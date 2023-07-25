@@ -2,7 +2,6 @@ import logo from './logo.svg';
 import './App.css';
 import Clock from 'react-live-clock';
 import rd3 from 'react-d3-library';
-import node from 'd3file';
 
 
 import { render } from 'react-dom'
@@ -54,7 +53,6 @@ function RightSideBar(){
   />
 
 
-<RD3Component data={{d3: node}} />
 
     </div>
   )
