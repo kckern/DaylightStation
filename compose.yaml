@@ -8,14 +8,14 @@
 # database or a cache. For examples, see the Awesome Compose repository:
 # https://github.com/docker/awesome-compose
 services:
-  backend:
-    container_name: backend
+  daylight:
+    container_name: daylight
     build:
-      context: ./backend
+      context: .
     environment:
       NODE_ENV: production
     ports:
-      - 3300:3300
+      - 8011:8011
   #frontend:
   #  container_name: frontend
   #  build:

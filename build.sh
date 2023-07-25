@@ -5,7 +5,7 @@ DOCKER_USER=kckern
 
 
 cd backend
-REPO=home-backend
+REPO=daylight-station-backend
 docker build . -t $DOCKER_USER/$REPO
 
 

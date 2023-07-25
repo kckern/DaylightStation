@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Function that will be called when script is interrupted
+cleanup() {
+    kill -- -$$
+}
+
+# This traps the Ctrl+C (SIGINT) signal and calls the cleanup function
+trap cleanup SIGINT
+
+cd backend && npm start &
+cd frontend && npm start &
+
+# Wait for all child processes to finish
+wait
