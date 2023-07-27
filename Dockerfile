@@ -38,7 +38,7 @@ EXPOSE 8011
 RUN rm -rf frontend/build
 
 # Build the frontend
-RUN cd frontend && npm run build
+RUN cd frontend && npm i && npm run build
 
 
 # Run the application as a non-root user.
