@@ -5,8 +5,11 @@ DOCKER_USER=kckern
 
 
 cd backend
-REPO=daylight-station-backend
-docker build . -t $DOCKER_USER/$REPO
+LOCALREPO=daylight-station:latest 
+REMOTEREPO=daylight-station-ecr-test:latest
+
+#docker build . -t $DOCKER_USER/$REPO
+
 
 
 # IF DST IS AWS, PUSH TO AWS ELSE PUSH TO DOCKER
@@ -22,31 +25,33 @@ then
     AWS_PASSWORD=$(aws ecr get-login-password --region $AWS_REGION)
 
     #CHECK IF REPO EXISTS
-    REPOEXISTS=$(aws ecr describe-repositories --repository-names $REPO)
+    REPOEXISTS=$(aws ecr describe-repositories --repository-names $REMOTEREPO)
     if [ -z "$REPOEXISTS" ]
     then
-        echo "Repo does not exist"
-        aws ecr create-repository --repository-name $REPO
+        echo "Creating Repo"
+        aws ecr create-repository --repository-name $REMOTEREPO
     else
         echo "Repo exists"
     fi
 
-    docker tag $DOCKER_USER/$REPO $AWS_PATH/$REPO
+    echo "Tagging : $DOCKER_USER/$LOCALREPO to $AWS_PATH/$REMOTEREPO"
+    docker tag $DOCKER_USER/$LOCALREPO $AWS_PATH/$REMOTEREPO
 
     #LOGIN TO AWS
     docker login --username AWS --password-stdin $AWS_PATH <<< $AWS_PASSWORD
 
 
     #PUSH TO AWS
-    docker -D push $AWS_PATH/$REPO
+    echo "Pushing to AWS: $AWS_PATH/$REMOTEREPO"
+    docker -D push $AWS_PATH/$REMOTEREPO
 
     ## GET THE ECS Service to pull the new image
-    aws ecs update-service --cluster home --service home-backend --force-new-deployment
+    #aws ecs update-service --cluster home --service home-backend --force-new-deployment
 
 
 
 else
     echo "Pushing to Docker"
-    docker push $DOCKER_USER/$REPO
+   # docker push $DOCKER_USER/$REPO
 fi
 

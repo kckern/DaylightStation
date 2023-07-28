@@ -1,14 +1,11 @@
-import logo from './logo.svg';
+
 import './App.css';
 import Clock from 'react-live-clock';
-import rd3 from 'react-d3-library';
 
 
-import { render } from 'react-dom'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 
-const RD3Component = rd3.Component;
 
 function App() {
   return (
@@ -36,7 +33,7 @@ const options = {
 
 function LeftSideBar(){
   return(
-    <div className="h-full w-1/4 bg-white" style={{padding: '3rem'}}>
+    <div className="h-full w-1/4 bg-white" style={{padding: '4rem'}}>
       <Clock format={'HH:mm:ss'} ticking={true} timezone={'US/Pacific'} />
     </div>
   )

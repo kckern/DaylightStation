@@ -31,18 +31,19 @@ COPY . .
 
 
 # Expose the port that the application listens on.
-EXPOSE 8011
+EXPOSE 81
 
 
-# RM fontend/build
+
+
+# Frontend
 RUN rm -rf frontend/build
+RUN rm -rf frontend/node_modules
+RUN cd frontend && npm i
+RUN cd frontend && npm run build 
 
-# Build the frontend
-RUN cd frontend && npm i && npm run build
-
-
-# Run the application as a non-root user.
+# Backend
+RUN rm -rf backend/node_modules
+RUN cd backend && npm i
 USER node
-
-# Run the application.
 CMD cd backend &&  node index.js
