@@ -21,3 +21,4 @@ else app.use('/', (_,res) => res.redirect('http://localhost:3111'));
 
 
 app.listen(3112);
+console.log('Listening on port 3112');

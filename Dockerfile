@@ -1,6 +1,6 @@
 # Install OS
 ARG NODE_VERSION=18.4.0
-FROM node:${NODE_VERSION}-alpine
+FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine
 RUN npm install -g forever
 
 # Install app
