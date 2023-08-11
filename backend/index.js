@@ -3,21 +3,8 @@ const fs = require('fs');
 require('dotenv').config();
 
 
-const { serverSideRendering } = require('./ssr');
 const path = require('path');
 const app = express();
-const bots = ["google", "bing", "yahoo", "duckduckgo", "baidu", "yandex", "sogou", "exabot", "facebot", "ia_archiver", "facebookexternalhit", "twitterbot", "developers.google.com"];
-const botPattern = new RegExp(bots.join("|"), "i");
-
-
-
-// Server Side Rendering
-app.use((req, res, next) => {
-  if (botPattern.test(req.headers['user-agent']))
-    return serverSideRendering(req, res);
-  return next();
-});
-
 
 // Backend API
 app.get('/debug', function (req, res) {
