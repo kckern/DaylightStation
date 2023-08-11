@@ -1,18 +1,21 @@
 # Install OS
 ARG NODE_VERSION=18.4.0
 FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine
-RUN npm install -g forever
 
-# Install app
+# Set work directory to /usr/src/app
 WORKDIR /usr/src/app
+
+# Bundle app source
 COPY . .
+
+# Install app dependencies and build
+RUN npm install -g forever && \
+    cd frontend && npm ci && npm run build && \
+    cd ../backend && npm ci && \
+    chown -R node:node .
+
+USER node
+
 EXPOSE 3112
 
-# Frontend
-RUN cd frontend && npm i
-RUN cd frontend && npm run build 
-
-# Backend
-RUN cd backend && npm i
-USER node
 CMD forever backend/index.js
