@@ -1,0 +1,37 @@
+.keypad {
+    position: fixed;
+    bottom: 0;
+    left: 2em;
+    height: 10px;
+    width: 15em;
+    display: grid;
+    gap: 5px;
+    background-color:#EEE;
+    border-top: 10px solid #AAA;
+    border-radius: 1ex 1ex 0 0;
+    transition: height 0.5s ease;
+}
+
+.keypad button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    outline: 1px solid #BBB;
+    border-radius: 1ex;
+    font-weight:   bold ;
+}
+
+.keypad button:active {
+    background-color: #AAA;
+    color: #FFF;
+}
+
+.keypad.peek {
+    outline: 2px solid black;
+    border:0;
+    padding: 1ex;
+    padding-bottom: 2em;
+    height: 20em;
+    display: grid;
+    transition: height 0.5s ease;
+}
