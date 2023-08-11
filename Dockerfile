@@ -1,49 +1,18 @@
-# syntax=docker/dockerfile:1
-
-# Comments are provided throughout this file to help you get started.
-# If you need more help, visit the Dockerfile reference guide at
-# https://docs.docker.com/engine/reference/builder/
-
+# Install OS
 ARG NODE_VERSION=18.4.0
-
 FROM node:${NODE_VERSION}-alpine
+RUN npm install -g forever
 
-# Use production node environment by default.
-ENV NODE_ENV production
-
-
+# Install app
 WORKDIR /usr/src/app
-
-
-# Download dependencies as a separate step to take advantage of Docker's caching.
-# Leverage a cache mount to /root/.npm to speed up subsequent builds.
-# Leverage a bind mounts to package.json and package-lock.json to avoid having to copy them into
-# into this layer.
-RUN --mount=type=bind,source=backend/package.json,target=backend/package.json \
-    --mount=type=bind,source=backend/package-lock.json,target=backend/package-lock.json \
-    --mount=type=cache,target=/root/.npm \
-    cd backend && npm ci --omit=dev
-
-
-# Copy the rest of the source files into the image.
 COPY . .
-
-
-
-# Expose the port that the application listens on.
-EXPOSE 81
-
-
-
+EXPOSE 3112
 
 # Frontend
-RUN rm -rf frontend/build
-RUN rm -rf frontend/node_modules
 RUN cd frontend && npm i
 RUN cd frontend && npm run build 
 
 # Backend
-RUN rm -rf backend/node_modules
 RUN cd backend && npm i
 USER node
-CMD cd backend &&  node index.js
+CMD forever backend/index.js
