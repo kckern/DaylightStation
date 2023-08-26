@@ -6,6 +6,7 @@ const configExists = fs.existsSync('./config.yml');
 
 const localPath = path.join(__dirname, '../data_local');
 const tmpPath = path.join(__dirname, '../data_tmp');
+const apiRouter = require('./api.js');
 
 
 const app = express();
@@ -24,11 +25,18 @@ if (configExists) {
   app.get('/debug', function (req, res) {
     res.json({ process: { env: process.env } });
   });
+
+  app.use('/data', apiRouter);
+
+
   // Frontend
   const fontendPath = path.join(__dirname, '../frontend/build');
   const frontendExists = fs.existsSync(fontendPath);
   if (frontendExists) app.use('/', express.static(fontendPath));
   else app.use('/', (_, res) => res.redirect('http://localhost:3111'));
+
+
+
 }
 else {
   app.get("*",function (req, res) {
