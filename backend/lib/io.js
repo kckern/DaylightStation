@@ -1,10 +1,14 @@
 const fs = require('fs');
+require('dotenv').config();
+
+
+
 
 const loadFile = (path) => {
     path = path.replace(process.env.dataPath, '').replace(/^[.\/]+/, '').replace(/\.json$/, '') + '.json';
-    const fileExists = fs.existsSync(`${process.env.dataPath}/${path}`);    
+    const fileExists = fs.existsSync(`${process.env.path.data}/${path}`);    
     if(!fileExists) return false;
-    const fileData = fs.readFileSync(`${process.env.dataPath}/${path}`, 'utf8');
+    const fileData = fs.readFileSync(`${process.env.path.data}/${path}`, 'utf8');
     try{
         return JSON.parse(fileData);
     }catch(e){
@@ -26,11 +30,11 @@ function removeCircularReferences(data){
 }
 
 const saveFile = (path, data) => {
-    path = path.replace(process.env.dataPath, '').replace(/^[.\/]+/, '');
+    path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
 
     //TODO: update data to remove any circular references that would cause JSON.stringify to fail
     if(typeof data !== 'string') data = JSON.stringify(removeCircularReferences(data),null,2);
-    fs.writeFileSync(`${process.env.dataPath}/${path}`, data, 'utf8');
+    fs.writeFileSync(`${process.env.path.data}/${path}`, data, 'utf8');
     return true;
 }
 
