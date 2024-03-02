@@ -5,6 +5,7 @@ const {Infinity} = require('./lib/infinity');
 const { saveFile } = require('./lib/io');
 
 
+
 apiRouter.get('/infinity/harvest/:table_id?',  async (req, res) => {
     let table_id = req.params.table_id || process.env.infinity.default_table || false;
     let table_alias = table_id+"";
@@ -15,6 +16,12 @@ apiRouter.get('/infinity/harvest/:table_id?',  async (req, res) => {
     res.json(table_data);
     saveFile(`infinity/${table_alias}.json`, table_data);
 });
+
+//handle all other requests, post or get
+apiRouter.all('*',  async (req, res) => {
+    return res.status(404).json({error: 'Invalid endpoint'});
+});
+
 
 
 module.exports = apiRouter;
