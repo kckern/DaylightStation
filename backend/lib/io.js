@@ -1,7 +1,6 @@
-const fs = require('fs');
-require('dotenv').config();
-
-
+import fs from 'fs';
+import dotenv from 'dotenv';
+dotenv.config();
 
 
 const loadFile = (path) => {
@@ -29,8 +28,24 @@ function removeCircularReferences(data){
     }));
 }
 
+const mkDirIfNotExists= (path) =>{
+    const pathWithoutFilename = path.split('/').slice(0,-1).join('/');
+    const dirs = pathWithoutFilename.split('/');
+    let currentPath = process.env.path.data;
+    dirs.forEach(dir => {
+        currentPath = `${currentPath}/${dir}`;
+        if (!fs.existsSync(currentPath)) {
+            fs.mkdirSync(currentPath);
+        }
+    });
+}
+
 const saveFile = (path, data) => {
     path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
+
+    //mkdir if not exists
+    mkDirIfNotExists(path);
+
 
     //TODO: update data to remove any circular references that would cause JSON.stringify to fail
     if(typeof data !== 'string') data = JSON.stringify(removeCircularReferences(data),null,2);
@@ -39,4 +54,4 @@ const saveFile = (path, data) => {
 }
 
 
-module.exports = { loadFile, saveFile };
+export { loadFile, saveFile}
