@@ -9,7 +9,6 @@ cleanup() {
 trap cleanup SIGINT
 
 cd backend && npm start &
-cd frontend && npm start &
-
+cd frontend && npm run dev &
 # Wait for all child processes to finish
 wait
