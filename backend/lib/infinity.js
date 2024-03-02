@@ -1,7 +1,8 @@
+import axios from 'axios';
+import { loadFile, saveFile } from './io.js';
+import dotenv from 'dotenv';
 
-const axios = require('axios');
-const { loadFile, saveFile } = require('./io');
-require('dotenv').config();
+dotenv.config();
 
 const { INFINITY_WORKSPACE, INFINITY_CLIENT_ID, INFINITY_CLIENT_SECRET, INFINITY_REFRESH_TOKEN } = process.env;
 
@@ -127,4 +128,4 @@ const updateItem = async (tableId, itemId, key, val) => {
     });
     return response.data;
 };
-module.exports = { Infinity: { loadTable, saveItem, updateItem } };
+export default { loadTable, saveItem, updateItem };
