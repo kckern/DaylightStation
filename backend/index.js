@@ -1,37 +1,34 @@
-const express = require('express');
-const fs = require('fs');
-const YAML = require('yaml')
-const path = require('path');
-const configExists = fs.existsSync(`${__dirname}/../config.app.yml`);
-const isDocker = fs.existsSync('/.dockerenv');
+import express from 'express';
+import { existsSync, readFileSync } from 'fs';
+import { parse } from 'yaml';
+import path from 'path';
 
+const configExists = existsSync(`${process.cwd()}/../config.app.yml`);
+const isDocker = existsSync('/.dockerenv');
 
-const fetchRouter = require(path.join(__dirname, 'fetch.js'));
-const harvestRouter = require(path.join(__dirname, 'harvest.js'));
-
+import fetchRouter from './fetch.js';
+import harvestRouter from './harvest.js';
 
 const app = express();
 if (configExists) {
-  process.env = { ...process.env,isDocker, ...YAML.parse(fs.readFileSync(path.join(__dirname, '../config.app.yml'), 'utf8')) };
-
-
+  process.env = { ...process.env, isDocker, ...parse(readFileSync(path.join(process.cwd(), '../config.app.yml'), 'utf8')) };
+  //override with local env if not docker
+  if(!isDocker) process.env = { ...process.env, ...parse(readFileSync(path.join(process.cwd(), '../config.app-local.yml'), 'utf8')) };
 
   // Backend API
-  app.get('/debug', (_, res) =>res.json({ process: { env: process.env } }));
+  app.get('/debug', (_, res) => res.json({ process: { env: process.env } }));
   app.use('/data', fetchRouter);
   app.use("/harvest", harvestRouter);
 
-
   // Frontend
-  const fontendPath = path.join(__dirname, '../frontend/dist');
-  const frontendExists = fs.existsSync(fontendPath);
+  const fontendPath = path.join(process.cwd(), '../frontend/dist');
+  const frontendExists = existsSync(fontendPath);
   if (frontendExists) app.use('/', express.static(fontendPath));
   else {
     console.log('Frontend not found. Redirecting to localhost:3111');
     console.log(`I was expecting to find the frontend at ${fontendPath} but it was not there. Please run the frontend build script first.`);
     app.use('/', (_, res) => res.redirect('http://localhost:3111'));
   }
-
 }
 else {
   app.get("*",function (req, res) {
