@@ -2,6 +2,9 @@
 const axios = require('axios');
 const { loadFile, saveFile } = require('./io');
 require('dotenv').config();
+
+const { INFINITY_WORKSPACE, INFINITY_CLIENT_ID, INFINITY_CLIENT_SECRET, INFINITY_REFRESH_TOKEN } = process.env;
+
 const authInfinity = async () => {
     return process.env.infinity.token;
     const refreshToken = loadFile('infinity/refresh_token');
