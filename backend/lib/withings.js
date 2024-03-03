@@ -1,10 +1,8 @@
 import axios from 'axios';
 import { saveFile, loadFile } from './io.js';
-import dotenv from 'dotenv';
-dotenv.config();
 
 const getWeightData = async () => {
-    const { WITHINGS_CLIENT, WITHINGS_SECRET } = process.env;
+    const { WITHINGS_CLIENT, WITHINGS_SECRET,WITHINGS_REDIRECT } = process.env;
     const {refresh} = loadFile('_tmp/withings');
 
     const params_auth = {
@@ -13,15 +11,17 @@ const getWeightData = async () => {
         client_id: WITHINGS_CLIENT,
         client_secret: WITHINGS_SECRET,
         refresh_token: refresh,
-        redirect_uri:  `https://kc-oauth.vercel.app/api/withings`
+        redirect_uri:  WITHINGS_REDIRECT
     };
     
 
     let {data:{body:auth_data}} = await axios.post('https://wbsapi.withings.net/v2/oauth2',params_auth);
 
-    const {access_token, refresh_token} = auth_data;
+    const {access_token, refresh_token} = auth_data || {};
 
     if(refresh_token) saveFile('_tmp/withings', {refresh: refresh_token});
+
+    if(!access_token) return {error: `No access token.  Refresh token may have expired.`, refresh_token, WITHINGS_REDIRECT};
 
 
     const params = {

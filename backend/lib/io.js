@@ -3,8 +3,6 @@ import yaml from 'js-yaml';
 import {decode} from 'html-entities';
 import smartquotes from 'smartquotes';
 
-import dotenv from 'dotenv';
-dotenv.config();
 
 
 const loadFile = (path) => {
