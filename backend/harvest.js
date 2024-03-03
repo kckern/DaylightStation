@@ -11,10 +11,13 @@ import clickup from './lib/clickup.js';
 import lastfm from './lib/lastfm.js';
 import letterboxd from './lib/letterboxd.js';
 import goodreads from './lib/goodreads.js';
+import Infinity from './lib/infinity.js';
+
 
 
 const harvesters = {
     
+    //program: ()=>Infinity.loadTable(["program"]),
 
     todoist,
     gmail,

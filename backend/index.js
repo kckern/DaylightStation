@@ -1,7 +1,8 @@
 import express from 'express';
 import { existsSync, readFileSync } from 'fs';
 import { parse } from 'yaml';
-import path from 'path';
+import path,{ join } from 'path';
+
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -13,10 +14,16 @@ import harvestRouter from './harvest.js';
 
 const app = express();
 if (configExists) {
-  process.env = { ...process.env, isDocker, ...parse(readFileSync(path.join(__dirname, '../config.app.yml'), 'utf8')) };
-  process.env = { ...process.env, isDocker, ...parse(readFileSync(path.join(__dirname, '../config.secrets.yml'), 'utf8')) };
-  //override with local env if not docker
-  if(!isDocker) process.env = { ...process.env, ...parse(readFileSync(__dirname + '/../config.app-local.yml', 'utf8')) };
+
+
+
+  // Parse the YAML files
+  const appConfig = parse(readFileSync(join(__dirname, '../config.app.yml'), 'utf8'));
+  const secretsConfig = parse(readFileSync(join(__dirname, '../config.secrets.yml'), 'utf8'));
+  const localConfig = !isDocker ? parse(readFileSync(join(__dirname, '../config.app-local.yml'), 'utf8')) : {};
+
+// Construct the process.env object
+  process.env = { ...process.env, isDocker, ...appConfig, ...secretsConfig, ...localConfig };
 
   // Backend API
   app.get('/debug', (_, res) => res.json({ process: { env: process.env } }));
@@ -24,7 +31,7 @@ if (configExists) {
   app.use("/harvest", harvestRouter);
 
   // Frontend
-  const fontendPath = path.join(process.cwd(), '../frontend/dist');
+  const fontendPath = join(process.cwd(), '../frontend/dist');
   const frontendExists = existsSync(fontendPath);
   if (frontendExists) app.use('/', express.static(fontendPath));
   else {
