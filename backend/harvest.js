@@ -14,9 +14,7 @@ import goodreads from './lib/goodreads.js';
 import Infinity from './lib/infinity.js';
 
 const harvesters = {
-    
-    program: Infinity.loadProgram,
-    
+    ...Infinity.keys.reduce((fn, i) => (fn[i] = () => Infinity.loadData(i), fn), {}),
     todoist,
     gmail,
     gcal,
