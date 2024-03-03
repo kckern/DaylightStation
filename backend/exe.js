@@ -1,11 +1,9 @@
-const { exec } = require('child_process');
-const fs = require('fs');
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
+import { exec } from 'child_process';
+import fs from 'fs';
 
 async function executeCommand(sshCommand) {
     try {
-        const { stdout, stderr } = await exec(sshCommand);
+        const { stdout, stderr } =  exec(sshCommand);
         console.log(`stdout: ${stdout}`);
         console.error(`stderr: ${stderr}`);
         return stdout;
@@ -15,10 +13,10 @@ async function executeCommand(sshCommand) {
     }
 }
 
-function exe(req,res) {
+export default async function exe(req,res) {
     try{
         console.log('Starting exe function');
-        const { cmd } = req.body;
+        const { cmd } = req.body || req.query;
         console.log('Command received:', cmd);
         const { hardware: { host, user, port=22}, DOCKER_HOST_SSH_KEY } = process.env;
         console.log('Environment variables:', { host, user, port, DOCKER_HOST_SSH_KEY });
@@ -39,14 +37,16 @@ function exe(req,res) {
         const options = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
         const sshCommand = `ssh ${options} -i ${keyPath} -p ${port} ${user}@${host} 'sh /tmp/cmd.sh'`;    
         console.log('Executing SSH command:', sshCommand);
-        const stout = executeCommand(sshCommand);
+        const stout = await executeCommand(sshCommand);
         console.log('Command output:', stout);
         res.json({ stout });    
     }
     catch (error) {
+        const msg = error.message || error;
         console.log('Error occurred:', error);
-        res.json({ error });
+        res.json({ error: msg });
     }
+    return true;
 }
 
-module.exports = exe;
+
