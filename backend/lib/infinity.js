@@ -1,22 +1,22 @@
 import axios from 'axios';
 import { loadFile, saveFile } from './io.js';
 
-
+const keys = ['program', 'videomenu', 'watchlist', 'entropy', 'youtube'];
 
 const authInfinity = async () => {
-    const { INFINITY_DEV } = process.env;
-    
-    return INFINITY_DEV;
-    const {refreshToken} = loadFile('_tmp/infinity');
-    if (!refreshToken) return false;
+    const { INFINITY_DEV, INFINITY_CLI,INFINITY_CLIS  } = process.env;
+   return INFINITY_DEV;
+    const {refresh} = loadFile('_tmp/infinity');
+    if (!refresh) return false;
     const options = {
         grant_type: 'refresh_token',
-        client_id: process.env.infinity.cli,
-        client_secret: process.env.infinity.clis,
-        refresh_token: refreshToken
+        client_id: INFINITY_CLI,
+        client_secret: INFINITY_CLIS,
+        refresh_token: refresh
     };
     try {
         const response = await axios.post('https://app.startinfinity.com/oauth/token', options);
+        console.log(response.data); 
         const { access_token, refresh_token } = response.data;
         console.log({ access_token, refresh_token });
         if (!access_token) return false;
@@ -35,7 +35,6 @@ const loadTable = async (tableId , data = [], after = "") => {
 
     if(!tableId) return false;
     const token = await authInfinity();
-    console.log({token});
     if (!token) return false;
     try{
         
@@ -132,8 +131,10 @@ const updateItem = async (tableId, itemId, key, val) => {
     return response.data;
 };
 
-const loadProgram = async (req) => {
-    const {program,watchlist,videomenu} = process.env.infinity || {};
-    return loadTable(program);
+const loadData = async (name) => {
+    const data = await loadTable(process.env.infinity[name]);
+    saveFile(name, data);
+    return data;
 }
-export default { loadTable, saveItem, updateItem, loadProgram };
+
+export default { loadTable, saveItem, updateItem, loadData, keys};
