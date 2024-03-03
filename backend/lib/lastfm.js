@@ -4,7 +4,7 @@ import { saveFile } from './io.js';
 
 
 const getScrobbles = async () => {
-    const {LAST_FM_API_KEY,   LAST_FM_SALT,  LAST_FM_USER} = process.env;
+    const {LAST_FM_API_KEY,  LAST_FM_USER} = process.env;
     let page = 1;
     let tracks = [];
     while (page < 10) {
