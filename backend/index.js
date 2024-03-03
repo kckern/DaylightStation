@@ -30,7 +30,7 @@ if (configExists) {
   app.get('/debug', (_, res) => res.json({ process: { env: process.env } }));
   app.use('/data', fetchRouter);
   app.use("/harvest", harvestRouter);
-  app.use("/exec", exe);
+  app.use("/exe", exe);
 
   // Frontend
   const fontendPath = join(__dirname, '../frontend/dist');
