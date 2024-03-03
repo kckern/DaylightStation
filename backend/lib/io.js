@@ -1,15 +1,21 @@
 import fs from 'fs';
+import yaml from 'js-yaml';
+import {decode} from 'html-entities';
+import smartquotes from 'smartquotes';
+
 import dotenv from 'dotenv';
 dotenv.config();
 
 
 const loadFile = (path) => {
-    path = path.replace(process.env.dataPath, '').replace(/^[.\/]+/, '').replace(/\.json$/, '') + '.json';
+    path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.yaml$/, '') + '.yaml';
     const fileExists = fs.existsSync(`${process.env.path.data}/${path}`);    
     if(!fileExists) return false;
-    const fileData = fs.readFileSync(`${process.env.path.data}/${path}`, 'utf8');
+    const fileData = fs.readFileSync(`${process.env.path.data}/${path}`, 'utf8').toString().trim();
     try{
-        return JSON.parse(fileData);
+        const object = yaml.load(fileData);
+        console.log({fileData, object});
+        return object;
     }catch(e){
         return fileData
     }
@@ -42,16 +48,25 @@ const mkDirIfNotExists= (path) =>{
 
 const saveFile = (path, data) => {
     path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
-
     //mkdir if not exists
     mkDirIfNotExists(path);
+    //add yaml if it doesnt end with .yaml
+    const yamlFile = path.endsWith('.yaml') ? path : `${path}.yaml`;
+    data = JSON.parse(JSON.stringify(removeCircularReferences(data)));
+    fs.writeFileSync(`${process.env.path.data}/${yamlFile}`, yaml.dump(data), 'utf8');
 
-
-    //TODO: update data to remove any circular references that would cause JSON.stringify to fail
-    if(typeof data !== 'string') data = JSON.stringify(removeCircularReferences(data),null,2);
-    fs.writeFileSync(`${process.env.path.data}/${path}`, data, 'utf8');
     return true;
 }
 
+const sanitize = (string) => {
 
-export { loadFile, saveFile}
+    string = smartquotes(decode(string));
+    const allowedChars = /[a-zA-Z0-9\s\-_\uAC00-\uD7A3\(\)\[\]\{\}\'\"\&”“‘’<@>.,;!?]/;
+    string = string.replace(/\s+/g, ' ').trim();
+    return string.split('').filter(char => char.match(allowedChars)).join('');
+
+
+}
+
+
+export { loadFile, saveFile, sanitize };
