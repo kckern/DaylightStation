@@ -9,8 +9,13 @@ import buxfer from './lib/buxfer.js';
 import weather from './lib/weather.js';
 import clickup from './lib/clickup.js';
 import lastfm from './lib/lastfm.js';
+import letterboxd from './lib/letterboxd.js';
+import goodreads from './lib/goodreads.js';
+
 
 const harvesters = {
+    
+
     todoist,
     gmail,
     gcal,
@@ -18,7 +23,9 @@ const harvesters = {
     buxfer,
     weather,
     clickup,
-    lastfm
+    lastfm,
+    letterboxd,
+    goodreads,
     
 }
 
