@@ -8,6 +8,7 @@ import withings from './lib/withings.js';
 import buxfer from './lib/buxfer.js';
 import weather from './lib/weather.js';
 import clickup from './lib/clickup.js';
+import lastfm from './lib/lastfm.js';
 
 const harvesters = {
     todoist,
@@ -16,7 +17,8 @@ const harvesters = {
     withings,
     buxfer,
     weather,
-    clickup
+    clickup,
+    lastfm
     
 }
 

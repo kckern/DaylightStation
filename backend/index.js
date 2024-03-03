@@ -14,6 +14,7 @@ import harvestRouter from './harvest.js';
 const app = express();
 if (configExists) {
   process.env = { ...process.env, isDocker, ...parse(readFileSync(path.join(__dirname, '../config.app.yml'), 'utf8')) };
+  process.env = { ...process.env, isDocker, ...parse(readFileSync(path.join(__dirname, '../config.secrets.yml'), 'utf8')) };
   //override with local env if not docker
   if(!isDocker) process.env = { ...process.env, ...parse(readFileSync(__dirname + '/../config.app-local.yml', 'utf8')) };
 
