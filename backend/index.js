@@ -11,6 +11,7 @@ const isDocker = existsSync('/.dockerenv');
 
 import fetchRouter from './fetch.js';
 import harvestRouter from './harvest.js';
+import exe from './exe.js';
 
 const app = express();
 if (configExists) {
@@ -29,9 +30,10 @@ if (configExists) {
   app.get('/debug', (_, res) => res.json({ process: { env: process.env } }));
   app.use('/data', fetchRouter);
   app.use("/harvest", harvestRouter);
+  app.use("/exec", exe);
 
   // Frontend
-  const fontendPath = join(process.cwd(), '../frontend/dist');
+  const fontendPath = join(__dirname, '../frontend/dist');
   const frontendExists = existsSync(fontendPath);
   if (frontendExists) app.use('/', express.static(fontendPath));
   else {
