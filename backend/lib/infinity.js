@@ -2,10 +2,10 @@ import axios from 'axios';
 import { loadFile, saveFile } from './io.js';
 
 
-const { INFINITY_DEV, INFINITY_WORKSPACE, INFINITY_CLIENT_ID, INFINITY_CLIENT_SECRET, INFINITY_REFRESH_TOKEN } = process.env;
-
 
 const authInfinity = async () => {
+    const { INFINITY_DEV } = process.env;
+    
     return INFINITY_DEV;
     const {refreshToken} = loadFile('_tmp/infinity');
     if (!refreshToken) return false;
@@ -31,8 +31,7 @@ const authInfinity = async () => {
 }
 const loadTable = async (tableId , data = [], after = "") => {
 
-    if(Array.isArray(tableId)) tableId = process.env.infinity[tableId[0]];
-
+    const { INFINITY_WORKSPACE } = process.env;
 
     if(!tableId) return false;
     const token = await authInfinity();
@@ -132,4 +131,9 @@ const updateItem = async (tableId, itemId, key, val) => {
     });
     return response.data;
 };
-export default { loadTable, saveItem, updateItem };
+
+const loadProgram = async (req) => {
+    const {program,watchlist,videomenu} = process.env.infinity || {};
+    return loadTable(program);
+}
+export default { loadTable, saveItem, updateItem, loadProgram };
