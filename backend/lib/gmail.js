@@ -1,7 +1,5 @@
 import { google } from 'googleapis';
-import dotenv from 'dotenv';
 import { saveFile,sanitize } from './io.js';
-dotenv.config();
 
 const listMails = async () => {
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;

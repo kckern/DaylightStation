@@ -1,8 +1,6 @@
 import axios from 'axios';
 import { loadFile, saveFile } from './io.js';
-import dotenv from 'dotenv';
 
-dotenv.config();
 
 const { INFINITY_WORKSPACE, INFINITY_CLIENT_ID, INFINITY_CLIENT_SECRET, INFINITY_REFRESH_TOKEN } = process.env;
 

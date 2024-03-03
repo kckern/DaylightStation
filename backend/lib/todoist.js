@@ -1,7 +1,5 @@
 import { TodoistApi } from '@doist/todoist-api-typescript'
 import { saveFile, loadFile } from './io.js';
-import dotenv from 'dotenv';
-dotenv.config();
 
 const getTasks = async () => {
         const { TODOIST_KEY } = process.env
