@@ -3,7 +3,9 @@ import { existsSync, readFileSync } from 'fs';
 import { parse } from 'yaml';
 import path from 'path';
 
-const configExists = existsSync(`${process.cwd()}/../config.app.yml`);
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+
+const configExists = existsSync(`${__dirname}/../config.app.yml`);
 const isDocker = existsSync('/.dockerenv');
 
 import fetchRouter from './fetch.js';
@@ -11,9 +13,9 @@ import harvestRouter from './harvest.js';
 
 const app = express();
 if (configExists) {
-  process.env = { ...process.env, isDocker, ...parse(readFileSync(path.join(process.cwd(), '../config.app.yml'), 'utf8')) };
+  process.env = { ...process.env, isDocker, ...parse(readFileSync(path.join(__dirname, '../config.app.yml'), 'utf8')) };
   //override with local env if not docker
-  if(!isDocker) process.env = { ...process.env, ...parse(readFileSync(path.join(process.cwd(), '../config.app-local.yml'), 'utf8')) };
+  if(!isDocker) process.env = { ...process.env, ...parse(readFileSync(__dirname + '/../config.app-local.yml', 'utf8')) };
 
   // Backend API
   app.get('/debug', (_, res) => res.json({ process: { env: process.env } }));
