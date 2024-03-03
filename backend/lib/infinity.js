@@ -2,11 +2,12 @@ import axios from 'axios';
 import { loadFile, saveFile } from './io.js';
 
 
-const { INFINITY_WORKSPACE, INFINITY_CLIENT_ID, INFINITY_CLIENT_SECRET, INFINITY_REFRESH_TOKEN } = process.env;
+const { INFINITY_DEV, INFINITY_WORKSPACE, INFINITY_CLIENT_ID, INFINITY_CLIENT_SECRET, INFINITY_REFRESH_TOKEN } = process.env;
+
 
 const authInfinity = async () => {
-    return process.env.infinity.token;
-    const refreshToken = loadFile('infinity/refresh_token');
+    return INFINITY_DEV;
+    const {refreshToken} = loadFile('_tmp/infinity');
     if (!refreshToken) return false;
     const options = {
         grant_type: 'refresh_token',
@@ -19,7 +20,7 @@ const authInfinity = async () => {
         const { access_token, refresh_token } = response.data;
         console.log({ access_token, refresh_token });
         if (!access_token) return false;
-        if (refresh_token) saveFile('infinity/refresh_token', refresh_token);
+        if (refresh_token) saveFile('_tmp/infinity', refresh_token);
         return access_token;
     } catch (e) {
         console.log(e.message);
@@ -29,12 +30,17 @@ const authInfinity = async () => {
     }
 }
 const loadTable = async (tableId , data = [], after = "") => {
+
+    if(Array.isArray(tableId)) tableId = process.env.infinity[tableId[0]];
+
+
     if(!tableId) return false;
     const token = await authInfinity();
+    console.log({token});
     if (!token) return false;
     try{
         
-    let url = `https://app.startinfinity.com/api/v2/workspaces/${process.env.infinity.workspace}/boards/${tableId}/items?limit=100&expand%5B%5D=values.attribute&sort_direction=asc`;
+    let url = `https://app.startinfinity.com/api/v2/workspaces/${INFINITY_WORKSPACE}/boards/${tableId}/items?limit=100&expand%5B%5D=values.attribute&sort_direction=asc`;
     if (after) url = url + "&after=" + after;
     const response = await axios.get(url, {
         headers: {
@@ -87,7 +93,7 @@ const processKey = (val) => {
 const saveItem = async (tableId, folderId, dictionary) => {
     const token = await authInfinity();
     if (!token) return false;
-    const url = `https://app.startinfinity.com/api/v2/workspaces/${process.env.infinity.workspace}/boards/${tableId}/items`;
+    const url = `https://app.startinfinity.com/api/v2/workspaces/${INFINITY_WORKSPACE}/boards/${tableId}/items`;
     const data = {
         "folder_id": folderId,
         "values": []
@@ -109,7 +115,7 @@ const saveItem = async (tableId, folderId, dictionary) => {
 const updateItem = async (tableId, itemId, key, val) => {
     const token = await authInfinity();
     if (!token) return false;
-    const url = `https://app.startinfinity.com/api/v2/workspaces/${process.env.infinity.workspace}/boards/${tableId}/items/${itemId}`;
+    const url = `https://app.startinfinity.com/api/v2/workspaces/${INFINITY_WORKSPACE}/boards/${tableId}/items/${itemId}`;
     const data = {
         "values": [
             {
