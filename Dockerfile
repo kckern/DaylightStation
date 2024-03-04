@@ -5,6 +5,9 @@ FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine
 # Set work directory to /usr/src/app
 WORKDIR /usr/src/app
 
+# Install OpenSSH client
+RUN apk add --no-cache openssh-client
+
 # Bundle app source
 COPY . .
 
@@ -14,8 +17,17 @@ RUN npm install -g forever && \
     cd ../backend && npm ci && \
     chown -R node:node .
 
+# Copy entrypoint script into the image
+COPY entrypoint.sh /usr/src/app
+
+# Make the entrypoint script executable
+RUN chmod +x /usr/src/app/entrypoint.sh
+
+RUN chown node:node /usr/src/app/known_hosts
+
 USER node
 
 EXPOSE 3112
 
-CMD forever backend/index.js
+# Set the entrypoint script as the command to run when the container starts
+ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
