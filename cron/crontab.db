@@ -1,0 +1,1 @@
+{"name":"Daily","command":"curl -sSL http://daylightstation:3112/harvest/todoist","schedule":"@daily","stopped":false,"timestamp":"Mon Mar 04 2024 02:22:58 GMT+0000 (Coordinated Universal Time)","logging":"false","mailing":{},"created":1709518978065,"saved":true,"_id":"3BptmJPEl59hnvaU"}
