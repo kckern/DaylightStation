@@ -1,12 +1,14 @@
-import { exec } from 'child_process';
+
 import fs from 'fs';
+import util from 'util';
+import { exec } from 'child_process';
+const promiseExec = util.promisify(exec);
+
 
 async function executeCommand(sshCommand) {
     try {
-        const { stdout, stderr } =  exec(sshCommand);
-        console.log(`stdout: ${stdout}`);
-        console.error(`stderr: ${stderr}`);
-        return stdout;
+        const { stdout } =  await promiseExec(sshCommand);
+        return stdout.trim().split('\n');
     } catch (error) {
         console.error(`exec error: ${error}`);
         throw error;
@@ -18,24 +20,15 @@ export default async function exe(req,res) {
         console.log('Starting exe function');
         const { cmd } = req.body || req.query;
         console.log('Command received:', cmd);
-        const { hardware: { host, user, port=22}, DOCKER_HOST_SSH_KEY } = process.env;
-        console.log('Environment variables:', { host, user, port, DOCKER_HOST_SSH_KEY });
-        const keyPath = `${process.env.HOME}/.ssh/docker_host_ssh_key`;
-        console.log('Key path:', keyPath);
-        if (!fs.existsSync(keyPath)) {
-            console.log('Key path does not exist');
-            //check if folder exists
-            if (!fs.existsSync(`${process.env.HOME}/.ssh`)) {
-                console.log('SSH folder does not exist, creating...');
-                fs.mkdirSync(`${process.env.HOME}/.ssh`);
-            }
-            console.log('Writing SSH key to file...');
-            fs.writeFileSync(keyPath, DOCKER_HOST_SSH_KEY, { mode: 0o600 });
-        }
-        console.log('Writing command to file...');
-        fs.writeFileSync('/tmp/cmd.sh', cmd, { mode: 0o700 });
-        const options = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
-        const sshCommand = `ssh ${options} -i ${keyPath} -p ${port} ${user}@${host} 'sh /tmp/cmd.sh'`;    
+        const { hardware: { host, user, ssh_port=22} } = process.env;
+        console.log('Environment variables:', { host, user, ssh_port });
+
+        const keyPath = `/usr/src/app/host_private_key`;
+        const knownPath = `/usr/src/app/known_hosts`;
+        const knownIsEmpty = !fs.readFileSync(knownPath).toString().length;
+        const base64Cmd = Buffer.from(cmd).toString('base64');
+        const options = `${knownIsEmpty ? `-o StrictHostKeyChecking=no` : ""} -o UserKnownHostsFile=./known_hosts`;
+        const sshCommand = `ssh ${options} -i ${keyPath} -p ${ssh_port} ${user}@${host} "echo ${base64Cmd} | base64 -d | bash"`;
         console.log('Executing SSH command:', sshCommand);
         const stout = await executeCommand(sshCommand);
         console.log('Command output:', stout);
