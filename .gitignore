@@ -6,3 +6,4 @@ frontend/build
 backend/node_modules
 *.yml
 data*
+node_modules/*

@@ -2,6 +2,8 @@ import express from 'express';
 const apiRouter = express.Router();
 import Infinity from './lib/infinity.js';
 import { saveFile } from './lib/io.js';
+import { readFileSync } from 'fs';
+import yaml from 'js-yaml';
 
 apiRouter.get('/infinity/harvest/:table_id?',  async (req, res) => {
     let table_id = req.params.table_id || process.env.infinity.default_table || false;
@@ -14,9 +16,15 @@ apiRouter.get('/infinity/harvest/:table_id?',  async (req, res) => {
     saveFile(`infinity/${table_alias}.json`, table_data);
 });
 
+apiRouter.get('/budget',  async (req, res) => {
+    const finances = yaml.load(readFileSync('../data/budget/finances.yml', 'utf8'));
+    res.json(finances);
+});
+
 //handle all other requests, post or get
 apiRouter.all('*',  async (req, res) => {
-    return res.status(404).json({error: 'Invalid endpoint'});
+    const availableEndpoints = apiRouter.stack.map(r => r.route.path);
+    return res.status(404).json({error: `Invalid endpoint: ${req.method} ${req.path}`, availableEndpoints});
 });
 
 export default apiRouter;
