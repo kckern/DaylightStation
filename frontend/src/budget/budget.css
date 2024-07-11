@@ -54,17 +54,33 @@
     overflow: auto;
     border-bottom-left-radius: 1rem;
     border-bottom-right-radius: 1rem;
+    width: 100%;
 }
 
 
 pre{
     line-height: 2ex;
     font-size: 1ex;
+    
+    max-width: 400px;
+    overflow: hidden;
 }
 
+.category-label {
+    font-family: 'Roboto Condensed', sans-serif;
+}
 
+b.category-label {
+    color: #000;
+    font-size: 1em;
+    font-family: 'Roboto', sans-serif;
+}
 
-
+small.category-label {
+    color: #AAA!important;
+    font-size: 0.7em;
+    font-family: 'Roboto', sans-serif;
+}
 
 
 
