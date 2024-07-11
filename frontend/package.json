@@ -22,6 +22,8 @@
     "@tabler/icons-react": "^3.10.0",
     "dayjs": "^1.11.11",
     "embla-carousel-react": "^8.1.6",
+    "highcharts": "^11.4.6",
+    "highcharts-react-official": "^3.2.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-modern-drawer": "^1.3.1",
