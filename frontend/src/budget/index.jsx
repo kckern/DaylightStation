@@ -48,8 +48,7 @@ const BASE_HEIGHT = "90vh"; // Changed BASE_HEIGHT to 90 viewport height
 const getSubHeight = (children, spacing) =>
   `calc(${BASE_HEIGHT} / ${children} - ${spacing}px * ((${children} - 1) / ${children}))`;
 
-export function BudgetViewer() {
-  const theme = useMantineTheme();
+export function BudgetViewer({ budget }) {
 
   const [drawerContent, setDrawerContent] = useState(null);
 
@@ -62,25 +61,28 @@ return (
         <Button onClick={() => setDrawerContent(null)}>Close</Button>
         {drawerContent}
         </Drawer>
-      <div class="grid-container">
-          <BudgetBlock title="Month over Month"  setDrawerContent={setDrawerContent}/>
-          <BudgetBlock title="Overview" setDrawerContent={setDrawerContent}/>
-          <BudgetBlock title="Mortgage" setDrawerContent={setDrawerContent}/>
-          <BudgetBlock title="Monthly Expenses" setDrawerContent={setDrawerContent}/>
-          <BudgetBlock title="Yearly Budget" setDrawerContent={setDrawerContent}/>
-          <BudgetBlock title="Investments" setDrawerContent={setDrawerContent}/>
+      <div className="grid-container">
+          <BudgetBlock title="Month over Month"  setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetBlock title="Overview" setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetBlock title="Mortgage" setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetBlock title="Monthly Expenses" setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetBlock title="Yearly Budget" setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetBlock title="Retirement" setDrawerContent={setDrawerContent} budget={budget}/>
         </div>
     </div>
   );
 }
 
-function BudgetBlock({ title, key, setDrawerContent }) {
+function BudgetBlock({ title, key, setDrawerContent, budget }) {
 
   return (
     <div className="budget-block">
       <h2>{title}</h2>
       <div className="budget-block-content">
         <Button onClick={() => setDrawerContent(<TableSort/>)}>Show</Button>
+        <pre>
+          {JSON.stringify(budget, null, 2)}
+        </pre>
       </div>
     </div>
   );
@@ -251,7 +253,7 @@ export function TableSort() {
         value={search}
         onChange={handleSearchChange}
       />
-      <Table horizontalSpacing="md" verticalSpacing="xs" minWidth={700} layout="fixed">
+      <Table horizontalSpacing="md" verticalSpacing="xs"  layout="fixed">
         <Table.Tbody>
           <Table.Tr>
             <Th
