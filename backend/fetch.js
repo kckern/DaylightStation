@@ -4,6 +4,7 @@ import Infinity from './lib/infinity.js';
 import { saveFile } from './lib/io.js';
 import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
+const dataPath = `${process.cwd()}/data`;
 
 apiRouter.get('/infinity/harvest/:table_id?',  async (req, res) => {
     let table_id = req.params.table_id || process.env.infinity.default_table || false;
@@ -17,7 +18,8 @@ apiRouter.get('/infinity/harvest/:table_id?',  async (req, res) => {
 });
 
 apiRouter.get('/budget',  async (req, res) => {
-    const finances = yaml.load(readFileSync('../data/budget/finances.yml', 'utf8'));
+    //console log pwd
+    const finances = yaml.load(readFileSync(`${dataPath}/budget/finances.yml`, 'utf8'));
     res.json(finances);
 });
 

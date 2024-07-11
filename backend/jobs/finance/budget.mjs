@@ -1,7 +1,7 @@
 
 
 import { readFileSync, writeFileSync } from 'fs';
-import { getTransactions } from '../lib/buxfer.js';    
+import { getTransactions } from '../../lib/buxfer.js';    
 import yaml from 'js-yaml';
 
 

@@ -11,6 +11,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Routes> {/* Step 4: Use Routes to define Route components */}
         <Route path="/" element={<App />} />
         <Route path="/budget" element={<BudgetApp />} /> {/* Example of another route */}
+        <Route path="/finances" element={<BudgetApp />} /> {/* Example of another route */}
         {/* Add more <Route> components as needed */}
       </Routes>
     </BrowserRouter>
