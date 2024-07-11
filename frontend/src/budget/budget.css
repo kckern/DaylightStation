@@ -57,6 +57,18 @@
 }
 
 
+pre{
+    line-height: 2ex;
+    font-size: 1ex;
+}
+
+
+
+
+
+
+
+
 /* make responsive: under 100 2 cols, under 500 1 col */
 @media (max-width: 1000px) {
     .grid-container {
