@@ -1,0 +1,81 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap');
+
+.budget-viewer{
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Roboto Condensed', sans-serif;
+}
+
+
+.budget-viewer header h1{
+    margin: 0;
+    background-color: #444;
+    color: #FFF;
+    text-align: center;
+    height: 3rem;
+    overflow: hidden;
+}
+
+.grid-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    padding: 1rem;
+    grid-auto-rows: minmax(0, 1fr); /* Make grid items fill the height */
+    background-color: aliceblue;
+    height: calc(100vh - 3rem); /* Subtract the header height */
+}
+
+.grid-container .budget-block {
+    background-color: #EEEEEE;
+    border-radius: 1rem;
+    border: 1px solid #CCC;
+}
+
+
+.grid-container .budget-block h2{
+    color: #FFF;
+    background-color: #00000099;
+    text-align: center;
+    margin: 0;
+    border-top-left-radius: 1rem;
+    border-top-right-radius: 1rem;
+    height: 2rem;
+    line-height: 2rem;
+    font-size: 1.5rem;
+    letter-spacing: 1px;
+    overflow: hidden;
+
+}
+
+.grid-container .budget-block .budget-block-content{
+    height: calc(100% - 2rem); /* Subtract the header height */
+    overflow: auto;
+    border-bottom-left-radius: 1rem;
+    border-bottom-right-radius: 1rem;
+}
+
+
+/* make responsive: under 100 2 cols, under 500 1 col */
+@media (max-width: 1000px) {
+    .grid-container {
+        grid-template-columns: 1fr 1fr;
+        height: auto;
+    }
+    .grid-container .budget-block
+    {
+        min-height: 50vw;
+    }
+}
+@media (max-width: 500px) {
+    .grid-container {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    .grid-container .budget-block
+    {
+        min-height: 100vw;
+    }
+    
+}
