@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Button, MantineProvider, TabsPanel } from '@mantine/core';
-import { BudgetMonthOverMonth, BudgetOverview, BudgetMortgage, BudgetMonthlyExpenses, BudgetYearly, BudgetRetirement} from './blocks.jsx';
+import { BudgetMonthOverMonth, BudgetOverview, BudgetMortgage, BudgetMonthlyExpenses, BudgetRetirement} from './blocks.jsx';
+import { BudgetYearly } from './blocks/yearly.jsx';
+import { BudgetBurnDownChart } from './blocks/daytoday.jsx';
 import { Drawer } from '@mantine/core';
 import 'react-modern-drawer/dist/index.css'
 import "./budget.css"
@@ -44,7 +46,7 @@ return (
         {drawerContent}
       </Drawer>
       <div className="grid-container">
-          <BudgetMonthlyExpenses setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetYearly setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>
