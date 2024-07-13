@@ -51,7 +51,7 @@
 
 .grid-container .budget-block .budget-block-content{
     height: calc(100% - 2rem); /* Subtract the header height */
-    overflow: auto;
+    overflow: hidden;
     border-bottom-left-radius: 1rem;
     border-bottom-right-radius: 1rem;
     width: 100%;
@@ -86,7 +86,7 @@ small.category-label {
 
 
 /* make responsive: under 100 2 cols, under 500 1 col */
-@media (max-width: 1000px) {
+@media (max-width: 1500px) {
     .grid-container {
         grid-template-columns: 1fr 1fr;
         height: auto;
@@ -96,7 +96,7 @@ small.category-label {
         min-height: 50vw;
     }
 }
-@media (max-width: 500px) {
+@media (max-width: 900px) {
     .grid-container {
         grid-template-columns: 1fr;
         height: auto;
