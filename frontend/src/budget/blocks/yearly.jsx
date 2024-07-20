@@ -2,25 +2,12 @@ import React, { useEffect, useState } from "react";
 import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
+function formatAsCurrency(value) {
+    return `$${value.toLocaleString()}`;
+}
 
-export function BudgetYearly({ setDrawerContent, budget }) {
+export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }) {
 
-    const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
-
-    useEffect(() => {
-        const handleResize = () => {
-            const budgetBlock = document.querySelector('.budget-block-content');
-            if (budgetBlock) {
-                setBudgetBlockDimensions({
-                    width: budgetBlock.clientWidth,
-                    height: budgetBlock.clientHeight
-                });
-            }
-        };
-        handleResize();
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
 
 
     const categories = [
@@ -173,9 +160,6 @@ export function BudgetYearly({ setDrawerContent, budget }) {
     };
     
 
-    function formatAsCurrency(value) {
-        return `$${value.toLocaleString()}`;
-    }
 
     function handleRowClick(data) {
         // Example callback function, adjust as needed
@@ -185,7 +169,7 @@ export function BudgetYearly({ setDrawerContent, budget }) {
 
     return (
         <div className="budget-block">
-            <h2>Yearly Expenses ({budgetBlockDimensions.width} x {budgetBlockDimensions.height})</h2>
+            <h2>Short Term Expenses</h2>
             <div className="budget-block-content">
                 <HighchartsReact
                     highcharts={Highcharts}

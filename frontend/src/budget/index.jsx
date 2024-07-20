@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Button, MantineProvider, TabsPanel } from '@mantine/core';
-import { BudgetMonthOverMonth, BudgetOverview, BudgetMortgage, BudgetMonthlyExpenses, BudgetRetirement} from './blocks.jsx';
+import { BudgetOverview, BudgetMortgage, BudgetRetirement} from './blocks.jsx';
+import { BudgetMonthOverMonth } from './blocks/monthly.jsx';
 import { BudgetYearly } from './blocks/yearly.jsx';
 import { BudgetBurnDownChart } from './blocks/daytoday.jsx';
 import { Drawer } from '@mantine/core';
 import 'react-modern-drawer/dist/index.css'
 import "./budget.css"
 import '@mantine/core/styles.css';
-
 
 const fetchBudget = async () => {
   //get from http://localhost:3112/data/budget
@@ -21,7 +21,7 @@ export default function App() {
   const [budgetData, setBudgetData] = useState(null);
   
   useEffect(() => {
-    fetchBudget().then(({budget}) => setBudgetData(budget));
+    fetchBudget().then((budget) => setBudgetData(budget));
   }, []);
   
   return (
@@ -35,6 +35,24 @@ export default function App() {
 export function BudgetViewer({ budget }) {
 
   const [drawerContent, setDrawerContent] = useState(null);
+  const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
+
+  useEffect(() => {
+      const handleResize = () => {
+          const budgetBlock = document.querySelector('.budget-block-content');
+          if (budgetBlock) {
+              setBudgetBlockDimensions({
+                  width: budgetBlock.clientWidth,
+                  height: budgetBlock.clientHeight
+              });
+          }
+      };
+      handleResize();
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+
 
 return (
     <div className="budget-viewer">
@@ -47,8 +65,8 @@ return (
       </Drawer>
       <div className="grid-container">
           <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetYearly setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+          <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
           <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetRetirement setDrawerContent={setDrawerContent} budget={budget}/>
