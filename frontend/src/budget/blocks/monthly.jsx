@@ -1,91 +1,61 @@
+import moment from "moment";
 import React, { useEffect, useState } from "react";
 import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
+const currentTime = 0.6;
 function formatAsCurrency(value) {
+    if (!value) return `$Ø`;
     return `$${value.toLocaleString()}`;
 }
+  
+  
+  export function BudgetMonthOverMonth({ setDrawerContent, budget , budgetBlockDimensions}) {
+  
+    const budgetKeys = Object.keys(budget);
+    const months = budgetKeys.map((key) => budget[key].monthlyBudget).reduce((acc, months) => {
+      return {...acc, ...months};
+    }, {});
+    const monthKeys = Object.keys(months);
+      const currentMonth = moment().format("YYYY-MM");
+      const [activeMonth, setActiveMonth] = useState(currentMonth);
+      const nonFutureMonths = monthKeys.filter((month) => month <= currentMonth);
+  
+  
+      const monthHeader = <MonthTabs monthKeys={nonFutureMonths}  activeMonth={activeMonth} setActiveMonth={setActiveMonth} />;
+  
+    const { categories } = months[activeMonth];
+    const catKeys = Object.keys(categories);
+    const processedData = catKeys.map((category) => {
+        const { amount, remaining, transactions } = categories[category];
+        const spent = amount - remaining;
+        const planned = amount;
+        const over = spent > planned ? spent - planned : 0;
 
-export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }) {
-
-
-
-    const categories = [
-        { "Spent": "#0077b6" },
-        { "Planned": "#90e0ef" },
-        { "Remaining": "#AAAAAA" },
-        { "Over": "red" }
-    ];
-
-    const currentTime = 0.6;
-
-    const data = [
-        {
-            category: 'Air Travel',
-            budget: 1000,
-            numbers: { Spent: 1200, Planned: 100, Remaining: 300, Over: 0 },
-            subtitle: 'Air travel expenses',
-            count: 4
-        },
-        {
-            category: 'Furniture',
-            budget: 1000,
-            numbers: { Spent: 1900, Planned: 0, Remaining: 100, Over: 0 },
-            subtitle: 'Furniture expenses',
-            count: 3
-        },
-        {
-            category: 'Clothing',
-            budget: 1000,
-            numbers: { Spent: 400, Planned: 0, Remaining: 600, Over: 0 },
-            subtitle: 'Clothing expenses',
-            count: 3
-        },
-        {
-            category: 'Housewares',
-            budget: 1000,
-            numbers: { Spent: 1000, Planned: 0, Remaining: 500, Over: 0 },
-            subtitle: 'Housewares expenses',
-            count: 3
-        },
-        {
-            category: 'Electronics',
-            budget: 1000,
-            numbers: { Spent: 800, Planned: 0, Remaining: 200, Over: 0 },
-            subtitle: 'Electronics expenses',
-            count: 3
-        },
-        {
-            category: 'Groceries',
-            budget: 1000,
-            numbers: { Spent: 750, Planned: 0, Remaining: 0, Over: 100 },
-            subtitle: 'Groceries expenses',
-            count: 4
-        },
-    ];
-
-    // Ensure all data points are valid
-    const processedData = data.map(item => ({
-        ...item,
-        numbers: Object.keys(item.numbers).reduce((prev, key) => {
-            prev[key] = isNaN(item.numbers[key]) ? 0 : item.numbers[key];
-            return prev;
-        }, {})
-    }));
-
-    const series = categories.reverse().map(cat => {
-        const [category, color] = Object.entries(cat)[0];
         return {
-            name: category,
-            color: color,
-            data: processedData.map(item => item.numbers[category])
+            category,
+            Spent: spent,
+            Planned: planned,
+            Remaining: remaining,
+            Over: over
         };
     });
 
-    const options = {
+    const series = [
+        { name: "Spent", color: "#0077b6" },
+        { name: "Planned", color: "#90e0ef" },
+        { name: "Remaining", color: "#AAAAAA" },
+        { name: "Over", color: "red" }
+    ].map(serie => ({
+        ...serie,
+        data: processedData.map(item => item[serie.name])
+    }));
+ 
+
+      const options = {
         chart: {
             type: 'bar',
-            height: budgetBlockDimensions.height - 1,
+            height: budgetBlockDimensions.height - 50,
             width: budgetBlockDimensions.width,
             backgroundColor: 'rgba(0,0,0,0)',
             animation: false,
@@ -158,24 +128,47 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
         },
         series: series
     };
-    
-
-
-    function handleRowClick(data) {
-        // Example callback function, adjust as needed
-        console.log('Row clicked:', data);
-        setDrawerContent(data); // Assuming setDrawerContent updates some drawer content with the clicked data
-    }
-
-    return (
+  
+      return (
         <div className="budget-block">
-            <h2>Short Term Expenses</h2>
-            <div className="budget-block-content">
-                <HighchartsReact
+          <h2>Fixed Expenses</h2>
+          <div className="budget-block-content">
+            {monthHeader}
+            <HighchartsReact
                     highcharts={Highcharts}
                     options={options}
                 />
+          </div>
+        </div>
+      );
+    }
+
+
+
+const MonthTabs = ({monthKeys, activeMonth, setActiveMonth}) => {
+    const recentMonths = monthKeys.slice(-6); // Get the most recent 6 months
+    const olderMonths = monthKeys.slice(0, -6); // Get the rest
+  
+  
+    return (
+        <div className="month-header">
+          {recentMonths.map((month) => {
+            const monthLabel = moment(month, "YYYY-MM").format("MMM ‘YY");
+            return <div key={monthLabel} onClick={() => setActiveMonth(month)}  className={activeMonth === month ? "month active" : "month"}>
+              {monthLabel}</div>
+          })}
+          {olderMonths.length > 0 && (
+            <div className="dropdown">
+              <button className="dropbtn">Older Months</button>
+              <div className="dropdown-content">
+                {olderMonths.map((month) => {
+                  const monthLabel = moment(month, "YYYY-MM").format("MMM ‘YY");
+                  return <a key={monthLabel} href="#">{monthLabel}</a>
+                })}
+              </div>
             </div>
+          )}
         </div>
     );
-}
+  };
+  
