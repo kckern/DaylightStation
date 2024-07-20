@@ -151,7 +151,7 @@ export const BudgetBurnDownChart = ({ setDrawerContent }) => {
 
     return (
         <div className="budget-block">
-            <h2>Monthly Budget Burn Down ({budgetBlockDimensions.width} x {budgetBlockDimensions.height})</h2>
+            <h2>Day-to-day Spending</h2>
             <div className="budget-block-content">
                 <HighchartsReact
                     highcharts={Highcharts}

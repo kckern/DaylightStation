@@ -1,18 +1,6 @@
+import moment from "moment";
 import React, { useEffect, useState } from "react";
 
-
-
-// BudgetMonthOverMonth.jsx
-export function BudgetMonthOverMonth({ setDrawerContent, budget }) {
-    return (
-      <div className="budget-block">
-        <h2>Periodic Expenses</h2>
-        <div className="budget-block-content">
-          {/* Placeholder for Month Over Month content */}
-        </div>
-      </div>
-    );
-  }
   
   // BudgetOverview.jsx
   export function BudgetOverview({ setDrawerContent, budget }) {
