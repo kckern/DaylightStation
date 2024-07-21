@@ -109,7 +109,8 @@ const isOverlap = (arr1, arr2) => {
 const fillBudgetWithTransactions = (budget) => {
     const {budgetStart, budgetEnd, accounts,  dayToDayCategories, monthlyCategories, shortTermCategories} = budget;
     const transactions = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')).transactions
-        .filter(({date, accountName}) => date >= budgetStart && date <= budgetEnd && accounts.includes(accountName));
+        .filter(({date, accountName}) => date >= budgetStart && date <= budgetEnd && accounts.includes(accountName))
+        .filter((transaction, index, self) => index === self.findIndex(t => t.id === transaction.id));
 
 
     for(let transaction of transactions) {
@@ -157,13 +158,16 @@ const fillBudgetWithTransactions = (budget) => {
         
     }
 
-    const tallyTransactions = ({amount, transactions}) => {
+    const tallyTransactions = ({amount, transactions, category}) => {
         transactions = transactions || [];
         const spent = transactions.reduce((acc, {amount}) => acc + amount, 0);
         const roundedSpent = Math.round(spent * 100) / 100; // Round spent to nearest cent
-        const remaining = Math.round((amount - roundedSpent) * 100) / 100; // Round remaining to nearest cent
+        const remaining = Math.max(0,Math.round((amount - roundedSpent) * 100) / 100); // Round remaining to nearest cent
         const over = roundedSpent > amount ? Math.round((roundedSpent - amount) * 100) / 100 : 0; // Round over to nearest cent
-        return {amount, spent: roundedSpent, remaining, over, transactions};
+        const planned = 0;
+        const r= {amount, spent: roundedSpent, remaining, over, transactions, planned, category};
+        if(!category) delete r.category;
+        return r;
     }
     // Tally up Day to Day Spending
     for (const month in budget["dayToDayBudget"]) {

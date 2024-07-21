@@ -1,86 +1,58 @@
 import React, { useEffect, useState } from "react";
 import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import { Drawer } from "../drawer";
 
 function formatAsCurrency(value) {
-    return `$${value.toLocaleString()}`;
+    return `$${(value||0).toLocaleString()}`;
 }
 
 export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }) {
 
+    const budgetKeys = Object.keys(budget);
+    const [activeBudget] = budgetKeys;
+
+    const shortTermBudget = budget[activeBudget].shortTermBudget;
 
 
-    const categories = [
-        { "Spent": "#0077b6" },
-        { "Planned": "#90e0ef" },
-        { "Remaining": "#AAAAAA" },
-        { "Over": "red" }
-    ];
+    const colors = {
+        spent: "#0077b6",
+        planned: "#90e0ef",
+        remaining: "#AAAAAA",
+        over: "#ff6361"
+      };
 
     const currentTime = 0.6;
 
-    const data = [
-        {
-            category: 'Air Travel',
-            budget: 1000,
-            numbers: { Spent: 1200, Planned: 100, Remaining: 300, Over: 0 },
-            subtitle: 'Air travel expenses',
-            count: 4
-        },
-        {
-            category: 'Furniture',
-            budget: 1000,
-            numbers: { Spent: 1900, Planned: 0, Remaining: 100, Over: 0 },
-            subtitle: 'Furniture expenses',
-            count: 3
-        },
-        {
-            category: 'Clothing',
-            budget: 1000,
-            numbers: { Spent: 400, Planned: 0, Remaining: 600, Over: 0 },
-            subtitle: 'Clothing expenses',
-            count: 3
-        },
-        {
-            category: 'Housewares',
-            budget: 1000,
-            numbers: { Spent: 1000, Planned: 0, Remaining: 500, Over: 0 },
-            subtitle: 'Housewares expenses',
-            count: 3
-        },
-        {
-            category: 'Electronics',
-            budget: 1000,
-            numbers: { Spent: 800, Planned: 0, Remaining: 200, Over: 0 },
-            subtitle: 'Electronics expenses',
-            count: 3
-        },
-        {
-            category: 'Groceries',
-            budget: 1000,
-            numbers: { Spent: 750, Planned: 0, Remaining: 0, Over: 100 },
-            subtitle: 'Groceries expenses',
-            count: 4
-        },
-    ];
 
     // Ensure all data points are valid
-    const processedData = data.map(item => ({
-        ...item,
-        numbers: Object.keys(item.numbers).reduce((prev, key) => {
-            prev[key] = isNaN(item.numbers[key]) ? 0 : item.numbers[key];
-            return prev;
-        }, {})
-    }));
+    const processedData = shortTermBudget.map((item) => {
+        const { amount, spent, remaining, planned, over, transactions, category } = item;
 
-    const series = categories.reverse().map(cat => {
-        const [category, color] = Object.entries(cat)[0];
+
         return {
-            name: category,
-            color: color,
-            data: processedData.map(item => item.numbers[category])
+            category,
+            amount,
+             spent,
+             planned,
+             remaining,
+             over,
+             count: transactions.length,
+             transactions
         };
     });
+
+
+    const series = Object.keys(colors).map((key) => {
+      return {
+        name: key,
+        data: processedData.map((item) => item[key]),
+        color: colors[key]
+      };
+    }
+    );
+
+    console.log(series);
 
     const options = {
         chart: {
@@ -95,7 +67,7 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
             categories: processedData.map(item => `
                 <div style="margin:0; padding:0; display:flex; flex-direction:column; align-items:center; justify-content:center">
                 <b class="category-label">${item.category}</b>
-                <br/><small class="category-label" style="color:#AAA; font-size:0.7rem">${formatAsCurrency(item.budget)}</small>
+                <br/><small class="category-label" style="color:#AAA; font-size:0.7rem">${formatAsCurrency(item.amount)}</small>
                 </div>`),
             reversed: true
         },
@@ -103,6 +75,7 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
             visible: true,
             title: { text: null },
             labels: { enabled: false },
+            reversed: true,
             gridLineWidth: 0,
             tickWidth: 0,
             plotLines: [{
@@ -145,13 +118,7 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
                 events: {
                     click: function (event) {
                         const category = processedData[event.point.index];
-                        setDrawerContent(
-                            <div>
-                                <h3>{category.category}</h3>
-                                <p>{category.subtitle}</p>
-                                <p>{category.count} transactions</p>
-                            </div>
-                        );
+                        setDrawerContent(<Drawer  header={category.category} transactions={category.transactions}  setDrawerContent={setDrawerContent} /> );
                     }
                 }
             }

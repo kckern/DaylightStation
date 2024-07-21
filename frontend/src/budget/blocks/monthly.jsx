@@ -2,6 +2,7 @@ import moment from "moment";
 import React, { useEffect, useState } from "react";
 import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import { Drawer } from "../drawer";
 
 const currentTime = 0.6;
 function formatAsCurrency(value) {
@@ -27,31 +28,39 @@ function formatAsCurrency(value) {
     const { categories } = months[activeMonth];
     const catKeys = Object.keys(categories);
     const processedData = catKeys.map((category) => {
-        const { amount, remaining, transactions } = categories[category];
-        const spent = amount - remaining;
-        const planned = amount;
-        const over = spent > planned ? spent - planned : 0;
+        const { amount, spent, remaining, planned, over, transactions } = categories[category];
+
 
         return {
             category,
-            Spent: spent,
-            Planned: planned,
-            Remaining: remaining,
-            Over: over
+            amount,
+             spent,
+             planned,
+             remaining,
+             over,
+             count: transactions.length,
+             transactions
         };
     });
 
-    const series = [
-        { name: "Spent", color: "#0077b6" },
-        { name: "Planned", color: "#90e0ef" },
-        { name: "Remaining", color: "#AAAAAA" },
-        { name: "Over", color: "red" }
-    ].map(serie => ({
-        ...serie,
-        data: processedData.map(item => item[serie.name])
-    }));
- 
 
+    const colors = {
+      spent: "#0077b6",
+      planned: "#90e0ef",
+      remaining: "#AAAAAA",
+      over: "red"
+    };
+
+    const series = Object.keys(colors).map((key) => {
+      return {
+        name: key,
+        data: processedData.map((item) => item[key]),
+        color: colors[key]
+      };
+    }
+    );
+
+    
       const options = {
         chart: {
             type: 'bar',
@@ -65,7 +74,7 @@ function formatAsCurrency(value) {
             categories: processedData.map(item => `
                 <div style="margin:0; padding:0; display:flex; flex-direction:column; align-items:center; justify-content:center">
                 <b class="category-label">${item.category}</b>
-                <br/><small class="category-label" style="color:#AAA; font-size:0.7rem">${formatAsCurrency(item.budget)}</small>
+                <br/><small class="category-label" style="color:#AAA; font-size:0.7rem">${formatAsCurrency(item.amount)}</small>
                 </div>`),
             reversed: true
         },
@@ -75,6 +84,7 @@ function formatAsCurrency(value) {
             labels: { enabled: false },
             gridLineWidth: 0,
             tickWidth: 0,
+            reversed: true,
             plotLines: [{
                 color: '#EEEEEE',
                 value: currentTime * 100,
@@ -115,13 +125,7 @@ function formatAsCurrency(value) {
                 events: {
                     click: function (event) {
                         const category = processedData[event.point.index];
-                        setDrawerContent(
-                            <div>
-                                <h3>{category.category}</h3>
-                                <p>{category.subtitle}</p>
-                                <p>{category.count} transactions</p>
-                            </div>
-                        );
+                        setDrawerContent(<Drawer  header={category.category} transactions={category.transactions}  setDrawerContent={setDrawerContent} />                    );
                     }
                 }
             }
