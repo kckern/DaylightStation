@@ -8,7 +8,6 @@ import React, { useEffect, useState } from "react";
       <div className="budget-block">
         <h2>Accounts</h2>
         <div className="budget-block-content">
-          {/* Placeholder for Overview content */}
         </div>
       </div>
     );

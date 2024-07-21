@@ -133,3 +133,24 @@ small.category-label {
     background-color: #000;
     color: #FFF;
 }
+
+.budget-drawer-content .transactions-table{
+    width: 100%;
+    border-collapse: collapse;
+}
+.budget-drawer-content .transactions-table td
+{
+white-space: nowrap;
+padding: 1ex;
+}
+
+td.description-col{
+    /* flex grow:1 for td */
+    /* flex: 1 wont work for td */
+     width: 100%;    
+}
+
+td.amount-col{
+    text-align: right;
+    width: 10ex;
+}
