@@ -12,7 +12,6 @@ function buildBudget(budget)
     budget.timeframe.end = moment.utc(budget.timeframe.end).format('YYYY-MM-DD');
     const {start: budgetStart, end: budgetEnd} = budget.timeframe;
     const accounts = budget.accounts;
-    console.log(budget.dayToDay);
     const dayToDayCategories = budget.dayToDay.categories;
     const {monthlyBudget, shortTermBudgetAmount, monthlyCategories, dayToDayBudget} = buildMonthlyBudget(budget.monthly,budget.dayToDay, budget.income, budgetStart, budgetEnd);
     const {shortTermBudget, shortTermCategories} = buildshortTermBudget(shortTermBudgetAmount, budget.shortTerm);
@@ -63,7 +62,6 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
     const dayToDayBudget = {};
     let monthlyCategories = [];
     for(const month of months){
-
         // Handle Day-to-Day Spending
         dayToDayBudget[month] = {amount: dayToDayAmount, transactions: []};
         
@@ -100,65 +98,87 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
     const shortTermBudgetAmount = months.map(month => budget[month].surplus).reduce((acc, val) => acc + parseInt(val, 10), 0);
     // Deduplicate and sort categories
     monthlyCategories = [...new Set(monthlyCategories)].sort();
-
     return {monthlyBudget: budget, shortTermBudgetAmount, monthlyCategories, dayToDayBudget};
 }
 
 
-const isOverlap = (arr1, arr2) => arr1.some(tag => arr2.includes(tag));
+const isOverlap = (arr1, arr2) => {
+  const match = arr1.find(tag => arr2.includes(tag));
+  return match || false;
+};
 const fillBudgetWithTransactions = (budget) => {
     const {budgetStart, budgetEnd, accounts,  dayToDayCategories, monthlyCategories, shortTermCategories} = budget;
     const transactions = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')).transactions
         .filter(({date, accountName}) => date >= budgetStart && date <= budgetEnd && accounts.includes(accountName));
 
-    budget['dayToDayBudget'].transactions = [];
 
     for(let transaction of transactions) {
 
         const {description, amount, date, accountName, tagNames: tags} = transaction;
         const month = moment(date).format('YYYY-MM');
 
-        const isDayToDayCategory    = isOverlap(tags, dayToDayCategories);
-        const isMonthlyCategory     = isOverlap(tags, monthlyCategories);
-        const isShortTermCategory   = isOverlap(tags, shortTermCategories);
-        const isDailyOverride       = isOverlap(tags, [`[Daily]`]);
-        const isMonthlyOverride     = isOverlap(tags, [`[Monthly]`]);
-        const isShortTermOverride   = isOverlap(tags, [`[Annual]`]);
+        const isDayToDay    = isOverlap(tags, [...dayToDayCategories, "[Daily]"]);
+        const isMonthly     = isOverlap(tags, [...monthlyCategories, "[Monthly]"]);
+        const isShortTerm   = isOverlap(tags, [...shortTermCategories, "[Yearly]"]);
 
-        const isDayToDay = isDayToDayCategory || isDailyOverride;
-        const isMonthly = isMonthlyCategory || isMonthlyOverride;
-        const isShortTerm = isShortTermCategory || isShortTermOverride;
 
         const bucketKey = isDayToDay ? 'dayToDay' : isMonthly ? 'monthly' : 'shortTerm';
 
+
+        //console.log( bucketKey, tags, transaction.description );
+
         const addTransaction = (month, bucket, transaction) => {
-            const {tags:category} = transaction; //todo: only 1 tag
+            const {tags:category} = transaction || {}; //todo: only 1 tag
             if(bucket === 'dayToDay') budget['dayToDayBudget'][month].transactions.push(transaction);
-            if(bucket === 'monthly') budget['monthlyBudget'][month].categories[category].transactions.push(transaction);
+            if (bucket === 'monthly') {
+              if (!budget['monthlyBudget'][month]) {
+                budget['monthlyBudget'][month] = { categories: {} };
+              }
+              if (!budget['monthlyBudget'][month].categories[category]) {
+                budget['monthlyBudget'][month].categories[category] = { transactions: [] };
+              }
+            
+              // Now that we've ensured the structure exists, push the transaction
+              budget['monthlyBudget'][month].categories[category].transactions.push(transaction);
+            }
             if(bucket === 'shortTerm') {
-                budget['shortTermBudget'][category] = budget['shortTermBudget'][category] || {amount: 0, transactions: []};
-                budget['shortTermBudget'][category].transactions.push(transaction);
+                const hasUnbudgeted = budget['shortTermBudget'].find(({category: cat}) => cat === 'Unbudgeted');
+                if(!hasUnbudgeted) budget['shortTermBudget'].push({category: 'Unbudgeted', transactions: []});
+                const UnbudgetedKey = budget['shortTermBudget'].findIndex(({category: cat}) => cat === 'Unbudgeted');
+                const shortTermIndex = budget['shortTermBudget'].findIndex(({category: cat}) => {
+                    return new RegExp(category, 'i').test(cat);
+                }) || UnbudgetedKey;
+                const shortTermKey = shortTermIndex < 0 ? UnbudgetedKey : shortTermIndex;
+                budget['shortTermBudget'][shortTermKey]['transactions'] = budget['shortTermBudget'][shortTermKey]?.['transactions'] || [];
+                budget['shortTermBudget'][shortTermKey].transactions.push(transaction);
               }
             }
         addTransaction(month, bucketKey, transaction);
         
     }
 
-    //calculate spent, remaining, over for month and categories in all the buckets
     const tallyTransactions = ({amount, transactions}) => {
-        //return {amount, spent, remaining, over, transactions};
+        transactions = transactions || [];
         const spent = transactions.reduce((acc, {amount}) => acc + amount, 0);
-        const remaining = amount - spent;
-        const over = spent > amount ? spent - amount : 0;
-        return {amount, spent, remaining, over, transactions};
+        const roundedSpent = Math.round(spent * 100) / 100; // Round spent to nearest cent
+        const remaining = Math.round((amount - roundedSpent) * 100) / 100; // Round remaining to nearest cent
+        const over = roundedSpent > amount ? Math.round((roundedSpent - amount) * 100) / 100 : 0; // Round over to nearest cent
+        return {amount, spent: roundedSpent, remaining, over, transactions};
     }
-    ['dayToDayBudget'].forEach(bucketKey => {
-        for(const month in budget[bucketKey]) {
-            console.log(budget[bucketKey][month], month);
-            budget[bucketKey][month] = tallyTransactions(budget[bucketKey][month]);
+    // Tally up Day to Day Spending
+    for (const month in budget["dayToDayBudget"]) {
+        budget["dayToDayBudget"][month] = tallyTransactions(budget["dayToDayBudget"][month]);
+    }
+    // Tally up Monthly Expenses
+    for (const month in budget["monthlyBudget"]) {
+        for (const category in budget["monthlyBudget"][month].categories) {
+            budget["monthlyBudget"][month].categories[category] = tallyTransactions(budget["monthlyBudget"][month].categories[category]);
         }
-    });
-
+    }
+    // Tally up Short Term Expenses
+    for (const catKey in budget["shortTermBudget"]) {
+        budget["shortTermBudget"][catKey] = tallyTransactions(budget["shortTermBudget"][catKey]);
+    }
 
 
 
