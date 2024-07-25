@@ -13,13 +13,13 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
     const [activeBudget] = budgetKeys;
 
     const shortTermBudget = budget[activeBudget].shortTermBudget;
+    const shortTermStatus = budget[activeBudget].shortTermStatus;
 
 
     const colors = {
         spent: "#0077b6",
         planned: "#90e0ef",
-        remaining: "#AAAAAA",
-        over: "#ff6361"
+        remaining: "#AAAAAA"
       };
 
     const currentTime = 0.6;
@@ -44,20 +44,34 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
 
 
     const series = Object.keys(colors).map((key) => {
+      
+      const data = processedData.map((item) => {
+
+        const isOver = item.over > 0;
+        const isSpent = key === 'spent';
+        if (isOver && isSpent) {
+          //override color and make it red
+            return {
+                y: item[key],
+                color: '#c1121f'
+            };
+        }
+
+        return item[key];
+      })
       return {
         name: key,
-        data: processedData.map((item) => item[key]),
-        color: colors[key]
+        data: data,
+        color: colors[key] || '#000000',
       };
     }
     );
 
-    console.log(series);
 
     const options = {
         chart: {
             type: 'bar',
-            height: budgetBlockDimensions.height - 1,
+            height: budgetBlockDimensions.height - 50,
             width: budgetBlockDimensions.width,
             backgroundColor: 'rgba(0,0,0,0)',
             animation: false,
@@ -134,10 +148,23 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
         setDrawerContent(data); // Assuming setDrawerContent updates some drawer content with the clicked data
     }
 
+
+    const statusBadge = (
+        <span className="status-badge">
+            <span className="amount">${Math.round(shortTermStatus.amount).toLocaleString()}</span> +
+            <span className="gained"> ${Math.round(shortTermStatus.gained).toLocaleString()}</span> −
+            <span className="spent"> ${Math.round(shortTermStatus.spent).toLocaleString()}</span> = 
+            <span className="remaining">${Math.round(shortTermStatus.remaining).toLocaleString()}</span>
+        </span>
+    );
+
     return (
         <div className="budget-block">
             <h2>Short Term Expenses</h2>
             <div className="budget-block-content">
+                <div className="status-badge" style={{ textAlign: 'center' }}>
+                {statusBadge}
+                </div>
                 <HighchartsReact
                     highcharts={Highcharts}
                     options={options}

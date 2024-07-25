@@ -47,18 +47,28 @@ function formatAsCurrency(value) {
     const colors = {
       spent: "#0077b6",
       planned: "#90e0ef",
-      remaining: "#AAAAAA",
-      over: "red"
+      remaining: "#AAAAAA"
     };
 
     const series = Object.keys(colors).map((key) => {
+      const data = processedData.map((item) => {
+        const isOver = item.over > 0;
+        const isSpent = key === 'spent';
+        if (isOver && isSpent) {
+          // Override color and make it red
+          return {
+            y: item[key],
+            color: '#c1121f'
+          };
+        }
+        return item[key];
+      });
       return {
         name: key,
-        data: processedData.map((item) => item[key]),
-        color: colors[key]
+        data: data,
+        color: colors[key] || '#000000',
       };
-    }
-    );
+    });
 
     
       const options = {
@@ -125,7 +135,7 @@ function formatAsCurrency(value) {
                 events: {
                     click: function (event) {
                         const category = processedData[event.point.index];
-                        setDrawerContent(<Drawer  header={category.category} transactions={category.transactions}  setDrawerContent={setDrawerContent} />                    );
+                        setDrawerContent(<Drawer  header={category.category} transactions={category.transactions}  setDrawerContent={setDrawerContent} /> );
                     }
                 }
             }

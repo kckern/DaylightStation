@@ -134,6 +134,10 @@ small.category-label {
     color: #FFF;
 }
 
+.budget-drawer{
+    font-family: "Roboto Condensed", sans-serif;
+}
+
 .budget-drawer-content .transactions-table{
     width: 100%;
     border-collapse: collapse;
@@ -153,4 +157,45 @@ td.description-col{
 td.amount-col{
     text-align: right;
     width: 10ex;
+}
+tr{
+    cursor: pointer;
+}
+
+tr:hover td{
+    filter: brightness(0.9);
+}
+
+tr.income{
+    background-color: #d8f0e4;
+}
+
+tr .amount-col{
+    color:#000;
+    font-weight: 800;
+    text-decoration: none;
+}
+tr.income .amount-col{
+    color: rgb(19, 95, 56)
+}
+.status-badge span{
+    border-radius: 5px;
+    font-size: 0.8rem;
+    padding: 0 1ex;
+    margin: 0 1ex;
+}
+.status-badge .amount{
+    background-color: #888;
+    color: white;
+}.status-badge .gained{
+    background-color: #759c82;
+    color: white;
+}
+.status-badge .spent{
+    background-color: #0077b6;
+    color: white;
+}
+.status-badge .remaining{
+    background-color: #DDD;
+    color: black;
 }
