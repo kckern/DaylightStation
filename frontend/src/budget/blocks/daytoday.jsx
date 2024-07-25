@@ -1,158 +1,141 @@
 import React, { useEffect, useState } from "react";
+import moment from "moment";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import { MonthTabs } from "./monthly";
+import { Drawer } from "../drawer";
 
-const daysInMonth = 31;
-const today = 20; // Assume today's date is the 20th
-const initialBudget = 1500;
-const finalBudget = 500;
-
-const generateActualData = (start, end, days) => {
-    let data = [start]; // Start with initialBudget as the first value
-    let diff = (start - end) / days;
-    for (let i = 1; i < days; i++) { // Start loop from 1 since day 0 is already included
-        let value = start - i * diff + Math.random() * 50 - 25; // Add some randomness
-        data.push(value);
-    }
-    return data;
+const formatAsCurrency = (value) => {
+    if (!value) return `$Ø`;
+    return `$${value.toLocaleString()}`;
 };
 
-const actualData = generateActualData(initialBudget, finalBudget, today + 1); // Adjust to include day zero
-const averageDailyBurn = (actualData[0] - actualData[today]) / today; // Adjust index for today
-const projectedData = [actualData[today]].concat(
-    Array.from({ length: daysInMonth - today  }, (_, i) => actualData[today] - (i + 1) * averageDailyBurn)
-);
 
-// Generate the baseline data
-const generateBaselineData = (start, days) => {
-    let data = [];
-    let dailyDecrease = start / (days);
-    for (let i = 0; i <= days; i++) {
-        data.push(start - i * dailyDecrease);
-    }
-    return data;
-};
-const baselineData = generateBaselineData(initialBudget, daysInMonth);
+export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimensions }) => {
 
-// No need to add "day zero" to the baseline data
-const projectedDataWithZero = [null].concat(Array(today - 1).fill(null)).concat(projectedData);
+    const budgetKeys = Object.keys(budget);
+    const months = budgetKeys.map((key) => budget[key].monthlyBudget).reduce((acc, months) => {
+        return { ...acc, ...months };
+    }, {});
+    const monthKeys = Object.keys(months);
+    const currentMonth = moment().format("YYYY-MM");
+    const [activeMonth, setActiveMonth] = useState(currentMonth);
+    const nonFutureMonths = monthKeys.filter((month) => month <= currentMonth);
 
-// Find the index of the first non-null value in projectedDataWithZero
-const firstNonNullIndex = projectedDataWithZero.findIndex(value => value !== null);
-const lastIndex = projectedDataWithZero.length - 1;
+    const activeMonthTransactions = budget[budgetKeys[0]].dayToDayBudget[activeMonth].transactions;
 
-// Customize the marker for the first non-null index
-const projectedDataSeries = projectedDataWithZero.map((value, index) => ({
-    y: value,
-    marker: {
-        enabled: index === firstNonNullIndex || lastIndex === index,
-        radius: 4,
-        fillColor: 'blue',
-        symbol: index === firstNonNullIndex ? 'circle' : 'square'
-    }
-}))
+    const monthHeader = <MonthTabs monthKeys={nonFutureMonths} activeMonth={activeMonth} setActiveMonth={setActiveMonth} />;
 
-const actualDataSeries = actualData.map((value, index) => ({
-    y: value,
-    color: //index === 0 || index === today ? 'blue' : undefined // Set color for day zero and today
-        (()=>{
-            if (index === today) return '#0077b6';
-            if (!index) return 'black';
-            return  '#0077b6`';
+    const activeMonthDailyBudget = budget[budgetKeys[0]].dayToDayBudget[activeMonth].dailyBalances;
+    const daysInMonth = Object.keys(activeMonthDailyBudget).length;
+    const today = moment().date();
+    const activeMonthIsCurrentMonth = activeMonth === currentMonth;
+    const actualData = Object.keys(activeMonthDailyBudget).map((date, index) => ({
+        y: activeMonthDailyBudget[date].endingBalance,
+        color: (index === today && activeMonthIsCurrentMonth) ? '#0077b6' : undefined
+    }));
 
-        })()
-}));
+    const initialBudget = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[0]].startingBalance;
 
-const options = {
-    title: {
-        text: 'Your Main Title',
-        align: 'right',
-        verticalAlign: 'top',
-        floating: true,
-    },
-    subtitle: {
-        text: 'Your Subtitle',
-        align: 'right',
-        verticalAlign: 'top',
-        y: 30, // Adjusts the position of the subtitle downwards
-        floating: true,
-    },
-    xAxis: {
-        categories: [''].concat(Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString())),
-        tickInterval: 1
-    },
-    yAxis: {
-        min: 0,
-        max: initialBudget,
+    const averageDailyBurn = (actualData[0].y - actualData[today].y) / (today + 1);
+    const projectedData = [actualData[today].y].concat(
+        Array.from({ length: daysInMonth - today  }, (_, i) => actualData[today].y - (i + 1) * averageDailyBurn)
+    );
+
+    const projectedDataWithZero = Array(today).fill(null).concat(projectedData);
+    const firstNonNullIndex = projectedDataWithZero.findIndex(value => value !== null);
+    const lastIndex = projectedDataWithZero.length - 1;
+
+    const projectedDataSeries = projectedDataWithZero.map((value, index) => ({
+        y: value,
+        marker: {
+            enabled: index === firstNonNullIndex || lastIndex === index,
+            radius: 4,
+            fillColor: 'blue',
+            symbol: index === firstNonNullIndex ? 'circle' : 'square'
+        }
+    }));
+
+    const baselineData = Array.from({ length: daysInMonth +1 }, (_, i) => initialBudget - (i * (initialBudget / daysInMonth)));
+
+    const start = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[0]].startingBalance;
+    const end = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[Object.keys(activeMonthDailyBudget).length - 1]].endingBalance;
+    const spent = start - end;
+
+    const options = {
         title: {
-            text: ''
+            text: `${moment(activeMonth).format("MMMM YYYY")}`,
+            align: 'right',
+            verticalAlign: 'top',
+            floating: true,
         },
-        labels: {
-            formatter: function () {
-                // Convert the number to a string and format it with commas
-                const formattedNumber = this.axis.defaultLabelFormatter.call(this).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-                return '$' + formattedNumber;
+        subtitle: {
+            text: `Spent: ${formatAsCurrency(spent)} | Remaining: ${formatAsCurrency(end)} | Budget: ${formatAsCurrency(start)}`,
+            align: 'right',
+            verticalAlign: 'top',
+            y: 30,
+            floating: true,
+        },
+        xAxis: {
+            categories: [''].concat(Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString())),
+            tickInterval: 1
+        },
+        yAxis: {
+            min: 0,
+            max: initialBudget * 1.15,
+            title: { text: '' },
+            labels: {
+                formatter: function () {
+                    const formattedNumber = this.axis.defaultLabelFormatter.call(this).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+                    return '$' + formattedNumber;
+                }
             }
-        }
-    },
-    series: [{
-        name: 'Baseline',
-        data: baselineData,
-        type: 'area',
-        color: 'rgba(255, 0, 0, 0.1)',
-        lineColor: 'rgba(255, 0, 0, 0.5)',
-        marker: { enabled: false }
-    }, {
-        name: 'Actual Data',
-        data: actualDataSeries,
-        type: 'column',
-        zIndex : 2,
-    }, {
-        name: 'Projected Data',
-        data: projectedDataSeries,
-        type: 'line',
-        dashStyle: 'ShortDash',
-        lineWidth: 2,
-        color: 'blue'
-    }],
-    plotOptions: {
-        series: {
-            animation: false
-        }
-    },
-    legend: { enabled: false },
-    credits: { enabled: false }
-};
-
-export const BudgetBurnDownChart = ({ setDrawerContent }) => {
-    const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
-    useEffect(() => {
-        const handleResize = () => {
-            const budgetBlock = document.querySelector('.budget-block-content');
-            if (budgetBlock) {
-                setBudgetBlockDimensions({
-                    width: budgetBlock.clientWidth,
-                    height: budgetBlock.clientHeight
-                });
+        },
+        series: [{
+            name: 'Baseline',
+            data: baselineData,
+            type: 'area',
+            color: 'rgba(255, 0, 0, 0.1)',
+            lineColor: 'rgba(255, 0, 0, 0.5)',
+            marker: { enabled: false },
+        }, {
+            name: 'Actual Data',
+            data: [{
+                y: initialBudget,
+                color: '#0077b6'
+            },...actualData].map((data, index) => ({
+                ...data,
+                y: activeMonth === currentMonth && index > today ? null : data.y
+            })),
+            type: 'column',
+            zIndex: 2,
+            cursor: 'pointer',
+            events: {
+                click: function (event) {
+                    const header = `Day-to-day transactions for ${moment(activeMonth).format("MMMM YYYY")}`;
+                    setDrawerContent(<Drawer setDrawerContent={setDrawerContent} header={header} transactions={activeMonthTransactions} highlightDate={event.point.category} />);
+                }
             }
-        };
-        handleResize();
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
-    options.chart = {
-        type: 'column',
-        height: budgetBlockDimensions.height - 1,
-        width: budgetBlockDimensions.width,
-        backgroundColor: 'rgba(0,0,0,0)',
-        animation: false,
+        }, {
+            name: 'Projected Data',
+            data: activeMonth === currentMonth ? projectedDataSeries : [],
+            type: 'line',
+            dashStyle: 'ShortDash',
+            lineWidth: 2,
+            color: 'blue'
+        }],
+        plotOptions: {
+            series: { animation: false }
+        },
+        legend: { enabled: false },
+        credits: { enabled: false }
     };
 
     return (
         <div className="budget-block">
             <h2>Day-to-day Spending</h2>
             <div className="budget-block-content">
+                {monthHeader}
                 <HighchartsReact
                     highcharts={Highcharts}
                     options={{
