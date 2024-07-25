@@ -64,7 +64,7 @@ return (
         {drawerContent}
       </Drawer>
       <div className="grid-container">
-          <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
           <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
           <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
           <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>

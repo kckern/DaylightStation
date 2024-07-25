@@ -159,7 +159,7 @@ function formatAsCurrency(value) {
 
 
 
-const MonthTabs = ({monthKeys, activeMonth, setActiveMonth}) => {
+export const MonthTabs = ({monthKeys, activeMonth, setActiveMonth}) => {
     const recentMonths = monthKeys.slice(-6); // Get the most recent 6 months
     const olderMonths = monthKeys.slice(0, -6); // Get the rest
   
