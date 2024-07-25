@@ -50,6 +50,7 @@ function buildshortTermBudget(shortTermBudgetAmount, shortTerm){
     return {shortTermBudget, shortTermCategories,shortTermCategoryMap};
 }
 
+
 function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart, budgetEnd){
 
     const {amount:dayToDayAmount} = dayTodayData;
@@ -195,6 +196,7 @@ const fillBudgetWithTransactions = (budget) => {
     // Tally up Day to Day Spending
     for (const month in budget["dayToDayBudget"]) {
         budget["dayToDayBudget"][month] = tallyTransactions(budget["dayToDayBudget"][month]);
+        budget["dayToDayBudget"][month] = fillDayToDayTransactions(budget["dayToDayBudget"][month], month);
     }
     // Tally up Monthly Expenses
     for (const month in budget["monthlyBudget"]) {
@@ -229,7 +231,44 @@ const fillBudgetWithTransactions = (budget) => {
     return budget;
 };
 
+function fillDayToDayTransactions(monthlyDayToDayBudget, month){
+    const {transactions} = monthlyDayToDayBudget;
+    const todaysDate = moment().format('YYYY-MM-DD');
+    const firstDay = moment(month).format('YYYY-MM-01');
+    const lastDay = moment(month).endOf('month').format('YYYY-MM-DD');
+    const numDays = moment(lastDay).diff(firstDay, 'days') + 1;
+    const dailyBudget = Array.from({ length: numDays }, (_, i) => i +1);
+    const dailyBalances = {};
+    const averageDailySpend = transactions.filter(({date}) => moment(date).isBefore(todaysDate))
+    .reduce((acc, {amount, transactionType}) => acc + (transactionType !== 'income' ? amount : 0), 0) / dailyBudget.length;
 
+    for(const day of dailyBudget){
+        const date = `${month}-${day.toString().padStart(2, '0')}`;
+        const prevDate = day ===1 ? null : moment(date).subtract(1, 'days').format('YYYY-MM-DD') || null;
+        const isFuture = moment(date).isAfter(todaysDate);
+        const startingBalance = dailyBalances[prevDate] ? parseFloat(dailyBalances[prevDate].endingBalance.toFixed(2)) : parseFloat(monthlyDayToDayBudget.amount.toFixed(2));
+        dailyBalances[date] = {startingBalance, endingBalance: 0, spent: 0, gained: 0};
+        if(!isFuture){
+            const dailyTransactions = transactions.filter(({date: transactionDate}) => transactionDate === date);
+            const dailySpend = dailyTransactions.reduce((acc, {amount, transactionType}) => acc + (transactionType !== 'income' ? amount : 0), 0);
+            const dailyGain = dailyTransactions.reduce((acc, {amount, transactionType}) => acc + (transactionType === 'income' ? amount : 0), 0);
+            dailyBalances[date].spent = parseFloat(dailySpend.toFixed(2));
+            dailyBalances[date].gained = parseFloat(dailyGain.toFixed(2));
+            dailyBalances[date].endingBalance = parseFloat((startingBalance + dailyGain - dailySpend).toFixed(2));
+        }
+        else{
+            dailyBalances[date].spent = parseFloat(averageDailySpend.toFixed(2));
+            dailyBalances[date].gained = 0;
+            dailyBalances[date].endingBalance = parseFloat((startingBalance - averageDailySpend).toFixed(2));
+            dailyBalances[date].isFuture = true;
+        }
+    }
+
+
+    monthlyDayToDayBudget.dailyBalances = dailyBalances;
+
+    return monthlyDayToDayBudget;
+}
 
 
 (async () => {
