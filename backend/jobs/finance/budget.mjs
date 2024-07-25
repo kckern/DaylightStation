@@ -116,12 +116,22 @@ const isOverlap = (arr1, arr2) => {
   const match = arr1.find(tag => arr2.includes(tag));
   return match || false;
 };
+
+const shouldFilter = (transaction, {accounts, startDate, endDate}) => {
+    const isInAccounts  = accounts.includes(transaction.accountName);
+    const isAfterStart   = moment(transaction.date).isSameOrAfter(startDate);
+    const isBeforeEnd    = moment(transaction.date).isSameOrBefore(endDate);
+    const isOK = isInAccounts && isAfterStart && isBeforeEnd;
+    if(!isOK) return false;
+    return true;
+};
+
+
+
 const fillBudgetWithTransactions = (budget) => {
     const {budgetStart, budgetEnd, accounts,  dayToDayCategories, monthlyCategories, shortTermCategoryMap, monthlyCategoryMap} = budget;
-    const transactions = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')).transactions
-        .filter(({date, accountName}) => date >= budgetStart && date <= budgetEnd && accounts.includes(accountName))
-        .filter((transaction, index, self) => index === self.findIndex(t => t.id === transaction.id));
-
+    const rawTransactions = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')).transactions;
+    const transactions =  rawTransactions.filter((transaction)=>shouldFilter(transaction, {accounts, startDate: budgetStart, endDate: budgetEnd}));
     const checkIfTransfer = ({tagNames, type}) => {
         if(/(transfer|investment)/i.test(type)) return true;
         if(isOverlap(tagNames, ['Transfer','Payroll'])) return true;
@@ -140,10 +150,6 @@ const fillBudgetWithTransactions = (budget) => {
 
         const bucketKey = isTransfer ? "transfer" : isDayToDay ? 'dayToDay' : isMonthly ? 'monthly' : 'shortTerm';
 
-
-        //console.log( bucketKey, tags, transaction.description );
-
-        const shortTermStatus = { amount: budget.shortTermBudgetAmount}
 
         const addTransaction = (month, bucket, transaction) => {
 
