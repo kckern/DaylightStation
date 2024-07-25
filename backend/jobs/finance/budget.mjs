@@ -12,18 +12,18 @@ function buildBudget(budget)
     budget.timeframe.end = moment.utc(budget.timeframe.end).format('YYYY-MM-DD');
     const {start: budgetStart, end: budgetEnd} = budget.timeframe;
     const accounts = budget.accounts;
-    const dayToDayCategories = budget.dayToDay.categories;
-    const {monthlyBudget, shortTermBudgetAmount, monthlyCategories, dayToDayBudget} = buildMonthlyBudget(budget.monthly,budget.dayToDay, budget.income, budgetStart, budgetEnd);
-    const {shortTermBudget, shortTermCategories} = buildshortTermBudget(shortTermBudgetAmount, budget.shortTerm);
+    const dayToDayCategories = budget.dayToDay.tags;
+    const {monthlyBudget, shortTermBudgetAmount, monthlyCategories, dayToDayBudget, monthlyCategoryMap} = buildMonthlyBudget(budget.monthly,budget.dayToDay, budget.income, budgetStart, budgetEnd);
+    const {shortTermBudget, shortTermCategories, shortTermCategoryMap} = buildshortTermBudget(shortTermBudgetAmount, budget.shortTerm);
     const {dayToDay} = budget;
-    return {budgetStart, budgetEnd, accounts, dayToDayBudget, dayToDayCategories, monthlyBudget, monthlyCategories, shortTermBudget, shortTermCategories};
+    return {budgetStart, budgetEnd, accounts, dayToDayBudget, dayToDayCategories, monthlyBudget, monthlyCategories, shortTermBudget, shortTermCategories, shortTermCategoryMap, monthlyCategoryMap, shortTermBudgetAmount};
 }
 function buildshortTermBudget(shortTermBudgetAmount, shortTerm){
-    const shortTermBudget = shortTerm.map(({category, amount}) => {return {category, amount}});
+    const shortTermBudget = shortTerm.map(({tags, label, amount}) => {return {category:label, amount, tags}});
     const sumOfAllAmounts = shortTermBudget.map(({amount}) => amount).reduce((acc, val) => acc + parseInt(val, 10), 0);
     const remainingAmount = shortTermBudgetAmount - sumOfAllAmounts;
     if(remainingAmount > 0){ 
-        shortTermBudget.push({category: 'Unbudgeted', amount: remainingAmount}); 
+        shortTermBudget.push({category: 'Unbudgeted', amount: remainingAmount, tags: ['Shopping']});
     } else {
         // Subtract from largest categories, cascading down
         let remaining = Math.abs(remainingAmount);
@@ -41,18 +41,22 @@ function buildshortTermBudget(shortTermBudgetAmount, shortTerm){
             }
         }
     }
-    const shortTermCategories = Array.from(new Set(shortTerm.flatMap(({category}) => 
-        category.split(',').map(cat => cat.trim())
-    ))).sort();
-    return {shortTermBudget, shortTermCategories};
+    const shortTermCategoryMap = {};
+    shortTermBudget.forEach(({ category, tags }) => {
+      tags.forEach(tag =>  shortTermCategoryMap[tag] = category);
+      shortTermCategoryMap[category] = category;
+    });
+    const shortTermCategories = shortTermBudget.map(({category,tags}) => [category,...tags]).flat();
+    return {shortTermBudget, shortTermCategories,shortTermCategoryMap};
 }
 
 function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart, budgetEnd){
 
     const {amount:dayToDayAmount} = dayTodayData;
     monthlyBudget.push({
-        category: 'Day-to-Day Spending',
+        label: 'Day-to-Day Spending',
         amount: dayToDayAmount,
+        tags: ['[Daily]']
     });
 
     const months = Array.from({ length: moment(budgetEnd).diff(moment(budgetStart), 'months') + 1 }, 
@@ -60,7 +64,6 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
     const [{salary, exceptions: salaryExceptions}, {extra: extraIncome}] = incomeData;
     const budget = {};
     const dayToDayBudget = {};
-    let monthlyCategories = [];
     for(const month of months){
         // Handle Day-to-Day Spending
         dayToDayBudget[month] = {amount: dayToDayAmount, transactions: []};
@@ -75,16 +78,14 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
 
         // Load Monthly Expenses
         for(const item of monthlyBudget){
-            const {category, amount, months, exceptions} = item;
-            const splitCategories = category.split(',').map(cat => cat.trim());
-            monthlyCategories = [...monthlyCategories, ...splitCategories];
+            const {tags, label, amount, months, exceptions} = item;
             if(months && !months.includes(month)) continue;
             if(exceptions && exceptions[month] === null) continue;
             
-            budget[month].categories[category] = budget[month].categories[category] || {amount: 0, remaining: 0, transactions: []};
+            budget[month].categories[label] = budget[month].categories[label] || {amount: 0, remaining: 0, transactions: []};
             const exceptionAmount = exceptions?.[month] === null ? 0 : (exceptions?.[month] || amount);
-            budget[month].categories[category].amount += exceptionAmount;
-            budget[month].categories[category].remaining += exceptionAmount;  // Initialize remaining with the amount
+            budget[month].categories[label].amount += exceptionAmount;
+            budget[month].categories[label].remaining += exceptionAmount;  // Initialize remaining with the amount
         }
 
         // Any remaining income is put into short term savings
@@ -96,9 +97,17 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
     }
 
     const shortTermBudgetAmount = months.map(month => budget[month].surplus).reduce((acc, val) => acc + parseInt(val, 10), 0);
-    // Deduplicate and sort categories
-    monthlyCategories = [...new Set(monthlyCategories)].sort();
-    return {monthlyBudget: budget, shortTermBudgetAmount, monthlyCategories, dayToDayBudget};
+
+
+    const monthlyCategoryMap = {};
+    monthlyBudget.forEach(({ label, tags }) => {
+      tags.forEach(tag =>  monthlyCategoryMap[tag] = label);
+      monthlyCategoryMap[label] = label;
+    });
+    const monthlyCategories = monthlyBudget.map(({label,tags}) => [label,...tags]).flat().filter((v, i, a) => a.indexOf(v) === i);
+
+
+    return {monthlyBudget: budget, shortTermBudgetAmount, monthlyCategories, dayToDayBudget, monthlyCategoryMap};
 }
 
 
@@ -107,49 +116,60 @@ const isOverlap = (arr1, arr2) => {
   return match || false;
 };
 const fillBudgetWithTransactions = (budget) => {
-    const {budgetStart, budgetEnd, accounts,  dayToDayCategories, monthlyCategories, shortTermCategories} = budget;
+    const {budgetStart, budgetEnd, accounts,  dayToDayCategories, monthlyCategories, shortTermCategoryMap, monthlyCategoryMap} = budget;
     const transactions = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')).transactions
         .filter(({date, accountName}) => date >= budgetStart && date <= budgetEnd && accounts.includes(accountName))
         .filter((transaction, index, self) => index === self.findIndex(t => t.id === transaction.id));
+
+    const checkIfTransfer = ({tagNames, type}) => {
+        if(/(transfer|investment)/i.test(type)) return true;
+        if(isOverlap(tagNames, ['Transfer','Payroll'])) return true;
+        return false;
+    };
 
 
     for(let transaction of transactions) {
 
         const {description, amount, date, accountName, tagNames: tags} = transaction;
         const month = moment(date).format('YYYY-MM');
-
         const isDayToDay    = isOverlap(tags, [...dayToDayCategories, "[Daily]"]);
         const isMonthly     = isOverlap(tags, [...monthlyCategories, "[Monthly]"]);
-        const isShortTerm   = isOverlap(tags, [...shortTermCategories, "[Yearly]"]);
+        const isTransfer    = checkIfTransfer(transaction);
 
 
-        const bucketKey = isDayToDay ? 'dayToDay' : isMonthly ? 'monthly' : 'shortTerm';
+        const bucketKey = isTransfer ? "transfer" : isDayToDay ? 'dayToDay' : isMonthly ? 'monthly' : 'shortTerm';
 
 
         //console.log( bucketKey, tags, transaction.description );
 
+        const shortTermStatus = { amount: budget.shortTermBudgetAmount}
+
         const addTransaction = (month, bucket, transaction) => {
+
             const {tags:category} = transaction || {}; //todo: only 1 tag
+            if(bucket === 'transfer') {
+                budget['transfers'] = budget['transfers'] || {transactions: []};
+                budget['transfers'].transactions.push(transaction);
+            }
             if(bucket === 'dayToDay') budget['dayToDayBudget'][month].transactions.push(transaction);
             if (bucket === 'monthly') {
-              if (!budget['monthlyBudget'][month]) {
-                budget['monthlyBudget'][month] = { categories: {} };
-              }
-              if (!budget['monthlyBudget'][month].categories[category]) {
-                budget['monthlyBudget'][month].categories[category] = { transactions: [] };
-              }
-            
-              // Now that we've ensured the structure exists, push the transaction
-              budget['monthlyBudget'][month].categories[category].transactions.push(transaction);
+               const monthlyLabel = monthlyCategoryMap[category];
+               if(!monthlyLabel) {
+                bucket = 'shortTerm';
+               }
+               else{
+                budget['monthlyBudget'][month].categories[monthlyLabel] = budget['monthlyBudget'][month].categories[monthlyLabel] 
+                    || { transactions: [] , amount: 0, category: monthlyLabel};
+                budget['monthlyBudget'][month].categories[monthlyLabel]['transactions'] = 
+                    budget['monthlyBudget'][month].categories[monthlyLabel]?.['transactions'] || [];
+                budget['monthlyBudget'][month].categories[monthlyLabel].transactions.push(transaction);
+               }
             }
             if(bucket === 'shortTerm') {
-                const hasUnbudgeted = budget['shortTermBudget'].find(({category: cat}) => cat === 'Unbudgeted');
-                if(!hasUnbudgeted) budget['shortTermBudget'].push({category: 'Unbudgeted', transactions: []});
-                const UnbudgetedKey = budget['shortTermBudget'].findIndex(({category: cat}) => cat === 'Unbudgeted');
-                const shortTermIndex = budget['shortTermBudget'].findIndex(({category: cat}) => {
-                    return new RegExp(category, 'i').test(cat);
-                }) || UnbudgetedKey;
-                const shortTermKey = shortTermIndex < 0 ? UnbudgetedKey : shortTermIndex;
+
+                const shortTermLabel = shortTermCategoryMap[category] || "Unbudgeted";
+                const shortTermKey = Object.keys(budget['shortTermBudget']).find(key => budget['shortTermBudget'][key].category === shortTermLabel);
+                budget['shortTermBudget'][shortTermKey] = budget['shortTermBudget'][shortTermKey] || { transactions: [] , amount: 0, category: shortTermLabel};
                 budget['shortTermBudget'][shortTermKey]['transactions'] = budget['shortTermBudget'][shortTermKey]?.['transactions'] || [];
                 budget['shortTermBudget'][shortTermKey].transactions.push(transaction);
               }
@@ -160,12 +180,15 @@ const fillBudgetWithTransactions = (budget) => {
 
     const tallyTransactions = ({amount, transactions, category}) => {
         transactions = transactions || [];
-        const spent = transactions.reduce((acc, {amount}) => acc + amount, 0);
+        const incomeTypes = ['income', 'investment sale'];
+        const spent = transactions.reduce((acc, {transactionType,amount}) => acc + (!incomeTypes.includes(transactionType) ? amount : 0), 0);
+        const gained = transactions.reduce((acc, {transactionType,amount}) => acc + (incomeTypes.includes(transactionType) ? amount : 0), 0);
         const roundedSpent = Math.round(spent * 100) / 100; // Round spent to nearest cent
-        const remaining = Math.max(0,Math.round((amount - roundedSpent) * 100) / 100); // Round remaining to nearest cent
-        const over = roundedSpent > amount ? Math.round((roundedSpent - amount) * 100) / 100 : 0; // Round over to nearest cent
+        const remaining = Math.max(0,Math.round((amount - roundedSpent + gained) * 100) / 100); // Round remaining to nearest cent
+        const over = Math.max(0, Math.round(((roundedSpent-gained) - amount) * 100) / 100); // Round over to nearest cent
         const planned = 0;
-        const r= {amount, spent: roundedSpent, remaining, over, transactions, planned, category};
+        amount = amount + gained;
+        const r= {amount, gained, spent: roundedSpent, remaining, over, transactions, planned, category};
         if(!category) delete r.category;
         return r;
     }
@@ -179,12 +202,29 @@ const fillBudgetWithTransactions = (budget) => {
             budget["monthlyBudget"][month].categories[category] = tallyTransactions(budget["monthlyBudget"][month].categories[category]);
         }
     }
+
+
+
+
     // Tally up Short Term Expenses
     for (const catKey in budget["shortTermBudget"]) {
         budget["shortTermBudget"][catKey] = tallyTransactions(budget["shortTermBudget"][catKey]);
+        //sort by amount alrge to small
+
     }
+    budget["shortTermStatus"] = { amount : budget["shortTermBudgetAmount"], gained:0, spent: 0, remaining: 0, over: 0};
+    delete budget["shortTermBudgetAmount"];
+    budget["shortTermStatus"]["gained"] = parseFloat(budget["shortTermBudget"].reduce((acc, {gained}) => acc + gained, 0).toFixed(2));
+    budget["shortTermStatus"]["spent"] = parseFloat(budget["shortTermBudget"].reduce((acc, {spent}) => acc + spent, 0).toFixed(2));
+    budget["shortTermStatus"]["remaining"] = parseFloat((budget["shortTermStatus"]["amount"] - budget["shortTermStatus"]["spent"]).toFixed(2));
+    budget["shortTermStatus"]["over"] = parseFloat(Math.max(0, budget["shortTermStatus"]["spent"] - budget["shortTermStatus"]["amount"]).toFixed(2));
 
-
+    budget["shortTermBudget"] = budget["shortTermBudget"].sort((a, b) => {
+        if (a.category === "Unbudgeted") return 1;
+        if (b.category === "Unbudgeted") return -1;
+        return b.amount - a.amount;
+    });
+    
 
     return budget;
 };
@@ -199,6 +239,7 @@ const fillBudgetWithTransactions = (budget) => {
         const emptyBudget = buildBudget(budget);
         const budgetStart = moment(emptyBudget.budgetStart).format('YYYY-MM-DD');
         const fullBudget = fillBudgetWithTransactions(emptyBudget);
+        delete fullBudget.shortTermCategoryMap;
         budgets[budgetStart] = fullBudget;
     }
     writeFileSync('data/budget/finances.yml', yaml.dump(budgets));

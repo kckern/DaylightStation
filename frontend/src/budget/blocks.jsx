@@ -1,13 +1,21 @@
 import moment from "moment";
 import React, { useEffect, useState } from "react";
+import { Drawer } from "./drawer";
 
   
   // BudgetOverview.jsx
   export function BudgetOverview({ setDrawerContent, budget }) {
+
+    const budgets = Object.keys(budget);
+    const activeBudget = budget[budgets[0]];
+    
+    const Transfers = <Drawer setDrawerContent={setDrawerContent} header="Transfers" transactions={activeBudget.transfers.transactions} />;
+
     return (
       <div className="budget-block">
         <h2>Accounts</h2>
         <div className="budget-block-content">
+          <button onClick={() => setDrawerContent(Transfers)}>View Transfers</button>
         </div>
       </div>
     );
