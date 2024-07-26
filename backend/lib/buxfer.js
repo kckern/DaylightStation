@@ -33,7 +33,7 @@ export const getTransactions = async ({startDate, endDate,  accounts, tagName}) 
 	const token = await getToken();
 	startDate = startDate || '2022-01-01';
 	endDate = endDate || '2024-12-31';
-	accounts = accounts || ["Fidelity", "CaptialOne"];
+	accounts = accounts || ["Fidelity", "CaptialOne","Payroll"];
 	const command = 'transactions';
 	let transactions = [];
 	for (let account of accounts) {
