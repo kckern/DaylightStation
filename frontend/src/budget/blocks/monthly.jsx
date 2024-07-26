@@ -4,10 +4,15 @@ import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
 
-const currentTime = 0.6;
-function formatAsCurrency(value) {
+const currentDayOfMonth = moment().format("DD");
+const daysInMonth = moment().daysInMonth();
+const currentTime = parseFloat(currentDayOfMonth) / daysInMonth;
+export function formatAsCurrency(value, showcents=true) {
     if (!value) return `$Ø`;
-    return `$${value.toLocaleString()}`;
+    if (showcents) {
+        return `$${value.toFixed(2).toLocaleString()}`;
+    }
+    return `$${Math.round(value).toLocaleString()}`;
 }
   
   
@@ -52,13 +57,14 @@ function formatAsCurrency(value) {
 
     const series = Object.keys(colors).map((key) => {
       const data = processedData.map((item) => {
-        const isOver = item.over > 0;
+        const isOver = item.over > 1;
         const isSpent = key === 'spent';
         if (isOver && isSpent) {
           // Override color and make it red
           return {
             y: item[key],
-            color: '#c1121f'
+            color: '#c1121f',
+                label: `OVER`
           };
         }
         return item[key];
@@ -95,13 +101,13 @@ function formatAsCurrency(value) {
             gridLineWidth: 0,
             tickWidth: 0,
             reversed: true,
-            plotLines: [{
+            plotLines: activeMonth === currentMonth ? [{
                 color: '#EEEEEE',
-                value: currentTime * 100,
+                value: (1-currentTime) * 100,
                 width: 1.5,
                 dashStyle: 'dash',
                 zIndex: 5
-            }]
+            }] : []
         },
         legend: { enabled: false },
         credits: { enabled: false },
@@ -128,7 +134,11 @@ function formatAsCurrency(value) {
                         color: '#FFFFFF'
                     },
                     formatter: function() {
-                        return this.y !== 0 ? `$${this.y.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : null;
+                      if(this.y === 0) return "";
+                      const {over, spent} = processedData[this.point.index];
+                      const spentLabel  = formatAsCurrency(spent,false);
+                      const overlabel = over <= 0 ? "" :` (${formatAsCurrency(processedData[this.point.index].over,false)} OVER)`;
+                      return `${spentLabel}${overlabel}`;
                     }
                 },
                 cursor: 'pointer',

@@ -30,11 +30,14 @@ export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimen
     const daysInMonth = Object.keys(activeMonthDailyBudget).length;
     const today = moment().date();
     const activeMonthIsCurrentMonth = activeMonth === currentMonth;
-    const actualData = Object.keys(activeMonthDailyBudget).map((date, index) => ({
-        y: activeMonthDailyBudget[date].endingBalance,
-        color: (index === today && activeMonthIsCurrentMonth) ? '#0077b6' : undefined
-    }));
-
+    const actualData = Object.keys(activeMonthDailyBudget).map((date, index) => {
+        const isMonday = moment(date).day() === 1;
+        return {
+            y: activeMonthDailyBudget[date].endingBalance,
+            color: (index === today && activeMonthIsCurrentMonth) ? '#0077b6' : (isMonday ? '#777' : undefined)
+        };
+    });
+    
     const initialBudget = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[0]].startingBalance;
 
     const averageDailyBurn = (actualData[0].y - actualData[today].y) / (today + 1);
@@ -57,12 +60,18 @@ export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimen
     }));
 
     const baselineData = Array.from({ length: daysInMonth +1 }, (_, i) => initialBudget - (i * (initialBudget / daysInMonth)));
-
+    const zeroCrossingIndex = actualData.findIndex(data => data.y < 0);
+    console.log(zeroCrossingIndex);
     const start = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[0]].startingBalance;
     const end = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[Object.keys(activeMonthDailyBudget).length - 1]].endingBalance;
     const spent = start - end;
-
+    const endingBalance = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[Object.keys(activeMonthDailyBudget).length - 1]].endingBalance;
     const options = {
+        chart: {
+            animation: false,
+            //padding top
+            marginTop: 50,
+        },
         title: {
             text: `${moment(activeMonth).format("MMMM YYYY")}`,
             align: 'right',
@@ -76,20 +85,49 @@ export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimen
             y: 30,
             floating: true,
         },
+
         xAxis: {
             categories: [''].concat(Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString())),
-            tickInterval: 1
+            labels: {
+                formatter: function () {
+                    const date = moment(activeMonth).date(this.value);
+                    const isMonday = date.day() === 1;
+                    const isLastDay = this.value == daysInMonth;
+                    return isMonday || isLastDay ? this.value : '';
+                }
+            },
+            tickPositions: Array.from({ length: daysInMonth }, (_, i) => {
+                const date = moment(activeMonth).date(i + 1);
+                const isMonday = date.day() === 1;
+                const isLastDay = i + 1 === daysInMonth;
+                const isFirstDay = i === 0;
+                return isFirstDay || isMonday || isLastDay ? i + 1 : null;
+            }).filter(Boolean),
+            plotLines: Array.from({ length: daysInMonth }, (_, i) => {
+                const date = moment(activeMonth).date(i + 1);
+                const isMonday = date.day() === 1;
+                return isMonday ? { color: '#EEE', width: 1, value: i + 1 } : null;
+            }).filter(Boolean),
+            plotBands: zeroCrossingIndex >= 0  ? [
+                {
+                    from: zeroCrossingIndex >= 0 ? zeroCrossingIndex : daysInMonth,
+                    to: daysInMonth,
+                    color: 'rgba(255, 0, 0, 0.1)', // Red
+                    max: 0
+                }
+            ] : []
         },
         yAxis: {
-            min: 0,
-            max: initialBudget * 1.15,
+            min: Math.min(0, endingBalance),
+            max: initialBudget,
             title: { text: '' },
             labels: {
                 formatter: function () {
                     const formattedNumber = this.axis.defaultLabelFormatter.call(this).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
                     return '$' + formattedNumber;
                 }
-            }
+            },
+            gridLineWidth: 0
         },
         series: [{
             name: 'Baseline',
@@ -98,6 +136,12 @@ export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimen
             color: 'rgba(255, 0, 0, 0.1)',
             lineColor: 'rgba(255, 0, 0, 0.5)',
             marker: { enabled: false },
+            enableMouseTracking: false,
+            states: {
+                hover: {
+                    enabled: false
+                }
+            }
         }, {
             name: 'Actual Data',
             data: [{

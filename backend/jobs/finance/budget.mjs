@@ -134,7 +134,7 @@ const fillBudgetWithTransactions = (budget) => {
     const transactions =  rawTransactions.filter((transaction)=>shouldFilter(transaction, {accounts, startDate: budgetStart, endDate: budgetEnd}));
     const checkIfTransfer = ({tagNames, type}) => {
         if(/(transfer|investment)/i.test(type)) return true;
-        if(isOverlap(tagNames, ['Transfer','Payroll'])) return true;
+        if(isOverlap(tagNames, ['Transfer','Payroll','Salary','Earnings'])) return true;
         return false;
     };
 
@@ -277,6 +277,36 @@ function fillDayToDayTransactions(monthlyDayToDayBudget, month){
 }
 
 
+
+function balanceBudget(budget){
+
+    //tighten each of the monthly items in the past
+        //remove empty ones, change amounts to match acutals, and accrue the new remainder
+    for(const month in budget["monthlyBudget"]){
+        const {categories} = budget["monthlyBudget"][month];
+        const isPast = moment(month).isBefore(moment().format('YYYY-MM'));
+        if(!isPast) continue;
+        for(const category in categories){
+            const { spent, gained, transactions} = categories[category];
+            const amount = spent - gained;
+            if(transactions.length === 0){
+                delete budget["monthlyBudget"][month].categories[category];
+            } else {
+                budget["monthlyBudget"][month].categories[category].amount = amount;
+                budget["monthlyBudget"][month].categories[category].remaining = 0;
+            }
+        }
+
+    }
+    //todo: gather actual income from payroll and other sources
+    //todo: recalculate remainders for each category
+    
+
+
+    return budget;
+}
+
+
 (async () => {
     const budgetConfig = (yaml.load(readFileSync('data/budget/budget.yml', 'utf8'))).budget.sort((a, b) => a.timeframe.start - b.timeframe.start);
     const budgets = {};
@@ -284,8 +314,9 @@ function fillDayToDayTransactions(monthlyDayToDayBudget, month){
         const emptyBudget = buildBudget(budget);
         const budgetStart = moment(emptyBudget.budgetStart).format('YYYY-MM-DD');
         const fullBudget = fillBudgetWithTransactions(emptyBudget);
-        delete fullBudget.shortTermCategoryMap;
-        budgets[budgetStart] = fullBudget;
+        const balancedBudget = balanceBudget(fullBudget);
+        delete balancedBudget.shortTermCategoryMap;
+        budgets[budgetStart] = balancedBudget;
     }
     writeFileSync('data/budget/finances.yml', yaml.dump(budgets));
 })();
