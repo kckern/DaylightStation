@@ -2,10 +2,9 @@ import React, { useEffect, useState } from "react";
 import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
+import { formatAsCurrency } from "./monthly";
 
-function formatAsCurrency(value) {
-    return `$${(value||0).toLocaleString()}`;
-}
+
 
 export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }) {
 
@@ -53,7 +52,8 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
           //override color and make it red
             return {
                 y: item[key],
-                color: '#c1121f'
+                color: '#c1121f',
+                label: `OVER`
             };
         }
 
@@ -125,7 +125,11 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
                         color: '#FFFFFF'
                     },
                     formatter: function() {
-                        return this.y !== 0 ? `$${this.y.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : null;
+                      if(this.y === 0) return "";
+                      const {over, spent} = processedData[this.point.index];
+                      const spentLabel  = formatAsCurrency(spent,false);
+                      const overlabel = over <= 0 ? "" :` (${formatAsCurrency(processedData[this.point.index].over,false)} OVER)`;
+                      return `${spentLabel}${overlabel}`;
                     }
                 },
                 cursor: 'pointer',
