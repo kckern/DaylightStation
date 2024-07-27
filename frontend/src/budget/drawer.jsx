@@ -1,12 +1,27 @@
 import moment from "moment";
 import React, { useEffect, useState } from "react";
 
+
+const formatAsCurrency = (amount) => {
+  return `$${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+};
+
 export function Drawer({ setDrawerContent, header, transactions }) {
 
     const handleRowClick = (transaction) => {
       // Open the transaction in a new tab, see a tag
       window.open(`https://www.buxfer.com/transactions?tids=${transaction.id}`, '_blank');
     };
+
+
+    const summary = transactions.reduce((acc, transaction) => {
+      const { expenseAmount } = transaction;
+      acc.spent += expenseAmount > 0 ? expenseAmount : 0;
+      acc.gained += expenseAmount < 0 ? -expenseAmount : 0;
+      return acc; // Ensure the accumulator is returned
+    }, { spent: 0, gained: 0, net: 0 });
+    
+    summary.netspend = summary.spent - summary.gained ;
 
     return (
         <div className="budget-drawer">
@@ -18,6 +33,17 @@ export function Drawer({ setDrawerContent, header, transactions }) {
                     </a>
                 </h3>
                 <button onClick={() => setDrawerContent(null)}>Close</button>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>
+                Spent: {formatAsCurrency(summary.spent)}
+              </span>
+              <span>
+                Credits: {formatAsCurrency(summary.gained)}
+              </span>
+              <span>
+                Net Spend: {formatAsCurrency(summary.netspend)}
+              </span>
             </div>
             <div className="budget-drawer-content">
                 <table className="transactions-table">
@@ -39,7 +65,7 @@ export function Drawer({ setDrawerContent, header, transactions }) {
                       prevDate = currentDateFormatted; // Update prevDate for the next iteration
                       const transactionType = transaction.transactionType;
 
-                      const incomeTypes = ['income', 'investment sale'];
+                      const incomeTypes = ['income', 'investment sale','refund','dividend','interest'];
                       const isIncome = incomeTypes.includes(transactionType);
 
                       const amountLabel = !isIncome 

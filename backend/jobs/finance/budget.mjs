@@ -54,47 +54,52 @@ function buildshortTermBudget(shortTermBudgetAmount, shortTerm){
 function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart, budgetEnd){
 
     const {amount:dayToDayAmount} = dayTodayData;
-    monthlyBudget.push({
-        label: 'Day-to-Day Spending',
-        amount: dayToDayAmount,
-        tags: ['[Daily]']
-    });
-
     const months = Array.from({ length: moment(budgetEnd).diff(moment(budgetStart), 'months') + 1 }, 
             (_, i) => moment(budgetStart).add(i, 'months').format('YYYY-MM'));
-    const [{salary, exceptions: salaryExceptions}, {extra: extraIncome}] = incomeData;
+    const [{salary, payCheckCount, payFrequencyInDays, firstPaycheckDate, exceptions: salaryExceptions}, {extra: extraIncome}] = incomeData;
+
+    // make array of paychecks
+    const payDays = Array.from({ length: payCheckCount }, (_, i) => moment(firstPaycheckDate).add(i * payFrequencyInDays, 'days').format('YYYY-MM-DD'));
     const budget = {};
     const dayToDayBudget = {};
     for(const month of months){
+
+        //TODO: Handle a raise in the middle of the year
+        const paycheckAmount = parseFloat(salary / payCheckCount).toFixed(2);
+
+        const payDaysThisMonth = payDays.filter(payDay => moment(payDay).isBetween(moment(month).startOf('month'), moment(month).endOf('month'), null, '[]'));
+        const payAmountsThisMonth = payDaysThisMonth.map(_ => paycheckAmount);
+        const monthlySalary = payAmountsThisMonth.reduce((acc, val) => acc + parseInt(val, 10), 0);
+
+
         // Handle Day-to-Day Spending
         dayToDayBudget[month] = {amount: dayToDayAmount, transactions: []};
         
         // Load Budget
-        budget[month] = budget[month] || {income: 0, expense: 0, surplus: 0, categories: {}};
+        budget[month] = budget[month] || {amount:0, income: 0, spent: 0, gained:0, netspent:0, remaining:0, categories: {}};
 
         // Load Income
-        budget[month].income += salaryExceptions?.[month] === null ? 0 : (salaryExceptions?.[month] || salary);
+        budget[month].income += salaryExceptions?.[month] === null ? 0 : (salaryExceptions?.[month] || monthlySalary);
         const extraIncomeThisMonth = extraIncome.filter(({months}) => months.includes(month)).reduce((acc, {amount}) => acc + amount, 0);
         budget[month].income += extraIncomeThisMonth;
 
         // Load Monthly Expenses
+        let monthAmount = 0;
         for(const item of monthlyBudget){
-            const {tags, label, amount, months, exceptions} = item;
+            let {tags, label, amount, months, exceptions, frequency} = item;
             if(months && !months.includes(month)) continue;
             if(exceptions && exceptions[month] === null) continue;
+
+            if(frequency === 'paycheck') amount = amount * payDaysThisMonth.length;
+            monthAmount += amount;
             
             budget[month].categories[label] = budget[month].categories[label] || {amount: 0, remaining: 0, transactions: []};
             const exceptionAmount = exceptions?.[month] === null ? 0 : (exceptions?.[month] || amount);
             budget[month].categories[label].amount += exceptionAmount;
             budget[month].categories[label].remaining += exceptionAmount;  // Initialize remaining with the amount
         }
-
-        // Any remaining income is put into short term savings
-        budget[month].expense = Object.values(budget[month].categories)
-            .map(catObj => catObj.amount)
-            .reduce((acc, val) => acc + parseInt(val, 10), 0);
-
-        budget[month].surplus = budget[month].income - budget[month].expense;
+        budget[month].paychecks = payDaysThisMonth.map((date, i) => ({date, amount: parseFloat(payAmountsThisMonth[i])}));
+        budget[month].amount = monthAmount;
     }
 
     const shortTermBudgetAmount = months.map(month => budget[month].surplus).reduce((acc, val) => acc + parseInt(val, 10), 0);
@@ -127,6 +132,22 @@ const shouldFilter = (transaction, {accounts, startDate, endDate}) => {
 };
 
 
+const tallyTransactions = ({amount, transactions, category}) => {
+    transactions = transactions || [];
+    if(!transactions.length) return {amount, gained: 0, spent: 0, netspent: 0, remaining: amount, over: 0, transactions, planned: 0, category};
+    const incomeTypes = ['income', 'investment sale'];
+    const spent = parseFloat(transactions.reduce((acc, {transactionType, amount}) => acc + (!incomeTypes.includes(transactionType) ? amount : 0), 0).toFixed(2));
+    const gained = parseFloat(transactions.reduce((acc, {transactionType, amount}) => acc + (incomeTypes.includes(transactionType) ? amount : 0), 0).toFixed(2));
+    const roundedSpent = Math.round(spent * 100) / 100; // Round spent to nearest cent
+    const remaining = Math.max(0,Math.round((amount - roundedSpent + gained) * 100) / 100); // Round remaining to nearest cent
+    const over = Math.max(0, Math.round(((roundedSpent-gained) - amount) * 100) / 100); // Round over to nearest cent
+    const planned = 0;
+    amount = amount + gained;
+    const netspent = parseFloat((spent - gained).toFixed(2));
+    const r= {amount, gained, spent: roundedSpent, netspent, remaining, over, transactions, planned, category};
+    if(!category) delete r.category;
+    return r;
+}
 
 const fillBudgetWithTransactions = (budget) => {
     const {budgetStart, budgetEnd, accounts,  dayToDayCategories, monthlyCategories, shortTermCategoryMap, monthlyCategoryMap} = budget;
@@ -137,6 +158,11 @@ const fillBudgetWithTransactions = (budget) => {
         if(isOverlap(tagNames, ['Transfer','Payroll','Salary','Earnings'])) return true;
         return false;
     };
+    const checkIfIncome = ({tagNames, type, expenseAmount}) => {
+        if(isOverlap(tagNames, ['Salary','Bonus'])) return true;
+        return false;
+    };
+
 
 
     for(let transaction of transactions) {
@@ -145,15 +171,20 @@ const fillBudgetWithTransactions = (budget) => {
         const month = moment(date).format('YYYY-MM');
         const isDayToDay    = isOverlap(tags, [...dayToDayCategories, "[Daily]"]);
         const isMonthly     = isOverlap(tags, [...monthlyCategories, "[Monthly]"]);
-        const isTransfer    = checkIfTransfer(transaction);
+        const isIncome     = checkIfIncome(transaction);
+        const isTransfer    = !isIncome && checkIfTransfer(transaction);
 
 
-        const bucketKey = isTransfer ? "transfer" : isDayToDay ? 'dayToDay' : isMonthly ? 'monthly' : 'shortTerm';
+        const bucketKey = isIncome ? "income" : isTransfer ? "transfer" : isDayToDay ? 'dayToDay' : isMonthly ? 'monthly' : 'shortTerm';
 
 
         const addTransaction = (month, bucket, transaction) => {
 
             const {tags:category} = transaction || {}; //todo: only 1 tag
+            if(bucket === 'income') {
+                budget['monthlyBudget'][month]['income_transactions'] = budget['monthlyBudget'][month]['income_transactions'] || [];
+                budget['monthlyBudget'][month]['income_transactions'].push(transaction);
+            }
             if(bucket === 'transfer') {
                 budget['transfers'] = budget['transfers'] || {transactions: []};
                 budget['transfers'].transactions.push(transaction);
@@ -179,71 +210,126 @@ const fillBudgetWithTransactions = (budget) => {
                 budget['shortTermBudget'][shortTermKey] = budget['shortTermBudget'][shortTermKey] || { transactions: [] , amount: 0, category: shortTermLabel};
                 budget['shortTermBudget'][shortTermKey]['transactions'] = budget['shortTermBudget'][shortTermKey]?.['transactions'] || [];
                 budget['shortTermBudget'][shortTermKey].transactions.push(transaction);
+
               }
             }
         addTransaction(month, bucketKey, transaction);
         
     }
 
-    const tallyTransactions = ({amount, transactions, category}) => {
-        transactions = transactions || [];
-        const incomeTypes = ['income', 'investment sale'];
-        const spent = transactions.reduce((acc, {transactionType,amount}) => acc + (!incomeTypes.includes(transactionType) ? amount : 0), 0);
-        const gained = transactions.reduce((acc, {transactionType,amount}) => acc + (incomeTypes.includes(transactionType) ? amount : 0), 0);
-        const roundedSpent = Math.round(spent * 100) / 100; // Round spent to nearest cent
-        const remaining = Math.max(0,Math.round((amount - roundedSpent + gained) * 100) / 100); // Round remaining to nearest cent
-        const over = Math.max(0, Math.round(((roundedSpent-gained) - amount) * 100) / 100); // Round over to nearest cent
-        const planned = 0;
-        amount = amount + gained;
-        const r= {amount, gained, spent: roundedSpent, remaining, over, transactions, planned, category};
-        if(!category) delete r.category;
-        return r;
-    }
     // Tally up Day to Day Spending
     for (const month in budget["dayToDayBudget"]) {
         budget["dayToDayBudget"][month] = tallyTransactions(budget["dayToDayBudget"][month]);
         budget["dayToDayBudget"][month] = fillDayToDayTransactions(budget["dayToDayBudget"][month], month);
+
     }
     // Tally up Monthly Expenses
-    for (const month in budget["monthlyBudget"]) {
-        for (const category in budget["monthlyBudget"][month].categories) {
-            budget["monthlyBudget"][month].categories[category] = tallyTransactions(budget["monthlyBudget"][month].categories[category]);
+    function processCategories(monthString, budget) {
+        const month = budget["monthlyBudget"][monthString];
+        const isFuture = moment(monthString).isAfter(moment().format('YYYY-MM'));
+        month.spent = 0;
+        for (const category in month.categories) {
+            month.categories[category] = tallyTransactions(month.categories[category]);
+            month.spent += month.categories[category].spent;
+            month.gained += month.categories[category].gained;
+            month.categories[category].amount += month.categories[category].gained;
         }
+        const {amount,netspent} = budget["dayToDayBudget"][monthString];
+        const dayToDayNetspent = isFuture ? amount : netspent;
+
+        const monthNetSpent = parseFloat((
+            
+            isFuture? month.amount :month.spent - month.gained
+        
+        ).toFixed(2));
+        const sumofPaychecks = month.paychecks.reduce((acc, {amount}) => acc + amount, 0);
+        const monthTopLine = parseFloat((month.income || sumofPaychecks).toFixed(2));
+        const surplus = parseFloat((
+            monthTopLine - monthNetSpent - dayToDayNetspent
+        ).toFixed(2));
+        month.summary = {
+            monthTopLine,
+            monthNetSpent,
+            dayToDaySpentOrBudgeted: dayToDayNetspent,
+            surplus,
+
+        }
+        budget["monthlyBudget"][monthString] = month;
     }
-
-
-
-
-    // Tally up Short Term Expenses
-    for (const catKey in budget["shortTermBudget"]) {
-        budget["shortTermBudget"][catKey] = tallyTransactions(budget["shortTermBudget"][catKey]);
-        //sort by amount alrge to small
-
-    }
-    budget["shortTermStatus"] = { amount : budget["shortTermBudgetAmount"], gained:0, spent: 0, remaining: 0, over: 0};
-    delete budget["shortTermBudgetAmount"];
-    budget["shortTermStatus"]["gained"] = parseFloat(budget["shortTermBudget"].reduce((acc, {gained}) => acc + gained, 0).toFixed(2));
-    budget["shortTermStatus"]["spent"] = parseFloat(budget["shortTermBudget"].reduce((acc, {spent}) => acc + spent, 0).toFixed(2));
-    budget["shortTermStatus"]["remaining"] = parseFloat((budget["shortTermStatus"]["amount"] - budget["shortTermStatus"]["spent"]).toFixed(2));
-    budget["shortTermStatus"]["over"] = parseFloat(Math.max(0, budget["shortTermStatus"]["spent"] - budget["shortTermStatus"]["amount"]).toFixed(2));
-
-    budget["shortTermBudget"] = budget["shortTermBudget"].sort((a, b) => {
-        if (a.category === "Unbudgeted") return 1;
-        if (b.category === "Unbudgeted") return -1;
-        return b.amount - a.amount;
-    });
     
+    for (const month in budget["monthlyBudget"]) processCategories(month, budget);
+
+    const {shortTermBudget, shortTermStatus} = 
+        balanceShortTermBudget(budget["shortTermBudget"], budget["shortTermBudgetAmount"]);
+    budget["shortTermBudget"] = shortTermBudget;
+    budget["shortTermStatus"] = shortTermStatus;
+    delete budget["shortTermBudgetAmount"];
 
     return budget;
 };
 
+
+const balanceShortTermCategories = (shortTermBudget) => {
+
+    const overages = shortTermBudget.filter(i => i.over > 0).sort((a, b) => b.over - a.over);
+
+    for (const overage of overages) {
+        const amountOver = overage.over;
+        const [topSurplus] = shortTermBudget.filter(i => i.remaining > 0).sort((a, b) => b.remaining - a.remaining);
+        if(!topSurplus) continue;
+        if(topSurplus.remaining < amountOver) continue;
+        const overKey = shortTermBudget.findIndex(i => i.category === overage.category);
+        const surplusKey = shortTermBudget.findIndex(i => i.category === topSurplus.category);
+        //handle over
+        shortTermBudget[overKey].amount += amountOver;
+        shortTermBudget[overKey].over = 0;
+        //handle surplus
+        shortTermBudget[surplusKey].amount -= amountOver;
+        shortTermBudget[surplusKey].remaining = Math.max(0, shortTermBudget[surplusKey].remaining - amountOver);
+    }
+
+
+    return shortTermBudget;
+};
+
+
+const balanceShortTermBudget = (shortTermBudget, shortTermBudgetAmount) => {
+
+    shortTermBudgetAmount = parseFloat(shortTermBudgetAmount.toFixed(2));
+
+    for (const catKey in shortTermBudget) {
+        shortTermBudget[catKey] = tallyTransactions(shortTermBudget[catKey]);
+    }
+
+    shortTermBudget = balanceShortTermCategories(shortTermBudget);
+
+    const shortTermStatus = { amount : shortTermBudgetAmount, gained:0, spent: 0, remaining: 0, over: 0};
+    //delete budget["shortTermBudgetAmount"];
+    shortTermStatus["gained"] = parseFloat(shortTermBudget.reduce((acc, {gained}) => acc + gained, 0).toFixed(2));
+    shortTermStatus["spent"] = parseFloat(shortTermBudget.reduce((acc, {spent}) => acc + spent, 0).toFixed(2));
+    shortTermStatus["remaining"] = parseFloat((shortTermStatus["amount"] - shortTermStatus["spent"]).toFixed(2));
+    shortTermStatus["over"] = parseFloat(Math.max(0, shortTermStatus["spent"] - shortTermStatus["amount"]).toFixed(2));
+
+    shortTermBudget = shortTermBudget.sort((a, b) => {
+        if (a.category === "Unbudgeted") return 1;
+        if (b.category === "Unbudgeted") return -1;
+        return b.amount - a.amount;
+    });
+    return {shortTermBudget, shortTermStatus};
+}
+
+
+
 function fillDayToDayTransactions(monthlyDayToDayBudget, month){
+
     const {transactions} = monthlyDayToDayBudget;
     const todaysDate = moment().format('YYYY-MM-DD');
     const firstDay = moment(month).format('YYYY-MM-01');
     const lastDay = moment(month).endOf('month').format('YYYY-MM-DD');
     const numDays = moment(lastDay).diff(firstDay, 'days') + 1;
     const dailyBudget = Array.from({ length: numDays }, (_, i) => i +1);
+
+    // Calculate daily balances
     const dailyBalances = {};
     const averageDailySpend = transactions.filter(({date}) => moment(date).isBefore(todaysDate))
     .reduce((acc, {amount, transactionType}) => acc + (transactionType !== 'income' ? amount : 0), 0) / dailyBudget.length;
@@ -270,6 +356,9 @@ function fillDayToDayTransactions(monthlyDayToDayBudget, month){
         }
     }
 
+    //set amount to amount - gained
+    monthlyDayToDayBudget.amount = monthlyDayToDayBudget.amount - monthlyDayToDayBudget.gained;
+
 
     monthlyDayToDayBudget.dailyBalances = dailyBalances;
 
@@ -286,6 +375,13 @@ function balanceBudget(budget){
         const {categories} = budget["monthlyBudget"][month];
         const isPast = moment(month).isBefore(moment().format('YYYY-MM'));
         if(!isPast) continue;
+
+        //recalculate income from actual transactions
+        const incomeTransactions = budget["monthlyBudget"][month]["income_transactions"];
+        const income = incomeTransactions.reduce((acc, {amount}) => acc + amount, 0);
+        budget["monthlyBudget"][month].income = income;
+
+        //Reset monthly budgets to match actuals
         for(const category in categories){
             const { spent, gained, transactions} = categories[category];
             const amount = spent - gained;
@@ -293,14 +389,32 @@ function balanceBudget(budget){
                 delete budget["monthlyBudget"][month].categories[category];
             } else {
                 budget["monthlyBudget"][month].categories[category].amount = amount;
-                budget["monthlyBudget"][month].categories[category].remaining = 0;
+                budget["monthlyBudget"][month].categories[category].spent = spent;
+                budget["monthlyBudget"][month].categories[category].over = 0;
+                budget["monthlyBudget"][month].categories[category].planned = 0;
+                budget["monthlyBudget"][month].categories[category].balanced = true;
             }
         }
 
+
+        const sumFields = (field) => parseFloat(Object.values(budget["monthlyBudget"][month].categories).reduce((acc, { [field]: val }) => acc + val, 0).toFixed(2));
+        budget["monthlyBudget"][month].spent = sumFields('spent');
+        budget["monthlyBudget"][month].gained = sumFields('gained');
+        budget["monthlyBudget"][month].remaining = sumFields('remaining');
+        budget['monthlyBudget'][month].netspent = sumFields('spent') - sumFields('gained');
+
     }
-    //todo: gather actual income from payroll and other sources
-    //todo: recalculate remainders for each category
-    
+    //gather the actual past income and projected future income
+    const periodSurplus = Object.values(budget["monthlyBudget"]).reduce((acc, {summary}) => acc + summary.surplus, 0);
+
+
+
+    //rebalance short term budget with the new surplus
+    const {shortTermBudget, shortTermStatus} = 
+        balanceShortTermBudget(budget["shortTermBudget"], periodSurplus);
+    budget["shortTermBudget"] = shortTermBudget;
+    budget["shortTermStatus"] = shortTermStatus;
+
 
 
     return budget;
