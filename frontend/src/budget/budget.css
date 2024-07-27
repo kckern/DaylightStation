@@ -162,9 +162,6 @@ tr{
     cursor: pointer;
 }
 
-tr:hover td{
-    filter: brightness(0.9);
-}
 
 tr.income{
     background-color: #d8f0e4;
@@ -183,6 +180,7 @@ tr.income .amount-col{
     font-size: 0.8rem;
     padding: 0 1ex;
     margin: 0 1ex;
+    cursor: pointer;
 }
 .status-badge .amount{
     background-color: #888;
@@ -198,4 +196,43 @@ tr.income .amount-col{
 .status-badge .remaining{
     background-color: #DDD;
     color: black;
+}
+
+.overviewTable
+{
+    width: calc(100% - 4px);
+    border-collapse: collapse;
+    height: calc(100% - 4px);
+    margin: 2px;
+}
+.overviewTable td
+{
+    padding: 0 1ex;
+    border: 1px solid #BBB;
+    text-align: right;
+}.overviewTable td:hover
+{
+    filter: brightness(1.5);
+    background-color: #112d3c;
+    color: #FFF;
+}
+
+.overviewTable tr.past{
+    background-color: #0077b6;
+    color: #FFFFFFEE;
+}
+.overviewTable tr.past td{
+    border-color: #0b3954;
+}
+.overviewTable tr.present{
+    background-color: #cbf3f0;
+    outline: 2px solid #0b3954;
+}
+.overviewTable tr.present td{
+    border-color: #0b3954;
+    font-weight: 800;
+}
+.overviewTable tr.future{
+    background-color: #DDD;
+    color: #888;
 }

@@ -28,7 +28,6 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
     const processedData = shortTermBudget.map((item) => {
         const { amount, spent, remaining, planned, over, transactions, category } = item;
 
-
         return {
             category,
             amount,
@@ -67,7 +66,7 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
     }
     );
 
-
+    console.log(series);
     const options = {
         chart: {
             type: 'bar',
@@ -126,10 +125,13 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
                     },
                     formatter: function() {
                       if(this.y === 0) return "";
-                      const {over, spent} = processedData[this.point.index];
-                      const spentLabel  = formatAsCurrency(spent,false);
-                      const overlabel = over <= 0 ? "" :` (${formatAsCurrency(processedData[this.point.index].over,false)} OVER)`;
-                      return `${spentLabel}${overlabel}`;
+                      const item = processedData[this.point.index];
+                      const seriesName = this.series.name;
+                      if(seriesName === 'over') {
+                        return formatAsCurrency(item.over,false);
+                      }else{
+                        return formatAsCurrency(item[seriesName],false);
+                      }
                     }
                 },
                 cursor: 'pointer',
@@ -152,19 +154,40 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
         setDrawerContent(data); // Assuming setDrawerContent updates some drawer content with the clicked data
     }
 
+    const gatherTransactions = (key) => {
+        const alltransactions = shortTermBudget.reduce((acc, item) => {
+            return acc.concat(item.transactions);
+        }, []).sort((b, a) => a.amount - b.amount);
+        if(key === 'budget') return alltransactions;
+        if(key === 'spent') return alltransactions.filter(transaction => transaction.expenseAmount > 0);
+        if(key === 'gained') return alltransactions.filter(transaction => transaction.expenseAmount < 0)
+    }
+
+    const handleStatusClick = (key) => {
+        const transactions = gatherTransactions(key);
+        const header = key === 'budget' ? 'Short Term Budget' : key === 'spent' ? 'Spent' : 'Gained';
+        const content = <Drawer setDrawerContent={setDrawerContent} header={header} transactions={transactions} />;
+        setDrawerContent(content);
+    }
 
     const statusBadge = (
         <span className="status-badge">
-            <span className="amount">${Math.round(shortTermStatus.amount).toLocaleString()}</span> +
-            <span className="gained"> ${Math.round(shortTermStatus.gained).toLocaleString()}</span> −
-            <span className="spent"> ${Math.round(shortTermStatus.spent).toLocaleString()}</span> = 
+            <span 
+            onClick={() => handleStatusClick('budget')}
+            className="amount">${Math.round(shortTermStatus.amount).toLocaleString()}</span> +
+            <span onClick={() => handleStatusClick('gained')}
+            className="gained"> ${Math.round(shortTermStatus.gained).toLocaleString()}</span> −
+            <span 
+            onClick={() => handleStatusClick('spent')}
+
+            className="spent"> ${Math.round(shortTermStatus.spent).toLocaleString()}</span> = 
             <span className="remaining">${Math.round(shortTermStatus.remaining).toLocaleString()}</span>
         </span>
     );
 
     return (
         <div className="budget-block">
-            <h2>Short Term Expenses</h2>
+            <h2>Short Term Savings</h2>
             <div className="budget-block-content">
                 <div className="status-badge" style={{ textAlign: 'center' }}>
                 {statusBadge}

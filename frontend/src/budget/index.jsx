@@ -64,12 +64,13 @@ return (
         {drawerContent}
       </Drawer>
       <div className="grid-container">
+          <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+
           <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
           <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-          <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+          <BudgetRetirement setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetRetirement setDrawerContent={setDrawerContent} budget={budget}/>
         </div>
     </div>
   );

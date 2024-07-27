@@ -33,7 +33,7 @@ export function formatAsCurrency(value, showcents=true) {
     const { categories } = months[activeMonth];
     const catKeys = Object.keys(categories);
     const processedData = catKeys.map((category) => {
-        const { amount, spent, remaining, planned, over, transactions } = categories[category];
+        const { amount, spent, remaining, planned, over, transactions, balanced } = categories[category];
 
 
         return {
@@ -44,7 +44,8 @@ export function formatAsCurrency(value, showcents=true) {
              remaining,
              over,
              count: transactions.length,
-             transactions
+             transactions,
+              balanced
         };
     });
 
@@ -57,14 +58,22 @@ export function formatAsCurrency(value, showcents=true) {
 
     const series = Object.keys(colors).map((key) => {
       const data = processedData.map((item) => {
+        const isBalanced = item.balanced;
         const isOver = item.over > 1;
         const isSpent = key === 'spent';
-        if (isOver && isSpent) {
+        if(isBalanced){
+          return {
+            y: item[key],
+            color: '#63af90',
+            label: `BALANCED`
+          };
+        }
+        else if (isOver && isSpent) {
           // Override color and make it red
           return {
             y: item[key],
             color: '#c1121f',
-                label: `OVER`
+            label: `OVER`
           };
         }
         return item[key];
@@ -155,7 +164,7 @@ export function formatAsCurrency(value, showcents=true) {
   
       return (
         <div className="budget-block">
-          <h2>Fixed Expenses</h2>
+          <h2>Regular Expenses</h2>
           <div className="budget-block-content">
             {monthHeader}
             <HighchartsReact
