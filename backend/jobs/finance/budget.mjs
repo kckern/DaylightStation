@@ -89,6 +89,7 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
             let {tags, label, amount, months, exceptions, frequency} = item;
             if(months && !months.includes(month)) continue;
             if(exceptions && exceptions[month] === null) continue;
+            
 
             if(frequency === 'paycheck') amount = amount * payDaysThisMonth.length;
             monthAmount += amount;
@@ -258,9 +259,9 @@ const fillBudgetWithTransactions = (budget) => {
     }
     
     for (const month in budget["monthlyBudget"]) processCategories(month, budget);
-
+    const balance = false;
     const {shortTermBudget, shortTermStatus} = 
-        balanceShortTermBudget(budget["shortTermBudget"], budget["shortTermBudgetAmount"]);
+        balanceShortTermBudget(budget["shortTermBudget"], budget["shortTermBudgetAmount"], balance);
     budget["shortTermBudget"] = shortTermBudget;
     budget["shortTermStatus"] = shortTermStatus;
     delete budget["shortTermBudgetAmount"];
@@ -271,11 +272,16 @@ const fillBudgetWithTransactions = (budget) => {
 
 const balanceShortTermCategories = (shortTermBudget) => {
 
+    const totalTransactionCount = shortTermBudget.reduce((acc, {transactions}) => acc + transactions.length, 0);
+
+
     const overages = shortTermBudget.filter(i => i.over > 0).sort((a, b) => b.over - a.over);
 
     for (const overage of overages) {
+
         const amountOver = overage.over;
         const [topSurplus] = shortTermBudget.filter(i => i.remaining > 0).sort((a, b) => b.remaining - a.remaining);
+        console.log(`\n${overage.category} is over by ${amountOver}, it only had ${overage.amount} planned, but already spent ${overage.spent}`);
         if(!topSurplus) continue;
         if(topSurplus.remaining < amountOver) continue;
         const overKey = shortTermBudget.findIndex(i => i.category === overage.category);
@@ -286,6 +292,7 @@ const balanceShortTermCategories = (shortTermBudget) => {
         //handle surplus
         shortTermBudget[surplusKey].amount -= amountOver;
         shortTermBudget[surplusKey].remaining = Math.max(0, shortTermBudget[surplusKey].remaining - amountOver);
+        console.log(`\tMoved ${amountOver} from ${topSurplus.category} to ${overage.category}`);
     }
 
 
@@ -293,7 +300,11 @@ const balanceShortTermCategories = (shortTermBudget) => {
 };
 
 
-const balanceShortTermBudget = (shortTermBudget, shortTermBudgetAmount) => {
+const balanceShortTermBudget = (shortTermBudget, shortTermBudgetAmount, balance) => {
+
+    //write out the short term budget to file yml and fs
+    writeFileSync('data/budget/shortTermBudget.yml', yaml.dump(shortTermBudget));
+    
 
     shortTermBudgetAmount = parseFloat(shortTermBudgetAmount.toFixed(2));
 
@@ -301,6 +312,7 @@ const balanceShortTermBudget = (shortTermBudget, shortTermBudgetAmount) => {
         shortTermBudget[catKey] = tallyTransactions(shortTermBudget[catKey]);
     }
 
+    if(balance)
     shortTermBudget = balanceShortTermCategories(shortTermBudget);
 
     const shortTermStatus = { amount : shortTermBudgetAmount, gained:0, spent: 0, remaining: 0, over: 0};
@@ -315,6 +327,10 @@ const balanceShortTermBudget = (shortTermBudget, shortTermBudgetAmount) => {
         if (b.category === "Unbudgeted") return -1;
         return b.amount - a.amount;
     });
+
+    //remove items with no amount and no transactions
+    shortTermBudget = shortTermBudget.filter(({amount, transactions}) => amount > 0 || transactions.length > 0);
+
     return {shortTermBudget, shortTermStatus};
 }
 
@@ -411,7 +427,7 @@ function balanceBudget(budget){
 
     //rebalance short term budget with the new surplus
     const {shortTermBudget, shortTermStatus} = 
-        balanceShortTermBudget(budget["shortTermBudget"], periodSurplus);
+        balanceShortTermBudget(budget["shortTermBudget"], periodSurplus, true);
     budget["shortTermBudget"] = shortTermBudget;
     budget["shortTermStatus"] = shortTermStatus;
 
