@@ -18,21 +18,34 @@
 }
 
 .grid-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 1rem;
-    padding: 1rem;
-    grid-auto-rows: minmax(0, 1fr); /* Make grid items fill the height */
-    background-color: aliceblue;
+    gap: 1ex;
+    padding: 1ex;
     height: calc(100vh - 3rem); /* Subtract the header height */
+    width: 100vw;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-around;
+    align-content: stretch;
 }
 
-.grid-container .budget-block {
+.grid-container > .budget-block {
+    height: calc(50% - 1ex); /* Half of the viewport height */
+    width: calc(33.33vw - 1rem); /* One third of the viewport width */
     background-color: #EEEEEE;
     border-radius: 1rem;
     border: 1px solid #CCC;
+    overflow: hidden;
 }
 
+/* width under 1500px */
+@media screen and (max-width: 1200px) {
+    .grid-container > .budget-block {
+        width: calc(50% - 0.5rem); /* Half of the viewport width */
+        height: calc(33vh - 2rem); /* One third of the viewport height */
+    }
+}
+
+  
 
 .grid-container .budget-block h2{
     color: #FFF;
@@ -85,28 +98,6 @@ small.category-label {
 
 
 
-/* make responsive: under 100 2 cols, under 500 1 col */
-@media (max-width: 1500px) {
-    .grid-container {
-        grid-template-columns: 1fr 1fr;
-        height: auto;
-    }
-    .grid-container .budget-block
-    {
-        min-height: 50vw;
-    }
-}
-@media (max-width: 900px) {
-    .grid-container {
-        grid-template-columns: 1fr;
-        height: auto;
-    }
-    .grid-container .budget-block
-    {
-        min-height: 100vw;
-    }
-    
-}
 
 .month-header{
     display: flex;
