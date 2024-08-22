@@ -58,6 +58,12 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
             (_, i) => moment(budgetStart).add(i, 'months').format('YYYY-MM'));
     const [{salary, payCheckCount, payFrequencyInDays, firstPaycheckDate, exceptions: salaryExceptions}, {extra: extraIncome}] = incomeData;
 
+    const salaryExceptionsDict = salaryExceptions.reduce((acc, val) => {
+        const [key, value] = Object.entries(val)[0];
+        acc[key] = value;
+        return acc;
+    }, {}) || {};
+
     // make array of paychecks
     const payDays = Array.from({ length: payCheckCount }, (_, i) => moment(firstPaycheckDate).add(i * payFrequencyInDays, 'days').format('YYYY-MM-DD'));
     const budget = {};
@@ -79,8 +85,8 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
         budget[month] = budget[month] || {amount:0, income: 0, spent: 0, gained:0, netspent:0, remaining:0, categories: {}};
 
         // Load Income
-        budget[month].income += salaryExceptions?.[month] === null ? 0 : (salaryExceptions?.[month] || monthlySalary);
-        const extraIncomeThisMonth = extraIncome.filter(({months}) => months.includes(month)).reduce((acc, {amount}) => acc + amount, 0);
+        budget[month].income += salaryExceptionsDict?.[month] === null ? 0 : (salaryExceptionsDict?.[month] || monthlySalary);
+        const extraIncomeThisMonth = extraIncome.filter(({months}) => months.includes(month)).reduce((acc, {amount}) => acc + amount, 0) || {};
         budget[month].income += extraIncomeThisMonth;
 
         // Load Monthly Expenses
@@ -88,16 +94,28 @@ function buildMonthlyBudget(monthlyBudget, dayTodayData, incomeData, budgetStart
         for(const item of monthlyBudget){
             let {tags, label, amount, months, exceptions, frequency} = item;
             if(months && !months.includes(month)) continue;
-            if(exceptions && exceptions[month] === null) continue;
-            
+            const exceptionDict = exceptions?.reduce((acc, val) => {
+                const [key, value] = Object.entries(val)[0];
+                acc[key] = value;
+                return acc;
+            }, {}) || {};
 
-            if(frequency === 'paycheck') amount = amount * payDaysThisMonth.length;
-            monthAmount += amount;
+            const isExceptional = !!exceptionDict[month];
+
             
+            const instanceCount = frequency === 'paycheck' ? payDaysThisMonth.length : 1;
+
             budget[month].categories[label] = budget[month].categories[label] || {amount: 0, remaining: 0, transactions: []};
-            const exceptionAmount = exceptions?.[month] === null ? 0 : (exceptions?.[month] || amount);
-            budget[month].categories[label].amount += exceptionAmount;
-            budget[month].categories[label].remaining += exceptionAmount;  // Initialize remaining with the amount
+
+            const amountToAdd = (exceptions?.[month] === null ? 0 : (exceptions?.[month] || amount)) * instanceCount;
+            budget[month].categories[label].amount += amountToAdd;
+            budget[month].categories[label].remaining += amountToAdd;
+            
+            if(isExceptional) 
+                    console.log(`${month}\t${label}\t${amountToAdd}\t${instanceCount}\t${JSON.stringify(exceptions||[])}`);
+            monthAmount += amountToAdd;
+
+
         }
         budget[month].paychecks = payDaysThisMonth.map((date, i) => ({date, amount: parseFloat(payAmountsThisMonth[i])}));
         budget[month].amount = monthAmount;
@@ -244,6 +262,7 @@ const fillBudgetWithTransactions = (budget) => {
         
         ).toFixed(2));
         const sumofPaychecks = month.paychecks.reduce((acc, {amount}) => acc + amount, 0);
+        console.log({month,sumofPaychecks});
         const monthTopLine = parseFloat((month.income || sumofPaychecks).toFixed(2));
         const surplus = parseFloat((
             monthTopLine - monthNetSpent - dayToDayNetspent

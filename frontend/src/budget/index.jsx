@@ -37,21 +37,6 @@ export function BudgetViewer({ budget }) {
   const [drawerContent, setDrawerContent] = useState(null);
   const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
 
-  useEffect(() => {
-      const handleResize = () => {
-          const budgetBlock = document.querySelector('.budget-block-content');
-          if (budgetBlock) {
-              setBudgetBlockDimensions({
-                  width: budgetBlock.clientWidth,
-                  height: budgetBlock.clientHeight
-              });
-          }
-      };
-      handleResize();
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
 
 
 return (
