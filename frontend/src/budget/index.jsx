@@ -50,10 +50,10 @@ return (
       </Drawer>
       <div className="grid-container">
         <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>
+        <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
         {/* 
         <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
         <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-        <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
         <BudgetAccounts setDrawerContent={setDrawerContent} budget={budget}/>
         <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
         */}

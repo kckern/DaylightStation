@@ -50,7 +50,8 @@ const futureMonthlyBudget = ({month, config}) => {
     const extraIncomeTransactions = extra.reduce((acc, {amount, dates, description}) => {
         const dateIsInMonth = dates.map(date => moment(date).format('YYYY-MM')).includes(month);
         if(!dateIsInMonth) return acc;
-        return [...acc, {month, amount, description}];
+        const date = `${month}-01`;
+        return [...acc, {date, amount, description}];
     }, []);
     const extraIncomeAmount = extraIncomeTransactions.reduce((acc, transaction) => acc + transaction.amount, 0);
 
@@ -59,7 +60,7 @@ const futureMonthlyBudget = ({month, config}) => {
     const incomeTransactions = [...paychecks, ...extraIncomeTransactions].sort((a, b) => moment(a.date).diff(moment(b.date)));
 
     // SPENDING CATEGORIES
-    const categories = monthly.reduce((acc, {label, amount, frequency, months, exceptions}) => {
+    const monthlyCategories = monthly.reduce((acc, {label, amount, frequency, months, exceptions}) => {
         const exceptionalItem = exceptions?.find(exception => (exception[moment(month).format('YYYY-MM')]))
         const exceptionalAmount = exceptionalItem ? exceptionalItem[moment(month).format('YYYY-MM')] : null;
         amount = exceptionalAmount !== null ? exceptionalAmount : amount;
@@ -72,7 +73,7 @@ const futureMonthlyBudget = ({month, config}) => {
         return acc;
     }, {});
 
-    const categorySpending = Object.values(categories).reduce((acc, {amount}) => acc + amount, 0);
+    const categorySpending = Object.values(monthlyCategories).reduce((acc, {amount}) => acc + amount, 0);
     const dayToDaySpending = dayToDay.amount;
     const monthlySpending  = parseFloat((categorySpending + dayToDaySpending).toFixed(2));
     const surplus = parseFloat( (income - monthlySpending - dayToDaySpending).toFixed(2) );
@@ -80,7 +81,7 @@ const futureMonthlyBudget = ({month, config}) => {
     return {
         income,
         incomeTransactions,
-        categories,
+        monthlyCategories,
         monthlySpending,
         dayToDaySpending,
         surplus
@@ -109,7 +110,7 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
         else if(bucket === 'transfer') transferTransactions.push(txn);
         else if(bucket === 'monthly'){
             if(!monthlyCategories[label]) monthlyCategories[label] = {amount: 0, transactions: []};
-            monthlyCategories[label].amount += txn.amount;
+            monthlyCategories[label].amount += txn.expenseAmount;
             monthlyCategories[label].transactions.push(txn);
         }
         else if(bucket === 'shortTerm'){
@@ -147,7 +148,7 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
 
 export const dayToDayBudgetReducer = (acc, month, monthlyBudget,config) => {
     const transactions = monthlyBudget[month].dayToDayTransactions || [];
-    if(!transactions.length) return acc;
+    if(!transactions.length) return {...acc, [month]: {spending: 0, budget: config.dayToDay.amount, balance: config.dayToDay.amount, transactions: [], dailyBalances: {}}};
     acc[month] = {spending: 0, budget: 0, balance:0, transactions};
     acc[month].spending = parseFloat( (transactions.reduce((acc, txn) => acc + txn.amount, 0)).toFixed(2) );
     acc[month].budget = config.dayToDay.amount;
