@@ -59,17 +59,21 @@ const futureMonthlyBudget = ({month, config}) => {
     const income = payCheckIncomeAmount + extraIncomeAmount;
     const incomeTransactions = [...paychecks, ...extraIncomeTransactions].sort((a, b) => moment(a.date).diff(moment(b.date)));
 
-    // SPENDING CATEGORIES
     const monthlyCategories = monthly.reduce((acc, {label, amount, frequency, months, exceptions}) => {
-        const exceptionalItem = exceptions?.find(exception => (exception[moment(month).format('YYYY-MM')]))
+        const exceptionalItem = exceptions?.find(exception => (exception[moment(month).format('YYYY-MM')]));
         const exceptionalAmount = exceptionalItem ? exceptionalItem[moment(month).format('YYYY-MM')] : null;
         amount = exceptionalAmount !== null ? exceptionalAmount : amount;
         amount = months ? months?.includes(moment(month).format('YYYY-MM')) ? amount : 0 : amount;
-       
+    
         const multiplier = frequency === 'paycheck' ? paycheckCountThisMonth : 1;
         const finalAmount = amount * multiplier;
-        if(!finalAmount) return acc;
-        acc[label] = {amount: finalAmount};
+        if (!finalAmount) return acc;
+    
+        if (acc[label]) {
+            acc[label].amount += finalAmount;
+        } else {
+            acc[label] = { amount: finalAmount };
+        }
         return acc;
     }, {});
 
@@ -183,24 +187,35 @@ export const transferTransactionsReducer = (acc, month, monthlyBudget) => {
     delete monthlyBudget[month].transferTransactions;
     return acc;
 }
-export const shortTermBudgetReducer = (acc, month, monthlyBudget,config) => {
-    const {shortTermTransactions} = monthlyBudget[month];
-    if(!Array.isArray(shortTermTransactions) || !shortTermTransactions.length) return acc;
+export const shortTermBudgetReducer = (acc, month, monthlyBudget, config) => {
+    const {shortTermTransactions, amount} = monthlyBudget[month];
+    if(!amount && !Array.isArray(shortTermTransactions) || !shortTermTransactions.length) return acc;
     for(const txn of shortTermTransactions){
         const {label} = findBucket(config, txn);
         if(!acc[label]) acc[label] = {spending: 0, transactions: []};
-        acc[label].spending = parseFloat((acc[label].spending + txn.expenseAmount).toFixed(2));
-        acc[label].transactions.push(txn);
+        const isExpense = txn.expenseAmount > 0;
+        acc[label][isExpense ? 'debits' : 'credits'] = acc[label][isExpense ? 'debits' : 'credits'] || 0;
+        acc[label][isExpense ? 'debits' : 'credits'] += Math.abs(txn.amount);
+        acc[label].transactions.push(txn);       
     }
-
-    const allLabels = Object.keys(acc);
+    
+    const allLabels = config.shortTerm.map(item => item.label);
     for(const label of allLabels){
-        const {spending, transactions} = acc[label];
-        const budget = config.shortTerm.find(item => item.label === label)?.amount || 0;
-        const balance = parseFloat((budget - spending).toFixed(2));
-        acc[label] = {budget, spending, balance, transactions};
-    }
+        const {debits, credits, transactions} = acc[label] || {debits:0, credits:0, transactions: []};
 
+        const budget = parseFloat((config.shortTerm.find(item => item.label === label)?.amount || 0).toFixed(2));
+        const spending = parseFloat(((debits||0) - (credits||0) ).toFixed(2));
+        const balance = parseFloat((budget - spending).toFixed(2));
+        acc[label] = {
+          budget: budget || 0,
+          spending: spending || 0,
+          debits: parseFloat((debits || 0).toFixed(2) || 0),
+          credits: parseFloat((credits || 0).toFixed(2)),
+          balance: balance || 0,
+          transactions: transactions || []
+        };
+
+    }
     delete monthlyBudget[month].shortTermTransactions;
     return acc;
 }
