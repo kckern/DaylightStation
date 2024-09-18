@@ -232,14 +232,15 @@ tr.income .amount-col{
     border-left: 4px solid #666!important;
 }
 .overviewTable  tr:not(.sum) td.surplus.negative{
-    background-color: #f79986;
+    background-color: #9c2c34;
     border-color: #666;
-    color: #000;
+    color: #FFF;
+    font-weight: 800;
 }
 .overviewTable  tr:not(.sum) td.surplus.positive{
-    background-color: #a1ccaf;
+    background-color: #b1b1b1;
     border-color: #666;
-    color: #000;
+    color: #444;
 }
 
 .overviewTable  tr.past{

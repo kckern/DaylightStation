@@ -42,7 +42,6 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
              transactions
         };
     });
-    console.log(processedData);
     const series = Object.keys(colors).map((key) => {
       
       const data = processedData.map((item) => {
@@ -68,7 +67,6 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
     }
     );
 
-    console.log(series);
     const options = {
         chart: {
             type: 'bar',
@@ -155,7 +153,9 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
     }
 
     const gatherTransactions = (key) => {
-        const alltransactions = shortTermBudget.reduce((acc, item) => {
+        const shortTermLabels = Object.keys(shortTermBudget);
+        const alltransactions = shortTermLabels.reduce((acc, label) => {
+            const item = shortTermBudget[label];
             return acc.concat(item.transactions);
         }, []).sort((b, a) => a.amount - b.amount);
         if(key === 'budget') return alltransactions;
@@ -176,11 +176,11 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
             onClick={() => handleStatusClick('budget')}
             className="amount">{formatAsCurrency(shortTermStatus.budget)}</span> +
             <span onClick={() => handleStatusClick('gained')}
-            className="gained"> {formatAsCurrency(shortTermStatus.gained)}</span> -
+            className="gained"> {formatAsCurrency(shortTermStatus.credits)}</span> -
             <span 
             onClick={() => handleStatusClick('spent')}
 
-            className="spent"> {formatAsCurrency(shortTermStatus.spending)}</span> =
+            className="spent"> {formatAsCurrency(shortTermStatus.debits)}</span> =
             <span className="remaining"> {formatAsCurrency(shortTermStatus.balance)}</span>
         </span>
     );
