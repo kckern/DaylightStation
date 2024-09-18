@@ -68,6 +68,7 @@
     border-bottom-left-radius: 1rem;
     border-bottom-right-radius: 1rem;
     width: 100%;
+    display: relative;
 }
 
 
@@ -189,18 +190,25 @@ tr.income .amount-col{
     color: black;
 }
 
+.budget-block .budget-block-content >  div:nth-child(2)
+{
+    height: calc(100% - 2.5rem);
+}
+
 .overviewTable
 {
-    width: calc(100% - 4px);
+    width: calc(100% + 2px);
     border-collapse: collapse;
-    height: calc(100% - 4px);
-    margin: 2px;
+    height: calc(100% + 2px);
+    margin: -1px;
 }
 .overviewTable td
 {
     padding: 0 1ex;
     border: 1px solid #BBB;
     text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
 }.overviewTable td:hover
 {
     filter: brightness(1.5);

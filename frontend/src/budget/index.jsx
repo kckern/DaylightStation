@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Button, MantineProvider, TabsPanel } from '@mantine/core';
-import { BudgetOverview, BudgetMortgage, BudgetRetirement} from './blocks.jsx';
+import { BudgetAccounts, BudgetMortgage, BudgetOverview} from './blocks.jsx';
 import { BudgetMonthOverMonth } from './blocks/monthly.jsx';
 import { BudgetYearly } from './blocks/yearly.jsx';
 import { BudgetBurnDownChart } from './blocks/daytoday.jsx';
@@ -49,14 +49,15 @@ return (
         {drawerContent}
       </Drawer>
       <div className="grid-container">
-          <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-
-          <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-          <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-          <BudgetRetirement setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
-        </div>
+        <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>
+        {/* 
+        <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+        <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+        <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+        <BudgetAccounts setDrawerContent={setDrawerContent} budget={budget}/>
+        <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
+        */}
+      </div>
     </div>
   );
 
