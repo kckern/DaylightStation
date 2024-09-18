@@ -164,7 +164,7 @@ export function formatAsCurrency(value, showcents=true) {
   
       return (
         <div className="budget-block">
-          <h2>Regular Expenses</h2>
+          <h2>Monthly Expenses</h2>
           <div className="budget-block-content">
             {monthHeader}
             <HighchartsReact
