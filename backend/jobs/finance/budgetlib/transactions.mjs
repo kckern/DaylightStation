@@ -3,7 +3,7 @@ export const findBucket = (buckets, transaction) => {
     const incomeTags = buckets.income.tags;
     //Monthly
     const monthTagDict = buckets.monthly.reduce((acc, {tags,label}) => {
-        tags.forEach(tag => {acc[tag] = label; acc[label] = label;});
+        tags?.forEach(tag => {acc[tag] = label; acc[label] = label;});
         return acc;
     }, {});
     const monthTags = Object.keys(monthTagDict);
