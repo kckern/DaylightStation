@@ -2,7 +2,10 @@ import React, { useEffect, useState } from "react";
 import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
-import { formatAsCurrency } from "./monthly";
+import { formatAsCurrency } from "../blocks";
+
+
+
 
 
 
@@ -11,9 +14,9 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
     const budgetKeys = Object.keys(budget);
     const [activeBudget] = budgetKeys;
 
-    const shortTermBudget = budget[activeBudget].shortTermBudget;
+    const shortTermBudget = budget[activeBudget].shortTermBuckets;
     const shortTermStatus = budget[activeBudget].shortTermStatus;
-
+    const buckets = Object.keys(shortTermBudget);
 
     const colors = {
         spent: "#0077b6",
@@ -25,22 +28,21 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
 
 
     // Ensure all data points are valid
-    const processedData = shortTermBudget.map((item) => {
-        const { amount, spent, remaining, planned, over, transactions, category } = item;
-
+    const processedData = buckets.map((label) => {
+        const item = shortTermBudget[label];
+        const { budget, spending, balance, transactions } = item;
         return {
-            category,
-            amount,
-             spent,
-             planned,
-             remaining,
-             over,
+             category: label,
+             amount: budget,
+             spent: Math.max(0,spending),
+             planned: 0, //todo integrate planned
+             remaining: Math.max(0,balance),
+             over: balance < 0 ? Math.abs(balance) : 0,
              count: transactions.length,
              transactions
         };
     });
-
-
+    console.log(processedData);
     const series = Object.keys(colors).map((key) => {
       
       const data = processedData.map((item) => {
@@ -70,8 +72,6 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
     const options = {
         chart: {
             type: 'bar',
-            height: budgetBlockDimensions.height - 50,
-            width: budgetBlockDimensions.width,
             backgroundColor: 'rgba(0,0,0,0)',
             animation: false,
         },
@@ -174,14 +174,14 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
         <span className="status-badge">
             <span 
             onClick={() => handleStatusClick('budget')}
-            className="amount">${Math.round(shortTermStatus.amount).toLocaleString()}</span> +
+            className="amount">{formatAsCurrency(shortTermStatus.budget)}</span> +
             <span onClick={() => handleStatusClick('gained')}
-            className="gained"> ${Math.round(shortTermStatus.gained).toLocaleString()}</span> −
+            className="gained"> {formatAsCurrency(shortTermStatus.gained)}</span> -
             <span 
             onClick={() => handleStatusClick('spent')}
 
-            className="spent"> ${Math.round(shortTermStatus.spent).toLocaleString()}</span> = 
-            <span className="remaining">${Math.round(shortTermStatus.remaining).toLocaleString()}</span>
+            className="spent"> {formatAsCurrency(shortTermStatus.spending)}</span> =
+            <span className="remaining"> {formatAsCurrency(shortTermStatus.balance)}</span>
         </span>
     );
 

@@ -209,14 +209,40 @@ tr.income .amount-col{
     text-align: right;
     white-space: nowrap;
     overflow: hidden;
-}.overviewTable td:hover
+}
+.overviewTable tr:not(.sum) td:not(.surplus):hover
 {
     filter: brightness(1.5);
     background-color: #112d3c;
     color: #FFF;
 }
 
-.overviewTable tr.past{
+.overviewTable tr.sum td, .overviewTable td.surplus
+{
+    cursor: default!important;
+}
+
+.overviewTable tr.sum td{
+    border-top: 4px solid #AAA;
+    background-color: #333;
+    color: #EEE;
+    font-weight: 800;
+}
+.overviewTable  td.surplus{
+    border-left: 4px solid #666!important;
+}
+.overviewTable  tr:not(.sum) td.surplus.negative{
+    background-color: #f79986;
+    border-color: #666;
+    color: #000;
+}
+.overviewTable  tr:not(.sum) td.surplus.positive{
+    background-color: #a1ccaf;
+    border-color: #666;
+    color: #000;
+}
+
+.overviewTable  tr.past{
     background-color: #0077b6;
     color: #FFFFFFEE;
 }
