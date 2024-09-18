@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { URLSearchParams } from 'url';
 import yaml from 'js-yaml';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import isJSON from 'is-json';
 import { askGPT } from './gpt.js';
 import moment from 'moment';
@@ -64,6 +64,38 @@ export const getTransactions = async ({startDate, endDate,  accounts, tagName}) 
 	return transactions;
 }
 
+//delete if matches string in account ID
+export const deleteTransactions = async ({accountId, matchString, startDate, endDate}) => {
+
+    //delete backup file: data/budget/deletedTransactions.yml
+    //load from yaml file
+    const deletedTransactions = (() => { try { return yaml.load(readFileSync('./data/budget/deletedTransactions.yml', 'utf8')) || []; } catch { return {}; } })();
+    const transactions = await getTransactions({startDate, endDate, accounts: [accountId]});
+    const transactionsToDelete = transactions.filter(txn => txn.description.includes(matchString));
+    console.log(`Deleting ${transactionsToDelete.length} transactions...`);
+    for(let txn of transactionsToDelete) {
+        const { id, description, amount, date } = txn;
+        const r = await deleteTransaction(id);
+        console.log(`Deleted: ${date} - ${id} - ${description} - ${amount}`);
+        deletedTransactions[id] = { description, amount, date , accountId};
+    }
+    //save to yaml file
+    const deletedTransactionsYml = yaml.dump(deletedTransactions);
+    writeFileSync('./data/budget/deletedTransactions.yml', deletedTransactionsYml);
+
+}
+
+export const deleteTransaction = async (id) => {
+    try{
+        const token = await getToken();
+        const url = `https://www.buxfer.com/api/transaction_delete?token=${token}`;
+        const params = { id };
+        const {data: { response } } = await axios.post(url, params);
+        return response;
+    }catch(e){
+        console.log({id, error: e.message});
+    }
+}
 
 
 
@@ -112,3 +144,17 @@ export const updateTransacton = async (id, description, tags, memo) =>{
     }
 }
 
+export const addTransaction = async ({ accountId, amount, date, description, tags, type, status, toAccountId, fromAccountId }) => {
+    try {
+        const token = await getToken();
+        const url = `https://www.buxfer.com/api/transaction_add?token=${token}`;
+        const tagsString = Array.isArray(tags) ? tags.join(',') : tags;
+        const params = { accountId, amount, date, description, tags: tagsString, type, status };
+        if(toAccountId) params['toAccountId'] = toAccountId;
+        if(fromAccountId) params['fromAccountId'] = fromAccountId;
+        const { data: { response } } = await axios.post(url, params);
+        return response;
+    } catch (e) {
+        console.log({ account, amount, date, description, tags, type, status, error: e.message });
+    }
+}

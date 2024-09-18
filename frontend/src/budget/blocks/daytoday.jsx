@@ -181,6 +181,7 @@ export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimen
             <div className="budget-block-content">
                 {monthHeader}
                 <HighchartsReact
+                    className="budget-burn-down-chart"
                     highcharts={Highcharts}
                     options={{
                         ...options,
