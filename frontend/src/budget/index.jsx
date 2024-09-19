@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Button, MantineProvider, TabsPanel } from '@mantine/core';
-import { BudgetAccounts, BudgetMortgage} from './blocks.jsx';
-import { BudgetOverview } from './blocks/monthly.jsx';
-import { BudgetYearly } from './blocks/yearly.jsx';
-import { BudgetBurnDownChart } from './blocks/daytoday.jsx';
+import { BudgetHoldings, BudgetGoals, BudgetMortgage} from './blocks.jsx';
+import { BudgetMonthly } from './blocks/monthly.jsx';
+import { BudgetShortTerm } from './blocks/yearly.jsx';
+import { BudgetDayToDay } from './blocks/daytoday.jsx';
 import { Drawer } from '@mantine/core';
 import 'react-modern-drawer/dist/index.css'
 import "./budget.css"
@@ -43,13 +43,13 @@ export function BudgetViewer({ budget }) {
           {drawerContent?.jsx || drawerContent}
         </Drawer>
         <div className="grid-container">
-          <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-          <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+          <BudgetMonthly setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetShortTerm setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+          <BudgetDayToDay setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
     
-          <BudgetAccounts setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetHoldings setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetGoals setDrawerContent={setDrawerContent} budget={budget}/>
         
         </div>
       </div>

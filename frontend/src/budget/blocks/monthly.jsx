@@ -31,8 +31,8 @@ export const MonthTabs = ({monthKeys, activeMonth, setActiveMonth}) => {
   );
 };
 
-  // BudgetOverview.jsx
-  export function BudgetOverview({ setDrawerContent, budget }) {
+  // BudgetMonthly.jsx
+  export function BudgetMonthly({ setDrawerContent, budget }) {
     return (
       <div className="budget-block">
         <h2>Monthly Operations</h2>

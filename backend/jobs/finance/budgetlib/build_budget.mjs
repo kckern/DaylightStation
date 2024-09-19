@@ -21,8 +21,14 @@ export const buildBudget = (config, transactions)=>
   
     const periodSurplus = Object.values(monthlyBudget).reduce((acc, {surplus}) => acc + surplus, 0);
     const shortTermBudget_pre =  Object.values(shortTermBuckets).reduce((acc, {budget}) => acc + (budget||0), 0);
-    shortTermBuckets["Unbudgeted"]['budget'] = parseFloat((periodSurplus - shortTermBudget_pre).toFixed(2));
-    shortTermBuckets["Unbudgeted"]['balance'] = parseFloat((shortTermBuckets["Unbudgeted"]['budget'] - shortTermBuckets["Unbudgeted"]['spending']).toFixed(2));
+
+    const unBudgetedAmount = parseFloat((periodSurplus - shortTermBudget_pre).toFixed(2));
+    if(unBudgetedAmount > 0){
+        shortTermBuckets["Unbudgeted"] = shortTermBuckets["Unbudgeted"] || { budget: 0, spending: 0, balance: 0, debits: 0, credits: 0, transactions: [] };
+        shortTermBuckets["Unbudgeted"]['budget']    = parseFloat((periodSurplus - shortTermBudget_pre).toFixed(2));
+        shortTermBuckets["Unbudgeted"]['balance']   = parseFloat((shortTermBuckets["Unbudgeted"]['budget'] - shortTermBuckets["Unbudgeted"]['spending']).toFixed(2));
+    }
+
     const shortTermBudget =  Object.values(shortTermBuckets).reduce((acc, {budget}) => acc + budget, 0);
     const shortTermSpending = Object.values(shortTermBuckets).reduce((acc, {spending}) => acc + spending, 0);
     const shortTermDebits = Object.values(shortTermBuckets).reduce((acc, {debits}) => acc + (debits||0), 0);
