@@ -44,19 +44,18 @@ return (
       <header>
         <h1>Budget</h1>
       </header>
-      <Drawer opened={!!drawerContent} onClose={() => setDrawerContent(null)} title="Authentication" size="90vw" position='right' offset={8}>
-        <Button onClick={() => setDrawerContent(null)}>Close</Button>
-        {drawerContent}
+      <Drawer opened={!!drawerContent} onClose={() => setDrawerContent(null)} title={drawerContent?.meta?.title} size="90vw" position='right' offset={8} className='txn-drawer'>
+        {drawerContent?.jsx || drawerContent}
       </Drawer>
       <div className="grid-container">
         <BudgetOverview setDrawerContent={setDrawerContent} budget={budget}/>
         <BudgetYearly setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-        {/* 
-        <BudgetMonthOverMonth setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
         <BudgetBurnDownChart setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
+   
         <BudgetAccounts setDrawerContent={setDrawerContent} budget={budget}/>
         <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
-        */}
+        <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
+       
       </div>
     </div>
   );

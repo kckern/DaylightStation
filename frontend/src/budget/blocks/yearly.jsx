@@ -3,6 +3,7 @@ import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
+import moment from "moment";
 
 
 
@@ -13,9 +14,11 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
 
     const budgetKeys = Object.keys(budget);
     const [activeBudget] = budgetKeys;
+    
 
     const shortTermBudget = budget[activeBudget].shortTermBuckets;
     const shortTermStatus = budget[activeBudget].shortTermStatus;
+    const {budgetStart, budgetEnd} = budget[activeBudget];
     const buckets = Object.keys(shortTermBudget);
 
     const colors = {
@@ -23,25 +26,50 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
         planned: "#90e0ef",
         remaining: "#AAAAAA"
       };
-
-    const currentTime = 0.6;
-
-
+    
+    const weekCount = moment(budgetEnd).diff(moment(budgetStart), 'weeks');
+    const currentWeek = moment().diff(moment(budgetStart), 'weeks');
+    const weeksLeft = weekCount - currentWeek;
+    const currentTime = (currentWeek / weekCount);
+      
     // Ensure all data points are valid
     const processedData = buckets.map((label) => {
         const item = shortTermBudget[label];
-        const { budget, spending, balance, transactions } = item;
+        const { budget, spending, credits, debits, balance, transactions } = item;
+
+        const over = balance < 0 ? Math.abs(balance) : 0;
+        const remaining = Math.max(0, balance);
+        const extendedBudget = budget + credits;
+        const perc = budget > 0 ? Math.min(100, Math.round((debits / extendedBudget) * 100)) : 0;
+
         return {
              category: label,
              amount: budget,
-             spent: Math.max(0,spending),
+             percentage: perc,
+             spent: debits,
+             gained: credits,
              planned: 0, //todo integrate planned
-             remaining: Math.max(0,balance),
-             over: balance < 0 ? Math.abs(balance) : 0,
+             remaining,
+             over,
+             extendedBudget,
+             rateRemaining: parseFloat((remaining / weeksLeft).toFixed(0)),
              count: transactions.length,
              transactions
         };
+
+    }).sort((a, b) => {
+
+        //sort by percentage
+        if (a.extendedBudget > b.extendedBudget) return -1;
+        if (a.extendedBudget < b.extendedBudget) return 1;
+        return 0;
+
+
     });
+
+        console.log('processedData', processedData);
+
+
     const series = Object.keys(colors).map((key) => {
       
       const data = processedData.map((item) => {
@@ -78,7 +106,8 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
             categories: processedData.map(item => `
                 <div style="margin:0; padding:0; display:flex; flex-direction:column; align-items:center; justify-content:center">
                 <b class="category-label">${item.category}</b>
-                <br/><small class="category-label" style="color:#AAA; font-size:0.7rem">${formatAsCurrency(item.amount)}</small>
+                <br/><small class="category-label" style="color:#AAA; font-size:0.7rem">${formatAsCurrency(item.amount)}${item.gained > 0 ? ` <b class='green' style="color:#759c82"  >+ ${formatAsCurrency(item.gained)}` : ''}</b>
+                </small>
                 </div>`),
             reversed: true
         },
@@ -103,8 +132,8 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
             shared: true,
             formatter: function () {
                 const index = this.points[0].point.index;
-                const { category, count } = processedData[index];
-                return `<b>${category}</b><br/>${count} transactions`;
+                const { category, count, percentage, rateRemaining } = processedData[index];
+                return `<b>${category}</b><br/>${count} transactions<br/>${100-(percentage||0)}% remaining<br/>$${rateRemaining}/week`;
             }
         },
         plotOptions: {
@@ -136,7 +165,8 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
                 events: {
                     click: function (event) {
                         const category = processedData[event.point.index];
-                        setDrawerContent(<Drawer  header={category.category} transactions={category.transactions}  setDrawerContent={setDrawerContent} /> );
+                        const content = <Drawer  header={category.category} transactions={category.transactions}  setDrawerContent={setDrawerContent} />;
+                        setDrawerContent({jsx: content, meta: {title: category.category}});
                     }
                 }
             }
@@ -167,7 +197,7 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
         const transactions = gatherTransactions(key);
         const header = key === 'budget' ? 'Short Term Budget' : key === 'spent' ? 'Spent' : 'Gained';
         const content = <Drawer setDrawerContent={setDrawerContent} header={header} transactions={transactions} />;
-        setDrawerContent(content);
+        setDrawerContent({jsx: content, meta: {title: header}});
     }
 
     const statusBadge = (
