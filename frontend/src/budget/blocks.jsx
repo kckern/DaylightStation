@@ -17,7 +17,7 @@ export const formatAsCurrency = (value) => {
     const budgets = Object.keys(budget);
     const activeBudget = budget[budgets[0]];
     
-    const Transfers = <Drawer setDrawerContent={setDrawerContent} header="Transfers" transactions={activeBudget.transfers.transactions} />;
+    const Transfers = <Drawer setDrawerContent={setDrawerContent} header="Transfers" transactions={activeBudget.transferTransactions.transactions} />;
 
     return (
       <div className="budget-block">
@@ -130,9 +130,11 @@ function BudgetTable({ setDrawerContent, budget }) {
 
   const handleCellClick = (month, key) => {
     const transactions = loadTransactions(month, key).sort((a, b) => b.amount - a.amount);
+    const monthString = moment(month, "YYYY-MM").format("MMM ‘YY");
+    const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
     const header = key === "income" ? "Income" : key === "fixed" ? "Fixed Expenses" : "Day-to-Day Spending";
     const content = <Drawer setDrawerContent={setDrawerContent} header={header} transactions={transactions} />;
-    setDrawerContent(content);
+    setDrawerContent({ jsx: content, meta: { title: `${isFuture ? "Anticipated" : ""}  ${header} for ${monthString}` } });
   }
 
   const rows = (() => {

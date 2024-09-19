@@ -157,7 +157,8 @@ export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimen
             events: {
                 click: function (event) {
                     const header = `Day-to-day transactions for ${moment(activeMonth).format("MMMM YYYY")}`;
-                    setDrawerContent(<Drawer setDrawerContent={setDrawerContent} header={header} transactions={activeMonthTransactions} highlightDate={event.point.category} />);
+                    const content = <Drawer setDrawerContent={setDrawerContent} header={header} transactions={activeMonthTransactions} highlightDate={event.point.category} />;
+                    setDrawerContent({ jsx: content, meta: { title: header } });
                 }
             }
         }, {
