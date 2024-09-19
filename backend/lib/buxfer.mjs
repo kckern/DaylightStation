@@ -37,11 +37,11 @@ export const getTransactions = async ({startDate, endDate,  accounts, tagName}) 
 	const command = 'transactions';
 	let transactions = [];
 	for (let account of accounts) {
-        console.log(`Getting transactions for account: ${account}`);
+        //console.log(`Getting transactions for account: ${account}`);
 		let page = 1;
 		let hasMore = true;
 		while (hasMore) {
-            console.log(`Getting transactions for account: ${account} page: ${page}`);
+            //console.log(`Getting transactions for account: ${account} page: ${page}`);
 			const params ={ page, accountName: account, startDate, endDate };
             if(tagName) params.tagName = tagName;
 			const url = `https://www.buxfer.com/api/${command}?token=${token}&${new URLSearchParams(params).toString()}`;
@@ -63,6 +63,7 @@ export const getTransactions = async ({startDate, endDate,  accounts, tagName}) 
 
 	return transactions;
 }
+
 
 //delete if matches string in account ID
 export const deleteTransactions = async ({accountId, matchString, startDate, endDate}) => {
@@ -100,33 +101,48 @@ export const deleteTransaction = async (id) => {
 
 
 
-export const processTransactions = async () => {
+export const processTransactions = async ({startDate, endDate, accounts}) => {
 
-    const endDate = moment().format('YYYY-MM-DD');
-    const startDate = moment(endDate).subtract(1, 'months').format('YYYY-MM-DD');
-    const transactions = await getTransactions({startDate, endDate});
+    const transactions = await getTransactions({startDate, endDate, accounts});
 
     const hasNoTag = (txn) => !txn.tagNames.length;
     const hasRawDescription = (txn) => /(^Direct|Pwp|xx|as of|\*|（|Privacycom)/ig.test(txn.description); //TODO: parameterize this
 
     const txn_to_process = transactions.filter(txn => hasNoTag(txn) || hasRawDescription(txn));
-    console.log(`Processing ${txn_to_process.length} transactions to categorize...`);
+   // console.log(`Processing ${txn_to_process.length} transactions to categorize...`);
     txn_to_process.forEach(txn => console.log(`${txn.date} - ${txn.description}`));
     const {validTags, chat} = yaml.load(readFileSync('./data/budget/gpt.yml', 'utf8'));
     chat[0].content =  chat[0].content.replace("__VALID_TAGS__", JSON.stringify(validTags));
 
     for(let txn of txn_to_process) {
         const { description, id, tags,date  } = txn;
+        const index = transactions.findIndex(t => t.id === id);
         const gpt_input = [...chat, {role:"user", content: description}];
-        const json_string = await askGPT(gpt_input, 'gpt-3.5-turbo', { response_format: { type: "json_object" }});
+        const json_string = await askGPT(gpt_input, 'gpt-4o-2024-08-06', { response_format: { type: "json_object" }});
         const is_json = isJSON(json_string);
         const { category, friendlyName, memo } = is_json ? JSON.parse(json_string) : { };
         if(friendlyName && validTags.includes(category)) {
             console.log(`${date} - ${id} - ${friendlyName} - ${category}`);
             const r = await updateTransacton(id, friendlyName, category, memo);
+            transactions[index].tagNames = [category];
+            transactions[index].description = friendlyName;
         }else console.log(`\x1b[31mFailed to categorize: ${date} - ${id} - ${description}\x1b[0m`);
     }
     //TODO Delete comp transactions from fidility
+    const deleteIds = transactions
+      .filter(txn => 
+        (txn.description.includes('FDIC') || txn.description.includes('Redemption')) && 
+        txn.accountId === 732539
+      )
+      .map(txn => txn.id);    
+    
+      for(let id of deleteIds) {
+        const r = await deleteTransaction(id);
+        console.log(`Deleted: ${id}`);
+    }
+    const saveMe =  transactions.filter(txn => !deleteIds.includes(txn.id));
+    //console.log(saveMe);
+    return saveMe;
 }
 
 export const updateTransacton = async (id, description, tags, memo) =>{

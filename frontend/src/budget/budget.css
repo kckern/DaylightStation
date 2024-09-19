@@ -297,3 +297,33 @@ tr.income .amount-col{
     border-radius: 1ex;
     background-color: #EEE;
 }
+
+@-webkit-keyframes spin {
+    from {
+        -webkit-transform: rotate(0deg);
+        transform: rotate(0deg);
+    }
+    to {
+        -webkit-transform: rotate(360deg);
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+button.reload img {
+    width: 2.7rem;
+}
+button.reload{
+    cursor: pointer;
+    font-size: 2rem;
+    margin-left: -2.5rem;
+    width: 3.5rem;
+}

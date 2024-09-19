@@ -8,10 +8,18 @@ import { Drawer } from '@mantine/core';
 import 'react-modern-drawer/dist/index.css'
 import "./budget.css"
 import '@mantine/core/styles.css';
+import spinner from '../assets/icons/spinner.svg';
 
 const fetchBudget = async () => {
   //get from http://localhost:3112/data/budget
   const response = await fetch('http://localhost:3112/data/budget');
+  const data = await response.json();
+  return data;
+}
+
+const reloadBudget = async () => {
+  //get from http://localhost:3112/data/budget
+  const response = await fetch('http://localhost:3112/harvest/budget');
   const data = await response.json();
   return data;
 }
@@ -24,20 +32,35 @@ export default function App() {
   }, []);
   return (
     <MantineProvider>
-      {budgetData ? <BudgetViewer budget={budgetData} /> : <div>Loading...</div>}
+      {budgetData ? <BudgetViewer budget={budgetData} setBudgetData={setBudgetData} /> : <div>Loading...</div>}
     </MantineProvider>
   );
 }
 
+function ReloadButton({setBudgetData}) {
 
-export function BudgetViewer({ budget }) {
+  const [reloading, setReloading] = useState(false);
+  const handleClick = async () => {
+    setReloading(true);
+    await reloadBudget();
+    const newData = await fetchBudget()
+    setBudgetData(newData);
+    setReloading(false);
+  }
+  return <button
+    style={{float: 'right'}} className={reloading ? 'reload reloading' : 'reload'} onClick={handleClick}>{reloading  ? <img src={spinner} alt="loading" /> : '🔄'}</button>
+
+}
+
+export function BudgetViewer({ budget, setBudgetData }) {
 
   const [drawerContent, setDrawerContent] = useState(null);
   const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
   return (
       <div className="budget-viewer">
         <header>
-          <h1>Budget</h1>
+          <h1>Budget <ReloadButton setBudgetData={setBudgetData} /></h1>
+          
         </header>
         <Drawer opened={!!drawerContent} onClose={() => setDrawerContent(null)} title={drawerContent?.meta?.title} size="90vw" position='right' offset={8} className='txn-drawer'>
           {drawerContent?.jsx || drawerContent}
