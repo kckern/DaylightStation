@@ -11,6 +11,7 @@ import lastfm from './lib/lastfm.js';
 import letterboxd from './lib/letterboxd.js';
 import goodreads from './lib/goodreads.js';
 import Infinity from './lib/infinity.js';
+import { refreshFinancialData as budget } from './lib/budget.mjs';
 
 const harvesters = {
     ...Infinity.keys.reduce((fn, i) => (fn[i] = () => Infinity.loadData(i), fn), {}),
@@ -23,6 +24,7 @@ const harvesters = {
     lastfm,
     letterboxd,
     goodreads,
+    budget
     
 }
 

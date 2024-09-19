@@ -171,9 +171,10 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
 export const dayToDayBudgetReducer = (acc, month, monthlyBudget,config) => {
     const transactions = monthlyBudget[month].dayToDayTransactions || [];
     if(!transactions.length) return {...acc, [month]: {spending: 0, budget: config.dayToDay.amount, balance: config.dayToDay.amount, transactions: [], dailyBalances: {}}};
+    const isCurrentMonth = moment(month).format('YYYY-MM') === moment().format('YYYY-MM');
     acc[month] = {spending: 0, budget: 0, balance:0, transactions};
     acc[month].spending = parseFloat( (transactions.reduce((acc, txn) => acc + txn.amount, 0)).toFixed(2) );
-    acc[month].budget = config.dayToDay.amount;
+    acc[month].budget = isCurrentMonth ? config.dayToDay.amount : acc[month].spending;
     acc[month].balance = parseFloat((acc[month].budget - acc[month].spending).toFixed(2));
     const daysInMonth = moment(month, 'YYYY-MM').daysInMonth();
     const daysArray = [0,...Array.from({length: daysInMonth}, (v, i) => i + 1)].map(i => `${month}-${i.toString().padStart(2, '0')}`);

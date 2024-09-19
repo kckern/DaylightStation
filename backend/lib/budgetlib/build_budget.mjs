@@ -33,7 +33,7 @@ export const buildBudget = (config, transactions)=>
     
     if(unBudgetedAmount > 0){
         let amountToAllocate = unBudgetedAmount;
-        if(unBudgetedAmount > unclassifiedTransactionSum){
+        if(unclassifiedTransactionSum && unBudgetedAmount > unclassifiedTransactionSum){
 
             shortTermBuckets["Unbudgeted"]['budget'] = unclassifiedTransactionSum;
             shortTermBuckets["Unbudgeted"]['balance'] = 0;
