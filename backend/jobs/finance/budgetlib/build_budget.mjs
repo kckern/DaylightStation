@@ -17,16 +17,44 @@ export const buildBudget = (config, transactions)=>
     const transferTransactions  = monthList.reduce((acc, month) => transferTransactionsReducer(acc, month, monthlyBudget), {});
     const shortTermBuckets      = monthList.reduce((acc, month) => shortTermBudgetReducer(acc, month, monthlyBudget, config), {});
 
-
-  
+    const unBudgetedTransactions = shortTermBuckets["Unbudgeted"]?.transactions || [];
+    
     const periodSurplus = Object.values(monthlyBudget).reduce((acc, {surplus}) => acc + surplus, 0);
     const shortTermBudget_pre =  Object.values(shortTermBuckets).reduce((acc, {budget}) => acc + (budget||0), 0);
-
     const unBudgetedAmount = parseFloat((periodSurplus - shortTermBudget_pre).toFixed(2));
-    if(unBudgetedAmount > 0){
+    const unclassifiedTransactionSum = unBudgetedTransactions.reduce((acc, {amount}) => acc + amount, 0);
+
+  
+    if(unBudgetedTransactions.length){
         shortTermBuckets["Unbudgeted"] = shortTermBuckets["Unbudgeted"] || { budget: 0, spending: 0, balance: 0, debits: 0, credits: 0, transactions: [] };
-        shortTermBuckets["Unbudgeted"]['budget']    = parseFloat((periodSurplus - shortTermBudget_pre).toFixed(2));
-        shortTermBuckets["Unbudgeted"]['balance']   = parseFloat((shortTermBuckets["Unbudgeted"]['budget'] - shortTermBuckets["Unbudgeted"]['spending']).toFixed(2));
+        shortTermBuckets["Unbudgeted"]['balance'] = -unclassifiedTransactionSum; 
+
+    }
+    
+    if(unBudgetedAmount > 0){
+        let amountToAllocate = unBudgetedAmount;
+        if(unBudgetedAmount > unclassifiedTransactionSum){
+
+            shortTermBuckets["Unbudgeted"]['budget'] = unclassifiedTransactionSum;
+            shortTermBuckets["Unbudgeted"]['balance'] = 0;
+            shortTermBuckets["Unbudgeted"]['spending'] = unclassifiedTransactionSum;
+            shortTermBuckets["Unbudgeted"]['debits'] = unclassifiedTransactionSum;
+            shortTermBuckets["Unbudgeted"]['credits'] = 0;
+            amountToAllocate = unBudgetedAmount - unclassifiedTransactionSum;
+        }
+
+
+        const flexibleBuckets = config.shortTerm.filter(({flex}) => flex).map(({label, flex}) => ({label, flex}));
+        const flexWeightSum = flexibleBuckets.reduce((acc, {flex}) => acc + flex, 0);
+        //console.log("unBudgetedAmount", unBudgetedAmount);
+        //console.log("amountToAllocate", amountToAllocate);
+        for(const {label, flex} of flexibleBuckets){
+            const percentage = flex / flexWeightSum;
+            const allocation = parseFloat((amountToAllocate * percentage).toFixed(2));
+            //console.log({label, flex, percentage, allocation});
+            shortTermBuckets[label]['budget'] += allocation;
+            shortTermBuckets[label]['balance'] += allocation;
+        }
     }
 
     const shortTermBudget =  Object.values(shortTermBuckets).reduce((acc, {budget}) => acc + budget, 0);

@@ -59,7 +59,8 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
 
     }).sort((a, b) => {
 
-        //sort by percentage
+        //Unbudgeted label should always be at the bottom
+        if(a.category === 'Unbudgeted') return 1;
         if (a.extendedBudget > b.extendedBudget) return -1;
         if (a.extendedBudget < b.extendedBudget) return 1;
         return 0;
