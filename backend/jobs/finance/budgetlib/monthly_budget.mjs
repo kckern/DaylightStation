@@ -1,6 +1,7 @@
 
 import moment from 'moment';
 import { findBucket } from './transactions.mjs';
+import { parse } from 'path';
 
 export const getMonthlyBudget =  (config, transactions) => {
 
@@ -59,6 +60,7 @@ const futureMonthlyBudget = ({month, config}) => {
     const income = payCheckIncomeAmount + extraIncomeAmount;
     const incomeTransactions = [...paychecks, ...extraIncomeTransactions].sort((a, b) => moment(a.date).diff(moment(b.date)));
 
+    // EXPENSES
     const monthlyCategories = monthly.reduce((acc, {label, amount, frequency, months, exceptions}) => {
         const exceptionalItem = exceptions?.find(exception => (exception[moment(month).format('YYYY-MM')]));
         const exceptionalAmount = exceptionalItem ? exceptionalItem[moment(month).format('YYYY-MM')] : null;
@@ -74,12 +76,13 @@ const futureMonthlyBudget = ({month, config}) => {
         } else {
             acc[label] = { amount: finalAmount };
         }
+        acc[label].debits = acc[label].amount;
         return acc;
     }, {});
 
     const categorySpending = Object.values(monthlyCategories).reduce((acc, {amount}) => acc + amount, 0);
     const dayToDaySpending = dayToDay.amount;
-    const monthlySpending  = parseFloat((categorySpending + dayToDaySpending).toFixed(2));
+    const monthlySpending  = parseFloat((categorySpending ).toFixed(2));
     const surplus = parseFloat( (income - monthlySpending - dayToDaySpending).toFixed(2) );
 
     return {
@@ -109,13 +112,22 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
 
     for(const txn of transactions){
         const {label,bucket} = findBucket(config, txn);
+        txn['label'] = label;
+        txn['bucket'] = bucket;
         if(bucket === 'income') incomeTransactions.push(txn);
         else if(bucket === 'day') dayToDayTransactions.push(txn);
         else if(bucket === 'transfer') transferTransactions.push(txn);
         else if(bucket === 'monthly'){
-            if(!monthlyCategories[label]) monthlyCategories[label] = {amount: 0, transactions: []};
+            if(!monthlyCategories[label]) monthlyCategories[label] = {amount: 0, credits: 0, debits: 0, transactions: []};
             monthlyCategories[label].amount += txn.expenseAmount;
+            monthlyCategories[label].credits += txn.expenseAmount < 0 ? Math.abs(txn.expenseAmount) : 0;
+            monthlyCategories[label].debits += txn.expenseAmount > 0 ? txn.expenseAmount : 0;
             monthlyCategories[label].transactions.push(txn);
+
+            monthlyCategories[label].amount = parseFloat(monthlyCategories[label].amount.toFixed(2));
+            monthlyCategories[label].credits = parseFloat(monthlyCategories[label].credits.toFixed(2));
+            monthlyCategories[label].debits = parseFloat(monthlyCategories[label].debits.toFixed(2));
+
         }
         else if(bucket === 'shortTerm'){
             shortTermTransactions.push(txn);
@@ -129,14 +141,20 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
     const income = parseFloat(incomeTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2));
     const monthlyCategorySpending = parseFloat(Object.values(monthlyCategories).reduce((acc, {amount}) => acc + amount, 0).toFixed(2));
     const dayToDaySpending = parseFloat(dayToDayTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2));
-    const monthlySpending = parseFloat((monthlyCategorySpending + dayToDaySpending).toFixed(2));
+    const monthlySpending = parseFloat((monthlyCategorySpending).toFixed(2));
     const spending = parseFloat((dayToDaySpending + monthlySpending).toFixed(2));
     const surplus = parseFloat((income - monthlySpending - dayToDaySpending).toFixed(2));
+
+    const monthlyDebits = parseFloat(shortTermTransactions.filter(txn => txn.expenseAmount > 0).reduce((acc, txn) => acc + txn.expenseAmount, 0).toFixed(2));
+    const monthlyCredits = Math.abs(parseFloat(shortTermTransactions.filter(txn => txn.expenseAmount < 0).reduce((acc, txn) => acc + txn.expenseAmount, 0).toFixed(2)));
+
     return {
         income,
         spending,
         surplus,
         monthlySpending,
+        monthlyDebits,
+        monthlyCredits,
         dayToDaySpending,
 
         incomeTransactions,
