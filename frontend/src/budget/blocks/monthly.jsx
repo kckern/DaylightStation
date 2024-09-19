@@ -154,7 +154,9 @@ export function formatAsCurrency(value, showcents=true) {
                 events: {
                     click: function (event) {
                         const category = processedData[event.point.index];
-                        setDrawerContent(<Drawer  header={category.category} transactions={category.transactions}  setDrawerContent={setDrawerContent} /> );
+                        const month = activeMonth;
+                        const content = <Drawer  header={category.category} transactions={category.transactions}  setDrawerContent={setDrawerContent} />;
+                        setDrawerContent({jsx: content, meta: {title: `${category.category} Transactions for ${moment(month).format("MMMM YYYY")}`}});
                     }
                 }
             }

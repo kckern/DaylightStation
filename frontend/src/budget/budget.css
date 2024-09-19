@@ -97,6 +97,11 @@ small.category-label {
 }
 
 
+.category-label .green{
+    color: #759c82;
+}
+
+
 
 
 
@@ -134,7 +139,8 @@ small.category-label {
     width: 100%;
     border-collapse: collapse;
 }
-.budget-drawer-content .transactions-table td
+.budget-drawer-content .transactions-table td,
+.budget-drawer-content .transactions-table th
 {
 white-space: nowrap;
 padding: 1ex;
@@ -261,4 +267,9 @@ tr.income .amount-col{
 .overviewTable tr.future{
     background-color: #DDD;
     color: #888;
+}
+
+.txn-drawer section header h2{
+    font-weight: 800;
+    font-size: 2rem;
 }
