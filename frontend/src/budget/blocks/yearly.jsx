@@ -10,7 +10,7 @@ import moment from "moment";
 
 
 
-export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }) {
+export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimensions }) {
 
     const budgetKeys = Object.keys(budget);
     const [activeBudget] = budgetKeys;
