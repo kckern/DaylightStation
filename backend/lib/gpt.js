@@ -21,11 +21,13 @@ const models = {
     'gpt-4-32k'                 : {in: 0.00006,     out: 0.00012,    context_window: 32768},
     'gpt-4-32k-0613'            : {in: 0.00006,     out: 0.00012,    context_window: 32768},
 
-    'gpt-4-0125-preview'        : {in: 0.00001,     out: 0.00003,    context_window: 128000, flagship: true},
+    'gpt-4-0125-preview'        : {in: 0.00001,     out: 0.00003,    context_window: 128000},
     'gpt-4-turbo-preview'       : {in: 0.00001,     out: 0.00003,    context_window: 128000},
     'gpt-4-1106-preview'        : {in: 0.00001,     out: 0.00003,    context_window: 128000},
     'gpt-4-vision-preview'      : {in: 0.00001,     out: 0.00003,    context_window: 128000},
     'gpt-4-1106-vision-preview' : {in: 0.00001,     out: 0.00003,    context_window: 128000},
+
+    'gpt-4o-2024-08-06'        : {in: 0.00001,     out: 0.00003,    context_window: 128000, flagship: true},
 }
 
 
