@@ -11,8 +11,8 @@ export const formatAsCurrency = (value) => {
   const formattedValue = absoluteValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   return isNegative ? `-$${formattedValue}` : `$${formattedValue}`;
 };
-  // BudgetAccounts.jsx
-  export function BudgetAccounts({ setDrawerContent, budget }) {
+  // BudgetHoldings.jsx
+  export function BudgetHoldings({ setDrawerContent, budget }) {
 
     const budgets = Object.keys(budget);
     const activeBudget = budget[budgets[0]];
@@ -21,7 +21,7 @@ export const formatAsCurrency = (value) => {
 
     return (
       <div className="budget-block">
-        <h2>Accounts</h2>
+        <h2>Holdings</h2>
         <div className="budget-block-content">
           <button onClick={() => setDrawerContent(Transfers)}>View Transfers</button>
         </div>
@@ -34,6 +34,18 @@ export const formatAsCurrency = (value) => {
     return (
       <div className="budget-block">
         <h2>Mortgage</h2>
+        <div className="budget-block-content">
+          {/* Placeholder for Mortgage content */}
+        </div>
+      </div>
+    );
+  }
+  
+  // BudgetMortgage.jsx
+  export function BudgetGoals({ setDrawerContent, budget }) {
+    return (
+      <div className="budget-block">
+        <h2>Financial Goals</h2>
         <div className="budget-block-content">
           {/* Placeholder for Mortgage content */}
         </div>

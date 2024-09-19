@@ -11,7 +11,7 @@ const formatAsCurrency = (value) => {
 };
 
 
-export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimensions }) => {
+export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions }) => {
 
     const budgetKeys = Object.keys(budget);
     const months = budgetKeys.map((key) => budget[key].monthlyBudget).reduce((acc, months) => {
