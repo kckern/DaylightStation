@@ -67,8 +67,6 @@ export function BudgetYearly({ setDrawerContent, budget, budgetBlockDimensions }
 
     });
 
-        console.log('processedData', processedData);
-
 
     const series = Object.keys(colors).map((key) => {
       

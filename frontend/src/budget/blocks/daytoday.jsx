@@ -61,7 +61,6 @@ export const BudgetBurnDownChart = ({ setDrawerContent, budget, budgetBlockDimen
 
     const baselineData = Array.from({ length: daysInMonth +1 }, (_, i) => initialBudget - (i * (initialBudget / daysInMonth)));
     const zeroCrossingIndex = actualData.findIndex(data => data.y < 0);
-    console.log(zeroCrossingIndex);
     const start = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[0]].startingBalance;
     const end = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[Object.keys(activeMonthDailyBudget).length - 1]].endingBalance;
     const spent = start - end;
