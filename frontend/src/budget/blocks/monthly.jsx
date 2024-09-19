@@ -52,6 +52,8 @@ function BudgetTable({ setDrawerContent, budget }) {
     const date = moment(month, "YYYY-MM").endOf('month').format("YYYY-MM-DD");
     const accountName = "Anticipated";
     switch (key) {
+      case "month":
+        return [...loadAnticipatedTransactions(month, "fixed"), ...loadAnticipatedTransactions(month, "day"), ...loadAnticipatedTransactions(month, "income")];
       case "income":
         return activeBudget["monthlyBudget"][month].incomeTransactions.map((paycheck) => ({
           date: paycheck.date,
@@ -59,7 +61,9 @@ function BudgetTable({ setDrawerContent, budget }) {
           amount: paycheck.amount,
           expenseAmount: paycheck.amount,
           description: paycheck.description || "Paycheck",
-          tagNames: []
+          tagNames: ["Income"],
+          label: 'Income',
+          bucket: 'income'
         }));
       case "fixed":
         return Object.keys(activeBudget["monthlyBudget"][month].monthlyCategories).map((cat) => ({
@@ -68,7 +72,8 @@ function BudgetTable({ setDrawerContent, budget }) {
           amount: activeBudget["monthlyBudget"][month].monthlyCategories[cat].amount,
           expenseAmount: activeBudget["monthlyBudget"][month].monthlyCategories[cat].amount,
           description: cat,
-          tagNames: []
+          tagNames: [cat],
+          label: cat
         }));
       case "day":
         return [{
@@ -77,7 +82,9 @@ function BudgetTable({ setDrawerContent, budget }) {
           amount: activeBudget["dayToDayBudget"][month].budget,
           expenseAmount: activeBudget["dayToDayBudget"][month].budget,
           description: "Day-to-Day Spending",
-          tagNames: []
+          tagNames: ["Day-to-Day"],
+          label: "Day-to-Day Spending",
+          bucket: "day"
         }];
     }
     return [];
@@ -104,12 +111,14 @@ function BudgetTable({ setDrawerContent, budget }) {
 
   const handleCellClick = (month, key) => {
     const transactions = loadTransactions(month, key).sort((a, b) => b.amount - a.amount);
+    const monthData = {month: activeBudget["monthlyBudget"][month], daytoday: activeBudget["dayToDayBudget"][month]};
     const monthString = moment(month, "YYYY-MM").format("MMM ‘YY");
     const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
-    const header = key === "income" ? "Income" : key === "fixed" ? "Fixed Expenses" : "Day-to-Day Spending";
-    const content = <Drawer setDrawerContent={setDrawerContent} header={header} transactions={transactions} />;
+    const header = key === "income" ? "Income" : key === "fixed" ? "Operating Expenses" : "Day-to-Day Spending";
+    const content = <Drawer transactions={transactions} cellKey={key} monthData={monthData} />;
     setDrawerContent({ jsx: content, meta: { title: `${isFuture ? "Anticipated" : ""}  ${header} for ${monthString}` } });
   }
+
 
   const rows = (() => {
     const { monthlyBudget } = activeBudget;
@@ -130,7 +139,7 @@ function BudgetTable({ setDrawerContent, budget }) {
           <td onClick={() => handleCellClick(month, 'income')}>{formatAsCurrency(income)}</td>
           <td onClick={() => handleCellClick(month, 'fixed')}>{formatAsCurrency(monthlySpending)}</td>
           <td onClick={() => handleCellClick(month, 'day')}>{formatAsCurrency(dayToDaySpending)}</td>
-          <td className={surplusClassName}>{formatAsCurrency(surplus || 0)}</td>
+          <td onClick={()=>handleCellClick(month, 'month')} className={surplusClassName}>{formatAsCurrency(surplus || 0)}</td>
         </tr>
       );
     });
