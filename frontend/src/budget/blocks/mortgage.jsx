@@ -1,6 +1,6 @@
 import moment from "moment";
 import { formatAsCurrency } from "../blocks";
-import { Tabs } from "@mantine/core";
+import { Tabs, Badge } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
@@ -66,7 +66,8 @@ function calculateSummary(mortgage,plan) {
             avgMonthlyInterest: events.reduce((acc, {accruedInterest}) => acc + accruedInterest, 0) / events.length,
             avgMonthlyEquity: openingBalance / events.length,
             payoffDate: moment(events[events.length - 1].date).format('MMMM YYYY'),
-            annualBudget: events.reduce((acc, {payments}) => acc + payments.reduce((acc, val) => acc + val, 0), 0) * 12,
+            //totalPaid / totalYears
+            annualBudget: events.reduce((acc, {payments}) => acc + payments.reduce((acc, val) => acc + val, 0), 0) / (events.length / 12),
             totalExtraPaid: events.reduce((acc, {payments}) => acc + payments.slice(1).reduce((acc, val) => acc + val, 0), 0),
 
         },
@@ -112,12 +113,12 @@ function calculateSummary(mortgage,plan) {
 
         };
         const costPerDollarSaved = plan.savings.totalExtraPaid ? plan.summary.totalExtraPaid / plan.savings.totalSavings : 0;
-        plan.savings['costPerDollarSaved'] =`$${parseFloat(costPerDollarSaved).toFixed(2)}`;
+        plan.savings['costPerDollarSaved'] = costPerDollarSaved ? `$${parseFloat(costPerDollarSaved).toFixed(2)}` : 0;
     });
 
     const chartOptions = {
         chart: {
-            type: 'area',
+            type: 'line',
         },
         credits: {
             enabled: false
@@ -205,7 +206,7 @@ function calculateSummary(mortgage,plan) {
                     <tr key={key}>
                         <td>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</td>
                         {paymentPlans.map(({ summary }) => (
-                            <td key={summary[key]}>
+                            <td key={summary[key]} style={{ textAlign: 'right' }}>
                                 {typeof summary[key] === 'number' ? formatAsCurrency(summary[key]) : summary[key]}
                             </td>
                         ))}
@@ -220,7 +221,7 @@ function calculateSummary(mortgage,plan) {
                     <tr key={key}>
                         <td>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</td>
                         {paymentPlans.map(({ savings }) => (
-                            <td key={savings[key]}>
+                            <td key={savings[key]} style={{ textAlign: 'right' }}>
                                 {parseInt(savings[key]) === 0 ? '' : (typeof savings[key] === 'number' ? formatAsCurrency(savings[key]) : savings[key])}
                             </td>
                         ))}
@@ -257,6 +258,7 @@ function calculateSummary(mortgage,plan) {
         <tr>
             <th>Date</th>
             <th>Opening Balance</th>
+            <th>Interest Rate</th>
             <th>Accrued Interest</th>
             <th>Payments</th>
             <th>Closing Balance</th>
@@ -268,11 +270,16 @@ function calculateSummary(mortgage,plan) {
             const paymentCount = payments.length;
             const extraPaymentAmount = paymentCount > 1 ? payments.slice(1).reduce((acc, val) => acc + val, 0) : 0;
             const balanceAfterFirstPayment =closingBalance + extraPaymentAmount;
+            const month = moment(date).format('MMMM');
+            const borderTopStyle = month === 'January' ? '2px solid' : 'none';
+
             acc.push(   
-                <tr key={`${date}-main`}>
-                    <td>{date}</td>
+                <tr key={`${date}-main`} style={{outline: borderTopStyle}}>
+                    <td style={{textAlign: 'right'}} >{moment(date).format('MMMM YYYY')}</td>
                     <td>{formatAsCurrency(openingBalance)}</td>
-                    <td>{formatAsCurrency(accruedInterest)} ({(effectiveRate * 100).toFixed(2)}%)</td>
+                    <td style={{textAlign: 'center'}}
+                    ><Badge>{(effectiveRate * 100).toFixed(2)}%</Badge></td>
+                    <td>{formatAsCurrency(accruedInterest)}</td>
                     <td>{payments.length > 0 ? formatAsCurrency(payments[0]) : ''}</td>
                     <td>{formatAsCurrency(balanceAfterFirstPayment)}</td>
                 </tr>
