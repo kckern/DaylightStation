@@ -1,6 +1,6 @@
 import moment from "moment";
 import { formatAsCurrency } from "../blocks";
-import { Tabs, Badge } from "@mantine/core";
+import { Tabs, Badge, Table } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 
@@ -77,44 +77,67 @@ function calculateSummary(mortgage,plan) {
 
 
 
-  // BudgetMortgage.jsx
-  export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
-
-    const paymentPlans = mortgage.paymentPlans.map(plan=>calculateSummary(mortgage,plan));
-
+export function BudgetMortgage({ setDrawerContent, mortgage }) {
+    const paymentPlans = mortgage.paymentPlans.map(plan => calculateSummary(mortgage, plan));
+  
+  
     return (
       <div className="budget-block">
         <h2>Mortgage</h2>
-        <div className="budget-block-content">
-          <button onClick={() => setDrawerContent({jsx:<MortgageDrawer paymentPlans={paymentPlans} />, meta:{
-            title: 'Mortgage Forecast and Simulation',
-          }})}>View Mortgage</button>
-          <pre>
-            {JSON.stringify(paymentPlans[1].summary, null, 2)}
-          </pre>
+        <div className="budget-block-content" style={{ display: 'flex', justifyContent: 'space-around', flexDirection: 'column' , alignItems: 'center'}}>
+    
+            <Tabs defaultValue={paymentPlans[0]?.id || ''} style={{ width: '90%' }}>
+              <Tabs.List style={{ width: '90%' }}>
+                {paymentPlans.map(plan => (
+                  <Tabs.Tab key={plan.id} value={plan.id}>{plan.title}</Tabs.Tab>
+                ))}
+                 <Tabs.Tab key="chart" value="chart">Chart</Tabs.Tab>
+              </Tabs.List>
+              {paymentPlans.map(plan => (
+                <Tabs.Panel key={plan.id} value={plan.id}>
+                  <Table>
+                    <tbody>
+                      <tr>
+                        <td>Total Payments</td>
+                        <td style={{ textAlign: 'right' }}>{plan.summary?.totalPayments}</td>
+                      </tr>
+                      <tr>
+                        <td>Total Paid</td>
+                        <td style={{ textAlign: 'right' }}>{formatAsCurrency(plan.summary?.totalPaid)}</td>
+                      </tr>
+                      
+                      <tr> <td>Total Extra Paid</td>  <td style={{ textAlign: 'right' }}>{formatAsCurrency(plan.summary?.totalExtraPaid)}</td> </tr>
+                        <tr> <td>Total Interest</td>  <td style={{ textAlign: 'right' }}>{formatAsCurrency(plan.summary?.totalInterest)}</td> </tr>
+                        <tr> <td>Years to Payoff</td>  <td style={{ textAlign: 'right' }}>{plan.summary?.totalYears}</td> </tr>
+                        <tr> <td>Payoff Date</td>  <td style={{ textAlign: 'right' }}>{plan.summary?.payoffDate}</td> </tr>
+                        <tr> <td>Annual Budget</td>  <td style={{ textAlign: 'right' }}>{formatAsCurrency(plan.summary?.annualBudget)}</td> </tr>
+                        <tr> <td>Avg Monthly Interest</td>  <td style={{ textAlign: 'right' }}>{formatAsCurrency(plan.summary?.avgMonthlyInterest)}</td> </tr>
+                        <tr> <td>Avg Monthly Equity</td>  <td style={{ textAlign: 'right' }}>{formatAsCurrency(plan.summary?.avgMonthlyEquity)}</td> </tr>
+                        <tr> <td>Cost Per Dollar Saved</td>  <td style={{ textAlign: 'right' }}>{plan.savings?.costPerDollarSaved}</td> </tr>
+
+                    </tbody>
+                  </Table>
+                </Tabs.Panel>
+              ))}
+                <Tabs.Panel key="chart" value="chart">
+                    <HighchartsReact
+                    highcharts={Highcharts}
+                    options={mortageChartOptions(paymentPlans)}
+                    />
+                </Tabs.Panel>
+            </Tabs>
+            <button onClick={() => setDrawerContent({jsx:<MortgageDrawer paymentPlans={paymentPlans} />,meta:{
+                            title: `Mortgage Payoff Scenarios`,
+                        }})}>View Details</button>
         </div>
       </div>
     );
   }
   
-
-  function MortgageDrawer({ paymentPlans }) {
+  const mortageChartOptions = (paymentPlans) => {
 
     const baseline = paymentPlans.find(({id})=>id==='baseline');
-
-    
-    paymentPlans.forEach((plan) => {
-        plan.savings = {
-            monthsSaved: `${baseline.summary.totalPayments - plan.summary.totalPayments}`,
-            percentSavings: `${parseFloat((1 - plan.summary.totalInterest / baseline.summary.totalInterest) * 100).toFixed()}%`,
-            totalSavings: baseline.summary.totalInterest - plan.summary.totalInterest,
-            totalExtraPaid:  plan.summary.totalExtraPaid - baseline.summary.totalExtraPaid,
-
-        };
-        const costPerDollarSaved = plan.savings.totalExtraPaid ? plan.summary.totalExtraPaid / plan.savings.totalSavings : 0;
-        plan.savings['costPerDollarSaved'] = costPerDollarSaved ? `$${parseFloat(costPerDollarSaved).toFixed(2)}` : 0;
-    });
 
     const chartOptions = {
         chart: {
@@ -183,12 +206,35 @@ function calculateSummary(mortgage,plan) {
         }))
     };
 
+    return chartOptions;
+
+  }
+
+  function MortgageDrawer({ paymentPlans }) {
+
+    const baseline = paymentPlans.find(({id})=>id==='baseline');
+
+    
+    paymentPlans.forEach((plan) => {
+        plan.savings = {
+            monthsSaved: `${baseline.summary.totalPayments - plan.summary.totalPayments}`,
+            percentSavings: `${parseFloat((1 - plan.summary.totalInterest / baseline.summary.totalInterest) * 100).toFixed()}%`,
+            totalSavings: baseline.summary.totalInterest - plan.summary.totalInterest,
+            totalExtraPaid:  plan.summary.totalExtraPaid - baseline.summary.totalExtraPaid,
+
+        };
+        const costPerDollarSaved = plan.savings.totalExtraPaid ? plan.summary.totalExtraPaid / plan.savings.totalSavings : 0;
+        plan.savings['costPerDollarSaved'] = costPerDollarSaved ? `$${parseFloat(costPerDollarSaved).toFixed(2)}` : 0;
+    });
+
+
+
     const summaryKeys = Object.keys(baseline.summary);
     const savingsKeys = Object.keys(baseline.savings);
-
+    const colCount = paymentPlans.length;
 
     return <div className="mortgage-drawer">
-                <table style={{width: '100%'}}>
+                <table style={{width: '100%'}} className="mortgage-summary">
             <thead>
                 <tr>
                     <th></th>
@@ -202,28 +248,34 @@ function calculateSummary(mortgage,plan) {
                 </tr>
             </thead>
             <tbody>
-                {summaryKeys.map((key) => (
-                    <tr key={key}>
-                        <td>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</td>
+                {summaryKeys.map((key, i ) => (
+                    <tr key={key} className={ i===0 ? 'first-row' : ''}>
+                        <td className="summary-key" >{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</td>
                         {paymentPlans.map(({ summary }) => (
-                            <td key={summary[key]} style={{ textAlign: 'right' }}>
+                            <td key={summary[key]} style={{ textAlign: 'right', width: `${100 / (colCount+1)}%`}} className="summary-cell"> 
                                 {typeof summary[key] === 'number' ? formatAsCurrency(summary[key]) : summary[key]}
                             </td>
                         ))}
                     </tr>
                 ))}
                 <tr>
-                    <td colSpan={paymentPlans.length + 1} style={{ backgroundColor: 'lightgray', textAlign: 'center' }}>
+                <td style={{ backgroundColor: 'white'}}></td>
+                <td style={{ backgroundColor: 'lightgray', border: "2px solid #555" , borderTop: "2px solid #555" }} />
+                    <td colSpan={paymentPlans.length + 1} style={{ backgroundColor: 'lightgray', textAlign: 'center',  border: "2px solid #555", borderBottom: "2px solid #555" , borderTop: "2px solid #555" , fontWeight: 800 }}>
                         Savings vs. Baseline
                     </td>
                 </tr>
-                {savingsKeys.map((key) => (
-                    <tr key={key}>
-                        <td>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</td>
-                        {paymentPlans.map(({ savings }) => (
-                            <td key={savings[key]} style={{ textAlign: 'right' }}>
-                                {parseInt(savings[key]) === 0 ? '' : (typeof savings[key] === 'number' ? formatAsCurrency(savings[key]) : savings[key])}
-                            </td>
+                {savingsKeys.map((key,i) => (
+                    <tr key={key} className={ i===savingsKeys.length-1 ? 'last-row' : ''}>
+                        <td colSpan={2} className="summary-key">
+                            {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                        </td>
+                        {paymentPlans.map(({ savings }, i) => (
+                            i === 0 ? null : (
+                                <td key={savings[key]} style={{ textAlign: 'right' }} className="summary-cell">
+                                    {parseInt(savings[key]) === 0 ? '' : (typeof savings[key] === 'number' ? formatAsCurrency(savings[key]) : savings[key])}
+                                </td>
+                            )
                         ))}
                     </tr>
                 ))}
@@ -236,7 +288,7 @@ function calculateSummary(mortgage,plan) {
             <HighchartsReact
             className="mortgage-chart"
             highcharts={Highcharts}
-            options={chartOptions}
+            options={mortageChartOptions(paymentPlans)}
             />
 
         <hr/>
@@ -253,7 +305,7 @@ function calculateSummary(mortgage,plan) {
   function  MortgageTable ({events}) {
 
 
-    return <table style={{width: '100%'}}>
+    return <table style={{width: '100%'}} className="mortgage-table">
     <thead>
         <tr>
             <th>Date</th>
@@ -271,11 +323,11 @@ function calculateSummary(mortgage,plan) {
             const extraPaymentAmount = paymentCount > 1 ? payments.slice(1).reduce((acc, val) => acc + val, 0) : 0;
             const balanceAfterFirstPayment =closingBalance + extraPaymentAmount;
             const month = moment(date).format('MMMM');
-            const borderTopStyle = month === 'January' ? '2px solid' : 'none';
+            const className = month === 'January' ? 'new-year' : '';
 
             acc.push(   
-                <tr key={`${date}-main`} style={{outline: borderTopStyle}}>
-                    <td style={{textAlign: 'right'}} >{moment(date).format('MMMM YYYY')}</td>
+                <tr key={`${date}-main`} className={className}>
+                    <td style={{textAlign: 'right'}} ><Badge  color="gray">{moment(date).format('MMMM YYYY')}</Badge></td>
                     <td>{formatAsCurrency(openingBalance)}</td>
                     <td style={{textAlign: 'center'}}
                     ><Badge>{(effectiveRate * 100).toFixed(2)}%</Badge></td>
@@ -291,9 +343,7 @@ function calculateSummary(mortgage,plan) {
                 const thisClosingBalance = runningBalance - payments[i];
                 acc.push(
                     <tr key={`${date}-payment-${i}`}>
-                        <td></td>
-                        <td></td>
-                        <td></td>
+                        <td colSpan={4}/>
                         <td>{formatAsCurrency(payments[i])}</td>
                         <td>{formatAsCurrency(thisClosingBalance)}</td>
                     </tr>

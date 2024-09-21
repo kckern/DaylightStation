@@ -331,3 +331,47 @@ button.reload{
 .mortgage-table-body tr:nth-child(odd) td{
     background-color: #EEE;
 }
+.mortgage-table-body {
+    border-collapse: collapse;
+}
+
+.mortgage-table-body tr.new-year td {
+    border-top: 3px solid #666;
+}
+.mortgage-table-body tr td {
+    padding:0 1ex;
+    text-align: center;
+}
+.mortgage-table, .mortgage-summary{
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1ex 0;
+}
+
+.mortgage-table, .mortgage-summary{
+    border-right: 3rem;
+}
+
+.mortgage-summary td{
+    white-space: nowrap;
+}
+.mortgage-summary td:last-child{
+    border-right: 2px solid #666;
+}
+.mortgage-summary .summary-cell{
+    border-left: 2px solid #666;
+    border-right: 3rem;
+    padding-right: 3rem;
+}
+.mortgage-summary .summary-key{
+    font-weight: 800;
+    text-align: right;
+    padding-right: 1rem;
+}
+
+.first-row td:not(:first-child){
+    border-top: 2px solid #666;
+}
+.last-row td:not(:first-child){
+    border-bottom: 2px solid #666;
+}
