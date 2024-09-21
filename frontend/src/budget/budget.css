@@ -328,6 +328,6 @@ button.reload{
     width: 3.5rem;
 }
 
-.mortgage-table-body tr:nth-child(even) td{
+.mortgage-table-body tr:nth-child(odd) td{
     background-color: #EEE;
 }
