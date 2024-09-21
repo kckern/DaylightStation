@@ -12,6 +12,7 @@ import '@mantine/core/styles.css';
 import spinner from '../assets/icons/spinner.svg';
 
 const fetchBudget = async () => {
+  console.log('fetching budget')
   //get from http://localhost:3112/data/budget
   const response = await fetch('http://localhost:3112/data/budget');
   const data = await response.json();
@@ -28,12 +29,13 @@ const reloadBudget = async () => {
 
 export default function App() {
   const [budgetData, setBudgetData] = useState(null);
+  const [mortgageData, setMortgageData] = useState(null);
   useEffect(() => {
-    fetchBudget().then((budget) => setBudgetData(budget));
+    fetchBudget().then(({budgets,mortgage}) => { setBudgetData(budgets); setMortgageData(mortgage); });
   }, []);
   return (
     <MantineProvider>
-      {budgetData ? <BudgetViewer budget={budgetData} setBudgetData={setBudgetData} /> : <div>Loading...</div>}
+      {budgetData ? <BudgetViewer budget={budgetData} mortgage={mortgageData} setBudgetData={setBudgetData} /> : <div>Loading...</div>}
     </MantineProvider>
   );
 }
@@ -53,7 +55,7 @@ function ReloadButton({setBudgetData}) {
 
 }
 
-export function BudgetViewer({ budget, setBudgetData }) {
+export function BudgetViewer({ budget, mortgage, setBudgetData }) {
 
   const [drawerContent, setDrawerContent] = useState(null);
   const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
@@ -71,7 +73,7 @@ export function BudgetViewer({ budget, setBudgetData }) {
           <BudgetShortTerm setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
           <BudgetDayToDay setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
     
-          <BudgetMortgage setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage}/>
           <BudgetHoldings setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetGoals setDrawerContent={setDrawerContent} budget={budget}/>
         
