@@ -12,15 +12,25 @@ function calculateSummary(mortgage,plan) {
     const events = [];
     let previousClosingBalance = balance;
 
+    const rateChanges = plan.rates?.reduce((acc, { effectiveDate, rate, fee }) => {
+        const effectiveMonth = moment(effectiveDate).format('YYYY-MM');
+      return { ...acc, [effectiveMonth]: {rate,fee}};
+    }, {}) || {};
+    let effectiveRate = interestRate;
     while (balance > 0) {
+
+        effectiveRate = rateChanges[monthCursor.format('YYYY-MM')]?.rate || effectiveRate;
+        const fee = [rateChanges[monthCursor.format('YYYY-MM')]?.fee || 0];
+
+
         const event = {
             date: monthCursor.format('YYYY-MM'),
             openingBalance: previousClosingBalance,
-            accruedInterest: previousClosingBalance * interestRate / 12,
-            payments: [monthlyPayment],
+            effectiveRate,
+            accruedInterest: previousClosingBalance * effectiveRate / 12,
+            payments: [monthlyPayment, ...fee].filter(Boolean),
             closingBalance: null
         };
-        
         // Find extra payments
         const regularExtra = payments.find(({ regular }) => regular && regular.includes(monthCursor.month() + 1)) || null;
         const fixedExtra = payments.find(({ fixed }) => fixed && fixed.includes(monthCursor.format('YYYY-MM'))) || null;
@@ -101,8 +111,8 @@ function calculateSummary(mortgage,plan) {
             totalExtraPaid:  plan.summary.totalExtraPaid - baseline.summary.totalExtraPaid,
 
         };
-        const costPerDollarSaved = plan.savings.totalSavings ? plan.summary.totalExtraPaid / plan.savings.totalSavings : 0;
-        plan.savings['costPerDollarSaved'] = costPerDollarSaved ? `$${parseFloat(plan.summary.totalExtraPaid / plan.savings.totalSavings).toFixed(2)}` : 0;
+        const costPerDollarSaved = plan.savings.totalExtraPaid ? plan.summary.totalExtraPaid / plan.savings.totalSavings : 0;
+        plan.savings['costPerDollarSaved'] =`$${parseFloat(costPerDollarSaved).toFixed(2)}`;
     });
 
     const chartOptions = {
@@ -253,7 +263,7 @@ function calculateSummary(mortgage,plan) {
         </tr>
     </thead>
     <tbody className="mortgage-table-body">
-        {events.reduce((acc, {date, openingBalance, accruedInterest, payments, closingBalance}) => {
+        {events.reduce((acc, {date, openingBalance, effectiveRate, accruedInterest, payments, closingBalance}) => {
             // Add the main event row
             const paymentCount = payments.length;
             const extraPaymentAmount = paymentCount > 1 ? payments.slice(1).reduce((acc, val) => acc + val, 0) : 0;
@@ -262,7 +272,7 @@ function calculateSummary(mortgage,plan) {
                 <tr key={`${date}-main`}>
                     <td>{date}</td>
                     <td>{formatAsCurrency(openingBalance)}</td>
-                    <td>{formatAsCurrency(accruedInterest)}</td>
+                    <td>{formatAsCurrency(accruedInterest)} ({(effectiveRate * 100).toFixed(2)}%)</td>
                     <td>{payments.length > 0 ? formatAsCurrency(payments[0]) : ''}</td>
                     <td>{formatAsCurrency(balanceAfterFirstPayment)}</td>
                 </tr>
