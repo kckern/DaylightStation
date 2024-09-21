@@ -21,16 +21,21 @@ export const compileBudget = async () => {
 }
 
 const budgetPath = 'data/budget/budget.config.yml';
+export const refreshFinancialData = async (noDL) => {
+    let transactions;
 
-export const refreshFinancialData = async () => {
+    if (!noDL) {
+        const { budget } = yaml.load(readFileSync(budgetPath, 'utf8'));
+        const [{ timeframe: { start, end }, accounts }] = budget;
+        const startDate = moment(start).format('YYYY-MM-DD');
+        const endDate = moment(end).format('YYYY-MM-DD');
 
-    const {budget} = yaml.load(readFileSync(budgetPath, 'utf8'));    
-    const [{timeframe:{start, end}, accounts}] = budget;
-    const startDate = moment(start).format('YYYY-MM-DD');
-    const endDate = moment(end).format('YYYY-MM-DD');
+        transactions = await processTransactions({ startDate, endDate, accounts });
+        writeFileSync('data/budget/transactions.yml', yaml.dump({ transactions }));
+    } else {
+        ({ transactions } = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')));
+    }
 
-    const transactions = await processTransactions({startDate, endDate, accounts});
-    writeFileSync('data/budget/transactions.yml', yaml.dump({transactions}));
     await compileBudget();
-    return {status: 'success', transactionCount: transactions.length};
+    return { status: 'success', transactionCount: transactions.length };
 }

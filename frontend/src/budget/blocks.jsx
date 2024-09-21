@@ -30,18 +30,6 @@ export const formatAsCurrency = (value) => {
   }
   
   // BudgetMortgage.jsx
-  export function BudgetMortgage({ setDrawerContent, budget }) {
-    return (
-      <div className="budget-block">
-        <h2>Mortgage</h2>
-        <div className="budget-block-content">
-          {/* Placeholder for Mortgage content */}
-        </div>
-      </div>
-    );
-  }
-  
-  // BudgetMortgage.jsx
   export function BudgetGoals({ setDrawerContent, budget }) {
     return (
       <div className="budget-block">

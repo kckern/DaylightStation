@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Button, MantineProvider, TabsPanel } from '@mantine/core';
-import { BudgetHoldings, BudgetGoals, BudgetMortgage} from './blocks.jsx';
+import { BudgetHoldings, BudgetGoals} from './blocks.jsx';
+import { BudgetMortgage } from './blocks/mortgage.jsx';
 import { BudgetMonthly } from './blocks/monthly.jsx';
 import { BudgetShortTerm } from './blocks/shortterm.jsx';
 import { BudgetDayToDay } from './blocks/daytoday.jsx';
