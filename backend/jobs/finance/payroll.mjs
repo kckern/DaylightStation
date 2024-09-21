@@ -1,7 +1,8 @@
 import axios from 'axios';
 import yaml from 'js-yaml';
 import { readFileSync, writeFileSync } from 'fs';
-import { getTransactions, addTransaction } from '../../lib/buxfer.js';
+import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';
+
 
 
 const secrets = './config.secrets.yml';

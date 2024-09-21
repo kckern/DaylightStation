@@ -23,37 +23,65 @@ export const buildBudget = (config, transactions)=>
     const shortTermBudget_pre =  Object.values(shortTermBuckets).reduce((acc, {budget}) => acc + (budget||0), 0);
     const unBudgetedAmount = parseFloat((periodSurplus - shortTermBudget_pre).toFixed(2));
     const unclassifiedTransactionSum = unBudgetedTransactions.reduce((acc, {amount}) => acc + amount, 0);
-
+    
   
     if(unBudgetedTransactions.length){
         shortTermBuckets["Unbudgeted"] = shortTermBuckets["Unbudgeted"] || { budget: 0, spending: 0, balance: 0, debits: 0, credits: 0, transactions: [] };
         shortTermBuckets["Unbudgeted"]['balance'] = -unclassifiedTransactionSum; 
 
     }
+    if (unBudgetedAmount !== 0) {
+        let amountToAdjust = Math.abs(unBudgetedAmount);
     
-    if(unBudgetedAmount > 0){
-        let amountToAllocate = unBudgetedAmount;
-        if(unclassifiedTransactionSum && unBudgetedAmount > unclassifiedTransactionSum){
+        if (unBudgetedAmount > 0) {
+            // Allocate surplus
+            if (unclassifiedTransactionSum && unBudgetedAmount > unclassifiedTransactionSum) {
+                shortTermBuckets["Unbudgeted"]['budget'] = unclassifiedTransactionSum;
+                shortTermBuckets["Unbudgeted"]['balance'] = 0;
+                shortTermBuckets["Unbudgeted"]['spending'] = unclassifiedTransactionSum;
+                shortTermBuckets["Unbudgeted"]['debits'] = unclassifiedTransactionSum;
+                shortTermBuckets["Unbudgeted"]['credits'] = 0;
+                amountToAdjust = unBudgetedAmount - unclassifiedTransactionSum;
+            }
+    
+            const flexibleBuckets = config.shortTerm.filter(({flex}) => flex).map(({label, flex}) => ({label, flex}));
+            const flexWeightSum = flexibleBuckets.reduce((acc, {flex}) => acc + flex, 0);
+    
+            for (const {label, flex} of flexibleBuckets) {
+                const percentage = flex / flexWeightSum;
+                const allocation = parseFloat((amountToAdjust * percentage).toFixed(2));
+                shortTermBuckets[label]['budget'] += allocation;
+                shortTermBuckets[label]['balance'] += allocation;
+            }
+        } else {
+            // Reduce budgets
+                    //todo: 
+                //Step 1: Flex Bucket Adjustment Reduce each flex bucket simultaneously based on its weight. Continue until the budget equals the balance or until no further adjustment is possible. 
+                // Step 2: Non-Flex Item Adjustment -  If all flex buckets have been reduced to the balance: Simultaneously reduce each non-flex item. Stop if any item reaches its balance amount. 
+                // Step 3: Overall Budget Reduction -  If all buckets have been reduced to the balance: Evenly lower the budget below the balance. Start with the largest category.
 
-            shortTermBuckets["Unbudgeted"]['budget'] = unclassifiedTransactionSum;
-            shortTermBuckets["Unbudgeted"]['balance'] = 0;
-            shortTermBuckets["Unbudgeted"]['spending'] = unclassifiedTransactionSum;
-            shortTermBuckets["Unbudgeted"]['debits'] = unclassifiedTransactionSum;
-            shortTermBuckets["Unbudgeted"]['credits'] = 0;
-            amountToAllocate = unBudgetedAmount - unclassifiedTransactionSum;
-        }
 
-
-        const flexibleBuckets = config.shortTerm.filter(({flex}) => flex).map(({label, flex}) => ({label, flex}));
-        const flexWeightSum = flexibleBuckets.reduce((acc, {flex}) => acc + flex, 0);
-        //console.log("unBudgetedAmount", unBudgetedAmount);
-        //console.log("amountToAllocate", amountToAllocate);
-        for(const {label, flex} of flexibleBuckets){
-            const percentage = flex / flexWeightSum;
-            const allocation = parseFloat((amountToAllocate * percentage).toFixed(2));
-            //console.log({label, flex, percentage, allocation});
-            shortTermBuckets[label]['budget'] += allocation;
-            shortTermBuckets[label]['balance'] += allocation;
+            for (const label in shortTermBuckets) {
+                const bucket = shortTermBuckets[label];
+                if (bucket['balance'] > 0) {
+                    const reduction = Math.min(bucket['balance'], amountToAdjust);
+                    bucket['budget'] -= reduction;
+                    bucket['balance'] -= reduction;
+                    amountToAdjust -= reduction;
+                    if (amountToAdjust <= 0) break;
+                }
+            }
+            if (amountToAdjust > 0) {
+                const flexibleBuckets = config.shortTerm.filter(({flex}) => flex).map(({label, flex}) => ({label, flex}));
+                const flexWeightSum = flexibleBuckets.reduce((acc, {flex}) => acc + flex, 0);
+    
+                for (const {label, flex} of flexibleBuckets) {
+                    const percentage = flex / flexWeightSum;
+                    const reduction = parseFloat((amountToAdjust * percentage).toFixed(2));
+                    shortTermBuckets[label]['budget'] -= reduction;
+                    shortTermBuckets[label]['balance'] -= reduction;
+                }
+            }
         }
     }
 
