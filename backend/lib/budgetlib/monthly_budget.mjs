@@ -49,10 +49,10 @@ const futureMonthlyBudget = ({month, config}) => {
 
     // EXTRA INCOME
     const extraIncomeTransactions = extra.reduce((acc, {amount, dates, description}) => {
-        const dateIsInMonth = dates.map(date => moment(date).format('YYYY-MM')).includes(month);
-        if(!dateIsInMonth) return acc;
-        const date = `${month}-01`;
-        return [...acc, {date, amount, description}];
+        const datesInMonth = dates.filter(date => date.startsWith(month));
+        if(datesInMonth.length === 0) return acc;
+        const transactions = datesInMonth.map(date => ({date, amount, description}));
+        return [...acc, ...transactions];
     }, []);
     const extraIncomeAmount = extraIncomeTransactions.reduce((acc, transaction) => acc + transaction.amount, 0);
 
@@ -61,12 +61,12 @@ const futureMonthlyBudget = ({month, config}) => {
     const incomeTransactions = [...paychecks, ...extraIncomeTransactions].sort((a, b) => moment(a.date).diff(moment(b.date)));
 
     // EXPENSES
-    const monthlyCategories = monthly.reduce((acc, {label, amount, frequency, months, exceptions}) => {
+    const monthlyCategories = monthly.reduce((acc, {label, amount, frequency, dates, exceptions}) => {
         const exceptionalItem = exceptions?.find(exception => (exception[moment(month).format('YYYY-MM')]));
         const exceptionalAmount = exceptionalItem ? exceptionalItem[moment(month).format('YYYY-MM')] : null;
         amount = exceptionalAmount !== null ? exceptionalAmount : amount;
-        amount = months ? months?.includes(moment(month).format('YYYY-MM')) ? amount : 0 : amount;
-    
+        amount = dates ? dates.some(date => date.startsWith(month)) ? amount : 0 : amount; 
+
         const multiplier = frequency === 'paycheck' ? paycheckCountThisMonth : 1;
         const finalAmount = amount * multiplier;
         if (!finalAmount) return acc;

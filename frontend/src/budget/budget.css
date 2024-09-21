@@ -327,3 +327,7 @@ button.reload{
     margin-left: -2.5rem;
     width: 3.5rem;
 }
+
+.mortgage-table-body tr:nth-child(even) td{
+    background-color: #EEE;
+}
