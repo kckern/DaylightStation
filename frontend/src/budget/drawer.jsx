@@ -118,12 +118,13 @@ export function Drawer({ cellKey, transactions, monthData }) {
                                   : `+$${Math.abs(transaction.amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
                                   const evenOdd = i % 2 === 0 ? "even" : "odd";
                                 const rowClassName = !isIncome ? `expense ${evenOdd}` : `income ${evenOdd}`;
+                                const memo = transaction.memo ? <span className="memo">{transaction.memo}</span> : null;
                                 return (
-                                    <tr key={transaction.id} className={rowClassName} onClick={() => handleRowClick(transaction)} key={transaction.id}>
+                                    <tr key={transaction.id+i} className={rowClassName} onClick={() => handleRowClick(transaction)} key={transaction.id}>
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
-                                        <td className="description-col">{transaction.description}</td>
+                                        <td className="description-col">{transaction.description}{memo}</td>
                                         <td className="tags-col">{transaction.tagNames.join(", ")}</td>
                                     </tr>
                                 );
