@@ -122,6 +122,7 @@ function BudgetTable({ setDrawerContent, budget }) {
 
   const rows = (() => {
     const { monthlyBudget } = activeBudget;
+    if(!monthlyBudget) return [];
     const months = Object.keys(monthlyBudget);
     const currentMonth = moment().startOf('month');
 
