@@ -145,6 +145,11 @@ small.category-label {
 white-space: nowrap;
 padding: 0.3ex;
 }
+.budget-drawer-content .transactions-table td .memo{
+    margin-left: 1ex;
+    color: #AAA;
+    font-size: 0.7rem;
+}
 
 td.description-col{
     /* flex grow:1 for td */

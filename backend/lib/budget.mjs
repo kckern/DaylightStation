@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import yaml from 'js-yaml';
 import moment from 'moment-timezone';
 import { buildBudget } from './budgetlib/build_budget.mjs';
@@ -12,6 +12,13 @@ export const compileBudget = async () => {
     const budgetList = budgetConfig.budget.sort((a, b) => a.timeframe.start - b.timeframe.start);
     const { mortgage } = budgetConfig;
     const rawTransactions = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')).transactions;
+    //Apply Memos
+    const transactionMemos = yaml.load(readFileSync('data/budget/transaction.memos.yml', 'utf8'));
+   for(const txnId of Object.keys(transactionMemos)){
+        const txnIndex = rawTransactions.findIndex(txn => `${txn.id}` === txnId);
+        if(txnIndex !== -1) rawTransactions[txnIndex]['memo'] = transactionMemos[txnId]; 
+      
+    }
     const budgets = {};
     for(const budget of budgetList){
         const budgetStart = moment(budget.timeframe.start).toISOString().slice(0, 10);

@@ -67,8 +67,7 @@ function calculateSummary(mortgage,plan) {
             avgMonthlyEquity: openingBalance / events.length,
             payoffDate: moment(events[events.length - 1].date).format('MMMM YYYY'),
             //totalPaid / totalYears
-            annualBudget: events.reduce((acc, {payments}) => acc + payments.reduce((acc, val) => acc + val, 0), 0) / (events.length / 12),
-            totalExtraPaid: events.reduce((acc, {payments}) => acc + payments.slice(1).reduce((acc, val) => acc + val, 0), 0),
+            annualBudget: events.reduce((acc, {payments}) => acc + payments.reduce((acc, val) => acc + val, 0), 0) / (events.length / 12)
 
         },
         ...plan
