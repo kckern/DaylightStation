@@ -6,8 +6,8 @@ import isJSON from 'is-json';
 import { askGPT } from './gpt.js';
 import moment from 'moment';
 
-const secrets = './config.secrets.yml';
-const { BUXFER_EMAIL, BUXFER_PW } = yaml.load(readFileSync(secrets, 'utf8'));
+
+const { BUXFER_EMAIL, BUXFER_PW } = process.env;
 
 
 const getToken = async () => {
@@ -21,7 +21,7 @@ const getToken = async () => {
         password: BUXFER_PW
     };
 
-    console.log(`curl -X POST "${url}" -d "email=${BUXFER_EMAIL}&password=${BUXFER_PW}"`);
+   // console.log(`curl -X POST "${url}" -d "email=${BUXFER_EMAIL}&password=${BUXFER_PW}"`);
     const {data: { response: { token } } } = await axios.post(url, params);
 
     // Save the token to process.env

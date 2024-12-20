@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
-import moment from "moment";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { MonthTabs } from "./monthly";
 import { Drawer } from "../drawer";
+import moment from 'moment';
 
 const formatAsCurrency = (value) => {
     if (!value) return `$Ø`;

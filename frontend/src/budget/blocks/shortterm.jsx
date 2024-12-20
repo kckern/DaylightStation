@@ -3,7 +3,7 @@ import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
-import moment from "moment";
+import moment from 'moment';
 
 
 
@@ -119,7 +119,7 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
             tickWidth: 0,
             plotLines: [{
                 color: '#EEEEEE',
-                value: currentTime * 100,
+                value: (1-currentTime) * 100,
                 width: 1.5,
                 dashStyle: 'dash',
                 zIndex: 5

@@ -1,4 +1,3 @@
-import moment from "moment";
 import React, { useEffect, useState } from "react";
 import { Drawer } from "./drawer";
 
