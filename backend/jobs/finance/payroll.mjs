@@ -5,8 +5,9 @@ import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';
 
 
 
-const secrets = './config.secrets.yml';
-const {  PAYROLL_BASE, PAYROLL_AUTHKEY, PAYROLL_AUTH, PAYROLL_COMPANY, PAYROLL_EMPLOYEE } = yaml.load(readFileSync(secrets, 'utf8'));
+
+
+const {  PAYROLL_BASE, PAYROLL_AUTHKEY, PAYROLL_AUTH, PAYROLL_COMPANY, PAYROLL_EMPLOYEE } = process.env;
 //config
 const configpath = './config.app.yml';
 const { buxfer: {payroll_account_id, direct_deposit_account_id} } = yaml.load(readFileSync(configpath, 'utf8'));
@@ -149,7 +150,7 @@ const { buxfer: {payroll_account_id, direct_deposit_account_id} } = yaml.load(re
 
       }catch(e) {
         const errorCode = e.response?.status;
-        if(!errorCode) return console.error(e.message);
+        if(!errorCode) return console.error(`Error Message: ${e.message}`);
         else if(errorCode === 401) return console.error('Error: Please fetch new auth token: https://trinet.hrpassport.com/ui-home');
        // else if(errorCode) return console.error(`Error [${errorCode}] fetching paychecks`);
         console.error(`Error [${errorCode}] fetching paychecks`);

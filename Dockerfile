@@ -11,6 +11,9 @@ RUN apk add --no-cache openssh-client
 # Bundle app source
 COPY . .
 
+# install npm install moment-timezone --save
+RUN npm install moment-timezone --save
+
 # Install app dependencies and build
 RUN npm install -g forever && \
     cd frontend && npm ci && npm run build && \

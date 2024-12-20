@@ -2,8 +2,7 @@ import fetch from 'node-fetch';
 import { appendFile } from 'fs';
 import yaml from 'js-yaml';
 import { readFileSync } from 'fs';
-const secrets = './config.secrets.yml';
-const { OPENAI_API_KEY } = yaml.load(readFileSync(secrets, 'utf8'));
+const { OPENAI_API_KEY } = process.env;
 
 
 const models = {
