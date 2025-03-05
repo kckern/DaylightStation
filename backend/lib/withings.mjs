@@ -4,7 +4,7 @@ import { saveFile, loadFile } from './io.js';
 const getWeightData = async () => {
     const { WITHINGS_CLIENT, WITHINGS_SECRET,WITHINGS_REDIRECT } = process.env;
     const {refresh} = loadFile('_tmp/withings');
-
+    // return {refresh,currentDirectory};
     const params_auth = {
         action: 'requesttoken',
         grant_type: 'refresh_token',
@@ -13,15 +13,14 @@ const getWeightData = async () => {
         refresh_token: refresh,
         redirect_uri:  WITHINGS_REDIRECT
     };
-    
-
-    let {data:{body:auth_data}} = await axios.post('https://wbsapi.withings.net/v2/oauth2',params_auth);
+    const response = await axios.post('https://wbsapi.withings.net/v2/oauth2',params_auth);
+    let {body:auth_data} =response?.data || {};
 
     const {access_token, refresh_token} = auth_data || {};
 
     if(refresh_token) saveFile('_tmp/withings', {refresh: refresh_token});
 
-    if(!access_token) return {error: `No access token.  Refresh token may have expired.`, refresh_token, WITHINGS_REDIRECT};
+    if(!access_token) return {error: `No access token.  Refresh token may have expired.`, refresh_token,r:response.data, params_auth, path:process.env.path};
 
 
     const params = {
@@ -50,7 +49,7 @@ const getWeightData = async () => {
             if(type === 1) { type = 'lbs'; val = round(2.20462 * val, 1); }
             if(type === 5) { type = 'lean_lbs'; val = round(2.20462 * val, 1); }
             if(type === 8) { type = 'fat_lbs'; val = round(2.20462 * val, 1); }
-            if(type === 6) { type = 'fet_percent'; val = round(val, 1); }
+            if(type === 6) { type = 'fat_percent'; val = round(val, 1); }
             measurements[time][type] = val;
         });
     });

@@ -4,7 +4,7 @@ const harvestRouter = express.Router();
 import todoist from './lib/todoist.js';
 import gmail from './lib/gmail.js';
 import gcal from './lib/gcal.js';
-import withings from './lib/withings.js';
+import withings from './lib/withings.mjs';
 import weather from './lib/weather.js';
 import clickup from './lib/clickup.js';
 import lastfm from './lib/lastfm.js';
