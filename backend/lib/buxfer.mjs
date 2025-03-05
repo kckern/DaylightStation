@@ -7,8 +7,10 @@ import { askGPT } from './gpt.js';
 import moment from 'moment';
 
 
-const { BUXFER_EMAIL, BUXFER_PW } = process.env;
 
+const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
+const secretspath = `${__appDirectory}/config.secrets.yml`;
+const { BUXFER_EMAIL, BUXFER_PW } = yaml.load(readFileSync(secretspath, 'utf8'));
 
 const getToken = async () => {
     // If a token already exists in process.env, return it
@@ -118,7 +120,7 @@ export const processTransactions = async ({startDate, endDate, accounts}) => {
         const { description, id, tags,date  } = txn;
         const index = transactions.findIndex(t => t.id === id);
         const gpt_input = [...chat, {role:"user", content: description}];
-        const json_string = await askGPT(gpt_input, 'gpt-4o-2024-08-06', { response_format: { type: "json_object" }});
+        const json_string = await askGPT(gpt_input, 'gpt-4o', { response_format: { type: "json_object" }});
         const is_json = isJSON(json_string);
         const { category, friendlyName, memo } = is_json ? JSON.parse(json_string) : { };
         if(friendlyName && validTags.includes(category)) {
@@ -126,7 +128,7 @@ export const processTransactions = async ({startDate, endDate, accounts}) => {
             const r = await updateTransacton(id, friendlyName, category, memo);
             transactions[index].tagNames = [category];
             transactions[index].description = friendlyName;
-        }else console.log(`\x1b[31mFailed to categorize: ${date} - ${id} - ${description}\x1b[0m`);
+        }else console.log(`\x1b[31mFailed to categorize (${category}): ${date} - ${id} - ${description}\x1b[0m`);
     }
     //TODO Delete comp transactions from fidility
     const deleteIds = transactions

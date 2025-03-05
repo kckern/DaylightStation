@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import Calendar from './modules/Calendar'
+import Clock from './modules/Time'
 import './App.css'
 
 function App() {
@@ -9,7 +9,14 @@ function App() {
   return (
     <>
       <div>
-        <h1>Daylight Station</h1>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            height: '100vh',
+          }}
+        ><Clock/></div>
       </div>
     </>
   )
