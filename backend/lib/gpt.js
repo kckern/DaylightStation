@@ -2,8 +2,10 @@ import fetch from 'node-fetch';
 import { appendFile } from 'fs';
 import yaml from 'js-yaml';
 import { readFileSync } from 'fs';
-const { OPENAI_API_KEY } = process.env;
 
+const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
+const secretspath = `${__appDirectory}/config.secrets.yml`;
+const { OPENAI_API_KEY} = yaml.load(readFileSync(secretspath, 'utf8'));
 
 const models = {
     'gpt-3.5-turbo-0125'        : {in: 0.0000005,   out: 0.0000015,  context_window: 4096, flagship: true},
@@ -26,7 +28,8 @@ const models = {
     'gpt-4-vision-preview'      : {in: 0.00001,     out: 0.00003,    context_window: 128000},
     'gpt-4-1106-vision-preview' : {in: 0.00001,     out: 0.00003,    context_window: 128000},
 
-    'gpt-4o-2024-08-06'        : {in: 0.00001,     out: 0.00003,    context_window: 128000, flagship: true},
+    'gpt-4o-2024-08-06'        : {in: 0.00001,     out: 0.00003,    context_window: 128000},
+    'gpt-4o'                  : {in: 0.00001,     out: 0.00003,    context_window: 128000, flagship: true},
 }
 
 
@@ -45,7 +48,7 @@ const logGPT = (model, promptTokens, completionTokens, generated_text) => {
   });
 };
 
-export const askGPT = async (messages, model = 'gpt-3.5-turbo', extraconfig) => {
+export const askGPT = async (messages, model = 'gpt-4o', extraconfig) => {
 
   const msgIsString = typeof messages === 'string'; 
   if(msgIsString) messages = [

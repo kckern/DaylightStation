@@ -6,16 +6,23 @@ import { processTransactions } from './buxfer.mjs';
 
 moment.tz.setDefault('America/Los_Angeles');
 
+const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
+
+const budgetPath            = `${__appDirectory}/data/budget/budget.config.yml`;
+const transactionPath       = `${__appDirectory}/data/budget/transactions.yml`;
+const financesPath          = `${__appDirectory}/data/budget/finances.yml`;
+const transactionMemoPath   = `${__appDirectory}/data/budget/transaction.memos.yml`;
 
 export const compileBudget = async () => {
-    const budgetConfig = yaml.load(readFileSync('data/budget/budget.config.yml', 'utf8'));
+    const budgetConfig = yaml.load(readFileSync(budgetPath, 'utf8'));
     const budgetList = budgetConfig.budget.sort((a, b) => a.timeframe.start - b.timeframe.start);
     const { mortgage } = budgetConfig;
-    const rawTransactions = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')).transactions;
+    const rawTransactions = yaml.load(readFileSync(transactionPath, 'utf8')).transactions;
     //Apply Memos
-    const transactionMemos = yaml.load(readFileSync('data/budget/transaction.memos.yml', 'utf8'));
+    const transactionMemos = yaml.load(readFileSync(transactionMemoPath, 'utf8'));
    for(const txnId of Object.keys(transactionMemos)){
-        const txnIndex = rawTransactions.findIndex(txn => `${txn.id}` === txnId);
+       
+        const txnIndex = rawTransactions?.findIndex(txn => `${txn.id}` === txnId);
         if(txnIndex !== -1) rawTransactions[txnIndex]['memo'] = transactionMemos[txnId]; 
       
     }
@@ -26,10 +33,9 @@ export const compileBudget = async () => {
         const transactions = rawTransactions.filter(txn => txn.date >= budgetStart && txn.date <= budgetEnd);
         budgets[budgetStart] = buildBudget(budget, transactions);
     }
-    writeFileSync('data/budget/finances.yml', yaml.dump({budgets,mortgage}));
+    writeFileSync(financesPath, yaml.dump({budgets,mortgage}));
 }
 
-const budgetPath = 'data/budget/budget.config.yml';
 export const refreshFinancialData = async (noDL) => {
     let transactions;
 
@@ -40,9 +46,9 @@ export const refreshFinancialData = async (noDL) => {
         const endDate = moment(end).format('YYYY-MM-DD');
 
         transactions = await processTransactions({ startDate, endDate, accounts });
-        writeFileSync('data/budget/transactions.yml', yaml.dump({ transactions }));
+        writeFileSync(transactionPath, yaml.dump({ transactions }));
     } else {
-        ({ transactions } = yaml.load(readFileSync('data/budget/transactions.yml', 'utf8')));
+        ({ transactions } = yaml.load(readFileSync(transactionPath, 'utf8')));
     }
 
     await compileBudget();

@@ -26,5 +26,7 @@
 **/dist
 *.yml
 ./data/*
+./frontend/dist
+./frontend/dist/*
 LICENSE
 README.md
