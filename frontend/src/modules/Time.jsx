@@ -1,7 +1,8 @@
+
 import React from 'react';
 import './Time.scss';
 
-// function component
+// function component for the animated flipping card
 const AnimatedCard = ({ animation, digit }) => {
   return (
     <div className={`flipCard ${animation}`}>
@@ -10,7 +11,7 @@ const AnimatedCard = ({ animation, digit }) => {
   );
 };
 
-// function component
+// function component for the static (upper/lower) card
 const StaticCard = ({ position, digit }) => {
   return (
     <div className={position}>
@@ -19,61 +20,89 @@ const StaticCard = ({ position, digit }) => {
   );
 };
 
-// function component
+// Reusable flip container for hours, minutes, and seconds
 const FlipUnitContainer = ({ digit, shuffle, unit }) => {
-  // assign digit values
+  // assign digit values and determine previous digit
   let currentDigit = digit;
   let previousDigit = digit - 1;
 
-  // to prevent a negative value
+  // For minutes and seconds, roll over from -1 to 59;
+  // for hours (in 12-hour mode) roll over from 1 to 12.
   if (unit !== 'hours') {
     previousDigit = previousDigit === -1 ? 59 : previousDigit;
   } else {
-    previousDigit = previousDigit === -1 ? 23 : previousDigit;
+    previousDigit = previousDigit === 0 ? 12 : previousDigit;
   }
 
-  // add zero
-  if (currentDigit < 10) {
-    currentDigit = `0${currentDigit}`;
-  }
-  if (previousDigit < 10) {
-    previousDigit = `0${previousDigit}`;
+  // add leading zero if needed (only for minutes and seconds)
+  if (unit !== 'hours') {
+    if (currentDigit < 10) {
+      currentDigit = `0${currentDigit}`;
+    }
+    if (previousDigit < 10) {
+      previousDigit = `0${previousDigit}`;
+    }
   }
 
-  // shuffle digits
+  // decide which digit gets animated depending on the shuffle value
   const digit1 = shuffle ? previousDigit : currentDigit;
   const digit2 = !shuffle ? previousDigit : currentDigit;
 
-  // shuffle animations
+  // define animations for each card
   const animation1 = shuffle ? 'fold' : 'unfold';
   const animation2 = !shuffle ? 'fold' : 'unfold';
 
   return (
-    <div className={'flipUnitContainer'}>
-      <StaticCard position={'upperCard'} digit={currentDigit} />
-      <StaticCard position={'lowerCard'} digit={previousDigit} />
+    <div className="flipUnitContainer">
+      <StaticCard position="upperCard" digit={currentDigit} />
+      <StaticCard position="lowerCard" digit={previousDigit} />
       <AnimatedCard digit={digit1} animation={animation1} />
       <AnimatedCard digit={digit2} animation={animation2} />
     </div>
   );
 };
 
-// class component
+// New component for the AM/PM panel
+const AmPmPanel = ({ ampm, shuffle }) => {
+  // For the flip effect, the "previous" value is simply the opposite.
+  const previousAmPm = ampm === 'AM' ? 'PM' : 'AM';
+  const card1 = shuffle ? previousAmPm : ampm;
+  const card2 = !shuffle ? previousAmPm : ampm;
+  const animation1 = shuffle ? 'fold' : 'unfold';
+  const animation2 = !shuffle ? 'fold' : 'unfold';
+
+  return (
+    <div className="flipUnitContainer">
+      <StaticCard position="upperCard" digit={ampm} />
+      <StaticCard position="lowerCard" digit={previousAmPm} />
+      <AnimatedCard digit={card1} animation={animation1} />
+      <AnimatedCard digit={card2} animation={animation2} />
+    </div>
+  );
+};
+
+// class component for the Flip Clock
 class FlipClock extends React.Component {
   constructor(props) {
     super(props);
+    // initialize using the current date/time in 12-hour format
+    const now = new Date();
+    const hours24 = now.getHours();
+    const hours12 = (hours24 % 12) || 12;
     this.state = {
-      hours: 0,
+      hours: hours12,
       hoursShuffle: true,
-      minutes: 0,
+      minutes: now.getMinutes(),
       minutesShuffle: true,
-      seconds: 0,
+      seconds: now.getSeconds(),
       secondsShuffle: true,
+      ampm: hours24 >= 12 ? 'PM' : 'AM',
+      ampmShuffle: true,
     };
   }
 
   componentDidMount() {
-    this.timerID = setInterval(() => this.updateTime(), 1000); // Use 1000 to update every second
+    this.timerID = setInterval(() => this.updateTime(), 1000);
   }
 
   componentWillUnmount() {
@@ -81,21 +110,30 @@ class FlipClock extends React.Component {
   }
 
   updateTime() {
-    // get new date
+    // get a new Date instance
     const time = new Date();
-    // set time units
-    const hours = time.getHours();
+    const hours24 = time.getHours();
     const minutes = time.getMinutes();
     const seconds = time.getSeconds();
-    // on hour change, update hours and shuffle state
-    if (hours !== this.state.hours) {
+
+    // Convert to 12-hour format: 0 becomes 12, others modulo 12.
+    const hours12 = (hours24 % 12) || 12;
+    const newAMPM = hours24 >= 12 ? 'PM' : 'AM';
+
+    // Update hours (and AM/PM if changed)
+    if (hours12 !== this.state.hours) {
       const hoursShuffle = !this.state.hoursShuffle;
+      // If AM/PM has changed then toggle the flip animation for that panel too.
+      const ampmShuffle =
+        newAMPM !== this.state.ampm ? !this.state.ampmShuffle : this.state.ampmShuffle;
       this.setState({
-        hours,
+        hours: hours12,
         hoursShuffle,
+        ampm: newAMPM,
+        ampmShuffle,
       });
     }
-    // on minute change, update minutes and shuffle state
+    // Update minutes if changed
     if (minutes !== this.state.minutes) {
       const minutesShuffle = !this.state.minutesShuffle;
       this.setState({
@@ -103,7 +141,7 @@ class FlipClock extends React.Component {
         minutesShuffle,
       });
     }
-    // on second change, update seconds and shuffle state
+    // Update seconds if changed
     if (seconds !== this.state.seconds) {
       const secondsShuffle = !this.state.secondsShuffle;
       this.setState({
@@ -114,28 +152,34 @@ class FlipClock extends React.Component {
   }
 
   render() {
-    // state object destructuring
-    const { hours, minutes, seconds, hoursShuffle, minutesShuffle, secondsShuffle } = this.state;
+    // Destructure state
+    const {
+      hours,
+      minutes,
+      seconds,
+      hoursShuffle,
+      minutesShuffle,
+      secondsShuffle,
+      ampm,
+      ampmShuffle,
+    } = this.state;
 
     return (
-      <div className={'flipClock'}>
-        <FlipUnitContainer unit={'hours'} digit={hours} shuffle={hoursShuffle} />
-        <FlipUnitContainer unit={'minutes'} digit={minutes} shuffle={minutesShuffle} />
-        <FlipUnitContainer unit={'seconds'} digit={seconds} shuffle={secondsShuffle} />
+      <div className="flipClock">
+        <FlipUnitContainer unit="hours" digit={hours} shuffle={hoursShuffle} />
+        <FlipUnitContainer unit="minutes" digit={minutes} shuffle={minutesShuffle} />
+        <FlipUnitContainer unit="seconds" digit={seconds} shuffle={secondsShuffle} />
+        <AmPmPanel ampm={ampm} shuffle={ampmShuffle} />
       </div>
     );
   }
 }
 
-// function component
-const Header = () => {
-  return (
-    <header>
-      <h1>React Flip Clock</h1>
-    </header>
-  );
-};
-
+// Main exported function component
 export default function Time() {
-  return <FlipClock />
+  return (
+    <div>
+      <FlipClock />
+    </div>
+  );
 }
