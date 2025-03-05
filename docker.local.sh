@@ -4,6 +4,7 @@ docker rm daylight-station
 
 
 #push to local registry
+docker tag kckern/daylight-station:latest localhost:3113/daylight-station:latest
 
 
 
@@ -13,5 +14,8 @@ docker compose build
 docker compose up -d
 
 
+
+
 ##push to hub
-# docker push kckern/daylight-station:latest
+docker push kckern/daylight-station:latest
+ 
