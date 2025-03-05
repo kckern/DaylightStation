@@ -15,10 +15,9 @@ COPY . .
 RUN npm install moment-timezone --save
 
 # Install app dependencies and build
-RUN npm install -g forever && \
-    cd frontend && npm ci && npm run build && \
-    cd ../backend && npm ci && \
-    chown -R node:node .
+RUN npm install -g forever
+RUN cd frontend && npm ci && npm run build
+RUN cd backend && npm ci && chown -R node:node .
 
 # Copy entrypoint script into the image
 COPY entrypoint.sh /usr/src/app

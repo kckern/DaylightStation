@@ -38,7 +38,7 @@ export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions
         };
     });
     
-    const initialBudget = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[0]].startingBalance;
+    const initialBudget = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[0]]?.startingBalance;
 
     const averageDailyBurn = (actualData[0].y - actualData[today].y) / (today + 1);
     const projectedData = [actualData[today].y].concat(

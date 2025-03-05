@@ -11,17 +11,19 @@ import "./budget.css"
 import '@mantine/core/styles.css';
 import spinner from '../assets/icons/spinner.svg';
 
+const isLocalhost = /localhost/.test(window.location.href);
+
+const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+
 const fetchBudget = async () => {
   console.log('fetching budget')
-  //get from http://localhost:3112/data/budget
-  const response = await fetch('http://localhost:3112/data/budget');
+  const response = await fetch(`${baseUrl}/data/budget`);
   const data = await response.json();
   return data;
 }
 
 const reloadBudget = async () => {
-  //get from http://localhost:3112/data/budget
-  const response = await fetch('http://localhost:3112/harvest/budget');
+  const response = await fetch(`${baseUrl}/harvest/budget`);
   const data = await response.json();
   return data;
 }
