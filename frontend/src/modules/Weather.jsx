@@ -325,8 +325,9 @@ export default function Weather() {
   return (
     <div
       style={{
-        scale: "1.5",
+        lineHeight: "1",
         display: "flex",
+        fontSize: "1.5rem",
         flexDirection: "column",
         justifyContent: "space-between",
         textAlign: "center"
@@ -340,16 +341,17 @@ export default function Weather() {
             justifyContent: "space-around",
             padding: "0",
             borderRadius: "10px",
-            margin: "0 25%",
+            margin: "0 5%",
             width: "auto"
           }}
         >
-          <img src={currentWeather.image} alt={currentWeather.description} />
+          <img src={currentWeather.image} alt={currentWeather.description}  style={{ width: "50%" }} />
           <div>
             <div
               style={{
-                fontSize: "2rem",
-                fontWeight: "bold"
+                fontSize: "3rem",
+                fontWeight: "bold",
+                marginBottom: "0.3ex"
               }}
             >
               {currentWeather.feel}°
@@ -368,25 +370,26 @@ export default function Weather() {
             justifyContent: "space-around",
             padding: "0",
             borderRadius: "10px",
-            margin: "0 25%",
+            margin: "0 5%",
             width: "auto"
           }}
         >
           <div>
+          <div>Air Quality:</div>
             <div
               style={{
-                fontSize: "2rem",
+                fontSize: "3rem",
+                marginTop: "0.7ex",
                 fontWeight: "bold"
               }}
             >
               {Math.round(currentWeather.aqi)}
             </div>
-            <div>Air Quality Index</div>
           </div>
           <img
             src={currentWeather.aircolor}
             alt={"Air Quality"}
-            style={{ height: "4rem" }}
+            style={{ width: "50%", padding: "3ex" }} 
           />
         </div>
       </div>
