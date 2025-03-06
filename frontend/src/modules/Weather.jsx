@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DaylightAPI } from '../lib/api.mjs';
 import React from 'react';
-import Highcharts from 'highcharts';
+import Highcharts, { color } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
 
@@ -9,36 +9,44 @@ export default function Weather() {
   const [temps, setTemps] = useState([]);
   const [times, setTimes] = useState([]);
 
-  const gmtOffset = new Date().getTimezoneOffset() * 60;
+  const celciusToFahrenheit = (temp) => Math.round(temp * 9/5 + 32);
 
-  useEffect(() => {
+  const reloadData = () => {
     DaylightAPI('/data/weather').then((response) => {
-        const now = new Date();
-        const futureList = response?.forecast?.list.filter((item) => new Date(item.dt_txt) > now).reverse() || [];
+        const list = response.hourly || [];
+        const endTime = moment().add(36, 'hours');
+        const isFuture = ({time}) => moment(time).isAfter(moment()) && moment(time).isBefore(endTime);
+      const futureList = list.filter(isFuture);
+      const temps = futureList.map((item) => item.feel).map(celciusToFahrenheit) || [];
+      const times = futureList.map((item) => item.time).map((time) => moment(time).format('ha')) || [];
 
-      const list = futureList.slice(0,15) || [];
-      const temps = list.map((item) => item.main.feels_like).map(kelvingToFahrenheit) || [];
-    const times = list.map((item) => item.dt_txt).map((time) => moment(time).utcOffset(gmtOffset).format('M/D h a')) || [];
-      setTemps(temps);
-      setTimes(times);
-    });
-  }, []); 
+      //every n hours
+      const n = 6;
+      setTemps(temps.filter((_, i) => i % n === 0));
+      setTimes(times.filter((_, i) => i % n === 0));
+    }
+    );
+  }
 
-  const kelvingToFahrenheit = (temp) => Math.round((temp - 273.15) * 9/5 + 32);
+    useEffect(() => {
+        reloadData();
+        const interval = setInterval(reloadData, 300000);
+        return () => clearInterval(interval);
+    }, []);
 
-  return <WeatherChart times={times} temps={temps} />
-}
 
-const WeatherChart = ({ times, temps }) => {
-  if (!temps.length || !times.length) return null;
 const options = {
+    credits: {
+        enabled: false
+    },
     chart: {
         type: 'column',
         animation: false,
-        backgroundColor: '#2c2c2c',
+        backgroundColor: '#000',
         style: {
             color: '#ffffff'
-        }
+        },
+        spacing: [10, 10, 10, 10]
     },
     title: {
         text: '',
@@ -49,18 +57,23 @@ const options = {
     series: [{
         name: 'Temperature',
         data: temps,
+        animation: { duration: 0 },
+        color: '#000066',
+        borderColor: '#FFFFFF55',
         dataLabels: {
             enabled: true,
             align: 'center',
             verticalAlign: 'top',
             inside: true,
             formatter: function() {
-                return this.y + '°';
+                return ' ' + this.y + '°';
             },
             style: {
-                fontSize: '12px',
+                fontFamily: 'Roboto Condensed',
+                fontSize: '30px',
                 fontWeight: 'bold',
-                color: '#ffffff'
+                paddingLeft: '1ex',
+                color: '#ffffffDD'
             }
         }
     }],
@@ -68,27 +81,33 @@ const options = {
         categories: times,
         labels: {
             style: {
-                color: '#ffffff'
-            }
-        }
+                color: '#ffffff',
+                fontSize: '27px',
+                fontFamily: 'Roboto Condensed'
+
+            },
+            rotation: -45,
+            x: 10,
+            y: 15
+        },
+        lineColor: '#ffffff',
+        lineWidth: 2
     },
     yAxis: {
-        labels: {
-            style: {
-                color: '#ffffff'
-            }
-        },
+        visible: false,
         title: {
-            style: {
-                color: '#ffffff'
-            }
-        }
+            enabled: false
+        },
+        gridLineWidth: 0
     },
     legend: {
-        //none
         enabled: false
+    },
+    plotOptions: {
+        column: {
+            groupPadding: -0.05
+        }
     }
 };
-
   return <HighchartsReact highcharts={Highcharts} options={options} />;
-};
+}
