@@ -21,7 +21,7 @@ export default function Weather() {
       const times = futureList.map((item) => item.time).map((time) => moment(time).format('ha')) || [];
 
       //every n hours
-      const n = 6;
+      const n = 5;
       setTemps(temps.filter((_, i) => i % n === 0));
       setTimes(times.filter((_, i) => i % n === 0));
     }
@@ -42,7 +42,7 @@ const options = {
     chart: {
         type: 'column',
         animation: false,
-        backgroundColor: '#000',
+        backgroundColor: '#00000000',
         style: {
             color: '#ffffff'
         },
@@ -58,7 +58,7 @@ const options = {
         name: 'Temperature',
         data: temps,
         animation: { duration: 0 },
-        color: '#000066',
+        color: '#e9c46a',
         borderColor: '#FFFFFF55',
         dataLabels: {
             enabled: true,
@@ -66,14 +66,14 @@ const options = {
             verticalAlign: 'top',
             inside: true,
             formatter: function() {
-                return ' ' + this.y + '°';
+                return '' + this.y + '°';
             },
             style: {
                 fontFamily: 'Roboto Condensed',
-                fontSize: '30px',
+                fontSize: '24',
                 fontWeight: 'bold',
                 paddingLeft: '1ex',
-                color: '#ffffffDD'
+                color: '#000'
             }
         }
     }],
@@ -82,7 +82,7 @@ const options = {
         labels: {
             style: {
                 color: '#ffffff',
-                fontSize: '27px',
+                fontSize: '20px',
                 fontFamily: 'Roboto Condensed'
 
             },

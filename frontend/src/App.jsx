@@ -8,26 +8,9 @@ function App() {
 
   return (
     <>
-      <div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '30vh',
-          }}
-        ><Clock/></div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            width: '25vw',
-          }}
-        >
-
-        <Weather />
-        </div>
+    <div className='sidebar'>
+    <Clock/>
+    <Weather />
       </div>
     </>
   )
