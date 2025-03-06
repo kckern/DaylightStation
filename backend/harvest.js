@@ -28,7 +28,9 @@ const harvesters = {
     
 }
 
-Object.keys(harvesters).forEach(key => {
+const harvestKeys = Object.keys(harvesters);
+
+harvestKeys.forEach(key => {
     harvestRouter.get(`/${key}`, async (req, res) =>{
         try {
             const response = await harvesters[key](req);
@@ -40,6 +42,10 @@ Object.keys(harvesters).forEach(key => {
     });
 });
 
+//root
+harvestRouter.get('/', async (req, res) => {
+    return res.status(200).json({availableEndpoints: harvestKeys});
+});
 
 
 //handle all other requests, post or get
