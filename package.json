@@ -11,6 +11,7 @@
     "node-fetch": "^3.3.2",
     "openai": "^4.77.0",
     "openai-gpt-token-counter": "^1.1.1",
+    "openmeteo": "^1.1.5",
     "string-similarity": "^4.0.4"
   }
 }

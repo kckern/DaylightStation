@@ -17,7 +17,17 @@ function App() {
             height: '30vh',
           }}
         ><Clock/></div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            width: '25vw',
+          }}
+        >
+
         <Weather />
+        </div>
       </div>
     </>
   )
