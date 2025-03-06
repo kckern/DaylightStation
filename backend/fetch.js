@@ -2,9 +2,9 @@ import express from 'express';
 const apiRouter = express.Router();
 import Infinity from './lib/infinity.js';
 import { saveFile } from './lib/io.js';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import yaml from 'js-yaml';
-const dataPath = `${process.cwd()}/data`;
+const dataPath = `${process.env.path.data}`;
 
 // Middleware for error handling
 apiRouter.use((err, req, res, next) => {
@@ -36,9 +36,31 @@ apiRouter.get('/budget',  async (req, res, next) => {
     }
 });
 
+//list the *.yml files in data path /data
+const dataFiles = readdirSync(`${dataPath}`).filter(f => f.endsWith('.yaml')).map(f => f.replace('.yaml', ''));
+apiRouter.get('/list',  async (req, res, next) => {
+    try {
+        res.json({dataPath, dataFiles});
+    } catch (err) {
+        next(err);
+    }
+});
+
+//add an endpoint to fetch a specific file
+apiRouter.get('/:file',  async (req, res, next) => {
+    try {
+        const file = req.params.file;
+        const data = yaml.load(readFileSync(`${dataPath}/${file}.yaml`, 'utf8'));
+        res.json(data);
+    } catch (err) {
+        next(err);
+    }
+});
+
+
 //handle all other requests, post or get
 apiRouter.all('*',  async (req, res) => {
-    const availableEndpoints = apiRouter.stack.map(r => r.route.path);
+    const availableEndpoints = apiRouter.stack.map(r => r.route?.path);
     return res.status(404).json({error: `Invalid endpoint: ${req.method} ${req.path}`, availableEndpoints});
 });
 
