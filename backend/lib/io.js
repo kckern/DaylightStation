@@ -50,7 +50,10 @@ const saveFile = (path, data) => {
     //add yaml if it doesnt end with .yaml
     const yamlFile = path.endsWith('.yaml') ? path : `${path}.yaml`;
     data = JSON.parse(JSON.stringify(removeCircularReferences(data)));
-    fs.writeFileSync(`${process.env.path.data}/${yamlFile}`, yaml.dump(data), 'utf8');
+    const dst = `${process.env.path.data}/${yamlFile}`;
+    fs.writeFileSync(`${dst}`, yaml.dump(data), 'utf8');
+
+    //console.log(`Saved file to ${dst}`);
 
     return true;
 }

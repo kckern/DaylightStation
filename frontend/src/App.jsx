@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import Calendar from './modules/Calendar'
 import Clock from './modules/Time'
+import Weather from './modules/Weather'
 import './App.css'
 
 function App() {
@@ -14,9 +14,10 @@ function App() {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            height: '100vh',
+            height: '30vh',
           }}
         ><Clock/></div>
+        <Weather />
       </div>
     </>
   )
