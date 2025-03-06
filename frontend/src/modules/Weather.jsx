@@ -366,7 +366,6 @@ export default function Weather() {
                 margin: '0 25%',
                 width: 'auto'
             }}>
-    <img src={currentWeather.aircolor} alt={"Air Quality"} style={{height: '4rem'}}/>
     <div>
             <div
                 style={{
@@ -375,7 +374,8 @@ export default function Weather() {
                 }}
             >{Math.round(currentWeather.aqi)}</div>
             <div>Air Quality Index</div>
-            </div></div>
+            </div>
+            <img src={currentWeather.aircolor} alt={"Air Quality"} style={{height: '4rem'}}/></div>
         </div>
     </div>
 }
