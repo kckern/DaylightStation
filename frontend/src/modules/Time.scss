@@ -5,12 +5,12 @@ $easeInOut: cubic-bezier(0.455, 0.03, 0.515, 0.955);
 $turnDuration: 0.6s;
 
 // Colors and fonts
-$border: rgb(113, 113, 113);
-$card: rgb(165, 165, 165);
+$border: rgb(74, 74, 74);
+$card: rgb(0, 0, 0);
 $font-family: 'Roboto Condensed', sans-serif;
-$font-size: 4.5em;
+$font-size: 3em;
 $font-weight: 800;
-$font-color: rgb(69, 69, 69);
+$font-color: rgb(160, 160, 160);
 
 // Animation mixin
 @mixin animate($name, $easing, $duration: 300ms, $delay: 0s, $iteration: 1, $direction: normal, $fill-mode: forwards) {
@@ -36,7 +36,7 @@ $font-color: rgb(69, 69, 69);
   perspective: 300px;
   background-color: $card;
   border-radius: 3px;
-  box-shadow: 0px 10px 10px -10px grey;
+  box-shadow: 0px 10px 10px -10px rgb(0, 0, 0);
 }
 
 .upperCard, .lowerCard {
