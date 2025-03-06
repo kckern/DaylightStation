@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import Clock from './modules/Time'
-import Weather from './modules/Weather'
 import './App.css'
+import WeatherForecast from './modules/WeatherForecast'
+import Weather from './modules/Weather'
 
 function App() {
   const [count, setCount] = useState(0)
@@ -10,7 +11,8 @@ function App() {
     <>
     <div className='sidebar'>
     <Clock/>
-    <Weather />
+    <Weather/>
+    <WeatherForecast />
       </div>
     </>
   )
