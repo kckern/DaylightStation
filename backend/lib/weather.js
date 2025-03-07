@@ -5,7 +5,7 @@ import 'moment-timezone';
 moment.tz.setDefault('UTC');
 
 
-const getWeather = async () => {
+const getWeather = async (job_id) => {
     const { OPEN_WEATHER_API_KEY, weather: { lat, lng, timezone} } = process.env;
 
     const weatherParams = {
@@ -61,6 +61,7 @@ const getWeather = async () => {
     };
 
     saveFile('weather', weatherData);
+    console.log('Weather data saved, job:', job_id);
     return weatherData;
 }
 
