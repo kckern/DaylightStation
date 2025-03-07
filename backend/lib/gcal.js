@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import { saveFile, sanitize } from './io.js';
 
-const listCalendarEvents = async () => {
+const listCalendarEvents = async (job_id) => {
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;
 
     if(!(GOOGLE_CLIENT_ID || GOOGLE_CLIENT_SECRET || GOOGLE_REDIRECT_URI || GOOGLE_REFRESH_TOKEN)) {
@@ -34,6 +34,7 @@ const listCalendarEvents = async () => {
         return { start, end, summary, description };
     });
 
+    console.log(`\t[${job_id}] Calendar: ${events.length} events found`);
     saveFile('calendar', events);
     return events;
 }
