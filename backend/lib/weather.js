@@ -61,7 +61,7 @@ const getWeather = async (job_id) => {
     };
 
     saveFile('weather', weatherData);
-    console.log('Weather data saved, job:', job_id);
+    console.log(`\t[${job_id}] Weather saved`);
     return weatherData;
 }
 

@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import { saveFile,sanitize } from './io.js';
 
-const listMails = async () => {
+const listMails = async (job_id) => {
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;
 
     if(!(GOOGLE_CLIENT_ID || GOOGLE_CLIENT_SECRET || GOOGLE_REDIRECT_URI || GOOGLE_REFRESH_TOKEN)) {
@@ -28,6 +28,7 @@ const listMails = async () => {
         return { subject, from, to, snippet };
     }));
 
+    console.log(`\t[${job_id}] Gmail: ${messages.length} messages found`);
     saveFile('gmail', messages);
     return messages;
 }
