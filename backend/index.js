@@ -23,6 +23,7 @@ async function initializeApp() {
     process.env = { ...process.env, isDocker, ...appConfig, ...secretsConfig, ...localConfig };
 
     // Import routers dynamically after configuration is set
+    const { default: cron } = await import('./cron.mjs');
     const { default: fetchRouter } = await import('./fetch.js');
     const { default: harvestRouter } = await import('./harvest.js');
     const { default: JournalistRouter } = await import('./journalist.mjs');
@@ -32,6 +33,8 @@ async function initializeApp() {
     // Backend API
     app.get('/debug', (_, res) => res.json({ process: { __dirname, env: process.env } }));
     app.use('/data', fetchRouter);
+    
+    app.use('/cron', cron);
     app.use("/harvest", harvestRouter);
     app.use("/journalist", JournalistRouter);
     app.use("/home", homeRouter);
