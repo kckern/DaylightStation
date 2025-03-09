@@ -26,7 +26,7 @@ export default function Upcoming() {
   // Initial load + refresh every 5 minutes
   useEffect(() => {
     reloadData();
-    const loadInterval = setInterval(reloadData, 300000); // 5 minutes
+    const loadInterval = setInterval(reloadData, 1000 * 60 * 3);
     return () => clearInterval(loadInterval);
   }, []);
 
