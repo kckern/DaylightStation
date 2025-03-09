@@ -11,66 +11,97 @@ $transition-time: 1s;
     flex-grow: 0;
     outline: 2px solid #f0f0f055;
 
+
     .main-panel {
-      flex-grow: 1;
-      overflow: hidden;
-      position: relative;
-      max-width: 60%;
-      height: 100%;
-      position: relative;
-  
-      .main-panel-items {
-        display: flex;
+        flex-grow: 1;
+        overflow: hidden;
+        position: relative;
+        max-width: 60%;
         height: 100%;
-        transition: transform $transition-time ease-in-out;
+      
+        .main-panel-items {
+          display: flex;
+          height: 100%;
+          // We remove the fixed translateX(-100%) that was always applied:
+          // transition: transform $transition-time ease-in-out;
+          // transform: translateX(-100%);
+      
+          // We still want to allow transitions, but toggled by .main-panel-item classes
+          &.animating {
+            // Container-level styling if needed while animating
+          }
+        }
+      
+        .main-panel-item {
+          flex: 0 0 auto;
+          width: 100%;
+          padding: 0;
+          box-sizing: border-box;
+          border-right: 1px solid #f0f0f0;
+          word-break: break-word;
+          overflow: hidden;
+      
+          // Like the list panel, define transitions on each item
+          transition: transform $transition-time ease-in-out, opacity $transition-time ease-in-out;
+      
+          h2 {
+            padding: 10px;
+            background-color: #f0f0f0;
+            color: #111;
+          }
+      
+          // No motion when not animating
+          &.noslide {
+            transition: none !important;
+            transform: none;
+          }
+      
+          // For the "first" item (idx === 0) whenever isMoving
+          // Slide it left, fade out
+          &.slide-out {
+            transform: translateX(-100%);
+            opacity: 0;
+          }
+      
+          // For all other items (idx >= 1) in an animation
+          // Slide them left (no fade out)
+          &.slide-left {
+            transform: translateX(-100%);
+          }
+        }
       }
-  
-      .main-panel-item {
-        flex: 0 0 auto; // Prevents the item from growing or shrinking
-        padding: 0;
-        box-sizing: border-box;
-        border-right: 1px solid #f0f0f0;
-        word-break: break-word;
+      
+      .list-panel {
+        width: max(40%, 300px);
         overflow: hidden;
-      }
-      .main-panel-item h2 {
-        padding: 10px;
-        background-color: #f0f0f0;
-        color: #111;
-      }
-    }
-  
-    .list-panel {
-      width: max(40%, 300px);
-      overflow: hidden;
-      position: relative;
-      transition: none!important;
-      background-color: #000;
-      position: relative;
-      border-left: 1px solid #f0f0f0;
-      margin-left: -1px;
-  
-      .list-panel-item {
-        background-color: #1d1c1c;
-        border: 1px solid #f0f0f033;
-        height: 3rem;
-        padding: 3px;
-        padding: 1ex;
-        box-sizing: border-box;
-        transition: transform $transition-time ease-in-out, opacity $transition-time ease-in-out;
-        word-break: break-word;
-        overflow: hidden;
-      }
-      .list-panel-item.slide-out {
-        transform: translateX(-100%);
-        opacity: 0;
-      }
-  
-      .list-panel-item.slide-up {
-        transform: translateY(-100%);
-      }
-      .list-panel-item.noslide {
+        position: relative;
         transition: none!important;
+        background-color: #000;
+        position: relative;
+        border-left: 1px solid #f0f0f0;
+        margin-left: -1px;
+      
+        .list-panel-item {
+          background-color: #1d1c1c;
+          border: 1px solid #f0f0f033;
+          height: 3rem;
+          padding: 3px;
+          padding: 1ex;
+          box-sizing: border-box;
+          transition: transform $transition-time ease-in-out, opacity $transition-time ease-in-out;
+          word-break: break-word;
+          overflow: hidden;
+        }
+        .list-panel-item.slide-out {
+          transform: translateX(-100%);
+          opacity: 0;
+        }
+      
+        .list-panel-item.slide-up {
+          transform: translateY(-100%);
+        }
+        .list-panel-item.noslide {
+          transition: none!important;
+        }
       }
-    }
   }
