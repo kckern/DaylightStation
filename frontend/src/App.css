@@ -1,5 +1,11 @@
 body{
     font-family: 'Roboto Condensed', sans-serif!important;
+    color: #FFFFFFAA;
+}
+
+#root{
+    display: flex;
+    justify-content: center;
 }
 
 .sidebar{
@@ -13,6 +19,19 @@ body{
     flex-direction: column;
     justify-content: space-between;
 }
+
+.content{
+    flex-grow: 1;
+    height: calc(100vh - 4rem);
+    margin: 2rem 2rem 2rem 0;
+    background-color: #FFFFFF22;
+    border-radius: 1rem;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
 
 h2{
     margin: 0;
