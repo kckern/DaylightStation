@@ -13,30 +13,46 @@ const listCalendarEvents = async (job_id) => {
 
     const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
 
+    // List available calendars
+    const { data: list } = await calendar.calendarList.list();
     const now = new Date();
     const sixWeeksFromNow = new Date();
     sixWeeksFromNow.setDate(now.getDate() + 42); // 6 weeks = 42 days
 
-    const { data } = await calendar.events.list({
-        calendarId: 'primary',
-        timeMin: now.toISOString(),
-        timeMax: sixWeeksFromNow.toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime',
-    });
+    let allEvents = [];
 
-    const events = data.items.map(event => {
-        const start = event.start.dateTime || event.start.date;
-        const end = event.end.dateTime || event.end.date;
-        const summary = sanitize(event.summary);
-        const description = sanitize(event.description);
+    for (const cal of list.items) {
+        if(!cal.selected) continue;
+        const { data } = await calendar.events.list({
+            calendarId: cal.id,
+            timeMin: now.toISOString(),
+            timeMax: sixWeeksFromNow.toISOString(),
+            singleEvents: true,
+            orderBy: 'startTime',
+        });
 
-        return { start, end, summary, description };
-    });
+        const events = data.items.map(event => {
+            const start = event.start.dateTime || event.start.date;
+            const end = event.end.dateTime || event.end.date;
+            const summary = sanitize(event.summary);
+            const description = sanitize(event.description);
+            const calendar = sanitize(cal.summary);
+            const duration = (new Date(end) - new Date(start) ) / 1000 / 60 / 60;
 
-    console.log(`\t[${job_id}] Calendar: ${events.length} events found`);
-    saveFile('calendar', events);
-    return events;
+            return { start, end, summary, description , calendar , duration };
+        })
+        //filter birthdays
+        .filter(event => !(/ birthday$/i.test(event.summary) && event.duration === 24));
+
+        allEvents = allEvents.concat(events);
+    }
+
+    //sort 
+    allEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+    console.log(`\t[${job_id}] Calendar: ${allEvents.length} events found`);
+    saveFile('calendar', allEvents);
+    return allEvents;
 }
 
 export default listCalendarEvents;
