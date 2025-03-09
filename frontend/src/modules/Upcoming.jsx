@@ -8,7 +8,7 @@ export default function Upcoming() {
   const [listItems, setListItems] = useState([]);
   const [isMoving, setIsMoving] = useState(false);
   const reloadData = () => {
-    DaylightAPI("/data/calendar").then(events => {
+    DaylightAPI("/data/events").then(events => {
       events = [...events.slice(-1), ...events.slice(0, -1)];
       while (events.length < 5) events = [...events, ...events];
 

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import crypto from 'crypto';
-import { saveFile } from './io.js';
+import { saveFile } from './io.mjs';
 
 
 const getScrobbles = async () => {
