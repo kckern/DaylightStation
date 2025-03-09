@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { loadFile, saveFile } from './io.js';
+import { loadFile, saveFile } from './io.mjs';
 
 const keys = ['program', 'videomenu', 'watchlist', 'entropy', 'youtube'];
 

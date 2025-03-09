@@ -1,4 +1,4 @@
-import { saveFile, loadFile } from './io.js';
+import { saveFile, loadFile } from './io.mjs';
 import { fetchWeatherApi } from 'openmeteo';
 import moment from 'moment';
 import 'moment-timezone';

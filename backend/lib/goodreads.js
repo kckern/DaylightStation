@@ -1,4 +1,4 @@
-import { saveFile } from './io.js';
+import { saveFile } from './io.mjs';
 import Parser from 'rss-parser';
 let parser = new Parser();
  
