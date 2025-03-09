@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
-import { saveFile, sanitize } from './io.js';
+import { saveFile, sanitize } from './io.mjs';
+import saveEvents from '../jobs/events.mjs';
 
 const listCalendarEvents = async (job_id) => {
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;
@@ -31,19 +32,7 @@ const listCalendarEvents = async (job_id) => {
             orderBy: 'startTime',
         });
 
-        const events = data.items.map(event => {
-            const start = event.start.dateTime || event.start.date;
-            const end = event.end.dateTime || event.end.date;
-            const summary = sanitize(event.summary);
-            const description = sanitize(event.description);
-            const calendar = sanitize(cal.summary);
-            const duration = (new Date(end) - new Date(start) ) / 1000 / 60 / 60;
-
-            return { start, end, summary, description , calendar , duration };
-        })
-        //filter birthdays
-        .filter(event => !(/ birthday$/i.test(event.summary) && event.duration === 24));
-
+        const events = data.items;
         allEvents = allEvents.concat(events);
     }
 
@@ -52,6 +41,7 @@ const listCalendarEvents = async (job_id) => {
 
     console.log(`\t[${job_id}] Calendar: ${allEvents.length} events found`);
     saveFile('calendar', allEvents);
+    saveEvents(job_id);
     return allEvents;
 }
 

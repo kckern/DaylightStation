@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import { saveFile,sanitize } from './io.js';
+import { saveFile,sanitize } from './io.mjs';
 
 const listMails = async (job_id) => {
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;

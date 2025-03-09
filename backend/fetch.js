@@ -1,7 +1,7 @@
 import express from 'express';
 const apiRouter = express.Router();
 import Infinity from './lib/infinity.js';
-import { saveFile } from './lib/io.js';
+import { saveFile } from './lib/io.mjs';
 import { readFileSync, readdirSync } from 'fs';
 import yaml from 'js-yaml';
 const dataPath = `${process.env.path.data}`;

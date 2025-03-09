@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { saveFile, loadFile } from './io.js';
+import { saveFile, loadFile } from './io.mjs';
 
 const getWeightData = async () => {
     const { WITHINGS_CLIENT, WITHINGS_SECRET,WITHINGS_REDIRECT } = process.env;
