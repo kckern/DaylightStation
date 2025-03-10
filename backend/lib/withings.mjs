@@ -1,10 +1,11 @@
 import axios from 'axios';
 import { saveFile, loadFile } from './io.mjs';
+import processWeight from '../jobs/weight.mjs';
 
-const getWeightData = async () => {
+const getWeightData = async (job_id) => {
     const { WITHINGS_CLIENT, WITHINGS_SECRET,WITHINGS_REDIRECT } = process.env;
     const {refresh} = loadFile('_tmp/withings');
-    // return {refresh,currentDirectory};
+    //return {refresh};
     const params_auth = {
         action: 'requesttoken',
         grant_type: 'refresh_token',
@@ -60,6 +61,7 @@ const getWeightData = async () => {
     if(measurements.length === 0) return;
 
     saveFile('withings', measurements);
+    processWeight(job_id);
     return measurements;
 };
 
