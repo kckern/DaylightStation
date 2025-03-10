@@ -8,12 +8,13 @@ import moment  from 'moment';
     let values = interpolateDays(weightPoints.slice(0, 90));
     values = rollingAverage(values, 'lbs', 14);
     values = rollingAverage(values, 'fat_percent', 14);
-
+    values = extrapolateToPresent(values);
+    
     values = trendline(values, 'lbs_adjusted_average', 14);
     values = trendline(values, 'lbs_adjusted_average', 7);
+    values = caloricBalance(values);
     values = trendline(values, 'lbs_adjusted_average', 1);
     values = removeTempKeys(values);
-    values = extrapolateToPresent(values);
     saveFile('weight', values);
     return values;
 }
@@ -25,7 +26,6 @@ function extrapolateToPresent(values) {
     const mostRecentRecord = allRecords[allRecords.length - 1];
     const presentDate = moment().format('YYYY-MM-DD');
     const daysSinceLastRecord = moment(presentDate).diff(mostRecentRecord, 'days');
-    console.log('daysSinceLastRecord', daysSinceLastRecord);
     if (daysSinceLastRecord < 1) return values;
     for (let key of keysToExtrapolate) {
         const lastValue = values[mostRecentRecord][key];
@@ -68,6 +68,19 @@ function interpolateDays(values) {
     for (let key of keysToInterpolate) allDates = interpolateKeyedValues(allDates, key);
     return allDates;
 }
+
+function caloricBalance(values) {
+    const dates = Object.keys(values).sort();
+    for (let i = 0; i < dates.length; i++) {
+        const date = dates[i];
+        const trend = values[date].lbs_adjusted_average_7day_trend;
+        const deficit = Math.round( (trend * 3500) / 7);
+        values[date].caloric_balance = deficit;
+    }
+    return values;
+}
+
+
 
 
 function trendline(values, key, n) {
