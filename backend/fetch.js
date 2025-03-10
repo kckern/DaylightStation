@@ -3,6 +3,7 @@ const apiRouter = express.Router();
 import Infinity from './lib/infinity.js';
 import { saveFile } from './lib/io.mjs';
 import { readFileSync, readdirSync } from 'fs';
+import test from './jobs/weight.mjs';
 import yaml from 'js-yaml';
 const dataPath = `${process.env.path.data}`;
 
@@ -41,6 +42,15 @@ const dataFiles = readdirSync(`${dataPath}`).filter(f => f.endsWith('.yaml')).ma
 apiRouter.get('/list',  async (req, res, next) => {
     try {
         res.json({dataPath, dataFiles});
+    } catch (err) {
+        next(err);
+    }
+});
+
+apiRouter.get('/test',  async (req, res, next) => {
+    try {
+        const result = await test();
+        res.json({test: result});
     } catch (err) {
         next(err);
     }
