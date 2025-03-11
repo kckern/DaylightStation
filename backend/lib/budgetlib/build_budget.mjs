@@ -54,13 +54,6 @@ export const buildBudget = (config, transactions)=>
                 shortTermBuckets[label]['balance'] += allocation;
             }
         } else {
-            // Reduce budgets
-                    //todo: 
-                //Step 1: Flex Bucket Adjustment Reduce each flex bucket simultaneously based on its weight. Continue until the budget equals the balance or until no further adjustment is possible. 
-                // Step 2: Non-Flex Item Adjustment -  If all flex buckets have been reduced to the balance: Simultaneously reduce each non-flex item. Stop if any item reaches its balance amount. 
-                // Step 3: Overall Budget Reduction -  If all buckets have been reduced to the balance: Evenly lower the budget below the balance. Start with the largest category.
-
-
             for (const label in shortTermBuckets) {
                 const bucket = shortTermBuckets[label];
                 if (bucket['balance'] > 0) {

@@ -104,7 +104,7 @@ export const deleteTransaction = async (id) => {
 
 
 export const processTransactions = async ({startDate, endDate, accounts}) => {
-
+    console.log(`Processing transactions from ${startDate} to ${endDate}`);
     const transactions = await getTransactions({startDate, endDate, accounts});
 
     const hasNoTag = (txn) => !txn.tagNames.length;
@@ -113,7 +113,7 @@ export const processTransactions = async ({startDate, endDate, accounts}) => {
     const txn_to_process = transactions.filter(txn => hasNoTag(txn) || hasRawDescription(txn));
    // console.log(`Processing ${txn_to_process.length} transactions to categorize...`);
     txn_to_process.forEach(txn => console.log(`${txn.date} - ${txn.description}`));
-    const {validTags, chat} = yaml.load(readFileSync('./data/budget/gpt.yml', 'utf8'));
+    const {validTags, chat} = yaml.load(readFileSync('../data/budget/gpt.yml', 'utf8'));
     chat[0].content =  chat[0].content.replace("__VALID_TAGS__", JSON.stringify(validTags));
 
     for(let txn of txn_to_process) {
