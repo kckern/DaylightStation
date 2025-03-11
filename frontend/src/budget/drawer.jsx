@@ -125,7 +125,7 @@ export function Drawer({ cellKey, transactions, monthData }) {
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
                                         <td className="description-col">{transaction.description}{memo}</td>
-                                        <td className="tags-col">{transaction.tagNames.join(", ")}</td>
+                                        <td className="tags-col">{transaction.tagNames?.join(", ")}</td>
                                     </tr>
                                 );
                             });
@@ -256,7 +256,7 @@ function DrawerWaterFallChart({ monthData, setTransactionFilter }) {
 function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
   const data = transactions.reduce((acc, tx) => {
     const { tagNames, description, amount } = tx;
-    const [tag] = tagNames;
+    const [tag] = tagNames || ['Other'];
     const color = '#' + (Math.random() * 0xFFFFFF << 0).toString(16);
     
     let tagEntry = acc.find(entry => entry.id === tag);

@@ -32,75 +32,191 @@ export const getMonthlyBudget =  (config, transactions) => {
     return monthlyBudget;
 }
 
-const futureMonthlyBudget = ({month, config}) => {
-
-    const { income: incomeData, monthly, dayToDay } = config;
-    const {salary:{amount: salaryAmount, payCheckCount, payFrequencyInDays, firstPaycheckDate, exceptions}, extra} = incomeData;
-
-    // PAYCHECKS
-    const paycheckAmount = parseFloat((salaryAmount / payCheckCount).toFixed(2));    
-    const paycheckDates = Array.from({length: payCheckCount}, (v, i) => moment(firstPaycheckDate).add(i * payFrequencyInDays, 'days').format('YYYY-MM-DD'));
-    //process.exit(console.log({paycheckDates}));
-    const paycheckDatesThisMonth = paycheckDates.filter(date => moment(date).format('YYYY-MM') === month);
-   // console.log({paycheckDates,paycheckDatesThisMonth,month})
-    const paychecks = paycheckDatesThisMonth.filter(date => (moment(date).format('YYYY-MM') === month)).map(date => ({date, amount: paycheckAmount}));
-    const payCheckIncomeAmount = paychecks.reduce((acc, paycheck) => acc + paycheck.amount, 0);
-    const paycheckCountThisMonth = paycheckDatesThisMonth.length;
-
-    // EXTRA INCOME
-    const extraIncomeTransactions = extra.reduce((acc, {amount, dates, description}) => {
-        const datesInMonth = dates.filter(date => date.startsWith(month));
-        if(datesInMonth.length === 0) return acc;
-        const transactions = datesInMonth.map(date => ({date, amount, description}));
-        return [...acc, ...transactions];
-    }, []);
-    const extraIncomeAmount = extraIncomeTransactions.reduce((acc, transaction) => acc + transaction.amount, 0);
-
-    // INCOME
-    const income = payCheckIncomeAmount + extraIncomeAmount;
-    const incomeTransactions = [...paychecks, ...extraIncomeTransactions].sort((a, b) => moment(a.date).diff(moment(b.date)));
-
-    // EXPENSES
-    const monthlyCategories = monthly.reduce((acc, {label, amount, frequency, dates, exceptions}) => {
-        const exceptionalItem = exceptions?.find(exception => (exception[moment(month).format('YYYY-MM')]));
-        const exceptionalAmount = exceptionalItem ? exceptionalItem[moment(month).format('YYYY-MM')] : null;
-        amount = exceptionalAmount !== null ? exceptionalAmount : amount;
-        amount = dates ? dates.some(date => date.startsWith(month)) ? amount : 0 : amount; 
-
-        const multiplier = frequency === 'paycheck' ? paycheckCountThisMonth : 1;
-        const finalAmount = amount * multiplier;
-        if (!finalAmount) return acc;
-    
-        if (acc[label]) {
-            acc[label].amount += finalAmount;
-        } else {
-            acc[label] = { amount: finalAmount };
-        }
-        acc[label].debits = acc[label].amount;
-        return acc;
-    }, {});
-
-    const categorySpending = Object.values(monthlyCategories).reduce((acc, {amount}) => acc + amount, 0);
-    const dayToDaySpending = dayToDay.amount;
-    const monthlySpending  = parseFloat((categorySpending ).toFixed(2));
-    const surplus = parseFloat( (income - monthlySpending - dayToDaySpending).toFixed(2) );
-
-    return {
-        income,
-        incomeTransactions,
-        monthlyCategories,
-        monthlySpending,
-        dayToDaySpending,
-        surplus
+const futureMonthlyBudget = ({ month, config }) => {
+    const { income: incomeData, monthly, dayToDay, cutoff } = config;
+    const {
+      salary: { amount: salaryAmount, payCheckCount, payFrequencyInDays, firstPaycheckDate, exceptions },
+      extra,
+    } = incomeData;
+  
+    // 1) PAYCHECKS
+    const paycheckAmount = parseFloat((salaryAmount / payCheckCount).toFixed(2));
+    // Generate all possible paychecks
+    let paycheckDates = Array.from({ length: payCheckCount }, (_, i) =>
+      moment(firstPaycheckDate).add(i * payFrequencyInDays, 'days').format('YYYY-MM-DD')
+    );
+    // Filter to only those in target month
+    let paycheckDatesThisMonth = paycheckDates.filter(
+      (date) => moment(date).format('YYYY-MM') === month
+    );
+    // If cutoff is set, ignore any paychecks before that date
+    if (cutoff) {
+      paycheckDatesThisMonth = paycheckDatesThisMonth.filter((date) =>
+        moment(date).isSameOrAfter(moment(cutoff), 'day')
+      );
     }
+    // Build and sum the paychecks in this month
+    const paychecks = paycheckDatesThisMonth.map((date) => ({
+      date,
+      amount: paycheckAmount,
+    }));
+    const payCheckIncomeAmount = paychecks.reduce((acc, p) => acc + p.amount, 0);
+    const paycheckCountThisMonth = paychecks.length;
+  
+    // 2) EXTRA INCOME
+    const extraIncomeTransactions = extra.reduce((acc, { amount, dates, description }) => {
+      // Filter to dates in the target month
+      let datesInMonth = dates.filter((d) => d.startsWith(month));
+      // If cutoff is set, ignore any dates before cutoff
+      if (cutoff) {
+        datesInMonth = datesInMonth.filter((d) => moment(d).isSameOrAfter(moment(cutoff), 'day'));
+      }
+      if (datesInMonth.length === 0) return acc;
+  
+      const transactions = datesInMonth.map((date) => ({ date, amount, description }));
+      return [...acc, ...transactions];
+    }, []);
+    const extraIncomeAmount = extraIncomeTransactions.reduce((acc, t) => acc + t.amount, 0);
+  
+    // 3) INCOME (paychecks + extra)
+    const income = payCheckIncomeAmount + extraIncomeAmount;
+    const incomeTransactions = [...paychecks, ...extraIncomeTransactions].sort((a, b) =>
+      moment(a.date).diff(moment(b.date))
+    );
+  
+    // 4) EXPENSES
+    const monthlyCategories = monthly.reduce((acc, { label, amount, frequency, dates, exceptions }) => {
+      // Check for exceptions for this month
+      const exceptionalItem = exceptions?.find((ex) => ex[moment(month).format('YYYY-MM')]);
+      const exceptionalAmount = exceptionalItem ? exceptionalItem[moment(month).format('YYYY-MM')] : null;
+      let finalAmount = exceptionalAmount !== null ? exceptionalAmount : amount;
+  
+      // If this category has specific date(s), use them to decide whether to include or skip.
+      if (dates) {
+        // Filter for dates in month
+        let validDatesInMonth = dates.filter((d) => d.startsWith(month));
+        // If cutoff is set, ignore dates before cutoff
+        if (cutoff) {
+          validDatesInMonth = validDatesInMonth.filter((d) =>
+            moment(d).isSameOrAfter(moment(cutoff), 'day')
+          );
+        }
+        // If no valid date remains, treat amount as zero for this month
+        if (validDatesInMonth.length === 0) {
+          finalAmount = 0;
+        }
+      }
+  
+      // Multiply by paycheck count if needed
+      const multiplier = frequency === 'paycheck' ? paycheckCountThisMonth : 1;
+      finalAmount = finalAmount * multiplier;
+  
+      // Skip if finalAmount is zero
+      if (!finalAmount) return acc;
+  
+      if (!acc[label]) {
+        acc[label] = { amount: 0, debits: 0 };
+      }
+      acc[label].amount += finalAmount;
+      acc[label].debits = acc[label].amount;
+  
+      return acc;
+    }, {});
+  
+    const categorySpending = Object.values(monthlyCategories).reduce((acc, { amount }) => acc + amount, 0);
+    const dayToDaySpending = dayToDay.amount;
+    const monthlySpending = parseFloat(categorySpending.toFixed(2));
+    const surplus = parseFloat((income - monthlySpending - dayToDaySpending).toFixed(2));
+  
+    return {
+      income,
+      incomeTransactions,
+      monthlyCategories,
+      monthlySpending,
+      dayToDaySpending,
+      surplus,
+    };
+  };
 
-}
-
-const currentMonthlyBudget = ({month, config, transactions}) => {
+  export const currentMonthlyBudget = ({ month, config, transactions }) => {
+    // 1) Gather all real (past) transactions for this month
+    const pastData = pastMonthlyBudget({ month, config, transactions });
+  
+    // 2) Create a copy of config that sets cutoff to today, so futureMonthlyBudget
+    //    generates only the portion after the current date.
     const today = moment().format('YYYY-MM-DD');
-    return  pastMonthlyBudget({month, config, transactions});
-
-}
+    const configCopy = { ...config, cutoff: today };
+  
+    // 3) Call futureMonthlyBudget, but we will only use its income data
+    const futureData = futureMonthlyBudget({ month, config: configCopy });
+  
+    // 4) Create a clone of pastData so we don’t mutate the original
+    const finalData = JSON.parse(JSON.stringify(pastData));
+  
+    // 5) Only anticipate future income. We do so by adding new “(Anticipated)”  
+    //    transactions for any future income. We do not import future expenses.
+    if (Array.isArray(futureData.incomeTransactions)) {
+      futureData.incomeTransactions.forEach(fTxn => {
+        // Create a new transaction record with “(Anticipated)” in the description
+        const anticipatedTxn = {
+          ...fTxn,
+          description: fTxn.description
+            ? fTxn.description + ' (Anticipated)'
+            : '(Anticipated)',
+        };
+        finalData.incomeTransactions.push(anticipatedTxn);
+      });
+    }
+  
+    // 6) Recalculate the summary fields in finalData. We only updated finalData.incomeTransactions,
+    //    so we essentially recalc income, surplus, etc. as if these “anticipated” transactions had occurred.
+    const income = parseFloat(
+      finalData.incomeTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2)
+    );
+  
+    const monthlyCategorySpending = parseFloat(
+      Object.values(finalData.monthlyCategories).reduce(
+        (acc, category) => acc + category.amount,
+        0
+      ).toFixed(2)
+    );
+  
+    const dayToDaySpending = parseFloat(
+      finalData.dayToDayTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2)
+    );
+  
+    const monthlySpending = parseFloat(monthlyCategorySpending.toFixed(2));
+    const spending = parseFloat((monthlySpending + dayToDaySpending).toFixed(2));
+    const surplus = parseFloat((income - spending).toFixed(2));
+  
+    // shortTerm “debits” and “credits” remain from pastData only
+    const monthlyDebits = parseFloat(
+      finalData.shortTermTransactions
+        .filter((txn) => txn.expenseAmount > 0)
+        .reduce((acc, txn) => acc + txn.expenseAmount, 0)
+        .toFixed(2)
+    );
+    const monthlyCredits = Math.abs(
+      parseFloat(
+        finalData.shortTermTransactions
+          .filter((txn) => txn.expenseAmount < 0)
+          .reduce((acc, txn) => acc + txn.expenseAmount, 0)
+          .toFixed(2)
+      )
+    );
+  
+    // 7) Update finalData with the recalculated top-level fields
+    finalData.income = income;
+    finalData.surplus = surplus;
+    finalData.spending = spending;
+    finalData.monthlySpending = monthlySpending;
+    finalData.dayToDaySpending = dayToDaySpending;
+    finalData.monthlyDebits = monthlyDebits;
+    finalData.monthlyCredits = monthlyCredits;
+  
+    // 8) Return a single object combining the actual plus anticipated income
+    return finalData;
+  };
 
 const pastMonthlyBudget = ({month, config, transactions}) => {
     

@@ -23,9 +23,7 @@ const fetchBudget = async () => {
 }
 
 const reloadBudget = async () => {
-  const response = await fetch(`${baseUrl}/harvest/budget`);
-  const data = await response.json();
-  return data;
+  await fetch(`${baseUrl}/harvest/budget`);
 }
 
 
@@ -49,7 +47,8 @@ function ReloadButton({setBudgetData}) {
     setReloading(true);
     await reloadBudget();
     const newData = await fetchBudget()
-    setBudgetData(newData);
+    console.log(newData);
+    setBudgetData(newData.budgets);
     setReloading(false);
   }
   return <button
