@@ -34,15 +34,17 @@ export const compileBudget = async () => {
         budgets[budgetStart] = buildBudget(budget, transactions);
     }
     writeFileSync(financesPath, yaml.dump({budgets,mortgage}));
+    return { status: 'success' };
 }
 
 export const refreshFinancialData = async (noDL) => {
+    console.log('Refreshing financial data');
     let transactions;
 
-    if (!noDL) {
+    if (noDL) {
         const { budget } = yaml.load(readFileSync(budgetPath, 'utf8'));
         const [{ timeframe: { start, end }, accounts }] = budget;
-        const startDate = moment(start).format('YYYY-MM-DD');
+        const startDate = moment(start).format('YYYY-MM-DD')
         const endDate = moment(end).format('YYYY-MM-DD');
 
         transactions = await processTransactions({ startDate, endDate, accounts });

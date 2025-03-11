@@ -4,6 +4,7 @@ import './App.css'
 import WeatherForecast from './modules/WeatherForecast'
 import Weather from './modules/Weather'
 import Upcoming from './modules/Upcoming'
+import Health from './modules/Health'
 
 function App() {
   const [count, setCount] = useState(0)
@@ -17,6 +18,7 @@ function App() {
       </div>
       <div className='content'>
         <Upcoming />
+        <Health />
       </div>
     </>
   )

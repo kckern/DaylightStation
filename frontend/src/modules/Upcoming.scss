@@ -6,6 +6,7 @@ $transition-time: 1s;
 
 .upcoming {
     width: 100%;
+    max-width: 65vw;
     display: flex;
     height: 40%;
     flex-grow: 0;
@@ -35,6 +36,8 @@ $transition-time: 1s;
         .main-panel-item {
           flex: 0 0 auto;
           width: 100%;
+          flex-grow: 0;
+          max-width: 100%;
           padding: 0;
           box-sizing: border-box;
           border-right: 1px solid #f0f0f0;
