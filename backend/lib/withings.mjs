@@ -21,8 +21,12 @@ const getWeightData = async (job_id) => {
 
     if(refresh_token) saveFile('_tmp/withings', {refresh: refresh_token});
 
-    if(!access_token) return {error: `No access token.  Refresh token may have expired.`, refresh_token,r:response.data, params_auth, path:process.env.path};
+    if(!access_token){
 
+         processWeight(job_id);  
+        return {error: `No access token.  Refresh token may have expired.`, refresh_token,r:response.data, params_auth, path:process.env.path};
+
+    } 
 
     const params = {
         access_token,
