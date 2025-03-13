@@ -9,6 +9,7 @@ import moment from 'moment';
 
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
+const dataPath = `${process.env.path.data}`;
 const secretspath = `${__appDirectory}/config.secrets.yml`;
 const { BUXFER_EMAIL, BUXFER_PW } = yaml.load(readFileSync(secretspath, 'utf8'));
 
@@ -72,7 +73,7 @@ export const deleteTransactions = async ({accountId, matchString, startDate, end
 
     //delete backup file: data/budget/deletedTransactions.yml
     //load from yaml file
-    const deletedTransactions = (() => { try { return yaml.load(readFileSync(`${__appDirectory}/data/budget/deletedTransactions.yml`, 'utf8')) || []; } catch { return {}; } })();
+    const deletedTransactions = (() => { try { return yaml.load(readFileSync(`${dataPath}/budget/deletedTransactions.yml`, 'utf8')) || []; } catch { return {}; } })();
     const transactions = await getTransactions({startDate, endDate, accounts: [accountId]});
     const transactionsToDelete = transactions.filter(txn => txn.description.includes(matchString));
     console.log(`Deleting ${transactionsToDelete.length} transactions...`);
@@ -84,7 +85,7 @@ export const deleteTransactions = async ({accountId, matchString, startDate, end
     }
     //save to yaml file
     const deletedTransactionsYml = yaml.dump(deletedTransactions);
-    writeFileSync(`${__appDirectory}/data/budget/deletedTransactions.yml`, deletedTransactionsYml);
+    writeFileSync(`${dataPath}/budget/deletedTransactions.yml`, deletedTransactionsYml);
 
 }
 
@@ -113,7 +114,7 @@ export const processTransactions = async ({startDate, endDate, accounts}) => {
     const txn_to_process = transactions.filter(txn => hasNoTag(txn) || hasRawDescription(txn));
    // console.log(`Processing ${txn_to_process.length} transactions to categorize...`);
     txn_to_process.forEach(txn => console.log(`${txn.date} - ${txn.description}`));
-    const {validTags, chat} = yaml.load(readFileSync(`${__appDirectory}/data/budget/gpt.yml`, 'utf8'));
+    const {validTags, chat} = yaml.load(readFileSync(`${dataPath}/budget/gpt.yml`, 'utf8'));
     chat[0].content =  chat[0].content.replace("__VALID_TAGS__", JSON.stringify(validTags));
 
     for(let txn of txn_to_process) {
