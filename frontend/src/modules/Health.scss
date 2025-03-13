@@ -1,3 +1,9 @@
 .health{
     width: 50%;
+    height: 100%;
+    position: relative;
+}
+
+.health > div{
+    height: 48vh;
 }
