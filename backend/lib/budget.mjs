@@ -6,12 +6,12 @@ import { processTransactions } from './buxfer.mjs';
 
 moment.tz.setDefault('America/Los_Angeles');
 
-const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
+const dataPath = `${process.env.path.data}`;
 
-const budgetPath            = `${__appDirectory}/data/budget/budget.config.yml`;
-const transactionPath       = `${__appDirectory}/data/budget/transactions.yml`;
-const financesPath          = `${__appDirectory}/data/budget/finances.yml`;
-const transactionMemoPath   = `${__appDirectory}/data/budget/transaction.memos.yml`;
+const budgetPath            = `${dataPath}/budget/budget.config.yml`;
+const transactionPath       = `${dataPath}/budget/transactions.yml`;
+const financesPath          = `${dataPath}/budget/finances.yml`;
+const transactionMemoPath   = `${dataPath}/budget/transaction.memos.yml`;
 
 export const compileBudget = async () => {
     const budgetConfig = yaml.load(readFileSync(budgetPath, 'utf8'));
@@ -34,6 +34,7 @@ export const compileBudget = async () => {
         budgets[budgetStart] = buildBudget(budget, transactions);
     }
     writeFileSync(financesPath, yaml.dump({budgets,mortgage}));
+    console.log(`Saved finances to ${financesPath}`);
     return { status: 'success' };
 }
 
