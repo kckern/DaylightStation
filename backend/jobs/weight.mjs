@@ -183,33 +183,19 @@ function rollingAverage(items, key, windowSize) {
 //
 function trendline(values, key, n) {
     const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
-  
-    for (let i = 0; i < dates.length; i++) {
-        // We'll gather up to n points (from i-n+1 to i), if available
-        const sliceStart = Math.max(0, i - (n - 1));
-        const subDates = dates.slice(sliceStart, i + 1);
 
-        // If there's only 1 day, slope is 0
-        if (subDates.length < 2) {
-            values[dates[i]][`${key}_${n}day_trend`] = 0;
-            continue;
+    for (let i = n - 1; i < dates.length; i++) {
+        const currentDate = dates[i];
+        const pastDate = dates[i - n + 1];
+
+        if (values[currentDate][key] !== undefined && values[pastDate][key] !== undefined) {
+            const currentValue = values[currentDate][key];
+            const pastValue = values[pastDate][key];
+            const diff = currentValue - pastValue;
+            values[currentDate][`${key}_${n}day_trend`] = Math.round(diff * 10) / 10;
         }
-
-        // Compute a linear regression slope: dayIndex vs keyValue
-        let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-        for (let j = 0; j < subDates.length; j++) {
-            const x = j; // day index
-            const y = values[subDates[j]][key] || 0;
-
-            sumX += x;
-            sumY += y;
-            sumXY += x * y;
-            sumX2 += x * x;
-        }
-        const m = computeSlope(subDates.length, sumX, sumY, sumXY, sumX2);
-        // Use slope as the "trend"
-        values[dates[i]][`${key}_${n}day_trend`] = Math.round(m * 10) / 10;
     }
+
     return values;
 }
 
@@ -272,11 +258,14 @@ function removeTempKeys(values) {
 //
 function caloricBalance(values) {
     const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
-    for (let i = 0; i < dates.length; i++) {
+    const caloriesPerPound = 3500;
+    const daysInWeek = 7;
+    const key = 'lbs_adjusted_average_7day_trend';
+    for(let i = 0; i < dates.length; i++) {
         const date = dates[i];
-        const trend = values[date].lbs_adjusted_average_7day_trend || 0;
-        const deficit = Math.round((trend * 3500) / 7);
-        values[date].caloric_balance = deficit;
+        const trend = values[date][key] || 0;
+        const balance = trend / daysInWeek * caloriesPerPound;
+        values[date].calorie_balance = Math.round(balance);
     }
     return values;
 }

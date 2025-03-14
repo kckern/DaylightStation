@@ -14,7 +14,8 @@ export default function Health() {
         const list = response || [];
         const keys = Object.keys(list);
         setWeightData(list);
-        setToday(list[keys[0]]);
+		const today = list[keys[keys.length - 1]];
+        setToday(today);
     }
     );
   }
@@ -25,38 +26,46 @@ export default function Health() {
         return () => clearInterval(interval);
     }, []);
 
-    const {lbs_adjusted_average, fat_percent_adjusted_average, lbs_adjusted_average_7day_trend} = today;
-
-    return (
-        <div className="health">
-            <table style={{width: "100%"}}>
-                <thead style={{textAlign: "left"}}>
-                    <tr>
-                        <th>Weight</th>
-                        <th>Composition</th>
-                        <th>7 Day Trend</th>
-                        <th>Days to 15%</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>{lbs_adjusted_average}</td>
-                        <td>?</td>
-                        <td>{lbs_adjusted_average_7day_trend}</td>
-                        <td>{Math.round(15 / lbs_adjusted_average_7day_trend)}</td>
-                    </tr>
-                </tbody>
-            </table>
-            <HealthChart data={Object.keys(weightData).map((key) => weightData[key])} /> 
-        </div>
-    );
+    const {lbs_adjusted_average, date,fat_percent_adjusted_average, lbs_adjusted_average_7day_trend, calorie_balance} = today;
+	const trend = lbs_adjusted_average_7day_trend > 0 ? 'up' : 'down';
+	const leanMass = lbs_adjusted_average - lbs_adjusted_average * (fat_percent_adjusted_average / 100);
+	const lbsAtFifteenPercentBodyFat = leanMass / (1 - 0.15);
+	const lbsToLose = lbs_adjusted_average - lbsAtFifteenPercentBodyFat;
+	const lossRate = trend;
+	const daysToLose = lossRate > 0 ? Math.ceil(lbsToLose / lossRate) : 'N/A';
+	const calorie_label = calorie_balance > 0 ? 'surplus' : 'deficit';
+	return (
+		<div className="health">
+			<table style={{width: "100%", borderCollapse: "collapse"}}>
+				<thead style={{textAlign: "left"}}>
+					<tr>
+						<th style={{border: "1px solid black", width: "20%", padding: "8px"}}>Weight</th>
+						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Composition</th>
+						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>7 Day Trend</th>
+						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Daily Calories</th>
+						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Days to 15%</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td style={{border: "1px solid black", padding: "8px"}}>{lbs_adjusted_average}</td>
+						<td style={{border: "1px solid black", padding: "8px"}}>{fat_percent_adjusted_average}%</td>
+						<td style={{border: "1px solid black", padding: "8px"}}>{lbs_adjusted_average_7day_trend} lbs {trend}</td>
+						<td style={{border: "1px solid black", padding: "8px"}}>{calorie_balance} {calorie_label}</td>
+						<td style={{border: "1px solid black", padding: "8px"}}>{daysToLose}</td>
+					</tr>
+				</tbody>
+			</table>
+			<HealthChart data={Object.keys(weightData).map((key) => weightData[key])} /> 
+		</div>
+	);
 
 
 }
 
 
 function HealthChart({data}) {
-	data = data.sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-90);
+	data = data.sort((a, b) => new Date(a.date) - new Date(b.date)).slice(- 7 * 12);
     const minValue = Math.min(...data.map(({lbs_adjusted_average}) => lbs_adjusted_average));
     const maxValue = Math.max(...data.map(({lbs_adjusted_average}) => lbs_adjusted_average));
     const chartMin = minValue - 2;
@@ -94,7 +103,7 @@ function HealthChart({data}) {
 				style: {
 					color: '#C5D2E0',
 					fontFamily: "Roboto Condensed",
-					fontSize: "1.3rem"
+					fontSize: "1.1rem"
 				},
 				format: '{value}\u00A0lbs'
 			},
