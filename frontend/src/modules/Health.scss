@@ -1,9 +1,53 @@
 .health{
     width: 50%;
-    height: 100%;
+    flex-grow: 1;
     position: relative;
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+}
+.health table{
+    margin-bottom: 1rem;
+    background-color: #FFFFFF22;
+    text-align: center;
+    flex-grow: 0;
+}
+.health table th{
+    background-color: #FFFFFF44;
+    padding: 0.5rem;
+    text-align: center;
+    white-space: nowrap!important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8rem;
+}
+.health table td{
+    white-space: nowrap!important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8rem;
+    font-size: 1.2rem;
+    font-weight: bold;
 }
 
 .health > div{
-    height: 48vh;
+    flex-grow: 1;
+    position: relative;
+    margin-bottom: -2rem;
+    margin-right: -1.5rem;
+}
+.health > div > div{
+}
+
+.health svg{
+}
+
+ .health svg > g.highcharts-grid.highcharts-xaxis-grid > path:nth-child(1){
+    stroke-width: 3px;
+    stroke: #FFFFFFBB;
+}
+
+.health .highcharts-xaxis .highcharts-axis-line{
+    stroke-width: 3px;
+    stroke: #FFFFFFBB;
 }
