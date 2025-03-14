@@ -124,7 +124,6 @@ function HealthChart({data}) {
 					padding: 10,
 				},
 				formatter: (value) => {
-					console.log(value);
 					if(value.isFirst) return null;
 					return value.value;
 				},
