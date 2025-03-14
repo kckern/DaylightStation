@@ -36,7 +36,7 @@ const weightProcess = async (job_id) => {
     values = removeTempKeys(values);
 
     // Save final results
-    saveFile('weight', values.reverse());
+    saveFile('weight', values);
 
     return values;
 };

@@ -56,7 +56,7 @@ export default function Health() {
 
 
 function HealthChart({data}) {
-	data = data.reverse().slice(-90);
+	data = data.sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-90);
     const minValue = Math.min(...data.map(({lbs_adjusted_average}) => lbs_adjusted_average));
     const maxValue = Math.max(...data.map(({lbs_adjusted_average}) => lbs_adjusted_average));
     const chartMin = minValue - 2;
