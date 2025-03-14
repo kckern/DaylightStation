@@ -4,6 +4,10 @@ import "./Health.scss";
 import Highcharts, { color } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
+import upArrow from '../assets/icons/up.svg';
+import downArrow from '../assets/icons/down.svg';
+import plusIcon from '../assets/icons/plus.svg';
+import minusIcon from '../assets/icons/minus.svg';
 
 export default function Health() {
     const [weightData, setWeightData] = useState([]);
@@ -27,13 +31,17 @@ export default function Health() {
     }, []);
 
     const {lbs_adjusted_average, date,fat_percent_adjusted_average, lbs_adjusted_average_7day_trend, calorie_balance} = today;
-	const trend = lbs_adjusted_average_7day_trend > 0 ? 'up' : 'down';
+	const trend = lbs_adjusted_average_7day_trend > 0 ? 
+	<img src={upArrow} alt="up" style={{height: "1.3em", marginBottom: "-0.3em"}} /> : 
+	<img src={downArrow} alt="down" style={{height: "1.3em", marginBottom: "-0.3em"}} />;
 	const leanMass = lbs_adjusted_average - lbs_adjusted_average * (fat_percent_adjusted_average / 100);
 	const lbsAtFifteenPercentBodyFat = leanMass / (1 - 0.15);
 	const lbsToLose = lbs_adjusted_average - lbsAtFifteenPercentBodyFat;
 	const lossRate = trend;
-	const daysToLose = lossRate > 0 ? Math.ceil(lbsToLose / lossRate) : 'N/A';
-	const calorie_label = calorie_balance > 0 ? 'surplus' : 'deficit';
+	const daysToLose = lossRate > 0 ? Math.ceil(lbsToLose / lossRate) : `⚠️`;
+	const calorie_label = calorie_balance > 0 ? 
+	<img src={plusIcon} alt="+" style={{height: "1.3em", marginBottom: "-0.3em"}} /> :
+	<img src={minusIcon} alt="-" style={{height: "1.3em", marginBottom: "-0.3em"}} />;
 	return (
 		<div className="health">
 			<table style={{width: "100%", borderCollapse: "collapse"}}>
@@ -50,7 +58,7 @@ export default function Health() {
 					<tr>
 						<td style={{border: "1px solid black", padding: "8px"}}>{lbs_adjusted_average}</td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{fat_percent_adjusted_average}%</td>
-						<td style={{border: "1px solid black", padding: "8px"}}>{lbs_adjusted_average_7day_trend} lbs {trend}</td>
+						<td style={{border: "1px solid black", padding: "8px"}}>{trend} {lbs_adjusted_average_7day_trend} lbs </td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{calorie_balance} {calorie_label}</td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{daysToLose}</td>
 					</tr>
