@@ -33,6 +33,7 @@ const getToken = async () => {
     return token;
 }
 export const getTransactions = async ({startDate, endDate,  accounts, tagName}) => { 
+    console.log(`Getting transactions from ${startDate} to ${endDate} for accounts: ${JSON.stringify(accounts)}`);
 	const token = await getToken();
 	startDate = startDate || '2022-01-01';
 	endDate = endDate || '2024-12-31';
@@ -101,7 +102,26 @@ export const deleteTransaction = async (id) => {
     }
 }
 
+export const processMortgageTransactions = async ({ startDate, accounts}) => {
+        console.log(`Processing mortgage transactions from ${startDate} for accounts: ${JSON.stringify(accounts)}`);
+        if(!accounts) return [];
+        const endDate = moment().format('YYYY-MM-DD');
+        const transactions = await getTransactions({startDate, endDate, accounts});
+        return transactions;
 
+
+}
+
+
+export const getAccountBalances = async ({ accounts }) => {
+    console.log(`Getting account balances for accounts: ${JSON.stringify(accounts)}`);
+    const token = await getToken();
+    const command = 'accounts';
+    const url = `https://www.buxfer.com/api/${command}?token=${token}`;
+    const { data: { response } } = await axios.get(url);
+    const balances = response.accounts.filter(acc => accounts.includes(acc.name)).map(acc => ({ name: acc.name, balance: acc.balance }));
+    return balances;
+}
 
 
 export const processTransactions = async ({startDate, endDate, accounts}) => {
