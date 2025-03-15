@@ -75,8 +75,9 @@
 pre{
     line-height: 2ex;
     font-size: 1ex;
-    
-    max-width: 400px;
+    word-break: break-all;
+    white-space: pre-wrap;
+    padding: 1rem;
     overflow: hidden;
 }
 
