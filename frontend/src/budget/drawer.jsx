@@ -277,7 +277,7 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
 }
 
-function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
+export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
   const data = transactions.reduce((acc, tx) => {
     const { tagNames, description, amount } = tx;
     const [tag] = tagNames || ['Other'];

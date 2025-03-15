@@ -260,7 +260,7 @@ function caloricBalance(values) {
     const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
     const caloriesPerPound = 3500;
     const daysInWeek = 7;
-    const key = 'lbs_adjusted_average_7day_trend';
+    const key = 'lbs_adjusted_average_1day_trend';
     for(let i = 0; i < dates.length; i++) {
         const date = dates[i];
         const trend = values[date][key] || 0;
