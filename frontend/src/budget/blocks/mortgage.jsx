@@ -18,68 +18,108 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     );
   }
 
+  import { useMemo } from 'react';
+  
   export default function MortgageChart({ mortgage }) {
     if (!mortgage?.transactions) return null;
   
-    const { date: startDate } = mortgage.transactions
-      .sort((a, b) => moment(b.date).diff(moment(a.date)))
-      .pop();
+    const { months, pastData, futureSeries, maxY } = useMemo(() => {
+      // 1. Identify the earliest transaction date.
+      const { date: startDate } =
+        mortgage.transactions
+          .sort((a, b) => moment(b.date).diff(moment(a.date)))
+          .pop() || {};
   
-    const lastDate = mortgage.paymentPlans
-      .map(({ info }) => moment(info.payoffDate))
-      .sort((a, b) => a.diff(b))
-      .pop();
+      // 2. Identify the latest payoff date among plans.
+      const lastDate = mortgage.paymentPlans
+        .map(({ info }) => moment(info.payoffDate))
+        .sort((a, b) => a.diff(b))
+        .pop();
   
-    const months = [];
-    const cursor = moment(startDate, "YYYY-MM");
-    while (cursor.isBefore(lastDate)) {
-      months.push(cursor.clone());
-      cursor.add(1, "month");
-    }
+      // If for some reason these are not valid, return empty placeholders.
+      if (!startDate || !lastDate) {
+        return {
+          months: [],
+          pastData: [],
+          futureSeries: [],
+          maxY: 0
+        };
+      }
   
-    const firstPlan = mortgage.paymentPlans[0];
-    const pastData = [];
-    const futureData = [];
+      // 3. Build a month-by-month array from startDate to lastDate.
+      const months = [];
+      const cursor = moment(startDate, "YYYY-MM");
+      while (cursor.isBefore(lastDate)) {
+        months.push(cursor.clone());
+        cursor.add(1, "month");
+      }
   
-    months.forEach(m => {
-      const ms = m.valueOf();
-      const t = mortgage.transactions.find(
-        ({ date }) => moment(date).format("YYYY-MM") === m.format("YYYY-MM")
+      // 4. Build the pastData by matching each month to a transaction.
+      const pastData = months.map(m => {
+        const ms = m.valueOf();
+        const matchingTransaction = mortgage.transactions.find(
+          ({ date }) => moment(date).format("YYYY-MM") === m.format("YYYY-MM")
+        );
+        // Note that we flip runningBalance to a positive value:
+        const rawBalance = matchingTransaction?.runningBalance ?? null;
+        const value = rawBalance == null ? null : Math.abs(rawBalance);
+        return [ms, value];
+      });
+  
+      // 5. Build a future series for each payment plan. Each plan gets its own line.
+      const futureSeries = mortgage.paymentPlans.map((plan, index) => {
+        const data = months.map(m => {
+          const ms = m.valueOf();
+          const planMonth = plan.months.find(
+            ({ month }) => month === m.format("YYYY-MM")
+          );
+          const futureBalance = planMonth?.startBalance ?? null;
+          return [ms, futureBalance];
+        });
+  
+        return {
+          // Optionally include plan.info.planName or some other label:
+          name: plan.info.planName ? plan.info.planName : `Plan ${index + 1}`,
+          type: "line",
+          data
+        };
+      });
+  
+      // 6. Compute the maximum Y value for chart scaling.
+      //    In addition to the past data, consider all future lines.
+      const allPastValues = pastData.map(([_, y]) => y || 0);
+      const allFutureValues = futureSeries.flatMap(s =>
+        s.data.map(([_, y]) => y || 0)
       );
-      const rawBalance = t?.runningBalance ?? null;
-      const pastBalance = rawBalance == null ? null : Math.abs(rawBalance);
+      const maxY = Math.max(...allPastValues, ...allFutureValues, 0);
   
-      const planMonth = firstPlan.months.find(
-        ({ month }) => month === m.format("YYYY-MM")
-      );
-      const futureBalance = planMonth?.endBalance ?? null;
+      return { months, pastData, futureSeries, maxY };
+    }, [mortgage]);
   
-      pastData.push([ms, pastBalance]);
-      futureData.push([ms, futureBalance]);
-
-    });
+    // Early-exit if we have no months at all:
+    if (!months.length) return null;
   
+    // Build a Highcharts options object with multiple series: one area for the "Past"
+    // plus one line per payment plan.
     const options = {
       chart: {
         backgroundColor: "transparent",
         style: { fontFamily: "sans-serif" }
       },
+      credits: { enabled: false },
       title: { text: null },
       xAxis: {
         type: "datetime",
-        min: months[0]?.valueOf(),
-        max: months[months.length - 1]?.valueOf(),
-        tickInterval: 365.25 * 24 * 3600 * 1000,
+        min: months[0].valueOf(),
+        max: months[months.length - 1].valueOf(),
+        tickInterval: 365.25 * 24 * 3600 * 1000, // one year
         minorTickInterval: 30 * 24 * 3600 * 1000,
         gridLineWidth: 1,
         minorGridLineWidth: 0.5
       },
       yAxis: {
         title: { text: null },
-        max: Math.max(
-            ...pastData.map(([_, y]) => y),
-            ...futureData.map(([_, y]) => y)
-            ),
+        max: maxY,
         tickInterval: 25000,
         labels: {
           formatter() {
@@ -90,33 +130,54 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         minorGridLineColor: "#f0f0f0",
         minorTickInterval: "auto"
       },
-      legend: { enabled: false },
+      legend: { enabled: true },
       plotOptions: {
         series: {
           lineWidth: 2,
           marker: { enabled: false }
+        },
+        column: {
+          pointPadding: 0.1,
+          borderWidth: 0
         }
       },
       series: [
+        // Past balance (area)
         {
           name: "Past",
-          type: "column",
+          type: "area",
           data: pastData,
           color: "#4c8ffc",
           zIndex: 1
         },
-        {
-          name: "Future",
-          type: "line",
-          data: futureData,
-          color: "#2b2b2b",
-          zIndex: 2
-        }
+        // Spread out each plan’s future data as a separate line
+        ...futureSeries.map((planSeries, idx) => ({
+          ...planSeries,
+          color: Highcharts.getOptions().colors[idx] || "#2b2b2b",
+          zIndex: 2 + idx
+        }))
       ]
     };
-  
+    const paidOffTotal = Math.abs(mortgage.startingBalance - mortgage.balance);
+    const paidOffPercentage = Math.abs(paidOffTotal / mortgage.startingBalance);
+    
     return (
       <div>
+        <table style={{width: '100%'}} className="mortgage-summary">
+            <tbody>
+                <tr>
+                    <td>
+                        Paid: {formatAsCurrency(paidOffTotal)} ({(paidOffPercentage * 100).toFixed(0)}%)
+                    </td>
+                    <td>
+                        Earliest Payoff: {mortgage.earliestPayoff}
+                    </td>
+                    <td>
+                        Latest Payoff: {mortgage.latestPayoff}
+                    </td>
+                    </tr>
+                    </tbody>
+        </table>
         <HighchartsReact highcharts={Highcharts} options={options} />
       </div>
     );

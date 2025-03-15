@@ -138,13 +138,25 @@ export const processMortgage = (mortgage, accountBalances, mortgageTransactions,
         txn.runningBalance = Math.round(txn.runningBalance * 100) / 100;
         return txn;
         });
-  
+
+        const paymentPlansFilled = processMortgagePaymentPlans(paymentPlans || [], balance || 0, interestRate || 0, minimumPayment || 0);
+        const totalPaid = transactions.reduce((total, { amount }) => total + (amount || 0), 0);
+        const { earliestPayoff, latestPayoff } = paymentPlansFilled.reduce((acc, { info }) => {
+            const payoffDate = moment(info.payoffDate, "MMMM YYYY");
+            if (!acc.earliestPayoff || payoffDate.isBefore(acc.earliestPayoff)) acc.earliestPayoff = payoffDate;
+            if (!acc.latestPayoff || payoffDate.isAfter(acc.latestPayoff)) acc.latestPayoff = payoffDate;
+            return acc;
+        }, {});
+
     return {
       startingBalance,
       balance,
       interestRate,
+      earliestPayoff: earliestPayoff?.format("YYYY-MM") || "",
+      latestPayoff: latestPayoff?.format("YYYY-MM") || "",
+      totalPaid,
       transactions,
-      paymentPlans: processMortgagePaymentPlans(paymentPlans, balance, interestRate, minimumPayment),
+      paymentPlans: paymentPlansFilled,
     };
   };
 
