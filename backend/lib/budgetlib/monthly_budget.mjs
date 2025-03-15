@@ -284,32 +284,84 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
 }
 
 
-export const dayToDayBudgetReducer = (acc, month, monthlyBudget,config) => {
-    const transactions = monthlyBudget[month].dayToDayTransactions || [];
-    if(!transactions.length) return {...acc, [month]: {spending: 0, budget: config.dayToDay.amount, balance: config.dayToDay.amount, transactions: [], dailyBalances: {}}};
-    const isCurrentMonth = moment(month).format('YYYY-MM') === moment().format('YYYY-MM');
-    acc[month] = {spending: 0, budget: 0, balance:0, transactions};
-    acc[month].spending = parseFloat( (transactions.reduce((acc, txn) => acc + txn.amount, 0)).toFixed(2) );
-    acc[month].budget = isCurrentMonth ? config.dayToDay.amount : acc[month].spending;
-    acc[month].balance = parseFloat((acc[month].budget - acc[month].spending).toFixed(2));
-    const daysInMonth = moment(month, 'YYYY-MM').daysInMonth();
-    const daysArray = [0,...Array.from({length: daysInMonth}, (v, i) => i + 1)].map(i => `${month}-${i.toString().padStart(2, '0')}`);
-    acc[month].dailyBalances = daysArray.reduce((ccc, day) => {
-        const dayTransactions = transactions.filter(txn => txn.date === day);
-        const dayInt = parseInt(day.slice(-2));
-        let yesterDayString = dayInt >= 2 ? `${month}-${(dayInt - 1).toString().padStart(2, '0')}` : null;
-        const yesterday = ccc[yesterDayString] || {startingBalance: acc[month].budget};
-        const transactionCount = dayTransactions.length;
-        const startingBalance = yesterday.endingBalance || acc[month].budget;
-        const credits = parseFloat(dayTransactions.filter(txn => txn.expenseAmount < 0).reduce((bcc, txn) => bcc + txn.expenseAmount, 0).toFixed(2));
-        const debits = parseFloat(dayTransactions.filter(txn => txn.expenseAmount > 0).reduce((bcc, txn) => bcc + txn.expenseAmount, 0).toFixed(2));
-        const endingBalance = parseFloat((startingBalance + credits - debits).toFixed(2));
-        ccc[day] = {startingBalance, credits, debits, endingBalance, transactionCount};
-        return ccc;
-    },{});
-    //todo add daily balance
-    delete monthlyBudget[month].dayToDayTransactions;
-    return acc;
+export const dayToDayBudgetReducer = (acc, month, monthlyBudget, config) => {
+  const transactions = monthlyBudget[month].dayToDayTransactions || [];
+  if (!transactions.length) {
+    return {
+      ...acc,
+      [month]: {
+        spending: 0,
+        budget: config.dayToDay.amount,
+        balance: config.dayToDay.amount,
+        transactions: [],
+        dailyBalances: {}
+      }
+    };
+  }
+
+  const isCurrentMonth = moment(month).format('YYYY-MM') === moment().format('YYYY-MM');
+  acc[month] = { spending: 0, budget: 0, balance: 0, transactions };
+
+  acc[month].spending = parseFloat(
+    transactions.reduce((innerAcc, txn) => innerAcc + txn.amount, 0).toFixed(2)
+  );
+
+  acc[month].budget = isCurrentMonth ? config.dayToDay.amount : acc[month].spending;
+  acc[month].balance = parseFloat((acc[month].budget - acc[month].spending).toFixed(2));
+
+  const daysInMonth = moment(month, 'YYYY-MM').daysInMonth();
+  const daysArray = [0, ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
+    .map(i => `${month}-${i.toString().padStart(2, '0')}`);
+
+  acc[month].dailyBalances = daysArray.reduce((ccc, day) => {
+    const dayTransactions = transactions.filter(txn => txn.date === day);
+    const dayInt = parseInt(day.slice(-2));
+
+    // Always reference the previous day if dayInt > 0, otherwise null for day 0
+    const yesterDayString =
+      dayInt > 0 ? `${month}-${(dayInt - 1).toString().padStart(2, '0')}` : null;
+
+    const yesterday = yesterDayString ? ccc[yesterDayString] : null;
+    const transactionCount = dayTransactions.length;
+
+    // If there's no "yesterday" entry and we're not day 0, default to zero instead of budget
+    const startingBalance = yesterday
+      ? yesterday.endingBalance
+      : dayInt === 0
+        ? acc[month].budget
+        : 0;
+
+    const credits = parseFloat(
+      dayTransactions
+        .filter(txn => txn.expenseAmount < 0)
+        .reduce((sum, txn) => sum + txn.expenseAmount, 0)
+        .toFixed(2)
+    );
+
+    const debits = parseFloat(
+      dayTransactions
+        .filter(txn => txn.expenseAmount > 0)
+        .reduce((sum, txn) => sum + txn.expenseAmount, 0)
+        .toFixed(2)
+    );
+
+    const endingBalance = parseFloat(
+      (startingBalance + credits - debits).toFixed(2)
+    );
+
+    ccc[day] = {
+      dayInt,
+      startingBalance,
+      credits,
+      debits,
+      endingBalance,
+      transactionCount
+    };
+    return ccc;
+  }, {});
+
+  delete monthlyBudget[month].dayToDayTransactions;
+  return acc;
 }
 
 export const transferTransactionsReducer = (acc, month, monthlyBudget) => {
