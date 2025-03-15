@@ -190,7 +190,7 @@ export const compileBudget = async () => {
 export const refreshFinancialData = async (noDL) => {
     console.log('Refreshing financial data');
     let transactions;
-    noDL = false;
+    //noDL = false;
     if (noDL) {
         const { budget, mortgage } = yaml.load(readFileSync(budgetPath, 'utf8'));
         const [{ timeframe: { start, end }, accounts }] = budget;
