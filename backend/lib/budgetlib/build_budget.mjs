@@ -26,6 +26,9 @@ export const buildBudget = (config, transactions)=>
     
   
     if(unBudgetedTransactions.length){
+
+        console.log(unBudgetedTransactions.map(({date,description,amount,id})=>({  date,description,amount, url:`https://www.buxfer.com/transactions?tids=${id}`})));
+
         shortTermBuckets["Unbudgeted"] = shortTermBuckets["Unbudgeted"] || { budget: 0, spending: 0, balance: 0, debits: 0, credits: 0, transactions: [] };
         shortTermBuckets["Unbudgeted"]['balance'] = -unclassifiedTransactionSum; 
 

@@ -44,6 +44,13 @@
         height: calc(33vh - 2rem); /* One third of the viewport height */
     }
 }
+/* width under 1500px */
+@media screen and (max-width: 1000px) {
+    .grid-container > .budget-block {
+        width: calc(100% - 0.5rem); /* Half of the viewport width */
+        height: calc(50vh - 2rem); /* One third of the viewport height */
+    }
+}
 
   
 

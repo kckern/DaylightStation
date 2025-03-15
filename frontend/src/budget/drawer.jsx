@@ -43,6 +43,11 @@ export function Drawer({ cellKey, transactions, monthData }) {
     const sortedTransactions = [...transactions].sort((a, b) => {
       const parseValue = (value) => {
           if (typeof value === 'string') {
+            //lowercast
+            value = value.toLowerCase();
+            const isDate = /date/i.test(sortConfig.key);
+            if (isDate)  return moment(value).format('YYYYMMDD');
+
         const numericValue = parseFloat(value.replace(/[^0-9.-]+/g, ""));
         return isNaN(numericValue) ? value : numericValue;
           }
@@ -58,7 +63,9 @@ export function Drawer({ cellKey, transactions, monthData }) {
       if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
       return 0;
 
-    })    .filter(transaction => {
+    })   
+    
+    .filter(transaction => {
           const { tags, description, label, bucket } = transactionFilter || {};
           let showMe = true;
           if(tags && !tags.some(tag => transaction.tagNames.includes(tag))) showMe = false;

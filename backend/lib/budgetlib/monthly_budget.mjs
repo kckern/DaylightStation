@@ -1,7 +1,7 @@
 
 import moment from 'moment';
 import { findBucket } from './transactions.mjs';
-import { parse } from 'path';
+import { loadFile, saveFile } from '../io.mjs';
 
 export const getMonthlyBudget =  (config, transactions) => {
 
@@ -137,86 +137,84 @@ const futureMonthlyBudget = ({ month, config }) => {
       surplus,
     };
   };
-
   export const currentMonthlyBudget = ({ month, config, transactions }) => {
-    // 1) Gather all real (past) transactions for this month
+    // 1) Get past actual data and future projections
     const pastData = pastMonthlyBudget({ month, config, transactions });
+    const futureData = futureMonthlyBudget({ month, config });
   
-    // 2) Create a copy of config that sets cutoff to today, so futureMonthlyBudget
-    //    generates only the portion after the current date.
-    const today = moment().format('YYYY-MM-DD');
-    const configCopy = { ...config, cutoff: today };
+    // 2) Initialize current data from past data
+    const currentData = { ...pastData };
+    const endOfMonth = moment(month).endOf('month').format('YYYY-MM-DD');
   
-    // 3) Call futureMonthlyBudget, but we will only use its income data
-    const futureData = futureMonthlyBudget({ month, config: configCopy });
+    // 3) Calculate and append anticipated income
+    const anticipatedIncome = parseFloat(futureData.income) - parseFloat(pastData.income);
+    currentData.income = parseFloat(pastData.income) + anticipatedIncome;
   
-    // 4) Create a clone of pastData so we don’t mutate the original
-    const finalData = JSON.parse(JSON.stringify(pastData));
+    currentData.incomeTransactions = [
+      ...pastData.incomeTransactions,
+      {
+        date: endOfMonth,
+        amount: anticipatedIncome,
+        description: 'Anticipated Income',
+        tagNames: ['Anticipated'],
+        tag: 'Anticipated',
+      },
+    ];
   
-    // 5) Only anticipate future income. We do so by adding new “(Anticipated)”  
-    //    transactions for any future income. We do not import future expenses.
-    if (Array.isArray(futureData.incomeTransactions)) {
-      futureData.incomeTransactions.forEach(fTxn => {
-        // Create a new transaction record with “(Anticipated)” in the description
-        const anticipatedTxn = {
-          ...fTxn,
-          description: fTxn.description
-            ? fTxn.description + ' (Anticipated)'
-            : '(Anticipated)',
-        };
-        finalData.incomeTransactions.push(anticipatedTxn);
-      });
-    }
+    // 4) Calculate and append anticipated amounts for monthly categories
+    const monthlyCategoryKeys = Object.keys(futureData.monthlyCategories);
   
-    // 6) Recalculate the summary fields in finalData. We only updated finalData.incomeTransactions,
-    //    so we essentially recalc income, surplus, etc. as if these “anticipated” transactions had occurred.
-    const income = parseFloat(
-      finalData.incomeTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2)
-    );
+    monthlyCategoryKeys.forEach((key) => {
+      const pastCategory = pastData.monthlyCategories[key];
+      const futureCategory = futureData.monthlyCategories[key];
   
-    const monthlyCategorySpending = parseFloat(
-      Object.values(finalData.monthlyCategories).reduce(
-        (acc, category) => acc + category.amount,
-        0
-      ).toFixed(2)
-    );
+      const anticipatedAmount =
+        parseFloat(futureCategory.amount) - parseFloat(pastCategory.amount);
   
-    const dayToDaySpending = parseFloat(
-      finalData.dayToDayTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2)
-    );
+      currentData.monthlyCategories[key].amount =
+        parseFloat(pastCategory.amount) + anticipatedAmount;
   
-    const monthlySpending = parseFloat(monthlyCategorySpending.toFixed(2));
-    const spending = parseFloat((monthlySpending + dayToDaySpending).toFixed(2));
-    const surplus = parseFloat((income - spending).toFixed(2));
+      currentData.monthlyCategories[key].debits =
+        parseFloat(pastCategory.debits) + anticipatedAmount;
   
-    // shortTerm “debits” and “credits” remain from pastData only
-    const monthlyDebits = parseFloat(
-      finalData.shortTermTransactions
-        .filter((txn) => txn.expenseAmount > 0)
-        .reduce((acc, txn) => acc + txn.expenseAmount, 0)
-        .toFixed(2)
-    );
-    const monthlyCredits = Math.abs(
-      parseFloat(
-        finalData.shortTermTransactions
-          .filter((txn) => txn.expenseAmount < 0)
-          .reduce((acc, txn) => acc + txn.expenseAmount, 0)
-          .toFixed(2)
-      )
-    );
+      currentData.monthlyCategories[key].transactions = [
+        ...pastCategory.transactions,
+        {
+          date: endOfMonth,
+          amount: anticipatedAmount,
+          description: 'Anticipated Expense',
+          tagNames: ['Anticipated'],
+          tag: 'Anticipated',
+        },
+      ];
+    });
   
-    // 7) Update finalData with the recalculated top-level fields
-    finalData.income = income;
-    finalData.surplus = surplus;
-    finalData.spending = spending;
-    finalData.monthlySpending = monthlySpending;
-    finalData.dayToDaySpending = dayToDaySpending;
-    finalData.monthlyDebits = monthlyDebits;
-    finalData.monthlyCredits = monthlyCredits;
+    // 5) Calculate and append anticipated day-to-day spending
+    const anticipatedDayToDaySpending =
+      parseFloat(futureData.dayToDaySpending) -
+      parseFloat(pastData.dayToDaySpending);
   
-    // 8) Return a single object combining the actual plus anticipated income
-    return finalData;
+    currentData.dayToDaySpending =
+      parseFloat(pastData.dayToDaySpending) + anticipatedDayToDaySpending;
+  
+    currentData.dayToDayTransactions = [
+      ...pastData.dayToDayTransactions,
+      {
+        date: endOfMonth,
+        amount: anticipatedDayToDaySpending,
+        description: 'Anticipated Expense',
+        tagNames: ['Anticipated'],
+        tag: 'Anticipated',
+      },
+    ];
+
+    //recalculate surplus
+    currentData.surplus = parseFloat((currentData.income - currentData.monthlySpending - currentData.dayToDaySpending).toFixed(2));
+
+  
+    return currentData;
   };
+  
 
 const pastMonthlyBudget = ({month, config, transactions}) => {
     
