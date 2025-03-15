@@ -50,8 +50,8 @@ export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
   );
 };
 
-  // BudgetMonthly.jsx
-  export function BudgetMonthly({ setDrawerContent, budget }) {
+  // BudgetCashFlow.jsx
+  export function BudgetCashFlow({ setDrawerContent, budget }) {
     return (
       <div className="budget-block">
         <h2>Monthly Cash Flow</h2>
@@ -108,8 +108,11 @@ function BudgetTable({ setDrawerContent, budget }) {
     }
     return [];
   }
-
   const loadTransactions = (month, key) => {
+    if (!month) {
+      return Object.keys(activeBudget["monthlyBudget"]).flatMap(m => loadTransactions(m, key));
+    }
+
     const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
     if (isFuture) {
       return loadAnticipatedTransactions(month, key);
@@ -128,13 +131,25 @@ function BudgetTable({ setDrawerContent, budget }) {
     }
   }
 
+  const getPeriodData = (month, key) => {
+
+    month = month || Object.keys(activeBudget["monthlyBudget"])[0];
+    const periodData = {month: activeBudget["monthlyBudget"][month], daytoday: activeBudget["dayToDayBudget"][month]};
+    return periodData;
+
+  }
+
+
   const handleCellClick = (month, key) => {
+
+
+
     const transactions = loadTransactions(month, key).sort((a, b) => b.amount - a.amount);
-    const monthData = {month: activeBudget["monthlyBudget"][month], daytoday: activeBudget["dayToDayBudget"][month]};
+    const periodData = getPeriodData(month, key);
     const monthString = moment(month, "YYYY-MM").format("MMM ‘YY");
     const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
     const header = key === "income" ? "Income" : key === "fixed" ? "Operating Expenses" : "Day-to-Day Spending";
-    const content = <Drawer transactions={transactions} cellKey={key} monthData={monthData} />;
+    const content = <Drawer transactions={transactions} cellKey={key} periodData={periodData} />;
     setDrawerContent({ jsx: content, meta: { title: `${isFuture ? "Anticipated" : ""}  ${header} for ${monthString}` } });
   }
 
@@ -146,12 +161,12 @@ function BudgetTable({ setDrawerContent, budget }) {
     const currentMonth = moment().startOf('month');
 
     const rows = months.map((month) => {
-      const monthData = monthlyBudget[month];
-      //const netSpent = Object.values(monthData.monthlyCategories).reduce((sum, cat) => sum + cat.spent, 0);
+      const periodData = monthlyBudget[month];
+      //const netSpent = Object.values(periodData.monthlyCategories).reduce((sum, cat) => sum + cat.spent, 0);
       const monthMoment = moment(month, "YYYY-MM");
       const rowClassName = monthMoment.isBefore(currentMonth) ? 'past' : monthMoment.isSame(currentMonth) ? 'present' : 'future';
 
-      const {income, monthlySpending, dayToDaySpending, surplus} = monthData;
+      const {income, monthlySpending, dayToDaySpending, surplus} = periodData;
       const surplusClassName = surplus >= 0 ? "surplus positive" : "surplus negative";
       return (
         <tr key={month} className={rowClassName}>
@@ -166,13 +181,14 @@ function BudgetTable({ setDrawerContent, budget }) {
     const totalSurplus = months.reduce((acc, month) => acc + (monthlyBudget[month]?.surplus || 0), 0);
     const surplusClassName = totalSurplus >= 0 ? "surplus positive" : "surplus negative";
     
+
     const sumRow = (
       <tr key="sum" className="sum">
-        <td>Total</td>
-        <td>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.income || 0), 0))}</td>
-        <td>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.monthlySpending || 0), 0))}</td>
-        <td>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.dayToDaySpending || 0), 0))}</td>
-        <td className={surplusClassName}>{formatAsCurrency(totalSurplus)}</td>
+      <td onClick={() => handleCellClick(null, 'month')}>Total</td>
+      <td onClick={() => handleCellClick(null, 'income')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.income || 0), 0))}</td>
+      <td onClick={() => handleCellClick(null, 'fixed')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.monthlySpending || 0), 0))}</td>
+      <td onClick={() => handleCellClick(null, 'day')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.dayToDaySpending || 0), 0))}</td>
+      <td onClick={() => handleCellClick(null, 'month')} className={surplusClassName}>{formatAsCurrency(totalSurplus)}</td>
       </tr>
     );
 
