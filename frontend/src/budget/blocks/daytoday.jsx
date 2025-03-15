@@ -67,7 +67,6 @@ export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions
     const endingBalance = activeMonthDailyBudget[Object.keys(activeMonthDailyBudget)[Object.keys(activeMonthDailyBudget).length - 1]].endingBalance;
 
 
-    console.log({ activeMonthDailyBudget });
 
     const options = {
         chart: {

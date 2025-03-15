@@ -14,7 +14,7 @@ import { formatAsCurrency } from "./blocks";
 
 import externalIcon from "../assets/icons/external.svg";;
 
-export function Drawer({ cellKey, transactions, monthData }) {
+export function Drawer({ cellKey, transactions, periodData }) {
 
     const [sortConfig, setSortConfig] = useState({ key: "date", direction: 'descending' });
     const [transactionFilter, setTransactionFilter] = useState({});
@@ -91,7 +91,7 @@ export function Drawer({ cellKey, transactions, monthData }) {
 
     return (
         <div className="budget-drawer">
-            <DrawerChart transactions={transactions} cellKey={cellKey} monthData={monthData} setTransactionFilter={setTransactionFilter} />
+            <DrawerChart transactions={transactions} cellKey={cellKey} periodData={periodData} setTransactionFilter={setTransactionFilter} />
             <div className="budget-drawer-summary">
                 
                 <span>{sortedTransactions.length} Transactions <a target="_blank" href={`https://www.buxfer.com/transactions?tids=${sortedTransactions.map(tx => tx.id).join(",")}`}>
@@ -141,7 +141,7 @@ export function Drawer({ cellKey, transactions, monthData }) {
                                 const rowClassName = !isIncome ? `expense ${evenOdd}` : `income ${evenOdd}`;
                                 const memo = transaction.memo ? <span className="memo">{transaction.memo}</span> : null;
                                 return (
-                                    <tr key={transaction.id+i} className={rowClassName} onClick={() => handleRowClick(transaction)} key={transaction.id}>
+                                    <tr key={transaction.id+i} className={rowClassName} onClick={() => handleRowClick(transaction)} >
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
@@ -158,18 +158,20 @@ export function Drawer({ cellKey, transactions, monthData }) {
     );
 }
 
-function DrawerChart({ transactions, cellKey, monthData, setTransactionFilter }) {
+function DrawerChart({ transactions, cellKey, periodData, setTransactionFilter }) {
 
   
-  if(cellKey === 'fixed') return <DrawerWaterFallChart monthData={monthData} setTransactionFilter={setTransactionFilter} />;
-  if(cellKey === 'month') return <DrawerWaterFallChart monthData={monthData} setTransactionFilter={setTransactionFilter} />;
+  if(cellKey === 'fixed') return <DrawerWaterFallChart periodData={periodData} setTransactionFilter={setTransactionFilter} />;
+  if(cellKey === 'month') return <DrawerWaterFallChart periodData={periodData} setTransactionFilter={setTransactionFilter} />;
   if(cellKey === 'day') return <DrawerTreeMapChart transactions={transactions} setTransactionFilter={setTransactionFilter} />;
 
 }
 
-function DrawerWaterFallChart({ monthData, setTransactionFilter }) {
+function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
-  const {month} = monthData;
+
+  console.log(periodData);
+  const {month} = periodData;
 
   const incomeSum = month.income;
   const dayToDaySum = month.dayToDaySpending;
@@ -274,6 +276,7 @@ function DrawerWaterFallChart({ monthData, setTransactionFilter }) {
   </div>
 
 }
+
 function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
   const data = transactions.reduce((acc, tx) => {
     const { tagNames, description, amount } = tx;
