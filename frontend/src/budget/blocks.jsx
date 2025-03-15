@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Drawer } from "./drawer";
+import { Drawer, DrawerTreeMapChart } from "./drawer";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import SankeyModule from "highcharts/modules/sankey";
@@ -33,12 +33,35 @@ export const formatAsCurrency = (value) => {
   
   // BudgetMortgage.jsx
   export function BudgetSpending({ setDrawerContent, budget }) {
+
+    const budgets = Object.keys(budget);
+    const activeBudget = budget[budgets[0]];
+
+    const monthsDayToDay = Object.keys(activeBudget.dayToDayBudget);
+    const monthsMonthly = Object.keys(activeBudget.monthlyBudget);
+    const shortTermBuckets = Object.keys(activeBudget.shortTermBuckets);
+
+    const dayToDayTransactionsAllMonths = monthsDayToDay.map((month) => activeBudget.dayToDayBudget[month].transactions).flat();
+    const monthlyTransactionsAllMonths = monthsMonthly.map((month) => {
+      const categories = Object.keys(activeBudget.monthlyBudget[month].monthlyCategories);
+      return categories.map((category) => activeBudget.monthlyBudget[month].monthlyCategories[category].transactions).flat();
+    }).flat();
+
+    const shortTermTransactions = shortTermBuckets.map((bucket) => activeBudget.shortTermBuckets[bucket].transactions).flat();
+
+    const allTransactionsFromAllMonths = dayToDayTransactionsAllMonths
+    .concat(monthlyTransactionsAllMonths)
+    .concat(shortTermTransactions)
+    .filter((txn) => txn.expenseAmount > 0)
+    .filter((txn) => !["Housing", "Taxes", "Health Insurance", "Utilities", "Long-term Savings"].includes(txn.label));
+
+
+
     return (
       <div className="budget-block">
         <h2>Spending</h2>
         <div className="budget-block-content">
-          {/* Placeholder for Mortgage content */}
-          <BudgetSankeyChart />
+          <DrawerTreeMapChart transactions={allTransactionsFromAllMonths} />
         </div>
       </div>
     );
