@@ -41,9 +41,23 @@ export function Drawer({ cellKey, transactions, monthData }) {
       return null;
     };
     const sortedTransactions = [...transactions].sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'ascending' ? -1 : 1;
-        if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'ascending' ? 1 : -1;
-        return 0;
+      const parseValue = (value) => {
+          if (typeof value === 'string') {
+        const numericValue = parseFloat(value.replace(/[^0-9.-]+/g, ""));
+        return isNaN(numericValue) ? value : numericValue;
+          }
+          return value;
+      };
+
+      const keyToUse = sortConfig.key === 'amount' ? 'expenseAmount' : sortConfig.key;
+
+      const aValue = parseValue(a[keyToUse]);
+      const bValue = parseValue(b[keyToUse]);
+
+      if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+      return 0;
+
     })    .filter(transaction => {
           const { tags, description, label, bucket } = transactionFilter || {};
           let showMe = true;
