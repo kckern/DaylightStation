@@ -178,7 +178,7 @@ function DrawerWaterFallChart({ monthData, setTransactionFilter }) {
     { name: 'Monthly Income', isIntermediateSum: true, color: `#304529`  , filter: { bucket: "income" }},
     ... categoryCredits.sort((a, b) => a.y - b.y),
     ... categoryDebits.sort((a, b) => a.y - b.y),
-    { name: 'Monthly Operations', isIntermediateSum: true, color: `#660000` , filter: { bucket: "monthly" }},
+    { name: 'Monthly Cash Flow', isIntermediateSum: true, color: `#660000` , filter: { bucket: "monthly" }},
     { name: 'Day-to-Day Spending', y: -dayToDaySum , color: `#432454`  , filter: { bucket: "day" }},
     { name: !isNegative  ? 'Surplus' : 'Deficit',   isSum: true, color: isNegative ? `#c1121f` : `#759c82`}
   ];

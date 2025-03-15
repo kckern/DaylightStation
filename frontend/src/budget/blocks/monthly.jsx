@@ -2,32 +2,51 @@ import moment from "moment";
 import React, { useEffect, useState } from "react";
 import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
+import { Menu, Button, Group } from '@mantine/core';
 
-
-export const MonthTabs = ({monthKeys, activeMonth, setActiveMonth}) => {
+export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
   const recentMonths = monthKeys.slice(-6); // Get the most recent 6 months
   const olderMonths = monthKeys.slice(0, -6); // Get the rest
 
-
   return (
-      <div className="month-header">
+    <div className="month-header">
+      {olderMonths.length > 0 && (
+        <Menu>
+          <Menu.Target>
+            <Button
+              style={{ padding: "0", width: "100%" }}
+              variant="outline"
+              className="month-dropdown"
+            >{olderMonths.length} Previous Months</Button>
+          </Menu.Target>
+          <Menu.Dropdown>
+            {olderMonths.reverse().map((month) => {
+              const monthLabel = moment(month, "YYYY-MM").format("MMM ‘YY");
+              return (
+                <Menu.Item key={month} onClick={() => setActiveMonth(month)}>
+                  {monthLabel}
+                </Menu.Item>
+              );
+            })}
+          </Menu.Dropdown>
+        </Menu>
+      )}
+      <Group style={{ marginLeft: "auto", display: "flex", flexWrap: "nowrap", gap: "0.5rem", justifyContent: "space-around" , width: "100%"}}>
         {recentMonths.map((month) => {
           const monthLabel = moment(month, "YYYY-MM").format("MMM ‘YY");
-          return <div key={monthLabel} onClick={() => setActiveMonth(month)}  className={activeMonth === month ? "month active" : "month"}>
-            {monthLabel}</div>
+          return (
+            <Button
+            style={{ padding: "1ex" }}
+              key={month}
+              onClick={() => setActiveMonth(month)}
+              variant={activeMonth === month ? "filled" : "outline"}
+            >
+              {monthLabel}
+            </Button>
+          );
         })}
-        {olderMonths.length > 0 && (
-          <div className="dropdown">
-            <button className="dropbtn">Older Months</button>
-            <div className="dropdown-content">
-              {olderMonths.map((month) => {
-                const monthLabel = moment(month, "YYYY-MM").format("MMM ‘YY");
-                return <a key={monthLabel} href="#">{monthLabel}</a>
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+      </Group>
+    </div>
   );
 };
 
@@ -35,7 +54,7 @@ export const MonthTabs = ({monthKeys, activeMonth, setActiveMonth}) => {
   export function BudgetMonthly({ setDrawerContent, budget }) {
     return (
       <div className="budget-block">
-        <h2>Monthly Operations</h2>
+        <h2>Monthly Cash Flow</h2>
         <div className="budget-block-content">
           <BudgetTable setDrawerContent={setDrawerContent} budget={budget} />
         </div>
