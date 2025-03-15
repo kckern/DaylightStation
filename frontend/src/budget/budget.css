@@ -109,9 +109,10 @@ small.category-label {
     display: flex;
     gap: 1ex;
     justify-content: space-around;
-    padding: 0;
+    padding: 1ex;
     margin:0;
     width:100%;
+
 }
 
 .month-header div.month{
