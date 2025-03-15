@@ -1,9 +1,7 @@
-body{
-    font-family: 'Roboto Condensed', sans-serif!important;
-    color: #FFFFFFAA;
-}
 
-#root{
+.App{
+    font-family: 'Roboto Condensed', sans-serif!important;
+    color: #FFFFFFAA!important;
     display: flex;
     justify-content: center;
 }
