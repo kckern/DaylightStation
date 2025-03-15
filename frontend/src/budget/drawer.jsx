@@ -20,9 +20,9 @@ export function Drawer({ cellKey, transactions, monthData }) {
     const [transactionFilter, setTransactionFilter] = useState({});
 
     const handleSorting = (key) => {
-        let direction = 'ascending';
-        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-            direction = 'descending';
+        let direction = 'descending';
+        if (sortConfig.key === key && sortConfig.direction === 'descending') {
+            direction = 'ascending';
         }
         setSortConfig({ key, direction });
     };
