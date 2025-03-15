@@ -30,7 +30,7 @@ const weightProcess = async (job_id) => {
     values = trendline(values, 'lbs_adjusted_average', 14);
     values = trendline(values, 'lbs_adjusted_average', 7);
     values = caloricBalance(values); 
-    values = trendline(values, 'lbs_adjusted_average', 1);
+    values = trendline(values, 'lbs_adjusted_average', 2);
 
     // Remove temporary "_diff" keys
     values = removeTempKeys(values);
@@ -260,7 +260,7 @@ function caloricBalance(values) {
     const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
     const caloriesPerPound = 3500;
     const daysInWeek = 7;
-    const key = 'lbs_adjusted_average_1day_trend';
+    const key = 'lbs_adjusted_average_2day_trend';
     for(let i = 0; i < dates.length; i++) {
         const date = dates[i];
         const trend = values[date][key] || 0;
