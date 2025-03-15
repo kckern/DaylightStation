@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Button, MantineProvider, TabsPanel } from '@mantine/core';
 import { BudgetHoldings,  BudgetSpending} from './blocks.jsx';
 import { BudgetMortgage } from './blocks/mortgage.jsx';
-import { BudgetMonthly } from './blocks/monthly.jsx';
+import { BudgetCashFlow } from './blocks/monthly.jsx';
 import { BudgetShortTerm } from './blocks/shortterm.jsx';
 import { BudgetDayToDay } from './blocks/daytoday.jsx';
 import { Drawer } from '@mantine/core';
@@ -70,7 +70,7 @@ export function BudgetViewer({ budget, mortgage, setBudgetData }) {
           {drawerContent?.jsx || drawerContent}
         </Drawer>
         <div className="grid-container">
-          <BudgetMonthly setDrawerContent={setDrawerContent} budget={budget}/>
+          <BudgetCashFlow setDrawerContent={setDrawerContent} budget={budget}/>
           <BudgetShortTerm setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
           <BudgetDayToDay setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
     
