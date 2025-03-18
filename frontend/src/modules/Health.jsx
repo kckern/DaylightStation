@@ -18,7 +18,8 @@ export default function Health() {
         const list = response || [];
         const keys = Object.keys(list);
         setWeightData(list);
-		const today = list[keys[keys.length - 1]];
+		const sortedList = keys.map(key => list[key]).sort((a, b) => new Date(a.date) - new Date(b.date));
+		const today = sortedList[sortedList.length - 1];
         setToday(today);
     }
     );
@@ -29,7 +30,6 @@ export default function Health() {
         const interval = setInterval(reloadData, 300000);
         return () => clearInterval(interval);
     }, []);
-
     const {lbs_adjusted_average, date,fat_percent_adjusted_average, lbs_adjusted_average_7day_trend, calorie_balance} = today;
 	const trend = lbs_adjusted_average_7day_trend > 0 ? 
 	<img src={upArrow} alt="up" style={{height: "1.3em", marginBottom: "-0.3em"}} /> : 
