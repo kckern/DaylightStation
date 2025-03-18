@@ -273,15 +273,14 @@ function removeTempKeys(values) {
 function caloricBalance(values) {
     const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
     const caloriesPerPound = 3500;
-    const daysInWeek = 7;
-    const key = 'lbs_adjusted_average_1day_trend';
-    for(let i = 0; i < dates.length; i++) {
-        const keys = Object.keys(values[dates[i]]);
-        const date = dates[i];
-        const trend = values[date][key] || 1;
-        const balance = trend / daysInWeek * caloriesPerPound;
-        values[date].calorie_balance = Math.round(balance);
+    const trend_key = 'lbs_adjusted_average_1day_trend';
+    values = dates.reduce((acc, key) => {
+        const keys = Object.keys(values[key]);
+        acc[key] = { ...values[key] };
+        acc[key].calorie_balance = values[key]['lbs_adjusted_average_1day_trend'] * caloriesPerPound;
+        return acc;
     }
+    , {});
     return values;
 }
 
