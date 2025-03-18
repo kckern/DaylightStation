@@ -3,6 +3,10 @@ import { saveFile, loadFile } from './io.mjs';
 import processWeight from '../jobs/weight.mjs';
 
 const getWeightData = async (job_id) => {
+
+    //In Dev, the api is not called, and previous api data is sent to the processWeight function
+    if(!!process.env.dev) return processWeight(job_id);
+
     const { WITHINGS_CLIENT, WITHINGS_SECRET,WITHINGS_REDIRECT } = process.env;
     const {refresh} = loadFile('_tmp/withings');
     //return {refresh};
