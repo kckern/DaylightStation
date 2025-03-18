@@ -52,8 +52,8 @@ export const formatAsCurrency = (value) => {
     const allTransactionsFromAllMonths = dayToDayTransactionsAllMonths
     .concat(monthlyTransactionsAllMonths)
     .concat(shortTermTransactions)
-    .filter((txn) => txn.expenseAmount > 0)
-    .filter((txn) => !["Housing", "Taxes", "Health Insurance", "Utilities", "Long-term Savings"].includes(txn.label));
+    //.filter((txn) => !["Housing", "Taxes", "Health Insurance", "Utilities", "Long-term Savings"].includes(txn.label))
+    .filter((txn) => txn.expenseAmount > 0);
 
 
 

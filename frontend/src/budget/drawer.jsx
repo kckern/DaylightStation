@@ -276,53 +276,87 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
   </div>
 
 }
-
 export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
-  const data = transactions.reduce((acc, tx) => {
+  const pastelColors = [
+    '#FFD1DC', '#E2F0CB', '#FFABAB', '#B5EAD7', '#81F5FF',
+    '#E3B5A4', '#FFF9C4', '#DAD5DB', '#C4B6EF', '#FFB6C1',
+    '#FF677D', '#F2F3F5', '#D1C4E9', '#80DEEA', '#FFCCBC',
+    '#F48FB1', '#B39DDB', '#B2DFDB', '#FFCDD2', '#E1BEE7'
+  ];
+
+  const tagColorMap = {};
+  let colorIndex = 0;
+
+  // Prepare raw data
+  const rawData = transactions.reduce((acc, tx) => {
     const { tagNames, description, amount } = tx;
     const [tag] = tagNames || ['Other'];
-    const color = '#' + (Math.random() * 0xFFFFFF << 0).toString(16);
-    
-    let tagEntry = acc.find(entry => entry.id === tag);
-    
+    if (!tagColorMap[tag]) {
+      tagColorMap[tag] = pastelColors[colorIndex % pastelColors.length];
+      colorIndex++;
+    }
+    let tagEntry = acc.find(e => e.id === tag);
     if (!tagEntry) {
-        tagEntry = { id: tag, name: tag, value: 0, color: color };
-        acc.push(tagEntry);
+      tagEntry = { id: tag, name: tag, value: 0, color: tagColorMap[tag] };
+      acc.push(tagEntry);
     }
-
     tagEntry.value += amount;
-
-    let descEntry = acc.find(child => child.id === `${tag}-${description}`);
-    
+    const descId = `${tag}-${description}`;
+    let descEntry = acc.find(e => e.id === descId);
     if (!descEntry) {
-        descEntry = { id: `${tag}-${description}`, parent: tag, name: description, value: amount };
-        acc.push(descEntry);
-    } else {
-        descEntry.value += amount;
+      descEntry = { id: descId, parent: tag, name: description, value: 0, color: tagColorMap[tag] };
+      acc.push(descEntry);
     }
-    
+    descEntry.value += amount;
     return acc;
-}, []);
+  }, []);
 
-// Group by tags and include only top 4 descriptions
-const groupedData = data.reduce((result, entry) => {
-    if (!entry.parent) { // Check if it's a tag entry
-        const children = data
-            .filter(child => child.parent === entry.id)
-            .sort((a, b) => b.value - a.value);
-        
-        const topChildren = children.slice(0, 4);
-        const otherChildrenValue = children.slice(4).reduce((sum, child) => sum + child.value, 0);
-        
-        result.push(entry);
-        result.push(...topChildren);
-        
-        if (otherChildrenValue > 0) {
-            result.push({ id: `${entry.id}-Other`, parent: entry.id, name: 'Other', value: otherChildrenValue });
+  // Compute total for top-level entries
+  const grandTotal = rawData
+    .filter(e => !e.parent)
+    .reduce((sum, e) => sum + e.value, 0);
+
+  // Group children <= 20% into "Other"
+  const processedData = rawData.reduce((result, entry) => {
+    if (!entry.parent) {
+      const parentValueRounded = Math.round(entry.value).toLocaleString();
+      const parentPercent = Math.round((entry.value / grandTotal) * 100);
+      const parentWithLabel = {
+        ...entry,
+        name: `${parentPercent}% ${entry.id}
+        <br/>$${parentValueRounded}`
+      };
+
+      const children = rawData
+        .filter(child => child.parent === entry.id)
+        .sort((a, b) => b.value - a.value);
+
+      const parentTotal = children.reduce((sum, c) => sum + c.value, 0);
+      let accumulated = 0;
+      const mainChildren = [];
+
+      children.forEach(child => {
+        if (accumulated / parentTotal < 0.8) {
+          mainChildren.push(child);
+          accumulated += child.value;
         }
+      });
+
+      const otherValue = parentTotal - accumulated;
+      result.push(parentWithLabel);
+      result.push(...mainChildren);
+      if (otherValue > 0) {
+        result.push({
+          id: `${entry.id}-Other`,
+          parent: entry.id,
+          name: 'Other',
+          value: otherValue,
+          color: entry.color
+        });
+      }
     }
     return result;
-}, []);
+  }, []);
 
   const options = {
     chart: { type: 'treemap' },
@@ -331,39 +365,42 @@ const groupedData = data.reduce((result, entry) => {
     series: [{
       type: "treemap",
       layoutAlgorithm: "squarified",
-      data: groupedData,
+      data: processedData,
       levels: [
         {
           level: 1,
           dataLabels: {
             enabled: true,
-            align: "left",
-            verticalAlign: "top"
+            align: "center",
+            verticalAlign: "middle"
           }
         },
         {
           level: 2,
           dataLabels: {
-            enabled: true,
-            align: "center",
-            verticalAlign: "middle"
+            enabled: false
           }
         }
       ]
     }],
-    tooltip: { 
-      useHTML: true, 
+    tooltip: {
+      useHTML: true,
       pointFormatter: function() {
-        return `The total spent on <b>${this.name}</b> is <b>${formatAsCurrency(this.value)}</b>`;
+        const val = Math.round(this.value);
+        return `${this.name}`;
       }
     },
     plotOptions: {
-      series: { 
+      series: {
         animation: false,
-        events: { 
+        events: {
           click: function(event) {
             const level = event.point.node.level;
-            setTransactionFilter(level === 1 ? { tags: [event.point.id] } : { description: event.point.name });
+            setTransactionFilter(
+              level === 1
+                ? { tags: [event.point.id] }
+                : { description: event.point.name }
+            );
           }
         }
       }

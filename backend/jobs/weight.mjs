@@ -6,10 +6,10 @@ import moment from 'moment';
 //
 const weightProcess = async (job_id) => {
     // Load data
-    const weightPoints = loadFile('withings') || [];
+    const weightPoints = (loadFile('withings') || []).sort((a, b) => moment(a.date) - moment(b.date));
 
     // 1. Do a (re-implemented) linear interpolation over gaps for the last ~90 days
-    let values = interpolateDays(weightPoints.slice(0, 90));
+    let values = interpolateDays(weightPoints.slice(-90));
 
     // Attach a direct "measurement" property in case needed
     for (let point of weightPoints) {
@@ -23,17 +23,24 @@ const weightProcess = async (job_id) => {
     values = rollingAverage(values, 'lbs', 14);
     values = rollingAverage(values, 'fat_percent', 14);
 
-    // 3. Extrapolate to current date if needed
-    values = extrapolateToPresent(values);
 
     // 4. Calculate trendlines for different windows
     values = trendline(values, 'lbs_adjusted_average', 14);
     values = trendline(values, 'lbs_adjusted_average', 7);
+    values = trendline(values, 'lbs_adjusted_average', 1);
+
+    // 3. Extrapolate to current date if needed
+    values = extrapolateToPresent(values);
     values = caloricBalance(values); 
-    values = trendline(values, 'lbs_adjusted_average', 2);
+    values = trendline(values, 'lbs_adjusted_average', 14);
+    values = trendline(values, 'lbs_adjusted_average', 7);
 
     // Remove temporary "_diff" keys
     values = removeTempKeys(values);
+
+    const keys = Object.keys(values);
+    const sortedKeys = keys.sort((a, b) => moment(b) - moment(a));
+    values = sortedKeys.reduce((acc, key) => { acc[key] = values[key]; return acc; }, {});
 
     // Save final results
     saveFile('weight', values);
@@ -184,15 +191,21 @@ function rollingAverage(items, key, windowSize) {
 function trendline(values, key, n) {
     const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
 
-    for (let i = n - 1; i < dates.length; i++) {
-        const currentDate = dates[i];
-        const pastDate = dates[i - n + 1];
+    for (let i = 0; i < dates.length; i++) {
+        if (i < n) {
+            // Not enough data to calculate trend for this date
+            values[dates[i]][`${key}_${n}day_trend`] = null;
+            continue;
+        }
 
-        if (values[currentDate][key] !== undefined && values[pastDate][key] !== undefined) {
-            const currentValue = values[currentDate][key];
-            const pastValue = values[pastDate][key];
-            const diff = currentValue - pastValue;
-            values[currentDate][`${key}_${n}day_trend`] = Math.round(diff * 10) / 10;
+        const todayValue = values[dates[i]][key];
+        const nDaysAgoValue = values[dates[i - n]][key];
+
+        if (todayValue !== undefined && nDaysAgoValue !== undefined) {
+            const diff = todayValue - nDaysAgoValue;
+            values[dates[i]][`${key}_${n}day_trend`] = Math.round(diff * 100) / 100;
+        } else {
+            values[dates[i]][`${key}_${n}day_trend`] = null;
         }
     }
 
@@ -209,7 +222,7 @@ function computeSlope(count, sumX, sumY, sumXY, sumX2) {
 // use the last known 1-day trend to extrapolate forward.
 //
 function extrapolateToPresent(values) {
-    const keysToExtrapolate = ['lbs_adjusted_average'];
+    const keysToExtrapolate = ['lbs_adjusted_average','fat_percent_adjusted_average'];
     const allRecords = Object.keys(values).sort((a, b) => moment(a) - moment(b));
     const mostRecentRecord = allRecords[allRecords.length - 1];
 
@@ -220,6 +233,7 @@ function extrapolateToPresent(values) {
     for (let key of keysToExtrapolate) {
         // We rely on the 1day trend from the last known record
         const lastValue = values[mostRecentRecord][key];
+        const keys = Object.keys(values[mostRecentRecord]);
         const dailyChange = values[mostRecentRecord][`${key}_1day_trend`] || 0;
         for (let i = 1; i <= daysSinceLastRecord; i++) {
             const date = moment(mostRecentRecord).add(i, 'days').format('YYYY-MM-DD');
@@ -260,10 +274,11 @@ function caloricBalance(values) {
     const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
     const caloriesPerPound = 3500;
     const daysInWeek = 7;
-    const key = 'lbs_adjusted_average_2day_trend';
+    const key = 'lbs_adjusted_average_1day_trend';
     for(let i = 0; i < dates.length; i++) {
+        const keys = Object.keys(values[dates[i]]);
         const date = dates[i];
-        const trend = values[date][key] || 0;
+        const trend = values[date][key] || 1;
         const balance = trend / daysInWeek * caloriesPerPound;
         values[date].calorie_balance = Math.round(balance);
     }

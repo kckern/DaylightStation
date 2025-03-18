@@ -14,6 +14,7 @@ app.use(cors()); // Step 3: Enable CORS for all routes
 
 async function initializeApp() {
   if (configExists) {
+
     // Parse the YAML files
     const appConfig = parse(readFileSync(join(__dirname, '../config.app.yml'), 'utf8'));
     const secretsConfig = parse(readFileSync(join(__dirname, '../config.secrets.yml'), 'utf8'));
