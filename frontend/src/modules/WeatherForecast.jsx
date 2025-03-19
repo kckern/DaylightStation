@@ -35,6 +35,7 @@ export default function WeatherForecast() {
     }, []);
 
 const minTemp = Math.min(...temps);
+const maxTemp = Math.max(...temps);
 const options = {
     credits: {
         enabled: false
@@ -47,7 +48,7 @@ const options = {
             color: '#ffffff'
         },
         //height 200
-        height: 200,
+        height: 240,
         spacing: [10, 10, 10, 10]
     },
     title: {
@@ -72,7 +73,7 @@ const options = {
             },
             style: {
                 fontFamily: 'Roboto Condensed',
-                fontSize: '24',
+                fontSize: '20',
                 fontWeight: 'bold',
                 paddingLeft: '1ex',
                 color: '#000'

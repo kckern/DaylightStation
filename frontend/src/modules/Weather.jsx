@@ -327,10 +327,11 @@ export default function Weather() {
       style={{
         lineHeight: "1",
         display: "flex",
-        fontSize: "1.5rem",
+        fontSize: "1.2rem",
         flexDirection: "column",
         justifyContent: "space-between",
-        textAlign: "center"
+        textAlign: "center",
+        gap: "0.3rem" // Reduced gap
       }}
     >
       <div>
@@ -341,24 +342,23 @@ export default function Weather() {
             justifyContent: "space-around",
             padding: "0",
             borderRadius: "10px",
-            margin: "0 5%",
-            width: "auto"
+            margin: "0 3%", // Reduced margin
+            width: "auto",
+            gap: "0.3rem" // Reduced gap
           }}
         >
-          <img src={currentWeather.image} alt={currentWeather.description}  style={{ width: "50%" }} />
+          <img src={currentWeather.image} alt={currentWeather.description} style={{ width: "35%" }} /> {/* Reduced width */}
           <div>
             <div
               style={{
-                fontSize: "3rem",
+                fontSize: "2rem", // Reduced font size
                 fontWeight: "bold",
-                marginBottom: "0.3ex"
+                marginBottom: "0.1rem" // Reduced margin
               }}
             >
               {currentWeather.feel}°
             </div>
-            <div>
-              {currentWeather.description}
-            </div>
+            <div>{currentWeather.description}</div>
           </div>
         </div>
       </div>
@@ -370,16 +370,17 @@ export default function Weather() {
             justifyContent: "space-around",
             padding: "0",
             borderRadius: "10px",
-            margin: "0 5%",
-            width: "auto"
+            margin: "0",
+            width: "auto",
+            gap: "0.3rem" // Reduced gap
           }}
         >
           <div>
-          <div>Air Quality:</div>
+            <div>Air Quality:</div>
             <div
               style={{
-                fontSize: "3rem",
-                marginTop: "0.7ex",
+                fontSize: "2rem", // Reduced font size
+                marginTop: "0.1rem", // Reduced margin
                 fontWeight: "bold"
               }}
             >
@@ -389,7 +390,7 @@ export default function Weather() {
           <img
             src={currentWeather.aircolor}
             alt={"Air Quality"}
-            style={{ width: "50%", padding: "3ex" }} 
+            style={{ width: "35%", padding: "0.5rem" }} // Reduced width and padding
           />
         </div>
       </div>

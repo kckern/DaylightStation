@@ -12,17 +12,15 @@ function App() {
 
 
   return (
-    <div className='App'>
-      <div className='sidebar'>
+    <div className='App' >
+          <div className='sidebar'>
         <h2 style={{ color: '#FFFFFF88',  fontWeight: 'bold', marginBottom: '0', textAlign: 'center' , marginTop: '1rem'}}>
           {moment().format('dddd, MMMM Do, YYYY')}
         </h2>
           <Clock/>
           <Weather/>
-          <div style={{ height: '2rem'}}>
 
           <WeatherForecast />
-          </div>
       </div>
       <div className='content'>
         <Upcoming />
