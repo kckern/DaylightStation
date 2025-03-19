@@ -1,191 +1,131 @@
 import React, { useEffect, useState } from "react";
-import Highcharts, { color } from 'highcharts';
+import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import moment from 'moment';
 import { MonthTabs } from "./monthly";
 import { Drawer } from "../drawer";
-import { DaylightAPI } from "../../lib/api.mjs";
+import moment from 'moment';
 
 const formatAsCurrency = (value) => {
   if (!value && value !== 0) return '$Ø';
   return `$${value.toLocaleString()}`;
 };
 
-export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerContent, budgetBlockDimensions, config }) => {
-    config = config || {};
+export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
+  if (!monthData || !monthData.dailyBalances) return {};
 
-    setDrawerContent = setDrawerContent || (() => {});
-    budgetBlockDimensions = budgetBlockDimensions || { width: 600, height: 400 };
+  const dailyBalances = monthData.dailyBalances;
+  const transactions = monthData.transactions || [];
+  const dayKeys = Object.keys(dailyBalances).sort();
+  if (!dayKeys.length) return {};
 
-    const[monthData, setMonthData] = useState(monthDataInput);
+  // Basic info about the month
+  const firstDayKey = dayKeys[0];
+  const lastDayKey = dayKeys[dayKeys.length - 1];
+  const inferredMonth = moment(firstDayKey.substring(0, 7)).format('YYYY-MM');
+  const currentMonth = moment().format('YYYY-MM');
+  const daysInMonth = dayKeys.length - 1;
+  const isCurrentMonth = inferredMonth === currentMonth;
+  console.log({firstDayKey, inferredMonth, currentMonth, isCurrentMonth });
+  const today = moment().date(); // 1-based day of the month
 
-    useEffect(() => {
-        if(!!monthDataInput) return false;
-        const fetchData = () => {
-            DaylightAPI("data/budget/daytoday")
-                .then((data) => setMonthData(data));
-        };
-
-        fetchData();
-        const interval = setInterval(fetchData, 3600000); // Refresh every hour (3600000 ms)
-
-        return () => clearInterval(interval); // Cleanup on unmount
-    }, [monthDataInput]);
-
-    if (!monthData) {
-        return <div>Loading...</div>;
-    }
-
-  const { transactions, dailyBalances } = monthData;
-  if (!dailyBalances) {
-    return null;
-  }
-
-  const dayDates = Object.keys(dailyBalances).sort();
-  if (dayDates.length === 0) {
-    return null;
-  }
-
-  const firstDay = dayDates[0];
-  const lastDay = dayDates[dayDates.length - 1];
-  const activeMonth = firstDay.slice(0, 7);
-  const currentMonth = moment().format("YYYY-MM");
-  const activeMonthIsCurrentMonth = activeMonth === currentMonth;
-  const todayDateStr = moment().format("YYYY-MM-DD");
-  const todayIndex = dayDates.indexOf(todayDateStr) + 1;
-  const daysInMonth = dayDates.length -1;
-
-  const start = dailyBalances[firstDay].startingBalance;
-  const end = dailyBalances[lastDay].endingBalance;
-  const spent = start - end;
-
-  const actualData = dayDates.map((date) => {
-    const day = moment(date);
-    const dayOfMonth = parseInt(day.format("D"), 10);
-    const isMonday = day.day() === 1;
-    const isToday = date === todayDateStr && activeMonthIsCurrentMonth;
+  // Build the actual data series
+  const actualData = dayKeys.map((dateKey, idx) => {
+    const isMonday = moment(dateKey).day() === 1;
+    const highlightToday = isCurrentMonth && idx === today;
     return {
-      y: dailyBalances[date].endingBalance,
-      color: isToday ? '#0077b6' : (isMonday ? '#777' : undefined),
-      dayOfMonth,
-      date
+      y: dailyBalances[dateKey].endingBalance,
+      color: highlightToday ? '#0077b6' : (isMonday ? '#777' : undefined)
     };
   });
 
-  const zeroCrossingIndex = actualData.findIndex((d) => d.y < 0);
+  // Budget stats
+  const initialBudget = dailyBalances[firstDayKey].startingBalance;
+  const endingBalance = dailyBalances[lastDayKey].endingBalance;
+  const spent = initialBudget - endingBalance;
 
-  const initialBudget = dailyBalances[firstDay].startingBalance;
-  let averageDailyBurn = 0;
-  if (todayIndex >= 0 && todayIndex <= dayDates.length - 1) {
-    averageDailyBurn = (actualData[0].y - actualData[todayIndex].y) / (todayIndex + 1);
+  // Build projected data for future days in the current month
+  // Replicates the original logic where index == today is used
+  let projectedDataSeries = [];
+  if (isCurrentMonth && today < daysInMonth && actualData[today]) {
+    const averageDailyBurn = (actualData[0].y - actualData[today].y) / (today + 1);
+    const projectedData = [actualData[today].y].concat(
+      Array.from({ length: daysInMonth - (today ) }, (_, i) => {
+        const val =  actualData[today].y - (i + 1) * averageDailyBurn;
+        return Math.max(0, val);
+      })
+    );
+    const projectedDataWithNulls = Array(today).fill(null).concat(projectedData);
+    const firstNonNullIndex = projectedDataWithNulls.findIndex((v) => v !== null);
+    const lastIndex = projectedDataWithNulls.length - 1;
+    projectedDataSeries = projectedDataWithNulls.map((val, idx) => ({
+      y: val,
+      marker: {
+        enabled: idx === firstNonNullIndex || idx === lastIndex,
+        radius: 4,
+        fillColor: 'blue',
+        symbol: idx === firstNonNullIndex ? 'circle' : 'square'
+      }
+    }));
   }
 
-  const projectedData = [];
-  if (todayIndex >= 0 && todayIndex < dayDates.length) {
-    const currentBalance = actualData[todayIndex].y;
-    projectedData.push(currentBalance);
-    const daysLeft = (dayDates.length - 1) - todayIndex;
-    for (let i = 1; i <= daysLeft; i++) {
-      projectedData.push(currentBalance - i * averageDailyBurn);
-    }
-  }
-  const projectedDataWithNulls = new Array(Math.max(0, todayIndex)).fill(null).concat(projectedData);
+  // Baseline data (simple linear descent of the entire month's budget)
+  const baselineData = Array.from({ length: daysInMonth + 1 }, (_, i) => {
+    return initialBudget - i * (initialBudget / daysInMonth);
+  });
 
-  const firstNonNullIndex = projectedDataWithNulls.findIndex((v) => v !== null);
-  const lastIndex = projectedDataWithNulls.length - 1;
-  const projectedDataSeries = projectedDataWithNulls.map((value, idx) => ({
-    y: value,
-    marker: {
-      enabled: idx === firstNonNullIndex || idx === lastIndex,
-      radius: 4,
-      fillColor: '#007766',
-      symbol: idx === firstNonNullIndex ? 'circle' : 'square'
-    }
-  }));
+  // Identify where the balance crosses below zero (shaded area)
+  const zeroCrossingIndex = actualData.findIndex((pt) => pt.y < 0);
 
-  const baselineData = [];
-  for (let i = 0; i <= daysInMonth; i++) {
-    baselineData.push(initialBudget - i * (initialBudget / daysInMonth));
-  }
-
-  const options = {
-    chart: {
-      animation: false,
-      marginTop: 50,
-      backgroundColor: config.backgroundColor || '#FFF',
-      width: budgetBlockDimensions.width,
-      height: budgetBlockDimensions.height
-    },
+  return {
+    chart: { animation: false, marginTop: 50 },
     title: {
-      text: moment(activeMonth).format("MMMM YYYY"),
+      text: moment(inferredMonth).format('MMMM YYYY'),
       align: 'right',
       verticalAlign: 'top',
-       style: {
-        color: '#FFF'
-        },
       floating: true
     },
     subtitle: {
-      text: config.subtitle || `Spent: ${formatAsCurrency(spent)} | Remaining: ${formatAsCurrency(end)} | Budget: ${formatAsCurrency(start)}`,
+      text: `Spent: ${formatAsCurrency(spent)} | Remaining: ${formatAsCurrency(endingBalance)} | Budget: ${formatAsCurrency(initialBudget)}`,
       align: 'right',
       verticalAlign: 'top',
       y: 30,
       floating: true
     },
     xAxis: {
-      categories: [''].concat(
-        [...Array(daysInMonth).keys()].map((i) => (i + 1).toString())
-      ),
+      categories: [''].concat(Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString())),
       labels: {
-
-       style: {
-        color: '#FFF'
-        },
         formatter: function () {
-          const isMonday = moment(activeMonth).date(this.value).day() === 1;
-          const isLastDay = parseInt(this.value, 10) === daysInMonth;
-          return isMonday || isLastDay ? this.value : '';
+          const date = moment(firstDayKey).date(this.value);
+          const isMonday = date.day() === 1;
+          const isLastDay = +this.value === daysInMonth;
+          return (isMonday || isLastDay) ? this.value : '';
         }
       },
-      tickPositions: [...Array(daysInMonth).keys()]
-        .map((i) => {
-          const dayObj = moment(activeMonth).date(i + 1);
-          const isMonday = dayObj.day() === 1;
-          const isLastDay = (i + 1) === daysInMonth;
-          const isFirstDay = i === 0;
-          return isFirstDay || isMonday || isLastDay ? i + 1 : null;
-        })
-        .filter(Boolean),
-      plotLines: [...Array(daysInMonth).keys()]
-        .map((i) => {
-          const dayObj = moment(activeMonth).date(i + 1);
-          return dayObj.day() === 1 ? { color: '#EEE', width: 1, value: i + 1 } : null;
-        })
-        .filter(Boolean),
-      plotBands: zeroCrossingIndex >= 0
-        ? [
-            {
-              from: zeroCrossingIndex,
-              to: daysInMonth,
-              color: 'rgba(255, 0, 0, 0.1)',
-              max: 0
-            }
-          ]
-        : []
+      tickPositions: Array.from({ length: daysInMonth }, (_, i) => {
+        const date = moment(firstDayKey).date(i + 1);
+        if (i === 0) return i + 1;
+        const isMonday = date.day() === 1;
+        const isLastDay = (i + 1) === daysInMonth;
+        return (isMonday || isLastDay) ? i + 1 : null;
+      }).filter(Boolean),
+      plotLines: Array.from({ length: daysInMonth }, (_, i) => {
+        const date = moment(firstDayKey).date(i + 1);
+        return date.day() === 1 ? { color: '#EEE', width: 1, value: i + 1 } : null;
+      }).filter(Boolean),
+      plotBands: zeroCrossingIndex >= 0 ? [{
+        from: zeroCrossingIndex,
+        to: daysInMonth,
+        color: 'rgba(255, 0, 0, 0.1)'
+      }] : []
     },
     yAxis: {
-      min: Math.min(0, end),
-      max: start,
+      min: Math.min(0, endingBalance, ...actualData.map((a) => a.y)),
+      max: initialBudget,
       title: { text: '' },
       labels: {
-        style: {
-         color: '#FFF'
-         },
         formatter: function () {
-          const formattedNumber = this.axis.defaultLabelFormatter
-            .call(this)
-            .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-          return '$' + formattedNumber;
+          const formatted = this.axis.defaultLabelFormatter.call(this);
+          return '$' + formatted.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         }
       },
       gridLineWidth: 0
@@ -199,101 +139,90 @@ export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerConten
         lineColor: 'rgba(255, 0, 0, 0.5)',
         marker: { enabled: false },
         enableMouseTracking: false,
-        states: {
-          hover: { enabled: false }
-        }
+        states: { hover: { enabled: false } }
       },
       {
         name: 'Actual Data',
         data: [
-          { y: start, color: '#0077b6' },
-          ...actualData.map((d) => d)
-        ].map((point, idx) => {
-          if (idx === 0) return point;
-          const dayOfMonth = point.dayOfMonth || idx;
-          const hideFuture = activeMonthIsCurrentMonth && dayOfMonth > moment().date();
-          return {
-            ...point,
-            y: hideFuture ? null : point.y
-          };
+          ...actualData
+        ].map((d, idx) => {
+          // Hide future data points on the bar chart
+          if (isCurrentMonth && idx > today) {
+            return { ...d, y: null };
+          }
+          return d;
         }),
         type: 'column',
         zIndex: 2,
-        cursor: 'pointer',
-        events: {
-          click: function (event) {
-            const header = `Day-to-day transactions for ${moment(activeMonth).format("MMMM YYYY")}`;
-            const content = (
-              <Drawer
-                setDrawerContent={setDrawerContent}
-                header={header}
-                transactions={transactions}
-                highlightDate={event.point.category}
-              />
-            );
-            setDrawerContent({ jsx: content, meta: { title: header } });
+        cursor: setDrawerContent ? 'pointer' : undefined,
+        events: setDrawerContent ? {
+          click: function (e) {
+            const header = `Day-to-day transactions for ${moment(inferredMonth).format('MMMM YYYY')}`;
+            setDrawerContent({
+              jsx: (
+                <Drawer
+                  setDrawerContent={setDrawerContent}
+                  header={header}
+                  transactions={transactions}
+                  highlightDate={e.point.category}
+                />
+              ),
+              meta: { title: header }
+            });
           }
-        }
+        } : {}
       },
       {
         name: 'Projected Data',
-        data: activeMonthIsCurrentMonth ? projectedDataSeries : [],
+        data: projectedDataSeries,
         type: 'line',
         dashStyle: 'ShortDash',
         lineWidth: 2,
-        color: '#007766'
+        color: 'blue'
       }
     ],
-    plotOptions: {
-      series: { animation: false }
-    },
+    plotOptions: { series: { animation: false } },
     legend: { enabled: false },
     credits: { enabled: false }
   };
-
-  return <HighchartsReact highcharts={Highcharts} options={options} />;
-};
+}
 
 export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions }) => {
   const budgetKeys = Object.keys(budget);
-  const months = budgetKeys
-    .map((key) => budget[key].monthlyBudget)
-    .reduce((acc, monthlyBudget) => ({ ...acc, ...monthlyBudget }), {});
+  const months = budgetKeys.map((key) => budget[key].monthlyBudget).reduce((acc, m) => ({ ...acc, ...m }), {});
   const monthKeys = Object.keys(months);
   const currentMonth = moment().format("YYYY-MM");
   const [activeMonth, setActiveMonth] = useState(currentMonth);
   const nonFutureMonths = monthKeys.filter((m) => m <= currentMonth);
-  const dayToDayForActive = budget[budgetKeys[0]]?.dayToDayBudget[activeMonth];
 
-  if (!dayToDayForActive) {
-    return (
-      <div className="budget-block">
-        <h2>Day-to-day Spending</h2>
-        <div className="budget-block-content">
-          <MonthTabs
-            monthKeys={nonFutureMonths}
-            activeMonth={activeMonth}
-            setActiveMonth={setActiveMonth}
-          />
-          <p>No data available for this month.</p>
-        </div>
-      </div>
-    );
-  }
+  const monthHeader = (
+    <MonthTabs
+      monthKeys={nonFutureMonths}
+      activeMonth={activeMonth}
+      setActiveMonth={setActiveMonth}
+    />
+  );
+
+  const firstBudgetKey = budgetKeys[0];
+  const monthData = budget[firstBudgetKey]?.dayToDayBudget[activeMonth] || {};
+  const options = buildDayToDayBudgetOptions(monthData, setDrawerContent);
 
   return (
     <div className="budget-block">
       <h2>Day-to-day Spending</h2>
       <div className="budget-block-content">
-        <MonthTabs
-          monthKeys={nonFutureMonths}
-          activeMonth={activeMonth}
-          setActiveMonth={setActiveMonth}
-        />
-        <BudgetDayToDayChart
-          monthData={dayToDayForActive}
-          setDrawerContent={setDrawerContent}
-          budgetBlockDimensions={budgetBlockDimensions}
+        {monthHeader}
+        <HighchartsReact
+          className="budget-burn-down-chart"
+          highcharts={Highcharts}
+          options={{
+            ...options,
+            chart: {
+              ...options.chart,
+              width: budgetBlockDimensions.width,
+              height: budgetBlockDimensions.height
+            }
+          }}
         />
       </div>
     </div>
