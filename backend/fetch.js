@@ -5,6 +5,7 @@ import { saveFile } from './lib/io.mjs';
 import { readFileSync, readdirSync } from 'fs';
 import test from './jobs/weight.mjs';
 import yaml from 'js-yaml';
+import moment from 'moment-timezone';
 const dataPath = `${process.env.path.data}`;
 
 // Middleware for error handling
@@ -32,6 +33,21 @@ apiRouter.get('/budget',  async (req, res, next) => {
     try {
         const finances = yaml.load(readFileSync(`${dataPath}/budget/finances.yml`, 'utf8'));
         res.json(finances);
+    } catch (err) {
+        next(err);
+    }
+});
+apiRouter.get('/budget/daytoday',  async (req, res, next) => {
+    try {
+        const {budgets} = yaml.load(readFileSync(`${dataPath}/budget/finances.yml`, 'utf8'));
+        const dates = Object.keys(budgets);
+        const latestDate = dates.sort((a, b) => moment(b).diff(moment(a)))[0];
+        const {dayToDayBudget} = budgets[latestDate];
+        const months = Object.keys(dayToDayBudget);
+        const latestMonth = months.sort((a, b) => moment(b).diff(moment(a)))[0];
+        const budgetData = dayToDayBudget[latestMonth];
+        delete budgetData.transactions;
+        res.json(budgetData);
     } catch (err) {
         next(err);
     }
