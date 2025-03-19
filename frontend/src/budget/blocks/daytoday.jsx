@@ -10,9 +10,10 @@ const formatAsCurrency = (value) => {
   return `$${value.toLocaleString()}`;
 };
 
-export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
+export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override) {
+  override = override || {};
   if (!monthData || !monthData.dailyBalances) return {};
-
+  setDrawerContent = setDrawerContent || (() => {});
   const dailyBalances = monthData.dailyBalances;
   const transactions = monthData.transactions || [];
   const dayKeys = Object.keys(dailyBalances).sort();
@@ -128,7 +129,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
       }).filter(Boolean),
       plotLines: Array.from({ length: daysInMonth }, (_, i) => {
         const date = moment(firstDayKey).date(i + 1);
-        return date.day() === 1 ? { color: '#EEE', width: 1, value: i + 1 } : null;
+        return date.day() === 1 ? { color: override.plotLineColor || '#EEE', width: 1, value: i + 1 } : null;
       }).filter(Boolean),
       plotBands: zeroCrossingIndex >= 0 ? [{
         from: zeroCrossingIndex,
