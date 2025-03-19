@@ -14,7 +14,7 @@ function App() {
   return (
     <div className='App'>
       <div className='sidebar'>
-        <h2 style={{ color: '#FFFFFF88', fontSize: '2rem', fontWeight: 'bold', marginBottom: '0', textAlign: 'center' , marginTop: '1rem'}}>
+        <h2 style={{ color: '#FFFFFF88',  fontWeight: 'bold', marginBottom: '0', textAlign: 'center' , marginTop: '1rem'}}>
           {moment().format('dddd, MMMM Do, YYYY')}
         </h2>
           <Clock/>
