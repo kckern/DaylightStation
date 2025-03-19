@@ -87,6 +87,7 @@ function HealthChart({data}) {
 		chart: {
 			backgroundColor: '#00000000',
 			//left border 2px white
+			height: 240,
 		},
 		title: {
 			text: null

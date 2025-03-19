@@ -1,19 +1,33 @@
+#root{
+    height: 100vh;
 
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #282c34;
+}
 .App{
     font-family: 'Roboto Condensed', sans-serif!important;
     color: #FFFFFFAA!important;
     display: flex;
     justify-content: center;
+    height: 720px;
+    width: 1280px;
+    overflow: hidden;
+    position: relative;
+    background-color: #000;
+    outline: 1px solid #FFFFFF22;
+    padding: 0;
+
 }
 
 .sidebar{
-    width: 25vw;
+    width: 25%;
     height: auto;
     flex-grow: 0;
     margin: 2rem;
     background-color: #FFFFFF22;
     border-radius: 1rem;
-
     display: flex;
     flex-direction: column;
     justify-content: flex-start
@@ -21,7 +35,8 @@
 
 .content{
     flex-grow: 1;
-    height: calc(100vh - 4rem);
+    width: calc(75% - 4rem);
+    height: calc(100% - 4rem);
     margin: 2rem 2rem 2rem 0;
     background-color: #FFFFFF22;
     border-radius: 1rem;
