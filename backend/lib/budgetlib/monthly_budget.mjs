@@ -307,10 +307,10 @@ export const dayToDayBudgetReducer = (acc, month, monthlyBudget, config) => {
   acc[month].budget = isCurrentMonth ? config.dayToDay.amount : acc[month].spending;
   acc[month].balance = parseFloat((acc[month].budget - acc[month].spending).toFixed(2));
 
+
   const daysInMonth = moment(month, 'YYYY-MM').daysInMonth();
   const daysArray = [0, ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
     .map(i => `${month}-${i.toString().padStart(2, '0')}`);
-
   acc[month].dailyBalances = daysArray.reduce((ccc, day) => {
     const dayTransactions = transactions.filter(txn => txn.date === day);
     const dayInt = parseInt(day.slice(-2));
@@ -357,6 +357,31 @@ export const dayToDayBudgetReducer = (acc, month, monthlyBudget, config) => {
     };
     return ccc;
   }, {});
+
+
+  const start = acc[month].spending;
+  const tommorrow = moment().add(1, 'days').format('YYYY-MM-DD');
+  const endOfMonth = moment(month, 'YYYY-MM').endOf('month').date();
+  const balance = Math.round(Object.keys(acc[month].dailyBalances).map(day => acc[month].dailyBalances[day].endingBalance).pop() * 100) / 100;
+  const spent = parseFloat((start - balance).toFixed(2));
+  const daysRemaining = isCurrentMonth ? moment(endOfMonth, 'DD').diff(moment(tommorrow, 'DD'), 'days') : 0;
+  const daysCompleted = daysInMonth - daysRemaining;
+  const dailySpend = parseFloat((spent / daysCompleted).toFixed(2));
+  const dailyBudget = parseFloat((balance / daysRemaining).toFixed(2));
+  const diff = parseFloat((dailyBudget - dailySpend).toFixed(2));
+  const adjustPercentage = parseFloat(((diff / dailySpend) * 100).toFixed(2));
+
+ 
+  acc[month] = {
+    ...acc[month],
+    balance,
+    spent,
+    daysRemaining,
+    dailySpend,
+    dailyBudget,
+    dailyAdjustment: adjustPercentage,
+    adjustPercentage
+  }
 
   delete monthlyBudget[month].dayToDayTransactions;
   return acc;
