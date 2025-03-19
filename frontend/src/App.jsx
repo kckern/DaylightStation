@@ -19,9 +19,16 @@ function App() {
       </div>
       <div className='content'>
         <Upcoming />
-        <div style={{ display: 'flex', justifyContent: 'space-evenly', gap: '3rem', width: '100%' }}>
-          <BudgetDayToDayChart />
+        <div style={{ display: 'flex', justifyContent: 'space-between' ,  width: '100%'}}>
+          <div style={{ width: `calc(50% - 0.5rem)`, marginTop: '2rem' }}>
+          <BudgetDayToDayChart budgetBlockDimensions={{ width: 400, height: 330 }} config={{
+            backgroundColor: 'transparent',
+            subtitle: '-'
+          }} />
+          </div>
+          <div style={{ width: `calc(50% - 0.5rem)`}}>
           <Health />
+          </div>
         </div>
       </div>
     </div>
