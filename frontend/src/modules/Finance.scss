@@ -1,0 +1,24 @@
+
+.finance table{
+    margin-bottom: 1rem;
+    background-color: #FFFFFF22;
+    text-align: center;
+    flex-grow: 0;
+}
+.finance table th{
+    background-color: #FFFFFF44;
+    padding: 0.5rem;
+    text-align: center;
+    white-space: nowrap!important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8rem;
+}
+.finance table td{
+    white-space: nowrap!important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8rem;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
