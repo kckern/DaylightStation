@@ -19,7 +19,10 @@ function App() {
         </h2>
           <Clock/>
           <Weather/>
+          <div style={{ height: '2rem'}}>
+
           <WeatherForecast />
+          </div>
       </div>
       <div className='content'>
         <Upcoming />
