@@ -57,27 +57,17 @@ return (
     <table style={{width: "100%", borderCollapse: "collapse"}}>
         <thead style={{textAlign: "left"}}>
             <tr>
-            <th style={{border: "1px solid black", width: "20%", padding: "8px"}}>Budget</th>
-            <th style={{border: "1px solid black", width: "20%", padding: "8px"}} colSpan={2}>Spent</th>
-                <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Daily Spend</th>
+            <th style={{border: "1px solid black", width: "20%", padding: "8px"}}>Spent</th>
                 <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Balance</th>
-                <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Days Left</th>
-                <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Daily Budget</th>
                 <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Adjustment</th>
 
             </tr>
         </thead>
         <tbody>
             <tr>
-                <td style={{border: "1px solid black", padding: "8px"}}>{formatAsCurrency(info.budget)}</td>
                 <td style={{border: "1px solid black", padding: "8px"}}>{formatAsCurrency(info.spent)}</td>
-                <td style={{border: "1px solid black", padding: "8px"}}>{Math.round(info.spentPercentage * 100)}%</td>
-                <td style={{border: "1px solid black", padding: "8px"}}>{formatAsCurrency(info.dailySpending)}</td>
                 <td style={{border: "1px solid black", padding: "8px"}}>{formatAsCurrency(info.remaining)}</td>
-                <td style={{border: "1px solid black", padding: "8px"}}>{info.daysRemaining}</td>
-                <td style={{border: "1px solid black", padding: "8px"}}>{formatAsCurrency(info.dailyBudget)}</td>
                 <td style={{border: "1px solid black", padding: "8px"}}>{info.adjust}% {adjustIcon}</td>
-
             </tr>
         </tbody>
     </table>

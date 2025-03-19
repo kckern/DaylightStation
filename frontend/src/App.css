@@ -8,14 +8,15 @@
 
 .sidebar{
     width: 25vw;
-    height: calc(70vh - 4rem);
+    height: auto;
+    flex-grow: 0;
     margin: 2rem;
     background-color: #FFFFFF22;
     border-radius: 1rem;
 
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start
 }
 
 .content{
