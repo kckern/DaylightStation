@@ -6,6 +6,7 @@ import Weather from './modules/Weather'
 import Upcoming from './modules/Upcoming'
 import Health from './modules/Health'
 import { FinanceChart } from './modules/Finance'
+import moment from 'moment'
 function App() {
   const [count, setCount] = useState(0)
 
@@ -13,6 +14,9 @@ function App() {
   return (
     <div className='App'>
       <div className='sidebar'>
+        <h2 style={{ color: '#FFFFFF88', fontSize: '2rem', fontWeight: 'bold', marginBottom: '0', textAlign: 'center' , marginTop: '1rem'}}>
+          {moment().format('dddd, MMMM Do, YYYY')}
+        </h2>
           <Clock/>
           <Weather/>
           <WeatherForecast />
