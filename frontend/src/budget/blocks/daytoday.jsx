@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import Highcharts from 'highcharts';
+import Highcharts, { color } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
 import { MonthTabs } from "./monthly";
@@ -11,7 +11,8 @@ const formatAsCurrency = (value) => {
   return `$${value.toLocaleString()}`;
 };
 
-export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerContent, budgetBlockDimensions }) => {
+export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerContent, budgetBlockDimensions, config }) => {
+    config = config || {};
 
     setDrawerContent = setDrawerContent || (() => {});
     budgetBlockDimensions = budgetBlockDimensions || { width: 600, height: 400 };
@@ -19,8 +20,16 @@ export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerConten
     const[monthData, setMonthData] = useState(monthDataInput);
 
     useEffect(() => {
-        DaylightAPI("data/budget/daytoday")
-            .then((data) => setMonthData(data));
+        if(!!monthDataInput) return false;
+        const fetchData = () => {
+            DaylightAPI("data/budget/daytoday")
+                .then((data) => setMonthData(data));
+        };
+
+        fetchData();
+        const interval = setInterval(fetchData, 3600000); // Refresh every hour (3600000 ms)
+
+        return () => clearInterval(interval); // Cleanup on unmount
     }, [monthDataInput]);
 
     if (!monthData) {
@@ -89,7 +98,7 @@ export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerConten
     marker: {
       enabled: idx === firstNonNullIndex || idx === lastIndex,
       radius: 4,
-      fillColor: 'blue',
+      fillColor: '#007766',
       symbol: idx === firstNonNullIndex ? 'circle' : 'square'
     }
   }));
@@ -103,6 +112,7 @@ export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerConten
     chart: {
       animation: false,
       marginTop: 50,
+      backgroundColor: config.backgroundColor || '#FFF',
       width: budgetBlockDimensions.width,
       height: budgetBlockDimensions.height
     },
@@ -110,10 +120,13 @@ export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerConten
       text: moment(activeMonth).format("MMMM YYYY"),
       align: 'right',
       verticalAlign: 'top',
+       style: {
+        color: '#FFF'
+        },
       floating: true
     },
     subtitle: {
-      text: `Spent: ${formatAsCurrency(spent)} | Remaining: ${formatAsCurrency(end)} | Budget: ${formatAsCurrency(start)}`,
+      text: config.subtitle || `Spent: ${formatAsCurrency(spent)} | Remaining: ${formatAsCurrency(end)} | Budget: ${formatAsCurrency(start)}`,
       align: 'right',
       verticalAlign: 'top',
       y: 30,
@@ -124,6 +137,10 @@ export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerConten
         [...Array(daysInMonth).keys()].map((i) => (i + 1).toString())
       ),
       labels: {
+
+       style: {
+        color: '#FFF'
+        },
         formatter: function () {
           const isMonday = moment(activeMonth).date(this.value).day() === 1;
           const isLastDay = parseInt(this.value, 10) === daysInMonth;
@@ -161,6 +178,9 @@ export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerConten
       max: start,
       title: { text: '' },
       labels: {
+        style: {
+         color: '#FFF'
+         },
         formatter: function () {
           const formattedNumber = this.axis.defaultLabelFormatter
             .call(this)
@@ -221,7 +241,7 @@ export const BudgetDayToDayChart = ({ monthData: monthDataInput, setDrawerConten
         type: 'line',
         dashStyle: 'ShortDash',
         lineWidth: 2,
-        color: 'blue'
+        color: '#007766'
       }
     ],
     plotOptions: {
