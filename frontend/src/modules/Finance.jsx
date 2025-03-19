@@ -34,7 +34,7 @@ export function FinanceChart()
 
   //2px solid white line on x axis
 
-const budgetBlockDimensions = { height : 270}
+const budgetBlockDimensions = { height : 240}
 //...monthlyBudget[month], balance, spent, daysRemaining, dailySpend, dailyBudget, dailyAdjustment: adjustPercentage, adjustPercentage
  
   const info = {
