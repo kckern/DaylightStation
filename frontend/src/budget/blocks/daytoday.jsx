@@ -19,22 +19,23 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
   if (!dayKeys.length) return {};
 
   // Basic info about the month
-  const firstDayKey = dayKeys[0];
+  const firstDayKey = dayKeys[1];
   const lastDayKey = dayKeys[dayKeys.length - 1];
-  const inferredMonth = moment(firstDayKey.substring(0, 7)).format('YYYY-MM');
+  const inferredMonth = moment(firstDayKey).format('YYYY-MM');
   const currentMonth = moment().format('YYYY-MM');
   const daysInMonth = dayKeys.length - 1;
   const isCurrentMonth = inferredMonth === currentMonth;
-  console.log({firstDayKey, inferredMonth, currentMonth, isCurrentMonth });
   const today = moment().date(); // 1-based day of the month
 
   // Build the actual data series
   const actualData = dayKeys.map((dateKey, idx) => {
     const isMonday = moment(dateKey).day() === 1;
+    const isFirstDay = idx === 0;
+    const isWeekend = moment(dateKey).day() === 0 || moment(dateKey).day() === 6;
     const highlightToday = isCurrentMonth && idx === today;
     return {
       y: dailyBalances[dateKey].endingBalance,
-      color: highlightToday ? '#0077b6' : (isMonday ? '#777' : undefined)
+      color: (highlightToday || isFirstDay) ? '#0077b6' : (isWeekend ? '#777' : undefined)
     };
   });
 
@@ -46,27 +47,41 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
   // Build projected data for future days in the current month
   // Replicates the original logic where index == today is used
   let projectedDataSeries = [];
-  if (isCurrentMonth && today < daysInMonth && actualData[today]) {
-    const averageDailyBurn = (actualData[0].y - actualData[today].y) / (today + 1);
-    const projectedData = [actualData[today].y].concat(
-      Array.from({ length: daysInMonth - (today ) }, (_, i) => {
-        const val =  actualData[today].y - (i + 1) * averageDailyBurn;
-        return Math.max(0, val);
-      })
-    );
-    const projectedDataWithNulls = Array(today).fill(null).concat(projectedData);
-    const firstNonNullIndex = projectedDataWithNulls.findIndex((v) => v !== null);
-    const lastIndex = projectedDataWithNulls.length - 1;
-    projectedDataSeries = projectedDataWithNulls.map((val, idx) => ({
-      y: val,
-      marker: {
-        enabled: idx === firstNonNullIndex || idx === lastIndex,
-        radius: 4,
-        fillColor: 'blue',
-        symbol: idx === firstNonNullIndex ? 'circle' : 'square'
-      }
-    }));
-  }
+  const averageDailyBurn = isCurrentMonth && today < daysInMonth && actualData[today]
+    ? (actualData[0].y - actualData[today].y) / (today + 1)
+    : 0;
+
+  const projectedData = isCurrentMonth && today < daysInMonth && actualData[today]
+    ? [actualData[today].y].concat(
+        Array.from({ length: daysInMonth - today }, (_, i) => {
+          const val = actualData[today].y - (i + 1) * averageDailyBurn;
+          return Math.max(0, val);
+        })
+      )
+    : [];
+
+  const projectedDataWithNulls = isCurrentMonth && today < daysInMonth && actualData[today]
+    ? Array(today).fill(null).concat(projectedData)
+    : [];
+
+  const firstNonNullIndex = projectedDataWithNulls.findIndex((v) => v !== null);
+  const lastIndex = projectedDataWithNulls.length - 1;
+
+  const endingProjectedBalance = projectedData.length
+    ? projectedData[projectedData.length - 1]
+    : 0;
+
+  const projectionColor = endingProjectedBalance < 0 ? '#780000' : '#2a9d8f';
+
+  projectedDataSeries = projectedDataWithNulls.map((val, idx) => ({
+    y: val,
+    marker: {
+      enabled: idx === firstNonNullIndex || idx === lastIndex,
+      radius: 4,
+      fillColor: projectionColor,
+      symbol: idx === firstNonNullIndex ? 'circle' : 'square'
+    }
+  }));
 
   // Baseline data (simple linear descent of the entire month's budget)
   const baselineData = Array.from({ length: daysInMonth + 1 }, (_, i) => {
@@ -75,6 +90,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
 
   // Identify where the balance crosses below zero (shaded area)
   const zeroCrossingIndex = actualData.findIndex((pt) => pt.y < 0);
+  const categories = [''].concat(Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString()));
 
   return {
     chart: { animation: false, marginTop: 50 },
@@ -92,13 +108,15 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
       floating: true
     },
     xAxis: {
-      categories: [''].concat(Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString())),
+      categories,
       labels: {
+        y: 15,
         formatter: function () {
           const date = moment(firstDayKey).date(this.value);
+          const label = moment(firstDayKey).date(this.value).format('MMM D');
           const isMonday = date.day() === 1;
           const isLastDay = +this.value === daysInMonth;
-          return (isMonday || isLastDay) ? this.value : '';
+          return (isMonday || isLastDay) ? label : '';
         }
       },
       tickPositions: Array.from({ length: daysInMonth }, (_, i) => {
@@ -155,6 +173,13 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
         type: 'column',
         zIndex: 2,
         cursor: setDrawerContent ? 'pointer' : undefined,
+        // add tooltip events
+        tooltip: {
+          pointFormatter: function () {
+            const date = moment(firstDayKey).date(this.category).format('MMMM D, YYYY');
+            return `<b>${date}: ${formatAsCurrency(this.y)}</b>`;
+          }
+        },
         events: setDrawerContent ? {
           click: function (e) {
             const header = `Day-to-day transactions for ${moment(inferredMonth).format('MMMM YYYY')}`;
@@ -178,7 +203,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent) {
         type: 'line',
         dashStyle: 'ShortDash',
         lineWidth: 2,
-        color: 'blue'
+        color: projectionColor
       }
     ],
     plotOptions: { series: { animation: false } },
