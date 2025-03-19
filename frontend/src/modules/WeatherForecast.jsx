@@ -34,7 +34,7 @@ export default function WeatherForecast() {
         return () => clearInterval(interval);
     }, []);
 
-
+const minTemp = Math.min(...temps);
 const options = {
     credits: {
         enabled: false
@@ -46,6 +46,8 @@ const options = {
         style: {
             color: '#ffffff'
         },
+        //height 200
+        height: 200,
         spacing: [10, 10, 10, 10]
     },
     title: {
@@ -98,7 +100,8 @@ const options = {
         title: {
             enabled: false
         },
-        gridLineWidth: 0
+        gridLineWidth: 0,
+        min: minTemp - 5,
     },
     legend: {
         enabled: false
