@@ -10,16 +10,52 @@ export default function Upcoming() {
   const [isMoving, setIsMoving] = useState(false);
   const reloadData = () => {
     DaylightAPI("/data/events").then(events => {
+      // Rotate events and ensure at least 5 items
       events = [...events.slice(-1), ...events.slice(0, -1)];
       while (events.length < 5) events = [...events, ...events];
 
-      setListItems(
-        events.map(event => ({
-          ...event,
-          title:  event.summary || event.title,
-          time:   event.start || null
-        }))
-      );
+      // Map API events to desired format
+      const itemsFromAPI = events.map(event => ({
+      ...event,
+      title: event.summary || event.title,
+      time: event.start || null
+      })).map(event => {
+        const daysInFuture = moment(event.time).startOf("day").diff(moment().startOf("day"), "days") || 0;
+
+        if(daysInFuture > 20) return null;
+        // Ensure monday is always a future Monday
+        let monday = moment().day(1);
+        if (moment().isSameOrAfter(monday, "day")) {
+          monday = monday.add(7, "days");
+        }
+        const nextMonday = moment(monday).add(7, "days");
+
+        //is before $monday
+        const isNow = !event.time;
+        const isThisWeek = moment(event.time).isBefore(monday);
+        const isNextWeek = moment(event.time).isBetween(monday, nextMonday, null, "[]");
+        const isAfterNextWeek = moment(event.time).isAfter(nextMonday);
+        const isToday = daysInFuture === 0;
+        const isTomorrow =  daysInFuture === 1;
+
+        const color = isNow ? "red" : isAfterNextWeek ? "grey" : isNextWeek ? "blue" :  isToday ? "orange" : isTomorrow ? "yellow" : isThisWeek ? "green" : "grey";
+        // Set color based on the day of the week
+        event.color = color;
+        event.daysInFuture = daysInFuture;
+        return event;
+      }).filter(Boolean);
+
+
+
+      // Remove old, removed items and add new items
+      const items = [
+        ...listItems,
+        ...itemsFromAPI.filter(newItem => !listItems.some(existingItem => existingItem.id === newItem.id))
+      ]
+        .filter(item => item.type === "todoist" || moment(item.time).isAfter(moment()))
+        .sort((a, b) => new Date(a.time) - new Date(b.time));
+
+      setListItems(items);
     });
   };
 
@@ -90,15 +126,18 @@ function ListPanel({ items, isMoving }) {
 function MainItem({ item, className }) {
 
   // Mon, 1 Jan • 5:00 PM
-  const {allday} = item;
+  const {allday, daysInFuture} = item;
   const format = allday ? "dddd, D MMMM" : "dddd, D MMMM • h:mm A";
-  const daysInFuture = moment(item.time).diff(moment(), "days");
-  const inXDays = daysInFuture > 0 ? daysInFuture === 1 ? "Tomorrow" : `In ${daysInFuture} days` : "";
-  const timeLabel = item.type === "todoist" ? "Todo" : moment(item.start).format(format).replace(/:00/g, ""); // Remove ":00" from time
+  const timeFormat = allday ? "dddd, D MMMM" : "h:mm A";
+  const inXDays = daysInFuture <= 1 ? null : `In ${daysInFuture} days`;
+  const timeLabel = item.type === "todoist" ? "Todo" : 
+  daysInFuture === 1 ? `Tomorrow at ${moment(item.start).format(timeFormat)}` :
+  daysInFuture === 0 ? "Today at " + moment(item.start).format(timeFormat) :
+  moment(item.start).format(format).replace(/:00/g, ""); // Remove ":00" from time
   const titleLabel = item.title;
   const locationLabel = item.domain ||  item.location || null
 
-  const color = item.color || "red"; // Fallback color if not provided
+  const color = item.color || "grey"; // Fallback color if not provided
 
   return (
     <div className={className + ` ${color}`}>
@@ -112,19 +151,19 @@ function MainItem({ item, className }) {
 
 function ListItem({ item, className }) {
 
-  const daysInFuture = moment(item.time).diff(moment(), "days");
+  const {daysInFuture} = item;
   const chipLabel = item.type === "todoist" 
     ? "Todo" 
     : daysInFuture > 10 
     ? moment(item.time).format("D MMM") 
-    : daysInFuture > 0 
-    ? daysInFuture === 1 
-      ? "Tomorrow" 
-      : moment(item.time).format("ddd") 
-    : "Today";
+    : daysInFuture === 0 
+    ? "Today"
+    : daysInFuture === 1
+    ? "Tomorrow"
+    : `In ${daysInFuture} days`;
 
   return (
-    <div className={className + ` list-item ${item.color || "red"}`}>
+    <div className={className + ` list-item ${item.color || "grey"}`}>
       <h2>
         <span className="chip">
         {chipLabel}
