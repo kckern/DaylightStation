@@ -40,8 +40,8 @@ export default function Health() {
 	const lossRate = trend;
 	const daysToLose = lossRate > 0 ? Math.ceil(lbsToLose / lossRate) : `⚠️`;
 	const calorie_label = calorie_balance > 0 ? 
-	<img src={plusIcon} alt="+" style={{height: "1.3em", marginBottom: "-0.3em"}} /> :
-	<img src={minusIcon} alt="-" style={{height: "1.3em", marginBottom: "-0.3em"}} />;
+	<span>{calorie_balance}<img src={plusIcon} alt="+" style={{height: "1.3em", marginBottom: "-0.3em", marginLeft:"0.5ex"}} /></span> :
+	<span>{Math.abs(calorie_balance)}<img src={minusIcon} alt="-" style={{height: "1.3em", marginBottom: "-0.3em", marginLeft:"0.5ex"}} /></span>;
 	return (
 		<div className="health">
 			<table style={{width: "100%", borderCollapse: "collapse"}}>
@@ -59,7 +59,7 @@ export default function Health() {
 						<td style={{border: "1px solid black", padding: "8px"}}>{lbs_adjusted_average}</td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{Math.round(fat_percent_adjusted_average)}%</td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{trend} {lbs_adjusted_average_7day_trend} lbs </td>
-						<td style={{border: "1px solid black", padding: "8px"}}>{calorie_balance ? `${calorie_label} ${calorie_balance}` : "Balanced"}</td>
+						<td style={{border: "1px solid black", padding: "8px"}}>{calorie_balance ? calorie_label : "Balanced"}</td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{daysToLose}</td>
 					</tr>
 				</tbody>
