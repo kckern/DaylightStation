@@ -47,6 +47,7 @@ const options = {
         style: {
             color: '#ffffff'
         },
+        marginTop: -10,
         //height 200
         height: 240,
         spacing: [10, 10, 10, 10]
