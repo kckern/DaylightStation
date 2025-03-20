@@ -15,8 +15,11 @@ const weightProcess = async (job_id) => {
     for (let point of weightPoints) {
         const date = moment(point.date).format('YYYY-MM-DD');
         const measurement = point.lbs;
-        if (!values[date]) continue;
-        values[date]['measurement'] = measurement;
+        if (!values[date]) {
+            values[date] = { date, measurement };
+        } else {
+            values[date]['measurement'] = Math.min(values[date]['measurement'] || Infinity, measurement);
+        }
     }
 
     // 2. Rolling averages on interpolated data
