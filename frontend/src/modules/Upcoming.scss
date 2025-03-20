@@ -79,19 +79,22 @@ $transition-time: 1s;
             margin: 0;
             text-align: center;
             padding: 0.2rem;
+            font-size: 1.8rem;
+            line-height: 1.8rem;
           }
 
                 h3, h4 {
                 padding: 10px;
                 background-color: #FFFFFF88;
-                color: #111;
+                color: #00000099;
                 margin: 0;
                 padding: 0.2rem;
                 text-align: center;
                 white-space: nowrap;
                 overflow: hidden;
-                line-height: 1.5rem;
-                height: 2rem;
+                line-height: 2rem;
+                font-size: 1.5rem;
+                height: 2.2rem;
                 text-overflow: ellipsis;
                 flex-shrink: 0;
                 }
