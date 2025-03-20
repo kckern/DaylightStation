@@ -17,7 +17,7 @@ export default function WeatherForecast() {
         const endTime = moment().add(36, 'hours');
         const isFuture = ({time}) => moment(time).isAfter(moment()) && moment(time).isBefore(endTime);
       const futureList = list.filter(isFuture);
-      const temps = futureList.map((item) => item.feel).map(celciusToFahrenheit) || [];
+      const temps = futureList.map((item) => ({temp: celciusToFahrenheit(item.feel), precip:item.precip}));
       const times = futureList.map((item) => item.time).map((time) => moment(time).format('ha')) || [];
 
       //every n hours
@@ -34,8 +34,7 @@ export default function WeatherForecast() {
         return () => clearInterval(interval);
     }, []);
 
-const minTemp = Math.min(...temps);
-const maxTemp = Math.max(...temps);
+const minTemp = Math.min(...temps.map(({temp}) => temp)) - 5;
 const options = {
     credits: {
         enabled: false
@@ -60,7 +59,37 @@ const options = {
     },
     series: [{
         name: 'Temperature',
-        data: temps,
+        data: temps.map(({temp,precip}) => {
+
+            console.log({temp});
+            const colors = {
+                "32": "#FFFFFF", //Freezing
+                "40": "#a9def9", //Coat weather
+                "50": "#00bbf9", //Jacket
+                "60": "#a7c957", //Sweater
+                "70": "#fcbf49", //T-shirt
+                "80": "#f77f00", //Shorts
+                "90": "#d62828",  //Hot
+                "100": "#9e2a2b"  //Very Hot
+            };
+            const thresholds = Object.keys(colors).map(Number);
+            const color = precip > 1 ? "#81a4cd"           
+            :colors[thresholds.find(threshold => temp < threshold)] || "#90be6d"; // Default color
+
+
+            return {
+                y: temp,
+                color,
+                dataLabels: {
+                    x: 2, // Adjust x position for data labels
+                    y:precip > 1 ? -26 : 0, // Adjust y position based on precip
+                    style: {
+                        color: 'contrast',
+                        textOutline: '2px contrast'
+                    }
+                },
+            };
+        }),
         animation: { duration: 0 },
         color: '#e9c46a',
         borderColor: '#FFFFFF55',
@@ -70,13 +99,16 @@ const options = {
             verticalAlign: 'top',
             inside: true,
             formatter: function() {
+                const isPrecip = temps[this.point.index].precip > 1;
+                if (isPrecip) {
+                    return '🌧️<br/>' + this.y + '°';
+                }
                 return '' + this.y + '°';
             },
             style: {
                 fontFamily: 'Roboto Condensed',
-                fontSize: '20',
+                fontSize: '18',
                 fontWeight: 'bold',
-                paddingLeft: '1ex',
                 color: '#000'
             }
         }
@@ -88,10 +120,9 @@ const options = {
                 color: '#ffffff',
                 fontSize: '20px',
                 fontFamily: 'Roboto Condensed'
-
             },
             rotation: -45,
-            x: 10,
+            x: 20, // Updated x offset to 10px
             y: 15
         },
         lineColor: '#ffffff',
