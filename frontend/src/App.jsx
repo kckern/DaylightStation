@@ -14,13 +14,27 @@ function App() {
   return (
     <div className='App' >
           <div className='sidebar'>
-        <h2 style={{ color: '#FFFFFF88',  fontWeight: 'bold', marginBottom: '0', textAlign: 'center' , marginTop: '1rem'}}>
+        <h2 style={{ color: '#FFFFFF88',  fontWeight: 'bold', marginBottom: '-1ex', textAlign: 'center' , marginTop: '1rem', fontSize: '1.2rem'}}>
           {moment().format('dddd, MMMM Do, YYYY')}
         </h2>
           <Clock/>
           <Weather/>
 
           <WeatherForecast />
+          <div
+            style={{
+              flexGrow: 1,
+              outline: '1px solid #FFFFFF33',
+              margin: '1ex',
+              marginTop: '-0.5rem',
+              borderRadius: '1ex',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            Entropy Dashboard coming soon
+          </div>
       </div>
       <div className='content'>
         <Upcoming />
