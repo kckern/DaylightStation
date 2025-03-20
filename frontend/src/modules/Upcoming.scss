@@ -71,6 +71,7 @@ $transition-time: 1s;
                 line-height: 1.5rem;
                 height: 2rem;
                 text-overflow: ellipsis;
+                flex-shrink: 0;
                 }
           h4{
             background-color: #FFFFFF66;
@@ -132,6 +133,7 @@ $transition-time: 1s;
           transition: transform $transition-time ease-in-out, opacity $transition-time ease-in-out;
           word-break: break-all;
           overflow: hidden;
+          flex-shrink: 0;
         }
         .list-panel-item.slide-out {
           transform: translateX(-100%);
