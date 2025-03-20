@@ -323,77 +323,58 @@ export default function Weather() {
   if (!currentWeather.feel) return null;
 
   return (
-    <div
+    <table
       style={{
-        lineHeight: "1",
-        display: "flex",
-        fontSize: "1.2rem",
-        flexDirection: "column",
-        justifyContent: "space-between",
+        width: "100%",
         textAlign: "center",
-        gap: "0.3rem" // Reduced gap
+        fontSize: "1.2rem",
+        lineHeight: "1",
+        borderCollapse: "collapse",
+        marginTop: "-1.5rem",
+        marginBottom: "-1rem"
       }}
     >
-      <div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-around",
-            padding: "0",
-            borderRadius: "10px",
-            margin: "0 3%", // Reduced margin
-            width: "auto",
-            gap: "0.3rem" // Reduced gap
-          }}
-        >
-          <img src={currentWeather.image} alt={currentWeather.description} style={{ width: "35%" }} /> {/* Reduced width */}
-          <div>
-            <div
-              style={{
-                fontSize: "2rem", // Reduced font size
-                fontWeight: "bold",
-                marginBottom: "0.1rem" // Reduced margin
-              }}
-            >
-              {currentWeather.feel}°
+      <tbody>
+        <tr>
+          <td style={{ padding: "1rem", border: "0", textAlign: "center" }} align="center" width={"50%"}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <img
+                src={currentWeather.image}
+                alt={currentWeather.description}
+                style={{ margin: "-2ex", display: "block" }}
+              />
+              <div
+                style={{
+                  fontSize: "2.5rem",
+                  fontWeight: "bold",
+                  marginBottom: "0.2rem"
+                }}
+              >
+                {currentWeather.feel}°
+              </div>
+              <div>{currentWeather.description}</div>
             </div>
-            <div>{currentWeather.description}</div>
-          </div>
-        </div>
-      </div>
-      <div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-around",
-            padding: "0",
-            borderRadius: "10px",
-            margin: "0",
-            width: "auto",
-            gap: "0.3rem" // Reduced gap
-          }}
-        >
-          <div>
-            <div>Air Quality:</div>
-            <div
-              style={{
-                fontSize: "2rem", // Reduced font size
-                marginTop: "0.1rem", // Reduced margin
-                fontWeight: "bold"
-              }}
-            >
-              {Math.round(currentWeather.aqi)}
+          </td>
+          <td style={{ padding: "1rem", border: "0 solid #ddd" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <img
+                src={currentWeather.aircolor}
+                alt={"Air Quality"}
+                style={{ height: "3rem", margin: "0 auto", display: "block" }}
+              />
+              <div>Air Quality:</div>
+              <div
+                style={{
+                  fontSize: "3rem",
+                  fontWeight: "bold"
+                }}
+              >
+                {Math.round(currentWeather.aqi)}
+              </div>
             </div>
-          </div>
-          <img
-            src={currentWeather.aircolor}
-            alt={"Air Quality"}
-            style={{ width: "35%", padding: "0.5rem" }} // Reduced width and padding
-          />
-        </div>
-      </div>
-    </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
