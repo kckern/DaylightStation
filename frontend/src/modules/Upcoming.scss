@@ -46,12 +46,50 @@ $transition-time: 1s;
       
           // Like the list panel, define transitions on each item
           transition: transform $transition-time ease-in-out, opacity $transition-time ease-in-out;
+
+          display: flex;
+          flex-direction: column;
       
           h2 {
             padding: 10px;
             background-color: #f0f0f0;
             color: #111;
+            margin: 0;
+            text-align: center;
+            padding: 0.2rem;
           }
+
+                h3, h4 {
+                padding: 10px;
+                background-color: #FFFFFF88;
+                color: #111;
+                margin: 0;
+                padding: 0.2rem;
+                text-align: center;
+                white-space: nowrap;
+                overflow: hidden;
+                line-height: 1.5rem;
+                height: 2rem;
+                text-overflow: ellipsis;
+                }
+          h4{
+            background-color: #FFFFFF66;
+          }
+          p{
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 3rem;
+            padding: 1rem;
+            line-height: 3rem;
+            text-align: center;
+            margin-top: 5%;
+          }
+
+
+
       
           // No motion when not animating
           &.noslide {
@@ -92,7 +130,7 @@ $transition-time: 1s;
           padding: 1ex;
           box-sizing: border-box;
           transition: transform $transition-time ease-in-out, opacity $transition-time ease-in-out;
-          word-break: break-word;
+          word-break: break-all;
           overflow: hidden;
         }
         .list-panel-item.slide-out {
@@ -105,6 +143,16 @@ $transition-time: 1s;
         }
         .list-panel-item.noslide {
           transition: none!important;
+        }
+        .list-item {
+          .chip{
+            width: 30rem;
+            background-color: #FFFFFF44;
+            color: #111;
+            margin-right: 1ex;
+            padding: 0 0.5ex;
+            border-radius: 0.5ex;
+          }
         }
       }
   }

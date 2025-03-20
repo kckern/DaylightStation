@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { DaylightAPI } from "../lib/api.mjs";
 import "./Upcoming.scss";
+import moment from "moment";
 
 export default function Upcoming() {
   const cycleTimeMs = 5000;
@@ -14,10 +15,9 @@ export default function Upcoming() {
 
       setListItems(
         events.map(event => ({
-          id: event.id,
-          title: event.summary,
-          description: event.description,
-          time: event.start
+          ...event,
+          title:  event.summary || event.title,
+          time:   event.start || null
         }))
       );
     });
@@ -88,33 +88,49 @@ function ListPanel({ items, isMoving }) {
 }
 
 function MainItem({ item, className }) {
+
+  // Mon, 1 Jan • 5:00 PM
+  const {allday} = item;
+  const format = allday ? "dddd, D MMMM" : "dddd, D MMMM • h:mm A";
+  const daysInFuture = moment(item.time).diff(moment(), "days");
+  const inXDays = daysInFuture > 0 ? daysInFuture === 1 ? "Tomorrow" : `In ${daysInFuture} days` : "";
+  const timeLabel = item.type === "todoist" ? "Todo" : moment(item.start).format(format).replace(/:00/g, ""); // Remove ":00" from time
+  const titleLabel = item.title;
+  const locationLabel = item.domain ||  item.location || null
+
+  const color = item.color || "red"; // Fallback color if not provided
+
   return (
-    <div className={className}>
-      <h2>
-        {item.title}
-      </h2>
-      <p>
-        {item.time}
-      </p>
-      <p>
-        {item.description}
-      </p>
+    <div className={className + ` ${color}`}>
+      {!!timeLabel && <h2>{timeLabel}</h2>}
+      {!!locationLabel && <h3>{locationLabel}</h3>}
+      {!!inXDays && <h4>{inXDays}</h4>}
+      {!!titleLabel && <p>{titleLabel}</p>}
     </div>
   );
 }
 
 function ListItem({ item, className }) {
+
+  const daysInFuture = moment(item.time).diff(moment(), "days");
+  const chipLabel = item.type === "todoist" 
+    ? "Todo" 
+    : daysInFuture > 10 
+    ? moment(item.time).format("D MMM") 
+    : daysInFuture > 0 
+    ? daysInFuture === 1 
+      ? "Tomorrow" 
+      : moment(item.time).format("ddd") 
+    : "Today";
+
   return (
-    <div className={className}>
+    <div className={className + ` list-item ${item.color || "red"}`}>
       <h2>
+        <span className="chip">
+        {chipLabel}
+        </span> 
         {item.title}
       </h2>
-      <p>
-        {item.time}
-      </p>
-      <p>
-        {item.description}
-      </p>
     </div>
   );
 }
