@@ -49,7 +49,7 @@ const options = {
         },
         marginTop: -10,
         //height 200
-        height: 240,
+        height: 160,
         spacing: [10, 10, 10, 10]
     },
     title: {
