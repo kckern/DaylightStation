@@ -7,10 +7,32 @@ import Upcoming from './modules/Upcoming'
 import Health from './modules/Health'
 import { FinanceChart } from './modules/Finance'
 import moment from 'moment'
+import Player from './modules/Player'
+
+
 function App() {
-  const [count, setCount] = useState(0)
 
+  const [queue, setQueue] = useState([])
+  const keyboardHandler = () => {
 
+    //todo get from config
+    const map = {
+      "s": { key: 'scripture', value: 12345 },
+      "p": { key: 'plex', value: 67890 }
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setQueue([])
+      Object.keys(map).forEach((key) => {
+        if (event.key === key) setQueue([map[key]])})}
+      window.addEventListener('keydown', handleKeyDown)
+    return () => {window.removeEventListener('keydown', handleKeyDown)}
+  }
+
+  //keydown listener to add scripture to queue
+  useEffect(keyboardHandler, [])
+  
+  if(queue.length) return  <div className='App' ><Player queue={queue} setQueue={setQueue} /></div>
   return (
     <div className='App' >
           <div className='sidebar'>
