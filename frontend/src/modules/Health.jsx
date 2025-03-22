@@ -56,7 +56,7 @@ export default function Health() {
 				</thead>
 				<tbody>
 					<tr>
-						<td style={{border: "1px solid black", padding: "8px"}}>{lbs_adjusted_average}</td>
+						<td style={{border: "1px solid black", padding: "8px"}}>{Math.round(lbs_adjusted_average * 10) / 10} lbs</td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{Math.round(fat_percent_adjusted_average)}%</td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{trend} {lbs_adjusted_average_7day_trend} lbs </td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{calorie_balance ? calorie_label : "Balanced"}</td>
