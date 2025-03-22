@@ -128,6 +128,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
                         {(() => {
                             let prevDate = null;
                             return sortedTransactions.map((transaction,i) => {
+                               const guid = transaction.id || `${transaction.accountName}-${transaction.description}-${transaction.amount}-${i}`;
                                 const currentDateFormatted = moment(transaction.date).format("MMM Do");
                                 const displayDate = currentDateFormatted === prevDate ? "" : currentDateFormatted;
                                 prevDate = currentDateFormatted;
@@ -141,7 +142,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                 const rowClassName = !isIncome ? `expense ${evenOdd}` : `income ${evenOdd}`;
                                 const memo = transaction.memo ? <span className="memo">{transaction.memo}</span> : null;
                                 return (
-                                    <tr key={transaction.id+i} className={rowClassName} onClick={() => handleRowClick(transaction)} >
+                                    <tr key={guid} className={rowClassName} onClick={() => handleRowClick(transaction)} >
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
@@ -195,9 +196,9 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
   const maxValue = incomeSum + categoryCredits.reduce((acc, {y}) => acc + y, 0);
   
   const income = month.incomeTransactions.map(tx => ({name: tx.description || "Paycheck", y: tx.amount, filter: { description: tx.description }}))
-  .sort((b, a) => a.y - b.y);
+  .sort((a, b) => a.name.localeCompare(b.name) || b.y - a.y);
   const data = [
-    ... income.sort((a, b) => a.name - b.name),
+    ... income,
     { name: 'Monthly Income', isIntermediateSum: true, color: `#304529`  , filter: { bucket: "income" }},
     ... categoryCredits.sort((a, b) => a.y - b.y),
     ... categoryDebits.sort((a, b) => a.y - b.y),

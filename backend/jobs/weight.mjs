@@ -111,7 +111,7 @@ function interpolateKeyedValues(allDates, key) {
                 if (totalDays > 0) {
                     const ratio = daysFromPrev / totalDays;
                     const newVal = prevVal + ratio * (nextVal - prevVal);
-                    allDates[d][key] = Math.round(newVal * 10) / 10;
+                    allDates[d][key] = Math.round(newVal * 100) / 100;
                 }
             }
         }
@@ -154,7 +154,7 @@ function rollingAverage(items, key, windowSize) {
         }
 
         const avg = queue.length ? sum / queue.length : 0;
-        items[date][`${key}_average`] = Math.round(avg * 10) / 10;
+        items[date][`${key}_average`] = Math.round(avg * 100) / 100;
     }
 
     // Then compute diff from the rolling average
@@ -162,7 +162,7 @@ function rollingAverage(items, key, windowSize) {
         const date = dates[i];
         const actual = items[date][key] || 0;
         const avg = items[date][`${key}_average`] || 0;
-        items[date][`${key}_diff`] = Math.round((actual - avg) * 10) / 10;
+        items[date][`${key}_diff`] = Math.round((actual - avg) * 100) / 100;
     }
 
     // Next, a rolling average of that diff, to create an "adjusted" average
@@ -179,9 +179,9 @@ function rollingAverage(items, key, windowSize) {
         }
 
         const avgDiff = queue.length ? sum / queue.length : 0;
-        items[date][`${key}_diff_average`] = Math.round(avgDiff * 10) / 10;
+        items[date][`${key}_diff_average`] = Math.round(avgDiff * 100) / 100;
         items[date][`${key}_adjusted_average`] =
-            Math.round((items[date][`${key}_average`] - avgDiff) * 10) / 10;
+            Math.round((items[date][`${key}_average`] - avgDiff) * 100) / 100;
     }
 
     return items;
@@ -241,7 +241,7 @@ function extrapolateToPresent(values) {
         for (let i = 1; i <= daysSinceLastRecord; i++) {
             const date = moment(mostRecentRecord).add(i, 'days').format('YYYY-MM-DD');
             values[date] = values[date] || { date };
-            values[date][key] = Math.round((lastValue + dailyChange * i) * 10) / 10;
+            values[date][key] = Math.round((lastValue + dailyChange * i) * 100) / 100;
         }
     }
 
@@ -276,11 +276,14 @@ function removeTempKeys(values) {
 function caloricBalance(values) {
     const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
     const caloriesPerPound = 3500;
-    const trend_key = 'lbs_adjusted_average_1day_trend';
     values = dates.reduce((acc, key) => {
-        const keys = Object.keys(values[key]);
-        acc[key] = { ...values[key] };
-        acc[key].calorie_balance = values[key]['lbs_adjusted_average_1day_trend'] * caloriesPerPound;
+        const lbs = values[key]['lbs_adjusted_average'] || 0;
+        const dayBefore = moment(key).subtract(1, 'days').format('YYYY-MM-DD') || null;
+        const change = dayBefore && values[dayBefore] ? 
+            (values[key]['lbs_adjusted_average'] - values[dayBefore]['lbs_adjusted_average']) : 0;
+        const calorie_balance = Math.round((change * caloriesPerPound));
+        acc[key] = values[key] || {};
+        acc[key]['calorie_balance'] = calorie_balance
         return acc;
     }
     , {});
