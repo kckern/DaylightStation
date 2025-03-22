@@ -52,7 +52,7 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
             name: 'allotted',
             data: processedData.map((item) => ({
                 y: item.allotted,
-                color: item.overage > 0 ? '#c1121f' : '#0077b6'
+                color: item.overage > 0 ? '#c1121f' : item.balance === 0 ? '#023e8a' : '#0077b6'
             })),
             stack: 'shortTerm'
         },

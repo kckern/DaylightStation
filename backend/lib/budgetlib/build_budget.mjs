@@ -15,7 +15,7 @@ export const buildBudget = (config, transactions)=>
 
     const dayToDayBudget        = monthList.reduce((acc, month) => dayToDayBudgetReducer(acc, month, monthlyBudget, config), {});
     const transferTransactions  = monthList.reduce((acc, month) => transferTransactionsReducer(acc, month, monthlyBudget), {});
-    const shortTermBuckets      = monthList.reduce((acc, month) => shortTermBudgetReducer(acc, month, monthlyBudget, config), {});
+    const shortTermBuckets      = monthList.reduce((acc, month) => shortTermBudgetReducer(acc, month, monthlyBudget, config), {})
 
     const unBudgetedTransactions = shortTermBuckets["Unbudgeted"]?.transactions || [];
     
@@ -80,6 +80,27 @@ export const buildBudget = (config, transactions)=>
             }
         }
     }
+
+    //for any bucket that has less than $50 balance remaining, reduce the budget to make the balance zero, 
+    // and move the remaining amount to bucket with the most balance
+    for (const label in shortTermBuckets) {
+        const bucket = shortTermBuckets[label];
+        if (bucket['balance'] < 50 && bucket['budget'] > 0) {
+            const amountToMove = Math.min(bucket['budget'], bucket['balance']);
+            bucket['budget'] -= amountToMove;
+            bucket['balance'] = 0;
+            bucket['status'] = 'spent'; // Mark the bucket as spent
+
+            // Find the bucket with the most balance to move the remaining amount
+            const targetBucket = Object.values(shortTermBuckets).reduce((max, b) => (b.balance > max.balance ? b : max), { balance: 0 });
+            if (targetBucket !== bucket && targetBucket.balance > 0) {
+                targetBucket['budget'] += amountToMove;
+                targetBucket['balance'] += amountToMove;
+            }
+        }
+    }
+
+
 
     const shortTermBudget =  Object.values(shortTermBuckets).reduce((acc, {budget}) => acc + budget, 0);
     const shortTermSpending = Object.values(shortTermBuckets).reduce((acc, {spending}) => acc + spending, 0);

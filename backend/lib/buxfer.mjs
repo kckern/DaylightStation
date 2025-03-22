@@ -9,7 +9,9 @@ import moment from 'moment';
 
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
-const dataPath = `${process.env.path.data}`;
+
+const dataPath = `${process.env.path?.data}` || `${__appDirectory}/data`;
+
 const secretspath = `${__appDirectory}/config.secrets.yml`;
 const { BUXFER_EMAIL, BUXFER_PW } = yaml.load(readFileSync(secretspath, 'utf8'));
 

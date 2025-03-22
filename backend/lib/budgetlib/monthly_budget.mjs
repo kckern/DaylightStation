@@ -141,54 +141,56 @@ const futureMonthlyBudget = ({ month, config }) => {
     // 1) Get past actual data and future projections
     const pastData = pastMonthlyBudget({ month, config, transactions });
     const futureData = futureMonthlyBudget({ month, config });
+
+    //write pastData to file for debugging
+    saveFile(`${month}-pastData`, pastData);
+    saveFile(`${month}-futureData`, futureData);
   
     // 2) Initialize current data from past data
     const currentData = { ...pastData };
     const endOfMonth = moment(month).endOf('month').format('YYYY-MM-DD');
   
     // 3) Calculate and append anticipated income
-    const anticipatedIncome = parseFloat(futureData.income) - parseFloat(pastData.income);
+ 
+    const anticipatedIncome =  parseFloat(futureData.income) - parseFloat(pastData.nonBonusIncome);
     currentData.income = parseFloat(pastData.income) + anticipatedIncome;
   
     currentData.incomeTransactions = [
       ...pastData.incomeTransactions,
       {
         date: endOfMonth,
+        transactionType: 'income',
         amount: anticipatedIncome,
         description: 'Anticipated Income',
         tagNames: ['Anticipated'],
         tag: 'Anticipated',
       },
     ];
-  
-    // 4) Calculate and append anticipated amounts for monthly categories
-    const monthlyCategoryKeys = Object.keys(futureData.monthlyCategories);
-  
-    monthlyCategoryKeys.forEach((key) => {
-      const pastCategory = pastData.monthlyCategories[key];
-      const futureCategory = futureData.monthlyCategories[key];
-  
-      const anticipatedAmount =
-        parseFloat(futureCategory.amount) - parseFloat(pastCategory.amount);
-  
-      currentData.monthlyCategories[key].amount =
-        parseFloat(pastCategory.amount) + anticipatedAmount;
-  
-      currentData.monthlyCategories[key].debits =
-        parseFloat(pastCategory.debits) + anticipatedAmount;
-  
-      currentData.monthlyCategories[key].transactions = [
-        ...pastCategory.transactions,
-        {
-          date: endOfMonth,
-          amount: anticipatedAmount,
-          description: 'Anticipated Expense',
+
+    const anticipatedTaxRate = process.env.buxfer.taxRate || 0.2;
+    //loop through anticipated income transactions and add anticipated tax txn to currentData.monthlyCategories['Taxes']
+    currentData.incomeTransactions.forEach(txn => {
+      if(txn.tag === 'Anticipated'){
+        const taxAmount = parseFloat((txn.amount * anticipatedTaxRate).toFixed(2));
+        if(!currentData.monthlyCategories['Taxes']){
+          currentData.monthlyCategories['Taxes'] = {amount: 0, credits: 0, debits: 0, transactions: []};
+        }
+        currentData.monthlyCategories['Taxes'].amount += taxAmount;
+        currentData.monthlyCategories['Taxes'].debits += taxAmount;
+        currentData.monthlyCategories['Taxes'].transactions.push({
+          date: txn.date,
+          transactionType: 'expense',
+          amount: taxAmount,
+          expenseAmount: taxAmount,
+          description: 'Anticipated Withholding',
           tagNames: ['Anticipated'],
           tag: 'Anticipated',
-        },
-      ];
+        });
+      }
     });
-  
+
+
+
     // 5) Calculate and append anticipated day-to-day spending
     const anticipatedDayToDaySpending =
       parseFloat(futureData.dayToDaySpending) -
@@ -201,8 +203,9 @@ const futureMonthlyBudget = ({ month, config }) => {
       ...pastData.dayToDayTransactions,
       {
         date: endOfMonth,
+        transactionType: 'expense',
         amount: anticipatedDayToDaySpending,
-        description: 'Anticipated Expense',
+        description: 'Anticipated Day-to-Day Spending',
         tagNames: ['Anticipated'],
         tag: 'Anticipated',
       },
@@ -253,6 +256,7 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
         }
     }
     const income = parseFloat(incomeTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2));
+    const nonBonusIncome = parseFloat(incomeTransactions.filter(txn => txn.tagNames.includes('Income')).reduce((acc, txn) => acc + txn.amount, 0).toFixed(2));
     const monthlyCategorySpending = parseFloat(Object.values(monthlyCategories).reduce((acc, {amount}) => acc + amount, 0).toFixed(2));
     const dayToDaySpending = parseFloat(dayToDayTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2));
     const monthlySpending = parseFloat((monthlyCategorySpending).toFixed(2));
@@ -264,6 +268,7 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
 
     return {
         income,
+        nonBonusIncome,
         spending,
         surplus,
         monthlySpending,
@@ -360,16 +365,25 @@ export const dayToDayBudgetReducer = (acc, month, monthlyBudget, config) => {
 
 
   const start = acc[month].spending;
-  const tommorrow = moment().add(1, 'days').format('YYYY-MM-DD');
-  const endOfMonth = moment(month, 'YYYY-MM').endOf('month').date();
   const balance = Math.round(Object.keys(acc[month].dailyBalances).map(day => acc[month].dailyBalances[day].endingBalance).pop() * 100) / 100;
   const spent = parseFloat((start - balance).toFixed(2));
-  const daysRemaining = isCurrentMonth ? moment(endOfMonth, 'DD').diff(moment(tommorrow, 'DD'), 'days') : 0;
+  //end of month minus tomorrow, in days
+  const tomorrow = moment().add(1, 'days');
+  const today = moment().startOf('day');
+  const endOfMonth = moment(month, 'YYYY-MM').endOf('month');
+  
+  const daysRemaining = !isCurrentMonth ? 0 : endOfMonth.diff(today, 'days');
+  
+
   const daysCompleted = daysInMonth - daysRemaining;
   const dailySpend = parseFloat((spent / daysCompleted).toFixed(2));
   const dailyBudget = parseFloat((balance / daysRemaining).toFixed(2));
   const diff = parseFloat((dailyBudget - dailySpend).toFixed(2));
   const adjustPercentage = parseFloat(((diff / dailySpend) * 100).toFixed(2));
+  const expectedBalanceAtEndOfMonth = parseFloat((dailyBudget * daysRemaining).toFixed(2));
+
+  saveFile(`${month}-dayToDayBudget`, {expectedBalanceAtEndOfMonth,dailyBudget, dailySpend, diff, adjustPercentage, daysRemaining, daysCompleted,tomorrow,endOfMonth});
+  
 
  
   acc[month] = {
@@ -411,7 +425,7 @@ export const shortTermBudgetReducer = (acc, month, monthlyBudget, config) => {
     
     const allLabels = config.shortTerm.map(item => item.label);
     for(const label of allLabels){
-        const {debits, credits, transactions} = acc[label] || {debits:0, credits:0, transactions: []};
+        const {debits, credits, transactions, flex} = acc[label] || {debits:0, credits:0, transactions: []};
 
         const budget = parseFloat((config.shortTerm.find(item => item.label === label)?.amount || 0).toFixed(2));
         const spending = parseFloat(((debits||0) - (credits||0) ).toFixed(2));
@@ -419,6 +433,7 @@ export const shortTermBudgetReducer = (acc, month, monthlyBudget, config) => {
         acc[label] = {
           budget: budget || 0,
           spending: spending || 0,
+          flex: flex || 0.5, // default flex value
           debits: parseFloat((debits || 0).toFixed(2) || 0),
           credits: parseFloat((credits || 0).toFixed(2)),
           balance: balance || 0,
