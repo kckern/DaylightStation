@@ -11,9 +11,11 @@ const cron = {
     ],
     cronHourly: [    
         './lib/withings.mjs',
+        //video lists
     ],
     cronDaily: [
         './lib/withings.mjs',
+        './lib/clickup.js',
     ]
 }
 
