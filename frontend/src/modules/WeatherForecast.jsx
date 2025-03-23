@@ -17,7 +17,7 @@ export default function WeatherForecast() {
         const endTime = moment().add(36, 'hours');
         const isFuture = ({time}) => moment(time).isAfter(moment()) && moment(time).isBefore(endTime);
       const futureList = list.filter(isFuture);
-      const temps = futureList.map((item) => ({temp: celciusToFahrenheit(item.feel), precip:item.precip}));
+      const temps = futureList.map((item) => ({temp: celciusToFahrenheit(item.temp), precip:item.precip}));
       const times = futureList.map((item) => item.time).map((time) => moment(time).format('ha')) || [];
 
       //every n hours
@@ -65,8 +65,8 @@ const options = {
             const colors = {
                 "32": "#FFFFFF", //Freezing
                 "40": "#a9def9", //Coat weather
-                "50": "#00bbf9", //Jacket
-                "60": "#a7c957", //Sweater
+                "50": "#00bbf9", //2a9d8f
+                "60": "#2a9d8f", //Sweater
                 "70": "#fcbf49", //T-shirt
                 "80": "#f77f00", //Shorts
                 "90": "#d62828",  //Hot
