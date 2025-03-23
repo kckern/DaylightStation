@@ -5,6 +5,7 @@ export default async (job_id) => {
 
     const calendarEvents = loadFile('calendar') || [];
     const todoItems = loadFile('todoist') || [];
+    const clickupData = loadFile('clickup') || [];
 
     const calendarItems = calendarEvents.map(event => {
         const { id, start, end, summary, description, location,  organizer: {displayName: calendarName} } = event;
@@ -27,7 +28,27 @@ export default async (job_id) => {
         return { id, start: due ? new Date(due).toISOString() : null, summary: extractedContent, description, type: 'todoist', domain, url: extractedUrl };
     });
 
-    const allItems = [...calendarItems, ...todoistItems].sort((a, b) => new Date(a.start) - new Date(b.start));
+    const lists = process.env.clickup?.todo_lists || null
+    const count = process.env.clickup?.todo_count || 3;
+    const statuses = process.env.clickup?.statuses || null;
+    const clickupItems = clickupData.map(item => {
+        const { taxonomy, name,status, id } = item;
+        const uppercaseStatus = status && status.toUpperCase();
+        if(!statuses.includes(status)) return false;
+        const listIds = Object.keys(taxonomy).map(Number);
+        if(!listIds.some(listId => lists.includes(listId))) return false;
+        const start =  null;
+        const url = `https://app.clickup.com/t/${id}`;
+        const domain = url && url.match(/https?:\/\/([^\/]+)/) ? url.match(/https?:\/\/([^\/]+)/)[1] : null;
+        const summary = `${name} (${Object.values(taxonomy).join(' › ')})`;
+        return { id, start, status:uppercaseStatus, summary,  type: 'clickup', url, domain };
+    }).filter(Boolean)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, count);
+        
+
+
+    const allItems = [...calendarItems, ...todoistItems, ...clickupItems].sort((a, b) => new Date(a.start) - new Date(b.start));
 
     saveFile('events', allItems);
 

@@ -52,7 +52,9 @@ export default function Upcoming() {
         ...listItems,
         ...itemsFromAPI.filter(newItem => !listItems.some(existingItem => existingItem.id === newItem.id))
       ]
-        .filter(item => item.type === "todoist" || moment(item.time).isAfter(moment()))
+        .filter(item => 
+          (item.type === "todoist" || item.type === "clickup") || moment(item.time).isAfter(moment())
+        )
         .sort((a, b) => new Date(a.time) - new Date(b.time));
 
       setListItems(items);
@@ -130,11 +132,18 @@ function MainItem({ item, className }) {
   const format = allday ? "dddd, D MMMM" : "dddd, D MMMM • h:mm A";
   const timeFormat = allday ? "dddd, D MMMM" : "h:mm A";
   const inXDays = daysInFuture <= 1 ? null : `In ${daysInFuture} days`;
-  const timeLabel = item.type === "todoist" ? "Todo" : 
+  const timeLabel = ['todoist', 'clickup'].includes(item.type) ? "Todo" : 
   daysInFuture === 1 ? `Tomorrow at ${moment(item.start).format(timeFormat)}` :
   daysInFuture === 0 ? "Today at " + moment(item.start).format(timeFormat) :
   moment(item.start).format(format).replace(/:00/g, ""); // Remove ":00" from time
-  const titleLabel = item.title;
+  let titleLabel = item.title;
+  let subTitleLabel = null;
+
+  const parentheticalMatch = titleLabel.match(/^(.*)\s\((.*)\)$/);
+  if (parentheticalMatch) {
+    titleLabel = parentheticalMatch[1];
+    subTitleLabel = parentheticalMatch[2];
+  }
   const locationLabel = item.domain ||  item.location || null
 
   const color = item.color || "grey"; // Fallback color if not provided
@@ -144,16 +153,22 @@ function MainItem({ item, className }) {
       {!!timeLabel && <h2>{timeLabel}</h2>}
       {!!locationLabel && <h3>{locationLabel}</h3>}
       {!!inXDays && <h4>{inXDays}</h4>}
-      {!!titleLabel && <p>{titleLabel}</p>}
+      {!!titleLabel && <p>{titleLabel} {!!subTitleLabel && <p><small
+        style={{ opacity: 0.5, fontSize: "2rem", lineHeight: "2rem" }}
+      >{subTitleLabel}</small></p>}</p>}
+     
     </div>
   );
 }
+
 
 function ListItem({ item, className }) {
 
   const {daysInFuture} = item;
   const chipLabel = item.type === "todoist" 
     ? "Todo" 
+    : item.type === "clickup"
+    ? item.status?.toUpperCase() || "Todo"
     : daysInFuture > 10 
     ? moment(item.time).format("D MMM") 
     : daysInFuture === 0 
