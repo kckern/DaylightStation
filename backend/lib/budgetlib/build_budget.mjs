@@ -85,7 +85,9 @@ export const buildBudget = (config, transactions)=>
     // and move the remaining amount to bucket with the most balance
     for (const label in shortTermBuckets) {
         const bucket = shortTermBuckets[label];
-        if (bucket['balance'] < 50 && bucket['budget'] > 0) {
+        bucket['percentLeft'] = Math.round(((bucket['balance'] / (bucket['budget'] + (bucket['credits'] || 0))) || 0) * 100);
+
+        if (bucket['percentLeft'] < 5) {
             const amountToMove = Math.min(bucket['budget'], bucket['balance']);
             bucket['budget'] -= amountToMove;
             bucket['balance'] = 0;

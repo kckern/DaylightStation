@@ -320,7 +320,7 @@ export default function Weather() {
     const interval = setInterval(reloadData, 300000);
     return () => clearInterval(interval);
   }, []);
-  if (!currentWeather.feel) return null;
+  if (!currentWeather.temp) return null;
 
   return (
     <table
@@ -350,7 +350,7 @@ export default function Weather() {
                   marginBottom: "0.2rem"
                 }}
               >
-                {currentWeather.feel}°
+                {currentWeather.temp}°
               </div>
               <div>{currentWeather.description}</div>
             </div>
