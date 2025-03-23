@@ -58,7 +58,8 @@ return (
         <thead style={{textAlign: "left"}}>
             <tr>
             <th style={{border: "1px solid black", width: "20%", padding: "8px"}}>Spent</th>
-                <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Balance</th>
+            <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Balance</th>
+            <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Days Left</th>
                 <th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Adjustment</th>
 
             </tr>
@@ -67,6 +68,7 @@ return (
             <tr>
                 <td style={{border: "1px solid black", padding: "8px"}}>{formatAsCurrency(info.spent)}</td>
                 <td style={{border: "1px solid black", padding: "8px"}}>{formatAsCurrency(info.remaining)}</td>
+                <td style={{border: "1px solid black", padding: "8px"}}>{info.daysRemaining}</td>
                 <td style={{border: "1px solid black", padding: "8px"}}>{info.adjust}% {adjustIcon}</td>
             </tr>
         </tbody>

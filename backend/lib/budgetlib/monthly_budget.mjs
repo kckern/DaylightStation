@@ -162,15 +162,16 @@ const futureMonthlyBudget = ({ month, config }) => {
         transactionType: 'income',
         amount: anticipatedIncome,
         description: 'Anticipated Income',
-        tagNames: ['Anticipated'],
-        tag: 'Anticipated',
+        tagNames: ['Income'],
+        tag: 'Income',
+        flag: 'Anticipated',
       },
     ];
 
     const anticipatedTaxRate = process.env.buxfer.taxRate || 0.2;
     //loop through anticipated income transactions and add anticipated tax txn to currentData.monthlyCategories['Taxes']
     currentData.incomeTransactions.forEach(txn => {
-      if(txn.tag === 'Anticipated'){
+      if(txn.flag === 'Anticipated' && txn.transactionType === 'income'){
         const taxAmount = parseFloat((txn.amount * anticipatedTaxRate).toFixed(2));
         if(!currentData.monthlyCategories['Taxes']){
           currentData.monthlyCategories['Taxes'] = {amount: 0, credits: 0, debits: 0, transactions: []};
@@ -183,8 +184,8 @@ const futureMonthlyBudget = ({ month, config }) => {
           amount: taxAmount,
           expenseAmount: taxAmount,
           description: 'Anticipated Withholding',
-          tagNames: ['Anticipated'],
-          tag: 'Anticipated',
+          tagNames: ['Taxes'],
+          tag: 'Taxes',
         });
       }
     });
@@ -206,8 +207,8 @@ const futureMonthlyBudget = ({ month, config }) => {
         transactionType: 'expense',
         amount: anticipatedDayToDaySpending,
         description: 'Anticipated Day-to-Day Spending',
-        tagNames: ['Anticipated'],
-        tag: 'Anticipated',
+        tagNames: ['Groceries'],
+        tag: 'Groceries',
       },
     ];
 
