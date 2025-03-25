@@ -12,7 +12,11 @@ export default async (job_id) => {
         const domain = location && location.match(/https?:\/\/([^\/]+)/) ? location.match(/https?:\/\/([^\/]+)/)[1] : null;
         const allday = !!(start.date && !start.dateTime);
         return { id, start: start.dateTime || start.date, end: end.dateTime || end.date, duration: (new Date(end.dateTime || end.date) - new Date(start.dateTime || start.date)) / 1000 / 60 / 60, summary, description, type: 'calendar', calendarName, location, domain, allday };
-    }).filter(event => !(/ birthday$/i.test(event.summary)));
+        }).filter(event => !(/ birthday$/i.test(event.summary)))
+        .reduce((acc, event) => {
+        if (!acc.some(e => e.id === event.id || (e.start === event.start && e.summary === event.summary))) acc.push(event);
+        return acc;
+        }, []);
 
     
     const todoistItems = todoItems.map(item => {
