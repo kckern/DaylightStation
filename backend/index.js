@@ -29,6 +29,7 @@ async function initializeApp() {
     const { default: harvestRouter } = await import('./harvest.js');
     const { default: JournalistRouter } = await import('./journalist.mjs');
     const { default: homeRouter } = await import('./home.mjs');
+    const { default: mediaRouter } = await import('./media.mjs');
     const { default: exe } = await import('./exe.js');
 
     // Backend API
@@ -39,6 +40,7 @@ async function initializeApp() {
     app.use("/harvest", harvestRouter);
     app.use("/journalist", JournalistRouter);
     app.use("/home", homeRouter);
+    app.use("/media", mediaRouter);
     app.use("/exe", exe);
 
     // Frontend
