@@ -47,6 +47,7 @@ const getWeather = async (job_id) => {
             time: moment.tz((t + utcOffsetSeconds) * 1000, timezone).format('YYYY-MM-DD HH:mm:ss'),
             unix: t + utcOffsetSeconds,
             temp: hourlyWeather.variables(0).valuesArray()[index],
+            code: hourlyWeather.variables(3).valuesArray()[index],
             feel: hourlyWeather.variables(1).valuesArray()[index],
             precip: hourlyWeather.variables(2).valuesArray()[index],
             cloud: hourlyWeather.variables(4).valuesArray()[index]

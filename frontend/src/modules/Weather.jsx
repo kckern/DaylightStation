@@ -301,11 +301,13 @@ export default function Weather() {
 
   const reloadData = () => {
     DaylightAPI("/data/weather").then(({ current }) => {
+
+      const descdata = (codes[current.code]?.[isDaytime() ? "day" : "night"]) || {};
       current.temp = celciusToFahrenheit(current.temp);
       current.feel = celciusToFahrenheit(current.feel);
       current = {
         ...current,
-        ...codes[current.code][isDaytime() ? "day" : "night"]
+        ...descdata
       };
       current.aircolor =
         current.aqi >= 150
