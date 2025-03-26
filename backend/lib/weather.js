@@ -38,26 +38,35 @@ const getWeather = async (job_id) => {
     const utcOffsetSeconds = weatherResponse.utcOffsetSeconds();
     const hourlyWeather = weatherResponse.hourly();
 
+    const now = moment.tz(new Date(), timezone);
+    const unix = now.unix();
+   
+
+    const hourly = range(Number(hourlyWeather.time()), Number(hourlyWeather.timeEnd()), hourlyWeather.interval()).map(
+        (t, index) => ({
+            time: moment.tz((t + utcOffsetSeconds) * 1000, timezone).format('YYYY-MM-DD HH:mm:ss'),
+            unix: t + utcOffsetSeconds,
+            temp: hourlyWeather.variables(0).valuesArray()[index],
+            feel: hourlyWeather.variables(1).valuesArray()[index],
+            precip: hourlyWeather.variables(2).valuesArray()[index],
+            cloud: hourlyWeather.variables(4).valuesArray()[index]
+        })
+    );
+
+    const current = hourly.find(({ unix }) => unix > now.unix());
+    console.log(current);
+
     const weatherData = {
+        now,
+        unix,
         current: {
-            feel: hourlyWeather.variables(1).valuesArray()[0],
-            temp: hourlyWeather.variables(0).valuesArray()[0],
-            precip: hourlyWeather.variables(2).valuesArray()[0],
-            code: hourlyWeather.variables(3).valuesArray()[0],
-            cloud: hourlyWeather.variables(4).valuesArray()[0],
+            ...current,
             aqi: currentAir.variables(2).value(),
             pm10: currentAir.variables(0).value(),
             pm2_5: currentAir.variables(1).value(),
         },
-        hourly: range(Number(hourlyWeather.time()), Number(hourlyWeather.timeEnd()), hourlyWeather.interval()).map(
-            (t, index) => ({
-                time: moment.tz((t + utcOffsetSeconds) * 1000, timezone).format('YYYY-MM-DD HH:mm:ss'),
-                temp: hourlyWeather.variables(0).valuesArray()[index],
-                feel: hourlyWeather.variables(1).valuesArray()[index],
-                precip: hourlyWeather.variables(2).valuesArray()[index],
-                cloud: hourlyWeather.variables(4).valuesArray()[index]
-            })
-        ),
+        hourly
+   
     };
 
     saveFile('weather', weatherData);
