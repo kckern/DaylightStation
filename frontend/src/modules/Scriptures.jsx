@@ -67,7 +67,7 @@ export default function Scriptures({ media, advance }) {
             className="textpanel">
                 <ScriptureText scriptureTextData={scriptureTextData}  progress={textProgress(progress, duration)} />
             </div>
-            <ScriptureAudioPlayer media={mediaPath} setProgress={setProgress} setDuration={setDuration} duration={duration} />
+            <ScriptureAudioPlayer media={mediaPath} setProgress={setProgress} setDuration={setDuration} duration={duration}  advance={advance}/>
             
         </div>
     );
@@ -185,7 +185,7 @@ function ScriptureText({ scriptureTextData, progress }) {
   }
 
  
-function ScriptureAudioPlayer({ media, setProgress, duration, setDuration }) {
+function ScriptureAudioPlayer({ media, setProgress, duration, setDuration, advance }) {
     const [music] = useState(String(Math.floor(Math.random() * 115) + 1).padStart(3, "0"));
     const musicPath = DaylightMediaPath(`media/scripture/ambient/${music}`);
 
@@ -238,6 +238,7 @@ function ScriptureAudioPlayer({ media, setProgress, duration, setDuration }) {
                 ref={audioRef}
                 src={media}
                 controls={false}
+                onEnded={advance}
                 onLoadedMetadata={handleLoadedMetadata}
                 style={{ width: "100%" }}
             />
