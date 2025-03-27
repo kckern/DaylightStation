@@ -17,8 +17,7 @@ export function FinanceChart()
       .then((data) => {
         setMonthData(data)
       })
-  }
-  )
+  }, [])
   if(!monthData) return null;
   const options = buildDayToDayBudgetOptions(monthData, null, {plotLineColor: '#444'});
   if(!options.chart) return null;

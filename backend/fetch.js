@@ -29,6 +29,19 @@ apiRouter.get('/infinity/harvest/:table_id?',  async (req, res, next) => {
     }
 });
 
+
+//scritpures
+apiRouter.get('/scripture/:volume/:version/:verse_id',  async (req, res, next) => {
+    try {
+        const {volume, version, verse_id} = req.params;
+        const data = yaml.load(readFileSync(`${dataPath}/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
+        res.json(data);
+    } catch (err) {
+        next(err);
+    }
+}
+);
+
 apiRouter.get('/budget',  async (req, res, next) => {
     try {
         const finances = yaml.load(readFileSync(`${dataPath}/budget/finances.yml`, 'utf8'));
