@@ -1,3 +1,4 @@
+import axios from 'axios';
 import express from 'express';
 import fs from 'fs';
 const mediaRouter = express.Router();
@@ -21,6 +22,29 @@ const findFile = path => {
 
     return {path: firstMatch, fileSize, mimeType};
 }
+
+mediaRouter.all('/plex/:plex_key', async (req, res) => {
+    const plex_key = req.params.plex_key;
+    const {plex: {host, token, session, protocol, platform}} = process.env;
+    const plexUrl = `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${plex_key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
+
+    try {
+
+        const response = await axios.get(plexUrl);
+        if (response.status !== 200) {
+            res.status(response.status).json({ 
+                error: 'Error fetching from Plex server', 
+                status: response.status, 
+                message: response.statusText,
+                plexUrl: plexUrl
+            });
+            return;
+        }
+        res.redirect(plexUrl);
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
+    }
+});
 
 mediaRouter.all('*', async (req, res) => {
     const { path, fileSize, mimeType } = findFile(req.path);
