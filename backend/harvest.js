@@ -11,6 +11,7 @@ import lastfm from './lib/lastfm.js';
 import letterboxd from './lib/letterboxd.js';
 import goodreads from './lib/goodreads.js';
 import Infinity from './lib/infinity.js';
+import scripture from './lib/scriptureguide.mjs';
 import { refreshFinancialData as budget } from './lib/budget.mjs';
 
 const harvesters = {
@@ -20,6 +21,7 @@ const harvesters = {
     gcal,
     withings,
     weather,
+    scripture,
     clickup,
     lastfm,
     letterboxd,
