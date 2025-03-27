@@ -15,9 +15,9 @@ function App() {
   const [queue, setQueue] = useState([])
   const keyboardHandler = () => {
 
-    const scripture = ()=>setQueue([{ key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` }])
-    const plex = ()=>setQueue([{ key: 'plex', value: 489490 }])
-    const reset = ()=>setQueue([])
+    const scripture = () => setQueue([{ key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` }])
+    const plex = () => setQueue([{ key: 'plex', value: 489490 }])
+    const reset = () => setQueue([])
 
     //todo get from config
     const map = {
@@ -29,10 +29,14 @@ function App() {
 
     const handleKeyDown = (event) => {
       Object.keys(map).forEach((key) => {
-        if (event.key === key) (map[key]||(()=>{}))()
-      window.addEventListener('keydown', handleKeyDown)
-    return () => {window.removeEventListener('keydown', handleKeyDown)}
+        if (event.key === key) (map[key] || (() => {}))()
+      })
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => { window.removeEventListener('keydown', handleKeyDown) }
   }
+  
 
   //keydown listener to add scripture to queue
   useEffect(keyboardHandler, [])
