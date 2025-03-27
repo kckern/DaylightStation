@@ -17,7 +17,7 @@ function App() {
 
     //todo get from config
     const map = {
-      "s": { key: 'scripture', value: 12345 },
+      "s": { key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` },
       "p": { key: 'plex', value: 67890 }
     }
 

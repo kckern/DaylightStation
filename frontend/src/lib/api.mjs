@@ -20,3 +20,10 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     const response_data = await response.json();
     return response_data;
 };
+
+export const DaylightMediaPath = (path) => {
+    path = path.toString().replace(/^\/|\/$/g,'');
+    const isLocalhost = /localhost/.test(window.location.href);
+    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+    return `${baseUrl}/${path}`;
+}

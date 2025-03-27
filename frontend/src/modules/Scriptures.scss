@@ -1,0 +1,120 @@
+.scriptures{
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+
+    h2{
+        text-align: center;
+        background-color: #222;
+        color: #FFFFFF99;
+        line-height: 100%;
+        font-size: 3rem;
+        line-height: 4rem;
+        margin:0
+    }
+    h3{
+        text-align: center;
+        background-color: #111;
+        color: #FFFFFF66;
+        line-height: 100%;
+        font-size: 2rem;
+        line-height: 3rem;
+        margin: 0;
+    }
+
+    .textpanel{
+
+        flex-grow: 1;
+        overflow: hidden;
+        font-family: "Scripture", serif;
+        color:#000;
+
+    }
+
+    .textpanel .scripture-text
+    {
+        padding: 0 2rem;
+    }
+
+    .textpanel h4{
+        font-size: 3.4rem;
+        line-height: 1;
+        margin: 0;
+        margin: 4rem 0 1ex 0 ;
+        font-family: "Roboto Condensed", sans-serif;
+    }
+
+    .textpanel .background,  
+    .textpanel .summary {
+        font-style: italic;
+        color: #7c340aAA;
+        line-height: 4.6rem;
+        margin-top: 2rem;
+        text-align: justify;
+
+    }
+    .verse-number{
+        font-size: 1ex;
+        color: #5d340855;
+        position: relative;
+        
+        margin-left: 1ex;
+        top: -2ex;
+        right: -0.1ex;
+        font-family: "Roboto Condensed", sans-serif;
+    }
+
+    .textpanel p{
+        margin: 0;
+        color: #5d3408;
+        font-size: 2.8rem;
+        line-height: 1.2;
+        margin-bottom: 1rem;
+    }
+
+    .controls{
+
+        background-color: #333;
+        height: 2rem;
+        flex-grow: 0;
+        flex-shrink: 0;
+        position: relative;
+        outline: 1px solid pink;
+    }
+    .time{
+
+        position: absolute;
+        top:0;
+        right: 0;
+        color: #FFFFFF66;
+        padding: 1.2rem;
+        font-weight: bold;
+        font-family: "Roboto Condensed", sans-serif;
+    }
+
+    .seek-bar
+    {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        height: 100%;
+        width: 100%;
+        z-index: 1;
+    }
+    .current-time,
+    .total-time{
+        padding: 0.5ex;
+        font-weight: bold;
+    }
+    .current-time{
+        padding-right: 1ex;
+        border-right: 1px solid #FFFFFF;
+    }
+    .total-time{
+        position: absolute;
+        z-index: -1;
+    }
+
+}
+
