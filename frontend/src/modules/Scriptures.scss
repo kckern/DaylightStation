@@ -29,14 +29,27 @@
         overflow: hidden;
         font-family: "Scripture", serif;
         color:#000;
+        position: relative;
+        //fade in
+        opacity: 1;
+        transition: opacity 6s;
 
+    }
+    .textpanel.fade-out{
+        opacity: 0;
+        transition: opacity 3s;
+    }
+    .textpanel.init{
+        opacity: 0;
     }
 
     .textpanel .scripture-text
     {
-        padding: 0 2rem;
+        padding: 0 2rem 0 2rem;
+        border-bottom: 1px solid #000;
+        position: absolute;
     }
-
+ 
     .textpanel h4{
         font-size: 3.4rem;
         line-height: 1;
@@ -80,14 +93,13 @@
         flex-grow: 0;
         flex-shrink: 0;
         position: relative;
-        outline: 1px solid pink;
     }
     .time{
 
         position: absolute;
         top:0;
         right: 0;
-        color: #FFFFFF66;
+        color: #FFFFFF;
         padding: 1.2rem;
         font-weight: bold;
         font-family: "Roboto Condensed", sans-serif;
