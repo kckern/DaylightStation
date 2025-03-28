@@ -238,7 +238,21 @@ function ScriptureAudioPlayer({ media, setProgress, duration, setDuration, advan
                 ref={audioRef}
                 src={media}
                 controls={false}
-                onEnded={advance}
+                onEnded={() => {
+                    if (musicRef.current) {
+                        let fadeOutInterval = setInterval(() => {
+                            if (musicRef.current.volume > 0.01) {
+                                musicRef.current.volume -= 0.01; // Decrease by 0.01 every 250ms
+                            } else {
+                                musicRef.current.volume = 0;
+                                clearInterval(fadeOutInterval);
+                                advance();
+                            }
+                        }, 250); // 5 seconds fade-out (250ms * 40 steps)
+                    } else {
+                        advance();
+                    }
+                }}
                 onLoadedMetadata={handleLoadedMetadata}
                 style={{ width: "100%" }}
             />
@@ -249,6 +263,11 @@ function ScriptureAudioPlayer({ media, setProgress, duration, setDuration, advan
                 src={musicPath}
                 controls={false}
                 style={{ display: "none" }}
+                onLoadedMetadata={() => {
+                    if (musicRef.current) {
+                        musicRef.current.volume = 0.1; // Set default volume to 0.1
+                    }
+                }}
             />
         </div>
     );
