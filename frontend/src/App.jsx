@@ -8,22 +8,28 @@ import Health from './modules/Health'
 import { FinanceChart } from './modules/Finance'
 import moment from 'moment'
 import Player from './modules/Player'
+import MenuNav from './modules/MenuNav'
 
 
 function App() {
 
   const [queue, setQueue] = useState([])
+  const [menu, setMenu] = useState(false)
   const keyboardHandler = () => {
 
     const scripture = () => setQueue([{ key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` }])
     const plex = () => setQueue([{ key: 'plex', value: 489490 }])
     const reset = () => setQueue([])
 
+
     //todo get from config
     const map = {
       "1": scripture,
       "2": plex,
+      "3": () => setMenu("Kids Shows"),
       "4": reset,
+      "5": () => setMenu("Lessons"),
+      "6": () => setMenu("Plex"),
       "Escape": reset
     }
 
@@ -40,7 +46,8 @@ function App() {
 
   //keydown listener to add scripture to queue
   useEffect(keyboardHandler, [])
-  
+
+  if(menu) return <div className='App' ><MenuNav setMenu={setMenu} menu={menu} setQueue={setQueue} /></div>
   if(queue.length) return  <div className='App' ><Player queue={queue} setQueue={setQueue} /></div>
   return (
     <div className='App' >
