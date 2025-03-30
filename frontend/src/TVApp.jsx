@@ -1,33 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Scriptures from './modules/Scriptures';
+import TVMenu from './modules/TVMenu';
+import './TVApp.scss';
+import Player from './modules/Player';
 
 function TVApp() {
-    const [screenInfo, setScreenInfo] = useState({
-        width: window.innerWidth,
-        height: window.innerHeight,
-        userAgent: navigator.userAgent,
-    });
 
-    // Keep track of window resizing
-    useEffect(() => {
-        const handleResize = () => {
-            setScreenInfo({
-                width: window.innerWidth,
-                height: window.innerHeight,
-                userAgent: navigator.userAgent,
-            });
-        };
+    const [selection, setSelection] = useState(null);
+    const [active, setActive] = useState(false);
 
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    const selectionMap = {
+        'A': <Scriptures media={`d&c ${Math.floor(Math.random() * 132) + 1}` } advance={() => setSelection(null)} />,
+        'B': <Player queue={[{ key: 'plex', value: 489490 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
+    }
+
+
+
+    const selectedContent = selectionMap[selection] ? selectionMap[selection] : <TVMenu setSelection={setSelection} />;
+
 
     return (
-        <div style={{ textAlign: 'center', padding: '20px' }}>
-            <h1>TV App</h1>
-            <p>Screen Width: {screenInfo.width}px</p>
-            <p>Screen Height: {screenInfo.height}px</p>
-            <p>Browser User Agent: {screenInfo.userAgent}</p>
-            <WebcamViewer />
+        <div  className="tv-app-container" >
+            <div className="tv-app"> 
+                {selectedContent}
+            </div>
         </div>
     );
 }

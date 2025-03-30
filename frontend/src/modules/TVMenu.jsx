@@ -1,0 +1,76 @@
+import React, { useState, useEffect, useRef } from 'react';
+import './TVMenu.scss';
+
+const TVMenu = ({ setSelection }) => {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const ROW_COUNT = 4;
+  const COL_COUNT = 4;
+  const TOTAL_ITEMS = ROW_COUNT * COL_COUNT;
+
+  const buttons = [
+    'A', 'B', 'C', 'D',
+    'E', 'F', 'G', 'H',
+    'I', 'J', 'K', 'L',
+    'M', 'N', 'O', 'P'
+  ];
+
+  const handleKeyDown = (e) => {
+    switch (e.key) {
+      case 'Enter':
+        setSelection(buttons[selectedIndex]);
+        break;
+      case 'ArrowUp':
+        setSelectedIndex((prev) => (prev - COL_COUNT + TOTAL_ITEMS) % TOTAL_ITEMS);
+        break;
+      case 'ArrowDown':
+        setSelectedIndex((prev) => (prev + COL_COUNT) % TOTAL_ITEMS);
+        break;
+      case 'ArrowLeft':
+        setSelectedIndex((prev) => (prev - 1 + TOTAL_ITEMS) % TOTAL_ITEMS);
+        break;
+      case 'ArrowRight':
+        setSelectedIndex((prev) => (prev + 1) % TOTAL_ITEMS);
+        break;
+      case 'Enter':
+        setSelection(buttons[selectedIndex]);
+        break;
+      case 'Escape':
+        setSelection(null);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (menuRef.current) {
+      menuRef.current.focus();
+    }
+  }, []);
+
+  return (
+    <div className="tv-menu-container">
+      <h2>TV Menu {selectedIndex + 1} / {buttons.length}</h2>
+      <div
+        className="tv-menu"
+        ref={menuRef}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+      >
+        {buttons.map((button, index) => (
+          <div
+            key={button}
+            className={`menu-button ${selectedIndex === index ? 'highlighted' : ''}`}
+          >
+            {button}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default TVMenu;
