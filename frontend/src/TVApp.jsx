@@ -17,6 +17,40 @@ function TVApp() {
 
 
     const selectedContent = selectionMap[selection] ? selectionMap[selection] : <TVMenu setSelection={setSelection} />;
+    // Clear selection on escape
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                setSelection(null);
+            } else if (event.key === 'Enter') {
+                setSelection(null); // Example: Handle Enter key if needed
+            }
+        };
+
+        const handleBeforeUnload = (event) => {
+            event.preventDefault();
+            event.returnValue = ''; // Required for some browsers
+            setSelection(null);
+        };
+
+        const handlePopState = () => {
+            setSelection(null);
+            window.history.pushState(null, '', window.location.href); // Prevent back navigation
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        window.addEventListener('popstate', handlePopState);
+
+        // Push initial state to prevent back navigation
+        window.history.pushState(null, '', window.location.href);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, []);
 
 
     return (

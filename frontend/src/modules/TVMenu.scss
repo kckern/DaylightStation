@@ -4,15 +4,18 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    padding: 1rem;
+    padding: 2rem;
 
-    :focus,
-    :focus-visible,
-    :focus-within {
-        outline: none;
-        opacity: 0;
+    * { -webkit-tap-highlight-color: rgba(0,0,0,0); }
+    * {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
     }
-
+    *:focus {
+        outline: none;
+    }
     h2{
         margin-bottom: 2rem;
     }
@@ -20,7 +23,7 @@
 .tv-menu {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 3rem;
+    gap: 2rem;
     flex-grow: 1;
 }
 
