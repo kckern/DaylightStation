@@ -21,20 +21,11 @@ const styleConfig = {
   textPanel: { backgroundImage: `url(${config.backgroundImage})` },
   controls: { width: "100%" },
   seekBarWrapper: { position: "relative" },
-  seekProgress: { position: "absolute", top: 0, left: 0, height: "100%", backgroundColor: "#6c584c66", display: "flex", justifyContent: "flex-end" },
-  currentTime: {},
   totalTime: { pointerEvents: "none", position: "absolute", right: 0 },
 };
 
 function findVolume(verseId) {
   return Object.entries(config.volumes).reduce((prev, curr) => (verseId >= curr[1] ? curr : prev))[0];
-}
-
-function textProgress(progress, duration) {
-  const cutoff = 15 / duration;
-  if (progress < cutoff) return 0;
-  if (progress < 1) return (progress - cutoff) / (1 - cutoff);
-  return 1;
 }
 
 function createBlocks(scriptureTextData) {
@@ -67,7 +58,7 @@ function createChunks(blocks) {
   return chunks;
 }
 
-function ScriptureText({ scriptureTextData, progress, panelHeight }) {
+function ScriptureText({ scriptureTextData,  panelHeight , yProgress }) {
   if (!scriptureTextData) return null;
   const blocks = createBlocks(scriptureTextData);
   const chunks = createChunks(blocks);
@@ -78,7 +69,7 @@ function ScriptureText({ scriptureTextData, progress, panelHeight }) {
     if (textRef.current) setTextHeight(textRef.current.clientHeight);
   }, [chunks]);
 
-  const YPosition = (progress * textHeight) - panelHeight;
+  const YPosition = (yProgress * textHeight) - (panelHeight * yProgress);
 
 return (
     <div
@@ -129,12 +120,13 @@ function SeekBar({ currentTime, duration, onSeek }) {
   );
 }
 
-function ScriptureAudioPlayer({ media, setProgress, duration, setDuration, advance }) {
+function ScriptureAudioPlayer({ media, setProgress, duration, setDuration, advance , currentTime, setCurrentTime }) {
   const [music] = useState(String(Math.floor(Math.random() * config.randomMax) + config.randomMin).padStart(3, "0"));
   const audioRef = useRef(null);
   const musicRef = useRef(null);
-  const [currentTime, setCurrentTime] = useState(0);
   const musicPath = DaylightMediaPath(`media/scripture/ambient/${music}`);
+
+
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = 1;
@@ -214,9 +206,16 @@ export default function Scriptures({ media, advance }) {
   const [subtitle, setSubtitle] = useState(null);
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const volume = findVolume(verseId);
   const mediaPath = DaylightMediaPath(`media/scripture/${volume}${version}/${verseId}`);
   const [scriptureTextData, setScriptureTextData] = useState(null);
+
+  const yStartTime = 15;
+  const movingTime = duration - yStartTime;
+  const yProgress = currentTime < yStartTime ? 0 : (currentTime - yStartTime) / movingTime;
+
+  
 
   useEffect(() => {
     DaylightAPI(`data/scripture/${volume}${version}/${verseId}`).then((verses) => {
@@ -239,10 +238,10 @@ export default function Scriptures({ media, advance }) {
     <div className="scriptures" style={styleConfig.scripturesContainer}>
       <h2>{titleHeader}</h2>
       {subtitle && <h3>{subtitle}</h3>}
-      <div  ref={panelRef} style={styleConfig.textPanel} className={"textpanel" + (progress > .999 ? " fade-out" : "") + (init? " init" : "")}>
-        <ScriptureText scriptureTextData={scriptureTextData} progress={textProgress(progress, duration)} panelHeight={panelHeight} />
+      <div ref={panelRef} style={styleConfig.textPanel} className={"textpanel" + (progress > .999 ? " fade-out" : "") + (init? " init" : "")}>
+        <ScriptureText scriptureTextData={scriptureTextData} yProgress={yProgress} panelHeight={panelHeight} />
       </div>
-      <ScriptureAudioPlayer media={mediaPath} setProgress={setProgress} setDuration={setDuration} duration={duration} advance={advance} />
+      <ScriptureAudioPlayer media={mediaPath} setProgress={setProgress} setDuration={setDuration} duration={duration} advance={advance} currentTime={currentTime} setCurrentTime={setCurrentTime} />
     </div>
   );
 }
