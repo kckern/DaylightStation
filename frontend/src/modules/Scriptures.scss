@@ -104,6 +104,20 @@
         font-weight: bold;
         font-family: "Roboto Condensed", sans-serif;
     }
+    .seek-progress{
+        //  seekProgress: { position: "absolute", top: 0, left: 0, height: "100%", backgroundColor: "#6c584c66", display: "flex", justifyContent: "flex-end" },
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background-color: #51443b;
+        display: flex;
+        justify-content: flex-end;
+        z-index: 0;
+        transition: width 0.1s linear;
+        user-select: none;
+        align-items: center;
+    }
 
     .seek-bar
     {
