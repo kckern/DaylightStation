@@ -207,8 +207,9 @@ function ScriptureAudioPlayer({ media, setProgress, duration, setDuration, advan
 }
 
 export default function Scriptures({ media, advance }) {
+  console.log("Scriptures", media);
   const [{ ref, verse_ids: [verseId] }] = useState(() => lookupReference(media));
-  const version = media.split("/").length > 1 ? "/" + media.split("/")[0] : "/redc";
+  const version = media && media.split("/").length > 1 ? "/" + media.split("/")[0] : "/redc";
   const [titleHeader, setTitleHeader] = useState(ref);
   const [subtitle, setSubtitle] = useState(null);
   const [duration, setDuration] = useState(0);

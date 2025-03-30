@@ -1,0 +1,35 @@
+.tv-app-container{
+    font-family: 'Roboto Condensed', sans-serif!important;
+    color: #FFFFFFAA!important;
+    display: flex;
+    justify-content: center;
+    height: 720px;
+    width: 1280px;
+    overflow: hidden;
+    position: relative;
+    background-color: #000;
+    outline: 1px solid #FFFFFF22;
+    padding: 0;
+    margin: 0;
+    border-radius: 1rem;
+
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #111111; // optional background color
+
+
+}
+.tv-app {
+    width: 1024px;
+    height: 575px;
+    background-color: #222222; /* optional background color */
+    box-shadow: 0 4px 8px #000000; /* optional shadow */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
