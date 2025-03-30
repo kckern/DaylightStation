@@ -22,6 +22,26 @@ const findFile = path => {
 
     return {path: firstMatch, fileSize, mimeType};
 }
+mediaRouter.get('/img/*', async (req, res) => {
+    const exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+    const img = req.params[0]; // Capture the full path after /img/
+    const baseDir = `${process.env.path.img}`;
+    const filePathWithoutExt = `${baseDir}/${img}`;
+    const ext = exts.find(e => fs.existsSync(`${filePathWithoutExt}.${e}`));
+    const filePath = ext ? `${filePathWithoutExt}.${ext}` : `${baseDir}/notfound.png`;
+    const mimeType = ext ? `image/${ext}` : 'image/png';
+    const statusCode = ext ? 200 : 404;
+    res.status(statusCode).set({
+        'Content-Type': mimeType,
+        'Content-Length': fs.statSync(filePath).size,
+        'Cache-Control': 'public, max-age=31536000',
+        'Expires': new Date(Date.now() + 31536000000).toUTCString(),
+        'Content-Disposition': `inline; filename="${img}.${ext || 'notfound.png'}"`,
+        'Access-Control-Allow-Origin': '*'
+    });
+    return fs.createReadStream(filePath).pipe(res);
+});
+
 
 mediaRouter.all('/plex/:plex_key', async (req, res) => {
     const plex_key = req.params.plex_key;

@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom'; // Step 2: Import BrowserRouter, Routes, and Route
 import App from './App.jsx';
+import TVApp from './TVApp.jsx';
 import BudgetApp from './budget/index.jsx'; // Step 5: Import the new component
 import './index.css';
 
@@ -12,6 +13,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/" element={<App />} />
         <Route path="/budget" element={<BudgetApp />} /> {/* Example of another route */}
         <Route path="/finances" element={<BudgetApp />} /> {/* Example of another route */}
+        <Route path="/tv" element={<TVApp />} /> {/* Example of another route */}
         {/* Add more <Route> components as needed */}
       </Routes>
     </BrowserRouter>
