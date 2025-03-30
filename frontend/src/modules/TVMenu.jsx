@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import './TVMenu.scss';
 
 const TVMenu = ({ setSelection }) => {
@@ -32,9 +32,6 @@ const TVMenu = ({ setSelection }) => {
       case 'ArrowRight':
         setSelectedIndex((prev) => (prev + 1) % TOTAL_ITEMS);
         break;
-      case 'Enter':
-        setSelection(buttons[selectedIndex]);
-        break;
       case 'Escape':
         setSelection(null);
         break;
@@ -43,23 +40,17 @@ const TVMenu = ({ setSelection }) => {
     }
   };
 
-  const menuRef = useRef(null);
-
   useEffect(() => {
-    if (menuRef.current) {
-      menuRef.current.focus();
-    }
-  }, []);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedIndex]);
 
   return (
     <div className="tv-menu-container">
       <h2>TV Menu {selectedIndex + 1} / {buttons.length}</h2>
-      <div
-        className="tv-menu"
-        ref={menuRef}
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-      >
+      <div className="tv-menu">
         {buttons.map((button, index) => (
           <div
             key={button}
