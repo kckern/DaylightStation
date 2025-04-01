@@ -27,6 +27,14 @@ export class Plex {
     itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
     const { plex: { host, token, session, protocol, platform } } = process.env;
     const { ratingKey:key, type } = itemData
+
+    if(!["episode", "movie", "track"].includes(type)) {
+      //treat as list
+      const {list} = await this.loadListFromKey(key);
+      const [item] = this.selectKeyToPlay(list);
+      
+      return await this.loadMediaUrl(item.key || item);
+    }
     const mediaType = this.determineMediaType(type);
     try {
       if (mediaType === 'audio') {
@@ -101,8 +109,10 @@ export class Plex {
 
   determineMediaType(type) {
     const videoTypes = ['movie', 'episode', 'clip', 'short', 'trailer'];
+    const audioTypes = ['track', 'album', 'artist'];
     if(videoTypes.includes(type)) return 'video';
-    else return 'audio';
+    if(audioTypes.includes(type)) return 'audio';
+    else return null
   }
 
 
