@@ -14,7 +14,7 @@ export default function Player({ queue, setQueue }) {
     const [mediaInfo, setMediaInfo] = useState({});
     useEffect(() => {
         async function fetchVideoInfo() {
-            const response = await DaylightAPI(`media/plex/info/${value}`); //handle other media types
+            const response = await DaylightAPI(`media/plex/info/${value}/shuffle`); //handle other media types
             setMediaInfo(response);
         }
         fetchVideoInfo();
@@ -22,30 +22,38 @@ export default function Player({ queue, setQueue }) {
 
     return (
         <div className="player" >
-            {mediaInfo.mediaType === 'video' && <VideoPlayer media={mediaInfo.mediaUrl} advance={advance} />}
-            {mediaInfo.mediaType === 'audio' && <AudioPlayer media={mediaInfo.mediaUrl} advance={advance} />}
-            <pre>{JSON.stringify(mediaInfo, null, 2)}</pre>
+            {mediaInfo.mediaType === 'video' && <VideoPlayer media={mediaInfo} advance={advance} />}
+            {mediaInfo.mediaType === 'audio' && <AudioPlayer media={mediaInfo} advance={advance} />}
+            {!mediaInfo.mediaType && <div>Loading...</div>}
         </div>
     );
 }
 
-function AudioPlayer({ media, advance }) {
+function AudioPlayer({ media: { mediaUrl, title, artist, album, img }, advance }) {
     const audioRef = useRef(null);
     const [player, setPlayer] = useState(null);
 
-    return (<audio
+    return (
+        <div className="audio-player">
+            <p>{artist} - {album}</p>
+        <div className="image-container">
+            <img src={img} alt={title} />
+        </div>
+            <h2>{title}</h2>
+            <audio
                 ref={audioRef}
                 autoPlay
-                src={media}
+                src={mediaUrl}
                 onEnded={advance}
                 style={{ width: '100%' }}
                 controls={true}
             />
+        </div>
     );
 }
 
 
-function VideoPlayer({ media, advance }) {
+function VideoPlayer({ media:{mediaUrl,title, show, season}, advance }) {
     const videoRef = useRef(null);
     const [player, setPlayer] = useState(null);
 
@@ -54,20 +62,20 @@ function VideoPlayer({ media, advance }) {
             if (!player) {
                 const vjsPlayer = videojs(videoRef.current, {
                     controls: true,
-                    autoplay: false,
                     preload: 'auto',
-                    fluid: true,
-                    sources: [{ src: media, type: 'application/dash+xml' }]
+                    fluid: false,
+                    sources: [{ src: mediaUrl, type: 'application/dash+xml' }]
                 });
                 setPlayer(vjsPlayer);
             } else {
-                player.src({ src: media, type: 'application/dash+xml' });
+                player.src({ src: mediaUrl, type: 'application/dash+xml' });
             }
         }
         return () => player?.dispose();
-    }, [media]);
+    }, [mediaUrl]);
     return (
         <div className="video-player">
+            <h2>{show} - {season}: {title}</h2>
             <video
                 ref={videoRef}
                 className="video-js vjs-big-play-centered"
