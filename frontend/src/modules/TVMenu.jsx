@@ -11,10 +11,6 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
   const defaultButtonLabels = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
 
 
-  // Grid layout definitions
-  const COL_COUNT = 5;
-  const ROW_COUNT = defaultButtonLabels.length / COL_COUNT;
-  const TOTAL_ITEMS = ROW_COUNT * COL_COUNT;
 
   const defaultButtons = defaultButtonLabels.map((label) => ({
     title: label,
@@ -26,6 +22,10 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
   const [buttons, setButtons] = useState(defaultButtons);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [menuType, setMenuType] = useState('default');
+  // Grid layout definitions
+  const COL_COUNT = 5;
+  const ROW_COUNT = buttons.length / COL_COUNT;
+  const TOTAL_ITEMS = ROW_COUNT * COL_COUNT;
 
   //scroll to the selected button
   const menuRef = useRef(null);
@@ -138,17 +138,10 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
           <div
             key={button.key}
             data-key={button.key}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleSelection(button.key);
-              }
-            }}
-            onTouchStart={() => handleSelection(button.key)}
-            onClick={() => handleSelection(button.key)}
-            style={{ backgroundImage: button.img ? `url(${button.img})` : 'none' }}
             className={`menu-button ${selectedIndex === index ? 'highlighted' : ''}`}
           >
-            {button.title}
+            {button.img && <img src={button.img} alt={button.title} className="menu-button-img" />}
+            <h3 className="menu-button-title">{button.title}</h3>
           </div>
         ))}
       </div>

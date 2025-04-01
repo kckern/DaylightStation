@@ -1,9 +1,68 @@
 .tv-app .player {
     position: relative;
     height: 100%;
-    outline: 3px solid #007bff;
     width: 100%;
-    max-width: 100%;
-    max-height: 100%;
-    box-sizing: border-box;
+}
+
+.tv-app .player > div {
+    height: 100%;
+    width: 100%;
+}
+
+.video-player{
+    position: relative;;
+}
+
+.video-player > div{
+    height: 100%;
+    width: 100%;
+}
+
+.video-player > h2{
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 4rem;
+    z-index: 99;
+    width: 100%;
+    text-align: center;
+    background-color: #000000AA;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.audio-player {
+    display: flex;
+    text-align: center;
+    flex-direction: column;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 100%;
+    padding-top: 2rem;
+    overflow: hidden; /* Ensure contents are contained */
+    h2{
+        margin-bottom: 2rem;
+    }
+    p{
+        font-size: 1.5rem;
+        font-weight: 400;
+        margin: 0;
+    }
+}
+
+.audio-player > .image-container {
+    flex-grow: 1; /* Allow the image to grow and fill available space */
+    height: 0; /* Set height to 0 to rely on flex-grow */
+    max-height: 100%; /* Prevent overflow */
+    aspect-ratio: 1 / 1; /* Maintain a square aspect ratio */
+    margin: 2rem;
+    border-radius: 1rem;
+
+}
+.audio-player > .image-container > img {
+    height: 100%;
+    border: 1px solid #000;
+    border-radius: 1rem;
+    box-shadow: 0 1ex 1ex rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
