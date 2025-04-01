@@ -1,24 +1,98 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './TVMenu.scss';
+import { DaylightAPI } from '../lib/api.mjs';
 
-const TVMenu = ({ setSelection }) => {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+const TVMenu = ({ menuList, setSelection, appRef }) => {
+  /**
+   * Default buttons A-O if no menuList is provided.
+   * Each button object has a title to display, a key to use for selection,
+   * and an optional background image.
+   */
+  const defaultButtonLabels = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
 
-  const ROW_COUNT = 3;
+
+  // Grid layout definitions
   const COL_COUNT = 5;
+  const ROW_COUNT = defaultButtonLabels.length / COL_COUNT;
   const TOTAL_ITEMS = ROW_COUNT * COL_COUNT;
 
-  const buttons = [
-    'A', 'B', 'C', 'D',
-    'E', 'F', 'G', 'H',
-    'I', 'J', 'K', 'L',
-    'M', 'N', 'O'
-  ];
+  const defaultButtons = defaultButtonLabels.map((label) => ({
+    title: label,
+    key: label,
+    img: ''
+  }));
 
+  // State for the currently displayed buttons and which one is selected
+  const [buttons, setButtons] = useState(defaultButtons);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [menuType, setMenuType] = useState('default');
+
+  //scroll to the selected button
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (menuRef.current) {
+      const selectedButton = menuRef.current.querySelector('.highlighted');
+      const scrollableParent = appRef.current;
+      if (selectedButton && scrollableParent) {
+        const buttonRect = selectedButton.getBoundingClientRect();
+        const parentRect = scrollableParent.getBoundingClientRect();
+
+        // Calculate the position to scroll to, centering the selected button
+        const scrollTop =
+          buttonRect.top - parentRect.top + scrollableParent.scrollTop - parentRect.height / 2 + buttonRect.height / 2;
+        scrollableParent.scrollTo({ top: scrollTop, behavior: 'smooth' });
+      }
+    }
+  }, [selectedIndex]);
+ 
+
+
+  /**
+   * Fetch the button data if menuList is provided,
+   * otherwise default buttons (A-O) remain.
+   */
+  useEffect(() => {
+    if (!menuList) return ()=> {};
+
+    const fetchData = async () => {
+      try {
+        if(!menuList || menuList?.length === 0) {
+          setMenuType('default');
+          setButtons(defaultButtons);
+          setSelectedIndex(0);
+          return ;
+        }
+
+
+        const { plex } = menuList;
+        if (!plex) return;
+
+        const { list } = await DaylightAPI(`media/plex/list/${plex}`);
+        // Transform the fetched list into expected { title, key, img } objects
+        const newButtons = list.map((item) => ({
+          title: item.title,
+          key: item.key ?? item.title, // Fallback to title if key is missing
+          img: item.img ?? ''          // Fallback to empty string if img is missing
+        }));
+        setMenuType('plex');
+        setButtons(newButtons);
+        setSelectedIndex(0);
+      } catch (error) {
+        console.error('Error fetching TV menu data:', error);
+      }
+    };
+
+    fetchData();
+  }, [menuList]);
+
+  /**
+   * Handle keyboard navigation and selection.
+   */
   const handleKeyDown = (e) => {
     switch (e.key) {
       case 'Enter':
-        setSelection(buttons[selectedIndex]);
+        if(menuType === 'plex') return handleSelection(buttons[selectedIndex].key);
+        setSelection(buttons[selectedIndex].key);
         break;
       case 'ArrowUp':
         setSelectedIndex((prev) => (prev - COL_COUNT + TOTAL_ITEMS) % TOTAL_ITEMS);
@@ -40,25 +114,41 @@ const TVMenu = ({ setSelection }) => {
     }
   };
 
+  /**
+   * Attach and detach the keyboard listener.
+   */
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedIndex]);
+  }, [selectedIndex, buttons]);
+
+  const handleSelection = (key) => {
+    setSelection({plex: key});
+  };
 
   return (
     <div className="tv-menu-container">
-      <h2>TV Menu {selectedIndex + 1} / {buttons.length}</h2>
-      <div className="tv-menu">
+      <h2>
+        TV Menu {selectedIndex + 1} / {buttons.length} ({menuType})
+      </h2>
+      <div className="tv-menu" ref={menuRef}>
         {buttons.map((button, index) => (
           <div
-            key={button}
-            onTouchStart={() => setSelection(button)}
-            onClick={() => setSelection(button)}
+            key={button.key}
+            data-key={button.key}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSelection(button.key);
+              }
+            }}
+            onTouchStart={() => handleSelection(button.key)}
+            onClick={() => handleSelection(button.key)}
+            style={{ backgroundImage: button.img ? `url(${button.img})` : 'none' }}
             className={`menu-button ${selectedIndex === index ? 'highlighted' : ''}`}
           >
-            {button}
+            {button.title}
           </div>
         ))}
       </div>
