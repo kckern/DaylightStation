@@ -1,6 +1,7 @@
 import axios from 'axios';
 import express from 'express';
 import fs from 'fs';
+import {Plex} from './lib/plex.mjs';
 const mediaRouter = express.Router();
 const audioPath = `${process.env.path.audio}`;
 const videoPath = `${process.env.path.video}`;
@@ -43,13 +44,10 @@ mediaRouter.get('/img/*', async (req, res) => {
 });
 
 
-mediaRouter.all('/plex/:plex_key', async (req, res) => {
+mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
     const plex_key = req.params.plex_key;
-    const {plex: {host, token, session, protocol, platform}} = process.env;
-    const plexUrl = `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${plex_key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
-
+    const plexUrl = await ( new Plex()).loadMediaUrl(plex_key);
     try {
-
         const response = await axios.get(plexUrl);
         if (response.status !== 200) {
             res.status(response.status).json({ 
@@ -65,6 +63,58 @@ mediaRouter.all('/plex/:plex_key', async (req, res) => {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
     }
 });
+
+mediaRouter.all('/plex/info/:plex_key/:action?', async (req, res) => {
+    const { plex_key, action } = req.params;
+    const shuffle = action === 'shuffle';
+    const plexInfo = await (new Plex()).loadPlayableItemFromKey(plex_key, shuffle);
+    try {
+        res.json(plexInfo);
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
+    }
+});
+
+mediaRouter.all('/plex/list/:plex_key/:action?', async (req, res) => {
+    const { plex_key, action } = req.params;
+    const shuffle = action === 'shuffle';
+    const plexList = await (new Plex()).loadListFromKey(plex_key, shuffle);
+    try {
+        res.json(plexList);
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
+    }
+});
+
+mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
+    const { plex_key } = req.params;
+    const imageUrl = await (new Plex()).loadImgFromKey(plex_key);
+    try {
+        const response = await axios.get(imageUrl, { responseType: 'stream' });
+        res.setHeader('Content-Type', response.headers['content-type']);
+        res.setHeader('Content-Length', response.headers['content-length']);
+        response.data.pipe(res);
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: imageUrl });
+    }
+});
+
+mediaRouter.all('/plex/audio/:plex_key', async (req, res) => {
+    const { plex_key } = req.params;
+    const mediaURL = await (new Plex()).loadMediaUrl(plex_key);
+    try {
+        //assume mp3, passthrough
+        const response = await axios.get(mediaURL, { responseType: 'stream' });
+        res.setHeader('Content-Type', response.headers['content-type']);
+        res.setHeader('Content-Length', response.headers['content-length']);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Content-Disposition', `inline; filename="${plex_key}.mp3"`);
+        response.data.pipe(res);
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, mediaURL });
+    }
+});
+
 
 mediaRouter.all('*', async (req, res) => {
     const { path, fileSize, mimeType } = findFile(req.path);
