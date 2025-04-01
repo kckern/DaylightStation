@@ -40,8 +40,8 @@
     background-color: #ffffffff;
     outline: 3px solid #007bff;
     transform: scale(1.05);
+    color: black
 }
-
 
 
 .menu-button {
@@ -49,14 +49,40 @@
     justify-content: center;
     align-items: center;
     height: 100%;
+    aspect-ratio: 1 / 1.15; /* Ensures a square ratio */
     border-radius: 1rem;
     background-color: #ffffff22;
     font-size: 16px;
     font-weight: bold;
+    outline:2px solid #000;
     color: #999;
     cursor: pointer;
+    position: relative;
     transition: background-color 0.3s, transform 0.2s;
+    flex-direction: column;
+    overflow: hidden;
+
+    .menu-button-img {
+        flex-grow: 1;
+        width: 100%;
+        height: calc(100% - 2rem);
+        object-fit: cover;
+        background-color: #000;
+        border-bottom: 3px solid #000;
+    }
+
+    h3 {
+        flex-shrink: 0;
+        flex-grow: 0;
+        padding: 0.5ex;
+        margin: 0;
+        text-align: center;
+        line-height: 1;
+        width: 100%;
+
+    }
 }
+
 
 
 

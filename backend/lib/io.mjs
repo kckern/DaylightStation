@@ -44,7 +44,8 @@ const mkDirIfNotExists= (path) =>{
 }
 
 const saveFile = (path, data) => {
-    path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
+    if(typeof path !== 'string') return false;
+    path = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
     //mkdir if not exists
     mkDirIfNotExists(path);
     //add yaml if it doesnt end with .yaml

@@ -25,14 +25,13 @@ function TVApp() {
             setSelectionValue(null);
         }
     }, [selection]);
-
     const getSelectionContent = (key, value = {}) => {
         if (!selection) return <TVMenu setSelection={setSelection}  menuList={[]} />;
         const selectionMap = {
             'A': <Scriptures media={`d&c ${Math.floor(Math.random() * 132) + 1}`} advance={() => setSelection(null)} />,
-            'B': <Player queue={[{ key: 'plex', value: 616001 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
+            'B': <Player queue={[{ key: 'plex', value: 411041 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
             'C': <TVMenu menuList={{ plex: '177777' }} setSelection={setSelection} />,
-            'D': <TVMenu menuList={{ plex: '598279' }} setSelection={setSelection} />,
+            'D': <TVMenu menuList={{ plex: '411041' }} setSelection={setSelection} />,
             'plex': <Player queue={[{ key: 'plex', value }]} setQueue={() => {}} advance={() => setSelection(null)} />,
         };
 
@@ -80,9 +79,6 @@ function TVApp() {
     const appRef = useRef(null);
     return (
         <div className="tv-app-container">
-            <pre style={{ color: 'white', fontSize: '12px', position: 'absolute', top: '10px', left: '10px' }}>
-                {JSON.stringify({ selection, selectionKey, selectionValue }, null, 2)}
-            </pre>
             <div className="tv-app" ref={appRef}>
                 {React.cloneElement(selectedContent, { appRef, setSelection })}
             </div>
