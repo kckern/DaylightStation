@@ -78,7 +78,7 @@ mediaRouter.all('/plex/info/:plex_key/:action?', async (req, res) => {
 mediaRouter.all('/plex/list/:plex_key/:action?', async (req, res) => {
     const { plex_key, action } = req.params;
     const shuffle = action === 'shuffle';
-    const plexList = await (new Plex()).loadListFromKey(plex_key, shuffle);
+    const plexList = await (new Plex()).loadChildrenFromKey(plex_key, shuffle);
     try {
         res.json(plexList);
     } catch (error) {

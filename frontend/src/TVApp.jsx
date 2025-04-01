@@ -6,17 +6,42 @@ import Player from './modules/Player';
 
 function TVApp() {
 
-    const [selection, setSelection] = useState(null);
-    const [active, setActive] = useState(false);
+    const [selection, setSelection] = useState('');
+    const [selectionKey, setSelectionKey] = useState(null);
+    const [selectionValue, setSelectionValue] = useState(null);
 
-    const selectionMap = {
-        'A': <Scriptures media={`d&c ${Math.floor(Math.random() * 132) + 1}` } advance={() => setSelection(null)} />,
-        'B': <Player queue={[{ key: 'plex', value: 616001 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
-    }
+    useEffect(() => {
+        if (selection) {
+            if (typeof selection === 'string') {
+                setSelectionKey(selection);
+                setSelectionValue(null);
+            } else {
+                const key = Object.keys(selection)[0];
+                setSelectionKey(key);
+                setSelectionValue(selection[key]);
+            }
+        } else {
+            setSelectionKey(null);
+            setSelectionValue(null);
+        }
+    }, [selection]);
+
+    const getSelectionContent = (key, value = {}) => {
+        if (!selection) return <TVMenu setSelection={setSelection}  menuList={[]} />;
+        const selectionMap = {
+            'A': <Scriptures media={`d&c ${Math.floor(Math.random() * 132) + 1}`} advance={() => setSelection(null)} />,
+            'B': <Player queue={[{ key: 'plex', value: 616001 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
+            'C': <TVMenu menuList={{ plex: '177777' }} setSelection={setSelection} />,
+            'D': <TVMenu menuList={{ plex: '598279' }} setSelection={setSelection} />,
+            'plex': <Player queue={[{ key: 'plex', value }]} setQueue={() => {}} advance={() => setSelection(null)} />,
+        };
+
+        return selectionMap[key] || <TVMenu setSelection={setSelection} />;
+    };
+
+    const selectedContent = getSelectionContent(selectionKey, selectionValue);
 
 
-
-    const selectedContent = selectionMap[selection] ? selectionMap[selection] : <TVMenu setSelection={setSelection} />;
     // Clear selection on escape
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -52,11 +77,14 @@ function TVApp() {
         };
     }, []);
 
-
+    const appRef = useRef(null);
     return (
-        <div  className="tv-app-container" >
-            <div className="tv-app"> 
-                {selectedContent}
+        <div className="tv-app-container">
+            <pre style={{ color: 'white', fontSize: '12px', position: 'absolute', top: '10px', left: '10px' }}>
+                {JSON.stringify({ selection, selectionKey, selectionValue }, null, 2)}
+            </pre>
+            <div className="tv-app" ref={appRef}>
+                {React.cloneElement(selectedContent, { appRef, setSelection })}
             </div>
         </div>
     );
