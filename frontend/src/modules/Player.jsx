@@ -2,6 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import './Player.scss';
 import 'video.js/dist/video-js.css';
+import axios from 'axios';
 
 import videojs from 'video.js';
 // If you need DASH support, also import the DASH plugin:
@@ -18,7 +19,16 @@ export default function Player({ queue, setQueue }) {
     const url = DaylightPlexPath(value);
     const videoRef = useRef(null);
     const [player, setPlayer] = useState(null);
+    const [videoInfo, setVideoInfo] = useState({});
+
+    useEffect(async () => {
+        const response = await axios.get(url);
+        const { data } = response;
+        setVideoInfo(data);
+    }, [value]);
+
     useEffect(() => {
+        if(!videoInfo.playbackUrl) return;
         const videoElement = videoRef.current;
         if (videoElement) {
             if (!player) {
@@ -27,15 +37,15 @@ export default function Player({ queue, setQueue }) {
                     autoplay: false,
                     preload: 'auto',
                     fluid: true,
-                    sources: [{ src: url, type: 'application/dash+xml' }]
+                    sources: [{ src: videoInfo.playbackUrl, type: 'application/dash+xml' }]
                 });
                 setPlayer(vjsPlayer);
             } else {
-                player.src({ src: url, type: 'application/dash+xml' });
+                player.src({ src: videoInfo.playbackUrl, type: 'application/dash+xml' });
             }
         }
         return () => player?.dispose();
-    }, [player, url]);
+    }, [videoInfo.playbackUrl]);
 
 return ( <div className="player" style={{ width: '100%', height: '100%' }}>
         <video

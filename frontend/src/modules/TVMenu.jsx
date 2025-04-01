@@ -4,15 +4,15 @@ import './TVMenu.scss';
 const TVMenu = ({ setSelection }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const ROW_COUNT = 4;
-  const COL_COUNT = 4;
+  const ROW_COUNT = 3;
+  const COL_COUNT = 5;
   const TOTAL_ITEMS = ROW_COUNT * COL_COUNT;
 
   const buttons = [
     'A', 'B', 'C', 'D',
     'E', 'F', 'G', 'H',
     'I', 'J', 'K', 'L',
-    'M', 'N', 'O', 'P'
+    'M', 'N', 'O'
   ];
 
   const handleKeyDown = (e) => {
@@ -54,6 +54,8 @@ const TVMenu = ({ setSelection }) => {
         {buttons.map((button, index) => (
           <div
             key={button}
+            onTouchStart={() => setSelection(button)}
+            onClick={() => setSelection(button)}
             className={`menu-button ${selectedIndex === index ? 'highlighted' : ''}`}
           >
             {button}
