@@ -25,13 +25,16 @@
     grid-template-columns: repeat(5, 1fr);
     gap: 2rem;
     flex-grow: 1;
+    padding-bottom: 30%;
 }
-
-
- .menu-button {
+.menu-button {
     background-color: #ffffffAA;
     color: #000;
- }
+    aspect-ratio: 1 / 1; /* Ensures a square ratio */
+    background-size: contain; /* Forces background to size to the container */
+    background-repeat: no-repeat; /* Prevents background from repeating */
+    background-position: center; /* Centers the background within the container */
+}
 
 .menu-button.highlighted {
     background-color: #ffffffff;

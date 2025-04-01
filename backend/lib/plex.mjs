@@ -14,13 +14,17 @@ export class Plex {
     this.port = port;
     this.baseUrl = this.port ? `${this.host}:${this.port}` : this.host;
   }
-
   async fetch(paramString) {
-    let url = `${this.baseUrl}/${paramString}`;
-    if (!/\?/.test(paramString)) url += '?1=1';
-    url += `&X-Plex-Token=${this.token}`;
-    const data = (await axios.get(url)).data;
-    return data;
+    try {
+      let url = `${this.baseUrl}/${paramString}`;
+      if (!/\?/.test(paramString)) url += '?1=1';
+      url += `&X-Plex-Token=${this.token}`;
+      const response = await axios.get(url);
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching data from Plex API: ${error.message}`);
+      return null; // Return null to indicate failure
+    }
   }
 
   async loadMediaUrl(itemData) {
@@ -56,6 +60,14 @@ export class Plex {
     const response =  await this.fetch(`library/metadata/${key}${type}`);
     return  response?.MediaContainer?.Metadata || [];
   }
+
+  async loadChildrenFromKey(key, shuffle = false) {
+    if(!key) return {key: false, list: []};
+    let list = await this.loadListKeys(key, '/children');
+    list = shuffle ? list.sort(() => Math.random() - 0.5) : list;
+    return { key, list };
+  }
+
   async loadListFromKey(key = false, shuffle = false) {
     const [data] = await this.loadMeta(key);
     if (!data) return false;
@@ -74,7 +86,7 @@ export class Plex {
   }
   async loadListKeys(key, path) {
     const keys = (await this.loadMeta(key, path))?.map(({ ratingKey, title, thumb })=>{
-      return { key:ratingKey, title, art: this.thumbUrl(thumb) }
+      return { key:ratingKey, title, img: this.thumbUrl(thumb) }
     }) || [];
     return keys.length ? keys : [];
   }
@@ -204,7 +216,7 @@ export class Plex {
   }
 
   selectKeyToPlay(keys, shuffle = false) {
-    keys = keys?.[0]?.ratingKey ? keys.map(x => x.ratingKey) : keys || [];
+    keys = keys?.[0]?.key ? keys.map(x => x.key) : keys || [];
     let log = loadFile("memory/plexlog") || {};
     let unwatched = [];
     for (let key of keys) {

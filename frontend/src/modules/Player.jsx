@@ -1,59 +1,80 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import './Player.scss';
 import 'video.js/dist/video-js.css';
-import axios from 'axios';
 
 import videojs from 'video.js';
-// If you need DASH support, also import the DASH plugin:
-// import 'videojs-contrib-dash';
 
 import Scriptures from './Scriptures';
-import { DaylightPlexPath } from '../lib/api.mjs';
+import { DaylightAPI } from '../lib/api.mjs';
 
 export default function Player({ queue, setQueue }) {
-  const [{ key, value }] = queue;
-  const advance = () => setQueue(queue.slice(1));
-  if (key === 'scripture') return <Scriptures media={value} advance={advance} />;
-
-    const url = DaylightPlexPath(value);
-    const videoRef = useRef(null);
-    const [player, setPlayer] = useState(null);
-    const [videoInfo, setVideoInfo] = useState({});
-
-    useEffect(async () => {
-        const response = await axios.get(url);
-        const { data } = response;
-        setVideoInfo(data);
+    const [{ key, value }] = queue;
+    const advance = () => setQueue(queue.slice(1));
+    if (key === 'scripture') return <Scriptures media={value} advance={advance} />;
+    const [mediaInfo, setMediaInfo] = useState({});
+    useEffect(() => {
+        async function fetchVideoInfo() {
+            const response = await DaylightAPI(`media/plex/info/${value}`); //handle other media types
+            setMediaInfo(response);
+        }
+        fetchVideoInfo();
     }, [value]);
 
+    return (
+        <div className="player" >
+            {mediaInfo.mediaType === 'video' && <VideoPlayer media={mediaInfo.mediaUrl} advance={advance} />}
+            {mediaInfo.mediaType === 'audio' && <AudioPlayer media={mediaInfo.mediaUrl} advance={advance} />}
+            <pre>{JSON.stringify(mediaInfo, null, 2)}</pre>
+        </div>
+    );
+}
+
+function AudioPlayer({ media, advance }) {
+    const audioRef = useRef(null);
+    const [player, setPlayer] = useState(null);
+
+    return (<audio
+                ref={audioRef}
+                autoPlay
+                src={media}
+                onEnded={advance}
+                style={{ width: '100%' }}
+                controls={true}
+            />
+    );
+}
+
+
+function VideoPlayer({ media, advance }) {
+    const videoRef = useRef(null);
+    const [player, setPlayer] = useState(null);
+
     useEffect(() => {
-        if(!videoInfo.playbackUrl) return;
-        const videoElement = videoRef.current;
-        if (videoElement) {
+        if (videoRef.current) {
             if (!player) {
-                const vjsPlayer = videojs(videoElement, {
+                const vjsPlayer = videojs(videoRef.current, {
                     controls: true,
                     autoplay: false,
                     preload: 'auto',
                     fluid: true,
-                    sources: [{ src: videoInfo.playbackUrl, type: 'application/dash+xml' }]
+                    sources: [{ src: media, type: 'application/dash+xml' }]
                 });
                 setPlayer(vjsPlayer);
             } else {
-                player.src({ src: videoInfo.playbackUrl, type: 'application/dash+xml' });
+                player.src({ src: media, type: 'application/dash+xml' });
             }
         }
         return () => player?.dispose();
-    }, [videoInfo.playbackUrl]);
-
-return ( <div className="player" style={{ width: '100%', height: '100%' }}>
-        <video
-          ref={videoRef}
-          className="video-js vjs-big-play-centered"
-          autoPlay
-          onEnded={advance}
-          controls={false}
-        />
-    </div> );
+    }, [media]);
+    return (
+        <div className="video-player">
+            <video
+                ref={videoRef}
+                className="video-js vjs-big-play-centered"
+                autoPlay
+                onEnded={advance}
+                controls={false}
+            />
+        </div>
+    );
 }
