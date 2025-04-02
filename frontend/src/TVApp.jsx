@@ -1,110 +1,30 @@
-import React, { useState, useEffect, useRef } from 'react';
-import Scriptures from './modules/Scriptures';
+import React, { useState } from 'react';
 import TVMenu from './modules/TVMenu';
 import './TVApp.scss';
-import Player from './modules/Player';
 
-function TVApp() {
+const TVApp = () => {
+    const initialMenuList = [
+        { title: 'D&C', key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` },
+        { title: 'Did You Know', key: 'player', value: { plexId: 415974 } },
+        { title: 'Bible', key: 'list', value: { plexId: '177777' } },
+        { title: 'Crash Course Kids', key: 'list', value: { plexId: '375840' } },
+        { title: 'Cooking', key: 'list', value: { plexId: '416408' } },
+    ];
 
-    const [selection, setSelection] = useState('');
-    const [selectionKey, setSelectionKey] = useState(null);
-    const [selectionValue, setSelectionValue] = useState(null);
+    // Use a state to track the current view/component
+    const [currentComponent, setCurrentComponent] = useState(
+        <TVMenu
+            menuList={initialMenuList}
+        />
+    );
 
-    const [menuList] = useState([
-        { label: 'D&C', key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` },
-        { label: 'Did You Know', key: 'player', value: [{ key: 'plex', value: 415974 }] },
-        { label: 'Bible', key: 'list', value: { plex: '177777' } },
-        { label: 'Did You Know', key: 'list', value: { plex: '415974' } },
-        { label: 'Crash Course Kids', key: 'list', value: { plex: '375840' } },
-        { label: 'Cooking', key: 'list', value: { plex: '416408' } }
-    ]);
-
-    useEffect(() => {
-        if (selection) {
-            if (typeof selection === 'string') {
-                setSelectionKey(selection);
-                setSelectionValue(null);
-            } else {
-                const key = Object.keys(selection)[0];
-                setSelectionKey(key);
-                setSelectionValue(selection[key]);
-            }
-        } else {
-            setSelectionKey(null);
-            setSelectionValue(null);
-        }
-    }, [selection]);
-    const getSelectionContent = (key, value = {}) => {
-        if (!selection) return <TVMenu setSelection={setSelection}  menuList={[]} />;
-        const selectionMap = {
-            'A': <Scriptures media={`d&c ${Math.floor(Math.random() * 132) + 1}`} advance={() => setSelection(null)} />,
-            'B': <Player queue={[{ key: 'plex', value: 415974 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
-            'C': <TVMenu menuList={{ plex: '177777' }} setSelection={setSelection} />,
-            'D': <TVMenu menuList={{ plex: '415974' }} setSelection={setSelection} />,
-            'E': <TVMenu menuList={{ plex: '375839' }} setSelection={setSelection} />,
-            'F': <TVMenu menuList={{ plex: '416408' }} setSelection={setSelection} />,
-            'plex': <Player queue={[{ key: 'plex', value }]} setQueue={() => {}} advance={() => setSelection(null)} />,
-        };
-
-        return selectionMap[key] || <TVMenu setSelection={setSelection} />;
-    };
-
-    const selectedContent = getSelectionContent(selectionKey, selectionValue);
-
-
-    // Clear selection on escape
-    useEffect(() => {
-        const handleKeyDown = (event) => {
-            if (event.key === 'Escape') {
-                setSelection(null);
-            } 
-        };
-
-        const handleBeforeUnload = (event) => {
-            event.preventDefault();
-            event.returnValue = ''; // Required for some browsers
-            setSelection(null);
-        };
-
-        const handlePopState = () => {
-            setSelection(null);
-            window.history.pushState(null, '', window.location.href); // Prevent back navigation
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        window.addEventListener('beforeunload', handleBeforeUnload);
-        window.addEventListener('popstate', handlePopState);
-
-        // Push initial state to prevent back navigation
-        window.history.pushState(null, '', window.location.href);
-
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-            window.removeEventListener('popstate', handlePopState);
-        };
-    }, []);
-
-    const appRef = useRef(null);
     return (
         <div className="tv-app-container">
-            <div className="tv-app" ref={appRef}>
-                {React.cloneElement(selectedContent, { appRef, setSelection })}
+            <div className="tv-app">
+                {currentComponent}
             </div>
         </div>
     );
-}
-
-function ExternalLink({url}){
-
-    useEffect(() => {
-        window.location.href = url;
-    }, []);
-
-    return <div>
-        <code>{url}</code>
-    </div>
-}
-
+};
 
 export default TVApp;
