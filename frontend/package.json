@@ -35,7 +35,8 @@
     "react-router-dom": "^6.24.0",
     "recharts": "^2.12.7",
     "scripture-guide": "^1.0.62",
-    "video.js": "^8.22.0"
+    "video.js": "^8.22.0",
+    "videojs-hotkeys": "^0.2.30"
   },
   "devDependencies": {
     "@types/react": "^18.2.56",

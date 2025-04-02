@@ -21,7 +21,7 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
   // State for the currently displayed buttons and which one is selected
   const [buttons, setButtons] = useState(defaultButtons);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [menuType, setMenuType] = useState('default');
+  const [menuMeta, setMenuMeta] = useState({});
   // Grid layout definitions
   const COL_COUNT = 5;
   const ROW_COUNT = buttons.length / COL_COUNT;
@@ -57,24 +57,20 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
     const fetchData = async () => {
       try {
         if(!menuList || menuList?.length === 0) {
-          setMenuType('default');
+          setMenuMeta({ title: 'TV Menu', img: '', type: 'default' });
           setButtons(defaultButtons);
           setSelectedIndex(0);
           return ;
         }
-
-
         const { plex } = menuList;
         if (!plex) return;
-
-        const { list } = await DaylightAPI(`media/plex/list/${plex}`);
-        // Transform the fetched list into expected { title, key, img } objects
+        const { list, title, img } = await DaylightAPI(`media/plex/list/${plex}`);
         const newButtons = list.map((item) => ({
           title: item.title,
           key: item.key ?? item.title, // Fallback to title if key is missing
           img: item.img ?? ''          // Fallback to empty string if img is missing
         }));
-        setMenuType('plex');
+        setMenuMeta({ title, img, type: 'plex' });
         setButtons(newButtons);
         setSelectedIndex(0);
       } catch (error) {
@@ -91,7 +87,7 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
   const handleKeyDown = (e) => {
     switch (e.key) {
       case 'Enter':
-        if(menuType === 'plex') return handleSelection(buttons[selectedIndex].key);
+        if(menuMeta.type === 'plex') return handleSelection(buttons[selectedIndex].key);
         setSelection(buttons[selectedIndex].key);
         break;
       case 'ArrowUp':
@@ -130,9 +126,7 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
 
   return (
     <div className="tv-menu-container">
-      <h2>
-        TV Menu {selectedIndex + 1} / {buttons.length} ({menuType})
-      </h2>
+      <h2>{menuMeta.title}</h2>
       <div className="tv-menu" ref={menuRef}>
         {buttons.map((button, index) => (
           <div
