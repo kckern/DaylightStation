@@ -37,6 +37,7 @@
     align-items: center;
     pointer-events: none;
     padding: 0 15%;
+    line-height: 1;
 }
 
 .player  .progress-bar{
@@ -52,7 +53,7 @@
     height: 100%;
     width: 100%;
     z-index: 100;
-    background-color: #2a9d8f;
+    background-color: #2a9d8f99;
 }
 
 .audio-player {
@@ -68,6 +69,7 @@
     h2{
         margin-bottom: 2rem;
         padding: 0 15%;
+        line-height: 1;
     }
     p{
         font-size: 1.5rem;
@@ -91,3 +93,21 @@
     border-radius: 1rem;
     box-shadow: 0 1ex 1ex rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
+
+
+.shader {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 999;
+    background-color: #000;
+    transition: background-color 0.5s;
+    pointer-events: none;
+}
+.shader.off     { background-color: #00000000;}
+.shader.low     { background-color: #00000055;}
+.shader.medium  { background-color: #000000AA;}
+.shader.high    { background-color: #000000EE;}
+.shader.full    { background-color: #000000FF;}

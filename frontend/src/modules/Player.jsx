@@ -39,9 +39,24 @@ export default function Player({ queue, setQueue, advance }) {
 }
 
 function AudioPlayer({ media: { mediaUrl, title, artist, album, img }, advance, start, playbackRate }) {
+
+    const levels = ['full', 'high', 'medium', 'low', 'off', 'low', 'medium', 'high', 'full'];
+
+
   const audioRef = useRef(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+const [shaderIndex, setShaderIndex] = useState(levels.indexOf('off'));
+
+const updateShaderLevel = (incr) => {
+    setShaderIndex((prevIndex) => {
+            const nextIndex = (prevIndex + incr + levels.length) % levels.length; // Ensure circular navigation
+            return nextIndex;
+    });
+};
+
+const shaderlevel = levels[shaderIndex];
+
 
   const { percent } = getProgressPercent(progress, duration);
 
@@ -67,6 +82,15 @@ function AudioPlayer({ media: { mediaUrl, title, artist, album, img }, advance, 
         event.preventDefault();
         audioElement.paused ? audioElement.play() : audioElement.pause();
       }
+      //up and down arrow keys to change shader level
+        else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            updateShaderLevel(1);
+        }
+        else if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            updateShaderLevel(-1);
+        }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -102,27 +126,28 @@ function AudioPlayer({ media: { mediaUrl, title, artist, album, img }, advance, 
     audioElement.currentTime = (clickX / rect.width) * duration;
   };
 
-  return (
+return (
     <div className="audio-player">
-      <ProgressBar percent={percent} onClick={handleProgressClick} />
-      <p>{artist} - {album}</p>
-      <p>
-        {formatTime(progress)} / {formatTime(duration)}
-      </p>
-      <div className="image-container">
-        <img src={img} alt={title} />
-      </div>
-      <h2>{title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}</h2>
-      <audio
-        ref={audioRef}
-        autoPlay
-        src={mediaUrl}
-        onEnded={advance}
-        style={{ display: 'none' }}
-        controls
-      />
+        <div className={`shader ${shaderlevel}`}/>
+        <ProgressBar percent={percent} onClick={handleProgressClick} />
+        <p>{artist} - {album}</p>
+        <p>
+            {formatTime(progress)} / {formatTime(duration)}
+        </p>
+        <div className="image-container">
+            <img src={img} alt={title} />
+        </div>
+        <h2>{title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}</h2>
+        <audio
+            ref={audioRef}
+            autoPlay
+            src={mediaUrl}
+            onEnded={advance}
+            style={{ display: 'none' }}
+            controls
+        />
     </div>
-  );
+);
 }
 
 function VideoPlayer({ media: { mediaUrl, title, show, season }, advance }) {
@@ -148,12 +173,7 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance }) {
         vjsPlayer.hotkeys({
           volumeStep: 0.1,
           seekStep: 5,
-          playPauseKey: (event) => {
-            if (['Enter', 'Space'].includes(event.key)) {
-              return true;
-            }
-            return false;
-          },
+          playPauseKey: (event) => ['Enter', 'MediaPlayPause', 'Space'].includes(event.key),
         });
         vjsPlayer.on('durationchange', () => setDuration(vjsPlayer.duration()));
         vjsPlayer.playbackRate(2);
@@ -174,10 +194,19 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance }) {
     return () => player?.dispose();
   }, [mediaUrl, player, advance]);
 
+
+  const seekTo = (event) => {
+    if (!player) return;
+    const rect = event.target.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const percent = clickX / rect.width;
+    player.currentTime(percent * duration);
+  }
+
   return (
     <div className="video-player">
       <h2>{show} - {season}: {title}</h2>
-      <ProgressBar percent={percent} />
+      <ProgressBar percent={percent} onClick={seekTo} />
       <video
         ref={videoRef}
         className="video-js vjs-big-play-centered"
