@@ -1,11 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
 import './Player.scss';
-import 'video.js/dist/video-js.css';
 import moment from 'moment';
-import videojs from 'video.js';
-import 'videojs-hotkeys';
 import Scriptures from './Scriptures';
 import { DaylightAPI } from '../lib/api.mjs';
+import 'dash-video-element';
+
 
 export default function Player({ queue, setQueue, advance, clear }) {
     advance = advance || clear || (() => {});
@@ -169,45 +168,6 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance, clear 
 
   const { percent } = getProgressPercent(progress, duration);
 
-  useEffect(() => {
-    if (!videoRef.current) return ()=> {};
-    const alreadyInitialized = videoRef.current.classList.contains('vjs-initialized');
-    if(alreadyInitialized) return ()=> {};
-    if (!player) {
-      const vjsPlayer = videojs(videoRef.current, {
-        controls: true,
-        preload: 'auto',
-        fluid: false,
-        sources: [{ src: mediaUrl, type: 'application/dash+xml' }]
-      });
-
-      vjsPlayer.ready(() => {
-        if(!vjsPlayer) return false;
-        vjsPlayer.hotkeys({
-          volumeStep: 0.1,
-          seekStep: 5,
-          playPauseKey: (event) => ['Enter', 'MediaPlayPause', 'Space'].includes(event.key),
-        });
-        vjsPlayer.on('durationchange', () => setDuration(vjsPlayer.duration()));
-        vjsPlayer.playbackRate(2);
-        vjsPlayer.on('timeupdate', () => {
-          if (!vjsPlayer.paused()) {
-            setTimeout(() => setProgress(vjsPlayer.currentTime()), 50);
-          }
-        });
-        vjsPlayer.on('ended', () => advance());
-        vjsPlayer.on('error', () => console.error('Video error:', vjsPlayer.error()));
-      });
-
-      setPlayer(vjsPlayer);
-      vjsPlayer.on('ready', () => vjsPlayer.el().focus());
-    } else {
-      player.src({ src: mediaUrl, type: 'application/dash+xml' });
-    }
-    return () => player?.dispose();
-  }, [mediaUrl, player, advance]);
-
-
   const seekTo = (event) => {
     if (!player) return;
     const rect = event.target.getBoundingClientRect();
@@ -220,13 +180,10 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance, clear 
     <div className="video-player">
       <h2>{show} - {season}: {title}</h2>
       <ProgressBar percent={percent} onClick={seekTo} />
-      <video
+      <dash-video 
         ref={videoRef}
-        className="video-js vjs-big-play-centered"
-        autoPlay
-        onEnded={advance}
-        controls
-      />
+      controls src={mediaUrl}></dash-video>
+
     </div>
   );
 }
