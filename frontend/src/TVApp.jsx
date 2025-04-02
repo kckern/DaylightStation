@@ -32,6 +32,7 @@ function TVApp() {
             'B': <Player queue={[{ key: 'plex', value: 415974 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
             'C': <TVMenu menuList={{ plex: '177777' }} setSelection={setSelection} />,
             'D': <TVMenu menuList={{ plex: '415974' }} setSelection={setSelection} />,
+            'E': <ExternalLink url={`http://toptal.com/developers/keycode`} />,
             'plex': <Player queue={[{ key: 'plex', value }]} setQueue={() => {}} advance={() => setSelection(null)} />,
         };
 
@@ -46,9 +47,7 @@ function TVApp() {
         const handleKeyDown = (event) => {
             if (event.key === 'Escape') {
                 setSelection(null);
-            } else if (event.key === 'Enter') {
-                setSelection(null); // Example: Handle Enter key if needed
-            }
+            } 
         };
 
         const handleBeforeUnload = (event) => {
@@ -86,6 +85,16 @@ function TVApp() {
     );
 }
 
+function ExternalLink({url}){
+
+    useEffect(() => {
+        window.location.href = url;
+    }, []);
+
+    return <div>
+        <code>{url}</code>
+    </div>
+}
 
 
 export default TVApp;
