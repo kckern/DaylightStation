@@ -29,9 +29,9 @@ function TVApp() {
         if (!selection) return <TVMenu setSelection={setSelection}  menuList={[]} />;
         const selectionMap = {
             'A': <Scriptures media={`d&c ${Math.floor(Math.random() * 132) + 1}`} advance={() => setSelection(null)} />,
-            'B': <Player queue={[{ key: 'plex', value: 411041 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
+            'B': <Player queue={[{ key: 'plex', value: 415974 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
             'C': <TVMenu menuList={{ plex: '177777' }} setSelection={setSelection} />,
-            'D': <TVMenu menuList={{ plex: '411041' }} setSelection={setSelection} />,
+            'D': <TVMenu menuList={{ plex: '415974' }} setSelection={setSelection} />,
             'plex': <Player queue={[{ key: 'plex', value }]} setQueue={() => {}} advance={() => setSelection(null)} />,
         };
 
