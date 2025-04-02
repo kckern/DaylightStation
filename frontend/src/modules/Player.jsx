@@ -19,7 +19,8 @@ export default function Player({ queue, setQueue, advance, clear }) {
 
   useEffect(() => {
     async function fetchVideoInfo() {
-      const response = await DaylightAPI(`media/plex/info/${value}/shuffle`);
+      const plexId = value?.plexId || value;
+      const response = await DaylightAPI(`media/plex/info/${plexId}/shuffle`);
       setMediaInfo(response);
     }
     fetchVideoInfo();
@@ -97,6 +98,7 @@ const shaderlevel = levels[shaderIndex];
         }
         //escape key to clear
         else if (event.key === 'Escape') {
+          alert('Escape key pressed');
             event.preventDefault();
             clear ? clear() : ()=>{};
         }
@@ -218,7 +220,6 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance, clear 
     <div className="video-player">
       <h2>{show} - {season}: {title}</h2>
       <ProgressBar percent={percent} onClick={seekTo} />
-      <code>{mediaUrl}</code>
       <video
         ref={videoRef}
         className="video-js vjs-big-play-centered"
