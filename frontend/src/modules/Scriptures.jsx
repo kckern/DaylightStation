@@ -240,31 +240,25 @@ function ScriptureAudioPlayer({
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (!audioRef.current) return;
-      switch (event.key) {
-        case "ArrowLeft": {
-          const newT = Math.max(audioRef.current.currentTime - 5, 0);
-          audioRef.current.currentTime = newT;
-          setCurrentTime(newT);
-          break;
-        }
-        case "ArrowRight": {
-          const newT = Math.min(audioRef.current.currentTime + 5, duration);
-          audioRef.current.currentTime = newT;
-          setCurrentTime(newT);
-          break;
-        }
-        case " ":
-          if (audioRef.current.paused) {
-            audioRef.current.play();
-          } else {
-            audioRef.current.pause();
-          }
-          break;
-        case "Escape":
-          clear();
-          break;
-        default:
-          break;
+      const duration = audioRef.current.duration;
+      const increment = Math.min(5, duration / 30);
+      event.preventDefault();
+      if (event.key === "ArrowLeft") {
+      const newT = Math.max(audioRef.current.currentTime - increment, 0);
+      audioRef.current.currentTime = newT;
+      setCurrentTime(newT);
+      } else if (event.key === "ArrowRight") {
+      const newT = Math.min(audioRef.current.currentTime + increment, duration);
+      audioRef.current.currentTime = newT;
+      setCurrentTime(newT);
+      } else if (["Enter", " ","MediaPlayPause"].includes(event.key)) {
+      if (audioRef.current.paused) {
+        audioRef.current.play();
+      } else {
+        audioRef.current.pause();
+      }
+      } else if (event.key === "Escape") {
+      clear();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
