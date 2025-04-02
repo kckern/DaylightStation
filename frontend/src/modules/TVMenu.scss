@@ -1,11 +1,4 @@
-
-.tv-menu-container{
-    height: 100%;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    padding: 2rem;
-
+.tv-app-container{
     * { -webkit-tap-highlight-color: rgba(0,0,0,0); }
     * {
         -webkit-user-select: none;
@@ -16,6 +9,17 @@
     *:focus {
         outline: none;
     }
+}
+
+
+.tv-menu-container{
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 2rem;
+
+
     h2{
         margin-bottom: 2rem;
     }
@@ -54,7 +58,6 @@
     background-color: #ffffff22;
     font-size: 16px;
     font-weight: bold;
-    outline:2px solid #000;
     color: #999;
     cursor: pointer;
     position: relative;

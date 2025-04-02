@@ -37,10 +37,18 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
         const buttonRect = selectedButton.getBoundingClientRect();
         const parentRect = scrollableParent.getBoundingClientRect();
 
-        // Calculate the position to scroll to, centering the selected button
-        const scrollTop =
-          buttonRect.top - parentRect.top + scrollableParent.scrollTop - parentRect.height / 2 + buttonRect.height / 2;
-        scrollableParent.scrollTo({ top: scrollTop, behavior: 'smooth' });
+        // Check if the selected button is in the top row
+        const isTopRow = selectedIndex < COL_COUNT;
+
+        if (isTopRow) {
+          // Scroll to the top if on the top row
+          scrollableParent.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          // Calculate the position to scroll to, centering the selected button
+          const scrollTop =
+            buttonRect.top - parentRect.top + scrollableParent.scrollTop - parentRect.height / 2 + buttonRect.height / 2;
+          scrollableParent.scrollTo({ top: scrollTop, behavior: 'smooth' });
+        }
       }
     }
   }, [selectedIndex]);
@@ -59,7 +67,6 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
         if(!menuList || menuList?.length === 0) {
           setMenuMeta({ title: 'TV Menu', img: '', type: 'default' });
           setButtons(defaultButtons);
-          setSelectedIndex(0);
           return ;
         }
         const { plex } = menuList;
