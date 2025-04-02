@@ -63,9 +63,11 @@ export class Plex {
 
   async loadChildrenFromKey(key, shuffle = false) {
     if(!key) return {key: false, list: []};
+    const [{title,thumb}] = await this.loadMeta(key);
+    const img = this.thumbUrl(thumb);
     let list = await this.loadListKeys(key, '/children');
     list = shuffle ? list.sort(() => Math.random() - 0.5) : list;
-    return { key, list };
+    return { key, title, img, list };
   }
 
   async loadListFromKey(key = false, shuffle = false) {

@@ -11,8 +11,13 @@
 
 .video-player{
     position: relative;;
+
 }
 
+.vjs-control-bar{
+    opacity: 0.1!important;
+    display: none!important;
+}
 .video-player > div{
     height: 100%;
     width: 100%;
@@ -30,7 +35,25 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    pointer-events: none;
 }
+
+.player  .progress-bar{
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 0.5ex;
+    z-index: 99;
+    width: 100%;
+    background-color: #00000044;
+}
+.player .progress-bar > .progress{
+    height: 100%;
+    width: 100%;
+    z-index: 100;
+    background-color: #2a9d8f;
+}
+
 .audio-player {
     display: flex;
     text-align: center;
