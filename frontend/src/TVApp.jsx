@@ -10,6 +10,15 @@ function TVApp() {
     const [selectionKey, setSelectionKey] = useState(null);
     const [selectionValue, setSelectionValue] = useState(null);
 
+    const [menuList] = useState([
+        { label: 'D&C', key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` },
+        { label: 'Did You Know', key: 'player', value: [{ key: 'plex', value: 415974 }] },
+        { label: 'Bible', key: 'list', value: { plex: '177777' } },
+        { label: 'Did You Know', key: 'list', value: { plex: '415974' } },
+        { label: 'Crash Course Kids', key: 'list', value: { plex: '375840' } },
+        { label: 'Cooking', key: 'list', value: { plex: '416408' } }
+    ]);
+
     useEffect(() => {
         if (selection) {
             if (typeof selection === 'string') {
@@ -32,7 +41,8 @@ function TVApp() {
             'B': <Player queue={[{ key: 'plex', value: 415974 }]} setQueue={() => {}} advance={() => setSelection(null)} />,
             'C': <TVMenu menuList={{ plex: '177777' }} setSelection={setSelection} />,
             'D': <TVMenu menuList={{ plex: '415974' }} setSelection={setSelection} />,
-            'E': <ExternalLink url={`http://toptal.com/developers/keycode`} />,
+            'E': <TVMenu menuList={{ plex: '375839' }} setSelection={setSelection} />,
+            'F': <TVMenu menuList={{ plex: '416408' }} setSelection={setSelection} />,
             'plex': <Player queue={[{ key: 'plex', value }]} setQueue={() => {}} advance={() => setSelection(null)} />,
         };
 
