@@ -1,135 +1,138 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './TVMenu.scss';
 import { DaylightAPI } from '../lib/api.mjs';
+import Scriptures from './Scriptures';
+import Player from './Player';
 
-const TVMenu = ({ menuList, setSelection, appRef }) => {
-  /**
-   * Default buttons A-O if no menuList is provided.
-   * Each button object has a title to display, a key to use for selection,
-   * and an optional background image.
-   */
-  const defaultButtonLabels = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
-
-
-
-  const defaultButtons = defaultButtonLabels.map((label) => ({
-    title: label,
-    key: label,
-    img: ''
-  }));
-
-  // State for the currently displayed buttons and which one is selected
-  const [buttons, setButtons] = useState(defaultButtons);
+const TVMenu = ({ menuList, plexId = null, clear }) => {
+  const [buttons, setButtons] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [menuMeta, setMenuMeta] = useState({});
-  // Grid layout definitions
-  const COL_COUNT = 5;
-  const ROW_COUNT = buttons.length / COL_COUNT;
-  const TOTAL_ITEMS = ROW_COUNT * COL_COUNT;
+  const [menuMeta, setMenuMeta] = useState({ title: 'TV Menu', img: '', type: 'default' });
+  const [loaded, setLoaded] = useState(false);
+  const [currentContent, setCurrentContent] = useState(null);
 
-  //scroll to the selected button
   const menuRef = useRef(null);
+  const COL_COUNT = 5;
+
   useEffect(() => {
-    if (menuRef.current) {
-      const selectedButton = menuRef.current.querySelector('.highlighted');
-      const scrollableParent = appRef.current;
-      if (selectedButton && scrollableParent) {
-        const buttonRect = selectedButton.getBoundingClientRect();
-        const parentRect = scrollableParent.getBoundingClientRect();
+    const fetchMenuList = async () => {
+      setButtons(menuList);
+      setLoaded(true);
+    };
 
-        // Check if the selected button is in the top row
-        const isTopRow = selectedIndex < COL_COUNT;
-
-        if (isTopRow) {
-          // Scroll to the top if on the top row
-          scrollableParent.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-          // Calculate the position to scroll to, centering the selected button
-          const scrollTop =
-            buttonRect.top - parentRect.top + scrollableParent.scrollTop - parentRect.height / 2 + buttonRect.height / 2;
-          scrollableParent.scrollTo({ top: scrollTop, behavior: 'smooth' });
-        }
-      }
-    }
-  }, [selectedIndex]);
- 
-
-
-  /**
-   * Fetch the button data if menuList is provided,
-   * otherwise default buttons (A-O) remain.
-   */
-  useEffect(() => {
-    if (!menuList) return ()=> {};
-
-    const fetchData = async () => {
-      try {
-        if(!menuList || menuList?.length === 0) {
-          setMenuMeta({ title: 'TV Menu', img: '', type: 'default' });
-          setButtons(defaultButtons);
-          return ;
-        }
-        const { plex } = menuList;
-        if (!plex) return;
-        const { list, title, img } = await DaylightAPI(`media/plex/list/${plex}`);
-        const newButtons = list.map((item) => ({
+    const fetchPlexMenu = async () => {
+      const { list, title, img } = await DaylightAPI(`media/plex/list/${plexId}`);
+      setButtons(
+        list.map(item => ({
           title: item.title,
-          key: item.key ?? item.title, // Fallback to title if key is missing
-          img: item.img ?? ''          // Fallback to empty string if img is missing
-        }));
-        setMenuMeta({ title, img, type: 'plex' });
-        setButtons(newButtons);
-        setSelectedIndex(0);
-      } catch (error) {
-        console.error('Error fetching TV menu data:', error);
+          key: 'player',
+          value: item.key,
+          img: item.img
+        }))
+      );
+      setMenuMeta({ title, img, type: 'plex' });
+      setLoaded(true);
+    };
+
+    const getData = async () => {
+      if (menuList) {
+        await fetchMenuList();
+      } else if (plexId) {
+        await fetchPlexMenu();
       }
     };
 
-    fetchData();
-  }, [menuList]);
+    getData();
+  }, [menuList, plexId]);
 
-  /**
-   * Handle keyboard navigation and selection.
-   */
-  const handleKeyDown = (e) => {
-    switch (e.key) {
-      case 'Enter':
-        if(menuMeta.type === 'plex') return handleSelection(buttons[selectedIndex].key);
-        setSelection(buttons[selectedIndex].key);
-        break;
-      case 'ArrowUp':
-        setSelectedIndex((prev) => (prev - COL_COUNT + TOTAL_ITEMS) % TOTAL_ITEMS);
-        break;
-      case 'ArrowDown':
-        setSelectedIndex((prev) => (prev + COL_COUNT) % TOTAL_ITEMS);
-        break;
-      case 'ArrowLeft':
-        setSelectedIndex((prev) => (prev - 1 + TOTAL_ITEMS) % TOTAL_ITEMS);
-        break;
-      case 'ArrowRight':
-        setSelectedIndex((prev) => (prev + 1) % TOTAL_ITEMS);
-        break;
-      case 'Escape':
-        setSelection(null);
-        break;
-      default:
-        break;
-    }
-  };
-
-  /**
-   * Attach and detach the keyboard listener.
-   */
   useEffect(() => {
+    if (menuRef.current && loaded) {
+      const selectedButton = menuRef.current.querySelector('.highlighted');
+      const parent = document.querySelector('.tv-app-container');
+      if (selectedButton && parent) {
+        const btnRect = selectedButton.getBoundingClientRect();
+        const parentRect = parent.getBoundingClientRect();
+        const isTopRow = selectedIndex < COL_COUNT;
+        const scrollTop = isTopRow
+          ? 0
+          : btnRect.top -
+            parentRect.top +
+            parent.scrollTop -
+            parentRect.height / 2 +
+            btnRect.height / 2;
+        parent.scrollTo({ top: scrollTop, behavior: 'smooth' });
+      }
+    }
+  }, [selectedIndex, loaded]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (currentContent) return;
+      switch (e.key) {
+        case 'Enter':
+          handleSelection(buttons[selectedIndex]);
+          break;
+        case 'ArrowUp':
+          setSelectedIndex(prev => (prev - COL_COUNT + buttons.length) % buttons.length);
+          break;
+        case 'ArrowDown':
+          setSelectedIndex(prev => (prev + COL_COUNT) % buttons.length);
+          break;
+        case 'ArrowLeft':
+          setSelectedIndex(prev => (prev - 1 + buttons.length) % buttons.length);
+          break;
+        case 'ArrowRight':
+          setSelectedIndex(prev => (prev + 1) % buttons.length);
+          break;
+        case 'Escape':
+          if (clear) {
+            clear();
+          } else {
+            setCurrentContent(null);
+          }
+          break;
+        default:
+          break;
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedIndex, buttons]);
+  }, [selectedIndex, buttons, currentContent, clear]);
 
-  const handleSelection = (key) => {
-    setSelection({plex: key});
+  const handleSelection = (selection) => {
+    const clear = ()=> setCurrentContent(null);
+    const { key, value } = selection;
+    switch (key) {
+      case 'scripture':
+        setCurrentContent(<Scriptures media={value} clear={clear} />);
+        break;
+      case 'player':
+        setCurrentContent(
+          <Player
+            queue={[{ key: 'plex', value }]}
+            clear={() => setCurrentContent(null)}
+          />
+        );
+        break;
+      case 'list':
+        setCurrentContent(
+          <TVMenu
+            plexId={value.plexId}
+            clear={() => setCurrentContent(null)}
+          />
+        );
+        break;
+      default:
+        setCurrentContent(null);
+        break;
+    }
   };
+
+  if (currentContent) return currentContent;
+  if (!loaded) return null;
 
   return (
     <div className="tv-menu-container">
@@ -137,11 +140,12 @@ const TVMenu = ({ menuList, setSelection, appRef }) => {
       <div className="tv-menu" ref={menuRef}>
         {buttons.map((button, index) => (
           <div
-            key={button.key}
-            data-key={button.key}
+            key={`${index}-${button.title}`}
             className={`menu-button ${selectedIndex === index ? 'highlighted' : ''}`}
           >
-            {button.img && <img src={button.img} alt={button.title} className="menu-button-img" />}
+            {button.img && (
+              <img src={button.img} alt={button.title} className="menu-button-img" />
+            )}
             <h3 className="menu-button-title">{button.title}</h3>
           </div>
         ))}

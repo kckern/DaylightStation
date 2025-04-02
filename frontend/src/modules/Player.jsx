@@ -7,7 +7,10 @@ import 'videojs-hotkeys';
 import Scriptures from './Scriptures';
 import { DaylightAPI } from '../lib/api.mjs';
 
-export default function Player({ queue, setQueue, advance }) {
+export default function Player({ queue, setQueue, advance, clear }) {
+    advance = advance || clear || (() => {});
+    clear = clear || advance || (() => setQueue([]));
+
   const [{ key, value }] = queue;
   advance = advance || (() => setQueue(queue.slice(1)));
   if (key === 'scripture') return <Scriptures media={value} advance={advance} />;
@@ -25,6 +28,7 @@ export default function Player({ queue, setQueue, advance }) {
   const props = {
     media: mediaInfo,
     advance: advance,
+    clear: clear,
     start: mediaInfo.start,
     playbackRate: mediaInfo.playbackRate || 2
   };
@@ -38,7 +42,7 @@ export default function Player({ queue, setQueue, advance }) {
   );
 }
 
-function AudioPlayer({ media: { mediaUrl, title, artist, album, img }, advance, start, playbackRate }) {
+function AudioPlayer({ media: { mediaUrl, title, artist, album, img }, advance, start, playbackRate, clear }) {
 
     const levels = ['full', 'high', 'medium', 'low', 'off', 'low', 'medium', 'high', 'full'];
 
@@ -90,6 +94,11 @@ const shaderlevel = levels[shaderIndex];
         else if (event.key === 'ArrowDown') {
             event.preventDefault();
             updateShaderLevel(-1);
+        }
+        //escape key to clear
+        else if (event.key === 'Escape') {
+            event.preventDefault();
+            clear ? clear() : ()=>{};
         }
     };
 
@@ -150,7 +159,7 @@ return (
 );
 }
 
-function VideoPlayer({ media: { mediaUrl, title, show, season }, advance }) {
+function VideoPlayer({ media: { mediaUrl, title, show, season }, advance, clear }) {
   const videoRef = useRef(null);
   const [player, setPlayer] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -159,7 +168,9 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance }) {
   const { percent } = getProgressPercent(progress, duration);
 
   useEffect(() => {
-    if (!videoRef.current) return;
+    if (!videoRef.current) return ()=> {};
+    const alreadyInitialized = videoRef.current.classList.contains('vjs-initialized');
+    if(alreadyInitialized) return ()=> {};
     if (!player) {
       const vjsPlayer = videojs(videoRef.current, {
         controls: true,
@@ -207,6 +218,7 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance }) {
     <div className="video-player">
       <h2>{show} - {season}: {title}</h2>
       <ProgressBar percent={percent} onClick={seekTo} />
+      <code>{mediaUrl}</code>
       <video
         ref={videoRef}
         className="video-js vjs-big-play-centered"
