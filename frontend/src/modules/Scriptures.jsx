@@ -241,7 +241,7 @@ function ScriptureAudioPlayer({
     const handleKeyDown = (event) => {
       if (!audioRef.current) return;
       const duration = audioRef.current.duration;
-      const increment = Math.min(5, duration / 30);
+      const increment = Math.max(5, duration / 30);
       event.preventDefault();
       if (event.key === "ArrowLeft") {
       const newT = Math.max(audioRef.current.currentTime - increment, 0);
