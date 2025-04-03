@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import "./TVMenu.scss";
-import { DaylightAPI } from "../lib/api.mjs";
+import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import Scriptures from "./Scriptures";
 import Player from "./Player";
 import { useBackFunction } from "../TVApp";
@@ -156,29 +156,33 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
   if (currentContent) return currentContent;
   if (!loaded) return null;
 
+  
+
   return (
     <div className="tv-menu-container">
       <h2>
         {menuMeta.title}
       </h2>
       <div className="tv-menu" ref={menuRef}>
-        {buttons.map((button, index) =>
-          <div
+        {buttons.map((button, index) =>{
+            const plexId = Array.isArray(button.value?.plexId) ? button.value.plexId[0] : button.value?.plexId || null;
+          const img = button.img || (plexId && DaylightMediaPath(`/media/plex/img/${plexId}`)) || null;
+          return <div
             key={`${index}-${button.title}`}
             className={`menu-button ${selectedIndex === index
               ? "highlighted"
               : ""}`}
           >
-            {button.img &&
+            {img &&
               <img
-                src={button.img}
+                src={img}
                 alt={button.title}
                 className="menu-button-img"
               />}
             <h3 className="menu-button-title">
               {button.title}
             </h3>
-          </div>
+          </div>}
         )}
       </div>
     </div>
