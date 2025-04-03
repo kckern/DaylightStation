@@ -223,7 +223,7 @@ function AudioPlayer({ media, advance, clear }) {
 
   const { playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
     start: media.start,
-    playbackRate: media.playbackRate || 2,
+    playbackRate: media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
     isAudio: true,
@@ -262,7 +262,7 @@ function AudioPlayer({ media, advance, clear }) {
 function VideoPlayer({ media, advance, clear }) {
   const { playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
     start: media.start,
-    playbackRate: media.playbackRate || 2,
+    playbackRate: media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
     isAudio: false,
