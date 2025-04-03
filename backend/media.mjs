@@ -131,6 +131,22 @@ mediaRouter.all('/plex/list/:plex_key/:action?', async (req, res) => {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }
 });
+mediaRouter.all('/plex/queue/:plex_key/:action?', async (req, res) => {
+    const { plex_key, action } = req.params;
+    const plex_keys = plex_key.split(',');
+    const shuffle = action === 'shuffle';
+    let list = [];
+    let info = {};
+    for (const plex_key of plex_keys) {
+        const queue = await (new Plex()).loadPlayableQueueFromKey(plex_key, shuffle);
+        list = list.concat(queue);
+    }
+    try {
+        res.json(list);
+    } catch (error) {
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
+    }
+});
 
 mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
     const { plex_key } = req.params;

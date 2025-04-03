@@ -131,24 +131,26 @@ export class Plex {
 
 
 
-  async loadPlayableItemFromKey(key, shuffle = false) {
-    const {type:listType,list} = await this.loadListFromKey(key, shuffle);
-    const [selectedKey, progress] = this.selectKeyToPlay(list, shuffle);
-    if (!selectedKey) return false;
-    //process.exit(console.log({ selectedKey, time }));
-    const [itemData] = await this.loadMeta(selectedKey);
-    const {title, type, parentTitle, grandparentTitle, summary, year, thumb} = itemData;
+  // Helper that takes Plex metadata, plus extra info, and returns a “playable” object
+  async buildPlayableObject(itemData, parentKey, parentType, progress = 0) {
+    if (!itemData) {
+      return null;
+    }
+
+    const { title, type, parentTitle, grandparentTitle, summary, year, thumb } = itemData;
     const mediaUrl = await this.loadMediaUrl(itemData);
+
+    // Construct the 'playable item' result
     const result = {
-      listkey: key,
-      listType,
-      key: selectedKey,
+      listkey: parentKey,
+      listType: parentType,
+      key: itemData.ratingKey,
       type,
       title: title || parentTitle || grandparentTitle,
-      artist: type === 'track' ? itemData.grandparentTitle : "",
-      album: type === 'track' ? itemData.parentTitle : "",
-      show: type === 'episode' ? itemData.grandparentTitle : "",
-      season: type === 'episode' ? itemData.parentTitle : "",
+      artist: type === 'track' ? itemData.grandparentTitle : undefined,
+      album: type === 'track' ? itemData.parentTitle : undefined,
+      show: type === 'episode' ? itemData.grandparentTitle : undefined,
+      season: type === 'episode' ? itemData.parentTitle : undefined,
       summary: summary || "",
       tagline: itemData.tagline || "",
       studio: itemData.studio || "",
@@ -156,17 +158,61 @@ export class Plex {
       mediaType: this.determineMediaType(type),
       mediaUrl,
       img: this.thumbUrl(thumb),
-      progress: progress || 0,
-     // itemData
+      progress: progress || 0
     };
 
-    // Remove empty keys
+    // Remove any undefined/falsey keys
     Object.keys(result).forEach(key => {
-      if (!result[key]) delete result[key];
+      if (result[key] == null || result[key] === "") {
+        delete result[key];
+      }
     });
 
     return result;
+  }
 
+  // Returns a single playable item
+  async loadPlayableItemFromKey(key, shuffle = false) {
+    // Get the "list" from the key
+    const { type: parentType, list } = await this.loadListFromKey(key, shuffle);
+    // Pick one item from the list (or strings)
+    const [selectedKey, progress] = this.selectKeyToPlay(list, shuffle);
+    if (!selectedKey) return false;
+
+    // Load its metadata
+    const [itemData] = await this.loadMeta(selectedKey);
+    if (!itemData) {
+      return false;
+    }
+
+    // Build playable object with the shared helper
+    const playableItem = await this.buildPlayableObject(itemData, key, parentType, progress);
+    return playableItem;
+  }
+
+  // Returns an array of playable items
+  async loadPlayableQueueFromKey(key, shuffle = false) {
+    // Retrieve the "list" from the key 
+    const { type: parentType, list } = await this.loadListFromKey(key, shuffle);
+
+    // We'll accumulate a playable object for each item
+    const playableArray = [];
+    for (const listItem of list) {
+      // Some "list" entries might be strings, others might be objects with .key
+      const ratingKey = typeof listItem === 'string' ? listItem : listItem.key;
+      if (!ratingKey) continue;
+
+      const [itemData] = await this.loadMeta(ratingKey);
+      if (!itemData) continue;
+
+      // We can pass progress=0 or track real progress if you wish
+      const playableObject = await this.buildPlayableObject(itemData, key, parentType, 0);
+      if (playableObject) {
+        playableArray.push(playableObject);
+      }
+    }
+
+    return playableArray; // Now you have multiple playable items
   }
 
   getMediaArray(item) {
