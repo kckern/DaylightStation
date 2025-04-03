@@ -2,7 +2,12 @@ import axios from 'axios';
 import express from 'express';
 import fs from 'fs';
 import {Plex} from './lib/plex.mjs';
+import { loadFile, saveFile } from './lib/io.mjs';
+import moment from 'moment';
 const mediaRouter = express.Router();
+mediaRouter.use(express.json({
+    strict: false // Allows parsing of JSON with single-quoted property names
+}));
 const audioPath = `${process.env.path.audio}`;
 const videoPath = `${process.env.path.video}`;
 const notFound = `${audioPath}/${process.env.media.error}`;
@@ -63,6 +68,29 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
     }
 });
+
+mediaRouter.post('/log', async (req, res) => {
+    const postData = req.body;
+    const { type, id, percent, title } = postData;
+    if (!type || !id || !percent) {
+        return res.status(400).json({ error: `Invalid request: ${JSON.stringify(postData)}` });
+    }
+    try {
+        const log = loadFile('_media_memory') || {};
+        log[type] = log[type] || {};
+        log[type][id] = { time: moment().format('YYYY-MM-DD hh:mm:ss a'), title, id, percent: parseFloat(percent) };
+        if(!log[type][id].title) delete log[type][id].title;
+        log[type] = Object.fromEntries(
+            Object.entries(log[type]).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ss a').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ss a')))
+        );
+        saveFile('_media_memory', log);
+        res.json({ response: log[type][id] });
+    } catch (error) {
+        console.error('Error handling /log:', error.message);
+        res.status(500).json({ error: 'Failed to process log.' });
+    }
+});
+
 
 mediaRouter.all('/plex/info/:plex_key/:action?', async (req, res) => {
     const { plex_key, action } = req.params;

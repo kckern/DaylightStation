@@ -25,11 +25,15 @@ const TVApp = () => {
 
     const initialMenuList = [
         { title: 'D&C', key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` },
+        { title: 'Book of Mormon Lectures', key: 'list', value: { plexId: '438023' } },
         { title: 'Bible Project', key: 'player', value: { plexId: [463232,463265], shuffle: true} },
         { title: 'Bible', key: 'list', value: { plexId: '177777' } },
         { title: 'Crash Course Kids', key: 'list', value: { plexId: '375840'  } },
         { title: 'Cooking', key: 'list', value: { plexId: '416408' } },
         { title: 'Classical', key: 'player', value: { plexId: '489862',  shuffle: true} },
+        { title: "Isaiah", key: "player", value: { plexId: '47230', shuffle: true } },
+        { title: 'Scribd Coach', key: 'list', value: { plexId: '481800' } },
+        { title: "DK Ideas", key: "player", value: { plexId: '482225', shuffle: true } },
     ];
 
     const [currentComponent, setCurrentComponent] = useState(

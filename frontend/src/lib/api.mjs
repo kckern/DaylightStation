@@ -1,5 +1,7 @@
 
 export const DaylightAPI = async (path, data = {}, method = 'GET') => {
+
+    method = Object.keys(data).length > 1 ? 'POST' : method;
     //remove leading and trailing slashes
     path = path.replace(/^\/|\/$/g,'');
     const isLocalhost = /localhost/.test(window.location.href);
