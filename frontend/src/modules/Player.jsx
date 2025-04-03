@@ -164,8 +164,9 @@ export default function Player({ queue, setQueue, advance, clear }) {
     //clear && setBackFunction(clear);
     async function fetchVideoInfo() {
       const plexId = value?.plexId || value;
+      const rate = value?.rate || 2;
       const infoResponse = await DaylightAPI(`media/plex/info/${plexId}/shuffle`);
-      setMediaInfo(infoResponse);
+      setMediaInfo({...infoResponse, playbackRate: rate});
       setIsReady(true);
     }
     fetchVideoInfo();
