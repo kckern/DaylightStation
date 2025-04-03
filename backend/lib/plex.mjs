@@ -47,7 +47,7 @@ export class Plex {
       return `${host}${mediaKey}?X-Plex-Token=${token}`;
       } else {
       if (!key) throw new Error("Rating key not found for video.");
-      return `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
+      return `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=3000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
       }
     } catch (error) {
       console.error("Error generating media URL:", error.message);
