@@ -1,20 +1,152 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './Player.scss';
 import moment from 'moment';
 import Scriptures from './Scriptures';
-import { DaylightAPI, DaylightStatusCheck } from '../lib/api.mjs';
+import { DaylightAPI } from '../lib/api.mjs';
 import 'dash-video-element';
 import spinner from '../assets/icons/spinner.svg';
 
+/*─────────────────────────────────────────────────────────────*/
+/*  CUSTOM HOOKS                                              */
+/*─────────────────────────────────────────────────────────────*/
+
+/**
+ * A reusable hook to track media progress and duration.
+ * It returns { progress, duration, setProgress, setDuration } so that each player can update UI accordingly.
+ */
+function useMediaProgress() {
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  return { progress, duration, setProgress, setDuration };
+}
+
+/**
+ * A reusable hook to handle events common to both audio and video:
+ * - time updates
+ * - duration changes
+ * - ended
+ * - loadedmetadata (for setting initial currentTime, playbackRate, etc.)
+ */
+function useMediaEvents(playerRef, { start, playbackRate = 1, onEnded }) {
+  const { setProgress, setDuration } = useMediaProgress(); // not used directly here
+
+  // Because we only want the event listeners set up once, we use another approach:
+  // We'll return a function to let the caller bind to the "progress" and "duration" states.
+  // This is so we can keep all the addEventListener logic in a single place.
+  useEffect(() => {
+    if (!playerRef.current) return;
+
+    // We will rely on the caller to reference these events from the actual parent code.
+    const player = playerRef.current;
+    const handleTimeUpdate = () => {
+      // handled externally
+    };
+    const handleDurationChange = () => {
+      // handled externally
+    };
+    const handleEnded = () => {
+      onEnded && onEnded();
+    };
+    const handleLoadedMetadata = () => {
+      if (typeof start === 'number') {
+        player.currentTime = start;
+      }
+      player.playbackRate = playbackRate;
+    };
+
+    player.addEventListener('timeupdate', handleTimeUpdate);
+    player.addEventListener('durationchange', handleDurationChange);
+    player.addEventListener('ended', handleEnded);
+    player.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+    return () => {
+      player.removeEventListener('timeupdate', handleTimeUpdate);
+      player.removeEventListener('durationchange', handleDurationChange);
+      player.removeEventListener('ended', handleEnded);
+      player.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+  }, [playerRef, onEnded, playbackRate, start]);
+}
+
+/**
+ * A reusable hook for keyboard controls common to both audio and video:
+ * - ArrowLeft, ArrowRight for seeking
+ * - Escape for clearing
+ * - Enter/Space for toggling play/pause
+ */
+function useCommonKeyControls(playerRef, { onClear, onPauseToggle }) {
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const player = playerRef.current;
+      if (!player) return;
+
+      const increment = player.duration ? Math.max(5, Math.floor(player.duration / 50)) : 5;
+      switch (event.key) {
+        case 'ArrowRight':
+          player.currentTime = Math.min(player.currentTime + increment, player.duration || 0);
+          break;
+        case 'ArrowLeft':
+          player.currentTime = Math.max(player.currentTime - increment, 0);
+          break;
+        case 'Enter':
+        case ' ':
+        case 'Space':
+        case 'Spacebar':
+        case 'MediaPlayPause':
+          event.preventDefault();
+          onPauseToggle && onPauseToggle();
+          break;
+        case 'Escape':
+          event.preventDefault();
+          onClear && onClear();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [playerRef, onClear, onPauseToggle]);
+}
+
+/*─────────────────────────────────────────────────────────────*/
+/*  UTILITY FUNCTIONS                                         */
+/*─────────────────────────────────────────────────────────────*/
+
+function getProgressPercent(progress, duration) {
+  if (!duration || duration === 0) return { percent: 0 };
+  const percent = ((progress / duration) * 100).toFixed(1);
+  return { percent };
+}
+
+function formatTime(seconds) {
+  return moment.utc(seconds * 1000).format(seconds >= 3600 ? 'HH:mm:ss' : 'mm:ss').replace(/^0(\d+)/, '$1');
+}
+
+/*─────────────────────────────────────────────────────────────*/
+/*  PLAYER COMPONENT                                          */
+/*─────────────────────────────────────────────────────────────*/
 
 export default function Player({ queue, setQueue, advance, clear }) {
-    advance = advance || clear || (() => {});
-    clear = clear || advance || (() => setQueue([]));
+  // If "advance" wasn't passed, default to clearing or removing the first item
+  advance = advance || clear || (() => {});
+  clear = clear || advance || (() => setQueue([]));
 
+  // Destructure the first item in the queue
   const [{ key, value }] = queue;
+  // Fallback for advancing
   advance = advance || (() => setQueue(queue.slice(1)));
-  if (key === 'scripture') return <Scriptures media={value} advance={advance} />;
 
+  // Scripture mode
+  if (key === 'scripture') {
+    return <Scriptures media={value} advance={advance} />;
+  }
+
+  // Otherwise, let's load media info
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
 
@@ -22,290 +154,259 @@ export default function Player({ queue, setQueue, advance, clear }) {
     async function fetchVideoInfo() {
       const plexId = value?.plexId || value;
       const infoResponse = await DaylightAPI(`media/plex/info/${plexId}/shuffle`);
-      const mediaUrl = infoResponse?.mediaUrl || value?.mediaUrl;
       setMediaInfo(infoResponse);
-     // const status = await DaylightStatusCheck(`media/plex/play/${plexId}`);
-      //console.log({status})
-      setIsReady(true); //todo: check if status is 200
+      // Optionally check status:
+      // const status = await DaylightStatusCheck(`media/plex/play/${plexId}`);
+      setIsReady(true); // Could set conditionally based on status
     }
     fetchVideoInfo();
   }, [value]);
 
   const props = {
     media: mediaInfo,
-    isReady: isReady,
-    advance: advance,
-    clear: clear,
+    isReady,
+    advance,
+    clear,
     start: mediaInfo.start,
     playbackRate: mediaInfo.playbackRate || 2
   };
 
   return (
     <div className="player">
-      {!isReady && <Loading {...props} />}
+      {!isReady && <Loading media={mediaInfo} />}
       {isReady && mediaInfo.mediaType === 'video' && <VideoPlayer {...props} />}
       {isReady && mediaInfo.mediaType === 'audio' && <AudioPlayer {...props} />}
     </div>
   );
 }
 
+/*─────────────────────────────────────────────────────────────*/
+/*  LOADING                                                   */
+/*─────────────────────────────────────────────────────────────*/
 
-function Loading({ isReady,media }) {
-
-  const { mediaUrl, title, artist, album, img, mediaType } = media;
+function Loading({ media }) {
+  const { title, artist, album, img, mediaType } = media || {};
 
   if (mediaType === 'audio') {
     return (
-      <div className="audio-player" style={{ opacity: 0.5 }} >
-        <div className={`shader off`} />
+      <div className="audio-player" style={{ opacity: 0.5 }}>
+        <div className="shader off" />
         <ProgressBar percent={0} />
         <p>{artist} - {album}</p>
         <p>Loading...</p>
         <div className="image-container">
-          <img src={spinner} alt="Loading..." className='loading' />
-          <img src={img} alt={title} className='cover' />
+          <img src={spinner} alt="Loading..." className="loading" />
+          {img && <img src={img} alt={title} className="cover" />}
         </div>
         <h2>{title}</h2>
       </div>
     );
   }
-
-  return false;
-
+  return null;
 }
 
-function AudioPlayer({ media: { mediaUrl, title, artist, album, img }, advance, start, playbackRate, clear }) {
+/*─────────────────────────────────────────────────────────────*/
+/*  AUDIO PLAYER                                              */
+/*─────────────────────────────────────────────────────────────*/
 
-    const levels = ['full', 'high', 'medium', 'low', 'off', 'low', 'medium', 'high', 'full'];
-
-
+function AudioPlayer({ media, advance, start, playbackRate, clear }) {
   const audioRef = useRef(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-const [shaderIndex, setShaderIndex] = useState(levels.indexOf('off'));
 
-const updateShaderLevel = (incr) => {
-    setShaderIndex((prevIndex) => {
-            const nextIndex = (prevIndex + incr + levels.length) % levels.length; // Ensure circular navigation
-            return nextIndex;
-    });
-};
+  // The "shader" logic is specific to audio.
+  const levels = ['full', 'high', 'medium', 'low', 'off', 'low', 'medium', 'high', 'full'];
+  const [shaderIndex, setShaderIndex] = useState(levels.indexOf('off'));
+  const shaderLevel = levels[shaderIndex];
 
-const shaderlevel = levels[shaderIndex];
+  // Common events
+  useMediaEvents(audioRef, {
+    start,
+    playbackRate,
+    onEnded: advance,
+  });
 
-
-  const { percent } = getProgressPercent(progress, duration);
-
+  // Common keyboard controls, plus audio‐specific arrowUp/arrowDown
   useEffect(() => {
-    const audioElement = audioRef.current;
-    if (!audioElement) return;
-
-    const handleTimeUpdate = () => setProgress(audioElement.currentTime);
-    const handleDurationChange = () => setDuration(audioElement.duration);
-    const handleEnded = () => advance();
-
-    audioElement.addEventListener('timeupdate', handleTimeUpdate);
-    audioElement.addEventListener('durationchange', handleDurationChange);
-    audioElement.addEventListener('ended', handleEnded);
-
     const handleKeyDown = (event) => {
-      const increment = Math.max(5, Math.floor(audioElement.duration / 50));
-      if (event.key === 'ArrowRight') {
-        audioElement.currentTime = Math.min(audioElement.currentTime + increment, audioElement.duration);
-      } else if (event.key === 'ArrowLeft') {
-        audioElement.currentTime = Math.max(audioElement.currentTime - increment, 0);
-      } else if (event.key === 'Enter') {
-        event.preventDefault();
-        audioElement.paused ? audioElement.play() : audioElement.pause();
-      }
-      //up and down arrow keys to change shader level
-        else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            updateShaderLevel(1);
-        }
-        else if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            updateShaderLevel(-1);
-        }
-        //escape key to clear
-        else if (event.key === 'Escape') {
-            event.preventDefault();
-            clear ? clear() : ()=>{};
-        }
-    };
+      const audio = audioRef.current;
+      if (!audio) return;
 
+      const increment = audio.duration ? Math.max(5, Math.floor(audio.duration / 50)) : 5;
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setShaderIndex((prev) => ((prev + 1) % levels.length));
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setShaderIndex((prev) => ((prev - 1 + levels.length) % levels.length));
+      }
+    };
     window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [levels.length]);
 
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      audioElement.removeEventListener('timeupdate', handleTimeUpdate);
-      audioElement.removeEventListener('durationchange', handleDurationChange);
-      audioElement.removeEventListener('ended', handleEnded);
-    };
-  }, [advance]);
-
-  useEffect(() => {
-    const audioElement = audioRef.current;
-    if (!audioElement) return;
-
-    const handleLoadedMetadata = () => {
-      if (start) audioElement.currentTime = start;
-      if (playbackRate) audioElement.playbackRate = playbackRate;
-    };
-    audioElement.addEventListener('loadedmetadata', handleLoadedMetadata);
-
-    return () => {
-      audioElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
-    };
-  }, [start, playbackRate]);
-
-  const handleProgressClick = (event) => {
-    const audioElement = audioRef.current;
-    if (!audioElement || !duration) return;
-    const rect = event.target.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    audioElement.currentTime = (clickX / rect.width) * duration;
-  };
-
-return (
-    <div className="audio-player">
-        <div className={`shader ${shaderlevel}`}/>
-        <ProgressBar percent={percent} onClick={handleProgressClick} />
-        <p>{artist} - {album}</p>
-        <p>
-            {formatTime(progress)} / {formatTime(duration)}
-        </p>
-        <div className="image-container">
-            <img src={img} alt={title}  className='cover' />
-        </div>
-        <h2>{title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}</h2>
-        <audio
-            ref={audioRef}
-            autoPlay
-            src={mediaUrl}
-            onEnded={advance}
-            style={{ display: 'none' }}
-            controls
-        />
-    </div>
-);
-}
-
-function VideoPlayer({ media: { mediaUrl, title, show, season }, advance, clear }) {
-  const videoRef = useRef(null);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-
-  const { percent } = getProgressPercent(progress, duration);
-
-  const seekTo = (event) => {
-    const player = videoRef.current.shadowRoot.querySelector('video');
-    if (!player || !duration) return;
-    const rect = event.target.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const percent = clickX / rect.width;
-    player.currentTime(percent * duration);
-  }
-
-  //listen for keydown events
-  useEffect(() => {
-    const player = videoRef.current.shadowRoot.querySelector('video');
-    if (!player) return;
-
-    const handleKeyDown = (event) => {
-      const increment = Math.max(5, Math.floor(player.duration / 50));
-      if (event.key === 'ArrowRight') {
-        player.currentTime = Math.min(player.currentTime + increment, player.duration);
-      } else if (event.key === 'ArrowLeft') {
-        player.currentTime = Math.max(player.currentTime - increment, 0);
-      } else if (event.key === 'Enter') {
-        event.preventDefault();
-        player.paused ? player.play() : player.pause();
-      }
-      //escape key to clear
-      else if (event.key === 'Escape') {
-        event.preventDefault();
-        clear ? clear() : ()=>{};
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [advance]);
-
-  useEffect(() => {
-
-    const videoElementInside = videoRef.current.shadowRoot.querySelector('video');
-    if (!videoElementInside) return;
-    //set autoplay
-    videoElementInside.autoplay = true;
-    //no controls
-    videoElementInside.controls = false;
-
-    //playback rate x2
-    videoElementInside.playbackRate = 2;
-
-    //listen for timeupdate and set progress and duration
-    const handleTimeUpdate = () => {
-      setProgress(videoElementInside.currentTime);
-      setDuration(videoElementInside.duration);
-    };
-    const handleDurationChange = () => setDuration(videoElementInside.duration);
-    const handleEnded = () => advance();
-    const handleLoadedMetadata = () => {
-      if (videoElementInside.duration) {
-        setDuration(videoElementInside.duration);
+  // Use the common key controls for pause/play, left/right, escape
+  useCommonKeyControls(audioRef, {
+    onClear: clear,
+    onPauseToggle: () => {
+      const audio = audioRef.current;
+      if (audio.paused) {
+        audio.play();
+      } else {
+        audio.pause();
       }
     }
-    videoElementInside.addEventListener('timeupdate', handleTimeUpdate);
-    videoElementInside.addEventListener('durationchange', handleDurationChange);
-    videoElementInside.addEventListener('ended', handleEnded);
-    videoElementInside.addEventListener('loadedmetadata', handleLoadedMetadata);
+  });
 
+  // Local progress/timeupdate
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handleTimeUpdate = () => setProgress(audio.currentTime);
+    const handleDurationChange = () => setDuration(audio.duration);
+
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('durationchange', handleDurationChange);
     return () => {
-      videoElementInside.removeEventListener('timeupdate', handleTimeUpdate);
-      videoElementInside.removeEventListener('durationchange', handleDurationChange);
-      videoElementInside.removeEventListener('ended', handleEnded);
-      videoElementInside.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('durationchange', handleDurationChange);
     };
+  }, []);
 
+  const handleProgressClick = (evt) => {
+    if (!duration) return;
+    const rect = evt.target.getBoundingClientRect();
+    const clickX = evt.clientX - rect.left;
+    audioRef.current.currentTime = (clickX / rect.width) * duration;
+  };
 
-  },[videoRef.current]  );
+  const { percent } = getProgressPercent(progress, duration);
+  const { mediaUrl, title, artist, album, img } = media;
 
   return (
-    <div className="video-player">
-      <h2>{show} - {season}: {title}</h2>
-      <ProgressBar percent={percent} onClick={seekTo} />
-      <dash-video 
-        ref={videoRef}
-        class="video-element"
-      controls src={mediaUrl}></dash-video>
-
+    <div className="audio-player">
+      <div className={`shader ${shaderLevel}`} />
+      <ProgressBar percent={percent} onClick={handleProgressClick} />
+      <p>{artist} - {album}</p>
+      <p>
+        {formatTime(progress)} / {formatTime(duration)}
+      </p>
+      <div className="image-container">
+        {img && <img src={img} alt={title} className="cover" />}
+      </div>
+      <h2>{title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}</h2>
+      <audio
+        ref={audioRef}
+        autoPlay
+        src={mediaUrl}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }
 
-function ProgressBar({ percent, onClick }) {
+/*─────────────────────────────────────────────────────────────*/
+/*  VIDEO PLAYER                                              */
+/*─────────────────────────────────────────────────────────────*/
+
+function VideoPlayer({ media, advance, clear }) {
+  const videoContainerRef = useRef(null);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  // Because we're using dash-video-element, the actual <video> is inside a Shadow DOM.
+  // We'll get the <video> element via querySelector('video').
+  useEffect(() => {
+    const dashEl = videoContainerRef.current;
+    if (!dashEl) return;
+
+    const videoEl = dashEl.shadowRoot?.querySelector('video');
+    if (!videoEl) return;
+
+    // Autoplay, no controls, double speed
+    videoEl.autoplay = true;
+    videoEl.controls = false;
+    videoEl.playbackRate = 2;
+
+    const handleTimeUpdate = () => {
+      setProgress(videoEl.currentTime);
+      setDuration(videoEl.duration);
+    };
+    const handleDurationChange = () => {
+      setDuration(videoEl.duration);
+    };
+    const handleEnded = () => advance();
+    const handleLoadedMetadata = () => {
+      setDuration(videoEl.duration || 0);
+    };
+
+    videoEl.addEventListener('timeupdate', handleTimeUpdate);
+    videoEl.addEventListener('durationchange', handleDurationChange);
+    videoEl.addEventListener('ended', handleEnded);
+    videoEl.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+    return () => {
+      videoEl.removeEventListener('timeupdate', handleTimeUpdate);
+      videoEl.removeEventListener('durationchange', handleDurationChange);
+      videoEl.removeEventListener('ended', handleEnded);
+      videoEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+  }, [advance]);
+
+  // Common key controls in the video
+  useCommonKeyControls(videoContainerRef, {
+    onClear: clear,
+    onPauseToggle: () => {
+      const videoEl = videoContainerRef.current?.shadowRoot?.querySelector('video');
+      if (!videoEl) return;
+      if (videoEl.paused) {
+        videoEl.play();
+      } else {
+        videoEl.pause();
+      }
+    }
+  });
+
+  const seekTo = (event) => {
+    const videoEl = videoContainerRef.current?.shadowRoot?.querySelector('video');
+    if (!videoEl || !duration) return;
+    const rect = event.target.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    videoEl.currentTime = (clickX / rect.width) * duration;
+  };
+
+  const { show, season, title, mediaUrl } = media;
+  const { percent } = getProgressPercent(progress, duration);
+
+  return (
+    <div className="video-player">
+      <h2>
+        {show} - {season}: {title}
+      </h2>
+      <ProgressBar percent={percent} onClick={seekTo} />
+      <dash-video
+        ref={videoContainerRef}
+        class="video-element"
+        controls
+        src={mediaUrl}
+      />
+    </div>
+  );
+}
+
+/*─────────────────────────────────────────────────────────────*/
+/*  PROGRESS BAR                                              */
+/*─────────────────────────────────────────────────────────────*/
+
+function ProgressBar({ percent = 0, onClick }) {
   return (
     <div
       className="progress-bar"
       onClick={onClick}
       style={onClick ? { cursor: 'pointer' } : {}}
     >
-      <div className="progress" style={{ width: `${percent}%` }}></div>
+      <div className="progress" style={{ width: `${percent}%` }} />
     </div>
   );
-}
-
-function getProgressPercent(progress, duration) {
-  if (!duration || duration === 0) return { percent: '0.0' };
-  const percent = ((progress / duration) * 100).toFixed(1);
-  return { percent };
-}
-
-function formatTime(seconds) {
-  return moment.utc(seconds * 1000).format(seconds >= 3600 ? 'HH:mm:ss' : 'mm:ss').replace(/^0(\d+)/, '$1');
 }
