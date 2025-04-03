@@ -24,8 +24,8 @@ export default function Player({ queue, setQueue, advance, clear }) {
       const infoResponse = await DaylightAPI(`media/plex/info/${plexId}/shuffle`);
       const mediaUrl = infoResponse?.mediaUrl || value?.mediaUrl;
       setMediaInfo(infoResponse);
-      const status = await DaylightStatusCheck(`media/plex/play/${plexId}`);
-      console.log({status})
+     // const status = await DaylightStatusCheck(`media/plex/play/${plexId}`);
+      //console.log({status})
       setIsReady(true); //todo: check if status is 200
     }
     fetchVideoInfo();
@@ -193,19 +193,57 @@ return (
 
 function VideoPlayer({ media: { mediaUrl, title, show, season }, advance, clear }) {
   const videoRef = useRef(null);
-  const [player, setPlayer] = useState(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
 
   const { percent } = getProgressPercent(progress, duration);
 
   const seekTo = (event) => {
-    if (!player) return;
+ 
     const rect = event.target.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
     const percent = clickX / rect.width;
     player.currentTime(percent * duration);
   }
+
+  useEffect(() => {
+
+    const videoElementInside = videoRef.current.shadowRoot.querySelector('video');
+    if (!videoElementInside) return;
+    //set autoplay
+    videoElementInside.autoplay = true;
+    //no controls
+    videoElementInside.controls = false;
+
+    //playback rate x2
+    videoElementInside.playbackRate = 2;
+
+    //listen for timeupdate and set progress and duration
+    const handleTimeUpdate = () => {
+      setProgress(videoElementInside.currentTime);
+      setDuration(videoElementInside.duration);
+    };
+    const handleDurationChange = () => setDuration(videoElementInside.duration);
+    const handleEnded = () => advance();
+    const handleLoadedMetadata = () => {
+      if (videoElementInside.duration) {
+        setDuration(videoElementInside.duration);
+      }
+    }
+    videoElementInside.addEventListener('timeupdate', handleTimeUpdate);
+    videoElementInside.addEventListener('durationchange', handleDurationChange);
+    videoElementInside.addEventListener('ended', handleEnded);
+    videoElementInside.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+    return () => {
+      videoElementInside.removeEventListener('timeupdate', handleTimeUpdate);
+      videoElementInside.removeEventListener('durationchange', handleDurationChange);
+      videoElementInside.removeEventListener('ended', handleEnded);
+      videoElementInside.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+
+
+  },[videoRef.current]  );
 
   return (
     <div className="video-player">
@@ -213,6 +251,7 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance, clear 
       <ProgressBar percent={percent} onClick={seekTo} />
       <dash-video 
         ref={videoRef}
+        class="video-element"
       controls src={mediaUrl}></dash-video>
 
     </div>
