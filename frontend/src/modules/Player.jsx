@@ -175,11 +175,7 @@ export default function Player({ queue, setQueue, advance, clear }) {
   const [{ key, value }] = queue;
   advance = advance || (() => setQueue(queue.slice(1)));
 
-  if (key === 'scripture') {
-    return <Scriptures media={value} advance={advance} />;
-  }
-
-  const { setBackFunction } = useBackFunction();
+  if (key === 'scripture') return <Scriptures media={value} advance={advance} />;
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
 
@@ -189,6 +185,7 @@ export default function Player({ queue, setQueue, advance, clear }) {
       const rate = value?.rate || 1;
       const shuffle = value?.shuffle || false;
       const infoResponse = await DaylightAPI(`media/plex/info/${plexId}${shuffle ? '/shuffle' : ''}`);
+      //TODO set queue
       setMediaInfo({ ...infoResponse, playbackRate: rate });
       setIsReady(true);
     }
