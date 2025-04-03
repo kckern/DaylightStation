@@ -5,7 +5,11 @@ import './TVApp.scss';
 const BackFunctionContext = createContext();
 
 export const BackFunctionProvider = ({ children }) => {
-    const [backFunction, setBackFunction] = useState(() => () => alert("Back!"));
+    const [backFunction, setBackFunction] = useState(() => () => {
+        //simulate escape key
+        const event = new KeyboardEvent('keydown', { key: 'Escape' });
+        window.dispatchEvent(event);
+    });
 
     return (
         <BackFunctionContext.Provider value={{ backFunction, setBackFunction }}>
@@ -23,15 +27,15 @@ const TVApp = () => {
         { title: 'D&C', key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` },
         { title: 'Bible Project', key: 'player', value: { plexId: [463232,463265], rate: 1 , shuffle: true} },
         { title: 'Bible', key: 'list', value: { plexId: '177777' } },
-        { title: 'Crash Course Kids', key: 'list', value: { plexId: '375840' } },
-        { title: 'Cooking', key: 'list', value: { plexId: '416408' } },
+        { title: 'Crash Course Kids', key: 'list', value: { plexId: '375840'  , rate: 1} },
+        { title: 'Cooking', key: 'list', value: { plexId: '416408' , rate: 1} },
         { title: 'Classical', key: 'player', value: { plexId: '489862', rate: 1 } },
     ];
 
     const [currentComponent, setCurrentComponent] = useState(
         <TVMenu
             menuList={initialMenuList}
-            setBackFunction={setBackFunction}
+            
         />
     );
 
