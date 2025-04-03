@@ -199,12 +199,42 @@ function VideoPlayer({ media: { mediaUrl, title, show, season }, advance, clear 
   const { percent } = getProgressPercent(progress, duration);
 
   const seekTo = (event) => {
- 
+    const player = videoRef.current.shadowRoot.querySelector('video');
+    if (!player || !duration) return;
     const rect = event.target.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
     const percent = clickX / rect.width;
     player.currentTime(percent * duration);
   }
+
+  //listen for keydown events
+  useEffect(() => {
+    const player = videoRef.current.shadowRoot.querySelector('video');
+    if (!player) return;
+
+    const handleKeyDown = (event) => {
+      const increment = Math.max(5, Math.floor(player.duration / 50));
+      if (event.key === 'ArrowRight') {
+        player.currentTime = Math.min(player.currentTime + increment, player.duration);
+      } else if (event.key === 'ArrowLeft') {
+        player.currentTime = Math.max(player.currentTime - increment, 0);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        player.paused ? player.play() : player.pause();
+      }
+      //escape key to clear
+      else if (event.key === 'Escape') {
+        event.preventDefault();
+        clear ? clear() : ()=>{};
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [advance]);
 
   useEffect(() => {
 
