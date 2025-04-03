@@ -15,6 +15,9 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
   });
   const [loaded, setLoaded] = useState(false);
   const [currentContent, setCurrentContent] = useState(null);
+  const [translateY, setTranslateY] = useState(0);
+  const containerRef = useRef(null);
+
 
   const menuRef = useRef(null);
   const COL_COUNT = 5;
@@ -72,22 +75,15 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
 
   useEffect(
     () => {
-      if (menuRef.current && loaded) {
-        const selectedButton = menuRef.current.querySelector(".highlighted");
-        const parent = document.querySelector(".tv-app-container");
-        if (selectedButton && parent) {
-          const btnRect = selectedButton.getBoundingClientRect();
-          const parentRect = parent.getBoundingClientRect();
-          const isTopRow = selectedIndex < COL_COUNT;
-          const scrollTop = isTopRow
-            ? 0
-            : btnRect.top -
-              parentRect.top +
-              parent.scrollTop -
-              parentRect.height / 2 +
-              btnRect.height / 2;
-          parent.scrollTo({ top: scrollTop, behavior: "smooth" });
-        }
+      if (loaded) {
+        const heightOfContainer = containerRef.current.offsetHeight;
+        const heightOfSelectedButton = menuRef.current.children[selectedIndex].offsetHeight;
+        const buttonDistance = menuRef.current.children[selectedIndex].offsetTop;
+        const targetDistanceForVerticalCentering = buttonDistance - (heightOfContainer / 2) + (heightOfSelectedButton / 2);
+        const maxDistance = menuRef.current.scrollHeight - heightOfContainer;
+        const minDistance = 0;
+        const distance = Math.max(minDistance, Math.min(maxDistance, targetDistanceForVerticalCentering));
+        setTranslateY(distance);
       }
     },
     [selectedIndex, loaded]
@@ -164,10 +160,8 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
   if (currentContent) return currentContent;
   if (!loaded) return null;
 
-  
-
   return (
-    <div className="tv-menu-container">
+    <div className="tv-menu-container" style={{ transform: `translateY(${-translateY}px)` }} ref={containerRef}>
       <h2>
         {menuMeta.title}
       </h2>
