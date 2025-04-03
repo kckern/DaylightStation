@@ -66,8 +66,15 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
 
 mediaRouter.all('/plex/info/:plex_key/:action?', async (req, res) => {
     const { plex_key, action } = req.params;
+    const plex_keys = plex_key.split(',');
     const shuffle = action === 'shuffle';
-    const plexInfo = await (new Plex()).loadPlayableItemFromKey(plex_key, shuffle);
+    let infos = [];
+    for (const key of plex_keys) {
+        const info = await (new Plex()).loadPlayableItemFromKey(key, shuffle);
+        infos.push(info);
+    }
+    //pick one
+    const plexInfo = infos[Math.floor(Math.random() * infos.length)];
     try {
         res.json(plexInfo);
     } catch (error) {
@@ -77,12 +84,23 @@ mediaRouter.all('/plex/info/:plex_key/:action?', async (req, res) => {
 
 mediaRouter.all('/plex/list/:plex_key/:action?', async (req, res) => {
     const { plex_key, action } = req.params;
+    const plex_keys = plex_key.split(',');
     const shuffle = action === 'shuffle';
-    const plexList = await (new Plex()).loadChildrenFromKey(plex_key, shuffle);
+    let list = [];
+    let info = {};
+    for (const plex_key of plex_keys) {
+        const {list:listItems, key, title, img} = await (new Plex()).loadChildrenFromKey(plex_key, shuffle);
+        list = list.concat(listItems);
+        info = {
+            key: info.key ? `${info.key},${key}` : key,
+            title: info.title ? `${info.title} • ${title}` : title,
+            img: info.img ? `${info.img}` : img
+        }
+    }
     try {
-        res.json(plexList);
+        res.json({...info, list});
     } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }
 });
 
