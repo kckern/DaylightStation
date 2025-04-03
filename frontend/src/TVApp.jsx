@@ -5,7 +5,7 @@ import './TVApp.scss';
 const BackFunctionContext = createContext();
 
 export const BackFunctionProvider = ({ children }) => {
-    const [backFunction, setBackFunction] = useState(()=>{});
+    const [backFunction, setBackFunction] = useState(()=>{alert('No back function set')});
 
     return (
         <BackFunctionContext.Provider value={{ backFunction, setBackFunction }}>
@@ -34,20 +34,26 @@ const TVApp = () => {
         />
     );
 
+
     useEffect(() => {
-        const handlePopState = (event) => {
+        const handleBeforeUnload = (event) => {
             event.preventDefault();
-            if (typeof backFunction === 'function') {
-                backFunction();
-            }
+            event.returnValue = ''; // Required for some browsers
+            backFunction();
         };
-
+        const handlePopState = () => {
+            backFunction();
+            window.history.pushState(null, '', window.location.href); // Prevent back navigation
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
         window.addEventListener('popstate', handlePopState);
-
+        // Push initial state to prevent back navigation
+        window.history.pushState(null, '', window.location.href);
         return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
             window.removeEventListener('popstate', handlePopState);
         };
-    }, [backFunction]);
+    }, []);
 
     return (
         <div className="tv-app-container">
