@@ -5,6 +5,7 @@ import Scriptures from './Scriptures';
 import { DaylightAPI } from '../lib/api.mjs';
 import 'dash-video-element';
 import spinner from '../assets/icons/spinner.svg';
+import { useBackFunction } from "../TVApp";
 
 /*─────────────────────────────────────────────────────────────*/
 /*  HOOKS AND UTILITIES                                       */
@@ -60,6 +61,7 @@ function useCommonMediaController({
   };
 
   useEffect(() => {
+    
     const handleKeyDown = (event) => {
       const mediaEl = isVideo
         ? containerRef.current?.shadowRoot?.querySelector('video')
@@ -154,10 +156,12 @@ export default function Player({ queue, setQueue, advance, clear }) {
     return <Scriptures media={value} advance={advance} />;
   }
 
+  const { setBackFunction } = useBackFunction();
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
-
   useEffect(() => {
+
+    //clear && setBackFunction(clear);
     async function fetchVideoInfo() {
       const plexId = value?.plexId || value;
       const infoResponse = await DaylightAPI(`media/plex/info/${plexId}/shuffle`);
@@ -272,7 +276,7 @@ function VideoPlayer({ media, advance, clear }) {
         {show} - {season}: {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      <dash-video ref={containerRef} class="video-element" controls src={mediaUrl} />
+      <dash-video ref={containerRef} class={`video-element ${(progress || 0) > 0 && "show"}`} controls src={mediaUrl} />
     </div>
   );
 }

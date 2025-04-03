@@ -4,6 +4,7 @@ import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import { lookupReference } from "scripture-guide";
 import moment from "moment";
 import paperBackground from "../assets/backgrounds/paper.jpg";
+import { useBackFunction } from "../TVApp";
 
 const config = {
   volumes: { ot: 1, nt: 23146, bom: 31103, dc: 37707, pgp: 41361, lof: 41996 },
@@ -147,7 +148,7 @@ function SeekBar({ currentTime, duration, onSeek }) {
       <div
         className="seek-progress"
         style={{
-          width: `${(currentTime / duration) * 100}%`,
+          width: currentTime ? `${(currentTime / duration) * 100}%` : "0%",
         }}
       >
         <div className="current-time">
@@ -298,12 +299,14 @@ export default function Scriptures({ media, advance, clear }) {
   const volume = findVolume(verseId);
   const mediaPath = DaylightMediaPath(`media/scripture/${volume}${version}/${verseId}`);
   const [scriptureTextData, setScriptureTextData] = useState(null);
+  const { setBackFunction } = useBackFunction();
 
   const yStartTime = 15;
   const movingTime = duration - yStartTime;
   const yProgress = currentTime < yStartTime ? 0 : (currentTime - yStartTime) / movingTime;
 
   useEffect(() => {
+    //setBackFunction(()=>clear());
     DaylightAPI(`data/scripture/${volume}${version}/${verseId}`).then((verses) => {
       setScriptureTextData(verses);
       const [{ headings: { title, subtitle: st } }] = verses;

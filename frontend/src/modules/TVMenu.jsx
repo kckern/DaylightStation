@@ -3,8 +3,11 @@ import "./TVMenu.scss";
 import { DaylightAPI } from "../lib/api.mjs";
 import Scriptures from "./Scriptures";
 import Player from "./Player";
+import { useBackFunction } from "../TVApp";
 
 const TVMenu = ({ menuList, plexId = null, clear }) => {
+
+  const {setBackFunction} = useBackFunction();
   const [buttons, setButtons] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [menuMeta, setMenuMeta] = useState({
@@ -20,6 +23,8 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
 
   useEffect(
     () => {
+
+      //clear && setBackFunction(clear);
       const fetchMenuList = async () => {
         setButtons(menuList);
         setLoaded(true);
