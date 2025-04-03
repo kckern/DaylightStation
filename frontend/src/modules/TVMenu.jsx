@@ -3,11 +3,9 @@ import "./TVMenu.scss";
 import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import Scriptures from "./Scriptures";
 import Player from "./Player";
-import { useBackFunction } from "../TVApp";
 
 const TVMenu = ({ menuList, plexId = null, clear }) => {
 
-  const {setBackFunction} = useBackFunction();
   const [buttons, setButtons] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [menuMeta, setMenuMeta] = useState({
@@ -21,11 +19,24 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
   const menuRef = useRef(null);
   const COL_COUNT = 5;
 
+  const escapeHandler = () => {
+   // alert("Escape");
+    if (currentContent) {
+      setCurrentContent(null);
+    }
+    if (clear) {
+      clear();
+    }
+  };
+
+
   useEffect(
     () => {
-
-      //clear && setBackFunction(clear);
+      
+      
       const fetchMenuList = async () => {
+
+
         setButtons(menuList);
         setLoaded(true);
       };
@@ -107,11 +118,8 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
             setSelectedIndex(prev => (prev + 1) % buttons.length);
             break;
           case "Escape":
-            if (clear) {
-              clear();
-            } else {
-              setCurrentContent(null);
-            }
+            e.preventDefault();
+            escapeHandler();
             break;
           default:
             break;
@@ -144,7 +152,7 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
         break;
       case "list":
         setCurrentContent(
-          <TVMenu plexId={value.plexId} clear={() => setCurrentContent(null)} />
+          <TVMenu plexId={value.plexId} clear={() => setCurrentContent(null)}  />
         );
         break;
       default:
