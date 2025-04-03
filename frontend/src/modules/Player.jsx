@@ -103,10 +103,18 @@ function useCommonMediaController({
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
       mediaEl.currentTime = start;
-      mediaEl.playbackRate = playbackRate;
+      mediaEl.autoplay = true;
       if (isVideo) {
-        mediaEl.autoplay = true;
         mediaEl.controls = false;
+        mediaEl.addEventListener('play', () => {
+          mediaEl.playbackRate = playbackRate;
+        }, { once: false });
+
+        mediaEl.addEventListener('seeked', () => {
+          mediaEl.playbackRate = playbackRate;
+        }, { once: false });
+      } else {
+        mediaEl.playbackRate = playbackRate;
       }
     };
 
@@ -127,6 +135,7 @@ function useCommonMediaController({
     containerRef,
     progress,
     duration,
+    playbackRate,
     handleProgressClick
   };
 }
@@ -206,7 +215,7 @@ function AudioPlayer({ media, advance, clear }) {
     setShaderIndex((prev) => (prev + step + levels.length) % levels.length);
   };
 
-  const { containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
+  const { playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
     start: media.start,
     playbackRate: media.playbackRate || 2,
     onEnd: advance,
@@ -233,7 +242,7 @@ function AudioPlayer({ media, advance, clear }) {
         {img && <img src={img} alt={title} className="cover" />}
       </div>
       <h2>
-        {title} {media.playbackRate > 1 ? `(${media.playbackRate}×)` : ''}
+        {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
       </h2>
       <audio ref={containerRef} src={mediaUrl} autoPlay style={{ display: 'none' }} />
     </div>
@@ -245,7 +254,7 @@ function AudioPlayer({ media, advance, clear }) {
 /*─────────────────────────────────────────────────────────────*/
 
 function VideoPlayer({ media, advance, clear }) {
-  const { containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
+  const { playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
     start: media.start,
     playbackRate: media.playbackRate || 2,
     onEnd: advance,
@@ -260,7 +269,7 @@ function VideoPlayer({ media, advance, clear }) {
   return (
     <div className="video-player">
       <h2>
-        {show} - {season}: {title}
+        {show} - {season}: {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <dash-video ref={containerRef} class="video-element" controls src={mediaUrl} />
