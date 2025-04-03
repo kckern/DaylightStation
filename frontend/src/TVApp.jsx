@@ -5,7 +5,7 @@ import './TVApp.scss';
 const BackFunctionContext = createContext();
 
 export const BackFunctionProvider = ({ children }) => {
-    const [backFunction, setBackFunction] = useState(()=>{alert('No back function set')});
+    const [backFunction, setBackFunction] = useState(() => () => alert("Back!"));
 
     return (
         <BackFunctionContext.Provider value={{ backFunction, setBackFunction }}>
@@ -21,10 +21,11 @@ const TVApp = () => {
 
     const initialMenuList = [
         { title: 'D&C', key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` },
-        { title: 'Did You Know', key: 'player', value: { plexId: 415974 } },
+        { title: 'Bible Project', key: 'player', value: { plexId: 463232 } },
         { title: 'Bible', key: 'list', value: { plexId: '177777' } },
         { title: 'Crash Course Kids', key: 'list', value: { plexId: '375840' } },
         { title: 'Cooking', key: 'list', value: { plexId: '416408' } },
+        { title: 'Classical', key: 'list', value: { plexId: '489862' } },
     ];
 
     const [currentComponent, setCurrentComponent] = useState(
@@ -34,24 +35,37 @@ const TVApp = () => {
         />
     );
 
-
     useEffect(() => {
-        const handleBeforeUnload = (event) => {
+        const handlePopState = (event) => {
             event.preventDefault();
-            event.returnValue = ''; // Required for some browsers
-            backFunction();
+            if (backFunction) {
+                backFunction();
+                // Push a new state to re-hijack the back button
+                window.history.pushState(null, '', window.location.href);
+                return false; // Prevent the default action
+            }
+            return false; // Prevent the default action
         };
-        const handlePopState = () => {
-            backFunction();
-            window.history.pushState(null, '', window.location.href); // Prevent back navigation
+
+        const handleBeforeUnload = (event) => {
+            if (backFunction) {
+                event.preventDefault();
+                event.returnValue = ''; // Required for some browsers to show the confirmation dialog
+                backFunction();
+                return false; // Prevent the default action
+            }
+            return false; // Prevent the default action
         };
-        window.addEventListener('beforeunload', handleBeforeUnload);
-        window.addEventListener('popstate', handlePopState);
+
         // Push initial state to prevent back navigation
         window.history.pushState(null, '', window.location.href);
+
+        window.addEventListener('popstate', handlePopState);
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
         return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
             window.removeEventListener('popstate', handlePopState);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
         };
     }, []);
 
