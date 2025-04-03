@@ -133,7 +133,7 @@ export class Plex {
 
   async loadPlayableItemFromKey(key, shuffle = false) {
     const {type:listType,list} = await this.loadListFromKey(key, shuffle);
-    const [selectedKey, time] = this.selectKeyToPlay(list, shuffle);
+    const [selectedKey, progress] = this.selectKeyToPlay(list, shuffle);
     if (!selectedKey) return false;
     //process.exit(console.log({ selectedKey, time }));
     const [itemData] = await this.loadMeta(selectedKey);
@@ -156,7 +156,7 @@ export class Plex {
       mediaType: this.determineMediaType(type),
       mediaUrl,
       img: this.thumbUrl(thumb),
-      time: time || 0,
+      progress: progress || 0,
      // itemData
     };
 
@@ -216,35 +216,37 @@ export class Plex {
     const keys = videoArray.map(x => x.ratingKey);
     return this.selectKeyToPlay(keys, shuffle);
   }
-
   selectKeyToPlay(keys, shuffle = false) {
     keys = keys?.[0]?.key ? keys.map(x => x.key) : keys || [];
-    let log = loadFile("memory/plexlog") || {};
-    let unwatched = [];
-    for (let key of keys) {
-      if (!log[key]?.progress) { unwatched.push(key); continue; }
-      if (log[key].progress < 90) return [key, log[key].time];
-    }
-    if (!unwatched.length) {
-      for (let key of keys) delete log[key];
-      saveFile(log, "memory/plexlog");
-      unwatched = keys;
-    }
-    if (shuffle) shuffleArray(unwatched);
-    let selected = unwatched[0];
-    let time = log[selected]?.time ? log[selected].time : 0;
+    let log = loadFile("_media_memory")?.plex || {};
+
+    const watched = keys.filter(key => log[key]?.percent >= 90).sort((a, b) => log[b].time - log[a].time);
+    const inProgress = keys.filter(key => log[key]?.percent > 0 && log[key]?.percent < 90).sort((b, a) => log[b].percent - log[a].percent);
+
+    //console.log({ keys, watched, inProgress });
+    const unwatched = keys.filter(key => !log[key]?.percent) || [];
+    
+
+    if(inProgress.length > 0) return [inProgress[0], log[inProgress[0]].percent];
+    if (unwatched.length === 0) return [watched[0], log[watched[0]].percent];
+    
+    const sortFunction = shuffle ? () => Math.random() - 0.5 : ()=>true;
+    const queue = unwatched.sort(sortFunction);
+    if (queue.length === 0) return [watched[0], log[watched[0]].percent];
+    const [selected] = queue;
+    let time = log[selected]?.percent || 0;
     return [selected, time];
   }
 
   async loadSingleFromWatchlist(watchlist) {
-    let log = loadFile("memory/plexlog");
+    let log = loadFile("_media_memory")?.plex || {};
     let watchlists = loadFile("watchlists");
     let list = watchlists[watchlist];
     if (!list) return [];
     let candidates = { normal: {}, urgent: {}, in_progress: {} };
     for (let plexkey in list) {
       let item = list[plexkey];
-      let progress = log[plexkey]?.progress;
+      let progress = log[plexkey]?.seconds;
       progress = progress > 15 ? progress : 0;
       if (progress > 90) continue;
       if (item.watched) continue;
@@ -289,8 +291,8 @@ export class Plex {
     let values = sortedKeys.map(k => program[k]);
     let [selectedKey, uid] = values[0];
     let seekTo = 0;
-    if (log[selectedKey]?.progress && log[selectedKey].progress < 90) {
-      seekTo = log[selectedKey].time;
+    if (log[selectedKey]?.seconds && log[selectedKey].seconds < 90) {
+      seekTo = log[selectedKey].seconds;
     }
     return [selectedKey, seekTo, uid];
   }
