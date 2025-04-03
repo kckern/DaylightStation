@@ -2,8 +2,9 @@ import React, { useRef, useEffect, useState } from 'react';
 import './Player.scss';
 import moment from 'moment';
 import Scriptures from './Scriptures';
-import { DaylightAPI } from '../lib/api.mjs';
+import { DaylightAPI, DaylightStatusCheck } from '../lib/api.mjs';
 import 'dash-video-element';
+import spinner from '../assets/icons/spinner.svg';
 
 
 export default function Player({ queue, setQueue, advance, clear }) {
@@ -15,18 +16,24 @@ export default function Player({ queue, setQueue, advance, clear }) {
   if (key === 'scripture') return <Scriptures media={value} advance={advance} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     async function fetchVideoInfo() {
       const plexId = value?.plexId || value;
-      const response = await DaylightAPI(`media/plex/info/${plexId}/shuffle`);
-      setMediaInfo(response);
+      const infoResponse = await DaylightAPI(`media/plex/info/${plexId}/shuffle`);
+      const mediaUrl = infoResponse?.mediaUrl || value?.mediaUrl;
+      setMediaInfo(infoResponse);
+      const status = await DaylightStatusCheck(`media/plex/play/${plexId}`);
+      console.log({status})
+      setIsReady(true); //todo: check if status is 200
     }
     fetchVideoInfo();
   }, [value]);
 
   const props = {
     media: mediaInfo,
+    isReady: isReady,
     advance: advance,
     clear: clear,
     start: mediaInfo.start,
@@ -35,11 +42,36 @@ export default function Player({ queue, setQueue, advance, clear }) {
 
   return (
     <div className="player">
-      {mediaInfo.mediaType === 'video' && <VideoPlayer {...props} />}
-      {mediaInfo.mediaType === 'audio' && <AudioPlayer {...props} />}
-      {!mediaInfo.mediaType && <div>Loading...</div>}
+      {!isReady && <Loading {...props} />}
+      {isReady && mediaInfo.mediaType === 'video' && <VideoPlayer {...props} />}
+      {isReady && mediaInfo.mediaType === 'audio' && <AudioPlayer {...props} />}
     </div>
   );
+}
+
+
+function Loading({ isReady,media }) {
+
+  const { mediaUrl, title, artist, album, img, mediaType } = media;
+
+  if (mediaType === 'audio') {
+    return (
+      <div className="audio-player" style={{ opacity: 0.5 }} >
+        <div className={`shader off`} />
+        <ProgressBar percent={0} />
+        <p>{artist} - {album}</p>
+        <p>Loading...</p>
+        <div className="image-container">
+          <img src={spinner} alt="Loading..." className='loading' />
+          <img src={img} alt={title} className='cover' />
+        </div>
+        <h2>{title}</h2>
+      </div>
+    );
+  }
+
+  return false;
+
 }
 
 function AudioPlayer({ media: { mediaUrl, title, artist, album, img }, advance, start, playbackRate, clear }) {
@@ -97,7 +129,6 @@ const shaderlevel = levels[shaderIndex];
         }
         //escape key to clear
         else if (event.key === 'Escape') {
-          alert('Escape key pressed');
             event.preventDefault();
             clear ? clear() : ()=>{};
         }
@@ -145,7 +176,7 @@ return (
             {formatTime(progress)} / {formatTime(duration)}
         </p>
         <div className="image-container">
-            <img src={img} alt={title} />
+            <img src={img} alt={title}  className='cover' />
         </div>
         <h2>{title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}</h2>
         <audio
@@ -207,5 +238,5 @@ function getProgressPercent(progress, duration) {
 }
 
 function formatTime(seconds) {
-  return moment.utc(seconds * 1000).format(seconds >= 3600 ? 'HH:mm:ss' : 'mm:ss');
+  return moment.utc(seconds * 1000).format(seconds >= 3600 ? 'HH:mm:ss' : 'mm:ss').replace(/^0(\d+)/, '$1');
 }
