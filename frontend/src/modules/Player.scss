@@ -87,11 +87,18 @@
     border-radius: 1rem;
 
 }
-.audio-player > .image-container > img {
+.audio-player > .image-container > img.cover {
     height: 100%;
     border: 1px solid #000;
     border-radius: 1rem;
     box-shadow: 0 1ex 1ex rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.audio-player > .image-container > img.loading {
+    position: absolute;
+    top:30%;
+    left: 30%;
+    width: 40%;
+    height: 40%;
 }
 
 
