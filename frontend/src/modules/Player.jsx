@@ -43,11 +43,13 @@ function useCommonMediaController({
   onClear = () => {},
   isAudio = false,
   isVideo = false,
+  meta,
   onShaderLevelChange = () => {}
 }) {
   const containerRef = useRef(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  const lastLoggedTimeRef = useRef(0);
 
   const handleProgressClick = (event) => {
     if (!duration || !containerRef.current) return;
@@ -60,7 +62,13 @@ function useCommonMediaController({
     mediaEl.currentTime = (clickX / rect.width) * duration;
   };
 
+  
+
+
+
   useEffect(() => {
+
+ 
     
     const handleKeyDown = (event) => {
       const mediaEl = isVideo
@@ -100,11 +108,26 @@ function useCommonMediaController({
       : containerRef.current;
     if (!mediaEl) return;
 
-    const onTimeUpdate = () => setProgress(mediaEl.currentTime);
+    const logTime = async (type, id, percent, title) => {
+      const now = Date.now();
+      const timeSinceLastLog = now - lastLoggedTimeRef.current;
+      if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
+        lastLoggedTimeRef.current = now;
+        await DaylightAPI(`media/log`, { title, type, id, percent, title });
+      }
+    };
+
+    const onTimeUpdate = () => {
+      setProgress(mediaEl.currentTime);
+      const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
+      logTime('plex', meta.key, percent, meta.title);
+    };
     const onDurationChange = () => setDuration(mediaEl.duration);
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
-      mediaEl.currentTime = start;
+      const startTime = (meta.progress / 100) * mediaEl.duration;
+      mediaEl.dataset.key = meta.key;
+      mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
       if (isVideo) {
         mediaEl.controls = false;
@@ -159,15 +182,14 @@ export default function Player({ queue, setQueue, advance, clear }) {
   const { setBackFunction } = useBackFunction();
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
-  useEffect(() => {
 
-    //clear && setBackFunction(clear);
+  useEffect(() => {
     async function fetchVideoInfo() {
       const plexId = Array.isArray(value?.plexId) ? value.plexId.join(',') : value?.plexId || value;
       const rate = value?.rate || 1;
       const shuffle = value?.shuffle || false;
       const infoResponse = await DaylightAPI(`media/plex/info/${plexId}${shuffle ? '/shuffle' : ''}`);
-      setMediaInfo({...infoResponse, playbackRate: rate});
+      setMediaInfo({ ...infoResponse, playbackRate: rate });
       setIsReady(true);
     }
     fetchVideoInfo();
@@ -222,12 +244,13 @@ function AudioPlayer({ media, advance, clear }) {
   };
 
   const { playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
-    start: media.start,
+    start: media.progress,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
     isAudio: true,
     isVideo: false,
+    meta: media,
     onShaderLevelChange
   });
 
@@ -261,12 +284,13 @@ function AudioPlayer({ media, advance, clear }) {
 
 function VideoPlayer({ media, advance, clear }) {
   const { playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
-    start: media.start,
+    start: media.progress,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
     isAudio: false,
-    isVideo: true
+    isVideo: true,
+    meta:media
   });
 
   const { show, season, title, mediaUrl } = media;
