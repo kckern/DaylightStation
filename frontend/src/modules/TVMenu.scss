@@ -19,6 +19,7 @@
     flex-direction: column;
     padding: 2rem;
 
+    transition: transform 0.3s ease-in-out;
 
     h2{
         margin-bottom: 2rem;
@@ -43,8 +44,12 @@
 .menu-button.highlighted {
     background-color: #ffffffff;
     outline: 3px solid #007bff;
-    transform: scale(1.05);
-    color: black
+    transform: scale(1.05) ;
+    color: black;
+    box-shadow: 0 0 1rem #FFFFFFFF
+}
+.menu-button.highlighted img{
+    filter: brightness(1.1);
 }
 
 
