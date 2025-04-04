@@ -178,19 +178,36 @@ function useCommonMediaController({
 /*─────────────────────────────────────────────────────────────*/
 /*  MAIN PLAYER                                               */
 /*─────────────────────────────────────────────────────────────*/
-export default function Player({ play, clear }) {
-  const [queue, setQueue] = useState(
-    Array.isArray(play) ? play.map((item) => ({ ...item, guid: guid() })) : []
-  );
+export default function Player({ play, queue, clear }) {
+  const [playQueue, setQueue] = useState(() => {
+    if (Array.isArray(queue)) return queue.map((item) => ({ ...item, guid: guid() }));
+    if (Array.isArray(play)) return play.map((item) => ({ ...item, guid: guid() }));
+    if (queue && typeof queue === 'object') {
+      (async () => {
+        const validKeys = ["plex","media","hymn","scripture"];
+        const queueKeys = Object.keys(queue);
+        const queueKey = queueKeys.find(key => validKeys.includes(key)) || null;
+        const queueVal = queue[queueKey];
+        const query = queueKeys
+          .filter(key => typeof queue[key] === 'string' || typeof queue[key] === 'number')
+          .map(key => `${key}=${encodeURIComponent(queue[key])}`)
+          .join('&');
+        const fetchedQueue = await DaylightAPI(`media/queue/${queueKey}/${queueVal}?${query}`);
+        setQueue(fetchedQueue.map((item) => ({ ...item, guid: guid() })));
+      })();
+      return [];
+    }
+    return [];
+  });
 
   const advance = useCallback(() => {
-    queue.length > 1 ? setQueue(queue.slice(1)) : clear();
-  }, [queue, clear]);
+    setQueue((prevQueue) => (prevQueue.length > 1 ? prevQueue.slice(1) : (clear(), [])));
+  }, [clear]);
 
   if (!Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  if (!queue.length) return null;
+  if (!playQueue.length) return clear ? () => clear() : null;
 
-  return <SinglePlayer key={queue[0].guid} {...queue[0]} advance={advance} clear={clear} />;
+  return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
 }
 
 
