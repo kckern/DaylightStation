@@ -54,7 +54,8 @@ mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
 
     //play objects
     const queue = [
-        {scripture: "d&c 13"},
+        {scripture: "d&c 13", version: "redc"},
+        {scripture: "d&c 4", version: "redc"},
         {hymn: "1000"},
         {plex: 1234},
         {media: "video/cnn", mode: "mini"}
