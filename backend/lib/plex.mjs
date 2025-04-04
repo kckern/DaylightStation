@@ -95,6 +95,7 @@ export class Plex {
 
   async loadImgFromKey(key) {
     const [data] = await this.loadMeta(key);
+    if(!data) return false;
     return this.thumbUrl(data.thumb);
   }
 
