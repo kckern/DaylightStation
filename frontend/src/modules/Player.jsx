@@ -192,7 +192,7 @@ export default function Player({ play, queue, clear }) {
           .filter(key => typeof queue[key] === 'string' || typeof queue[key] === 'number')
           .map(key => `${key}=${encodeURIComponent(queue[key])}`)
           .join('&');
-        const fetchedQueue = await DaylightAPI(`media/queue/${queueKey}/${queueVal}?${query}`);
+        const {queue:fetchedQueue} = await DaylightAPI(`media/queue/${queueKey}/${queueVal}?${query}`);
         setQueue(fetchedQueue.map((item) => ({ ...item, guid: guid() })));
       })();
       return [];
@@ -204,9 +204,8 @@ export default function Player({ play, queue, clear }) {
     setQueue((prevQueue) => (prevQueue.length > 1 ? prevQueue.slice(1) : (clear(), [])));
   }, [clear]);
 
-  if (!Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  if (!playQueue.length) return clear ? () => clear() : null;
-
+  if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
+  if (!playQueue.length) return <div>Loading Queue....</div>
   return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
 }
 
@@ -222,7 +221,6 @@ export function SinglePlayer(play) {
     advance,
     clear
   } = play;
-  console.log({play});
   // Scripture or Hymn short-circuits
   if (!!scripture)    return <Scriptures {...play} />;
   if (!!hymn)         return <Hymn {...play} />;
