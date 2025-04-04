@@ -1,15 +1,25 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './Player.scss';
 import moment from 'moment';
 import Scriptures from './Scriptures';
+import Hymn from './Hymns.jsx';
 import { DaylightAPI } from '../lib/api.mjs';
 import 'dash-video-element';
 import spinner from '../assets/icons/spinner.svg';
-import { useBackFunction } from "../TVApp";
 
 /*─────────────────────────────────────────────────────────────*/
 /*  HOOKS AND UTILITIES                                       */
 /*─────────────────────────────────────────────────────────────*/
+
+function guid() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 10; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 
 function formatTime(seconds) {
   return moment
@@ -168,37 +178,68 @@ function useCommonMediaController({
 /*─────────────────────────────────────────────────────────────*/
 /*  MAIN PLAYER                                               */
 /*─────────────────────────────────────────────────────────────*/
+export default function Player({ play, clear }) {
+  const [queue, setQueue] = useState(
+    Array.isArray(play) ? play.map((item) => ({ ...item, guid: guid() })) : []
+  );
 
-export default function Player({ queue, setQueue, advance, clear }) {
-  advance = advance || clear || (() => {});
-  clear = clear || advance || (() => setQueue([]));
-  const [{ key, value }] = queue;
-  advance = advance || (() => setQueue(queue.slice(1)));
+  const advance = useCallback(() => {
+    queue.length > 1 ? setQueue(queue.slice(1)) : clear();
+  }, [queue, clear]);
 
-  if (key === 'scripture') return <Scriptures media={value} advance={advance} />;
+  if (!Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
+  if (!queue.length) return null;
+
+  return <SinglePlayer key={queue[0].guid} {...queue[0]} advance={advance} clear={clear} />;
+}
+
+
+export function SinglePlayer(play) {
+  const {
+    plex,
+    media,
+    hymn,
+    scripture,
+    shuffle,
+    rate,
+    advance,
+    clear
+  } = play;
+  console.log({play});
+  // Scripture or Hymn short-circuits
+  if (!!scripture)    return <Scriptures {...play} />;
+  if (!!hymn)         return <Hymn {...play} />;
+
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     async function fetchVideoInfo() {
-      const plexId = Array.isArray(value?.plexId) ? value.plexId.join(',') : value?.plexId || value;
-      const rate = value?.rate || 1;
-      const shuffle = value?.shuffle || false;
-      const infoResponse = await DaylightAPI(`media/plex/info/${plexId}${shuffle ? '/shuffle' : ''}`);
-      //TODO set queue
-      setMediaInfo({ ...infoResponse, playbackRate: rate });
-      setIsReady(true);
+      if (!!plex) {
+        const infoResponse = await DaylightAPI(
+          `media/plex/info/${plex}${shuffle ? "/shuffle" : ""}`
+        );
+        setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
+        setIsReady(true);
+      } else if (!!media) {
+        const infoResponse = await DaylightAPI(
+          `media/info/${media}${shuffle ? "/shuffle" : ""}`
+        );
+        setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
+        setIsReady(true);
+      }
+      // TODO: Handle advanced queue logic if needed
     }
     fetchVideoInfo();
-  }, [value]);
+  }, [plex, media, shuffle, rate]);
 
   return (
     <div className="player">
       {!isReady && <Loading media={mediaInfo} />}
-      {isReady && mediaInfo.mediaType === 'video' && (
+      {isReady && mediaInfo.mediaType === "video" && (
         <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
-      {isReady && mediaInfo.mediaType === 'audio' && (
+      {isReady && mediaInfo.mediaType === "audio" && (
         <AudioPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
     </div>
