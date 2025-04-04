@@ -45,6 +45,9 @@ valid keys: list, play, open
 */
 
 const list = [
+    { title: "Anna K", play: { media: "annakarenina"}},
+    { title: "Tolstoy", queue: { media: "tolstoy"}},
+    { title: "Glympse", open: { app: "glympse", key: "ABC-123" }},
     { title: "D&C", 
         play: { scripture: `d&c ${Math.floor(Math.random() * 132) + 1}`, version: "redc" } },
     { title: "D&C 4-5", 

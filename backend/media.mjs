@@ -48,6 +48,31 @@ mediaRouter.get('/img/*', async (req, res) => {
     return fs.createReadStream(filePath).pipe(res);
 });
 
+mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
+    const queryParams = req.query;
+    const shuffle = req.params.action === 'shuffle';
+
+    //play objects
+    const queue = [
+        {scripture: "d&c 13"},
+        {hymn: "1000"},
+        {plex: 1234},
+        {media: "video/cnn", mode: "mini"}
+    ];
+
+    //TODO: 
+    //  1 watched status, 
+    //  2 progress status, 
+    //  3 sort/shuffle
+
+    res.status(200).json({
+        queue: queue,
+        queryParams: queryParams,
+        shuffle
+    });
+    return;
+});
+
 
 mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
     const plex_key = req.params.plex_key;
