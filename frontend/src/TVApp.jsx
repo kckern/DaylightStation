@@ -45,7 +45,7 @@ valid keys: list, play, open
 */
 
 const list = [
-    { title: "Anna K", play: { media: "annakarenina"}},
+    { title: "Test Queue", queue: { media: "hardcoded"}},
     { title: "Tolstoy", queue: { media: "tolstoy"}},
     { title: "Glympse", open: { app: "glympse", key: "ABC-123" }},
     { title: "D&C", 
