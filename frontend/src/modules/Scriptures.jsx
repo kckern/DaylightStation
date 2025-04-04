@@ -4,7 +4,6 @@ import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import { lookupReference } from "scripture-guide";
 import moment from "moment";
 import paperBackground from "../assets/backgrounds/paper.jpg";
-import { useBackFunction } from "../TVApp";
 
 const config = {
   volumes: { ot: 1, nt: 23146, bom: 31103, dc: 37707, pgp: 41361, lof: 41996 },
@@ -286,20 +285,17 @@ function ScriptureAudioPlayer({
   );
 }
 
-export default function Scriptures({ media, advance, clear }) {
-  advance =  advance || clear || (() => {});  
-  clear = clear || advance || (() => {});    
-  const [{ ref, verse_ids: [verseId] }] = useState(() => lookupReference(media));
-  const version = media && media.split("/").length > 1 ? "/" + media.split("/")[0] : "/redc";
+export default function Scriptures(play) {
+  const { scripture, version = "redc", advance, clear } = play;
+  const [{ ref, verse_ids: [verseId] }] = useState(() => lookupReference(scripture));
   const [titleHeader, setTitleHeader] = useState(ref);
   const [subtitle, setSubtitle] = useState(null);
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const volume = findVolume(verseId);
-  const mediaPath = DaylightMediaPath(`media/scripture/${volume}${version}/${verseId}`);
+  const mediaPath = DaylightMediaPath(`media/scripture/${volume}/${version}/${verseId}`);
   const [scriptureTextData, setScriptureTextData] = useState(null);
-  const { setBackFunction } = useBackFunction();
 
   const yStartTime = 15;
   const movingTime = duration - yStartTime;
@@ -307,7 +303,7 @@ export default function Scriptures({ media, advance, clear }) {
 
   useEffect(() => {
     //setBackFunction(()=>clear());
-    DaylightAPI(`data/scripture/${volume}${version}/${verseId}`).then((verses) => {
+    DaylightAPI(`data/scripture/${volume}/${version}/${verseId}`).then((verses) => {
       setScriptureTextData(verses);
       const [{ headings: { title, subtitle: st } }] = verses;
       if (title) setTitleHeader(ref);

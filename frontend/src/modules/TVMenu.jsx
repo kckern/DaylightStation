@@ -4,7 +4,9 @@ import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import Scriptures from "./Scriptures";
 import Player from "./Player";
 
-const TVMenu = ({ menuList, plexId = null, clear }) => {
+const TVMenu = ({ list, clear }) => {
+
+  const plexId = 0;
 
   const [buttons, setButtons] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -35,12 +37,13 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
 
   useEffect(
     () => {
-      
+
+      //3 possible: hard coded, media, plex
       
       const fetchMenuList = async () => {
 
 
-        setButtons(menuList);
+        setButtons(list);
         setLoaded(true);
       };
 
@@ -51,6 +54,7 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
         setButtons(
           list.map(item => ({
             title: item.title,
+            play: {plex: item.key},
             key: "player",
             value: item.key,
             img: item.img
@@ -61,7 +65,7 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
       };
 
       const getData = async () => {
-        if (menuList) {
+        if (list) {
           await fetchMenuList();
         } else if (plexId) {
           await fetchPlexMenu();
@@ -70,7 +74,7 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
 
       getData();
     },
-    [menuList, plexId]
+    [list, plexId]
   );
 
   useEffect(
@@ -131,29 +135,27 @@ const TVMenu = ({ menuList, plexId = null, clear }) => {
   );
 
   const handleSelection = selection => {
+    if (!selection || !selection.title) {
+      alert("Invalid selection. Please try again.");
+      return;
+    }
+
     const clear = () => setCurrentContent(null);
-    const { key, value } = selection;
-    switch (key) {
-      case "scripture":
-        setCurrentContent(<Scriptures media={value} clear={clear} />);
-        break;
-      case "player":
-        setCurrentContent(
-          <Player
-            queue={[{ key: "plex", value }]}
-            advance={() => setCurrentContent(null)}
-            clear={() => setCurrentContent(null)}
-          />
-        );
-        break;
-      case "list":
-        setCurrentContent(
-          <TVMenu plexId={value.plexId} clear={() => setCurrentContent(null)}  />
-        );
-        break;
-      default:
-        setCurrentContent(null);
-        break;
+    const props = { ...selection, clear };
+    const options = {
+      "play": <Player {...props} />,
+      "list": <TVMenu {...props} />,
+      "open": <div>App Container</div>
+    };
+
+    const selectionKeys = Object.keys(selection);
+    const availableKeys = Object.keys(options);
+    const firstMatch = selectionKeys.find(key => availableKeys.includes(key)) || null;
+
+    if (firstMatch) {
+      setCurrentContent(options[firstMatch]);
+    } else {
+      alert(`No valid action found for selection. Available options are: ${availableKeys.join(", ")}`);
     }
   };
 
