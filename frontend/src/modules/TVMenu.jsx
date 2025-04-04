@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import "./TVMenu.scss";
 import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
-import Scriptures from "./Scriptures";
 import Player from "./Player";
+import AppContainer from "./AppContainer";
+import "./TVMenu.scss";
 
 const TVMenu = ({ list, clear }) => {
 
@@ -144,8 +144,9 @@ const TVMenu = ({ list, clear }) => {
     const props = { ...selection, clear };
     const options = {
       "play": <Player {...props} />,
+      "queue": <Player {...props} />,
       "list": <TVMenu {...props} />,
-      "open": <div>App Container</div>
+      "open": <AppContainer {...props} />,
     };
 
     const selectionKeys = Object.keys(selection);
