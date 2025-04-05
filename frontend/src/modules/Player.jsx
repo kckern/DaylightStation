@@ -61,12 +61,17 @@ function useCommonMediaController({
   const [duration, setDuration] = useState(0);
   const lastLoggedTimeRef = useRef(0);
 
+
+  const getMediaEl = () => {
+    const mediaEl = containerRef.current?.shadowRoot?.querySelector('video') || containerRef.current;
+    if (!mediaEl) return null;
+    return mediaEl;
+  };
+
   const isDash = meta.mediaType === 'dash_video';
   const handleProgressClick = (event) => {
     if (!duration || !containerRef.current) return;
-    const mediaEl = isVideo
-      ? containerRef.current.shadowRoot?.querySelector('video')
-      : containerRef.current;
+    const mediaEl = getMediaEl();
     if (!mediaEl) return;
     const rect = event.target.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
@@ -80,9 +85,7 @@ function useCommonMediaController({
   useEffect(() => {
     
     const handleKeyDown = (event) => {
-      const mediaEl = isVideo
-        ? containerRef.current?.shadowRoot?.querySelector('video')
-        : containerRef.current;
+      const mediaEl = getMediaEl();
       if (!mediaEl) return;
       const inc = mediaEl.duration ? Math.max(5, Math.floor(mediaEl.duration / 50)) : 5;
       if (event.key === 'ArrowRight') {
@@ -112,9 +115,7 @@ function useCommonMediaController({
   }, [onClear, isAudio, isVideo, onShaderLevelChange, duration]);
 
   useEffect(() => {
-    const mediaEl = isVideo
-      ? containerRef.current?.shadowRoot?.querySelector('video')
-      : containerRef.current;
+    const mediaEl = getMediaEl();
     if (!mediaEl) return;
 
     const logTime = async (type, id, percent, title) => {
