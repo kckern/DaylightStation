@@ -1,8 +1,11 @@
-.scriptures{
+.scriptures,
+.hymn
+{
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: column;
+
 
     h2{
         text-align: center;
@@ -85,6 +88,19 @@
         font-size: 2.8rem;
         line-height: 1.2;
         margin-bottom: 1rem;
+    }
+
+    .textpanel .stanza{
+        margin-bottom: 2rem;
+        line-height: 1;
+        margin-left: 20%;
+        margin-bottom: 3rem;
+        margin-left: 20%;
+        p {
+            line-height: 1;
+            margin: 0;
+            padding: 0;
+        }
     }
 
     .controls{
