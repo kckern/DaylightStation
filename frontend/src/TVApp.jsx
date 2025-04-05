@@ -51,7 +51,7 @@ const list = [
     { title: "CNN", play: { media: "program/cnn"}},
     { title: "WS", open: { app: "websocket", param: "ping" }},
     { title: "Tolstoy", queue: { media: "tolstoy"}},
-    { title: "Glympse", open: { app: "glympse", param: "ABC-123" }},
+    { title: "Glympse", open: { app: "glympse", param: "BePR-gHkf" }},
     { title: "D&C", 
         play: { scripture: `d&c ${Math.floor(Math.random() * 132) + 1}`, version: "redc" } },
     { title: "D&C 4-5", 
@@ -133,12 +133,19 @@ export default function TVApp() {
     useEffect(setupNavigationHandlers, []);
 
     const params = new URLSearchParams(window.location.search);
-    const playlist = params.get("playlist");
+    const queryEntries = Object.fromEntries(params.entries());
+    const keysInQuery = Object.keys(queryEntries);
+
+    const autoplay = keysInQuery.length > 0 
+        ? keysInQuery.includes("playlist") 
+            ? { queue: { playlist: queryEntries["playlist"] } } 
+            : { open: { app: keysInQuery[0], param: queryEntries[keysInQuery[0]] } }
+        : null;
 
     return (
         <div className="tv-app-container">
             <div className="tv-app">
-                <TVMenu list={list} autoplay={playlist ? {queue: { playlist }} : null}  />
+                <TVMenu list={list} autoplay={autoplay}  />
             </div>
         </div>
     );
