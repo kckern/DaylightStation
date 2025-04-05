@@ -55,8 +55,8 @@ mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
 
     //play objects
     const queue = [
-        {media: "program/bbc"},
         {media: "program/cnn", mode: "mini"},
+        {media: "program/bbc"},
         {media: "program/bbc"},
         {media: "program/usdocs/gettysburg"},
         {scripture: "d&c 13", version: "redc"},
