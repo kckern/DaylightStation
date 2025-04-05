@@ -22,6 +22,59 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     const response_data = await response.json();
     return response_data;
 };
+
+export const DaylightWebsocketUnsubscribe = (path) => {
+    const isLocalhost = /localhost/.test(window.location.href);
+    const baseUrl = isLocalhost ? 'ws://localhost:3112' : `wss://${window.location.host}`;
+    const ws = new WebSocket(`${baseUrl}/ws/${path}`);
+
+    return () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.close();
+            console.log("WebSocket connection closed for path:", path);
+        }
+    };
+};
+const activeWebsockets = new Map();
+
+export const DaylightWebsocketSubscribe = (path, callback) => {
+    if (activeWebsockets.has(path)) {
+        console.warn(`WebSocket for path "${path}" is already active.`);
+        return activeWebsockets.get(path).unsubscribe;
+    }
+
+    const isLocalhost = /localhost/.test(window.location.href);
+    const baseUrl = isLocalhost ? 'ws://localhost:3112' : `wss://${window.location.host}`;
+    const ws = new WebSocket(`${baseUrl}/ws/${path}`);
+
+    ws.onopen = () => console.log("WebSocket connection opened for path:", path);
+    ws.onmessage = (event) => {
+        try {
+            const message = JSON.parse(event.data);
+            callback(message);
+        } catch (error) {
+            console.error("Error parsing WebSocket message:", error);
+        }
+    };
+    ws.onclose = () => {
+        console.log("WebSocket connection closed for path:", path);
+        activeWebsockets.delete(path);
+    };
+    ws.onerror = (error) => console.error("WebSocket error for path:", path, error);
+
+    const unsubscribe = () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.close();
+        }
+        activeWebsockets.delete(path);
+    };
+
+    activeWebsockets.set(path, { ws, unsubscribe });
+    return unsubscribe;
+};
+
+
+
 export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
     //remove leading and trailing slashes
     path = path.replace(/^\/|\/$/g, '');
