@@ -61,7 +61,7 @@ mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
                 { media: "program/bbc" },
                 { media: "program/usdocs/gettysburg" },
                 { scripture: "d&c 13", version: "redc" },
-                { hymn: "1001" },
+                { hymn: "113" },
                 { plex: "481800", shuffle: true },
             ],
             evening: [
