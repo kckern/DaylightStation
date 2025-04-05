@@ -205,8 +205,8 @@ mediaRouter.all('/plex/audio/:plex_key', async (req, res) => {
 
 
 mediaRouter.all('*', async (req, res) => {
-    const { path, fileSize, mimeType } = findFile(req.path);
 
+    const { path, fileSize, mimeType } = findFile(req.path);
     res.setHeader('Content-Length', fileSize);
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Cache-Control', 'public, max-age=31536000');
