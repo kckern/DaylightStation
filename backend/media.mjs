@@ -60,7 +60,7 @@ mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
         {media: "program/usdocs/gettysburg"},
         {scripture: "d&c 13", version: "redc"},
         {hymn: "1001"},
-        {plex: 1234},
+        //{plex: 1234},
     ];
 
     //TODO: 
