@@ -22,11 +22,12 @@ const findFile = path => {
         : ext.flatMap(e => [audioPath, videoPath].map(p => `${p}/${path}.${e}`));
     const firstMatch = possiblePaths.find(p => fs.existsSync(p));
     const fileSize = firstMatch? fs.statSync(firstMatch).size : fs.statSync(notFound).size;
+    const pathExtention = firstMatch.split('.').pop();
     if(!firstMatch) return {path: notFound, fileSize, mimeType: 'audio/mpeg'};
 
-    const mimeType = extention === 'mp3' ? 'audio/mpeg' : 'video/mp4';
+    const mimeType = pathExtention === 'mp3' ? 'audio/mpeg' : 'video/mp4';
 
-    return {path: firstMatch, fileSize, mimeType};
+    return {path: firstMatch, fileSize, extention:pathExtention, mimeType};
 }
 mediaRouter.get('/img/*', async (req, res) => {
     const exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
@@ -54,11 +55,12 @@ mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
 
     //play objects
     const queue = [
+        {media: "program/cnn", mode: "mini"},
+        {media: "program/bbc"},
+        {media: "program/usdocs/gettysburg"},
         {scripture: "d&c 13", version: "redc"},
-        {scripture: "d&c 4", version: "redc"},
-        {hymn: "1000"},
+        {hymn: "1001"},
         {plex: 1234},
-        {media: "video/cnn", mode: "mini"}
     ];
 
     //TODO: 
@@ -116,7 +118,22 @@ mediaRouter.post('/log', async (req, res) => {
         res.status(500).json({ error: 'Failed to process log.' });
     }
 });
-
+mediaRouter.all(`/info/*`, async (req, res) => {
+    const media = req.params[0]; // Capture the full path after /info/
+    const thisHost = req.headers.host;
+    const pathForMedia = `/media/${media}`;
+    const mediaUrl = `http://${thisHost}${pathForMedia}`;
+    const { fileSize,  extention } = findFile(media);
+    res.json({
+        key: media,
+        title: media.split('/').pop(),
+        mediaUrl,
+        fileSize,
+        extention,
+        mediaType: ['mp3'].includes(extention) ? 'audio' : 'video',
+        
+    });
+});
 
 mediaRouter.all('/plex/info/:plex_key/:action?', async (req, res) => {
     const { plex_key, action } = req.params;
@@ -135,6 +152,9 @@ mediaRouter.all('/plex/info/:plex_key/:action?', async (req, res) => {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
     }
 });
+
+
+
 
 mediaRouter.all('/plex/list/:plex_key/:action?', async (req, res) => {
     const { plex_key, action } = req.params;
