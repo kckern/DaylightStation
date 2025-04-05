@@ -139,7 +139,9 @@ export default function TVApp() {
     const autoplay = keysInQuery.length > 0 
         ? keysInQuery.includes("playlist") 
             ? { queue: { playlist: queryEntries["playlist"] } } 
-            : { open: { app: keysInQuery[0], param: queryEntries[keysInQuery[0]] } }
+            : keysInQuery.includes("hymn") 
+                ? { play: { hymn: queryEntries["hymn"] } } 
+                : { open: { app: keysInQuery[0], param: queryEntries[keysInQuery[0]] } }
         : null;
 
     return (

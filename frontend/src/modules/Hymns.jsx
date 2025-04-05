@@ -38,26 +38,32 @@ function HymnText({ verses, panelHeight, yProgress }) {
     }
 
     return (
-        <div
-            className="hymn-text"
-            ref={textRef}
-            style={{
-                paddingBottom: `${panelHeight * .5}px`,
-                paddingTop: `${panelHeight * .15}px`,
-                transform: `translateY(-${YPosition}px)`,
-                backgroundImage: `url(${config.backgroundImage})`,
-            }}
-        >
-            {verses.map((stanza, stanzaIndex) => (
-                <div key={`stanza-${stanzaIndex}`} className="stanza">
-                    {stanza.map((line, lineIndex) => (
-                        <p key={`line-${stanzaIndex}-${lineIndex}`} className="line">
-                            {line}
-                        </p>
-                    ))}
-                </div>
+      <div
+        className="hymn-text"
+        ref={textRef}
+        style={{
+          paddingBottom: `${panelHeight * .5}px`,
+          paddingTop: `${panelHeight * .15}px`,
+          transform: `translateY(-${YPosition}px)`,
+          backgroundImage: `url(${config.backgroundImage})`,
+        }}
+      >
+        {verses.map((stanza, stanzaIndex) => (
+          <div key={`stanza-${stanzaIndex}`} className="stanza">
+            {stanza.map((line, lineIndex) => (
+              <p
+                key={`line-${stanzaIndex}-${lineIndex}`}
+                className="line"
+                style={{
+                  marginLeft: /^[a-z]/.test(line) ? "5rem" : "0",
+                }}
+              >
+                {line}
+              </p>
             ))}
-        </div>
+          </div>
+        ))}
+      </div>
     );
 }
 
