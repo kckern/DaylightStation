@@ -168,7 +168,11 @@ const TVMenu = ({ list, clear, autoplay }) => {
       const clear = () => setCurrentContent(null);
       setCurrentContent(<Player queue={autoplay.queue} clear={clear} />);
     }
-  }, [autoplay]);
+    if(autoplay?.open) {
+      const clear = () => setCurrentContent(null);
+      setCurrentContent(<AppContainer open={autoplay.open} clear={clear} />);
+    }
+  }, [autoplay?.queue, autoplay?.open]);
 
 
   if (currentContent) return currentContent;
