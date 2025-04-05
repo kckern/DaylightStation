@@ -141,6 +141,8 @@ const TVMenu = ({ list, clear, autoplay }) => {
       return;
     }
 
+    
+
     const clear = () => setCurrentContent(null);
     const props = { ...selection, clear };
     const options = {

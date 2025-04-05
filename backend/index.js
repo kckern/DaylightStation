@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'fs';
 import { parse } from 'yaml';
 import path, { join } from 'path';
 import cors from 'cors'; // Step 2: Import cors
+import websocketServer from './websocket.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -65,10 +66,12 @@ async function initializeApp() {
     });
   }
 
-  // Listen on port
-  app.listen(3112, () => {
+  // Create an HTTP server and attach WebSocket server
+  const server = app.listen(3112, () => {
     console.log('Listening on port 3112');
   });
+  websocketServer(server);
+
 }
 
 // Initialize the app
