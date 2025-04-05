@@ -45,7 +45,8 @@ valid keys: list, play, open
 */
 
 const list = [
-    { title: "Hymn", play: { hymn: "1001"}},
+    { title: "Program", queue: { playlist: "morning"}},
+    { title: "Hymn",    play: { hymn: "1001"}},
     { title: "Tolstoy", queue: { media: "tolstoy"}},
     { title: "Glympse", open: { app: "glympse", key: "ABC-123" }},
     { title: "D&C", 
