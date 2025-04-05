@@ -1,11 +1,12 @@
 import express from 'express';
 const apiRouter = express.Router();
 import Infinity from './lib/infinity.js';
-import { saveFile } from './lib/io.mjs';
+import { loadFile, saveFile } from './lib/io.mjs';
 import { readFileSync, readdirSync } from 'fs';
 import test from './jobs/weight.mjs';
 import yaml from 'js-yaml';
 import moment from 'moment-timezone';
+import fs from 'fs';
 const dataPath = `${process.env.path.data}`;
 
 // Middleware for error handling
@@ -13,6 +14,9 @@ apiRouter.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ error: err.message });
 });
+
+
+
 
 apiRouter.get('/infinity/harvest/:table_id?',  async (req, res, next) => {
     try {
@@ -44,45 +48,12 @@ apiRouter.get('/scripture/:volume/:version/:verse_id',  async (req, res, next) =
 
 
 apiRouter.get('/hymn/:hymn_num',  async (req, res, next) => {
-    try {
-        const data = {
-            title: "Come thou fount of every blessing",
-            hymn_num: "1001",
-            verses: [
-                [
-                    "Come thou fount of every blessing",
-                    "Tune my heart to sing thy grace",
-                    "Streams of mercy never ceasing",
-                    "Call for songs of loudest praise",
-                    "Teach me some melodious sonnet",
-                    "Sung by flaming tongues above",
-                ],
-                [
-                    "Here I raise my Ebenezer",
-                    "Hither by thy help I'm come",
-                    "And I hope, by thy good pleasure",
-                    "Safely to arrive at home",
-                    "Jesus sought me when a stranger",
-                    "Wandering from the fold of God",
-                ],
-                [
-                    "He, to rescue me from danger",
-                    "Interposed his precious blood",
-                    "O to grace how great a debtor",
-                    "Daily I'm constrained to be",
-                    "Let thy goodness like a fetter",
-                    "Bind my wandering heart to thee",
-                ],
-                [
-                    "Prone to wander, Lord, I feel it",
-                    "Prone to leave the God I love",
-                    "Here's my heart, O take and seal it",
-                    "Seal it for thy courts above"
-                ]
-            ],
 
-        }
-        res.json(data);
+    
+    try {
+        const hymn_num = req.params.hymn_num;
+        const hymnData = loadFile(`songs/hymns/${hymn_num}`);
+        res.json(hymnData);
     } catch (err) {
         next(err);
     }

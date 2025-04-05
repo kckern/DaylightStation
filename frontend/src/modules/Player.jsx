@@ -220,7 +220,13 @@ export default function Player({ play, queue, clear }) {
   }, [clear]);
 
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  if (!playQueue.length) return <div>Loading Queue....</div>
+  if (!playQueue.length) return <div>Loading Queue....
+
+  <pre>
+    {JSON.stringify({play, queue}, null, 2)}
+  </pre>
+
+  </div>
   return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
 }
 
