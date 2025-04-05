@@ -61,6 +61,7 @@ function useCommonMediaController({
   const [duration, setDuration] = useState(0);
   const lastLoggedTimeRef = useRef(0);
 
+  const isDash = meta.mediaType === 'dash_video';
   const handleProgressClick = (event) => {
     if (!duration || !containerRef.current) return;
     const mediaEl = isVideo
@@ -171,6 +172,7 @@ function useCommonMediaController({
     progress,
     duration,
     playbackRate,
+    isDash,
     handleProgressClick
   };
 }
@@ -184,7 +186,7 @@ export default function Player({ play, queue, clear }) {
     if (Array.isArray(play)) return play.map((item) => ({ ...item, guid: guid() }));
     if (queue && typeof queue === 'object') {
       (async () => {
-        const validKeys = ["plex","media","hymn","scripture"];
+        const validKeys = ["plex","media","hymn","scripture", "playlist"];
         const queueKeys = Object.keys(queue);
         const queueKey = queueKeys.find(key => validKeys.includes(key)) || null;
         const queueVal = queue[queueKey];
@@ -243,7 +245,6 @@ export function SinglePlayer(play) {
         setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
         setIsReady(true);
       }
-      // TODO: Handle advanced queue logic if needed
     }
     fetchVideoInfo();
   }, [plex, media, shuffle, rate]);
@@ -251,11 +252,19 @@ export function SinglePlayer(play) {
   return (
     <div className="player">
       {!isReady && <Loading media={mediaInfo} />}
+      {isReady && mediaInfo.mediaType === "dash_video" && (
+        <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
+      )}
       {isReady && mediaInfo.mediaType === "video" && (
         <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
       {isReady && mediaInfo.mediaType === "audio" && (
         <AudioPlayer media={mediaInfo} advance={advance} clear={clear} />
+      )}
+      {isReady && !["dash_video", "video", "audio"].includes(mediaInfo.mediaType) && (
+        <div className="unsupported-media">
+          <p>Unsupported media type</p>
+        </div>
       )}
     </div>
   );
@@ -336,7 +345,7 @@ function AudioPlayer({ media, advance, clear }) {
 /*─────────────────────────────────────────────────────────────*/
 
 function VideoPlayer({ media, advance, clear }) {
-  const { playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
+  const { isDash, playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
     start: media.progress,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
@@ -352,10 +361,18 @@ function VideoPlayer({ media, advance, clear }) {
   return (
     <div className="video-player">
       <h2>
+        {isDash? "Dash" : "No Dash"}
         {show} - {season}: {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      <dash-video ref={containerRef} class={`video-element ${(progress || 0) > 0 && "show"}`} controls src={mediaUrl} />
+        {isDash ? (
+          <dash-video ref={containerRef} class={`video-element ${(progress || 0) > 0 && "show"}`} controls src={mediaUrl} />
+        ) : (
+          <video 
+          ref={containerRef}
+          autoPlay
+          className={`video-element show`} controls src={mediaUrl} />
+        )}
     </div>
   );
 }

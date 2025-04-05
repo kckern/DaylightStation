@@ -125,7 +125,7 @@ export class Plex {
   determineMediaType(type) {
     const videoTypes = ['movie', 'episode', 'clip', 'short', 'trailer'];
     const audioTypes = ['track', 'album', 'artist'];
-    if(videoTypes.includes(type)) return 'video';
+    if(videoTypes.includes(type)) return 'dash_video';
     if(audioTypes.includes(type)) return 'audio';
     else return null
   }
