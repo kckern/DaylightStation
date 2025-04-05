@@ -4,7 +4,7 @@ import Player from "./Player";
 import AppContainer from "./AppContainer";
 import "./TVMenu.scss";
 
-const TVMenu = ({ list, clear }) => {
+const TVMenu = ({ list, clear, autoplay }) => {
 
   const plexId = 0;
 
@@ -159,6 +159,16 @@ const TVMenu = ({ list, clear }) => {
       alert(`No valid action found for selection. Available options are: ${availableKeys.join(", ")}`);
     }
   };
+
+  //if autoplay handleSelection for [0]
+  useEffect(() => {
+    if (autoplay && buttons.length > 0) {
+      //simulat enter key
+      const event = new KeyboardEvent("keydown", { key: "Enter" });
+      window.dispatchEvent(event);
+    }
+  }, [autoplay, buttons]);
+
 
   if (currentContent) return currentContent;
   if (!loaded) return null;
