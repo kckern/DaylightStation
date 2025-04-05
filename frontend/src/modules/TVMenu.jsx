@@ -80,6 +80,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
   useEffect(
     () => {
       if (loaded) {
+        if(!containerRef?.current) return;
         const heightOfContainer = containerRef.current.offsetHeight;
         const heightOfSelectedButton = menuRef.current.children[selectedIndex].offsetHeight;
         const buttonDistance = menuRef.current.children[selectedIndex].offsetTop;
@@ -160,14 +161,12 @@ const TVMenu = ({ list, clear, autoplay }) => {
     }
   };
 
-  //if autoplay handleSelection for [0]
   useEffect(() => {
-    if (autoplay && buttons.length > 0) {
-      //simulat enter key
-      const event = new KeyboardEvent("keydown", { key: "Enter" });
-      window.dispatchEvent(event);
+    if (autoplay?.queue?.playlist) {
+      const clear = () => setCurrentContent(null);
+      setCurrentContent(<Player queue={autoplay.queue} clear={clear} />);
     }
-  }, [autoplay, buttons]);
+  }, [autoplay]);
 
 
   if (currentContent) return currentContent;
