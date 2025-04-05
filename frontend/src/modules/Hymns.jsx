@@ -213,8 +213,8 @@ export default function Hymns(play) {
     return currentTime < yStartTime ? 0 : (currentTime - yStartTime) / movingTime;
   })();
 
-
-  const mediaPath = DaylightMediaPath(`media/hymn/1001`);
+  const hymn_num = hymn.toString().padStart(3, "0");
+  const mediaPath = DaylightMediaPath(`media/hymn/${hymn_num}`);
 
 
   useEffect(() => {
