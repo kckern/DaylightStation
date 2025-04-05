@@ -205,6 +205,20 @@ export default function Player({ play, queue, clear }) {
     setQueue((prevQueue) => (prevQueue.length > 1 ? prevQueue.slice(1) : (clear(), [])));
   }, [clear]);
 
+  //enable escape key to clear
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        clear();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [clear]);
+
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
   if (!playQueue.length) return <div>Loading Queue....</div>
   return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;

@@ -48,6 +48,7 @@ const list = [
     { title: "Program", queue: { playlist: "morning"}},
     { title: "Gettysburg", play: { media: "program/usdocs/gettysburg"}},
     { title: "Hymn",    play: { hymn: "1001"}},
+    { title: "CNN", play: { media: "program/cnn"}},
     { title: "Tolstoy", queue: { media: "tolstoy"}},
     { title: "Glympse", open: { app: "glympse", key: "ABC-123" }},
     { title: "D&C", 
