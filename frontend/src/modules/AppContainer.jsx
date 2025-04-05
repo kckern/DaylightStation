@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { DaylightWebsocketSubscribe, DaylightWebsocketUnsubscribe } from "../lib/api.mjs";
+import {
+  DaylightWebsocketSubscribe,
+  DaylightWebsocketUnsubscribe
+} from "../lib/api.mjs";
 
 export default function AppContainer({ open, clear }) {
   const { app, param } = open;
@@ -20,6 +23,7 @@ export default function AppContainer({ open, clear }) {
   );
 
   if (app === "websocket") return <WebSocketApp path={param} />;
+  if (app === "glympse") return <GlympseApp id={param} />;
   return (
     <div>
       <h2>App Container</h2>
@@ -30,20 +34,46 @@ export default function AppContainer({ open, clear }) {
   );
 }
 
+
+function GlympseApp({id}){
+  if(!id) return <div>Invalid Glympse ID</div>;
+  const iframeRef = useRef(null);
+  useEffect(() => {
+    if (iframeRef.current) {
+      iframeRef.current.src = `https://glympse.com/${id}`;
+    }
+  }, [id]);
+  return (
+    <div style={{ width: "100%", height: "100%" }}>
+      <iframe
+        style={{ 
+          marginTop: "-50px", 
+          marginLeft: "-50px", 
+          width: "calc(100% + 100px)", 
+          height: "calc(100% + 90px)" }}
+        ref={iframeRef}
+        title="Glympse"
+        frameBorder="0"
+        scrolling="no"
+      />
+    </div>
+  );
+}
+
 function WebSocketApp({ path }) {
   const [messages, setMessages] = useState([]);
 
-useEffect(() => {
-    const handleNewMessage = (message) => {
-        setMessages((prevMessages) => [...prevMessages, message]);
+  useEffect(() => {
+    const handleNewMessage = message => {
+      setMessages(prevMessages => [...prevMessages, message]);
     };
 
     DaylightWebsocketSubscribe(path, handleNewMessage);
 
     return () => {
-        DaylightWebsocketUnsubscribe(path);
+      DaylightWebsocketUnsubscribe(path);
     };
-}, []);
+  }, []);
 
   return (
     <div>
