@@ -78,8 +78,6 @@ function useCommonMediaController({
 
 
   useEffect(() => {
-
- 
     
     const handleKeyDown = (event) => {
       const mediaEl = isVideo
@@ -345,14 +343,21 @@ function AudioPlayer({ media, advance, clear }) {
 /*─────────────────────────────────────────────────────────────*/
 
 function VideoPlayer({ media, advance, clear }) {
-  const { isDash, playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
+  const {
+    isDash,
+    containerRef,
+    progress,
+    duration,
+    handleProgressClick,
+    playbackRate,
+  } = useCommonMediaController({
     start: media.progress,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
     isAudio: false,
     isVideo: true,
-    meta:media
+    meta: media,
   });
 
   const { show, season, title, mediaUrl } = media;
@@ -361,18 +366,25 @@ function VideoPlayer({ media, advance, clear }) {
   return (
     <div className="video-player">
       <h2>
-        {isDash? "Dash" : "No Dash"}
-        {show} - {season}: {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
+        {isDash ? "Dash" : "No Dash"} {show} - {season}: {title}
+        {playbackRate > 1 ? ` (${playbackRate}×)` : ""}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-        {isDash ? (
-          <dash-video ref={containerRef} class={`video-element ${(progress || 0) > 0 && "show"}`} controls src={mediaUrl} />
-        ) : (
-          <video 
+      {isDash ? (
+        <dash-video
           ref={containerRef}
+          class={`video-element ${(progress || 0) > 0 && "show"}`}
+          controls
+          src={mediaUrl}
+        />
+      ) : (
+        <video
           autoPlay
-          className={`video-element show`} controls src={mediaUrl} />
-        )}
+          ref={containerRef}
+          className={`video-element show`}
+          src={mediaUrl}
+        />
+      )}
     </div>
   );
 }
