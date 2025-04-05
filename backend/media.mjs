@@ -48,30 +48,38 @@ mediaRouter.get('/img/*', async (req, res) => {
     });
     return fs.createReadStream(filePath).pipe(res);
 });
-
 mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
     const queryParams = req.query;
     const shuffle = req.params.action === 'shuffle';
+    const { queue_key, queue_val } = req.params;
 
-    //play objects
-    const queue = [
-        {media: "program/cnn", mode: "mini"},
-        {media: "program/bbc"},
-        {media: "program/usdocs/gettysburg"},
-        {scripture: "d&c 13", version: "redc"},
-        {hymn: "1001"},
-        //{plex: 1234},
-    ];
+    const predefinedQueues = {
+        playlist: {
+            morning: [
+                { media: "program/cnn", mode: "mini" },
+                { media: "program/bbc" },
+                { media: "program/usdocs/gettysburg" },
+                { scripture: "d&c 13", version: "redc" },
+                { hymn: "1001" },
+            ],
+            evening: [
+                { hymn: "1001" },
+                { scripture: "d&c 93", version: "redc" },
+            ],
+        },
+    };
 
-    //TODO: 
-    //  1 watched status, 
-    //  2 progress status, 
-    //  3 sort/shuffle
+    let queue = predefinedQueues[queue_key]?.[queue_val] || [];
+
+    // Apply shuffle if requested
+    if (shuffle) {
+        queue = queue.sort(() => Math.random() - 0.5);
+    }
 
     res.status(200).json({
-        queue: queue,
-        queryParams: queryParams,
-        shuffle
+        queue,
+        queryParams,
+        shuffle,
     });
     return;
 });
