@@ -130,16 +130,13 @@ function setupNavigationHandlers() {
 export default function TVApp() {
     useEffect(setupNavigationHandlers, []);
 
-    // Get params from URL. If playlist=var, then set list to 
-    // { queue: { playlist: var } }
     const params = new URLSearchParams(window.location.search);
     const playlist = params.get("playlist");
-    const dynamicList = playlist ? [{ title: "auto", queue: { playlist } }] : list;
 
     return (
         <div className="tv-app-container">
             <div className="tv-app">
-                <TVMenu list={dynamicList} autoplay={!!playlist} />
+                <TVMenu list={list} autoplay={playlist ? {queue: { playlist }} : null}  />
             </div>
         </div>
     );
