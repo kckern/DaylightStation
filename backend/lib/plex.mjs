@@ -274,8 +274,8 @@ export class Plex {
     const unwatched = keys.filter(key => !log[key]?.percent) || [];
     
 
-    if(inProgress.length > 0) return [inProgress[0], log[inProgress[0]].percent];
-    if (unwatched.length === 0) return [watched[0], log[watched[0]].percent];
+    if(inProgress.length > 0) return [inProgress[0], log[inProgress[0]]?.percent];
+    if (unwatched.length === 0) return [watched[0], log[watched[0]]?.percent];
     
     const sortFunction = shuffle ? () => Math.random() - 0.5 : ()=>true;
     const queue = unwatched.sort(sortFunction);
