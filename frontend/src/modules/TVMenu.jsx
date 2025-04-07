@@ -4,7 +4,7 @@ import Player from "./Player";
 import AppContainer from "./AppContainer";
 import "./TVMenu.scss";
 
-const TVMenu = ({ list, clear, autoplay }) => {
+const TVMenu = ({ list, menu, clear, autoplay }) => {
 
   const plexId = 0;
 
@@ -42,8 +42,12 @@ const TVMenu = ({ list, clear, autoplay }) => {
       
       const fetchMenuList = async () => {
 
+        //if menu is set, 
+        const menuList = list?.menu && await DaylightAPI(  `data/nav/${list?.menu}`  ) || null;
 
-        setButtons(list);
+      
+
+        setButtons( menuList || list || [] );
         setLoaded(true);
       };
 
@@ -53,7 +57,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
         );
         setButtons(
           list.map(item => ({
-            title: item.title,
+            label: item.title,
             play: {plex: item.key},
             key: "player",
             value: item.key,
@@ -136,7 +140,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
   );
 
   const handleSelection = selection => {
-    if (!selection || !selection.title) {
+    if (!selection || !selection.label) {
       alert("Invalid selection. Please try again.");
       return;
     }
@@ -145,10 +149,12 @@ const TVMenu = ({ list, clear, autoplay }) => {
 
     const clear = () => setCurrentContent(null);
     const props = { ...selection, clear };
+    console.log("props", props);
     const options = {
       "play": <Player {...props} />,
       "queue": <Player {...props} />,
       "list": <TVMenu {...props} />,
+      "menu": <TVMenu {...props} />,
       "open": <AppContainer {...props} />,
     };
 
@@ -159,7 +165,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
     if (firstMatch) {
       setCurrentContent(options[firstMatch]);
     } else {
-      alert(`No valid action found for selection. Available options are: ${availableKeys.join(", ")}`);
+      alert(`No valid action found for selection (${JSON.stringify(selectionKeys)}). Available options are: ${availableKeys.join(", ")}`);
     }
   };
 
@@ -182,17 +188,18 @@ const TVMenu = ({ list, clear, autoplay }) => {
   if (currentContent) return currentContent;
   if (!loaded) return null;
 
+
   return (
     <div className="tv-menu-container" style={{ transform: `translateY(${-translateY}px)` }} ref={containerRef}>
       <h2>
-        {menuMeta.title}
+        {menuMeta.title || menuMeta.label}
       </h2>
       <div className="tv-menu" ref={menuRef}>
         {buttons.map((button, index) =>{
             const plexId = Array.isArray(button.value?.plexId) ? button.value.plexId[0] : button.value?.plexId || null;
-          const img = button.img || (plexId && DaylightMediaPath(`/media/plex/img/${plexId}`)) || null;
+          const img = button.image || (plexId && DaylightMediaPath(`/media/plex/img/${plexId}`)) || null;
           return <div
-            key={`${index}-${button.title}`}
+            key={`${index}-${button.label}`}
             className={`menu-button ${selectedIndex === index
               ? "highlighted"
               : ""}`}
@@ -200,11 +207,11 @@ const TVMenu = ({ list, clear, autoplay }) => {
             {img &&
               <img
                 src={img}
-                alt={button.title}
+                alt={button.label}
                 className="menu-button-img"
               />}
             <h3 className="menu-button-title">
-              {button.title}
+              {button.label}
             </h3>
           </div>}
         )}

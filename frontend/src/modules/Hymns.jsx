@@ -214,7 +214,7 @@ export default function Hymns(play) {
   })();
 
   const hymn_num = hymn.toString().padStart(3, "0");
-  const mediaPath = DaylightMediaPath(`media/hymn/${hymn_num}`);
+  const mediaPath = DaylightMediaPath(`media/songs/hymn/${hymn_num}`);
 
 
   useEffect(() => {

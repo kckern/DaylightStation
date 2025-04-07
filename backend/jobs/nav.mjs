@@ -17,6 +17,7 @@ export const navProcess = async (host) => {
     const data = await loadFile('nav');
     if (!data) return false;
     const processedData = await Promise.all(data.map(async (item) => {
+        item.action = item.action?.toLowerCase() || item.action;
         const inputs = item.input.split(/[;|]/).map(i => i.trim());
         let inputObject = {};
         for (const input of inputs) {
@@ -36,6 +37,10 @@ export const navProcess = async (host) => {
             }
         }
         item.input = inputObject;
+        const actionKey = item.action || 'play';
+        item = { ...item, [actionKey]: item.input };
+        delete item.input;
+        delete item.action;
 
         if (item.image) {
             await saveImage(item.image, 'navimgs', item.uid);

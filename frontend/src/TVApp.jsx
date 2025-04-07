@@ -1,6 +1,8 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import TVMenu from "./modules/TVMenu";
 import "./TVApp.scss";
+import { DaylightAPI } from "./lib/api.mjs";
+import { use } from "react";
 
 /*
 valid keys: list, play, open
@@ -44,7 +46,7 @@ valid keys: list, play, open
 
 */
 
-const list = [
+const listTMP = [
     { title: "Program", queue: { playlist: "morning"}},
     { title: "Gettysburg", play: { media: "program/usdocs/gettysburg"}},
     { title: "Hymn: OSL",    play: { hymn: "113"}},
@@ -129,8 +131,20 @@ function setupNavigationHandlers() {
     };
 }
 
+
+
+
 export default function TVApp() {
     useEffect(setupNavigationHandlers, []);
+
+    const [list, setList] = useState([]);
+    useEffect(() => {
+        const fetchData = async () => {
+            const data = await DaylightAPI("data/nav/TVApp");
+            setList(data);
+        };
+        fetchData();
+    }, []);
 
     const params = new URLSearchParams(window.location.search);
     const queryEntries = Object.fromEntries(params.entries());
@@ -147,7 +161,7 @@ export default function TVApp() {
     return (
         <div className="tv-app-container">
             <div className="tv-app">
-                <TVMenu list={list} autoplay={autoplay}  />
+                { list.length === 0 ? <div className="loading">Loading...</div> : <TVMenu list={list} autoplay={autoplay}  /> }
             </div>
         </div>
     );
