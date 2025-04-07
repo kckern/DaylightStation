@@ -46,6 +46,15 @@ const loadTable = async (tableId , data = [], after = "") => {
         return loadTable(tableId, fetched_data, after);
     }
 
+    //sort by sort_order
+    fetched_data = fetched_data.sort((a, b) => {
+        const sortOrderA = parseFloat(a.sort_order) || 0;
+        const sortOrderB = parseFloat(b.sort_order) || 0;
+        if (sortOrderA < sortOrderB) return -1;
+        if (sortOrderA > sortOrderB) return 1;
+        return 0;
+    });
+
     const folders = await loadFolders(tableId);
 
     return processTable(fetched_data, folders);
