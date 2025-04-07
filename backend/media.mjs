@@ -21,6 +21,7 @@ const findFile = path => {
         ? [audioPath, videoPath].map(p => `${p}/${path}`) 
         : ext.flatMap(e => [audioPath, videoPath].map(p => `${p}/${path}.${e}`));
     const firstMatch = possiblePaths.find(p => fs.existsSync(p));
+    if(!firstMatch) console.log(`File not found: ${JSON.stringify(possiblePaths)}`);
     if(!firstMatch) return {path: notFound, fileSize: fs.statSync(notFound).size, mimeType: 'audio/mpeg'};
     const fileSize = firstMatch? fs.statSync(firstMatch).size : fs.statSync(notFound).size;
     const pathExtention = firstMatch?.split('.').pop();
