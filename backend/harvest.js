@@ -15,7 +15,7 @@ import scripture from './lib/scriptureguide.mjs';
 import { refreshFinancialData as budget } from './lib/budget.mjs';
 
 const harvesters = {
-    ...Infinity.keys.reduce((fn, i) => (fn[i] = () => Infinity.loadData(i), fn), {}),
+    ...Infinity.keys.reduce((fn, i) => (fn[i] = (req) => Infinity.loadData(i,req), fn), {}),
     todoist,
     gmail,
     gcal,

@@ -130,11 +130,12 @@ const updateItem = async (tableId, itemId, key, val) => {
     return response.data;
 };
 
-const loadData = async (name) => {
+const loadData = async (name,req) => {
     const data = await loadTable(process.env.infinity[name]);
     saveFile(name, data);
     //if nav
-    if (name === "nav") await navProcess()
+    const host = req.headers.host;
+    if (name === "nav") await navProcess(host)
     return data;
 }
 
