@@ -2,6 +2,42 @@ import fs from 'fs';
 import yaml from 'js-yaml';
 import {decode} from 'html-entities';
 import smartquotes from 'smartquotes';
+import axios from 'axios';
+
+
+export const saveImage = async (url, folder, uid) => {
+    console.log(`Saving image from ${url} to ${folder}/${uid}`);
+    if (!url) return false;
+    const path = `${process.env.path.img}/${folder}/${uid}`;
+    const pathWithoutFilename = path.split('/').slice(0, -1).join('/');
+
+    // Ensure the folder exists
+    if (!fs.existsSync(pathWithoutFilename)) {
+        fs.mkdirSync(pathWithoutFilename, { recursive: true });
+    }
+
+    try {
+        const response = await axios({
+            method: 'get',
+            url: url,
+            responseType: 'stream'
+        });
+
+        const filePath = `${path}.jpg`; // Assuming the image is a .jpg
+        const writer = fs.createWriteStream(filePath);
+
+        response.data.pipe(writer);
+
+        return new Promise((resolve, reject) => {
+            writer.on('finish', () => resolve(filePath));
+            writer.on('error', reject);
+        });
+    } catch (error) {
+        console.error(`Failed to save image from ${url}:`, error);
+        return false;
+    }
+};
+
 
 
 
