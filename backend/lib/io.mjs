@@ -6,7 +6,6 @@ import axios from 'axios';
 
 
 export const saveImage = async (url, folder, uid) => {
-    console.log(`Saving image from ${url} to ${folder}/${uid}`);
     if (!url) return false;
     const path = `${process.env.path.img}/${folder}/${uid}`;
     const pathWithoutFilename = path.split('/').slice(0, -1).join('/');
@@ -14,6 +13,18 @@ export const saveImage = async (url, folder, uid) => {
     // Ensure the folder exists
     if (!fs.existsSync(pathWithoutFilename)) {
         fs.mkdirSync(pathWithoutFilename, { recursive: true });
+    }
+
+    // Check if file already exists
+    const alreadyExists = fs.existsSync(path + '.jpg');
+    if (alreadyExists) {
+        const stats = fs.statSync(path + '.jpg');
+        const fileAgeInMs = Date.now() - stats.mtimeMs;
+        const oneDayInMs = 24 * 60 * 60 * 1000;
+        if (fileAgeInMs < oneDayInMs) {
+            console.log(`Image already exists and is less than 24 hours old: ${path}.jpg`);
+            return true;
+        }
     }
 
     try {

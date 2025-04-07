@@ -39,6 +39,7 @@ mediaRouter.get('/img/*', async (req, res) => {
     const filePath = ext ? `${filePathWithoutExt}.${ext}` : `${baseDir}/notfound.png`;
     const mimeType = ext ? `image/${ext}` : 'image/png';
     const statusCode = ext ? 200 : 404;
+    if(statusCode === 404) console.log(`Image not found: ${filePathWithoutExt}`);
     res.status(statusCode).set({
         'Content-Type': mimeType,
         'Content-Length': fs.statSync(filePath).size,
