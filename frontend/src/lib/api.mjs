@@ -109,3 +109,9 @@ export const DaylightPlexPath = (key) => {
     const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
     return `${baseUrl}/media/plex/${key}`;
 }
+
+export const DaylightHostPath = () => {
+    const isLocalhost = /localhost/.test(window.location.href);
+    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+    return baseUrl;
+}

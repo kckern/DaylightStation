@@ -104,6 +104,18 @@ apiRouter.get('/test',  async (req, res, next) => {
 });
 
 //add an endpoint to fetch a specific file
+apiRouter.get('/:file/:key',  async (req, res, next) => {
+    try {
+        const file = req.params.file;
+        const data = yaml.load(readFileSync(`${dataPath}/${file}.yaml`, 'utf8'));
+        if(data?.[req.params.key]) return res.json(data[req.params.key]);
+        else res.json(data);
+    } catch (err) {
+        next(err);
+    }
+});
+
+
 apiRouter.get('/:file',  async (req, res, next) => {
     try {
         const file = req.params.file;
