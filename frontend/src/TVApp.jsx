@@ -47,7 +47,7 @@ valid keys: list, play, open
 const list = [
     { title: "Program", queue: { playlist: "morning"}},
     { title: "Gettysburg", play: { media: "program/usdocs/gettysburg"}},
-    { title: "Hymn",    play: { hymn: "1001"}},
+    { title: "Hymn: OSL",    play: { hymn: "113"}},
     { title: "CNN", play: { media: "program/cnn"}},
     { title: "WS", open: { app: "websocket", param: "ping" }},
     { title: "Tolstoy", queue: { media: "tolstoy"}},

@@ -135,7 +135,7 @@ function useCommonMediaController({
     const onDurationChange = () => setDuration(mediaEl.duration);
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
-      const startTime = (meta.progress / 100) * mediaEl.duration;
+      const startTime = mediaEl.duration ? (meta.progress / 100) * mediaEl.duration : 0;
       mediaEl.dataset.key = meta.key;
       mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
