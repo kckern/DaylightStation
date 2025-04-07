@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { loadFile, saveFile } from './io.mjs';
+import { navProcess } from '../jobs/nav.mjs';
 
 const keys = Object.keys(process.env.infinity);
 
@@ -132,6 +133,8 @@ const updateItem = async (tableId, itemId, key, val) => {
 const loadData = async (name) => {
     const data = await loadTable(process.env.infinity[name]);
     saveFile(name, data);
+    //if nav
+    if (name === "nav") await navProcess()
     return data;
 }
 
