@@ -176,7 +176,7 @@ function ScriptureAudioPlayer({
   const [music] = useState(
     String(Math.floor(Math.random() * config.randomMax) + config.randomMin).padStart(3, "0")
   );
-  const musicPath = DaylightMediaPath(`media/scripture/ambient/${music}`);
+  const musicPath = DaylightMediaPath(`media/ambient/${music}`);
 
   useEffect(() => {
     if (audioRef.current) {
