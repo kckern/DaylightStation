@@ -41,13 +41,6 @@ export const navProcess = async (host) => {
         item = { ...item, [actionKey]: item.input };
         delete item.input;
         delete item.action;
-
-        if (item.image) {
-            await saveImage(item.image, 'navimgs', item.uid);
-            const protocol = /localhost/.test(host) ? 'http' : 'https';
-            item.image = `${protocol}://${host}/media/img/navimgs/${item.uid}`;
-        }
-
         return item;
     }));
 
