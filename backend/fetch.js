@@ -7,7 +7,12 @@ import test from './jobs/weight.mjs';
 import yaml from 'js-yaml';
 import moment from 'moment-timezone';
 import fs from 'fs';
+import { parseFile } from 'music-metadata';
+
+
 const dataPath = `${process.env.path.data}`;
+const videoPath = `${process.env.path.video}`;
+const audioPath = `${process.env.path.audio}`;
 
 // Middleware for error handling
 apiRouter.use((err, req, res, next) => {
@@ -83,6 +88,65 @@ apiRouter.get('/budget/daytoday',  async (req, res, next) => {
         next(err);
     }
 });
+
+
+apiRouter.get('/list/:folder/:type',  async (req, res, next) => {
+
+
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const baseUrl = `${protocol}://${host}`;
+
+    const extentions = {
+        media: ['.mp3', '.mp4', '.m4a']
+    }
+    try {
+        const folder = req.params.folder;
+        const type = req.params.type;
+        const validExtensions = extentions[type] || ["*"];
+        const getFiles = (basePath) => {
+            const folderPath = `${basePath}/${folder}`;
+            if (!fs.existsSync(folderPath)) return [];
+            return fs.readdirSync(folderPath).filter(file => {
+                const ext = file.split('.').pop();
+                return validExtensions.includes(`.${ext}`);
+            }).map(file => {
+                const filePath = `${folderPath}/${file}`;
+                return fs.existsSync(filePath) ? file : null;
+            }).filter(Boolean);
+        };
+
+        const items = await Promise.all(
+            [...getFiles(videoPath), ...getFiles(audioPath)].map(async file => {
+            // Extract id3 tags
+            const isVideo = file.endsWith('.mp4');
+            const filePath = isVideo || true ? `${videoPath}/${folder}/${file}` : `${audioPath}/${folder}/${file}`;
+            const keepTags = ['title', 'artist', 'album', 'year', 'track', 'genre'];
+            const tags = (await parseFile(filePath, { native: true })).common;
+            const fileTags = keepTags.reduce((acc, tag) => {
+                if (tags[tag] && typeof tags[tag] === 'object' && 'no' in tags[tag]) {
+                    acc[tag] = tags[tag].no;
+                } else if (tags[tag]) {
+                    acc[tag] = tags[tag];
+                }
+                //delete if null
+                if (!acc[tag]) delete acc[tag];
+                return acc;
+            }, {});
+            const key = file.replace(/\.[^/.]+$/, "");
+            const url = `${baseUrl}/media/${folder}/${key}`;
+            const image = `${baseUrl}/media/img/${folder}/${key}`;
+            return { ...fileTags, image, url };
+            })
+        );
+        //todo add metadata from a config
+        return res.json({list:"List Title",items});
+    } catch (err) {
+        next(err);
+    }
+});
+
+
 
 //list the *.yml files in data path /data
 const dataFiles = readdirSync(`${dataPath}`).filter(f => f.endsWith('.yaml')).map(f => f.replace('.yaml', ''));
