@@ -9,8 +9,8 @@ const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
 }));
-const audioPath = `${process.env.path.audio}`;
-const videoPath = `${process.env.path.video}`;
+const audioPath = `${process.env.path.media}`;
+const videoPath = `${process.env.path.media}`;
 const notFound = `${audioPath}/${process.env.media.error}`;
 
 const ext = ['mp3','mp4','m4a'];

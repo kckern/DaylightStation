@@ -4,15 +4,14 @@ import Infinity from './lib/infinity.js';
 import { loadFile, saveFile } from './lib/io.mjs';
 import { readFileSync, readdirSync } from 'fs';
 import test from './jobs/weight.mjs';
-import yaml from 'js-yaml';
+import yaml, { load } from 'js-yaml';
 import moment from 'moment-timezone';
 import fs from 'fs';
 import { parseFile } from 'music-metadata';
 
 
 const dataPath = `${process.env.path.data}`;
-const videoPath = `${process.env.path.video}`;
-const audioPath = `${process.env.path.audio}`;
+const mediaPath = `${process.env.path.media}`;
 
 // Middleware for error handling
 apiRouter.use((err, req, res, next) => {
@@ -90,6 +89,39 @@ apiRouter.get('/budget/daytoday',  async (req, res, next) => {
 });
 
 
+const loadMetadataFromFile = async ({file, folder, baseUrl}) => {
+    const keepTags = ['title', 'artist', 'album', 'year', 'track', 'genre'];
+    const filePath = `${mediaPath}/${folder}/${file}`;
+    const tags = (await parseFile(filePath, { native: true })).common;
+    const fileTags = keepTags.reduce((acc, tag) => {
+        if (tags[tag] && typeof tags[tag] === 'object' && 'no' in tags[tag]) {
+            acc[tag] = tags[tag].no;
+        } else if (tags[tag]) {
+            acc[tag] = tags[tag];
+        }
+        if (!acc[tag]) delete acc[tag];
+        return acc;
+    }, {});
+    const media_key = folder + "/" + file.replace(/\.[^/.]+$/, "");
+    const media_url = `${baseUrl}/media/${media_key}`;
+    const mediaType = ["mp3", "m4a"].includes(file.split('.').pop()) ? "audio" : "video";
+    const result = { media_key, folder, ...fileTags, mediaType,media_url };
+
+    if (tags.picture) {
+        result.image = `${baseUrl}/media/img/${media_key}`;
+    }
+
+    return result;
+}
+
+const loadMetadataFromConfig =  (item) => {
+    const {media_key} = item;
+    const mediaConfig = loadFile(`media_config`);
+    const config = mediaConfig.find(c => c.media_key === media_key) || {};
+    return {...item, ...config};
+}
+
+
 apiRouter.get('/list/:folder/:type',  async (req, res, next) => {
 
 
@@ -108,37 +140,19 @@ apiRouter.get('/list/:folder/:type',  async (req, res, next) => {
             const folderPath = `${basePath}/${folder}`;
             if (!fs.existsSync(folderPath)) return [];
             return fs.readdirSync(folderPath).filter(file => {
-                const ext = file.split('.').pop();
-                return validExtensions.includes(`.${ext}`);
+            const ext = file.split('.').pop();
+            return validExtensions.includes(`.${ext}`);
             }).map(file => {
-                const filePath = `${folderPath}/${file}`;
-                return fs.existsSync(filePath) ? file : null;
+            const filePath = `${folderPath}/${file}`;
+            return fs.existsSync(filePath) ? { baseUrl, folder, file } : null;
             }).filter(Boolean);
         };
 
-        const items = await Promise.all(
-            [...getFiles(videoPath), ...getFiles(audioPath)].map(async file => {
-            // Extract id3 tags
-            const isVideo = file.endsWith('.mp4');
-            const filePath = isVideo || true ? `${videoPath}/${folder}/${file}` : `${audioPath}/${folder}/${file}`;
-            const keepTags = ['title', 'artist', 'album', 'year', 'track', 'genre'];
-            const tags = (await parseFile(filePath, { native: true })).common;
-            const fileTags = keepTags.reduce((acc, tag) => {
-                if (tags[tag] && typeof tags[tag] === 'object' && 'no' in tags[tag]) {
-                    acc[tag] = tags[tag].no;
-                } else if (tags[tag]) {
-                    acc[tag] = tags[tag];
-                }
-                //delete if null
-                if (!acc[tag]) delete acc[tag];
-                return acc;
-            }, {});
-            const key = file.replace(/\.[^/.]+$/, "");
-            const url = `${baseUrl}/media/${folder}/${key}`;
-            const image = `${baseUrl}/media/img/${folder}/${key}`;
-            return { ...fileTags, image, url };
-            })
-        );
+        const items = (await Promise.all(getFiles(mediaPath)
+                            .map(loadMetadataFromFile)))
+                            .map(loadMetadataFromConfig)
+                            .filter(Boolean);
+                            
         //todo add metadata from a config
         return res.json({list:"List Title",items});
     } catch (err) {
