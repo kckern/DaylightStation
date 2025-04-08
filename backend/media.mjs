@@ -4,6 +4,7 @@ import fs from 'fs';
 import {Plex} from './lib/plex.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
 import moment from 'moment';
+import { parseFile } from 'music-metadata';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -31,26 +32,61 @@ const findFile = path => {
 
     return {path: firstMatch, fileSize, extention:pathExtention, mimeType};
 }
+
+
 mediaRouter.get('/img/*', async (req, res) => {
-    const exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
-    const img = req.params[0]; // Capture the full path after /img/
+    const imgPath = req.params[0]; // Capture the full path after /img/
     const baseDir = `${process.env.path.img}`;
-    const filePathWithoutExt = `${baseDir}/${img}`;
+    const filePathWithoutExt = `${baseDir}/${imgPath}`;
+    const exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+
+    // Check for image file
     const ext = exts.find(e => fs.existsSync(`${filePathWithoutExt}.${e}`));
-    const filePath = ext ? `${filePathWithoutExt}.${ext}` : `${baseDir}/notfound.png`;
-    const mimeType = ext ? `image/${ext}` : 'image/png';
-    const statusCode = ext ? 200 : 404;
-    if(statusCode === 404) console.log(`Image not found: ${filePathWithoutExt}`);
-    res.status(statusCode).set({
-        'Content-Type': mimeType,
-        'Content-Length': fs.statSync(filePath).size,
+    if (ext) {
+        const filePath = `${filePathWithoutExt}.${ext}`;
+        const mimeType = `image/${ext}`;
+        res.status(200).set({
+            'Content-Type': mimeType,
+            'Content-Length': fs.statSync(filePath).size,
+            'Cache-Control': 'public, max-age=31536000',
+            'Expires': new Date(Date.now() + 31536000000).toUTCString(),
+            'Content-Disposition': `inline; filename="${imgPath}.${ext}"`,
+            'Access-Control-Allow-Origin': '*'
+        });
+        return fs.createReadStream(filePath).pipe(res);
+    }
+
+    // Check for media file
+    const mediaFile = findFile(imgPath);
+    if (mediaFile.path !== notFound) {
+        try {
+            const { common: { picture } } = await parseFile(mediaFile.path);
+            if (picture && picture.length) {
+                const image = picture[0];
+                const buffer = Buffer.from(image.data); // Convert data to a Buffer
+                res.setHeader('Content-Type', image.format);
+                res.setHeader('Content-Length', buffer.length);
+                return res.status(200).send(buffer); // Send the buffer as the image
+            }
+        } catch (error) {
+            console.error(`Error parsing media file for image: ${error.message}`);
+        }
+    }
+
+    // Fallback to notfound image
+    const notFoundPath = `${baseDir}/notfound.png`;
+    res.status(404).set({
+        'Content-Type': 'image/png',
+        'Content-Length': fs.statSync(notFoundPath).size,
         'Cache-Control': 'public, max-age=31536000',
         'Expires': new Date(Date.now() + 31536000000).toUTCString(),
-        'Content-Disposition': `inline; filename="${img}.${ext || 'notfound.png'}"`,
+        'Content-Disposition': `inline; filename="notfound.png"`,
         'Access-Control-Allow-Origin': '*'
     });
-    return fs.createReadStream(filePath).pipe(res);
+    return fs.createReadStream(notFoundPath).pipe(res);
 });
+
+
 mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
     const queryParams = req.query;
     const shuffle = req.params.action === 'shuffle';
@@ -205,6 +241,7 @@ mediaRouter.all('/plex/queue/:plex_key/:action?', async (req, res) => {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }
 });
+
 
 mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
     const { plex_key } = req.params;
