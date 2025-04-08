@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { loadFile, saveFile } from './io.mjs';
+import { loadFile, saveFile, saveImage } from './io.mjs';
 import { navProcess } from '../jobs/nav.mjs';
 
 const keys = Object.keys(process.env.infinity);
@@ -140,12 +140,27 @@ const updateItem = async (tableId, itemId, key, val) => {
 };
 
 const loadData = async (name,req) => {
-    const data = await loadTable(process.env.infinity[name]);
-    saveFile(name, data);
-    //if nav
+    let data = await loadTable(process.env.infinity[name]);
     const host = req.headers.host;
-    if (name === "nav") await navProcess(host)
+    data = await saveImages(host, data, name);
+    saveFile(name, data);
+    if (name === "nav") await navProcess(host) //todo, need a better way to handle one off jobs
     return data;
 }
+
+const saveImages = async (host, items, table_name) => {
+    const hasImages = items.filter(item => item.image);
+    if (!hasImages.length) return items;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].image) {
+            await saveImage(items[i].image, table_name, items[i].uid);
+            const protocol = /localhost/.test(host) ? 'http' : 'https';
+            delete items[i].image;
+            items[i].image = `${protocol}://${host}/media/img/${table_name}/${items[i].uid}`;
+        }
+    }
+    return items;
+}
+
 
 export default { loadTable, saveItem, updateItem, loadData, keys};
