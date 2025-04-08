@@ -44,10 +44,11 @@ const TVMenu = ({ list, menu, clear, autoplay }) => {
 
         //if menu is set, 
         const menuList = list?.menu && await DaylightAPI(  `data/nav/${list?.menu}`  ) || null;
+        const folderList = list?.folder && await DaylightAPI(  `data/list/${list?.folder}`  ) || null;
 
       
 
-        setButtons( menuList || list || [] );
+        setButtons( folderList || menuList || list || [] );
         setLoaded(true);
       };
 
