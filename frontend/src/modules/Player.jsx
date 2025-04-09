@@ -68,7 +68,7 @@ function useCommonMediaController({
     return mediaEl;
   };
 
-  const isDash = meta.mediaType === 'dash_video';
+  const isDash = meta.media_type === 'dash_video';
   const handleProgressClick = (event) => {
     if (!duration || !containerRef.current) return;
     const mediaEl = getMediaEl();
@@ -271,16 +271,16 @@ export function SinglePlayer(play) {
   return (
     <div className="player">
       {!isReady && <Loading media={mediaInfo} />}
-      {isReady && mediaInfo.mediaType === "dash_video" && (
+      {isReady && mediaInfo.media_type === "dash_video" && (
         <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
-      {isReady && mediaInfo.mediaType === "video" && (
+      {isReady && mediaInfo.media_type === "video" && (
         <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
-      {isReady && mediaInfo.mediaType === "audio" && (
+      {isReady && mediaInfo.media_type === "audio" && (
         <AudioPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
-      {isReady && !["dash_video", "video", "audio"].includes(mediaInfo.mediaType) && (
+      {isReady && !["dash_video", "video", "audio"].includes(mediaInfo.media_type) && (
         <div className="unsupported-media">
           <p>Unsupported media type</p>
         </div>
@@ -294,8 +294,8 @@ export function SinglePlayer(play) {
 /*─────────────────────────────────────────────────────────────*/
 
 function Loading({ media }) {
-  const { title, artist, album, img, mediaType } = media || {};
-  if (mediaType !== 'audio') return null;
+  const { title, artist, album, img, media_type } = media || {};
+  if (media_type !== 'audio') return null;
   return (
     <div className="audio-player" style={{ opacity: 0.5 }}>
       <div className="shader off" />
@@ -335,7 +335,7 @@ function AudioPlayer({ media, advance, clear }) {
     onShaderLevelChange
   });
 
-  const { mediaUrl, title, artist, album, img } = media;
+  const { media_url, title, artist, album, img } = media;
   const { percent } = getProgressPercent(progress, duration);
 
   return (
@@ -354,7 +354,7 @@ function AudioPlayer({ media, advance, clear }) {
       <h2>
         {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
       </h2>
-      <audio ref={containerRef} src={mediaUrl} autoPlay style={{ display: 'none' }} />
+      <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }} />
     </div>
   );
 }
@@ -381,7 +381,7 @@ function VideoPlayer({ media, advance, clear }) {
     meta: media,
   });
 
-  const { show, season, title, mediaUrl } = media;
+  const { show, season, title, media_url } = media;
   const { percent } = getProgressPercent(progress, duration);
 
   return (
@@ -396,14 +396,14 @@ function VideoPlayer({ media, advance, clear }) {
           ref={containerRef}
           class={`video-element ${(progress || 0) > 0 && "show"}`}
           controls
-          src={mediaUrl}
+          src={media_url}
         />
       ) : (
         <video
           autoPlay
           ref={containerRef}
           className={`video-element show`}
-          src={mediaUrl}
+          src={media_url}
         />
       )}
     </div>
