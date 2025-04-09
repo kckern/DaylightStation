@@ -168,37 +168,43 @@ const applyParentTags = (items, parent) => {
     return items;
 
 }
+// Helper function to get children from a parent media_key
+export const getChildrenFromMediaKey = async ({media_key, baseUrl}) => {
+    const validExtensions = ['.mp3', '.mp4', '.m4a'];
+    const getFiles = (basePath) => {
+        const folderPath = `${basePath}/${media_key}`;
+        if (!fs.existsSync(folderPath)) return [];
+        return fs.readdirSync(folderPath).filter(file => {
+            const ext = file.split('.').pop();
+            return validExtensions.includes(`.${ext}`);
+        }).map(file => {
+            const fileWithoutExt = file.replace(/\.[^/.]+$/, ""); // Remove the file extension
+            return fs.existsSync(`${folderPath}/${file}`) ? { baseUrl, media_key: `${media_key}/${fileWithoutExt}` } : null;
+        }).filter(Boolean);
+    };
 
-apiRouter.get('/list/*',  async (req, res, next) => {
+    const items = (await Promise.all(getFiles(mediaPath) // Get files from media path
+                        .map(loadMetadataFromFile)))
+                        .map(loadMetadataFromConfig)
+                        .filter(Boolean);
 
+    // Load metadata for the parent and apply parent tags to children
+    const parentMetadata = loadMetadataFromMediaKey(media_key);
+    return applyParentTags(items, parentMetadata);
+};
 
+apiRouter.get('/list/*', async (req, res, next) => {
     const protocol = req.protocol;
     const host = req.get('host');
     const baseUrl = `${protocol}://${host}`;
 
     try {
         const media_key = req.params[0];
-        const validExtensions =['.mp3', '.mp4', '.m4a'];
-        const getFiles = (basePath) => {
-            const folderPath = `${basePath}/${media_key}`;
-            if (!fs.existsSync(folderPath)) return [];
-            return fs.readdirSync(folderPath).filter(file => {
-            const ext = file.split('.').pop();
-            return validExtensions.includes(`.${ext}`);
-            }).map(file => {
-            const fileWithoutExt = file.replace(/\.[^/.]+$/, ""); // Remove the file extension
-            return fs.existsSync(`${folderPath}/${file}`) ? { baseUrl, media_key: `${media_key}/${fileWithoutExt}` } : null;
-            }).filter(Boolean);
-        };
+        const items = await getChildrenFromMediaKey(media_key, baseUrl, mediaPath);
 
-        const items = (await Promise.all(getFiles(`${mediaPath}`) //get files from media path
-                            .map(loadMetadataFromFile)))
-                            .map(loadMetadataFromConfig)
-                            .filter(Boolean);
-                            
-        //todo add metadata from a config
+        // Add metadata from a config
         const metadata = loadMetadataFromMediaKey(media_key);
-        return res.json({media_key,...metadata,items: applyParentTags(items, metadata)});
+        return res.json({ media_key, ...metadata, items });
     } catch (err) {
         next(err);
     }
