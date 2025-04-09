@@ -6,6 +6,7 @@ import { loadFile, saveFile } from './lib/io.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
 import { loadMetadataFromMediaKey, loadMetadataFromFile } from './fetch.mjs';
+import { getChildrenFromMediaKey } from './fetch.mjs';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -23,7 +24,7 @@ export const findFileFromMediaKey = media_key => {
         ? [audioPath, videoPath].map(p => `${p}/${media_key}`) 
         : ext.flatMap(e => [audioPath, videoPath].map(p => `${p}/${media_key}.${e}`));
     const firstMatch = possiblePaths.find(p => fs.existsSync(p));
-    if(!firstMatch) console.log(`File not found: ${JSON.stringify(possiblePaths)}`);
+    //if(!firstMatch) console.log(`File not found: ${JSON.stringify(possiblePaths)}`);
     if(!firstMatch) return {found:false, path: notFound, fileSize: fs.statSync(notFound).size, mimeType: 'audio/mpeg'};
     const fileSize = firstMatch? fs.statSync(firstMatch).size : fs.statSync(notFound).size;
     const fileExt = firstMatch?.split('.').pop();
@@ -131,14 +132,20 @@ mediaRouter.post('/log', async (req, res) => {
     }
 });
 mediaRouter.all(`/info/*`, async (req, res) => {
-    const media_key = req.params[0];
+    let media_key = req.params[0];
     const baseUrl = `${req.protocol}://${req.headers.host}`;
+    const { fileSize,  extention } = findFileFromMediaKey(media_key);
+
+    if(!extention) media_key = await (async ()=>{
+        const items = await getChildrenFromMediaKey({media_key, baseUrl});
+        return items.sort(()=>Math.random() - 0.5).slice(0,1)[0]?.media_key;
+    })();
+
+    const metadata_file = await loadMetadataFromFile({media_key, baseUrl});
     const metadata_media = loadMetadataFromMediaKey(media_key);
     const metadata_parent = loadMetadataFromMediaKey(media_key.split('/').slice(0, -1).join('/'),['image','volume','rate','shuffle']);
-    const metadata_file = await loadMetadataFromFile({media_key, baseUrl});
+
     const media_url = `${baseUrl}/media/${media_key}`;
-    const { fileSize,  extention } = findFileFromMediaKey(media_key);
-    console.log({metadata_file});
     res.json({
         media_key,
         ...metadata_parent,
