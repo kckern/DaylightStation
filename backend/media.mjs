@@ -5,6 +5,7 @@ import {Plex} from './lib/plex.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
+import { loadMetadataFromMediaKey, loadMetadataFromFile } from './fetch.mjs';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -14,23 +15,23 @@ const videoPath = `${process.env.path.media}`;
 const notFound = `${audioPath}/${process.env.media.error}`;
 
 const ext = ['mp3','mp4','m4a'];
-const findFile = path => {
-    path = path.replace(/^\//, '');
-    const lastLeaf = path.split('/').pop();
+export const findFileFromMediaKey = media_key => {
+    media_key = media_key.replace(/^\//, '');
+    const lastLeaf = media_key.split('/').pop();
     const extention = lastLeaf.split('.').length > 1 ? lastLeaf.split('.').pop() : null;
     const possiblePaths = extention 
-        ? [audioPath, videoPath].map(p => `${p}/${path}`) 
-        : ext.flatMap(e => [audioPath, videoPath].map(p => `${p}/${path}.${e}`));
+        ? [audioPath, videoPath].map(p => `${p}/${media_key}`) 
+        : ext.flatMap(e => [audioPath, videoPath].map(p => `${p}/${media_key}.${e}`));
     const firstMatch = possiblePaths.find(p => fs.existsSync(p));
     if(!firstMatch) console.log(`File not found: ${JSON.stringify(possiblePaths)}`);
-    if(!firstMatch) return {path: notFound, fileSize: fs.statSync(notFound).size, mimeType: 'audio/mpeg'};
+    if(!firstMatch) return {found:false, path: notFound, fileSize: fs.statSync(notFound).size, mimeType: 'audio/mpeg'};
     const fileSize = firstMatch? fs.statSync(firstMatch).size : fs.statSync(notFound).size;
-    const pathExtention = firstMatch?.split('.').pop();
-    if(!firstMatch) return {path: notFound, fileSize, mimeType: 'audio/mpeg'};
+    const fileExt = firstMatch?.split('.').pop();
+    if(!firstMatch) return {found:false, path: notFound, fileSize, mimeType: 'audio/mpeg'};
 
-    const mimeType = pathExtention === 'mp3' ? 'audio/mpeg' : 'video/mp4';
+    const mimeType = fileExt === 'mp3' ? 'audio/mpeg' : fileExt === 'm4a' ? 'audio/mp4' : fileExt === 'mp4' ? 'video/mp4' : 'application/octet-stream';
 
-    return {path: firstMatch, fileSize, extention:pathExtention, mimeType};
+    return {found:true, path: firstMatch, fileSize, extention:fileExt, mimeType};
 }
 
 
@@ -57,7 +58,7 @@ mediaRouter.get('/img/*', async (req, res) => {
     }
 
     // Check for media file
-    const mediaFile = findFile(imgPath);
+    const mediaFile = findFileFromMediaKey(imgPath);
     if (mediaFile.path !== notFound) {
         try {
             const { common: { picture } } = await parseFile(mediaFile.path);
@@ -87,47 +88,10 @@ mediaRouter.get('/img/*', async (req, res) => {
 });
 
 
-mediaRouter.all('/queue/:queue_key/:queue_val/:action?', async (req, res) => {
-    const queryParams = req.query;
-    const shuffle = req.params.action === 'shuffle';
-    const { queue_key, queue_val } = req.params;
-
-    const predefinedQueues = {
-        playlist: {
-            morning: [
-                { media: "program/cnn", mode: "mini" },
-                { media: "program/bbc" },
-                { media: "program/usdocs/gettysburg" },
-                { scripture: "d&c 13", version: "redc" },
-                { hymn: "113" },
-                { plex: "481800", shuffle: true },
-            ],
-            evening: [
-                { hymn: "1002" },
-                { scripture: "d&c 93", version: "redc" },
-            ],
-        },
-    };
-
-    let queue = predefinedQueues[queue_key]?.[queue_val] || [];
-
-    // Apply shuffle if requested
-    if (shuffle) {
-        queue = queue.sort(() => Math.random() - 0.5);
-    }
-
-    res.status(200).json({
-        queue,
-        queryParams,
-        shuffle,
-    });
-    return;
-});
-
 
 mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
     const plex_key = req.params.plex_key;
-    const plexUrl = await ( new Plex()).loadMediaUrl(plex_key);
+    const plexUrl = await ( new Plex()).loadmedia_url(plex_key);
     try {
         const response = await axios.get(plexUrl);
         if (response.status !== 200) {
@@ -167,18 +131,21 @@ mediaRouter.post('/log', async (req, res) => {
     }
 });
 mediaRouter.all(`/info/*`, async (req, res) => {
-    const media = req.params[0]; // Capture the full path after /info/
-    const thisHost = req.headers.host;
-    const pathForMedia = `/media/${media}`;
-    const mediaUrl = `http://${thisHost}${pathForMedia}`;
-    const { fileSize,  extention } = findFile(media);
+    const media_key = req.params[0];
+    const baseUrl = `${req.protocol}://${req.headers.host}`;
+    const metadata_media = loadMetadataFromMediaKey(media_key);
+    const metadata_parent = loadMetadataFromMediaKey(media_key.split('/').slice(0, -1).join('/'),['image','volume','rate','shuffle']);
+    const metadata_file = await loadMetadataFromFile({media_key, baseUrl});
+    const media_url = `${baseUrl}/media/${media_key}`;
+    const { fileSize,  extention } = findFileFromMediaKey(media_key);
+    console.log({metadata_file});
     res.json({
-        key: media,
-        title: media.split('/').pop(),
-        mediaUrl,
-        fileSize,
-        extention,
-        mediaType: ['mp3'].includes(extention) ? 'audio' : 'video',
+        media_key,
+        ...metadata_parent,
+        ...metadata_file,
+        ...metadata_media,
+        media_url,
+        fileSize
         
     });
 });
@@ -258,24 +225,24 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
 
 mediaRouter.all('/plex/audio/:plex_key', async (req, res) => {
     const { plex_key } = req.params;
-    const mediaURL = await (new Plex()).loadMediaUrl(plex_key);
+    const media_url = await (new Plex()).loadmedia_url(plex_key);
     try {
         //assume mp3, passthrough
-        const response = await axios.get(mediaURL, { responseType: 'stream' });
+        const response = await axios.get(media_url, { responseType: 'stream' });
         res.setHeader('Content-Type', response.headers['content-type']);
         res.setHeader('Content-Length', response.headers['content-length']);
         res.setHeader('Accept-Ranges', 'bytes');
         res.setHeader('Content-Disposition', `inline; filename="${plex_key}.mp3"`);
         response.data.pipe(res);
     } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, mediaURL });
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, media_url });
     }
 });
 
 
 mediaRouter.all('*', async (req, res) => {
 
-    const { path, fileSize, mimeType } = findFile(req.path);
+    const { path, fileSize, mimeType } = findFileFromMediaKey(req.path);
     res.setHeader('Content-Length', fileSize);
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Cache-Control', 'public, max-age=31536000');
