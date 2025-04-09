@@ -26,7 +26,7 @@ async function initializeApp() {
 
     // Import routers dynamically after configuration is set
     const { default: cron } = await import('./cron.mjs');
-    const { default: fetchRouter } = await import('./fetch.js');
+    const { default: fetchRouter } = await import('./fetch.mjs');
     const { default: harvestRouter } = await import('./harvest.js');
     const { default: JournalistRouter } = await import('./journalist.mjs');
     const { default: homeRouter } = await import('./home.mjs');

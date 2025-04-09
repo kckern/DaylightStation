@@ -27,7 +27,7 @@ export class Plex {
     }
   }
 
-  async loadMediaUrl(itemData) {
+  async loadmedia_url(itemData) {
     itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
     const { plex: { host, token, session, protocol, platform } } = process.env;
     const { ratingKey:key, type } = itemData
@@ -37,11 +37,11 @@ export class Plex {
       const {list} = await this.loadListFromKey(key);
       const [item] = this.selectKeyToPlay(list);
       
-      return await this.loadMediaUrl(item.key || item);
+      return await this.loadmedia_url(item.key || item);
     }
-    const mediaType = this.determineMediaType(type);
+    const media_type = this.determinemedia_type(type);
     try {
-      if (mediaType === 'audio') {
+      if (media_type === 'audio') {
       const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
       if (!mediaKey) throw new Error("Media key not found for audio.");
       return `${host}${mediaKey}?X-Plex-Token=${token}`;
@@ -122,7 +122,7 @@ export class Plex {
     return keys;
   }
 
-  determineMediaType(type) {
+  determinemedia_type(type) {
     const videoTypes = ['movie', 'episode', 'clip', 'short', 'trailer'];
     const audioTypes = ['track', 'album', 'artist'];
     if(videoTypes.includes(type)) return 'dash_video';
@@ -139,7 +139,7 @@ export class Plex {
     }
 
     const { title, type, parentTitle, grandparentTitle, summary, year, thumb } = itemData;
-    const mediaUrl = await this.loadMediaUrl(itemData);
+    const media_url = await this.loadmedia_url(itemData);
 
     // Construct the 'playable item' result
     const result = {
@@ -156,8 +156,8 @@ export class Plex {
       tagline: itemData.tagline || "",
       studio: itemData.studio || "",
       year: year || "",
-      mediaType: this.determineMediaType(type),
-      mediaUrl,
+      media_type: this.determinemedia_type(type),
+      media_url,
       img: this.thumbUrl(thumb),
       progress: progress || 0
     };

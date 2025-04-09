@@ -8,6 +8,7 @@ import yaml, { load } from 'js-yaml';
 import moment from 'moment-timezone';
 import fs from 'fs';
 import { parseFile } from 'music-metadata';
+import { findFileFromMediaKey } from './media.mjs';
 
 
 const dataPath = `${process.env.path.data}`;
@@ -89,23 +90,31 @@ apiRouter.get('/budget/daytoday',  async (req, res, next) => {
 });
 
 
-const loadMetadataFromFile = async ({file, folder, baseUrl}) => {
+export const loadMetadataFromFile = async ({media_key, baseUrl}) => {
+    media_key = media_key.replace(/\.[^/.]+$/, ""); // Remove the file extension
     const keepTags = ['title', 'artist', 'album', 'year', 'track', 'genre'];
-    const filePath = `${mediaPath}/${folder}/${file}`;
-    const tags = (await parseFile(filePath, { native: true })).common;
+    const {path} = findFileFromMediaKey(media_key);
+    let tags = {};
+    try {
+        tags = (await parseFile(path, { native: true })).common || {};
+    } catch (err) {
+        console.error(`Error parsing file metadata for ${path}:`, err.message);
+        return {media_key};
+    }
     const fileTags = keepTags.reduce((acc, tag) => {
         if (tags[tag] && typeof tags[tag] === 'object' && 'no' in tags[tag]) {
             acc[tag] = tags[tag].no;
         } else if (tags[tag]) {
-            acc[tag] = tags[tag];
+            acc[tag] = Array.isArray(tags[tag]) ? tags[tag].join(', ') : tags[tag];
         }
         if (!acc[tag]) delete acc[tag];
         return acc;
     }, {});
-    const media_key = folder + "/" + file.replace(/\.[^/.]+$/, "");
+
     const media_url = `${baseUrl}/media/${media_key}`;
-    const mediaType = ["mp3", "m4a"].includes(file.split('.').pop()) ? "audio" : "video";
-    const result = { media_key, folder, ...fileTags, mediaType,media_url };
+    const ext = path.split('.').pop();
+    const media_type = ["mp3", "m4a"].includes(ext) ? "audio" : "video";
+    const result = { media_key, media_key, ...fileTags, media_type,media_url };
 
     if (tags.picture) {
         result.image = `${baseUrl}/media/img/${media_key}`;
@@ -114,47 +123,82 @@ const loadMetadataFromFile = async ({file, folder, baseUrl}) => {
     return result;
 }
 
-const loadMetadataFromConfig =  (item) => {
+const loadMetadataFromConfig =  (item, keys=[]) => {
     const {media_key} = item;
-    const mediaConfig = loadFile(`media_config`);
-    const config = mediaConfig.find(c => c.media_key === media_key) || {};
+    const config = loadMetadataFromMediaKey(media_key);
+    if(keys?.length > 0) {
+        let keyed = {};
+        for (const key of keys) {
+            if (item[key] !== undefined) {
+                keyed[key] = item[key];
+            }
+        }
+        return {...item, ...keyed};
+    }
     return {...item, ...config};
 }
 
+export const loadMetadataFromMediaKey = (media_key, keys = []) => {
+    const mediaConfig = loadFile(`media_config`);
+    const config = mediaConfig.find(c => c.media_key === media_key) || {};
 
-apiRouter.get('/list/:folder/:type',  async (req, res, next) => {
+    if (keys.length > 0) {
+        let filteredConfig = {};
+        for (const key of keys) {
+            if (config[key] !== undefined) {
+                filteredConfig[key] = config[key];
+            }
+        }
+        return filteredConfig;
+    }
+
+    return config;
+};
+
+const applyParentTags = (items, parent) => {
+
+    const inheritableTags = ['volume', 'shuffle', 'continuous', 'image', 'rate'];
+    for (const tag of inheritableTags) {
+        for(const item of items) {
+            if (item[tag] === undefined && parent[tag] !== undefined) {
+                item[tag] = parent[tag];
+            }
+        }
+    }
+    return items;
+
+}
+
+apiRouter.get('/list/*',  async (req, res, next) => {
 
 
     const protocol = req.protocol;
     const host = req.get('host');
     const baseUrl = `${protocol}://${host}`;
 
-    const extentions = {
-        media: ['.mp3', '.mp4', '.m4a']
-    }
     try {
-        const folder = req.params.folder;
-        const type = req.params.type;
-        const validExtensions = extentions[type] || ["*"];
+        const media_key = req.params[0];
+        const validExtensions =['.mp3', '.mp4', '.m4a'];
         const getFiles = (basePath) => {
-            const folderPath = `${basePath}/${folder}`;
+            const folderPath = `${basePath}/${media_key}`;
             if (!fs.existsSync(folderPath)) return [];
             return fs.readdirSync(folderPath).filter(file => {
             const ext = file.split('.').pop();
             return validExtensions.includes(`.${ext}`);
             }).map(file => {
-            const filePath = `${folderPath}/${file}`;
-            return fs.existsSync(filePath) ? { baseUrl, folder, file } : null;
+            const fileWithoutExt = file.replace(/\.[^/.]+$/, ""); // Remove the file extension
+            return fs.existsSync(`${folderPath}/${file}`) ? { baseUrl, media_key: `${media_key}/${fileWithoutExt}` } : null;
             }).filter(Boolean);
         };
 
-        const items = (await Promise.all(getFiles(mediaPath)
+        const items = (await Promise.all(getFiles(`${mediaPath}`) //get files from media path
                             .map(loadMetadataFromFile)))
                             .map(loadMetadataFromConfig)
                             .filter(Boolean);
                             
         //todo add metadata from a config
-        return res.json({list:"List Title",items});
+        const metadata = loadMetadataFromMediaKey(media_key);
+        return res.json({media_key,...metadata,items: applyParentTags(items, metadata)});
     } catch (err) {
         next(err);
     }
