@@ -4,7 +4,7 @@ import Player from "./Player";
 import AppContainer from "./AppContainer";
 import "./TVMenu.scss";
 
-const TVMenu = ({ list, menu, clear, autoplay }) => {
+const TVMenu = ({ list, clear, autoplay }) => {
 
   const plexId = 0;
 
@@ -39,41 +39,38 @@ const TVMenu = ({ list, menu, clear, autoplay }) => {
     () => {
 
       //3 possible: hard coded, media, plex
-      
-      const fetchMenuList = async () => {
 
-        //if menu is set, 
-        const menuList = list?.menu && await DaylightAPI(  `data/nav/${list?.menu}`  ) || null;
-        const folderList = list?.folder && await DaylightAPI(  `data/list/${list?.folder}`  ) || null;
-
-      
-
-        setButtons( folderList || menuList || list || [] );
+      // Change fetchListData so it accepts the menu/folder name:
+      const fetchListData = async (menuOrFolder) => {
+        if (!menuOrFolder) {
+          setLoaded(true);
+          return;
+        }
+        // Actually fetch using the passed-in string
+        const { title, image, kind, items } = await DaylightAPI(`data/list/${menuOrFolder}`);
+        setButtons(items);
+        setMenuMeta({ title, image, kind });
         setLoaded(true);
       };
 
-      const fetchPlexMenu = async () => {
-        const { list, title, img } = await DaylightAPI(
-          `media/plex/list/${plexId}`
-        );
-        setButtons(
-          list.map(item => ({
-            label: item.title,
-            play: {plex: item.key},
-            key: "player",
-            value: item.key,
-            img: item.img
-          }))
-        );
-        setMenuMeta({ title, img, type: "plex" });
-        setLoaded(true);
-      };
-
+      // Then in getData, pass that parameter correctly:
       const getData = async () => {
-        if (list) {
-          await fetchMenuList();
-        } else if (plexId) {
-          await fetchPlexMenu();
+        if (Array.isArray(list.items)) {
+          setButtons(list.items);
+          const { items, ...rest } = list;
+          setMenuMeta(rest);
+          setLoaded(true);
+        } else if (typeof list === "string") {
+          await fetchListData(list);
+        } else if (typeof list === "object") {
+          setLoaded(false);
+          const { menu, list: playlist, plex } = list;
+          console.log("list", list);
+          await fetchListData(menu || playlist || plex);
+        } else {
+          setButtons([]);
+          setMenuMeta({ title: "No Menu", img: "", type: "default" });
+          setLoaded(true);
         }
       };
 
@@ -86,6 +83,7 @@ const TVMenu = ({ list, menu, clear, autoplay }) => {
     () => {
       if (loaded) {
         if(!containerRef?.current) return;
+        if(!menuRef?.current.children[selectedIndex]) return;
         const heightOfContainer = containerRef.current.offsetHeight;
         const heightOfSelectedButton = menuRef.current.children[selectedIndex].offsetHeight;
         const buttonDistance = menuRef.current.children[selectedIndex].offsetTop;
@@ -196,7 +194,7 @@ const TVMenu = ({ list, menu, clear, autoplay }) => {
         {menuMeta.title || menuMeta.label}
       </h2>
       <div className="tv-menu" ref={menuRef}>
-        {buttons.map((button, index) =>{
+        {buttons?.map((button, index) =>{
             const plexId = Array.isArray(button.value?.plexId) ? button.value.plexId[0] : button.value?.plexId || null;
           const img = button.image || (plexId && DaylightMediaPath(`/media/plex/img/${plexId}`)) || null;
           return <div

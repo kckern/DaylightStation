@@ -140,8 +140,9 @@ export default function TVApp() {
     const [list, setList] = useState([]);
     useEffect(() => {
         const fetchData = async () => {
-            const data = await DaylightAPI("data/nav/TVApp");
+            const data = await DaylightAPI("data/list/TVApp");
             setList(data);
+            console.log("TVApp data", data);
         };
         fetchData();
     }, []);
