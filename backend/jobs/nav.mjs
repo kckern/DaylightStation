@@ -12,49 +12,30 @@ const DaylightHostPath = () => {
 //
 // Keep the structure and variable names, but re-implement the internals.
 //
-export const navProcess = async (host) => {
-    // Load data
-    const data = await loadFile('nav');
-    if (!data) return false;
-    const processedData = await Promise.all(data.map(async (item) => {
-        item.action = item.action?.toLowerCase() || item.action;
-        const inputs = item.input.split(/[;|]/).map(i => i.trim());
-        let inputObject = {};
-        for (const input of inputs) {
-            const [key, value] = input.split(':').map(i => i.trim());
-            if (key && value) {
-            if (value.includes(',')) {
-                inputObject[key] = value.split(',').map(v => v.trim());
-            } else {
-                inputObject[key] = value;
-            }
-            } else if (key && key.includes('version')) {
-            inputObject['version'] = key.replace('version ', '').trim();
-            } else if (key) {
-            inputObject[key] = true;
-            } else {
-            inputObject[input] = true;
-            }
+export const processListItem = async (item) => {
+    item.action = item.action?.toLowerCase() || item.action;
+    const inputs = item.input.split(/[;|]/).map(i => i.trim());
+    let inputObject = {};
+    for (const input of inputs) {
+        const [key, value] = input.split(':').map(i => i.trim());
+        if (key && value) {
+        if (value.includes(',')) {
+            inputObject[key] = value.split(',').map(v => v.trim());
+        } else {
+            inputObject[key] = value;
         }
-        item.input = inputObject;
-        const actionKey = item.action || 'play';
-        item = { ...item, [actionKey]: item.input };
-        delete item.input;
-        delete item.action;
-        return item;
-    }));
-
-    
-    const folders = [...new Set(processedData.map(item => item.folder))];
-    const processedFolders = {};
-    for(const folder of folders) {
-        const folderData = processedData.filter(item => item.folder === folder).map(item => {
-            delete item.folder;
-            return item;
-        });
-        processedFolders[folder] = folderData;
+        } else if (key && key.includes('version')) {
+        inputObject['version'] = key.replace('version ', '').trim();
+        } else if (key) {
+        inputObject[key] = true;
+        } else {
+        inputObject[input] = true;
+        }
     }
-
-    saveFile('nav', processedFolders);
-    return true;
-};
+    item.input = inputObject;
+    const actionKey = item.action || 'play';
+    item = { ...item, [actionKey]: item.input };
+    delete item.input;
+    delete item.action;
+    return item;
+}
