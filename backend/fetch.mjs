@@ -9,6 +9,7 @@ import moment from 'moment-timezone';
 import fs from 'fs';
 import { parseFile } from 'music-metadata';
 import { findFileFromMediaKey } from './media.mjs';
+import { processListItem } from './jobs/nav.mjs';
 
 
 const dataPath = `${process.env.path.data}`;
@@ -171,6 +172,15 @@ const applyParentTags = (items, parent) => {
 // Helper function to get children from a parent media_key
 export const getChildrenFromMediaKey = async ({media_key, baseUrl}) => {
     const validExtensions = ['.mp3', '.mp4', '.m4a'];
+    const folderExists = fs.existsSync(`${mediaPath}/${media_key}`);
+    if (!folderExists) {
+        //load lists
+        const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
+        const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
+        return listItems.filter(filterFn) || [];
+    }
+
+
     const getFiles = (basePath) => {
         const folderPath = `${basePath}/${media_key}`;
         if (!fs.existsSync(folderPath)) return [];
@@ -182,6 +192,8 @@ export const getChildrenFromMediaKey = async ({media_key, baseUrl}) => {
             return fs.existsSync(`${folderPath}/${file}`) ? { baseUrl, media_key: `${media_key}/${fileWithoutExt}` } : null;
         }).filter(Boolean);
     };
+
+    //TODO if no folder for the media_key, check if the media_key is folder in the nav data
 
     const items = (await Promise.all(getFiles(mediaPath) // Get files from media path
                         .map(loadMetadataFromFile)))
@@ -200,7 +212,7 @@ apiRouter.get('/list/*', async (req, res, next) => {
 
     try {
         const media_key = req.params[0];
-        const items = await getChildrenFromMediaKey(media_key, baseUrl, mediaPath);
+        const items = await getChildrenFromMediaKey({media_key, baseUrl, mediaPath});
 
         // Add metadata from a config
         const metadata = loadMetadataFromMediaKey(media_key);

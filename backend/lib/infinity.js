@@ -1,6 +1,5 @@
 import axios from 'axios';
-import { loadFile, saveFile, saveImage } from './io.mjs';
-import { navProcess } from '../jobs/nav.mjs';
+import { saveFile, saveImage } from './io.mjs';
 
 const keys = Object.keys(process.env.infinity);
 
@@ -144,7 +143,6 @@ const loadData = async (name,req) => {
     const host = req.headers.host;
     data = await saveImages(host, data, name);
     saveFile(name, data);
-    if (name === "nav") await navProcess(host) //todo, need a better way to handle one off jobs
     return data;
 }
 

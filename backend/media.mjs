@@ -138,6 +138,7 @@ mediaRouter.all(`/info/*`, async (req, res) => {
 
     if(!extention) media_key = await (async ()=>{
         const items = await getChildrenFromMediaKey({media_key, baseUrl});
+        //TODO: Check for already watched, shuffle, etc
         return items.sort(()=>Math.random() - 0.5).slice(0,1)[0]?.media_key;
     })();
 
