@@ -12,6 +12,7 @@ import letterboxd from './lib/letterboxd.js';
 import goodreads from './lib/goodreads.js';
 import Infinity from './lib/infinity.js';
 import scripture from './lib/scriptureguide.mjs';
+import ldsgc from './lib/ldsgc.mjs';
 import { refreshFinancialData as budget } from './lib/budget.mjs';
 
 const harvesters = {
@@ -20,6 +21,7 @@ const harvesters = {
     gmail,
     gcal,
     withings,
+    ldsgc,
     weather,
     scripture,
     clickup,
