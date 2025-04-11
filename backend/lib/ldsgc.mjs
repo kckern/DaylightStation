@@ -1,6 +1,7 @@
 import { saveFile } from './io.mjs';
 import axios from 'axios';
 import {parse} from 'node-html-parser'; 
+import fs from 'fs';
 
 
 
@@ -30,7 +31,7 @@ export default async function harvestLDSGC(req) {
         const apiBase = `https://www.churchofjesuschrist.org/study/api/v3/language-pages/type/content?lang=eng&uri=/`;
         const apiUrl = apiBase + item.api;
         const {data} = await axios.get(apiUrl, { headers: { 'Accept': 'application/json' } });
-        const audioURL = data.meta.audio[0].mediaUrl;
+        const mediaUrl = (data.meta.video?.[0]?.mediaUrl || data.meta.audio?.[0]?.mediaUrl) ?? null;
         //const title = data.meta.title;
         const html = parse(data.content.body);
         const title = html.querySelector('h1')?.innerText;
@@ -41,10 +42,10 @@ export default async function harvestLDSGC(req) {
             }
             return el.innerText;
         });
-        const saveMe = {audioURL,title, speaker, content}
+        const saveMe = {mediaUrl,title, speaker, content}
+        return data.meta;
         saveFile('ldsgc/' + item.num, saveMe);
-        return saveMe;
-        break;
+
     }
     saveFile('ldsgc/index', items);
     return items;
