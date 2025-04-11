@@ -49,6 +49,31 @@ export const saveImage = async (url, folder, uid) => {
     }
 };
 
+export const loadRandom = (folder) => {
+    const path = `${process.env.path.data}/${folder}`;
+    if (!fs.existsSync(path)) {
+        console.error(`Folder does not exist: ${path}`);
+        return false;
+    }
+
+    const files = fs.readdirSync(path).filter(file => file.endsWith('.yaml'));
+    if (files.length === 0) {
+        console.error(`No YAML files found in folder: ${path}`);
+        return false;
+    }
+
+    const randomFile = files[Math.floor(Math.random() * files.length)];
+    const filePath = `${path}/${randomFile}`;
+    const fileData = fs.readFileSync(filePath, 'utf8').toString().trim();
+
+    try {
+        const object = yaml.load(fileData);
+        return object;
+    } catch (e) {
+        console.error(`Failed to parse YAML file: ${filePath}`, e);
+        return false;
+    }
+};
 
 
 
