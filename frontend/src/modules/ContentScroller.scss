@@ -1,0 +1,183 @@
+
+.content-scroller {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  
+
+  h2 {
+    text-align: center;
+    background-color: #222;
+    color: #ffffff99;
+    font-size: 3rem;
+    line-height: 4rem;
+    margin: 0;
+  }
+  h3 {
+    text-align: center;
+    background-color: #111;
+    color: #ffffff66;
+    font-size: 2rem;
+    line-height: 3rem;
+    margin: 0;
+  }
+
+  .textpanel {
+    padding-top: 3rem;
+    flex-grow: 1;
+    overflow: hidden;
+    font-family: "Scripture", serif;
+    color: #000;
+    position: relative;
+    /* fade in */
+    opacity: 1;
+    transition: opacity 6s;
+
+    &.fade-out {
+      opacity: 0;
+      transition: opacity 3s;
+    }
+
+    &.init {
+      opacity: 0;
+    }
+  }
+
+  .scrolled-content {
+    padding: 0 0;
+    transition: transform 0.2s;
+  }
+
+  .controls {
+    background-color: #333;
+    height: 2rem;
+    position: relative;
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
+  .seek-bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    height: 100%;
+    width: 100%;
+    z-index: 1;
+    user-select: none;
+    cursor: pointer;
+  }
+
+  .seek-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background-color: #51443b;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    z-index: 0;
+    transition: width 0.1s linear;
+
+    .current-time {
+      padding: 0.5ex;
+      font-weight: bold;
+      padding-right: 1ex;
+      border-right: 1px solid #ffffff;
+    }
+  }
+
+  .total-time {
+    padding: 0.5ex;
+    font-weight: bold;
+    position: absolute;
+    z-index: -1;
+  }
+}
+
+/* Scriptures-specific */
+.content-scroller.scriptures {
+
+  .scripture-text{
+    padding: 0 2rem 33vh 2rem;
+  }
+  .verse-headings {
+    margin-top: 2rem;
+  }
+   .background,  
+   .summary {
+      font-style: italic;
+      color: #7c340aAA;
+      line-height: 4.6rem;
+      font-size: 2.4rem;
+      margin-top: 2rem;
+      text-align: justify;
+
+  }
+  .heading {
+    font-family: "Roboto Condensed", sans-serif;
+    font-size: 3.4rem;
+    line-height: 1;
+    margin: 4rem 0 1ex 0;
+  }
+  .verse-number {
+    font-size: 1ex;
+    color: #5d340855;
+    position: relative;
+    margin-left: 1ex;
+    top: -2ex;
+    right: -0.1ex;
+    font-family: "Roboto Condensed", sans-serif;
+  }
+  .verse-text {
+    color: #5d3408;
+    font-size: 2.8rem;
+    line-height: 1.2;
+  }
+}
+
+/* Hymn-specific */
+.content-scroller.hymn {
+  background-color: #fdf0d5;
+  .hymn-text {
+    padding-bottom: 33vh;
+    font-size: 2rem;
+    margin-bottom: 2rem;
+    margin-left: 25vw;
+    .stanza {
+      margin-bottom: 3rem;
+      p {
+        margin: 0;
+        line-height: 1;
+      }
+    }
+  }
+}
+
+/* Song-specific */
+.content-scroller.song {
+  .song-lyrics {
+    p {
+      margin: 0 0 1rem;
+    }
+  }
+}
+
+/* Audiobook-specific */
+.content-scroller.audiobook {
+  .audiobook-text {
+    p {
+      margin-bottom: 1rem;
+    }
+  }
+}
+
+/* Talk-specific */
+.content-scroller.talk {
+  .talk-transcript {
+    p {
+      margin-bottom: 1rem;
+    }
+  }
+}
