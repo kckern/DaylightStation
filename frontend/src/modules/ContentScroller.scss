@@ -24,7 +24,7 @@
   }
 
   .textpanel {
-    padding-top: 3rem;
+    // padding-top: 3rem;
     flex-grow: 1;
     overflow: hidden;
     font-family: "Scripture", serif;
@@ -100,10 +100,11 @@
 .content-scroller.scriptures {
 
   .scripture-text{
-    padding: 0 2rem 33vh 2rem;
+    padding: 1rem 2rem 33vh 2rem;
+    margin-top: -2rem;
   }
   .verse-headings {
-    margin-top: 2rem;
+    margin-top: 0;
   }
    .background,  
    .summary {
