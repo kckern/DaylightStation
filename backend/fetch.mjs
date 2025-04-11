@@ -10,8 +10,6 @@ import fs from 'fs';
 import { parseFile } from 'music-metadata';
 import { findFileFromMediaKey } from './media.mjs';
 import { processListItem } from './jobs/nav.mjs';
-
-
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
 
@@ -54,9 +52,42 @@ apiRouter.get('/scripture/:volume/:version/:verse_id',  async (req, res, next) =
 
 apiRouter.get('/hymn/:hymn_num?', async (req, res, next) => {
     try {
-        const hymn_num = req.params.hymn_num;
-        const hymnData = hymn_num ? loadFile(`songs/hymns/${hymn_num}`) : loadRandom(`songs/hymns`);
-        res.json(hymnData);
+        const hostname = req.get('host');
+        const protocol = /localhost/.test(hostname) ? 'http' : 'https';
+        const preferences = ["_ldsgc", ""];
+        const hymnData = req.params.hymn_num ? loadFile(`songs/hymns/${req.params.hymn_num}`) : loadRandom(`songs/hymns`);
+        const hymn_num = String(req.params.hymn_num || hymnData?.hymn_num || '').padStart(3, '0');
+        const { mediaFilePath, mediaUrl } = preferences.reduce((result, prf) => {
+            if (result) return result; // If a result is already found, skip further checks
+            prf = prf ? `${prf}/` : '';
+            const mediaFilePath = `${mediaPath}/songs/hymns/${prf}${hymn_num}.mp3`;
+            try {
+            if (fs.existsSync(mediaFilePath)) {
+                return {
+                mediaUrl: `${protocol}://${hostname}/media/songs/hymns/${prf}${hymn_num}`,
+                mediaFilePath
+                };
+            }
+            } catch (err) {
+            console.error(`Error checking file path: ${mediaFilePath}`, err.message);
+            }
+            return null;
+        }, null) || {};
+
+        if (!mediaFilePath || !mediaUrl) {
+            return res.status(200).json({ ...hymnData, mediaUrl: null, duration: 0 });
+        }
+
+        if (!mediaFilePath || !mediaUrl) {
+            throw new Error(`Failed to resolve media file or URL for hymn number: ${hymn_num}`);
+        }
+        const metadata = await parseFile(mediaFilePath, { native: true });
+        const duration = parseInt(metadata?.format?.duration) || 0;
+
+        if (!mediaUrl) {
+            throw new Error(`Hymn file not found for hymn number: ${hymn_num}`);
+        }
+        res.json({...hymnData, mediaUrl, duration});
     } catch (err) {
         next(err);
     }
@@ -88,6 +119,7 @@ apiRouter.get('/budget/daytoday',  async (req, res, next) => {
 
 
 export const loadMetadataFromFile = async ({media_key, baseUrl}) => {
+    if(!media_key) return null;
     media_key = media_key.replace(/\.[^/.]+$/, ""); // Remove the file extension
     const keepTags = ['title', 'artist', 'album', 'year', 'track', 'genre'];
     const {path} = findFileFromMediaKey(media_key);

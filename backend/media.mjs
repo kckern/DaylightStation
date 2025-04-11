@@ -132,16 +132,19 @@ mediaRouter.post('/log', async (req, res) => {
     }
 });
 mediaRouter.all(`/info/*`, async (req, res) => {
-    let media_key = req.params[0];
+    let media_key = req.params[0] || Object.values(req.query)[0];
+    if(!media_key) return res.status(400).json({ error: 'No media_key provided', param: req.params, query: req.query });
+
     const baseUrl = `${req.protocol}://${req.headers.host}`;
     const { fileSize,  extention } = findFileFromMediaKey(media_key);
 
     if(!extention) media_key = await (async ()=>{
         const items = await getChildrenFromMediaKey({media_key, baseUrl});
         //TODO: Check for already watched, shuffle, etc
+        if(!items || items.length === 0) return media_key;
         return items.sort(()=>Math.random() - 0.5).slice(0,1)[0]?.media_key;
     })();
-
+    if(!media_key) return res.status(400).json({ error: 'No media_key found', param: req.params, query: req.query });
     const metadata_file = await loadMetadataFromFile({media_key, baseUrl});
     const metadata_media = loadMetadataFromMediaKey(media_key);
     const metadata_parent = loadMetadataFromMediaKey(media_key.split('/').slice(0, -1).join('/'),['image','volume','rate','shuffle']);

@@ -144,12 +144,15 @@
     padding-bottom: 33vh;
     font-size: 2rem;
     margin-bottom: 2rem;
-    margin-left: 25vw;
     .stanza {
-      margin-bottom: 3rem;
+      margin-bottom: 1.5rem;
       p {
         margin: 0;
         line-height: 1;
+        margin-left: 2rem;
+      }
+      p:nth-child(1) {
+        margin-left: 0;
       }
     }
   }

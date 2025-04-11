@@ -485,52 +485,58 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
     const [subtitle, setSubtitle] = useState("");
     const [verses, setHymnVerses] = useState([]);
     const [hymnNum, setHymnNum] = useState(null);
-     useEffect(() => {
+    const [mediaUrl, setMediaUrl] = useState(null);
+    const [duration, setDuration] = useState(0);
+    const hymnTextRef = useRef(null);
+
+    useEffect(() => {
         const path = hymn === true ? "data/hymn" : `data/hymn/${hymn}`;
-        DaylightAPI(path).then(({title,hymn_num,verses}) => {
+        DaylightAPI(path).then(({title, hymn_num, mediaUrl, verses, duration}) => {
           setHymnVerses(verses);
           setTitle(title);
           setHymnNum(hymn_num);
+          setMediaUrl(mediaUrl);
           setSubtitle(`Hymn #${hymn_num}`);
+          setDuration(duration);
         });
-      }, [hymn]);
-  
+    }, [hymn]);
+
     const parseHymnContent = useCallback((allVerses) => {
-      if (!allVerses) return null;
-      return (
-        <div className="hymn-text">
-          {allVerses.map((stanza, sIdx) => (
-            <div key={`stanza-${sIdx}`} className="stanza">
-              {stanza.map((line, lIdx) => (
-                <p
-                  key={`line-${sIdx}-${lIdx}`}
-                  className="line"
-                  style={{
-                    marginLeft: /^[a-z]/.test(line) ? "5rem" : "0"
-                  }}
-                >
-                  {line}
-                </p>
-              ))}
+        useEffect(() => {
+            const panelWidth = hymnTextRef.current.closest(".textpanel").offsetWidth; 
+            const hymnTextWidth = hymnTextRef.current.offsetWidth;
+            const diff = panelWidth - hymnTextWidth;
+            const marginLeft = (diff) / 2;
+            hymnTextRef.current.style.marginLeft = `${marginLeft}px`;
+            },
+         [allVerses]);
+
+        return (
+            <div className="hymn-text" ref={hymnTextRef}>
+                {allVerses.map((stanza, sIdx) => (
+                    <div key={`stanza-${sIdx}`} className="stanza">
+                        {stanza.map((line, lIdx) => (
+                            <p key={`line-${sIdx}-${lIdx}`} className="line">{line}</p>
+                        ))}
+                    </div>
+                ))}
             </div>
-          ))}
-        </div>
-      );
+        );
     }, []);
-  
-    const mainMediaUrl = hymnNum ? DaylightMediaPath(`media/songs/hymns/${hymnNum}`) : null;
     if(!hymnNum) return null;
+    const verseCount = verses.length;
+    const yStartTime = (duration / verseCount) / 1.8;
     return (
       <ContentScroller
         type="hymn"
         title={title}
         subtitle={subtitle}
-        mainMediaUrl={mainMediaUrl}
+        mainMediaUrl={mediaUrl}
         contentData={verses}
         parseContent={parseHymnContent}
         onAdvance={advance}
         onClear={clear}
-        yStartTime={15}
+        yStartTime={yStartTime}
       />
     );
   }
