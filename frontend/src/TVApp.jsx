@@ -151,13 +151,21 @@ export default function TVApp() {
     const queryEntries = Object.fromEntries(params.entries());
     const keysInQuery = Object.keys(queryEntries);
 
-    const autoplay = keysInQuery.length > 0 
-        ? keysInQuery.includes("playlist") 
-            ? { queue: { playlist: queryEntries["playlist"] } } 
-            : keysInQuery.includes("hymn") 
-                ? { play: { hymn: queryEntries["hymn"] } } 
-                : { open: { app: keysInQuery[0], param: queryEntries[keysInQuery[0]] } }
-        : null;
+    const autoplay = (() => {
+        const mappings = {
+            playlist: (value) => ({ queue: { playlist: value } }),
+            queue: (value) => ({ queue: { playlist: value } }),
+            hymn: (value) => ({ play: { hymn: value } }),
+            media: (value) => ({ play: { media: value } }),
+        };
+
+        for (const [key, value] of Object.entries(queryEntries)) {
+            if (mappings[key]) return mappings[key](value);
+            return { open: { app: key, param: value } };
+        }
+
+        return null;
+    })();
 
     return (
         <div className="tv-app-container">
