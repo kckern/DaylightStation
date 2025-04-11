@@ -179,26 +179,28 @@ function useCommonMediaController({
 /*  MAIN PLAYER                                               */
 /*─────────────────────────────────────────────────────────────*/
 export default function Player({ play, queue, clear }) {
+
   const [playQueue, setQueue] = useState(() => {
     if (Array.isArray(queue)) return queue.map((item) => ({ ...item, guid: guid() }));
     if (Array.isArray(play)) return play.map((item) => ({ ...item, guid: guid() }));
     if (queue && typeof queue === 'object') {
       (async () => {
-        const validKeys = ["plex","media","hymn","scripture", "playlist"];
-        const queueKeys = Object.keys(queue);
-        const queueKey = queueKeys.find(key => validKeys.includes(key)) || null;
-        const queueVal = queue[queueKey];
-        const query = queueKeys
-          .filter(key => typeof queue[key] === 'string' || typeof queue[key] === 'number')
-          .map(key => `${key}=${encodeURIComponent(queue[key])}`)
-          .join('&');
-        const {queue:fetchedQueue} = await DaylightAPI(`media/queue/${queueKey}/${queueVal}?${query}`);
-        setQueue(fetchedQueue.map((item) => ({ ...item, guid: guid() })));
+        //CASE 1: queue is an object with a playlist key
+        if(queue.playlist) {
+          const {items} = await DaylightAPI(`data/list/${queue.playlist}`);
+          setQueue(items.map((item) => ({ ...item.play, guid: guid() })));
+        }
+        //CASE 2: queue is an object with a plex key
       })();
       return [];
+    } 
+    if(Array.isArray(queue)) {
+      //CASE 3: queue is an array of objects, no fetch needed
+      return queue.map((item) => ({ ...item, guid: guid() }));
     }
     return [];
   });
+
 
   const advance = useCallback(() => {
     setQueue((prevQueue) => (prevQueue.length > 1 ? prevQueue.slice(1) : (clear(), [])));
@@ -219,13 +221,7 @@ export default function Player({ play, queue, clear }) {
   }, [clear]);
 
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  if (!playQueue.length) return <div>Loading Queue....
-
-  <pre>
-    {JSON.stringify({play, queue}, null, 2)}
-  </pre>
-
-  </div>
+  if (!playQueue?.length) return <div>Loading Queue....</div>
   return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
 }
 
@@ -240,7 +236,9 @@ export function SinglePlayer(play) {
     rate,
     advance,
     clear
-  } = play;
+  } =  play || {};
+
+
   // Scripture or Hymn short-circuits
   if (!!scripture)    return <Scriptures {...play} />;
   if (!!hymn)         return <Hymns {...play} />;
@@ -257,9 +255,8 @@ export function SinglePlayer(play) {
         setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
         setIsReady(true);
       } else if (!!media) {
-        const infoResponse = await DaylightAPI(
-          `media/info/${media}${shuffle ? "/shuffle" : ""}`
-        );
+        const infoResponse = await DaylightAPI(  `media/info/${media}`);
+        console.log("infoResponse", infoResponse);
         setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
         setIsReady(true);
       }
@@ -284,6 +281,7 @@ export function SinglePlayer(play) {
           <p>Unsupported media type</p>
         </div>
       )}
+      
     </div>
   );
 }
