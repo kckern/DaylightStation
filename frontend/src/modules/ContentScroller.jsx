@@ -38,7 +38,7 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
   export default function ContentScroller({
     type = "generic",
     className = "",
-    title,
+    title,ready,
     subtitle,
     mainMediaUrl,
     isVideo = false,
@@ -228,7 +228,6 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
   
     // Final transform for scrolling
     const yOffset = (2 * remPx) + (yProgress * (contentHeight - (3 * remPx)) - (panelHeight * yProgress)); 
-  
     return (
       <div className={`content-scroller ${type} ${className}`} >
         {(title || subtitle) && (
@@ -485,10 +484,13 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
     const [title, setTitle] = useState("");
     const [subtitle, setSubtitle] = useState("");
     const [verses, setHymnVerses] = useState([]);
+    const [hymnNum, setHymnNum] = useState(null);
      useEffect(() => {
-        DaylightAPI(`data/hymn/${hymn}`).then(({title,hymn_num,verses}) => {
+        const path = hymn === true ? "data/hymn" : `data/hymn/${hymn}`;
+        DaylightAPI(path).then(({title,hymn_num,verses}) => {
           setHymnVerses(verses);
           setTitle(title);
+          setHymnNum(hymn_num);
           setSubtitle(`Hymn #${hymn_num}`);
         });
       }, [hymn]);
@@ -516,7 +518,8 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
       );
     }, []);
   
-    const mainMediaUrl = DaylightMediaPath(`media/songs/hymns/${hymn}`);
+    const mainMediaUrl = hymnNum ? DaylightMediaPath(`media/songs/hymns/${hymnNum}`) : null;
+    if(!hymnNum) return null;
     return (
       <ContentScroller
         type="hymn"

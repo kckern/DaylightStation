@@ -1,7 +1,7 @@
 import express from 'express';
 const apiRouter = express.Router();
 import Infinity from './lib/infinity.js';
-import { loadFile, saveFile } from './lib/io.mjs';
+import { loadFile, loadRandom, saveFile } from './lib/io.mjs';
 import { readFileSync, readdirSync } from 'fs';
 import test from './jobs/weight.mjs';
 import yaml, { load } from 'js-yaml';
@@ -52,19 +52,15 @@ apiRouter.get('/scripture/:volume/:version/:verse_id',  async (req, res, next) =
 }
 );
 
-
-apiRouter.get('/hymn/:hymn_num',  async (req, res, next) => {
-
-    
+apiRouter.get('/hymn/:hymn_num?', async (req, res, next) => {
     try {
         const hymn_num = req.params.hymn_num;
-        const hymnData = loadFile(`songs/hymns/${hymn_num}`);
+        const hymnData = hymn_num ? loadFile(`songs/hymns/${hymn_num}`) : loadRandom(`songs/hymns`);
         res.json(hymnData);
     } catch (err) {
         next(err);
     }
-}
-);
+});
 
 apiRouter.get('/budget',  async (req, res, next) => {
     try {
