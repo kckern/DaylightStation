@@ -64,8 +64,7 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
     const contentRef = useRef(null);
     const [panelHeight, setPanelHeight] = useState(0);
     const [contentHeight, setContentHeight] = useState(0);
-    const [remPx, setRemPx] = useState(parseFloat(getComputedStyle(document.documentElement).fontSize));
-  
+
     // Fade-in class
     const [init, setInit] = useState(true);
   
@@ -78,7 +77,7 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
     } = ambientConfig || {};
   
     // Once we know main media's duration, we can do the scroll math
-    const movingTime = Math.max(0, duration - yStartTime);
+    const movingTime = Math.max(0, duration - yStartTime + 2);
     const yProgress =
       currentTime < yStartTime || movingTime <= 0
         ? 0
@@ -227,7 +226,7 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
       : (contentData || []).map((line, idx) => <p key={idx}>{line}</p>);
   
     // Final transform for scrolling
-    const yOffset = (2 * remPx) + (yProgress * (contentHeight - (3 * remPx)) - (panelHeight * yProgress)); 
+    const yOffset = (yProgress * contentHeight) - (panelHeight * yProgress); 
     return (
       <div className={`content-scroller ${type} ${className}`} >
         {(title || subtitle) && (
