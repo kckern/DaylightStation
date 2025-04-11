@@ -332,21 +332,24 @@ function AudioPlayer({ media, advance, clear }) {
     onShaderLevelChange
   });
 
-  const { media_url, title, artist, album, img } = media;
+  const { media_url, title, artist, album, image } = media;
   const { percent } = getProgressPercent(progress, duration);
+
+  const header = !!artist &&  !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
 
   return (
     <div className="audio-player">
       <div className={`shader ${levels[shaderIndex]}`} />
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <p>
-        {artist} - {album}
+        {header}
       </p>
       <p>
         {formatTime(progress)} / {formatTime(duration)}
       </p>
+
       <div className="image-container">
-        {img && <img src={img} alt={title} className="cover" />}
+        {image && <img src={image} alt={title} className="cover" />}
       </div>
       <h2>
         {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
