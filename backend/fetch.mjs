@@ -10,6 +10,7 @@ import fs from 'fs';
 import { parseFile } from 'music-metadata';
 import { findFileFromMediaKey } from './media.mjs';
 import { processListItem } from './jobs/nav.mjs';
+import {lookupReference, generateReference} from 'scripture-guide';
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
 
@@ -39,16 +40,135 @@ apiRouter.get('/infinity/harvest/:table_id?',  async (req, res, next) => {
 
 
 //scritpures
-apiRouter.get('/scripture/:volume/:version/:verse_id',  async (req, res, next) => {
+apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) => {
+
+    const volumes = {
+        ot: 1,
+        nt: 23146,
+        bom: 31103,
+        dc: 37707,
+        pgp: 41361,
+        lof: 41996
+    }
+
+    // Option 1: /scripture/ot   (first_term is volume)
+    // Option 2: /scripture/nt/msg (first_term is volume, second_term is version)
+    // Option 3: /scripture/msg/nt (first_term is version, second_term is volume)
+    // Option 4: /scripture/matt1 (first_term is reference)
+    // Option 5: /scripture/kjv/matt1 (first_term is version, second_term is reference)
+    // Option 6: /scripture/37707 (first_term is verse_id)
+    // Option 7: /scripture/redc/37707 (first_term is version, second_term is verse_id)
+    // Option 8: /scripture/37707/redc (first_term is verse_id, second_term is version)
+
+    //Helper functions 
+    const getVolume = (verse_id) => {
+        const keys = Object.keys(volumes);
+        const values = Object.values(volumes);
+
+        for (let i = 0; i < values.length; i++) {
+            const start = values[i];
+            const end = i === values.length - 1 ? Infinity : values[i + 1] - 1;
+            if (verse_id >= start && verse_id <= end) {
+                return keys[i];
+            }
+        }
+        return null;
+    };
+
+    const getVerseId = (input) => {
+        const ref = generateReference(input);
+        const {verse_ids:[verse_id]} = lookupReference(input);
+        return ref ? parseInt(input) : verse_id || null;
+    }
+
+    const getVersion = (volume) => {
+        //list of versions in volumne folder
+        const versions = readdirSync(`${dataPath}/scripture/${volume}`)
+                            .filter(folder => fs.statSync(`${dataPath}/scripture/${volume}/${folder}`).isDirectory());
+        return versions.length > 0 ? versions[0] : null;
+    }
+
+    const getVerseIdFromVolume = (volume, version) => {
+        const chapters = readdirSync(`${dataPath}/scripture/${volume}/${version}`)
+            .filter(file => file.endsWith('.yaml'))
+            .map(file => file.replace('.yaml', ''));
+        //todo: check logs
+        return chapters.length > 0 ? chapters[0] : null;
+    }
+
+    const deduceFromInput = (first_term, second_term) => {
+        let volume = null;
+        let version = null;
+        let verse_id = null;
+
+        if (first_term && second_term) {
+            // Option 3: /scripture/msg/nt
+            if (volumes[first_term]) {
+                volume = first_term;
+                version = second_term;
+                verse_id = getVerseIdFromVolume(volume, version);
+            } else if (volumes[second_term]) {
+                // Option 4: /scripture/nt/msg
+                volume = second_term;
+                version = first_term;
+                verse_id = getVerseIdFromVolume(volume, version);
+            } else {
+                // Option 5: /scripture/37707/redc
+                verse_id = getVerseId(first_term) || getVerseId(second_term);
+                volume = getVolume(verse_id);
+                version = volumes[second_term] ? second_term : getVersion(volume);
+            }
+        } else if (first_term) {
+            verse_id = getVerseId(first_term);
+            volume = volumes[first_term] ? first_term : getVolume(verse_id);
+            version = getVersion(volume) || null;
+            verse_id = verse_id || getVerseIdFromVolume(volume, version);
+        }
+
+        return {volume, version, verse_id};
+    }
+
     try {
-        const {volume, version, verse_id} = req.params;
+        const { first_term, second_term } = req.params;
+
+    
+        const {volume, version, verse_id} = deduceFromInput(first_term, second_term);
+
+        if (!volume || !version || !verse_id) {
+            return res.status(400).json({
+            error: 'Invalid scripture reference', 
+            first_term, second_term, volume, version, verse_id
+            });
+        }
+
+        const filePath = `${dataPath}/scripture/${volume}/${version}/${verse_id}.yaml`;
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+            error: 'Scripture file not found', 
+            first_term, second_term, volume, version, verse_id,
+            filePath
+            });
+        }
+        const reference = generateReference(verse_id).replace(/:1$/, '');
+
+        const mediaFilePath = `${mediaPath}/scripture/${volume}/${version}/${verse_id}.mp3`;
+        const mediaExists = fs.existsSync(mediaFilePath);
+        const mediaUrl = mediaExists ? `${req.protocol}://${req.get('host')}/media/scripture/${volume}/${version}/${verse_id}` : null;
+
         const data = yaml.load(readFileSync(`${dataPath}/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
-        res.json(data);
+        res.json({
+            input: !!first_term && !!second_term ? `${first_term}/${second_term}` : `${first_term || second_term}`,
+            reference,
+            volume,
+            version,
+            verse_id,
+            mediaUrl,
+            verses: data,
+        });
     } catch (err) {
         next(err);
     }
-}
-);
+});
 
 apiRouter.get('/hymn/:hymn_num?', async (req, res, next) => {
     try {
