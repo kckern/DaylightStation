@@ -316,34 +316,15 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
    * Example that uses an ambient background track plus a specialized parseContent
    * for headings and verses. 
    */
-  function findVolume(verseId) {
-    const volumes = { ot: 1, nt: 23146, bom: 31103, dc: 37707, pgp: 41361, lof: 41996 };
-    return Object.entries(volumes).reduce((prev, [name, id]) => {
-      return verseId >= id ? name : prev;
-    }) || "ot";
-  }
   
   // This is the default export for Scriptures:
   export function Scriptures(play) {
-    const { scripture, version = "redc", advance, clear } = play;
-  
-    // For computing verseId from reference
-    const [{ ref, verse_ids: [verseId] }] = useState(() => lookupReference(scripture));
-  
-    // Title/Subtitle from scripture headings
-    const [titleHeader, setTitleHeader] = useState(ref);
+    const { scripture, advance, clear } = play;
+    const [titleHeader, setTitleHeader] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
-  
-    // Scripture text data
+    const [mainMediaUrl, setMainMediaUrl] = useState(null);
     const [scriptureTextData, setScriptureTextData] = useState(null);
   
-    // Choose which volume
-    const volume = findVolume(verseId);
-  
-    // Build main media URL
-    const mainMediaUrl = DaylightMediaPath(`media/scripture/${volume}/${version}/${verseId}`);
-  
-    // Optional ambient track (random pick)
     const [music] = useState(
       String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")
     );
@@ -351,16 +332,16 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
   
     // Fetch the scripture text data
     useEffect(() => {
-      DaylightAPI(`data/scripture/${volume}/${version}/${verseId}`).then((verses) => {
+      DaylightAPI(`data/scripture/${scripture}`).then(({reference, mediaUrl, verses}) => {
         setScriptureTextData(verses);
-        // Typically the first verse object has headings
+        setTitleHeader(reference);
+        setMainMediaUrl(mediaUrl);
         if (verses && verses[0]?.headings) {
           const { title, subtitle: st } = verses[0].headings;
-          if (title) setTitleHeader(ref);
           setSubtitle([title, st].filter(Boolean).join(" • "));
         }
       });
-    }, [verseId, ref, version, volume]);
+    }, [scripture]);
   
 
     // Logic to build blocks and paragraphs
