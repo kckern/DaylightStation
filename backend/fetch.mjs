@@ -51,15 +51,6 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
         lof: 41996
     }
 
-    // Option 1: /scripture/ot   (first_term is volume)
-    // Option 2: /scripture/nt/msg (first_term is volume, second_term is version)
-    // Option 3: /scripture/msg/nt (first_term is version, second_term is volume)
-    // Option 4: /scripture/matt1 (first_term is reference)
-    // Option 5: /scripture/kjv/matt1 (first_term is version, second_term is reference)
-    // Option 6: /scripture/37707 (first_term is verse_id)
-    // Option 7: /scripture/redc/37707 (first_term is version, second_term is verse_id)
-    // Option 8: /scripture/37707/redc (first_term is verse_id, second_term is version)
-
     //Helper functions 
     const getVolume = (verse_id) => {
         const keys = Object.keys(volumes);
@@ -76,7 +67,8 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
     };
 
     const getVerseId = (input) => {
-        const ref = generateReference(input);
+        const isNumber = /^\d+$/.test(input);
+        const ref = isNumber ? generateReference(input) : (lookupReference(input).reference || null);
         const {verse_ids:[verse_id]} = lookupReference(input);
         return ref ? parseInt(input) : verse_id || null;
     }
