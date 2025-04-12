@@ -10,6 +10,7 @@ import React, {
   import { lookupReference } from "scripture-guide";
 import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import paperBackground from "../assets/backgrounds/paper.jpg";
+import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scripture-guide.jsx";
   
   /**
    * ContentScroller (superclass)
@@ -374,89 +375,15 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
     }, [scripture]);
   
 
-    // Logic to build blocks and paragraphs
-    const createBlocks = (data) => {
-      return (data || []).reduce((all, verseData, i) => {
-        const { headings, verse, text } = verseData || {};
-        if (headings) {
-          all.push({
-            type: "heading",
-            heading: headings.heading,
-            background: headings.background,
-            summary: headings.summary,
-            key: `heading-${i}`,
-          });
-        }
-        if (!text) return all;
-  
-        const plainText = text.replace(/[¶§｟｠]+/g, "");
-        const newParagraph = /¶/.test(text);
-        all.push({
-          type: "verse",
-          verse,
-          text: plainText,
-          newParagraph,
-          key: `verse-${i}`,
-        });
-        return all;
-      }, []);
-    };
-  
-    const createChunks = (blocks) => {
-      const chunks = [];
-      let currentParagraph = [];
-      blocks.forEach((b) => {
-        if (b.type === "heading") {
-          if (currentParagraph.length) {
-            chunks.push({ type: "paragraph", content: [...currentParagraph] });
-          }
-          currentParagraph = [];
-          chunks.push(b);
-        } else {
-          if (b.newParagraph && currentParagraph.length) {
-            chunks.push({ type: "paragraph", content: [...currentParagraph] });
-            currentParagraph = [b];
-          } else {
-            currentParagraph.push(b);
-          }
-        }
-      });
-      if (currentParagraph.length) {
-        chunks.push({ type: "paragraph", content: [...currentParagraph] });
-      }
-      return chunks;
-    };
   
     // parseContent for ContentScroller
     const parseScriptureContent = useCallback((allVerses) => {
       if (!allVerses) return null;
-      const blocks = createBlocks(allVerses);
-      const chunks = createChunks(blocks);
+      const data = convertVersesToScriptureData(allVerses);
   
       return (
         <div className="scripture-text" style={{ backgroundImage: `url(${paperBackground})` }}>
-          {chunks.map((chunk, i) => {
-            if (chunk.type === "heading") {
-              return (
-                <div key={chunk.key} className="verse-headings">
-                  {chunk.background && <p className="background">{chunk.background}</p>}
-                  {chunk.summary && <p className="summary">{chunk.summary}</p>}
-                  {chunk.heading && <h4 className="heading">{chunk.heading}</h4>}
-                </div>
-              );
-            }
-            // paragraph of verses
-            return (
-              <p key={`paragraph-${i}`}>
-                {chunk.content.map((c) => (
-                  <span key={c.key} className="verse">
-                    <span className="verse-number">{c.verse}</span>
-                    <span className="verse-text">{c.text}</span>
-                  </span>
-                ))}
-              </p>
-            );
-          })}
+          {scriptureDataToJSX(data)}
         </div>
       );
     }, []);

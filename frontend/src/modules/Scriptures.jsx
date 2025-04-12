@@ -4,6 +4,7 @@ import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import { lookupReference } from "scripture-guide";
 import moment from "moment";
 import paperBackground from "../assets/backgrounds/paper.jpg";
+import { convertVersesToScriptureData } from "../lib/scripture-guide.jsx";
 
 const config = {
   volumes: { ot: 1, nt: 23146, bom: 31103, dc: 37707, pgp: 41361, lof: 41996 },
@@ -24,68 +25,13 @@ const styleConfig = {
   totalTime: { pointerEvents: "none", position: "absolute", right: 0 },
 };
 
-function findVolume(verseId) {
-  return Object.entries(config.volumes).reduce(
-    (prev, curr) => (verseId >= curr[1] ? curr : prev)
-  )[0];
-}
 
-function createBlocks(scriptureTextData) {
-  return scriptureTextData.reduce((all, verseData, i) => {
-    const { headings, verse, text } = verseData || {};
-    if (headings) {
-      all.push({
-        type: "heading",
-        heading: headings.heading,
-        background: headings.background,
-        summary: headings.summary,
-        key: `heading-${i}`,
-      });
-    }
-    const plainText = text.replace(/[¶§｟｠]+/g, "");
-    const newParagraph = /¶/.test(text);
-    all.push({
-      type: "verse",
-      verse,
-      text: plainText,
-      newParagraph,
-      key: `verse-${i}`,
-    });
-    return all;
-  }, []);
-}
-
-function createChunks(blocks) {
-  const chunks = [];
-  let currentParagraph = [];
-  blocks.forEach((b) => {
-    if (b.type === "heading") {
-      if (currentParagraph.length) {
-        chunks.push({ type: "paragraph", content: [...currentParagraph] });
-      }
-      currentParagraph = [];
-      chunks.push(b);
-    } else {
-      if (b.newParagraph && currentParagraph.length) {
-        chunks.push({ type: "paragraph", content: [...currentParagraph] });
-        currentParagraph = [b];
-      } else {
-        currentParagraph.push(b);
-      }
-    }
-  });
-  if (currentParagraph.length) {
-    chunks.push({ type: "paragraph", content: [...currentParagraph] });
-  }
-  return chunks;
-}
 
 function ScriptureText({ scriptureTextData, panelHeight, yProgress }) {
   const textRef = useRef(null);
   const [textHeight, setTextHeight] = useState(0);
 
-  const blocks = scriptureTextData ? createBlocks(scriptureTextData) : [];
-  const chunks = scriptureTextData ? createChunks(blocks) : [];
+  const scriptureData = convertVersesToScriptureData(scriptureTextData);
 
   useEffect(() => {
     if (textRef.current) {
@@ -109,27 +55,9 @@ function ScriptureText({ scriptureTextData, panelHeight, yProgress }) {
         backgroundImage: `url(${config.backgroundImage})`,
       }}
     >
-      {chunks.map((chunk, i) => {
-        if (chunk.type === "heading") {
-          return (
-            <div key={chunk.key} className="verse-headings">
-              {chunk.background && <p className="background">{chunk.background}</p>}
-              {chunk.summary && <p className="summary">{chunk.summary}</p>}
-              {chunk.heading && <h4 className="heading">{chunk.heading}</h4>}
-            </div>
-          );
-        }
-        return (
-          <p key={`paragraph-${i}`}>
-            {chunk.content.map((c) => (
-              <span key={c.key} className="verse">
-                <span className="verse-number">{c.verse}</span>
-                <span className="verse-text">{c.text}</span>
-              </span>
-            ))}
-          </p>
-        );
-      })}
+      <pre>
+        {JSON.stringify(scriptureData, null, 2)}
+      </pre>
     </div>
   );
 }
@@ -293,7 +221,6 @@ export default function Scriptures(play) {
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const volume = findVolume(verseId);
   const mediaPath = DaylightMediaPath(`media/scripture/${volume}/${version}/${verseId}`);
   const [scriptureTextData, setScriptureTextData] = useState(null);
 
