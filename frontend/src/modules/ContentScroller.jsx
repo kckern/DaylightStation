@@ -38,6 +38,7 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
   export default function ContentScroller({
     type = "generic",
     className = "",
+    media_key,
     title,ready,
     subtitle,
     mainMediaUrl,
@@ -90,6 +91,33 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
       }
       setInit(false);
     }, [panelRef, contentData, duration]);
+
+    // Logger for media progress
+    const lastLoggedTimeRef = useRef(Date.now());
+
+    const logTime = async (type, id, percent, title) => {
+      const now = Date.now();
+      const timeSinceLastLog = now - lastLoggedTimeRef.current;
+      if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
+      lastLoggedTimeRef.current = now;
+      await DaylightAPI(`media/log`, { title, type, id:media_key, percent });
+      }
+    };
+
+    const onTimeUpdate = () => {
+      const mainEl = mainRef.current;
+      if (!mainEl || !duration) return;
+      const percent = (mainEl.currentTime / duration) * 100;
+      logTime(type, mainMediaUrl, percent, title);
+    };
+
+    useEffect(() => {
+      const mainEl = mainRef.current;
+      if (!mainEl) return;
+
+      mainEl.addEventListener('timeupdate', onTimeUpdate);
+      return () => mainEl.removeEventListener('timeupdate', onTimeUpdate);
+    }, [mainMediaUrl, duration, title]);
   
     // After content is rendered, measure the actual content height
     useEffect(() => {
@@ -323,6 +351,7 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
     const [titleHeader, setTitleHeader] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
     const [mainMediaUrl, setMainMediaUrl] = useState(null);
+    const [media_key, setMediaKey] = useState(null);
     const [scriptureTextData, setScriptureTextData] = useState(null);
   
     const [music] = useState(
@@ -332,9 +361,10 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
   
     // Fetch the scripture text data
     useEffect(() => {
-      DaylightAPI(`data/scripture/${scripture}`).then(({reference, mediaUrl, verses}) => {
+      DaylightAPI(`data/scripture/${scripture}`).then(({reference, media_key,mediaUrl, verses}) => {
         setScriptureTextData(verses);
         setTitleHeader(reference);
+        setMediaKey(media_key);
         setMainMediaUrl(mediaUrl);
         if (verses && verses[0]?.headings) {
           const { title, subtitle: st } = verses[0].headings;
@@ -435,6 +465,7 @@ import paperBackground from "../assets/backgrounds/paper.jpg";
       <ContentScroller
         type="scriptures"
         title={titleHeader}
+        media_key={media_key}
         subtitle={subtitle}
         mainMediaUrl={mainMediaUrl}
         ambientMediaUrl={ambientMediaUrl}

@@ -163,6 +163,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
             version,
             verse_id,
             mediaUrl,
+            media_key: `${volume}/${version}/${verse_id}`,
             verses: data,
         });
     } catch (err) {
