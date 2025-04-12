@@ -142,7 +142,6 @@ export default function TVApp() {
         const fetchData = async () => {
             const data = await DaylightAPI("data/list/TVApp");
             setList(data);
-            console.log("TVApp data", data);
         };
         fetchData();
     }, []);

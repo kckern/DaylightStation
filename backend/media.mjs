@@ -119,7 +119,7 @@ mediaRouter.post('/log', async (req, res) => {
     try {
         const log = loadFile('_media_memory') || {};
         log[type] = log[type] || {};
-        log[type][id] = { time: moment().format('YYYY-MM-DD hh:mm:ss a'), title, id, percent: parseFloat(percent) };
+        log[type][id] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, id, percent: parseFloat(percent) };
         if(!log[type][id].title) delete log[type][id].title;
         log[type] = Object.fromEntries(
             Object.entries(log[type]).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ss a').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ss a')))
