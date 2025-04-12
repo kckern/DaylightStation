@@ -85,7 +85,11 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
             .filter(file => file.endsWith('.yaml'))
             .map(file => file.replace('.yaml', ''));
         //todo: check logs
-        return chapters.length > 0 ? chapters[0] : null;
+        const media_memory = loadFile(`_media_memory`).scriptures;
+        const keys = Object.keys(media_memory).filter(k => k.startsWith(`${volume}/${version}/`));
+        const seen = keys.map(k => media_memory[k]).filter(({percent}) => percent > 0.5).map(k => k.id.match(/(\d+)$/)[1]);
+        const [nextUp] = chapters.filter(chapter => !seen.includes(chapter)) || [chapters[0]] || [null];
+        return nextUp;
     }
 
     const deduceFromInput = (first_term, second_term) => {
