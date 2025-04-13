@@ -6,6 +6,7 @@ import { DaylightAPI } from '../lib/api.mjs';
 import 'dash-video-element';
 import spinner from '../assets/icons/spinner.svg';
 
+
 /*─────────────────────────────────────────────────────────────*/
 /*  HOOKS AND UTILITIES                                       */
 /*─────────────────────────────────────────────────────────────*/
@@ -60,6 +61,18 @@ function useCommonMediaController({
   const [duration, setDuration] = useState(0);
   const lastLoggedTimeRef = useRef(0);
 
+  const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
+  const [selectedClass, setSelectedClass] = useState(classes[0]);
+  const cycleThroughClasses = (upOrDownInt) => {
+    upOrDownInt = parseInt(upOrDownInt) || 1;
+    setSelectedClass((prevClass) => {
+      const currentIndex = classes.indexOf(prevClass);
+      const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
+      return classes[newIndex];
+    }
+    );
+  };
+
 
   const getMediaEl = () => {
     const mediaEl = containerRef.current?.shadowRoot?.querySelector('video') || containerRef.current;
@@ -91,7 +104,13 @@ function useCommonMediaController({
         mediaEl.currentTime = Math.min(mediaEl.currentTime + inc, mediaEl.duration || 0);
       } else if (event.key === 'ArrowLeft') {
         mediaEl.currentTime = Math.max(mediaEl.currentTime - inc, 0);
-      } else if (['Enter', ' ', 'Space', 'Spacebar', 'MediaPlayPause'].includes(event.key)) {
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        cycleThroughClasses(1);
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        cycleThroughClasses(-1);
+      }  else if (['Enter', ' ', 'Space', 'Spacebar', 'MediaPlayPause'].includes(event.key)) {
         event.preventDefault();
         if (mediaEl.paused) {
           mediaEl.play();
@@ -101,12 +120,6 @@ function useCommonMediaController({
       } else if (event.key === 'Escape') {
         event.preventDefault();
         onClear();
-      } else if (isAudio && event.key === 'ArrowUp') {
-        event.preventDefault();
-        onShaderLevelChange(1);
-      } else if (isAudio && event.key === 'ArrowDown') {
-        event.preventDefault();
-        onShaderLevelChange(-1);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -136,7 +149,7 @@ function useCommonMediaController({
     const onLoadedMetadata = () => {
       const startTime = mediaEl.duration ? (meta.progress / 100) * mediaEl.duration : 0;
       mediaEl.dataset.key = meta.key;
-      mediaEl.currentTime = startTime;
+      if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
       if (isVideo) {
         mediaEl.controls = false;
@@ -171,6 +184,7 @@ function useCommonMediaController({
     duration,
     playbackRate,
     isDash,
+    selectedClass,
     handleProgressClick
   };
 }
@@ -222,7 +236,7 @@ export default function Player({ play, queue, clear }) {
 
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
   if (!playQueue?.length) return <div>Loading Queue....</div>
-  return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
+  return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />
 }
 
 
@@ -258,8 +272,7 @@ export function SinglePlayer(play) {
         setIsReady(true);
       } else if (!!media) {
         const infoResponse = await DaylightAPI(  `media/info/${media}`);
-        console.log("infoResponse", infoResponse);
-        setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
+        setMediaInfo({ ...infoResponse, key:media, playbackRate: rate || 1 });
         setIsReady(true);
       }
     }
@@ -317,13 +330,9 @@ function Loading({ media }) {
 /*─────────────────────────────────────────────────────────────*/
 
 function AudioPlayer({ media, advance, clear }) {
-  const [shaderIndex, setShaderIndex] = useState(4);
-  const levels = ['full', 'high', 'medium', 'low', 'off', 'low', 'medium', 'high', 'full'];
-  const onShaderLevelChange = (step) => {
-    setShaderIndex((prev) => (prev + step + levels.length) % levels.length);
-  };
 
-  const { playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
+
+  const { selectedClass, playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
     start: media.progress,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
@@ -331,7 +340,6 @@ function AudioPlayer({ media, advance, clear }) {
     isAudio: true,
     isVideo: false,
     meta: media,
-    onShaderLevelChange
   });
 
   const { media_url, title, artist, album, image } = media;
@@ -340,7 +348,7 @@ function AudioPlayer({ media, advance, clear }) {
   const header = !!artist &&  !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
 
   return (
-    <div className="audio-player">
+    <div className={`audio-player ${selectedClass}`}>
       <div className={`shader ${levels[shaderIndex]}`} />
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <p>
@@ -367,7 +375,7 @@ function AudioPlayer({ media, advance, clear }) {
 
 function VideoPlayer({ media, advance, clear }) {
   const {
-    isDash,
+    isDash,selectedClass, 
     containerRef,
     progress,
     duration,
@@ -381,15 +389,18 @@ function VideoPlayer({ media, advance, clear }) {
     isAudio: false,
     isVideo: true,
     meta: media,
+    selectedClass: media.selectedClass
   });
 
   const { show, season, title, media_url } = media;
   const { percent } = getProgressPercent(progress, duration);
 
+  const heading = !!show && !!season && !!title ? `${show} - ${season}: ${title}` : !!show && !!season ? `${show} - ${season}` : !!show ? show : title;
+
   return (
-    <div className="video-player">
+    <div className={`video-player ${selectedClass}`}>
       <h2>
-        {show} - {season}: {title}
+        {heading}
         {playbackRate > 1 ? ` (${playbackRate}×)` : ""}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
