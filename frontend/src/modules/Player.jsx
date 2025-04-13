@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './Player.scss';
 import moment from 'moment';
-import {Scriptures,Hymns} from './ContentScroller.jsx';
+import {Scriptures,Hymns, Talk} from './ContentScroller.jsx';
 import { DaylightAPI } from '../lib/api.mjs';
 import 'dash-video-element';
 import spinner from '../assets/icons/spinner.svg';
@@ -232,6 +232,7 @@ export function SinglePlayer(play) {
     media,
     hymn,
     scripture,
+    talk,
     shuffle,
     rate,
     advance,
@@ -242,6 +243,7 @@ export function SinglePlayer(play) {
   // Scripture or Hymn short-circuits
   if (!!scripture)    return <Scriptures {...play} />;
   if (!!hymn)         return <Hymns {...play} />;
+  if(!!talk)         return <Talk {...play} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);

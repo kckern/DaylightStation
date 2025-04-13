@@ -264,7 +264,14 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
             {subtitle && <h3>{subtitle}</h3>}
           </>
         )}
-  
+        <div className="content-container">
+
+        {!!isVideo && <video
+              ref={mainRef}
+              src={mainMediaUrl}
+              onLoadedMetadata={handleLoadedMetadata}
+              onEnded={handleEnded}
+            />}
         <div
           ref={panelRef}
           className={
@@ -280,6 +287,8 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
           >
             {renderedContent}
           </div>
+        </div>
+
         </div>
   
         {/* Seek + Controls */}
@@ -301,22 +310,13 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
           </div>
   
           {/* Main media (audio or video) */}
-          {isVideo ? (
-            <video
-              ref={mainRef}
-              src={mainMediaUrl}
-              onLoadedMetadata={handleLoadedMetadata}
-              onEnded={handleEnded}
-              style={{ display: "none" }}
-            />
-          ) : (
+          {!isVideo ? (
             <audio
               ref={mainRef}
               src={mainMediaUrl}
               onLoadedMetadata={handleLoadedMetadata}
               onEnded={handleEnded}
-            />
-          )}
+            />) : null }
   
           {/* Ambient media (optional) */}
           {ambientMediaUrl && (
@@ -554,30 +554,53 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
    */
   export function Talk(play) {
     const {
-      title,
-      subtitle,
-      videoUrl,
-      ambientMusicUrl,
-      transcriptData,
+      talk,
       advance,
       clear
     } = play;
-  
-    const parseTalkContent = useCallback((lines) => {
-      if (!lines) return null;
-      return (
-        <div className="talk-transcript">
-          {lines.map((t, i) => (
-            <p key={i}>{t}</p>
-          ))}
-        </div>
-      );
-    }, []);
-  
+
+    // Fetch the talk data
+    const [title, setTitle] = useState("Loading...");
+    const [subtitle, setSubtitle] = useState("");
+    const [videoUrl, setVideoUrl] = useState(null);
+    // Removed unused ambientMusicUrl state
+    const [transcriptData, setTranscriptData] = useState(null);
+    const [media_key, setMediaKey] = useState(null);
+
+    useEffect(() => {
+
+      DaylightAPI(`data/talk/${talk}`).then(({title, speaker, media_key, mediaUrl, content}) => {
+        setTitle(title);
+        setSubtitle(speaker);
+        setVideoUrl(mediaUrl);
+        setTranscriptData(content);
+        setMediaKey(media_key);
+      });
+    }
+    , [talk]);
+
+    
+    if(!videoUrl) return null;
+
+  const content_jsx = (
+    <div className="talk-text">
+    {transcriptData.map((line, idx) => {
+      if (line.startsWith("##")) {
+      return <h4 key={idx}>{line.slice(2).trim()}</h4>;
+      }
+      if (line.includes("©")) {
+      return null;
+      }
+      return <p key={idx}>{line}</p>;
+    })}
+    </div>
+  );
+    const ambientMusicUrl = `${DaylightMediaPath(`media/ambient/${String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")}`)}`;
     return (
       <ContentScroller
         type="talk"
         title={title}
+        media_key={media_key}
         subtitle={subtitle}
         mainMediaUrl={videoUrl}
         isVideo={true}
@@ -589,7 +612,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
           ambientVolume: 0.05
         }}
         contentData={transcriptData}
-        parseContent={parseTalkContent}
+        parseContent={()=>content_jsx}
         onAdvance={advance}
         onClear={clear}
         yStartTime={30}

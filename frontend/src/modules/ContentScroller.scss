@@ -193,11 +193,40 @@
   }
 }
 
-/* Talk-specific */
-.content-scroller.talk {
-  .talk-transcript {
-    p {
-      margin-bottom: 1rem;
-    }
-  }
+
+.talk .textpanel{
+  background-color: #fdf0d5;
+  padding-bottom: 20%;
+
+}
+
+.talk .talk-text {
+  padding: 2rem 2rem 33vh 2rem;
+  font-size: 1.5rem;
+  line-height: 0.9;
+  margin-bottom: 2rem;
+  text-align: justify;
+}
+.talk .talk-text p{
+  margin: 0;
+  margin-bottom: 1rem;
+}
+
+.talk .talk-text h4{
+  font-family: 'Roboto Condensed', sans-serif;
+  margin: 0;
+  margin-bottom: 0.5ex;
+  font-size: 2rem;
+  margin-left: -0.5ex;
+}
+
+.talk video{
+  object-fit: cover;
+  width: 40%;
+}
+
+.content-container {
+  display: flex;
+  flex-grow: 1;
+  display: flex;
 }

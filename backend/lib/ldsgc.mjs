@@ -43,7 +43,7 @@ export default async function harvestLDSGC(req) {
             return el.innerText;
         });
         const saveMe = {mediaUrl,title, speaker, content}
-        return data.meta;
+        //return data.meta;
         saveFile('ldsgc/' + item.num, saveMe);
 
     }
