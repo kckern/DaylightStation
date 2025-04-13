@@ -389,7 +389,7 @@ function VideoPlayer({ media, advance, clear }) {
   return (
     <div className="video-player">
       <h2>
-        {isDash ? "Dash" : "No Dash"} {show} - {season}: {title}
+        {show} - {season}: {title}
         {playbackRate > 1 ? ` (${playbackRate}×)` : ""}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />

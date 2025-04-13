@@ -6,7 +6,7 @@ import "./TVMenu.scss";
 
 const TVMenu = ({ list, clear, autoplay }) => {
 
-  const plexId = 0;
+  const plex = 0;
 
   const [buttons, setButtons] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -76,7 +76,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
 
       getData();
     },
-    [list, plexId]
+    [list, plex]
   );
 
   useEffect(
@@ -194,9 +194,14 @@ const TVMenu = ({ list, clear, autoplay }) => {
         {menuMeta.title || menuMeta.label}
       </h2>
       <div className="tv-menu" ref={menuRef}>
-        {buttons?.map((button, index) =>{
-            const plexId = Array.isArray(button.value?.plexId) ? button.value.plexId[0] : button.value?.plexId || null;
-          const img = button.image || (plexId && DaylightMediaPath(`/media/plex/img/${plexId}`)) || null;
+        {buttons?.map((button, index) => {
+          //handle images
+          const {plex} = button?.play || button?.queue || button?.list || button?.open || {};
+          if(!!plex) button.image = DaylightMediaPath(`/media/plex/img/${Array.isArray(plex) ? plex[0] : plex}`);
+          return button;
+        })
+        .map((button, index) =>{
+          const img = button.image || null;
           return <div
             key={`${index}-${button.label}`}
             className={`menu-button ${selectedIndex === index
