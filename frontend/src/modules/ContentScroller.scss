@@ -21,6 +21,12 @@
     font-size: 2rem;
     line-height: 3rem;
     margin: 0;
+    //no break, single line only
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    padding: 0 2rem;
   }
 
   .textpanel {
@@ -231,3 +237,18 @@
   flex-grow: 1;
   display: flex;
 }
+
+
+//dark mode
+  .content-scroller.dark-mode {
+
+    filter: brightness(0.3);
+    * {color: red!important;}
+    video{
+      filter: grayscale(100%) sepia(2) hue-rotate(-20deg);
+    }
+    .textpanel {
+      background-color: #000;
+    }
+    
+  }
