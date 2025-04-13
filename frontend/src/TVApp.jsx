@@ -77,7 +77,7 @@ const listTMP = [
     { title: "Bible", 
         list: { plex: "177777" } },
     { title: "Crash Course Kids", 
-        list: { plexId: "375840" } },
+        list: { plex: "375840" } },
     { title: "Cooking", 
         list: { plex: "416408" } },
     { title: "Classical", 
