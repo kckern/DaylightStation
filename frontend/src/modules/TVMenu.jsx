@@ -148,7 +148,6 @@ const TVMenu = ({ list, clear, autoplay }) => {
 
     const clear = () => setCurrentContent(null);
     const props = { ...selection, clear };
-    console.log("props", props);
     const options = {
       "play": <Player {...props} />,
       "queue": <Player {...props} />,

@@ -13,6 +13,7 @@ mediaRouter.use(express.json({
 }));
 const audioPath = `${process.env.path.media}`;
 const videoPath = `${process.env.path.media}`;
+const mediaPath = `${process.env.path.media}`;
 const notFound = `${audioPath}/${process.env.media.error}`;
 
 const ext = ['mp3','mp4','m4a'];
@@ -114,7 +115,7 @@ mediaRouter.post('/log', async (req, res) => {
     const postData = req.body;
     const { type, id, percent, title } = postData;
     if (!type || !id || !percent) {
-        return res.status(400).json({ error: `Invalid request: ${JSON.stringify(postData)}` });
+        return res.status(400).json({ error: `Invalid request: Missing ${!type ? 'type' : !id ? 'id' : 'percent'}` });
     }
     try {
         const log = loadFile('_media_memory') || {};
@@ -222,13 +223,21 @@ mediaRouter.all('/plex/queue/:plex_key/:action?', async (req, res) => {
 
 
 mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
+    const cacheFolder = `${mediaPath}/cache/plex`;
     const { plex_key } = req.params;
+    const cacheFile = `${cacheFolder}/${plex_key}.jpg`;
+    if (fs.existsSync(cacheFile)) return res.sendFile(cacheFile);
+    if (!fs.existsSync(cacheFolder)) fs.mkdirSync(cacheFolder, { recursive: true });
     const imageUrl = await (new Plex()).loadImgFromKey(plex_key);
     try {
         const response = await axios.get(imageUrl, { responseType: 'stream' });
-        res.setHeader('Content-Type', response.headers['content-type']);
-        res.setHeader('Content-Length', response.headers['content-length']);
-        response.data.pipe(res);
+        const writer = fs.createWriteStream(cacheFile);
+        response.data.pipe(writer);
+            writer.on('finish', () => {
+            res.setHeader('Content-Type', response.headers['content-type']);
+            res.setHeader('Content-Length', response.headers['content-length']);
+            response.data.pipe(res);
+        });
     } catch (error) {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: imageUrl });
     }
