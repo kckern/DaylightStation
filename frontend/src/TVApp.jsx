@@ -156,6 +156,7 @@ export default function TVApp() {
             queue: (value) => ({ queue: { playlist: value } }),
             hymn: (value) => ({ play: { hymn: value } }),
             media: (value) => ({ play: { media: value } }),
+            talk: (value) => ({ play: { talk: value } }),
             scripture: (value) => ({ play: { scripture: value } }),
         };
 

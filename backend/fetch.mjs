@@ -39,6 +39,37 @@ apiRouter.get('/infinity/harvest/:table_id?',  async (req, res, next) => {
 });
 
 
+//talk
+apiRouter.get('/talk/:talk_folder?/:talk_id?', async (req, res, next) => {
+
+    const { talk_folder, talk_id } = req.params;
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const filesInFolder = readdirSync(`${dataPath}/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml'));
+    const [selectedFile] = filesInFolder.sort(()=>Math.random() - 0.5);
+    const selection = selectedFile.replace('.yaml', '');
+    //todo: check watch history
+    const filePath = `${dataPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}`;
+    const talkData = yaml.load(readFileSync(filePath, 'utf8'));
+    const mediaFilePath = `${mediaPath}/talks/${talk_folder || ''}/${talk_id || selection}.mp4`;
+    const mediaExists = fs.existsSync(mediaFilePath);
+    const mediaUrl = mediaExists ? `${baseUrl}/media/talks/${talk_folder || ''}/${talk_id || selection}` : null;
+    delete talkData.mediaUrl;
+    return res.json({
+        input: talk_id || selectedFile,
+        media_key: `talks/${talk_folder || ''}/${talk_id || selection}`,
+        mediaExists,
+        mediaFilePath,
+        mediaUrl,
+        ...talkData
+    });
+
+});
+
+
+
+
+
+
 //scritpures
 apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) => {
 
