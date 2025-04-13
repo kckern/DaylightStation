@@ -239,16 +239,24 @@
 }
 
 
-//dark mode
-  .content-scroller.dark-mode {
+///['regular', 'minimal', 'night', 'screensaver', 'dark']
+  .content-scroller.night {
 
-    filter: brightness(0.3);
-    * {color: red!important;}
-    video{
-      filter: grayscale(100%) sepia(2) hue-rotate(-20deg);
-    }
-    .textpanel {
-      background-color: #000;
-    }
+    video{ filter: grayscale(100%) sepia(2) hue-rotate(-20deg); }
+    * {filter:brightness(0.3);background-color:  #000; color: red!important;}
     
+  }
+
+  .content-scroller.minimal {
+    h2, h3, .controls {
+      display: none;
+      height: 0 !important;
+    } .content-container{position: absolute; top: 0; left: 0; right: 0; bottom: 0;}
+    
+  }
+  .content-scroller.screensaver {
+    *{ filter: blur(10px); }
+  }
+  .content-scroller.dark {
+    * {filter:brightness(0)!important}
   }

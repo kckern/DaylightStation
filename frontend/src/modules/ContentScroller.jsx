@@ -67,6 +67,21 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
     const [panelHeight, setPanelHeight] = useState(0);
     const [contentHeight, setContentHeight] = useState(0);
 
+
+  const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
+  const [selectedClass, setSelectedClass] = useState(classes[0]);
+  const cycleThroughClasses = (upOrDownInt) => {
+    upOrDownInt = parseInt(upOrDownInt) || 1;
+    setSelectedClass((prevClass) => {
+      const currentIndex = classes.indexOf(prevClass);
+      const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
+      return classes[newIndex];
+    }
+    );
+  };
+
+
+
     // Fade-in class
     const [init, setInit] = useState(true);
   
@@ -203,6 +218,14 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
         const increment = Math.max(5, mainDuration / 30);
   
         switch (event.key) {
+          case "ArrowUp":
+            event.preventDefault();
+            cycleThroughClasses(1);
+            break;
+          case "ArrowDown":
+            event.preventDefault();
+            cycleThroughClasses(-1);
+            break;
           case "ArrowLeft":
             event.preventDefault();
             {
@@ -257,7 +280,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
     // Final transform for scrolling
     const yOffset = (yProgress * contentHeight) - (panelHeight * yProgress); 
     return (
-      <div className={`content-scroller ${type} ${className}`} >
+      <div className={`content-scroller ${type} ${className} ${selectedClass}`}>
         {(title || subtitle) && (
           <>
             {title && <h2>{title}</h2>}
@@ -425,6 +448,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
     const [hymnNum, setHymnNum] = useState(null);
     const [mediaUrl, setMediaUrl] = useState(null);
     const [duration, setDuration] = useState(0);
+    const [media_key, setMediaKey] = useState(null);
     const hymnTextRef = useRef(null);
 
     useEffect(() => {
@@ -435,6 +459,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
           setHymnNum(hymn_num);
           setMediaUrl(mediaUrl);
           setSubtitle(`Hymn #${hymn_num}`);
+          setMediaKey(`hymn/${hymn_num}`);
           setDuration(duration);
         });
     }, [hymn]);
@@ -468,6 +493,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
       <ContentScroller
         type="hymn"
         title={title}
+        media_key={media_key}
         subtitle={subtitle}
         mainMediaUrl={mediaUrl}
         contentData={verses}
