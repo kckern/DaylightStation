@@ -20,6 +20,19 @@ apiRouter.use((err, req, res, next) => {
     res.status(500).json({ error: err.message });
 });
 
+const findUnwatchedItems = (media_keys, category = "media", shuffle = false) => {
+    const media_memory = loadFile(`_media_memory`)[category] || {};
+    const unwatchedItems = media_keys.filter(key => {
+        const watchedItem = media_memory[key];
+        return !(watchedItem && watchedItem.percent > 0.5);
+    });
+
+    // If all items are filtered out, return the whole list
+    const result = unwatchedItems.length > 0 ? unwatchedItems : media_keys;
+
+    // If shuffle is true, shuffle the array
+    return result.sort(() => (shuffle ? Math.random() - 0.5 : 0));
+};
 
 
 
@@ -44,19 +57,17 @@ apiRouter.get('/talk/:talk_folder?/:talk_id?', async (req, res, next) => {
 
     const { talk_folder, talk_id } = req.params;
     const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const filesInFolder = readdirSync(`${dataPath}/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml'));
-    const [selectedFile] = filesInFolder.sort(()=>Math.random() - 0.5);
-    const selection = selectedFile.replace('.yaml', '');
-    //todo: check watch history
-    const filePath = `${dataPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}`;
+    const filesInFolder = readdirSync(`${dataPath}/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml')).map(file => file.replace('.yaml', ''));
+    const [selectedFile] = findUnwatchedItems(filesInFolder, 'talk', true);
+    const filePath = `${dataPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}.yaml`;
     const talkData = yaml.load(readFileSync(filePath, 'utf8'));
-    const mediaFilePath = `${mediaPath}/talks/${talk_folder || ''}/${talk_id || selection}.mp4`;
+    const mediaFilePath = `${mediaPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}.mp4`;
     const mediaExists = fs.existsSync(mediaFilePath);
-    const mediaUrl = mediaExists ? `${baseUrl}/media/talks/${talk_folder || ''}/${talk_id || selection}` : null;
+    const mediaUrl = mediaExists ? `${baseUrl}/media/talks/${talk_folder || ''}/${talk_id || selectedFile}` : null;
     delete talkData.mediaUrl;
     return res.json({
         input: talk_id || selectedFile,
-        media_key: `talks/${talk_folder || ''}/${talk_id || selection}`,
+        media_key: `talks/${talk_folder || ''}/${talk_id || selectedFile}`,
         mediaExists,
         mediaFilePath,
         mediaUrl,
@@ -115,13 +126,11 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
         const chapters = readdirSync(`${dataPath}/scripture/${volume}/${version}`)
             .filter(file => file.endsWith('.yaml'))
             .map(file => file.replace('.yaml', ''));
-        //todo: check logs
-        const media_memory = loadFile(`_media_memory`).scriptures;
-        const keys = Object.keys(media_memory).filter(k => k.startsWith(`${volume}/${version}/`));
-        const seen = keys.map(k => media_memory[k]).filter(({percent}) => percent > 0.5).map(k => k.id.match(/(\d+)$/)[1]);
-        const [nextUp] = chapters.filter(chapter => !seen.includes(chapter)) || [chapters[0]] || [null];
+        const keys = chapters.map(chapter => `${volume}/${version}/${chapter}`);
+        const unseenChapters = findUnwatchedItems(keys, 'scriptures');
+        const [nextUp] = unseenChapters.map(key => key.match(/(\d+)$/)[1]) || [chapters[0]] || [null];
         return nextUp;
-    }
+    };
 
     const deduceFromInput = (first_term, second_term) => {
         let volume = null;
