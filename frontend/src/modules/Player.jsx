@@ -202,9 +202,9 @@ export default function Player({ play, queue, clear }) {
     if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
       (async () => {
         //CASE 1: queue is an object with a playlist key
-        if(play?.playlist || play?.queue) {
-          const queue = play.playlist || play.queue;
-          const {items,continuous,volume} = await DaylightAPI(`data/list/${queue}`);
+        if(play?.playlist || play?.queue || queue?.playlist || queue?.queue) {
+          const queue_media_key = (play?.playlist || play?.queue || queue?.playlist || queue?.queue) ?? [];
+          const {items,continuous,volume} = await DaylightAPI(`data/list/${queue_media_key}`);
           setIsContinuous(continuous || false);
           setQueue(items.map((item) => ({ ...item.play, guid: guid() })));
         }
@@ -290,7 +290,7 @@ export function SinglePlayer(play) {
     async function fetchVideoInfo() {
       if (!!plex) {
         const infoResponse = await DaylightAPI(
-          `media/plex/info/${plex}${shuffle ? "/shuffle" : ""}`
+          `media/plex/info/${plex}`
         );
         setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
         setIsReady(true);
