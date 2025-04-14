@@ -184,23 +184,23 @@ mediaRouter.all('/plex/info/:plex_key', async (req, res) => {
 
 
 
-mediaRouter.all('/plex/list/:plex_key/:action?', async (req, res) => {
-    const { plex_key, action } = req.params;
+mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
+    const { plex_key } = req.params;
     const plex_keys = plex_key.split(',');
-    const shuffle = action === 'shuffle';
+    const shuffle = true; //todo get from config
     let list = [];
     let info = {};
     for (const plex_key of plex_keys) {
-        const {list:listItems, key, title, img} = await (new Plex()).loadChildrenFromKey(plex_key, shuffle);
-        list = list.concat(listItems);
+        const {list:items, key, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, shuffle);
+        list = list.concat(items);
         info = {
-            key: info.key ? `${info.key},${key}` : key,
+            plex: info.key ? `${info.key},${key}` : key,
             title: info.title ? `${info.title} • ${title}` : title,
-            img: info.img ? `${info.img}` : img
+            image: info.img ? `${info.image}` : image
         }
     }
     try {
-        res.json({...info, list});
+        res.json({...info, items: list});
     } catch (error) {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }

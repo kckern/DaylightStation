@@ -194,21 +194,27 @@ function useCommonMediaController({
 /*─────────────────────────────────────────────────────────────*/
 export default function Player({ play, queue, clear }) {
 
-  if(queue) play = queue;
-  const isQueue = play && (play.playlist || play.queue) || Array.isArray(play);
+
+  const isQueue = !!queue  || play && (play.playlist || play.queue) || Array.isArray(play);
   const [isContinuous, setIsContinuous] = useState(false);  
   const [playQueue, setQueue] = useState(() => {
     if (Array.isArray(play)) return play.map((item) => ({ ...item, guid: guid() }));
-    if (play && typeof play === 'object') {
+    if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
       (async () => {
         //CASE 1: queue is an object with a playlist key
-        if(play.playlist || play.queue) {
+        if(play?.playlist || play?.queue) {
           const queue = play.playlist || play.queue;
           const {items,continuous,volume} = await DaylightAPI(`data/list/${queue}`);
           setIsContinuous(continuous || false);
           setQueue(items.map((item) => ({ ...item.play, guid: guid() })));
         }
         //CASE 2: queue is an object with a plex key
+        if(!!queue?.plex) {
+          const {items,continuous,volume} = await DaylightAPI(`media/plex/list/${queue.plex}`);
+          setIsContinuous(continuous || false);
+          setQueue(items.map((item) => ({ ...item, guid: guid() })));
+
+        }
       })();
       return [];
     } 
@@ -243,9 +249,13 @@ export default function Player({ play, queue, clear }) {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [clear]);
+
+
   if(isQueue && playQueue?.length > 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />
   if (isQueue && playQueue?.length === 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
-  if (isQueue && playQueue?.length === 0) return <div>Loading Queue....</div>
+  if (isQueue && playQueue?.length === 0) return <div>Loading Queue....<pre>
+    {JSON.stringify({playQueue,queue}, null, 2)}
+  </pre></div>
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
   return <pre>
     Unexpected:
