@@ -121,7 +121,8 @@
 .player .night {
 
     div,p,span,h1,h2,h3 {filter:brightness(0.3);background-color:  #000; color:rgb(161, 16, 16)!important;}
-    video,dash-video{ filter: grayscale(100%) brightness(0.3) hue-rotate(-20deg); }
+    .progress-bar > .progress{background-color: red;}
+    video,dash-video{ filter: grayscale(100%) brightness(0.1) hue-rotate(-20deg); }
     
   }
 
