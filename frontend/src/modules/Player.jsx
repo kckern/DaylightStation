@@ -349,7 +349,6 @@ function AudioPlayer({ media, advance, clear }) {
 
   return (
     <div className={`audio-player ${selectedClass}`}>
-      <div className={`shader ${levels[shaderIndex]}`} />
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <p>
         {header}
@@ -372,10 +371,10 @@ function AudioPlayer({ media, advance, clear }) {
 /*─────────────────────────────────────────────────────────────*/
 /*  VIDEO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
-
 function VideoPlayer({ media, advance, clear }) {
   const {
-    isDash,selectedClass, 
+    isDash,
+    selectedClass,
     containerRef,
     progress,
     duration,
@@ -389,13 +388,39 @@ function VideoPlayer({ media, advance, clear }) {
     isAudio: false,
     isVideo: true,
     meta: media,
-    selectedClass: media.selectedClass
+    selectedClass: media.selectedClass,
   });
+
+  const [isBuffering, setIsBuffering] = useState(false);
 
   const { show, season, title, media_url } = media;
   const { percent } = getProgressPercent(progress, duration);
 
-  const heading = !!show && !!season && !!title ? `${show} - ${season}: ${title}` : !!show && !!season ? `${show} - ${season}` : !!show ? show : title;
+  const heading =
+    !!show && !!season && !!title
+      ? `${show} - ${season}: ${title}`
+      : !!show && !!season
+      ? `${show} - ${season}`
+      : !!show
+      ? show
+      : title;
+
+  useEffect(() => {
+    const mediaEl = containerRef.current;
+
+    if (!mediaEl) return;
+
+    const handleWaiting = () => setIsBuffering(true);
+    const handlePlaying = () => setIsBuffering(false);
+
+    mediaEl.addEventListener("waiting", handleWaiting);
+    mediaEl.addEventListener("playing", handlePlaying);
+
+    return () => {
+      mediaEl.removeEventListener("waiting", handleWaiting);
+      mediaEl.removeEventListener("playing", handlePlaying);
+    };
+  }, [containerRef]);
 
   return (
     <div className={`video-player ${selectedClass}`}>
@@ -404,6 +429,7 @@ function VideoPlayer({ media, advance, clear }) {
         {playbackRate > 1 ? ` (${playbackRate}×)` : ""}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
+      {isBuffering && <LoadingOverlay />}
       {isDash ? (
         <dash-video
           ref={containerRef}
@@ -419,6 +445,15 @@ function VideoPlayer({ media, advance, clear }) {
           src={media_url}
         />
       )}
+    </div>
+  );
+}
+
+function LoadingOverlay() {
+  return (
+    <div className="loading-overlay">
+      <img src={spinner} alt="Loading..." />
+      <p>{message}</p>
     </div>
   );
 }
