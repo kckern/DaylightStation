@@ -65,7 +65,6 @@ const TVMenu = ({ list, clear, autoplay }) => {
         } else if (typeof list === "object") {
           setLoaded(false);
           const { menu, list: playlist, plex } = list;
-          console.log("list", list);
           await fetchListData(menu || playlist || plex);
         } else {
           setButtons([]);
@@ -151,8 +150,11 @@ const TVMenu = ({ list, clear, autoplay }) => {
     const options = {
       "play": <Player {...props} />,
       "queue": <Player {...props} />,
+      "playlist": <Player {...props} />,
+
       "list": <TVMenu {...props} />,
       "menu": <TVMenu {...props} />,
+
       "open": <AppContainer {...props} />,
     };
 

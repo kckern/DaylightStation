@@ -19,6 +19,7 @@ export class Plex {
       let url = `${this.baseUrl}/${paramString}`;
       if (!/\?/.test(paramString)) url += '?1=1';
       url += `&X-Plex-Token=${this.token}`;
+      //console.log(`Fetching Plex API: ${url}`);
       const response = await axios.get(url);
       return response.data;
     } catch (error) {
@@ -88,13 +89,14 @@ export class Plex {
   }
   async loadListKeys(key, path) {
     const keys = (await this.loadMeta(key, path))?.map(({ ratingKey, title, thumb })=>{
-      return { key:ratingKey, title, img: this.thumbUrl(thumb) }
+      return { key:ratingKey, title, image: this.thumbUrl(thumb) }
     }) || [];
     return keys.length ? keys : [];
   }
 
   async loadImgFromKey(key) {
-    const [data] = await this.loadMeta(key);
+    let response = await this.loadMeta(key);
+    const data = response?.[0] || response || null;
     if(!data) return false;
     return this.thumbUrl(data.thumb);
   }
@@ -117,6 +119,7 @@ export class Plex {
   async loadListFromPlaylist(key) {
     const playlist = await this.fetch(`playlists/${key}/items`);
     const keys = playlist.MediaContainer.Metadata.map(({ ratingKey, title, thumb }) => {
+      return ratingKey;
       return { ratingKey, title, art: this.thumbUrl(thumb) };
     });
     return keys;
@@ -158,7 +161,7 @@ export class Plex {
       year: year || "",
       media_type: this.determinemedia_type(type),
       media_url,
-      img: this.thumbUrl(thumb),
+      image: this.thumbUrl(thumb),
       progress: progress || 0
     };
 
@@ -177,6 +180,7 @@ export class Plex {
     // Get the "list" from the key
     const { type: parentType, list } = await this.loadListFromKey(key, shuffle);
     // Pick one item from the list (or strings)
+
     const [selectedKey, progress] = this.selectKeyToPlay(list, shuffle);
     if (!selectedKey) return false;
 
@@ -348,7 +352,7 @@ export class Plex {
     const data = await this.loadMeta(key, '');
     let info = data.Video;
     let out = info || {};
-    out.img = this.thumbUrl(out.parentThumb);
+    out.image = this.thumbUrl(out.parentThumb);
     return out;
   }
 
@@ -356,7 +360,7 @@ export class Plex {
     const data = await this.loadMeta(key, '');
     let info = data.Video;
     let out = info || {};
-    out.img = this.thumbUrl(out.thumb);
+    out.image = this.thumbUrl(out.thumb);
     return out;
   }
 
@@ -366,7 +370,7 @@ export class Plex {
     let id = track.Media?.Part?.id;
     let path = track.Media?.Part?.key;
     let out = track;
-    out.img = this.thumbUrl(track.parentThumb);
+    out.image = this.thumbUrl(track.parentThumb);
     out.path = path;
     out.id = id;
     return out;
