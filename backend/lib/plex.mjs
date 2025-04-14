@@ -61,23 +61,31 @@ export class Plex {
     const response =  await this.fetch(`library/metadata/${key}${type}`);
     return  response?.MediaContainer?.Metadata || [];
   }
-
   async loadChildrenFromKey(key, shuffle = false) {
-    if(!key) return {key: false, list: []};
-    const [{title,thumb}] = await this.loadMeta(key);
-    const img = this.thumbUrl(thumb);
-    let list = await this.loadListKeys(key, '/children');
-    list = shuffle ? list.sort(() => Math.random() - 0.5) : list;
-    return { key, title, img, list };
+    if (!key) return { key: false, list: [] };
+    const [{ title, thumb, type }] = await this.loadMeta(key);
+    const image = this.thumbUrl(thumb);
+
+    let list;
+    if (type === "playlist") {
+      list = await this.loadListFromPlaylist(key);
+      list = list?.map(({ ratingKey, title, art }) => {
+        return { plex: ratingKey, title, image: this.thumbUrl(art) };
+      }) || [];
+    } else {
+      list = await this.loadListKeys(key, '/children');
+      if (shuffle) list = list?.sort(() => Math.random() - 0.5);
+    }
+
+    return { plex:key, title, image, list };
   }
 
   async loadListFromKey(key = false, shuffle = false) {
     const [data] = await this.loadMeta(key);
     if (!data) return false;
     const { type, title } = data;
-    //console.log({ key, title, type });
     let list;
-    if (type === 'playlist') list = await this.loadListFromPlaylist(key); //video 12944 audio 321217
+    if (type === 'playlist') list = await this.loadListKeysFromPlaylist(key); //video 12944 audio 321217
     else if (type === 'collection') list = await this.loadListFromCollection(key);
     else if (type === 'season') list = await this.loadListFromSeason(key); //598767
     else if (type === 'show') list = await this.loadListFromShow(key); //598748
@@ -118,11 +126,14 @@ export class Plex {
   }
   async loadListFromPlaylist(key) {
     const playlist = await this.fetch(`playlists/${key}/items`);
-    const keys = playlist.MediaContainer.Metadata.map(({ ratingKey, title, thumb }) => {
-      return ratingKey;
+    const items = playlist.MediaContainer.Metadata.map(({ ratingKey, title, thumb }) => {
       return { ratingKey, title, art: this.thumbUrl(thumb) };
     });
-    return keys;
+    return items;
+  }
+  async loadListKeysFromPlaylist(key) {
+    const items = await this.loadListFromPlaylist(key);
+    return items?.map(({ ratingKey}) => ratingKey);
   }
 
   determinemedia_type(type) {
@@ -418,11 +429,12 @@ export class Plex {
     let url = `${this.baseUrl}/${paramString}?X-Plex-Token=${this.token}`;
     return url;
   }
-
   thumbUrl(paramString) {
     if (!paramString) return "";
     let symb = /\?/.test(paramString) ? '&' : '?';
-    return `${this.baseUrl}${paramString}${symb}X-Plex-Token=${this.token}`;
+    let url = `${this.baseUrl}${paramString}${symb}X-Plex-Token=${this.token}`;
+    // Ensure the URL does not contain duplicate "http" segments
+    return url.replace(/(http.*?:\/\/).*?\1/, '$1');
   }
 
   pruneArray(arr, blacklist = []) {
