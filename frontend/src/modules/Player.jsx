@@ -194,31 +194,41 @@ function useCommonMediaController({
 /*─────────────────────────────────────────────────────────────*/
 export default function Player({ play, queue, clear }) {
 
+  if(queue) play = queue;
+  const isQueue = play && (play.playlist || play.queue) || Array.isArray(play);
+  const [isContinuous, setIsContinuous] = useState(false);  
   const [playQueue, setQueue] = useState(() => {
-    if (Array.isArray(queue)) return queue.map((item) => ({ ...item, guid: guid() }));
     if (Array.isArray(play)) return play.map((item) => ({ ...item, guid: guid() }));
-    if (queue && typeof queue === 'object') {
+    if (play && typeof play === 'object') {
       (async () => {
         //CASE 1: queue is an object with a playlist key
-        if(queue.playlist) {
-          const {items} = await DaylightAPI(`data/list/${queue.playlist}`);
+        if(play.playlist || play.queue) {
+          const queue = play.playlist || play.queue;
+          const {items,continuous,volume} = await DaylightAPI(`data/list/${queue}`);
+          setIsContinuous(continuous || false);
           setQueue(items.map((item) => ({ ...item.play, guid: guid() })));
         }
         //CASE 2: queue is an object with a plex key
       })();
       return [];
     } 
-    if(Array.isArray(queue)) {
-      //CASE 3: queue is an array of objects, no fetch needed
-      return queue.map((item) => ({ ...item, guid: guid() }));
-    }
     return [];
   });
 
 
   const advance = useCallback(() => {
-    setQueue((prevQueue) => (prevQueue.length > 1 ? prevQueue.slice(1) : (clear(), [])));
-  }, [clear]);
+    setQueue((prevQueue) => {
+      if (prevQueue.length > 1) {
+        if (isContinuous) {
+          const [current, ...rest] = prevQueue;
+          return [...rest, current];
+        }
+        return prevQueue.slice(1);
+      }
+      clear();
+      return [];
+    });
+  }, [clear, isContinuous]);
 
   //enable escape key to clear
   useEffect(() => {
@@ -233,10 +243,14 @@ export default function Player({ play, queue, clear }) {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [clear]);
-
+  if(isQueue && playQueue?.length > 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />
+  if (isQueue && playQueue?.length === 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
+  if (isQueue && playQueue?.length === 0) return <div>Loading Queue....</div>
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  if (!playQueue?.length) return <div>Loading Queue....</div>
-  return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />
+  return <pre>
+    Unexpected:
+    {JSON.stringify({play,isQueue,playQueue}, null, 2)}
+  </pre>
 }
 
 
@@ -453,7 +467,7 @@ function LoadingOverlay() {
   return (
     <div className="loading-overlay">
       <img src={spinner} alt="Loading..." />
-      <p>{message}</p>
+      <p>Loading...</p>
     </div>
   );
 }

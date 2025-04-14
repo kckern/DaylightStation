@@ -98,7 +98,7 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
         const response = await axios.get(plexUrl);
         if (response.status !== 200) {
             res.status(response.status).json({ 
-                error: 'Error fetching from Plex server', 
+                error: 'Error fetching from Plex server!', 
                 status: response.status, 
                 message: response.statusText,
                 plexUrl: plexUrl
@@ -107,7 +107,8 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
         }
         res.redirect(plexUrl);
     } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
+        res.status(500).json({ error: 'Error fetching from Plex server!', message: error.message, plexUrl: plexUrl, 
+            params: req.params, paths: req.path, query: req.query });
     }
 });
 
@@ -162,10 +163,10 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     });
 });
 
-mediaRouter.all('/plex/info/:plex_key/:action?', async (req, res) => {
-    const { plex_key, action } = req.params;
+mediaRouter.all('/plex/info/:plex_key', async (req, res) => {
+    const { plex_key } = req.params;
     const plex_keys = plex_key.split(',');
-    const shuffle = action === 'shuffle';
+    const shuffle = true; //todo get from config
     let infos = [];
     for (const key of plex_keys) {
         const info = await (new Plex()).loadPlayableItemFromKey(key, shuffle);
@@ -229,6 +230,7 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
     if (fs.existsSync(cacheFile)) return res.sendFile(cacheFile);
     if (!fs.existsSync(cacheFolder)) fs.mkdirSync(cacheFolder, { recursive: true });
     const imageUrl = await (new Plex()).loadImgFromKey(plex_key);
+    if(!imageUrl) return res.status(404).json({ error: 'No image found for this key', plex_key });
     try {
         const response = await axios.get(imageUrl, { responseType: 'stream' });
         const writer = fs.createWriteStream(cacheFile);
@@ -239,7 +241,7 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
             response.data.pipe(res);
         });
     } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: imageUrl });
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: imageUrl, request: req.params });
     }
 });
 
