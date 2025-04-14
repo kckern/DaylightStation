@@ -60,6 +60,8 @@ function useCommonMediaController({
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const lastLoggedTimeRef = useRef(0);
+  const lastUpdatedTimeRef = useRef(0);
+  const [timeSinceLastProgressUpdate, setTimeSinceLastProgressUpdate] = useState(0);
 
   const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
   const [selectedClass, setSelectedClass] = useState(classes[0]);
@@ -126,12 +128,24 @@ function useCommonMediaController({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClear, isAudio, isVideo, onShaderLevelChange, duration]);
 
+  
+    //make a 50ms loop that sets timeSinceLastProgressUpdate to the difference between now and timeOfLastProgressUpdate
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const diff = now - lastUpdatedTimeRef.current;
+      setTimeSinceLastProgressUpdate(diff);
+    }, 50);
+    return () => clearInterval(interval);
+  }, [meta.key, meta.title]);
+
   useEffect(() => {
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
 
     const logTime = async (type, id, percent, title) => {
       const now = Date.now();
+      lastUpdatedTimeRef.current = now;
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
         lastLoggedTimeRef.current = now;
@@ -185,6 +199,7 @@ function useCommonMediaController({
     playbackRate,
     isDash,
     selectedClass,
+    timeSinceLastProgressUpdate,
     handleProgressClick
   };
 }
@@ -257,6 +272,7 @@ export default function Player({ play, queue, clear }) {
     {JSON.stringify({playQueue,queue}, null, 2)}
   </pre></div>
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
+  return null;
   return <pre>
     Unexpected:
     {JSON.stringify({play,isQueue,playQueue}, null, 2)}
@@ -401,6 +417,7 @@ function VideoPlayer({ media, advance, clear }) {
     selectedClass,
     containerRef,
     progress,
+    timeSinceLastProgressUpdate,
     duration,
     handleProgressClick,
     playbackRate,
@@ -415,7 +432,6 @@ function VideoPlayer({ media, advance, clear }) {
     selectedClass: media.selectedClass,
   });
 
-  const [isBuffering, setIsBuffering] = useState(false);
 
   const { show, season, title, media_url } = media;
   const { percent } = getProgressPercent(progress, duration);
@@ -429,22 +445,7 @@ function VideoPlayer({ media, advance, clear }) {
       ? show
       : title;
 
-  useEffect(() => {
-    const mediaEl = containerRef.current;
 
-    if (!mediaEl) return;
-
-    const handleWaiting = () => setIsBuffering(true);
-    const handlePlaying = () => setIsBuffering(false);
-
-    mediaEl.addEventListener("waiting", handleWaiting);
-    mediaEl.addEventListener("playing", handlePlaying);
-
-    return () => {
-      mediaEl.removeEventListener("waiting", handleWaiting);
-      mediaEl.removeEventListener("playing", handlePlaying);
-    };
-  }, [containerRef]);
 
   return (
     <div className={`video-player ${selectedClass}`}>
@@ -453,7 +454,7 @@ function VideoPlayer({ media, advance, clear }) {
         {playbackRate > 1 ? ` (${playbackRate}×)` : ""}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {isBuffering && <LoadingOverlay />}
+      {timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
       {isDash ? (
         <dash-video
           ref={containerRef}
@@ -477,7 +478,6 @@ function LoadingOverlay() {
   return (
     <div className="loading-overlay">
       <img src={spinner} alt="Loading..." />
-      <p>Loading...</p>
     </div>
   );
 }
