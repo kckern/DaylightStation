@@ -198,16 +198,11 @@ mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
             image: info.img ? `${info.image}` : image
         }
     }
-    list = list.map(({key,type,title,image}) => {
-        const action = {
-            "track": "play",
-            "playlist": "queue",
-            "album": "queue",
-        }
+    list = list.map(({plex,type,title,image}) => {
         return {
             label: title,
             type: type,
-            plex: key,
+            plex: plex,
             image: image,
         };
     });
@@ -217,6 +212,8 @@ mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }
 });
+
+
 mediaRouter.all('/plex/queue/:plex_key/:action?', async (req, res) => {
     const { plex_key, action } = req.params;
     const plex_keys = plex_key.split(',');

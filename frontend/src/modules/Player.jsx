@@ -272,11 +272,9 @@ export default function Player({ play, queue, clear }) {
     {JSON.stringify({playQueue,queue}, null, 2)}
   </pre></div>
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  return null;
-  return <pre>
-    Unexpected:
-    {JSON.stringify({play,isQueue,playQueue}, null, 2)}
-  </pre>
+  //loading
+  return <LoadingOverlay />;
+
 }
 
 
@@ -336,6 +334,10 @@ export function SinglePlayer(play) {
           <p>Unsupported media type</p>
         </div>
       )}
+      {!mediaInfo.media_type && <><LoadingOverlay />
+      <pre>
+        {JSON.stringify({play,mediaInfo}, null, 2)}
+      </pre></>}
     </div>
   );
 }
@@ -371,7 +373,9 @@ function Loading({ media }) {
 function AudioPlayer({ media, advance, clear }) {
 
 
-  const { selectedClass, playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
+  const { media_url, title, artist, album, image, type } = media;
+  
+  const { selectedClass, timeSinceLastProgressUpdate, playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
     start: media.progress,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
@@ -381,13 +385,15 @@ function AudioPlayer({ media, advance, clear }) {
     meta: media,
   });
 
-  const { media_url, title, artist, album, image } = media;
   const { percent } = getProgressPercent(progress, duration);
 
   const header = !!artist &&  !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
 
+ 
+
   return (
     <div className={`audio-player ${selectedClass}`}>
+      {timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <p>
         {header}
