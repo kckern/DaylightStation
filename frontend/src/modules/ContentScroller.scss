@@ -244,24 +244,62 @@
 }
 
 
-///['regular', 'minimal', 'night', 'screensaver', 'dark']
-  .content-scroller.night {
+.talk.content-scroller {
+  * {
+    transition: all 0.5s ease-in-out;
+  }
+  &.night {
+    video { filter: brightness(0.2) grayscale(100%) sepia(2) hue-rotate(-20deg); }
+    * { background-color: #000; color: #ff000033; }
+    h2, h3, .controls { color: #ff000022 !important; }
+    .current-time { border-color: #ffffff11 !important; background-color: #00000000 !important;  }
+    .seek-progress { background-color: #ffffff11 !important; }
+  }
+  &.video {
+    h2, h3, .controls { display: none; height: 0 !important; }
+    .textpanel { display: none; }
+    video { width: 100%; }
+  }
+  &.text {
+    h2, h3, .controls { display: none; height: 0 !important; }
+    .textpanel { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+    video { display: none; }
+  }
+  &.dark {
+    * { filter: brightness(0);}
+  }
+  &.screensaver{
+    * { filter: grayscale(1) sepia(1) brightness(0.5); }
+  }
+  &.minimal {
+    h2, h3, .controls { display: none; height: 0 !important; }
+    video{ position: absolute; left: 50%; top: 0; width: 50%; height: 100%; }
+    .textpanel{ position: absolute; left: 0; top: 0; width: 50%; height: 100%; }
+  }
+}
 
-    video{ filter: grayscale(100%) sepia(2) hue-rotate(-20deg); }
-    * {filter:brightness(0.3);background-color:  #000; color: red!important;}
-    
+
+
+.scriptures.content-scroller {
+
+  &.night {
+    video { filter: brightness(0.2) grayscale(100%) sepia(2) hue-rotate(-20deg); }
+    * { background-color: #000; color: #ff000033; }
+    h2, h3, .controls { display: none; height: 0 !important; color: #ff000022 !important; }
+    .current-time { border-color: #ffffff11 !important; background-color: #00000000 !important;  }
+    .seek-progress { background-color: #ffffff11 !important; }
+    .scripture-text{ background-image: none!important;}
   }
 
-  .content-scroller.minimal {
-    h2, h3, .controls {
-      display: none;
-      height: 0 !important;
-    } .content-container{position: absolute; top: 0; left: 0; right: 0; bottom: 0;}
-    
+  &.dark {
+    * { filter: brightness(0);}
   }
-  .content-scroller.screensaver {
-    *{ filter: blur(10px); }
+  &.screensaver{
+    * { filter: grayscale(1) sepia(1) brightness(0.5); }
   }
-  .content-scroller.dark {
-    * {filter:brightness(0)!important}
+  &.minimal {
+    h2, h3, .controls { display: none; height: 0 !important; }
+    .textpanel{ position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
   }
+}
+
