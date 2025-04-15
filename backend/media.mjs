@@ -190,19 +190,19 @@ mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
     let list = [];
     let info = {};
     for (const plex_key of plex_keys) {
-        const {list:items, key, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, shuffle);
+        const {list:items, plex, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, shuffle);
         list = list.concat(items);
         info = {
-            plex: info.key ? `${info.key},${key}` : key,
+            plex: info.plex ? `${info.plex},${plex}` : plex,
             title: info.title ? `${info.title} • ${title}` : title,
             image: info.img ? `${info.image}` : image
         }
     }
-    list = list.map(({plex,type,title,image}) => {
+    list = list.map(({key,type,title,image}) => {
         return {
             label: title,
             type: type,
-            plex: plex,
+            plex: key,
             image: image,
         };
     });
