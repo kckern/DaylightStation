@@ -198,11 +198,11 @@ mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
             image: info.img ? `${info.image}` : image
         }
     }
-    list = list.map(({key,type,title,image}) => {
+    list = list.map(({key,plex,type,title,image}) => {
         return {
             label: title,
             type: type,
-            plex: key,
+            plex: key || plex,
             image: image,
         };
     });

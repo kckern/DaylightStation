@@ -231,14 +231,40 @@ function MenuIMG({ img, label }) {
     const orientation = numericRatio === 1 ? "square" : numericRatio > 1 ? "landscape" : "portrait";
     setOrientation(orientation);
     setLoading(false);
+
+    // Cache the image in local storage
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = naturalWidth;
+      canvas.height = naturalHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(e.target, 0, 0, naturalWidth, naturalHeight);
+      const dataURL = canvas.toDataURL("image/png");
+      localStorage.setItem(`cachedImage-${img}`, dataURL);
+    } catch (error) {
+      console.error("Failed to cache image:", error);
+    }
   };
 
+  React.useEffect(() => {
+    // Check if the image is already cached
+    const cachedImage = localStorage.getItem(`cachedImage-${img}`);
+    if (cachedImage) {
+      setLoading(false);
+      setOrientation("cached");
+    }
+  }, [img]);
+
   if (!img) return null;
-  
 
   return (
     <div className={`menu-button-img ${loading ? "loading" : ""} ${orientation}`}>
-      <img src={img} alt={label} onLoad={handleImageLoad} style={{ display: loading ? "none" : "block" }}  />
+      <img
+        src={localStorage.getItem(`cachedImage-${img}`) || img}
+        alt={label}
+        onLoad={handleImageLoad}
+        style={{ display: loading ? "none" : "block" }}
+      />
     </div>
   );
 }

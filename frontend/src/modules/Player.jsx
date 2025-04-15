@@ -320,7 +320,9 @@ export default function Player({ play, queue, clear }) {
   if(isQueue && playQueue?.length > 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />
   if (isQueue && playQueue?.length === 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  return <div className={`shader on`} />;
+  return <div className={`shader on queuer`} >
+    <LoadingOverlay />
+    </div>
 
 }
 
@@ -338,7 +340,7 @@ export function SinglePlayer(play) {
     clear
   } =  play || {};
 
-
+  console.log({play,plex});
   // Scripture or Hymn short-circuits
   if (!!scripture)    return <Scriptures {...play} />;
   if (!!hymn)         return <Hymns {...play} />;
@@ -350,6 +352,7 @@ export function SinglePlayer(play) {
   useEffect(() => {
     async function fetchVideoInfo() {
       if (!!plex) {
+        //const plex = subPlay?.plex || plex;
         const infoResponse = await DaylightAPI(
           `media/plex/info/${plex}`
         );
@@ -366,7 +369,7 @@ export function SinglePlayer(play) {
 
   return (
     <div className="player">
-      {!isReady && <div className="shader on" />}
+      {!isReady && <div className="shader on notReady" ><LoadingOverlay /></div>}
       {isReady && mediaInfo.media_type === "dash_video" && (
         <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
@@ -427,7 +430,7 @@ function AudioPlayer({ media, advance, clear }) {
 
   const header = !!artist &&  !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
 
-  const shaderState = progress < 0.5  || progress > duration - 2 ? 'on' : 'off';
+  const shaderState = progress < 0.1  || progress > duration - 2 ? 'on' : 'off';
 
   return (
     <div className={`audio-player ${selectedClass}`}>
@@ -498,7 +501,7 @@ function VideoPlayer({ media, advance, clear }) {
         {playbackRate > 1 ? ` (${playbackRate}×)` : ""}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
+      {progress ===0 ||timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
       {isDash ? (
         <dash-video
           ref={containerRef}
@@ -519,8 +522,21 @@ function VideoPlayer({ media, advance, clear }) {
 }
 
 function LoadingOverlay() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setVisible(true), 300);
+    return () => clearTimeout(timeout);
+  }, []);
+
   return (
-    <div className="loading-overlay">
+    <div
+      className="loading-overlay"
+      style={{
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 0.3s ease-in-out',
+      }}
+    >
       <img src={spinner} alt="Loading..." />
     </div>
   );
