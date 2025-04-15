@@ -300,7 +300,11 @@ export const loadMetadataFromFile = async ({media_key}) => {
     const media_url = `${host}/media/${media_key}`;
     const ext = path.split('.').pop();
     const media_type = ["mp3", "m4a"].includes(ext) ? "audio" : "video";
-    const result = { media_key, media_key, ...fileTags, media_type,media_url };
+    const defaultTags = {
+        label: media_key,
+        play: { media: media_key },
+    };
+    const result = {  media_key, ...defaultTags,...fileTags, media_type,media_url };
     if (tags.picture) {
         result.image = `${host}/media/img/${media_key}`;
     }
@@ -336,7 +340,7 @@ export const loadMetadataFromMediaKey = (media_key, keys = []) => {
         }
         return filteredConfig;
     }
-
+    config.label = config.label || config.title || media_key;
     return config;
 };
 
@@ -417,6 +421,7 @@ apiRouter.get('/list/*', async (req, res, next) => {
 
         // Add metadata from a config
         const metadata = loadMetadataFromMediaKey(media_key);
+        metadata.label = metadata.title || media_key;
         return res.json({ media_key,...meta, ...metadata, items });
     } catch (err) {
         next(err);
