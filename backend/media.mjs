@@ -137,21 +137,20 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     let media_key = req.params[0] || Object.values(req.query)[0];
     if(!media_key) return res.status(400).json({ error: 'No media_key provided', param: req.params, query: req.query });
 
-    const baseUrl = `${req.protocol}://${req.headers.host}`;
     const { fileSize,  extention } = findFileFromMediaKey(media_key);
 
     if(!extention) media_key = await (async ()=>{
-        const items = await getChildrenFromMediaKey({media_key, baseUrl});
+        const items = await getChildrenFromMediaKey({media_key});
         //TODO: Check for already watched, shuffle, etc
         if(!items || items.length === 0) return media_key;
         return items.sort(()=>Math.random() - 0.5).slice(0,1)[0]?.media_key;
     })();
     if(!media_key) return res.status(400).json({ error: 'No media_key found', param: req.params, query: req.query });
-    const metadata_file = await loadMetadataFromFile({media_key, baseUrl});
+    const metadata_file = await loadMetadataFromFile({media_key});
     const metadata_media = loadMetadataFromMediaKey(media_key);
     const metadata_parent = loadMetadataFromMediaKey(media_key.split('/').slice(0, -1).join('/'),['image','volume','rate','shuffle']);
-
-    const media_url = `${baseUrl}/media/${media_key}`;
+    const host = process.env.host || "";
+    const media_url = `${host}/media/${media_key}`;
     res.json({
         media_key,
         ...metadata_parent,
@@ -199,6 +198,19 @@ mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
             image: info.img ? `${info.image}` : image
         }
     }
+    list = list.map(({key,type,title,image}) => {
+        const action = {
+            "track": "play",
+            "playlist": "queue",
+            "album": "queue",
+        }
+        return {
+            label: title,
+            type: type,
+            plex: key,
+            image: image,
+        };
+    });
     try {
         res.json({...info, items: list});
     } catch (error) {
@@ -227,21 +239,33 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
     const cacheFolder = `${mediaPath}/cache/plex`;
     const { plex_key } = req.params;
     const cacheFile = `${cacheFolder}/${plex_key}.jpg`;
-    if (fs.existsSync(cacheFile)) return res.sendFile(cacheFile);
-    if (!fs.existsSync(cacheFolder)) fs.mkdirSync(cacheFolder, { recursive: true });
-    const imageUrl = await (new Plex()).loadImgFromKey(plex_key);
-    if(!imageUrl) return res.status(404).json({ error: 'No image found for this key', plex_key });
+
+    fs.mkdirSync(cacheFolder, { recursive: true });
+
+    if (fs.existsSync(cacheFile)) {
+        return res.sendFile(cacheFile);
+    }
+
     try {
+        const imageUrl = await (new Plex()).loadImgFromKey(plex_key);
+        if (!imageUrl) {
+            return res.status(404).json({ error: 'No image found', plex_key });
+        }
+
         const response = await axios.get(imageUrl, { responseType: 'stream' });
-        const writer = fs.createWriteStream(cacheFile);
-        response.data.pipe(writer);
-            writer.on('finish', () => {
-            res.setHeader('Content-Type', response.headers['content-type']);
-            res.setHeader('Content-Length', response.headers['content-length']);
-            response.data.pipe(res);
-        });
-    } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: imageUrl, request: req.params });
+
+        // Pipe the image to the response immediately
+        res.setHeader('Content-Type', response.headers['content-type']);
+        response.data.pipe(res);
+        //return false;
+        // Save the image to the cache
+        const writeStream = fs.createWriteStream(cacheFile);
+        response.data.pipe(writeStream)
+            .on('finish', () => console.log(`Image cached: ${cacheFile}`))
+            .on('error', (err) => console.error(`Cache error: ${err.message}`));
+    } catch (err) {
+        console.error(`Fetch error: ${err.message}`);
+        res.status(500).json({ error: 'Error fetching image', message: err.message });
     }
 });
 

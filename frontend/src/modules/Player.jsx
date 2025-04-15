@@ -336,7 +336,6 @@ export function SinglePlayer(play) {
           <p>Unsupported media type</p>
         </div>
       )}
-      
     </div>
   );
 }
