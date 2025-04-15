@@ -77,7 +77,7 @@ export class Plex {
       if (shuffle) list = list?.sort(() => Math.random() - 0.5);
     }
 
-    return { plex:key, title, image, list };
+    return { plex:key, type, title, image, list };
   }
 
   async loadListFromKey(key = false, shuffle = false) {
@@ -96,8 +96,8 @@ export class Plex {
     return { key, type, list };
   }
   async loadListKeys(key, path) {
-    const keys = (await this.loadMeta(key, path))?.map(({ ratingKey, title, thumb })=>{
-      return { key:ratingKey, title, image: this.thumbUrl(thumb) }
+    const keys = (await this.loadMeta(key, path))?.map(({ ratingKey, title, type, thumb })=>{
+      return { key:ratingKey,type, title, image: this.thumbUrl(thumb) }
     }) || [];
     return keys.length ? keys : [];
   }

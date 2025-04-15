@@ -197,6 +197,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
       <div className="tv-menu" ref={menuRef}>
         {buttons?.map((button, index) => {
           //handle images
+          console.log(button);
           const {plex} = button?.play || button?.queue || button?.list || button?.open || {};
           if(!!plex) button.image = DaylightMediaPath(`/media/plex/img/${Array.isArray(plex) ? plex[0] : plex}`);
           return button;
@@ -205,9 +206,9 @@ const TVMenu = ({ list, clear, autoplay }) => {
           const img = button.image || null;
           return <div
             key={`${index}-${button.label}`}
-            className={`menu-button ${selectedIndex === index
+            className={`menu-button ${button.type || ""} ${selectedIndex === index
               ? "highlighted"
-              : ""}`}
+              : ""} `}
           >
             {img &&
               <img
