@@ -16,7 +16,7 @@ const videoPath = `${process.env.path.media}`;
 const mediaPath = `${process.env.path.media}`;
 const notFound = `${audioPath}/${process.env.media.error}`;
 
-const ext = ['mp3','mp4','m4a'];
+const ext = ['mp3','mp4','m4a', 'webm'];
 export const findFileFromMediaKey = media_key => {
     media_key = media_key.replace(/^\//, '');
     const lastLeaf = media_key.split('/').pop();
@@ -31,7 +31,11 @@ export const findFileFromMediaKey = media_key => {
     const fileExt = firstMatch?.split('.').pop();
     if(!firstMatch) return {found:false, path: notFound, fileSize, mimeType: 'audio/mpeg'};
 
-    const mimeType = fileExt === 'mp3' ? 'audio/mpeg' : fileExt === 'm4a' ? 'audio/mp4' : fileExt === 'mp4' ? 'video/mp4' : 'application/octet-stream';
+    const mimeType = fileExt === 'mp3' ? 'audio/mpeg' 
+        : fileExt === 'm4a' ? 'audio/mp4' 
+        : fileExt === 'mp4' ? 'video/mp4' 
+        : fileExt === 'webm' ? 'video/webm' 
+        : 'application/octet-stream';
 
     return {found:true, path: firstMatch, fileSize, extention:fileExt, mimeType};
 }
@@ -139,11 +143,11 @@ mediaRouter.all(`/info/*`, async (req, res) => {
 
     const { fileSize,  extention } = findFileFromMediaKey(media_key);
 
-    if(!extention) media_key = await (async ()=>{
-        const items = await getChildrenFromMediaKey({media_key});
-        //TODO: Check for already watched, shuffle, etc
+    if(!extention) media_key = await (async () => {
+        const items = await getChildrenFromMediaKey(media_key);
+        // TODO: Check for already watched, shuffle, etc
         if(!items || items.length === 0) return media_key;
-        return items.sort(()=>Math.random() - 0.5).slice(0,1)[0]?.media_key;
+        return items[Math.floor(Math.random() * items.length)]?.media_key;
     })();
     if(!media_key) return res.status(400).json({ error: 'No media_key found', param: req.params, query: req.query });
     const metadata_file = await loadMetadataFromFile({media_key});

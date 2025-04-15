@@ -13,6 +13,8 @@ import goodreads from './lib/goodreads.js';
 import Infinity from './lib/infinity.js';
 import scripture from './lib/scriptureguide.mjs';
 import ldsgc from './lib/ldsgc.mjs';
+import newleaf from './lib/newleaf.mjs';
+import video_dl from './lib/video_dl.mjs';
 import { refreshFinancialData as budget } from './lib/budget.mjs';
 
 const harvesters = {
@@ -28,7 +30,9 @@ const harvesters = {
     lastfm,
     letterboxd,
     goodreads,
-    budget
+    budget,
+    video_dl,
+    newleaf,
     
 }
 
