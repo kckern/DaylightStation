@@ -92,27 +92,40 @@ function useCommonMediaController({
     mediaEl.currentTime = (clickX / rect.width) * duration;
   };
 
-  
-
-
+  const longPressTimeout = useRef(null);
+  const didLongPress = useRef(false);
 
   useEffect(() => {
-    
     const handleKeyDown = (event) => {
       const mediaEl = getMediaEl();
       if (!mediaEl) return;
-      const inc = mediaEl.duration ? Math.max(5, Math.floor(mediaEl.duration / 50)) : 5;
+
+      // Ignore repeated keydown events (browser auto-repeat when key is held)
+      if (event.repeat) {
+        return;
+      }
+
+      // For ArrowRight / ArrowLeft, start a 2s timer
+      // If the timer completes, we call onEnd(±1) exactly once
       if (event.key === 'ArrowRight') {
-        mediaEl.currentTime = Math.min(mediaEl.currentTime + inc, mediaEl.duration || 0);
+        didLongPress.current = false;
+        longPressTimeout.current = setTimeout(() => {
+          onEnd(1);
+          didLongPress.current = true;
+        }, 1000);
       } else if (event.key === 'ArrowLeft') {
-        mediaEl.currentTime = Math.max(mediaEl.currentTime - inc, 0);
+        didLongPress.current = false;
+        longPressTimeout.current = setTimeout(() => {
+          onEnd(-1);
+          didLongPress.current = true;
+        }, 1000);
       } else if (event.key === 'ArrowUp') {
         event.preventDefault();
         cycleThroughClasses(1);
       } else if (event.key === 'ArrowDown') {
         event.preventDefault();
         cycleThroughClasses(-1);
-      }  else if (['Enter', ' ', 'Space', 'Spacebar', 'MediaPlayPause'].includes(event.key)) {
+      } else if (['Enter', ' ', 'Space', 'Spacebar', 'MediaPlayPause'].includes(event.key)) {
         event.preventDefault();
         if (mediaEl.paused) {
           mediaEl.play();
@@ -124,10 +137,43 @@ function useCommonMediaController({
         onClear();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClear, isAudio, isVideo, onShaderLevelChange, duration]);
 
+    const handleKeyUp = (event) => {
+      const mediaEl = getMediaEl();
+      if (!mediaEl) return;
+
+      if (longPressTimeout.current) {
+        clearTimeout(longPressTimeout.current);
+        longPressTimeout.current = null;
+      }
+
+      // If no long-press happened, do the original skip logic
+      if (
+        (event.key === 'ArrowRight' || event.key === 'ArrowLeft') &&
+        !didLongPress.current
+      ) {
+        const inc = mediaEl.duration
+          ? Math.max(5, Math.floor(mediaEl.duration / 50))
+          : 5;
+        if (event.key === 'ArrowRight') {
+          mediaEl.currentTime = Math.min(
+            mediaEl.currentTime + inc,
+            mediaEl.duration || 0
+          );
+        } else {
+          mediaEl.currentTime = Math.max(mediaEl.currentTime - inc, 0);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [onClear, onEnd, isAudio, isVideo, onShaderLevelChange, duration]);
   
     //make a 50ms loop that sets timeSinceLastProgressUpdate to the difference between now and timeOfLastProgressUpdate
   useEffect(() => {
@@ -161,7 +207,7 @@ function useCommonMediaController({
     const onDurationChange = () => setDuration(mediaEl.duration);
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
-      const startTime = mediaEl.duration ? (meta.progress / 100) * mediaEl.duration : 0;
+      const startTime = mediaEl.duration > 8000 ? mediaEl.duration ? (meta.progress / 100) * mediaEl.duration : 0 : 0;
       mediaEl.dataset.key = meta.key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
@@ -237,14 +283,19 @@ export default function Player({ play, queue, clear }) {
   });
 
 
-  const advance = useCallback(() => {
+  const advance = useCallback((step = 1) => {
     setQueue((prevQueue) => {
       if (prevQueue.length > 1) {
+        const currentIndex = isContinuous
+          ? (prevQueue.length + step) % prevQueue.length
+          : Math.min(Math.max(0, step), prevQueue.length - 1);
+
         if (isContinuous) {
-          const [current, ...rest] = prevQueue;
-          return [...rest, current];
+          const rotatedQueue = [...prevQueue.slice(currentIndex), ...prevQueue.slice(0, currentIndex)];
+          return rotatedQueue;
         }
-        return prevQueue.slice(1);
+
+        return prevQueue.slice(currentIndex);
       }
       clear();
       return [];
@@ -268,12 +319,8 @@ export default function Player({ play, queue, clear }) {
 
   if(isQueue && playQueue?.length > 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />
   if (isQueue && playQueue?.length === 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
-  if (isQueue && playQueue?.length === 0) return <div>Loading Queue....<pre>
-    {JSON.stringify({playQueue,queue}, null, 2)}
-  </pre></div>
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  //loading
-  return <LoadingOverlay />;
+  return <div className={`shader on`} />;
 
 }
 
@@ -319,7 +366,7 @@ export function SinglePlayer(play) {
 
   return (
     <div className="player">
-      {!isReady && <Loading media={mediaInfo} />}
+      {!isReady && <div className="shader on" />}
       {isReady && mediaInfo.media_type === "dash_video" && (
         <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
@@ -329,15 +376,6 @@ export function SinglePlayer(play) {
       {isReady && mediaInfo.media_type === "audio" && (
         <AudioPlayer media={mediaInfo} advance={advance} clear={clear} />
       )}
-      {isReady && !["dash_video", "video", "audio"].includes(mediaInfo.media_type) && (
-        <div className="unsupported-media">
-          <p>Unsupported media type</p>
-        </div>
-      )}
-      {!mediaInfo.media_type && <><LoadingOverlay />
-      <pre>
-        {JSON.stringify({play,mediaInfo}, null, 2)}
-      </pre></>}
     </div>
   );
 }
@@ -374,7 +412,7 @@ function AudioPlayer({ media, advance, clear }) {
 
 
   const { media_url, title, artist, album, image, type } = media;
-  
+
   const { selectedClass, timeSinceLastProgressUpdate, playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
     start: media.progress,
     playbackRate: media.playbackRate || 1,
@@ -389,11 +427,12 @@ function AudioPlayer({ media, advance, clear }) {
 
   const header = !!artist &&  !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
 
- 
+  const shaderState = progress < 0.5  || progress > duration - 2 ? 'on' : 'off';
 
   return (
     <div className={`audio-player ${selectedClass}`}>
-      {timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
+    <div className={`shader ${shaderState}`} />
+      {progress > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <p>
         {header}
