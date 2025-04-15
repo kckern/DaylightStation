@@ -5,7 +5,8 @@ import {
 } from "../lib/api.mjs";
 
 export default function AppContainer({ open, clear }) {
-  const { app, param } = open;
+  const app = open?.app || open.open || open;
+  const param = open?.param || open.param || open;
   useEffect(
     () => {
       const handleKeyDown = event => {
@@ -24,12 +25,53 @@ export default function AppContainer({ open, clear }) {
 
   if (app === "websocket") return <WebSocketApp path={param} />;
   if (app === "glympse") return <GlympseApp id={param} />;
+  if (app === "keycode") return <KeyTestApp />;
   return (
     <div>
       <h2>App Container</h2>
       <pre>
-        {JSON.stringify({ app, param }, null, 2)}
+        {JSON.stringify({ app, param, open }, null, 2)}
       </pre>
+    </div>
+  );
+}
+
+function KeyTestApp() {
+  const [keyCode, setKeyCode] = useState(null);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Enter") {
+        openKeyCodeTest();
+      }
+      setKeyCode(event.keyCode);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  const openKeyCodeTest = () => {
+    const newWindow = window.open("https://www.toptal.com/developers/keycode", "_blank");
+    if (newWindow) {
+      newWindow.focus();
+    } else {
+      alert("Please allow popups for this website");
+    }
+  };
+
+  return (
+    <div>
+      <h2>Key Test App</h2>
+      <p>
+        This is a test app to check the key codes of the keyboard.
+        <br />
+        <span>Press any key to see the key code</span>
+        <br />
+        {keyCode && <span>Key Code: {keyCode}</span>}
+      </p>
     </div>
   );
 }
