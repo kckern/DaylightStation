@@ -82,8 +82,32 @@ export default function TVApp() {
         return null;
     })();
 
+    const [zoomLevel, setZoomLevel] = useState((window.devicePixelRatio * 50).toFixed(0));
+
+    useEffect(() => {
+        const handleZoomChange = () => {
+            setZoomLevel((window.devicePixelRatio * 50).toFixed(0));
+        };
+
+        window.addEventListener("resize", handleZoomChange);
+        return () => {
+            window.removeEventListener("resize", handleZoomChange);
+        };
+    }, []);
+
     return (
         <div className="tv-app-container">
+            {zoomLevel !== "100" && <div className="debug"
+                style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    color: "black",
+                    backgroundColor: "rgba(255, 255, 255, 0.8)",
+                    padding: "10px",
+                    zIndex: 1000,
+                }}
+            >{zoomLevel}</div>}
             <div className="tv-app">
                 { list.length === 0 ? <div className="loading">Loading...</div> : <TVMenu list={list} autoplay={autoplay}  /> }
             </div>
