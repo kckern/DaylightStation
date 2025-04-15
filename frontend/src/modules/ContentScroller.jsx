@@ -50,6 +50,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
     parseContent,
     onAdvance,
     onClear,
+    shaders,
     yStartTime = 15
   }) {
     // Refs for media elements
@@ -68,7 +69,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
     const [contentHeight, setContentHeight] = useState(0);
 
 
-  const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
+  const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
   const [selectedClass, setSelectedClass] = useState(classes[0]);
   const cycleThroughClasses = (upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
@@ -288,7 +289,17 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
           </>
         )}
         <div className="content-container">
-
+        <div
+          style={{
+            position: "absolute",
+            top: 'calc(100% - 1.5em)',
+            left: '50%',
+            width: "100%",
+            height: "100%",
+            zIndex: 999,
+          }}
+        >
+        </div>
         {!!isVideo && <video
               ref={mainRef}
               src={mainMediaUrl}
@@ -418,6 +429,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
         media_key={media_key}
         subtitle={subtitle}
         mainMediaUrl={mainMediaUrl}
+        shaders={['regular', 'minimal', 'night', 'screensaver', 'dark']}
         ambientMediaUrl={ambientMediaUrl}
         ambientConfig={{
           fadeOutStep: 0.01,
@@ -630,6 +642,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
         subtitle={subtitle}
         mainMediaUrl={videoUrl}
         isVideo={true}
+        shaders={['regular', 'minimal', 'night', 'video', 'text', 'screensaver', 'dark']}
         ambientMediaUrl={ambientMusicUrl}
         ambientConfig={{
           fadeOutStep: 0.01,

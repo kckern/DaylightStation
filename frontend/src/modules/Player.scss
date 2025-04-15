@@ -120,28 +120,42 @@
 
 
 ///['regular', 'minimal', 'night', 'screensaver', 'dark']
-.player .night {
 
-    div,p,span,h1,h2,h3 {filter:brightness(0.3);background-color:  #000; color:rgb(161, 16, 16)!important;}
-    .progress-bar > .progress{background-color: red;}
-    video,dash-video{ filter: grayscale(100%) brightness(0.1) hue-rotate(-20deg); }
-    
+.player{
+    background-color: #151515;
+    .dark {
+        background-color: #000000;
+        *{filter: brightness(0); }
+    }
+    .regular {
+       h2{display: none!important;}
+    }   
+    .night {
+        background-color: #000000;
+        *{color: #FF000022;}
+        h2{display: none!important;}
+        .progress{  background-color: #FF000022!important;  }
+        img{ filter: sepia(1) brightness(0.1); }
+        .video-element{ filter: sepia(1) brightness(0.15) hue-rotate(-35deg); }
+        
+    }
+    .minimal {
+        background-color: #000000;
+        .progress-bar{display: none;}
+        p,h2,h3,.progress-bar{display: none;}
+        img{
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: contain;
+        }
+    }
+    .screensaver {
+        background-color: #000000;
+        .video-element{ scale: 1.5}
+        *{filter: grayscale(1) sepia(1) brightness(0.5) blur(0.2ex);}
+    }
   }
 
-  .player .minimal {
-    h2, h3, .controls {
-      display: none;
-      height: 0 !important;
-    } 
-    .content-container{position: absolute; top: 0; left: 0; right: 0; bottom: 0;}
-    
-  }
-  .player .screensaver {
-    *{ filter: blur(10px); }
-  }
-  .player .dark {
-    * {filter:brightness(0)!important}
-  }
+
 .loading-overlay {
     position: absolute;
     top: 0;
