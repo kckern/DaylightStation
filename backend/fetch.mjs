@@ -11,6 +11,7 @@ import { parseFile } from 'music-metadata';
 import { findFileFromMediaKey } from './media.mjs';
 import { processListItem } from './jobs/nav.mjs';
 import {lookupReference, generateReference} from 'scripture-guide';
+import { Plex } from './lib/plex.mjs';
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
 
@@ -55,15 +56,15 @@ apiRouter.get('/infinity/harvest/:table_id?',  async (req, res, next) => {
 //talk
 apiRouter.get('/talk/:talk_folder?/:talk_id?', async (req, res, next) => {
 
+    const {host} = process.env || "";
     const { talk_folder, talk_id } = req.params;
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
     const filesInFolder = readdirSync(`${dataPath}/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml')).map(file => file.replace('.yaml', ''));
     const [selectedFile] = findUnwatchedItems(filesInFolder, 'talk', true);
     const filePath = `${dataPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}.yaml`;
     const talkData = yaml.load(readFileSync(filePath, 'utf8'));
     const mediaFilePath = `${mediaPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}.mp4`;
     const mediaExists = fs.existsSync(mediaFilePath);
-    const mediaUrl = mediaExists ? `${baseUrl}/media/talks/${talk_folder || ''}/${talk_id || selectedFile}` : null;
+    const mediaUrl = mediaExists ? `${host}/media/talks/${talk_folder || ''}/${talk_id || selectedFile}` : null;
     delete talkData.mediaUrl;
     return res.json({
         input: talk_id || selectedFile,
@@ -186,10 +187,10 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
             });
         }
         const reference = generateReference(verse_id).replace(/:1$/, '');
-
+        const { host } = process.env || "";
         const mediaFilePath = `${mediaPath}/scripture/${volume}/${version}/${verse_id}.mp3`;
         const mediaExists = fs.existsSync(mediaFilePath);
-        const mediaUrl = mediaExists ? `${req.protocol}://${req.get('host')}/media/scripture/${volume}/${version}/${verse_id}` : null;
+        const mediaUrl = mediaExists ? `${host}/media/scripture/${volume}/${version}/${verse_id}` : null;
 
         const data = yaml.load(readFileSync(`${dataPath}/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
         res.json({
@@ -209,8 +210,6 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
 
 apiRouter.get('/hymn/:hymn_num?', async (req, res, next) => {
     try {
-        const hostname = req.get('host');
-        const protocol = /localhost/.test(hostname) ? 'http' : 'https';
         const preferences = ["_ldsgc", ""];
         const hymnData = req.params.hymn_num ? loadFile(`songs/hymns/${req.params.hymn_num}`) : loadRandom(`songs/hymns`);
         const hymn_num = String(req.params.hymn_num || hymnData?.hymn_num || '').padStart(3, '0');
@@ -218,10 +217,11 @@ apiRouter.get('/hymn/:hymn_num?', async (req, res, next) => {
             if (result) return result; // If a result is already found, skip further checks
             prf = prf ? `${prf}/` : '';
             const mediaFilePath = `${mediaPath}/songs/hymns/${prf}${hymn_num}.mp3`;
+            const host = process.env.host || "";
             try {
             if (fs.existsSync(mediaFilePath)) {
                 return {
-                mediaUrl: `${protocol}://${hostname}/media/songs/hymns/${prf}${hymn_num}`,
+                mediaUrl: `${host}/media/songs/hymns/${prf}${hymn_num}`,
                 mediaFilePath
                 };
             }
@@ -275,7 +275,7 @@ apiRouter.get('/budget/daytoday',  async (req, res, next) => {
 });
 
 
-export const loadMetadataFromFile = async ({media_key, baseUrl}) => {
+export const loadMetadataFromFile = async ({media_key}) => {
     if(!media_key) return null;
     media_key = media_key.replace(/\.[^/.]+$/, ""); // Remove the file extension
     const keepTags = ['title', 'artist', 'album', 'year', 'track', 'genre'];
@@ -296,14 +296,13 @@ export const loadMetadataFromFile = async ({media_key, baseUrl}) => {
         if (!acc[tag]) delete acc[tag];
         return acc;
     }, {});
-
-    const media_url = `${baseUrl}/media/${media_key}`;
+    const host = process.env.host || "";
+    const media_url = `${host}/media/${media_key}`;
     const ext = path.split('.').pop();
     const media_type = ["mp3", "m4a"].includes(ext) ? "audio" : "video";
     const result = { media_key, media_key, ...fileTags, media_type,media_url };
-
     if (tags.picture) {
-        result.image = `${baseUrl}/media/img/${media_key}`;
+        result.image = `${host}/media/img/${media_key}`;
     }
 
     return result;
@@ -355,14 +354,32 @@ const applyParentTags = (items, parent) => {
 
 }
 // Helper function to get children from a parent media_key
-export const getChildrenFromMediaKey = async ({media_key, baseUrl}) => {
+export const getChildrenFromMediaKey = async ({media_key}) => {
     const validExtensions = ['.mp3', '.mp4', '.m4a'];
     const folderExists = fs.existsSync(`${mediaPath}/${media_key}`);
+    
     if (!folderExists) {
         //load lists
         const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
         const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
-        return listItems.filter(filterFn) || [];
+        const items = listItems.filter(filterFn) || [];
+        if(!!items.length) return {items};
+        const isPlex = /^\d+$/.test(media_key);
+        if(isPlex) {
+            const PLEX = new Plex();
+            const plexResponse = await PLEX.loadChildrenFromKey(media_key);
+            const plexList = plexResponse?.list.map(({key,title,type,image}) => {
+                let action = "play";
+                if(["show", "season"].includes(type)) action = "list";
+                if(["album"].includes(type)) action = "queue";
+                return {
+                    label:title, image, type,
+                    [action]: {plex: key}
+                }
+            });
+            delete plexResponse.list;
+            if(plexList) return {meta:plexResponse, items: plexList };
+        }
     }
 
 
@@ -374,7 +391,7 @@ export const getChildrenFromMediaKey = async ({media_key, baseUrl}) => {
             return validExtensions.includes(`.${ext}`);
         }).map(file => {
             const fileWithoutExt = file.replace(/\.[^/.]+$/, ""); // Remove the file extension
-            return fs.existsSync(`${folderPath}/${file}`) ? { baseUrl, media_key: `${media_key}/${fileWithoutExt}` } : null;
+            return fs.existsSync(`${folderPath}/${file}`) ? {  media_key: `${media_key}/${fileWithoutExt}` } : null;
         }).filter(Boolean);
     };
 
@@ -387,21 +404,20 @@ export const getChildrenFromMediaKey = async ({media_key, baseUrl}) => {
 
     // Load metadata for the parent and apply parent tags to children
     const parentMetadata = loadMetadataFromMediaKey(media_key);
-    return applyParentTags(items, parentMetadata);
+    const items_full =  applyParentTags(items, parentMetadata);
+    return { items: items_full, parentMetadata };
 };
 
 apiRouter.get('/list/*', async (req, res, next) => {
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const baseUrl = `${protocol}://${host}`;
+
 
     try {
         const media_key = req.params[0];
-        const items = await getChildrenFromMediaKey({media_key, baseUrl, mediaPath});
+        const {meta,items} = await getChildrenFromMediaKey({media_key,  mediaPath});
 
         // Add metadata from a config
         const metadata = loadMetadataFromMediaKey(media_key);
-        return res.json({ media_key, ...metadata, items });
+        return res.json({ media_key,...meta, ...metadata, items });
     } catch (err) {
         next(err);
     }

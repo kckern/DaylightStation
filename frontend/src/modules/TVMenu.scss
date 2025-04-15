@@ -74,9 +74,10 @@
         flex-grow: 1;
         width: 100%;
         height: calc(100% - 2rem);
-        object-fit: cover;
         background-color: #000;
         border-bottom: 3px solid #000;
+        object-fit: cover;
+
     }
 
     h3 {
