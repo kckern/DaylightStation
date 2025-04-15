@@ -56,7 +56,7 @@ apiRouter.get('/infinity/harvest/:table_id?',  async (req, res, next) => {
 //talk
 apiRouter.get('/talk/:talk_folder?/:talk_id?', async (req, res, next) => {
 
-    const {host} = process.env || "";
+    const host = process.env.host || "";
     const { talk_folder, talk_id } = req.params;
     const filesInFolder = readdirSync(`${dataPath}/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml')).map(file => file.replace('.yaml', ''));
     const [selectedFile] = findUnwatchedItems(filesInFolder, 'talk', true);
@@ -187,7 +187,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
             });
         }
         const reference = generateReference(verse_id).replace(/:1$/, '');
-        const { host } = process.env || "";
+        const host = process.env.host || "";
         const mediaFilePath = `${mediaPath}/scripture/${volume}/${version}/${verse_id}.mp3`;
         const mediaExists = fs.existsSync(mediaFilePath);
         const mediaUrl = mediaExists ? `${host}/media/scripture/${volume}/${version}/${verse_id}` : null;

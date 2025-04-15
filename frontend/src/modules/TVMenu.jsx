@@ -210,12 +210,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
               ? "highlighted"
               : ""} `}
           >
-            {img &&
-              <img
-                src={img}
-                alt={button.label}
-                className="menu-button-img"
-              />}
+            <MenuIMG img={img} label={button.label} />
             <h3 className="menu-button-title">
               {button.label}
             </h3>
@@ -225,5 +220,28 @@ const TVMenu = ({ list, clear, autoplay }) => {
     </div>
   );
 };
+
+
+function MenuIMG({ img, label }) {
+  const [orientation, setOrientation] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  const handleImageLoad = (e) => {
+    const { naturalWidth, naturalHeight } = e.target;
+    const numericRatio = naturalWidth / naturalHeight;
+    const orientation = numericRatio === 1 ? "square" : numericRatio > 1 ? "landscape" : "portrait";
+    setOrientation(orientation);
+    setLoading(false);
+  };
+
+  if (!img) return null;
+  
+
+  return (
+    <div className={`menu-button-img ${loading ? "loading" : ""} ${orientation}`}>
+      <img src={img} alt={label} onLoad={handleImageLoad} style={{ display: loading ? "none" : "block" }}  />
+    </div>
+  );
+}
 
 export default TVMenu;
