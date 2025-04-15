@@ -54,6 +54,7 @@ function useCommonMediaController({
   isAudio = false,
   isVideo = false,
   meta,
+  shaders,
   onShaderLevelChange = () => {}
 }) {
   const containerRef = useRef(null);
@@ -63,7 +64,7 @@ function useCommonMediaController({
   const lastUpdatedTimeRef = useRef(0);
   const [timeSinceLastProgressUpdate, setTimeSinceLastProgressUpdate] = useState(0);
 
-  const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
+  const classes = Array.isArray(shaders) ? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
   const [selectedClass, setSelectedClass] = useState(classes[0]);
   const cycleThroughClasses = (upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
