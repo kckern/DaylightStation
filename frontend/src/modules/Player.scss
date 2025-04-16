@@ -12,6 +12,8 @@
 .video-player{
     position: relative;;
     background-color: #000;
+    width: 100%;
+    height: 100%;
 
 }
 
@@ -123,6 +125,8 @@
 
 .player{
     background-color: #151515;
+    width: 100%;
+    height: 100%;
     .dark {
         background-color: #000000;
         *{filter: brightness(0); }

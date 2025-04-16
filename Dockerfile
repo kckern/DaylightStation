@@ -5,8 +5,10 @@ FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine
 # Set work directory to /usr/src/app
 WORKDIR /usr/src/app
 
-# Install OpenSSH client
-RUN apk add --no-cache openssh-client
+# Install OpenSSH client and yt-dlp
+RUN apk add --no-cache openssh-client \
+    && apk add --no-cache python3 py3-pip \
+    && pip3 install --no-cache-dir yt-dlp
 
 # Bundle app source
 COPY . .

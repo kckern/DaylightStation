@@ -261,6 +261,7 @@ export default function Player({ play, queue, clear }) {
   const [isContinuous, setIsContinuous] = useState(false);  
   const [playQueue, setQueue] = useState(() => {
     if (Array.isArray(play)) return play.map((item) => ({ ...item, guid: guid() }));
+    if (Array.isArray(queue)) return queue.map((item) => ({ ...item, guid: guid() }));
     if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
       (async () => {
         //CASE 1: queue is an object with a playlist key
@@ -323,6 +324,9 @@ export default function Player({ play, queue, clear }) {
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
   return <div className={`shader on queuer`} >
     <LoadingOverlay />
+    <pre>
+      {JSON.stringify({play, queue}, null, 2)}
+    </pre>
     </div>
 
 }
