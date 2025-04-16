@@ -31,9 +31,25 @@ const findUnwatchedItems = (media_keys, category = "media", shuffle = false) => 
     // If all items are filtered out, return the whole list
     const result = unwatchedItems.length > 0 ? unwatchedItems : media_keys;
 
+    if(unwatchedItems.length === 0) {
+        clearWatchedItems(media_keys, category);
+    }
+
     // If shuffle is true, shuffle the array
     return result.sort(() => (shuffle ? Math.random() - 0.5 : 0));
 };
+
+export const clearWatchedItems = (media_keys, category = "media") => {
+
+    const media_memory = loadFile(`_media_memory`)[category] || {};
+    for (const key of media_keys) {
+        if (media_memory[key]) {
+            delete media_memory[key];
+        }
+    }
+    saveFile(`_media_memory`, media_memory);
+    return media_memory;
+}
 
 
 
