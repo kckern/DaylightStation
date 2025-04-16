@@ -5,7 +5,7 @@ import {Plex} from './lib/plex.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
-import { loadMetadataFromMediaKey, loadMetadataFromFile } from './fetch.mjs';
+import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems } from './fetch.mjs';
 import { getChildrenFromMediaKey } from './fetch.mjs';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
@@ -173,7 +173,10 @@ mediaRouter.all(`/info/*`, async (req, res) => {
         )).flat().sort(sortItems);
         
         let items = unfilteredItems.filter(filterItems);
-        if(items.length === 0) items = unfilteredItems;
+        if(items.length === 0) {
+            clearWatchedItems(unfilteredItems.map(item => item.media_key));
+            items = unfilteredItems;
+        }
 
         //todo: check for shuffle, limits, etc
 
