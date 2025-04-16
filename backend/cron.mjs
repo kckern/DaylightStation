@@ -2,9 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 const apiRouter = express.Router();
 import Infinity from './lib/infinity.js';
-const harvesters = {
-    ...Infinity.keys.reduce((fn, i) => (fn[i] = (req) => Infinity.loadData(i,req), fn), {}),
-}
+const harvesters = Infinity.keys.map(key => (req) => Infinity.loadData(key, req));
 const cron = {
     cron10Mins: [
         './lib/weather.js',
