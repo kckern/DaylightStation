@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import {
+  DaylightHostPath,
   DaylightWebsocketSubscribe,
   DaylightWebsocketUnsubscribe
 } from "../lib/api.mjs";
+import "./AppContainer.scss";
 
 export default function AppContainer({ open, clear }) {
   const app = open?.app || open.open || open;
@@ -26,6 +28,7 @@ export default function AppContainer({ open, clear }) {
   if (app === "websocket") return <WebSocketApp path={param} />;
   if (app === "glympse") return <GlympseApp id={param} />;
   if (app === "keycode") return <KeyTestApp />;
+  if (app === "art") return <ArtApp />;
   return (
     <div>
       <h2>App Container</h2>
@@ -35,6 +38,18 @@ export default function AppContainer({ open, clear }) {
     </div>
   );
 }
+
+
+function ArtApp() {
+
+  const url = DaylightHostPath() + "/data/img/art.jpg";
+  return <div className="art-app">
+    <img src={url} alt="Daylight Art" />
+  </div>
+
+
+}
+
 
 function KeyTestApp() {
   const [keyCode, setKeyCode] = useState(null);
