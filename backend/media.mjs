@@ -144,10 +144,19 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     const { fileSize,  extention } = findFileFromMediaKey(media_key);
 
     if(!extention) media_key = await (async () => {
-        const items = await getChildrenFromMediaKey(media_key);
+        const mediakeys = media_key.split(/;|\|,/);
+        let mergedItems = [];
+        for (const key of mediakeys) {
+            const { items } = await getChildrenFromMediaKey({ media_key: key });
+            if (items && items.length > 0) {
+            mergedItems = mergedItems.concat(items);
+            }
+        }
+        const watched = loadFile('_media_memory')?.watched || {};
         // TODO: Check for already watched, shuffle, etc
-        if(!items || items.length === 0) return media_key;
-        return items[Math.floor(Math.random() * items.length)]?.media_key;
+        if (mergedItems.length === 0) return media_key;
+        console.log({mergedItems});
+        return mergedItems[Math.floor(Math.random() * mergedItems.length)]?.media_key;
     })();
     if(!media_key) return res.status(400).json({ error: 'No media_key found', param: req.params, query: req.query });
     const metadata_file = await loadMetadataFromFile({media_key});
@@ -165,6 +174,9 @@ mediaRouter.all(`/info/*`, async (req, res) => {
         
     });
 });
+
+
+
 
 mediaRouter.all('/plex/info/:plex_key', async (req, res) => {
     const { plex_key } = req.params;
