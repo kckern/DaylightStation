@@ -1,7 +1,10 @@
 import express from 'express';
 import crypto from 'crypto';
 const apiRouter = express.Router();
-
+import Infinity from './lib/infinity.js';
+const harvesters = {
+    ...Infinity.keys.reduce((fn, i) => (fn[i] = (req) => Infinity.loadData(i,req), fn), {}),
+}
 const cron = {
     cron10Mins: [
         './lib/weather.js',
@@ -11,11 +14,14 @@ const cron = {
     ],
     cronHourly: [    
         './lib/withings.mjs',
+        ...harvesters,
         //video lists
     ],
     cronDaily: [
         './lib/withings.mjs',
         './lib/clickup.js',
+        "./lib/plex.js",
+        "./lib/youtube.mjs",
     ]
 }
 
@@ -28,7 +34,16 @@ apiRouter.use((err, req, res, next) => {
 Object.keys(cron).forEach(key => {
     apiRouter.get(`/${key}`, async (req, res, next) => {
         try {
-            const functions = await Promise.all(cron[key].map(path => import(path).then(module => module.default)));
+            const functions = await Promise.all(cron[key].map(async (item) => {
+                if (typeof item === 'string') {
+                    const module = await import(item);
+                    return module.default;
+                } else if (typeof item === 'function') {
+                    return item;
+                } else {
+                    throw new Error(`Invalid cron item type for ${key}`);
+                }
+            }));
 
             const guidId = crypto.randomUUID().split('-').pop();
             console.log(`\n\n[${key}] Job ID: ${guidId}`);
