@@ -50,8 +50,19 @@ export const clearWatchedItems = (media_keys, category = "media") => {
     saveFile(`_media_memory`, media_memory);
     return media_memory;
 }
-
-
+apiRouter.get('/img/*', async (req, res, next) => {
+    try {
+        const imgPath = `${mediaPath}/img/${req.params[0]}`;
+        if (!fs.existsSync(imgPath)) {
+            return res.status(404).json({ error: 'Image not found' });
+        }
+        const imgStream = fs.createReadStream(imgPath);
+        res.setHeader('Content-Type', 'image/jpeg');
+        imgStream.pipe(res);
+    } catch (err) {
+        next(err);
+    }
+});
 
 apiRouter.get('/infinity/harvest/:table_id?',  async (req, res, next) => {
     try {
