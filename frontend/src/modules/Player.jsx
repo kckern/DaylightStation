@@ -55,8 +55,10 @@ function useCommonMediaController({
   isVideo = false,
   meta,
   shaders,
+  type,
   onShaderLevelChange = () => {}
 }) {
+  const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.media_url;
   const containerRef = useRef(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -190,26 +192,27 @@ function useCommonMediaController({
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
 
-    const logTime = async (type, id, percent, title) => {
+    const logTime = async (type, media_key, percent, title) => {
       const now = Date.now();
+      type = type || 'media';
       lastUpdatedTimeRef.current = now;
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
         lastLoggedTimeRef.current = now;
-        await DaylightAPI(`media/log`, { title, type, id, percent, title });
+        await DaylightAPI(`media/log`, { title, type, media_key, percent, title });
       }
     };
 
     const onTimeUpdate = () => {
       setProgress(mediaEl.currentTime);
-      const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
-      logTime('plex', meta.key, percent, meta.title);
+      const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent; 
+      logTime(type, media_key, percent, meta.title);
     };
     const onDurationChange = () => setDuration(mediaEl.duration);
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
       const startTime = mediaEl.duration > 8000 ? mediaEl.duration ? (meta.progress / 100) * mediaEl.duration : 0 : 0;
-      mediaEl.dataset.key = meta.key;
+      mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
       if (isVideo) {
@@ -345,7 +348,8 @@ export function SinglePlayer(play) {
     clear
   } =  play || {};
 
-  console.log({play,plex});
+  
+
   // Scripture or Hymn short-circuits
   if (!!scripture)    return <Scriptures {...play} />;
   if (!!hymn)         return <Hymns {...play} />;
@@ -365,7 +369,7 @@ export function SinglePlayer(play) {
         setIsReady(true);
       } else if (!!media) {
         const infoResponse = await DaylightAPI(  `media/info/${media}`);
-        setMediaInfo({ ...infoResponse, key:media, playbackRate: rate || 1 });
+        setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
         setIsReady(true);
       }
     }
@@ -429,6 +433,7 @@ function AudioPlayer({ media, advance, clear }) {
     isAudio: true,
     isVideo: false,
     meta: media,
+    type: ["track"].includes(type) ? "plex" : "media",
   });
 
   const { percent } = getProgressPercent(progress, duration);
@@ -464,6 +469,7 @@ function AudioPlayer({ media, advance, clear }) {
 /*  VIDEO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 function VideoPlayer({ media, advance, clear }) {
+  const isPlex = ["dash_video"].includes(media.media_type);
   const {
     isDash,
     selectedClass,
@@ -482,6 +488,7 @@ function VideoPlayer({ media, advance, clear }) {
     isVideo: true,
     meta: media,
     selectedClass: media.selectedClass,
+    type: isPlex ? "plex" : "media",
   });
 
 
