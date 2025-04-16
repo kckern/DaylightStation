@@ -17,9 +17,11 @@ function App() {
   const [menu, setMenu] = useState(false)
   const keyboardHandler = () => {
 
-    const scripture = () => setQueue([{ key: 'scripture', value: `d&c ${Math.floor(Math.random() * 132) + 1}` }])
-    const plex = () => setQueue([{ key: 'plex', value: 489490 }])
+    const scripture = () => setQueue([{ scripture: `dc` }])
+    const plex = () => setQueue([{ plex:489490 }])
     const reset = () => setQueue([])
+    const play = (info) => setQueue([info])
+    const queue = (list) => setQueue(list)
 
 
     //todo get from config
@@ -30,6 +32,8 @@ function App() {
       "4": reset,
       "5": () => setMenu("Lessons"),
       "6": () => setMenu("Plex"),
+      "7": () => play({media:"news/cnn"}),
+      "8": () => queue([{media:"news/world_az"}, {media:"news/cnn"}]),
       "Escape": reset
     }
 
@@ -48,7 +52,7 @@ function App() {
   useEffect(keyboardHandler, [])
 
   if(menu) return <div className='App' ><MenuNav setMenu={setMenu} menu={menu} setQueue={setQueue} /></div>
-  if(queue.length) return  <div className='App' ><Player queue={queue} setQueue={setQueue} /></div>
+  if(queue.length) return  <div className='App' ><Player queue={queue} clear={reset} /></div>
   return (
     <div className='App' >
           <div className='sidebar'>
