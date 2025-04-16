@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { parseStringPromise } from 'xml2js';
 import { loadFile, saveFile } from '../lib/io.mjs';
+import { clearWatchedItems } from '../fetch.mjs';
 
 
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } }
@@ -294,7 +295,11 @@ export class Plex {
     
     const sortFunction = shuffle ? () => Math.random() - 0.5 : ()=>true;
     const queue = unwatched.sort(sortFunction);
-    if (queue.length === 0) return [watched[0], log[watched[0]].percent];
+    if (queue.length === 0) {
+      //clearWatchedItems
+      clearWatchedItems(watched,"plex");
+      return [watched[0], log[watched[0]].percent];
+    }
     const [selected] = queue;
     let time = log[selected]?.percent || 0;
     return [selected, time];

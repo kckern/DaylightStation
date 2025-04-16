@@ -112,12 +112,12 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
     // Logger for media progress
     const lastLoggedTimeRef = useRef(Date.now());
 
-    const logTime = async (type, id, percent, title) => {
+    const logTime = async (type, media_key, percent, title) => {
       const now = Date.now();
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
       lastLoggedTimeRef.current = now;
-      await DaylightAPI(`media/log`, { title, type, id:media_key, percent });
+      await DaylightAPI(`media/log`, { title, type, media_key, percent });
       }
     };
 

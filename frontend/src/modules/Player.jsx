@@ -259,6 +259,63 @@ function useCommonMediaController({
     handleProgressClick
   };
 }
+function normalizeItem(item) {
+  // Make sure item.play exists
+  if (!item.play) {
+    item.play = {};
+  }
+  // Move any top-level fields (other than 'queue' and 'play')
+  // inside item.play so we have a single, consistent data structure
+  for (const [key, value] of Object.entries(item)) {
+    if (key !== 'play' && key !== 'queue') {
+      item.play[key] = value;
+    }
+  }
+  // Remove queue from the final object
+  delete item.queue;
+  return item;
+}
+
+export async function flattenQueueItems(items, level = 1) {
+  console.log('flattenQueueItems START', { level, count: items.length });
+
+  const flattened = [];
+
+  for (const item of items) {
+    // If there's a 'queue' key, we need to fetch and recurse
+    if (item.queue) {
+      // data/list references via 'playlist' or 'queue'
+      if (item.queue.playlist || item.queue.queue) {
+        const queueKey = item.queue.playlist ?? item.queue.queue;
+        const { items: nestedItems } = await DaylightAPI(`data/list/${queueKey}`);
+        // Recursively process those nested items
+        const nestedFlattened = await flattenQueueItems(nestedItems, level + 1);
+        flattened.push(...nestedFlattened);
+      }
+      // media/plex references via 'plex'
+      else if (item.queue.plex) {
+        const { items: plexItems } = await DaylightAPI(`media/plex/list/${item.queue.plex}`);
+        // Recursively process those nested items
+        const nestedFlattened = await flattenQueueItems(plexItems, level + 1);
+        flattened.push(...nestedFlattened);
+      } 
+      // else: no recognized queue type, you could throw or handle differently
+    }
+    // If there's a 'play' key, it's already a playable item → keep it
+    else if (item.play) {
+      flattened.push(item);
+    } 
+    // Otherwise (no queue, no play): optional fallback
+    else {
+      // Decide if you want to push it or skip it.  
+      // For safety, push as-is:
+      flattened.push(item);
+    }
+  }
+
+  return flattened;
+}
+
 
 /*─────────────────────────────────────────────────────────────*/
 /*  MAIN PLAYER                                               */
@@ -268,31 +325,51 @@ export default function Player({ play, queue, clear }) {
 
   const isQueue = !!queue  || play && (play.playlist || play.queue) || Array.isArray(play);
   const [isContinuous, setIsContinuous] = useState(false);  
-  const [playQueue, setQueue] = useState(() => {
-    if (Array.isArray(play)) return play.map((item) => ({ ...item, guid: guid() }));
-    if (Array.isArray(queue)) return queue.map((item) => ({ ...item, guid: guid() }));
-    if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
-      (async () => {
-        //CASE 1: queue is an object with a playlist key
-        if(play?.playlist || play?.queue || queue?.playlist || queue?.queue) {
-          const queue_media_key = (play?.playlist || play?.queue || queue?.playlist || queue?.queue) ?? [];
-          const {items,continuous,volume} = await DaylightAPI(`data/list/${queue_media_key}`);
-          setIsContinuous(continuous || false);
-          setQueue(items.map((item) => ({ ...item.play, guid: guid() })));
-        }
-        //CASE 2: queue is an object with a plex key
-        if(!!queue?.plex) {
-          const {items,continuous,volume} = await DaylightAPI(`media/plex/list/${queue.plex}`);
-          setIsContinuous(continuous || false);
-          setQueue(items.map((item) => ({ ...item, guid: guid() })));
+  const [playQueue, setQueue] = useState([]);
+  useEffect(() => {
+    async function initQueue() {
+      // Case 1: Already an array of "play" items
+      if (Array.isArray(play)) {
+        setQueue(play.map(item => ({ ...item, guid: guid() })));
+        return;
+      }
+      // Case 2: Already an array of "queue" items
+      if (Array.isArray(queue)) {
+        setQueue(queue.map(item => ({ ...item, guid: guid() })));
+        return;
+      }
 
-        }
-      })();
-      return [];
-    } 
-    return [];
-  });
+      // Case 3: We might have an object with playlist/queue/plex references
+      if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
+        // Example: data/list
+        if (play?.playlist || play?.queue || queue?.playlist || queue?.queue) {
+          const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue;
+          const { items, continuous, volume } = await DaylightAPI(`data/list/${queue_media_key}`);
+          setIsContinuous(continuous || false);
 
+          // Flatten any nested queues inside the items
+          const flattened = await flattenQueueItems(items);
+          console.log({flattened})
+          setQueue(flattened.map(item => ({ ...item,...item.play, guid: guid() })));
+          return;
+        }
+        // Example: media/plex/list
+        if (queue?.plex) {
+          const { items, continuous, volume } = await DaylightAPI(`media/plex/list/${queue.plex}`);
+          setIsContinuous(continuous || false);
+
+          // Flatten any nested queues inside the items
+          const flattened = await flattenQueueItems(items);
+          setQueue(flattened.map(item => ({ ...item,...item.play, guid: guid() })));
+          return;
+        }
+      }
+      // Default/fallback
+      setQueue([]);
+    }
+
+    initQueue();
+  }, [play, queue]);
 
   const advance = useCallback((step = 1) => {
     setQueue((prevQueue) => {
@@ -305,8 +382,10 @@ export default function Player({ play, queue, clear }) {
           const rotatedQueue = [...prevQueue.slice(currentIndex), ...prevQueue.slice(0, currentIndex)];
           return rotatedQueue;
         }
-
-        return prevQueue.slice(currentIndex);
+        
+        const newQueue =  prevQueue.slice(currentIndex);
+        console.log({newQueue})
+        return newQueue;
       }
       clear();
       return [];
@@ -353,7 +432,6 @@ export function SinglePlayer(play) {
     advance,
     clear
   } =  play || {};
-
   
 
   // Scripture or Hymn short-circuits
