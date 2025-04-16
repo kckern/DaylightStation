@@ -146,12 +146,7 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     if(!extention) media_key = await (async () => {
         const mediakeys = media_key.split(/[|]/);
         const watched = loadFile('_media_memory')?.media || {};
-        let mergedItems = (await Promise.all(
-            mediakeys.map(async key => {
-            const { items } = await getChildrenFromMediaKey({ media_key: key });
-            return items || [];
-            })
-        )).flat().sort((a, b) => {
+        const sortItems = (a, b) => {
             const lastLeafA = a.media_key.split('/').pop();
             const lastLeafB = b.media_key.split('/').pop();
             const stemA = a.media_key.replace(`/${lastLeafA}`, '');
@@ -161,16 +156,28 @@ mediaRouter.all(`/info/*`, async (req, res) => {
             const indexA = mediakeys.indexOf(stemA);
             const indexB = mediakeys.indexOf(stemB);
             return indexA - indexB;
-        }).filter(item => {
-            const {media_key} = item;
-            const {percent} = watched[media_key] || {};
+        };
+
+        const filterItems = item => {
+            const { media_key } = item;
+            const { percent } = watched[media_key] || {};
             const isWatched = percent && percent >= 50;
             return !isWatched;
-        });
+        };
+
+        let unfilteredItems = (await Promise.all(
+            mediakeys.map(async key => {
+            const { items } = await getChildrenFromMediaKey({ media_key: key });
+            return items || [];
+            })
+        )).flat().sort(sortItems);
+        
+        let items = unfilteredItems.filter(filterItems);
+        if(items.length === 0) items = unfilteredItems;
 
         //todo: check for shuffle, limits, etc
 
-        return mergedItems?.[0]?.media_key;
+        return items?.[0]?.media_key;
     })();
     if(!media_key) return res.status(400).json({ error: 'No media_key found', param: req.params, query: req.query });
     const metadata_file = await loadMetadataFromFile({media_key});
