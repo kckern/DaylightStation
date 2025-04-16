@@ -108,6 +108,12 @@ function useCommonMediaController({
         return;
       }
 
+      //advance on tab key
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        onEnd(1);
+      }
+
       // For ArrowRight / ArrowLeft, start a 2s timer
       // If the timer completes, we call onEnd(±1) exactly once
       if (event.key === 'ArrowRight') {

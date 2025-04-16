@@ -313,7 +313,8 @@ export const loadMetadataFromFile = async ({media_key}) => {
 }
 
 const loadMetadataFromConfig =  (item, keys=[]) => {
-    const {media_key} = item;
+    const {media_key} = item || {};
+    if(!media_key) return item;
     const config = loadMetadataFromMediaKey(media_key);
     if(keys?.length > 0) {
         let keyed = {};
@@ -361,7 +362,6 @@ const applyParentTags = (items, parent) => {
 export const getChildrenFromMediaKey = async ({media_key}) => {
     const validExtensions = ['.mp3', '.mp4', '.m4a'];
     const folderExists = fs.existsSync(`${mediaPath}/${media_key}`);
-    
     if (!folderExists) {
         //load lists
         const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
@@ -390,10 +390,15 @@ export const getChildrenFromMediaKey = async ({media_key}) => {
     const getFiles = (basePath) => {
         const folderPath = `${basePath}/${media_key}`;
         if (!fs.existsSync(folderPath)) return [];
-        return fs.readdirSync(folderPath).filter(file => {
+        return fs.readdirSync(folderPath).map(file => {
+            const isFolder = fs.statSync(`${folderPath}/${file}`).isDirectory();
+            if (isFolder) return {folder: file};
             const ext = file.split('.').pop();
-            return validExtensions.includes(`.${ext}`);
-        }).map(file => {
+            if(validExtensions.includes(`.${ext}`)) {return {file};}
+            return null;
+        }).filter(Boolean)
+        .map(({file,folder}) => {
+            if(folder) return {folder};
             const fileWithoutExt = file.replace(/\.[^/.]+$/, ""); // Remove the file extension
             return fs.existsSync(`${folderPath}/${file}`) ? {  media_key: `${media_key}/${fileWithoutExt}` } : null;
         }).filter(Boolean);

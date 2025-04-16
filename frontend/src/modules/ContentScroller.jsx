@@ -219,6 +219,11 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
         const increment = Math.max(5, mainDuration / 30);
   
         switch (event.key) {
+          case "Tab":
+            event.preventDefault();
+            onAdvance && onAdvance();
+            break; // trigger on advance
+            
           case "ArrowUp":
             event.preventDefault();
             cycleThroughClasses(1);
