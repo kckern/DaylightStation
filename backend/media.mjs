@@ -118,20 +118,20 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
 
 mediaRouter.post('/log', async (req, res) => {
     const postData = req.body;
-    const { type, id, percent, title } = postData;
-    if (!type || !id || !percent) {
-        return res.status(400).json({ error: `Invalid request: Missing ${!type ? 'type' : !id ? 'id' : 'percent'}` });
+    const { type, media_key, percent, title } = postData;
+    if (!type || !media_key || !percent) {
+        return res.status(400).json({ error: `Invalid request: Missing ${!type ? 'type' : !media_key ? 'media_key' : 'percent'}` });
     }
     try {
         const log = loadFile('_media_memory') || {};
         log[type] = log[type] || {};
-        log[type][id] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, id, percent: parseFloat(percent) };
-        if(!log[type][id].title) delete log[type][id].title;
+        log[type][media_key] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, media_key, percent: parseFloat(percent) };
+        if(!log[type][media_key].title) delete log[type][media_key].title;
         log[type] = Object.fromEntries(
-            Object.entries(log[type]).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ss a').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ss a')))
+            Object.entries(log[type]).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
         );
         saveFile('_media_memory', log);
-        res.json({ response: log[type][id] });
+        res.json({ response: log[type][media_key] });
     } catch (error) {
         console.error('Error handling /log:', error.message);
         res.status(500).json({ error: 'Failed to process log.' });
@@ -144,19 +144,33 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     const { fileSize,  extention } = findFileFromMediaKey(media_key);
 
     if(!extention) media_key = await (async () => {
-        const mediakeys = media_key.split(/;|\|,/);
-        let mergedItems = [];
-        for (const key of mediakeys) {
+        const mediakeys = media_key.split(/[|]/);
+        const watched = loadFile('_media_memory')?.media || {};
+        let mergedItems = (await Promise.all(
+            mediakeys.map(async key => {
             const { items } = await getChildrenFromMediaKey({ media_key: key });
-            if (items && items.length > 0) {
-            mergedItems = mergedItems.concat(items);
-            }
-        }
-        const watched = loadFile('_media_memory')?.watched || {};
-        // TODO: Check for already watched, shuffle, etc
-        if (mergedItems.length === 0) return media_key;
-        console.log({mergedItems});
-        return mergedItems[Math.floor(Math.random() * mergedItems.length)]?.media_key;
+            return items || [];
+            })
+        )).flat().sort((a, b) => {
+            const lastLeafA = a.media_key.split('/').pop();
+            const lastLeafB = b.media_key.split('/').pop();
+            const stemA = a.media_key.replace(`/${lastLeafA}`, '');
+            const stemB = b.media_key.replace(`/${lastLeafB}`, '');
+            if (lastLeafA < lastLeafB) return 1;
+            if (lastLeafA > lastLeafB) return -1;
+            const indexA = mediakeys.indexOf(stemA);
+            const indexB = mediakeys.indexOf(stemB);
+            return indexA - indexB;
+        }).filter(item => {
+            const {media_key} = item;
+            const {percent} = watched[media_key] || {};
+            const isWatched = percent && percent >= 50;
+            return !isWatched;
+        });
+
+        //todo: check for shuffle, limits, etc
+
+        return mergedItems?.[0]?.media_key;
     })();
     if(!media_key) return res.status(400).json({ error: 'No media_key found', param: req.params, query: req.query });
     const metadata_file = await loadMetadataFromFile({media_key});

@@ -14,7 +14,7 @@ const DaylightHostPath = () => {
 //
 export const processListItem = async (item) => {
     item.action = item.action?.toLowerCase() || item.action;
-    const inputs = item.input.split(/[;|]/).map(i => i.trim());
+    const inputs = item.input.split(/[;]/).map(i => i.trim());
     let inputObject = {};
     for (const input of inputs) {
         const [key, value] = input.split(':').map(i => i.trim());
