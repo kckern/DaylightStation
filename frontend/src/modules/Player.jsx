@@ -383,7 +383,7 @@ export default function Player({ play, queue, clear }) {
         }
         
         const newQueue =  prevQueue.slice(currentIndex);
-        console.log({newQueue})
+       // console.log({newQueue})
         return newQueue;
       }
       clear();
@@ -479,25 +479,6 @@ export function SinglePlayer(play) {
 /*  LOADING                                                   */
 /*─────────────────────────────────────────────────────────────*/
 
-function Loading({ media }) {
-  const { title, artist, album, img, media_type } = media || {};
-  if (media_type !== 'audio') return null;
-  return (
-    <div className="audio-player" style={{ opacity: 0.5 }}>
-      <div className="shader off" />
-      <ProgressBar percent={0} />
-      <p>
-        {artist} - {album}
-      </p>
-      <p>Loading...</p>
-      <div className="image-container">
-        <img src={spinner} alt="Loading..." className="loading" />
-        {img && <img src={img} alt={title} className="cover" />}
-      </div>
-      <h2>{title}</h2>
-    </div>
-  );
-}
 
 /*─────────────────────────────────────────────────────────────*/
 /*  AUDIO PLAYER                                              */
@@ -632,7 +613,7 @@ export function LoadingOverlay() {
         transition: 'opacity 0.3s ease-in-out',
       }}
     >
-      <img src={spinner} alt="Loading..." />
+      <img src={spinner} alt="" />
     </div>
   );
 }
