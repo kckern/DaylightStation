@@ -17,13 +17,6 @@ apiRouter.get('/todo',  async (req, res, next) => {
     return res.json({message: 'Hello from the todo endpoint'});
 });
 
-apiRouter.get('/tv_tasker',  async (req, res, next) => {
-
-    await turnOnTVPlug();
-    const {tv:{host, port}} = process.env;
-    return res.json({message: `TV Tasker is running on ${host}:${port}`});
-
-});
 
 
 export default apiRouter;
