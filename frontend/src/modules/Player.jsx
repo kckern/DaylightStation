@@ -5,6 +5,7 @@ import {Scriptures,Hymns, Talk} from './ContentScroller.jsx';
 import { DaylightAPI } from '../lib/api.mjs';
 import 'dash-video-element';
 import spinner from '../assets/icons/spinner.svg';
+import AppContainer from './AppContainer.jsx';
 
 
 /*─────────────────────────────────────────────────────────────*/
@@ -429,6 +430,7 @@ export function SinglePlayer(play) {
     shuffle,
     rate,
     advance,
+    open,
     clear
   } =  play || {};
   
@@ -440,6 +442,7 @@ export function SinglePlayer(play) {
 
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
+  const [goToApp, setGoToApp] = useState(false);
 
   useEffect(() => {
     async function fetchVideoInfo() {
@@ -455,9 +458,14 @@ export function SinglePlayer(play) {
         setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
         setIsReady(true);
       }
+      else if(!!open) {
+        setGoToApp(open);
+      }
     }
     fetchVideoInfo();
   }, [plex, media, shuffle, rate]);
+
+  if(goToApp) return <AppContainer open={goToApp} clear={clear} />;
 
   return (
     <div className="player">
