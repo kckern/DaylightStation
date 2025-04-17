@@ -313,7 +313,7 @@ export async function flattenQueueItems(items, level = 1) {
     }
   }
 
-  return flattened;
+  return flattened.filter(item => item?.active !== false);
 }
 
 
@@ -349,7 +349,6 @@ export default function Player({ play, queue, clear }) {
 
           // Flatten any nested queues inside the items
           const flattened = await flattenQueueItems(items);
-          console.log({flattened})
           setQueue(flattened.map(item => ({ ...item,...item.play, guid: guid() })));
           return;
         }
