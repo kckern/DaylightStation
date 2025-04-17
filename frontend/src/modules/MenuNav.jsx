@@ -86,7 +86,7 @@ export default function MenuNav({ setMenu, menu, setQueue }) {
     }
   }, [selectedIndex, menuItems]);
 
-  if (!menuItems) return <div>Loading...</div>;
+  if (!menuItems) return null;
 
   return (
     <div className="menunav">

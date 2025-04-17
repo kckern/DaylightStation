@@ -17,6 +17,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
   });
   const [loaded, setLoaded] = useState(false);
   const [currentContent, setCurrentContent] = useState(null);
+  const [autoplayed, setAutoplayed] = useState(false);
   const [translateY, setTranslateY] = useState(0);
   const containerRef = useRef(null);
 
@@ -183,12 +184,13 @@ const TVMenu = ({ list, clear, autoplay }) => {
       const clear = () => setCurrentContent(null);
       setCurrentContent(<Player play={autoplay.play} clear={clear} />);
     }
+    setAutoplayed(true);
   }, [autoplay?.queue, autoplay?.open, autoplay?.play]);
 
 
   if (currentContent) return currentContent;
   if (!loaded) return null;
-  if(!!autoplay && !currentContent) return null;
+  if(!!autoplay && !autoplayed && !currentContent) return null;
 
   return (
     <div className="tv-menu-container" style={{ transform: `translateY(${-translateY}px)` }} ref={containerRef}>

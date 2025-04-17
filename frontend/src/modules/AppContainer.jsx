@@ -43,9 +43,14 @@ export default function AppContainer({ open, clear }) {
 }
 
 
-function WrapUp() {
+function WrapUp({ clear }) {
   useEffect(() => {
-    DaylightAPI("exe/tv/off").then(clear);
+    DaylightAPI("exe/tv/off").then(()=>{
+      //trigger escape key
+      const event = new KeyboardEvent("keydown", { key: "Escape" });
+      window.dispatchEvent(event);
+      clear();
+    });
   }, []);
   return null;
 }
