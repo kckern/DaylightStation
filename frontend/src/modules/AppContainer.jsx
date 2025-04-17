@@ -29,6 +29,7 @@ export default function AppContainer({ open, clear }) {
   if (app === "glympse") return <GlympseApp id={param} />;
   if (app === "keycode") return <KeyTestApp />;
   if (app === "art") return <ArtApp />;
+  if (app === "webcam") return <WebcamApp />;
   return (
     <div>
       <h2>App Container</h2>
@@ -142,6 +143,47 @@ function WebSocketApp({ path }) {
             </div>
           )
         : <p>No messages received yet.</p>}
+    </div>
+  );
+}
+
+function WebcamApp() {
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    const startWebcam = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (error) {
+        console.error("Error accessing webcam:", error);
+      }
+    };
+
+    startWebcam();
+
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const tracks = videoRef.current.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  return (
+    <div style={{ width: "100%", height: "100%" }}>
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        style={{
+          width: "100%",
+          height: "100%",
+          transform: "scaleX(-1)" // Mirrors the video
+        }}
+      />
     </div>
   );
 }
