@@ -172,17 +172,16 @@ const TVMenu = ({ list, clear, autoplay }) => {
   };
 
   useEffect(() => {
-    if (autoplay?.queue?.playlist) {
+    if (autoplay?.queue || autoplay?.play) {
       const clear = () => setCurrentContent(null);
-      setCurrentContent(<Player queue={autoplay.queue} clear={clear} />);
+      const { queue, play } = autoplay || {};
+      if (queue || play) {
+        setCurrentContent(<Player {...(queue ? { queue } : { play })} clear={clear} />);
+      }
     }
     if(autoplay?.open) {
       const clear = () => setCurrentContent(null);
       setCurrentContent(<AppContainer open={autoplay.open} clear={clear} />);
-    }
-    if(autoplay?.play) {
-      const clear = () => setCurrentContent(null);
-      setCurrentContent(<Player play={autoplay.play} clear={clear} />);
     }
     setAutoplayed(true);
   }, [autoplay?.queue, autoplay?.open, autoplay?.play]);

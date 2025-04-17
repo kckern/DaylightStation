@@ -63,14 +63,17 @@ export default function TVApp() {
 
     const params = new URLSearchParams(window.location.search);
     const queryEntries = Object.fromEntries(params.entries());
-    const keysInQuery = Object.keys(queryEntries);
 
     const autoplay = (() => {
+        const findKey = (value) =>{
+            return /^\d+$/.test(value) ? "plex" : "media";
+        }
         const mappings = {
-            playlist:   (value) => ({ play: { playlist: value } }),
-            queue:      (value) => ({ play: { playlist: value } }),
-            hymn:       (value) => ({ play: { hymn: value } }),
+            queue:      (value) => ({ queue: { [findKey(value)]: value } }),
+            play:      (value) =>  ({ play:  { [findKey(value)]: value } }),
             media:      (value) => ({ play: { media: value } }),
+            plex:       (value) => ({ play: { plex: value } }),
+            hymn:       (value) => ({ play: { hymn: value } }),
             talk:       (value) => ({ play: { talk: value } }),
             scripture:  (value) => ({ play: { scripture: value } }),
         };
@@ -83,46 +86,11 @@ export default function TVApp() {
         return null;
     })();
 
-    const [containerAppRatio, setContainerAppRatio] = useState(0);
-
-    useEffect(() => {
-        const updateRatio = () => {
-            const container = containerRef.current;
-            const app = appRef.current;
-
-            if (container && app) {
-                const containerWidth = container.offsetWidth;
-                const appWidth = app.offsetWidth;
-                const ratio = Math.round((appWidth / containerWidth) * 100);
-                setContainerAppRatio(ratio);
-            }
-        };
-
-        updateRatio(); // Initial calculation
-
-        window.addEventListener("resize", updateRatio);
-        return () => {
-            window.removeEventListener("resize", updateRatio);
-        };
-    }, [list]);
-
-    const containerRef = useRef(null);
-    const appRef = useRef(null);
+    console.log("Autoplay:", autoplay);
 
     return (
-        <div className="tv-app-container" ref={containerRef}>
-            {!!containerAppRatio && <div className="debug"
-                style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    color: "black",
-                    backgroundColor: "rgba(255, 255, 255, 0.8)",
-                    padding: "10px",
-                    zIndex: 1000,
-                }}
-            >{containerAppRatio}</div>}
-            <div className="tv-app" ref={appRef} >
+        <div className="tv-app-container" >
+            <div className="tv-app" >
                 { list.length === 0 ? <LoadingOverlay/> : <TVMenu list={list} autoplay={autoplay}  /> }
             </div>
         </div>
