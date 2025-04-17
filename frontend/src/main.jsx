@@ -4,33 +4,10 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'; // Step 2: Impo
 import App from './App.jsx';
 import TVApp from './TVApp.jsx';
 import FinanceApp from './budget/index.jsx'; // Step 5: Import the new component
+import Blank from './modules/Blank.jsx';
 import './index.css';
 
 
-function CatchAll() {
-  return (
-    <div style={{ 
-      // flex, vertical center, horizontal center
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      height: '100vh',
-      width: '100vw',
-      fontSize: '2rem',
-      color: '#FFF',
-    }}>
-      {/* Show host, path, parameters */}
-      <pre>
-        {JSON.stringify({
-          url: window.location.href,
-          host: window.location.host,
-          path: window.location.pathname,
-          searchParams: Object.fromEntries(new URLSearchParams(window.location.search))
-        }, null, 2)}
-      </pre>
-    </div>
-  );
-}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -41,7 +18,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/finances" element={<FinanceApp />} /> {/* Example of another route */}
         <Route path="/tv" element={<TVApp />} /> {/* Example of another route */}
         {/* Evertyhign else */}
-        <Route path="*" element={<CatchAll />} /> {/* Fallback route */}
+        <Route path="*" element={<Blank />} /> {/* Fallback route */}
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,

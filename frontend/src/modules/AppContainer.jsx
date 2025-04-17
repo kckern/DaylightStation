@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
+  DaylightAPI,
   DaylightHostPath,
   DaylightWebsocketSubscribe,
   DaylightWebsocketUnsubscribe
@@ -30,6 +31,7 @@ export default function AppContainer({ open, clear }) {
   if (app === "keycode") return <KeyTestApp />;
   if (app === "art") return <ArtApp />;
   if (app === "webcam") return <WebcamApp />;
+  if (app === "wrapup") return <WrapUp clear={clear} />;
   return (
     <div>
       <h2>App Container</h2>
@@ -38,6 +40,14 @@ export default function AppContainer({ open, clear }) {
       </pre>
     </div>
   );
+}
+
+
+function WrapUp() {
+  useEffect(() => {
+    DaylightAPI("exe/tv/off").then(clear);
+  }, []);
+  return null;
 }
 
 
