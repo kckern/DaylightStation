@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import TVMenu from "./modules/TVMenu";
 import "./TVApp.scss";
 import { DaylightAPI } from "./lib/api.mjs";
+import { LoadingOverlay } from "./modules/Player";
 
 
 
@@ -82,22 +83,35 @@ export default function TVApp() {
         return null;
     })();
 
-    const [zoomLevel, setZoomLevel] = useState((window.devicePixelRatio * 50).toFixed(0));
+    const [containerAppRatio, setContainerAppRatio] = useState(0);
 
     useEffect(() => {
-        const handleZoomChange = () => {
-            setZoomLevel((window.devicePixelRatio * 50).toFixed(0));
+        const updateRatio = () => {
+            const container = containerRef.current;
+            const app = appRef.current;
+
+            if (container && app) {
+                const containerWidth = container.offsetWidth;
+                const appWidth = app.offsetWidth;
+                const ratio = Math.round((appWidth / containerWidth) * 100);
+                setContainerAppRatio(ratio);
+            }
         };
 
-        window.addEventListener("resize", handleZoomChange);
+        updateRatio(); // Initial calculation
+
+        window.addEventListener("resize", updateRatio);
         return () => {
-            window.removeEventListener("resize", handleZoomChange);
+            window.removeEventListener("resize", updateRatio);
         };
-    }, []);
+    }, [list]);
+
+    const containerRef = useRef(null);
+    const appRef = useRef(null);
 
     return (
-        <div className="tv-app-container">
-            {zoomLevel !== "100" && <div className="debug"
+        <div className="tv-app-container" ref={containerRef}>
+            {!!containerAppRatio && <div className="debug"
                 style={{
                     position: "absolute",
                     top: 0,
@@ -107,9 +121,9 @@ export default function TVApp() {
                     padding: "10px",
                     zIndex: 1000,
                 }}
-            >{zoomLevel}</div>}
-            <div className="tv-app">
-                { list.length === 0 ? <div className="loading">Loading...</div> : <TVMenu list={list} autoplay={autoplay}  /> }
+            >{containerAppRatio}</div>}
+            <div className="tv-app" ref={appRef} >
+                { list.length === 0 ? <LoadingOverlay/> : <TVMenu list={list} autoplay={autoplay}  /> }
             </div>
         </div>
     );

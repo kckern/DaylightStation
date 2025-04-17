@@ -22,7 +22,7 @@ export const saveImage = async (url, folder, uid) => {
         const fileAgeInMs = Date.now() - stats.mtimeMs;
         const oneDayInMs = 24 * 60 * 60 * 1000;
         if (fileAgeInMs < oneDayInMs) {
-            console.log(`Image already exists and is less than 24 hours old: ${path}.jpg`);
+            //console.log(`Image already exists and is less than 24 hours old: ${path}.jpg`);
             return true;
         }
     }
@@ -120,6 +120,7 @@ const saveFile = (path, data) => {
     path = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
     //mkdir if not exists
     mkDirIfNotExists(path);
+    console.log(data);
     //add yaml if it doesnt end with .yaml
     const yamlFile = path.endsWith('.yaml') ? path : `${path}.yaml`;
     data = JSON.parse(JSON.stringify(removeCircularReferences(data)));

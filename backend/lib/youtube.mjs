@@ -25,6 +25,7 @@ const getYoutube = async () => {
                     if (fileNameYYYYMMDD < tenDaysAgo) {
                         fs.unlinkSync(filePath);
                         deleted.push(filePath);
+                        console.log(`Deleted old file: ${filePath}`);
                     }
                 }
             }
@@ -40,7 +41,7 @@ const getYoutube = async () => {
         commands.push(ytdlp);
         shortcodes.push(`${shortcode}`);
 
-
+        console.log(`Downloading ${shortcode} from ${playlist}`);
     }
 
     //run each command in parallel, dont wait for each command to finish
@@ -59,6 +60,7 @@ const getYoutube = async () => {
                 const stats = fs.statSync(filePath);
                 if (stats.mtime > tenDaysAgo) {
                     files.push(filePath);
+                    console.log(`Found file: ${filePath}`);
                 }
             }
         }

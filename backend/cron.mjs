@@ -16,9 +16,9 @@ const cron = {
         //video lists
     ],
     cronDaily: [
-        './lib/withings.mjs',
+        //'./lib/withings.mjs',
         './lib/clickup.js',
-        "./lib/plex.js",
+        //"./lib/plex.mjs",
         "./lib/youtube.mjs",
     ]
 }
