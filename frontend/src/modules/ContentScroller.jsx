@@ -294,17 +294,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
           </>
         )}
         <div className="content-container">
-        <div
-          style={{
-            position: "absolute",
-            top: 'calc(100% - 1.5em)',
-            left: '50%',
-            width: "100%",
-            height: "100%",
-            zIndex: 999,
-          }}
-        >
-        </div>
+
         {!!isVideo && <video
               ref={mainRef}
               src={mainMediaUrl}
