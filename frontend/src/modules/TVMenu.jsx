@@ -188,7 +188,7 @@ const TVMenu = ({ list, clear, autoplay }) => {
 
   if (currentContent) return currentContent;
   if (!loaded) return null;
-
+  if(!!autoplay && !currentContent) return null;
 
   return (
     <div className="tv-menu-container" style={{ transform: `translateY(${-translateY}px)` }} ref={containerRef}>

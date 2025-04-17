@@ -617,7 +617,7 @@ function VideoPlayer({ media, advance, clear }) {
   );
 }
 
-function LoadingOverlay() {
+export function LoadingOverlay() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
