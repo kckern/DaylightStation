@@ -412,9 +412,6 @@ export default function Player({ play, queue, clear }) {
   if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
   return <div className={`shader on queuer`} >
     <LoadingOverlay />
-    <pre>
-      {JSON.stringify({play, queue}, null, 2)}
-    </pre>
     </div>
 
 }

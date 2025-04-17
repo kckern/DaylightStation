@@ -55,9 +55,6 @@ function ScriptureText({ scriptureTextData, panelHeight, yProgress }) {
         backgroundImage: `url(${config.backgroundImage})`,
       }}
     >
-      <pre>
-        {JSON.stringify(scriptureData, null, 2)}
-      </pre>
     </div>
   );
 }
