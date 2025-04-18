@@ -66,11 +66,12 @@ export default function TVApp() {
 
     const autoplay = (() => {
         const findKey = (value) =>{
-            return /^\d+$/.test(value) ? "plex" : "media";
+            return /^\d+$/.test(value) ? "plex" : "playlist";
         }
         const mappings = {
+            playlist:   (value) => ({ queue: { [findKey(value)]: value } }),
             queue:      (value) => ({ queue: { [findKey(value)]: value } }),
-            play:      (value) =>  ({ play:  { [findKey(value)]: value } }),
+            play:       (value) => ({ play:  { [findKey(value)]: value } }),
             media:      (value) => ({ play: { media: value } }),
             plex:       (value) => ({ play: { plex: value } }),
             hymn:       (value) => ({ play: { hymn: value } }),
