@@ -15,16 +15,76 @@ class HomeAssistant {
         this.token = token;
     }
 
-    async callService(entityId, service) {
-        const url = `${this.host}:${this.port}/api/services/remote/${service}`;
+    async fetch(path, method = 'GET', data = null) {
+
+        const url = `${this.host}:${this.port}${path}`;
         const headers = {
             Authorization: `Bearer ${this.token}`,
             'Content-Type': 'application/json',
         };
-        const data = { entity_id: entityId };
-        const response = await axios.post(url, data, { headers });
-        return response.data;
+        const options = {
+            method,
+            url,
+            headers,
+        };
+        if (data) {
+            options.data = data;
+        }
+        try {
+            const response = await axios(options);
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching ${url}:`, error.message || error);
+            throw error;
+        }
+
+
     }
+
+    async getSensorData(entityId) {
+        //eg sensor.living_room_plug_tv_power
+        const path = `/api/states/${entityId}`;
+        return await this.fetch(path, 'GET');
+    }
+
+    async callService(entityId, service) {
+        const [domain, ...rest] = entityId.split('.');
+        const path = `/api/services/${domain}/${service}`;
+        const data = { entity_id: entityId };
+        return await this.fetch(path, 'POST', data);
+    }
+
+
+    async turnOnTV() {
+        const {state} = await this.getSensorData('sensor.living_room_plug_tv_power');
+        console.log('TV state:', state);
+        if (parseInt(state) === 0) {
+            console.log('TV is off, turning it on...');
+            await this.callService('switch.living_room_plug_tv', 'turn_on');
+
+            // Loop until the state is > 0
+            let attempts = 0;
+            const maxAttempts = 15; // 30 seconds max with 2-second intervals
+            while (attempts < maxAttempts) {
+                const updatedSensor = await this.getSensorData('sensor.living_room_plug_tv_power');
+                if (updatedSensor.state > 0) {
+                    console.log('TV is now on.');
+                    return true;
+                }
+                attempts++;
+                console.log(`Waiting for TV to turn on... Attempt ${attempts}`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second interval
+            }
+
+            console.error('TV did not turn on within the timeout period.');
+            return false;
+        } else {
+            console.log('TV is already on.');
+            return true;
+        }
+    }
+
+
 }
 
 // Helper class for Fully Kiosk Browser
@@ -158,6 +218,7 @@ const tasker = new Tasker(
 // Routes
 exeRouter.get('/tv/:state(on|off|toggle)', async (req, res) => {
     try {
+        await homeAssistant.turnOnTV();
         const service = req.params.state === 'on' ? 'turn_on' : 'turn_off';
         const result = await homeAssistant.callService('remote.shield_android_tv', service);
         res.json({ result });
@@ -169,7 +230,13 @@ exeRouter.get('/tv/:state(on|off|toggle)', async (req, res) => {
 
 exeRouter.get('/tv', async (req, res) => {
     try {
+        await homeAssistant.turnOnTV();
         const query = req.query || {};
+        //turn on switch.living_room_plug_tv
+        const sensor = await homeAssistant.getSensorData('sensor.living_room_plug_tv_power');
+
+        const tvR = await homeAssistant.callService('switch.living_room_plug_tv', 'turn_on');       
+        //todo, wait till the tv is on before sending the command
         await homeAssistant.callService('remote.shield_android_tv', 'turn_on');
         const taskerResponse = await tasker.sendCommand('blank');
         const isBlank = await kiosk.waitForBlank()
