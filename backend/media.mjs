@@ -226,11 +226,11 @@ mediaRouter.all('/plex/info/:plex_key', async (req, res) => {
 mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
     const { plex_key } = req.params;
     const plex_keys = plex_key.split(',');
-    const shuffle = true; //todo get from config
+    const playable = true; //todo get from config
     let list = [];
     let info = {};
     for (const plex_key of plex_keys) {
-        const {list:items, plex, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, shuffle);
+        const {list:items, plex, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, playable);
         list = list.concat(items);
         info = {
             plex: info.plex ? `${info.plex},${plex}` : plex,
@@ -253,22 +253,87 @@ mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
     }
 });
 
-
-mediaRouter.all('/plex/queue/:plex_key/:action?', async (req, res) => {
-    const { plex_key, action } = req.params;
+mediaRouter.all('/plex/table/:plex_key', async (req, res) => {
+    const { plex_key } = req.params;
     const plex_keys = plex_key.split(',');
-    const shuffle = action === 'shuffle';
+    const playable = true; // No shuffle for table view
     let list = [];
     let info = {};
-    for (const plex_key of plex_keys) {
-        const queue = await (new Plex()).loadPlayableQueueFromKey(plex_key, shuffle);
-        list = list.concat(queue);
+
+    for (const key of plex_keys) {
+        const { list: items, plex, title, image } = await (new Plex()).loadChildrenFromKey(key, playable);
+        list = list.concat(items);
+        info = {
+            plex: info.plex ? `${info.plex},${plex}` : plex,
+            title: info.title ? `${info.title} • ${title}` : title,
+            image: info.image ? `${info.image}` : image
+        };
     }
-    try {
-        res.json(list);
-    } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
-    }
+
+    const tableRows = list.map(({  plex, grandparentTitle, parentTitle, type, title, image }) => `
+        <tr>
+            <td><img src="${image}" alt="${title}" style="width:50px;height:50px;"></td>
+            <td>${plex}</td>
+            <td>${title}</td>
+            <td>${parentTitle}</td>
+            <td>${grandparentTitle}</td>
+        </tr>
+    `).join('');
+
+    const html = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${info.title || 'Plex Table'}</title>
+            <style>
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                }
+                th, td {
+                    border: 1px solid #ddd;
+                    padding: 8px;
+                    text-align: left;
+                }
+                th {
+                    background-color: #f4f4f4;
+                }
+                tr:nth-child(even) {
+                    background-color: #f9f9f9;
+                }
+                tr:hover {
+                    background-color: #f1f1f1;
+                }
+                img {
+                    border-radius: 4px;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>${info.title || 'Plex Table'}</h1>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Image</th>
+                        <th>Plex Key</th>
+                        <th>Title</th>
+                        <th>Parent</th>
+                        <th>Grand Parent</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
 });
 
 

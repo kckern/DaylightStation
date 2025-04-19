@@ -9,15 +9,15 @@ function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { cons
 
 export class Plex {
   constructor() {
-    const { plex: { token, host, port } } = process.env;
+    const { plex: {  host, port }, PLEX_TOKEN:token } = process.env;
     this.token = token;
     this.host = host;
     this.port = port;
     this.baseUrl = this.port ? `${this.host}:${this.port}` : this.host;
   }
   async fetch(paramString) {
+    let url = `${this.baseUrl}/${paramString}`;
     try {
-      let url = `${this.baseUrl}/${paramString}`;
       if (!/\?/.test(paramString)) url += '?1=1';
       url += `&X-Plex-Token=${this.token}`;
       //console.log(`Fetching Plex API: ${url}`);
@@ -25,13 +25,14 @@ export class Plex {
       return response.data;
     } catch (error) {
       console.error(`Error fetching data from Plex API: ${error.message}`);
+      console.error(`URL: ${url}`); 
       return null; // Return null to indicate failure
     }
   }
 
   async loadmedia_url(itemData) {
     itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
-    const { plex: { host, token, session, protocol, platform } } = process.env;
+    const { plex: { host,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
     const { ratingKey:key, type } = itemData
 
     if(!["episode", "movie", "track"].includes(type)) {
@@ -49,7 +50,7 @@ export class Plex {
       return `${host}${mediaKey}?X-Plex-Token=${token}`;
       } else {
       if (!key) throw new Error("Rating key not found for video.");
-      return `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=3000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
+      return `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
       }
     } catch (error) {
       console.error("Error generating media URL:", error.message);
@@ -58,83 +59,84 @@ export class Plex {
 
   }
 
-  async loadMeta(key, type = '') {
-    const response =  await this.fetch(`library/metadata/${key}${type}`);
-    return  response?.MediaContainer?.Metadata || [];
+  async loadMeta(plex, type = '') {
+    const response =  await this.fetch(`library/metadata/${plex}${type}`);
+    const meta =   response?.MediaContainer?.Metadata || [];
+    meta['plex'] = plex;
+    return meta;
   }
-  async loadChildrenFromKey(key, shuffle = false) {
-    if (!key) return { key: false, list: [] };
-    const [{ title, thumb, type }] = await this.loadMeta(key);
+  async loadChildrenFromKey(plex, playable = false) {
+    if (!plex) return { plex: false, list: [] };
+    const [{ title, thumb, type }] = await this.loadMeta(plex);
     const image = this.thumbUrl(thumb);
-
     let list;
     if (type === "playlist") {
-      list = await this.loadListFromPlaylist(key);
+      list = await this.loadListFromPlaylist(plex);
       list = list?.map(({ ratingKey, title, art }) => {
         return { plex: ratingKey, title, image: this.thumbUrl(art) };
       }) || [];
-    } else {
-      list = await this.loadListKeys(key, '/children');
-      if (shuffle) list = list?.sort(() => Math.random() - 0.5);
+    } else if(playable && ["artist","show"].includes(type)) {
+      list = await this.loadListKeys(plex, '/grandchildren');
+    }else  {
+      list = await this.loadListKeys(plex, '/children');
     }
-
-    return { plex:key, type, title, image, list };
+    return { plex, type, title, image, list };
   }
 
-  async loadListFromKey(key = false, shuffle = false) {
-    const [data] = await this.loadMeta(key);
+  async loadListFromKey(plex = false, shuffle = false) {
+    const [data] = await this.loadMeta(plex);
     if (!data) return false;
     const { type, title } = data;
     let list;
-    if (type === 'playlist') list = await this.loadListKeysFromPlaylist(key); //video 12944 audio 321217
-    else if (type === 'collection') list = await this.loadListFromCollection(key);
-    else if (type === 'season') list = await this.loadListFromSeason(key); //598767
-    else if (type === 'show') list = await this.loadListFromShow(key); //598748
-    else if (type === 'artist') list = await this.loadListFromArtist(key); //575855
-    else if (type === 'album') list = await this.loadListFromAlbum(key); //575876
-    else list = [key]; //movie: 52769
+    if (type === 'playlist') list = await this.loadListKeysFromPlaylist(plex); //video 12944 audio 321217
+    else if (type === 'collection') list = await this.loadListFromCollection(plex);
+    else if (type === 'season') list = await this.loadListFromSeason(plex); //598767
+    else if (type === 'show') list = await this.loadListFromShow(plex); //598748
+    else if (type === 'artist') list = await this.loadListFromArtist(plex); //575855
+    else if (type === 'album') list = await this.loadListFromAlbum(plex); //575876
+    else list = [plex]; //movie: 52769
     list = shuffle ? list.sort(() => Math.random() - 0.5) : list;
-    return { key, type, list };
+    return { plex, type, list };
   }
-  async loadListKeys(key, path) {
-    const keys = (await this.loadMeta(key, path))?.map(({ ratingKey, title, type, thumb })=>{
-      return { key:ratingKey,type, title, image: this.thumbUrl(thumb) }
+  async loadListKeys(input, path) {
+    const items = (await this.loadMeta(input, path))?.map(({ ratingKey, parentRatingKey,parentTitle, grandparentRatingKey, grandparentTitle, title,summary, type, thumb })=>{
+      return { plex:ratingKey,title, parent:parentRatingKey, parentTitle, grandparent: grandparentRatingKey, grandparentTitle, type, summary, image: this.thumbUrl(thumb) }
     }) || [];
-    return keys.length ? keys : [];
+    return items.length ? items : [];
   }
 
-  async loadImgFromKey(key) {
-    let response = await this.loadMeta(key);
+  async loadImgFromKey(plex) {
+    let response = await this.loadMeta(plex);
     const data = response?.[0] || response || null;
     if(!data) return false;
     return this.thumbUrl(data.thumb);
   }
 
-  async loadListFromAlbum(key) {
-    return this.loadListKeys(key,'/children');
+  async loadListFromAlbum(plex) {
+    return this.loadListKeys(plex,'/children');
   }
-  async loadListFromSeason(key) {
-    return this.loadListKeys(key,'/children');
+  async loadListFromSeason(plex) {
+    return this.loadListKeys(plex,'/children');
   }
-  async loadListFromCollection(key) {
-    return this.loadListKeys(key,'/children');
+  async loadListFromCollection(plex) {
+    return this.loadListKeys(plex,'/children');
   }
-  async loadListFromShow(key) {
-    return this.loadListKeys(key,'/grandchildren');
+  async loadListFromShow(plex) {
+    return this.loadListKeys(plex,'/grandchildren');
   }
-  async loadListFromArtist(key) {
-    return this.loadListKeys(key,'/grandchildren');
+  async loadListFromArtist(plex) {
+    return this.loadListKeys(plex,'/grandchildren');
   }
-  async loadListFromPlaylist(key) {
-    const playlist = await this.fetch(`playlists/${key}/items`);
+  async loadListFromPlaylist(plex) {
+    const playlist = await this.fetch(`playlists/${plex}/items`);
     const items = playlist.MediaContainer.Metadata.map(({ ratingKey, title, thumb }) => {
-      return { ratingKey, title, art: this.thumbUrl(thumb) };
+      return { plex:ratingKey, title, art: this.thumbUrl(thumb) };
     });
     return items;
   }
-  async loadListKeysFromPlaylist(key) {
-    const items = await this.loadListFromPlaylist(key);
-    return items?.map(({ ratingKey}) => ratingKey);
+  async loadListKeysFromPlaylist(plex) {
+    const items = await this.loadListFromPlaylist(plex);
+    return items?.map(({ plex}) => plex);
   }
 
   determinemedia_type(type) {
