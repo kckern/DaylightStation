@@ -65,7 +65,7 @@ export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
 
   
 function BudgetTable({ setDrawerContent, budget }) {
-  const activeBudget = budget[Object.keys(budget)[0]];
+  const activeBudget = budget;
 
   const loadAnticipatedTransactions = (month, key) => {
     const date = moment(month, "YYYY-MM").endOf('month').format("YYYY-MM-DD");
