@@ -7,13 +7,9 @@ import moment from 'moment';
 
 export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimensions }) {
 
-    const budgetKeys = Object.keys(budget);
-    const [activeBudget] = budgetKeys;
 
-    const shortTermBudget = budget[activeBudget].shortTermBuckets;
-    const shortTermStatus = budget[activeBudget].shortTermStatus;
-    const { budgetStart, budgetEnd } = budget[activeBudget];
-    const buckets = Object.keys(shortTermBudget);
+    const { budgetStart, budgetEnd, shortTermBuckets, shortTermStatus } = budget;
+    const buckets = Object.keys(shortTermBuckets);
 
     const weekCount = moment(budgetEnd).diff(moment(budgetStart), 'weeks');
     const currentWeek = moment().diff(moment(budgetStart), 'weeks');
@@ -21,7 +17,7 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
     const currentTime = currentWeek / weekCount;
 
     const processedData = buckets.map((label) => {
-        const item = shortTermBudget[label];
+        const item = shortTermBuckets[label];
         const { budget, debits, credits, balance, transactions } = item;
         const extendedBudget = budget + credits;
         const overage = debits > extendedBudget ? debits - extendedBudget : 0;

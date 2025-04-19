@@ -214,13 +214,11 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
 }
 
 export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions }) => {
-  const budgetKeys = Object.keys(budget);
-  const months = budgetKeys.map((key) => budget[key].monthlyBudget).reduce((acc, m) => ({ ...acc, ...m }), {});
-  const monthKeys = Object.keys(months);
+
+  const months = Object.keys(budget.dayToDayBudget);
   const currentMonth = moment().format("YYYY-MM");
   const [activeMonth, setActiveMonth] = useState(currentMonth);
-  const nonFutureMonths = monthKeys.filter((m) => m <= currentMonth);
-
+  const nonFutureMonths = months.filter((m) => m <= currentMonth);
   const monthHeader = (
     <MonthTabs
       monthKeys={nonFutureMonths}
@@ -229,8 +227,7 @@ export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions
     />
   );
 
-  const firstBudgetKey = budgetKeys[0];
-  const monthData = budget[firstBudgetKey]?.dayToDayBudget[activeMonth] || {};
+  const monthData = budget.dayToDayBudget[activeMonth] || {};
   const options = buildDayToDayBudgetOptions(monthData, setDrawerContent);
 
   return (
