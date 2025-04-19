@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Button, MantineProvider, TabsPanel } from '@mantine/core';
+import { Button, MantineProvider, Select, TabsPanel } from '@mantine/core';
 import { BudgetHoldings,  BudgetSpending} from './blocks.jsx';
 import { BudgetMortgage } from './blocks/mortgage.jsx';
 import { BudgetCashFlow } from './blocks/monthly.jsx';
@@ -10,13 +10,13 @@ import 'react-modern-drawer/dist/index.css'
 import "./budget.css"
 import '@mantine/core/styles.css';
 import spinner from '../assets/icons/spinner.svg';
+import moment from 'moment';
 
 const isLocalhost = /localhost/.test(window.location.href);
 
 const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
 
 const fetchBudget = async () => {
-  console.log('fetching budget')
   const response = await fetch(`${baseUrl}/data/budget`);
   const data = await response.json();
   return data;
@@ -60,27 +60,54 @@ export function BudgetViewer({ budget, mortgage, setBudgetData }) {
 
   const [drawerContent, setDrawerContent] = useState(null);
   const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
+
+  const [activeBudgetKey, setActiveBudgetKey] = useState(Object.keys(budget)[0]);
+  const activeBudget = budget[activeBudgetKey];
+  const availableBudgetKeys = Object.keys(budget);
   return (
-      <div className="budget-viewer">
-        <header>
-          <h1>Budget <ReloadButton setBudgetData={setBudgetData} /></h1>
-          
-        </header>
-        <Drawer opened={!!drawerContent} onClose={() => setDrawerContent(null)} title={drawerContent?.meta?.title} size="90vw" position='right' offset={8} className='txn-drawer'>
-          {drawerContent?.jsx || drawerContent}
-        </Drawer>
-        <div className="grid-container">
-          <BudgetCashFlow setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetShortTerm setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-          <BudgetDayToDay setDrawerContent={setDrawerContent} budget={budget} budgetBlockDimensions={budgetBlockDimensions}/>
-    
-          <BudgetSpending setDrawerContent={setDrawerContent} budget={budget}/>
-          <BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage}/>
-          <BudgetHoldings setDrawerContent={setDrawerContent} budget={budget}/>
-        
-        </div>
+    <div className="budget-viewer">
+      <header>
+        <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '1rem'}}>
+          <Select
+            data={availableBudgetKeys.map((key) => ({ value: key, label: moment(key).format('YYYY') }))}
+            value={activeBudgetKey}
+            onChange={(value) => setActiveBudgetKey(value)}
+            placeholder="Select Budget"
+            style={{ width: '6rem',  }}
+          />
+          <span>Budget</span>
+          <ReloadButton setBudgetData={setBudgetData} />
+        </h1>
+      </header>
+      <Drawer
+        opened={!!drawerContent}
+        onClose={() => setDrawerContent(null)}
+        title={drawerContent?.meta?.title}
+        size="90vw"
+        position="right"
+        padding="md"
+        className="txn-drawer"
+      >
+        {drawerContent?.jsx || drawerContent}
+      </Drawer>
+      <div className="grid-container">
+        <BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} />
+        <BudgetShortTerm
+          setDrawerContent={setDrawerContent}
+          budget={activeBudget}
+          budgetBlockDimensions={budgetBlockDimensions}
+        />
+        <BudgetDayToDay
+          setDrawerContent={setDrawerContent}
+          budget={activeBudget}
+          budgetBlockDimensions={budgetBlockDimensions}
+        />
+        <BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} />
+        <BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} />
+        <BudgetHoldings setDrawerContent={setDrawerContent} budget={budget} />
       </div>
-    );
+    </div>
+  );
 
 
 }

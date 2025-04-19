@@ -16,10 +16,9 @@ export const formatAsCurrency = (value) => {
   // BudgetHoldings.jsx
   export function BudgetHoldings({ setDrawerContent, budget }) {
 
-    const budgets = Object.keys(budget);
-    const activeBudget = budget[budgets[0]];
+    const activeBudget = budget;
     
-    const Transfers = <Drawer setDrawerContent={setDrawerContent} header="Transfers" transactions={activeBudget.transferTransactions.transactions} />;
+    const Transfers = <Drawer setDrawerContent={setDrawerContent} header="Transfers" transactions={activeBudget.transferTransactions?.transactions || []} />;
 
     return (
       <div className="budget-block">
@@ -34,8 +33,7 @@ export const formatAsCurrency = (value) => {
   // BudgetMortgage.jsx
   export function BudgetSpending({ setDrawerContent, budget }) {
 
-    const budgets = Object.keys(budget);
-    const activeBudget = budget[budgets[0]];
+    const activeBudget = budget;
 
     const monthsDayToDay = Object.keys(activeBudget.dayToDayBudget);
     const monthsMonthly = Object.keys(activeBudget.monthlyBudget);
@@ -53,7 +51,7 @@ export const formatAsCurrency = (value) => {
     .concat(monthlyTransactionsAllMonths)
     .concat(shortTermTransactions)
     //.filter((txn) => !["Housing", "Taxes", "Health Insurance", "Utilities", "Long-term Savings"].includes(txn.label))
-    .filter((txn) => txn.expenseAmount > 0);
+    .filter((txn) => txn?.expenseAmount > 0);
 
 
 

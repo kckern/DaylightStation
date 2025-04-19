@@ -49,13 +49,14 @@ export const buildBudget = (config, transactions)=>
     
             const flexibleBuckets = config.shortTerm.filter(({flex}) => flex).map(({label, flex}) => ({label, flex}));
             const flexWeightSum = flexibleBuckets.reduce((acc, {flex}) => acc + flex, 0);
-    
             for (const {label, flex} of flexibleBuckets) {
                 const percentage = flex / flexWeightSum;
                 const allocation = parseFloat((amountToAdjust * percentage).toFixed(2));
-                shortTermBuckets[label]['budget'] += allocation;
-                shortTermBuckets[label]['balance'] += allocation;
+                if (!shortTermBuckets[label]) continue;
+                shortTermBuckets[label]['budget'] = (shortTermBuckets[label]['budget'] || 0) + allocation;
+                shortTermBuckets[label]['balance'] = (shortTermBuckets[label]['balance'] || 0) + allocation;
             }
+
         } else {
             for (const label in shortTermBuckets) {
                 const bucket = shortTermBuckets[label];
@@ -101,7 +102,6 @@ export const buildBudget = (config, transactions)=>
             }
         }
     }
-
 
 
     const shortTermBudget =  Object.values(shortTermBuckets).reduce((acc, {budget}) => acc + budget, 0);

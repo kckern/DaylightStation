@@ -120,7 +120,6 @@ const saveFile = (path, data) => {
     path = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
     //mkdir if not exists
     mkDirIfNotExists(path);
-    console.log(data);
     //add yaml if it doesnt end with .yaml
     const yamlFile = path.endsWith('.yaml') ? path : `${path}.yaml`;
     data = JSON.parse(JSON.stringify(removeCircularReferences(data)));
