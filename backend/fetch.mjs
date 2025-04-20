@@ -399,13 +399,13 @@ export const getChildrenFromMediaKey = async ({media_key}) => {
         if(isPlex) {
             const PLEX = new Plex();
             const plexResponse = await PLEX.loadChildrenFromKey(media_key);
-            const plexList = plexResponse?.list.map(({key,title,type,image}) => {
+            const plexList = plexResponse?.list.map(({plex,title,type,image}) => {
                 let action = "play";
                 if(["show", "season"].includes(type)) action = "list";
                 if(["album"].includes(type)) action = "queue";
                 return {
                     label:title, image, type,
-                    [action]: {plex: key}
+                    [action]: {plex}
                 }
             });
             delete plexResponse.list;

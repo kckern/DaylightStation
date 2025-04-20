@@ -77,8 +77,8 @@ export class Plex {
     let list;
     if (type === "playlist") {
       list = await this.loadListFromPlaylist(plex);
-      list = list?.map(({ plex,ratingKey, title, art }) => {
-        return { plex: plex || ratingKey, title, image: this.thumbUrl(art) };
+      list = list?.map(({ plex,ratingKey, type,title, art }) => {
+        return { plex: plex || ratingKey,type, title, image: this.thumbUrl(art) };
       }) || [];
     } else if(playable && ["artist","show"].includes(type)) {
       list = await this.loadListKeys(plex, '/grandchildren');
@@ -199,12 +199,10 @@ export class Plex {
     // Get the "list" from the key
     const { type: parentType, list } = await this.loadListFromKey(key, shuffle);
     // Pick one item from the list (or strings)
-
     const [selectedKey, progress] = this.selectKeyToPlay(list, shuffle);
     if (!selectedKey) return false;
-
     // Load its metadata
-    const [itemData] = await this.loadMeta(selectedKey);
+    const [itemData] = await this.loadMeta(selectedKey.plex || selectedKey);
     if (!itemData) {
       return false;
     }
