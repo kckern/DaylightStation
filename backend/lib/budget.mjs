@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import yaml from 'js-yaml';
 import moment from 'moment-timezone';
 import { buildBudget } from './budgetlib/build_budget.mjs';
@@ -9,7 +9,8 @@ moment.tz.setDefault('America/Los_Angeles');
 const dataPath = `${process.env.path.data}`;
 
 const budgetPath            = `${dataPath}/budget/budget.config.yml`;
-const transactionPath       = `${dataPath}/budget/transactions.yml`;
+const budgetBasePath       = `${dataPath}/budget`;
+const transactionPath       = `${dataPath}/budget/{{BUDGET_INDEX}}/transactions.yml`;
 const mortgageTransactionPath = `${dataPath}/budget/mortgage.transactions.yml`;
 const accountBalancePath = `${dataPath}/budget/account.balances.yml`;
 const financesPath          = `${dataPath}/budget/finances.yml`;
@@ -162,11 +163,16 @@ export const processMortgage = (mortgage, accountBalances, mortgageTransactions,
 
 export const compileBudget = async () => {
     const budgetConfig = yaml.load(readFileSync(budgetPath, 'utf8'));
+    const budgetStartDates = budgetConfig.budget.map(b => b.timeframe.start);
     const accountBalances = yaml.load(readFileSync(accountBalancePath, 'utf8')).accountBalances;
     const mortgageTransactions = yaml.load(readFileSync(mortgageTransactionPath, 'utf8')).mortgageTransactions;
     const budgetList = budgetConfig.budget.sort((b, a) => a.timeframe.start - b.timeframe.start);
     const mortgage = processMortgage(budgetConfig.mortgage, accountBalances, mortgageTransactions);
-    const rawTransactions = yaml.load(readFileSync(transactionPath, 'utf8')).transactions;
+    const rawTransactions = budgetStartDates.map(date => {
+      const transactionFileName = transactionPath.replace('{{BUDGET_INDEX}}', moment(date).utc().format('YYYY-MM-DD'));
+      console.log(`Reading transactions from ${transactionFileName}`);
+      return yaml.load(readFileSync(transactionFileName, 'utf8')).transactions;
+    }).flat();
     //Apply Memos
     const transactionMemos = yaml.load(readFileSync(transactionMemoPath, 'utf8'));
    for(const txnId of Object.keys(transactionMemos)){
@@ -189,34 +195,36 @@ export const compileBudget = async () => {
 }
 
 export const refreshFinancialData = async (noDL) => {
-    let transactions;
-   // noDL = false;
-    if (noDL) {
+
+
         const { budget:budgets, mortgage } = yaml.load(readFileSync(budgetPath, 'utf8'));
+        const startDates = budgets.map(b => b.timeframe.start);
+        console.log({startDates});
+        const accounts = [];
         for (const budget of budgets)
         {
-          const { timeframe: { start, end }, accounts, closed } = budget;
-          if (closed) continue; 
-          const startDate = moment(start).format('YYYY-MM-DD')
-          const endDate = moment(end).format('YYYY-MM-DD');
-
+          const { timeframe: { start, end }, accounts:b_accounts, closed } = budget;
+          //if (closed) continue; 
+            accounts.push(...b_accounts.filter(account => !accounts.includes(account)));
+            const startDate = moment(start).utc().format('YYYY-MM-DD');
+            const endDate = moment(end).utc().format('YYYY-MM-DD');
           console.log(`\n\n #### Refreshing financial data for ${startDate} to ${endDate} ####\n\n`);
-
-          const accountBalances = await getAccountBalances({ accounts: [...accounts, ...mortgage.accounts] });
-          writeFileSync(accountBalancePath, yaml.dump({ accountBalances }));
+          const transactions = await processTransactions({ startDate, endDate, accounts });
+          const budgetTransactionPath = transactionPath.replace('{{BUDGET_INDEX}}', startDate);
+          console.log(`Creating ${budgetBasePath}/${startDate}`);
+          mkdirSync(`${budgetBasePath}/${startDate}`, { recursive: true });
+          const txnCount = transactions.length;
+          console.log(`Writing ${txnCount} transactions to ${budgetTransactionPath}`);
+          writeFileSync(budgetTransactionPath, yaml.dump({ transactions }));
   
-          transactions = await processTransactions({ startDate, endDate, accounts });
-          writeFileSync(transactionPath, yaml.dump({ transactions }));
-  
-          const mortgageTransactions = await processMortgageTransactions({ accounts: mortgage.accounts, startDate: mortgage.startDate});
-          writeFileSync(mortgageTransactionPath, yaml.dump({ mortgageTransactions }));
         }
+        console.log("outside loop");
+        const accountBalances = await getAccountBalances({ accounts: [...accounts, ...mortgage.accounts] });
+        writeFileSync(accountBalancePath, yaml.dump({ accountBalances }));
+        const mortgageTransactions = await processMortgageTransactions({ accounts: mortgage.accounts, startDate: mortgage.startDate});
+        writeFileSync(mortgageTransactionPath, yaml.dump({ mortgageTransactions }));
 
 
-
-    } else {
-        ({ transactions } = yaml.load(readFileSync(transactionPath, 'utf8')));
-    }
     console.log(`Now compiling budget...`);
     await compileBudget();
     return { status: 'success', transactionCount: transactions?.length };
