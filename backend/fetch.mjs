@@ -292,7 +292,9 @@ apiRouter.get('/budget/daytoday',  async (req, res, next) => {
         const latestDate = dates.sort((a, b) => moment(b).diff(moment(a)))[0];
         const {dayToDayBudget} = budgets[latestDate];
         const months = Object.keys(dayToDayBudget);
-        const latestMonth = months.sort((a, b) => moment(b).diff(moment(a)))[0];
+        const thisMonth = moment().format('YYYY-MM');
+        const latestMonth = months.sort((a, b) => moment(b).diff(moment(a))).filter(m => m <= thisMonth)[0];
+        //console.log({dayToDayBudget,latestDate,latestMonth});
         const budgetData = dayToDayBudget[latestMonth];
         delete budgetData.transactions;
         res.json(budgetData);
