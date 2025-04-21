@@ -155,7 +155,7 @@ export class Plex {
 
 
   // Helper that takes Plex metadata, plus extra info, and returns a “playable” object
-  async buildPlayableObject(itemData, parentKey, parentType, progress = 0) {
+  async buildPlayableObject(itemData, parentKey, parentType, percent = 0, seconds = 0) {
     if (!itemData) {
       return null;
     }
@@ -181,7 +181,8 @@ export class Plex {
       media_type: this.determinemedia_type(type),
       media_url,
       image: this.thumbUrl(thumb),
-      progress: progress || 0
+      percent: percent || 0,
+      seconds: seconds || 0,
     };
 
     // Remove any undefined/falsey keys
@@ -199,7 +200,7 @@ export class Plex {
     // Get the "list" from the key
     const { type: parentType, list } = await this.loadListFromKey(key, shuffle);
     // Pick one item from the list (or strings)
-    const [selectedKey, progress] = this.selectKeyToPlay(list, shuffle);
+    const [selectedKey, seconds,percent] = this.selectKeyToPlay(list, shuffle);
     if (!selectedKey) return false;
     // Load its metadata
     const [itemData] = await this.loadMeta(selectedKey.plex || selectedKey);
@@ -208,7 +209,7 @@ export class Plex {
     }
 
     // Build playable object with the shared helper
-    const playableItem = await this.buildPlayableObject(itemData, key, parentType, progress);
+    const playableItem = await this.buildPlayableObject(itemData, key, parentType, percent, seconds);
     return playableItem;
   }
 
@@ -227,7 +228,7 @@ export class Plex {
       const [itemData] = await this.loadMeta(ratingKey);
       if (!itemData) continue;
 
-      // We can pass progress=0 or track real progress if you wish
+      // We can pass percent=0 or track real progress if you wish
       const playableObject = await this.buildPlayableObject(itemData, key, parentType, 0);
       if (playableObject) {
         playableArray.push(playableObject);
@@ -291,23 +292,39 @@ export class Plex {
     const watched = keys.filter(key => log[key]?.percent >= 90).sort((a, b) => log[b].time - log[a].time);
     const inProgress = keys.filter(key => log[key]?.percent > 0 && log[key]?.percent < 90).sort((b, a) => log[b].percent - log[a].percent);
 
-    //console.log({ keys, watched, inProgress });
     const unwatched = keys.filter(key => !log[key]?.percent) || [];
-    
 
-    if(inProgress.length > 0) return [inProgress[0], log[inProgress[0]]?.percent];
-    if (unwatched.length === 0) return [watched[0], log[watched[0]]?.percent];
-    
-    const sortFunction = shuffle ? () => Math.random() - 0.5 : ()=>true;
-    const queue = unwatched.sort(sortFunction);
-    if (queue.length === 0) {
-      //clearWatchedItems
-      clearWatchedItems(watched,"plex");
-      return [watched[0], log[watched[0]].percent];
+    if (inProgress.length > 0) {
+      const selected = inProgress[0];
+      const { seconds = 0, percent = 0 } = log[selected] || {};
+      return [selected, seconds, percent];
     }
-    const [selected] = queue;
-    let time = log[selected]?.percent || 0;
-    return [selected, time];
+
+    if (unwatched.length === 0) {
+      if (watched.length > 0) {
+        const selected = watched[0];
+        const { seconds = 0, percent = 0 } = log[selected] || {};
+        return [selected, seconds, percent];
+      }
+      return [null, 0, 0];
+    }
+
+    const sortFunction = shuffle ? () => Math.random() - 0.5 : () => true;
+    const queue = unwatched.sort(sortFunction);
+
+    if (queue.length === 0) {
+      clearWatchedItems(watched, "plex");
+      if (watched.length > 0) {
+        const selected = watched[0];
+        const { seconds = 0, percent = 0 } = log[selected] || {};
+        return [selected, seconds, percent];
+      }
+      return [null, 0, 0];
+    }
+
+    const selected = queue[0];
+    const { seconds = 0, percent = 0 } = log[selected] || {};
+    return [selected, seconds, percent];
   }
 
   async loadSingleFromWatchlist(watchlist) {

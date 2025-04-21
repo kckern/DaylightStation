@@ -123,6 +123,7 @@ mediaRouter.post('/log', async (req, res) => {
         return res.status(400).json({ error: `Invalid request: Missing ${!type ? 'type' : !media_key ? 'media_key' : 'percent'}` });
     }
     try {
+        if(seconds<10) return res.status(400).json({ error: `Invalid request: seconds < 10` });
         const log = loadFile('_media_memory') || {};
         log[type] = log[type] || {};
         log[type][media_key] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, media_key, seconds: parseInt(seconds), percent: parseFloat(percent) };
