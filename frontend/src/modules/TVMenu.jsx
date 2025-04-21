@@ -49,7 +49,6 @@ const TVMenu = ({ list, clear, autoplay }) => {
         }
         // Actually fetch using the passed-in string
         const { title, image, kind, items } = await DaylightAPI(`data/list/${menuOrFolder}`);
-        console.log({items})
         setButtons(items);
         setMenuMeta({ title, image, kind });
         setLoaded(true);
