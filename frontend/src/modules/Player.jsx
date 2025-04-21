@@ -590,7 +590,12 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
       <p>{header}</p>
       <p>{formatTime(progress)} / {formatTime(duration)}</p>
       <div className="image-container">
-        {image && <img src={image} alt={title} className="cover" />}
+        {image && (
+          <>
+            <img src={image} alt={title} className="cover" />
+            <div className="image-backdrop" />
+          </>
+        )}
       </div>
       <h2>
         {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
