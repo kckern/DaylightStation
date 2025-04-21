@@ -21,7 +21,6 @@ function guid() {
   return result;
 }
 
-
 function formatTime(seconds) {
   return moment
     .utc(seconds * 1000)
@@ -47,6 +46,11 @@ function ProgressBar({ percent, onClick }) {
   );
 }
 
+
+/*─────────────────────────────────────────────────────────────*/
+/*  useCommonMediaController                                  */
+/*─────────────────────────────────────────────────────────────*/
+
 function useCommonMediaController({
   start = 0,
   playbackRate = 1,
@@ -57,7 +61,11 @@ function useCommonMediaController({
   meta,
   shaders,
   type,
-  onShaderLevelChange = () => {}
+  onShaderLevelChange = () => {},
+  selectedClass,
+  setSelectedClass,
+  cycleThroughClasses,
+  classes
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.media_url;
   const containerRef = useRef(null);
@@ -67,19 +75,6 @@ function useCommonMediaController({
   const lastUpdatedTimeRef = useRef(0);
   const [timeSinceLastProgressUpdate, setTimeSinceLastProgressUpdate] = useState(0);
 
-  const classes = Array.isArray(shaders) ? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
-  const [selectedClass, setSelectedClass] = useState(classes[0]);
-  const cycleThroughClasses = (upOrDownInt) => {
-    upOrDownInt = parseInt(upOrDownInt) || 1;
-    setSelectedClass((prevClass) => {
-      const currentIndex = classes.indexOf(prevClass);
-      const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
-      return classes[newIndex];
-    }
-    );
-  };
-
-
   const getMediaEl = () => {
     const mediaEl = containerRef.current?.shadowRoot?.querySelector('video') || containerRef.current;
     if (!mediaEl) return null;
@@ -87,6 +82,7 @@ function useCommonMediaController({
   };
 
   const isDash = meta.media_type === 'dash_video';
+
   const handleProgressClick = (event) => {
     if (!duration || !containerRef.current) return;
     const mediaEl = getMediaEl();
@@ -104,19 +100,14 @@ function useCommonMediaController({
       const mediaEl = getMediaEl();
       if (!mediaEl) return;
 
-      // Ignore repeated keydown events (browser auto-repeat when key is held)
       if (event.repeat) {
         return;
       }
 
-      //advance on tab key
       if (event.key === 'Tab') {
         event.preventDefault();
         onEnd(1);
       }
-
-      // For ArrowRight / ArrowLeft, start a 2s timer
-      // If the timer completes, we call onEnd(±1) exactly once
       if (event.key === 'ArrowRight') {
         didLongPress.current = false;
         longPressTimeout.current = setTimeout(() => {
@@ -157,7 +148,6 @@ function useCommonMediaController({
         longPressTimeout.current = null;
       }
 
-      // If no long-press happened, do the original skip logic
       if (
         (event.key === 'ArrowRight' || event.key === 'ArrowLeft') &&
         !didLongPress.current
@@ -183,9 +173,8 @@ function useCommonMediaController({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [onClear, onEnd, isAudio, isVideo, onShaderLevelChange, duration]);
-  
-    //make a 50ms loop that sets timeSinceLastProgressUpdate to the difference between now and timeOfLastProgressUpdate
+  }, [onClear, onEnd, isAudio, isVideo, onShaderLevelChange, duration, cycleThroughClasses]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -201,7 +190,6 @@ function useCommonMediaController({
 
     const logTime = async (type, media_key, percent, title) => {
       const now = Date.now();
-      type = type || 'media';
       lastUpdatedTimeRef.current = now;
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
       const seconds = mediaEl.currentTime || 0;
@@ -213,13 +201,17 @@ function useCommonMediaController({
 
     const onTimeUpdate = () => {
       setProgress(mediaEl.currentTime);
-      const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent; 
+      const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
       logTime(type, media_key, percent, meta.title);
     };
     const onDurationChange = () => setDuration(mediaEl.duration);
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
-      const startTime = mediaEl.duration > 8000 ? mediaEl.duration ? (meta.progress / 100) * mediaEl.duration : 0 : 0;
+      const startTime = mediaEl.duration > 8000
+        ? mediaEl.duration
+          ? (meta.progress / 100) * mediaEl.duration
+          : 0
+        : 0;
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
@@ -228,7 +220,6 @@ function useCommonMediaController({
         mediaEl.addEventListener('play', () => {
           mediaEl.playbackRate = playbackRate;
         }, { once: false });
-
         mediaEl.addEventListener('seeked', () => {
           mediaEl.playbackRate = playbackRate;
         }, { once: false });
@@ -248,7 +239,7 @@ function useCommonMediaController({
       mediaEl.removeEventListener('ended', onEnded);
       mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
     };
-  }, [onEnd, playbackRate, start, isVideo]);
+  }, [onEnd, playbackRate, start, isVideo, meta.progress, meta.title, type, media_key]);
 
   return {
     containerRef,
@@ -261,19 +252,16 @@ function useCommonMediaController({
     handleProgressClick
   };
 }
+
 function normalizeItem(item) {
-  // Make sure item.play exists
   if (!item.play) {
     item.play = {};
   }
-  // Move any top-level fields (other than 'queue' and 'play')
-  // inside item.play so we have a single, consistent data structure
   for (const [key, value] of Object.entries(item)) {
     if (key !== 'play' && key !== 'queue') {
       item.play[key] = value;
     }
   }
-  // Remove queue from the final object
   delete item.queue;
   return item;
 }
@@ -284,33 +272,20 @@ export async function flattenQueueItems(items, level = 1) {
   const flattened = [];
 
   for (const item of items) {
-    // If there's a 'queue' key, we need to fetch and recurse
     if (item.queue) {
-      // data/list references via 'playlist' or 'queue'
       if (item.queue.playlist || item.queue.queue) {
         const queueKey = item.queue.playlist ?? item.queue.queue;
         const { items: nestedItems } = await DaylightAPI(`data/list/${queueKey}`);
-        // Recursively process those nested items
         const nestedFlattened = await flattenQueueItems(nestedItems, level + 1);
         flattened.push(...nestedFlattened);
-      }
-      // media/plex references via 'plex'
-      else if (item.queue.plex) {
+      } else if (item.queue.plex) {
         const { items: plexItems } = await DaylightAPI(`media/plex/list/${item.queue.plex}`);
-        // Recursively process those nested items
         const nestedFlattened = await flattenQueueItems(plexItems, level + 1);
         flattened.push(...nestedFlattened);
-      } 
-      // else: no recognized queue type, you could throw or handle differently
-    }
-    // If there's a 'play' key, it's already a playable item → keep it
-    else if (item.play) {
+      }
+    } else if (item.play) {
       flattened.push(item);
-    } 
-    // Otherwise (no queue, no play): optional fallback
-    else {
-      // Decide if you want to push it or skip it.  
-      // For safety, push as-is:
+    } else {
       flattened.push(item);
     }
   }
@@ -320,55 +295,55 @@ export async function flattenQueueItems(items, level = 1) {
 
 
 /*─────────────────────────────────────────────────────────────*/
-/*  MAIN PLAYER                                               */
+/*  useQueueController                                        */
 /*─────────────────────────────────────────────────────────────*/
-export default function Player({ play, queue, clear }) {
 
-
-  const isQueue = !!queue  || play && (play.playlist || play.queue) || Array.isArray(play);
-  const [isContinuous, setIsContinuous] = useState(false);  
+function useQueueController({ play, queue, clear }) {
+  const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
+  const [selectedClass, setSelectedClass] = useState(classes[0]);
+  const [isContinuous, setIsContinuous] = useState(false);
   const [playQueue, setQueue] = useState([]);
+
+  const cycleThroughClasses = (upOrDownInt) => {
+    upOrDownInt = parseInt(upOrDownInt) || 1;
+    setSelectedClass((prevClass) => {
+      const currentIndex = classes.indexOf(prevClass);
+      const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
+      return classes[newIndex];
+    });
+  };
+
+  const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
+
   useEffect(() => {
     async function initQueue() {
-      // Case 1: Already an array of "play" items
       if (Array.isArray(play)) {
         setQueue(play.map(item => ({ ...item, guid: guid() })));
         return;
       }
-      // Case 2: Already an array of "queue" items
       if (Array.isArray(queue)) {
         setQueue(queue.map(item => ({ ...item, guid: guid() })));
         return;
       }
-
-      // Case 3: We might have an object with playlist/queue/plex references
       if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
-        // Example: data/list
         if (play?.playlist || play?.queue || queue?.playlist || queue?.queue) {
           const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue;
-          const { items, continuous, volume } = await DaylightAPI(`data/list/${queue_media_key}`);
+          const { items, continuous } = await DaylightAPI(`data/list/${queue_media_key}`);
           setIsContinuous(continuous || false);
-
-          // Flatten any nested queues inside the items
           const flattened = await flattenQueueItems(items);
-          setQueue(flattened.map(item => ({ ...item,...item.play, guid: guid() })));
+          setQueue(flattened.map(item => ({ ...item, ...item.play, guid: guid() })));
           return;
         }
-        // Example: media/plex/list
         if (queue?.plex) {
-          const { items, continuous, volume } = await DaylightAPI(`media/plex/list/${queue.plex}`);
+          const { items, continuous } = await DaylightAPI(`media/plex/list/${queue.plex}`);
           setIsContinuous(continuous || false);
-
-          // Flatten any nested queues inside the items
           const flattened = await flattenQueueItems(items);
-          setQueue(flattened.map(item => ({ ...item,...item.play, guid: guid() })));
+          setQueue(flattened.map(item => ({ ...item, ...item.play, guid: guid() })));
           return;
         }
       }
-      // Default/fallback
       setQueue([]);
     }
-
     initQueue();
   }, [play, queue]);
 
@@ -378,22 +353,20 @@ export default function Player({ play, queue, clear }) {
         const currentIndex = isContinuous
           ? (prevQueue.length + step) % prevQueue.length
           : Math.min(Math.max(0, step), prevQueue.length - 1);
-
         if (isContinuous) {
-          const rotatedQueue = [...prevQueue.slice(currentIndex), ...prevQueue.slice(0, currentIndex)];
+          const rotatedQueue = [
+            ...prevQueue.slice(currentIndex),
+            ...prevQueue.slice(0, currentIndex),
+          ];
           return rotatedQueue;
         }
-        
-        const newQueue =  prevQueue.slice(currentIndex);
-       // console.log({newQueue})
-        return newQueue;
+        return prevQueue.slice(currentIndex);
       }
       clear();
       return [];
     });
   }, [clear, isContinuous]);
 
-  //enable escape key to clear
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
@@ -407,16 +380,88 @@ export default function Player({ play, queue, clear }) {
     };
   }, [clear]);
 
-
-  if(isQueue && playQueue?.length > 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />
-  if (isQueue && playQueue?.length === 1) return <SinglePlayer key={playQueue[0].guid} {...playQueue[0]} advance={advance} clear={clear} />;
-  if (play && !Array.isArray(play)) return <SinglePlayer {...play} advance={clear} clear={clear} />;
-  return <div className={`shader on queuer`} >
-    <LoadingOverlay />
-    </div>
-
+  return {
+    classes,
+    cycleThroughClasses,
+    selectedClass,
+    setSelectedClass,
+    isQueue,
+    isContinuous,
+    playQueue,
+    setQueue,
+    advance
+  };
 }
 
+
+/*─────────────────────────────────────────────────────────────*/
+/*  MAIN PLAYER                                               */
+/*─────────────────────────────────────────────────────────────*/
+
+export default function Player({ play, queue, clear }) {
+  const {
+    classes,
+    cycleThroughClasses,
+    selectedClass,
+    setSelectedClass,
+    isQueue,
+    isContinuous,
+    playQueue,
+    advance
+  } = useQueueController({ play, queue, clear });
+
+  if (isQueue && playQueue?.length > 1) {
+    return (
+      <SinglePlayer
+        key={playQueue[0].guid}
+        {...playQueue[0]}
+        advance={advance}
+        clear={clear}
+        selectedClass={selectedClass}
+        setSelectedClass={setSelectedClass}
+        cycleThroughClasses={cycleThroughClasses}
+        classes={classes}
+      />
+    );
+  }
+  if (isQueue && playQueue?.length === 1) {
+    return (
+      <SinglePlayer
+        key={playQueue[0].guid}
+        {...playQueue[0]}
+        advance={advance}
+        clear={clear}
+        selectedClass={selectedClass}
+        setSelectedClass={setSelectedClass}
+        cycleThroughClasses={cycleThroughClasses}
+        classes={classes}
+      />
+    );
+  }
+  if (play && !Array.isArray(play)) {
+    return (
+      <SinglePlayer
+        {...play}
+        advance={clear}
+        clear={clear}
+        selectedClass={selectedClass}
+        setSelectedClass={setSelectedClass}
+        cycleThroughClasses={cycleThroughClasses}
+        classes={classes}
+      />
+    );
+  }
+  return (
+    <div className={`shader on queuer`}>
+      <LoadingOverlay />
+    </div>
+  );
+}
+
+
+/*─────────────────────────────────────────────────────────────*/
+/*  SINGLE PLAYER                                             */
+/*─────────────────────────────────────────────────────────────*/
 
 export function SinglePlayer(play) {
   const {
@@ -429,14 +474,16 @@ export function SinglePlayer(play) {
     rate,
     advance,
     open,
-    clear
-  } =  play || {};
-  
+    clear,
+    selectedClass,
+    setSelectedClass,
+    cycleThroughClasses,
+    classes
+  } = play || {};
 
-  // Scripture or Hymn short-circuits
   if (!!scripture)    return <Scriptures {...play} />;
   if (!!hymn)         return <Hymns {...play} />;
-  if(!!talk)         return <Talk {...play} />;
+  if (!!talk)         return <Talk {...play} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
@@ -445,57 +492,78 @@ export function SinglePlayer(play) {
   useEffect(() => {
     async function fetchVideoInfo() {
       if (!!plex) {
-        //const plex = subPlay?.plex || plex;
-        const infoResponse = await DaylightAPI(
-          `media/plex/info/${plex}`
-        );
+        const infoResponse = await DaylightAPI(`media/plex/info/${plex}`);
         setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
         setIsReady(true);
       } else if (!!media) {
-        const infoResponse = await DaylightAPI(  `media/info/${media}`);
+        const infoResponse = await DaylightAPI(`media/info/${media}`);
         setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
         setIsReady(true);
-      }
-      else if(!!open) {
+      } else if (!!open) {
         setGoToApp(open);
       }
     }
     fetchVideoInfo();
-  }, [plex, media, shuffle, rate]);
+  }, [plex, media, shuffle, rate, open]);
 
-  if(goToApp) return <AppContainer open={goToApp} clear={clear} />;
+  if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
 
   return (
     <div className="player">
-      {!isReady && <div className="shader on notReady" ><LoadingOverlay /></div>}
-      {isReady && mediaInfo.media_type === "dash_video" && (
-        <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
+      {!isReady && <div className="shader on notReady"><LoadingOverlay /></div>}
+      {isReady && mediaInfo.media_type === 'dash_video' && (
+        <VideoPlayer
+          media={mediaInfo}
+          advance={advance}
+          clear={clear}
+          selectedClass={selectedClass}
+          setSelectedClass={setSelectedClass}
+          cycleThroughClasses={cycleThroughClasses}
+          classes={classes}
+        />
       )}
-      {isReady && mediaInfo.media_type === "video" && (
-        <VideoPlayer media={mediaInfo} advance={advance} clear={clear} />
+      {isReady && mediaInfo.media_type === 'video' && (
+        <VideoPlayer
+          media={mediaInfo}
+          advance={advance}
+          clear={clear}
+          selectedClass={selectedClass}
+          setSelectedClass={setSelectedClass}
+          cycleThroughClasses={cycleThroughClasses}
+          classes={classes}
+        />
       )}
-      {isReady && mediaInfo.media_type === "audio" && (
-        <AudioPlayer media={mediaInfo} advance={advance} clear={clear} />
+      {isReady && mediaInfo.media_type === 'audio' && (
+        <AudioPlayer
+          media={mediaInfo}
+          advance={advance}
+          clear={clear}
+          selectedClass={selectedClass}
+          setSelectedClass={setSelectedClass}
+          cycleThroughClasses={cycleThroughClasses}
+          classes={classes}
+        />
       )}
     </div>
   );
 }
-
-/*─────────────────────────────────────────────────────────────*/
-/*  LOADING                                                   */
-/*─────────────────────────────────────────────────────────────*/
 
 
 /*─────────────────────────────────────────────────────────────*/
 /*  AUDIO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function AudioPlayer({ media, advance, clear }) {
-
-
+function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes }) {
   const { media_url, title, artist, album, image, type } = media;
 
-  const { selectedClass, timeSinceLastProgressUpdate, playbackRate, containerRef, progress, duration, handleProgressClick } = useCommonMediaController({
+  const {
+    timeSinceLastProgressUpdate,
+    playbackRate,
+    containerRef,
+    progress,
+    duration,
+    handleProgressClick
+  } = useCommonMediaController({
     start: media.progress,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
@@ -503,27 +571,24 @@ function AudioPlayer({ media, advance, clear }) {
     isAudio: true,
     isVideo: false,
     meta: media,
-    type: ["track"].includes(type) ? "plex" : "media",
+    type: ['track'].includes(type) ? 'plex' : 'media',
+    selectedClass,
+    setSelectedClass,
+    cycleThroughClasses,
+    classes
   });
 
   const { percent } = getProgressPercent(progress, duration);
-
-  const header = !!artist &&  !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
-
-  const shaderState = progress < 0.1  || progress > duration - 2 ? 'on' : 'off';
+  const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
+  const shaderState = progress < 0.1 || progress > duration - 2 ? 'on' : 'off';
 
   return (
     <div className={`audio-player ${selectedClass}`}>
-    <div className={`shader ${shaderState}`} />
+      <div className={`shader ${shaderState}`} />
       {progress > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      <p>
-        {header}
-      </p>
-      <p>
-        {formatTime(progress)} / {formatTime(duration)}
-      </p>
-
+      <p>{header}</p>
+      <p>{formatTime(progress)} / {formatTime(duration)}</p>
       <div className="image-container">
         {image && <img src={image} alt={title} className="cover" />}
       </div>
@@ -535,20 +600,22 @@ function AudioPlayer({ media, advance, clear }) {
   );
 }
 
+
 /*─────────────────────────────────────────────────────────────*/
 /*  VIDEO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
-function VideoPlayer({ media, advance, clear }) {
-  const isPlex = ["dash_video"].includes(media.media_type);
+
+function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes }) {
+  const isPlex = ['dash_video'].includes(media.media_type);
+
   const {
     isDash,
-    selectedClass,
     containerRef,
     progress,
     timeSinceLastProgressUpdate,
     duration,
     handleProgressClick,
-    playbackRate,
+    playbackRate
   } = useCommonMediaController({
     start: media.progress,
     playbackRate: media.playbackRate || 1,
@@ -557,37 +624,35 @@ function VideoPlayer({ media, advance, clear }) {
     isAudio: false,
     isVideo: true,
     meta: media,
-    selectedClass: media.selectedClass,
-    type: isPlex ? "plex" : "media",
+    type: isPlex ? 'plex' : 'media',
+    selectedClass,
+    setSelectedClass,
+    cycleThroughClasses,
+    classes
   });
-
 
   const { show, season, title, media_url } = media;
   const { percent } = getProgressPercent(progress, duration);
-
-  const heading =
-    !!show && !!season && !!title
-      ? `${show} - ${season}: ${title}`
-      : !!show && !!season
-      ? `${show} - ${season}`
-      : !!show
-      ? show
-      : title;
-
-
+  const heading = !!show && !!season && !!title
+    ? `${show} - ${season}: ${title}`
+    : !!show && !!season
+    ? `${show} - ${season}`
+    : !!show
+    ? show
+    : title;
 
   return (
     <div className={`video-player ${selectedClass}`}>
       <h2>
         {heading}
-        {playbackRate > 1 ? ` (${playbackRate}×)` : ""}
+        {playbackRate > 1 ? ` (${playbackRate}×)` : ''}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {progress ===0 ||timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
+      {progress === 0 || timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
       {isDash ? (
         <dash-video
           ref={containerRef}
-          class={`video-element ${(progress || 0) > 0 && "show"}`}
+          class={`video-element ${(progress || 0) > 0 && 'show'}`}
           controls
           src={media_url}
         />
@@ -602,6 +667,11 @@ function VideoPlayer({ media, advance, clear }) {
     </div>
   );
 }
+
+
+/*─────────────────────────────────────────────────────────────*/
+/*  LOADING OVERLAY                                           */
+/*─────────────────────────────────────────────────────────────*/
 
 export function LoadingOverlay() {
   const [visible, setVisible] = useState(false);
