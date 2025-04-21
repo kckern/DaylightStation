@@ -87,7 +87,6 @@ export default function TVApp() {
         return null;
     })();
 
-    console.log("Autoplay:", autoplay);
 
     return (
         <div className="tv-app-container" >

@@ -4,6 +4,9 @@ import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import SankeyModule from "highcharts/modules/sankey";
 
+//https://coolors.co/palette/2364aa-3da5d9-73bfb8-fec601-ea7317
+//https://coolors.co/palette/1e3888-47a8bd-73BFB8-137547-f5e663-ffad69-EA7317-9c3848
+
 SankeyModule(Highcharts);
 export const formatAsCurrency = (value) => {
   const isNegative = value < 0;

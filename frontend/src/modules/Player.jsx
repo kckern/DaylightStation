@@ -69,7 +69,7 @@ function useCommonMediaController({
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.media_url;
   const containerRef = useRef(null);
-  const [progress, setProgress] = useState(0);
+  const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
   const lastLoggedTimeRef = useRef(0);
   const lastUpdatedTimeRef = useRef(0);
@@ -200,18 +200,16 @@ function useCommonMediaController({
     };
 
     const onTimeUpdate = () => {
-      setProgress(mediaEl.currentTime);
+      setSeconds(mediaEl.currentTime);
       const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
       logTime(type, media_key, percent, meta.title);
     };
     const onDurationChange = () => setDuration(mediaEl.duration);
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
-      const startTime = mediaEl.duration > 8000
-        ? mediaEl.duration
-          ? (meta.progress / 100) * mediaEl.duration
-          : 0
-        : 0;
+      const duration = mediaEl.duration || 0;
+      const startTime = duration > 8 ? start : 0;
+      //console.log({duration, start, startTime, media_key, type});
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
@@ -239,11 +237,14 @@ function useCommonMediaController({
       mediaEl.removeEventListener('ended', onEnded);
       mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta.progress, meta.title, type, media_key]);
+  }, [onEnd, playbackRate, start, isVideo, meta.percent, meta.title, type, media_key]);
+
+
 
   return {
     containerRef,
-    progress,
+    seconds,
+    percent: getProgressPercent(seconds, duration).percent,
     duration,
     playbackRate,
     isDash,
@@ -253,22 +254,9 @@ function useCommonMediaController({
   };
 }
 
-function normalizeItem(item) {
-  if (!item.play) {
-    item.play = {};
-  }
-  for (const [key, value] of Object.entries(item)) {
-    if (key !== 'play' && key !== 'queue') {
-      item.play[key] = value;
-    }
-  }
-  delete item.queue;
-  return item;
-}
+
 
 export async function flattenQueueItems(items, level = 1) {
-  console.log('flattenQueueItems START', { level, count: items.length });
-
   const flattened = [];
 
   for (const item of items) {
@@ -560,11 +548,11 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
     timeSinceLastProgressUpdate,
     playbackRate,
     containerRef,
-    progress,
+    seconds,
     duration,
     handleProgressClick
   } = useCommonMediaController({
-    start: media.progress,
+    start: media.seconds,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
@@ -578,17 +566,17 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
     classes
   });
 
-  const { percent } = getProgressPercent(progress, duration);
+  const { percent } = getProgressPercent(seconds, duration);
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
-  const shaderState = progress < 0.1 || progress > duration - 2 ? 'on' : 'off';
+  const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
 
   return (
     <div className={`audio-player ${selectedClass}`}>
       <div className={`shader ${shaderState}`} />
-      {progress > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
+      {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <p>{header}</p>
-      <p>{formatTime(progress)} / {formatTime(duration)}</p>
+      <p>{formatTime(seconds)} / {formatTime(duration)}</p>
       <div className="image-container">
         {image && (
           <>
@@ -612,17 +600,16 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
 
 function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes }) {
   const isPlex = ['dash_video'].includes(media.media_type);
-
   const {
     isDash,
     containerRef,
-    progress,
+    seconds,
     timeSinceLastProgressUpdate,
     duration,
     handleProgressClick,
     playbackRate
   } = useCommonMediaController({
-    start: media.progress,
+    start: media.seconds,
     playbackRate: media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
@@ -637,7 +624,7 @@ function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
   });
 
   const { show, season, title, media_url } = media;
-  const { percent } = getProgressPercent(progress, duration);
+  const { percent } = getProgressPercent(seconds, duration);
   const heading = !!show && !!season && !!title
     ? `${show} - ${season}: ${title}`
     : !!show && !!season
@@ -653,11 +640,11 @@ function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
         {playbackRate > 1 ? ` (${playbackRate}×)` : ''}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {progress === 0 || timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
+      {seconds === 0 || timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
       {isDash ? (
         <dash-video
           ref={containerRef}
-          class={`video-element ${(progress || 0) > 0 && 'show'}`}
+          class={`video-element ${(seconds || 0) > 0 && 'show'}`}
           controls
           src={media_url}
         />
