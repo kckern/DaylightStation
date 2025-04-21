@@ -318,9 +318,9 @@ export class Plex {
     let candidates = { normal: {}, urgent: {}, in_progress: {} };
     for (let plexkey in list) {
       let item = list[plexkey];
-      let progress = log[plexkey]?.seconds;
-      progress = progress > 15 ? progress : 0;
-      if (progress > 90) continue;
+      let percent = log[plexkey]?.percent || 0;
+      percent = percent > 15 ? percent : 0; // need seconds: TODO
+      if (percent > 90) continue;
       if (item.watched) continue;
       if (item.hold) continue;
       if (item.skip_after) {
@@ -341,7 +341,7 @@ export class Plex {
         eightDays.setDate(eightDays.getDate() + 8);
         if (skipAfter <= eightDays) priority = "urgent";
       }
-      if (progress > 0) priority = "in_progress";
+      if (percent > 0) priority = "in_progress";
       let show = item.uid;
       if (!candidates[priority][item.program]) candidates[priority][item.program] = {};
       candidates[priority][item.program][item.index] = [plexkey, item.uid, progress];

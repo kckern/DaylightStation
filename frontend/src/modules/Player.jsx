@@ -204,9 +204,10 @@ function useCommonMediaController({
       type = type || 'media';
       lastUpdatedTimeRef.current = now;
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
+      const seconds = mediaEl.currentTime || 0;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
         lastLoggedTimeRef.current = now;
-        await DaylightAPI(`media/log`, { title, type, media_key, percent, title });
+        await DaylightAPI(`media/log`, { title, type, media_key, seconds, percent, title });
       }
     };
 
