@@ -130,16 +130,37 @@
     .dark {
         background-color: #000000;
         *{filter: brightness(0); }
-    }
-    .regular {
-       h2{display: none!important;}
-    }   
+    } 
     .night {
         background-color: #000000;
         *{color: #FF000022;}
-        h2{display: none!important;}
         .progress{  background-color: #FF000022!important;  }
-        img{ filter: sepia(1) brightness(0.1); }
+        .image-container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            img, .image-backdrop {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            height: 100%;
+            aspect-ratio: 1 / 1;
+            }
+            img {
+            filter: grayscale(1);
+            mix-blend-mode: multiply;
+            z-index: 1; /* Ensure img is on top */
+            }
+            .image-backdrop {
+            background-color: rgb(39, 12, 12);
+            z-index: 0; /* Ensure backdrop is below img */
+            border-radius: 1rem;
+            }
+        }
+
+    
         .video-element{ filter: sepia(1) brightness(0.15) hue-rotate(-35deg); }
         
     }
@@ -159,6 +180,8 @@
     }
   }
 
+
+  
 
 .loading-overlay {
     position: absolute;
