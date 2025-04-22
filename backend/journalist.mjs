@@ -4,12 +4,11 @@ import auth from './journalist/auth.mjs';
 import bump from './journalist/bump.mjs';
 import cron from './journalist/cron.mjs';
 import entry from './journalist/entry.mjs';
-import foodlog_hook from './journalist/foodlog_hook.mjs';
+import {processFoodLogHook as foodlog_hook} from './journalist/foodlog_hook.mjs';
 import img from './journalist/img.mjs';
 //import health from './journalist/health.mjs';
 import journal from './journalist/journal.mjs';
 import report from './journalist/report.mjs';
-import trigger from './journalist/trigger.mjs';
 import webhook from './journalist/webhook.mjs';
 import test from './journalist/test.mjs';
 
@@ -24,7 +23,6 @@ const endpoints = {
    // health,
     journal,
     report,
-    trigger,
     webhook,
     test,
     "": async (req) => {

@@ -76,3 +76,25 @@ async function initializeApp() {
 
 // Initialize the app
 initializeApp().catch(err => console.error('Error initializing app:', err));
+
+
+
+// another app on port 3119 for an api
+const api_app = express();
+api_app.use(cors()); // Step 3: Enable CORS for all routes
+async function initializeApiApp() {
+
+
+  const { default: apiRouter } = await import('./api.mjs');
+
+  api_app.use(express.json({
+    strict: false // Allows parsing of JSON with single-quoted property names
+  }));
+  api_app.use('', apiRouter);
+  
+  api_app.listen(3119, () => {
+    console.log('API app listening on port 3119');
+  });
+}
+
+initializeApiApp().catch(err => console.error('Error initializing api app:', err));
