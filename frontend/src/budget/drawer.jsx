@@ -1,12 +1,14 @@
 import moment from "moment";
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import HighchartsTreeGraph from "highcharts/modules/treegraph";
+import HighchartsDrilldown from "highcharts/modules/drilldown";
 import HighchartsTreeMap from "highcharts/modules/treemap";
 
 HighchartsTreeMap(Highcharts);
 HighchartsTreeGraph(Highcharts);
+HighchartsDrilldown(Highcharts);
 
 import HC_More from "highcharts/highcharts-more";
 HC_More(Highcharts);
@@ -416,4 +418,222 @@ export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
       />
     </div>
   );
+}
+
+
+export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }) {
+  // thresholds
+  const LEVEL1_CUT = 2;  // <3% of grand → Level 1 “Other”
+  const LEVEL2_CUT = 5;  // <5% of Level 1 Other → Level 2 “Other2”
+
+  // currency formatter
+  const formatCurrency = (v) =>
+    v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${Math.round(v)}`;
+
+  // build our 3‑level data
+  const { topData, drillSeries } = useMemo(() => {
+    // 1) accumulate totals per tag, plus grand total
+    const byTag = {};
+    let grandTotal = 0;
+    transactions.forEach((tx) => {
+      const tag = tx.tagNames?.[0] || "Other";
+      byTag[tag] = (byTag[tag] || 0) + tx.amount;
+      grandTotal += tx.amount;
+    });
+
+    // 2) array of { tag, value, pctOfGrand }
+    const all = Object.entries(byTag).map(([tag, value]) => ({
+      tag,
+      value,
+      pctOfGrand: (value / grandTotal) * 100
+    }));
+
+    // 3) LEVEL‑1 partition
+    const lvl1Majors = all.filter((x) => x.pctOfGrand >= LEVEL1_CUT);
+    const lvl1Minors = all.filter((x) => x.pctOfGrand < LEVEL1_CUT);
+
+    // build top‑level slices, sorted, then push “Other” last if needed
+    const top = lvl1Majors
+      .map((x) => ({
+        name: x.tag,
+        // y = pctOfGrand so the top‐level pie sums to 100
+        y: parseFloat(x.pctOfGrand.toFixed(2)),
+        pctOfGrand: x.pctOfGrand,
+        valueReal: x.value,
+        drilldown: null
+      }))
+      .sort((a, b) => b.y - a.y);
+
+    if (lvl1Minors.length) {
+      const sumPct = lvl1Minors.reduce((s, x) => s + x.pctOfGrand, 0);
+      const sumVal = lvl1Minors.reduce((s, x) => s + x.value, 0);
+      top.push({
+        name: "Other",
+        y: parseFloat(sumPct.toFixed(2)),
+        pctOfGrand: sumPct,
+        valueReal: sumVal,
+        drilldown: "Other"
+      });
+    }
+
+    // 4) LEVEL‑2 under “Other”
+
+    const series = [];
+    if (lvl1Minors.length) {
+      const otherVal = lvl1Minors.reduce((s, x) => s + x.value, 0);
+      const lvl2All = lvl1Minors.map(x => ({
+        tag:          x.tag,
+        value:        x.value,
+        pctOfGrand:   x.pctOfGrand,
+        pctOfOther:   (x.value / otherVal) * 100
+      }));
+    
+      // sort descending by pctOfOther
+      const sorted = lvl2All
+        .slice()
+        .sort((a, b) => b.pctOfOther - a.pctOfOther);
+    
+      // pick the minimal prefix whose cumulative pctOfOther >= 80%
+      let cum = 0;
+      let splitIndex = sorted.length;
+      for (let i = 0; i < sorted.length; i++) {
+        cum += sorted[i].pctOfOther;
+        if (cum >= 90) {
+          splitIndex = i + 1; // include this one
+          break;
+        }
+      }
+    
+      const lvl2Majors = sorted.slice(0, splitIndex);
+      const lvl2Minors = sorted.slice(splitIndex);  
+      // lvl2Minors by construction sum to <= 20%
+    
+      // build the “Other” drilldown
+      const d2 = lvl2Majors
+        .map(x => ({
+          name:       x.tag,
+          y:          parseFloat(x.pctOfOther.toFixed(2)),
+          pctOfGrand: x.pctOfGrand,
+          valueReal:  x.value,
+          valueFormatted: formatCurrency(x.value),
+          drilldown:  null
+        }))
+        .sort((a, b) => b.y - a.y);
+    
+      if (lvl2Minors.length) {
+        const sumPctOfOther = lvl2Minors.reduce((s, x) => s + x.pctOfOther, 0);
+        const sumPctOfGrand = lvl2Minors.reduce((s, x) => s + x.pctOfGrand, 0);
+        const sumVal2       = lvl2Minors.reduce((s, x) => s + x.value, 0);
+    
+        d2.push({
+          name:       "Other2",
+          y:          parseFloat(sumPctOfOther.toFixed(2)), // ≤ 20%
+          pctOfGrand: sumPctOfGrand,
+          valueReal:  sumVal2,
+          valueFormatted: formatCurrency(sumVal2),
+          drilldown:  "Other2"
+        });
+      }
+    
+      series.push({
+        id:   "Other",
+        name: "Other breakdown",
+        data: d2
+      });
+    
+      // 5) LEVEL‑3 under “Other2” if you still want a third level
+      if (lvl2Minors.length) {
+        const other2Val = lvl2Minors.reduce((s, x) => s + x.value, 0);
+        const d3 = lvl2Minors
+          .map(x => ({
+            name:      x.tag,
+            y:         parseFloat(((x.value / other2Val) * 100).toFixed(2)),
+            pctOfGrand: x.pctOfGrand,
+            valueReal: x.value,
+            valueFormatted: formatCurrency(x.value),
+            drilldown: null
+          }))
+          .sort((a, b) => b.y - a.y);
+    
+        series.push({
+          id:   "Other2",
+          name: "Other2 breakdown",
+          data: d3
+        });
+      }
+    }
+    
+
+    return { topData: top, drillSeries: series };
+  }, [transactions]);
+
+  // 6) Chart options
+  const options = {
+    chart: { type: "pie" },
+    title: { text: "" },
+    credits: { enabled: false },
+    plotOptions: {
+      pie: {
+        cursor: "pointer",
+        dataLabels: {
+          enabled: true,
+          format: "{point.name}: {point.valueFormatted}"
+        },
+        point: {
+          events: {
+            click() {
+              // only real tags fire the filter
+              if (this.name !== "Other" && this.name !== "Other2") {
+                setTransactionFilter(this.name);
+              }
+            }
+          }
+        }
+      }
+    },
+    tooltip: {
+      useHTML: true,
+      backgroundColor: "#fff",
+      borderColor: "#333",
+      borderWidth: 1,
+      style: { textAlign: "center" },
+      formatter() {
+        // always show pctOfGrand
+        const pct = this.point.pctOfGrand.toFixed(1) + "%";
+        const amt = formatCurrency(this.point.valueReal || 0);
+        return `<div style="line-height:1.2">
+                  <strong>${pct}</strong><br/>
+                  ${this.point.name}<br/>
+                  <em>${amt}</em>
+                </div>`;
+      }
+    },
+    series: [
+      {
+        name: "Categories",
+        colorByPoint: true,
+        data: topData.map((pt) => ({
+          name: pt.name,
+          y: pt.y,
+          pctOfGrand: pt.pctOfGrand,
+          valueReal: pt.valueReal,
+          valueFormatted: formatCurrency(pt.valueReal),
+          drilldown: pt.drilldown,
+          point: {
+            events: {
+              click() {
+                // only real tags fire the filter
+                if (this.name !== "Other" && this.name !== "Other2") {
+                  setTransactionFilter(this.name);
+                }
+              }
+            }
+          }
+        }))
+      }
+    ],
+    drilldown: { series: drillSeries }
+  };
+
+  return <HighchartsReact highcharts={Highcharts} options={options} />;
 }
