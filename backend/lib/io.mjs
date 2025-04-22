@@ -86,6 +86,7 @@ const loadFile = (path) => {
         const object = yaml.load(fileData);
         return object || {};
     }catch(e){
+        console.error(`Failed to parse YAML file: ${path}`, e);
         return fileData || {};
     }
 }
