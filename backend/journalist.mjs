@@ -3,28 +3,24 @@ const JournalistRouter = express.Router();
 import auth from './journalist/auth.mjs';
 import bump from './journalist/bump.mjs';
 import cron from './journalist/cron.mjs';
-import entry from './journalist/entry.mjs';
 import {processFoodLogHook as foodlog_hook} from './journalist/foodlog_hook.mjs';
 import img from './journalist/img.mjs';
 //import health from './journalist/health.mjs';
 import journal from './journalist/journal.mjs';
 import report from './journalist/report.mjs';
 import webhook from './journalist/webhook.mjs';
-import test from './journalist/test.mjs';
 
 
 const endpoints = {
     auth,
     bump,
     cron,
-    entry,
     foodlog_hook,
     img,
    // health,
     journal,
     report,
     webhook,
-    test,
     "": async (req) => {
         return {message: "Welcome to the journalist API. Please use one of the following endpoints: " + Object.keys(endpoints).join(", ")};
     }
