@@ -168,7 +168,23 @@ function WebcamApp() {
   useEffect(() => {
     const startWebcam = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === "videoinput");
+
+        if (videoDevices.length > 0) {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+              deviceId: videoDevices[0].deviceId,
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          });
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        } else {
+          console.error("No video devices found.");
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }

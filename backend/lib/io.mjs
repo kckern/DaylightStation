@@ -84,9 +84,9 @@ const loadFile = (path) => {
     const fileData = fs.readFileSync(`${process.env.path.data}/${path}`, 'utf8').toString().trim();
     try{
         const object = yaml.load(fileData);
-        return object;
+        return object || {};
     }catch(e){
-        return fileData
+        return fileData || {};
     }
 }
 
