@@ -428,7 +428,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
 
   // currency formatter
   const formatCurrency = (v) =>
-    v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${Math.round(v)}`;
+    v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${Math.round(v)}`;
 
   // build our 3‑level data
   const { topData, drillSeries } = useMemo(() => {
@@ -476,23 +476,37 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
       });
     }
 
+    // Ensure no more than 15 items at LEVEL‑1
+    if (top.length > 15) {
+      const excess = top.splice(15);
+      const sumPct = excess.reduce((s, x) => s + x.pctOfGrand, 0);
+      const sumVal = excess.reduce((s, x) => s + x.valueReal, 0);
+      top.push({
+        name: "Other",
+        y: parseFloat(sumPct.toFixed(2)),
+        pctOfGrand: sumPct,
+        valueReal: sumVal,
+        drilldown: "Other"
+      });
+    }
+
     // 4) LEVEL‑2 under “Other”
 
     const series = [];
-    if (lvl1Minors.length) {
+    if (lvl1Minors.length || top.find((x) => x.name === "Other")) {
       const otherVal = lvl1Minors.reduce((s, x) => s + x.value, 0);
-      const lvl2All = lvl1Minors.map(x => ({
-        tag:          x.tag,
-        value:        x.value,
-        pctOfGrand:   x.pctOfGrand,
-        pctOfOther:   (x.value / otherVal) * 100
+      const lvl2All = lvl1Minors.map((x) => ({
+        tag: x.tag,
+        value: x.value,
+        pctOfGrand: x.pctOfGrand,
+        pctOfOther: (x.value / otherVal) * 100
       }));
-    
+
       // sort descending by pctOfOther
       const sorted = lvl2All
         .slice()
         .sort((a, b) => b.pctOfOther - a.pctOfOther);
-    
+
       // pick the minimal prefix whose cumulative pctOfOther >= 80%
       let cum = 0;
       let splitIndex = sorted.length;
@@ -503,81 +517,105 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
           break;
         }
       }
-    
+
       const lvl2Majors = sorted.slice(0, splitIndex);
-      const lvl2Minors = sorted.slice(splitIndex);  
-      // lvl2Minors by construction sum to <= 20%
-    
+      const lvl2Minors = sorted.slice(splitIndex);
+
+      // Ensure no more than 15 items at LEVEL‑2
+      if (lvl2Majors.length > 10) {
+        const excess = lvl2Majors.splice(10);
+        lvl2Minors.push(...excess);
+      }
+
       // build the “Other” drilldown
       const d2 = lvl2Majors
-        .map(x => ({
-          name:       x.tag,
-          y:          parseFloat(x.pctOfOther.toFixed(2)),
+        .map((x) => ({
+          name: x.tag,
+          y: parseFloat(x.pctOfOther.toFixed(2)),
           pctOfGrand: x.pctOfGrand,
-          valueReal:  x.value,
+          valueReal: x.value,
           valueFormatted: formatCurrency(x.value),
-          drilldown:  null
+          drilldown: null
         }))
         .sort((a, b) => b.y - a.y);
-    
+
       if (lvl2Minors.length) {
         const sumPctOfOther = lvl2Minors.reduce((s, x) => s + x.pctOfOther, 0);
         const sumPctOfGrand = lvl2Minors.reduce((s, x) => s + x.pctOfGrand, 0);
-        const sumVal2       = lvl2Minors.reduce((s, x) => s + x.value, 0);
-    
+        const sumVal2 = lvl2Minors.reduce((s, x) => s + x.value, 0);
+
         d2.push({
-          name:       "Other2",
-          y:          parseFloat(sumPctOfOther.toFixed(2)), // ≤ 20%
+          name: "Other2",
+          y: parseFloat(sumPctOfOther.toFixed(2)), // ≤ 20%
           pctOfGrand: sumPctOfGrand,
-          valueReal:  sumVal2,
+          valueReal: sumVal2,
           valueFormatted: formatCurrency(sumVal2),
-          drilldown:  "Other2"
+          drilldown: "Other2"
         });
       }
-    
+
       series.push({
-        id:   "Other",
+        id: "Other",
         name: "Other breakdown",
         data: d2
       });
-    
+
       // 5) LEVEL‑3 under “Other2” if you still want a third level
       if (lvl2Minors.length) {
         const other2Val = lvl2Minors.reduce((s, x) => s + x.value, 0);
         const d3 = lvl2Minors
-          .map(x => ({
-            name:      x.tag,
-            y:         parseFloat(((x.value / other2Val) * 100).toFixed(2)),
+          .map((x) => ({
+            name: x.tag,
+            y: parseFloat(((x.value / other2Val) * 100).toFixed(2)),
             pctOfGrand: x.pctOfGrand,
             valueReal: x.value,
             valueFormatted: formatCurrency(x.value),
             drilldown: null
           }))
           .sort((a, b) => b.y - a.y);
-    
+
         series.push({
-          id:   "Other2",
+          id: "Other2",
           name: "Other2 breakdown",
           data: d3
         });
       }
     }
-    
 
     return { topData: top, drillSeries: series };
   }, [transactions]);
 
   // 6) Chart options
   const options = {
-    chart: { type: "pie" },
+    chart: { type: "column", marginLeft: 20 },
     title: { text: "" },
     credits: { enabled: false },
+    xAxis: {
+      type: "category",
+      labels: {
+        rotation: -25,
+        y: 15, // Move labels 10px closer to the x-axis
+        x: 5,
+        style: {
+          fontSize: "14px",
+          fontFamily: "Roboto Condensed, sans-serif",
+        }
+      }
+    },
+    yAxis: {
+      title: { text: "" },
+      labels: { enabled: false }, // Disable y-axis labels
+      gridLineWidth: 0 // Disable y-axis grid lines
+    },
     plotOptions: {
-      pie: {
-        cursor: "pointer",
+      column: {
         dataLabels: {
           enabled: true,
-          format: "{point.name}: {point.valueFormatted}"
+          format: "{point.valueFormatted}",
+          style: {
+            fontSize: "14px",
+            fontFamily: "Roboto Condensed, sans-serif"
+          }
         },
         point: {
           events: {
@@ -597,7 +635,6 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
       borderWidth: 1,
       style: { textAlign: "center" },
       formatter() {
-        // always show pctOfGrand
         const pct = this.point.pctOfGrand.toFixed(1) + "%";
         const amt = formatCurrency(this.point.valueReal || 0);
         return `<div style="line-height:1.2">
@@ -618,20 +655,19 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
           valueReal: pt.valueReal,
           valueFormatted: formatCurrency(pt.valueReal),
           drilldown: pt.drilldown,
-          point: {
-            events: {
-              click() {
-                // only real tags fire the filter
-                if (this.name !== "Other" && this.name !== "Other2") {
-                  setTransactionFilter(this.name);
-                }
-              }
-            }
-          }
+          color: pt.color
         }))
       }
     ],
-    drilldown: { series: drillSeries }
+    drilldown: {
+      series: drillSeries.map((series) => ({
+        ...series,
+        data: series.data.map((pt) => ({
+          ...pt,
+          color: pt.color
+        }))
+      }))
+    }
   };
 
   return <HighchartsReact highcharts={Highcharts} options={options} />;
