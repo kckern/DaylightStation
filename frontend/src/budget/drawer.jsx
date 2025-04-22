@@ -581,9 +581,8 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
         },
         point: {
           events: {
-            click() {
-              // only real tags fire the filter
-              if (this.name !== "Other" && this.name !== "Other2") {
+            click(e) {
+              if (this.name && this.name !== "Other" && this.name !== "Other2") {
                 setTransactionFilter(this.name);
               }
             }
