@@ -162,59 +162,273 @@ function WebSocketApp({ path }) {
   );
 }
 
-function WebcamApp() {
+export  function WebcamApp() {
   const videoRef = useRef(null);
 
-  useEffect(() => {
-    const startWebcam = async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === "videoinput");
+  // Store the discovered devices
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [audioDevices, setAudioDevices] = useState([]);
 
-        if (videoDevices.length > 0) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { 
-              deviceId: videoDevices[0].deviceId,
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
-            }
-          });
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-        } else {
-          console.error("No video devices found.");
+  // Currently selected device IDs
+  const [selectedVideoDevice, setSelectedVideoDevice] = useState(null);
+  const [selectedAudioDevice, setSelectedAudioDevice] = useState(null);
+
+  // Volume state
+  const [volume, setVolume] = useState(0);
+
+  // Refs to handle audio analysis resources
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const dataArrayRef = useRef(null);
+  const animationIdRef = useRef(null);
+
+  // ------------------------------------------------------------------
+  // 1) On mount: Enumerate devices and pick defaults
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    const getDevices = async () => {
+      try {
+        const devicesList = await navigator.mediaDevices.enumerateDevices();
+        const vidDevices = devicesList.filter(d => d.kind === "videoinput");
+        const audDevices = devicesList.filter(d => d.kind === "audioinput");
+
+        setVideoDevices(vidDevices);
+        setAudioDevices(audDevices);
+        if (vidDevices.length > 0) {
+          setSelectedVideoDevice(vidDevices[0].deviceId);
         }
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        if (audDevices.length > 0) {
+          setSelectedAudioDevice(audDevices[0].deviceId);
         }
       } catch (error) {
-        console.error("Error accessing webcam:", error);
+        console.error("Error enumerating devices:", error);
       }
     };
-
-    startWebcam();
-
-    return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = videoRef.current.srcObject.getTracks();
-        tracks.forEach(track => track.stop());
-      }
-    };
+    getDevices();
   }, []);
 
+  // ------------------------------------------------------------------
+  // 2) Whenever selectedVideoDevice or selectedAudioDevice changes:
+  //    - stop old streams and analysis
+  //    - start new stream and set up volume analysis
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    let localVideoStream;
+    let localAudioStream;
+
+    // Cleanup from a previous run
+    const cleanup = () => {
+      // Stop meter animation
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
+      // Close old audio context if any
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      // Stop any old video tracks
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+      }
+    };
+
+    const startWebcamAndMic = async () => {
+      if (!selectedVideoDevice && !selectedAudioDevice) return;
+
+      try {
+        //  1) Acquire combined stream for video (and audio) for preview
+        //     (You can also split them, but combined is often simpler.)
+        localVideoStream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: selectedVideoDevice, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: { deviceId: selectedAudioDevice }
+        });
+
+        // Attach to video element
+        if (videoRef.current) {
+          videoRef.current.srcObject = localVideoStream;
+        }
+
+        //  2) Acquire separate audio-only stream for volume analysis
+        //     (Alternatively, you could reuse localVideoStream’s audio tracks,
+        //      but sometimes a separate capture is clearer.)
+        localAudioStream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: selectedAudioDevice }
+        });
+
+        //  3) Create fresh AudioContext + Analyser
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const audioContext = new AudioContextClass();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+
+        // Connect source -> analyser
+        const source = audioContext.createMediaStreamSource(localAudioStream);
+        source.connect(analyser);
+
+        // Store these in refs so we can clean them up later
+        audioContextRef.current = audioContext;
+        analyserRef.current = analyser;
+        dataArrayRef.current = new Uint8Array(analyser.fftSize);
+
+        //  4) Kick off a loop to read the volume
+        const analyzeVolume = () => {
+          analyser.getByteTimeDomainData(dataArrayRef.current);
+          let sumSquares = 0;
+          for (let i = 0; i < dataArrayRef.current.length; i++) {
+            const val = (dataArrayRef.current[i] - 128) / 128; // center around zero
+            sumSquares += val * val;
+          }
+          const rms = Math.sqrt(sumSquares / dataArrayRef.current.length);
+          setVolume(rms);
+
+          animationIdRef.current = requestAnimationFrame(analyzeVolume);
+        };
+        analyzeVolume();
+      } catch (error) {
+        console.error("Error accessing webcam/microphone:", error);
+      }
+    };
+
+    // First clean up any old streams/contexts, then start new
+    cleanup();
+    startWebcamAndMic();
+
+    // Final cleanup on unmount or re-run
+    return () => {
+      cleanup();
+      if (localVideoStream) {
+        localVideoStream.getTracks().forEach(t => t.stop());
+      }
+      if (localAudioStream) {
+        localAudioStream.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, [selectedVideoDevice, selectedAudioDevice]);
+
+  // ------------------------------------------------------------------
+  // 3) Spacebar/Enter to cycle through audio devices
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === " " || event.key === "Spacebar" || event.key === "Enter" || event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      if (audioDevices.length > 0 && selectedAudioDevice) {
+        const currentIndex = audioDevices.findIndex(
+        (device) => device.deviceId === selectedAudioDevice
+        );
+        const nextIndex = (currentIndex + 1) % audioDevices.length;
+        setSelectedAudioDevice(audioDevices[nextIndex].deviceId);
+      }
+
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (audioDevices.length > 0 && selectedAudioDevice) {
+        const currentIndex = audioDevices.findIndex(
+        (device) => device.deviceId === selectedAudioDevice
+        );
+        const prevIndex = (currentIndex - 1 + audioDevices.length) % audioDevices.length;
+        setSelectedAudioDevice(audioDevices[prevIndex].deviceId);
+      }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [audioDevices, selectedAudioDevice]);
+
+  // Meter conversion
+  const volumePercentage = Math.min(volume * 1000, 100);
+
+  // ------------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------------
+  return <pre>
+  {JSON.stringify({ volume, volumePercentage }, null, 2)}
+  <div>
+    {videoDevices.map((device, index) => (
+      <div
+        key={index}
+        style={{
+          color: selectedVideoDevice === device.deviceId ? "green" : "grey",
+        }}
+      >
+        <strong>Camera {index + 1}:</strong> {device.label || `Device ${index + 1}`}
+        {selectedVideoDevice === device.deviceId ? " 🎥" : ""}
+      </div>
+    ))}
+    {audioDevices.map((device, index) => (
+      <div
+        key={index}
+        style={{
+          color: selectedAudioDevice === device.deviceId ? "green" : "grey",
+        }}
+      >
+        <strong>Mic {index + 1}:</strong> {device.label || `Device ${index + 1}`}
+        {selectedAudioDevice === device.deviceId ? " 🎤" : ""}
+      </div>
+    ))}
+  </div>
+</pre>
+
   return (
-    <div style={{ width: "100%", height: "100%" }}>
+    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      {/* Debug info */}
+      
+      {/* Volume Meter */}
+      <div
+        style={{
+          textAlign: "center",
+          marginTop: "20px",
+          position: "absolute",
+          left: 0,
+          height: "100%",
+          bottom: 0,
+        }}
+      >
+        <div
+          style={{
+            opacity: 0.8,
+            display: "inline-block",
+            borderRadius: "5px",
+            width: "300px",
+            height: "20px",
+            backgroundColor: "#ddd",
+            position: "relative",
+            zIndex: 1,
+          }}
+        >
+          <div
+            style={{
+              width: `${volumePercentage}%`,
+              height: "100%",
+              borderRadius: "5px",
+              backgroundColor: "green",
+              transition: "width 0.1s",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Video Preview */}
       <video
         ref={videoRef}
         autoPlay
         muted
         style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
           width: "100%",
           height: "100%",
-          transform: "scaleX(-1)" // Mirrors the video
+          transform: "scaleX(-1)", // Mirror video
         }}
       />
     </div>
   );
 }
+
+
