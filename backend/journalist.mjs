@@ -7,7 +7,6 @@ import {processFoodLogHook as foodlog_hook} from './journalist/foodlog_hook.mjs'
 import img from './journalist/img.mjs';
 //import health from './journalist/health.mjs';
 import journal from './journalist/journal.mjs';
-import report from './journalist/report.mjs';
 import webhook from './journalist/webhook.mjs';
 
 
@@ -19,7 +18,6 @@ const endpoints = {
     img,
    // health,
     journal,
-    report,
     webhook,
     "": async (req) => {
         return {message: "Welcome to the journalist API. Please use one of the following endpoints: " + Object.keys(endpoints).join(", ")};
