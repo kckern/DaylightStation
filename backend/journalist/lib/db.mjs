@@ -11,7 +11,7 @@ const MESSAGEQUEUE_STORE = 'journalist/messagequeue';
 const QUIZQUESTIONS_STORE = 'journalist/quizquestions';
 const QUIZANSWERS_STORE = 'journalist/quizanswers'; // not used explicitly here, but might fit your usage
 const NUTRILOGS_STORE = 'journalist/nutrilogs';
-const NUTRICURSORS_STORE = 'journalist/nutricursors';
+const NUTRICURSORS_STORE= 'journalist/nutricursors';
 const ACTIVITIES_STORE = 'journalist/activities';
 const WEIGHTS_STORE = 'journalist/weights';
 const DAILY_NUTRITION_STORE = 'journalist/dailynutrition'; // not used explicitly, but mentioned
@@ -42,7 +42,7 @@ export const saveMessage = (chatId, { messageId, senderId, senderName, text, for
   const unix = Math.floor(Date.now() / 1000);
 
   try {
-    const data = loadFile(MESSAGES_STORE) || {};
+    const data = loadFile(MESSAGES_STORE + "/" + chatId) || {};
     const recordKey = `${chatId}_${messageId}`;
     data[recordKey] = {
       timestamp: unix,
@@ -57,7 +57,7 @@ export const saveMessage = (chatId, { messageId, senderId, senderName, text, for
     const sortedData = Object.fromEntries(
       Object.entries(data).sort(([, a], [, b]) => b.timestamp - a.timestamp)
     );
-    saveFile(MESSAGES_STORE, sortedData);
+    saveFile(MESSAGES_STORE + "/" + chatId, sortedData);
     return data[recordKey];
   } catch (error) {
     console.error('Error saving message:', error);
@@ -74,7 +74,7 @@ export const saveMessage = (chatId, { messageId, senderId, senderName, text, for
  */
 export const getMessages = (chatId, attempt = 1, max = 100) => {
   try {
-    const data = loadFile(MESSAGES_STORE);
+    const data = loadFile(MESSAGES_STORE + "/" + chatId);
     // Filter messages by chatId
     let rows = Object.values(data).filter(msg => msg.chat_id === chatId);
     // Sort by timestamp desc
@@ -128,11 +128,11 @@ export const findMostRecentUnansweredMessage = (chatId, senderId) => {
  */
 export const deleteMessageFromDB = (chatId, messageId) => {
   try {
-    const data = loadFile(MESSAGES_STORE);
+    const data = loadFile(MESSAGES_STORE + "/" + chatId);
     const recordKey = `${chatId}_${messageId}`;
     if (data[recordKey]) {
       delete data[recordKey];
-       saveFile(MESSAGES_STORE, data);
+       saveFile(MESSAGES_STORE + "/" + chatId, data);
       return { success: true };
     }
     return { success: false };
@@ -474,7 +474,7 @@ export const answerQuizQuestion = (uuid, answer) => {
  */
 export const updateDBMessage = (chat_id, message_id, values) => {
   try {
-    const data = loadFile(MESSAGES_STORE);
+    const data = loadFile(MESSAGES_STORE + "/" + chat_id);
     const recordKey = `${chat_id}_${message_id}`;
     if (!data[recordKey]) {
       return null;
@@ -484,7 +484,7 @@ export const updateDBMessage = (chat_id, message_id, values) => {
     if (foreign_key !== undefined) {
       data[recordKey].foreign_key = foreign_key;
     }
-     saveFile(MESSAGES_STORE, data);
+     saveFile(MESSAGES_STORE + "/" + chat_id, data);
     return data[recordKey];
   } catch (error) {
     console.error('Error updating message:', error);
@@ -500,7 +500,7 @@ export const updateDBMessage = (chat_id, message_id, values) => {
  */
 export const loadMessageFromDB = (chat_id, message_id) => {
   try {
-    const data = loadFile(MESSAGES_STORE);
+    const data = loadFile(MESSAGES_STORE + "/" + chat_id);
     const recordKey = `${chat_id}_${message_id}`;
     return data[recordKey] ? [data[recordKey]] : [];
   } catch (error) {
@@ -526,7 +526,7 @@ export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, 
   }
 
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
     data[uuid] = {
       uuid,
       chat_id,
@@ -535,7 +535,7 @@ export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, 
       food_data,
       status
     };
-     saveFile(NUTRILOGS_STORE, data);
+     saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
     return data[uuid];
   } catch (error) {
     console.error('Error saving nutrilog:', error);
@@ -548,10 +548,10 @@ export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, 
  * @param {string} uuid
  * @returns {Array|null}
  */
-export const getNutrilog = (uuid) => {
+export const getNutrilog = (uuid, chat_id) => {
   if (!uuid) return null;
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     const entry = data[uuid];
     return entry ? [entry] : [];
   } catch (error) {
@@ -571,7 +571,7 @@ export const getNutrilListByDate = (chat_id, date) => {
     // This was originally referencing 'nutrilist' table, but in the new structure
     // you might keep them in the same nutrilogs store or a different file. 
     // Adjust as needed. For demonstration, assume it's the same store:
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.date === date);
     // Sort by calories descending -> But there's no field "calories" in the default. 
     // We can parse item.food_data if needed. Implementation may vary.
@@ -596,7 +596,7 @@ export const getNutrilListByDate = (chat_id, date) => {
  */
 export const getNutrilListByID = (chat_id, uuid) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     const item = data[uuid];
     if (item && item.chat_id === chat_id) {
       return item;
@@ -616,10 +616,10 @@ export const getNutrilListByID = (chat_id, uuid) => {
  */
 export const deleteNuriListById = (chat_id, uuid) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     if (data[uuid] && data[uuid].chat_id === chat_id) {
       delete data[uuid];
-       saveFile(NUTRILOGS_STORE, data);
+       saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
       return { success: true };
     }
     return { success: false };
@@ -635,16 +635,16 @@ export const deleteNuriListById = (chat_id, uuid) => {
  * @param {object} values
  * @returns {object|null}
  */
-export const updateNutrilist = (uuid, values) => {
+export const updateNutrilist = (chat_id, uuid, values) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     if (!data[uuid]) {
       return null;
     }
     for (const [k, v] of Object.entries(values)) {
       data[uuid][k] = v;
     }
-     saveFile(NUTRILOGS_STORE, data);
+     saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
     return data[uuid];
   } catch (error) {
     console.error('Error updating nutrilist:', error);
@@ -661,7 +661,8 @@ export const updateNutrilist = (uuid, values) => {
 export const getNutrilogByMessageId = (chat_id, message_id) => {
   console.log('Getting nutrilog by message_id:', { chat_id, message_id });
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    console.log('Loaded data:', data);
     const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.message_id == message_id);
     return rows?.[0] || null;
   } catch (error) {
@@ -681,13 +682,13 @@ export const getPendingNutrilog = (chat_id) => {
     const cursor = getNutriCursor(chat_id);
     if (cursor.revising) {
       const { uuid } = cursor.revising;
-      const [nutrilog] = ( getNutrilog(uuid)) || [];
+      const [nutrilog] = ( getNutrilog(uuid, chat_id) || [] );
       console.log('Found pending nutrilog:', { uuid, nutrilog });
       if (nutrilog) return nutrilog;
     }
 
     // fallback: look for a "revising" entry
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     // 1 minute old
     const oneMinuteOld = Math.floor(Date.now() / 1000) - 60;
     const rows = Object.values(data)
@@ -720,7 +721,7 @@ export const loadJournalMessages = (chat_id, since, until) => {
 
   console.log('Loading journal entries:', { chat_id, since, until, sinceUnix, untilUnix });
   try {
-    const data = loadFile(MESSAGES_STORE);
+    const data = loadFile(MESSAGES_STORE + "/" + chat_id);
     const rows = Object.values(data).filter(item =>
       item.chat_id === chat_id &&
       item.timestamp >= sinceUnix &&
@@ -754,12 +755,12 @@ export const loadJournalMessages = (chat_id, since, until) => {
  * @param {string} uuid
  * @returns {object|null}
  */
-export const deleteNutrilog = (uuid) => {
+export const deleteNutrilog = (chat_id, uuid) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     if (data[uuid]) {
       delete data[uuid];
-       saveFile(NUTRILOGS_STORE, data);
+       saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
       return { success: true };
     }
     return { success: false };
@@ -779,13 +780,13 @@ export const deleteNutrilog = (uuid) => {
  * @returns {boolean|null}
  */
 export const saveNutrilist = (items) => {
-  // For demonstration, we'll reuse NUTRILOGS_STORE or create a new store if needed.
+  // For demonstration, we'll reuse NUTRILOGS_STORE + "/" + chat_id or create a new store if needed.
   // In the original code, it inserts into "nutrilist" table. We'll assume we have a separate store:
   // "journalist/nutrilogs" or "journalist/nutrilist". Adjust as needed.
   if (!Array.isArray(items)) items = [items];
 
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     for (const item of items) {
       // The primary key is item.uuid
       if (!item.uuid) {
@@ -811,7 +812,7 @@ export const saveNutrilist = (items) => {
         log_uuid: item.log_uuid
       };
     }
-     saveFile(NUTRILOGS_STORE, data);
+     saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
     return true;
   } catch (error) {
     console.error('Error saving nutrilist:', error);
@@ -829,7 +830,7 @@ export const loadNutrilogsNeedingListing = (chat_id) => {
   try {
     // We don't have stored procedures, so we can replicate logic:
     // Return all nutrilogs with status in ['accepted', 'assumed'], for example.
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     const rows = Object.values(data).filter(item =>
       item.chat_id === chat_id &&
       (item.status === 'accepted' || item.status === 'assumed')
@@ -871,7 +872,7 @@ export const loadDailyNutrition = (chat_id) => {
 export const loadRecentNutriList = (chat_id, days_since = 14) => {
   try {
     const dateThreshold = moment().subtract(days_since, 'days').format('YYYY-MM-DD');
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     // Filter
     const rows = Object.values(data).filter(item => {
       if (item.chat_id !== chat_id) return false;
@@ -891,9 +892,9 @@ export const loadRecentNutriList = (chat_id, days_since = 14) => {
  * @param {string} uuid
  * @returns {boolean}
  */
-export const nutriLogAlreadyListed = (uuid) => {
+export const nutriLogAlreadyListed = (uuid, chat_id) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     // If there's any item with log_uuid = uuid
     const found = Object.values(data).some(item => item.log_uuid === uuid);
     return found;
@@ -916,13 +917,13 @@ export const nutriLogAlreadyListed = (uuid) => {
 export const setNutriCursor = (chat_id, dataObj) => {
   const timestamp = Math.floor(Date.now() / 1000);
   try {
-    const data = loadFile(NUTRICURSORS_STORE);
+    const data = loadFile(NUTRICURSORS_STORE + "/" + chat_id) || {};
     data[chat_id] = {
       chat_id,
       timestamp,
       data: dataObj
     };
-     saveFile(NUTRICURSORS_STORE, data);
+     saveFile(NUTRICURSORS_STORE + "/" + chat_id, data);
     return true;
   } catch (error) {
     console.error('Error setting nutri cursor:', error);
@@ -937,7 +938,7 @@ export const setNutriCursor = (chat_id, dataObj) => {
  */
 export const getNutriCursor = (chat_id) => {
   try {
-    const data = loadFile(NUTRICURSORS_STORE);
+    const data = loadFile(NUTRICURSORS_STORE + "/" + chat_id) || {};
     if (data[chat_id]) {
       const parsed = data[chat_id].data;
       return parsed;
@@ -956,7 +957,7 @@ export const getNutriCursor = (chat_id) => {
  */
 export const clearNutrilistByLogUUID = (uuid) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
     let count = 0;
     for (const [k, v] of Object.entries(data)) {
       if (v.log_uuid === uuid) {
@@ -964,7 +965,7 @@ export const clearNutrilistByLogUUID = (uuid) => {
         count++;
       }
     }
-     saveFile(NUTRILOGS_STORE, data);
+     saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
     return { success: true, count };
   } catch (error) {
     console.error('Error clearing nutrilist by log uuid:', error);

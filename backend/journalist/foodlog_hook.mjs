@@ -1,7 +1,7 @@
 import { getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport } from "./lib/food.mjs";
 import dotenv from 'dotenv';
 import { deleteMessage, sendImageMessage, sendMessage, transcribeVoiceMessage, updateMessage, updateMessageReplyMarkup } from "./lib/telegram.mjs";
-import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getPendingNutrilog, saveNutrilog, getNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist } from "./lib/db.mjs";
+import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getPendingNutrilog, saveNutrilog,  getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist } from "./lib/db.mjs";
 import { detectFoodFromImage, detectFoodFromTextDescription } from "./lib/gpt_food.mjs";
 import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
@@ -10,12 +10,13 @@ dotenv.config();
 
 export const processFoodLogHook = async (req, res) => {
 
-    process.env.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_NUTRIBOT_TOKEN;
+    const {TELEGRAM_NUTRIBOT_TOKEN:token,journalist:{journalist_user_id,nutribot_telegram_bot_id:bot_id}} = process.env;
+    process.env.TELEGRAM_JOURNALIST_BOT_TOKEN = token; // TODO improve multi-bot support
     const payload = req.body || req.query;
-    const user_id = parseInt(payload.message?.chat?.id || payload.chat_id || req.query.chat_id);
-    const bot_id = payload.bot_id;
-    console.log({payload,user_id, bot_id});
+    const user_id = parseInt(payload.message?.chat?.id || payload.chat_id || req.query.chat_id || journalist_user_id);
+    //console.log({payload,user_id, bot_id});
     const chat_id = `b${bot_id}_u${user_id}`;
+    console.log({chat_id});
     if(!bot_id) return res.status(400).send('No bot id found');
     if(!chat_id) return res.status(400).send('No chat id found');
     const upc = payload.upc;
@@ -108,7 +109,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
 
     if(/^↩️/.test(choice)) {
         delete cursor.adjusting;
-        await setNutriCursor(chat_id, cursor);
+        setNutriCursor(chat_id, cursor);
         const choices = [["✅ Accept", "⬅️ Adjust"]];
         return await updateMessage(chat_id, {message_id, text: "", choices, inline: true, key: "caption"})
     }
@@ -135,7 +136,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
         const thirdRow = createRow(7, 9, today);
         const choices = [[{[today]:"☀️ Today"}], firstRow, secondRow, thirdRow, ["↩️ Done"]];
         //save cursor
-        await setNutriCursor(chat_id, cursor);
+        setNutriCursor(chat_id, cursor);
         return await updateMessage(chat_id, {message_id, text: "📅 Select Date to Adjust:", choices, inline: true, key: "caption"});
     }
 
@@ -156,7 +157,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
         const date = moment.tz(choice, "America/Los_Angeles").format('YYYY-MM-DD');
         cursor.adjusting.date = date;
         console.log({date_choice:choice,offset});
-        const foodItems = await getNutrilListByDate(chat_id, date);
+        const foodItems =  getNutrilListByDate(chat_id, date);
         console.log({foodItems,offset});
         let sliced = foodItems.slice(offset,offset+9);
         if(!sliced.length) sliced = foodItems.slice(0,9);
@@ -202,7 +203,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
             await deleteNuriListById(chat_id, uuid);
             const cursor = await getNutriCursor(chat_id);
             delete cursor.adjusting;
-            await setNutriCursor(chat_id, cursor);
+            setNutriCursor(chat_id, cursor);
             return await postItemizeFood(chat_id);
         }
         if(isNaN(factor) && /^📅/.test(choice)) {
@@ -215,9 +216,9 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
             acc[cur] = parseInt(listItem[cur] * factor);
             return acc;
         }, {});
-        await updateNutrilist(uuid, revisedItem);
+        await updateNutrilist(chat_id, uuid, revisedItem);
         delete cursor.adjusting;
-        await setNutriCursor(chat_id, cursor);
+        setNutriCursor(chat_id, cursor);
         return await postItemizeFood(chat_id);
 
     }
@@ -268,7 +269,7 @@ const acceptFoodLog = async (chat_id, message_id, uuid) => {
     console.log('Accepting message', {chat_id, message_id, uuid});
 
     const a = clearKeyboard(chat_id, message_id);
-    const b = saveNutrilog({uuid, status: "accepted"});
+    const b = saveNutrilog({uuid,message_id, chat_id, status: "accepted"});
     const c = clearPendingCursor(chat_id);
     await Promise.all([a,b,c]);
     await postItemizeFood(chat_id);
@@ -280,7 +281,7 @@ const discardFoodLog = async (chat_id, messageId, uuid) => {
     const a = deleteMessage(chat_id, messageId);
     const b = deleteMessageFromDB(chat_id, messageId);
     const c = clearPendingCursor(chat_id);
-    const d = deleteNutrilog(uuid);
+    const d = deleteNutrilog(chat_id, uuid);
     await Promise.all([a,b,c,d]);
     return true;
 }
@@ -296,19 +297,17 @@ const reviseFoodLog = async (chat_id, message_id, uuid, {food_data}) => {
     //Handle any Pending Nutrilogs
     const {revising} = cursor;
     if(revising?.message_id && revising?.uuid) {
-        const a = updateMessageReplyMarkup(chat_id, {message_id:revising.message_id, choices:["✅ Accept", "❌ Discard", "🔄 Revise"], inline: true});
-        const b = saveNutrilog({uuid:revising.uuid, food_data, status: "init"});
-        //reset cursor
+        await updateMessageReplyMarkup(chat_id, {message_id:revising.message_id, choices:["✅ Accept", "❌ Discard", "🔄 Revise"], inline: true});
+        saveNutrilog({uuid:revising.uuid,chat_id, message_id,food_data, status: "init"});
         delete cursor.revising;
-        const c = await setNutriCursor(chat_id, cursor);
-        await Promise.all([a,b,c]);
+        setNutriCursor(chat_id, cursor);
     }
 
     //Process Current Nutrilog
     cursor['revising'] = {message_id, uuid};
-    await setNutriCursor(chat_id, cursor);
+    setNutriCursor(chat_id, cursor);
     await updateMessageReplyMarkup(chat_id, {message_id, choices:["🗒️ Input your revision:"], inline: true});
-    await saveNutrilog({uuid, food_data, status: "revising"});
+    saveNutrilog({uuid,chat_id, food_data,message_id, status: "revising"});
     return true;
 
 }
@@ -328,6 +327,7 @@ const processTextInput = async (chat_id, message_id, text) => {
 
 const processRevision = async (chat_id, feedback_message_id, text, {message_id, uuid, food_data}) => {
 
+    console.log('Processing revision', {chat_id, feedback_message_id, text, message_id, uuid, food_data});
     const a =  deleteMessage(chat_id, feedback_message_id);
     const {img_url} = food_data;
     const c = updateMessage(chat_id, {message_id, text: "🔄 Revising...", choices: [], inline:true, key: img_url ? "caption" : null});
@@ -345,7 +345,7 @@ const processImageRevision = async (chat_id, text, {uuid, message_id, img_url, f
     const new_food_data = await detectFoodFromImage(base64Url, {food_data, text});
     new_food_data.img_url = img_url;
     new_food_data.text = text;
-    await saveNutrilog({uuid, food_data:new_food_data, status: "revised"});
+    saveNutrilog({uuid,chat_id, message_id,food_data:new_food_data, status: "revised"});
     return await processFoodListData(new_food_data, chat_id, message_id, "caption", true);
 }
 
@@ -354,7 +354,7 @@ const processTextRevision = async (chat_id, text, {uuid, message_id, food_data})
     const {text:food_text} = food_data;
     const new_food_data = await detectFoodFromTextDescription(text, {food_data, text:food_text});
     new_food_data.text = food_data.text + ' • ' + text;
-    await saveNutrilog({uuid, food_data:new_food_data, status: "revised"});
+    saveNutrilog({uuid, chat_id, message_id,food_data:new_food_data, status: "revised"});
     return await processFoodListData(new_food_data, chat_id, message_id, null, true);
 }
 

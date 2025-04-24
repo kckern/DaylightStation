@@ -14,10 +14,10 @@ export const processFoodListData = async (jsondata, chat_id, message_id, key, re
     const uuid = jsondata.uuid;
     const timestamp = Math.floor( Date.now() / 1000);
 
-    if(!jsondata.food.length) return updateMessage(chat_id, {message_id, text: "🚫 No food items detected.", choices: [["❌ Discard"]], inline:true, key});
+    if(!jsondata.food?.length) return updateMessage(chat_id, {message_id, text: "🚫 No food items detected.", choices: [["❌ Discard"]], inline:true, key});
 
     //save message
-    if(!revision) await saveNutrilog({uuid, timestamp, chat_id, message_id, food_data: jsondata, status: "init"});
+    if(!revision) await saveNutrilog({uuid,chat_id, timestamp, chat_id, message_id, food_data: jsondata, status: "init"});
     console.log({jsondata});
     const {food, date, time} = jsondata;
 
@@ -122,54 +122,63 @@ export const getBase64Url = async (imgUrl) => {
 
 export const handlePendingNutrilogs = async (chat_id) => {
 
-    const log_items_all = await loadNutrilogsNeedingListing(chat_id) || [];
+    const log_items_all = loadNutrilogsNeedingListing(chat_id) || [];
     const log_items = [];
     for(const log_item of log_items_all){
         const {uuid} = log_item;
-        const isAlreadyListed = await nutriLogAlreadyListed(uuid);
+        const isAlreadyListed = nutriLogAlreadyListed(uuid, chat_id);
         if(!isAlreadyListed) log_items.push(log_item);
     }
     console.log(log_items);
     console.log(`loadNutrilogsNeedingListing`);
     console.log(`Processing ${log_items.length} log items`);
+    console.log(log_items);
     let max_message_id = 0;
     for(const log_item of log_items){
+        console.log(`Processing log item: ${JSON.stringify(log_item)}`);
         const {uuid, food_data, chat_id, message_id} = log_item;
         max_message_id = Math.max(max_message_id, message_id);
-        const {food,date,time, img_url} = food_data;
-        if(!Array.isArray(food)) continue;
-        if(!food.length) continue;
+        const {food, date, time, img_url} = food_data || {};
+        if(!Array.isArray(food)) {
+            console.log(`Skipping log item with invalid food data: ${JSON.stringify(food_data)}`);
+            continue;
+        }
+        if(!food.length) {
+            console.log(`Skipping log item with empty food list: ${JSON.stringify(food_data)}`);
+            continue;
+        }
+        console.log(`Itemizing food for log item with UUID: ${uuid}`);
         const items = await itemizeFood(food, img_url);
-        const saveMe = items.map(item => ({...item, chat_id, date, timeofday:time, log_uuid:uuid}));
+        console.log(`Itemized food: ${JSON.stringify(items)}`);
+        const saveMe = items.map(item => ({...item, chat_id, date, timeofday: time, log_uuid: uuid}));
+        console.log(`Clearing existing nutrilist for UUID: ${uuid}`);
         await clearNutrilistByLogUUID(uuid);
-        await saveNutrilist(saveMe);
+        console.log(`Saving nutrilist: ${JSON.stringify(saveMe)}`);
+        saveNutrilist(saveMe);
     }
-
+    return console.log(`Processed ${log_items.length} log items`);
 }
 
 
-export const postItemizeFood = async (chat_id, hostname, attempt) => {
+export const postItemizeFood = async (chat_id, attempt) => {
     //TODO: Fix so that it doesn't axcepct vercel
     attempt = attempt || 1;
-    hostname = hostname;
-    const protocol = /localhost/.test(hostname) ? "http" : "https";
-    //add protocol to hostname if missing
-    if(!hostname.match(/^https?:\/\//)) hostname = `${protocol}://${hostname}`;
-    const reportImgUrl = `${hostname}/api/report?chat_id=${chat_id}&uuid=${uuidv4()}`;
+    const{nutribot_report_host} = process.env;
+const reportImgUrl = `${nutribot_report_host}/foodreport?chat_id=${chat_id}&uuid=${uuidv4()}`;
     if(attempt > 3) return await sendMessage(chat_id, `🚫 Error generating report. Please try again later.\n${reportImgUrl}`);
     await removeCurrentReport(chat_id);
     const {message_id:tmp_msg_id} = await sendMessage(chat_id, "📊 Generating report...");
     //save tmp message id as report cursor
     const earlyCursor = await getNutriCursor(chat_id);
     earlyCursor.report = {message_id: tmp_msg_id};
-    await setNutriCursor(chat_id, earlyCursor);
+    setNutriCursor(chat_id, earlyCursor);
     
     await handlePendingNutrilogs(chat_id);
     console.log(`Sending report image: ${reportImgUrl}`);
     const msg = await sendImageMessage(chat_id, reportImgUrl, `📊 Coaching message here`);
     const {message_id} = msg?.result || {}
     await deleteMessage(chat_id, tmp_msg_id);
-    if(!message_id) return await postItemizeFood(chat_id, hostname, attempt+1);
+    if(!message_id) return await postItemizeFood(chat_id, attempt+1);
     const cursor = await getNutriCursor(chat_id);
     const currentReportId = cursor?.report?.message_id;
     cursor.report = {message_id};

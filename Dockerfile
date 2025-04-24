@@ -5,9 +5,10 @@ FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine
 # Set work directory to /usr/src/app
 WORKDIR /usr/src/app
 
-# Install OpenSSH client and yt-dlp
+# Install OpenSSH client, yt-dlp, and required dependencies
 RUN apk add --no-cache openssh-client \
     && apk add --no-cache python3 py3-pip \
+    && apk add --no-cache cairo-dev jpeg-dev pango-dev giflib-dev g++ build-base \
     && pip3 install --no-cache-dir yt-dlp
 
 # Bundle app source
@@ -32,6 +33,7 @@ RUN chown node:node /usr/src/app/known_hosts
 USER node
 
 EXPOSE 3112
+EXPOSE 3119
 
 # Set the entrypoint script as the command to run when the container starts
 ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
