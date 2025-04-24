@@ -5,6 +5,7 @@ import moment from 'moment-timezone';
 import { loadNutrilogsNeedingListing, loadRecentNutriList } from './lib/db.mjs';
 import { handlePendingNutrilogs } from './lib/food.mjs';
 import { createCanvas, loadImage, registerFont } from 'canvas';
+import axios from 'axios';
 
 /**
  * REGISTER FONTS
@@ -630,4 +631,51 @@ export const foodReport = async (req, res) => {
   res.set('Content-Type', 'image/png');
   res.set('Content-Disposition', `inline; filename="${uuid || 'food_report'}.png"`);
   return res.send(placeholder);
+};
+
+
+export const scanBarcode = async (req, res) => {
+  const { barcode } = req.query;
+  try {
+    const response = await axios.get(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    res.set('Content-Type', 'application/json');
+    res.set('Content-Disposition', `inline; filename="${barcode}.json"`);
+    const whitelist = [
+      'brands',
+      'product_name',
+      'serving_quantity',
+      'serving_quantity_unit',
+      'product_quantity',
+      'product_quantity_unit',
+      'selected_images',
+    ];
+
+    const result = whitelist.reduce((acc, key) => {
+      const normalizedKey = key.replace(/-/g, '_');
+      acc[normalizedKey] = response.data.product[key];
+      return acc;
+    }, {});
+
+    // Extract serving-related items from nutriments
+    const servingKeys = [
+      'energy-kcal_serving',
+      'carbohydrates_serving',
+      'fat_serving',
+      'protein_serving',
+      'sodium_serving',
+      'sugars_serving',
+    ];
+
+    if (response.data.product.nutriments) {
+      servingKeys.forEach((key) => {
+      const normalizedKey = key.replace(/-/g, '_');
+      result[normalizedKey] = response.data.product.nutriments[key];
+      });
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error fetching barcode data:', error);
+    res.status(500).json({ error: 'Failed to fetch barcode data' });
+  }
 };
