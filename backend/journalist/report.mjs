@@ -1,405 +1,633 @@
-
 import fs from 'fs';
-import * as jimp from 'jimp';
 import path from 'path';
 import stringSimilarity from 'string-similarity';
-import { loadNutrilogsNeedingListing, loadRecentNutriList } from './lib/db.mjs';
 import moment from 'moment-timezone';
-import { handlePendingNutrilogs, postItemizeFood } from './lib/food.mjs';
-const fontsDir = path.resolve(process.cwd(), './api/fonts');
-const fontDir = path.resolve(fontsDir, './open-sans');
-const black16 = path.resolve(fontDir, './open-sans-16-black/open-sans-16-black.fnt');
-const black32 = path.resolve(fontDir, './open-sans-32-black/open-sans-32-black.fnt');
-const black64 = path.resolve(fontDir, './open-sans-64-black/open-sans-64-black.fnt');
-const fonts = {};
+import { loadNutrilogsNeedingListing, loadRecentNutriList } from './lib/db.mjs';
+import { handlePendingNutrilogs } from './lib/food.mjs';
+import { createCanvas, loadImage, registerFont } from 'canvas';
 
-const makePieChart = async (pieChartData, pieChartHeight, wedgeLabelFont, wedgeLabelSubFont) => {
+/**
+ * REGISTER FONTS
+ * --------------------------------------------------
+ * You can use registerFont to load your .ttf or .otf
+ * fonts. If you only have .fnt (bitmap fonts for jimp),
+ * convert them to TTF or choose an equivalent TTF font.
+ *
+ * Example:
+ *    registerFont('./api/fonts/OpenSans-Regular.ttf', {
+ *      family: 'Open Sans'
+ *    });
+ * Make sure the path and family name match your setup.
+ */
+// For demo purposes, using built-in system fonts:
+
+const fontPath = path.join(process.cwd(), './journalist/fonts/roboto-condensed/RobotoCondensed-Regular.ttf');
+
+console.log('Registering font:', fontPath);
+
+//register font ./fonts/RobotoCondensed-Regular.ttf
+registerFont(fontPath, {  family: 'Roboto Condensed', });
 
 
+const DEFAULT_FONT = '32px "Roboto Condensed"';
+const TITLE_FONT = '64px "Roboto Condensed"';
+const SUBTITLE_FONT = '48px "Roboto Condensed"';
 
-  wedgeLabelFont = wedgeLabelFont || await jimp.loadFont(black64);
-  wedgeLabelSubFont = wedgeLabelSubFont || await jimp.loadFont(black32);
-  pieChartData = pieChartData || [{color: '#f4a259', value: 45}, {color: '#8cb369', value: 20}, {color: '#f4e285', value: 30}];
-  const pieChartTotal = pieChartData.reduce((acc, slice) => acc + slice.value, 0);
-  pieChartData.forEach(slice => slice.percentage = slice.value / pieChartTotal);
-  const pieChartWidth = pieChartHeight;
-  const pieChart = new jimp(pieChartWidth, pieChartHeight);
-  const pieChartRadius = pieChartWidth/2;
-  const pieChartCenterX = pieChartWidth / 2;
-  const pieChartCenterY = pieChartHeight / 2;
-  let startAngle = 0;
-  let endAngle = 0;
-  const labels = [];
-  const subLabels = [];
-  for (const slice of pieChartData) {
-    endAngle = startAngle + (slice.percentage) * Math.PI * 2;
-    const label = `${slice.label || slice.value}`;
-    const subLabel = slice.subLabel ||slice.sublabel || '';
-    for(let y = -pieChartRadius; y <= pieChartRadius; y++) {
-      for(let x = -pieChartRadius; x <= pieChartRadius; x++) {
-        if(x*x + y*y <= pieChartRadius*pieChartRadius) {
-          let angle = Math.atan2(y, x) - Math.PI / 2; // subtract π/2 to rotate 90 degrees
-          if (angle < 0) angle += Math.PI * 2; // adjust the angle to 0 to 2π
-          if(startAngle <= angle && angle <= endAngle) {
-            pieChart.setPixelColor(jimp.cssColorToHex(slice.color), x + pieChartCenterX, y + pieChartCenterY);
-          }
-        }
+/**
+ * Helper functions for measuring text.
+ * Canvas measureText returns an object that can be used
+ * for exact text width and approximate text height (via
+ * the bounding box).
+ */
+function getTextWidth(ctx, text) {
+  return ctx.measureText(text).width;
+}
+
+function getTextHeight(ctx, text) {
+  const metrics = ctx.measureText(text);
+  // approximate text height
+  return metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+}
+
+/**
+ * Draw a filled rectangle with optional label in the center.
+ */
+function drawRect(ctx, x, y, w, h, color, label, font, pos) {
+  if (!w || !h) return;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+
+  if (label) {
+    ctx.font = font || DEFAULT_FONT;
+    ctx.fillStyle = '#000';
+
+    // measure label
+    const labelWidth = getTextWidth(ctx, label);
+    const labelHeight = getTextHeight(ctx, label);
+
+    // default to 'center-middle'
+    let labelX = x + w / 2 - labelWidth / 2;
+    let labelY = y + h / 2 + labelHeight / 4; // because fillText draws from baseline
+
+    if (pos) {
+      // horizontal position
+      if (/left/.test(pos)) {
+        labelX = x;
+      } else if (/right/.test(pos)) {
+        labelX = x + w - labelWidth;
+      }
+      // vertical position
+      if (/top/.test(pos)) {
+        labelY = y + labelHeight;
+      } else if (/bottom/.test(pos)) {
+        labelY = y + h;
       }
     }
-const [wedgeCenterX, wedgeCenterY] = [
-  pieChartCenterX + Math.cos(((startAngle + Math.PI / 2) + (endAngle + Math.PI / 2)) / 2) * (pieChartRadius * 0.6),
-  pieChartCenterY + Math.sin(((startAngle + Math.PI / 2) + (endAngle + Math.PI / 2)) / 2) * (pieChartRadius * 0.6)
-];
+    ctx.fillText(label, labelX, labelY);
+  }
+  ctx.restore();
+}
 
-    const wedgeLabelWidth = jimp.measureText(wedgeLabelFont, label);
-    const wedgeLabelHeight = jimp.measureTextHeight(wedgeLabelFont, label);
-    labels.push({label, wedgeCenterX, wedgeCenterY, wedgeLabelWidth, wedgeLabelHeight});
+/**
+ * Create a simple pie chart with Canvas.
+ * We approximate the jimp logic by drawing arcs for each slice.
+ * The wedge label is drawn near its center.
+ */
+async function makePieChart(pieChartData, pieChartHeight) {
+  // default example usage if data is not provided
+  pieChartData = pieChartData || [
+    { color: '#f4a259', value: 45 },
+    { color: '#8cb369', value: 20 },
+    { color: '#f4e285', value: 30 },
+  ];
+  const pieChartWidth = pieChartHeight;
+  const pieCanvas = createCanvas(pieChartWidth, pieChartHeight);
+  const ctx = pieCanvas.getContext('2d');
 
-    const [wedgeSublabelWidth, wedgeSublabelHeight] = [
-      jimp.measureText(wedgeLabelSubFont, subLabel),
-      jimp.measureTextHeight(wedgeLabelSubFont, subLabel)
-    ];
-    subLabels.push({subLabel, wedgeCenterX, wedgeCenterY, wedgeSublabelWidth, wedgeSublabelHeight});
-  
+  const pieChartTotal = pieChartData.reduce((acc, slice) => acc + slice.value, 0);
+  // compute each slice’s percentage
+  pieChartData.forEach((slice) => {
+    slice.percentage = slice.value / pieChartTotal;
+  });
+
+  let startAngle = 0;
+  const radius = pieChartWidth / 2;
+  const centerX = pieChartWidth / 2;
+  const centerY = pieChartHeight / 2;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // We'll use TITLE_FONT for big wedge labels and SUBTITLE_FONT for sub-labels:
+  for (const slice of pieChartData) {
+    const endAngle = startAngle + slice.percentage * 2 * Math.PI;
+    // Draw the wedge
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+    ctx.closePath();
+    ctx.fillStyle = slice.color;
+    ctx.fill();
+
+    // Now place the label in the middle of the wedge
+    const midAngle = startAngle + (endAngle - startAngle) / 2;
+    const labelRadius = radius * 0.6;
+    const wedgeCenterX = centerX + Math.cos(midAngle) * labelRadius;
+    const wedgeCenterY = centerY + Math.sin(midAngle) * labelRadius;
+
+    const label = slice.label || String(slice.value);
+    const subLabel = slice.subLabel || slice.sublabel || '';
+
+    // Draw the main label
+    ctx.save();
+    ctx.font = TITLE_FONT;
+    const labelWidth = getTextWidth(ctx, label);
+    ctx.fillStyle = '#000';
+    // Because fillText is baseline-left, shift upward a bit
+    ctx.fillText(label, wedgeCenterX, wedgeCenterY - 10);
+
+    // Draw the sub-label under it
+    if (subLabel) {
+      ctx.font = SUBTITLE_FONT;
+      ctx.fillText(subLabel, wedgeCenterX, wedgeCenterY + 30);
+    }
+    ctx.restore();
 
     startAngle = endAngle;
   }
-  for (const l of labels) {
-    pieChart.print(wedgeLabelFont, 
-      l.wedgeCenterX - l.wedgeLabelWidth / 2, 
-      l.wedgeCenterY - l.wedgeLabelHeight / 4, 
-      l.label);
-  }
-  for (const l of subLabels) {
-    pieChart.print(wedgeLabelSubFont, 
-      l.wedgeCenterX - l.wedgeSublabelWidth / 2, 
-      l.wedgeCenterY + (l.wedgeSublabelHeight / 4) + 10,
-      l.subLabel);
-  }
-  
-  return pieChart;
+  return pieCanvas;
 }
 
-const drawRect = (image, x, y, w, h, color, label, font, pos) => {
-  if(!h || !w) return ;
-  font = font || fonts['chartLabelFont'];
-  label = label || '';
-  image.scan(x, y, w, h, (x, y, idx) =>  image.setPixelColor( jimp.cssColorToHex(color), x, y));
+/**
+ * Create a list of food items visually, sorted by calories.
+ */
+async function makeFoodList(food, width, height) {
+  const listCanvas = createCanvas(width, height);
+  const ctx = listCanvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
 
-  pos = pos || 'center-middle';
-  const [labelWidth, labelHeight] = [jimp.measureText(font, label), font?.info?.size || jimp.measureTextHeight(font, label)];
-  const labelX = /center/.test(pos) ? x + w / 2 - labelWidth / 2 : 
-                  /right/.test(pos) ? x + w - labelWidth : 
-                  /left/.test(pos) ? x : x;
-  const labelY = /top/.test(pos) ? y - labelHeight : 
-                 /middle/.test(pos) ? y + (h / 2) - (labelHeight / 2) : 
-                 /bottom/.test(pos) ? y + h : y;
+  // sort descending by calories
+  food = food.sort((b, a) => a.calories - b.calories);
 
-  image.print(font, labelX, labelY, label);
-}
+  // figure line spacing
+  const fontSize = 32;
+  ctx.font = `${fontSize}px sans-serif`;
 
-
-const makeFoodList = async (food, width, height) => {
-
-  food = food.sort((b,a) => a.calories - b.calories);
-  const font = await jimp.loadFont(black32);
-  const lineHeight = 36;
+  const lineHeight = fontSize + 4; // minimal padding
   let foodItemCount = food.length;
-  let lineSpacing = (height / foodItemCount) - lineHeight -1;
-  while (lineSpacing < 0) {
+  let lineSpacing = height / foodItemCount - lineHeight - 1;
+  // reduce item count until it fits
+  while (lineSpacing < 0 && foodItemCount > 0) {
     foodItemCount--;
-    lineSpacing =  (height / foodItemCount) - lineHeight -1;
+    lineSpacing = height / foodItemCount - lineHeight - 1;
   }
   food = food.slice(0, foodItemCount);
 
-  const maxCalories = food.reduce((acc, food_item) => Math.max(acc, food_item.calories), 0);
-  const fontSm = await jimp.loadFont(black16);
-  const calColumnWidth = jimp.measureText(font, `${maxCalories}`) + 10;
-  const foodListCanvas = new jimp(width, height);
+  // measure text width for a column or two
+  const maxCalories = food.reduce((acc, item) => Math.max(acc, item.calories), 0);
+  const calColumnStr = String(maxCalories);
+  const calColumnWidth = ctx.measureText(calColumnStr).width + 30; // padding
+
   let y = 0;
-  for(const food_item of food) {
-    const {item, amount, unit,icon} = food_item;
-    const itemWidth = jimp.measureText(font, item);
-    const itemHeight = jimp.measureTextHeight(font, item);
-    foodListCanvas.print(fontSm, calColumnWidth + itemWidth + 50, y + 12  , `${amount}${unit}`);
+  for (const foodItem of food) {
+    const { item, amount, unit } = foodItem;
+    const rowY = y;
+    // print amount
+    ctx.fillStyle = '#000';
+    ctx.font = '16px sans-serif';
+    const amountStr = `${amount}${unit}`;
+    ctx.fillText(amountStr, calColumnWidth + 200, rowY + fontSize / 1.5);
+
     y += lineHeight + lineSpacing;
   }
-  foodListCanvas.color([{ apply: 'xor', params: ['#CCC'] }]);
-  y = 0; // Reset y to start from the beginning
-  for(const food_item of food) {
-    const {item, calories, icon} = food_item;
-    const basePath = path.resolve(process.cwd(), './api/data/food_icons/');
-    const allIcons = fs.readdirSync(basePath).filter(file => file.endsWith('.png')).map(file => file.replace('.png', ''));
-    const matches = stringSimilarity.findBestMatch(icon, allIcons);
-    const iconImgPath = `${basePath}/${matches.bestMatch.target}.png`
-    const iconImg = await jimp.read(iconImgPath);
-    const iconImgWithHeight = iconImg.resize(32, 32);
 
-    const calWidth = jimp.measureText(font, `${calories}`);
-    const calX = calColumnWidth - calWidth - 10;
-    foodListCanvas.print(font, calX, y, `${calories} `);
+  // example fill effect
+  ctx.save();
+  ctx.globalCompositeOperation = 'xor';
+  ctx.fillStyle = '#CCC';
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
 
-    foodListCanvas.composite(iconImgWithHeight, calColumnWidth, y);
+  // reset y to actually draw details
+  y = 0;
+  for (const foodItem of food) {
+    const rowY = y;
+    const { item, calories, icon, carbs, protein, fat } = foodItem;
 
-
-    foodListCanvas.print(font, calColumnWidth + 40, y, item);
-
-    //print macros on right side
-    const rectWidth = 36;
-    const smallFont = fonts['chartLabelFont'];
-    const rectHeight = 37;
-    const colors = {carbs: '#a3b18a', protein: '#fe938c', fat: '#f6bd60'};
-    const rightSideX = width - rectWidth;
-    //loop through macros
-    const macroKeys = Object.keys(colors);
-    for(const macro of macroKeys) {
-      const index = macroKeys.indexOf(macro);
-      //draw a rect for each macro aligned to the right, stacked horizontally
-      const color = colors[macro];
-      const macroValue = food_item[macro];
-      const macroX = rightSideX - 50 - (rectWidth * (index));
-      if(!Math.round(macroValue)) continue;
-      drawRect(foodListCanvas, macroX, y, rectWidth, rectHeight, color, `${Math.round(macroValue)}g`, smallFont, 'center-middle');
+    // Attempt to load the best matching icon from local images
+    let loadedIcon;
+    try {
+      const basePath = path.resolve(process.cwd(), './api/data/food_icons/');
+      const allIcons = fs
+        .readdirSync(basePath)
+        .filter((file) => file.endsWith('.png'))
+        .map((file) => file.replace('.png', ''));
+      const matches = stringSimilarity.findBestMatch(icon, allIcons);
+      const iconImgPath = path.join(basePath, `${matches.bestMatch.target}.png`);
+      loadedIcon = await loadImage(iconImgPath);
+    } catch (e) {
+      // fallback if icon not found
+      loadedIcon = null;
     }
 
+    // print calories in left column
+    ctx.font = '32px sans-serif';
+    const calStr = String(calories);
+    const calStrWidth = getTextWidth(ctx, calStr);
+    const calX = calColumnWidth - calStrWidth - 10;
+    ctx.fillStyle = '#000';
+    ctx.fillText(calStr, calX, rowY + fontSize);
+
+    // place icon next to the calories
+    if (loadedIcon) {
+      ctx.drawImage(loadedIcon, calColumnWidth, rowY, 32, 32);
+    }
+
+    // print item name
+    ctx.fillText(item, calColumnWidth + 40, rowY + fontSize);
+
+    // macros on right side
+    // rect area ~ 36x37 each
+    const rectWidth = 36;
+    const rectHeight = 37;
+    const colors = { carbs: '#a3b18a', protein: '#fe938c', fat: '#f6bd60' };
+    const macroKeys = Object.keys(colors);
+    const rightSideX = width - rectWidth;
+
+    macroKeys.forEach((macro, index) => {
+      const macroValue = foodItem[macro];
+      if (!Math.round(macroValue)) return;
+      const macroX = rightSideX - 50 - rectWidth * index;
+      drawRect(
+        ctx,
+        macroX,
+        rowY,
+        rectWidth,
+        rectHeight,
+        colors[macro],
+        `${Math.round(macroValue)}g`,
+        '16px sans-serif',
+        'center-middle'
+      );
+    });
+
     y += lineHeight + lineSpacing;
   }
 
-  // Set color back to black
-  return foodListCanvas;  
+  return listCanvas;
 }
 
+/**
+ * Generate either a placeholder or actual report for the user
+ */
+const placeholderImage = async (width, height) => {
+  const placeholderCanvas = createCanvas(width, height);
+  const ctx = placeholderCanvas.getContext('2d');
 
+  // Set background color
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(0, 0, width, height);
+
+  const now = moment().format('YYYY-MM-DD HH:mm:ss');
+
+  ctx.font = '48px "Roboto Condensed"';
+  ctx.fillStyle = '#333';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(now, width / 2, height / 2);
+
+  // Add border
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 5;
+  ctx.strokeRect(0, 0, width, height);
+
+  return placeholderCanvas.toBuffer();
+};
+
+/**
+ * The main function that compiles the day’s nutritional data
+ * into one image: a pie chart, a list of foods, a bar chart, etc.
+ */
 export const generateImage = async (chat_id) => {
-
   const timezone = 'America/Los_Angeles';
-  chat_id = chat_id || `b6898194425_u575596036`;
+  if (!chat_id) {
+    console.error('No chat_id provided');
+    return null;
+  }
   await handlePendingNutrilogs(chat_id);
 
-  //get data from supabase
-  const data = await loadRecentNutriList(chat_id);
-  if(!data) return console.error('No data found');
+  // get data from supabase
+  const data = loadRecentNutriList(chat_id) || [];
+  if (!data || !data.length) {
+    console.error('No data found');
+    return null;
+  }
 
   let daysAgo = 0;
   let todaysFood;
   while (true) {
     const dateToCheck = moment().tz(timezone).subtract(daysAgo, 'days').format('YYYY-MM-DD');
-    todaysFood = data.filter(item => item.date === dateToCheck);
-    if (todaysFood.length)  break;
+    todaysFood = data.filter((item) => item.date === dateToCheck);
+    if (todaysFood.length) break;
     daysAgo++;
+    if (daysAgo > 365) {
+      // safety valve
+      console.error('Unable to find data within 1 year.');
+      break;
+    }
   }
 
-  const [width,height] = [1080,1400];
-  const image = await jimp.read(width, height, "white");
+  const width = 1080;
+  const height = 1400;
+  const mainCanvas = createCanvas(width, height);
+  const ctx = mainCanvas.getContext('2d');
 
+  // White background
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
 
-  //title
+  // Title
   const totalCals = Math.round(todaysFood.reduce((acc, item) => acc + item.calories, 0));
-  const macroGrams = todaysFood.reduce((acc, item) => {
-    acc.protein += item.protein;
-    acc.carbs += item.carbs;
-    acc.fat += item.fat;
-    return acc;
-  }, {protein: 0, carbs: 0, fat: 0});
+  const macroGrams = todaysFood.reduce(
+    (acc, item) => {
+      acc.protein += item.protein;
+      acc.carbs += item.carbs;
+      acc.fat += item.fat;
+      return acc;
+    },
+    { protein: 0, carbs: 0, fat: 0 }
+  );
 
   const todaysFoodDateFormatted = moment(todaysFood[0].date).format('ddd, D MMM YYYY');
-
   const title = `${todaysFoodDateFormatted} | Calories: ${totalCals}`;
-  const titleFont = await jimp.loadFont(black64);
-  const listFont = await jimp.loadFont(black32);
-  const chartLabelFont = await jimp.loadFont(black16);
-  fonts['chartLabelFont'] = chartLabelFont;
-  const titleWidth = jimp.measureText(titleFont, title);
-  image.print(titleFont, width/2 - titleWidth/2, 10, title);
 
+  ctx.font = TITLE_FONT;
+  ctx.fillStyle = '#000';
+  const titleWidth = getTextWidth(ctx, title);
+  ctx.fillText(title, width / 2 - titleWidth / 2, 70);
 
+  // Make the food list
   const foodListWidth = width * 0.6;
   const leftSideWidth = width - foodListWidth;
-  const foodList = await makeFoodList(todaysFood, foodListWidth, (height/2) - 100);
-  image.composite(foodList, width - foodListWidth,(64*2));
+  const foodListCanvas = await makeFoodList(todaysFood, foodListWidth, height / 2 - 100);
 
+  ctx.drawImage(foodListCanvas, leftSideWidth, 130);
+
+  // Make the pie chart
   const pieChartWidth = leftSideWidth * 0.8;
-  const pieChart = await makePieChart([
-    {color: '#fe938c', value: Math.round(macroGrams.protein*4), sublabel: 'Protein', label: `${Math.round(macroGrams.protein)}g`},
-    {color: '#a3b18a', value: Math.round(macroGrams.carbs*4), sublabel: 'Carbs', label: `${Math.round(macroGrams.carbs)}g`},
-    {color: '#f6bd60', value: Math.round(macroGrams.fat*9), sublabel: 'Fat', label: `${Math.round(macroGrams.fat)}g`}].sort((b,a) => b.value - a.value),
-    pieChartWidth);
+  const sortedPieData = [
+    {
+      color: '#fe938c',
+      value: Math.round(macroGrams.protein * 4),
+      subLabel: 'Protein',
+      label: `${Math.round(macroGrams.protein)}g`,
+    },
+    {
+      color: '#a3b18a',
+      value: Math.round(macroGrams.carbs * 4),
+      subLabel: 'Carbs',
+      label: `${Math.round(macroGrams.carbs)}g`,
+    },
+    {
+      color: '#f6bd60',
+      value: Math.round(macroGrams.fat * 9),
+      subLabel: 'Fat',
+      label: `${Math.round(macroGrams.fat)}g`,
+    },
+  ].sort((a, b) => a.value - b.value);
 
-  const pieChartMargin = (leftSideWidth - pieChartWidth) / 2;
-  const [chartX, chartY] = [pieChartMargin,(64*2)];
-  image.composite(pieChart, chartX, chartY);
+  const pieCanvas = await makePieChart(sortedPieData, pieChartWidth);
+  const chartX = (leftSideWidth - pieChartWidth) / 2;
+  ctx.drawImage(pieCanvas, chartX, 130);
 
-
-    //TODO: Add more day stats with food icons
-    // - sodium
-    const midPoint = chartX + pieChartWidth / 2;
-    const stats = [
-    {label: 'Sodium',unit: 'mg', icon: 'salt',  value: Math.round(todaysFood.reduce((acc, item) => acc + item.sodium, 0))},
-    {label: 'Fiber', unit: 'g', icon: 'kale', value: Math.round(todaysFood.reduce((acc, item) => acc + item.fiber, 0))},
-    {label: 'Sugar',unit: 'g', icon: 'white_sugar', value: Math.round(todaysFood.reduce((acc, item) => acc + item.sugar, 0))},
-    {label: 'Cholesterol',unit: 'mg', icon: 'butter', value: Math.round(todaysFood.reduce((acc, item) => acc + item.cholesterol, 0))},
+  // Additional stats below the pie
+  const midPoint = chartX + pieChartWidth / 2;
+  const stats = [
+    {
+      label: 'Sodium',
+      unit: 'mg',
+      icon: 'salt',
+      value: Math.round(todaysFood.reduce((acc, item) => acc + item.sodium, 0)),
+    },
+    {
+      label: 'Fiber',
+      unit: 'g',
+      icon: 'kale',
+      value: Math.round(todaysFood.reduce((acc, item) => acc + item.fiber, 0)),
+    },
+    {
+      label: 'Sugar',
+      unit: 'g',
+      icon: 'white_sugar',
+      value: Math.round(todaysFood.reduce((acc, item) => acc + item.sugar, 0)),
+    },
+    {
+      label: 'Cholesterol',
+      unit: 'mg',
+      icon: 'butter',
+      value: Math.round(todaysFood.reduce((acc, item) => acc + item.cholesterol, 0)),
+    },
   ];
 
+  ctx.font = SUBTITLE_FONT;
   for (let i = 0; i < stats.length; i++) {
     const stat = stats[i];
-    const iconX = midPoint - 16;
-    const iconY = chartY + pieChartWidth + 50 + (i * 50);
+    const iconY = 130 + pieChartWidth + 50 + i * 50;
 
-    // print the amount and unit to the right of the icon
     const amount = `${stat.value}${stat.unit}`;
-    const amountWidth = jimp.measureText(listFont, amount);
-    const amountX = midPoint + 16;
-    const amountY = iconY;
-    image.print(listFont, amountX + 10, amountY, amount);
+    const textW = getTextWidth(ctx, amount);
+    const labelW = getTextWidth(ctx, stat.label);
 
-    // print the label to the left of the icon, aligned right
-    const labelWidth = jimp.measureText(listFont, stat.label);
-    const labelX = midPoint - 16 - labelWidth;
-    const labelY = iconY;
-    image.print(listFont, labelX -10, labelY, stat.label);
-    //32x32 box
-    //image.scan(iconX, iconY, 32, 32, (x, y, idx) =>  image.setPixelColor( jimp.cssColorToHex('#f00'), x, y));
-    //now place the icon in the box
-    const iconImgPath = `./api/data/food_icons/${stat.icon}.png`;
-    const iconImg = await jimp.read(iconImgPath);
-    const resizedIconImg = iconImg.resize(32, 32);
-    image.composite(resizedIconImg, iconX, iconY);
+    // label on the left
+    const labelX = midPoint - 16 - labelW - 10;
+    ctx.fillStyle = '#000';
+    ctx.fillText(stat.label, labelX, iconY + 24);
+
+    // amount on the right
+    const amountX = midPoint + 16 + 10;
+    ctx.fillText(amount, amountX, iconY + 24);
+
+    // draw icon in the center
+    const iconX = midPoint - 16;
+
+    try {
+      const iconPath = path.join(process.cwd(), './api/data/food_icons/', `${stat.icon}.png`);
+      const loadedIcon = await loadImage(iconPath);
+      ctx.drawImage(loadedIcon, iconX, iconY, 32, 32);
+    } catch (err) {
+      // If no icon found, ignore
+    }
   }
-    
 
-    //TODO: Add a daily meter
-    // - calories with macro breakdown
-    // - excercise
+  // Bar chart area
+  const barChartWidth = width * 0.9;
+  const barChartHeight = height / 3 - 150;
+  const barChartX = (width - barChartWidth) / 2;
+  const barChartY = height / 2 + 50;
+  drawRect(ctx, barChartX, barChartY, barChartWidth, barChartHeight, '#FAF3ED');
 
-    //loop through the last 10 days
-    const barChartWidth = width * 0.9;
-    const barChartHeight = (height / 3) - 150;
-    const barChartX = (width - barChartWidth) / 2;
-    const barChartY = height /2  + 50;
-    const barCount = 13;
-    const barAreaWidth = barChartWidth / (barCount - 1);
-    const barWidth = barAreaWidth * 0.8;
-    const barMaxVal = 2200;
-    const bmr = 2000;
-    const defGoal = 500;
-    const calGoal = bmr - defGoal;
+  // lines for BMR and Goal
+  const barMaxVal = 2200;
+  const bmr = 2000;
+  const defGoal = 500;
+  const calGoal = bmr - defGoal;
+  const bmrY = barChartY + barChartHeight - (bmr / barMaxVal) * barChartHeight;
+  drawRect(ctx, barChartX, bmrY, barChartWidth, 2, '#AAA', `BMR: ${bmr}`, DEFAULT_FONT, 'left-bottom');
 
-    //draw the bar chart area rect in cream
-    drawRect(image, barChartX, barChartY, barChartWidth, barChartHeight, '#FAF3ED');
+  const goalY = barChartY + barChartHeight - (calGoal / barMaxVal) * barChartHeight;
+  drawRect(ctx, barChartX, goalY, barChartWidth, 2, '#AAA', `Goal: ${calGoal}`, DEFAULT_FONT, 'left-bottom');
 
-    drawRect(image, barChartX, barChartY + barChartHeight - (bmr / barMaxVal * barChartHeight), barChartWidth, 2, '#AAA', `BMR: ${bmr}`,null,'left-bottom');
-    drawRect(image, barChartX, barChartY + barChartHeight - (calGoal / barMaxVal * barChartHeight), barChartWidth, 2, '#AAA', `Goal: ${calGoal}`,null,'left-bottom');
-  
+  // Draw bars for past days
+  let counter = { days: 0, def: 0 };
+  const barCount = 13;
+  const barAreaWidth = barChartWidth / (barCount - 1);
+  const barWidth = barAreaWidth * 0.8;
 
-const counter = {days:0,def:0};    
-for(let i = barCount - 1; i >= 1; i--) {
-  const dateToCheck = moment().tz(timezone).subtract(i, 'days').format('YYYY-MM-DD');
-  const food = data.filter(item => item.date === dateToCheck);
-  const todaysData = food.reduce((today, item) => {
-    today.date = dateToCheck; 
-    today.calories = today.calories || 0;
-    today.protein = today.protein || 0;
-    today.carbs = today.carbs || 0;
-    today.fat = today.fat || 0;
-    today.calories += item.calories;
-    today.protein += item.protein;
-    today.carbs += item.carbs;
-    today.fat += item.fat;
-    return today;
-  },{});
+  for (let i = barCount - 1; i >= 1; i--) {
+    const dateToCheck = moment().tz(timezone).subtract(i, 'days').format('YYYY-MM-DD');
+    const dayFood = data.filter((item) => item.date === dateToCheck);
+    const todaysData = dayFood.reduce(
+      (today, item) => {
+        today.date = dateToCheck;
+        today.calories += item.calories;
+        today.protein += item.protein;
+        today.carbs += item.carbs;
+        today.fat += item.fat;
+        return today;
+      },
+      { date: '', calories: 0, protein: 0, carbs: 0, fat: 0 }
+    );
 
-  const steps = 3000;
-  const calsPerStep = 0.04;
-  const stepCals = steps * calsPerStep;
-  //rand between 0 and 250
-  const excerciseCals = Math.floor(Math.random() * 10);
-  todaysData['burned'] = bmr + stepCals + excerciseCals;
-  todaysData['deficit'] = todaysData.burned - todaysData.calories;
-  const totalWeight = todaysData.protein * 4 + todaysData.carbs * 4 + todaysData.fat * 9;
-  todaysData.protein_percent = (todaysData.protein * 4) / totalWeight;
-  todaysData.carbs_percent = (todaysData.carbs * 4) / totalWeight;
-  todaysData.fat_percent = (todaysData.fat * 9) / totalWeight;
+    // just a mock for burned, steps
+    const steps = 3000;
+    const calsPerStep = 0.04;
+    const stepCals = steps * calsPerStep;
+    const exerciseCals = Math.floor(Math.random() * 10);
+    todaysData.burned = bmr + stepCals + exerciseCals;
+    todaysData.deficit = todaysData.burned - todaysData.calories;
 
-  const {calories, protein_percent, carbs_percent, fat_percent} = todaysData;
-  const barX = barChartX + ((barCount - 1 - i) * barAreaWidth) + ((barAreaWidth - barWidth) / 2);
-  const barY = barChartY;
-  const barW = barWidth;
-  const barH = Math.min((calories / barMaxVal) * barChartHeight, barChartHeight);
+    counter.days++;
+    counter.def += todaysData.deficit;
 
-  //draw bar based on calories, JIMP
-  // Replace the line with image.drawRect with the following code:
+    const totalWeight = todaysData.protein * 4 + todaysData.carbs * 4 + todaysData.fat * 9;
+    const protein_percent = totalWeight ? (todaysData.protein * 4) / totalWeight : 0;
+    const carbs_percent = totalWeight ? (todaysData.carbs * 4) / totalWeight : 0;
+    const fat_percent = totalWeight ? (todaysData.fat * 9) / totalWeight : 0;
 
-  // Calculate the start and end points of the rectangle
-  const proteinHeight = barH * (protein_percent );
-  const carbsHeight = barH * (carbs_percent );
-  const fatHeight = barH * (fat_percent );
+    const barX = barChartX + (barCount - 1 - i) * barAreaWidth + (barAreaWidth - barWidth) / 2;
+    const barH = Math.min((todaysData.calories / barMaxVal) * barChartHeight, barChartHeight);
+    const currentBarBottom = barChartY + barChartHeight;
 
+    // day of the week
+    const dayOfWeek = moment().tz(timezone).subtract(i, 'days').format('ddd');
+    ctx.font = SUBTITLE_FONT;
+    const dayOfWeekWidth = getTextWidth(ctx, dayOfWeek);
+    const dayOfWeekX = barX + barWidth / 2 - dayOfWeekWidth / 2;
+    const dayOfWeekY = currentBarBottom + 10;
+    ctx.fillStyle = '#000';
+    ctx.fillText(dayOfWeek, dayOfWeekX, dayOfWeekY + 20);
 
-  const dayOfWeek = moment().tz(timezone).subtract(i, 'days').format('ddd');
-  const dayOfWeekWidth = jimp.measureText(listFont, dayOfWeek);
-  const dayOfWeekX = barX + barWidth / 2 - dayOfWeekWidth / 2;
-  const dayOfWeekY = barChartY + barChartHeight + 10;
-  image.print(listFont, dayOfWeekX, dayOfWeekY, dayOfWeek);
+    // deficit box below day
+    const negative = todaysData.deficit <= 0;
+    const deficitVal = Math.abs(Math.round(todaysData.deficit));
+    const deficitStr = String(deficitVal);
+    const deficitW = getTextWidth(ctx, deficitStr);
+    const deficitX = barX + barWidth / 2 - deficitW / 2 - 5;
+    const deficitY = dayOfWeekY + 50;
 
-  //print deficit under the day of the week
-  const negative = todaysData.deficit > 0 ? false : true;
-  counter.days++;
-  counter.def += todaysData.deficit;
-  const deficit = Math.abs(Math.round(todaysData.deficit));
-  const deficitWidth = jimp.measureText(listFont, `${deficit}`);
-  const deficitX = barX + barWidth / 2 - deficitWidth / 2;
-  const deficitY = dayOfWeekY + 40;
-  const color = negative ? '#FFD5D4' : '#BDE7BD';
-  //draw colored box behind text
-  drawRect(image, deficitX - 5, deficitY, deficitWidth + 10, 40, color, `${deficit}`, listFont, 'center-middle');
+    // behind text box
+    ctx.save();
+    ctx.fillStyle = negative ? '#FFD5D4' : '#BDE7BD';
+    ctx.fillRect(deficitX, deficitY, deficitW + 10, 40);
+    ctx.fillStyle = '#000';
+    ctx.font = SUBTITLE_FONT;
+    ctx.fillText(deficitStr, deficitX + 5, deficitY + 28);
+    ctx.restore();
 
+    // label at top of bar showing total cals
+    ctx.save();
+    ctx.font = DEFAULT_FONT;
+    const calsLabel = String(Math.round(todaysData.calories || 0));
+    const calsLabelWidth = getTextWidth(ctx, calsLabel);
+    const calsLabelHeight = getTextHeight(ctx, calsLabel);
+    ctx.fillStyle = '#000';
+    const calsLabelX = barX + barWidth / 2 - calsLabelWidth / 2;
+    const calsLabelY = currentBarBottom - barH - calsLabelHeight - 2;
+    ctx.fillText(calsLabel, calsLabelX, calsLabelY);
+    ctx.restore();
 
+    // draw bar
+    // base
+    drawRect(ctx, barX, currentBarBottom - barH, barWidth, barH, '#CCC');
 
-  let currentY = barY + barChartHeight;
-  //print total calls on top of the bar, centered
-  const totalCaloriesWidth = jimp.measureText(chartLabelFont, `${calories}`);
-  const fontHeight = chartLabelFont.info.size;
-  const totalCaloriesX = barX - (totalCaloriesWidth / 2) + (barW / 2);
-  const totalCaloriesY = currentY - barH - fontHeight - 2;
-  image.print(chartLabelFont, totalCaloriesX, totalCaloriesY, `${Math.round(calories || 0)}`);
-  //draw black recatable over label
-  //drawRect(image, totalCaloriesX, totalCaloriesY , totalCaloriesWidth, fontHeight , '#000');
+    // stacked macros
+    let currentStackTop = currentBarBottom;
+    const macroMapping = [
+      { percent: carbs_percent, color: '#a3b18a', label: `${Math.round(todaysData.carbs)}g` },
+      { percent: protein_percent, color: '#fe938c', label: `${Math.round(todaysData.protein)}g` },
+      { percent: fat_percent, color: '#f6bd60', label: `${Math.round(todaysData.fat)}g` },
+    ];
 
-  //draw a grey rect for the whole bar, H is totalHeight, barY should factor in the height of the bar to it touches the bottom
-  drawRect(image, barX, barY + barChartHeight - barH, barW, barH, '#CCC');
+    for (const macro of macroMapping) {
+      const macroH = barH * macro.percent;
+      if (macroH <= 0) continue;
+      drawRect(
+        ctx,
+        barX,
+        currentStackTop - macroH,
+        barWidth,
+        macroH,
+        macro.color,
+        macro.label,
+        DEFAULT_FONT,
+        null
+      );
+      currentStackTop -= macroH;
+    }
+  }
 
-
-  drawRect(image, barX, currentY - carbsHeight, barW, carbsHeight, '#a3b18a', `${Math.round(todaysData.carbs)}g`);
-  currentY -= carbsHeight;
-  drawRect(image, barX, currentY - proteinHeight, barW, proteinHeight, '#fe938c', `${Math.round(todaysData.protein)}g`);
-  currentY -= proteinHeight;
-  drawRect(image, barX, currentY - fatHeight, barW, fatHeight, '#f6bd60', `${Math.round(todaysData.fat)}g`);}
-
-
-  const lbsPerWeek = Math.round((((counter.def / counter.days) * 7 ) / 3500) * 10) / 10;
+  const lbsPerWeek = Math.round(((counter.def / counter.days) * 7) / 3500 * 10) / 10;
   const plusMinus = lbsPerWeek < 0 ? '+' : '-';
+  ctx.font = SUBTITLE_FONT;
+  const finalStr = `${plusMinus}${Math.abs(lbsPerWeek)} lbs/week`;
+  const finalStrW = getTextWidth(ctx, finalStr);
+  ctx.fillStyle = '#000';
+  ctx.fillText(finalStr, width / 2 - finalStrW / 2, height - 50);
 
-  //print lbs per week, bottom center
-  const lbsPerWeekWidth = jimp.measureText(listFont, `${plusMinus}${lbsPerWeek} lbs/week`);
-  const lbsPerWeekX = width / 2 - lbsPerWeekWidth / 2;
-  const lbsPerWeekY = height - 100;
-  image.print(listFont, lbsPerWeekX, lbsPerWeekY, `${plusMinus}${lbsPerWeek} lbs/week`);
+  // If you want to scale the final image by 1.2:
+  const scaledWidth = Math.round(width * 1.2);
+  const scaledHeight = Math.round(height * 1.2);
+  const scaledCanvas = createCanvas(scaledWidth, scaledHeight);
+  const scaledCtx = scaledCanvas.getContext('2d');
+  scaledCtx.drawImage(mainCanvas, 0, 0, scaledWidth, scaledHeight);
 
+  return scaledCanvas;
+};
 
-  image.scale(1.2);
-    
-  return image;
-}
+/**
+ * Exported default route handler (Next.js, for example)
+ */
+export const foodReport = async (req, res) => {
+  const chat_id = req.query.chat_id || 'b6898194425_u575596036';
 
+  const { uuid } = req.query;
 
-export default async (req, res) => {
-  const chat_id = req.query.chat_id || `b6898194425_u575596036`;
-  const image = await generateImage(chat_id);
-  const path = `/tmp/report_${chat_id}.png`;
-  image.write(path, () => {
-    res.setHeader('Content-Type', 'image/png');
-    res.send(fs.readFileSync(path));
-  });
+  // If you want the real report image, call generateImage:
+  // const mainCanvas = await generateImage(chat_id);
+  // If data is missing or an error occurs, fall back to a placeholder:
+  // if (!mainCanvas) {
+  //   const placeholder = await placeholderImage(1080, 1400);
+  //   res.set('Content-Type', 'image/png');
+  //   res.set('Content-Disposition', `inline; filename="${uuid || 'food_report'}.png"`);
+  //   return res.send(placeholder);
+  // }
+  // Otherwise, mainCanvas.toBuffer() is your PNG image.
 
-}
-
+  // For demonstration, just send a placeholder always:
+  const placeholder = await placeholderImage(1080, 1400);
+  res.set('Content-Type', 'image/png');
+  res.set('Content-Disposition', `inline; filename="${uuid || 'food_report'}.png"`);
+  return res.send(placeholder);
+};

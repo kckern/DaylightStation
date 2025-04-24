@@ -137,7 +137,7 @@ export const detectFoodFromImage = async (imgUrl, extras ,attempt) => {
     console.log('Analyzing image...');
 
     const data = {
-        model: 'gpt-4-vision-preview',
+        model: 'gpt-4o',
        // response_format:{ type: "json_object" },
         messages: [
             {
@@ -198,7 +198,7 @@ export const detectFoodFromTextDescription = async (text, attempt) => {
     console.log('Analyzing text...');
 
     const data = {
-        model: 'gpt-4-0125-preview',
+        model: 'gpt-4o',
         messages: [
             {
                 role: 'system',
@@ -266,6 +266,7 @@ export const detectFoodFromTextDescription = async (text, attempt) => {
 
 export const itemizeFood = async (foodList, img, attempt) => {
 
+    console.log('itemizeFood', {foodList,img});
     attempt = attempt || 1;
 
     const foodString = foodList.map(item => item.item).join(' • ');
@@ -338,7 +339,7 @@ export const itemizeFood = async (foodList, img, attempt) => {
     ];
 
     const data = {
-        model: img ? 'gpt-4-vision-preview' : 'gpt-4-0125-preview',
+        model: img ? 'gpt-4o' : 'gpt-4o',
         messages,
         max_tokens: 4096
     };

@@ -586,89 +586,205 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
   }, [transactions]);
 
   // 6) Chart options
-  const options = {
-    chart: { type: "column", marginLeft: 20 },
-    title: { text: "" },
-    credits: { enabled: false },
+  const chartOptions = {
+    chart: {
+      type: 'column',
+      marginLeft: 20
+    },
+    title: {
+      text: 'Spending'
+    },
+    credits: {
+      enabled: false
+    },
+  
     xAxis: {
-      type: "category",
+      type: 'category',
       labels: {
         rotation: -25,
-        y: 15, // Move labels 10px closer to the x-axis
+        y: 15,
         x: 5,
         style: {
-          fontSize: "14px",
-          fontFamily: "Roboto Condensed, sans-serif",
+          fontSize: '14px',
+          fontFamily: 'Roboto Condensed, sans-serif'
         }
       }
     },
     yAxis: {
-      title: { text: "" },
-      labels: { enabled: false }, // Disable y-axis labels
-      gridLineWidth: 0 // Disable y-axis grid lines
+      title: null,
+      labels: { enabled: false },
+      gridLineWidth: 0
     },
+  
+    tooltip: {
+      useHTML: true,
+      backgroundColor: '#fff',
+      borderColor: '#333',
+      borderWidth: 1,
+      style: { textAlign: 'center' },
+      followPointer: true,    // no pointer lines back to the bar/pie
+      shared: false,
+      formatter() {
+        const p = this.point;
+        const pct = (p.pctOfGrand || 0).toFixed(1) + '%';
+        const amt = formatCurrency(p.valueReal || 0);
+        return `
+          <div style="line-height:1.2">
+            <strong>${pct}</strong><br/>
+            ${p.name}<br/>
+            <em>${amt}</em>
+          </div>`;
+      }
+    },
+  
     plotOptions: {
+      // Make sure once you move off, the tooltip hides
+      series: {
+        stickyTracking: false,
+        // Turn off brighten on hover so hovered color = original color
+        states: {
+          hover: {
+            brightness: 0
+          }
+        }
+      },
+  
       column: {
+        cursor: 'pointer',
         dataLabels: {
           enabled: true,
-          format: "{point.valueFormatted}",
+          format: '{point.valueFormatted}',
           style: {
-            fontSize: "14px",
-            fontFamily: "Roboto Condensed, sans-serif"
+            fontSize: '14px',
+            fontFamily: 'Roboto Condensed, sans-serif'
           }
         },
         point: {
           events: {
-            click(e) {
-              if (this.name && this.name !== "Other" && this.name !== "Other2") {
+            mouseOver(e) {
+              // highlight matching pie slice
+              const chart = this.series.chart;
+              const pieSeries = chart.series.find(s => s.type === 'pie');
+              if (pieSeries?.data[this.index]) {
+                pieSeries.data[this.index].setState('hover');
+              }
+              // show this bar’s tooltip at the pointer
+              chart.tooltip.refresh(this, e);
+            },
+            mouseOut() {
+              // un‐highlight pie slice
+              const chart = this.series.chart;
+              const pieSeries = chart.series.find(s => s.type === 'pie');
+              if (pieSeries?.data[this.index]) {
+                pieSeries.data[this.index].setState();
+              }
+              // tooltip will hide automatically (stickyTracking: false)
+            },
+            click() {
+              if (this.name && !['Other','Other2'].includes(this.name)) {
                 setTransactionFilter(this.name);
+              }
+              if (this.drilldown) {
+                const dd = drillSeries.find(obj => obj.id === this.drilldown);
+                if (dd) {
+                  this.series.chart.addSeriesAsDrilldown(this, dd);
+                  this.series.chart.applyDrilldown();
+                }
+              }
+            }
+          }
+        }
+      },
+  
+      pie: {
+        center: ['85%','20%'],
+        size: '30%',
+        showInLegend: false,
+        dataLabels: { enabled: false },
+        cursor: 'pointer',
+        point: {
+          events: {
+            mouseOver(e) {
+              const chart = this.series.chart;
+              // highlight our slice
+              this.setState('hover');
+              // highlight the matching column
+              const colSeries = chart.series.find(s => s.type === 'column');
+              if (colSeries?.data[this.index]) {
+                colSeries.data[this.index].setState('hover');
+              }
+              // show tooltip for this slice at cursor
+              chart.tooltip.refresh(this, e);
+            },
+            mouseOut() {
+              const chart = this.series.chart;
+              // un‐highlight slice
+              this.setState();
+              // un‐highlight bar
+              const colSeries = chart.series.find(s => s.type === 'column');
+              if (colSeries?.data[this.index]) {
+                colSeries.data[this.index].setState();
+              }
+            },
+            click() {
+              if (this.name && !['Other','Other2'].includes(this.name)) {
+                setTransactionFilter(this.name);
+              }
+              if (this.drilldown) {
+                const dd = drillSeries.find(obj => obj.id === this.drilldown);
+                if (dd) {
+                  this.series.chart.addSeriesAsDrilldown(this, dd);
+                  this.series.chart.applyDrilldown();
+                }
               }
             }
           }
         }
       }
     },
-    tooltip: {
-      useHTML: true,
-      backgroundColor: "#fff",
-      borderColor: "#333",
-      borderWidth: 1,
-      style: { textAlign: "center" },
-      formatter() {
-        const pct = this.point.pctOfGrand.toFixed(1) + "%";
-        const amt = formatCurrency(this.point.valueReal || 0);
-        return `<div style="line-height:1.2">
-                  <strong>${pct}</strong><br/>
-                  ${this.point.name}<br/>
-                  <em>${amt}</em>
-                </div>`;
-      }
-    },
+  
+    // TWO series: columns (using real $ amounts) & pie (using percentages),
+    // aligned by index so slice #i corresponds to bar #i.
     series: [
       {
-        name: "Categories",
+        name: 'Categories',
+        type: 'column',
         colorByPoint: true,
-        data: topData.map((pt) => ({
-          name: pt.name,
-          y: pt.y,
-          pctOfGrand: pt.pctOfGrand,
-          valueReal: pt.valueReal,
+        data: topData.map(pt => ({
+          name:           pt.name,
+          y:              pt.valueReal,
+          pctOfGrand:     pt.pctOfGrand,
+          valueReal:      pt.valueReal,
           valueFormatted: formatCurrency(pt.valueReal),
-          drilldown: pt.drilldown,
-          color: pt.color
+          drilldown:      pt.drilldown,
+          color:          pt.color
+        }))
+      },
+      {
+        name: 'Categories',
+        type: 'pie',
+        colorByPoint: true,
+        data: topData.map(pt => ({
+          name:           pt.name,
+          y:              pt.pctOfGrand,
+          pctOfGrand:     pt.pctOfGrand,
+          valueReal:      pt.valueReal,
+          valueFormatted: formatCurrency(pt.valueReal),
+          drilldown:      pt.drilldown,
+          color:          pt.color
         }))
       }
     ],
+  
+    // standard drilldown config
     drilldown: {
-      series: drillSeries.map((series) => ({
-        ...series,
-        data: series.data.map((pt) => ({
-          ...pt,
-          color: pt.color
-        }))
+      series: drillSeries.map(s => ({
+        ...s,
+        data: s.data.map(d => ({ ...d, color: d.color }))
       }))
     }
   };
-
-  return <HighchartsReact highcharts={Highcharts} options={options} />;
+  
+  
+  return <HighchartsReact highcharts={Highcharts} options={chartOptions} />;
 }

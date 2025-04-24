@@ -266,7 +266,7 @@ export const updateMessageReplyMarkup = async (chat_id, {message_id, choices, in
 
     if(Array.isArray(choices) && !Array.isArray(choices[0])) choices = [choices];
 
-    const user_id = chat_id.match(/u(\d+)/)[1];
+    const user_id = chat_id.match(/u(\d+)/)?.[1];
     let reply_markup = Array.isArray(choices) ? {
         keyboard: choices.map(choice => [choice]),
         resize_keyboard: true,
