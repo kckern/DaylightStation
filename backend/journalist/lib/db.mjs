@@ -11,6 +11,7 @@ const MESSAGEQUEUE_STORE = 'journalist/messagequeue';
 const QUIZQUESTIONS_STORE = 'journalist/quizquestions';
 const QUIZANSWERS_STORE = 'journalist/quizanswers'; // not used explicitly here, but might fit your usage
 const NUTRILOGS_STORE = 'journalist/nutrilogs';
+const NUTRILIST_STORE = 'journalist/nutrilist'; // not used explicitly here, but might fit your usage
 const NUTRICURSORS_STORE= 'journalist/nutricursors';
 const ACTIVITIES_STORE = 'journalist/activities';
 const WEIGHTS_STORE = 'journalist/weights';
@@ -571,7 +572,7 @@ export const getNutrilListByDate = (chat_id, date) => {
     // This was originally referencing 'nutrilist' table, but in the new structure
     // you might keep them in the same nutrilogs store or a different file. 
     // Adjust as needed. For demonstration, assume it's the same store:
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
     const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.date === date);
     // Sort by calories descending -> But there's no field "calories" in the default. 
     // We can parse item.food_data if needed. Implementation may vary.
@@ -596,7 +597,7 @@ export const getNutrilListByDate = (chat_id, date) => {
  */
 export const getNutrilListByID = (chat_id, uuid) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
     const item = data[uuid];
     if (item && item.chat_id === chat_id) {
       return item;
@@ -786,7 +787,7 @@ export const saveNutrilist = (items) => {
   if (!Array.isArray(items)) items = [items];
 
   try {
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
     for (const item of items) {
       // The primary key is item.uuid
       if (!item.uuid) {
@@ -812,7 +813,7 @@ export const saveNutrilist = (items) => {
         log_uuid: item.log_uuid
       };
     }
-     saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
+     saveFile(NUTRILIST_STORE + "/" + chat_id, data);
     return true;
   } catch (error) {
     console.error('Error saving nutrilist:', error);
@@ -872,7 +873,7 @@ export const loadDailyNutrition = (chat_id) => {
 export const loadRecentNutriList = (chat_id, days_since = 14) => {
   try {
     const dateThreshold = moment().subtract(days_since, 'days').format('YYYY-MM-DD');
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
     // Filter
     const rows = Object.values(data).filter(item => {
       if (item.chat_id !== chat_id) return false;
@@ -957,7 +958,7 @@ export const getNutriCursor = (chat_id) => {
  */
 export const clearNutrilistByLogUUID = (uuid) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     let count = 0;
     for (const [k, v] of Object.entries(data)) {
       if (v.log_uuid === uuid) {
@@ -965,7 +966,7 @@ export const clearNutrilistByLogUUID = (uuid) => {
         count++;
       }
     }
-     saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
+     saveFile(NUTRILIST_STORE + "/" + chat_id, data);
     return { success: true, count };
   } catch (error) {
     console.error('Error clearing nutrilist by log uuid:', error);
@@ -1127,3 +1128,25 @@ export const loadWeight = (chat_id, days_since = 14) => {
 39. loadWeight
 
 ------------------------------------------------------------------ */
+
+/**
+ * Deletes a specific message by chatId and messageId.
+ * @param {string} chat_id
+ * @param {string|number} message_id
+ * @returns {object|null}
+ */
+export const deleteSpecificMessage = (chat_id, message_id) => {
+  try {
+    const data = loadFile(MESSAGES_STORE + "/" + chat_id);
+    const recordKey = `${chat_id}_${message_id}`;
+    if (data[recordKey]) {
+      delete data[recordKey];
+      saveFile(MESSAGES_STORE + "/" + chat_id, data);
+      return { success: true };
+    }
+    return { success: false };
+  } catch (error) {
+    console.error('Error deleting specific message:', error);
+    return null;
+  }
+};
