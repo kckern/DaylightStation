@@ -661,7 +661,7 @@ export const scanBarcode = async (req, res) => {
       'energy-kcal_serving',
       'carbohydrates_serving',
       'fat_serving',
-      'protein_serving',
+      'proteins_serving',
       'sodium_serving',
       'sugars_serving',
     ];
@@ -672,6 +672,18 @@ export const scanBarcode = async (req, res) => {
       result[normalizedKey] = response.data.product.nutriments[key];
       });
     }
+    //"selected_images": { "front": { "display": { "en": "https://images.openfoodfacts.org/images/products/001/380/014/4072/front_en.3.400.jpg" }, "small": { "en": "https://images.openfoodfacts.org/images/products/001/380/014/4072/front_en.3.200.jpg" }, "thumb": { "en": "https://images.openfoodfacts.org/images/products/001/380/014/4072/front_en.3.100.jpg" } } },
+
+    //loop through keys of selected_images to get the first image url
+    const img = Object.keys(result.selected_images).reduce((acc, key) => {
+      const imageUrl = result.selected_images[key].display.en;
+      if (imageUrl) {
+        acc.push(imageUrl);
+      }
+      return acc;
+    }, []);
+    delete result.selected_images;
+    result.image = img[0];
 
     return res.json(result);
   } catch (error) {
