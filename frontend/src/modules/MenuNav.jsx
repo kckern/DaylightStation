@@ -15,7 +15,7 @@ import AppContainer from './AppContainer';
 
 import './MenuNav.scss';
 
-const menuTime = 3000;
+const MENU_TIMEOUT = 3000;
 
 export default function MenuNav({ setMenu, menu, clear }) {
   const [menuItems, setMenuItems] = useState([]);
