@@ -9,6 +9,7 @@ import { FinanceChart } from './modules/Finance'
 import moment from 'moment'
 import Player from './modules/Player'
 import MenuNav from './modules/MenuNav'
+import { DaylightAPI } from './lib/api.mjs'
 
 
 function App() {
@@ -17,41 +18,61 @@ function App() {
   const [menu, setMenu] = useState(false)
   const keyboardHandler = () => {
 
-    const scripture = () => setQueue([{ scripture: `dc` }])
-    const plex = () => setQueue([{ plex:489490 }])
-    const reset = () => setQueue([])
-    const play = (info) => setQueue([info])
-    const queue = (list) => setQueue(list)
 
-
-    //todo get from config
-    const map = {
-      "1": scripture,
-      "2": plex,
-      "3": () => setMenu("Kids Shows"),
-      "4": reset,
-      "5": () => setMenu("Lessons"),
-      "6": () => setMenu("Plex"),
-      "7": () => play({media:"news/cnn"}),
-      "8": () => queue([{media:"news/world_az"}, {media:"news/cnn"}]),
-      "Escape": reset
+    const buttonFns = {
+      "menu": (params) => {
+        if(!!params) return setMenu(params)
+      },
+     "escape": () => clear(),
+      "playback": (params) => {
+        switch (params) {
+          case "prev":
+            console.log('Previous')
+            break
+          case "pause":
+            console.log('Pause')
+            break
+          case "play":
+            console.log('Play')
+            break
+          default:
+            console.log(`Unknown playback option: ${params}`)
+        }
+      },
+      "volume": () => {
+        console.log('Volume')
+      },
+      "sleep": () => {
+        console.log('Sleep')
+      }
     }
 
-    const handleKeyDown = (event) => {
+    const handleKeyDown = (event, map) => {
       Object.keys(map).forEach((key) => {
-        if (event.key === key) (map[key] || (() => {}))()
+        if (event.key === key) {
+          const action = map[key]
+          if (action.function && buttonFns[action.function]) {
+            buttonFns[action.function](action.params)
+          }
+        }
       })
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => { window.removeEventListener('keydown', handleKeyDown) }
+    DaylightAPI(`/data/keyboard/officekeypad`).then((response) => {
+      const map = response
+      const keyDownListener = (event) => handleKeyDown(event, map)
+      window.addEventListener('keydown', keyDownListener)
+      return () => { window.removeEventListener('keydown', keyDownListener) }
+    }).catch((error) => {
+      console.error("Failed to fetch keyboard configuration:", error)
+    })
   }
   
 
   //keydown listener to add scripture to queue
   useEffect(keyboardHandler, [])
 
-  if(menu) return <div className='App' ><MenuNav setMenu={setMenu} menu={menu} setQueue={setQueue} /></div>
+  if(menu) return <div className='App' ><MenuNav setMenu={setMenu} menu={menu} setQueue={setQueue} clear={() => setMenu(false)} /></div>
   if(queue.length) return  <div className='App' ><Player queue={queue} clear={reset} /></div>
   return (
     <div className='App' >
