@@ -461,6 +461,22 @@ apiRouter.get('/list/*', async (req, res, next) => {
         next(err);
     }
 });
+apiRouter.get('/keyboard/:keyboard_id?', async (req, res) => {
+    const { keyboard_id } = req.params;
+    //get keyboard data from dataPath/keyboard
+    const keyboardData = loadFile(`keyboard`).filter(k => 
+        k.folder?.replace(/\s+/g, '').toLowerCase() === keyboard_id?.replace(/\s+/g, '').toLowerCase()
+    );
+    if(!keyboardData?.length) return res.status(404).json({error: 'Keyboard not found'});
+    const result = keyboardData.reduce((acc, k) => {
+        const { key, label, function: func, params, secondary } = k;
+        if (key && !!func) {
+            acc[key] = { label, function: func, params, secondary };
+        }
+        return acc;
+    }, {});
+    return res.json(result);
+});
 
 
 
