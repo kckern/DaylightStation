@@ -96,6 +96,11 @@ function App() {
           setCurrentContent(null)
           return
         }
+        if(!currentContent && !menuOpen) {
+          setMenuOpen(false)
+          window.location.reload()
+          return
+        }
         closeMenu()
       },
       playback: (params) => {
@@ -116,7 +121,11 @@ function App() {
 
     const handleKeyDown = (event) => {
       const action = keyMap[event.key]
+
+      //if escape key, involke escape function
+      if (event.key === 'Escape') return buttonFns.escape() 
       if (!action || !action.function) return
+
 
       // If something is playing and "menu" is pressed
       if (currentContent && action.function === 'menu') {
