@@ -10,8 +10,7 @@ import Health from './modules/Health'
 import { FinanceChart } from './modules/Finance'
 
 import Player from './modules/Player'
-import MenuNav from './modules/MenuNav'
-import TVMenu from './modules/TVMenu'
+import {KeypadMenu} from './modules/Menu'
 import AppContainer from './modules/AppContainer'
 
 import { DaylightAPI } from './lib/api.mjs'
@@ -45,7 +44,6 @@ function App() {
   const handleMenuSelection = useCallback(
     (selection) => {
       setMenuOpen(false)
-      console.log('Selected:', selection)
       if (!selection || !selection.label) {
         closeMenu()
         return
@@ -55,8 +53,8 @@ function App() {
         play:     <Player {...props} />,
         queue:    <Player {...props} />,
         playlist: <Player {...props} />,
-        list:     <MenuNav {...props} key={selection.media_key} />,
-        menu:     <MenuNav {...props} key={selection.media_key} />,
+        list:     <KeypadMenu {...props} key={selection.media_key} />,
+        menu:     <KeypadMenu {...props} key={selection.media_key} />,
         open:     <AppContainer {...props} />,
       }
       const selectionKeys = Object.keys(selection)
@@ -187,7 +185,7 @@ function App() {
   if (menu) {
     return (
       <div className='App'>
-        <MenuNav
+        <KeypadMenu
           key={menuKey}
           list={menu}
           onSelection={handleMenuSelection}
