@@ -61,7 +61,6 @@ const options = {
         name: 'Temperature',
         data: temps.map(({temp,precip}) => {
 
-            console.log({temp});
             const colors = {
                 "32": "#FFFFFF", //Freezing
                 "40": "#a9def9", //Coat weather

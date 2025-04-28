@@ -7,7 +7,8 @@ export default async (job_id) => {
     const todoItems = loadFile('todoist') || [];
     const clickupData = loadFile('clickup') || [];
 
-    const calendarItems = calendarEvents.map(event => {
+    const hasCalItems = !!calendarEvents.length
+    const calendarItems = !hasCalItems ? [] : calendarEvents.map(event => {
         const { id, start, end, summary, description, location,  organizer: {displayName: calendarName} } = event;
         const domain = location && location.match(/https?:\/\/([^\/]+)/) ? location.match(/https?:\/\/([^\/]+)/)[1] : null;
         const allday = !!(start.date && !start.dateTime);
@@ -19,7 +20,8 @@ export default async (job_id) => {
         }, []);
 
     
-    const todoistItems = todoItems.map(item => {
+    const hasTodoItems = !!todoItems.length
+    const todoistItems = !hasTodoItems ? [] : todoItems.map(item => {
         const { id, content, description, due, url } = item;
         let extractedContent = content;
         let extractedUrl = url;
@@ -35,7 +37,9 @@ export default async (job_id) => {
     const lists = process.env.clickup?.todo_lists || null
     const count = process.env.clickup?.todo_count || 3;
     const statuses = process.env.clickup?.statuses || null;
-    const clickupItems = clickupData.map(item => {
+    if(!lists || !statuses) return [];
+    const hasClickupItems = !!clickupData.length
+    const clickupItems = !hasClickupItems ? [] : clickupData.map(item => {
         const { taxonomy, name,status, id } = item;
         const uppercaseStatus = status && status.toUpperCase();
         if(!statuses.includes(status)) return false;
