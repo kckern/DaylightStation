@@ -45,6 +45,7 @@ function App() {
   const handleMenuSelection = useCallback(
     (selection) => {
       setMenuOpen(false)
+      console.log('Selected:', selection)
       if (!selection || !selection.label) {
         closeMenu()
         return
@@ -54,8 +55,8 @@ function App() {
         play:     <Player {...props} />,
         queue:    <Player {...props} />,
         playlist: <Player {...props} />,
-        list:     <MenuNav {...props} />,
-        menu:     <MenuNav {...props} />,
+        list:     <MenuNav {...props} key={selection.media_key} />,
+        menu:     <MenuNav {...props} key={selection.media_key} />,
         open:     <AppContainer {...props} />,
       }
       const selectionKeys = Object.keys(selection)
@@ -188,9 +189,9 @@ function App() {
       <div className='App'>
         <MenuNav
           key={menuKey}
-          menuId={menu}
+          list={menu}
           onSelection={handleMenuSelection}
-          onClose={closeMenu}
+          onClose={clear}
           onMenuState={setMenuOpen}
         />
       </div>
