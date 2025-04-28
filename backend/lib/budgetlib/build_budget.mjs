@@ -21,7 +21,7 @@ export const buildBudget = (config, transactions)=>
     
     const periodSurplus = Object.values(monthlyBudget).reduce((acc, {surplus}) => acc + surplus, 0);
     const shortTermBudget_pre =  Object.values(shortTermBuckets).reduce((acc, {budget}) => acc + (budget||0), 0);
-    const unBudgetedAmount = parseFloat((periodSurplus - shortTermBudget_pre).toFixed(2));
+    const unBudgetedAmount = Math.abs(parseFloat((periodSurplus - shortTermBudget_pre).toFixed(2)));
     const unclassifiedTransactionSum = unBudgetedTransactions.reduce((acc, {amount}) => acc + amount, 0);
     
   

@@ -42,29 +42,33 @@ export const getTransactions = async ({startDate, endDate,  accounts, tagName}) 
 	accounts = accounts || ["Fidelity", "CaptialOne","Payroll"];
 	const command = 'transactions';
 	let transactions = [];
-	for (let account of accounts) {
+    for (let account of accounts) {
         //console.log(`Getting transactions for account: ${account}`);
-		let page = 1;
-		let hasMore = true;
-		while (hasMore) {
+        let page = 1;
+        let hasMore = true;
+        while (hasMore) {
             //console.log(`Getting transactions for account: ${account} page: ${page}`);
-			const params ={ page, accountName: account, startDate, endDate };
-            if(tagName) params.tagName = tagName;
-			const url = `https://www.buxfer.com/api/${command}?token=${token}&${new URLSearchParams(params).toString()}`;
-			const {
-				data: {
-					response
-				}
-			} = await axios.get(url);
-			transactions = [...transactions, ...response.transactions];
-			if (response.transactions.length === 0) {
-				hasMore = false;
-			}
-			else {
-				page++;
-			}
-		}
-	}
+            const params = { page, accountName: account, startDate, endDate };
+            if (tagName) params.tagName = tagName;
+            const url = `https://www.buxfer.com/api/${command}?token=${token}&${new URLSearchParams(params).toString()}`;
+            try {
+                const {
+                    data: {
+                        response
+                    }
+                } = await axios.get(url);
+                transactions = [...transactions, ...response.transactions];
+                if (response.transactions.length === 0) {
+                    hasMore = false;
+                } else {
+                    page++;
+                }
+            } catch (error) {
+                console.log(`Error fetching transactions for account: ${account}, page: ${page}. Error: ${error.message}`);
+                hasMore = false; // Stop fetching for this account if there's an error
+            }
+        }
+    }
 	transactions.sort((a, b) => new Date(b.date) - new Date(a.date)); //save 
 
 	return transactions;

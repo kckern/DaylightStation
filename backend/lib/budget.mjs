@@ -201,7 +201,7 @@ export const refreshFinancialData = async (noDL) => {
         const startDates = budgets.map(b => b.timeframe.start);
         console.log({startDates});
         const accounts = [];
-        for (const budget of budgets)
+        for (const budget of [budgets[1]])
         {
           const { timeframe: { start, end }, accounts:b_accounts, closed } = budget;
           //if (closed) continue; 
