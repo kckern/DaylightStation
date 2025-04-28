@@ -33,6 +33,15 @@ function App() {
     setMenuOpen(false)
   }, [])
 
+  const clear = useCallback(() => {
+    setCurrentContent(null)
+    setQueue([])
+    setMenu(false)
+    setMenuOpen(false)
+    setMenuKey(0)
+  }
+  , [])
+
   const handleMenuSelection = useCallback(
     (selection) => {
       setMenuOpen(false)
@@ -40,14 +49,14 @@ function App() {
         closeMenu()
         return
       }
-      const props = { ...selection }
+      const props = { ...selection , queue, clear }
       const options = {
-        play:     <Player {...props} clear={() => setCurrentContent(null)} />,
-        queue:    <Player {...props} clear={() => setCurrentContent(null)} />,
-        playlist: <Player {...props} clear={() => setCurrentContent(null)} />,
-        list:     <TVMenu {...props} clear={() => setCurrentContent(null)} />,
-        menu:     <TVMenu {...props} clear={() => setCurrentContent(null)} />,
-        open:     <AppContainer {...props} clear={() => setCurrentContent(null)} />,
+        play:     <Player {...props} />,
+        queue:    <Player {...props} />,
+        playlist: <Player {...props} />,
+        list:     <MenuNav {...props} />,
+        menu:     <MenuNav {...props} />,
+        open:     <AppContainer {...props} />,
       }
       const selectionKeys = Object.keys(selection)
       const availableKeys = Object.keys(options)
