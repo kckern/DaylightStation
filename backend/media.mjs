@@ -350,12 +350,16 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
     }
 
     try {
-        const imageUrl = await (new Plex()).loadImgFromKey(plex_key);
-        if (!imageUrl) {
-            return res.status(404).json({ error: 'No image found', plex_key });
-        }
+        const [self, parent, grandparent] = await (new Plex()).loadImgFromKey(plex_key);
+        const [imgUrl] = await Promise.all(
+            [self, parent, grandparent].map(url =>
+            axios.get(url, { method: 'HEAD' })
+                .then(response => ({ url, status: response.status }))
+                .catch(error => ({ url, status: error.response ? error.response.status : null }))
+            )
+        ).then(results => results.filter(({ status }) => status >= 200 && status < 300).map(({ url }) => url));
 
-        const response = await axios.get(imageUrl, { responseType: 'stream' });
+        const response = await axios.get(imgUrl, { responseType: 'stream' });
 
         // Pipe the image to the response immediately
         res.setHeader('Content-Type', response.headers['content-type']);

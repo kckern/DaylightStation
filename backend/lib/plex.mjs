@@ -109,12 +109,12 @@ export class Plex {
     }) || [];
     return items.length ? items : [];
   }
-
   async loadImgFromKey(plex) {
     let response = await this.loadMeta(plex);
     const data = response?.[0] || response || null;
-    if(!data) return false;
-    return this.thumbUrl(data.thumb);
+    const {thumb, parentThumb, grandparentThumb} = data || {};
+    return [thumb, parentThumb, grandparentThumb].map(x => this.thumbUrl(x));
+    return false; 
   }
 
   async loadListFromAlbum(plex) {

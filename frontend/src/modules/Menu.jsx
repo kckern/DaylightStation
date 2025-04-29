@@ -40,6 +40,8 @@ export function KeypadMenu({
   const { menuItems, menuMeta, loaded } = useFetchMenuData(list);
   const containerRef = useRef(null);
 
+ 
+
   useEffect(() => {
     onMenuState?.(true);
     return () => onMenuState?.(false);
