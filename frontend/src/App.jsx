@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import './App.css'
 import moment from 'moment'
+import CryptoJS from 'crypto-js'
 
 import Clock from './modules/Time'
 import WeatherForecast from './modules/WeatherForecast'
@@ -48,13 +49,14 @@ function App() {
         closeMenu()
         return
       }
-      const props = { ...selection , queue, clear }
+      const props = { ...selection, queue, clear, onSelection: handleMenuSelection }
+      const uuid = CryptoJS.lib.WordArray.random(16).toString()
       const options = {
         play:     <Player {...props} />,
         queue:    <Player {...props} />,
         playlist: <Player {...props} />,
-        list:     <KeypadMenu {...props} key={selection.media_key} />,
-        menu:     <KeypadMenu {...props} key={selection.media_key} />,
+        list:     <KeypadMenu {...props} key={uuid} />,
+        menu:     <KeypadMenu {...props} key={uuid} />,
         open:     <AppContainer {...props} />,
       }
       const selectionKeys = Object.keys(selection)
@@ -65,7 +67,7 @@ function App() {
         closeMenu()
       }
     },
-    [closeMenu]
+    [closeMenu, queue, clear]
   )
 
   const openMenu = useCallback(
@@ -93,6 +95,9 @@ function App() {
 
   // Attach keydown listener when we have the map or when dependencies update
   useEffect(() => {
+
+    console.log({currentContent});
+    const subMenu = currentContent?.props?.list?.menu || currentContent?.props?.list?.plex;
     if (!keyMap) return
 
     const buttonFns = {
@@ -132,23 +137,22 @@ function App() {
 
       //if escape key, involke escape function
       if (event.key === 'Escape') return buttonFns.escape() 
-      if (!action || !action.function) return
+      if (!action || !action.function) return console.log('No action found for key:', event.key)
 
-
+      // If the menu is already open and it's the same ID, ignore
+      if (!!subMenu || (menu && menuOpen && action.function === 'menu' && action.params === menu)) {
+        return console.log('Menu already open, deffering to menu key handler')
+      }
       // If something is playing and "menu" is pressed
       if (currentContent && action.function === 'menu') {
         resetQueue()
         setCurrentContent(null)
         openMenu(action.params)
-        return
-      }
-
-      // If the menu is already open and it's the same ID, ignore
-      if (menu && menuOpen && action.function === 'menu' && action.params === menu) {
-        return
+        return console.log('Menu opened from playback')
       }
 
       const fn = buttonFns[action.function]
+      console.log('Key pressed:', event.key, 'Action:', action.function, 'Params:', action.params)
       if (fn) fn(action.params)
     }
 
