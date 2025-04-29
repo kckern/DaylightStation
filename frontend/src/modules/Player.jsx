@@ -65,7 +65,7 @@ function useCommonMediaController({
   selectedClass,
   setSelectedClass,
   cycleThroughClasses,
-  classes
+  playbackKeys,queuePosition 
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.media_url;
   const containerRef = useRef(null);
@@ -92,88 +92,79 @@ function useCommonMediaController({
     mediaEl.currentTime = (clickX / rect.width) * duration;
   };
 
-  const longPressTimeout = useRef(null);
-  const didLongPress = useRef(false);
+
+
 
   useEffect(() => {
+    const skipToNextTrack = () => onEnd(1);
+    const skipToPrevTrack = () => {
+      const mediaEl = getMediaEl();
+      if (mediaEl && mediaEl.currentTime > 5) {
+      mediaEl.currentTime = 0;
+      } else {
+      onEnd(-1);
+      }
+    };
+    const advanceInCurrentTrack = (seconds) => {
+      const mediaEl = getMediaEl();
+      if (mediaEl) {
+      const increment = mediaEl.duration
+        ? Math.max(5, Math.floor(mediaEl.duration / 50))
+        : 5;
+      mediaEl.currentTime = seconds > 0
+        ? Math.min(mediaEl.currentTime + Math.max(seconds, increment), mediaEl.duration || 0)
+        : Math.max(mediaEl.currentTime + Math.min(seconds, -increment), 0);
+      }
+    };
+    const togglePlayPause = () => {
+      const mediaEl = getMediaEl();
+      if (mediaEl) mediaEl.paused ? mediaEl.play() : mediaEl.pause();
+    };
+    const startTrackOver = () => {
+      const mediaEl = getMediaEl();
+      if (mediaEl) mediaEl.currentTime = 0;
+    };
+
     const handleKeyDown = (event) => {
-      const mediaEl = getMediaEl();
-      if (!mediaEl) return;
+      if (event.repeat) return;
+      const isPlaying = getMediaEl()?.paused === false;
+      const isFirstTrackInQueue = queuePosition === 0;
+      const keyMap = {
+      Tab: skipToNextTrack,
+      Backspace: skipToPrevTrack,
+      ArrowRight: () => advanceInCurrentTrack(10),
+      ArrowLeft: () => advanceInCurrentTrack(-10),
+      ArrowUp: () => cycleThroughClasses(1),
+      ArrowDown: () => cycleThroughClasses(-1),
+      Escape: onClear,
+      Enter: togglePlayPause,
+      ' ': togglePlayPause,
+      Space: togglePlayPause,
+      Spacebar: togglePlayPause,
+      MediaPlayPause: togglePlayPause,
+      ...(playbackKeys['prev'] || []).reduce((map, key) => ({ ...map, [key]: isFirstTrackInQueue ? startTrackOver : skipToPrevTrack }), {}),
+      ...(playbackKeys['play'] || []).reduce((map, key) => ({ ...map, [key]: () => !isPlaying ? getMediaEl()?.play() : skipToNextTrack() }), {}),
+      ...(playbackKeys['pause'] || []).reduce((map, key) => ({ ...map, [key]: togglePlayPause }), {}),
+      ...(playbackKeys['rew'] || []).reduce((map, key) => ({ ...map, [key]: () => advanceInCurrentTrack(-10) }), {}),
+      ...(playbackKeys['fwd'] || []).reduce((map, key) => ({ ...map, [key]: () => advanceInCurrentTrack(10) }), {}),
+      };
 
-      if (event.repeat) {
-        return;
-      }
-
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        onEnd(1);
-      }
-      if (event.key === 'ArrowRight') {
-        didLongPress.current = false;
-        longPressTimeout.current = setTimeout(() => {
-          onEnd(1);
-          didLongPress.current = true;
-        }, 1000);
-      } else if (event.key === 'ArrowLeft') {
-        didLongPress.current = false;
-        longPressTimeout.current = setTimeout(() => {
-          onEnd(-1);
-          didLongPress.current = true;
-        }, 1000);
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        cycleThroughClasses(1);
-      } else if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        cycleThroughClasses(-1);
-      } else if (['Enter', ' ', 'Space', 'Spacebar', 'MediaPlayPause'].includes(event.key)) {
-        event.preventDefault();
-        if (mediaEl.paused) {
-          mediaEl.play();
-        } else {
-          mediaEl.pause();
-        }
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        onClear();
+      const action = keyMap[event.key];
+      if (action) {
+      event.preventDefault();
+      action();
+      } else {
+     // alert(`Key "${event.key}" is not supported.`);
       }
     };
 
-    const handleKeyUp = (event) => {
-      const mediaEl = getMediaEl();
-      if (!mediaEl) return;
-
-      if (longPressTimeout.current) {
-        clearTimeout(longPressTimeout.current);
-        longPressTimeout.current = null;
-      }
-
-      if (
-        (event.key === 'ArrowRight' || event.key === 'ArrowLeft') &&
-        !didLongPress.current
-      ) {
-        const inc = mediaEl.duration
-          ? Math.max(5, Math.floor(mediaEl.duration / 50))
-          : 5;
-        if (event.key === 'ArrowRight') {
-          mediaEl.currentTime = Math.min(
-            mediaEl.currentTime + inc,
-            mediaEl.duration || 0
-          );
-        } else {
-          mediaEl.currentTime = Math.max(mediaEl.currentTime - inc, 0);
-        }
-      }
-    };
 
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [onClear, onEnd, isAudio, isVideo, onShaderLevelChange, duration, cycleThroughClasses]);
+  }, [onClear, onEnd, isAudio, isVideo, onShaderLevelChange, duration, cycleThroughClasses, playbackKeys]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -195,7 +186,7 @@ function useCommonMediaController({
       const seconds = mediaEl.currentTime || 0;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
         lastLoggedTimeRef.current = now;
-        await DaylightAPI(`media/log`, { title, type, media_key, seconds, percent, title });
+        if(seconds > 10)  await DaylightAPI(`media/log`, { title, type, media_key, seconds, percent, title });
       }
     };
 
@@ -208,7 +199,7 @@ function useCommonMediaController({
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
-      const startTime = duration > 8 ? start : 0;
+      const startTime = duration > (12 * 60) ? start : 0;
       //console.log({duration, start, startTime, media_key, type});
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
@@ -291,6 +282,7 @@ function useQueueController({ play, queue, clear }) {
   const [selectedClass, setSelectedClass] = useState(classes[0]);
   const [isContinuous, setIsContinuous] = useState(false);
   const [playQueue, setQueue] = useState([]);
+  const [originalQueue, setOriginalQueue] = useState([]);
 
   const cycleThroughClasses = (upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
@@ -303,34 +295,30 @@ function useQueueController({ play, queue, clear }) {
 
   const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
 
+
   useEffect(() => {
     async function initQueue() {
+      let newQueue = [];
       if (Array.isArray(play)) {
-        setQueue(play.map(item => ({ ...item, guid: guid() })));
-        return;
-      }
-      if (Array.isArray(queue)) {
-        setQueue(queue.map(item => ({ ...item, guid: guid() })));
-        return;
-      }
-      if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
+        newQueue = play.map(item => ({ ...item, guid: guid() }));
+      } else if (Array.isArray(queue)) {
+        newQueue = queue.map(item => ({ ...item, guid: guid() }));
+      } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
         if (play?.playlist || play?.queue || queue?.playlist || queue?.queue) {
           const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue;
           const { items, continuous } = await DaylightAPI(`data/list/${queue_media_key}`);
           setIsContinuous(continuous || false);
           const flattened = await flattenQueueItems(items);
-          setQueue(flattened.map(item => ({ ...item, ...item.play, guid: guid() })));
-          return;
-        }
-        if (queue?.plex) {
+          newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
+        } else if (queue?.plex) {
           const { items, continuous } = await DaylightAPI(`media/plex/list/${queue.plex}`);
           setIsContinuous(continuous || false);
           const flattened = await flattenQueueItems(items);
-          setQueue(flattened.map(item => ({ ...item, ...item.play, guid: guid() })));
-          return;
+          newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
         }
       }
-      setQueue([]);
+      setQueue(newQueue);
+      setOriginalQueue(newQueue);
     }
     initQueue();
   }, [play, queue]);
@@ -338,22 +326,29 @@ function useQueueController({ play, queue, clear }) {
   const advance = useCallback((step = 1) => {
     setQueue((prevQueue) => {
       if (prevQueue.length > 1) {
-        const currentIndex = isContinuous
-          ? (prevQueue.length + step) % prevQueue.length
-          : Math.min(Math.max(0, step), prevQueue.length - 1);
-        if (isContinuous) {
-          const rotatedQueue = [
-            ...prevQueue.slice(currentIndex),
-            ...prevQueue.slice(0, currentIndex),
-          ];
-          return rotatedQueue;
+        if (step < 0) {
+          const currentIndex = originalQueue.findIndex(item => item.guid === prevQueue[0]?.guid);
+          const backtrackIndex = (currentIndex + step + originalQueue.length) % originalQueue.length;
+          const backtrackItem = originalQueue[backtrackIndex];
+          return [backtrackItem, ...prevQueue];
+        } else {
+          const currentIndex = isContinuous
+            ? (prevQueue.length + step) % prevQueue.length
+            : Math.min(Math.max(0, step), prevQueue.length - 1);
+          if (isContinuous) {
+            const rotatedQueue = [
+              ...prevQueue.slice(currentIndex),
+              ...prevQueue.slice(0, currentIndex),
+            ];
+            return rotatedQueue;
+          }
+          return prevQueue.slice(currentIndex);
         }
-        return prevQueue.slice(currentIndex);
       }
       clear();
       return [];
     });
-  }, [clear, isContinuous]);
+  }, [clear, isContinuous, originalQueue]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -368,6 +363,7 @@ function useQueueController({ play, queue, clear }) {
     };
   }, [clear]);
 
+  const queuePosition = originalQueue.findIndex(item => item.guid === playQueue[0]?.guid);
   return {
     classes,
     cycleThroughClasses,
@@ -377,7 +373,8 @@ function useQueueController({ play, queue, clear }) {
     isContinuous,
     playQueue,
     setQueue,
-    advance
+    advance,
+    queuePosition
   };
 }
 
@@ -386,7 +383,8 @@ function useQueueController({ play, queue, clear }) {
 /*  MAIN PLAYER                                               */
 /*─────────────────────────────────────────────────────────────*/
 
-export default function Player({ play, queue, clear }) {
+export default function Player({ play, queue, clear, playbackKeys }) {
+
   const {
     classes,
     cycleThroughClasses,
@@ -394,9 +392,11 @@ export default function Player({ play, queue, clear }) {
     setSelectedClass,
     isQueue,
     isContinuous,
+    queuePosition,
     playQueue,
     advance
   } = useQueueController({ play, queue, clear });
+
 
   if (isQueue && playQueue?.length > 1) {
     return (
@@ -409,6 +409,8 @@ export default function Player({ play, queue, clear }) {
         setSelectedClass={setSelectedClass}
         cycleThroughClasses={cycleThroughClasses}
         classes={classes}
+        playbackKeys={playbackKeys}
+        queuePosition={queuePosition}
       />
     );
   }
@@ -423,6 +425,8 @@ export default function Player({ play, queue, clear }) {
         setSelectedClass={setSelectedClass}
         cycleThroughClasses={cycleThroughClasses}
         classes={classes}
+        playbackKeys={playbackKeys}
+        queuePosition={queuePosition}
       />
     );
   }
@@ -436,6 +440,8 @@ export default function Player({ play, queue, clear }) {
         setSelectedClass={setSelectedClass}
         cycleThroughClasses={cycleThroughClasses}
         classes={classes}
+        playbackKeys={playbackKeys}
+        queuePosition={queuePosition}
       />
     );
   }
@@ -466,7 +472,9 @@ export function SinglePlayer(play) {
     selectedClass,
     setSelectedClass,
     cycleThroughClasses,
-    classes
+    classes,
+    playbackKeys,
+    queuePosition
   } = play || {};
 
   if (!!scripture)    return <Scriptures {...play} />;
@@ -476,6 +484,7 @@ export function SinglePlayer(play) {
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
+
 
   useEffect(() => {
     async function fetchVideoInfo() {
@@ -508,6 +517,8 @@ export function SinglePlayer(play) {
           setSelectedClass={setSelectedClass}
           cycleThroughClasses={cycleThroughClasses}
           classes={classes}
+          playbackKeys={playbackKeys}
+          queuePosition={queuePosition}
         />
       )}
       {isReady && mediaInfo.media_type === 'video' && (
@@ -519,6 +530,8 @@ export function SinglePlayer(play) {
           setSelectedClass={setSelectedClass}
           cycleThroughClasses={cycleThroughClasses}
           classes={classes}
+          playbackKeys={playbackKeys}
+          queuePosition={queuePosition}
         />
       )}
       {isReady && mediaInfo.media_type === 'audio' && (
@@ -530,6 +543,8 @@ export function SinglePlayer(play) {
           setSelectedClass={setSelectedClass}
           cycleThroughClasses={cycleThroughClasses}
           classes={classes}
+          playbackKeys={playbackKeys}
+          queuePosition={queuePosition}
         />
       )}
     </div>
@@ -541,9 +556,8 @@ export function SinglePlayer(play) {
 /*  AUDIO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes }) {
+function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes,playbackKeys,queuePosition }) {
   const { media_url, title, artist, album, image, type } = media;
-
   const {
     timeSinceLastProgressUpdate,
     playbackRate,
@@ -563,7 +577,8 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
     selectedClass,
     setSelectedClass,
     cycleThroughClasses,
-    classes
+    classes,
+    playbackKeys,queuePosition 
   });
 
   const { percent } = getProgressPercent(seconds, duration);
@@ -598,7 +613,7 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
 /*  VIDEO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes }) {
+function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes, playbackKeys,queuePosition  }) {
   const isPlex = ['dash_video'].includes(media.media_type);
   const {
     isDash,
@@ -620,7 +635,8 @@ function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
     selectedClass,
     setSelectedClass,
     cycleThroughClasses,
-    classes
+    classes,
+    playbackKeys,queuePosition 
   });
 
   const { show, season, title, media_url } = media;
