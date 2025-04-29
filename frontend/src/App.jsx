@@ -165,7 +165,7 @@ function App() {
       }
 
       // If something is playing and "menu" is pressed
-      if (currentContent && action.function === 'menu') {
+      if (currentContent && action?.function === 'menu') {
         resetQueue()
         setCurrentContent(null)
         openMenu(action.params)
