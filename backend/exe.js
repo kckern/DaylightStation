@@ -3,9 +3,12 @@ import util from 'util';
 import express from 'express';
 import { exec } from 'child_process';
 import axios from 'axios';
+import { loadFile, saveFile } from './lib/io.mjs';
 
 const promiseExec = util.promisify(exec);
 const exeRouter = express.Router();
+
+exeRouter.use(express.json());
 
 // Helper class for Home Assistant
 class HomeAssistant {
@@ -248,23 +251,51 @@ exeRouter.get('/tv', async (req, res) => {
     }
 });
 
-exeRouter.post('/cmd', async (req, res) => {
+async function execmd(cmd) {
+    const { cmd: { host, user, port, known_hosts, private_key } } = process.env;
+    const knownIsEmpty = !fs.readFileSync(known_hosts).toString().length;
+    const base64Cmd = Buffer.from(cmd).toString('base64');
+    const options = `${knownIsEmpty ? `-o StrictHostKeyChecking=no` : ""} -o UserKnownHostsFile=./known_hosts`;
+    const sshCommand = `ssh ${options} -i ${private_key} -p ${port} ${user}@${host} "echo ${base64Cmd} | base64 -d | bash"`;
+    return await executeCommand(sshCommand);
+}
+
+exeRouter.get('/vol/:level', async (req, res) => {
+    const { level } = req.params;
+    const cycleLevels = [70, 50, 30, 20, 10, 0];
+    const volumeStateFile = '_volLevel';
     try {
-        const { cmd } = req.body || req.query;
-        const { hardware: { host, user, ssh_port = 22 } } = process.env;
+        let stout;
+        if (level === 'cycle') {
+            let currentLevel = parseInt(loadFile(volumeStateFile)) || 70;
+            let nextIndex = (cycleLevels.indexOf(currentLevel) + 1) % cycleLevels.length;
+            let nextLevel = cycleLevels[nextIndex];
+            saveFile(nextLevel.toString(), volumeStateFile);
+            stout = await execmd(`amixer set Master ${nextLevel}%`);
+        } else {
+            saveFile(level, volumeStateFile);
+            stout = await execmd(`amixer set Master ${level}%`);
+        }
+        res.json({ stout });
+    } catch (error) {
+        console.error('Error in /vol/:level endpoint:', error.message || error);
+        res.status(500).json({ error: error.message || 'Internal Server Error', body: req.body, query: req.query });
+    }
+});
 
-        const keyPath = `/usr/src/app/host_private_key`;
-        const knownPath = `/usr/src/app/known_hosts`;
-        const knownIsEmpty = !fs.readFileSync(knownPath).toString().length;
-        const base64Cmd = Buffer.from(cmd).toString('base64');
-        const options = `${knownIsEmpty ? `-o StrictHostKeyChecking=no` : ""} -o UserKnownHostsFile=./known_hosts`;
-        const sshCommand = `ssh ${options} -i ${keyPath} -p ${ssh_port} ${user}@${host} "echo ${base64Cmd} | base64 -d | bash"`;
 
-        const stout = await executeCommand(sshCommand);
+
+
+
+
+exeRouter.post('/cmd', async (req, res) => {
+    const { cmd } = { ...req.body, ...req.query, ...req.params };
+    try {
+        const stout = await execmd(cmd);
         res.json({ stout });
     } catch (error) {
         console.error('Error in /cmd endpoint:', error.message || error);
-        res.status(500).json({ error: error.message || 'Internal Server Error' });
+        res.status(500).json({ error: error.message || 'Internal Server Error', body: req.body, query: req.query });
     }
 });
 
