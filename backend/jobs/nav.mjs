@@ -32,6 +32,8 @@ export const processListItem = async (item) => {
         inputObject[input] = true;
         }
     }
+    if(item.shuffle) {inputObject['shuffle'] = item.shuffle; delete item.shuffle;}
+    if (item.playable) { inputObject['playable'] = item.playable; delete item.playable;}
     item.input = inputObject;
     const actionKey = item.action || 'play';
     item = { ...item, [actionKey]: item.input };
