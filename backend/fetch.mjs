@@ -390,60 +390,66 @@ const applyParentTags = (items, parent) => {
 // Helper function to get children from a parent media_key
 export const getChildrenFromMediaKey = async ({media_key}) => {
     const validExtensions = ['.mp3', '.mp4', '.m4a'];
-    const folderExists = fs.existsSync(`${mediaPath}/${media_key}`);
-    if (!folderExists) {
-        //load lists
-        const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
-        const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
-        const items = listItems.filter(filterFn) || [];
-        if(!!items.length) return {items};
-        const isPlex = /^\d+$/.test(media_key);
-        if(isPlex) {
-            const PLEX = new Plex();
-            const plexResponse = await PLEX.loadChildrenFromKey(media_key);
-            const plexList = plexResponse?.list.map(({plex,title,type,image}) => {
-                let action = "play";
-                if(["show", "season"].includes(type)) action = "list";
-                if(["album"].includes(type)) action = "queue";
-                return {
-                    label:title, image, type,
-                    [action]: {plex}
-                }
-            });
-            delete plexResponse.list;
-            if(plexList) return {meta:plexResponse, items: plexList };
-        }
+
+    // Check if the media_key exists in the lists first
+    const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
+    const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
+    const itemsFromList = listItems.filter(filterFn) || [];
+    if (!!itemsFromList.length) return { items: itemsFromList };
+
+    // If no list items, check if it's a Plex key
+    const isPlex = /^\d+$/.test(media_key);
+    if (isPlex) {
+        const PLEX = new Plex();
+        const plexResponse = await PLEX.loadChildrenFromKey(media_key);
+        const plexList = plexResponse?.list.map(({ plex, title, type, image }) => {
+            let action = "play";
+            if (["show", "season"].includes(type)) action = "list";
+            if (["album"].includes(type)) action = "queue";
+            return {
+                label: title,
+                image,
+                type,
+                [action]: { plex }
+            };
+        });
+        delete plexResponse.list;
+        if (plexList) return { meta: plexResponse, items: plexList };
     }
 
+    // If no list or Plex items, check the mediaPath
+    const folderExists = fs.existsSync(`${mediaPath}/${media_key}`);
+    if (folderExists) {
+        const getFiles = (basePath) => {
+            const folderPath = `${basePath}/${media_key}`;
+            if (!fs.existsSync(folderPath)) return [];
+            return fs.readdirSync(folderPath).map(file => {
+                const isFolder = fs.statSync(`${folderPath}/${file}`).isDirectory();
+                if (isFolder) return { folder: file };
+                const ext = file.split('.').pop();
+                if (validExtensions.includes(`.${ext}`)) { return { file }; }
+                return null;
+            }).filter(Boolean)
+                .map(({ file, folder }) => {
+                    if (folder) return { folder };
+                    const fileWithoutExt = file.replace(/\.[^/.]+$/, ""); // Remove the file extension
+                    return fs.existsSync(`${folderPath}/${file}`) ? { media_key: `${media_key}/${fileWithoutExt}` } : null;
+                }).filter(Boolean);
+        };
 
-    const getFiles = (basePath) => {
-        const folderPath = `${basePath}/${media_key}`;
-        if (!fs.existsSync(folderPath)) return [];
-        return fs.readdirSync(folderPath).map(file => {
-            const isFolder = fs.statSync(`${folderPath}/${file}`).isDirectory();
-            if (isFolder) return {folder: file};
-            const ext = file.split('.').pop();
-            if(validExtensions.includes(`.${ext}`)) {return {file};}
-            return null;
-        }).filter(Boolean)
-        .map(({file,folder}) => {
-            if(folder) return {folder};
-            const fileWithoutExt = file.replace(/\.[^/.]+$/, ""); // Remove the file extension
-            return fs.existsSync(`${folderPath}/${file}`) ? {  media_key: `${media_key}/${fileWithoutExt}` } : null;
-        }).filter(Boolean);
-    };
+        const items = (await Promise.all(getFiles(mediaPath) // Get files from media path
+            .map(loadMetadataFromFile)))
+            .map(loadMetadataFromConfig)
+            .filter(Boolean);
 
-    //TODO if no folder for the media_key, check if the media_key is folder in the nav data
+        // Load metadata for the parent and apply parent tags to children
+        const parentMetadata = loadMetadataFromMediaKey(media_key);
+        const items_full = applyParentTags(items, parentMetadata);
+        return { items: items_full, parentMetadata };
+    }
 
-    const items = (await Promise.all(getFiles(mediaPath) // Get files from media path
-                        .map(loadMetadataFromFile)))
-                        .map(loadMetadataFromConfig)
-                        .filter(Boolean);
-
-    // Load metadata for the parent and apply parent tags to children
-    const parentMetadata = loadMetadataFromMediaKey(media_key);
-    const items_full =  applyParentTags(items, parentMetadata);
-    return { items: items_full, parentMetadata };
+    // If no folder exists, return an empty result
+    return { items: [] };
 };
 
 apiRouter.get('/list/*', async (req, res, next) => {
