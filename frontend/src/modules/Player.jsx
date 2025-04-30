@@ -253,13 +253,14 @@ export async function flattenQueueItems(items, level = 1) {
 
   for (const item of items) {
     if (item.queue) {
+      const shuffle = !!item.shuffle;
       if (item.queue.playlist || item.queue.queue) {
         const queueKey = item.queue.playlist ?? item.queue.queue;
-        const { items: nestedItems } = await DaylightAPI(`data/list/${queueKey}`);
+        const { items: nestedItems } = await DaylightAPI(`data/list/${queueKey}${shuffle ? '/shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(nestedItems, level + 1);
         flattened.push(...nestedFlattened);
       } else if (item.queue.plex) {
-        const { items: plexItems } = await DaylightAPI(`media/plex/list/${item.queue.plex}`);
+        const { items: plexItems } = await DaylightAPI(`media/plex/list/${item.queue.plex}${shuffle ? '/shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(plexItems, level + 1);
         flattened.push(...nestedFlattened);
       }
