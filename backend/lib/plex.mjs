@@ -64,6 +64,7 @@ export class Plex {
     const meta =   (response?.MediaContainer?.Metadata || []).map((item) => {
       if(!item) return false;
       item['plex'] = item.ratingKey;
+      item['labels'] = item.Label? item.Label.map(x => x['tag'].toLowerCase()) : [];  
       return item;
     }
     );
@@ -72,7 +73,8 @@ export class Plex {
   }
   async loadChildrenFromKey(plex, playable = false) {
     if (!plex) return { plex: false, list: [] };
-    const [{ title, thumb, type }] = await this.loadMeta(plex);
+    const [{ title, thumb, type, labels }] = await this.loadMeta(plex);
+    const shuffle = labels.includes('shuffle');
     const image = this.thumbUrl(thumb);
     let list;
     if (type === "playlist") {
@@ -85,6 +87,7 @@ export class Plex {
     }else  {
       list = await this.loadListKeys(plex, '/children');
     }
+    if(shuffle) list = list.sort(() => Math.random() - 0.5);
     return { plex, type, title, image, list };
   }
 
