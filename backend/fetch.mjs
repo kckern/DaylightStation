@@ -388,8 +388,11 @@ const applyParentTags = (items, parent) => {
 
 }
 // Helper function to get children from a parent media_key
-export const getChildrenFromMediaKey = async ({media_key}) => {
+export const getChildrenFromMediaKey = async ({media_key, config}) => {
     const validExtensions = ['.mp3', '.mp4', '.m4a'];
+
+    const mustBePlayable = /playable/.test(config);
+    const shuffle = /shuffle/.test(config);
 
     // Check if the media_key exists in the lists first
     const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
@@ -401,7 +404,7 @@ export const getChildrenFromMediaKey = async ({media_key}) => {
     const isPlex = /^\d+$/.test(media_key);
     if (isPlex) {
         const PLEX = new Plex();
-        const plexResponse = await PLEX.loadChildrenFromKey(media_key);
+        const plexResponse = await PLEX.loadChildrenFromKey(media_key, mustBePlayable);
         const plexList = plexResponse?.list.map(({ plex, title, type, image }) => {
             let action = "play";
             if (["show", "season"].includes(type)) action = "list";
@@ -412,7 +415,7 @@ export const getChildrenFromMediaKey = async ({media_key}) => {
                 type,
                 [action]: { plex }
             };
-        });
+        }).sort(() => shuffle ? Math.random() - 0.5 : 0);
         delete plexResponse.list;
         if (plexList) return { meta: plexResponse, items: plexList };
     }
@@ -425,6 +428,7 @@ export const getChildrenFromMediaKey = async ({media_key}) => {
             if (!fs.existsSync(folderPath)) return [];
             return fs.readdirSync(folderPath).map(file => {
                 const isFolder = fs.statSync(`${folderPath}/${file}`).isDirectory();
+                if (mustBePlayable && isFolder) return null; // Skip folders if mustBePlayable is true
                 if (isFolder) return { folder: file };
                 const ext = file.split('.').pop();
                 if (validExtensions.includes(`.${ext}`)) { return { file }; }
@@ -444,7 +448,9 @@ export const getChildrenFromMediaKey = async ({media_key}) => {
 
         // Load metadata for the parent and apply parent tags to children
         const parentMetadata = loadMetadataFromMediaKey(media_key);
-        const items_full = applyParentTags(items, parentMetadata);
+        let items_full = applyParentTags(items, parentMetadata);
+        if (shuffle) items_full = items_full.sort(() => Math.random() - 0.5);
+
         return { items: items_full, parentMetadata };
     }
 
@@ -456,8 +462,8 @@ apiRouter.get('/list/*', async (req, res, next) => {
 
 
     try {
-        const media_key = req.params[0];
-        const {meta,items} = await getChildrenFromMediaKey({media_key,  mediaPath});
+        const [media_key, config] = req.params[0].split('/');
+        const {meta,items} = await getChildrenFromMediaKey({media_key,  mediaPath, config});
 
         // Add metadata from a config
         const metadata = loadMetadataFromMediaKey(media_key);
