@@ -159,7 +159,7 @@ function App() {
       // If the menu is already open, or if there’s a subMenu, skip processing
       if (
         subMenu ||
-        (menu && menuOpen && action.function === 'menu' && action.params === menu)
+        (menu && menuOpen && action?.function === 'menu' && action?.params === menu)
       ) {
         return 
       }
