@@ -350,9 +350,10 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
     }
 
     try {
-        const [self, parent, grandparent] = await (new Plex()).loadImgFromKey(plex_key);
+        const urls = (await (new Plex()).loadImgFromKey(plex_key)).filter(Boolean);
+        console.log(`Fetching image from: ${urls.join(', ')}`);
         const [imgUrl] = await Promise.all(
-            [self, parent, grandparent].map(url =>
+            urls.map(url =>
             axios.get(url, { method: 'HEAD' })
                 .then(response => ({ url, status: response.status }))
                 .catch(error => ({ url, status: error.response ? error.response.status : null }))
@@ -371,7 +372,7 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
             .on('finish', () => console.log(`Image cached: ${cacheFile}`))
             .on('error', (err) => console.error(`Cache error: ${err.message}`));
     } catch (err) {
-        console.error(`Fetch error: ${err.message}`);
+        console.error(`Fetch error: ${err.message || err.code}`);
         res.status(500).json({ error: 'Error fetching image', message: err.message });
     }
 });
