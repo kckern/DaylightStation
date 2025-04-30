@@ -156,8 +156,23 @@ const saveImages = async (items, table_name) => {
             items[i].image = `${host}/media/img/${table_name}/${items[i].uid}`;
         }
     }
-    return items;
+    return checkForDupeImages(items);
 }
+
+const checkForDupeImages = async (items) => {
+    const itemsWithImages = items.filter(item => item.image);
+    items.forEach(item => {
+        if (!item.image) {
+            const match = itemsWithImages.find(i => 
+                i.uid !== item.uid && 
+                (i.input?.toLowerCase().trim() === item.input?.toLowerCase().trim() || 
+                 i.label?.toLowerCase().trim() === item.label?.toLowerCase().trim())
+            );
+            if (match) item.image = match.image;
+        }
+    });
+    return items;
+};
 
 
 export default { loadTable, saveItem, updateItem, loadData, keys};
