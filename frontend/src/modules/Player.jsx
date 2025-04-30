@@ -129,6 +129,7 @@ function useCommonMediaController({
       if (event.repeat) return;
       const isPlaying = getMediaEl()?.paused === false;
       const isFirstTrackInQueue = queuePosition === 0;
+      playbackKeys = playbackKeys || {};
       const keyMap = {
       Tab: skipToNextTrack,
       Backspace: skipToPrevTrack,
