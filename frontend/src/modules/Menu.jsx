@@ -137,16 +137,17 @@ function useFetchMenuData(listInput) {
   useEffect(() => {
     let canceled = false;
 
-    async function fetchData(target) {
+    async function fetchData(target,config) {
       if (!target) {
         return { title: "No Menu", image: "", kind: "default", items: [] };
       }
-      const { title, image, kind, items } = await DaylightAPI(`data/list/${target}`);
+      const { title, image, kind, items } = await DaylightAPI(`data/list/${target}${config ? `/${config}` : ""}`);
       if (canceled) return null;
       return { title, image, kind, items };
     }
 
     async function loadListData(input) {
+      console.log("Loading menu data", input);
       if (!input) {
         setMenuItems([]);
         setMenuMeta({ title: "No Menu", image: "", kind: "default" });
@@ -174,10 +175,13 @@ function useFetchMenuData(listInput) {
         return;
       }
       if (typeof input === "object") {
-        const { menu, list, plex } = input;
+        const { menu, list, plex, shuffle, playable } = input;
+        const config = [];
+        config.push(shuffle ? "shuffle" : "");
+        config.push(playable ? "playable" : "");
         const param = menu || list || plex;
         if (param) {
-          const data = await fetchData(param);
+          const data = await fetchData(param, config.join("+"));
           if (data) {
             setMenuItems(data.items);
             setMenuMeta({
