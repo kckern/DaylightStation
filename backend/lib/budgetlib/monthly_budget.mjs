@@ -369,7 +369,7 @@ export const dayToDayBudgetReducer = (acc, month, monthlyBudget, config) => {
   const balance = Math.round(Object.keys(acc[month].dailyBalances).map(day => acc[month].dailyBalances[day].endingBalance).pop() * 100) / 100;
   const spent = parseFloat((start - balance).toFixed(2));
   //end of month minus tomorrow, in days
-  const tomorrow = moment().add(1, 'days');
+ // const tomorrow = moment().add(1, 'days');
   const today = moment().startOf('day');
   const endOfMonth = moment(month, 'YYYY-MM').endOf('month');
   
@@ -381,9 +381,9 @@ export const dayToDayBudgetReducer = (acc, month, monthlyBudget, config) => {
   const dailyBudget = parseFloat((balance / daysRemaining).toFixed(2));
   const diff = parseFloat((dailyBudget - dailySpend).toFixed(2));
   const adjustPercentage = parseFloat(((diff / dailySpend) * 100).toFixed(2));
-  const expectedBalanceAtEndOfMonth = parseFloat((dailyBudget * daysRemaining).toFixed(2));
+  //const expectedBalanceAtEndOfMonth = parseFloat((dailyBudget * daysRemaining).toFixed(2));
 
-  saveFile(`${month}-dayToDayBudget`, {expectedBalanceAtEndOfMonth,dailyBudget, dailySpend, diff, adjustPercentage, daysRemaining, daysCompleted,tomorrow,endOfMonth});
+  //saveFile(`${month}-dayToDayBudget`, {expectedBalanceAtEndOfMonth,dailyBudget, dailySpend, diff, adjustPercentage, daysRemaining, daysCompleted,tomorrow,endOfMonth});
   
 
  

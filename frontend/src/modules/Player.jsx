@@ -195,7 +195,8 @@ function useCommonMediaController({
     const onTimeUpdate = () => {
       setSeconds(mediaEl.currentTime);
       const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
-      logTime(type, media_key, percent, meta.title);
+      const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+      logTime(type, media_key, percent, title);
     };
     const onDurationChange = () => setDuration(mediaEl.duration);
     const onEnded = () => onEnd();
@@ -234,13 +235,14 @@ function useCommonMediaController({
 
 
 
+
   return {
     containerRef,
     seconds,
     percent: getProgressPercent(seconds, duration).percent,
     duration,
     playbackRate,
-    isPaused: getMediaEl()?.paused|| false,
+    isPaused: !seconds ? false : getMediaEl()?.paused || false,
     isDash,
     selectedClass,
     timeSinceLastProgressUpdate,
@@ -435,7 +437,6 @@ export default function Player({ play, queue, clear, playbackKeys }) {
 /*─────────────────────────────────────────────────────────────*/
 /*  SINGLE PLAYER                                             */
 /*─────────────────────────────────────────────────────────────*/
-
 export function SinglePlayer(play) {
   const {
     plex,
@@ -464,23 +465,24 @@ export function SinglePlayer(play) {
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
 
+  const fetchVideoInfo = useCallback(async () => {
+    setIsReady(false);
+    if (!!plex) {
+      const infoResponse = await DaylightAPI(`media/plex/info/${plex}`);
+      setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
+      setIsReady(true);
+    } else if (!!media) {
+      const infoResponse = await DaylightAPI(`media/info/${media}`);
+      setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
+      setIsReady(true);
+    } else if (!!open) {
+      setGoToApp(open);
+    }
+  }, [plex, media, rate, open]);
 
   useEffect(() => {
-    async function fetchVideoInfo() {
-      if (!!plex) {
-        const infoResponse = await DaylightAPI(`media/plex/info/${plex}`);
-        setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
-        setIsReady(true);
-      } else if (!!media) {
-        const infoResponse = await DaylightAPI(`media/info/${media}`);
-        setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
-        setIsReady(true);
-      } else if (!!open) {
-        setGoToApp(open);
-      }
-    }
     fetchVideoInfo();
-  }, [plex, media, shuffle, rate, open]);
+  }, [fetchVideoInfo]);
 
   if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
   return (
@@ -502,7 +504,8 @@ export function SinglePlayer(play) {
             cycleThroughClasses,
             classes,
             playbackKeys,
-            queuePosition
+            queuePosition,
+            fetchVideoInfo
           }
         )
       )}
@@ -515,7 +518,7 @@ export function SinglePlayer(play) {
 /*  AUDIO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes,playbackKeys,queuePosition }) {
+function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo }) {
   const { media_url, title, artist, album, image, type } = media;
   const {
     timeSinceLastProgressUpdate,
@@ -545,10 +548,11 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
 
+
   return (
     <div className={`audio-player ${selectedClass}`}>
       <div className={`shader ${shaderState}`} />
-      {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay isPaused={isPaused} />}
+      {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <p>{header}</p>
       <p>{formatTime(seconds)} / {formatTime(duration)}</p>
@@ -573,12 +577,13 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
 /*  VIDEO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes, playbackKeys,queuePosition  }) {
+function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo  }) {
   const isPlex = ['dash_video'].includes(media.media_type);
   const {
     isDash,
     containerRef,
     seconds,
+    isPaused,
     timeSinceLastProgressUpdate,
     duration,
     handleProgressClick,
@@ -616,7 +621,7 @@ function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
         {playbackRate > 1 ? ` (${playbackRate}×)` : ''}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {seconds === 0 || timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
+      {(seconds === 0 || timeSinceLastProgressUpdate > 1000) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
       {isDash ? (
         <dash-video
           ref={containerRef}
@@ -641,19 +646,37 @@ function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
 /*  LOADING OVERLAY                                           */
 /*─────────────────────────────────────────────────────────────*/
 
-export function LoadingOverlay({isPaused}) {
+export function LoadingOverlay({ isPaused, fetchVideoInfo }) {
   const [visible, setVisible] = useState(false);
+  const [loadingTime, setLoadingTime] = useState(0);
 
   useEffect(() => {
     const timeout = setTimeout(() => setVisible(true), 300);
     return () => clearTimeout(timeout);
   }, []);
 
+  useEffect(() => {
+    if (!isPaused) {
+      const interval = setInterval(() => {
+        setLoadingTime((prev) => prev + 1);
+      }, 1000);
+
+      if (loadingTime >= 10) {
+        fetchVideoInfo?.();
+        setLoadingTime(0); // Reset loading time after fetching
+      }
+
+      return () => clearInterval(interval);
+    } else {
+      setLoadingTime(0); // Reset loading time if paused
+    }
+  }, [isPaused, loadingTime, fetchVideoInfo]);
+
   const imgSrc = isPaused ? pause : spinner;
 
   return (
     <div
-      className="loading-overlay"
+      className={`loading-overlay ${isPaused ? 'paused' : 'loading'}`}
       style={{
         opacity: visible ? 1 : 0,
         transition: 'opacity 0.3s ease-in-out',
