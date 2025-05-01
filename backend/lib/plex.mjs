@@ -31,15 +31,13 @@ export class Plex {
   }
 
   async loadmedia_url(itemData, attempt = 0) {
+    if(!attempt >= 1) console.log("Attempting to load media URL for itemData:", itemData);
     itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
     const { plex: { host,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
-    const { ratingKey:key, type } = itemData
-
+    const { ratingKey:key, type } = itemData;
     if(!["episode", "movie", "track"].includes(type)) {
-      //treat as list
       const {list} = await this.loadListFromKey(key);
       const [item] = this.selectKeyToPlay(list);
-      
       return await this.loadmedia_url(item.key || item);
     }
     const media_type = this.determinemedia_type(type);
@@ -51,9 +49,9 @@ export class Plex {
       } else {
         if (!key) throw new Error("Rating key not found for video.");
         const url =  `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
-        const  isValid = await axios.get(url).then((response) => {
+        const isValid = await axios.get(url).then((response) => {
           return response.status >= 200 && response.status < 300;
-        });
+        }).catch(() => false);
         if(isValid || attempt > 10) return url;
         else return await this.loadmedia_url(itemData, attempt + 1);
       }
@@ -61,7 +59,6 @@ export class Plex {
       console.error("Error generating media URL:", error.message);
       return null;
     }
-
   }
 
   async loadMeta(plex, type = '') {
