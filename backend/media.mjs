@@ -132,7 +132,8 @@ mediaRouter.post('/log', async (req, res) => {
             Object.entries(log[type]).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
         );
         saveFile('_media_memory', log);
-        res.json({ response: log[type][media_key] });
+        console.log(`Log updated: ${JSON.stringify(log[type][media_key])}`);
+        res.json({ response: {type,...log[type][media_key]} });
     } catch (error) {
         console.error('Error handling /log:', error.message);
         res.status(500).json({ error: 'Failed to process log.' });

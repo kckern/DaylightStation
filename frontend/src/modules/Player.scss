@@ -198,9 +198,12 @@
     z-index: 9999;
     filter: grayscale(100%);
 }
-  .loading-overlay img{
-    width: 10rem;
-    height: 10rem;
+.loading-overlay img{
+  width: 10rem;
+  height: 10rem;
+}
+
+.loading-overlay.loading img{
     animation: spin 1s linear infinite;
     filter: invert(1) brightness(0.5);
   }
