@@ -15,6 +15,9 @@ import { Plex } from './lib/plex.mjs';
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
 
+//usejson
+apiRouter.use(express.json());
+
 // Middleware for error handling
 apiRouter.use((err, req, res, next) => {
     console.error(err.stack);
@@ -304,6 +307,17 @@ apiRouter.get('/budget/daytoday',  async (req, res, next) => {
 });
 
 
+
+apiRouter.post('/menu_log', async (req, res) => {
+    const postData = req.body;
+    const { media_key } = postData;
+    const menu_log = loadFile('_menu_memory') || {};
+    const nowUnix = moment().unix();
+    menu_log[media_key] = nowUnix;
+    saveFile('_menu_memory', menu_log);
+    res.json({[media_key]: nowUnix} );
+});
+
 export const loadMetadataFromFile = async ({media_key}) => {
     if(!media_key) return null;
     media_key = media_key.replace(/\.[^/.]+$/, ""); // Remove the file extension
@@ -387,6 +401,30 @@ const applyParentTags = (items, parent) => {
     return items;
 
 }
+
+const sortListByMenuMemory = (items) => {
+    const menuLog = loadFile('_menu_memory') || {};
+    items.sort((a, b) => {
+        const aKey = (() => {
+            const mediaKey = a?.play || a?.queue || a?.list || a?.open;
+            if (!mediaKey) return null;
+            return Array.isArray(mediaKey) ? mediaKey[0] : Object.values(mediaKey)?.length ? Object.values(mediaKey)[0] : null;
+        })();
+
+        const bKey = (() => {
+            const mediaKey = b?.play || b?.queue || b?.list || b?.open;
+            if (!mediaKey) return null;
+            return Array.isArray(mediaKey) ? mediaKey[0] : Object.values(mediaKey)?.length ? Object.values(mediaKey)[0] : null;
+        })();
+
+        const aTime = menuLog[aKey] || 0;
+        const bTime = menuLog[bKey] || 0;
+        return bTime - aTime; // Sort by most recent first
+    });
+    return items;
+}
+
+
 // Helper function to get children from a parent media_key
 export const getChildrenFromMediaKey = async ({media_key, config}) => {
     const validExtensions = ['.mp3', '.mp4', '.m4a'];
@@ -398,7 +436,7 @@ export const getChildrenFromMediaKey = async ({media_key, config}) => {
     const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
     const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
     const itemsFromList = listItems.filter(filterFn) || [];
-    if (!!itemsFromList.length) return { items: itemsFromList };
+    if (!!itemsFromList.length) return { items: sortListByMenuMemory(itemsFromList) };
 
     // If no list items, check if it's a Plex key
     const isPlex = /^\d+$/.test(media_key);
@@ -448,7 +486,8 @@ export const getChildrenFromMediaKey = async ({media_key, config}) => {
 
         // Load metadata for the parent and apply parent tags to children
         const parentMetadata = loadMetadataFromMediaKey(media_key);
-        let items_full = applyParentTags(items, parentMetadata);
+        let items_full = sortListByMenuMemory(applyParentTags(items, parentMetadata));
+
         if (shuffle) items_full = items_full.sort(() => Math.random() - 0.5);
 
         return { items: items_full, parentMetadata };
@@ -463,7 +502,7 @@ apiRouter.get('/list/*', async (req, res, next) => {
 
     try {
         const [media_key, config] = req.params[0].split('/');
-        const {meta,items} = await getChildrenFromMediaKey({media_key,  mediaPath, config});
+        const {meta,items} = await getChildrenFromMediaKey({media_key,  config});
 
         // Add metadata from a config
         const metadata = loadMetadataFromMediaKey(media_key);
