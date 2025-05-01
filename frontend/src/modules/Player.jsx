@@ -5,6 +5,7 @@ import {Scriptures,Hymns, Talk} from './ContentScroller.jsx';
 import { DaylightAPI } from '../lib/api.mjs';
 import 'dash-video-element';
 import spinner from '../assets/icons/spinner.svg';
+import pause from '../assets/icons/pause.svg';
 import AppContainer from './AppContainer.jsx';
 
 
@@ -239,6 +240,7 @@ function useCommonMediaController({
     percent: getProgressPercent(seconds, duration).percent,
     duration,
     playbackRate,
+    isPaused: getMediaEl()?.paused|| false,
     isDash,
     selectedClass,
     timeSinceLastProgressUpdate,
@@ -399,56 +401,31 @@ export default function Player({ play, queue, clear, playbackKeys }) {
     advance
   } = useQueueController({ play, queue, clear });
 
+  const playerProps = {
+    advance: isQueue ? advance : clear,
+    clear,
+    selectedClass,
+    setSelectedClass,
+    cycleThroughClasses,
+    classes,
+    playbackKeys,
+    queuePosition,
+  };
 
-  if (isQueue && playQueue?.length > 1) {
-    return (
-      <SinglePlayer
-        key={playQueue[0].guid}
-        {...playQueue[0]}
-        advance={advance}
-        clear={clear}
-        selectedClass={selectedClass}
-        setSelectedClass={setSelectedClass}
-        cycleThroughClasses={cycleThroughClasses}
-        classes={classes}
-        playbackKeys={playbackKeys}
-        queuePosition={queuePosition}
-      />
-    );
-  }
-  if (isQueue && playQueue?.length === 1) {
-    return (
-      <SinglePlayer
-        key={playQueue[0].guid}
-        {...playQueue[0]}
-        advance={advance}
-        clear={clear}
-        selectedClass={selectedClass}
-        setSelectedClass={setSelectedClass}
-        cycleThroughClasses={cycleThroughClasses}
-        classes={classes}
-        playbackKeys={playbackKeys}
-        queuePosition={queuePosition}
-      />
-    );
-  }
-  if (play && !Array.isArray(play)) {
-    return (
-      <SinglePlayer
-        {...play}
-        advance={clear}
-        clear={clear}
-        selectedClass={selectedClass}
-        setSelectedClass={setSelectedClass}
-        cycleThroughClasses={cycleThroughClasses}
-        classes={classes}
-        playbackKeys={playbackKeys}
-        queuePosition={queuePosition}
-      />
-    );
-  }
-  return (
-    <div className={`shader on queuer`}>
+  const singlePlayerProps = (() => {
+    if (isQueue && playQueue?.length > 0) {
+      return { key: playQueue[0].guid, ...playQueue[0] };
+    }
+    if (play && !Array.isArray(play)) {
+      return { ...play };
+    }
+    return null;
+  })();
+
+  return singlePlayerProps ? (
+    <SinglePlayer {...singlePlayerProps} {...playerProps} />
+  ) : (
+    <div className={`player ${selectedClass}`}>
       <LoadingOverlay />
     </div>
   );
@@ -506,48 +483,28 @@ export function SinglePlayer(play) {
   }, [plex, media, shuffle, rate, open]);
 
   if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
-
   return (
     <div className="player">
-      {!isReady && <div className="shader on notReady"><LoadingOverlay /></div>}
-      {isReady && mediaInfo.media_type === 'dash_video' && (
-        <VideoPlayer
-          media={mediaInfo}
-          advance={advance}
-          clear={clear}
-          selectedClass={selectedClass}
-          setSelectedClass={setSelectedClass}
-          cycleThroughClasses={cycleThroughClasses}
-          classes={classes}
-          playbackKeys={playbackKeys}
-          queuePosition={queuePosition}
-        />
-      )}
-      {isReady && mediaInfo.media_type === 'video' && (
-        <VideoPlayer
-          media={mediaInfo}
-          advance={advance}
-          clear={clear}
-          selectedClass={selectedClass}
-          setSelectedClass={setSelectedClass}
-          cycleThroughClasses={cycleThroughClasses}
-          classes={classes}
-          playbackKeys={playbackKeys}
-          queuePosition={queuePosition}
-        />
-      )}
-      {isReady && mediaInfo.media_type === 'audio' && (
-        <AudioPlayer
-          media={mediaInfo}
-          advance={advance}
-          clear={clear}
-          selectedClass={selectedClass}
-          setSelectedClass={setSelectedClass}
-          cycleThroughClasses={cycleThroughClasses}
-          classes={classes}
-          playbackKeys={playbackKeys}
-          queuePosition={queuePosition}
-        />
+      {!isReady && <div className={`shader on notReady ${selectedClass}`}><LoadingOverlay /></div>}
+      {isReady && ['dash_video', 'video', 'audio'].includes(mediaInfo.media_type) && (
+        React.createElement(
+          {
+            audio: AudioPlayer,
+            video: VideoPlayer,
+            dash_video: VideoPlayer
+          }[mediaInfo.media_type],
+          {
+            media: mediaInfo,
+            advance,
+            clear,
+            selectedClass,
+            setSelectedClass,
+            cycleThroughClasses,
+            classes,
+            playbackKeys,
+            queuePosition
+          }
+        )
       )}
     </div>
   );
@@ -566,6 +523,7 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
     containerRef,
     seconds,
     duration,
+    isPaused,
     handleProgressClick
   } = useCommonMediaController({
     start: media.seconds,
@@ -590,7 +548,7 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
   return (
     <div className={`audio-player ${selectedClass}`}>
       <div className={`shader ${shaderState}`} />
-      {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay />}
+      {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay isPaused={isPaused} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <p>{header}</p>
       <p>{formatTime(seconds)} / {formatTime(duration)}</p>
@@ -683,13 +641,15 @@ function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
 /*  LOADING OVERLAY                                           */
 /*─────────────────────────────────────────────────────────────*/
 
-export function LoadingOverlay() {
+export function LoadingOverlay({isPaused}) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const timeout = setTimeout(() => setVisible(true), 300);
     return () => clearTimeout(timeout);
   }, []);
+
+  const imgSrc = isPaused ? pause : spinner;
 
   return (
     <div
@@ -699,7 +659,7 @@ export function LoadingOverlay() {
         transition: 'opacity 0.3s ease-in-out',
       }}
     >
-      <img src={spinner} alt="" />
+      <img src={imgSrc} alt="" />
     </div>
   );
 }
