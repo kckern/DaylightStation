@@ -30,7 +30,7 @@ export class Plex {
     }
   }
 
-  async loadmedia_url(itemData) {
+  async loadmedia_url(itemData, attempt = 0) {
     itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
     const { plex: { host,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
     const { ratingKey:key, type } = itemData
@@ -49,8 +49,13 @@ export class Plex {
       if (!mediaKey) throw new Error("Media key not found for audio.");
       return `${host}${mediaKey}?X-Plex-Token=${token}`;
       } else {
-      if (!key) throw new Error("Rating key not found for video.");
-      return `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
+        if (!key) throw new Error("Rating key not found for video.");
+        const url =  `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
+        const  isValid = await axios.get(url).then((response) => {
+          return response.status >= 200 && response.status < 300;
+        });
+        if(isValid || attempt > 10) return url;
+        else return await this.loadmedia_url(itemData, attempt + 1);
       }
     } catch (error) {
       console.error("Error generating media URL:", error.message);
@@ -289,13 +294,14 @@ export class Plex {
     return this.selectKeyToPlay(keys, shuffle);
   }
   selectKeyToPlay(keys, shuffle = false) {
-    keys = keys?.[0]?.key ? keys.map(x => x.key) : keys || [];
+    keys = keys?.[0]?.plex ? keys.map(x => x.plex) : keys || [];
     let log = loadFile("_media_memory")?.plex || {};
 
     const watched = keys.filter(key => log[key]?.percent >= 90).sort((a, b) => log[b].time - log[a].time);
     const inProgress = keys.filter(key => log[key]?.percent > 0 && log[key]?.percent < 90).sort((b, a) => log[b].percent - log[a].percent);
 
     const unwatched = keys.filter(key => !log[key]?.percent) || [];
+
 
     if (inProgress.length > 0) {
       const selected = inProgress[0];
