@@ -7,14 +7,34 @@ import React, {
 import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import "./Menu.scss";
 
+const logMenuSelection = async (item) => {
+  const mediaKey = item?.play || item?.queue || item?.list || item?.open;
+  if (!mediaKey) return;
+
+  const selectedKey = Array.isArray(mediaKey) ? mediaKey[0] : Object.values(mediaKey)?.length ? Object.values(mediaKey)[0] : null;
+  if (selectedKey) {
+    await DaylightAPI("/data/menu_log", { media_key: selectedKey });
+  }
+};
+
 // -----------------------------------------------------------------------------
 // Main exported components
 // -----------------------------------------------------------------------------
+const SelectAndLog = (onSelectCallback) => {
+  return useCallback((item) => {
+    if (!item || !onSelectCallback) return;
+    onSelectCallback?.(item);
+    logMenuSelection(item);
+  }, [onSelectCallback]);
+};
+
 export function TVMenu({ list, onSelect, onEscape }) {
   const { menuItems, menuMeta, loaded } = useFetchMenuData(list);
   const containerRef = useRef(null);
 
   if (!loaded) return null;
+
+  const handleSelect = SelectAndLog(onSelect);
 
   return (
     <div className="menu-items-container" ref={containerRef}>
@@ -22,7 +42,7 @@ export function TVMenu({ list, onSelect, onEscape }) {
       <MenuItems
         items={menuItems}
         columns={5}
-        onSelect={onSelect}
+        onSelect={handleSelect}
         onClose={onEscape}
         containerRef={containerRef}
       />
@@ -35,12 +55,12 @@ export function KeypadMenu({
   onSelection,
   onClose,
   onMenuState,
-  MENU_TIMEOUT = 3000
+  MENU_TIMEOUT = 3000,
 }) {
   const { menuItems, menuMeta, loaded } = useFetchMenuData(list);
   const containerRef = useRef(null);
 
- 
+  const handleSelect = SelectAndLog(onSelection);
 
   useEffect(() => {
     onMenuState?.(true);
@@ -55,7 +75,7 @@ export function KeypadMenu({
       <MenuItems
         items={menuItems}
         columns={5}
-        onSelect={onSelection}
+        onSelect={handleSelect}
         onClose={onClose}
         MENU_TIMEOUT={MENU_TIMEOUT}
         containerRef={containerRef}
