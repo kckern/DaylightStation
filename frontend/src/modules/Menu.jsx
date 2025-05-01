@@ -67,12 +67,7 @@ export function KeypadMenu({
     return () => onMenuState?.(false);
   }, [onMenuState]);
 
-  if (!loaded || !menuItems.length) return <div>
-    List data failed to load
-    <pre>
-      {JSON.stringify({list, menuItems, menuMeta}, null, 2)}
-    </pre>
-  </div>
+  if (!loaded || !menuItems.length) return window.location.reload();
 
   return (
     <div className="menu-items-container" ref={containerRef}>
