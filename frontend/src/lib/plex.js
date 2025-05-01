@@ -10,11 +10,11 @@ function extractMetadataKey(url) {
     const decodedFragment = decodeURIComponent(fragment);
 
     // Use regex to match the metadata key from the decoded URL fragment
-    const regex = /\/metadata\/(\d+)/; // Matches "/metadata/" followed by digits
+    const regex = /\/(metadata|collections)\/(\d+)/; // Matches "/metadata/" followed by digits
     const match = decodedFragment.match(regex);
 
     // Return the first capturing group from the match if available
-    return match ? match[1] : null;
+    return match ? match[2] : null;
 }
 
 // Function to create and inject the metadata key <div>
