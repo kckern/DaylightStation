@@ -71,10 +71,10 @@ export class Plex {
 
     return meta;
   }
-  async loadChildrenFromKey(plex, playable = false) {
+  async loadChildrenFromKey(plex, playable = false, shuffle = false) {
     if (!plex) return { plex: false, list: [] };
     const [{ title, thumb, type, labels }] = await this.loadMeta(plex);
-    const shuffle = labels.includes('shuffle');
+    shuffle = shuffle || labels.includes('shuffle');
     const image = this.thumbUrl(thumb);
     let list;
     if (type === "playlist") {

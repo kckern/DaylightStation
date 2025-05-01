@@ -203,10 +203,10 @@ mediaRouter.all(`/info/*`, async (req, res) => {
 
 
 
-mediaRouter.all('/plex/info/:plex_key', async (req, res) => {
-    const { plex_key } = req.params;
+mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
+    const { plex_key, config } = req.params;
     const plex_keys = plex_key.split(',');
-    const shuffle = true; //todo get from config
+    const shuffle = /shuffle/i.test(config);
     let infos = [];
     for (const key of plex_keys) {
         const info = await (new Plex()).loadPlayableItemFromKey(key, shuffle);
@@ -224,14 +224,16 @@ mediaRouter.all('/plex/info/:plex_key', async (req, res) => {
 
 
 
-mediaRouter.all('/plex/list/:plex_key', async (req, res) => {
-    const { plex_key } = req.params;
+mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
+    const { plex_key, config } = req.params;
     const plex_keys = plex_key.split(',');
-    const playable = true; //todo get from config
+    const playable = /playable/i.test(config);
+    const shuffle = /shuffle/i.test(config);
+
     let list = [];
     let info = {};
     for (const plex_key of plex_keys) {
-        const {list:items, plex, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, playable);
+        const {list:items, plex, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, playable, shuffle);
         list = list.concat(items);
         info = {
             plex: info.plex ? `${info.plex},${plex}` : plex,

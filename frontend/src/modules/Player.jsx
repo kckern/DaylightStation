@@ -308,12 +308,12 @@ function useQueueController({ play, queue, clear }) {
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
         if (play?.playlist || play?.queue || queue?.playlist || queue?.queue) {
           const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue;
-          const { items, continuous } = await DaylightAPI(`data/list/${queue_media_key}`);
+          const { items, continuous } = await DaylightAPI(`data/list/${queue_media_key}${queue?.shuffle ? '/shuffle' : ''}`);
           setIsContinuous(continuous || false);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
         } else if (queue?.plex) {
-          const { items, continuous } = await DaylightAPI(`media/plex/list/${queue.plex}`);
+          const { items, continuous } = await DaylightAPI(`media/plex/list/${queue.plex}${queue.shuffle ? '/shuffle' : ''}`);
           setIsContinuous(continuous || false);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
