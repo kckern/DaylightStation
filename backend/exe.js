@@ -57,33 +57,57 @@ class HomeAssistant {
         return await this.fetch(path, 'POST', data);
     }
 
+    async getEntityState(entityId) {
+        const path = `/api/states/${entityId}`;
+        const data = { entity_id: entityId };
+        return await this.fetch(path, 'GET', data);
+    }
+
+    async runScript(scriptEntityId) {
+        const path = `/api/services/script/turn_on`;
+        const data = { entity_id: scriptEntityId };
+        return await this.fetch(path, 'POST', data);
+    }
+
+    async waitForState(entityId, desiredState, timeout = 30) {
+        const startTime = Date.now();
+        let { state } = await this.getSensorData(entityId);
+        while (state !== desiredState && (Date.now() - startTime) / 1000 < timeout) {
+            const updatedSensor = await this.getSensorData(entityId);
+            state = updatedSensor.state;
+            console.log(`${entityId} state:`, state);
+            if (state === desiredState) {
+                console.log(`${entityId} is now in the desired state: ${desiredState}.`);
+                return Math.floor((Date.now() - startTime) / 1000);
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second interval
+        }
+        return Math.floor((Date.now() - startTime) / 1000);
+    }
 
     async turnOnTV() {
-        const {state} = await this.getSensorData('sensor.living_room_plug_tv_power');
-        console.log('TV state:', state);
-        if (parseInt(state) === 0) {
-            console.log('TV is off, turning it on...');
-            await this.callService('switch.living_room_plug_tv', 'turn_on');
+        const startTime = Date.now();
+        let { state } = await this.getSensorData('binary_sensor.living_room_tv_state');
+        if (state === 'on') return Math.floor((Date.now() - startTime) / 1000);
+        await this.runScript('script.living_room_tv_on');
+        await this.waitForState('binary_sensor.living_room_tv_state', 'on');
+        return Math.floor((Date.now() - startTime) / 1000);
+    }
 
-            // Loop until the state is > 0
-            let attempts = 0;
-            const maxAttempts = 15; // 30 seconds max with 2-second intervals
-            while (attempts < maxAttempts) {
-                const updatedSensor = await this.getSensorData('sensor.living_room_plug_tv_power');
-                if (updatedSensor.state > 0) {
-                    console.log('TV is now on.');
-                    return true;
-                }
-                attempts++;
-                console.log(`Waiting for TV to turn on... Attempt ${attempts}`);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second interval
-            }
-
-            console.error('TV did not turn on within the timeout period.');
-            return false;
+    async turnOffTV() {
+        const startTime = Date.now();
+        let { state } = await this.getSensorData('binary_sensor.living_room_tv_state');
+        if (state === 'off') return Math.floor((Date.now() - startTime) / 1000);
+        await this.runScript('script.living_room_tv_off');
+        await this.waitForState('binary_sensor.living_room_tv_state', 'off');
+        return Math.floor((Date.now() - startTime) / 1000);
+    }
+    async toggleTV() {
+        const { state } = await this.getEntityState('binary_sensor.living_room_tv_state');
+        if (state === 'on') {
+            await this.turnOffTV();
         } else {
-            console.log('TV is already on.');
-            return true;
+            await this.turnOnTV();
         }
     }
 
@@ -102,13 +126,15 @@ class Kiosk {
         const url = `http://${this.host}:${this.port}/home?password=${this.password}`;
         const maxAttempts = 15; // 30 seconds max with 2-second intervals
         let attempts = 0;
+        const startTime = Date.now();
 
         while (attempts < maxAttempts) {
             try {
                 const response = await axios.get(url);
                 if (response.status === 200) {
-                    console.log('Kiosk is ready');
-                    return true;
+                    const secondsTaken = Math.floor((Date.now() - startTime) / 1000);
+                    console.log(`Kiosk is ready (took ${secondsTaken} seconds)`);
+                    return Math.max(secondsTaken, 1);
                 }
             } catch (error) {
                 console.log(`Attempt ${attempts + 1} failed: ${error.message || error}`);
@@ -126,17 +152,19 @@ class Kiosk {
             return { error: 'Failed to load URL after 10 attempts' };
         }
 
-        const ready = await this.waitForKiosk();
-        if (!ready) return { error: 'Kiosk not ready' };
+        const secondsToLoadKiosk = await this.waitForKiosk();
+        if (!secondsToLoadKiosk) return { error: 'Kiosk not ready' };
 
         const queryString = new URLSearchParams(query).toString();
         const dst_url = `${this.daylightHost}${path}${queryString ? `?${queryString}` : ''}`;
+        const startTime = Date.now();
         const url = `http://${this.host}:${this.port}/?cmd=loadUrl&password=${this.password}&url=${dst_url}`;
         await axios.get(url);
-
         const isLoaded = await this.waitForUrl(dst_url);
+        console.log({isLoaded, dst_url});
+        const secondsToLoadUrl = Math.floor((Date.now() - startTime) / 1000);
         if (isLoaded) {
-            return { success: true };
+            return { success: true, secondsToLoadKiosk, secondsToLoadUrl };
         }
 
         console.log(`Attempt ${attempt} failed. Retrying...`);
@@ -169,8 +197,10 @@ class Kiosk {
     }
 
     async waitForBlank() {
+        const startTime = Date.now();
         const url = `${this.daylightHost}/blank`;
-        return await this.waitForUrl(url, 10);
+        await this.waitForUrl(url, 10);
+        return Math.floor((Date.now() - startTime) / 1000);
     }
 }
 
@@ -181,10 +211,14 @@ class Tasker {
         this.port = port;
     }
 
-    async sendCommand(command) {
+    async sendCommand(command, start = null, attempt = 1) {
+        if(attempt > 10) return false;
+        start = start || Date.now();
         const url = `http://${this.host}:${this.port}/${command}`;
         const response = await axios.get(url);
-        return response.data;
+        const isOK = /OK/.test(response.data);
+        if(!isOK) await this.sendCommand(command, start, attempt + 1);
+        return  Math.floor((Date.now() - start) / 1000);
     }
 }
 
@@ -221,30 +255,29 @@ const tasker = new Tasker(
 // Routes
 exeRouter.get('/tv/:state(on|off|toggle)', async (req, res) => {
     try {
-        await homeAssistant.turnOnTV();
-        const service = req.params.state === 'on' ? 'turn_on' : 'turn_off';
-        const result = await homeAssistant.callService('remote.shield_android_tv', service);
+
+        console.log('param:', req.params.state);
+        let result;
+        if (req.params.state === 'toggle') result = await homeAssistant.toggleTV();
+        if (req.params.state === 'on') result = await homeAssistant.turnOnTV();
+        if (req.params.state === 'off') result = await homeAssistant.turnOffTV();
         res.json({ result });
+
     } catch (error) {
         console.error('Error in /tv/:state endpoint:', error.message || error);
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
 
+
 exeRouter.get('/tv', async (req, res) => {
     try {
-        await homeAssistant.turnOnTV();
+        const secondsToTurnOnTV = await homeAssistant.turnOnTV();
         const query = req.query || {};
-        //turn on switch.living_room_plug_tv
-        const sensor = await homeAssistant.getSensorData('sensor.living_room_plug_tv_power');
-
-        const tvR = await homeAssistant.callService('switch.living_room_plug_tv', 'turn_on');       
-        //todo, wait till the tv is on before sending the command
-        await homeAssistant.callService('remote.shield_android_tv', 'turn_on');
-        const taskerResponse = await tasker.sendCommand('blank');
-        const isBlank = await kiosk.waitForBlank()
-        const kioskResponse = await kiosk.loadUrl('/tv', query);
-        res.json({ status: 'ok', tasker: taskerResponse, kiosk: kioskResponse });
+        const secondsToOpenKiosk = await tasker.sendCommand('blank');
+        const secondsToPrepareKiosk = await kiosk.waitForBlank()
+        const {success, secondsToLoadKiosk, secondsToLoadUrl} = await kiosk.loadUrl('/tv', query);
+        res.json({ status: 'ok', secondsToTurnOnTV, secondsToOpenKiosk, secondsToPrepareKiosk, secondsToLoadKiosk, secondsToLoadUrl });
     } catch (error) {
         console.error('Error in /tv endpoint:', error.message || error);
         res.status(500).json({ error: error.message || 'Internal Server Error' });
