@@ -29,7 +29,15 @@ export const getMonthlyBudget =  (config, transactions) => {
         const monthTransactions = transactions.filter(txn => txn.date.slice(0, 7) === month);
         monthlyBudget[month] = fns[isFuture ? 'future' : isCurrent ? 'current' : 'past']({month, config, transactions:monthTransactions});
     }
-    return monthlyBudget;
+
+    const totalBudget = Object.keys(monthlyBudget).reduce((acc, month) => {
+      const keys = ['income', 'nonBonusIncome', 'spending', 'surplus', 'monthlySpending', 'monthlyDebits', 'monthlyCredits', 'dayToDaySpending'];
+      keys.forEach(key => { acc[key] = parseFloat(((acc[key] || 0) + (monthlyBudget[month][key] || 0)).toFixed(2)); });
+      return acc;
+    }, {});
+
+
+    return {monthlyBudget, totalBudget};
 }
 
 const futureMonthlyBudget = ({ month, config }) => {
