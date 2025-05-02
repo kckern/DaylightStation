@@ -10,7 +10,7 @@ export const buildBudget = (config, transactions)=>
     const budgetEnd = new Date(timeframe.end).toISOString().slice(0, 10);
 
     const accounts = config.accounts;
-    const monthlyBudget = getMonthlyBudget(config, transactions);
+    const {monthlyBudget,totalBudget} = getMonthlyBudget(config, transactions);
     const monthList = Object.keys(monthlyBudget);
 
     const dayToDayBudget        = monthList.reduce((acc, month) => dayToDayBudgetReducer(acc, month, monthlyBudget, config), {});
@@ -125,6 +125,7 @@ export const buildBudget = (config, transactions)=>
         accounts,
         dayToDayBudget: dayToDayBudget,
         monthlyBudget,
+        totalBudget,
         shortTermBuckets,
         shortTermStatus,
         transferTransactions
