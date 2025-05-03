@@ -1,5 +1,5 @@
 import moment from "moment";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Highcharts, { attr } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import HighchartsTreeGraph from "highcharts/modules/treegraph";
@@ -94,15 +94,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
     return (
         <div className="budget-drawer">
             <DrawerChart transactions={transactions} cellKey={cellKey} periodData={periodData} setTransactionFilter={setTransactionFilter} />
-            <div className="budget-drawer-summary">
-                
-                <span>{sortedTransactions.length} Transactions <a target="_blank" href={`https://www.buxfer.com/transactions?tids=${sortedTransactions.map(tx => tx.id).join(",")}`}>
-                <img src={externalIcon} alt="external link" style={{ width: "1em", height: "1em", marginBottom: "-0.2em" }} />
-                </a></span>  
-                <span>Spent: {formatAsCurrency(summary.spent)}</span>
-                <span>Credits: {formatAsCurrency(summary.gained)}</span>
-                <span>Net {summary.netspend < 0 ? "Gain" : "Spend"}: {formatAsCurrency(Math.abs(summary.netspend))}</span>
-            </div>
+            <DrawerSummary sortedTransactions={sortedTransactions} summary={summary} />
             <div className="budget-drawer-content">
               {transactionFilter.tags && <div>{unfilterButton} Filtering by tags: {transactionFilter.tags.join(", ")}</div>}
               {transactionFilter.description && <div>{unfilterButton} Filtering by description: {transactionFilter.description}</div>}
@@ -159,6 +151,40 @@ export function Drawer({ cellKey, transactions, periodData }) {
             </div>
         </div>
     );
+}
+
+
+function DrawerSummary({ sortedTransactions, summary }) {
+
+  return (
+    <div className="budget-drawer-summary">
+      {sortedTransactions.length > 0 && (
+        <span>
+          {sortedTransactions.length} Transactions{" "}
+          <a
+            target="_blank"
+            href={`https://www.buxfer.com/transactions?tids=${sortedTransactions
+              .map((tx) => tx.id)
+              .join(",")}`}
+          >
+            <img
+              src={externalIcon}
+              alt="external link"
+              style={{ width: "1em", height: "1em", marginBottom: "-0.2em" }}
+            />
+          </a>
+        </span>
+      )}
+      {summary.spent > 0 && <span>Spent: {formatAsCurrency(summary.spent)}</span>}
+      {summary.gained > 0 && <span>Credits: {formatAsCurrency(summary.gained)}</span>}
+      {summary.spent > 0 && summary.gained > 0 && summary.netspend !== 0 && (
+        <span>
+          Net {summary.netspend < 0 ? "Gain" : "Spend"}:{" "}
+          {formatAsCurrency(Math.abs(summary.netspend))}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function DrawerChart({ transactions, cellKey, periodData, setTransactionFilter }) {
@@ -227,7 +253,7 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
       acc.push({ name, y, filter });
     }
     return acc;
-  }, []);
+  }, []).sort((a, b) => b.y - a.y);
 
 
   const data = [
@@ -451,370 +477,429 @@ export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
 }
 
 
-export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }) {
-  // thresholds
-  const LEVEL1_CUT = 2;  // <3% of grand → Level 1 “Other”
-  const LEVEL2_CUT = 5;  // <5% of Level 1 Other → Level 2 “Other2”
 
-  // currency formatter
-  const formatCurrency = (v) =>
-    v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${Math.round(v)}`;
 
-  // build our 3‑level data
-  const { topData, drillSeries } = useMemo(() => {
-    // 1) accumulate totals per tag, plus grand total
-    const byTag = {};
-    let grandTotal = 0;
-    transactions.forEach((tx) => {
-      const tag = tx.tagNames?.[0] || "Other";
-      byTag[tag] = (byTag[tag] || 0) + tx.amount;
-      grandTotal += tx.amount;
+
+const MAX_ITEMS = 10;
+
+function safeGetTag(tx) {
+  if (!tx || !Array.isArray(tx.tagNames) || !tx.tagNames[0]) return "Other";
+  return tx.tagNames[0];
+}
+
+function formatCurrency(v) {
+  return v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${Math.round(v)}`;
+}
+
+function buildDrillData(transactions) {
+  if (!Array.isArray(transactions) || transactions.length === 0) {
+    return { topData: [], drillSeries: [], grandTotal: 0 };
+  }
+  let grandTotal = 0;
+  const byTag = {};
+  transactions.forEach((tx) => {
+    const tag = safeGetTag(tx);
+    const amount = Number(tx?.amount) || 0;
+    byTag[tag] = (byTag[tag] || 0) + amount;
+    grandTotal += amount;
+  });
+
+  if (grandTotal === 0) {
+    return { topData: [], drillSeries: [], grandTotal: 0 };
+  }
+  console.log({ grandTotal });
+  const all = Object.entries(byTag).map(([tag, value]) => ({
+    tag,
+    value,
+    pctOfGrand: (value / grandTotal) * 100,
+    txList: transactions.filter((t) => safeGetTag(t) === tag)
+  }));
+
+  const lvl1Majors = all.filter((x) => x.pctOfGrand >= 2);
+  const lvl1Minors = all.filter((x) => x.pctOfGrand < 2);
+
+  const top = lvl1Majors
+    .map((x) => ({
+      name: x.tag,
+      y: parseFloat(x.pctOfGrand.toFixed(2)),
+      pctOfGrand: x.pctOfGrand,
+      valueReal: x.value,
+      drilldown: null,
+      txList: x.txList
+    }))
+    .sort((a, b) => b.y - a.y);
+
+  if (lvl1Minors.length) {
+    const sumPct = lvl1Minors.reduce((s, x) => s + x.pctOfGrand, 0);
+    const sumVal = lvl1Minors.reduce((s, x) => s + x.value, 0);
+    if (sumVal > 0) {
+      const allMinorTx = lvl1Minors.reduce((acc, item) => acc.concat(item.txList || []), []);
+      top.push({
+        name: "Other",
+        y: parseFloat(sumPct.toFixed(2)),
+        pctOfGrand: sumPct,
+        valueReal: sumVal,
+        drilldown: "Other",
+        txList: allMinorTx
+      });
+    }
+  }
+
+  if (top.length > MAX_ITEMS) {
+    const excess = top.splice(MAX_ITEMS);
+    const sumPct = excess.reduce((s, x) => s + x.pctOfGrand, 0);
+    const sumVal = excess.reduce((s, x) => s + x.valueReal, 0);
+    if (sumVal > 0) {
+      const allExcessTx = excess.reduce((acc, item) => acc.concat(item.txList || []), []);
+      top.push({
+        name: "Other",
+        y: parseFloat(sumPct.toFixed(2)),
+        pctOfGrand: sumPct,
+        valueReal: sumVal,
+        drilldown: "Other",
+        txList: allExcessTx
+      });
+    }
+  }
+
+  const series = [];
+  const otherEntry = top.find((x) => x.name === "Other");
+  if (otherEntry && Array.isArray(otherEntry.txList) && otherEntry.txList.length > 0) {
+    const otherVal = otherEntry.valueReal;
+    const groupedMinorByTag = {};
+    otherEntry.txList.forEach((tx) => {
+      const tag = safeGetTag(tx);
+      const amt = Number(tx.amount) || 0;
+      groupedMinorByTag[tag] = (groupedMinorByTag[tag] || 0) + amt;
     });
 
-    // 2) array of { tag, value, pctOfGrand }
-    const all = Object.entries(byTag).map(([tag, value]) => ({
+    const otherItems = Object.entries(groupedMinorByTag).map(([tag, value]) => ({
       tag,
       value,
-      pctOfGrand: (value / grandTotal) * 100
+      pctOfGrand: (value / grandTotal) * 100,
+      pctOfOther: (value / otherVal) * 100,
+      txList: otherEntry.txList.filter((t) => safeGetTag(t) === tag)
     }));
 
-    // 3) LEVEL‑1 partition
-    const lvl1Majors = all.filter((x) => x.pctOfGrand >= LEVEL1_CUT);
-    const lvl1Minors = all.filter((x) => x.pctOfGrand < LEVEL1_CUT);
+    const sorted = otherItems.slice().sort((a, b) => b.pctOfOther - a.pctOfOther);
+    let cum = 0;
+    let splitIndex = sorted.length;
+    for (let i = 0; i < sorted.length; i++) {
+      cum += sorted[i].pctOfOther;
+      if (cum >= 90) {
+        splitIndex = i + 1;
+        break;
+      }
+    }
+    const lvl2Majors = sorted.slice(0, splitIndex);
+    const lvl2Minors = sorted.slice(splitIndex);
 
-    // build top‑level slices, sorted, then push “Other” last if needed
-    const top = lvl1Majors
+    if (lvl2Majors.length > 10) {
+      const excess = lvl2Majors.splice(10);
+      lvl2Minors.push(...excess);
+    }
+
+    const d2 = lvl2Majors
       .map((x) => ({
         name: x.tag,
-        // y = pctOfGrand so the top‐level pie sums to 100
-        y: parseFloat(x.pctOfGrand.toFixed(2)),
+        y: parseFloat(x.pctOfOther.toFixed(2)),
         pctOfGrand: x.pctOfGrand,
         valueReal: x.value,
-        drilldown: null
+        valueFormatted: formatCurrency(x.value),
+        drilldown: null,
+        txList: x.txList
       }))
       .sort((a, b) => b.y - a.y);
 
-    if (lvl1Minors.length) {
-      const sumPct = lvl1Minors.reduce((s, x) => s + x.pctOfGrand, 0);
-      const sumVal = lvl1Minors.reduce((s, x) => s + x.value, 0);
-      top.push({
-        name: "Other",
-        y: parseFloat(sumPct.toFixed(2)),
-        pctOfGrand: sumPct,
-        valueReal: sumVal,
-        drilldown: "Other"
-      });
-    }
-
-    // Ensure no more than 15 items at LEVEL‑1
-    if (top.length > 15) {
-      const excess = top.splice(15);
-      const sumPct = excess.reduce((s, x) => s + x.pctOfGrand, 0);
-      const sumVal = excess.reduce((s, x) => s + x.valueReal, 0);
-      top.push({
-        name: "Other",
-        y: parseFloat(sumPct.toFixed(2)),
-        pctOfGrand: sumPct,
-        valueReal: sumVal,
-        drilldown: "Other"
-      });
-    }
-
-    // 4) LEVEL‑2 under “Other”
-
-    const series = [];
-    if (lvl1Minors.length || top.find((x) => x.name === "Other")) {
-      const otherVal = lvl1Minors.reduce((s, x) => s + x.value, 0);
-      const lvl2All = lvl1Minors.map((x) => ({
-        tag: x.tag,
-        value: x.value,
-        pctOfGrand: x.pctOfGrand,
-        pctOfOther: (x.value / otherVal) * 100
-      }));
-
-      // sort descending by pctOfOther
-      const sorted = lvl2All
-        .slice()
-        .sort((a, b) => b.pctOfOther - a.pctOfOther);
-
-      // pick the minimal prefix whose cumulative pctOfOther >= 80%
-      let cum = 0;
-      let splitIndex = sorted.length;
-      for (let i = 0; i < sorted.length; i++) {
-        cum += sorted[i].pctOfOther;
-        if (cum >= 90) {
-          splitIndex = i + 1; // include this one
-          break;
-        }
-      }
-
-      const lvl2Majors = sorted.slice(0, splitIndex);
-      const lvl2Minors = sorted.slice(splitIndex);
-
-      // Ensure no more than 15 items at LEVEL‑2
-      if (lvl2Majors.length > 10) {
-        const excess = lvl2Majors.splice(10);
-        lvl2Minors.push(...excess);
-      }
-
-      // build the “Other” drilldown
-      const d2 = lvl2Majors
-        .map((x) => ({
-          name: x.tag,
-          y: parseFloat(x.pctOfOther.toFixed(2)),
-          pctOfGrand: x.pctOfGrand,
-          valueReal: x.value,
-          valueFormatted: formatCurrency(x.value),
-          drilldown: null
-        }))
-        .sort((a, b) => b.y - a.y);
-
-      if (lvl2Minors.length) {
-        const sumPctOfOther = lvl2Minors.reduce((s, x) => s + x.pctOfOther, 0);
-        const sumPctOfGrand = lvl2Minors.reduce((s, x) => s + x.pctOfGrand, 0);
-        const sumVal2 = lvl2Minors.reduce((s, x) => s + x.value, 0);
-
+    if (lvl2Minors.length) {
+      const sumPctOfOther = lvl2Minors.reduce((s, x) => s + x.pctOfOther, 0);
+      const sumPctOfGrand = lvl2Minors.reduce((s, x) => s + x.pctOfGrand, 0);
+      const sumVal2 = lvl2Minors.reduce((s, x) => s + x.value, 0);
+      if (sumVal2 > 0) {
+        const allMinor2Tx = lvl2Minors.reduce((acc, i) => acc.concat(i.txList || []), []);
         d2.push({
           name: "Other2",
-          y: parseFloat(sumPctOfOther.toFixed(2)), // ≤ 20%
+          y: parseFloat(sumPctOfOther.toFixed(2)),
           pctOfGrand: sumPctOfGrand,
           valueReal: sumVal2,
           valueFormatted: formatCurrency(sumVal2),
-          drilldown: "Other2"
-        });
-      }
-
-      series.push({
-        id: "Other",
-        name: "Other breakdown",
-        data: d2
-      });
-
-      // 5) LEVEL‑3 under “Other2” if you still want a third level
-      if (lvl2Minors.length) {
-        const other2Val = lvl2Minors.reduce((s, x) => s + x.value, 0);
-        const d3 = lvl2Minors
-          .map((x) => ({
-            name: x.tag,
-            y: parseFloat(((x.value / other2Val) * 100).toFixed(2)),
-            pctOfGrand: x.pctOfGrand,
-            valueReal: x.value,
-            valueFormatted: formatCurrency(x.value),
-            drilldown: null
-          }))
-          .sort((a, b) => b.y - a.y);
-
-        series.push({
-          id: "Other2",
-          name: "Other2 breakdown",
-          data: d3
+          drilldown: "Other2",
+          txList: allMinor2Tx
         });
       }
     }
 
-    return { topData: top, drillSeries: series };
-  }, [transactions]);
+    series.push({
+      id: "Other",
+      name: "Other breakdown",
+      data: d2
+    });
 
-  // 6) Chart options
+    const other2Entry = d2.find((item) => item.name === "Other2");
+    if (other2Entry && Array.isArray(other2Entry.txList) && other2Entry.txList.length > 0) {
+      const other2Val = other2Entry.valueReal;
+      if (other2Val > 0) {
+        const d3ByTag = {};
+        other2Entry.txList.forEach((tx) => {
+          const tag = safeGetTag(tx);
+          const amt = Number(tx.amount) || 0;
+          d3ByTag[tag] = (d3ByTag[tag] || 0) + amt;
+        });
+        const d3Items = Object.entries(d3ByTag).map(([tag, value]) => ({
+          name: tag,
+          y: parseFloat(((value / other2Val) * 100).toFixed(2)),
+          pctOfGrand: (value / grandTotal) * 100,
+          valueReal: value,
+          valueFormatted: formatCurrency(value),
+          drilldown: null
+        }));
+        d3Items.sort((a, b) => b.y - a.y);
+        series.push({
+          id: "Other2",
+          name: "Other2 breakdown",
+          data: d3Items
+        });
+      } else {
+        series.push({
+          id: "Other2",
+          name: "Other2 breakdown",
+          data: []
+        });
+      }
+    }
+  }
+
+  return { topData: top, drillSeries: series, grandTotal };
+}
+
+export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, budgetKey }) {
+  const [componentKey, setComponentKey] = useState(0);
+
+  // Force a "nuke" rebuild of the component on transactions or budgetKey change.
+  useEffect(() => {
+    setComponentKey((prev) => prev + 1);
+  }, [transactions, budgetKey]);
+
+  const [drillStack, setDrillStack] = useState([transactions || []]);
+  const [crumbs, setCrumbs] = useState([]);
+  const [grandTotal, setGrandTotal] = useState(0);
+  const getGrandTotal = () => { return grandTotal || 0; };
+    
+
+  // Re-initialize drillStack and crumb whenever the component is "nuked" and remounted.
+  useEffect(() => {
+    const { grandTotal } = buildDrillData(transactions || []);
+    setGrandTotal(grandTotal);
+    setDrillStack([transactions || []]);
+    setCrumbs([`Total: ${formatCurrency(grandTotal)}`]);
+  }, [componentKey, transactions]);
+
+  const currentTransactions = drillStack[drillStack.length - 1];
+  const { topData, drillSeries } = useMemo(() => buildDrillData(currentTransactions), [currentTransactions]);
+
+  const buildCrumbLabel = (point) => {
+    const percentOfTop = (point.valueReal / grandTotal) * 100;
+    if (point.name === "Other") {
+      return `${formatCurrency(point.valueReal)} (${percentOfTop.toFixed(1)}%)`;
+    }
+    return point.name;
+  };
+
+  const handleClick = (point) => {
+    if (point.name === "Other" || point.name === "Other2") {
+      const subset = drillSeries.find((s) => s.id === point.name);
+      if (subset) {
+        const clickedData = topData.find((d) => d.name === point.name);
+        const childTxList = clickedData && Array.isArray(clickedData.txList) ? clickedData.txList : [];
+        if (point.name === "Other") {
+          if (childTxList.length) {
+            setDrillStack([...drillStack, childTxList]);
+            setCrumbs([...crumbs, buildCrumbLabel(point)]);
+          }
+        } else {
+          const d2Item = subset.data.find((d) => d.name === point.name);
+          if (d2Item && Array.isArray(d2Item.txList) && d2Item.txList.length) {
+            setDrillStack([...drillStack, d2Item.txList]);
+            setCrumbs([...crumbs, buildCrumbLabel(point)]);
+          } else if (childTxList.length) {
+            setDrillStack([...drillStack, childTxList]);
+            setCrumbs([...crumbs, buildCrumbLabel(point)]);
+          }
+        }
+      }
+    } else {
+      setTransactionFilter(point.name);
+    }
+  };
+
   const chartOptions = {
-    chart: {
-      type: 'column',
-      marginLeft: 20
-    },
-    title: {
-      text: 'Spending'
-    },
-    credits: {
-      enabled: false
-    },
-  
+    chart: { type: "column", marginLeft: 20 },
+    title: { text: "" },
+    credits: { enabled: false },
+    legend: { enabled: false },
     xAxis: {
-      type: 'category',
+      type: "category",
       labels: {
         rotation: -25,
         y: 15,
         x: 5,
-        style: {
-          fontSize: '14px',
-          fontFamily: 'Roboto Condensed, sans-serif'
-        }
+        style: { fontSize: "14px", fontFamily: "Roboto Condensed, sans-serif" }
       }
     },
-    yAxis: {
-      title: null,
-      labels: { enabled: false },
-      gridLineWidth: 0
-    },
-  
+    yAxis: { title: null, labels: { enabled: false }, gridLineWidth: 0 },
     tooltip: {
       useHTML: true,
-      backgroundColor: '#fff',
-      borderColor: '#333',
+      backgroundColor: "#fff",
+      borderColor: "#333",
       borderWidth: 1,
-      style: { textAlign: 'center' },
-      followPointer: true,    // no pointer lines back to the bar/pie
+      style: { textAlign: "center" },
+      followPointer: true,
       shared: false,
       formatter() {
         const p = this.point;
-        const pct = (p.pctOfGrand || 0).toFixed(1) + '%';
+        const pct = (p.pctOfGrand || 0).toFixed(1) + "%";
         const amt = formatCurrency(p.valueReal || 0);
-        return `
-          <div style="line-height:1.2">
-            <strong>${pct}</strong><br/>
-            ${p.name}<br/>
-            <em>${amt}</em>
-          </div>`;
+        return `<div style="line-height:1.2"><strong>${pct}</strong><br/>${p.name}<br/><em>${amt}</em></div>`;
       }
     },
-  
     plotOptions: {
-      // Make sure once you move off, the tooltip hides
       series: {
         stickyTracking: false,
-        // Turn off brighten on hover so hovered color = original color
-        states: {
-          hover: {
-            brightness: 0
-          }
-        }
+        states: { hover: { brightness: 0 } }
       },
-  
       column: {
-        cursor: 'pointer',
+        cursor: "pointer",
         dataLabels: {
           enabled: true,
-          format: '{point.valueFormatted}',
+          format: "{point.valueFormatted}",
           style: {
-            fontSize: '14px',
-            fontFamily: 'Roboto Condensed, sans-serif'
+            fontSize: "14px",
+            fontFamily: "Roboto Condensed, sans-serif"
           }
         },
         point: {
           events: {
             mouseOver(e) {
-              // highlight matching pie slice
               const chart = this.series.chart;
-              const pieSeries = chart.series.find(s => s.type === 'pie');
-              if (pieSeries?.data[this.index]) {
-                pieSeries.data[this.index].setState('hover');
+              const pieSeries = chart.series.find((s) => s?.type === "pie");
+              if (pieSeries && pieSeries.data[this.index]) {
+                pieSeries.data[this.index].setState("hover");
               }
-              // show this bar’s tooltip at the pointer
               chart.tooltip.refresh(this, e);
             },
             mouseOut() {
-              // un‐highlight pie slice
               const chart = this.series.chart;
-              const pieSeries = chart.series.find(s => s.type === 'pie');
-              if (pieSeries?.data[this.index]) {
+              const pieSeries = chart.series.find((s) => s?.type === "pie");
+              if (pieSeries && pieSeries.data[this.index]) {
                 pieSeries.data[this.index].setState();
               }
-              // tooltip will hide automatically (stickyTracking: false)
             },
             click() {
-              if (this.name && !['Other','Other2'].includes(this.name)) {
-                setTransactionFilter(this.name);
-              }
-              if (this.drilldown) {
-                const dd = drillSeries.find(obj => obj.id === this.drilldown);
-                if (dd) {
-                  this.series.chart.addSeriesAsDrilldown(this, dd);
-                  this.series.chart.applyDrilldown();
-                }
-              }
+              handleClick(this);
             }
           }
         }
       },
-  
       pie: {
-        center: ['85%','20%'],
-        size: '30%',
+        center: ["85%", "20%"],
+        size: "30%",
         showInLegend: false,
         dataLabels: { enabled: false },
-        cursor: 'pointer',
+        cursor: "pointer",
         point: {
           events: {
             mouseOver(e) {
               const chart = this.series.chart;
-              // highlight our slice
-              this.setState('hover');
-              // highlight the matching column
-              const colSeries = chart.series.find(s => s.type === 'column');
-              if (colSeries?.data[this.index]) {
-                colSeries.data[this.index].setState('hover');
+              this.setState("hover");
+              const colSeries = chart.series.find((s) => s.type === "column");
+              if (colSeries && colSeries.data[this.index]) {
+                colSeries.data[this.index].setState("hover");
               }
-              // show tooltip for this slice at cursor
               chart.tooltip.refresh(this, e);
             },
             mouseOut() {
               const chart = this.series.chart;
-              // un‐highlight slice
               this.setState();
-              // un‐highlight bar
-              const colSeries = chart.series.find(s => s.type === 'column');
-              if (colSeries?.data[this.index]) {
+              const colSeries = chart.series.find((s) => s.type === "column");
+              if (colSeries && colSeries.data[this.index]) {
                 colSeries.data[this.index].setState();
               }
             },
             click() {
-              if (this.name && !['Other','Other2'].includes(this.name)) {
-                setTransactionFilter(this.name);
-              }
-              if (this.drilldown) {
-                const dd = drillSeries.find(obj => obj.id === this.drilldown);
-                if (dd) {
-                  this.series.chart.addSeriesAsDrilldown(this, dd);
-                  this.series.chart.applyDrilldown();
-                }
-              }
+              handleClick(this);
             }
           }
         }
       }
     },
-  
-    // TWO series: columns (using real $ amounts) & pie (using percentages),
-    // aligned by index so slice #i corresponds to bar #i.
     series: [
       {
-        name: 'Categories',
-        type: 'column',
+        name: "Categories",
+        type: "column",
         colorByPoint: true,
-        data: topData.map(pt => ({
-          name:           pt.name,
-          y:              pt.valueReal,
-          pctOfGrand:     pt.pctOfGrand,
-          valueReal:      pt.valueReal,
+        data: topData.map((pt) => ({
+          name: pt.name,
+          y: pt.valueReal,
+          pctOfGrand: pt.pctOfGrand,
+          valueReal: pt.valueReal,
           valueFormatted: formatCurrency(pt.valueReal),
-          drilldown:      pt.drilldown,
-          color:          pt.color
+          drilldown: pt.drilldown
         }))
       },
       {
-        name: 'Categories',
-        type: 'pie',
+        name: "Categories",
+        type: "pie",
         colorByPoint: true,
-        data: topData.map(pt => ({
-          name:           pt.name,
-          y:              pt.pctOfGrand,
-          pctOfGrand:     pt.pctOfGrand,
-          valueReal:      pt.valueReal,
+        data: topData.map((pt) => ({
+          name: pt.name,
+          y: pt.y,
+          pctOfGrand: pt.pctOfGrand,
+          valueReal: pt.valueReal,
           valueFormatted: formatCurrency(pt.valueReal),
-          drilldown:      pt.drilldown,
-          color:          pt.color
+          drilldown: pt.drilldown
         }))
       }
-    ],
-  
-    // standard drilldown config
-    drilldown: {
-      series: drillSeries.map(s => ({
-        ...s,
-        data: s.data.map(d => ({ ...d, color: d.color }))
-      }))
-    }
+    ]
   };
-  
-  
-  return <HighchartsReact highcharts={Highcharts} options={chartOptions} />;
+
+  function renderBreadcrumbs(handleBackClick) {
+    return crumbs.map((c, i) => {
+      const separator = i < crumbs.length - 1 ? " > " : "";
+
+      return (
+        <span key={i}>
+          <span
+        onClick={() => handleBackClick(i)}
+        style={{
+          fontWeight: i === crumbs.length - 1 ? "bold" : "normal",
+          color: "black",
+          textDecoration: "none",
+          cursor: "pointer",
+          backgroundColor: "#00000022",
+          borderRadius: "4px",
+          padding: "0 1ex",
+        }}
+          >
+        {c}
+          </span>
+          {separator}
+        </span>
+      );
+    });
+  }
+
+  const handleBackClick = (i) => {
+    setDrillStack(drillStack.slice(0, i + 1));
+    setCrumbs(crumbs.slice(0, i + 1));
+  };
+
+  return (
+    //max-width: 900px; margin: 0px auto; height:100%; display:flex; flex-direction: column
+    <div key={componentKey} style={{ maxWidth: 900, margin: "0px auto", height: "100%", display: "flex", flexDirection: "column" }}>
+      <div style={{ textAlign: "center", padding: "0.5ex 0"}}>
+        <span style={{ marginLeft: 10 }}>{renderBreadcrumbs(handleBackClick)}</span>
+      </div>
+      <HighchartsReact highcharts={Highcharts} options={chartOptions} />
+    </div>
+  );
 }
