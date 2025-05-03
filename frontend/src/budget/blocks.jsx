@@ -70,12 +70,12 @@ export const formatAsCurrency = (value) => {
       );
 
     }
-
+    const budgetKey =activeBudget.budgetStart;
     return (
       <div className="budget-block">
         <h2>Spending</h2>
         <div className="budget-block-content">
-          <SpendingPieDrilldownChart transactions={allTransactionsFromAllMonths} key={budgetStartDate.toString()} setTransactionFilter={setTransactionFilter} />
+          <SpendingPieDrilldownChart transactions={allTransactionsFromAllMonths} key={budgetStartDate.toString()} setTransactionFilter={setTransactionFilter}  budgetKey={budgetKey} />
         </div>
       </div>
     );
