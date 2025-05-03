@@ -226,9 +226,18 @@ export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions
       setActiveMonth={setActiveMonth}
     />
   );
+  useEffect(() => {
+    const activeMonthIsInCurrentBudget = budget.dayToDayBudget[activeMonth] !== undefined;
+
+    if (!activeMonthIsInCurrentBudget) {
+      const firstMonth = nonFutureMonths.reverse()[0];
+      setActiveMonth(firstMonth);
+    }
+  }, [activeMonth, budget.dayToDayBudget, nonFutureMonths]);
 
   const monthData = budget.dayToDayBudget[activeMonth] || {};
   const options = buildDayToDayBudgetOptions(monthData, setDrawerContent);
+
 
   return (
     <div className="budget-block">
@@ -236,6 +245,7 @@ export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions
       <div className="budget-block-content">
         {monthHeader}
         <HighchartsReact
+        key={activeMonth}
           className="budget-burn-down-chart"
           highcharts={Highcharts}
           options={{

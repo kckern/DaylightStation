@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button, MantineProvider, Select, TabsPanel } from '@mantine/core';
 import { BudgetHoldings,  BudgetSpending} from './blocks.jsx';
 import { BudgetMortgage } from './blocks/mortgage.jsx';
@@ -56,6 +56,66 @@ function ReloadButton({setBudgetData}) {
 
 }
 
+
+
+
+function Header({
+  availableBudgetKeys = [],
+  activeBudgetKey,
+  setActiveBudgetKey,
+  setBudgetData,
+}) {
+  // Transform available budget keys into data for the Select component
+  const budgetOptions = useMemo(() => (
+    availableBudgetKeys.map((key) => ({
+      value: key,
+      label: moment(key).format('YYYY') + ' Budget',
+    }))
+  ), [availableBudgetKeys]);
+
+  // Default to the first key if activeBudgetKey is missing
+  const defaultValue = activeBudgetKey || budgetOptions?.[0]?.value || '';
+
+  return (
+    <header>
+      <h1 style={{ display: 'flex', alignItems: 'center', padding: '0 1rem' }}>
+        <div style={{ flex: 1 }} />
+
+        {/* Centered, subtle "title" dropdown */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          <Select
+            data={budgetOptions}
+            value={defaultValue}
+            onChange={setActiveBudgetKey}
+            // Make the font size larger since it acts as a page title
+            styles={{
+              input: {
+                fontSize: '1.5rem',
+                fontWeight: 'bold',
+                border: '1px solid #FFFFFF33',
+                textAlign: 'center',
+                backgroundColor: 'transparent',
+                color: 'white',
+                cursor: 'pointer',
+              },
+              rightSection: {
+                pointerEvents: 'none',
+              },
+            }}
+            rightSection={<span style={{ fontSize: '1rem' }}>▼</span>}
+            // Remove placeholder since we auto-select the first value
+            clearable={false}
+          />
+        </div>
+
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+          <ReloadButton setBudgetData={setBudgetData} />
+        </div>
+      </h1>
+    </header>
+  );
+}
+
 export function BudgetViewer({ budget, mortgage, setBudgetData }) {
 
   const [drawerContent, setDrawerContent] = useState(null);
@@ -66,19 +126,12 @@ export function BudgetViewer({ budget, mortgage, setBudgetData }) {
   const availableBudgetKeys = Object.keys(budget);
   return (
     <div className="budget-viewer">
-      <header>
-        <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '1rem'}}>
-          <Select
-            data={availableBudgetKeys.map((key) => ({ value: key, label: moment(key).format('YYYY') }))}
-            value={activeBudgetKey}
-            onChange={(value) => setActiveBudgetKey(value)}
-            placeholder="Select Budget"
-            style={{ width: '6rem',  }}
-          />
-          <span>Budget</span>
-          <ReloadButton setBudgetData={setBudgetData} />
-        </h1>
-      </header>
+      <Header
+        availableBudgetKeys={availableBudgetKeys}
+        activeBudgetKey={activeBudgetKey}
+        setActiveBudgetKey={setActiveBudgetKey}
+        setBudgetData={setBudgetData}
+      />
       <Drawer
         opened={!!drawerContent}
         onClose={() => setDrawerContent(null)}

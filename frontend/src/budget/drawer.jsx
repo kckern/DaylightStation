@@ -173,7 +173,6 @@ function DrawerChart({ transactions, cellKey, periodData, setTransactionFilter }
 function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
 
-  console.log(periodData);
   const {month} = periodData;
 
   const incomeSum = month.income;
@@ -197,14 +196,46 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
   const isNegative = surplusValue < 0;  
   const maxValue = incomeSum + categoryCredits.reduce((acc, {y}) => acc + y, 0);
   
-  const income = month.incomeTransactions.map(tx => ({name: tx.description || "Paycheck", y: tx.amount, filter: { description: tx.description }}))
-  .sort((a, b) => a.name.localeCompare(b.name) || b.y - a.y);
+  const totalIncomeValue = month.incomeTransactions.reduce((acc, { amount }) => acc + amount, 0);
+  const income = month.incomeTransactions.map(tx => ({
+    name: tx.description || "Paycheck",
+    y: tx.amount,
+    filter: { description: tx.description }
+  })).sort((a, b) => a.name.localeCompare(b.name) || b.y - a.y);
+
+  const incomeNamesWithCounts = income.reduce((acc, { name, y }) => {
+    if (!acc[name]) {
+      acc[name] = { count: 0, amount: 0, percent: 0 };
+    }
+    acc[name].count += 1;
+    acc[name].amount += Math.abs(y);
+    acc[name].percent = (acc[name].amount / totalIncomeValue) * 100;
+    return acc;
+  }, {});
+
+  const mergedIncome = income.reduce((acc, { name, y, filter }) => {
+    const { count, percent } = incomeNamesWithCounts[name];
+    if(name=== "Discretionary Bonus")  console.log({name, count, percent});
+    if (count > 3 || (count > 1 && percent < 20)) {
+      const existingEntry = acc.find(entry => entry.name === name);
+      if (existingEntry) {
+        existingEntry.y += y;
+      } else {
+        acc.push({ name, y, filter });
+      }
+    } else {
+      acc.push({ name, y, filter });
+    }
+    return acc;
+  }, []);
+
+
   const data = [
-    ... income,
-    { name: 'Monthly Income', isIntermediateSum: true, color: `#304529`  , filter: { bucket: "income" }},
+    ... mergedIncome,
+    { name: 'Income', isIntermediateSum: true, color: `#304529`  , filter: { bucket: "income" }},
     ... categoryCredits.sort((a, b) => a.y - b.y),
     ... categoryDebits.sort((a, b) => a.y - b.y),
-    { name: 'Monthly Cash Flow', isIntermediateSum: true, color: `#660000` , filter: { bucket: "monthly" }},
+    { name: 'Cash Flow', isIntermediateSum: true, color: `#660000` , filter: { bucket: "monthly" }},
     { name: 'Day-to-Day Spending', y: -dayToDaySum , color: `#432454`  , filter: { bucket: "day" }},
     { name: !isNegative  ? 'Surplus' : 'Deficit',   isSum: true, color: isNegative ? `#c1121f` : `#759c82`}
   ];
@@ -242,7 +273,7 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
     legend: { enabled: false },
     tooltip: { 
         formatter: function() {
-            return `<b>${this.point.name}</b><br/>${formatAsCurrency(this.y)}<br/>${(Math.abs(this.y) / incomeSum * 100).toFixed(0)}% of monthly income`;
+            return `<b>${this.point.name}</b><br/>${formatAsCurrency(this.y)}<br/>${(Math.abs(this.y) / incomeSum * 100).toFixed(0)}% of income`;
         }, 
     },
     series: [{
@@ -271,7 +302,6 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
   };
 
   return <div className="waterfall-chart">
-
                 <HighchartsReact
                     highcharts={Highcharts}
                     options={options}
