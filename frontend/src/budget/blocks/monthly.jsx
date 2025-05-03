@@ -131,24 +131,112 @@ function BudgetTable({ setDrawerContent, budget }) {
     }
   }
 
-  const getPeriodData = (month, key) => {
-
-    month = month || Object.keys(activeBudget["monthlyBudget"])[0];
-    const periodData = {month: activeBudget["monthlyBudget"][month], daytoday: activeBudget["dayToDayBudget"][month]};
+  function getPeriodData(month, key) {
+    const allMonths = Object.keys(activeBudget["monthlyBudget"]);
+  
+    if (!month) {
+      const aggregatedData = {
+        month: {
+          income: 0,
+          nonBonusIncome: 0,
+          spending: 0,
+          surplus: 0,
+          monthlySpending: 0,
+          monthlyDebits: 0,
+          monthlyCredits: 0,
+          dayToDaySpending: 0,
+          incomeTransactions: [],
+          monthlyCategories: {}
+        },
+        daytoday: {
+          spending: 0,
+          budget: 0,
+          balance: 0,
+          transactions: [],
+          dailyBalances: {},
+          spent: 0,
+          daysRemaining: 0,
+          dailySpend: 0,
+          dailyBudget: null,
+          dailyAdjustment: null,
+          adjustPercentage: null
+        }
+      };
+  
+      allMonths.forEach(m => {
+        const currentMonthData = activeBudget["monthlyBudget"][m] || {};
+        const currentDayToDayData = activeBudget["dayToDayBudget"][m] || {};
+  
+        aggregatedData.month.income            += currentMonthData.income            || 0;
+        aggregatedData.month.nonBonusIncome    += currentMonthData.nonBonusIncome    || 0;
+        aggregatedData.month.spending         += currentMonthData.spending          || 0;
+        aggregatedData.month.surplus          += currentMonthData.surplus           || 0;
+        aggregatedData.month.monthlySpending  += currentMonthData.monthlySpending   || 0;
+        aggregatedData.month.monthlyDebits    += currentMonthData.monthlyDebits     || 0;
+        aggregatedData.month.monthlyCredits   += currentMonthData.monthlyCredits    || 0;
+        aggregatedData.month.dayToDaySpending += currentMonthData.dayToDaySpending  || 0;
+  
+        const monthIncomeTransactions = currentMonthData.incomeTransactions || [];
+        aggregatedData.month.incomeTransactions.push(...monthIncomeTransactions);
+  
+        const currentCategories = currentMonthData.monthlyCategories || {};
+        Object.keys(currentCategories).forEach(cat => {
+          if (!aggregatedData.month.monthlyCategories[cat]) {
+            aggregatedData.month.monthlyCategories[cat] = {
+              amount: 0,
+              credits: 0,
+              debits: 0,
+              transactions: []
+            };
+          }
+          aggregatedData.month.monthlyCategories[cat].amount   += currentCategories[cat].amount   || 0;
+          aggregatedData.month.monthlyCategories[cat].credits  += currentCategories[cat].credits  || 0;
+          aggregatedData.month.monthlyCategories[cat].debits   += currentCategories[cat].debits   || 0;
+          aggregatedData.month.monthlyCategories[cat].transactions.push(...(currentCategories[cat].transactions || []));
+        });
+  
+        aggregatedData.daytoday.spending += currentDayToDayData.spending || 0;
+        aggregatedData.daytoday.budget   += currentDayToDayData.budget   || 0;
+        aggregatedData.daytoday.balance  += currentDayToDayData.balance  || 0;
+        aggregatedData.daytoday.spent    += currentDayToDayData.spent    || 0;
+  
+        const dayTransactions = currentDayToDayData.transactions || [];
+        aggregatedData.daytoday.transactions.push(...dayTransactions);
+  
+        const dailyBalances = currentDayToDayData.dailyBalances || {};
+        Object.keys(dailyBalances).forEach(day => {
+          if (!aggregatedData.daytoday.dailyBalances[day]) {
+            aggregatedData.daytoday.dailyBalances[day] = { ...dailyBalances[day] };
+          } else {
+            aggregatedData.daytoday.dailyBalances[day].credits          += dailyBalances[day].credits          || 0;
+            aggregatedData.daytoday.dailyBalances[day].debits           += dailyBalances[day].debits           || 0;
+            aggregatedData.daytoday.dailyBalances[day].transactionCount += dailyBalances[day].transactionCount || 0;
+            aggregatedData.daytoday.dailyBalances[day].endingBalance    += dailyBalances[day].endingBalance    || 0;
+          }
+        });
+      });
+  
+      return aggregatedData;
+    }
+  
+    const periodData = {
+      month: activeBudget["monthlyBudget"][month],
+      daytoday: activeBudget["dayToDayBudget"][month]
+    };
+    console.log("Period data", month, key, periodData);
     return periodData;
-
   }
 
 
   const handleCellClick = (month, key) => {
 
 
-
+    console.log("Clicked cell", month, key);
     const transactions = loadTransactions(month, key).sort((a, b) => b.amount - a.amount);
     const periodData = getPeriodData(month, key);
-    const monthString = moment(month, "YYYY-MM").format("MMM ‘YY");
+    const monthString = month ? moment(month, "YYYY-MM").format("MMM ‘YY") : "Entire Budget Period";
     const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
-    const header = key === "income" ? "Income" : key === "fixed" ? "Operating Expenses" : "Day-to-Day Spending";
+    const header = key === "income" ? "Income" : key === "fixed" ? "Operating Expenses" : key === "day" ? "Day-to-Day Spending" : "Cash Flow";
     const content = <Drawer transactions={transactions} cellKey={key} periodData={periodData} />;
     setDrawerContent({ jsx: content, meta: { title: `${isFuture ? "Anticipated" : ""}  ${header} for ${monthString}` } });
   }
