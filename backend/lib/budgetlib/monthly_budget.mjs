@@ -95,6 +95,7 @@ const futureMonthlyBudget = ({ month, config }) => {
     // 4) EXPENSES
     const monthlyCategories = monthly.reduce((acc, { label, amount, frequency, dates, exceptions }) => {
       // Check for exceptions for this month
+      label = label || 'Shopping';
       const exceptionalItem = exceptions?.find((ex) => ex[moment(month).format('YYYY-MM')]);
       const exceptionalAmount = exceptionalItem ? exceptionalItem[moment(month).format('YYYY-MM')] : null;
       let finalAmount = exceptionalAmount !== null ? exceptionalAmount : amount;

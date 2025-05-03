@@ -23,13 +23,29 @@ export const findBucket = (buckets, transaction) => {
     const mainTag = txnTags[0];
     const arraysOverlap = (a, b) => a.some(tag => b.includes(tag));
     const txnType = transaction.type;
+    let label, bucket;
 
-    if(/transfer|investment/.test(txnType) || mainTag==="Transfer") return {label: mainTag, bucket: 'transfer'};
-    if(arraysOverlap(incomeTags, txnTags))      return {label: mainTag, bucket: 'income'}; 
-    if(arraysOverlap(dayTags, txnTags))         return {label: 'Day-to-Day', bucket: 'day'};
-    if(arraysOverlap(monthTags, txnTags))       return {label: monthTagDict[mainTag], bucket: 'monthly'};
-    if(arraysOverlap(shortTermTags, txnTags))   return {label: shortTermTagDict[mainTag], bucket: 'shortTerm'};
-    return {label: 'Unbudgeted', bucket: 'shortTerm'};
+    if (/transfer|investment/.test(txnType) || mainTag === "Transfer") {
+        label = mainTag;
+        bucket = 'transfer';
+    } else if (arraysOverlap(incomeTags, txnTags)) {
+        label = mainTag;
+        bucket = 'income';
+    } else if (arraysOverlap(dayTags, txnTags)) {
+        label = 'Day-to-Day';
+        bucket = 'day';
+    } else if (arraysOverlap(monthTags, txnTags)) {
+        label = monthTagDict[mainTag];
+        bucket = 'monthly';
+    } else if (arraysOverlap(shortTermTags, txnTags)) {
+        label = shortTermTagDict[mainTag];
+        bucket = 'shortTerm';
+    } else {
+        label = 'Unbudgeted';
+        bucket = 'shortTerm';
+    }
+    label = label || 'Day-to-Day';
+    return { label, bucket };
 
 
 }   

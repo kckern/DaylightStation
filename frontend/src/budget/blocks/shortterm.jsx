@@ -20,7 +20,7 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
         const item = shortTermBuckets[label];
         const { budget, debits, credits, balance, transactions } = item;
         const extendedBudget = budget + credits;
-        const overage = debits > extendedBudget ? debits - extendedBudget : 0;
+        const overage = debits > extendedBudget ? parseFloat((debits - extendedBudget).toFixed(2)) : 0;
         const spentWithinAllotted = Math.min(debits, extendedBudget);
         const remainingPortion = balance < 0 ? 0 : balance;
 
@@ -166,9 +166,9 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
     };
 
     function gatherTransactions(key) {
-        const shortTermLabels = Object.keys(shortTermBudget);
+        const shortTermLabels = Object.keys(shortTermBuckets);
         const alltransactions = shortTermLabels.reduce((acc, label) => {
-            const item = shortTermBudget[label];
+            const item = shortTermBuckets[label];
             return acc.concat(item.transactions);
         }, []).sort((b, a) => a.amount - b.amount);
 
