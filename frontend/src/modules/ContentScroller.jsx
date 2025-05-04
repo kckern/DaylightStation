@@ -70,10 +70,10 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
 
 
   const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
-  const [selectedClass, setSelectedClass] = useState(classes[0]);
+  const [shader, setShader] = useState(classes[0]);
   const cycleThroughClasses = (upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
-    setSelectedClass((prevClass) => {
+    setShader((prevClass) => {
       const currentIndex = classes.indexOf(prevClass);
       const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
       return classes[newIndex];
@@ -286,7 +286,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
     // Final transform for scrolling
     const yOffset = (yProgress * contentHeight) - (panelHeight * yProgress); 
     return (
-      <div className={`content-scroller ${type} ${className} ${selectedClass}`}>
+      <div className={`content-scroller ${type} ${className} ${shader}`}>
         {(title || subtitle) && (
           <>
             {title && <h2>{title}</h2>}

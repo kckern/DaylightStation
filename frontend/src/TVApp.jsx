@@ -60,6 +60,7 @@ export default function TVApp() {
   const [list, setList] = useState([]);
   const [currentContent, setCurrentContent] = useState(null);
   const [autoplayed, setAutoplayed] = useState(false);
+  const [autoShader, setAutoShader] = useState(false);
 
   useEffect(setupNavigationHandlers, []);
 
@@ -76,16 +77,25 @@ export default function TVApp() {
   const queryEntries = Object.fromEntries(params.entries());
 
   const autoplay = (() => {
+
+    const configList = ["volume","shader","playbackRate","shuffle","continuous"];
+    const config = {};
+    for (const configKey of configList) {
+      if (queryEntries[configKey]) {
+        config[configKey] = queryEntries[configKey];
+      }
+    }
+
     const findKey = (value) => ( /^\d+$/.test(value) ? "plex" : "playlist" );
     const mappings = {
-      playlist:  (value) => ({ queue: { [findKey(value)]: value } }),
-      queue:     (value) => ({ queue: { [findKey(value)]: value } }),
-      play:      (value) => ({ play:  { [findKey(value)]: value } }),
-      media:     (value) => ({ play: { media: value } }),
-      plex:      (value) => ({ play: { plex: value } }),
-      hymn:      (value) => ({ play: { hymn: value } }),
-      talk:      (value) => ({ play: { talk: value } }),
-      scripture: (value) => ({ play: { scripture: value } }),
+      playlist:  (value) => ({ queue: { [findKey(value)]: value, ...config } }),
+      queue:     (value) => ({ queue: { [findKey(value)]: value, ...config } }),
+      play:      (value) => ({ play:  { [findKey(value)]: value, ...config } }),
+      media:     (value) => ({ play: { media: value, ...config } }),
+      plex:      (value) => ({ play: { plex: value, ...config } }),
+      hymn:      (value) => ({ play: { hymn: value, ...config } }),
+      talk:      (value) => ({ play: { talk: value, ...config } }),
+      scripture: (value) => ({ play: { scripture: value, ...config } }),
     };
 
     for (const [key, value] of Object.entries(queryEntries)) {
