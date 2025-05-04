@@ -35,7 +35,24 @@ export default function App() {
   }, []);
   return (
     <MantineProvider>
-      {budgetData ? <BudgetViewer budget={budgetData} mortgage={mortgageData} setBudgetData={setBudgetData} /> : <div>Loading...</div>}
+      {budgetData ? (
+        <BudgetViewer budget={budgetData} mortgage={mortgageData} setBudgetData={setBudgetData} />
+      ) : (
+        <div style={{ padding: '1rem' }}>
+          <div
+            style={{
+              border: '1px solid #e0e0e0',
+              borderRadius: '8px',
+              backgroundColor: '#f8f9fa',
+              padding: '1rem',
+              textAlign: 'center',
+              color: '#495057',
+            }}
+          >
+            <strong>Loading...</strong>
+          </div>
+        </div>
+      )}
     </MantineProvider>
   );
 }

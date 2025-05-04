@@ -78,6 +78,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
         });
 
     const handleRowClick = (transaction) => {
+      if(!transaction.id) return;
         window.open(`https://www.buxfer.com/transactions?tids=${transaction.id}`, '_blank');
     };
 
@@ -135,8 +136,9 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                   const evenOdd = i % 2 === 0 ? "even" : "odd";
                                 const rowClassName = !isIncome ? `expense ${evenOdd}` : `income ${evenOdd}`;
                                 const memo = transaction.memo ? <span className="memo">{transaction.memo}</span> : null;
+                                const hasId = !!transaction.id;
                                 return (
-                                    <tr key={guid} className={rowClassName} onClick={() => handleRowClick(transaction)} >
+                                    <tr key={guid} className={rowClassName} onClick={() => handleRowClick(transaction)}  style={{ cursor: hasId ? 'pointer' : 'default' }}>
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
