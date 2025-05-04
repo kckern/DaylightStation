@@ -157,8 +157,9 @@ class Kiosk {
 
         const queryString = new URLSearchParams(query).toString();
         const dst_url = `${this.daylightHost}${path}${queryString ? `?${queryString}` : ''}`;
+        const encodedUrl = encodeURIComponent(dst_url);
         const startTime = Date.now();
-        const url = `http://${this.host}:${this.port}/?cmd=loadUrl&password=${this.password}&url=${dst_url}`;
+        const url = `http://${this.host}:${this.port}/?cmd=loadUrl&password=${this.password}&url=${encodedUrl}`;
         await axios.get(url);
         const isLoaded = await this.waitForUrl(dst_url);
         console.log({isLoaded, dst_url});

@@ -63,8 +63,9 @@ function useCommonMediaController({
   shaders,
   type,
   onShaderLevelChange = () => {},
-  selectedClass,
-  setSelectedClass,
+  shader,
+  setShader,
+  volume,
   cycleThroughClasses,
   playbackKeys,queuePosition 
 }) {
@@ -202,21 +203,24 @@ function useCommonMediaController({
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
+      volume = parseFloat(volume) || 1;
+      if(volume > 1) volume = volume / 100;
       const startTime = duration > (12 * 60) ? start : 0;
-      //console.log({duration, start, startTime, media_key, type});
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
+      mediaEl.volume = volume; // Set the volume level
+      console.log({volume});
       if (isVideo) {
-        mediaEl.controls = false;
-        mediaEl.addEventListener('play', () => {
-          mediaEl.playbackRate = playbackRate;
-        }, { once: false });
-        mediaEl.addEventListener('seeked', () => {
-          mediaEl.playbackRate = playbackRate;
-        }, { once: false });
-      } else {
+      mediaEl.controls = false;
+      mediaEl.addEventListener('play', () => {
         mediaEl.playbackRate = playbackRate;
+      }, { once: false });
+      mediaEl.addEventListener('seeked', () => {
+        mediaEl.playbackRate = playbackRate;
+      }, { once: false });
+      } else {
+      mediaEl.playbackRate = playbackRate;
       }
     };
 
@@ -241,10 +245,9 @@ function useCommonMediaController({
     seconds,
     percent: getProgressPercent(seconds, duration).percent,
     duration,
-    playbackRate,
     isPaused: !seconds ? false : getMediaEl()?.paused || false,
     isDash,
-    selectedClass,
+    shader,
     timeSinceLastProgressUpdate,
     handleProgressClick
   };
@@ -285,14 +288,15 @@ export async function flattenQueueItems(items, level = 1) {
 
 function useQueueController({ play, queue, clear }) {
   const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
-  const [selectedClass, setSelectedClass] = useState(classes[0]);
-  const [isContinuous, setIsContinuous] = useState(false);
+  const [shader, setShader] = useState(play?.shader || queue?.shader || classes[0]);
+  const [volume] = useState(play?.volume || queue?.volume || 1);
+  const [isContinuous, setIsContinuous] = useState(play?.continuous || queue?.continuous || false);
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
 
   const cycleThroughClasses = (upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
-    setSelectedClass((prevClass) => {
+    setShader((prevClass) => {
       const currentIndex = classes.indexOf(prevClass);
       const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
       return classes[newIndex];
@@ -373,9 +377,10 @@ function useQueueController({ play, queue, clear }) {
   return {
     classes,
     cycleThroughClasses,
-    selectedClass,
-    setSelectedClass,
+    shader,
+    setShader,
     isQueue,
+    volume,
     isContinuous,
     playQueue,
     setQueue,
@@ -394,10 +399,11 @@ export default function Player({ play, queue, clear, playbackKeys }) {
   const {
     classes,
     cycleThroughClasses,
-    selectedClass,
-    setSelectedClass,
+    shader,
+    setShader,
     isQueue,
     isContinuous,
+    volume,
     queuePosition,
     playQueue,
     advance
@@ -406,8 +412,9 @@ export default function Player({ play, queue, clear, playbackKeys }) {
   const playerProps = {
     advance: isQueue ? advance : clear,
     clear,
-    selectedClass,
-    setSelectedClass,
+    shader,
+    volume,
+    setShader,
     cycleThroughClasses,
     classes,
     playbackKeys,
@@ -423,11 +430,11 @@ export default function Player({ play, queue, clear, playbackKeys }) {
     }
     return null;
   })();
-
+  if(singlePlayerProps?.key) delete singlePlayerProps.key;
   return singlePlayerProps ? (
     <SinglePlayer {...singlePlayerProps} {...playerProps} />
   ) : (
-    <div className={`player ${selectedClass}`}>
+    <div className={`player ${shader}`}>
       <LoadingOverlay />
     </div>
   );
@@ -444,17 +451,22 @@ export function SinglePlayer(play) {
     hymn,
     scripture,
     talk,
-    shuffle,
     rate,
     advance,
     open,
     clear,
-    selectedClass,
-    setSelectedClass,
+    setShader,
     cycleThroughClasses,
     classes,
     playbackKeys,
-    queuePosition
+    queuePosition,
+    //configs
+    shader,
+    volume,
+    playbackRate
+
+
+
   } = play || {};
 
   if (!!scripture)    return <Scriptures {...play} />;
@@ -487,7 +499,7 @@ export function SinglePlayer(play) {
   if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
   return (
     <div className="player">
-      {!isReady && <div className={`shader on notReady ${selectedClass}`}><LoadingOverlay /></div>}
+      {!isReady && <div className={`shader on notReady ${shader}`}><LoadingOverlay /></div>}
       {isReady && ['dash_video', 'video', 'audio'].includes(mediaInfo.media_type) && (
         React.createElement(
           {
@@ -499,8 +511,10 @@ export function SinglePlayer(play) {
             media: mediaInfo,
             advance,
             clear,
-            selectedClass,
-            setSelectedClass,
+            shader,
+            volume,
+            playbackRate,
+            setShader,
             cycleThroughClasses,
             classes,
             playbackKeys,
@@ -518,29 +532,29 @@ export function SinglePlayer(play) {
 /*  AUDIO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo }) {
+function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo }) {
   const { media_url, title, artist, album, image, type } = media;
   const {
     timeSinceLastProgressUpdate,
-    playbackRate,
-    containerRef,
     seconds,
     duration,
+    containerRef,
     isPaused,
     handleProgressClick
   } = useCommonMediaController({
     start: media.seconds,
-    playbackRate: media.playbackRate || 1,
+    playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
     isAudio: true,
     isVideo: false,
     meta: media,
     type: ['track'].includes(type) ? 'plex' : 'media',
-    selectedClass,
-    setSelectedClass,
+    shader,
+    setShader,
     cycleThroughClasses,
     classes,
+    volume,
     playbackKeys,queuePosition 
   });
 
@@ -550,7 +564,7 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
 
 
   return (
-    <div className={`audio-player ${selectedClass}`}>
+    <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
       {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
@@ -567,7 +581,7 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
       <h2>
         {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
       </h2>
-      <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }} />
+      <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }}  />
     </div>
   );
 }
@@ -577,7 +591,7 @@ function AudioPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
 /*  VIDEO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo  }) {
+function VideoPlayer({ media, advance, clear, shader, setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo  }) {
   const isPlex = ['dash_video'].includes(media.media_type);
   const {
     isDash,
@@ -597,8 +611,8 @@ function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
     isVideo: true,
     meta: media,
     type: isPlex ? 'plex' : 'media',
-    selectedClass,
-    setSelectedClass,
+    shader,
+    setShader,
     cycleThroughClasses,
     classes,
     playbackKeys,queuePosition 
@@ -615,7 +629,7 @@ function VideoPlayer({ media, advance, clear, selectedClass, setSelectedClass, c
     : title;
 
   return (
-    <div className={`video-player ${selectedClass}`}>
+    <div className={`video-player ${shader}`}>
       <h2>
         {heading}
         {playbackRate > 1 ? ` (${playbackRate}×)` : ''}
