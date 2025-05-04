@@ -414,7 +414,7 @@ function MenuItems({
         const { plex } = item?.play || item?.queue || item?.list || item?.open || {};
         const isActive = index === selectedIndex;
         let image = item.image;
-        if (plex) {
+        if (!item.image && plex) {
           const val = Array.isArray(plex) ? plex[0] : plex;
           image = DaylightMediaPath(`/media/plex/img/${val}`);
         }
