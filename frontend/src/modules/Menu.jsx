@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import "./Menu.scss";
+import { LoadingOverlay } from "./Player";
 
 // -----------------------------------------------------------------------------
 // Log a menu selection to the server
@@ -92,8 +93,7 @@ export function KeypadMenu({
 
   // If no data, trigger reload (but after hook calls)
   if (!loaded || !menuItems.length) {
-    window.location.reload();
-    return null;
+    return <LoadingOverlay />;
   }
 
   // Render the menu once loaded
