@@ -47,7 +47,6 @@ function ReloadButton({setBudgetData}) {
     setReloading(true);
     await reloadBudget();
     const newData = await fetchBudget()
-    console.log(newData);
     setBudgetData(newData.budgets);
     setReloading(false);
   }
@@ -157,7 +156,7 @@ export function BudgetViewer({ budget, mortgage, setBudgetData }) {
         />
         <BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} />
         <BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} />
-        <BudgetHoldings setDrawerContent={setDrawerContent} budget={budget} />
+        <BudgetHoldings setDrawerContent={setDrawerContent} budget={activeBudget} />
       </div>
     </div>
   );
