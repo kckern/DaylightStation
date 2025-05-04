@@ -241,7 +241,6 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
   const mergedIncome = income.reduce((acc, { name, y, filter }) => {
     const { count, percent } = incomeNamesWithCounts[name];
-    if(name=== "Discretionary Bonus")  console.log({name, count, percent});
     if (count > 3 || (count > 1 && percent < 20)) {
       const existingEntry = acc.find(entry => entry.name === name);
       if (existingEntry) {
@@ -507,7 +506,6 @@ function buildDrillData(transactions) {
   if (grandTotal === 0) {
     return { topData: [], drillSeries: [], grandTotal: 0 };
   }
-  console.log({ grandTotal });
   const all = Object.entries(byTag).map(([tag, value]) => ({
     tag,
     value,

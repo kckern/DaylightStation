@@ -103,82 +103,96 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     // plus one line per payment plan.
     const options = {
       chart: {
-        backgroundColor: "transparent",
-        style: { fontFamily: "sans-serif" }
+      backgroundColor: "transparent",
+      style: { fontFamily: "sans-serif", marginBottom: '2rem' },  
       },
       credits: { enabled: false },
       title: { text: null },
+      legend: { enabled: false }, // Disable the legend
       xAxis: {
-        type: "datetime",
-        min: months[0].valueOf(),
-        max: months[months.length - 1].valueOf(),
-        tickInterval: 365.25 * 24 * 3600 * 1000, // one year
-        minorTickInterval: 30 * 24 * 3600 * 1000,
-        gridLineWidth: 1,
-        minorGridLineWidth: 0.5
+      type: "datetime",
+      min: months[0].valueOf(),
+      max: months[months.length - 1].valueOf(),
+      tickInterval: 365.25 * 24 * 3600 * 1000, // one year
+      minorTickInterval: 30 * 24 * 3600 * 1000,
+      gridLineWidth: 1,
+      minorGridLineWidth: 0.5
       },
       yAxis: {
-        title: { text: null },
-        max: maxY,
-        tickInterval: 25000,
-        labels: {
-          formatter() {
-            return `$${(this.value / 1000).toFixed(0)}k`;
-          }
-        },
-        gridLineColor: "#e0e0e0",
-        minorGridLineColor: "#f0f0f0",
-        minorTickInterval: "auto"
-      },
-      legend: { enabled: true },
-      plotOptions: {
-        series: {
-          lineWidth: 2,
-          marker: { enabled: false }
-        },
-        column: {
-          pointPadding: 0.1,
-          borderWidth: 0
+      title: { text: null },
+      max: maxY,
+      tickInterval: 25000,
+      labels: {
+        formatter() {
+        return `$${(this.value / 1000).toFixed(0)}k`;
         }
       },
+      gridLineColor: "#e0e0e0",
+      minorGridLineColor: "#f0f0f0",
+      minorTickInterval: "auto"
+      },
+      plotOptions: {
+      series: {
+        lineWidth: 2,
+        marker: { enabled: false }
+      },
+      column: {
+        pointPadding: 0.1,
+        borderWidth: 0
+      }
+      },
       series: [
-        // Past balance (area)
-        {
-          name: "Past",
-          type: "area",
-          data: pastData,
-          color: "#4c8ffc",
-          zIndex: 1
-        },
-        // Spread out each plan’s future data as a separate line
-        ...futureSeries.map((planSeries, idx) => ({
-          ...planSeries,
-          color: Highcharts.getOptions().colors[idx] || "#2b2b2b",
-          zIndex: 2 + idx
-        }))
+      // Past balance (area)
+      {
+        name: "Past",
+        type: "area",
+        data: pastData,
+        color: "#4c8ffc",
+        zIndex: 1
+      },
+      // Spread out each plan’s future data as a separate line
+      ...futureSeries.map((planSeries, idx) => ({
+        ...planSeries,
+        color: Highcharts.getOptions().colors[idx] || "#2b2b2b",
+        zIndex: 2 + idx
+      }))
       ]
     };
-    const paidOffTotal = Math.abs(mortgage.startingBalance - mortgage.balance);
-    const paidOffPercentage = Math.abs(paidOffTotal / mortgage.startingBalance);
+
+    const { totalPaid,totalPrincipalPaid,totalInterestPaid,monthlyRent,monthlyEquity,percentPaidOff,balance } = mortgage;
+
+
+
     
     return (
-      <div>
-        <table style={{width: '100%'}} className="mortgage-summary">
-            <tbody>
-                <tr>
-                    <td>
-                        Paid: {formatAsCurrency(paidOffTotal)} ({(paidOffPercentage * 100).toFixed(0)}%)
-                    </td>
-                    <td>
-                        Earliest Payoff: {mortgage.earliestPayoff}
-                    </td>
-                    <td>
-                        Latest Payoff: {mortgage.latestPayoff}
-                    </td>
-                    </tr>
-                    </tbody>
-        </table>
-        <HighchartsReact highcharts={Highcharts} options={options} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+      <table style={{ width: '95%'}} className="mortgage-summary">
+      <tbody>
+      <tr>
+      <td style={{ width: '20%', textAlign: 'right' }}>Paid:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(totalPaid, "K")}</b></td>
+      <td style={{ width: '20%', textAlign: 'right' }}>Principal Paid:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></td>
+      <td style={{ width: '20%', textAlign: 'right' }}>Avg Equity / Month:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(monthlyEquity, "K")}</b></td>
+      </tr>
+      <tr>
+      <td style={{ width: '20%', textAlign: 'right' }}>Balance:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(-balance, "K")}</b></td>
+      <td style={{ width: '20%', textAlign: 'right' }}>Interest Paid:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(totalInterestPaid, "K")}</b></td>
+      <td style={{ width: '20%', textAlign: 'right' }}>Avg Rent / Month:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(monthlyRent, "K")}</b></td>
+      </tr>
+      </tbody>
+      </table>
+      <div style={{ flexGrow: 1, width: '100%', overflow: 'hidden' }}>
+      <HighchartsReact
+      highcharts={Highcharts}
+      options={options}
+      containerProps={{ style: { width: '100%', height: 'calc(100% - 2rem)' } }}
+      />
+      </div>
       </div>
     );
   }

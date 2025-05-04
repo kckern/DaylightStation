@@ -231,7 +231,6 @@ function BudgetTable({ setDrawerContent, budget }) {
   const handleCellClick = (month, key) => {
 
 
-    console.log("Clicked cell", month, key);
     const transactions = loadTransactions(month, key).sort((a, b) => b.amount - a.amount);
     const periodData = getPeriodData(month, key);
     const monthString = month ? moment(month, "YYYY-MM").format("MMM ‘YY") : "Entire Budget Period";

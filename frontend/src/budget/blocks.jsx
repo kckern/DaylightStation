@@ -8,27 +8,60 @@ import SankeyModule from "highcharts/modules/sankey";
 //https://coolors.co/palette/1e3888-47a8bd-73BFB8-137547-f5e663-ffad69-EA7317-9c3848
 
 SankeyModule(Highcharts);
-export const formatAsCurrency = (value) => {
+export const formatAsCurrency = (value, abr) => {
   const isNegative = value < 0;
   const absoluteValue = Math.abs(value);
   //if nan or infinity return Ø
   if (!isFinite(absoluteValue)) return `$Ø`;
-  const formattedValue = absoluteValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  return isNegative ? `-$${formattedValue}` : `$${formattedValue}`;
+
+  let formattedValue;
+  if (abr === "K") {
+    formattedValue = (absoluteValue / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return isNegative ? `-$${formattedValue}K` : `$${formattedValue}K`;
+  } else {
+    formattedValue = absoluteValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    return isNegative ? `-$${formattedValue}` : `$${formattedValue}`;
+  }
 };
   // BudgetHoldings.jsx
   export function BudgetHoldings({ setDrawerContent, budget }) {
 
     const activeBudget = budget;
+
+    const transferTransactions = activeBudget.transferTransactions?.transactions || [];
+
+
     
-    const Transfers = <Drawer setDrawerContent={setDrawerContent} header="Transfers" transactions={activeBudget.transferTransactions?.transactions || []} />;
+    const Transfers = <Drawer setDrawerContent={setDrawerContent} header="Transfers" transactions={transferTransactions || []} />;
 
     return (
       <div className="budget-block">
-        <h2>Holdings</h2>
-        <div className="budget-block-content">
-          <button onClick={() => setDrawerContent(Transfers)}>View Transfers</button>
-        </div>
+      <h2 onClick={() => setDrawerContent(Transfers)}>Transfers</h2>
+      <div className="budget-block-content" style={{ maxHeight: "400px", overflowY: "auto" , width: "100%" }}>
+        <table className="transaction-table" style={{ width: "100%" }}>
+        <thead>
+          <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transferTransactions.map((txn, index) => {
+          const { date, description, amount, id } = txn;
+          const formattedDate = new Date(date).toLocaleDateString();
+          const formattedAmount = formatAsCurrency(amount);
+            return (
+            <tr key={index} onClick={() => window.open(`https://www.buxfer.com/transactions?tids=${id}`, "_blank")}>
+              <td>{formattedDate}</td>
+              <td>{description}</td>
+              <td>{formattedAmount}</td>
+            </tr>
+            );
+          })}
+        </tbody>
+        </table>
+      </div>
       </div>
     );
   }
