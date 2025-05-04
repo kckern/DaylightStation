@@ -9,11 +9,15 @@ import HighchartsReact from 'highcharts-react-official';
 
 
 export function BudgetMortgage({ setDrawerContent, mortgage }) {
+  const { accountId } = mortgage;
+  const handleClick = ()=>{
+    window.open(`https://www.buxfer.com/account?id=${accountId}`, "_blank");
+  }
 
     return (
       <div className="budget-block">
-        <h2>Mortgage</h2>
-        <MortgageChart mortgage={mortgage} />
+      <h2 onClick={handleClick} style={{ cursor: 'pointer' }}>Mortgage</h2>
+      <MortgageChart mortgage={mortgage} />
       </div>
     );
   }

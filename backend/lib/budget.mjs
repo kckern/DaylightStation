@@ -111,7 +111,7 @@ export const processMortgage = (mortgage, accountBalances, mortgageTransactions)
   console.log("Account balances:", accountBalances);
   console.log("Mortgage transactions:", mortgageTransactions);
 
-  const { mortgageStartValue, startDate, interestRate, accounts, paymentPlans, minimumPayment } = mortgage;
+  const { mortgageStartValue,accountId, startDate, interestRate, accounts, paymentPlans, minimumPayment } = mortgage;
 
   // Current (final) balance across matching accounts
   const balance = accountBalances
@@ -185,6 +185,7 @@ export const processMortgage = (mortgage, accountBalances, mortgageTransactions)
 
   console.log("Finished processMortgage.");
   return {
+    accountId,
     mortgageStartValue,
     startingBalance,
     totalInterestPaid,
