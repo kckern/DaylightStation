@@ -210,7 +210,7 @@ function useCommonMediaController({
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
       mediaEl.volume = volume; // Set the volume level
-      console.log({volume});
+      console.log({volume,playbackRate});
       if (isVideo) {
       mediaEl.controls = false;
       mediaEl.addEventListener('play', () => {
@@ -383,6 +383,7 @@ function useQueueController({ play, queue, clear }) {
     volume,
     isContinuous,
     playQueue,
+    playbackRate: play?.playbackRate || queue?.playbackRate || 1,
     setQueue,
     advance,
     queuePosition
@@ -405,6 +406,7 @@ export default function Player({ play, queue, clear, playbackKeys }) {
     isContinuous,
     volume,
     queuePosition,
+    playbackRate,
     playQueue,
     advance
   } = useQueueController({ play, queue, clear });
@@ -417,6 +419,7 @@ export default function Player({ play, queue, clear, playbackKeys }) {
     setShader,
     cycleThroughClasses,
     classes,
+    playbackRate,
     playbackKeys,
     queuePosition,
   };
@@ -477,15 +480,17 @@ export function SinglePlayer(play) {
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
 
+  console.log({playbackRate}); 
+
   const fetchVideoInfo = useCallback(async () => {
     setIsReady(false);
     if (!!plex) {
       const infoResponse = await DaylightAPI(`media/plex/info/${plex}`);
-      setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
+      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1 });
       setIsReady(true);
     } else if (!!media) {
       const infoResponse = await DaylightAPI(`media/info/${media}`);
-      setMediaInfo({ ...infoResponse, playbackRate: rate || 1 });
+      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1 });
       setIsReady(true);
     } else if (!!open) {
       setGoToApp(open);
