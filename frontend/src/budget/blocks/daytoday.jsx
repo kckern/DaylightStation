@@ -116,8 +116,10 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
           const date = moment(firstDayKey).date(this.value);
           const label = moment(firstDayKey).date(this.value).format('MMM D');
           const isMonday = date.day() === 1;
+          const isCloseToEnd = moment(firstDayKey).date(this.value).isAfter(moment(firstDayKey).endOf('month').subtract(4, 'days'));
           const isLastDay = +this.value === daysInMonth;
-          return (isMonday || isLastDay) ? label : '';
+          const showableMonday = isMonday && !isCloseToEnd;
+          return (showableMonday || isLastDay) ? label : '';
         }
       },
       tickPositions: Array.from({ length: daysInMonth }, (_, i) => {
