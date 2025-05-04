@@ -28,7 +28,7 @@ export const formatAsCurrency = (value, abr) => {
 
     const activeBudget = budget;
 
-    const transferTransactions = activeBudget.transferTransactions?.transactions || [];
+    const transferTransactions = activeBudget.transferTransactions?.transactions.sort((a, b) => new Date(b.date) - new Date(a.date)) || [];
 
 
     

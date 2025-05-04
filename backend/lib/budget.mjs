@@ -106,55 +106,36 @@ export const processMortgagePaymentPlans = (paymentPlans, balance, interestRate,
 };
 
 export const processMortgage = (mortgage, accountBalances, mortgageTransactions) => {
-  console.log("Starting processMortgage...");
-  console.log("Mortgage input:", mortgage);
-  console.log("Account balances:", accountBalances);
-  console.log("Mortgage transactions:", mortgageTransactions);
+  const { mortgageStartValue, accountId, startDate, interestRate, accounts, paymentPlans, minimumPayment } = mortgage;
 
-  const { mortgageStartValue,accountId, startDate, interestRate, accounts, paymentPlans, minimumPayment } = mortgage;
-
-  // Current (final) balance across matching accounts
   const balance = accountBalances
     .filter((acc) => accounts.includes(acc.name))
     .reduce((total, { balance }) => total + balance, 0);
-  console.log("Calculated balance:", balance);
 
-  // Sort transactions chronologically
   const sortedTransactions = [...mortgageTransactions].sort(
     (a, b) => moment(a.date).diff(moment(b.date))
   );
-  console.log("Sorted transactions:", sortedTransactions);
 
-  // Sum of all transaction amounts
   const sumOfTransactions = sortedTransactions.reduce(
     (total, { amount }) => total + amount,
     0
   );
-  console.log("Sum of transactions:", sumOfTransactions);
 
-  // Calculate starting balance as finalBalance - sumOfTransactions
   const startingBalanceNeg = Math.round((balance - sumOfTransactions) * 100) / 100;
   const startingBalance = Math.abs(startingBalanceNeg);
-  console.log("Starting balance:", startingBalanceNeg);
 
-  // Build transactions list with runningBalance based on startingBalance
   let runningTotal = 0;
   const transactions = sortedTransactions.map((txn) => {
     runningTotal += txn.amount;
     return {
       ...txn,
-      runningBalance: startingBalanceNeg + runningTotal,
+      runningBalance: Math.round((startingBalanceNeg + runningTotal) * 100) / 100,
     };
-  }).map((txn) => {
-    txn.runningBalance = Math.round(txn.runningBalance * 100) / 100;
-    return txn;
   });
 
   const paymentPlansFilled = processMortgagePaymentPlans(paymentPlans || [], balance || 0, interestRate || 0, minimumPayment || 0);
 
-
   const totalPaid = transactions.reduce((total, { amount }) => total + (amount || 0), 0);
-  console.log("Total paid:", totalPaid);
 
   const { earliestPayoff, latestPayoff } = paymentPlansFilled.reduce((acc, { info }) => {
     const payoffDate = moment(info.payoffDate, "MMMM YYYY");
@@ -162,28 +143,16 @@ export const processMortgage = (mortgage, accountBalances, mortgageTransactions)
     if (!acc.latestPayoff || payoffDate.isAfter(acc.latestPayoff)) acc.latestPayoff = payoffDate;
     return acc;
   }, {});
-  console.log("Earliest payoff:", earliestPayoff?.format("YYYY-MM"));
-  console.log("Latest payoff:", latestPayoff?.format("YYYY-MM"));
 
   const monthsSinceStart = moment().diff(moment(startDate), "months");
-  console.log("Months since start:", monthsSinceStart);
 
   const totalInterestPaid = startingBalance - mortgageStartValue;
-  console.log("Total interest paid:", totalInterestPaid);
-
   const totalPrincipalPaid = totalPaid - totalInterestPaid;
-  console.log("Total principal paid:", totalPrincipalPaid);
-
   const percentPaidOff = (startingBalance - balance) / startingBalance;
-  console.log("Percent paid off:", percentPaidOff);
 
   const monthlyRent = Math.round((totalInterestPaid / monthsSinceStart) * 100) / 100;
-  console.log("Monthly rent:", monthlyRent);
-
   const monthlyEquity = Math.round((totalPrincipalPaid / monthsSinceStart) * 100) / 100;
-  console.log("Monthly equity:", monthlyEquity);
 
-  console.log("Finished processMortgage.");
   return {
     accountId,
     mortgageStartValue,
@@ -246,7 +215,7 @@ export const refreshFinancialData = async (noDL) => {
         for (const budget of budgets)
         {
           const { timeframe: { start, end }, accounts:b_accounts, closed } = budget;
-          //if (closed) continue; 
+          if (closed) continue; 
             accounts.push(...b_accounts.filter(account => !accounts.includes(account)));
             const startDate = moment(start).utc().format('YYYY-MM-DD');
             const endDate = moment(end).utc().format('YYYY-MM-DD');
