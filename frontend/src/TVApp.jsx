@@ -75,6 +75,7 @@ export default function TVApp() {
   // Parse query params for autoplay
   const params = new URLSearchParams(window.location.search);
   const queryEntries = Object.fromEntries(params.entries());
+  const isQueueOrPlay = ["queue", "play"].some(key => Object.keys(queryEntries).includes(key));
 
   const autoplay = (() => {
 
@@ -171,7 +172,7 @@ export default function TVApp() {
   }
 
   // Otherwise, if list is still loading, show loading
-  if (list.length === 0) {
+  if (list.length === 0 || (isQueueOrPlay)){
     return <TVAppWrapper content={<LoadingOverlay />} />;
   }
 
