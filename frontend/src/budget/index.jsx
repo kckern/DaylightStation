@@ -92,6 +92,20 @@ function Header({
   // Default to the first key if activeBudgetKey is missing
   const defaultValue = activeBudgetKey || budgetOptions?.[0]?.value || '';
 
+
+  const handleChange = (value) => {
+    console.log(value);
+    const isSameAsactiveBudgetKey = value === activeBudgetKey;
+    if (isSameAsactiveBudgetKey) {
+      return;
+    }
+    if (availableBudgetKeys.includes(value) === false) {
+      console.error(`Budget key ${value} not found in available budget keys.`);
+      return;
+    }
+    setActiveBudgetKey(value);
+  }
+
   return (
     <header>
       <h1 style={{ display: 'flex', alignItems: 'center', padding: '0 1rem' }}>
@@ -102,7 +116,7 @@ function Header({
           <Select
             data={budgetOptions}
             value={defaultValue}
-            onChange={setActiveBudgetKey}
+            onChange={handleChange}
             // Make the font size larger since it acts as a page title
             styles={{
               input: {
