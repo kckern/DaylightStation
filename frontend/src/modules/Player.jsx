@@ -263,11 +263,11 @@ export async function flattenQueueItems(items, level = 1) {
       const shuffle = !!item.shuffle;
       if (item.queue.playlist || item.queue.queue) {
         const queueKey = item.queue.playlist ?? item.queue.queue;
-        const { items: nestedItems } = await DaylightAPI(`data/list/${queueKey}${shuffle ? '/shuffle' : ''}`);
+        const { items: nestedItems } = await DaylightAPI(`data/list/${queueKey}/playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(nestedItems, level + 1);
         flattened.push(...nestedFlattened);
       } else if (item.queue.plex) {
-        const { items: plexItems } = await DaylightAPI(`media/plex/list/${item.queue.plex}${shuffle ? '/shuffle' : ''}`);
+        const { items: plexItems } = await DaylightAPI(`media/plex/list/${item.queue.plex}/playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(plexItems, level + 1);
         flattened.push(...nestedFlattened);
       }
@@ -293,6 +293,7 @@ function useQueueController({ play, queue, clear }) {
   const [isContinuous, setIsContinuous] = useState(play?.continuous || queue?.continuous || false);
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
+  const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || false);
 
   const cycleThroughClasses = (upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
@@ -316,12 +317,12 @@ function useQueueController({ play, queue, clear }) {
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
         if (play?.playlist || play?.queue || queue?.playlist || queue?.queue) {
           const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue;
-          const { items, continuous } = await DaylightAPI(`data/list/${queue_media_key}${queue?.shuffle ? '/shuffle' : ''}`);
+          const { items, continuous } = await DaylightAPI(`data/list/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
           setIsContinuous(continuous || false);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
         } else if (queue?.plex) {
-          const { items, continuous } = await DaylightAPI(`media/plex/list/${queue.plex}${queue.shuffle ? '/shuffle' : ''}`);
+          const { items, continuous } = await DaylightAPI(`media/plex/list/${queue.plex}/playable${isShuffle ? ',shuffle' : ''}`);
           setIsContinuous(continuous || false);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
@@ -596,7 +597,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
 /*  VIDEO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function VideoPlayer({ media, advance, clear, shader, setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo  }) {
+function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo  }) {
   const isPlex = ['dash_video'].includes(media.media_type);
   const {
     isDash,
@@ -606,10 +607,9 @@ function VideoPlayer({ media, advance, clear, shader, setShader, cycleThroughCla
     timeSinceLastProgressUpdate,
     duration,
     handleProgressClick,
-    playbackRate
   } = useCommonMediaController({
     start: media.seconds,
-    playbackRate: media.playbackRate || 1,
+    playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
     isAudio: false,
@@ -617,6 +617,8 @@ function VideoPlayer({ media, advance, clear, shader, setShader, cycleThroughCla
     meta: media,
     type: isPlex ? 'plex' : 'media',
     shader,
+    playbackRate,
+    volume,
     setShader,
     cycleThroughClasses,
     classes,
