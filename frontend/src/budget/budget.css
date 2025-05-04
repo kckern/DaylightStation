@@ -364,14 +364,13 @@ button.reload{
 }
 
 .mortgage-table, .mortgage-summary{
-    border-right: 3rem;
+ 
 }
 
 .mortgage-summary td{
     white-space: nowrap;
 }
 .mortgage-summary td:last-child{
-    border-right: 2px solid #666;
 }
 .mortgage-summary .summary-cell{
     border-left: 2px solid #666;
