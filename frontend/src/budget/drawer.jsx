@@ -705,7 +705,9 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
     return point.name;
   };
 
-  const handleClick = (point) => {
+  const handleClick = (point,e) => {
+    e.stopPropagation();
+    e.preventDefault();
     if (point.name === "Other" || point.name === "Other2") {
       const subset = drillSeries.find((s) => s.id === point.name);
       if (subset) {
@@ -763,6 +765,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
       }
     },
     plotOptions: {
+      animation: false,
       series: {
         stickyTracking: false,
         states: { hover: { brightness: 0 } }
@@ -794,13 +797,15 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
                 pieSeries.data[this.index].setState();
               }
             },
-            click() {
-              handleClick(this);
+            click(e) {
+              handleClick(this,e);
             }
           }
         }
       },
       pie: {
+
+        animation: false,
         center: ["85%", "20%"],
         size: "30%",
         showInLegend: false,
@@ -836,6 +841,8 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
       {
         name: "Categories",
         type: "column",
+
+      animation: false,
         colorByPoint: true,
         data: topData.map((pt) => ({
           name: pt.name,
