@@ -346,7 +346,7 @@ export  function WebcamApp() {
   // ------------------------------------------------------------------
   // Render
   // ------------------------------------------------------------------
-  return <pre>
+  if(false) return <pre>
   {JSON.stringify({ volume, volumePercentage }, null, 2)}
   <div>
     {videoDevices.map((device, index) => (
@@ -375,7 +375,16 @@ export  function WebcamApp() {
 </pre>
 
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+    <div
+      style={{
+        width: "calc(100% - 2rem)",
+        height: "calc(100% - 2rem)",
+        position: "relative",
+        padding: "3rem",
+        margin: "1rem",
+        boxSizing: "border-box",
+      }}
+    >
       {/* Debug info */}
       
       {/* Volume Meter */}
@@ -385,6 +394,7 @@ export  function WebcamApp() {
           marginTop: "20px",
           position: "absolute",
           left: 0,
+          width: "100%",
           height: "100%",
           bottom: 0,
         }}
@@ -423,6 +433,11 @@ export  function WebcamApp() {
           top: 0,
           left: 0,
           width: "100%",
+          borderRadius: "50%",
+          objectFit: "cover",
+          //fade edges
+          boxShadow: "0 0 20px rgba(0, 0, 0, 0.5)",
+          filter: "saturate(1.3) brightness(1.2)",
           height: "100%",
           transform: "scaleX(-1)", // Mirror video
         }}
