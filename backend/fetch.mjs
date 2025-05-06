@@ -424,6 +424,64 @@ const sortListByMenuMemory = (items) => {
     return items;
 }
 
+export const getChildrenFromWatchlist =  (watchListItems) => {
+    const log = loadFile('_media_memory')?.plex || {};
+    let candidates = { normal: {}, urgent: {}, in_progress: {} };
+
+    for (let item of watchListItems) {
+        let {plexkey, percent: itemProgress, watched, hold, skip_after, wait_until, title, program} = item;
+        const percent = log[plexkey]?.percent || itemProgress || 0;
+        const seconds = log[plexkey]?.seconds || 0;
+
+        const usepercent = percent > 15 ? percent : 0; // Ignore progress below 15%
+        if (usepercent > 90) continue; // Skip if watched more than 90%
+        if (item.watched) continue; // Skip if marked as watched
+        if (item.hold) continue; // Skip if on hold
+        if (item.skip_after && moment(item.skip_after).isBefore(moment())) continue; // Skip if past the skip_after date
+        if (item.wait_until && moment(item.wait_until).isAfter(moment().add(2, 'days'))) continue; // Skip if wait_until is more than 2 days away
+
+        let priority = "normal";
+        if (item.skip_after) {
+            let skipAfter = new Date(item.skip_after);
+            let eightDays = new Date();
+            eightDays.setDate(eightDays.getDate() + 8);
+            if (skipAfter <= eightDays) priority = "urgent"; // Mark as urgent if skip_after is within 8 days
+        }
+        if (percent > 0) priority = "in_progress"; // Mark as in_progress if partially watched
+
+        if (!candidates[priority][program]) {
+            candidates[priority][program] = [];
+        }
+        candidates[priority][program].push([plexkey, title, program, percent, seconds]);
+    }
+
+    const items = Object.entries(candidates).reduce((acc, [key, value]) => {
+        const items = Object.entries(value).reduce((acc, [program, items]) => {
+            const itemList = Object.entries(items).map(([index, [plexkey, title, program, percent, seconds]]) => {
+                const result = { plex: plexkey, title, program };
+                if (percent > 0) {
+                    result.percent = percent;
+                    result.seconds = seconds;
+                }
+                return result;
+            });
+            return [...acc, ...itemList];
+        }, []);
+        return [...acc, ...items];
+    }, []);
+
+    return { items };
+};
+
+
+export const watchListFromMediaKey = (media_key) => {
+
+    const normalizeKey = key => key?.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+    const watchListItems = (loadFile('watchlist')||[]).filter(w => normalizeKey(w.folder) === normalizeKey(media_key));
+    if (!watchListItems?.length) return null;
+    return watchListItems;
+}
+
 
 // Helper function to get children from a parent media_key
 export const getChildrenFromMediaKey = async ({media_key, config}) => {
@@ -431,6 +489,8 @@ export const getChildrenFromMediaKey = async ({media_key, config}) => {
 
     const mustBePlayable = /playable/.test(config);
     const shuffle = /shuffle/.test(config);
+    const watchListItems = watchListFromMediaKey(media_key);
+    if(watchListItems?.length) return  getChildrenFromWatchlist(watchListItems);
 
     // Check if the media_key exists in the lists first
     const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
