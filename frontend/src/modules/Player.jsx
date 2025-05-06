@@ -98,7 +98,15 @@ function useCommonMediaController({
 
 
   useEffect(() => {
-    const skipToNextTrack = () => onEnd(1);
+    const skipToNextTrack = () => {
+      const mediaEl = getMediaEl();
+      if (mediaEl) {
+      const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
+      const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+      DaylightAPI(`media/log`, { title, type, media_key, seconds: mediaEl.currentTime, percent:100, title });
+      }
+      onEnd(1);
+    };
     const skipToPrevTrack = () => {
       const mediaEl = getMediaEl();
       if (mediaEl && mediaEl.currentTime > 5) {
@@ -205,7 +213,9 @@ function useCommonMediaController({
       const duration = mediaEl.duration || 0;
       volume = parseFloat(volume) || 1;
       if(volume > 1) volume = volume / 100;
-      const startTime = duration > (12 * 60) ? start : 0;
+      const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
+      console.log({isVideo});
+      const startTime = (duration > (12 * 60) || isVideo) ? start : 0;
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
