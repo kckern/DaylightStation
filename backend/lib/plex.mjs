@@ -180,6 +180,7 @@ export class Plex {
       type,
       title: title || parentTitle || grandparentTitle,
       artist: type === 'track' ? itemData.grandparentTitle : undefined,
+      albumArtist: type === 'track' ? itemData.originalTitle : undefined,
       album: type === 'track' ? itemData.parentTitle : undefined,
       show: type === 'episode' ? itemData.grandparentTitle : undefined,
       season: type === 'episode' ? itemData.parentTitle : undefined,
