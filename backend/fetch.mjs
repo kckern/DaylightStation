@@ -424,7 +424,7 @@ const sortListByMenuMemory = (items) => {
     return items;
 }
 
-export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ignoreWatchStatus=false) => {
+export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ignoreWatchStatus=false, ignoreWait=false) => {
     const log = loadFile('_media_memory')?.plex || {};
     let candidates = { normal: {}, urgent: {}, in_progress: {} };
 
@@ -434,24 +434,22 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
         const seconds = log[plexkey]?.seconds || 0;
 
         const usepercent = percent > 15 ? percent : 0; // Ignore progress below 15%
-        if (usepercent > 90) continue; // Skip if watched more than 90%
+        if (usepercent > 90 && !ignoreWatchStatus) continue; // Skip if watched more than 90%
         if (item.watched && !ignoreWatchStatus) continue; // Skip if marked as watched
         if (item.hold) continue; // Skip if on hold
         if (!ignoreSkips && item.skip_after && moment(item.skip_after).isBefore(moment())) continue; // Skip if past the skip_after date
-        if (item.wait_until && moment(item.wait_until).isAfter(moment().add(2, 'days'))) continue; // Skip if wait_until is more than 2 days away
+        if (!ignoreWait && item.wait_until && moment(item.wait_until).isAfter(moment().add(2, 'days'))) continue; // Skip if wait_until is more than 2 days away
 
         let priority = item.priority || "medium"; // Default to normal priority
         if (item.skip_after) {
             let skipAfter = new Date(item.skip_after);
             let eightDays = new Date();
             eightDays.setDate(eightDays.getDate() + 8);
-            if (skipAfter <= eightDays) priority = "urgent"; // Mark as urgent if skip_after is within 8 days
+            if (!ignoreSkips && skipAfter <= eightDays) priority = "urgent"; // Mark as urgent if skip_after is within 8 days
         }
         if (percent > 0) priority = "in_progress"; // Mark as in_progress if partially watched
-
-        if (!candidates[priority][program]) {
-            candidates[priority][program] = [];
-        }
+        candidates[priority] ||= {};
+        candidates[priority][program] ||= [];
         candidates[priority][program].push([plexkey, title, program, percent, seconds]);
     }
 
@@ -474,9 +472,10 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
     const count = items.length;
     if (count === 0 && !ignoreSkips) return getChildrenFromWatchlist(watchListItems, true);
     if (count === 0 && ignoreSkips && !ignoreWatchStatus) return getChildrenFromWatchlist(watchListItems, true, true);
+    if (count === 0 && ignoreSkips && ignoreWatchStatus) return getChildrenFromWatchlist(watchListItems, true, true, true);
 
     const sortedItems = items.sort((a, b) => {
-        //sort by wait_until, later dates first 
+        // Sort by wait_until, later dates first
         const aWaitUntil = watchListItems.find(w => w.plexkey === a.plex)?.wait_until || null;
         const bWaitUntil = watchListItems.find(w => w.plexkey === b.plex)?.wait_until || null;
         if (aWaitUntil && bWaitUntil) {
@@ -485,17 +484,16 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
         return 0;
     }).sort((a, b) => {
         const priorityOrder = ['in_progress', 'urgent', 'high', 'medium', 'low'];
-        const priorityA = priorityOrder.indexOf(a.priority);
-        const priorityB = priorityOrder.indexOf(b.priority);
+        const priorityA = priorityOrder.indexOf((a.priority || '').toLowerCase());
+        const priorityB = priorityOrder.indexOf((b.priority || '').toLowerCase());
 
         if (priorityA !== priorityB) {
             return priorityA - priorityB; // Sort by priority
         }
 
-        if (a.priority === 'in_progress' && b.priority === 'in_progress') {
+        if (a.priority?.toLowerCase() === 'in_progress' && b.priority?.toLowerCase() === 'in_progress') {
             return b.percent - a.percent; // Sort by percent for in_progress
         }
-
 
         return 0; // Keep original order for items with the same priority
     });
