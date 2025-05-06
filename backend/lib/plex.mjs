@@ -31,7 +31,8 @@ export class Plex {
   }
 
   async loadmedia_url(itemData, attempt = 0) {
-    if(!attempt >= 1) console.log("Attempting to load media URL for itemData:", itemData);
+    const plex = itemData?.plex || itemData?.ratingKey;
+    if(!attempt >= 1) console.log("Attempting to load media URL for itemData: " , plex);
     itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
     const { plex: { host,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
     const { ratingKey:key, type } = itemData;
@@ -87,7 +88,7 @@ export class Plex {
     if (!data) return false;
     const { type, title } = data;
     let list = [];
-    if (type === 'playlist') list = await this.loadListKeysFromPlaylist(plex); //video 12944 audio 321217
+    if (type === 'playlist') list = await this.loadListFromPlaylist(plex); //video 12944 audio 321217
     else if (type === 'collection') list = await this.loadListFromCollection(plex, playable); //598767
     else if (type === 'season') list = await this.loadListFromSeason(plex); //598767
     else if (type === 'show') list = await this.loadListFromShow(plex,playable); //598748
