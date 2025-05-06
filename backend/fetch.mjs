@@ -417,7 +417,9 @@ const applyParentTags = (items, parent) => {
 
 }
 
-const sortListByMenuMemory = (items) => {
+const sortListByMenuMemory = (items, config) => {
+    const sortByMenu = /recent_on_top/i.test(config);
+    if (!sortByMenu) return items;
     const menuLog = loadFile('_menu_memory') || {};
     items.sort((a, b) => {
         const aKey = (() => {
@@ -539,7 +541,7 @@ export const getChildrenFromMediaKey = async ({media_key, config}) => {
     const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
     const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
     const itemsFromList = listItems.filter(filterFn) || [];
-    if (!!itemsFromList.length) return { items: sortListByMenuMemory(itemsFromList) };
+    if (!!itemsFromList.length) return { items: sortListByMenuMemory(itemsFromList,config) };
 
     // If no list items, check if it's a Plex key
     const isPlex = /^\d+$/.test(media_key);
