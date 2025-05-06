@@ -539,7 +539,7 @@ export function SinglePlayer(play) {
 /*─────────────────────────────────────────────────────────────*/
 
 function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo }) {
-  const { media_url, title, artist, album, image, type } = media;
+  const { media_url, title, artist, albumArtist, album, image, type } = media;
   const {
     timeSinceLastProgressUpdate,
     seconds,
@@ -568,7 +568,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
 
-
+  const footer = `${title}${albumArtist && albumArtist !== artist ? ` (${albumArtist})` : ''}`;
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
@@ -585,7 +585,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
         )}
       </div>
       <h2>
-        {title} {playbackRate > 1 ? `(${playbackRate}×)` : ''}
+        {footer}
       </h2>
       <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }}  />
     </div>
