@@ -231,6 +231,7 @@ function useFetchMenuData(listInput) {
         const config = [];
         if (shuffle) config.push("shuffle");
         if (playable) config.push("playable");
+        config.push("recent_on_top");
         const param = menu || list || plex;
         if (param) {
           const data = await fetchData(param, config.join("+"));
