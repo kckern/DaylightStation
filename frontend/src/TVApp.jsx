@@ -60,7 +60,6 @@ export default function TVApp() {
   const [list, setList] = useState([]);
   const [currentContent, setCurrentContent] = useState(null);
   const [autoplayed, setAutoplayed] = useState(false);
-  const [autoShader, setAutoShader] = useState(false);
 
   useEffect(setupNavigationHandlers, []);
 
@@ -166,14 +165,14 @@ export default function TVApp() {
     return null;
   }
 
-  // If there's content, show it
-  if (currentContent) {
-    return <TVAppWrapper content={currentContent} />;
-  }
-
   // Otherwise, if list is still loading, show loading
   if (list.length === 0 || (isQueueOrPlay)){
     return <TVAppWrapper content={<LoadingOverlay />} />;
+  }
+
+  // If there's content, show it
+  if (currentContent) {
+    return <TVAppWrapper content={currentContent} />;
   }
 
   // Default: Show the main TVMenu
