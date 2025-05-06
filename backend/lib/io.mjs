@@ -80,7 +80,10 @@ export const loadRandom = (folder) => {
 const loadFile = (path) => {
     path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.yaml$/, '') + '.yaml';
     const fileExists = fs.existsSync(`${process.env.path.data}/${path}`);    
-    if(!fileExists) return false;
+    if(!fileExists) {
+        console.error(`File does not exist: ${path}`);
+        return false;
+    }
     const fileData = fs.readFileSync(`${process.env.path.data}/${path}`, 'utf8').toString().trim();
     try{
         const object = yaml.load(fileData);

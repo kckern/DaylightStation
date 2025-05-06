@@ -81,6 +81,7 @@ function App() {
       if (menu === menuId && menuOpen) {
         return
       }
+      setCurrentContent(null)
       setMenu(menuId)
       setMenuKey((k) => k + 1)
       setMenuOpen(true)
