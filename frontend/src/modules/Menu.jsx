@@ -178,6 +178,7 @@ function useFetchMenuData(listInput) {
     let canceled = false;
 
     async function fetchData(target, config) {
+      config = `${config || ""}+recent_on_top`;
       if (!target) {
         return {
           title: "No Menu",
@@ -231,7 +232,6 @@ function useFetchMenuData(listInput) {
         const config = [];
         if (shuffle) config.push("shuffle");
         if (playable) config.push("playable");
-        config.push("recent_on_top");
         const param = menu || list || plex;
         if (param) {
           const data = await fetchData(param, config.join("+"));
