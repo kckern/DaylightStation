@@ -117,7 +117,8 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
       lastLoggedTimeRef.current = now;
-      await DaylightAPI(`media/log`, { title, type, media_key, percent: Math.round(percent) });
+      const seconds = Math.round((duration * percent) / 100);
+      await DaylightAPI(`media/log`, { title, type, media_key, seconds, percent: Math.round(percent) });
       }
     };
 
