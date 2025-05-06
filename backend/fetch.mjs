@@ -168,6 +168,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
     const loadScriptureWatchlist = (watchListFolder) => {
         const watchListItems = loadFile('watchlist') || [];
         const filteredItems = watchListItems.filter(w => w.folder === watchListFolder);
+        console.log({watchListFolder,filteredItems,watchListFolder});
         const {items:[item]} = getChildrenFromWatchlist(filteredItems);
         const [volume,version,verse_id] = (item?.plex || item?.media_key || "").split('/').filter(Boolean);
         if(!volume || !version || !verse_id) return {volume: 0, version: 0, verse_id: 0};
@@ -178,6 +179,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
         let volume = null;
         let version = null;
         let verse_id = null;
+        const watchListKeys = Object.keys(process.env.scripture || {}) || [];
         if (first_term && second_term) {
             // Option 3: /scripture/msg/nt
             if (volumes[first_term]) {
@@ -195,7 +197,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
                 volume = getVolume(verse_id);
                 version = volumes[second_term] ? second_term : getVersion(volume);
             }
-        } else if (["cfm"].includes(first_term)) {
+        } else if (watchListKeys.includes(first_term)) {
             const  {scripture : map} = process.env || {};
             const watchListFolder = map[first_term];
             if(!watchListFolder) return {volume: 0, version: 0, verse_id: 0};
@@ -489,7 +491,7 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
     const count = items.length;
     if (count === 0 && !ignoreSkips) return getChildrenFromWatchlist(watchListItems, true);
     if (count === 0 && ignoreSkips && !ignoreWatchStatus) return getChildrenFromWatchlist(watchListItems, true, true);
-    if (count === 0 && ignoreSkips && ignoreWatchStatus) return getChildrenFromWatchlist(watchListItems, true, true, true);
+    if (count === 0 && ignoreSkips && ignoreWatchStatus && !ignoreWait) return getChildrenFromWatchlist(watchListItems, true, true, true);
 
     const sortedItems = items.sort((a, b) => {
         // Sort by wait_until, later dates first
