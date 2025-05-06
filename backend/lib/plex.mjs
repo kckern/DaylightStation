@@ -78,31 +78,20 @@ export class Plex {
     const [{ title, thumb, type, labels }] = await this.loadMeta(plex);
     shuffle = shuffle || labels.includes('shuffle');
     const image = this.thumbUrl(thumb);
-    let list;
-    if (type === "playlist") {
-      list = await this.loadListFromPlaylist(plex);
-      list = list?.map(({ plex,ratingKey, type,title, art }) => {
-        return { plex: plex || ratingKey,type, title, image: this.thumbUrl(art) };
-      }) || [];
-    } else if(playable && ["artist","show"].includes(type)) {
-      list = await this.loadListKeys(plex, '/grandchildren');
-    }else  {
-      list = await this.loadListKeys(plex, '/children');
-    }
-    if(shuffle) list = list.sort(() => Math.random() - 0.5);
+    const {list} = await this.loadListFromKey(plex, playable, shuffle);
     return { plex, type, title, image, list };
   }
 
-  async loadListFromKey(plex = false, shuffle = false) {
+  async loadListFromKey(plex = false, playable=false, shuffle = false) {
     const [data] = await this.loadMeta(plex);
     if (!data) return false;
     const { type, title } = data;
-    let list;
+    let list = [];
     if (type === 'playlist') list = await this.loadListKeysFromPlaylist(plex); //video 12944 audio 321217
-    else if (type === 'collection') list = await this.loadListFromCollection(plex);
+    else if (type === 'collection') list = await this.loadListFromCollection(plex, playable); //598767
     else if (type === 'season') list = await this.loadListFromSeason(plex); //598767
-    else if (type === 'show') list = await this.loadListFromShow(plex); //598748
-    else if (type === 'artist') list = await this.loadListFromArtist(plex); //575855
+    else if (type === 'show') list = await this.loadListFromShow(plex,playable); //598748
+    else if (type === 'artist') list = await this.loadListFromArtist(plex,playable); //575855
     else if (type === 'album') list = await this.loadListFromAlbum(plex); //575876
     else list = [plex]; //movie: 52769
     list = shuffle ? list.sort(() => Math.random() - 0.5) : list;
@@ -128,14 +117,28 @@ export class Plex {
   async loadListFromSeason(plex) {
     return this.loadListKeys(plex,'/children');
   }
-  async loadListFromCollection(plex) {
-    return this.loadListKeys(plex,'/children');
+  async loadListFromCollection(plex, playable = false) {
+    const collection = await this.fetch(`library/collections/${plex}/items`);
+    const items = await Promise.all(
+      collection.MediaContainer.Metadata.map(async ({ ratingKey, title, thumb, type }) => {
+        const item = { plex: ratingKey, title, type, art: this.thumbUrl(thumb) };
+        if (["show", "artist", "album"].includes(type)) {
+          const subItems = await this.loadListKeys(item.plex, '/children');
+          return subItems;
+        }
+        return item;
+      })
+    );
+
+    // Flatten the list
+    const flatItems = items.flat();
+    return flatItems;
   }
-  async loadListFromShow(plex) {
-    return this.loadListKeys(plex,'/grandchildren');
+  async loadListFromShow(plex, playable = false) {
+    return this.loadListKeys(plex,playable ? '/children' : '/grandchildren');
   }
-  async loadListFromArtist(plex) {
-    return this.loadListKeys(plex,'/grandchildren');
+  async loadListFromArtist(plex, playable = false) {
+    return this.loadListKeys(plex, playable ? '/grandchildren' : '/children');
   }
   async loadListFromPlaylist(plex) {
     const playlist = await this.fetch(`playlists/${plex}/items`);
