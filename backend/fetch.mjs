@@ -424,7 +424,7 @@ const sortListByMenuMemory = (items) => {
     return items;
 }
 
-export const getChildrenFromWatchlist =  (watchListItems) => {
+export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ignoreWatchStatus=false) => {
     const log = loadFile('_media_memory')?.plex || {};
     let candidates = { normal: {}, urgent: {}, in_progress: {} };
 
@@ -435,12 +435,12 @@ export const getChildrenFromWatchlist =  (watchListItems) => {
 
         const usepercent = percent > 15 ? percent : 0; // Ignore progress below 15%
         if (usepercent > 90) continue; // Skip if watched more than 90%
-        if (item.watched) continue; // Skip if marked as watched
+        if (item.watched && !ignoreWatchStatus) continue; // Skip if marked as watched
         if (item.hold) continue; // Skip if on hold
-        if (item.skip_after && moment(item.skip_after).isBefore(moment())) continue; // Skip if past the skip_after date
+        if (!ignoreSkips && item.skip_after && moment(item.skip_after).isBefore(moment())) continue; // Skip if past the skip_after date
         if (item.wait_until && moment(item.wait_until).isAfter(moment().add(2, 'days'))) continue; // Skip if wait_until is more than 2 days away
 
-        let priority = "normal";
+        let priority = item.priority || "medium"; // Default to normal priority
         if (item.skip_after) {
             let skipAfter = new Date(item.skip_after);
             let eightDays = new Date();
@@ -463,6 +463,7 @@ export const getChildrenFromWatchlist =  (watchListItems) => {
                     result.percent = percent;
                     result.seconds = seconds;
                 }
+                result.priority = key; // Add priority to the result
                 return result;
             });
             return [...acc, ...itemList];
@@ -470,7 +471,36 @@ export const getChildrenFromWatchlist =  (watchListItems) => {
         return [...acc, ...items];
     }, []);
 
-    return { items };
+    const count = items.length;
+    if (count === 0 && !ignoreSkips) return getChildrenFromWatchlist(watchListItems, true);
+    if (count === 0 && ignoreSkips && !ignoreWatchStatus) return getChildrenFromWatchlist(watchListItems, true, true);
+
+    const sortedItems = items.sort((a, b) => {
+        //sort by wait_until, later dates first 
+        const aWaitUntil = watchListItems.find(w => w.plexkey === a.plex)?.wait_until || null;
+        const bWaitUntil = watchListItems.find(w => w.plexkey === b.plex)?.wait_until || null;
+        if (aWaitUntil && bWaitUntil) {
+            return moment(bWaitUntil).diff(moment(aWaitUntil));
+        }
+        return 0;
+    }).sort((a, b) => {
+        const priorityOrder = ['in_progress', 'urgent', 'high', 'medium', 'low'];
+        const priorityA = priorityOrder.indexOf(a.priority);
+        const priorityB = priorityOrder.indexOf(b.priority);
+
+        if (priorityA !== priorityB) {
+            return priorityA - priorityB; // Sort by priority
+        }
+
+        if (a.priority === 'in_progress' && b.priority === 'in_progress') {
+            return b.percent - a.percent; // Sort by percent for in_progress
+        }
+
+
+        return 0; // Keep original order for items with the same priority
+    });
+
+    return { items:sortedItems };
 };
 
 
