@@ -86,7 +86,7 @@ export default function TVApp() {
       }
     }
 
-    const findKey = (value) => ( /^\d+$/.test(value) ? "plex" : "playlist" );
+    const findKey = (value) => ( /^\d+$/.test(value) ? "plex" : "media" );
     const mappings = {
       playlist:  (value) => ({ queue: { [findKey(value)]: value, ...config } }),
       queue:     (value) => ({ queue: { [findKey(value)]: value, ...config } }),
@@ -104,6 +104,8 @@ export default function TVApp() {
       }
       return { open: { app: key, param: value } };
     }
+
+
     return null;
   })();
 
@@ -131,6 +133,7 @@ export default function TVApp() {
       menu:      <TVMenu {...props} />,
       open:      <AppContainer {...props} />
     };
+
 
     const selectionKeys = Object.keys(selection);
     const match = selectionKeys.find(k => Object.keys(options).includes(k));
@@ -166,7 +169,7 @@ export default function TVApp() {
   }
 
   // Otherwise, if list is still loading, show loading
-  if (list.length === 0 || (isQueueOrPlay)){
+  if (list.length === 0 && (isQueueOrPlay)){
     return <TVAppWrapper content={<LoadingOverlay />} />;
   }
 

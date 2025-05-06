@@ -44,7 +44,7 @@ const loadTable = async (tableId , data = [], after = "") => {
         after = response?.data.after;
         return loadTable(tableId, fetched_data, after);
     }
-
+    //console.log(fetched_data.map(item => item.values.map(val => val.attribute)));
     //sort by sort_order
     fetched_data = fetched_data.sort((a, b) => {
         const sortOrderA = parseFloat(a.sort_order) || 0;
@@ -120,6 +120,7 @@ const saveItem = async (tableId, folderId, dictionary) => {
 const updateItem = async (tableId, itemId, key, val) => {
     const token = await authInfinity();
     if (!token) return false;
+    const { INFINITY_WORKSPACE } = process.env;
     const url = `https://app.startinfinity.com/api/v2/workspaces/${INFINITY_WORKSPACE}/boards/${tableId}/items/${itemId}`;
     const data = {
         "values": [
@@ -129,13 +130,21 @@ const updateItem = async (tableId, itemId, key, val) => {
             }
         ]
     };
-    const response = await axios.put(url, data, {
-        headers: {
-            'Authorization': 'Bearer ' + token,
-            'Content-Type': 'application/json'
-        }
-    });
-    return response.data;
+    try {
+        const response = await axios.put(url, data, {
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            }
+        });
+        return response.data;
+    } catch (e) {
+        console.error("Error updating item:", e.message);
+        console.error("Response data:", e.response?.data);
+        console.error("Curl equivalent:");
+        console.error(`curl -X PUT '${url}' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d '${JSON.stringify(data)}'`);
+        return false;
+    }
 };
 
 const loadData = async (name,req) => {

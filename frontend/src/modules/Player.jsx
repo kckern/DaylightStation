@@ -487,11 +487,11 @@ export function SinglePlayer(play) {
     setIsReady(false);
     if (!!plex) {
       const infoResponse = await DaylightAPI(`media/plex/info/${plex}`);
-      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1 });
+      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1, media_key: infoResponse.plex });
       setIsReady(true);
     } else if (!!media) {
       const infoResponse = await DaylightAPI(`media/info/${media}`);
-      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1 });
+      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1, media_key: infoResponse.key  || infoResponse.listkey });
       setIsReady(true);
     } else if (!!open) {
       setGoToApp(open);
