@@ -104,6 +104,7 @@ function useCommonMediaController({
       const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
       const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
       DaylightAPI(`media/log`, { title, type, media_key, seconds: mediaEl.currentTime, percent:100, title });
+      DaylightAPI(`harvest/watchlist`);
       }
       onEnd(1);
     };
@@ -325,8 +326,9 @@ function useQueueController({ play, queue, clear }) {
       } else if (Array.isArray(queue)) {
         newQueue = queue.map(item => ({ ...item, guid: guid() }));
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
-        if (play?.playlist || play?.queue || queue?.playlist || queue?.queue) {
-          const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue;
+        const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
+        if (queue_media_key) {
+
           const { items, continuous } = await DaylightAPI(`data/list/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
           setIsContinuous(continuous || false);
           const flattened = await flattenQueueItems(items);
@@ -445,6 +447,8 @@ export default function Player({ play, queue, clear, playbackKeys }) {
     return null;
   })();
   if(singlePlayerProps?.key) delete singlePlayerProps.key;
+
+
   return singlePlayerProps ? (
     <SinglePlayer {...singlePlayerProps} {...playerProps} />
   ) : (

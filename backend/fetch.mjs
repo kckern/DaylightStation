@@ -12,6 +12,7 @@ import { findFileFromMediaKey } from './media.mjs';
 import { processListItem } from './jobs/nav.mjs';
 import {lookupReference, generateReference} from 'scripture-guide';
 import { Plex } from './lib/plex.mjs';
+import { parse } from 'path';
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
 
@@ -163,11 +164,20 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
         return nextUp;
     };
 
+
+    const loadScriptureWatchlist = (watchListFolder) => {
+        const watchListItems = loadFile('watchlist') || [];
+        const filteredItems = watchListItems.filter(w => w.folder === watchListFolder);
+        const {items:[item]} = getChildrenFromWatchlist(filteredItems);
+        const [volume,version,verse_id] = (item?.plex || item?.media_key || "").split('/').filter(Boolean);
+        if(!volume || !version || !verse_id) return {volume: 0, version: 0, verse_id: 0};
+        return {volume, version, verse_id};
+    }
+
     const deduceFromInput = (first_term, second_term) => {
         let volume = null;
         let version = null;
         let verse_id = null;
-
         if (first_term && second_term) {
             // Option 3: /scripture/msg/nt
             if (volumes[first_term]) {
@@ -185,6 +195,11 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
                 volume = getVolume(verse_id);
                 version = volumes[second_term] ? second_term : getVersion(volume);
             }
+        } else if (["cfm"].includes(first_term)) {
+            const  {scripture : map} = process.env || {};
+            const watchListFolder = map[first_term];
+            if(!watchListFolder) return {volume: 0, version: 0, verse_id: 0};
+            return loadScriptureWatchlist(watchListFolder);
         } else if (first_term) {
             verse_id = getVerseId(first_term);
             volume = volumes[first_term] ? first_term : getVolume(verse_id);
@@ -425,13 +440,13 @@ const sortListByMenuMemory = (items) => {
 }
 
 export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ignoreWatchStatus=false, ignoreWait=false) => {
-    const log = loadFile('_media_memory')?.plex || {};
     let candidates = { normal: {}, urgent: {}, in_progress: {} };
-
+    const alllogs = loadFile('_media_memory') || {};
     for (let item of watchListItems) {
-        let {plexkey, percent: itemProgress, watched, hold, skip_after, wait_until, title, program} = item;
-        const percent = log[plexkey]?.percent || itemProgress || 0;
-        const seconds = log[plexkey]?.seconds || 0;
+        let {media_key, src, percent: itemProgress, watched, hold, skip_after, wait_until, title, program} = item;
+        const log = alllogs[src] || {};
+        const percent = log[media_key]?.percent || itemProgress || 0;
+        const seconds = log[media_key]?.seconds || 0;
 
         const usepercent = percent > 15 ? percent : 0; // Ignore progress below 15%
         if (usepercent > 90 && !ignoreWatchStatus) continue; // Skip if watched more than 90%
@@ -450,13 +465,13 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
         if (percent > 0) priority = "in_progress"; // Mark as in_progress if partially watched
         candidates[priority] ||= {};
         candidates[priority][program] ||= [];
-        candidates[priority][program].push([plexkey, title, program, percent, seconds]);
+        candidates[priority][program].push([media_key, title, program, percent, seconds]);
     }
 
     const items = Object.entries(candidates).reduce((acc, [key, value]) => {
         const items = Object.entries(value).reduce((acc, [program, items]) => {
-            const itemList = Object.entries(items).map(([index, [plexkey, title, program, percent, seconds]]) => {
-                const result = { plex: plexkey, title, program };
+            const itemList = Object.entries(items).map(([index, [media_key, title, program, percent, seconds]]) => {
+                const result = { plex: media_key, title, program };
                 if (percent > 0) {
                     result.percent = percent;
                     result.seconds = seconds;
@@ -476,8 +491,8 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
 
     const sortedItems = items.sort((a, b) => {
         // Sort by wait_until, later dates first
-        const aWaitUntil = watchListItems.find(w => w.plexkey === a.plex)?.wait_until || null;
-        const bWaitUntil = watchListItems.find(w => w.plexkey === b.plex)?.wait_until || null;
+        const aWaitUntil = watchListItems.find(w => w.media_key === a.plex)?.wait_until || null;
+        const bWaitUntil = watchListItems.find(w => w.media_key === b.plex)?.wait_until || null;
         if (aWaitUntil && bWaitUntil) {
             return moment(bWaitUntil).diff(moment(aWaitUntil));
         }
