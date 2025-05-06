@@ -118,8 +118,11 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
 });
 
 const logToInfinity = async (plexkey, { percent, seconds }) => {
-    if (percent < 10) return false;
-
+    percent = parseFloat(percent);
+    seconds = parseInt(seconds);
+    if (seconds < 10) return false;
+    const duration = percent > 0 ? (seconds / (percent / 100)) : 0;
+    const secondsRemaining = duration - seconds;
     const watchList = loadFile('watchlist') || [];
     const matches = watchList.filter(item => item.plexkey === plexkey) || [];
 
@@ -130,10 +133,11 @@ const logToInfinity = async (plexkey, { percent, seconds }) => {
 
     for (const uid of uids) {
         await Infinity.updateItem(process.env.infinity.watchlist, uid, watchlist_progress, percent);
-        if (percent >= 90) {
+        if (secondsRemaining < 20) {
             await Infinity.updateItem(process.env.infinity.watchlist, uid, watchlist_watched, true);
             await Infinity.updateItem(process.env.infinity.watchlist, uid, watchlist_progress, 100);
         }
+        console.log(`Infinity updated: ${uid} - ${percent}%`);
     }
 
     return true;
@@ -265,6 +269,26 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const plex_keys = plex_key.split(',');
     const playable = /playable/i.test(config);
     const shuffle = /shuffle/i.test(config);
+
+    //hanlde watchlist
+
+    const watchListItems = watchListFromMediaKey(plex_key);
+    if(watchListItems?.length) {
+        const items =  getChildrenFromWatchlist(watchListItems);
+        res.json({
+            media_key: plex_key,
+            items: items.items.map(({plex, type, title, image}) => {
+                return {
+                    label: title,
+                    type: type,
+                    plex: plex,
+                    image: image,
+                };
+            }),
+            ...items
+        });
+        return;
+    }
 
     let list = [];
     let info = {};
