@@ -5,8 +5,9 @@ import {Plex} from './lib/plex.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
-import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems } from './fetch.mjs';
+import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist } from './fetch.mjs';
 import { getChildrenFromMediaKey } from './fetch.mjs';
+import Infinity from './lib/infinity.js';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -116,6 +117,28 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
     }
 });
 
+const logToInfinity = async (plexkey, { percent, seconds }) => {
+    if (percent < 10) return false;
+
+    const watchList = loadFile('watchlist') || [];
+    const matches = watchList.filter(item => item.plexkey === plexkey) || [];
+
+    if (!matches.length) return false;
+
+    const uids = matches.map(item => item.uid);
+    const { infinity: { watchlist_progress, watchlist_watched } } = process.env;
+
+    for (const uid of uids) {
+        await Infinity.updateItem(process.env.infinity.watchlist, uid, watchlist_progress, percent);
+        if (percent >= 90) {
+            await Infinity.updateItem(process.env.infinity.watchlist, uid, watchlist_watched, true);
+            await Infinity.updateItem(process.env.infinity.watchlist, uid, watchlist_progress, 100);
+        }
+    }
+
+    return true;
+};
+
 mediaRouter.post('/log', async (req, res) => {
     const postData = req.body;
     const { type, media_key, percent, seconds, title } = postData;
@@ -133,6 +156,7 @@ mediaRouter.post('/log', async (req, res) => {
         );
         saveFile('_media_memory', log);
         console.log(`Log updated: ${JSON.stringify(log[type][media_key])}`);
+        await logToInfinity(media_key,{percent, seconds});
         res.json({ response: {type,...log[type][media_key]} });
     } catch (error) {
         console.error('Error handling /log:', error.message);
@@ -143,7 +167,18 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     let media_key = req.params[0] || Object.values(req.query)[0];
     if(!media_key) return res.status(400).json({ error: 'No media_key provided', param: req.params, query: req.query });
 
-    const { fileSize,  extention } = findFileFromMediaKey(media_key);
+
+        const watchListItems = watchListFromMediaKey(media_key);
+
+        if(watchListItems?.length) {
+            const {items:[{plex}]} = getChildrenFromWatchlist(watchListItems);
+            const info = await (new Plex()).loadPlayableItemFromKey(plex);
+            return res.json({
+                media_key,
+                ...info,
+            });
+        }  
+
 
     if(!extention) media_key = await (async () => {
         const mediakeys = media_key.split(/[|]/);
