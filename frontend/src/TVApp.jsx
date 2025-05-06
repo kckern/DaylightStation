@@ -169,7 +169,7 @@ export default function TVApp() {
   }
 
   // Otherwise, if list is still loading, show loading
-  if (list.length === 0 || (isQueueOrPlay)){
+  if (list.length === 0 && (isQueueOrPlay && !autoplayed)) {
     return <TVAppWrapper content={<LoadingOverlay />} />;
   }
 
