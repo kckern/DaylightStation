@@ -155,7 +155,6 @@ function App() {
         //return console.log('No action found for key:', event.key)
       }
 
-      const action = keyMap[event.key]
 
       // If the menu is already open, or if there’s a subMenu, skip processing
       if (
