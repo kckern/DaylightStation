@@ -95,6 +95,8 @@ function useCommonMediaController({
   };
 
 
+  const lastKeypressTimeRef = useRef(0);
+  const delta = 200;
 
 
   useEffect(() => {
@@ -136,6 +138,22 @@ function useCommonMediaController({
       if (mediaEl) mediaEl.currentTime = 0;
     };
 
+
+    const handleRightArrow = (e) => {
+      const isDoubleClick = Date.now() - lastKeypressTimeRef.current < delta;
+      console.log({ isDoubleClick, lastKeypressTime: lastKeypressTimeRef.current });
+      lastKeypressTimeRef.current = Date.now();
+      if (isDoubleClick) return skipToNextTrack();
+      return advanceInCurrentTrack(10);
+    };
+
+    const handleLeftArrow = (e) => {
+      const isDoubleClick = Date.now() - lastKeypressTimeRef.current < delta;
+      lastKeypressTimeRef.current = Date.now();
+      if (isDoubleClick) return skipToPrevTrack();
+      return advanceInCurrentTrack(-10);
+    };
+
     const handleKeyDown = (event) => {
       if (event.repeat) return;
       const isPlaying = getMediaEl()?.paused === false;
@@ -144,8 +162,8 @@ function useCommonMediaController({
       const keyMap = {
       Tab: skipToNextTrack,
       Backspace: skipToPrevTrack,
-      ArrowRight: () => advanceInCurrentTrack(10),
-      ArrowLeft: () => advanceInCurrentTrack(-10),
+      ArrowRight: (e) => handleRightArrow(e),
+      ArrowLeft: (e)=> handleLeftArrow(e),
       ArrowUp: () => cycleThroughClasses(1),
       ArrowDown: () => cycleThroughClasses(-1),
       Escape: onClear,
@@ -215,13 +233,11 @@ function useCommonMediaController({
       volume = parseFloat(volume) || 1;
       if(volume > 1) volume = volume / 100;
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
-      console.log({isVideo});
       const startTime = (duration > (12 * 60) || isVideo) ? start : 0;
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
       mediaEl.volume = volume; // Set the volume level
-      console.log({volume,playbackRate});
       if (isVideo) {
       mediaEl.controls = false;
       mediaEl.addEventListener('play', () => {
@@ -495,7 +511,6 @@ export function SinglePlayer(play) {
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
 
-  console.log({playbackRate}); 
 
   const fetchVideoInfo = useCallback(async () => {
     setIsReady(false);
