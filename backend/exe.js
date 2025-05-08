@@ -88,7 +88,10 @@ class HomeAssistant {
     async turnOnTV() {
         const startTime = Date.now();
         let { state } = await this.getSensorData('binary_sensor.living_room_tv_state');
-        if (state === 'on') return Math.floor((Date.now() - startTime) / 1000);
+        if (state === 'on') {
+            await this.runScript('script.living_room_tv_volume');
+            return Math.floor((Date.now() - startTime) / 1000);
+        }
         await this.runScript('script.living_room_tv_on');
         await this.waitForState('binary_sensor.living_room_tv_state', 'on');
         return Math.floor((Date.now() - startTime) / 1000);
