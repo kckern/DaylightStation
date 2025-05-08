@@ -55,7 +55,6 @@ const getWeather = async (job_id) => {
     );
 
     const current = hourly.find(({ unix }) => unix > now.unix());
-    console.log(current);
 
     const weatherData = {
         now,
@@ -71,7 +70,14 @@ const getWeather = async (job_id) => {
     };
 
     saveFile('weather', weatherData);
-    console.log(`\t[${job_id}] Weather saved`);
+
+    const forecaseString = hourly
+        .slice(0, 10)
+        .map((item) => `${Math.round((item.temp * 9) / 5 + 32)}°`)
+        .join(' ');
+
+
+    console.log(`\t[${job_id}] Weather saved: ${forecaseString}`);
     return weatherData;
 }
 
