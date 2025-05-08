@@ -96,7 +96,7 @@ function useCommonMediaController({
 
 
   const lastKeypressTimeRef = useRef(0);
-  const delta = 200;
+  const delta = 350;
 
 
   useEffect(() => {

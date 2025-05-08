@@ -1,5 +1,6 @@
 import express from 'express';
 const harvestRouter = express.Router();
+import crypto from 'crypto';
 
 import todoist from './lib/todoist.js';
 import gmail from './lib/gmail.js';
@@ -39,7 +40,8 @@ const harvestKeys = Object.keys(harvesters);
 harvestKeys.forEach(key => {
     harvestRouter.get(`/${key}`, async (req, res) =>{
         try {
-            const response = await harvesters[key](req);
+            const guidId = crypto.randomUUID().split('-').pop();
+            const response = await harvesters[key](guidId,req);
             return res.status(200).json(response);
         
         } catch (error) {
