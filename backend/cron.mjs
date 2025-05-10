@@ -12,7 +12,7 @@ const timeZone = "America/Los_Angeles";
 
 const cron = {
   cron10Mins: [
-    "./lib/weather.js"
+    "./lib/weather.js",
      "./lib/gcal.js",
      "./lib/todoist.js",
      "./lib/gmail.js",
