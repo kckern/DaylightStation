@@ -146,5 +146,5 @@ export const cronContinuous = async () => {
 };
 
 setInterval(() => {
-  cronContinuous().catch(err => console.error("Error running cron jobs:", err));
+  cronContinuous().catch(err => console.error("Error running some cron jobs:", err));
 }, 5000);
