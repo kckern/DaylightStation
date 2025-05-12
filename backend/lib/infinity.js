@@ -80,8 +80,9 @@ const processTable = (tableData, folders) => {
             return acc;
         }, {});
         processedItem.uid = item.id;
-        const folderName = folders.find(folder => folder.id === item.folder_id)?.name;
+        const {name:folderName,color:folderColor} = folders.find(folder => folder.id === item.folder_id) || {name:null, color:null};
         processedItem.folder = folderName || item.folder_id;
+        if (folderColor) processedItem.folder_color = folderColor;
         return processedItem;
     });
     return items;
