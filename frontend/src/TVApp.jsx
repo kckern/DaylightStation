@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import "./TVApp.scss";
 import { DaylightAPI } from "./lib/api.mjs";
-import {TVMenu} from "./modules/Menu";
+import { TVMenu } from "./modules/Menu";
 import Player from "./modules/Player";
 import AppContainer from "./modules/AppContainer";
 import { LoadingOverlay } from "./modules/Player";
@@ -16,14 +16,13 @@ export function TVAppWrapper({ content }) {
   );
 }
 
-// This function creates an "Escape" key event
 const backFunction = () => {
   const event = new KeyboardEvent("keydown", { key: "Escape" });
   window.dispatchEvent(event);
 };
 
 function setupNavigationHandlers() {
-  const handlePopState = event => {
+  const handlePopState = (event) => {
     event.preventDefault();
     if (backFunction) {
       backFunction();
@@ -33,7 +32,7 @@ function setupNavigationHandlers() {
     return false;
   };
 
-  const handleBeforeUnload = event => {
+  const handleBeforeUnload = (event) => {
     event.preventDefault();
     event.returnValue = "";
     if (backFunction) {
@@ -44,9 +43,7 @@ function setupNavigationHandlers() {
     return false;
   };
 
-  // Prevent browser back navigation
   window.history.pushState(null, "", window.location.href);
-
   window.addEventListener("popstate", handlePopState);
   window.addEventListener("beforeunload", handleBeforeUnload);
 
@@ -58,8 +55,14 @@ function setupNavigationHandlers() {
 
 export default function TVApp() {
   const [list, setList] = useState([]);
-  const [currentContent, setCurrentContent] = useState(null);
   const [autoplayed, setAutoplayed] = useState(false);
+
+  // Stack to track current menu/content components
+  // (Each element is a React element representing a menu level)
+  const [contentStack, setContentStack] = useState([]);
+
+  // Derived current content from the stack
+  const currentContent = contentStack[contentStack.length - 1] || null;
 
   useEffect(setupNavigationHandlers, []);
 
@@ -71,13 +74,11 @@ export default function TVApp() {
     fetchData();
   }, []);
 
-  // Parse query params for autoplay
   const params = new URLSearchParams(window.location.search);
   const queryEntries = Object.fromEntries(params.entries());
   const isQueueOrPlay = ["queue", "play"].some(key => Object.keys(queryEntries).includes(key));
 
   const autoplay = (() => {
-
     const configList = ["volume","shader","playbackRate","shuffle","continuous"];
     const config = {};
     for (const configKey of configList) {
@@ -105,23 +106,9 @@ export default function TVApp() {
       return { open: { app: key, param: value } };
     }
 
-
     return null;
   })();
 
-  // Handles a selection from the TVMenu
-  function handleSelection(selection) {
-    const newContent = mapSelectionToContent(selection);
-    if (newContent) {
-      setCurrentContent(newContent);
-    } else {
-      alert(
-        "No valid action found for selection: " + JSON.stringify(Object.keys(selection))
-      );
-    }
-  }
-
-  // Maps user selection to a component (Player, new TVMenu, AppContainer, etc.)
   function mapSelectionToContent(selection) {
     const clear = () => setCurrentContent(null);
     const props = { ...selection, clear, onSelect: handleSelection, onEscape: handleEscape };
@@ -134,25 +121,39 @@ export default function TVApp() {
       open:      <AppContainer {...props} />
     };
 
-
     const selectionKeys = Object.keys(selection);
     const match = selectionKeys.find(k => Object.keys(options).includes(k));
     return match ? options[match] : null;
   }
 
-  // In all cases, pressing escape should revert to the top-level menu
+  // Override setCurrentContent to push or pop from contentStack
+  const setCurrentContent = useCallback((newContent) => {
+    if (!newContent) {
+      setContentStack((oldStack) => {
+        if (oldStack.length > 0) {
+          return oldStack.slice(0, -1);
+        }
+        return [];
+      });
+    } else {
+      setContentStack((oldStack) => [...oldStack, newContent]);
+    }
+  }, []);
+
+  function handleSelection(selection) {
+    const newContent = mapSelectionToContent(selection);
+    if (newContent) {
+      setCurrentContent(newContent);
+    } else {
+      alert(
+        "No valid action found for selection: " + JSON.stringify(Object.keys(selection))
+      );
+    }
+  }
+
   function handleEscape() {
     setCurrentContent(null);
   }
-
-  // Autoplay logic
-  useEffect(() => {
-    if (!autoplayed && autoplay) {
-      const newContent = handleAutoplay(autoplay);
-      if (newContent) setCurrentContent(newContent);
-      setAutoplayed(true);
-    }
-  }, [autoplay, autoplayed]);
 
   function handleAutoplay(entry) {
     const clear = () => setCurrentContent(null);
@@ -168,17 +169,22 @@ export default function TVApp() {
     return null;
   }
 
-  // Otherwise, if list is still loading, show loading
+  useEffect(() => {
+    if (!autoplayed && autoplay) {
+      const newContent = handleAutoplay(autoplay);
+      if (newContent) setCurrentContent(newContent);
+      setAutoplayed(true);
+    }
+  }, [autoplay, autoplayed, setCurrentContent]);
+
   if (list.length === 0 && (isQueueOrPlay && !autoplayed)) {
     return <TVAppWrapper content={<LoadingOverlay />} />;
   }
 
-  // If there's content, show it
   if (currentContent) {
     return <TVAppWrapper content={currentContent} />;
   }
 
-  // Default: Show the main TVMenu
   return (
     <TVAppWrapper
       content={
@@ -191,3 +197,4 @@ export default function TVApp() {
     />
   );
 }
+

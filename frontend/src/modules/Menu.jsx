@@ -1,4 +1,3 @@
-// Menu.jsx
 
 import React, {
   useState,
@@ -10,9 +9,9 @@ import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
 import "./Menu.scss";
 import { LoadingOverlay } from "./Player";
 
-// -----------------------------------------------------------------------------
-// Log a menu selection to the server
-// -----------------------------------------------------------------------------
+/**
+ * Logs a menu selection to the server.
+ */
 const logMenuSelection = async (item) => {
   const mediaKey = item?.play || item?.queue || item?.list || item?.open;
   if (!mediaKey) return;
@@ -20,17 +19,17 @@ const logMenuSelection = async (item) => {
   const selectedKey = Array.isArray(mediaKey)
     ? mediaKey[0]
     : Object.values(mediaKey)?.length
-    ? Object.values(mediaKey)[0]
-    : null;
+      ? Object.values(mediaKey)[0]
+      : null;
 
   if (selectedKey) {
     await DaylightAPI("/data/menu_log", { media_key: selectedKey });
   }
 };
 
-// -----------------------------------------------------------------------------
-// A custom hook to wrap the "onSelect" callback with a logging side-effect
-// -----------------------------------------------------------------------------
+/**
+ * A custom hook to wrap the "onSelect" callback with a logging side-effect.
+ */
 function useSelectAndLog(onSelectCallback) {
   return useCallback(
     (item) => {
@@ -42,21 +41,18 @@ function useSelectAndLog(onSelectCallback) {
   );
 }
 
-// -----------------------------------------------------------------------------
-// TVMenu
-// -----------------------------------------------------------------------------
+/**
+ * TVMenu: Main menu component.
+ */
 export function TVMenu({ list, onSelect, onEscape }) {
-  // Always call hooks at the top level to avoid changing the hook order
   const { menuItems, menuMeta, loaded } = useFetchMenuData(list);
   const containerRef = useRef(null);
   const handleSelect = useSelectAndLog(onSelect);
 
-  // If not loaded, return early (but after hook calls)
   if (!loaded) {
     return null;
   }
 
-  // Render the menu once loaded
   return (
     <div className="menu-items-container" ref={containerRef}>
       <h2>{menuMeta.title || menuMeta.label}</h2>
@@ -71,9 +67,10 @@ export function TVMenu({ list, onSelect, onEscape }) {
   );
 }
 
-// -----------------------------------------------------------------------------
-// KeypadMenu
-// -----------------------------------------------------------------------------
+/**
+ * KeypadMenu: A variant of TVMenu that also shows a loading overlay if not loaded
+ * and can auto-select an item after a timeout.
+ */
 export function KeypadMenu({
   list,
   onSelection,
@@ -81,7 +78,6 @@ export function KeypadMenu({
   onMenuState,
   MENU_TIMEOUT = 3000,
 }) {
-  // Always call hooks at the top level to avoid changing the hook order
   const { menuItems, menuMeta, loaded } = useFetchMenuData(list);
   const containerRef = useRef(null);
   const handleSelect = useSelectAndLog(onSelection);
@@ -91,12 +87,10 @@ export function KeypadMenu({
     return () => onMenuState?.(false);
   }, [onMenuState]);
 
-  // If no data, trigger reload (but after hook calls)
   if (!loaded || !menuItems.length) {
     return <LoadingOverlay />;
   }
 
-  // Render the menu once loaded
   return (
     <div className="menu-items-container" ref={containerRef}>
       <h2>{menuMeta.title || menuMeta.label || "Menu"}</h2>
@@ -112,20 +106,18 @@ export function KeypadMenu({
   );
 }
 
-// -----------------------------------------------------------------------------
-// 1) A stable custom hook for a countdown timer
-// -----------------------------------------------------------------------------
+/**
+ * A hook to handle an optional countdown that invokes a callback.
+ */
 function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
   const [timeLeft, setTimeLeft] = useState(timeout);
   const timerRef = useRef(null);
-
-  // Store the onTimeout callback in a ref so the effect doesn’t re-run
   const callbackRef = useRef(onTimeout);
+
   useEffect(() => {
     callbackRef.current = onTimeout;
   }, [onTimeout]);
 
-  // Only (re)initialize when timeout or interval changes
   useEffect(() => {
     if (!timeout || timeout <= 0) {
       setTimeLeft(0);
@@ -152,7 +144,6 @@ function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
     };
   }, [timeout, interval]);
 
-  // Resets only the “timeLeft” to the original “timeout” without re‐creating the timer
   const resetTime = useCallback(() => {
     if (timerRef.current) {
       setTimeLeft(timeout);
@@ -162,9 +153,9 @@ function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
   return { timeLeft, resetTime };
 }
 
-// -----------------------------------------------------------------------------
-// 2) Hook to fetch menu data
-// -----------------------------------------------------------------------------
+/**
+ * Fetches menu data (either from a local object, server API, or a string path).
+ */
 function useFetchMenuData(listInput) {
   const [menuItems, setMenuItems] = useState([]);
   const [menuMeta, setMenuMeta] = useState({
@@ -202,7 +193,7 @@ function useFetchMenuData(listInput) {
         return;
       }
 
-      // Already an object with items array
+      // (A) If the input is already a "menu object" with items
       if (Array.isArray(input?.items)) {
         const { items, ...rest } = input;
         setMenuItems(items);
@@ -211,7 +202,7 @@ function useFetchMenuData(listInput) {
         return;
       }
 
-      // A simple string
+      // (B) If the input is a string referencing a menu path
       if (typeof input === "string") {
         const data = await fetchData(input);
         if (data) {
@@ -226,7 +217,7 @@ function useFetchMenuData(listInput) {
         return;
       }
 
-      // An object with a param for the menu 
+      // (C) If the input is an object with "menu", "list", or "plex"
       if (typeof input === "object") {
         const { menu, list, plex, shuffle, playable } = input;
         const config = [];
@@ -251,7 +242,7 @@ function useFetchMenuData(listInput) {
         return;
       }
 
-      // Fallback/failsafe
+      // (D) Fallback
       setMenuItems([]);
       setMenuMeta({ title: "No Menu", image: "", kind: "default" });
       setLoaded(true);
@@ -267,9 +258,9 @@ function useFetchMenuData(listInput) {
   return { menuItems, menuMeta, loaded };
 }
 
-// -----------------------------------------------------------------------------
-// MenuIMG: a helper component to display the image and detect orientation
-// -----------------------------------------------------------------------------
+/**
+ * MenuIMG: A helper component to display the menu image (and its orientation).
+ */
 function MenuIMG({ img, label }) {
   const [orientation, setOrientation] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -277,9 +268,8 @@ function MenuIMG({ img, label }) {
   const handleImageLoad = (e) => {
     const { naturalWidth, naturalHeight } = e.target;
     const ratio = naturalWidth / naturalHeight;
-    let newOrientation = "square";
-    if (ratio > 1) newOrientation = "landscape";
-    else if (ratio < 1) newOrientation = "portrait";
+    const newOrientation =
+      ratio > 1 ? "landscape" : ratio < 1 ? "portrait" : "square";
 
     setOrientation(newOrientation);
     setLoading(false);
@@ -301,9 +291,9 @@ function MenuIMG({ img, label }) {
   );
 }
 
-// -----------------------------------------------------------------------------
-// MenuItems: renders the list of items, handles arrow keys & optional timeout
-// -----------------------------------------------------------------------------
+/**
+ * MenuItems: Renders the menu items, handles arrow keys, and manages optional timeout.
+ */
 function MenuItems({
   items = [],
   columns = 1,
@@ -314,7 +304,18 @@ function MenuItems({
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Keyboard navigation
+  /**
+   * Reset scroll position at component mount: always start at the top.
+   */
+  useEffect(() => {
+    if (containerRef?.current) {
+      containerRef.current.style.transform = "translateY(0)";
+    }
+  }, [containerRef]);
+
+  /**
+   * Keyboard navigation for menu items.
+   */
   const handleKeyDown = useCallback(
     (e) => {
       if (!items.length) return;
@@ -324,30 +325,38 @@ function MenuItems({
           e.preventDefault();
           onSelect?.(items[selectedIndex]);
           break;
+
         case "ArrowUp":
           e.preventDefault();
           setSelectedIndex(
             (prev) => (prev - columns + items.length) % items.length
           );
           break;
+
         case "ArrowDown":
           e.preventDefault();
-          setSelectedIndex((prev) => (prev + columns) % items.length);
+          setSelectedIndex(
+            (prev) => (prev + columns) % items.length
+          );
           break;
+
         case "ArrowLeft":
           e.preventDefault();
           setSelectedIndex(
             (prev) => (prev - 1 + items.length) % items.length
           );
           break;
+
         case "ArrowRight":
           e.preventDefault();
           setSelectedIndex((prev) => (prev + 1) % items.length);
           break;
+
         case "Escape":
           e.preventDefault();
           onClose?.();
           break;
+
         default:
           // Move to the next item if it's an alphanumeric key
           if (!e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey) {
@@ -363,25 +372,30 @@ function MenuItems({
     [items, selectedIndex, onSelect, onClose, columns]
   );
 
-  // Attach/detach the global listener
+  /**
+   * Attach/detach the global keydown listener.
+   */
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  // Our custom countdown Hook
+  /**
+   * Optional countdown timer to auto-select.
+   */
   const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {
     onSelect?.(items[selectedIndex]);
   });
 
-  // Reset when the selected item changes
   useEffect(() => {
     if (MENU_TIMEOUT > 0 && items.length) {
       resetTime();
     }
   }, [selectedIndex, items, MENU_TIMEOUT, resetTime]);
 
-  // Scroll the container so the active item remains in view
+  /**
+   * Scroll the container so the active item remains in view.
+   */
   useEffect(() => {
     if (!containerRef?.current || !items.length) return;
     const containerEl = containerRef.current;
@@ -398,7 +412,9 @@ function MenuItems({
     containerEl.style.transform = `translateY(${-newTranslateY}px)`;
   }, [selectedIndex, items, containerRef]);
 
-  // A small child component for the progress bar
+  /**
+   * A small child component for rendering the countdown progress bar (if used).
+   */
   const ProgressTimeoutBar = ({ timeLeft, totalTime }) => {
     if (totalTime <= 0) return null;
     const percentage = 100 - (timeLeft / totalTime) * 100;
@@ -415,10 +431,13 @@ function MenuItems({
         const { plex } = item?.play || item?.queue || item?.list || item?.open || {};
         const isActive = index === selectedIndex;
         let image = item.image;
+
+        // If there's a Plex ID but no image, build one
         if (!item.image && plex) {
           const val = Array.isArray(plex) ? plex[0] : plex;
           image = DaylightMediaPath(`/media/plex/img/${val}`);
         }
+
         return (
           <div
             key={`${index}-${item.label}`}
