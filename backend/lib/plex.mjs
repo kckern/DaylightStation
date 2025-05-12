@@ -35,7 +35,7 @@ export class Plex {
     if(!attempt >= 1) console.log("Attempting to load media URL for itemData: " , plex);
     itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
     const {host, plex: { host:plexHost,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
-    const plexProxyHost = `${host}/plex_proxy`;
+    const plexProxyHost = `${host || ""}/plex_proxy`;
     const { ratingKey:key, type } = itemData;
     if(!["episode", "movie", "track"].includes(type)) {
       const {list} = await this.loadListFromKey(key);
