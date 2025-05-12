@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'fs';
 import { parse } from 'yaml';
 import path, { join } from 'path';
 import cors from 'cors'; // Step 2: Import cors
+import request from 'request'; // Import the request module
 import websocketServer from './websocket.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -12,6 +13,7 @@ const isDocker = existsSync('/.dockerenv');
 
 const app = express();
 app.use(cors()); // Step 3: Enable CORS for all routes
+
 
 async function initializeApp() {
   if (configExists) {
@@ -44,6 +46,15 @@ async function initializeApp() {
     app.use("/media", mediaRouter);
     app.use("/exe", exe);
 
+    // Proxy app for Plex
+    const {host} = process.env.plex;
+    app.use('/plex_proxy', (req, res) => {
+      const url = `${host}${req.url.replace(/\/plex_proxy/, '')}`;
+      console.log(`Proxying request to: ${url}`);
+      req.pipe(request({ qs: req.query, uri: url })).pipe(res);
+    });
+
+
     // Frontend
     const frontendPath = join(__dirname, '../frontend/dist');
     const frontendExists = existsSync(frontendPath);
@@ -60,6 +71,7 @@ async function initializeApp() {
       console.log(`I was expecting to find the frontend at ${frontendPath} but it was not there. Please run the frontend build script first.`);
       app.use('/', (_, res) => res.redirect('http://localhost:3111'));
     }
+
   } else {
     app.get("*", function (req, res) {
       res.status(500).json({ error: 'This application is not configured yet. Please add a config.app.yml file to the root of the project.' });
@@ -71,7 +83,6 @@ async function initializeApp() {
     console.log('Listening on port 3112');
   });
   websocketServer(server);
-
 }
 
 // Initialize the app
@@ -95,6 +106,12 @@ async function initializeApiApp() {
   api_app.listen(3119, () => {
     console.log('API app listening on port 3119');
   });
+
+
+
+  
 }
 
 initializeApiApp().catch(err => console.error('Error initializing api app:', err));
+
+
