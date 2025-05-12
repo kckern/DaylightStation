@@ -34,7 +34,8 @@ export class Plex {
     const plex = itemData?.plex || itemData?.ratingKey;
     if(!attempt >= 1) console.log("Attempting to load media URL for itemData: " , plex);
     itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
-    const { plex: { host,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
+    const {host, plex: { host:plexHost,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
+    const plexProxyHost = `${host}/plex_proxy`;
     const { ratingKey:key, type } = itemData;
     if(!["episode", "movie", "track"].includes(type)) {
       const {list} = await this.loadListFromKey(key);
@@ -46,10 +47,10 @@ export class Plex {
       if (media_type === 'audio') {
       const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
       if (!mediaKey) throw new Error("Media key not found for audio.");
-      return `${host}${mediaKey}?X-Plex-Token=${token}`;
+      return `${plexProxyHost}${mediaKey}?X-Plex-Token=${token}`;
       } else {
         if (!key) throw new Error("Rating key not found for video.");
-        const url =  `${host}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
+        const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
         const isValid = await axios.get(url).then((response) => {
           return response.status >= 200 && response.status < 300;
         }).catch(() => false);
