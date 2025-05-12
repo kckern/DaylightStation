@@ -543,7 +543,8 @@ export const getChildrenFromMediaKey = async ({media_key, config}) => {
     const listItems = await Promise.all(loadFile(`lists`).map(processListItem));
     const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
     const itemsFromList = listItems.filter(filterFn) || [];
-    if (!!itemsFromList.length) return { items: sortListByMenuMemory(itemsFromList,config) };
+    const noSort = itemsFromList.some(item => item?.folder_color);  // Color is used as an indicator for no sorting, since folders have no other attributes besides title
+    if (!!itemsFromList.length) return { items: noSort ? itemsFromList : sortListByMenuMemory(itemsFromList,config) };
 
     // If no list items, check if it's a Plex key
     const isPlex = /^\d+$/.test(media_key);
