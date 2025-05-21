@@ -128,6 +128,9 @@
     background-color: #151515;
     width: 100%;
     height: 100%;
+    .regular{
+        h2{ display: none;}
+    }
     .dark {
         background-color: #000000;
         *{filter: brightness(0); }
