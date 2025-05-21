@@ -20,9 +20,9 @@ const listMails = async (job_id) => {
         const payload = data.payload;
         const headers = payload.headers;
 
-        const subject = sanitize(headers.find(header => header.name === 'Subject').value);
-        const from = sanitize(headers.find(header => header.name === 'From').value);
-        const to = sanitize(headers.find(header => header.name === 'To').value);
+        const subject = sanitize(headers.find(header => header.name === 'Subject')?.value || 'No Subject');
+        const from = sanitize(headers.find(header => header.name === 'From')?.value || 'Unknown Sender');
+        const to = sanitize(headers.find(header => header.name === 'To')?.value || 'Unknown Recipient');
         const snippet = sanitize(data.snippet);
 
         return { subject, from, to, snippet };
