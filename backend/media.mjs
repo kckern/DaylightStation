@@ -179,6 +179,7 @@ mediaRouter.all(`/info/*`, async (req, res) => {
         return res.json({
             media_key,
             ...info,
+            title: info.title || `Plex Item ${plex}`,
         });
     }  
 

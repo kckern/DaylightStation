@@ -69,7 +69,7 @@ function useCommonMediaController({
   cycleThroughClasses,
   playbackKeys,queuePosition 
 }) {
-  const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.media_url;
+  const media_key = meta.media_key || meta.key || meta.guid || meta.id  || meta.plex || meta.media_url;
   const containerRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -104,7 +104,7 @@ function useCommonMediaController({
       const mediaEl = getMediaEl();
       if (mediaEl) {
       const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
-      const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+      const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '')
       DaylightAPI(`media/log`, { title, type, media_key, seconds: mediaEl.currentTime, percent:100, title });
       DaylightAPI(`harvest/watchlist`);
       }
@@ -424,7 +424,9 @@ function useQueueController({ play, queue, clear }) {
 /*  MAIN PLAYER                                               */
 /*─────────────────────────────────────────────────────────────*/
 
-export default function Player({ play, queue, clear, playbackKeys }) {
+export default function Player({ play, queue, clear, playbackKeys, playbackrate }) {
+
+  if(playbackrate) play['playbackRate'] = playbackrate; //Override playback rate if passed in via menu selection
 
   const {
     classes,
@@ -502,6 +504,7 @@ export function SinglePlayer(play) {
 
 
   } = play || {};
+  
 
   if (!!scripture)    return <Scriptures {...play} />;
   if (!!hymn)         return <Hymns {...play} />;
@@ -520,7 +523,8 @@ export function SinglePlayer(play) {
       setIsReady(true);
     } else if (!!media) {
       const infoResponse = await DaylightAPI(`media/info/${media}`);
-      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1, media_key: infoResponse.key  || infoResponse.listkey });
+      console.log({ infoResponse });
+      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1, media_key: infoResponse.media_key  || infoResponse.listkey });
       setIsReady(true);
     } else if (!!open) {
       setGoToApp(open);
@@ -614,7 +618,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
         )}
       </div>
       <h2>
-        {footer}
+        {footer} {`(${playbackRate}×)`}
       </h2>
       <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }}  />
     </div>
@@ -667,8 +671,7 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
   return (
     <div className={`video-player ${shader}`}>
       <h2>
-        {heading}
-        {playbackRate > 1 ? ` (${playbackRate}×)` : ''}
+        {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       {(seconds === 0 || timeSinceLastProgressUpdate > 1000) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
