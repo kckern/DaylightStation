@@ -617,9 +617,9 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
           </>
         )}
       </div>
-      <h2>
-        {footer} {`(${playbackRate}×)`}
-      </h2>
+      <h3>
+        {footer}
+      </h3>
       <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }}  />
     </div>
   );

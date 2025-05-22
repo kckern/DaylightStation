@@ -255,6 +255,7 @@ mediaRouter.all(`/info/*`, async (req, res) => {
 
 mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     const { plex_key, config } = req.params;
+    const {host} = process.env;
     const plex_keys = plex_key.split(',');
     const shuffle = /shuffle/i.test(config);
     let infos = [];
@@ -264,7 +265,7 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     }
     //pick one
     const plexInfo = infos[Math.floor(Math.random() * infos.length)];
-    plexInfo['image'] = `/media/plex/img/${plex_key}`;
+    plexInfo['image'] = `${host || ""}/media/plex/img/${plex_key}`;
     
     try {
         res.json(plexInfo);
