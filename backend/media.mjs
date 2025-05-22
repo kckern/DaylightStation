@@ -264,6 +264,8 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     }
     //pick one
     const plexInfo = infos[Math.floor(Math.random() * infos.length)];
+    plexInfo['image'] = `/media/plex/img/${plex_key}`;
+    
     try {
         res.json(plexInfo);
     } catch (error) {
