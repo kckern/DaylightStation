@@ -50,8 +50,21 @@ async function initializeApp() {
     const {host} = process.env.plex;
     app.use('/plex_proxy', (req, res) => {
       const url = `${host}${req.url.replace(/\/plex_proxy/, '')}`;
-    //  console.log(`Proxying request to: ${url}`);
-      req.pipe(request({ qs: req.query, uri: url })).pipe(res);
+      const proxyRequest = request({ qs: req.query, uri: url });
+
+      let responseSent = false;
+
+      proxyRequest.on('error', (err) => {
+        if (!responseSent) {
+          responseSent = true;
+          console.error(`Error proxying request to: ${url}`, err);
+          res.status(500).json({ error: 'Failed to proxy request', details: err.message });
+        }
+      });
+
+      req.pipe(proxyRequest).on('response', () => {
+        responseSent = true;
+      }).pipe(res);
     });
 
 
