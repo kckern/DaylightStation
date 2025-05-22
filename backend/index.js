@@ -50,7 +50,7 @@ async function initializeApp() {
     const {host} = process.env.plex;
     app.use('/plex_proxy', (req, res) => {
       const url = `${host}${req.url.replace(/\/plex_proxy/, '')}`;
-      console.log(`Proxying request to: ${url}`);
+    //  console.log(`Proxying request to: ${url}`);
       req.pipe(request({ qs: req.query, uri: url })).pipe(res);
     });
 
