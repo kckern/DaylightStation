@@ -95,6 +95,8 @@ export default function TVApp() {
       media:     (value) => ({ play: { media: value, ...config } }),
       plex:      (value) => ({ play: { plex: value, ...config } }),
       hymn:      (value) => ({ play: { hymn: value, ...config } }),
+      song:      (value) => ({ play: { song: value, ...config } }),
+      primary:   (value) => ({ play: { primary: value, ...config } }),
       talk:      (value) => ({ play: { talk: value, ...config } }),
       scripture: (value) => ({ play: { scripture: value, ...config } }),
     };
@@ -123,7 +125,9 @@ export default function TVApp() {
 
     const selectionKeys = Object.keys(selection);
     const match = selectionKeys.find(k => Object.keys(options).includes(k));
-    return match ? options[match] : null;
+    return match ? options[match] : <pre>
+      No valid action found for selection: {JSON.stringify(selection, null, 2)}
+    </pre>
   }
 
   // Override setCurrentContent to push or pop from contentStack

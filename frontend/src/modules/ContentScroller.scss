@@ -110,8 +110,9 @@
 /* Scriptures-specific */
 .content-scroller.scriptures {
 
+
   .scripture-text{
-    padding: 1rem 2rem 60vh 2rem;
+    padding: 1rem 2rem 15rem 2rem;
     margin-top: -2rem;
   }
   .verse-headings {
@@ -167,9 +168,13 @@
 /* Hymn-specific */
 .content-scroller.hymn {
   background-color: #fdf0d588;
+  // var for height of this panel
+  --textpanel-height: 100%;
+  
+  
   .hymn-text {
     padding-top: 2rem;
-    padding-bottom: 60vh;
+    padding-bottom: calc(0.2 * var(--textpanel-height)); // 60% of .textpanel height
     font-size: 3rem;
     margin-bottom: 2rem;
     .stanza {
@@ -212,7 +217,7 @@
 }
 
 .talk .talk-text {
-  padding: 2rem 2rem 60vh 2rem;
+  padding: 2rem 2rem 15rem 2rem;
   font-size: 2rem;
   line-height: 0.9;
   margin-bottom: 2rem;
