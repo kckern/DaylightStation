@@ -485,6 +485,7 @@ export function SinglePlayer(play) {
     plex,
     media,
     hymn,
+    primary,
     scripture,
     talk,
     rate,
@@ -508,6 +509,7 @@ export function SinglePlayer(play) {
 
   if (!!scripture)    return <Scriptures {...play} />;
   if (!!hymn)         return <Hymns {...play} />;
+  if (!!primary)      return <Hymns {...{...play,hymn: primary, subfolder:"primary"}}/>;
   if (!!talk)         return <Talk {...play} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
