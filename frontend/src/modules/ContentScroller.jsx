@@ -449,7 +449,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
    * No ambient track, just a single audio. 
    */
   export function Hymns(play) {
-    const { hymn, advance, clear } = play;
+    const { hymn, advance, clear, subfolder } = play;
     const [title, setTitle] = useState("");
     const [subtitle, setSubtitle] = useState("");
     const [verses, setHymnVerses] = useState([]);
@@ -458,16 +458,18 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scriptu
     const [duration, setDuration] = useState(0);
     const [media_key, setMediaKey] = useState(null);
     const hymnTextRef = useRef(null);
-
+    const folder = subfolder || `hymn`;
+    console.log(`Loading hymn: ${hymn} from folder: ${folder}`);
     useEffect(() => {
-        const path = hymn === true ? "data/hymn" : `data/hymn/${hymn}`;
-        DaylightAPI(path).then(({title, hymn_num, mediaUrl, verses, duration}) => {
+        const path = hymn === true ? `data/${folder}` : `data/${folder}/${hymn}`;
+        DaylightAPI(path).then(({title, hymn_num, song_number, mediaUrl, verses, duration}) => {
+          const num = hymn_num || song_number;
           setHymnVerses(verses);
           setTitle(title);
-          setHymnNum(hymn_num);
+          setHymnNum(num);
           setMediaUrl(mediaUrl);
-          setSubtitle(`Hymn #${hymn_num}`);
-          setMediaKey(`hymn/${hymn_num}`);
+          setSubtitle(`${folder==="hymn" ? "Hymn " : "Song "}#${num}`);
+          setMediaKey(`${folder}/${num}`);
           setDuration(duration);
         });
     }, [hymn]);
