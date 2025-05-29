@@ -34,6 +34,7 @@ async function initializeApp() {
     const { default: homeRouter } = await import('./home.mjs');
     const { default: mediaRouter } = await import('./media.mjs');
     const { default: exe } = await import('./exe.js');
+    const { default: tts } = await import('./tts.mjs');
 
     // Backend API
     app.get('/debug', (_, res) => res.json({ process: { __dirname, env: process.env } }));
@@ -45,6 +46,8 @@ async function initializeApp() {
     app.use("/home", homeRouter);
     app.use("/media", mediaRouter);
     app.use("/exe", exe);
+    app.use("/tts", tts);
+
 
     // Proxy app for Plex
     const {host} = process.env.plex;

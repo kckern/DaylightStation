@@ -2,6 +2,9 @@ import fetch from 'node-fetch';
 import { appendFile } from 'fs';
 import yaml from 'js-yaml';
 import { readFileSync } from 'fs';
+import axios from 'axios';
+import crypto from 'crypto';
+import fs from 'fs';
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
 const secretspath = `${__appDirectory}/config.secrets.yml`;
@@ -104,5 +107,51 @@ export const askGPT = async (messages, model = 'gpt-4o', extraconfig) => {
     return false;
   }
 };
+
+
+export const generateSpeech = async (string, voice, instructions) => {
+  const config = {
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    responseType: 'arraybuffer'
+  };
+  const data = {
+    model: 'gpt-4o-mini-tts',
+    input: string || 'Today is a wonderful day to build something people love!',
+    voice: voice || 'coral',
+    instructions: instructions || 'Speak in a cheerful and positive tone.'
+  };
+
+
+  try {
+    const response = await axios.post('https://api.openai.com/v1/audio/speech', data, config);
+    const uuid = crypto.randomUUID();
+    const filename = `/tmp/${uuid}.mp3`;
+    await fs.promises.writeFile(filename, response.data, 'binary');
+    return filename;
+  } catch (error) {
+    console.error('Error generating speech:', error?.response?.data?.error?.message || error.message);
+    return false;
+  }
+}
+
+
+
+export const askGPTWithJSONOutput = async (messages, model = 'gpt-4o', extraconfig) => {
+
+  messages[0].content += '\n\nPlease respond with a valid JSON object.';
+  const response = await askGPT(messages, model, extraconfig);
+  if (!response) return false;
+
+  try {
+    return JSON.parse(response);
+  } catch (error) {
+    console.error('Error parsing JSON response:', error.message);
+    return false;
+  }
+};
+
 
 export default { askGPT };
