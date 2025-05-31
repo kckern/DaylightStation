@@ -76,20 +76,28 @@ export const loadRandom = (folder) => {
 };
 
 
-
 const loadFile = (path) => {
-    path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.yaml$/, '') + '.yaml';
-    const fileExists = fs.existsSync(`${process.env.path.data}/${path}`);    
-    if(!fileExists) {
-        console.error(`File does not exist: ${path}`);
+    path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
+    // Try .yaml first, then .yml
+    const yamlPath = `${process.env.path.data}/${path}.yaml`;
+    const ymlPath = `${process.env.path.data}/${path}.yml`;
+    let fileToLoad = null;
+
+    if (fs.existsSync(yamlPath)) {
+        fileToLoad = yamlPath;
+    } else if (fs.existsSync(ymlPath)) {
+        fileToLoad = ymlPath;
+    } else {
+        console.error(`File does not exist: ${yamlPath} or ${ymlPath}`);
         return false;
     }
-    const fileData = fs.readFileSync(`${process.env.path.data}/${path}`, 'utf8').toString().trim();
-    try{
+
+    const fileData = fs.readFileSync(fileToLoad, 'utf8').toString().trim();
+    try {
         const object = yaml.load(fileData);
         return object || {};
-    }catch(e){
-        console.error(`Failed to parse YAML file: ${path}`, e);
+    } catch (e) {
+        console.error(`Failed to parse YAML file: ${fileToLoad}`, e);
         return fileData || {};
     }
 }

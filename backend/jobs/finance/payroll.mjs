@@ -2,6 +2,7 @@ import axios from 'axios';
 import yaml from 'js-yaml';
 import { readFileSync, writeFileSync } from 'fs';
 import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';
+import { loadFile } from '../../lib/io.mjs';
 
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -4).join('/')}`;
@@ -12,9 +13,14 @@ const {  buxfer: {payroll_account_id, direct_deposit_account_id} } = yaml.load(r
 
 
 
-(async () => {
+const  payrollSync = async (key,req) => {
 
-    const pastPaycheckData = yaml.load(readFileSync('data/budget/payroll.yml', 'utf8'));
+  console.log(`Running Payroll Sync Job [${key}]`);
+
+    const authKey = req.query.token || PAYROLL_AUTH;
+
+    const pastPaycheckData =     loadFile('budget/payroll');
+
     const pastDates = Object.keys(pastPaycheckData.paychecks);
 
     const url = `https://${PAYROLL_BASE}/${PAYROLL_COMPANY}/${PAYROLL_EMPLOYEE}/paychecks`;
@@ -23,7 +29,7 @@ const {  buxfer: {payroll_account_id, direct_deposit_account_id} } = yaml.load(r
         method: 'GET',
         url,
         headers: {
-          cookie: `${PAYROLL_AUTHKEY}=${PAYROLL_AUTH}`
+          cookie: `${PAYROLL_AUTHKEY}=${authKey}`
         }
       };
       try{
@@ -47,7 +53,7 @@ const {  buxfer: {payroll_account_id, direct_deposit_account_id} } = yaml.load(r
             method: 'GET',
             url: checkUrl,
             headers: {
-              cookie: `${PAYROLL_AUTHKEY}=${PAYROLL_AUTH}`
+              cookie: `${PAYROLL_AUTHKEY}=${authKey}`
             }
           };
           try{
@@ -156,5 +162,6 @@ const {  buxfer: {payroll_account_id, direct_deposit_account_id} } = yaml.load(r
         console.error(e.message);
       }
 }
-)();
+
+export default payrollSync;
 

@@ -3,6 +3,7 @@ import yaml from 'js-yaml';
 import moment from 'moment-timezone';
 import { buildBudget } from './budgetlib/build_budget.mjs';
 import { processTransactions, processMortgageTransactions, getAccountBalances } from './buxfer.mjs';
+import payrollSync from '../jobs/finance/payroll.mjs';
 
 moment.tz.setDefault('America/Los_Angeles');
 
@@ -16,7 +17,7 @@ const accountBalancePath = `${dataPath}/budget/account.balances.yml`;
 const financesPath          = `${dataPath}/budget/finances.yml`;
 const transactionMemoPath   = `${dataPath}/budget/transaction.memos.yml`;
 
-
+export const payrollSyncJob = async (key,req) => payrollSync(key,req);
 
 export const processMortgagePaymentPlans = (paymentPlans, balance, interestRate, minimumPayment) => {
   const principal = Math.abs(balance);
