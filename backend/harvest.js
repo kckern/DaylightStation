@@ -15,7 +15,7 @@ import Infinity from './lib/infinity.js';
 import scripture from './lib/scriptureguide.mjs';
 import ldsgc from './lib/ldsgc.mjs';
 import youtube_dl from './lib/youtube.mjs';
-import { refreshFinancialData as budget } from './lib/budget.mjs';
+import { refreshFinancialData as budget, payrollSyncJob } from './lib/budget.mjs';
 
 const harvesters = {
     ...Infinity.keys.reduce((fn, i) => (fn[i] = (req) => Infinity.loadData(i,req), fn), {}),
@@ -32,6 +32,7 @@ const harvesters = {
     goodreads,
     budget,
     youtube_dl,
+    payroll: payrollSyncJob
     
 }
 
