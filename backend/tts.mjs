@@ -104,33 +104,33 @@ ttsRouter.all('/generate', async (req, res) => {
 
 
 const respondWithAudio = async (input, res) => {
-    const {string, voice, instructions} = input;
+    const { string, voice, instructions } = input;
 
-    const filename = await generateSpeech(string, voice, instructions);
-    if (filename) {
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Content-Disposition', 'inline'); // Force play in browser
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); // Prevent caching
+    // generateSpeech should return a Promise that resolves to a readable stream from OpenAI
+    generateSpeech(string, voice, instructions)
+        .then(audioStream => {
+            if (audioStream && typeof audioStream.pipe === 'function') {
+                res.setHeader('Content-Type', 'audio/mpeg');
+                res.setHeader('Content-Disposition', 'inline');
+                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
-        fs.stat(filename, (err, stats) => {
-            if (err || !stats.isFile()) {
-            res.status(500).json({ error: 'Error reading audio file' });
-            return;
+                audioStream.on('error', (err) => {
+                    console.error('Audio stream error:', err);
+                    if (!res.headersSent) {
+                        res.status(500).json({ error: 'Error streaming audio' });
+                    }
+                });
+
+                audioStream.pipe(res);
+            } else {
+                res.status(500).json({ error: 'Error generating speech' });
             }
-            res.setHeader('Content-Length', stats.size);
-            const stream = fs.createReadStream(filename);
-            stream.on('error', () => {
-            res.status(500).json({ error: 'Error reading audio file' });
-            });
-            stream.pipe(res);
+        })
+        .catch(err => {
+            console.error('Error generating speech:', err);
+            res.status(500).json({ error: 'Error generating speech' });
         });
-
-        return; // Prevent further response handling
-    } else {
-        res.status(500).json({ error: 'Error generating speech' });
-    }
 };
-
 
 
 
