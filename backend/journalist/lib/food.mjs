@@ -1,4 +1,4 @@
-import {detectFoodFromImage, itemizeFood} from "./gpt_food.mjs";
+import { detectFoodFromImage, generateCoachingMessage, itemizeFood} from "./gpt_food.mjs";
 import nodeFetch from 'node-fetch';
 import * as Jimp from 'jimp';
 import moment from "moment-timezone";
@@ -178,7 +178,8 @@ const reportImgUrl = `${nutribot_report_host}/foodreport?chat_id=${chat_id}&uuid
     
     await handlePendingNutrilogs(chat_id);
     console.log(`Sending report image: ${reportImgUrl}`);
-    const msg = await sendImageMessage(chat_id, reportImgUrl, `📊 Coaching message here`);
+    const coachingMessage = await generateCoachingMessage(chat_id, attempt);
+    const msg = await sendImageMessage(chat_id, reportImgUrl, coachingMessage);
     const {message_id} = msg?.result || {}
     await deleteMessage(chat_id, tmp_msg_id);
     if(!message_id) return await postItemizeFood(chat_id, attempt+1);

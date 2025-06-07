@@ -3,6 +3,7 @@ import fetch from 'node-fetch';
 import { v4 as uuidv4 } from 'uuid';
 import moment from 'moment-timezone';
 import { getBase64Url } from './food.mjs';
+import { getMostRecentNutrilistItems, getNutriDay, getNutriDaysBack, getNutrilListByDate, getNutrilog, saveNutriCoach } from './db.mjs';
 dotenv.config();
 
 
@@ -400,3 +401,81 @@ export const itemizeFood = async (foodList, img, attempt) => {
 }
 
 
+
+
+export const generateCoachingMessage = async (chat_id, attempt=1)=>{
+
+    const nutriDays = JSON.stringify(getNutriDaysBack(chat_id, 7));
+    const mostRecentItems =  JSON.stringify(getMostRecentNutrilistItems(chat_id));
+    const pastCoaching = JSON.stringify(getNutrilog(chat_id, 'nutri_coach', 7));
+    
+
+    //TODO add weight trends and exercise trends
+
+    const data = {
+        model: 'gpt-4o',
+        messages: [
+            {
+                role: 'system',
+                content: `You are a nutrition coach.  You analyze the user's food intake and provide coaching advice based on their food choices, trends, and patterns.
+                You will be given the user's recent food intake, weight trends, and exercise trends.  Use this information to provide personalized coaching advice.
+                Do not use markdown or any formatting, just plain text.  Keep your responses concise and to the point, no more than 2-3 sentences.
+                `
+            },
+            {
+                role: 'user',
+                content: `Here is the user's recent food intake for the last 7 days: ${nutriDays}`
+            },
+            {
+                role: 'user',
+                content: `Here is the are the user's past coaching messages you have sent: ${pastCoaching}`
+            },
+            {
+                role: 'user',
+                content: `This includes the most recent food items, logged just now: ${mostRecentItems}`
+            },
+            {
+                role: 'user',
+                content: `Now, based on the above information, provide a coaching message for the user.  Focus on the impact of the most recent food items on their overall nutrition and health.  You may mention past trends and patterns, but focus on the most recent food items and how they relate to the user's overall nutrition and health. If the most recent input is obviously a snack or small portion, just reply with a pithy comment, such as "Nice!". Or "Just a quick treat, huh?" or "Looks like a snack, not a meal." or "Just a little something to tide you over?"  For more substantial meals, provide a more detailed analysis and coaching message that takes into account more longitudinal trends and patterns.  If you are not sure, just reply with "Keep going!" or "You got this!"`
+            },
+
+        ],
+        max_tokens: 1000
+    };
+    try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            const {error} = await response.json();
+            console.error(error);
+            throw new Error(`Failed to get coaching message.`);
+        }
+
+        const jsonResponse = await response.json();
+        const coachingMessage = jsonResponse.choices?.[0].message?.content || '';
+        const todaysDate = moment().tz('America/Los_Angeles').format('YYYY-MM-DD');
+        saveNutriCoach({
+            chat_id,
+            date: todaysDate,
+            message: coachingMessage,
+            mostRecentItems
+        });
+        return coachingMessage;
+
+    } catch (error) {
+
+        console.error('Error getting coaching message:', error);
+        if(attempt < 3) return await coachingMessage(chat_id, attempt + 1);
+        return false;
+
+    }
+
+
+}
