@@ -15,6 +15,7 @@ const NUTRICURSORS_STORE= 'journalist/nutribot/nutricursors';
 const ACTIVITIES_STORE = 'journalist/activities';
 const WEIGHTS_STORE = 'journalist/weights';
 const NUTRIDAY_STORE = 'journalist/nutribot/nutridays'; // not used explicitly, but mentioned
+const NUTRICOACH_STORE = 'journalist/nutribot/nutricoach'; // not used explicitly, but mentioned
 // If you need multiple data stores, you can define more as needed.
 
 
@@ -569,6 +570,77 @@ export const saveNutriDay = ({ chat_id, daily_data }) => {
 
 }
 
+
+export const getNutriDay = (chat_id, date) => {
+  try {
+    const data = loadFile(NUTRIDAY_STORE + "/" + chat_id) || {};
+    if (data[date]) {
+      return data[date];
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting nutriday:', error);
+    return null;
+  }
+}
+
+export const getNutriDaysBack = (chat_id, days = 7) => {
+  try {
+    const data = loadFile(NUTRIDAY_STORE + "/" + chat_id) || {};
+    const today = moment().format('YYYY-MM-DD');
+    const daysBack = [];
+    for (let i = 0; i < days; i++) {
+      const date = moment(today).subtract(i, 'days').format('YYYY-MM-DD');
+      if (data[date]) {
+        daysBack.push({ date, data: data[date] });
+      }
+    }
+    return daysBack;
+  } catch (error) {
+    console.error('Error getting nutridays back:', error);
+    return null;
+  }
+}
+
+export const saveNutriCoach = ({ chat_id, date, message, mostRecentItems}) => {
+  try {
+    const data = loadFile(NUTRICOACH_STORE + "/" + chat_id) || {};
+    data[date] = data[date] || [];
+    data[date].push({
+      timestamp: Math.floor(Date.now() / 1000),
+      mostRecentItems,
+      message
+    });
+     saveFile(NUTRICOACH_STORE + "/" + chat_id, data);
+    return true;
+
+}
+  catch (error) {
+    console.error('Error saving nutricoach:', error);
+    return null;
+  }
+}
+
+
+export const getNutriCoach = (chat_id, daysBack = 7) => {
+  try {
+    const data = loadFile(NUTRICOACH_STORE + "/" + chat_id) || {};
+    const today = moment().format('YYYY-MM-DD');
+    const coachData = [];
+    for (let i = 0; i < daysBack; i++) {
+      const date = moment(today).subtract(i, 'days').format('YYYY-MM-DD');
+      if (data[date]) {
+        coachData.push({ date, messages: data[date] });
+      }
+    }
+    return coachData;
+  } catch (error) {
+    console.error('Error getting nutricoach data:', error);
+    return null;
+  }
+}
+
+
 /**
  * Retrieves a nutrilog by UUID.
  * @param {string} uuid
@@ -585,6 +657,45 @@ export const getNutrilog = (uuid, chat_id) => {
     return null;
   }
 };
+
+export const getMostRecentNutrilog = (chat_id) => {
+  try {
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    // Sort by timestamp descending
+    const logIds = Object.keys(data);
+    const sorted = logIds.sort((a, b) => data[b].message_id - data[a].message_id);
+    // Get the most recent one
+    const mostRecentId = sorted[0];
+    return data[mostRecentId] || null;
+  } catch (error) {
+    console.error('Error getting most recent nutrilog:', error);
+    return null;
+  }
+}
+
+export const getMostRecentNutrilistItems = (chat_id) => {
+  const mostRecentNutrilog = getMostRecentNutrilog(chat_id);
+  if (!mostRecentNutrilog) {
+    console.warn('No recent nutrilog found for chat_id:', chat_id);
+    return [];
+  }
+  try {
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
+    // Filter items that match the most recent nutrilog's log_uuid
+    const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.log_uuid === mostRecentNutrilog.uuid);
+    // Sort by calories descending
+    rows.sort((a, b) => {
+      let aCals = 0, bCals = 0;
+      try { aCals = a.food_data?.calories || 0; } catch {}
+      try { bCals = b.food_data?.calories || 0; } catch {}
+      return bCals - aCals;
+    });
+    return rows.map(item => (`${item.item} (${item.amount} ${item.unit})`));
+  } catch (error) {
+    console.error('Error getting most recent nutrilist items:', error);
+    return [];
+  }
+}
 
 /**
  * Retrieves nutrilist by date.
