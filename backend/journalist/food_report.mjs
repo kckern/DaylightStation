@@ -425,7 +425,7 @@ async function generateFoodList(ctx, todaysFood, foodListWidth, height, leftSide
 /**
  * Generate the macro stats section.
  */
-async function generateMacroStats(ctx, todaysFood, pieChartWidth, midPoint) {
+async function generateMicroStats(ctx, todaysFood, pieChartWidth, midPoint) {
   const stats = [
     {
       label: 'Sodium',
@@ -483,114 +483,131 @@ async function generateMacroStats(ctx, todaysFood, pieChartWidth, midPoint) {
 /**
  * Generate the daily chart section.
  */
-async function generateDailyChart(ctx, data, barChartWidth, barChartHeight, barChartX, barChartY, bmr, calGoal, barMaxVal) {
-  
-  saveFile(`generateDailyChart`, data);
 
-  console.log('Generating daily chart with data:', data);
-  
-  drawRect(ctx, barChartX, barChartY, barChartWidth, barChartHeight, '#FAF3ED');
+async function generateDailyChart(
+  ctx,
+  data,
+  barChartWidth,
+  barChartHeight,
+  barChartX,
+  barChartY,
+  bmr,
+  calGoal,
+  barMaxVal,
+  timezone
+) {
+  // EXAMPLE COLORS (change as you like)
+  timezone = timezone || 'America/Los_Angeles';
+  const BG_COLOR = '#FAF3ED';
+  const MACRO_COLORS = {
+    carbs: '#a3b18a',
+    protein: '#fe938c',
+    fat: '#f6bd60',
+  };
+  const BMR_LINE_COLOR = '#AAA';
+  const GOAL_LINE_COLOR = '#AAA';
+  const BAR_BASE_COLOR = '#CCC';
+  const TEXT_COLOR = '#000';
 
+  // EXAMPLE FONTS
+  const DEFAULT_FONT = '12px Arial';
+  const SUBTITLE_FONT = '10px Arial';
+
+  // 1. Background rectangle for the chart area
+  drawRect(ctx, barChartX, barChartY, barChartWidth, barChartHeight, BG_COLOR);
+
+  // 2. Draw horizontal lines for BMR and Goal
   const bmrY = barChartY + barChartHeight - (bmr / barMaxVal) * barChartHeight;
-  drawRect(ctx, barChartX, bmrY, barChartWidth, 2, '#AAA', `BMR: ${bmr}`, DEFAULT_FONT, 'left-bottom');
+  drawRect(ctx, barChartX, bmrY, barChartWidth, 2, BMR_LINE_COLOR);
 
   const goalY = barChartY + barChartHeight - (calGoal / barMaxVal) * barChartHeight;
-  drawRect(ctx, barChartX, goalY, barChartWidth, 2, '#AAA', `Goal: ${calGoal}`, DEFAULT_FONT, 'left-bottom');
+  drawRect(ctx, barChartX, goalY, barChartWidth, 2, GOAL_LINE_COLOR);
 
-  // Draw bars for past days
-  let counter = { days: 0, def: 0 };
-  const barCount = 13;
-  const barAreaWidth = barChartWidth / (barCount - 1);
-  const barWidth = barAreaWidth * 0.8;
+  // 3. Determine how many days to plot and set up spacing
+  const barCount = 7; // Example: last 7 days
+  const barAreaWidth = barChartWidth / barCount;
+  const barWidth = barAreaWidth * 0.6; // space between bars
 
-  for (let i = barCount - 1; i >= 1; i--) {
-    const dateToCheck = moment().tz(timezone).subtract(i, 'days').format('YYYY-MM-DD');
+  // 4. Loop through each day (from oldest to most recent)
+  for (let i = barCount - 1; i >= 0; i--) {
+    const dateToCheck = moment()
+      .tz(timezone)
+      .subtract(i, 'days')
+      .format('YYYY-MM-DD');
+
+    // 4b. Filter log entries for that date
     const dayFood = data.filter((item) => item.date === dateToCheck);
+    if (dayFood.length === 0) {
+      // If no data, you could continue or draw an empty bar
+      continue;
+    }
+
+    // 4c. Summarize daily totals
     const todaysData = dayFood.reduce(
-      (today, item) => {
-        today.date = dateToCheck;
-        today.calories += item.calories;
-        today.protein += item.protein;
-        today.carbs += item.carbs;
-        today.fat += item.fat;
-        return today;
+      (acc, item) => {
+        acc.calories += item.calories;
+        acc.protein += item.protein;
+        acc.carbs += item.carbs;
+        acc.fat += item.fat;
+        return acc;
       },
-      { date: '', calories: 0, protein: 0, carbs: 0, fat: 0 }
+      { calories: 0, protein: 0, carbs: 0, fat: 0 }
     );
 
-    // just a mock for burned, steps
-    const steps = 3000;
-    const calsPerStep = 0.04;
-    const stepCals = steps * calsPerStep;
-    const exerciseCals = Math.floor(Math.random() * 10);
-    todaysData.burned = bmr + stepCals + exerciseCals;
-    todaysData.deficit = todaysData.burned - todaysData.calories;
+    // 4d. Calculate stacked macro parts
+    const totalMacroCals = 
+      todaysData.carbs * 4 + todaysData.protein * 4 + todaysData.fat * 9;
+    // Handle zero‑calorie edge case
+    const carbsRatio = totalMacroCals ? (todaysData.carbs * 4) / totalMacroCals : 0;
+    const proteinRatio = totalMacroCals ? (todaysData.protein * 4) / totalMacroCals : 0;
+    const fatRatio = totalMacroCals ? (todaysData.fat * 9) / totalMacroCals : 0;
 
-    counter.days++;
-    counter.def += todaysData.deficit;
-
-    const totalWeight = todaysData.protein * 4 + todaysData.carbs * 4 + todaysData.fat * 9;
-    const protein_percent = totalWeight ? (todaysData.protein * 4) / totalWeight : 0;
-    const carbs_percent = totalWeight ? (todaysData.carbs * 4) / totalWeight : 0;
-    const fat_percent = totalWeight ? (todaysData.fat * 9) / totalWeight : 0;
-
+    // 4e. Compute bar dimensions
     const barX = barChartX + (barCount - 1 - i) * barAreaWidth + (barAreaWidth - barWidth) / 2;
     const barH = Math.min((todaysData.calories / barMaxVal) * barChartHeight, barChartHeight);
-    const currentBarBottom = barChartY + barChartHeight;
+    const barBottom = barChartY + barChartHeight;
 
-    // day of the week
-    const dayOfWeek = moment().tz(timezone).subtract(i, 'days').format('ddd');
-    ctx.font = SUBTITLE_FONT;
-    const dayOfWeekWidth = getTextWidth(ctx, dayOfWeek);
-    const dayOfWeekX = barX + barWidth / 2 - dayOfWeekWidth / 2;
-    const dayOfWeekY = currentBarBottom + 10;
-    ctx.fillStyle = '#000';
-    ctx.fillText(dayOfWeek, dayOfWeekX, dayOfWeekY + 20);
-
-    // deficit box below day
-    const negative = todaysData.deficit <= 0;
-    const deficitVal = Math.abs(Math.round(todaysData.deficit));
-    const deficitStr = String(deficitVal);
-    const deficitW = getTextWidth(ctx, deficitStr);
-    const deficitX = barX + barWidth / 2 - deficitW / 2 - 5;
-    const deficitY = dayOfWeekY + 50;
-
-    // behind text box
+    // 4f. Label for day of week
+    const dayLabel = moment().tz(timezone).subtract(i, 'days').format('ddd');
     ctx.save();
-    ctx.fillStyle = negative ? '#FFD5D4' : '#BDE7BD';
-    ctx.fillRect(deficitX, deficitY, deficitW + 10, 40);
-    ctx.fillStyle = '#000';
     ctx.font = SUBTITLE_FONT;
-    ctx.fillText(deficitStr, deficitX + 5, deficitY + 28);
+    ctx.fillStyle = TEXT_COLOR;
+    const dayLabelWidth = getTextWidth(ctx, dayLabel);
+    ctx.fillText(
+      dayLabel,
+      barX + barWidth / 2 - dayLabelWidth / 2,
+      barBottom + 15 // slightly below the chart
+    );
     ctx.restore();
 
-    // label at top of bar showing total cals
+    // 4g. Label for total calories at the top of the bar
     ctx.save();
     ctx.font = DEFAULT_FONT;
-    const calsLabel = String(Math.round(todaysData.calories || 0));
-    const calsLabelWidth = getTextWidth(ctx, calsLabel);
-    const calsLabelHeight = getTextHeight(ctx, calsLabel);
-    ctx.fillStyle = '#000';
-    const calsLabelX = barX + barWidth / 2 - calsLabelWidth / 2;
-    const calsLabelY = currentBarBottom - barH - calsLabelHeight - 2;
-    ctx.fillText(calsLabel, calsLabelX, calsLabelY);
+    const calsLabel = String(Math.round(todaysData.calories));
+    const labelWidth = getTextWidth(ctx, calsLabel);
+    const labelHeight = getTextHeight(ctx, calsLabel);
+    ctx.fillStyle = TEXT_COLOR;
+    ctx.fillText(
+      calsLabel,
+      barX + barWidth / 2 - labelWidth / 2,
+      barBottom - barH - labelHeight - 2
+    );
     ctx.restore();
 
-    // draw bar
-    // base
-    drawRect(ctx, barX, currentBarBottom - barH, barWidth, barH, '#CCC');
+    // 4h. Draw the base bar (light gray)
+    drawRect(ctx, barX, barBottom - barH, barWidth, barH, BAR_BASE_COLOR);
 
-    // stacked macros
-    let currentStackTop = currentBarBottom;
-    const macroMapping = [
-      { percent: carbs_percent, color: '#a3b18a', label: `${Math.round(todaysData.carbs)}g` },
-      { percent: protein_percent, color: '#fe938c', label: `${Math.round(todaysData.protein)}g` },
-      { percent: fat_percent, color: '#f6bd60', label: `${Math.round(todaysData.fat)}g` },
+    // 4i. Draw stacked macros: start from the bottom of the bar
+    let currentStackTop = barBottom;
+    const macroStacks = [
+      { ratio: carbsRatio, color: MACRO_COLORS.carbs, label: `${Math.round(todaysData.carbs)}g` },
+      { ratio: proteinRatio, color: MACRO_COLORS.protein, label: `${Math.round(todaysData.protein)}g` },
+      { ratio: fatRatio, color: MACRO_COLORS.fat, label: `${Math.round(todaysData.fat)}g` },
     ];
 
-    for (const macro of macroMapping) {
-      const macroH = barH * macro.percent;
-      if (macroH <= 0) continue;
+    macroStacks.forEach((macro) => {
+      if (macro.ratio === 0) return;
+      const macroH = barH * macro.ratio;
       drawRect(
         ctx,
         barX,
@@ -603,10 +620,9 @@ async function generateDailyChart(ctx, data, barChartWidth, barChartHeight, barC
         null
       );
       currentStackTop -= macroH;
-    }
+    });
   }
 }
-
 /**
  * Generate the summary section.
  */
@@ -623,7 +639,7 @@ async function generateSummary(ctx, counter, width, height) {
   await generateTitle(ctx, todaysFood, width);
   await generateFoodList(ctx, todaysFood, foodListWidth, height, leftSideWidth);
   await generatePieChart(ctx, macroGrams, leftSideWidth, pieChartWidth);
-  await generateMacroStats(ctx, todaysFood, pieChartWidth, midPoint);
+  await generateMicroStats(ctx, todaysFood, pieChartWidth, midPoint);
 
   const barChartWidth = width * 0.9;
   const barChartHeight = height / 3 - 150;
@@ -660,7 +676,7 @@ export const foodReport = async (req, res) => {
 
   const nutridata = loadRecentNutriList(chat_id); // Load the data for the given chat_id
 
-  console.log('Loaded nutridata:', nutridata); // For debugging
+  //console.log('Loaded nutridata:', nutridata); // For debugging
 
   // If you want the real report image, call generateImage:
    const mainCanvas = await generateImage(chat_id);

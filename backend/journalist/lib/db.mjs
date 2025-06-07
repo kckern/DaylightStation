@@ -9,12 +9,12 @@ const JOURNALENTRIES_STORE = 'journalist/journalentries';
 const MESSAGEQUEUE_STORE = 'journalist/messagequeue';
 const QUIZQUESTIONS_STORE = 'journalist/quizquestions';
 const QUIZANSWERS_STORE = 'journalist/quizanswers'; // not used explicitly here, but might fit your usage
-const NUTRILOGS_STORE = 'journalist/nutrilogs';
-const NUTRILIST_STORE = 'journalist/nutrilists'; // not used explicitly here, but might fit your usage
-const NUTRICURSORS_STORE= 'journalist/nutricursors';
+const NUTRILOGS_STORE = 'journalist/nutribot/nutrilogs';
+const NUTRILIST_STORE = 'journalist/nutribot/nutrilists'; // not used explicitly here, but might fit your usage
+const NUTRICURSORS_STORE= 'journalist/nutribot/nutricursors';
 const ACTIVITIES_STORE = 'journalist/activities';
 const WEIGHTS_STORE = 'journalist/weights';
-const DAILY_NUTRITION_STORE = 'journalist/dailynutrition'; // not used explicitly, but mentioned
+const NUTRIDAY_STORE = 'journalist/nutribot/nutridays'; // not used explicitly, but mentioned
 // If you need multiple data stores, you can define more as needed.
 
 
@@ -544,6 +544,31 @@ export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, 
   }
 };
 
+
+export const saveNutriDay = ({ chat_id, daily_data }) => {
+
+  const datesToUpsert = Object.keys(daily_data || {});
+  const data = loadFile(NUTRIDAY_STORE + "/" + chat_id) || {};
+  for (const date of datesToUpsert) {
+    if (!data[date]) {
+      data[date] = daily_data[date];
+    } else {
+      // Update existing entry
+      for (const [k, v] of Object.entries(daily_data[date])) {
+        data[date][k] = v;
+      }
+    }
+  }
+  try {
+    saveFile(NUTRIDAY_STORE + "/" + chat_id, data);
+    return true;
+  } catch (error) {
+    console.error('Error saving nutriday:', error);
+    return null;
+  }
+
+}
+
 /**
  * Retrieves a nutrilog by UUID.
  * @param {string} uuid
@@ -618,10 +643,10 @@ export const getNutrilListByID = (chat_id, uuid) => {
  */
 export const deleteNuriListById = (chat_id, uuid) => {
   try {
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
     if (data[uuid] && data[uuid].chat_id === chat_id) {
       delete data[uuid];
-       saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
+       saveFile(NUTRILIST_STORE + "/" + chat_id, data);
       return { success: true };
     }
     return { success: false };
@@ -638,15 +663,16 @@ export const deleteNuriListById = (chat_id, uuid) => {
  * @returns {object|null}
  */
 export const updateNutrilist = (chat_id, uuid, values) => {
+  console.log('Updating nutrilist:', { chat_id, uuid, values });
   try {
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
     if (!data[uuid]) {
       return null;
     }
     for (const [k, v] of Object.entries(values)) {
       data[uuid][k] = v;
     }
-     saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
+     saveFile(NUTRILIST_STORE + "/" + chat_id, data);
     return data[uuid];
   } catch (error) {
     console.error('Error updating nutrilist:', error);
@@ -913,7 +939,7 @@ export const nutriLogAlreadyListed = (uuid, chat_id) => {
     const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     // If there's any item with log_uuid = uuid
     const found = Object.values(data).some(item => item.log_uuid === uuid);
-    console.log(`Checking if nutrilog ${uuid} is already listed:`, found);
+   // console.log(`Checking if nutrilog ${uuid} is already listed:`, found);
     return found;
   } catch (error) {
     console.error('Error checking if nutrilog is already listed:', error);

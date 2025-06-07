@@ -1,4 +1,4 @@
-import { getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport } from "./lib/food.mjs";
+import { compileDailyFoodReport, getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport } from "./lib/food.mjs";
 import dotenv from 'dotenv';
 import { deleteMessage, sendImageMessage, sendMessage, transcribeVoiceMessage, updateMessage, updateMessageReplyMarkup } from "./lib/telegram.mjs";
 import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getPendingNutrilog, saveNutrilog,  getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist } from "./lib/db.mjs";
@@ -99,10 +99,11 @@ const processImgMsg = async (file_id, chat_id, host, payload) => {
 const processRevisionButtonpress = async (chat_id, message_id, choice) => {
 
     const cursor = await getNutriCursor(chat_id);
+    console.log('Processing revision button press', {chat_id, message_id, choice, cursor});
     const {adjusting} = cursor;
     if(!adjusting) {
         cursor.adjusting = {message_id, level: 0};
-        await setNutriCursor(chat_id, cursor);
+        setNutriCursor(chat_id, cursor);
         const date = moment().tz("America/Los_Angeles").format('YYYY-MM-DD');
         return await processRevisionButtonpress(chat_id, message_id, date);
     }
@@ -124,7 +125,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
                 delete cursor.adjusting.date;
             }
         }
-        await setNutriCursor(chat_id, cursor);
+        setNutriCursor(chat_id, cursor);
         const createRow = (start, end, today) => {
             return Array.from({length: end-start+1}, (_, i) => i + start)
                 .map(i => moment(today).subtract(i, 'days').format('YYYY-MM-DD'))
@@ -216,6 +217,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
             acc[cur] = parseInt(listItem[cur] * factor);
             return acc;
         }, {});
+       // console.log({listItem,revisedItem, factor, uuid});
         await updateNutrilist(chat_id, uuid, revisedItem);
         delete cursor.adjusting;
         setNutriCursor(chat_id, cursor);
@@ -250,7 +252,7 @@ const processButtonpress = async (body, chat_id) => {
     }
     const {uuid, food_data} = nutrilogItem;
     if(!uuid) return console.error('No uuid found for nutrilog item', nutrilogItem);
-    console.log({uuid, food_data});
+    //console.log({uuid, food_data});
     if(leadingEmoji === '✅') return await acceptFoodLog(chat_id, messageId, uuid, food_data);
     if(leadingEmoji === '❌') return await discardFoodLog(chat_id, messageId, uuid);
     if(leadingEmoji === '🔄') return await reviseFoodLog(chat_id, messageId, uuid, nutrilogItem);
@@ -260,7 +262,7 @@ const processButtonpress = async (body, chat_id) => {
 const clearPendingCursor = async (chat_id) => {
     const cursor = await getNutriCursor(chat_id);
     if(cursor.revising) delete cursor.revising;
-    await setNutriCursor(chat_id, cursor);
+    setNutriCursor(chat_id, cursor);
 }
 
 const acceptFoodLog = async (chat_id, message_id, uuid, food_data) => {
@@ -271,6 +273,7 @@ const acceptFoodLog = async (chat_id, message_id, uuid, food_data) => {
     const b = saveNutrilog({uuid, message_id, chat_id, food_data, status: "accepted"});
     const c = clearPendingCursor(chat_id);
     await Promise.all([a, b, c]);
+    compileDailyFoodReport(chat_id);
     await postItemizeFood(chat_id);
 };
 
