@@ -8,6 +8,7 @@ import { createCanvas, loadImage, registerFont } from 'canvas';
 import axios from 'axios';
 import { saveFile } from '../lib/io.mjs';
 
+const iconPath = process.env.path?.icons;
 /**
  * REGISTER FONTS
  * --------------------------------------------------
@@ -56,7 +57,7 @@ function getTextHeight(ctx, text) {
 /**
  * Draw a filled rectangle with optional label in the center.
  */
-function drawRect(ctx, x, y, w, h, color, label, font, pos) {
+function drawRect(ctx, x, y, w, h, color, label, font, pos, textColor) {
   if (!w || !h) return;
   ctx.save();
   ctx.fillStyle = color;
@@ -64,7 +65,7 @@ function drawRect(ctx, x, y, w, h, color, label, font, pos) {
 
   if (label) {
     ctx.font = font || DEFAULT_FONT;
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = textColor || '#000000';
 
     // measure label
     const labelWidth = getTextWidth(ctx, label);
@@ -200,7 +201,7 @@ async function makeFoodList(food, width, height) {
     const rowY = y;
     // print amount
     ctx.fillStyle = '#000';
-    ctx.font = '16px sans-serif';
+    ctx.font = '16px Roboto Condensed';
     const amountStr = `${amount}${unit}`;
     ctx.fillText(amountStr, calColumnWidth + 200, rowY + fontSize / 1.5);
 
@@ -223,7 +224,7 @@ async function makeFoodList(food, width, height) {
     // Attempt to load the best matching icon from local images
     let loadedIcon;
     try {
-      const basePath = path.resolve(process.cwd(), './api/data/food_icons/');
+      const basePath = iconPath;
       const allIcons = fs
         .readdirSync(basePath)
         .filter((file) => file.endsWith('.png'))
@@ -237,7 +238,7 @@ async function makeFoodList(food, width, height) {
     }
 
     // print calories in left column
-    ctx.font = '32px sans-serif';
+    ctx.font = '32px Roboto Condensed';
     const calStr = String(calories);
     const calStrWidth = getTextWidth(ctx, calStr);
     const calX = calColumnWidth - calStrWidth - 10;
@@ -471,8 +472,9 @@ async function generateMicroStats(ctx, todaysFood, pieChartWidth, midPoint) {
 
     const iconX = midPoint - 16;
     try {
-      const iconPath = path.join(process.cwd(), './api/data/food_icons/', `${stat.icon}.png`);
-      const loadedIcon = await loadImage(iconPath);
+      const iconFilePath = path.join(iconPath, `${stat.icon}.png`);
+      console.log('Loading icon:', iconFilePath);
+      const loadedIcon = await loadImage(iconFilePath);
       ctx.drawImage(loadedIcon, iconX, iconY, 32, 32);
     } catch (err) {
       // Ignore missing icons
@@ -570,19 +572,20 @@ async function generateDailyChart(
     // 4f. Label for day of week
     const dayLabel = moment().tz(timezone).subtract(i, 'days').format('ddd');
     ctx.save();
-    ctx.font = SUBTITLE_FONT;
+    ctx.font = `36px "Roboto Condensed"`;
     ctx.fillStyle = TEXT_COLOR;
     const dayLabelWidth = getTextWidth(ctx, dayLabel);
+    const dayLabelHeight = getTextHeight(ctx, dayLabel);
     ctx.fillText(
       dayLabel,
       barX + barWidth / 2 - dayLabelWidth / 2,
-      barBottom + 15 // slightly below the chart
+      barBottom  + dayLabelHeight + 5
     );
     ctx.restore();
 
     // 4g. Label for total calories at the top of the bar
     ctx.save();
-    ctx.font = DEFAULT_FONT;
+    ctx.font = `36px "Roboto Condensed"`;
     const calsLabel = String(Math.round(todaysData.calories));
     const labelWidth = getTextWidth(ctx, calsLabel);
     const labelHeight = getTextHeight(ctx, calsLabel);
@@ -590,7 +593,7 @@ async function generateDailyChart(
     ctx.fillText(
       calsLabel,
       barX + barWidth / 2 - labelWidth / 2,
-      barBottom - barH - labelHeight - 2
+      barBottom - barH - 10
     );
     ctx.restore();
 
@@ -600,9 +603,9 @@ async function generateDailyChart(
     // 4i. Draw stacked macros: start from the bottom of the bar
     let currentStackTop = barBottom;
     const macroStacks = [
-      { ratio: carbsRatio, color: MACRO_COLORS.carbs, label: `${Math.round(todaysData.carbs)}g` },
       { ratio: proteinRatio, color: MACRO_COLORS.protein, label: `${Math.round(todaysData.protein)}g` },
       { ratio: fatRatio, color: MACRO_COLORS.fat, label: `${Math.round(todaysData.fat)}g` },
+      { ratio: carbsRatio, color: MACRO_COLORS.carbs, label: `${Math.round(todaysData.carbs)}g` },
     ];
 
     macroStacks.forEach((macro) => {
@@ -616,8 +619,9 @@ async function generateDailyChart(
         macroH,
         macro.color,
         macro.label,
-        DEFAULT_FONT,
-        null
+        `20px "Roboto Condensed"`,
+        null,
+        `#00000055`
       );
       currentStackTop -= macroH;
     });
