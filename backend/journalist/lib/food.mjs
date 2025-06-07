@@ -122,6 +122,8 @@ export const getBase64Url = async (imgUrl) => {
 
 export const handlePendingNutrilogs = async (chat_id) => {
 
+    console.log(`Handling pending nutrilogs for chat_id: ${chat_id}`);
+
     const log_items_all = loadNutrilogsNeedingListing(chat_id) || [];
     const log_items = [];
     for(const log_item of log_items_all){
