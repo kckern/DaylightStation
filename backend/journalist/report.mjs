@@ -6,6 +6,7 @@ import { loadNutrilogsNeedingListing, loadRecentNutriList } from './lib/db.mjs';
 import { handlePendingNutrilogs } from './lib/food.mjs';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 import axios from 'axios';
+import { saveFile } from '../lib/io.mjs';
 
 /**
  * REGISTER FONTS
@@ -327,6 +328,9 @@ export const generateImage = async (chat_id) => {
     return null;
   }
 
+  //save tmp data to a file for debugging
+  saveFile(`nutrichart`, data);
+
   let daysAgo = 0;
   let todaysFood;
   while (true) {
@@ -622,21 +626,18 @@ export const foodReport = async (req, res) => {
   console.log('Loaded nutridata:', nutridata); // For debugging
 
   // If you want the real report image, call generateImage:
-  // const mainCanvas = await generateImage(chat_id);
-  // If data is missing or an error occurs, fall back to a placeholder:
-  // if (!mainCanvas) {
-  //   const placeholder = await placeholderImage(1080, 1400);
-  //   res.set('Content-Type', 'image/png');
-  //   res.set('Content-Disposition', `inline; filename="${uuid || 'food_report'}.png"`);
-  //   return res.send(placeholder);
-  // }
-  // Otherwise, mainCanvas.toBuffer() is your PNG image.
-
-  // For demonstration, just send a placeholder always:
-  const placeholder = await placeholderImage(1080, 1400);
+   const mainCanvas = await generateImage(chat_id);
+  if (!mainCanvas) {
+    console.error('No mainCanvas generated');
+    res.status(500).send('Failed to generate report image');
+    return;
+  } 
+  // Set headers for PNG response
   res.set('Content-Type', 'image/png');
   res.set('Content-Disposition', `inline; filename="${uuid || 'food_report'}.png"`);
-  return res.send(placeholder);
+  // Send the generated image as a response
+  return res.send(mainCanvas.toBuffer('image/png'));
+  
 };
 
 

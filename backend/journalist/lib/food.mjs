@@ -126,7 +126,9 @@ export const handlePendingNutrilogs = async (chat_id) => {
     const log_items = [];
     for(const log_item of log_items_all){
         const {uuid} = log_item;
+        console.log(`Checking if log item with UUID ${uuid} is already listed.`);
         const isAlreadyListed = nutriLogAlreadyListed(uuid, chat_id);
+        console.log(`Is log item with UUID ${uuid} already listed? ${isAlreadyListed}`);
         if(!isAlreadyListed) log_items.push(log_item);
     }
     console.log(log_items);
@@ -152,9 +154,9 @@ export const handlePendingNutrilogs = async (chat_id) => {
         console.log(`Itemized food: ${JSON.stringify(items)}`);
         const saveMe = items.map(item => ({...item, chat_id, date, timeofday: time, log_uuid: uuid}));
         console.log(`Clearing existing nutrilist for UUID: ${uuid}`);
-        await clearNutrilistByLogUUID(uuid);
+        await clearNutrilistByLogUUID(uuid, chat_id);
         console.log(`Saving nutrilist: ${JSON.stringify(saveMe)}`);
-        saveNutrilist(saveMe);
+        saveNutrilist(saveMe, chat_id);
     }
     return console.log(`Processed ${log_items.length} log items`);
 }
