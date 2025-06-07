@@ -326,6 +326,7 @@ export const generateImage = async (chat_id) => {
   const data = loadRecentNutriList(chat_id) || [];
   if (!data || !data.length) {
     console.error('No data found');
+    //return placeholderImage(1080, 1400);
     return null;
   }
 

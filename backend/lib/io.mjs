@@ -88,8 +88,10 @@ const loadFile = (path) => {
     } else if (fs.existsSync(ymlPath)) {
         fileToLoad = ymlPath;
     } else {
-        console.error(`File does not exist: ${yamlPath} or ${ymlPath}`);
-        return false;
+        console.warn(`File does not exist: ${yamlPath} or ${ymlPath}`);
+        //touch file
+        saveFile(yamlPath, {});
+        return {};
     }
 
     const fileData = fs.readFileSync(fileToLoad, 'utf8').toString().trim();
