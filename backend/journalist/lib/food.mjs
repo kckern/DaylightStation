@@ -3,7 +3,7 @@ import nodeFetch from 'node-fetch';
 import * as Jimp from 'jimp';
 import moment from "moment-timezone";
 import {  sendImageMessage, updateMessage, deleteMessage, updateMessageReplyMarkup, deleteSpecificMessage, sendMessage } from "./telegram.mjs";
-import { clearNutrilistByLogUUID, getNutriCursor, loadNutrilogsNeedingListing, nutriLogAlreadyListed, saveMessage, saveNutrilist, saveNutrilog, setNutriCursor } from "./db.mjs";
+import { clearNutrilistByLogUUID, getNutriCursor, getNutrilListByDate, loadNutrilogsNeedingListing, nutriLogAlreadyListed, saveMessage, saveNutriDay, saveNutrilist, saveNutrilog, setNutriCursor } from "./db.mjs";
 //uuid
 import { v4 as uuidv4 } from 'uuid';
 const timezone = "America/Los_Angeles";
@@ -18,7 +18,6 @@ export const processFoodListData = async (jsondata, chat_id, message_id, key, re
 
     //save message
     if(!revision) await saveNutrilog({uuid,chat_id, timestamp, chat_id, message_id, food_data: jsondata, status: "init"});
-    console.log({jsondata});
     const {food, date, time} = jsondata;
 
     const colors = {
@@ -128,18 +127,18 @@ export const handlePendingNutrilogs = async (chat_id) => {
     const log_items = [];
     for(const log_item of log_items_all){
         const {uuid} = log_item;
-        console.log(`Checking if log item with UUID ${uuid} is already listed.`);
+      //  console.log(`Checking if log item with UUID ${uuid} is already listed.`);
         const isAlreadyListed = nutriLogAlreadyListed(uuid, chat_id);
-        console.log(`Is log item with UUID ${uuid} already listed? ${isAlreadyListed}`);
+      //  console.log(`Is log item with UUID ${uuid} already listed? ${isAlreadyListed}`);
         if(!isAlreadyListed) log_items.push(log_item);
     }
-    console.log(log_items);
+
     console.log(`loadNutrilogsNeedingListing`);
     console.log(`Processing ${log_items.length} log items`);
-    console.log(log_items);
+
     let max_message_id = 0;
     for(const log_item of log_items){
-        console.log(`Processing log item: ${JSON.stringify(log_item)}`);
+     //   console.log(`Processing log item: ${JSON.stringify(log_item)}`);
         const {uuid, food_data, chat_id, message_id} = log_item;
         max_message_id = Math.max(max_message_id, message_id);
         const {food, date, time, img_url} = food_data || {};
@@ -151,7 +150,7 @@ export const handlePendingNutrilogs = async (chat_id) => {
             console.log(`Skipping log item with empty food list: ${JSON.stringify(food_data)}`);
             continue;
         }
-        console.log(`Itemizing food for log item with UUID: ${uuid}`);
+   //     console.log(`Itemizing food for log item with UUID: ${uuid}`);
         const items = await itemizeFood(food, img_url);
         console.log(`Itemized food: ${JSON.stringify(items)}`);
         const saveMe = items.map(item => ({...item, chat_id, date, timeofday: time, log_uuid: uuid}));
@@ -208,4 +207,45 @@ export const removeCurrentReport = async (chat_id) => {
     const b = setNutriCursor(chat_id, cursor || {});
     await Promise.all([a,b]);
     return true;
+}
+
+
+
+export const compileDailyFoodReport = async (chat_id) => {
+    const pastSevenDays = Array.from({length: 7}, (_, i) => moment.tz(timezone).subtract(i, 'days').format("YYYY-MM-DD"));
+    const pastWeekOfFood = pastSevenDays.reduce((acc, date) => {
+        const foodList = getNutrilListByDate(chat_id, date);
+        const foodListKeys = Object.keys(foodList || {});
+        if(!foodListKeys.length) return acc;
+        const foodItems = [];
+        const foodSums = {calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sodium: 0};
+        foodListKeys.forEach(key => {
+            const item = foodList[key];
+            //eg 30g of chicken breast (100 cal)
+            const label = `${item.amount}${item.unit} ${item.item} (${item.calories || 0} cal)`;
+            if(!item) return;
+            foodItems.push(label);
+            foodSums.calories += parseInt(item.calories || 0, 10);
+            foodSums.protein += parseInt(item.protein || 0, 10);
+            foodSums.carbs += parseInt(item.carbs || 0, 10);
+            foodSums.fat += parseInt(item.fat || 0, 10);
+            foodSums.fiber += parseInt(item.fiber || 0, 10);
+            foodSums.sodium += parseInt(item.sodium || 0, 10);
+            foodSums.sugar = (foodSums.sugar || 0) + parseInt(item.sugar || 0, 10);
+            foodSums.cholesterol = (foodSums.cholesterol || 0) + parseInt(item.cholesterol || 0, 10);
+
+        });
+        acc[date] = {
+            date,
+            ...foodSums,
+            food_items: foodItems,
+        }
+        delete acc[date].chat_id;
+        delete acc[date].date;
+        return acc;
+    }, {});
+
+    saveNutriDay({chat_id, daily_data: pastWeekOfFood});
+    return pastWeekOfFood;
+
 }

@@ -2,7 +2,7 @@
 import express from 'express';
 import { processWebhookPayload } from './journalist/telegram_hook.mjs';
 import {processFoodLogHook} from './journalist/foodlog_hook.mjs';
-import {foodReport, scanBarcode} from './journalist/report.mjs';
+import {foodReport, scanBarcode} from './journalist/food_report.mjs';
 const apiRouter = express.Router();
 apiRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
