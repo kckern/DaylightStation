@@ -21,6 +21,22 @@ export const getRecentMessages = async (chatId) => {
     return  getMessages(chatId);
 }
 
+export const updateWebhook = async (bot_id, url) => {
+    try {
+        const response = await fetch(`https://api.telegram.org/bot${bot_id}/setWebhook?url=${encodeURIComponent(url)}`, {
+            method: 'GET',
+        });
+        const json = await response.json();
+        console.log('Update Webhook Result:', json);
+        return json;
+    } catch (error) {
+        console.error('Error updating webhook:', error);
+        return { ok: false, error: error.message };
+    }
+};
+
+
+
 export const sendImageMessage = async (chat_id, image_url, caption) => {
     const user_id = chat_id.match(/u(\d+)/)[1];
     caption = caption || `📸 Image`;
