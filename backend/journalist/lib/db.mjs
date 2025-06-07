@@ -882,7 +882,7 @@ export const nutriLogAlreadyListed = (uuid, chat_id) => {
   try {
     const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     console.log(`Checking if log_uuid ${uuid} is already listed for chat_id ${chat_id}`);
-    const found = Object.values(data).some(item => item.log_uuid === uuid);
+    const found = Object.values(data).some(item => item.uuid === uuid);
     console.log(`Result for log_uuid ${uuid}: ${found}`);
     return found;
   } catch (error) {

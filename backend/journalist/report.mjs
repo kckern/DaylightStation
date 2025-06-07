@@ -34,7 +34,8 @@ registerFont(fontPath, {  family: 'Roboto Condensed', });
 
 const DEFAULT_FONT = '32px "Roboto Condensed"';
 const TITLE_FONT = '64px "Roboto Condensed"';
-const SUBTITLE_FONT = '48px "Roboto Condensed"';
+const PIE_LABEL_FONT = '48px "Roboto Condensed"';
+const SUBTITLE_FONT = '36px "Roboto Condensed"';
 
 /**
  * Helper functions for measuring text.
@@ -144,7 +145,7 @@ async function makePieChart(pieChartData, pieChartHeight) {
 
     // Draw the main label
     ctx.save();
-    ctx.font = TITLE_FONT;
+    ctx.font = PIE_LABEL_FONT;
     const labelWidth = getTextWidth(ctx, label);
     ctx.fillStyle = '#000';
     // Because fillText is baseline-left, shift upward a bit
@@ -350,12 +351,9 @@ export const generateImage = async (chat_id) => {
   const mainCanvas = createCanvas(width, height);
   const ctx = mainCanvas.getContext('2d');
 
-  // White background
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, width, height);
 
-  // Title
-  const totalCals = Math.round(todaysFood.reduce((acc, item) => acc + item.calories, 0));
   const macroGrams = todaysFood.reduce(
     (acc, item) => {
       acc.protein += item.protein;
@@ -366,6 +364,16 @@ export const generateImage = async (chat_id) => {
     { protein: 0, carbs: 0, fat: 0 }
   );
 
+  const foodListWidth = width * 0.6;
+  const leftSideWidth = width - foodListWidth;
+  const pieChartWidth = leftSideWidth * 0.8;
+  const midPoint = (leftSideWidth - pieChartWidth) / 2 + pieChartWidth / 2;
+
+  /**
+ * Generate the title section of the report.
+ */
+async function generateTitle(ctx, todaysFood, width) {
+  const totalCals = Math.round(todaysFood.reduce((acc, item) => acc + item.calories, 0));
   const todaysFoodDateFormatted = moment(todaysFood[0].date).format('ddd, D MMM YYYY');
   const title = `${todaysFoodDateFormatted} | Calories: ${totalCals}`;
 
@@ -373,16 +381,12 @@ export const generateImage = async (chat_id) => {
   ctx.fillStyle = '#000';
   const titleWidth = getTextWidth(ctx, title);
   ctx.fillText(title, width / 2 - titleWidth / 2, 70);
+}
 
-  // Make the food list
-  const foodListWidth = width * 0.6;
-  const leftSideWidth = width - foodListWidth;
-  const foodListCanvas = await makeFoodList(todaysFood, foodListWidth, height / 2 - 100);
-
-  ctx.drawImage(foodListCanvas, leftSideWidth, 130);
-
-  // Make the pie chart
-  const pieChartWidth = leftSideWidth * 0.8;
+/**
+ * Generate the pie chart section.
+ */
+async function generatePieChart(ctx, macroGrams, leftSideWidth, pieChartWidth) {
   const sortedPieData = [
     {
       color: '#fe938c',
@@ -407,9 +411,20 @@ export const generateImage = async (chat_id) => {
   const pieCanvas = await makePieChart(sortedPieData, pieChartWidth);
   const chartX = (leftSideWidth - pieChartWidth) / 2;
   ctx.drawImage(pieCanvas, chartX, 130);
+}
 
-  // Additional stats below the pie
-  const midPoint = chartX + pieChartWidth / 2;
+/**
+ * Generate the food list section.
+ */
+async function generateFoodList(ctx, todaysFood, foodListWidth, height, leftSideWidth) {
+  const foodListCanvas = await makeFoodList(todaysFood, foodListWidth, height / 2 - 100);
+  ctx.drawImage(foodListCanvas, leftSideWidth, 130);
+}
+
+/**
+ * Generate the macro stats section.
+ */
+async function generateMacroStats(ctx, todaysFood, pieChartWidth, midPoint) {
   const stats = [
     {
       label: 'Sodium',
@@ -446,39 +461,35 @@ export const generateImage = async (chat_id) => {
     const textW = getTextWidth(ctx, amount);
     const labelW = getTextWidth(ctx, stat.label);
 
-    // label on the left
     const labelX = midPoint - 16 - labelW - 10;
     ctx.fillStyle = '#000';
     ctx.fillText(stat.label, labelX, iconY + 24);
 
-    // amount on the right
     const amountX = midPoint + 16 + 10;
     ctx.fillText(amount, amountX, iconY + 24);
 
-    // draw icon in the center
     const iconX = midPoint - 16;
-
     try {
       const iconPath = path.join(process.cwd(), './api/data/food_icons/', `${stat.icon}.png`);
       const loadedIcon = await loadImage(iconPath);
       ctx.drawImage(loadedIcon, iconX, iconY, 32, 32);
     } catch (err) {
-      // If no icon found, ignore
+      // Ignore missing icons
     }
   }
+}
 
-  // Bar chart area
-  const barChartWidth = width * 0.9;
-  const barChartHeight = height / 3 - 150;
-  const barChartX = (width - barChartWidth) / 2;
-  const barChartY = height / 2 + 50;
+/**
+ * Generate the daily chart section.
+ */
+async function generateDailyChart(ctx, data, barChartWidth, barChartHeight, barChartX, barChartY, bmr, calGoal, barMaxVal) {
+  
+  saveFile(`generateDailyChart`, data);
+
+  console.log('Generating daily chart with data:', data);
+  
   drawRect(ctx, barChartX, barChartY, barChartWidth, barChartHeight, '#FAF3ED');
 
-  // lines for BMR and Goal
-  const barMaxVal = 2200;
-  const bmr = 2000;
-  const defGoal = 500;
-  const calGoal = bmr - defGoal;
   const bmrY = barChartY + barChartHeight - (bmr / barMaxVal) * barChartHeight;
   drawRect(ctx, barChartX, bmrY, barChartWidth, 2, '#AAA', `BMR: ${bmr}`, DEFAULT_FONT, 'left-bottom');
 
@@ -593,7 +604,12 @@ export const generateImage = async (chat_id) => {
       currentStackTop -= macroH;
     }
   }
+}
 
+/**
+ * Generate the summary section.
+ */
+async function generateSummary(ctx, counter, width, height) {
   const lbsPerWeek = Math.round(((counter.def / counter.days) * 7) / 3500 * 10) / 10;
   const plusMinus = lbsPerWeek < 0 ? '+' : '-';
   ctx.font = SUBTITLE_FONT;
@@ -601,8 +617,27 @@ export const generateImage = async (chat_id) => {
   const finalStrW = getTextWidth(ctx, finalStr);
   ctx.fillStyle = '#000';
   ctx.fillText(finalStr, width / 2 - finalStrW / 2, height - 50);
+}
 
-  // If you want to scale the final image by 1.2:
+  await generateTitle(ctx, todaysFood, width);
+  await generateFoodList(ctx, todaysFood, foodListWidth, height, leftSideWidth);
+  await generatePieChart(ctx, macroGrams, leftSideWidth, pieChartWidth);
+  await generateMacroStats(ctx, todaysFood, pieChartWidth, midPoint);
+
+  const barChartWidth = width * 0.9;
+  const barChartHeight = height / 3 - 150;
+  const barChartX = (width - barChartWidth) / 2;
+  const barChartY = height / 2 + 50;
+  const barMaxVal = 2200;
+  const bmr = 2000;
+  const defGoal = 500;
+  const calGoal = bmr - defGoal;
+
+  await generateDailyChart(ctx, data, barChartWidth, barChartHeight, barChartX, barChartY, bmr, calGoal, barMaxVal);
+
+  const counter = { days: 0, def: 0 };
+  await generateSummary(ctx, counter, width, height);
+
   const scaledWidth = Math.round(width * 1.2);
   const scaledHeight = Math.round(height * 1.2);
   const scaledCanvas = createCanvas(scaledWidth, scaledHeight);
@@ -620,6 +655,7 @@ export const foodReport = async (req, res) => {
 
   const { uuid } = req.query;
 
+  await handlePendingNutrilogs(chat_id); // Ensure all pending nutrilogs are processed
 
   const nutridata = loadRecentNutriList(chat_id); // Load the data for the given chat_id
 
