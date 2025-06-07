@@ -248,14 +248,13 @@ const processButtonpress = async (body, chat_id) => {
         if(leadingEmoji === '↩️') return await postItemizeFood(chat_id);
         return false;
     }
-    const {uuid} = nutrilogItem;
+    const {uuid, food_data} = nutrilogItem;
     if(!uuid) return console.error('No uuid found for nutrilog item', nutrilogItem);
-    console.log({uuid});
-    if(leadingEmoji === '✅') return await acceptFoodLog(chat_id, messageId, uuid);
+    console.log({uuid, food_data});
+    if(leadingEmoji === '✅') return await acceptFoodLog(chat_id, messageId, uuid, food_data);
     if(leadingEmoji === '❌') return await discardFoodLog(chat_id, messageId, uuid);
     if(leadingEmoji === '🔄') return await reviseFoodLog(chat_id, messageId, uuid, nutrilogItem);
     return false;
-
 }
 
 const clearPendingCursor = async (chat_id) => {
@@ -264,16 +263,16 @@ const clearPendingCursor = async (chat_id) => {
     await setNutriCursor(chat_id, cursor);
 }
 
-const acceptFoodLog = async (chat_id, message_id, uuid) => {
+const acceptFoodLog = async (chat_id, message_id, uuid, food_data) => {
 
-    console.log('Accepting message', {chat_id, message_id, uuid});
+    console.log('Accepting message', {chat_id, message_id, uuid, food_data});
 
     const a = clearKeyboard(chat_id, message_id);
-    const b = saveNutrilog({uuid,message_id, chat_id, status: "accepted"});
+    const b = saveNutrilog({uuid, message_id, chat_id, food_data, status: "accepted"});
     const c = clearPendingCursor(chat_id);
-    await Promise.all([a,b,c]);
+    await Promise.all([a, b, c]);
     await postItemizeFood(chat_id);
-}
+};
 
 const discardFoodLog = async (chat_id, messageId, uuid) => {
 

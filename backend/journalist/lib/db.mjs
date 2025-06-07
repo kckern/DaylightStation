@@ -1,4 +1,3 @@
-
 import moment from 'moment-timezone';
 import { v4 as uuidv4 } from 'uuid';
 import { loadFile, saveFile } from '../../lib/io.mjs';
@@ -11,7 +10,7 @@ const MESSAGEQUEUE_STORE = 'journalist/messagequeue';
 const QUIZQUESTIONS_STORE = 'journalist/quizquestions';
 const QUIZANSWERS_STORE = 'journalist/quizanswers'; // not used explicitly here, but might fit your usage
 const NUTRILOGS_STORE = 'journalist/nutrilogs';
-const NUTRILIST_STORE = 'journalist/nutrilist'; // not used explicitly here, but might fit your usage
+const NUTRILIST_STORE = 'journalist/nutrilists'; // not used explicitly here, but might fit your usage
 const NUTRICURSORS_STORE= 'journalist/nutricursors';
 const ACTIVITIES_STORE = 'journalist/activities';
 const WEIGHTS_STORE = 'journalist/weights';
@@ -780,14 +779,11 @@ export const deleteNutrilog = (chat_id, uuid) => {
  * @param {Object|Array} items
  * @returns {boolean|null}
  */
-export const saveNutrilist = (items) => {
-  // For demonstration, we'll reuse NUTRILOGS_STORE + "/" + chat_id or create a new store if needed.
-  // In the original code, it inserts into "nutrilist" table. We'll assume we have a separate store:
-  // "journalist/nutrilogs" or "journalist/nutrilist". Adjust as needed.
+export const saveNutrilist = (items, chat_id) => {
   if (!Array.isArray(items)) items = [items];
 
   try {
-    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     for (const item of items) {
       // The primary key is item.uuid
       if (!item.uuid) {
@@ -799,18 +795,7 @@ export const saveNutrilist = (items) => {
         item: item.item,
         unit: item.unit,
         amount: item.amount,
-        noom_color: item.noom_color,
-        calories: item.calories,
-        fat: item.fat,
-        carbs: item.carbs,
-        protein: item.protein,
-        fiber: item.fiber,
-        sugar: item.sugar,
-        sodium: item.sodium,
-        cholesterol: item.cholesterol,
-        chat_id: item.chat_id,
-        date: item.date,
-        log_uuid: item.log_uuid
+        ...item,
       };
     }
      saveFile(NUTRILIST_STORE + "/" + chat_id, data);
@@ -896,8 +881,9 @@ export const loadRecentNutriList = (chat_id, days_since = 14) => {
 export const nutriLogAlreadyListed = (uuid, chat_id) => {
   try {
     const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
-    // If there's any item with log_uuid = uuid
+    console.log(`Checking if log_uuid ${uuid} is already listed for chat_id ${chat_id}`);
     const found = Object.values(data).some(item => item.log_uuid === uuid);
+    console.log(`Result for log_uuid ${uuid}: ${found}`);
     return found;
   } catch (error) {
     console.error('Error checking if nutrilog is already listed:', error);
@@ -956,7 +942,7 @@ export const getNutriCursor = (chat_id) => {
  * @param {string} uuid
  * @returns {object|null}
  */
-export const clearNutrilistByLogUUID = (uuid) => {
+export const clearNutrilistByLogUUID = (uuid, chat_id) => {
   try {
     const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     let count = 0;
@@ -966,11 +952,11 @@ export const clearNutrilistByLogUUID = (uuid) => {
         count++;
       }
     }
-     saveFile(NUTRILIST_STORE + "/" + chat_id, data);
+    saveFile(NUTRILIST_STORE + "/" + chat_id, data);
     return { success: true, count };
   } catch (error) {
-    console.error('Error clearing nutrilist by log uuid:', error);
-    return null;
+    console.error("Error clearing nutrilist by log uuid:", error);
+    return { success: false, error };
   }
 };
 
