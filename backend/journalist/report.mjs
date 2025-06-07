@@ -616,6 +616,7 @@ export const foodReport = async (req, res) => {
 
   const { uuid } = req.query;
 
+
   const nutridata = loadRecentNutriList(chat_id); // Load the data for the given chat_id
 
   console.log('Loaded nutridata:', nutridata); // For debugging
