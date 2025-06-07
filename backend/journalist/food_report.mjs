@@ -176,6 +176,23 @@ async function makeFoodList(food, width, height) {
   // sort descending by calories
   food = food.sort((b, a) => a.calories - b.calories);
 
+  //group by item name, summing calories and macros
+  food = food.reduce((acc, item) => {
+    const existing = acc.find((i) => i.item === item.item);
+    if (existing) {
+      ['calories', 'carbs', 'protein', 'fat', 'amount'].forEach(key => {
+        existing[key] += item[key];
+      });
+    } else {
+      acc.push({
+        ...item,
+        unit: item.unit || 'g',
+        icon: item.icon || 'unknown_food',
+      });
+    }
+    return acc;
+  }, []);
+
   // figure line spacing
   const fontSize = 32;
   ctx.font = `${fontSize}px sans-serif`;
@@ -473,7 +490,7 @@ async function generateMicroStats(ctx, todaysFood, pieChartWidth, midPoint) {
     const iconX = midPoint - 16;
     try {
       const iconFilePath = path.join(iconPath, `${stat.icon}.png`);
-      console.log('Loading icon:', iconFilePath);
+     // console.log('Loading icon:', iconFilePath);
       const loadedIcon = await loadImage(iconFilePath);
       ctx.drawImage(loadedIcon, iconX, iconY, 32, 32);
     } catch (err) {
