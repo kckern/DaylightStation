@@ -1,4 +1,3 @@
-
 import moment from 'moment-timezone';
 import { v4 as uuidv4 } from 'uuid';
 import { loadFile, saveFile } from '../../lib/io.mjs';
@@ -166,23 +165,22 @@ export const loadCronJobs = () => {
  * Updates a specific cron job with a new message ID.
  * @param {string} uuid
  * @param {string|number} message_id
+ * @param {string} chat_id
  * @returns {object|null}
  */
-export const updateCronJob = (uuid, message_id) => {
+export const updateCronJob = (uuid, message_id, chat_id) => {
   if (!message_id) return null;
   const lastRun = Math.floor(Date.now() / 1000);
   try {
     const data = loadFile(CRONJOBS_STORE);
-    if (!data[uuid]) {
-      // If it doesn't exist, you might want to skip or create it. We'll skip here.
-      return null;
-    }
-    data[uuid].last_run = lastRun;
+    if (!data[uuid]) return null;
     data[uuid].message_id = message_id;
-     saveFile(CRONJOBS_STORE, data);
+    data[uuid].chat_id = chat_id;
+    data[uuid].last_run = lastRun;
+    saveFile(CRONJOBS_STORE, data);
     return data[uuid];
   } catch (error) {
-    console.error('Error updating cron job:', error, { uuid, lastRun, message_id });
+    console.error('Error updating cron job:', error);
     return null;
   }
 };
@@ -193,18 +191,20 @@ export const updateCronJob = (uuid, message_id) => {
 
 /**
  * Saves a journal entry.
+ * @param {string} chat_id
  * @param {string} date
  * @param {string} period
  * @param {string} entry
  * @param {any} src
  * @returns {object|null}
  */
-export const saveJournalEntry = (date, period, entry, src) => {
+export const saveJournalEntry = (chat_id, date, period, entry, src) => {
   const uuid = uuidv4();
   try {
-    const data = loadFile(JOURNALENTRIES_STORE);
+    const data = loadFile(JOURNALENTRIES_STORE) || {};
     data[uuid] = {
       uuid,
+      chat_id,
       date,
       period,
       entry,
@@ -780,7 +780,7 @@ export const deleteNutrilog = (chat_id, uuid) => {
  * @param {Object|Array} items
  * @returns {boolean|null}
  */
-export const saveNutrilist = (items) => {
+export const saveNutrilist = (items, chat_id) => {
   // For demonstration, we'll reuse NUTRILOGS_STORE + "/" + chat_id or create a new store if needed.
   // In the original code, it inserts into "nutrilist" table. We'll assume we have a separate store:
   // "journalist/nutrilogs" or "journalist/nutrilist". Adjust as needed.
@@ -897,7 +897,7 @@ export const nutriLogAlreadyListed = (uuid, chat_id) => {
   try {
     const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     // If there's any item with log_uuid = uuid
-    const found = Object.values(data).some(item => item.log_uuid === uuid);
+    const found = Object.values(data).some(item => item.uuid === uuid);
     return found;
   } catch (error) {
     console.error('Error checking if nutrilog is already listed:', error);
@@ -956,7 +956,7 @@ export const getNutriCursor = (chat_id) => {
  * @param {string} uuid
  * @returns {object|null}
  */
-export const clearNutrilistByLogUUID = (uuid) => {
+export const clearNutrilistByLogUUID = (uuid, chat_id) => {
   try {
     const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     let count = 0;
