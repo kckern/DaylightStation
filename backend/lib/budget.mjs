@@ -19,7 +19,7 @@ const transactionMemoPath   = `${dataPath}/budget/transaction.memos.yml`;
 
 export const payrollSyncJob = async (key,req) => payrollSync(key,req);
 
-export const processMortgagePaymentPlans = (paymentPlans, balance, interestRate, minimumPayment) => {
+export const processMortgagePaymentPlans = (paymentPlans, balance, interestRate, minimumPayment, capital_extracted=0) => {
   const principal = Math.abs(balance);
   const minPmt = parseFloat(minimumPayment) || 0;
   const startDate = moment().startOf("month");
@@ -60,11 +60,21 @@ export const processMortgagePaymentPlans = (paymentPlans, balance, interestRate,
           payments.push(item.amount);
         }
         if (item.fixed && item.fixed.includes(ym)) {
+          
+          if(capital_extracted && item.amount > 0){
+            const captial_extracted_this_month = Math.max(minimumPayment, item.amount - capital_extracted);
+            item.amount -= captial_extracted_this_month;
+            capital_extracted -= captial_extracted_this_month;
+          }
+
           payments.push(item.amount);
         }
       });
 
       let amountPaid = payments.reduce((a, b) => a + b, 0);
+
+ 
+
       if (currentBalance + accruedInterest < amountPaid) {
         amountPaid = currentBalance + accruedInterest;
       }
@@ -134,7 +144,7 @@ export const processMortgage = (mortgage, accountBalances, mortgageTransactions)
     };
   });
 
-  const paymentPlansFilled = processMortgagePaymentPlans(paymentPlans || [], balance || 0, interestRate || 0, minimumPayment || 0);
+  const paymentPlansFilled = processMortgagePaymentPlans(paymentPlans || [], balance || 0, interestRate || 0, minimumPayment || 0, 0);
 
   const totalPaid = transactions.reduce((total, { amount }) => total + (amount || 0), 0);
 

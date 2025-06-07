@@ -1,8 +1,8 @@
 import axios from 'axios';
 import yaml from 'js-yaml';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';
-import { loadFile } from '../../lib/io.mjs';
+import { loadFile, saveFile } from '../../lib/io.mjs';
 
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -4).join('/')}`;
@@ -70,15 +70,14 @@ const  payrollSync = async (key,req) => {
             //sleep for 1 second to avoid rate limiting
             await new Promise(resolve => setTimeout(resolve, 3000));
       }
-      if(Object.keys(paychecks).length !== checkCount)  return console.log('Error: Not all paychecks were retrieved');
-        const paychecksPath = 'data/budget/payroll.yml';
-        const paychecksYml = yaml.dump({paychecks});
-        writeFileSync(paychecksPath, paychecksYml);
+    //  if(Object.keys(paychecks).length !== checkCount)  return console.log('Error: Not all paychecks were retrieved');
+
+        saveFile('budget/payroll', {paychecks});
 
 
         //TODO: UPLOAD TO BUXFER
         //load dict
-        const {mapping} = yaml.load(readFileSync('data/budget/payrollDict.yml', 'utf8'));
+        const {mapping} = loadFile('budget/payrollDict');
         
         let debits = [];
         let credits = [];
@@ -113,9 +112,7 @@ const  payrollSync = async (key,req) => {
         const allTransactions = [...debits.map(i=>({...i, amount: -i.amount})), ...credits, ...transfers].sort((a,b) => new Date(a.date) - new Date(b.date));
 
         //write all transactions to file
-        const transactionsPath = 'data/budget/tmp.yml';
-        const transactionsYml = yaml.dump({transactions: allTransactions});
-        writeFileSync(transactionsPath, transactionsYml);
+        saveFile('budget/tmp', {transactions: allTransactions});
 
         // get from allTransactions
         const startDate   = allTransactions.sort((a,b) => new Date(a.date) - new Date(b.date))[0].date;
