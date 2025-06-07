@@ -21,8 +21,9 @@ import axios from 'axios';
  * Make sure the path and family name match your setup.
  */
 // For demo purposes, using built-in system fonts:
-
-const fontPath = path.join(process.cwd(), './journalist/fonts/roboto-condensed/RobotoCondensed-Regular.ttf');
+//console.log(process.env);
+const fontDir = process.env.path?.font || './backend/journalist/fonts/roboto-condensed';
+const fontPath =fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
 
 console.log('Registering font:', fontPath);
 
@@ -614,6 +615,10 @@ export const foodReport = async (req, res) => {
   const chat_id = req.query.chat_id || 'b6898194425_u575596036';
 
   const { uuid } = req.query;
+
+  const nutridata = loadRecentNutriList(chat_id); // Load the data for the given chat_id
+
+  console.log('Loaded nutridata:', nutridata); // For debugging
 
   // If you want the real report image, call generateImage:
   // const mainCanvas = await generateImage(chat_id);
