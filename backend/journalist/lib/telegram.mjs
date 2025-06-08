@@ -183,6 +183,7 @@ export const deleteMessage = async (chat_id, message_id) => {
         chat_id:user_id,
         message_id
     });
+    console.log('Delete Message:', deleteBody);
     const response = await fetch(`https://api.telegram.org/bot${telegramBotToken()}/deleteMessage`, {
         method: 'POST',
         headers: {
