@@ -404,78 +404,165 @@ export const itemizeFood = async (foodList, img, attempt) => {
 
 
 export const generateCoachingMessage = async (chat_id, attempt=1)=>{
-
-    const nutriDays = JSON.stringify(getNutriDaysBack(chat_id, 7));
-    const mostRecentItems =  JSON.stringify(getMostRecentNutrilistItems(chat_id));
-    const pastCoaching = JSON.stringify(getNutrilog(chat_id, 'nutri_coach', 7));
-    
-
-    //TODO add weight trends and exercise trends
-
-    const data = {
-        model: 'gpt-4o',
-        messages: [
-            {
-                role: 'system',
-                content: `You are a nutrition coach.  You analyze the user's food intake and provide coaching advice based on their food choices, trends, and patterns.
-                You will be given the user's recent food intake, weight trends, and exercise trends.  Use this information to provide personalized coaching advice.
-                Do not use markdown or any formatting, just plain text.  Keep your responses concise and to the point, no more than 2-3 sentences.
-                `
-            },
-            {
-                role: 'user',
-                content: `Here is the user's recent food intake for the last 7 days: ${nutriDays}`
-            },
-            {
-                role: 'user',
-                content: `Here is the are the user's past coaching messages you have sent: ${pastCoaching}`
-            },
-            {
-                role: 'user',
-                content: `This includes the most recent food items, logged just now: ${mostRecentItems}`
-            },
-            {
-                role: 'user',
-                content: `Now, based on the above information, provide a coaching message for the user.  Focus on the impact of the most recent food items on their overall nutrition and health.  You may mention past trends and patterns, but focus on the most recent food items and how they relate to the user's overall nutrition and health. If the most recent input is obviously a snack or small portion, just reply with a pithy comment, such as "Nice!". Or "Just a quick treat, huh?" or "Looks like a snack, not a meal." or "Just a little something to tide you over?"  For more substantial meals, provide a more detailed analysis and coaching message that takes into account more longitudinal trends and patterns.  If you are not sure, just reply with "Keep going!" or "You got this!"`
-            },
-
-        ],
-        max_tokens: 1000
-    };
     try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            const {error} = await response.json();
-            console.error(error);
-            throw new Error(`Failed to get coaching message.`);
-        }
-
-        const jsonResponse = await response.json();
-        const coachingMessage = jsonResponse.choices?.[0].message?.content || '';
         const todaysDate = moment().tz('America/Los_Angeles').format('YYYY-MM-DD');
+        
+        // Get today's food items and calculate total calories
+        const todaysItems = getNutrilListByDate(chat_id, todaysDate) || [];
+        const todaysTotalCalories = todaysItems.reduce((total, item) => {
+            return total + (parseInt(item.calories || 0, 10));
+        }, 0);
+        
+        // Get most recent items for context
+        const mostRecentItems = getMostRecentNutrilistItems(chat_id);
+        const recentCalories = mostRecentItems.reduce((total, item) => {
+            return total + (parseInt(item.calories || 0, 10));
+        }, 0);
+        
+        // Check if this logging crosses any calorie thresholds
+        const thresholds = [400, 1000, 1600];
+        const previousCalories = todaysTotalCalories - recentCalories;
+        let crossedThreshold = null;
+        
+        for (const threshold of thresholds) {
+            if (previousCalories < threshold && todaysTotalCalories >= threshold) {
+                crossedThreshold = threshold;
+                break;
+            }
+        }
+        
+        let coachingMessage = '';
+        
+        if (crossedThreshold) {
+            // Generate major coaching message for threshold crossing using GPT
+            const dailyBudget = 2000;
+            const remainingCalories = dailyBudget - todaysTotalCalories;
+            
+            const data = {
+                model: 'gpt-4o',
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a supportive nutrition coach providing milestone celebration messages when users cross calorie thresholds.
+                        The user just crossed the ${crossedThreshold} calorie threshold for the day.
+                        Provide a 2-3 sentence encouraging message that:
+                        - Acknowledges this milestone
+                        - Provides appropriate guidance for their current calorie level
+                        - Maintains a positive, supportive tone
+                        
+                        Their daily total is now ${todaysTotalCalories} calories.
+                        They have ${remainingCalories > 0 ? remainingCalories + ' calories remaining' : 'exceeded their budget by ' + Math.abs(remainingCalories) + ' calories'} in their daily budget.`
+                    },
+                    {
+                        role: 'user',
+                        content: `I just crossed the ${crossedThreshold} calorie threshold. My daily total is now ${todaysTotalCalories} calories. Recent foods: ${JSON.stringify(mostRecentItems.map(item => `${item.item} (${item.amount}${item.unit})`))}`
+                    }
+                ],
+                max_tokens: 1500
+            };
+            
+            try {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to get threshold coaching message.`);
+                }
+                
+                const jsonResponse = await response.json();
+                coachingMessage = jsonResponse.choices?.[0].message?.content || `Great milestone! You've reached ${crossedThreshold} calories today.`;
+            } catch (gptError) {
+                console.error('Error getting GPT threshold message:', gptError);
+                // Fallback threshold messages if GPT fails
+                switch (crossedThreshold) {
+                    case 400:
+                        coachingMessage = "Great start to your day! You've hit 400 calories - a solid foundation. Keep focusing on nutrient-dense foods to fuel your body well.";
+                        break;
+                    case 1000:
+                        coachingMessage = "You're now at 1000 calories for the day - well into your nutritional stride! This is a good milestone. Consider how your energy levels are feeling and stay mindful of your remaining calorie budget.";
+                        break;
+                    case 1600:
+                        coachingMessage = "You've reached 1600 calories today - that's substantial nutrition! Take a moment to assess your hunger and energy levels. If you're feeling satisfied, you might consider lighter options for the rest of the day.";
+                        break;
+                    default:
+                        coachingMessage = `Great milestone! You've reached ${crossedThreshold} calories today.`;
+                }
+            }
+        } else {
+            // Generate minor coaching message using GPT
+            const dailyBudget = 2000;
+            const remainingCalories = dailyBudget - todaysTotalCalories;
+            
+            const data = {
+                model: 'gpt-4o',
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a supportive nutrition coach providing brief, encouraging responses to food logging. 
+                        Keep responses to 1 sentence or a short phrase. Be positive and motivating.
+                        The user has logged ${recentCalories} calories just now, bringing their daily total to ${todaysTotalCalories} calories.
+                        They have ${remainingCalories > 0 ? remainingCalories + ' calories remaining' : 'exceeded their budget by ' + Math.abs(remainingCalories) + ' calories'}.
+                        Respond appropriately to their current situation with a brief, encouraging message.`
+                    },
+                    {
+                        role: 'user',
+                        content: `Most recent food items logged: ${JSON.stringify(mostRecentItems.map(item => `${item.item} (${item.amount}${item.unit})`))}. 
+                        Today's total so far: ${todaysTotalCalories} calories.`
+                    }
+                ],
+                max_tokens: 1000
+            };
+            
+            try {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to get minor coaching message.`);
+                }
+                
+                const jsonResponse = await response.json();
+                coachingMessage = jsonResponse.choices?.[0].message?.content || 'Great job logging that!';
+            } catch (gptError) {
+                console.error('Error getting GPT minor message:', gptError);
+                // Fallback to simple messages if GPT fails
+                const fallbackMessages = [
+                    "Good job logging that!",
+                    "Thanks for keeping track!",
+                    "Nice choice!",
+                    "Keep it up!",
+                    "Great logging!"
+                ];
+                const randomIndex = Math.floor(Math.random() * fallbackMessages.length);
+                coachingMessage = fallbackMessages[randomIndex];
+            }
+        }
+        
+        // Save the coaching message
         saveNutriCoach({
             chat_id,
             date: todaysDate,
             message: coachingMessage,
-            mostRecentItems
+            mostRecentItems: JSON.stringify(mostRecentItems)
         });
+        
         return coachingMessage;
-
+        
     } catch (error) {
-
         console.error('Error getting coaching message:', error);
-        if(attempt < 3) return await coachingMessage(chat_id, attempt + 1);
-        return false;
-
+        if(attempt < 3) return await generateCoachingMessage(chat_id, attempt + 1);
+        return 'Keep going - you got this!';
     }
-
-
 }
