@@ -200,7 +200,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
     if(level === 2) { //We just received the revision
         const uuid = cursor.adjusting.uuid;
         const factor = parseFloat(choice);
-        if(isNaN(factor) && /^[🗑️]/.test(choice)){
+        if(isNaN(factor) && choice === '🗑️ Delete'){
             console.log('Deleting item', {chat_id, uuid});
             const r = await deleteNuriListById(chat_id, uuid);
             console.log('Delete result', r);
@@ -209,9 +209,20 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
             setNutriCursor(chat_id, cursor);
             return await postItemizeFood(chat_id);
         }
-        if(isNaN(factor) && /^📅/.test(choice)) {
-            //TODO: change date menu
-            return await processRevisionButtonpress(chat_id, message_id, `↩️`);
+        if(isNaN(factor) && choice === '📅') {
+            // Handle move day functionality
+            cursor.adjusting.level = 3; // New level for date selection
+            setNutriCursor(chat_id, cursor);
+            const createRow = (start, end, today) => {
+                return Array.from({length: end-start+1}, (_, i) => i + start)
+                    .map(i => moment(today).subtract(i, 'days').format('YYYY-MM-DD'))
+                    .map((j,i) => ({[j]: i === 0 && start === 1 ? "Yesterday" : `${start+i} days ago`}));
+            }
+            const today = moment().tz("America/Los_Angeles").format('YYYY-MM-DD');
+            const firstRow = createRow(1, 3, today);
+            const secondRow = createRow(4, 6, today);
+            const choices = [[{[today]:"☀️ Today"}], firstRow, secondRow, ["↩️ Back"]];
+            return await updateMessage(chat_id, {message_id, text: "📅 Move to which date?", choices, inline: true, key: "caption"});
         }
         const listItem = await getNutrilListByID(chat_id, uuid);
         const numericFields = ['amount', 'calories', 'fat', 'protein', 'carbs', 'sugar', 'fiber', 'sodium', 'cholesterol'];
@@ -225,6 +236,39 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
         setNutriCursor(chat_id, cursor);
         return await postItemizeFood(chat_id);
 
+    }
+    if(level === 3) { // We just received the new date for moving the item
+        const uuid = cursor.adjusting.uuid;
+        
+        // Handle back button
+        if(/^↩️/.test(choice)) {
+            cursor.adjusting.level = 2; // Go back to adjustment menu
+            setNutriCursor(chat_id, cursor);
+            
+            const listItem = await getNutrilListByID(chat_id, uuid);
+            if(!listItem) return console.error('No list item found for uuid', {chat_id, uuid});
+            const {item, noom_color, amount, unit, calories, fat, protein, carbs} = listItem || {};
+            const emoji = noom_color === 'green' ? '🟢' : noom_color === 'yellow' ? '🟡' : noom_color === "orange" ? '🟠' : "🔴";
+            const text = `${emoji} ${item.trim()} (${`${amount}`.trim()}${unit.trim()})\n🔥 ${parseInt(calories)} cal\n🧀 ${parseInt(fat)}g 🍖 ${parseInt(protein)}g 🍏 ${parseInt(carbs)}g\n\n↕️ How to adjust?`;
+            const choices = [
+                [{"0.25":"¼"}, {"0.33":"⅓"}, {"0.5":"½"}, {"0.67":"⅔"}, {"0.75":"¾"}, {"0.8":"⅘"}],
+                [{"1.25":"×1¼"}, {"1.5":"×1½"}, {"1.75":"×1¾"}, {"2":"×2"}, {"3":"×3"}, {"4":"×4"}],
+                ["🗑️ Delete", {"📅":"📅 Move Day"},"↩️ Done"]
+            ];
+            return await updateMessage(chat_id, {message_id, text, choices, inline: true, key: "caption"});
+        }
+        
+        const newDate = moment.tz(choice, "America/Los_Angeles").format('YYYY-MM-DD');
+        
+        // Update the item's date
+        await updateNutrilist(chat_id, uuid, { date: newDate });
+        
+        // Clear adjusting state
+        delete cursor.adjusting;
+        setNutriCursor(chat_id, cursor);
+        
+        // Show success and refresh the report
+        return await postItemizeFood(chat_id);
     }
     
     return false;
