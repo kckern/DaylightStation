@@ -31,6 +31,8 @@ const NUTRICOACH_STORE = 'journalist/nutribot/nutricoach'; // not used explicitl
  */
 export const saveMessage = (chatId, { messageId, senderId, senderName, text, foreign_key }) => {
   if (!text) return null;
+  if (!chatId) return null;
+  if (!messageId) return null;
 
   // Strip emoji from start of text
   const firstCharIsEmoji = text.codePointAt(0) > 255;
@@ -49,10 +51,10 @@ export const saveMessage = (chatId, { messageId, senderId, senderName, text, for
       timestamp: unix,
       chat_id: chatId,
       message_id: messageId,
-      sender_id: senderId,
-      sender_name: senderName,
+      sender_id: senderId || null,
+      sender_name: senderName || 'Unknown',
       text,
-      foreign_key
+      foreign_key: foreign_key || {}
     };
     // Sort by timestamp desc and save
     const sortedData = Object.fromEntries(
@@ -74,8 +76,10 @@ export const saveMessage = (chatId, { messageId, senderId, senderName, text, for
  * @returns {Array}
  */
 export const getMessages = (chatId, attempt = 1, max = 100) => {
+  if (!chatId) return [];
+  
   try {
-    const data = loadFile(MESSAGES_STORE + "/" + chatId);
+    const data = loadFile(MESSAGES_STORE + "/" + chatId) || {};
     // Filter messages by chatId
     let rows = Object.values(data).filter(msg => msg.chat_id === chatId);
     // Sort by timestamp desc
@@ -87,8 +91,8 @@ export const getMessages = (chatId, attempt = 1, max = 100) => {
     const mapped = rows.map((message) => {
       const m = { ...message };
       m.datetime = moment(m.timestamp * 1000).format('D MMM YYYY, h:mm A');
-      m.sender_id = parseInt(m.sender_id, 10);
-      m.message_id = parseInt(m.message_id, 10);
+      m.sender_id = parseInt(m.sender_id, 10) || 0;
+      m.message_id = parseInt(m.message_id, 10) || 0;
       if (m.foreign_key) {
         try {
           m.foreign_key = m.foreign_key
@@ -113,12 +117,19 @@ export const getMessages = (chatId, attempt = 1, max = 100) => {
  * @returns {object|null}
  */
 export const findMostRecentUnansweredMessage = (chatId, senderId) => {
+  if (!chatId || !senderId) return null;
+  
   console.log('findMostRecentUnansweredMessage:', { chatId, senderId });
-  const history = getMessages(chatId);
-  if(!history || history.length === 0) return null;
-  const mostRecentMessage = history[history.length - 1];
-  if (mostRecentMessage?.sender_id === senderId) return mostRecentMessage;
-  return null;
+  try {
+    const history = getMessages(chatId);
+    if(!history || history.length === 0) return null;
+    const mostRecentMessage = history[history.length - 1];
+    if (mostRecentMessage?.sender_id === senderId) return mostRecentMessage;
+    return null;
+  } catch (error) {
+    console.error('Error finding most recent unanswered message:', error);
+    return null;
+  }
 };
 
 /**
@@ -128,8 +139,10 @@ export const findMostRecentUnansweredMessage = (chatId, senderId) => {
  * @returns {object|null}
  */
 export const deleteMessageFromDB = (chatId, messageId) => {
+  if (!chatId || !messageId) return { success: false };
+  
   try {
-    const data = loadFile(MESSAGES_STORE + "/" + chatId);
+    const data = loadFile(MESSAGES_STORE + "/" + chatId) || {};
     const recordKey = `${chatId}_${messageId}`;
     if (data[recordKey]) {
       delete data[recordKey];
@@ -153,7 +166,7 @@ export const deleteMessageFromDB = (chatId, messageId) => {
  */
 export const loadCronJobs = () => {
   try {
-    const data = loadFile(CRONJOBS_STORE);
+    const data = loadFile(CRONJOBS_STORE) || {};
     // Return as an array
     return Object.values(data);
   } catch (error) {
@@ -170,13 +183,32 @@ export const loadCronJobs = () => {
  * @returns {object|null}
  */
 export const updateCronJob = (uuid, message_id, chat_id) => {
-  if (!message_id) return null;
+  // Input validation
+  if (!uuid || typeof uuid !== 'string') {
+    console.error('updateCronJob: Invalid uuid parameter');
+    return null;
+  }
+
+  if (!message_id || (typeof message_id !== 'string' && typeof message_id !== 'number')) {
+    console.error('updateCronJob: Invalid message_id parameter');
+    return null;
+  }
+
   const lastRun = Math.floor(Date.now() / 1000);
   try {
-    const data = loadFile(CRONJOBS_STORE);
-    if (!data[uuid]) return null;
+    const data = loadFile(CRONJOBS_STORE) || {};
+    if (!data || typeof data !== 'object') {
+      console.error('updateCronJob: Invalid or missing cron jobs data');
+      return null;
+    }
+
+    if (!data[uuid]) {
+      console.error('updateCronJob: Cron job not found for uuid:', uuid);
+      return null;
+    }
+
     data[uuid].message_id = message_id;
-    data[uuid].chat_id = chat_id;
+    if (chat_id) data[uuid].chat_id = chat_id;
     data[uuid].last_run = lastRun;
     saveFile(CRONJOBS_STORE, data);
     return data[uuid];
@@ -200,6 +232,10 @@ export const updateCronJob = (uuid, message_id, chat_id) => {
  * @returns {object|null}
  */
 export const saveJournalEntry = (chat_id, date, period, entry, src) => {
+  if (!chat_id || !entry) {
+    console.error('saveJournalEntry called with missing chat_id or entry');
+    return null;
+  }
   const uuid = uuidv4();
   try {
     const data = loadFile(JOURNALENTRIES_STORE) || {};
@@ -229,8 +265,10 @@ export const saveJournalEntry = (chat_id, date, period, entry, src) => {
  * @returns {Array}
  */
 export const loadUnsentQueue = (chat_id) => {
+  if (!chat_id) return [];
+  
   try {
-    const data = loadFile(MESSAGEQUEUE_STORE);
+    const data = loadFile(MESSAGEQUEUE_STORE) || {};
     // Filter by chat_id and message_id is null
     let rows = Object.values(data).filter(item => item.chat_id === chat_id && !item.message_id);
     // Order by timestamp ASC
@@ -250,22 +288,35 @@ export const loadUnsentQueue = (chat_id) => {
  * @returns {object|null}
  */
 export const updateQueue = (uuid, message_id) => {
-  if (!uuid || !message_id) {
-    console.error('updateQueue called with missing parameters');
-    return null;
+  // Input validation
+  if (!uuid || typeof uuid !== 'string') {
+    console.error('updateQueue: Invalid uuid parameter');
+    return { success: false, error: 'Invalid uuid parameter' };
   }
+
+  if (!message_id || (typeof message_id !== 'string' && typeof message_id !== 'number')) {
+    console.error('updateQueue: Invalid message_id parameter');
+    return { success: false, error: 'Invalid message_id parameter' };
+  }
+
   try {
-    const data = loadFile(MESSAGEQUEUE_STORE);
-    if (!data[uuid]) {
-      // If it doesn't exist, do nothing or create it. We'll skip here.
-      return null;
+    const data = loadFile(MESSAGEQUEUE_STORE) || {};
+    if (!data || typeof data !== 'object') {
+      console.error('updateQueue: Invalid or missing message queue data');
+      return { success: false, error: 'Invalid message queue data' };
     }
+
+    if (!data[uuid]) {
+      console.error('updateQueue: Queue item not found for uuid:', uuid);
+      return { success: false, error: 'Queue item not found' };
+    }
+
     data[uuid].message_id = message_id;
     saveFile(MESSAGEQUEUE_STORE, data);
-    return data[uuid];
+    return { success: true, item: data[uuid] };
   } catch (error) {
     console.error('Error updating queue:', error);
-    return null;
+    return { success: false, error: error.message || 'Unknown error occurred' };
   }
 };
 
@@ -275,19 +326,33 @@ export const updateQueue = (uuid, message_id) => {
  * @returns {object|null}
  */
 export const clearQueue = (chat_id) => {
+  // Input validation
+  if (!chat_id || typeof chat_id !== 'string') {
+    console.error('clearQueue: Invalid chat_id parameter');
+    return { success: false, error: 'Invalid chat_id parameter' };
+  }
+  
   try {
-    const data = loadFile(MESSAGEQUEUE_STORE);
+    const data = loadFile(MESSAGEQUEUE_STORE) || {};
+    if (!data || typeof data !== 'object') {
+      console.error('clearQueue: Invalid or missing message queue data');
+      return { success: false, error: 'Invalid message queue data' };
+    }
+
     const newData = {};
+    let removedCount = 0;
     for (const [key, value] of Object.entries(data)) {
-      if (value.chat_id !== chat_id) {
+      if (value && value.chat_id !== chat_id) {
         newData[key] = value;
+      } else if (value && value.chat_id === chat_id) {
+        removedCount++;
       }
     }
-    saveFile(MESSAGEQUEUE_STORE, {});
-    return { success: true };
+    saveFile(MESSAGEQUEUE_STORE, newData);
+    return { success: true, removedCount };
   } catch (error) {
     console.error('Error clearing queue:', error);
-    return null;
+    return { success: false, error: error.message || 'Unknown error occurred' };
   }
 };
 
@@ -298,6 +363,10 @@ export const clearQueue = (chat_id) => {
  * @returns {boolean|null}
  */
 export const saveToQueue = (chat_id, { messages, choices, inlines, foreign_keys }) => {
+  if (!chat_id || !messages || !Array.isArray(messages) || messages.length === 0) {
+    console.error('saveToQueue called with missing chat_id or messages');
+    return null;
+  }
   const timestamp = Math.floor(Date.now() / 1000);
   try {
     const data = loadFile(MESSAGEQUEUE_STORE) || {};
@@ -333,8 +402,10 @@ export const saveToQueue = (chat_id, { messages, choices, inlines, foreign_keys 
  * @returns {object|null}
  */
 export const deleteUnprocessedQueue = (chat_id) => {
+  if (!chat_id) return { success: false };
+  
   try {
-    const data = loadFile(MESSAGEQUEUE_STORE);
+    const data = loadFile(MESSAGEQUEUE_STORE) || {};
     const newData = {};
     for (const [k, v] of Object.entries(data)) {
       if (!(v.chat_id === chat_id && !v.message_id)) {
@@ -359,8 +430,12 @@ export const deleteUnprocessedQueue = (chat_id) => {
  * @returns {Array}
  */
 export const loadQuizQuestions = (category) => {
+  if (!category) {
+    console.error('loadQuizQuestions called with missing category');
+    return [];
+  }
   try {
-    const data = loadFile(QUIZQUESTIONS_STORE);
+    const data = loadFile(QUIZQUESTIONS_STORE) || {};
     // Filter
     const rows = Object.values(data).filter(q => q.category === category);
     return rows;
@@ -377,14 +452,24 @@ export const loadQuizQuestions = (category) => {
  * @returns {object|null}
  */
 export const loadQuestionByCategory = (category) => {
+  // Input validation
+  if (!category || typeof category !== 'string') {
+    console.error('loadQuestionByCategory: Invalid category parameter');
+    return null;
+  }
+
   const attemptLoad = () => {
     try {
       const data = loadFile(QUIZQUESTIONS_STORE);
+      if (!data || typeof data !== 'object') {
+        console.error('loadQuestionByCategory: Invalid or missing quiz questions data');
+        return null;
+      }
 
       // Filter by last_asked = null (i.e., unasked)
-      let rows = Object.values(data).filter(q => q.last_asked == null);
+      let rows = Object.values(data).filter(q => q && q.last_asked == null);
       if (category) {
-        rows = rows.filter(q => q.category === category);
+        rows = rows.filter(q => q && q.category === category);
       }
       if (rows && rows.length > 0) {
         // Shuffle
@@ -404,14 +489,24 @@ export const loadQuestionByCategory = (category) => {
     // Reset all last_asked for the category
     try {
       const data = loadFile(QUIZQUESTIONS_STORE);
+      if (!data || typeof data !== 'object') {
+        console.error('loadQuestionByCategory: Invalid data when resetting last_asked');
+        return null;
+      }
+
+      let resetCount = 0;
       for (const [k, v] of Object.entries(data)) {
-        if (v.category === category) {
+        if (v && v.category === category) {
           v.last_asked = null;
+          resetCount++;
         }
       }
-       saveFile(QUIZQUESTIONS_STORE, data);
-      // Try fetching again
-      result = attemptLoad();
+      
+      if (resetCount > 0) {
+        saveFile(QUIZQUESTIONS_STORE, data);
+        // Try fetching again
+        result = attemptLoad();
+      }
     } catch (error) {
       console.error('Error resetting last_asked:', error);
       return null;
@@ -427,11 +522,27 @@ export const loadQuestionByCategory = (category) => {
  * @returns {object|null}
  */
 export const answerQuizQuestion = (uuid, answer) => {
+  // Input validation
+  if (!uuid || typeof uuid !== 'string') {
+    console.error('answerQuizQuestion: Invalid uuid parameter');
+    return null;
+  }
+
+  if (answer === undefined || answer === null) {
+    console.error('answerQuizQuestion: Invalid answer parameter');
+    return null;
+  }
+
   try {
     const data = loadFile(QUIZQUESTIONS_STORE);
+    if (!data || typeof data !== 'object') {
+      console.error('answerQuizQuestion: Invalid or missing quiz questions data');
+      return null;
+    }
+
     const question = data[uuid];
     if (!question) {
-      console.error('Question not found');
+      console.error('answerQuizQuestion: Question not found for uuid:', uuid);
       return null;
     }
 
@@ -439,12 +550,15 @@ export const answerQuizQuestion = (uuid, answer) => {
     let responses = {};
     if (question.responses) {
       try {
-        responses = question.responses;
-      } catch {}
+        responses = typeof question.responses === 'object' ? question.responses : {};
+      } catch (error) {
+        console.error('answerQuizQuestion: Error parsing existing responses:', error);
+        responses = {};
+      }
     }
 
     // parse answer
-    const isNumeric = /^\d+$/.test(answer);
+    const isNumeric = /^\d+$/.test(String(answer));
     if (isNumeric) answer = parseInt(answer, 10);
 
     const timeZone = 'America/Los_Angeles';
@@ -454,7 +568,7 @@ export const answerQuizQuestion = (uuid, answer) => {
     // save back
     question.responses = responses;
     data[uuid] = question;
-     saveFile(QUIZQUESTIONS_STORE, data);
+    saveFile(QUIZQUESTIONS_STORE, data);
 
     return responses;
   } catch (error) {
@@ -475,8 +589,12 @@ export const answerQuizQuestion = (uuid, answer) => {
  * @returns {object|null}
  */
 export const updateDBMessage = (chat_id, message_id, values) => {
+  if (!chat_id || !message_id || !values) {
+    console.error('updateDBMessage called with missing parameters');
+    return null;
+  }
   try {
-    const data = loadFile(MESSAGES_STORE + "/" + chat_id);
+    const data = loadFile(MESSAGES_STORE + "/" + chat_id) || {};
     const recordKey = `${chat_id}_${message_id}`;
     if (!data[recordKey]) {
       return null;
@@ -501,13 +619,17 @@ export const updateDBMessage = (chat_id, message_id, values) => {
  * @returns {object|null}
  */
 export const loadMessageFromDB = (chat_id, message_id) => {
+  if (!chat_id || !message_id) {
+    console.error('loadMessageFromDB called with missing parameters');
+    return [];
+  }
   try {
-    const data = loadFile(MESSAGES_STORE + "/" + chat_id);
+    const data = loadFile(MESSAGES_STORE + "/" + chat_id) || {};
     const recordKey = `${chat_id}_${message_id}`;
     return data[recordKey] ? [data[recordKey]] : [];
   } catch (error) {
     console.error('Error loading message from DB:', error);
-    return null;
+    return [];
   }
 };
 
@@ -522,8 +644,8 @@ export const loadMessageFromDB = (chat_id, message_id) => {
  */
 export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, status }) => {
   console.log('Saving nutrilog:', { uuid, chat_id, message_id, food_data, status });
-  if (!uuid) {
-    console.error('UUID is null');
+  if (!uuid || !chat_id) {
+    console.error('saveNutrilog called with missing uuid or chat_id');
     return null;
   }
 
@@ -532,10 +654,10 @@ export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, 
     data[uuid] = {
       uuid,
       chat_id,
-      timestamp,
+      timestamp: timestamp || Math.floor(Date.now() / 1000),
       message_id,
-      food_data,
-      status
+      food_data: food_data || {},
+      status: status || 'pending'
     };
      saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
     return data[uuid];
@@ -547,27 +669,30 @@ export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, 
 
 
 export const saveNutriDay = ({ chat_id, daily_data }) => {
+  if (!chat_id || !daily_data) {
+    console.error('saveNutriDay called with missing chat_id or daily_data');
+    return null;
+  }
 
-  const datesToUpsert = Object.keys(daily_data || {});
-  const data = loadFile(NUTRIDAY_STORE + "/" + chat_id) || {};
-  for (const date of datesToUpsert) {
-    if (!data[date]) {
-      data[date] = daily_data[date];
-    } else {
-      // Update existing entry
-      for (const [k, v] of Object.entries(daily_data[date])) {
-        data[date][k] = v;
+  try {
+    const datesToUpsert = Object.keys(daily_data || {});
+    const data = loadFile(NUTRIDAY_STORE + "/" + chat_id) || {};
+    for (const date of datesToUpsert) {
+      if (!data[date]) {
+        data[date] = daily_data[date];
+      } else {
+        // Update existing entry
+        for (const [k, v] of Object.entries(daily_data[date])) {
+          data[date][k] = v;
+        }
       }
     }
-  }
-  try {
     saveFile(NUTRIDAY_STORE + "/" + chat_id, data);
     return true;
   } catch (error) {
     console.error('Error saving nutriday:', error);
     return null;
   }
-
 }
 
 
@@ -647,22 +772,31 @@ export const getNutriCoach = (chat_id, daysBack = 7) => {
  * @returns {Array|null}
  */
 export const getNutrilog = (uuid, chat_id) => {
-  if (!uuid) return null;
+  if (!uuid || !chat_id) {
+    console.error('getNutrilog called with missing uuid or chat_id');
+    return [];
+  }
   try {
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
     const entry = data[uuid];
     return entry ? [entry] : [];
   } catch (error) {
     console.error('Error getting nutrilog:', error);
-    return null;
+    return [];
   }
 };
 
 export const getMostRecentNutrilog = (chat_id) => {
+  if (!chat_id) {
+    console.error('getMostRecentNutrilog called with missing chat_id');
+    return null;
+  }
   try {
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
     // Sort by timestamp descending
     const logIds = Object.keys(data);
+    if (logIds.length === 0) return null;
+    
     const sorted = logIds.sort((a, b) => data[b].message_id - data[a].message_id);
     // Get the most recent one
     const mostRecentId = sorted[0];
@@ -674,13 +808,18 @@ export const getMostRecentNutrilog = (chat_id) => {
 }
 
 export const getMostRecentNutrilistItems = (chat_id) => {
+  if (!chat_id) {
+    console.error('getMostRecentNutrilistItems called with missing chat_id');
+    return [];
+  }
+  
   const mostRecentNutrilog = getMostRecentNutrilog(chat_id);
   if (!mostRecentNutrilog) {
     console.warn('No recent nutrilog found for chat_id:', chat_id);
     return [];
   }
   try {
-    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     // Filter items that match the most recent nutrilog's log_uuid
     const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.log_uuid === mostRecentNutrilog.uuid);
     // Sort by calories descending
@@ -704,11 +843,15 @@ export const getMostRecentNutrilistItems = (chat_id) => {
  * @returns {Array|null}
  */
 export const getNutrilListByDate = (chat_id, date) => {
+  if (!chat_id || !date) {
+    console.error('getNutrilListByDate called with missing chat_id or date');
+    return [];
+  }
   try {
     // This was originally referencing 'nutrilist' table, but in the new structure
     // you might keep them in the same nutrilogs store or a different file. 
     // Adjust as needed. For demonstration, assume it's the same store:
-    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.date === date);
     // Sort by calories descending -> But there's no field "calories" in the default. 
     // We can parse item.food_data if needed. Implementation may vary.
@@ -721,7 +864,7 @@ export const getNutrilListByDate = (chat_id, date) => {
     return rows;
   } catch (error) {
     console.error('Error getting nutrilist by date:', error);
-    return null;
+    return [];
   }
 };
 
@@ -732,13 +875,17 @@ export const getNutrilListByDate = (chat_id, date) => {
  * @returns {object|null}
  */
 export const getNutrilListByID = (chat_id, uuid) => {
+  if (!chat_id || !uuid) {
+    console.error('getNutrilListByID called with missing chat_id or uuid');
+    return {};
+  }
   try {
-    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     const item = data[uuid];
     if (item && item.chat_id === chat_id) {
       return item;
     }
-    return null;
+    return {};
   } catch (error) {
     //return empty object if not found
     console.error('Error getting nutrilist by ID:', error);
@@ -753,8 +900,12 @@ export const getNutrilListByID = (chat_id, uuid) => {
  * @returns {object|null}
  */
 export const deleteNuriListById = (chat_id, uuid) => {
+  if (!chat_id || !uuid) {
+    console.error('deleteNuriListById called with missing chat_id or uuid');
+    return { success: false };
+  }
   try {
-    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     if (data[uuid] && data[uuid].chat_id === chat_id) {
       delete data[uuid];
        saveFile(NUTRILIST_STORE + "/" + chat_id, data);
@@ -763,7 +914,7 @@ export const deleteNuriListById = (chat_id, uuid) => {
     return { success: false };
   } catch (error) {
     console.error('Error deleting nutrilist by ID:', error);
-    return null;
+    return { success: false };
   }
 };
 
@@ -775,8 +926,12 @@ export const deleteNuriListById = (chat_id, uuid) => {
  */
 export const updateNutrilist = (chat_id, uuid, values) => {
   console.log('Updating nutrilist:', { chat_id, uuid, values });
+  if (!chat_id || !uuid || !values) {
+    console.error('updateNutrilist called with missing parameters');
+    return null;
+  }
   try {
-    const data = loadFile(NUTRILIST_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     if (!data[uuid]) {
       return null;
     }
@@ -799,8 +954,12 @@ export const updateNutrilist = (chat_id, uuid, values) => {
  */
 export const getNutrilogByMessageId = (chat_id, message_id) => {
   console.log('Getting nutrilog by message_id:', { chat_id, message_id });
+  if (!chat_id || !message_id) {
+    console.error('getNutrilogByMessageId called with missing chat_id or message_id');
+    return null;
+  }
   try {
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
     console.log('Loaded data:', data);
     const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.message_id == message_id);
     return rows?.[0] || null;
@@ -816,10 +975,14 @@ export const getNutrilogByMessageId = (chat_id, message_id) => {
  * @returns {object|null}
  */
 export const getPendingNutrilog = (chat_id) => {
+  if (!chat_id) {
+    console.error('getPendingNutrilog called with missing chat_id');
+    return null;
+  }
   try {
     // The original logic references "getNutriCursor" to see if there's something "revising"
     const cursor = getNutriCursor(chat_id);
-    if (cursor.revising) {
+    if (cursor && cursor.revising) {
       const { uuid } = cursor.revising;
       const [nutrilog] = ( getNutrilog(uuid, chat_id) || [] );
       console.log('Found pending nutrilog:', { uuid, nutrilog });
@@ -827,7 +990,7 @@ export const getPendingNutrilog = (chat_id) => {
     }
 
     // fallback: look for a "revising" entry
-    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
     // 1 minute old
     const oneMinuteOld = Math.floor(Date.now() / 1000) - 60;
     const rows = Object.values(data)
@@ -852,6 +1015,11 @@ export const getPendingNutrilog = (chat_id) => {
  * @returns {Array|null}
  */
 export const loadJournalMessages = (chat_id, since, until) => {
+  if (!chat_id) {
+    console.error('loadJournalMessages called with missing chat_id');
+    return [];
+  }
+  
   const timeZone = 'America/Los_Angeles';
   since = since || moment().tz(timeZone).subtract(7, 'days').format('YYYY-MM-DD');
   until = until || moment().tz(timeZone).format('YYYY-MM-DD');
@@ -860,7 +1028,7 @@ export const loadJournalMessages = (chat_id, since, until) => {
 
   console.log('Loading journal entries:', { chat_id, since, until, sinceUnix, untilUnix });
   try {
-    const data = loadFile(MESSAGES_STORE + "/" + chat_id);
+    const data = loadFile(MESSAGES_STORE + "/" + chat_id) || {};
     const rows = Object.values(data).filter(item =>
       item.chat_id === chat_id &&
       item.timestamp >= sinceUnix &&
@@ -881,7 +1049,7 @@ export const loadJournalMessages = (chat_id, since, until) => {
     return Object.entries(reduced).map(([date, messages]) => [date, messages]);
   } catch (error) {
     console.error('Error getting journal entries:', error);
-    return null;
+    return [];
   }
 };
 
@@ -920,6 +1088,11 @@ export const deleteNutrilog = (chat_id, uuid) => {
  */
 export const saveNutrilist = (items, chat_id) => {
   console.log('saveNutrilist called with:', { items, chat_id });
+  
+  if (!chat_id) {
+    console.error('saveNutrilist called with missing chat_id');
+    return null;
+  }
   
   // For demonstration, we'll reuse NUTRILOGS_STORE + "/" + chat_id or create a new store if needed.
   // In the original code, it inserts into "nutrilist" table. We'll assume we have a separate store:
@@ -1069,13 +1242,17 @@ export const nutriLogAlreadyListed = (uuid, chat_id) => {
  * @returns {boolean|null}
  */
 export const setNutriCursor = (chat_id, dataObj) => {
+  if (!chat_id) {
+    console.error('setNutriCursor called with missing chat_id');
+    return null;
+  }
   const timestamp = Math.floor(Date.now() / 1000);
   try {
     const data = loadFile(NUTRICURSORS_STORE + "/" + chat_id) || {};
     data[chat_id] = {
       chat_id,
       timestamp,
-      data: dataObj
+      data: dataObj || {}
     };
      saveFile(NUTRICURSORS_STORE + "/" + chat_id, data);
     return true;
@@ -1091,16 +1268,20 @@ export const setNutriCursor = (chat_id, dataObj) => {
  * @returns {object}
  */
 export const getNutriCursor = (chat_id) => {
+  if (!chat_id) {
+    console.error('getNutriCursor called with missing chat_id');
+    return {};
+  }
   try {
     const data = loadFile(NUTRICURSORS_STORE + "/" + chat_id) || {};
     if (data[chat_id]) {
       const parsed = data[chat_id].data;
-      return parsed;
+      return parsed || {};
     }
     return {};
   } catch (error) {
     console.error('Error getting nutri cursor:', error);
-    return null;
+    return {};
   }
 };
 
@@ -1110,6 +1291,10 @@ export const getNutriCursor = (chat_id) => {
  * @returns {object|null}
  */
 export const clearNutrilistByLogUUID = (uuid, chat_id) => {
+  if (!uuid || !chat_id) {
+    console.error('clearNutrilistByLogUUID called with missing uuid or chat_id');
+    return { success: false, count: 0 };
+  }
   try {
     const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     let count = 0;
@@ -1123,7 +1308,7 @@ export const clearNutrilistByLogUUID = (uuid, chat_id) => {
     return { success: true, count };
   } catch (error) {
     console.error('Error clearing nutrilist by log uuid:', error);
-    return null;
+    return { success: false, count: 0 };
   }
 };
 
@@ -1137,8 +1322,12 @@ export const clearNutrilistByLogUUID = (uuid, chat_id) => {
  * @returns {boolean|null}
  */
 export const saveActivities = (activities) => {
+  if (!activities || !Array.isArray(activities) || activities.length === 0) {
+    console.error('saveActivities called with missing or empty activities array');
+    return null;
+  }
   try {
-    const data = loadFile(ACTIVITIES_STORE);
+    const data = loadFile(ACTIVITIES_STORE) || {};
     for (const activity of activities) {
       const { date, chat_id, src, type, id, data: activityData } = activity;
       if (!date || !src || !id || !activityData) continue;
@@ -1167,9 +1356,13 @@ export const saveActivities = (activities) => {
  * @returns {Array|null}
  */
 export const loadActivities = (chat_id, days_since = 14) => {
+  if (!chat_id) {
+    console.error('loadActivities called with missing chat_id');
+    return [];
+  }
   try {
     const dateThreshold = moment().subtract(days_since, 'days').format('YYYY-MM-DD');
-    const data = loadFile(ACTIVITIES_STORE);
+    const data = loadFile(ACTIVITIES_STORE) || {};
     const rows = Object.values(data).filter(act => {
       if (act.chat_id !== chat_id) return false;
       return (act.date >= dateThreshold);
@@ -1177,7 +1370,7 @@ export const loadActivities = (chat_id, days_since = 14) => {
     return rows;
   } catch (error) {
     console.error('Error getting activities:', error);
-    return null;
+    return [];
   }
 };
 
@@ -1191,10 +1384,15 @@ export const loadActivities = (chat_id, days_since = 14) => {
  * @returns {boolean|null}
  */
 export const saveWeight = (weights) => {
+  if (!weights || !Array.isArray(weights) || weights.length === 0) {
+    console.error('saveWeight called with missing or empty weights array');
+    return null;
+  }
   try {
-    const data = loadFile(WEIGHTS_STORE);
+    const data = loadFile(WEIGHTS_STORE) || {};
     for (const w of weights) {
       const { chat_id, src, date } = w;
+      if (!chat_id || !src || !date) continue;
       const pk = `${chat_id}_${src}_${date}`;
       const kg = parseFloat((w.kg || 0).toFixed(2)) || null;
       const fat_ratio = parseFloat((w.fat_ratio || 0).toFixed(1)) || null;
@@ -1221,9 +1419,13 @@ export const saveWeight = (weights) => {
  * @returns {Array|null}
  */
 export const loadWeight = (chat_id, days_since = 14) => {
+  if (!chat_id) {
+    console.error('loadWeight called with missing chat_id');
+    return [];
+  }
   try {
     const dateThreshold = moment().subtract(days_since, 'days').format('YYYY-MM-DD');
-    const data = loadFile(WEIGHTS_STORE);
+    const data = loadFile(WEIGHTS_STORE) || {};
     const rows = Object.values(data).filter(item => {
       return item.chat_id === chat_id && item.date >= dateThreshold;
     });
@@ -1232,7 +1434,7 @@ export const loadWeight = (chat_id, days_since = 14) => {
     return rows;
   } catch (error) {
     console.error('Error getting weights:', error);
-    return null;
+    return [];
   }
 };
 
@@ -1289,17 +1491,33 @@ export const loadWeight = (chat_id, days_since = 14) => {
  * @returns {object|null}
  */
 export const deleteSpecificMessage = (chat_id, message_id) => {
+  // Input validation
+  if (!chat_id || (chat_id !== null && typeof chat_id !== 'string' && typeof chat_id !== 'number')) {
+    console.error('deleteSpecificMessage: Invalid chat_id parameter');
+    return { success: false, error: 'Invalid chat_id parameter' };
+  }
+  
+  if (!message_id || (message_id !== null && typeof message_id !== 'string' && typeof message_id !== 'number')) {
+    console.error('deleteSpecificMessage: Invalid message_id parameter');
+    return { success: false, error: 'Invalid message_id parameter' };
+  }
+
   try {
     const data = loadFile(MESSAGES_STORE + "/" + chat_id);
+    if (!data || typeof data !== 'object') {
+      console.error('deleteSpecificMessage: Invalid or missing data for chat_id:', chat_id);
+      return { success: false, error: 'No data found for chat_id' };
+    }
+
     const recordKey = `${chat_id}_${message_id}`;
     if (data[recordKey]) {
       delete data[recordKey];
       saveFile(MESSAGES_STORE + "/" + chat_id, data);
       return { success: true };
     }
-    return { success: false };
+    return { success: false, error: 'Message not found' };
   } catch (error) {
     console.error('Error deleting specific message:', error);
-    return null;
+    return { success: false, error: error.message || 'Unknown error occurred' };
   }
 };
