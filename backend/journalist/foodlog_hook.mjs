@@ -12,14 +12,14 @@ export const processFoodLogHook = async (req, res) => {
 
     const {TELEGRAM_NUTRIBOT_TOKEN:token,journalist:{journalist_user_id,nutribot_telegram_bot_id:bot_id}} = process.env;
     process.env.TELEGRAM_JOURNALIST_BOT_TOKEN = token; // TODO improve multi-bot support
-    const payload = req.body || req.query;
+    const payload = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
     const user_id = parseInt(payload.message?.chat?.id || payload.chat_id || req.query.chat_id || journalist_user_id);
     //console.log({payload,user_id, bot_id});
     const chat_id = `b${bot_id}_u${user_id}`;
-    console.log({chat_id});
     if(!bot_id) return res.status(400).send('No bot id found');
     if(!chat_id) return res.status(400).send('No chat id found');
     const upc = payload.upc;
+    console.log({upc, chat_id, payload, body: req.body, query: req.query});
     const img_url       = payload.img_url?.trim();
     const img_id        = payload.message?.photo?.reduce((acc, cur) => (cur.width > acc.width) ? cur : acc).file_id || payload.message?.document?.file_id;
     const hostname = req.headers.host;
@@ -201,7 +201,9 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
         const uuid = cursor.adjusting.uuid;
         const factor = parseFloat(choice);
         if(isNaN(factor) && /^[🗑️]/.test(choice)){
-            await deleteNuriListById(chat_id, uuid);
+            console.log('Deleting item', {chat_id, uuid});
+            const r = await deleteNuriListById(chat_id, uuid);
+            console.log('Delete result', r);
             const cursor = await getNutriCursor(chat_id);
             delete cursor.adjusting;
             setNutriCursor(chat_id, cursor);

@@ -904,13 +904,26 @@ export const deleteNuriListById = (chat_id, uuid) => {
     console.error('deleteNuriListById called with missing chat_id or uuid');
     return { success: false };
   }
+  
   try {
     const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
+    
     if (data[uuid] && data[uuid].chat_id === chat_id) {
+      const log_uuid = data[uuid].log_uuid;
+      
+      if (log_uuid) {
+        const nutrilogData = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+        if (nutrilogData[log_uuid]) {
+          delete nutrilogData[log_uuid];
+          saveFile(NUTRILOGS_STORE + "/" + chat_id, nutrilogData);
+        }
+      }
+
       delete data[uuid];
-       saveFile(NUTRILIST_STORE + "/" + chat_id, data);
+      saveFile(NUTRILIST_STORE + "/" + chat_id, data);
       return { success: true };
     }
+    
     return { success: false };
   } catch (error) {
     console.error('Error deleting nutrilist by ID:', error);
@@ -1106,7 +1119,7 @@ export const saveNutrilist = (items, chat_id) => {
 
   try {
     const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
-    console.log('Loaded existing data:', Object.keys(data));
+    //console.log('Loaded existing data:', Object.keys(data));
     
     for (const item of items) {
       // The primary key is item.uuid
@@ -1136,7 +1149,7 @@ export const saveNutrilist = (items, chat_id) => {
       };
     }
     
-    console.log('Saving data with keys:', Object.keys(data));
+  //  console.log('Saving data with keys:', Object.keys(data));
     saveFile(NUTRILIST_STORE + "/" + chat_id, data);
     console.log('Successfully saved nutrilist');
     return true;

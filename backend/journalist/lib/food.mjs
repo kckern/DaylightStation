@@ -1,11 +1,13 @@
 import { detectFoodFromImage, generateCoachingMessage, itemizeFood} from "./gpt_food.mjs";
 import nodeFetch from 'node-fetch';
-import * as Jimp from 'jimp';
+import { createCanvas, loadImage } from 'canvas';
 import moment from "moment-timezone";
 import {  sendImageMessage, updateMessage, deleteMessage, updateMessageReplyMarkup, deleteSpecificMessage, sendMessage } from "./telegram.mjs";
 import { clearNutrilistByLogUUID, getNutriCursor, getNutrilListByDate, loadNutrilogsNeedingListing, nutriLogAlreadyListed, saveMessage, saveNutriDay, saveNutrilist, saveNutrilog, setNutriCursor } from "./db.mjs";
 //uuid
 import { v4 as uuidv4 } from 'uuid';
+//jimp
+
 const timezone = "America/Los_Angeles";
 
 
@@ -107,10 +109,24 @@ export const getBase64Url = async (imgUrl) => {
     const fetchedImage = await nodeFetch(imgUrl);
     const arrayBuffer = await fetchedImage.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const image = await Jimp.read(buffer);
-    const resizedImage = image.resize(800, Jimp.AUTO); // resize the width to 640px. Height is auto adjusted to maintain aspect ratio
-    resizedImage.quality(50);
-    const resizedBuffer = await resizedImage.getBufferAsync(Jimp.MIME_JPEG); // get the buffer of the resized image
+    
+    // Load image using Canvas
+    const image = await loadImage(buffer);
+    
+    // Calculate dimensions maintaining aspect ratio
+    const maxWidth = 800;
+    const { width, height } = image;
+    const aspectRatio = height / width;
+    const newWidth = Math.min(width, maxWidth);
+    const newHeight = Math.round(newWidth * aspectRatio);
+    
+    // Create canvas and resize image
+    const canvas = createCanvas(newWidth, newHeight);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0, newWidth, newHeight);
+    
+    // Convert to JPEG buffer with quality
+    const resizedBuffer = canvas.toBuffer('image/jpeg', { quality: 0.5 });
     const imgSizeKb = Math.round(resizedBuffer.length / 1024);
     console.log(`Resized image size: ${imgSizeKb} KB`);
     const base64 = resizedBuffer.toString('base64');
