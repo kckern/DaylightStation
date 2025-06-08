@@ -20,6 +20,8 @@ apiRouter.all('/:env(dev|prod)', async (req, res) => {
     const nutribotHook = env === 'dev' ? process.env.journalist.nutribot_dev_hook : process.env.journalist.nutribot_prod_hook;
 
     const journalistWebhookResult = await updateWebhook(process.env.TELEGRAM_JOURNALIST_BOT_TOKEN, journalistHook);
+    //wait 2 seconds to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 2000));
     const nutribotWebhookResult = await updateWebhook(process.env.TELEGRAM_NUTRIBOT_TOKEN, nutribotHook);
 
     res.status(200).json({ 
