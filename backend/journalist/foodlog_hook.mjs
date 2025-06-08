@@ -1,10 +1,11 @@
 import { compileDailyFoodReport, getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport } from "./lib/food.mjs";
 import dotenv from 'dotenv';
 import { deleteMessage, sendImageMessage, sendMessage, transcribeVoiceMessage, updateMessage, updateMessageReplyMarkup } from "./lib/telegram.mjs";
-import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getPendingNutrilog, saveNutrilog,  getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist } from "./lib/db.mjs";
+import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getPendingNutrilog, saveNutrilog,  getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist } from "./lib/db.mjs";
 import { detectFoodFromImage, detectFoodFromTextDescription } from "./lib/gpt_food.mjs";
 import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
+import { v4 as uuidv4 } from 'uuid';
 dotenv.config();
 
 
@@ -40,26 +41,67 @@ export const processFoodLogHook = async (req, res) => {
 
 
 const processUPC = async (chat_id, upc) => {
+    await removeCurrentReport(chat_id);
+    
     const foodData = await upcLookup(upc);
-    console.log({foodData,chat_id,upc});
     if(!foodData) return await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
+    
     const {image, label, nutrients} = foodData;
-    if(image) {
-        if(label) 
-        {
-            if(nutrients) return await sendImageMessage(chat_id, image,`${label}\n\n${(nutrients)}`);
-            else return await sendImageMessage(chat_id, image, label);
-        }else{
-            if(nutrients) return await sendImageMessage(chat_id, image,`${(nutrients)}`);
-            else return await sendImageMessage(chat_id, image, `🚫 No nutritional info found for UPC ${upc}`);
-        }
+    // If no nutritional data is available, just show what we found
+    if(!!nutrients) {
+
+
+            //save to nutrilist
+            saveToNutrilistFromUPCResult(chat_id, foodData);
+            await sendImageMessage(chat_id, image, `${label}`);
+
+            //generate food report
+            compileDailyFoodReport(chat_id);
+            await postItemizeFood(chat_id);
+            return true;
     }
-    if(label) {
-        if(nutrients)  return await sendMessage(chat_id, `${label}\n\n${(nutrients)}`);
-        else return await sendMessage(chat_id, label);
+    else {
+
+        return await sendMessage(chat_id, `🚫 No nutritional data found for UPC ${upc}`);
     }
-    return await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
+
 }
+
+
+const saveToNutrilistFromUPCResult = async (chat_id, foodData) => {
+    const {label, nutrients, servingSizes, servingsPerContainer} = foodData;
+
+    const nutrienMap = {calories: 'ENERC_KCAL', fat: 'FAT', protein: 'PROCNT', carbs: 'CHOCDF', sugar: 'SUGAR', fiber: 'FIBTG', sodium: 'NA', cholesterol: 'CHOLE'};
+    const nutrientsToSave = Object.entries(nutrienMap).reduce((acc, [key, value]) => {
+        acc[key] = nutrients[value] || 0;
+        return acc;
+    }, {});
+    const amount = servingsPerContainer * (servingSizes && servingSizes.length > 0 ? servingSizes.reduce((max, current) => current.quantity > max.quantity ? current : max).quantity : 100); // Default to 100g if no serving size is provided
+    const unit = servingSizes && servingSizes.length > 0 ? servingSizes[0].label : 'g'; // Default to the label of the first serving size if available, otherwise grams
+    const uuid = uuidv4();
+
+    const foodItem = {
+        uuid,
+        item: label || 'Unknown Item',
+        noom_color: "blue",
+        amount: parseFloat(amount),
+        unit: unit || 'g',
+        calories: parseInt(nutrientsToSave.calories),
+        fat: parseInt(nutrientsToSave.fat),
+        protein: parseInt(nutrientsToSave.protein),
+        carbs: parseInt(nutrientsToSave.carbs),
+        sugar: parseInt(nutrientsToSave.sugar),
+        fiber: parseInt(nutrientsToSave.fiber),
+        sodium: parseInt(nutrientsToSave.sodium),
+        cholesterol: parseInt(nutrientsToSave.cholesterol),
+        chat_id,
+        date: moment().tz("America/Los_Angeles").format('YYYY-MM-DD'),
+        log_uuid: "UPC"
+    };
+    console.log('Saving food item to nutrilist:', foodItem);
+    return saveNutrilist([foodItem],chat_id );
+}
+
 
 const processText = async (chat_id, input_message_id, text) => {
 

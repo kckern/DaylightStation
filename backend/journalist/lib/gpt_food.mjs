@@ -115,7 +115,7 @@ const instructions = `List the food items in them, output in a JSON object which
 `;
 
 export const detectFoodFromImage = async (imgUrl, extras ,attempt) => {
-    console.log('detectFoodFromImage', {imgUrl,extras});
+    //console.log('detectFoodFromImage', {imgUrl,extras});
     attempt = attempt || 1;
     extras = extras || {};
 

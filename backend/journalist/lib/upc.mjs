@@ -27,15 +27,18 @@ const isValidImgUrl = async (url) => {
 
 export const upcLookup = async (upc) => {
     console.log('Looking up UPC:', upc);
-    const food_item = (await findFoodByBarcode(upc) || {});
-    console.log( {food_item});
-    const { ED_APP_ID, ED_APP_KEY,UPCITE } = process.env;
-    const url = `https://api.edamam.com/api/food-database/v2/parser?upc=${upc}&app_id=${ED_APP_ID}&app_key=${ED_APP_KEY}`;
-    const response = await fetch(url);
-    const data = await response.json();
-    const food = data.hints?.[0]?.food;
 
-    const upcitemdb = await fetch('https://api.upcitemdb.com/prod/v1/lookup', {
+
+    // Fetch data from Edamam API
+    const { ED_APP_ID, ED_APP_KEY } = process.env;
+    const edamamUrl = `https://api.edamam.com/api/food-database/v2/parser?upc=${upc}&app_id=${ED_APP_ID}&app_key=${ED_APP_KEY}`;
+    const edamamResponse = await fetch(edamamUrl);
+    const edamamData = await edamamResponse.json();
+    const food = edamamData.hints?.[0]?.food;
+
+    // Fetch image from UPCItemDB
+    const { UPCITE } = process.env;
+    const upcItemDbResponse = await fetch('https://api.upcitemdb.com/prod/v1/lookup', {
         method: 'POST',
         headers: {
             "Content-Type": "application/json",
@@ -44,27 +47,35 @@ export const upcLookup = async (upc) => {
         },
         body: JSON.stringify({ upc })
     });
-    console.log(`curl -X POST -H "Content-Type: application/json" -H "user_key: ${UPCITE}" -H "key_type: 3scale" -d '{"upc":"${upc}"}' 'https://api.upcitemdb.com/prod/v1/lookup'`);
-    const json = await upcitemdb.json();
-    let image;
-    const images = json?.items?.[0]?.images || []; 
+    const upcItemDbData = await upcItemDbResponse.json();
+    const images = upcItemDbData?.items?.[0]?.images || [];
     images.push(`https://images.barcodespider.com/upcimage/${upc}.jpg`);
-    for (let img of (images || [])) 
-        if (await isValidImgUrl(img)) { image = img;  break; } 
 
-    if(!food) return { image };
-
-    food.image = image;
-    food.food_item = food_item;
-
-    if(food.nutrients) {
-        const keys = Object.keys(food.nutrients);
-        const vals = Object.values(food.nutrients).map(val => Math.round(val * 100) / 100);
-        const nutrients = keys.map((key, i) => `• ${key.toLowerCase()}: ${vals[i]}`).join('\n');
-        food.nutrients = nutrients;
+    let image;
+    for (let img of images) {
+        if (await isValidImgUrl(img)) {
+            image = img;
+            break;
+        }
     }
 
-    return food;
+    // If Edamam data is available, use it
+    if (food) {
+        console.log('Edamam data found:', food);
+        food.image = food.image || image;
+
+        if (food.nutrients) {
+            const keys = Object.keys(food.nutrients);
+            const vals = Object.values(food.nutrients).map(val => Math.round(val * 100) / 100);
+            const nutrientsFormatted = keys.map((key, i) => `• ${key.toLowerCase()}: ${vals[i]}`).join('\n');
+            food.nutrientsFormatted = nutrientsFormatted;
+        }
+
+        return food;
+    }
+
+    // If no Edamam data, fallback to barcode data
+    return null;
 }
 const generateNonce = (length = 5) => {
     let text = "";
@@ -121,10 +132,15 @@ export const getFoodById = async (food_id) => {
 
 export const findFoodByBarcode = async (barcode) => {
     try {
-        const { food_id: { value: food_id_value } } = await findIdForBarcode(barcode);
+        const foodIdResult = await findIdForBarcode(barcode);
+        if (!foodIdResult || !foodIdResult.food_id) {
+            console.warn(`No food_id found for barcode: ${barcode}`);
+            return null; // Return null instead of false for better handling
+        }
+        const { value: food_id_value } = foodIdResult.food_id;
         return await getFoodById(food_id_value);
     } catch (error) {
-        console.error(error);
-        return false;
+        console.error(`Error retrieving food_id for barcode: ${barcode}`, error);
+        return null; // Return null on error
     }
-}
+};
