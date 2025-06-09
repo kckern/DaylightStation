@@ -6,7 +6,7 @@ import { loadNutrilogsNeedingListing, loadRecentNutriList } from './lib/db.mjs';
 import { handlePendingNutrilogs } from './lib/food.mjs';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 import axios from 'axios';
-import { saveFile } from '../lib/io.mjs';
+import { loadFile, saveFile } from '../lib/io.mjs';
 
 const iconPath = process.env.path?.icons;
 /**
@@ -771,4 +771,30 @@ export const scanBarcode = async (req, res) => {
     console.error('Error fetching barcode data:', error);
     res.status(500).json({ error: 'Failed to fetch barcode data' });
   }
+};
+
+
+//canvasImage
+export const canvasImage = async (req, res) => {
+  ///apiRouter.all(  '/nutribot/images/*', canvasImage);
+  //base64
+  const chat_id = req.query.chat_id || req.params[0];
+  if (!chat_id) {
+    console.error('No chat_id provided');
+    return res.status(400).send('chat_id is required');
+  }
+  const base64String = loadFile(`journalist/nutribot/images/${chat_id}`)
+  const first100chars = base64String ? base64String.slice(0, 100) : '';
+  console.log('base64String:', base64String.length, first100chars);
+  if (!base64String) {
+    console.error('No base64 image found for chat_id:', chat_id);
+    return res.status(404).send('No image found for the provided chat_id');
+  }
+  res.set('Content-Type', 'image/png');
+  res.set('Content-Disposition', `inline; filename="${chat_id}.png"`);
+  // Remove the data URL prefix if present
+  const base64Data = base64String.replace(/^data:image\/[a-z]+;base64,/, '');
+  return res.send(Buffer.from(base64Data, 'base64'));
+
+
 };
