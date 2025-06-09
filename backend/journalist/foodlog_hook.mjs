@@ -7,7 +7,11 @@ import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
 import { v4 as uuidv4 } from 'uuid';
 dotenv.config();
+//canvas, axios
 
+import axios from 'axios';
+import { createCanvas, loadImage, registerFont } from 'canvas';
+import { saveFile } from "../lib/io.mjs";
 
 export const processFoodLogHook = async (req, res) => {
 
@@ -42,31 +46,146 @@ export const processFoodLogHook = async (req, res) => {
 
 const processUPC = async (chat_id, upc) => {
     await removeCurrentReport(chat_id);
-    
+
     const foodData = await upcLookup(upc);
-    if(!foodData) return await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
-    
-    const {image, label, nutrients} = foodData;
+    if (!foodData) return await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
+
+    const { image, label, nutrients } = foodData;
     // If no nutritional data is available, just show what we found
-    if(!!nutrients) {
+    if (!!nutrients) {
+        // Prompt user for serving quantity
+        const choices = [
+            [{ "1": "One serving" }],
+            [{ "0.25": "¼" }, { "0.33": "⅓" }, { "0.5": "½" }, { "0.67": "⅔" }, { "0.75": "¾" }, { "0.8": "⅘" }],
+            [{ "1.25": "×1¼" }, { "1.5": "×1½" }, { "1.75": "×1¾" }, { "2": "×2" }, { "3": "×3" }, { "4": "×4" }],
+            ["❌ Cancel"]
+        ];
 
+        const servingSizes = `Serving size is ${foodData.servingSizes && foodData.servingSizes.length > 0 ? foodData.servingSizes.map(size => `${size.quantity} ${size.label}`).join(', ') : 'not specified'}`;
+        const { message_id } = await sendMessage(chat_id, [`⬜ ${label}`, servingSizes, `Select serving quantity:`].join('\n\n'), { choices, inline: true, key: "caption" });
 
-            //save to nutrilist
-            saveToNutrilistFromUPCResult(chat_id, foodData);
-            await sendImageMessage(chat_id, image, `${label}`);
+        let cursor = await getNutriCursor(chat_id);
+        cursor.adjusting = {  upc, foodData, message_id}; // Set level to 2 to indicate we're adjusting serving size
 
-            //generate food report
-            compileDailyFoodReport(chat_id);
-            await postItemizeFood(chat_id);
-            return true;
-    }
-    else {
-
+        setNutriCursor(chat_id, cursor);
+        return true;
+    } else {
         return await sendMessage(chat_id, `🚫 No nutritional data found for UPC ${upc}`);
     }
+};
+
+const processServingQuantity = async (chat_id, message_id, choice) => {
+    const cursor = await getNutriCursor(chat_id);
+    if (!cursor || !cursor.adjusting?.foodData) {
+        await sendMessage(chat_id, `🚫 No food data found for UPC adjustment. Cursor: ${JSON.stringify(cursor)}`);
+        return false;
+    }
+
+    const { foodData } = cursor.adjusting;
+
+    console.log('Processing serving quantity', { foodData, chat_id, message_id, choice });
+
+    if (choice === "❌ Cancel") {
+        delete cursor.adjusting;
+        setNutriCursor(chat_id, cursor);
+        await deleteMessage(chat_id, message_id); // Delete the message without attempting to update it
+        return true;
+    }
+
+    const factor = parseFloat(choice);
+    if (isNaN(factor)) {
+        await sendMessage(chat_id, "🚫 Invalid serving quantity selected.");
+        return false;
+    }
+
+    const { nutrients } = foodData;
+    const adjustedNutrients = Object.keys(nutrients).reduce((acc, key) => {
+        acc[key] = nutrients[key] * factor;
+        return acc;
+    }, {});
+
+    foodData.nutrients = adjustedNutrients;
+
+    // Update the message to include the selected serving quantity
+    const updatedText = `🔵 ${foodData.label} (${factor}x serving)`;
+    await deleteMessage(chat_id, message_id); // Delete the message without attempting to update it
+
+    // Save to nutrilist
+    await saveToNutrilistFromUPCResult(chat_id, foodData);
+    const foodImage = await canvasImage(foodData.image, foodData.label);
+    saveFile(`journalist/nutribot/images/${chat_id}`, foodImage);
+    const foodImageUrl = process.env.nutribot_report_host + `/nutribot/images/${chat_id}`;
+    await sendImageMessage(chat_id, foodImageUrl, updatedText, { saveMessage: false });
+
+    // Generate food report
+    await compileDailyFoodReport(chat_id);
+    await postItemizeFood(chat_id);
+
+    delete cursor.adjusting;
+    setNutriCursor(chat_id, cursor);
+    return true;
+};
+
+
+const canvasImage = async (imageUrl, label) => {
+    // make a canvas image from the imageUrl 720p hight and 1280px width, then place the give image centered fitting the canvas, and add the label at the bottom with a black background and white text.  no stretching.  Font: Roboto, size 24px, bold.
+    const canvas = createCanvas(1280, 720);
+    const ctx = canvas.getContext('2d');
+    const fontDir = process.env.path?.font || './backend/journalist/fonts/roboto-condensed';
+    const fontPath =fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
+    registerFont(fontPath, { family: 'Roboto' });
+    ctx.fillStyle = '#AAA'; // Black background
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 36px Roboto';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000'; // White text
+    ctx.fillText(label, canvas.width / 2, canvas.height - 30); // Draw label at the bottom
+    try {
+        const image = await loadImage(imageUrl);
+        
+        // Calculate circular vignette dimensions with 10% margin on shortest side
+        const minDimension = Math.min(canvas.width, canvas.height);
+        const margin = minDimension * 0.1;
+        const radius = (minDimension - margin * 2) / 2;
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        
+        // Save the current context state
+        ctx.save();
+        
+        // Create circular clipping path
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        ctx.clip();
+        
+        // Calculate image scaling to fill the circle
+        const imageAspectRatio = image.width / image.height;
+        const circleSize = radius * 2;
+        let width, height;
+        
+        if (imageAspectRatio > 1) {
+            // Landscape image - scale by height
+            height = circleSize;
+            width = height * imageAspectRatio;
+        } else {
+            // Portrait or square image - scale by width
+            width = circleSize;
+            height = width / imageAspectRatio;
+        }
+        
+        // Draw the image centered in the circle
+        ctx.drawImage(image, centerX - width / 2, centerY - height / 2, width, height);
+        
+        // Restore the context state
+        ctx.restore();
+    } catch (error) {
+        console.error('Error loading image:', error);
+        throw new Error('Failed to load image for canvas');
+    }   
+
+    return canvas.toDataURL('image/png');
 
 }
-
 
 const saveToNutrilistFromUPCResult = async (chat_id, foodData) => {
     const {label, nutrients, servingSizes, servingsPerContainer} = foodData;
@@ -127,15 +246,29 @@ const processVoice = async (chat_id, message) => {
 const processImgMsg = async (file_id, chat_id, host, payload) => {
 
     await removeCurrentReport(chat_id);
+
+    // Validate file_id
+    if (!file_id || typeof file_id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(file_id)) {
+        console.error('Invalid file_id:', file_id);
+        await sendMessage(chat_id, '🚫 Invalid file identifier provided.');
+        return false;
+    }
+
     const tmpUrl = `${host}/api/img?file_id=${file_id}`;
     const message_id = payload.message.message_id;
-    const a = await deleteMessage(chat_id, message_id);
-    const b = await processImageUrl(tmpUrl, chat_id);
-    await Promise.all([a,b]);
- 
-    return true;   
 
-}
+    try {
+        const a = await deleteMessage(chat_id, message_id);
+        const b = await processImageUrl(tmpUrl, chat_id);
+        await Promise.all([a, b]);
+    } catch (error) {
+        console.error('Error processing image message:', error);
+        await sendMessage(chat_id, '🚫 Failed to process image message.');
+        return false;
+    }
+
+    return true;
+};
 
 
 const processRevisionButtonpress = async (chat_id, message_id, choice) => {
@@ -189,12 +322,21 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
             date: adjusting.date,
             offset: adjusting.offset ? adjusting.offset + 9 : 9
         };
-        await setNutriCursor(chat_id, cursor);
+        setNutriCursor(chat_id, cursor);
         return await processRevisionButtonpress(chat_id, message_id, adjusting.date);
     }
 
-    const {level} = adjusting;
-    if(level === 0) { //We just received the date
+    const {level, upc} = adjusting;
+
+    if(upc) {
+        // Handle UPC adjustment
+        const factor = parseFloat(choice);
+        if(isNaN(factor)) return await sendMessage(chat_id, `🚫 Invalid factor selected for UPC adjustment. ${JSON.stringify(choice)}`);
+        const result = await processServingQuantity(chat_id, message_id, choice);
+        console.log('UPC adjustment result:', result);
+        return result;
+
+    }else if(level === 0) { //We just received the date
         cursor.adjusting.level = 1;
         const offset = cursor.adjusting.offset || 0;
         const date = moment.tz(choice, "America/Los_Angeles").format('YYYY-MM-DD');
@@ -318,6 +460,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
 
 }
 
+
 const processButtonpress = async (body, chat_id) => {
 
 
@@ -328,24 +471,53 @@ const processButtonpress = async (body, chat_id) => {
 
     console.log('Processing button press', leadingEmoji);
     const cursor = await getNutriCursor(chat_id);
-    if(cursor.adjusting || leadingEmoji === '⬅️') {
+
+    // Handle cancel action directly
+    if (choice === '❌ Cancel') {
+        await deleteMessage(chat_id, messageId);
+        if (cursor.adjusting) delete cursor.adjusting;
+        if (cursor.upc) delete cursor.upc;
+        setNutriCursor(chat_id, cursor);
+        return true;
+    }
+
+    // Handle UPC flow
+    if (cursor.upc) {
+        const factor = parseFloat(choice);
+        if (isNaN(factor)) {
+            console.error('Invalid factor for UPC adjustment', {chat_id, messageId, choice});
+            return false;
+        }
+        const result = await processServingQuantity(chat_id, messageId, choice);
+        if (!result) {
+            console.error('Failed to process serving quantity', {chat_id, messageId, choice});
+            return false;
+        }
+        delete cursor.adjusting;
+        setNutriCursor(chat_id, cursor);
+        return true;
+    }
+
+    // Handle revision flow
+    if (cursor.adjusting || leadingEmoji === '⬅️') {
         return processRevisionButtonpress(chat_id, messageId, choice);
     }
+
     const nutrilogItem = await getNutrilogByMessageId(chat_id, messageId);
     console.log({nutrilogItem});
-    if(!nutrilogItem) {
-        if(["✅","⭐"].includes(leadingEmoji)) return await clearKeyboard(chat_id, messageId);
-        if(leadingEmoji === '↩️') return await postItemizeFood(chat_id);
+    if (!nutrilogItem) {
+        if (["✅","⭐"].includes(leadingEmoji)) return await clearKeyboard(chat_id, messageId);
+        if (leadingEmoji === '↩️') return await postItemizeFood(chat_id);
         return false;
     }
+
     const {uuid, food_data} = nutrilogItem;
-    if(!uuid) return console.error('No uuid found for nutrilog item', nutrilogItem);
-    //console.log({uuid, food_data});
-    if(leadingEmoji === '✅') return await acceptFoodLog(chat_id, messageId, uuid, food_data);
-    if(leadingEmoji === '❌') return await discardFoodLog(chat_id, messageId, uuid);
-    if(leadingEmoji === '🔄') return await reviseFoodLog(chat_id, messageId, uuid, nutrilogItem);
+    if (!uuid) return console.error('No uuid found for nutrilog item', nutrilogItem);
+    if (leadingEmoji === '✅') return await acceptFoodLog(chat_id, messageId, uuid, food_data);
+    if (leadingEmoji === '❌') return await discardFoodLog(chat_id, messageId, uuid);
+    if (leadingEmoji === '🔄') return await reviseFoodLog(chat_id, messageId, uuid, nutrilogItem);
     return false;
-}
+};
 
 const clearPendingCursor = async (chat_id) => {
     const cursor = await getNutriCursor(chat_id);
