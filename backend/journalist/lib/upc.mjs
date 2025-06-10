@@ -2,6 +2,7 @@ import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import querystring from 'querystring';
+import axios from 'axios';
 
 dotenv.config();
 
@@ -27,6 +28,11 @@ const isValidImgUrl = async (url) => {
 
 export const upcLookup = async (upc) => {
     console.log('Looking up UPC:', upc);
+
+    //openFoodFacts
+    const off =  await openFoodFacts(upc);
+
+    if (off) return off;
 
 
     // Fetch data from Edamam API
@@ -75,11 +81,6 @@ export const upcLookup = async (upc) => {
     }
 
     // If no Edamam data, fallback to barcode data
-
-    //openFoodFacts
-    const off =  await openFoodFacts(upc);
-
-    if (off) return off;
 
 
     return null;
@@ -187,12 +188,11 @@ const openFoodFacts = async (barcode) => {
             nutrients: {}
         };
 
-        console.log(Object.keys(product));
         
         // Add serving size if available
         if (product.serving_quantity && product.serving_quantity_unit) {
             //food.servingSizeStr = `${product.serving_quantity} ${product.serving_quantity_unit}`;
-            food.servingSizes = [{quantity: product.serving_quantity, label: product.serving_quantity_unit}];
+            food.servingSizes = [{quantity: parseFloat(product.serving_quantity), label: product.serving_quantity_unit}];
         }
         
         // Map OpenFoodFacts nutrients to similar format
@@ -201,7 +201,7 @@ const openFoodFacts = async (barcode) => {
             const nutrientMap = {
                 calories: "energy-kcal",
                 fat: "fat",
-                protein: "protein",
+                protein: "proteins",
                 carbs: "carbohydrates",
                 sugar: "sugars",
                 fiber: "fiber",
@@ -212,10 +212,13 @@ const openFoodFacts = async (barcode) => {
 
             
             Object.entries(nutrientMap).forEach(([offKey, standardKey]) => {
-                if (product.nutriments[offKey] !== undefined) {
-                    food.nutrients[standardKey] = Math.round(product.nutriments[offKey] * 100) / 100;
+                if (product.nutriments[standardKey] !== undefined) {
+                    food.nutrients[offKey] = Math.round(product.nutriments[standardKey] * 100) / 100;
+                }else{
+                    console.warn(`OpenFoodFacts • Nutrient ${offKey} not found for product: ${product.product_name}`);
                 }
             });
+
             
             // Format nutrients for display
             if (Object.keys(food.nutrients).length > 0) {
@@ -225,7 +228,12 @@ const openFoodFacts = async (barcode) => {
                 food.nutrientsFormatted = nutrientsFormatted;
             }
         }
-        
+        const searchedImage = await searchImage(`${food.label} ${food.brand}`);
+        if (searchedImage) {
+            food['image'] = searchedImage;
+        }
+      //  process.exit(console.log('OpenFoodFacts • Food data:', food));
+
         return food;
         
     } catch (error) {
@@ -233,3 +241,35 @@ const openFoodFacts = async (barcode) => {
         return null;
     }
 }
+async function searchImage(keyword) {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    const searchEngineId = process.env.GOOGLE_CSE_ID;
+
+    if (!apiKey || !searchEngineId) {
+        console.warn('Google API credentials not configured');
+        return null;
+    }
+
+    const fullURL = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${searchEngineId}&q=${encodeURIComponent(keyword)}&searchType=image&num=1`;
+
+    try {
+        const response = await axios.get(fullURL, {
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+        console.log('Image search response:', response.data);
+        
+        if (response.data.items && response.data.items.length > 0) {
+            const firstImageResult = response.data.items[0];
+            console.log('Image URL:', firstImageResult.link);
+            return firstImageResult.link;
+        } else {
+            console.log('No image results found for:', keyword, fullURL);
+            return null;
+        }
+    } catch (error) {
+        console.error('Error fetching image:', error.response ? error.response.data : error.message, fullURL);
+        return null;
+    }
+}  
