@@ -37,8 +37,9 @@ export default function Health() {
 	const leanMass = lbs_adjusted_average - lbs_adjusted_average * (fat_percent_adjusted_average / 100);
 	const lbsAtFifteenPercentBodyFat = leanMass / (1 - 0.15);
 	const lbsToLose = lbs_adjusted_average - lbsAtFifteenPercentBodyFat;
-	const lossRate = trend;
-	const daysToLose = lossRate > 0 ? Math.ceil(lbsToLose / lossRate) : `⚠️`;
+	const lossRate = Math.abs(lbs_adjusted_average_7day_trend);
+	const daysToLose = lossRate > 0 && lbsToLose > 0 ? Math.ceil(lbsToLose / lossRate) : `⚠️`;
+	const dateToLose = moment(date).add(daysToLose, 'days').format('MMM D');
 	const calorie_label = calorie_balance > 0 ? 
 	<span>{calorie_balance}<img src={plusIcon} alt="+" style={{height: "1.3em", marginBottom: "-0.3em", marginLeft:"0.5ex"}} /></span> :
 	<span>{Math.abs(calorie_balance)}<img src={minusIcon} alt="-" style={{height: "1.3em", marginBottom: "-0.3em", marginLeft:"0.5ex"}} /></span>;
@@ -60,7 +61,7 @@ export default function Health() {
 						<td style={{border: "1px solid black", padding: "8px"}}>{Math.round(fat_percent_adjusted_average)}%</td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{trend} {lbs_adjusted_average_7day_trend} lbs </td>
 						<td style={{border: "1px solid black", padding: "8px"}}>{calorie_balance ? calorie_label : "Balanced"}</td>
-						<td style={{border: "1px solid black", padding: "8px"}}>{daysToLose}</td>
+						<td style={{border: "1px solid black", padding: "8px", lineHeight:"1ex"}}>{daysToLose}<br/><small style={{margin:0, padding:0, fontSize:"1ex"}}>{dateToLose}</small></td>
 					</tr>
 				</tbody>
 			</table>

@@ -75,6 +75,13 @@ export const upcLookup = async (upc) => {
     }
 
     // If no Edamam data, fallback to barcode data
+
+    //openFoodFacts
+    const off =  await openFoodFacts(upc);
+
+    if (off) return off;
+
+
     return null;
 }
 const generateNonce = (length = 5) => {
@@ -144,3 +151,85 @@ export const findFoodByBarcode = async (barcode) => {
         return null; // Return null on error
     }
 };
+
+
+const openFoodFacts = async (barcode) => {
+    try {
+        console.log('OpenFoodFacts • Looking up barcode:', barcode);
+        
+        const response = await fetch(`https://world.openfoodfacts.net/api/v2/product/${barcode}.json`);
+        if (!response.ok) {
+            console.log('OpenFoodFacts • Invalid response:', response.status);
+            return null;
+        }
+        
+        const data = await response.json();
+        
+        if (!data.product || data.status !== 1) {
+            console.log('OpenFoodFacts • No product found for barcode:', barcode);
+            return null;
+        }
+        
+        const product = data.product;
+        console.log('OpenFoodFacts • Product found:', product.product_name);
+        
+        // Extract image
+        let image = product.image_url || product.image_front_url;
+        if (image && !(await isValidImgUrl(image))) {
+            image = undefined;
+        }
+        
+        // Format nutrition data similar to Edamam format
+        const food = {
+            label: product.product_name || product.product_name_en,
+            brand: product.brands,
+            image: image,
+            nutrients: {}
+        };
+
+        console.log(Object.keys(product));
+        
+        // Add serving size if available
+        if (product.serving_quantity && product.serving_quantity_unit) {
+            //food.servingSizeStr = `${product.serving_quantity} ${product.serving_quantity_unit}`;
+            food.servingSizes = [{quantity: product.serving_quantity, label: product.serving_quantity_unit}];
+        }
+        
+        // Map OpenFoodFacts nutrients to similar format
+        if (product.nutriments) {
+
+            const nutrientMap = {
+                calories: "energy-kcal",
+                fat: "fat",
+                protein: "protein",
+                carbs: "carbohydrates",
+                sugar: "sugars",
+                fiber: "fiber",
+                sodium: "sodium",
+                cholesterol: "cholesterol"
+            };
+
+
+            
+            Object.entries(nutrientMap).forEach(([offKey, standardKey]) => {
+                if (product.nutriments[offKey] !== undefined) {
+                    food.nutrients[standardKey] = Math.round(product.nutriments[offKey] * 100) / 100;
+                }
+            });
+            
+            // Format nutrients for display
+            if (Object.keys(food.nutrients).length > 0) {
+                const nutrientsFormatted = Object.entries(food.nutrients)
+                    .map(([key, value]) => `• ${key.toLowerCase()}: ${value}`)
+                    .join('\n');
+                food.nutrientsFormatted = nutrientsFormatted;
+            }
+        }
+        
+        return food;
+        
+    } catch (error) {
+        console.error('OpenFoodFacts • Error:', error);
+        return null;
+    }
+}
