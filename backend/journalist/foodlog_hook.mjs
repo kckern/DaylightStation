@@ -79,6 +79,7 @@ const processUPC = async (chat_id, upc, message_id, res) => {
         const caption = `🔵 ${titleCase(label)} (${sevingSizeLabel})`
         const nutribot_report_host = process.env.nutribot_report_host;
         const framedImageUrl = `${nutribot_report_host}/nutribot/images/${encodeURIComponent(image)}/${encodeURIComponent(label)}`;
+        console.log('Framed image URL:', framedImageUrl);
         const imageMsgResult = await sendImageMessage(chat_id, framedImageUrl, caption);
         const message_id = imageMsgResult.result?.message_id;
 
