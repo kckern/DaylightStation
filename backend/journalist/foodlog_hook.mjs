@@ -23,7 +23,8 @@ export const processFoodLogHook = async (req, res) => {
     const chat_id = `b${bot_id}_u${user_id}`;
     if(!bot_id) return res.status(400).send('No bot id found');
     if(!chat_id) return res.status(400).send('No chat id found');
-    const upc = payload.upc;
+    const upcFromText = /^\d+$/.test(payload.message?.text || payload.text) ? payload.message?.text || payload.text : null;
+    const upc = payload.upc || upcFromText || null;
     console.log({upc, chat_id, payload, body: req.body, query: req.query});
     const img_url       = payload.img_url?.trim();
     const img_id        = payload.message?.photo?.reduce((acc, cur) => (cur.width > acc.width) ? cur : acc).file_id || payload.message?.document?.file_id;
@@ -34,7 +35,7 @@ export const processFoodLogHook = async (req, res) => {
     if(payload.callback_query) await processButtonpress(payload, chat_id);
     if(img_url) await processImageUrl(img_url,chat_id);
     if(img_id) await processImgMsg(img_id, chat_id, host, payload);
-    if(upc) await processUPC(chat_id,upc);
+    if(upc) return  await processUPC(chat_id,upc, res);
     if(payload.message?.voice) await processVoice(chat_id, payload.message);
     if(text) await processText(chat_id, payload.message.message_id, text);
 
@@ -44,7 +45,7 @@ export const processFoodLogHook = async (req, res) => {
 
 
 
-const processUPC = async (chat_id, upc) => {
+const processUPC = async (chat_id, upc, res) => {
     await removeCurrentReport(chat_id);
 
     const foodData = await upcLookup(upc);
@@ -64,13 +65,28 @@ const processUPC = async (chat_id, upc) => {
         const servingSizes = `Serving size is ${foodData.servingSizes && foodData.servingSizes.length > 0 ? foodData.servingSizes.map(size => `${size.quantity} ${size.label}`).join(', ') : 'not specified'}`;
         const { message_id } = await sendMessage(chat_id, [`⬜ ${label}`, servingSizes, `Select serving quantity:`].join('\n\n'), { choices, inline: true, key: "caption" });
 
+
+        //SAVE FOOD DATA TO NUTRILOG
+        const nutrilogItem = {
+            uuid: uuidv4(),
+            chat_id,
+            upc,
+            food_data: foodData,
+            message_id,
+            status: "init"
+        };
+        await saveNutrilog(nutrilogItem);
+
+
+
         let cursor = await getNutriCursor(chat_id);
         cursor.adjusting = {  upc, foodData, message_id}; // Set level to 2 to indicate we're adjusting serving size
 
         setNutriCursor(chat_id, cursor);
-        return true;
+        res.status(200).json({nutrilogItem});
     } else {
-        return await sendMessage(chat_id, `🚫 No nutritional data found for UPC ${upc}`);
+         await sendMessage(chat_id, `🚫 No nutritional data found for UPC ${upc}`);
+        res.status(200).send(`No nutritional data found for UPC ${upc}`);
     }
 };
 
