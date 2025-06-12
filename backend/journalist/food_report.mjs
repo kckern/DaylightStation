@@ -7,6 +7,7 @@ import { handlePendingNutrilogs } from './lib/food.mjs';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 import axios from 'axios';
 import { loadFile, saveFile } from '../lib/io.mjs';
+import { canvasImage } from './foodlog_hook.mjs';
 
 const iconPath = process.env.path?.icons;
 /**
@@ -773,28 +774,28 @@ export const scanBarcode = async (req, res) => {
   }
 };
 
+;
 
-//canvasImage
-export const canvasImage = async (req, res) => {
+export const canvasImageEndpoint = async (req, res) => {
   ///apiRouter.all(  '/nutribot/images/*', canvasImage);
-  //base64
-  const chat_id = req.query.chat_id || req.params[0];
-  if (!chat_id) {
-    console.error('No chat_id provided');
-    return res.status(400).send('chat_id is required');
+  // Extract the image URL and caption from the route parameters
+  const img_url_urleconded = req.params.param1;
+  const caption = req.params.param2;
+  const base64Image = await canvasImage(decodeURIComponent(img_url_urleconded),caption);
+  if (!base64Image) {
+    return res.status(404).json({ error: 'Image not found' });
   }
-  const base64String = loadFile(`journalist/nutribot/images/${chat_id}`)
-  const first100chars = base64String ? base64String.slice(0, 100) : '';
-  console.log('base64String:', base64String.length, first100chars);
-  if (!base64String) {
-    console.error('No base64 image found for chat_id:', chat_id);
-    return res.status(404).send('No image found for the provided chat_id');
-  }
+  console.log('Sending image:', base64Image.substring(0, 50), '...'); // Log first 50 chars for debugging
+
+  // Trim the "data:image/png;base64," prefix if present
+  const trimmedBase64Image = base64Image.startsWith('data:image/png;base64,')
+    ? base64Image.replace('data:image/png;base64,', '')
+    : base64Image;
+
   res.set('Content-Type', 'image/png');
-  res.set('Content-Disposition', `inline; filename="${chat_id}.png"`);
-  // Remove the data URL prefix if present
-  const base64Data = base64String.replace(/^data:image\/[a-z]+;base64,/, '');
-  return res.send(Buffer.from(base64Data, 'base64'));
+  res.set('Content-Disposition', `inline; filename="canvas_image.png"`);
+  res.send(Buffer.from(trimmedBase64Image, 'base64'));
+  return res;
 
 
 };

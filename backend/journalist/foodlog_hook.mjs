@@ -6,6 +6,8 @@ import { detectFoodFromImage, detectFoodFromTextDescription } from "./lib/gpt_fo
 import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
 import { v4 as uuidv4 } from 'uuid';
+import { titleCase } from "title-case";
+
 dotenv.config();
 //canvas, axios
 
@@ -74,9 +76,10 @@ const processUPC = async (chat_id, upc, message_id, res) => {
 
         const servingSizes = `Serving size is ${foodData.servingSizes && foodData.servingSizes.length > 0 ? foodData.servingSizes.map(size => `${size.quantity} ${size.label}`).join(', ') : 'not specified'}`;
         const sevingSizeLabel = /*300g*/ `${foodData.servingSizes[0]?.quantity || "NA"}${foodData.servingSizes[0]?.label || 'g'}`;
-        const caption = `🔵 ${label} (${sevingSizeLabel})`
-        
-        const imageMsgResult = await sendImageMessage(chat_id, image, caption);
+        const caption = `🔵 ${titleCase(label)} (${sevingSizeLabel})`
+        const nutribot_report_host = process.env.nutribot_report_host;
+        const framedImageUrl = `${nutribot_report_host}/nutribot/images/${encodeURIComponent(image)}/${encodeURIComponent(label)}`;
+        const imageMsgResult = await sendImageMessage(chat_id, framedImageUrl, caption);
         const message_id = imageMsgResult.result?.message_id;
 
         if (!message_id) {
@@ -142,7 +145,7 @@ const processServingQuantity = async (chat_id, message_id, factor) => {
     const servingLabel = `${adjustedServingQuantity}${servingUnit}`; // e.g., "300g" 
 
     // Update the message to include the selected serving quantity
-    const updatedText = `🔵 ${foodData.label} (${servingLabel}) (${factor}x serving)`;
+    const updatedText = `🔵 ${titleCase(foodData.label)} (${servingLabel}) (${factor}x serving)`;
 
     //update message with updated caption and clear choices
     await updateMessage(chat_id, { message_id, text: updatedText, choices: [], inline: true, key: "caption" });
@@ -156,19 +159,31 @@ const processServingQuantity = async (chat_id, message_id, factor) => {
     return true;
 };
 
-
-const canvasImage = async (imageUrl, label) => {
+export const canvasImage = async (imageUrl, label) => {
+    label = titleCase(label.toLowerCase());
     // make a canvas image from the imageUrl 720p hight and 1280px width, then place the give image centered fitting the canvas, and add the label at the bottom with a black background and white text.  no stretching.  Font: Roboto, size 24px, bold.
     const canvas = createCanvas(1280, 720);
     const ctx = canvas.getContext('2d');
     const fontDir = process.env.path?.font || './backend/journalist/fonts/roboto-condensed';
     const fontPath =fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
     registerFont(fontPath, { family: 'Roboto' });
-    ctx.fillStyle = '#AAA'; // Black background
+
+    const colorPairs = [
+        ['#264653', '#8ecae6'], // Dark blueish green and light blue text
+        ['#03045e', '#caf0f8'], // Dark blue and light cyan text
+        ['#6f1d1b', '#ffe6a7'], // Dark red and light peach text
+        ['#7f5539', '#e6ccb2'], // Brown and light orange text
+        ['#264653', '#f4a261'], // Dark blueish green and light orange text
+    ];
+
+    const [backColor, textColor] = colorPairs[Math.floor(Math.random() * colorPairs.length)];   
+
+
+    ctx.fillStyle = backColor; // Black background
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.font = 'bold 36px Roboto';
+    ctx.font = 'bold 48px Roboto';
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#000'; // White text
+    ctx.fillStyle = textColor; // White text
     ctx.fillText(label, canvas.width / 2, canvas.height - 30); // Draw label at the bottom
     try {
         const image = await loadImage(imageUrl);
@@ -178,7 +193,7 @@ const canvasImage = async (imageUrl, label) => {
         const margin = minDimension * 0.1;
         const radius = (minDimension - margin * 2) / 2;
         const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
+        const centerY = canvas.height / 2 - canvas.height * 0.05; // Move circle up by 5% of canvas height
         
         // Save the current context state
         ctx.save();
@@ -200,7 +215,7 @@ const canvasImage = async (imageUrl, label) => {
         } else {
             // Portrait or square image - scale by width
             width = circleSize;
-            height = width / imageAspectRatio;
+            height = (width / imageAspectRatio) * 1;
         }
         
         // Draw the image centered in the circle
@@ -208,12 +223,19 @@ const canvasImage = async (imageUrl, label) => {
         
         // Restore the context state
         ctx.restore();
+
+        // Draw a 3px solid black line around the circle
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'black';
+        ctx.stroke();
     } catch (error) {
         console.error('Error loading image:', error);
         throw new Error('Failed to load image for canvas');
     }   
 
-    return canvas.toDataURL('image/png');
+    return canvas.toDataURL('image/png').replace('data:image/png;base64,', '');
 
 }
 
@@ -228,7 +250,7 @@ const saveToNutrilistFromUPCResult = async (chat_id, foodData) => {
 
     const foodItem = {
         uuid,
-        item: label || 'Unknown Item',
+        item: titleCase(label),
         noom_color: "blue",
         amount: parseFloat(amount),
         unit: unit || 'g',
