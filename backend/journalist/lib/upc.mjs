@@ -3,6 +3,9 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import querystring from 'querystring';
 import axios from 'axios';
+import moment from 'moment-timezone';
+//set timezone to los_angeles
+moment.tz.setDefault("America/Los_Angeles");
 
 dotenv.config();
 
@@ -182,8 +185,10 @@ const openFoodFacts = async (barcode) => {
         
         // Format nutrition data similar to Edamam format
         const food = {
+            upc: barcode,
             label: product.product_name || product.product_name_en,
             brand: product.brands,
+            date: moment().format('YYYY-MM-DD'),
             image: image,
             nutrients: {}
         };
@@ -258,7 +263,7 @@ async function searchImage(keyword) {
                 'Accept': 'application/json'
             }
         });
-        console.log('Image search response:', response.data);
+       // console.log('Image search response:', response.data);
         
         if (response.data.items && response.data.items.length > 0) {
             const firstImageResult = response.data.items[0];
