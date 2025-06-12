@@ -19,6 +19,7 @@ export const processFoodLogHook = async (req, res) => {
     process.env.TELEGRAM_JOURNALIST_BOT_TOKEN = token; // TODO improve multi-bot support
     const payload = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
     const user_id = parseInt(payload.message?.chat?.id || payload.chat_id || req.query.chat_id || journalist_user_id);
+    const message_id = payload.message?.message_id || payload.message_id || payload.callback_query?.message?.message_id || null;
     //console.log({payload,user_id, bot_id});
     const chat_id = `b${bot_id}_u${user_id}`;
     if(!bot_id) return res.status(400).send('No bot id found');
@@ -35,7 +36,7 @@ export const processFoodLogHook = async (req, res) => {
     if(payload.callback_query) await processButtonpress(payload, chat_id);
     if(img_url) await processImageUrl(img_url,chat_id);
     if(img_id) await processImgMsg(img_id, chat_id, host, payload);
-    if(upc) return  await processUPC(chat_id,upc, res);
+    if(upc) return  await processUPC(chat_id,upc, message_id, res);
     if(payload.message?.voice) await processVoice(chat_id, payload.message);
     if(text) await processText(chat_id, payload.message.message_id, text);
 
@@ -45,15 +46,24 @@ export const processFoodLogHook = async (req, res) => {
 
 
 
-const processUPC = async (chat_id, upc, res) => {
+const processUPC = async (chat_id, upc, message_id, res) => {
     await removeCurrentReport(chat_id);
+
+    if(message_id){
+        //delete the message if it exists
+        try {
+            await deleteMessage(chat_id, message_id);
+        } catch (error) {
+            console.error('Error deleting message:', error);
+        }
+    }
 
     const foodData = await upcLookup(upc);
     if (!foodData) return await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
 
     const { image, label, nutrients } = foodData;
     // If no nutritional data is available, just show what we found
-    if (!!nutrients) {
+    if (nutrients && typeof nutrients === 'object' && Object.keys(nutrients).length > 0) {
         // Prompt user for serving quantity
         const choices = [
             [{ "1": "One serving" }],
@@ -63,8 +73,23 @@ const processUPC = async (chat_id, upc, res) => {
         ];
 
         const servingSizes = `Serving size is ${foodData.servingSizes && foodData.servingSizes.length > 0 ? foodData.servingSizes.map(size => `${size.quantity} ${size.label}`).join(', ') : 'not specified'}`;
-        const { message_id } = await sendMessage(chat_id, [`⬜ ${label}`, servingSizes, `Select serving quantity:`].join('\n\n'), { choices, inline: true, key: "caption" });
+        const sevingSizeLabel = /*300g*/ `${foodData.servingSizes[0]?.quantity || "NA"}${foodData.servingSizes[0]?.label || 'g'}`;
+        const caption = `🔵 ${label} (${sevingSizeLabel})`
+        
+        const imageMsgResult = await sendImageMessage(chat_id, image, caption);
+        const message_id = imageMsgResult.result?.message_id;
 
+        if (!message_id) {
+            console.error("Failed to send image message or get message_id for UPC item:", {upc, foodData});
+            await sendMessage(chat_id, "Error: Could not display food item. Please try again.");
+            // It's important to send a response to the HTTP request if this is an HTTP handler
+            if (res && typeof res.status === 'function') {
+                res.status(500).send("Failed to send image message");
+            }
+            return; // Stop further processing
+        }
+
+        await updateMessageReplyMarkup(chat_id, { message_id, choices, inline: true });
 
         //SAVE FOOD DATA TO NUTRILOG
         const nutrilogItem = {
@@ -72,25 +97,29 @@ const processUPC = async (chat_id, upc, res) => {
             chat_id,
             upc,
             food_data: foodData,
-            message_id,
+            message_id, // Use the message_id from the image message
             status: "init"
         };
         await saveNutrilog(nutrilogItem);
-
-
 
         let cursor = await getNutriCursor(chat_id);
         cursor.adjusting = {  upc, foodData, message_id}; // Set level to 2 to indicate we're adjusting serving size
 
         setNutriCursor(chat_id, cursor);
-        res.status(200).json({nutrilogItem});
+        // Ensure res.status().json() is only called if res is a valid response object
+        if (res && typeof res.status === 'function') {
+            res.status(200).json({nutrilogItem});
+        }
     } else {
          await sendMessage(chat_id, `🚫 No nutritional data found for UPC ${upc}`);
-        res.status(200).send(`No nutritional data found for UPC ${upc}`);
+        // Ensure res.status().send() is only called if res is a valid response object
+        if (res && typeof res.status === 'function') {
+            res.status(200).send(`No nutritional data found for UPC ${upc}`);
+        }
     }
 };
 
-const processServingQuantity = async (chat_id, message_id, choice) => {
+const processServingQuantity = async (chat_id, message_id, factor) => {
     const cursor = await getNutriCursor(chat_id);
     if (!cursor || !cursor.adjusting?.foodData) {
         await sendMessage(chat_id, `🚫 No food data found for UPC adjustment. Cursor: ${JSON.stringify(cursor)}`);
@@ -99,21 +128,6 @@ const processServingQuantity = async (chat_id, message_id, choice) => {
 
     const { foodData } = cursor.adjusting;
 
-    console.log('Processing serving quantity', { foodData, chat_id, message_id, choice });
-
-    if (choice === "❌ Cancel") {
-        delete cursor.adjusting;
-        setNutriCursor(chat_id, cursor);
-        await deleteMessage(chat_id, message_id); // Delete the message without attempting to update it
-        return true;
-    }
-
-    const factor = parseFloat(choice);
-    if (isNaN(factor)) {
-        await sendMessage(chat_id, "🚫 Invalid serving quantity selected.");
-        return false;
-    }
-
     const { nutrients } = foodData;
     const adjustedNutrients = Object.keys(nutrients).reduce((acc, key) => {
         acc[key] = nutrients[key] * factor;
@@ -121,17 +135,17 @@ const processServingQuantity = async (chat_id, message_id, choice) => {
     }, {});
 
     foodData.nutrients = adjustedNutrients;
+    await saveToNutrilistFromUPCResult(chat_id, foodData);
+
+    const servingUnit = foodData.servingSizes[0]?.label || 'g'; // Default to grams if no serving size is provided
+    const adjustedServingQuantity = foodData.servingSizes[0]?.quantity * factor || 100; // Default to 100g if no serving size is provided
+    const servingLabel = `${adjustedServingQuantity}${servingUnit}`; // e.g., "300g" 
 
     // Update the message to include the selected serving quantity
-    const updatedText = `🔵 ${foodData.label} (${factor}x serving)`;
-    await deleteMessage(chat_id, message_id); // Delete the message without attempting to update it
+    const updatedText = `🔵 ${foodData.label} (${servingLabel}) (${factor}x serving)`;
 
-    // Save to nutrilist
-    await saveToNutrilistFromUPCResult(chat_id, foodData);
-    const foodImage = await canvasImage(foodData.image, foodData.label);
-    saveFile(`journalist/nutribot/images/${chat_id}`, foodImage);
-    const foodImageUrl = process.env.nutribot_report_host + `/nutribot/images/${chat_id}`;
-    await sendImageMessage(chat_id, foodImageUrl, updatedText, { saveMessage: false });
+    //update message with updated caption and clear choices
+    await updateMessage(chat_id, { message_id, text: updatedText, choices: [], inline: true, key: "caption" });
 
     // Generate food report
     await compileDailyFoodReport(chat_id);
@@ -206,14 +220,11 @@ const canvasImage = async (imageUrl, label) => {
 const saveToNutrilistFromUPCResult = async (chat_id, foodData) => {
     const {label, nutrients, servingSizes, servingsPerContainer} = foodData;
 
-    const nutrienMap = {calories: 'ENERC_KCAL', fat: 'FAT', protein: 'PROCNT', carbs: 'CHOCDF', sugar: 'SUGAR', fiber: 'FIBTG', sodium: 'NA', cholesterol: 'CHOLE'};
-    const nutrientsToSave = Object.entries(nutrienMap).reduce((acc, [key, value]) => {
-        acc[key] = nutrients[value] || 0;
-        return acc;
-    }, {});
+    const nutrientsToSave = nutrients;
     const amount = servingsPerContainer * (servingSizes && servingSizes.length > 0 ? servingSizes.reduce((max, current) => current.quantity > max.quantity ? current : max).quantity : 100); // Default to 100g if no serving size is provided
     const unit = servingSizes && servingSizes.length > 0 ? servingSizes[0].label : 'g'; // Default to the label of the first serving size if available, otherwise grams
     const uuid = uuidv4();
+
 
     const foodItem = {
         uuid,
@@ -348,7 +359,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
         // Handle UPC adjustment
         const factor = parseFloat(choice);
         if(isNaN(factor)) return await sendMessage(chat_id, `🚫 Invalid factor selected for UPC adjustment. ${JSON.stringify(choice)}`);
-        const result = await processServingQuantity(chat_id, message_id, choice);
+        const result = await processServingQuantity(chat_id, message_id, factor);
         console.log('UPC adjustment result:', result);
         return result;
 
