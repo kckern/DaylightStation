@@ -182,6 +182,8 @@ const openFoodFacts = async (barcode) => {
         if (image && !(await isValidImgUrl(image))) {
             image = undefined;
         }
+        const nutribot_report_host = process.env.nutribot_report_host;
+        image = (new RegExp(nutribot_report_host)).test(image) ? image : `${nutribot_report_host}/nutribot/images/${encodeURIComponent(image)}/${encodeURIComponent(product.product_name)}`;
         
         // Format nutrition data similar to Edamam format
         const food = {
@@ -235,7 +237,7 @@ const openFoodFacts = async (barcode) => {
         }
         const searchedImage = await searchImage(`${food.label} ${food.brand}`);
         if (searchedImage) {
-            food['image'] = searchedImage;
+            food['image'] = `${searchedImage}`;
         }
       //  process.exit(console.log('OpenFoodFacts • Food data:', food));
 
@@ -268,7 +270,11 @@ async function searchImage(keyword) {
         if (response.data.items && response.data.items.length > 0) {
             const firstImageResult = response.data.items[0];
             console.log('Image URL:', firstImageResult.link);
-            return firstImageResult.link;
+
+            const nutribot_report_host = process.env.nutribot_report_host;
+            const framedImageUrl = `${nutribot_report_host}/nutribot/images/${encodeURIComponent(firstImageResult.link)}/${encodeURIComponent(keyword)}`;
+            console.log('Framed Image URL:', framedImageUrl);
+            return framedImageUrl;
         } else {
             console.log('No image results found for:', keyword, fullURL);
             return null;
