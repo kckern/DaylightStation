@@ -367,12 +367,16 @@ export const generateImage = async (chat_id) => {
   }
 
   const width = 1080;
-  const height = 1200;
-  const mainCanvas = createCanvas(width, height);
+  // const height = 1200; // Original height
+  const newCanvasHeight = 1400;
+  const topPageMargin = 100;
+  const contentEffectiveHeight = newCanvasHeight - 2 * topPageMargin; // 1200px, the old height
+
+  const mainCanvas = createCanvas(width, newCanvasHeight);
   const ctx = mainCanvas.getContext('2d');
 
   ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, width, newCanvasHeight);
 
   const macroGrams = todaysFood.reduce(
     (acc, item) => {
@@ -400,7 +404,7 @@ async function generateTitle(ctx, todaysFood, width) {
   ctx.font = TITLE_FONT;
   ctx.fillStyle = '#000';
   const titleWidth = getTextWidth(ctx, title);
-  ctx.fillText(title, width / 2 - titleWidth / 2, 70);
+  ctx.fillText(title, width / 2 - titleWidth / 2, 70 + topPageMargin);
 }
 
 /**
@@ -430,15 +434,15 @@ async function generatePieChart(ctx, macroGrams, leftSideWidth, pieChartWidth) {
 
   const pieCanvas = await makePieChart(sortedPieData, pieChartWidth);
   const chartX = (leftSideWidth - pieChartWidth) / 2;
-  ctx.drawImage(pieCanvas, chartX, 130);
+  ctx.drawImage(pieCanvas, chartX, 130 + topPageMargin);
 }
 
 /**
  * Generate the food list section.
  */
 async function generateFoodList(ctx, todaysFood, foodListWidth, height, leftSideWidth) {
-  const foodListCanvas = await makeFoodList(todaysFood, foodListWidth, height / 2 - 100);
-  ctx.drawImage(foodListCanvas, leftSideWidth, 130);
+  const foodListCanvas = await makeFoodList(todaysFood, foodListWidth, height / 2 - 100); // height here is contentEffectiveHeight
+  ctx.drawImage(foodListCanvas, leftSideWidth, 130 + topPageMargin);
 }
 
 /**
@@ -475,7 +479,8 @@ async function generateMicroStats(ctx, todaysFood, pieChartWidth, midPoint) {
   ctx.font = SUBTITLE_FONT;
   for (let i = 0; i < stats.length; i++) {
     const stat = stats[i];
-    const iconY = 130 + pieChartWidth + 50 + i * 50;
+    // const iconY = 130 + pieChartWidth + 50 + i * 50; // Original calculation
+    const iconY = (130 + topPageMargin) + pieChartWidth + 50 + i * 50;
 
     const amount = `${stat.value}${stat.unit}`;
     const textW = getTextWidth(ctx, amount);
@@ -648,37 +653,42 @@ async function generateDailyChart(
 /**
  * Generate the summary section.
  */
-async function generateSummary(ctx, counter, width, height) {
+async function generateSummary(ctx, counter, width, height) { // height here is contentEffectiveHeight
   const lbsPerWeek = Math.round(((counter.def / counter.days) * 7) / 3500 * 10) / 10;
   const plusMinus = lbsPerWeek < 0 ? '+' : '-';
   ctx.font = SUBTITLE_FONT;
   const finalStr = `${plusMinus}${Math.abs(lbsPerWeek)} lbs/week`;
   const finalStrW = getTextWidth(ctx, finalStr);
   ctx.fillStyle = '#000';
-  ctx.fillText(finalStr, width / 2 - finalStrW / 2, height - 50);
+  // ctx.fillText(finalStr, width / 2 - finalStrW / 2, height - 50); // Original calculation
+  const finalStrY = topPageMargin + height - 50; // height is contentEffectiveHeight
+  ctx.fillText(finalStr, width / 2 - finalStrW / 2, finalStrY);
 }
 
   await generateTitle(ctx, todaysFood, width);
-  await generateFoodList(ctx, todaysFood, foodListWidth, height, leftSideWidth);
+  await generateFoodList(ctx, todaysFood, foodListWidth, contentEffectiveHeight, leftSideWidth); // Pass contentEffectiveHeight
   await generatePieChart(ctx, macroGrams, leftSideWidth, pieChartWidth);
   await generateMicroStats(ctx, todaysFood, pieChartWidth, midPoint);
 
   const barChartWidth = width * 0.9;
-  const barChartHeight = height / 3 - 150;
+  // const barChartHeight = height / 3 - 150; // Original calculation based on old height
+  // const barChartY = height / 2 + 200; // Original calculation based on old height
+  const dailyChartRenderHeight = contentEffectiveHeight / 3 - 150;
   const barChartX = (width - barChartWidth) / 2;
-  const barChartY = height / 2 + 200;
+  const dailyChartRenderY = topPageMargin + (contentEffectiveHeight / 2 + 200);
   const barMaxVal = 2200;
   const bmr = 2000;
   const defGoal = 500;
   const calGoal = bmr - defGoal;
 
-  await generateDailyChart(ctx, data, barChartWidth, barChartHeight, barChartX, barChartY, bmr, calGoal, barMaxVal);
+  await generateDailyChart(ctx, data, barChartWidth, dailyChartRenderHeight, barChartX, dailyChartRenderY, bmr, calGoal, barMaxVal);
 
   const counter = { days: 0, def: 0 };
-  await generateSummary(ctx, counter, width, height);
+  await generateSummary(ctx, counter, width, contentEffectiveHeight); // Pass contentEffectiveHeight
 
   const scaledWidth = Math.round(width * 1.2);
-  const scaledHeight = Math.round(height * 1.2);
+  // const scaledHeight = Math.round(height * 1.2); // Original calculation
+  const scaledHeight = Math.round(newCanvasHeight * 1.2); // Use newCanvasHeight for scaling
   const scaledCanvas = createCanvas(scaledWidth, scaledHeight);
   const scaledCtx = scaledCanvas.getContext('2d');
   scaledCtx.drawImage(mainCanvas, 0, 0, scaledWidth, scaledHeight);
