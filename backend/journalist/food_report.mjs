@@ -367,7 +367,7 @@ export const generateImage = async (chat_id) => {
   }
 
   const width = 1080;
-  const height = 1400;
+  const height = 1200;
   const mainCanvas = createCanvas(width, height);
   const ctx = mainCanvas.getContext('2d');
 
@@ -666,7 +666,7 @@ async function generateSummary(ctx, counter, width, height) {
   const barChartWidth = width * 0.9;
   const barChartHeight = height / 3 - 150;
   const barChartX = (width - barChartWidth) / 2;
-  const barChartY = height / 2 + 50;
+  const barChartY = height / 2 + 200;
   const barMaxVal = 2200;
   const bmr = 2000;
   const defGoal = 500;
