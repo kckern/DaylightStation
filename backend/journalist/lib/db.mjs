@@ -853,15 +853,13 @@ export const getNutrilListByDate = (chat_id, date) => {
     // Adjust as needed. For demonstration, assume it's the same store:
     const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.date === date);
-    // Sort by calories descending -> But there's no field "calories" in the default. 
-    // We can parse item.food_data if needed. Implementation may vary.
-    rows.sort((a, b) => {
-      let aCals = 0, bCals = 0;
-      try { aCals = a.food_data?.calories || 0; } catch {}
-      try { bCals = b.food_data?.calories || 0; } catch {}
+    const sorted =  rows.sort((a, b) => {
+      const aCals = a.calories || 0;
+      const bCals = b.calories || 0;
       return bCals - aCals;
     });
-    return rows;
+    console.log('Retrieved nutrilist by date:', { chat_id, date, count: sorted.length, sorted });
+    return sorted;
   } catch (error) {
     console.error('Error getting nutrilist by date:', error);
     return [];
