@@ -137,7 +137,7 @@ export class Plex {
     return flatItems;
   }
   async loadListFromShow(plex, playable = false) {
-    return this.loadListKeys(plex,playable ? '/children' : '/grandchildren');
+    return this.loadListKeys(plex,playable ? '/grandchildren' : '/children');
   }
   async loadListFromArtist(plex, playable = false) {
     return this.loadListKeys(plex, playable ? '/grandchildren' : '/children');
