@@ -184,46 +184,62 @@ export const canvasImage = async (imageUrl, label) => {
     ctx.fillText(label, canvas.width / 2, canvas.height - 30); // Draw label at the bottom
     try {
         const image = await loadImage(imageUrl);
-        
-        // Calculate circular vignette dimensions with 10% margin on shortest side
-        const minDimension = Math.min(canvas.width, canvas.height);
-        const margin = minDimension * 0.1;
-        const radius = (minDimension - margin * 2) / 2;
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2 - canvas.height * 0.05; // Move circle up by 5% of canvas height
-        
+
+        // Calculate dimensions to fit the image within the canvas while maintaining aspect ratio
+        const canvasAspectRatio = canvas.width / canvas.height;
+        const imageAspectRatio = image.width / image.height;
+        let width, height;
+
+        if (imageAspectRatio > canvasAspectRatio) {
+            // Image is wider than canvas - scale by width
+            width = canvas.width * 0.8; // 80% of canvas width
+            height = width / imageAspectRatio;
+        } else {
+            // Image is taller than canvas - scale by height
+            height = canvas.height * 0.8; // 80% of canvas height
+            width = height * imageAspectRatio;
+        }
+
+        // Center the image on the canvas
+        const x = (canvas.width - width) / 2;
+        const y = (canvas.height - height) / 2 * .80;
+
         // Save the current context state
         ctx.save();
-        
-        // Create circular clipping path
+
+        // Create a rounded rectangle clipping path
+        const cornerRadius = Math.min(width, height) * 0.1; // 10% corner radius
         ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        ctx.moveTo(x + cornerRadius, y);
+        ctx.lineTo(x + width - cornerRadius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + cornerRadius);
+        ctx.lineTo(x + width, y + height - cornerRadius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - cornerRadius, y + height);
+        ctx.lineTo(x + cornerRadius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - cornerRadius);
+        ctx.lineTo(x, y + cornerRadius);
+        ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+        ctx.closePath();
         ctx.clip();
-        
-        // Calculate image scaling to fill the circle
-        const imageAspectRatio = image.width / image.height;
-        const circleSize = radius * 2;
-        let width, height;
-        
-        if (imageAspectRatio > 1) {
-            // Landscape image - scale by height
-            height = circleSize;
-            width = height * imageAspectRatio;
-        } else {
-            // Portrait or square image - scale by width
-            width = circleSize;
-            height = (width / imageAspectRatio) * 1;
-        }
-        
-        // Draw the image centered in the circle
-        ctx.drawImage(image, centerX - width / 2, centerY - height / 2, width, height);
-        
+
+        // Draw the image within the rounded rectangle
+        ctx.drawImage(image, x, y, width, height);
+
         // Restore the context state
         ctx.restore();
 
-        // Draw a 3px solid black line around the circle
+        // Draw a 3px solid black border around the rounded rectangle
         ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        ctx.moveTo(x + cornerRadius, y);
+        ctx.lineTo(x + width - cornerRadius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + cornerRadius);
+        ctx.lineTo(x + width, y + height - cornerRadius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - cornerRadius, y + height);
+        ctx.lineTo(x + cornerRadius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - cornerRadius);
+        ctx.lineTo(x, y + cornerRadius);
+        ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+        ctx.closePath();
         ctx.lineWidth = 3;
         ctx.strokeStyle = 'black';
         ctx.stroke();
