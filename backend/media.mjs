@@ -430,7 +430,13 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
     }
 
     try {
-        const urls = (await (new Plex()).loadImgFromKey(plex_key)).filter(Boolean);
+        const urls = (await (new Plex()).loadImgFromKey(plex_key)).filter(Boolean).map(url => {
+            if (url.startsWith('/')) {
+                const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+                return `${protocol}://${req.headers.host}${url}`;
+            }
+            return url;
+        });
         console.log(`Fetching image from: ${urls.join(', ')}`);
         const [imgUrl] = await Promise.all(
             urls.map(url =>
