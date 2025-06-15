@@ -60,11 +60,9 @@ function useCommonMediaController({
   isAudio = false,
   isVideo = false,
   meta,
-  shaders,
   type,
   onShaderLevelChange = () => {},
   shader,
-  setShader,
   volume,
   cycleThroughClasses,
   playbackKeys,queuePosition 
@@ -231,7 +229,7 @@ function useCommonMediaController({
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
       volume = parseFloat(volume) || 1;
-      if(volume > 1) volume = volume / 100;
+      if(volume >= 1) volume = volume / 100;
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
       const startTime = (duration > (12 * 60) || isVideo) ? start : 0;
       mediaEl.dataset.key = media_key;
@@ -433,7 +431,6 @@ export default function Player({ play, queue, clear, playbackKeys, playbackrate 
     shader,
     setShader,
     isQueue,
-    isContinuous,
     volume,
     queuePosition,
     playbackRate,
@@ -573,7 +570,7 @@ export function SinglePlayer(play) {
 /*─────────────────────────────────────────────────────────────*/
 
 function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo }) {
-  const { media_url, title, artist, albumArtist, album, image, type } = media;
+  const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const {
     timeSinceLastProgressUpdate,
     seconds,
