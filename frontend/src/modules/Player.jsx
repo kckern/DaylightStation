@@ -314,10 +314,11 @@ export async function flattenQueueItems(items, level = 1) {
 /*─────────────────────────────────────────────────────────────*/
 
 function useQueueController({ play, queue, clear }) {
+ 
   const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
   const [shader, setShader] = useState(play?.shader || queue?.shader || classes[0]);
   const [volume] = useState(play?.volume || queue?.volume || 1);
-  const [isContinuous, setIsContinuous] = useState(play?.continuous || queue?.continuous || false);
+  const [isContinuous] = useState(!!queue?.continuous || !!play?.continuous || false);
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
   const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || false);
@@ -345,13 +346,11 @@ function useQueueController({ play, queue, clear }) {
         const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
         if (queue_media_key) {
 
-          const { items, continuous } = await DaylightAPI(`data/list/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
-          setIsContinuous(continuous || false);
+          const { items } = await DaylightAPI(`data/list/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
         } else if (queue?.plex) {
-          const { items, continuous } = await DaylightAPI(`media/plex/list/${queue.plex}/playable${isShuffle ? ',shuffle' : ''}`);
-          setIsContinuous(continuous || false);
+          const { items } = await DaylightAPI(`media/plex/list/${queue.plex}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
         }
