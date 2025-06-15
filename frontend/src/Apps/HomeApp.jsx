@@ -1,22 +1,22 @@
 import { useEffect, useState, useCallback } from 'react'
-import './App.css'
+import './HomeApp.scss'
 import moment from 'moment'
 import CryptoJS from 'crypto-js'
 
-import Clock from './modules/Time'
-import WeatherForecast from './modules/WeatherForecast'
-import Weather from './modules/Weather'
-import Upcoming from './modules/Upcoming'
-import Health from './modules/Health'
-import { FinanceChart } from './modules/Finance'
+import Clock from '../modules/Time'
+import WeatherForecast from '../modules/WeatherForecast'
+import Weather from '../modules/Weather'
+import Upcoming from '../modules/Upcoming'
+import Health from '../modules/Health'
+import { FinanceChart } from '../modules/Finance'
 
-import Player from './modules/Player'
-import {KeypadMenu} from './modules/Menu'
-import AppContainer from './modules/AppContainer'
+import Player from '../modules/Player'
+import {KeypadMenu} from '../modules/Menu'
+import AppContainer from '../modules/AppContainer'
 
-import { DaylightAPI } from './lib/api.mjs'
+import { DaylightAPI } from '../lib/api.mjs'
 
-function App() {
+function HomeApp() {
   const [queue, setQueue] = useState([])
   const [menu, setMenu] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -182,6 +182,7 @@ function App() {
     }
   }, [keyMap, menu, menuOpen, closeMenu, currentContent, openMenu, resetQueue])
 
+
   // If we have an active content component (like a sub-menu, player, etc.)
   if (currentContent) {
     return <div className='App'>{currentContent}</div>
@@ -269,4 +270,4 @@ function App() {
   )
 }
 
-export default App
+export default HomeApp
