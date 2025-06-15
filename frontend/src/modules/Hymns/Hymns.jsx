@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import "./Scriptures.scss";
-import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
+import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
 import moment from "moment";
 import paperBackground from "../assets/backgrounds/paper.jpg";
 

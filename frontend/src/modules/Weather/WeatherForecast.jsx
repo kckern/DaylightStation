@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DaylightAPI } from '../lib/api.mjs';
+import { DaylightAPI } from '../../lib/api.mjs';
 import React from 'react';
 import Highcharts, { color } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';

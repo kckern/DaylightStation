@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DaylightAPI } from '../lib/api.mjs';
+import { DaylightAPI } from '../../lib/api.mjs';
 
 export default function Calendar(){
 

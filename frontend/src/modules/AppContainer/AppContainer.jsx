@@ -4,9 +4,9 @@ import {
   DaylightHostPath,
   DaylightWebsocketSubscribe,
   DaylightWebsocketUnsubscribe
-} from "../lib/api.mjs";
+} from "../../lib/api.mjs";
 import "./AppContainer.scss";
-import  WebcamApp  from "./Input/Webcam.jsx";
+import  WebcamApp  from "../Input/Webcam.jsx";
 
 export default function AppContainer({ open, clear }) {
   const app = open?.app || open.open || open;
