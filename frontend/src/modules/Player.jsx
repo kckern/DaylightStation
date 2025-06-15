@@ -229,12 +229,19 @@ function useCommonMediaController({
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
       volume = parseFloat(volume || 100) / 100;
+
+      // ln should be between 0 and 1, if input is 0, output is 0, if 1m then output is 1
+      //however, instead of linear, we want logarithmic, so  most of the volume is in the first 20% of the range
+      const lnvolumne = Math.log(volume + 1) / Math.log(2);
+
+      console.log({volume, lnvolumne});
+
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
       const startTime = (duration > (12 * 60) || isVideo) ? start : 0;
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
-      mediaEl.volume = volume; // Set the volume level
+      mediaEl.volume = lnvolumne; // Set the volume level
       if (isVideo) {
       mediaEl.controls = false;
       mediaEl.addEventListener('play', () => {

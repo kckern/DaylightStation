@@ -14,7 +14,7 @@ import HC_More from "highcharts/highcharts-more";
 HC_More(Highcharts);
 import { formatAsCurrency } from "./blocks";
 
-import externalIcon from "../assets/icons/external.svg";;
+import externalIcon from "../../assets/icons/external.svg";;
 
 export function Drawer({ cellKey, transactions, periodData }) {
 
