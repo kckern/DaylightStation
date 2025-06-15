@@ -8,7 +8,7 @@ import yaml, { load } from 'js-yaml';
 import moment from 'moment-timezone';
 import fs from 'fs';
 import { parseFile } from 'music-metadata';
-import { findFileFromMediaKey } from './media.mjs';
+import { findFileFromMediaKey, handleDevImage } from './media.mjs';
 import { processListItem } from './jobs/nav.mjs';
 import {lookupReference, generateReference} from 'scripture-guide';
 import { Plex } from './lib/plex.mjs';
@@ -30,7 +30,7 @@ export const findUnwatchedItems = (media_keys, category = "media", shuffle = fal
     const unwatchedItems = media_keys.filter(key => {
         const watchedItem = media_memory[key];
         return !(watchedItem && watchedItem.percent > 0.5);
-    })
+    });
 
 
     // If all items are filtered out, return the whole list
@@ -529,7 +529,7 @@ export const watchListFromMediaKey = (media_key) => {
 
 
 // Helper function to get children from a parent media_key
-export const getChildrenFromMediaKey = async ({media_key, config}) => {
+export const getChildrenFromMediaKey = async ({media_key, config, req}) => {
     const validExtensions = ['.mp3', '.mp4', '.m4a'];
 
     const mustBePlayable = /playable/.test(config);
@@ -555,7 +555,7 @@ export const getChildrenFromMediaKey = async ({media_key, config}) => {
             if (["album"].includes(type)) action = "queue";
             return {
                 label: title,
-                image,
+                image: handleDevImage(req, image),
                 type,
                 [action]: { plex }
             };
@@ -608,7 +608,7 @@ apiRouter.get('/list/*', async (req, res, next) => {
 
     try {
         const [media_key, config] = req.params[0].split('/');
-        const {meta,items} = await getChildrenFromMediaKey({media_key,  config});
+        const {meta,items} = await getChildrenFromMediaKey({media_key,  config, req});
 
         // Add metadata from a config
         const metadata = loadMetadataFromMediaKey(media_key);

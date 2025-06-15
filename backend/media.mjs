@@ -265,7 +265,7 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     }
     //pick one
     const plexInfo = infos[Math.floor(Math.random() * infos.length)];
-    plexInfo['image'] = `${host || ""}/media/plex/img/${plex_key}`;
+    plexInfo['image'] = handleDevImage(req, plexInfo.image || `${host}/media/plex/img/notfound.png`);
     
     try {
         res.json(plexInfo);
@@ -274,7 +274,11 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     }
 });
 
-
+export const handleDevImage = (req,image) => {
+    const isDev = !!process.env.dev;
+    const host = req.headers.host || process.env.host || "";
+    return isDev && host ? `http://${host}${image}` : image;
+}
 
 
 mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
@@ -282,8 +286,6 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const plex_keys = plex_key.split(',');
     const playable = /playable/i.test(config);
     const shuffle = /shuffle/i.test(config);
-
-    //hanlde watchlist
 
     const watchListItems = watchListFromMediaKey(plex_key);
     if(watchListItems?.length) {
@@ -295,7 +297,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                     label: title,
                     type: type,
                     plex: plex,
-                    image: image,
+                    image: handleDevImage(req, image),
                 };
             }),
             ...items
@@ -311,7 +313,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
         info = {
             plex: info.plex ? `${info.plex},${plex}` : plex,
             title: info.title ? `${info.title} • ${title}` : title,
-            image: info.img ? `${info.image}` : image
+            image: info.img ? handleDevImage(req, `${info.image}`) : handleDevImage(req, image)
         }
     }
     const list_keys = list.map(item => item.key || item.plex || item.media_key).filter(Boolean);
@@ -322,7 +324,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             label: title,
             type: type,
             plex: key || plex,
-            image: image
+            image: handleDevImage(req, image)
         };
     });
     try {
