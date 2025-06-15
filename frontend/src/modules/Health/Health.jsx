@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
-import { DaylightAPI } from "../lib/api.mjs";
+import { DaylightAPI } from "../../lib/api.mjs";
 import "./Health.scss";
 import Highcharts, { color } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
-import upArrow from '../assets/icons/up.svg';
-import downArrow from '../assets/icons/down.svg';
-import plusIcon from '../assets/icons/plus.svg';
-import minusIcon from '../assets/icons/minus.svg';
+import upArrow from '../../assets/icons/up.svg';
+import downArrow from '../../assets/icons/down.svg';
+import plusIcon from '../../assets/icons/plus.svg';
+import minusIcon from '../../assets/icons/minus.svg';
 
 export default function Health() {
     const [weightData, setWeightData] = useState([]);

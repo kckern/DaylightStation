@@ -1,13 +1,14 @@
 
-import { buildDayToDayBudgetOptions } from './budget/blocks/daytoday'
+import { buildDayToDayBudgetOptions } from '../Finances/blocks/daytoday'
 import HighchartsReact from 'highcharts-react-official'
 import Highcharts from 'highcharts'
-import { DaylightAPI } from '../lib/api.mjs'
+import { DaylightAPI } from '../../lib/api.mjs'
 import { useEffect, useState } from 'react'
 import './Finance.scss'
-import { formatAsCurrency } from './budget/blocks'
-import upArrow from '../assets/icons/upGreen.svg';
-import downArrow from '../assets/icons/downRed.svg';
+import upArrow from '../../assets/icons/upGreen.svg';
+import downArrow from '../../assets/icons/downRed.svg';
+import { formatAsCurrency } from '../Finances/blocks'
+
 
 export function FinanceChart()
 {

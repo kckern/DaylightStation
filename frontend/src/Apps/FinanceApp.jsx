@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Button, MantineProvider, Select, TabsPanel } from '@mantine/core';
-import { BudgetHoldings,  BudgetSpending} from '../modules/budget/blocks.jsx';
-import { BudgetMortgage } from '../modules/budget/blocks/mortgage.jsx';
-import { BudgetCashFlow } from '../modules/budget/blocks/monthly.jsx';
-import { BudgetShortTerm } from '../modules/budget/blocks/shortterm.jsx';
-import { BudgetDayToDay } from '../modules/budget/blocks/daytoday.jsx';
+import { BudgetHoldings,  BudgetSpending} from '../modules/Finances/blocks.jsx';
+import { BudgetMortgage } from '../modules/Finances/blocks/mortgage.jsx';
+import { BudgetCashFlow } from '../modules/Finances/blocks/monthly.jsx';
+import { BudgetShortTerm } from '../modules/Finances/blocks/shortterm.jsx';
+import { BudgetDayToDay } from '../modules/Finances/blocks/daytoday.jsx';
 import { Drawer } from '@mantine/core';
 import 'react-modern-drawer/dist/index.css'
 import "./FinanceApp.scss"

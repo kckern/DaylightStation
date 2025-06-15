@@ -1,12 +1,12 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './Player.scss';
 import moment from 'moment';
-import {Scriptures,Hymns, Talk} from './ContentScroller.jsx';
-import { DaylightAPI } from '../lib/api.mjs';
+import {Scriptures,Hymns, Talk} from './../ContentScroller/ContentScroller.jsx';
+import { DaylightAPI } from '../../lib/api.mjs';
 import 'dash-video-element';
-import spinner from '../assets/icons/spinner.svg';
-import pause from '../assets/icons/pause.svg';
-import AppContainer from './AppContainer.jsx';
+import spinner from '../../assets/icons/spinner.svg';
+import pause from '../../assets/icons/pause.svg';
+import AppContainer from '../AppContainer/AppContainer.jsx';
 
 
 /*─────────────────────────────────────────────────────────────*/

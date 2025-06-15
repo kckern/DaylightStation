@@ -7,10 +7,9 @@ import React, {
   } from "react";
   import moment from "moment";
   import "./ContentScroller.scss";
-  import { lookupReference } from "scripture-guide";
-import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
-import paperBackground from "../assets/backgrounds/paper.jpg";
-import { convertVersesToScriptureData, scriptureDataToJSX } from "../lib/scripture-guide.jsx";
+import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
+import paperBackground from "../../assets/backgrounds/paper.jpg";
+import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scripture-guide.jsx";
   
   /**
    * ContentScroller (superclass)

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { DaylightAPI } from "../lib/api.mjs";
+import { DaylightAPI } from "../../lib/api.mjs";
 import "./Upcoming.scss";
 import moment from "moment";
 
