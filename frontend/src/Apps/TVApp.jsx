@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import "./TVApp.scss";
 import { DaylightAPI } from "../lib/api.mjs";
-import { TVMenu } from "../modules/Menu";
-import Player from "../modules/Player";
-import AppContainer from "../modules/AppContainer";
-import { LoadingOverlay } from "../modules/Player";
+import { TVMenu } from "../modules/Menu/Menu";
+import Player from "../modules/Player/Player";
+import AppContainer from "../modules/AppContainer/AppContainer";
+import { LoadingOverlay } from "../modules/Player/Player";
 
 export function TVAppWrapper({ content }) {
   return (

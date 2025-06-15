@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { DaylightAPI } from "../lib/api.mjs";
+import { DaylightAPI } from "../../lib/api.mjs";
 import moment from "moment-timezone";
-import green from "../assets/icons/green.png";
-import yellow from "../assets/icons/yellow.png";
-import red from "../assets/icons/red.png";
-import lime from "../assets/icons/lime.png";
+import green from "../../assets/icons/green.png";
+import yellow from "../../assets/icons/yellow.png";
+import red from "../../assets/icons/red.png";
+import lime from "../../assets/icons/lime.png";
 
 const codes = {
   "0": {

@@ -4,9 +4,9 @@ import React, {
   useRef,
   useCallback,
 } from "react";
-import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
+import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
 import "./Menu.scss";
-import { LoadingOverlay } from "./Player";
+import { LoadingOverlay } from "../Player/Player";
 
 /**
  * Logs a menu selection to the server.

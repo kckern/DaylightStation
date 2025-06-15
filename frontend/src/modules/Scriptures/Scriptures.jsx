@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import "./Scriptures.scss";
-import { DaylightAPI, DaylightMediaPath } from "../lib/api.mjs";
+import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
 import { lookupReference } from "scripture-guide";
 import moment from "moment";
 import paperBackground from "../assets/backgrounds/paper.jpg";
-import { convertVersesToScriptureData } from "../lib/scripture-guide.jsx";
+import { convertVersesToScriptureData } from "../../lib/scripture-guide.jsx";
 
 const config = {
   volumes: { ot: 1, nt: 23146, bom: 31103, dc: 37707, pgp: 41361, lof: 41996 },

@@ -6,8 +6,8 @@ import TVApp from './Apps/TVApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
-import Blank from './modules/Blank.jsx';
-import './index.css';
+import Blank from './modules/Blank/Blank.jsx';
+
 
 
 
