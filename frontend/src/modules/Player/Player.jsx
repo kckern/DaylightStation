@@ -228,6 +228,7 @@ function useCommonMediaController({
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
+      if(volume >= 1) volume = parseFloat(volume) * 100;
       volume = parseFloat(volume || 100) / 100;
 
       // ln should be between 0 and 1, if input is 0, output is 0, if 1m then output is 1
