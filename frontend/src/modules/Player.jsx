@@ -228,8 +228,7 @@ function useCommonMediaController({
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
-      volume = parseFloat(volume) || 1;
-      if(volume >= 1) volume = volume / 100;
+      volume = parseFloat(volume || 100) / 100;
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
       const startTime = (duration > (12 * 60) || isVideo) ? start : 0;
       mediaEl.dataset.key = media_key;
