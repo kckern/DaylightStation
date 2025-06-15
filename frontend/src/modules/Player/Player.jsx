@@ -229,6 +229,7 @@ function useCommonMediaController({
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
       if(volume < 1) volume = parseFloat(volume) * 100;
+      if(volume === 1)  volume = 100;
       volume = parseFloat(volume || 100) / 100;
 
       const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005, };
