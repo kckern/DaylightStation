@@ -228,21 +228,29 @@ function useCommonMediaController({
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
-      if(volume >= 1) volume = parseFloat(volume) * 100;
+      if(volume < 1) volume = parseFloat(volume) * 100;
       volume = parseFloat(volume || 100) / 100;
 
-      // ln should be between 0 and 1, if input is 0, output is 0, if 1m then output is 1
-      //however, instead of linear, we want logarithmic, so  most of the volume is in the first 20% of the range
-      const lnvolumne = Math.log(volume + 1) / Math.log(2);
+      const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005, };
 
-      console.log({volume, lnvolumne});
+      const adjustedVolume = ((volume) => {
+        const mappingKeys = Object.keys(mapping).map(Number).sort((a, b) => b - a); // Sort in descending order
+        for (let i = 0; i < mappingKeys.length; i++) {
+          if (volume >= mappingKeys[i]) {
+        return mapping[mappingKeys[i]];
+          }
+        }
+        return 0; // If volume is less than the smallest key, return 0
+      })(volume);
+
+      console.log({ volume, adjustedVolume });
 
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
       const startTime = (duration > (12 * 60) || isVideo) ? start : 0;
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
-      mediaEl.volume = lnvolumne; // Set the volume level
+      mediaEl.volume = adjustedVolume; // Set the volume level
       if (isVideo) {
       mediaEl.controls = false;
       mediaEl.addEventListener('play', () => {
