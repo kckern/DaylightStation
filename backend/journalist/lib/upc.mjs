@@ -160,62 +160,55 @@ export const findFoodByBarcode = async (barcode) => {
 const openFoodFacts = async (barcode) => {
     try {
         console.log('OpenFoodFacts • Looking up barcode:', barcode);
-
+        
         const response = await fetch(`https://world.openfoodfacts.net/api/v2/product/${barcode}.json`);
         if (!response.ok) {
-            console.warn('OpenFoodFacts • Invalid response:', response.status);
+            console.log('OpenFoodFacts • Invalid response:', response.status);
             return null;
         }
-
+        
         const data = await response.json();
+        
         if (!data.product || data.status !== 1) {
-            console.warn('OpenFoodFacts • No product found for barcode:', barcode);
+            console.log('OpenFoodFacts • No product found for barcode:', barcode);
             return null;
         }
-
+        
         const product = data.product;
         console.log('OpenFoodFacts • Product found:', product.product_name);
-
-        // Extract and validate image
+        
+        // Extract image
         let image = product.image_url || product.image_front_url;
         if (image && !(await isValidImgUrl(image))) {
             image = undefined;
         }
-        const nutribotReportHost = process.env.nutribot_report_host;
-        if (image) {
-            image = new RegExp(nutribotReportHost).test(image)
-                ? image
-                : `${nutribotReportHost}/nutribot/images/${encodeURIComponent(image)}/${encodeURIComponent(product.product_name)}`;
-        }
-
-        // Format food data
+        const nutribot_report_host = process.env.nutribot_report_host;
+        image = (new RegExp(nutribot_report_host)).test(image) ? image : `${nutribot_report_host}/nutribot/images/${encodeURIComponent(image)}/${encodeURIComponent(product.product_name)}`;
+        
+        // Format nutrition data similar to Edamam format
         const food = {
             upc: barcode,
             label: product.product_name || product.product_name_en,
             brand: product.brands,
             date: moment().format('YYYY-MM-DD'),
             image: image,
-            nutrients: {},
+            nutrients: {}
         };
 
-        // Add serving size
+
+        //"energy-kcal": 22, "energy-kcal_100g": 22,
+
+        // Add serving size if available
         if (product.serving_quantity && product.serving_quantity_unit) {
             food.servingSizes = [{ quantity: parseFloat(product.serving_quantity), label: product.serving_quantity_unit }];
         } else if (
-            product.nutriments &&
-            product.nutriments['energy-kcal_100g'] &&
+            product.nutriments && product.nutriments['energy-kcal_100g'] && 
             product.nutriments['energy-kcal'] === product.nutriments['energy-kcal_100g']
         ) {
             food.servingSizes = [{ quantity: 100, label: 'grams' }];
         } else {
             food.servingSizes = [{ quantity: 1, label: 'serving' }];
         }
-
-        return food;
-    } catch (error) {
-        console.error('OpenFoodFacts • Error:', error);
-        return null;
-    }
 
         // Map OpenFoodFacts nutrients to similar format
         if (product.nutriments) {
