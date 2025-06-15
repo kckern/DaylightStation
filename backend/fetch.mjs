@@ -275,6 +275,9 @@ apiRouter.get('/:songType(hymn|primary)/:hymn_num?', async (req, res, next) => {
                         mediaUrl: `${host}/media/${basePath}/${prf}${hymnNumStr}`,
                         mediaFilePath
                     };
+                }else{
+                    console.warn(`File not found: ${mediaFilePath}`);
+                    return null;
                 }
             } catch (err) {
                 console.error(`Error checking file path: ${mediaFilePath}`, err.message);
