@@ -1,4 +1,3 @@
-
 import React, {
   useState,
   useEffect,
@@ -424,6 +423,10 @@ function MenuItems({
       </div>
     );
   };
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [items]);
 
   return (
     <div className={`menu-items count_${items.length}`}>
