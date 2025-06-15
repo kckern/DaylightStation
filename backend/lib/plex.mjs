@@ -471,6 +471,9 @@ export class Plex {
   thumbUrl(paramString) {
     if (!paramString) return "";
     let symb = /\?/.test(paramString) ? '&' : '?';
+
+    return `/plex_proxy${paramString}`;
+
     let url = `${this.baseUrl}${paramString}${symb}X-Plex-Token=${this.token}`;
     // Ensure the URL does not contain duplicate "http" segments
     return url.replace(/(http.*?:\/\/).*?\1/, '$1');
