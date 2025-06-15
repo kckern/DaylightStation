@@ -25,12 +25,13 @@ apiRouter.use((err, req, res, next) => {
     res.status(500).json({ error: err.message });
 });
 
-const findUnwatchedItems = (media_keys, category = "media", shuffle = false) => {
+export const findUnwatchedItems = (media_keys, category = "media", shuffle = false) => {
     const media_memory = loadFile(`_media_memory`)[category] || {};
     const unwatchedItems = media_keys.filter(key => {
         const watchedItem = media_memory[key];
         return !(watchedItem && watchedItem.percent > 0.5);
-    });
+    })
+
 
     // If all items are filtered out, return the whole list
     const result = unwatchedItems.length > 0 ? unwatchedItems : media_keys;

@@ -5,7 +5,7 @@ import {Plex} from './lib/plex.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
-import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist } from './fetch.mjs';
+import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems } from './fetch.mjs';
 import { getChildrenFromMediaKey } from './fetch.mjs';
 import Infinity from './lib/infinity.js';
 const mediaRouter = express.Router();
@@ -314,12 +314,15 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             image: info.img ? `${info.image}` : image
         }
     }
-    list = list.map(({key,plex,type,title,image}) => {
+    const list_keys = list.map(item => item.key || item.plex || item.media_key).filter(Boolean);
+    const unwatched_keys = findUnwatchedItems(list_keys,"plex",shuffle);
+    const unwatchedList = list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
+    list = unwatchedList.map(({key,plex,type,title,image}) => {
         return {
             label: title,
             type: type,
             plex: key || plex,
-            image: image,
+            image: image
         };
     });
     try {
