@@ -161,6 +161,7 @@ const openFoodFacts = async (barcode) => {
     try {
         console.log('OpenFoodFacts • Looking up barcode:', barcode);
         
+        console.log(`OpenFoodFacts: https://world.openfoodfacts.net/api/v2/product/${barcode}.json`);
         const response = await fetch(`https://world.openfoodfacts.net/api/v2/product/${barcode}.json`);
         if (!response.ok) {
             console.log('OpenFoodFacts • Invalid response:', response.status);

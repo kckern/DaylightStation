@@ -61,7 +61,7 @@ const processUPC = async (chat_id, upc, message_id, res) => {
     }
 
     const foodData = await upcLookup(upc);
-    if (!foodData) return await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
+    if (!foodData) return false;// await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
 
     const { image, label, nutrients } = foodData;
     // If no nutritional data is available, just show what we found
