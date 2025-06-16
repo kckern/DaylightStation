@@ -431,9 +431,9 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
 
     try {
         const urls = (await (new Plex()).loadImgFromKey(plex_key)).filter(Boolean).map(url => {
-            if (url.startsWith('/')) {
-                const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-                return `${protocol}://${req.headers.host}${url}`;
+            if (/plex_proxy/.test(url)) {
+                const {host} = process.env.plex;
+                return `${host}${url.replace(/\/plex_proxy/, '')}${url.includes('?') ? '&' : '?'}X-Plex-Token=${process.env.PLEX_TOKEN}`;
             }
             return url;
         });
