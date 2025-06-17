@@ -74,7 +74,7 @@ const processUPC = async (chat_id, upc, message_id, res) => {
             ["❌ Cancel"]
         ];
 
-        const sevingSizeLabel = /*300g*/ `${foodData.servingSizes[0]?.quantity || "NA"}${foodData.servingSizes[0]?.label || 'g'}`;
+        const sevingSizeLabel = `${parseInt(foodData.servingSizes[0]?.quantity || "0")}${foodData.servingSizes[0]?.label || 'g'}`;
         const caption = `🔵 ${titleCase(label)} (${sevingSizeLabel})`
         const imageMsgResult = await sendImageMessage(chat_id, image, caption);
         const message_id = imageMsgResult.result?.message_id;

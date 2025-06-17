@@ -75,10 +75,10 @@ export default function Health() {
 
 function HealthChart({data}) {
 	data = data.sort((a, b) => new Date(a.date) - new Date(b.date)).slice(- 7 * 12);
-    const minValue = Math.min(...data.map(({lbs_adjusted_average}) => lbs_adjusted_average));
-    const maxValue = Math.max(...data.map(({lbs_adjusted_average}) => lbs_adjusted_average));
-    const chartMin = minValue - 2;
-    const chartMax = maxValue + 2;
+	const minValue = Math.min(...data.map(({lbs_adjusted_average, measurement}) => Math.min(lbs_adjusted_average, measurement || lbs_adjusted_average)));
+	const maxValue = Math.max(...data.map(({lbs_adjusted_average, measurement}) => Math.max(lbs_adjusted_average, measurement || lbs_adjusted_average)));
+    const chartMin = Math.floor(minValue) - 1;
+    const chartMax = Math.ceil(maxValue) + 1;
     const avgData = data.map(({lbs_adjusted_average}) => lbs_adjusted_average);
     const pointData = data.map(({measurement}) => measurement || null);
     const times = data.map(({date}) => moment(date).format('MMM D'));
@@ -87,7 +87,6 @@ function HealthChart({data}) {
 		className: 'health-chart',
 		chart: {
 			backgroundColor: '#00000000',
-			//left border 2px white
 			height: 240,
 		},
 		title: {
@@ -96,7 +95,6 @@ function HealthChart({data}) {
 		yAxis: {
 			min: chartMin,
 			max: chartMax,
-			
 			minorTickInterval: 1,
 			minorGridLineWidth: 1,
 			minorGridLineColor: '#4E657E',
@@ -177,6 +175,10 @@ function HealthChart({data}) {
 				fillOpacity: 0.2
 			},
 			scatter: {
+				marker: {
+					radius: 2.5, // Set point data radius to 1px
+					fillColor: '#C5D2E0AA'
+				},
 				tooltip: {
 					headerFormat: '',
 					pointFormat: '<b>{point.category}</b>: {point.y} lbs'
