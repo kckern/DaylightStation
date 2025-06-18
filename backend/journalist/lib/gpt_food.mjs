@@ -1,9 +1,10 @@
 import dotenv from 'dotenv';
-import fetch from 'node-fetch';
+import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import moment from 'moment-timezone';
 import { getBase64Url } from './food.mjs';
 import { getMostRecentNutrilistItems, getNutriDay, getNutriDaysBack, getNutrilListByDate, getNutrilog, saveNutriCoach } from './db.mjs';
+import { saveFile } from '../../lib/io.mjs';
 dotenv.config();
 
 
@@ -29,9 +30,12 @@ const icons = `almond apple_sauce apple artichoke asparagus avocado bacon bagel 
 guava gummybear hamburger_bun hamburger_patty hamburger hash hazelnut honey horseradish hot_dog_bun hot_dog hotpot ice_cream_bar ice_cream_sandwich ice_cream iced_coffee iced_tea jam jicama juice kale kebab ketchup kiwi lamb lasagna latte leeks lemon lemonade lime lobster macadamia macandcheese mango marshmallow mayonnaise meatballs melon milk_shake milk mixed_drink mixed_nuts molassescookie muffin mushroom mustard nigirisushi oatmeal octopus oil okra omelette onion orange_juice orange orangechicken pancakes papaya parfait parsnip pasta pastry pattysandwich pavlova peach peanut_butter peanut pear peas pecan peppers persimmon pickle pie_apple pie pill pine_nut pineapple pistachio pitasandwich pizza plum pocky pomegranate popcorn popsicle pork porkchop pot_pie potato_chip potato_salad potato powdereddrink prawn pretzel prune pudding pumpkin quesadilla quiche radish raisin ranch_dressing raspberry ravioli red_bean red_bell_pepper red_dip red_spice red_velvet_cookie red_wine relish rhubarb ribs rice_cake rice roll romaine salad salt sandwich sauce sausage seaweed seed sesame_bagel shallot shrimp smoothie snack snap_bean soft_drink souffle soup sour_cream soy_nut soysauce spaghetti_squash spinach springroll sprouts squash starfruit stewbrown stewyellow stir_fry stirfrynoodles strawberry_milk_shake strawberry stuffing sub_sandwich sugarcookie sushi syrup taco taro tater_tots tea tempura toast toaster_pastry tofu tomato tomatosoup tortilla_chip tortilla tostada turkey turnip turnover vanilla_cupcake vegetable waffles walnut water_chestnut water watermelon white_bean white_bread white_sugar white_wine wrap yam yellow_bell_pepper yellow_drink yellow_frosting yellow_spice yogurt zucchini`.replace(/\n/g, ' ');
 
 
-const today = moment().tz('America/Los_Angeles').format('YYYY-MM-DD');
-const dayOfWeek = moment().tz('America/Los_Angeles').format('dddd');
-const timeAMPM = moment().tz('America/Los_Angeles').format('h:mm a');
+const timezone = process.env.TIMEZONE || 'America/Los_Angeles';
+
+// Replace hardcoded timezone with variable
+const today = moment().tz(timezone).format('YYYY-MM-DD');
+const dayOfWeek = moment().tz(timezone).format('dddd');
+const timeAMPM = moment().tz(timezone).format('h:mm a');
 const instructions = `List the food items in them, output in a JSON object which contains keys: 
                  - "food" an array with the food icon, item name, amount (integer), and unit (g, ml, etc.), and noom color (green, yellow, orange).
                  - "questions", with what you need to clarify uncertainties and possible answers. 
@@ -114,7 +118,28 @@ const instructions = `List the food items in them, output in a JSON object which
                         ${icons}
 `;
 
-export const detectFoodFromImage = async (imgUrl, extras ,attempt) => {
+
+// Abstract GPT call function
+const gptCall = async (endpoint, payload) => {
+    try {
+        const response = await axios.post(endpoint, payload, {
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            }
+        });
+        const month = moment().tz(timezone).format('YYYY-MM');
+        saveFile(`gpt/food/${month}/${Date.now()}`, {in: payload, out: response.data});
+
+        return response.data;
+    } catch (error) {
+        console.error('Error during GPT call:', error);
+        throw error;
+    }
+};
+
+// Update detectFoodFromImage to use gptCall
+export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
     //console.log('detectFoodFromImage', {imgUrl,extras});
     attempt = attempt || 1;
     extras = extras || {};
@@ -139,13 +164,12 @@ export const detectFoodFromImage = async (imgUrl, extras ,attempt) => {
 
     const data = {
         model: 'gpt-4o',
-       // response_format:{ type: "json_object" },
         messages: [
             {
                 role: 'system',
                 content: `You are nutrition seer. You look at images and process them like this:
                 ${instructions}`
-                
+            
             },
             {
                 role: 'user',
@@ -160,38 +184,20 @@ export const detectFoodFromImage = async (imgUrl, extras ,attempt) => {
     };
 
     try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            const {error} = await response.json();
-            console.error(error);
-            throw new Error(`Failed to describe image.`);
-        }
-        const jsonResponse = await response.json();
-        const description = jsonResponse.choices?.[0].message?.content;
+        const response = await gptCall('https://api.openai.com/v1/chat/completions', data);
+        const description = response.choices?.[0]?.message?.content;
         const json = extractJSON(description);
         json.uuid = uuidv4();
-
         return json;
-
     } catch (error) {
-
         console.error('Error describing image:', error);
-        return await detectFoodFromImage(imgUrl,extras, attempt + 1);
-
+        return await detectFoodFromImage(imgUrl, extras, attempt + 1);
     }
 };
 
 
-//detectFoodFromTextDescription
-export const detectFoodFromTextDescription = async (text, attempt) => {
+// Update detectFoodFromTextDescription to use gptCall
+export const detectFoodFromTextDescription = async (text, attempt = 1) => {
     attempt = attempt || 1;
 
     if(attempt > 3) return false;
@@ -203,16 +209,8 @@ export const detectFoodFromTextDescription = async (text, attempt) => {
         messages: [
             {
                 role: 'system',
-                content: ``
-            },
-            {
-                role: 'system',
                 content: `You are nutrition reader. You read text descriptions of meals and snacks and process them like this:
-                ${instructions}
-                
-                - Assume a single serving size unless otherwise specified.
-                 - For a compound food, like a burrito, make sure you itemize the ingredients.  For example the food array might look like this:[ { "icon": "rice", "item": "Rice", "unit": "g", "amount": 150, "noom_color": "yellow" }, { "icon": "black_bean", "item": "Black Beans", "unit": "g", "amount": 130, "noom_color": "yellow" }, { "icon": "grilled_cheese", "item": "Grilled Chicken", "unit": "g", "amount": 100, "noom_color": "yellow" }, { "icon": "sauce", "item": "Sauce", "unit": "ml", "amount": 30, "noom_color": "yellow" }, { "icon": "vegetable", "item": "Mixed Vegetables", "unit": "g", "amount": 85, "noom_color": "green" }, { "icon": "cheese", "item": "Cheese", "unit": "g", "amount": 30, "noom_color": "orange" }, { "icon": "guacamole", "item": "Guacamole", "unit": "g", "amount": 30, "noom_color": "green" }, { "icon": "lettuce", "item": "Lettuce", "unit": "g", "amount": 20, "noom_color": "green" }, { "icon": "salsa", "item": "Salsa", "unit": "g", "amount": 30, "noom_color": "green" } ]
-                `
+                ${instructions}`
             },
             {
                 role: 'user',
@@ -225,47 +223,24 @@ export const detectFoodFromTextDescription = async (text, attempt) => {
     };
 
     try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            const {error} = await response.json();
-            console.error(error);
-            throw new Error(`Failed to describe text.`);
-        }
-
-        const jsonResponse = await response.json();
-        const description = jsonResponse.choices?.[0].message?.content;
+        const response = await gptCall('https://api.openai.com/v1/chat/completions', data);
+        const description = response.choices?.[0]?.message?.content;
         const json = extractJSON(description);
         json.uuid = uuidv4();
-
         json.date = json.date || today;
         json.time = json.time || "midday";
         json.nutrition = json.nutrition || [];
         json.questions = json.questions || [];
         json.food = json.food || null;
-
-
         return json;
-
     } catch (error) {
-
         console.error('Error describing text:', error);
         return await detectFoodFromTextDescription(text, attempt + 1);
-
     }
 };
 
-
-
-
-export const itemizeFood = async (foodList, img, attempt) => {
+// Update itemizeFood to use gptCall
+export const itemizeFood = async (foodList, img, attempt = 1) => {
 
     console.log('itemizeFood', {foodList,img});
     attempt = attempt || 1;
@@ -346,31 +321,19 @@ export const itemizeFood = async (foodList, img, attempt) => {
     };
 
     try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-            },
-            body: JSON.stringify(data)
-        });
-        if (!response.ok) {
-            const {error} = await response.json();
-            console.error(error);
-            throw new Error(`Failed to itemize food.`);
-        }
-        const jsonResponse = await response.json();
-        const new_data = jsonResponse.choices?.[0]?.message?.content.replace(/^[^\[]+/s, '').replace(/[^\]]+$/s, '').trim() || '[]';
+        const response = await gptCall('https://api.openai.com/v1/chat/completions', data);
+        const new_data = response.choices?.[0]?.message?.content.replace(/^[^\[]+/s, '').replace(/[^\]]+$/s, '').trim() || '[]';
         const json = (extractJSON(new_data))?.map(item => {
             item.uuid = uuidv4();
             return item;
         });
-        if(!json?.length) {
-            console.error('No JSON data:', jsonResponse.choices);
+
+        if (!json?.length) {
+            console.error('No JSON data:', response.choices);
             return await itemizeFood(foodList, img, attempt + 1);
         }
 
-        const validKeys = ['uuid','icon','item','unit','amount','noom_color','calories','fat','carbs','protein','fiber','sugar','sodium','cholesterol','chat_id','date','timeofday','log_uuid'];
+        const validKeys = ['uuid', 'icon', 'item', 'unit', 'amount', 'noom_color', 'calories', 'fat', 'carbs', 'protein', 'fiber', 'sugar', 'sodium', 'cholesterol', 'chat_id', 'date', 'timeofday', 'log_uuid'];
         const validated_data = json.map(item => {
             //substitue keys
 
@@ -390,12 +353,9 @@ export const itemizeFood = async (foodList, img, attempt) => {
             return item;
         });
         return validated_data;
-
     } catch (error) {
-
         console.error('Error itemizing food:', error);
         return false;
-
     }
 
 }
@@ -462,21 +422,35 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
             };
             
             try {
-                const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                    method: 'POST',
+                const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+                    model: 'gpt-4o',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `You are a supportive nutrition coach providing milestone celebration messages when users cross calorie thresholds.
+                            The user just crossed the ${crossedThreshold} calorie threshold for the day.
+                            Provide a 2-3 sentence encouraging message that:
+                            - Acknowledges this milestone
+                            - Provides appropriate guidance for their current calorie level
+                            - Maintains a positive, supportive tone
+                            
+                            Their daily total is now ${todaysTotalCalories} calories.
+                            They have ${remainingCalories > 0 ? remainingCalories + ' calories remaining' : 'exceeded their budget by ' + Math.abs(remainingCalories) + ' calories'} in their daily budget.`
+                        },
+                        {
+                            role: 'user',
+                            content: `I just crossed the ${crossedThreshold} calorie threshold. My daily total is now ${todaysTotalCalories} calories. Recent foods: ${JSON.stringify(mostRecentItems.map(item => `${item.item} (${item.amount}${item.unit})`))}`
+                        }
+                    ],
+                    max_tokens: 1500
+                }, {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-                    },
-                    body: JSON.stringify(data)
+                    }
                 });
                 
-                if (!response.ok) {
-                    throw new Error(`Failed to get threshold coaching message.`);
-                }
-                
-                const jsonResponse = await response.json();
-                coachingMessage = jsonResponse.choices?.[0].message?.content || `Great milestone! You've reached ${crossedThreshold} calories today.`;
+                coachingMessage = response.data.choices?.[0].message?.content || `Great milestone! You've reached ${crossedThreshold} calories today.`;
             } catch (gptError) {
                 console.error('Error getting GPT threshold message:', gptError);
                 // Fallback threshold messages if GPT fails
@@ -520,21 +494,32 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
             };
             
             try {
-                const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                    method: 'POST',
+                const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+                    model: 'gpt-4o',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `You are a supportive nutrition coach providing brief, encouraging responses to food logging. 
+                            Keep responses to 1 sentence or a short phrase. Be positive and motivating.
+                            The user has logged ${recentCalories} calories just now, bringing their daily total to ${todaysTotalCalories} calories.
+                            They have ${remainingCalories > 0 ? remainingCalories + ' calories remaining' : 'exceeded their budget by ' + Math.abs(remainingCalories) + ' calories'}.
+                            Respond appropriately to their current situation with a brief, encouraging message.`
+                        },
+                        {
+                            role: 'user',
+                            content: `Most recent food items logged: ${JSON.stringify(mostRecentItems.map(item => `${item.item} (${item.amount}${item.unit})`))}. 
+                            Today's total so far: ${todaysTotalCalories} calories.`
+                        }
+                    ],
+                    max_tokens: 1000
+                }, {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-                    },
-                    body: JSON.stringify(data)
+                    }
                 });
                 
-                if (!response.ok) {
-                    throw new Error(`Failed to get minor coaching message.`);
-                }
-                
-                const jsonResponse = await response.json();
-                coachingMessage = jsonResponse.choices?.[0].message?.content || 'Great job logging that!';
+                coachingMessage = response.data.choices?.[0].message?.content || 'Great job logging that!';
             } catch (gptError) {
                 console.error('Error getting GPT minor message:', gptError);
                 // Fallback to simple messages if GPT fails
