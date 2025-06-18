@@ -30,15 +30,16 @@ export default function Health() {
         const interval = setInterval(reloadData, 300000);
         return () => clearInterval(interval);
     }, []);
+	const goalBF = 18;
     const {lbs_adjusted_average, date,fat_percent_adjusted_average, lbs_adjusted_average_7day_trend, calorie_balance} = today;
 	const trend = lbs_adjusted_average_7day_trend > 0 ? 
 	<img src={upArrow} alt="up" style={{height: "1.3em", marginBottom: "-0.3em"}} /> : 
 	<img src={downArrow} alt="down" style={{height: "1.3em", marginBottom: "-0.3em"}} />;
 	const leanMass = lbs_adjusted_average - lbs_adjusted_average * (fat_percent_adjusted_average / 100);
-	const lbsAtFifteenPercentBodyFat = leanMass / (1 - 0.15);
+	const lbsAtFifteenPercentBodyFat = leanMass / (1 - (goalBF / 100));
 	const lbsToLose = lbs_adjusted_average - lbsAtFifteenPercentBodyFat;
 	const lossRate = Math.abs(lbs_adjusted_average_7day_trend);
-	const daysToLose = lossRate > 0 && lbsToLose > 0 ? Math.ceil(lbsToLose / lossRate) : `⚠️`;
+	const daysToLose = lossRate > 0 && lbsToLose > 0 ? Math.ceil(lbsToLose / (lossRate/7)) : `⚠️`;
 	const dateToLose = moment(date).add(daysToLose, 'days').format('MMM D');
 	const calorie_label = calorie_balance > 0 ? 
 	<span>{calorie_balance}<img src={plusIcon} alt="+" style={{height: "1.3em", marginBottom: "-0.3em", marginLeft:"0.5ex"}} /></span> :
@@ -52,7 +53,7 @@ export default function Health() {
 						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Composition</th>
 						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>7 Day Trend</th>
 						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Daily Calories</th>
-						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Days to 15%</th>
+						<th style={{border: "1px solid black", width: "20%",  padding: "8px"}}>Days to {goalBF}%</th>
 					</tr>
 				</thead>
 				<tbody>
