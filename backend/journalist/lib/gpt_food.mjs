@@ -36,12 +36,14 @@ const timezone = process.env.TIMEZONE || 'America/Los_Angeles';
 const today = moment().tz(timezone).format('YYYY-MM-DD');
 const dayOfWeek = moment().tz(timezone).format('dddd');
 const timeAMPM = moment().tz(timezone).format('h:mm a');
+const hourOfDayInt = parseInt(moment().tz(timezone).hour());
+
+const time = hourOfDayInt < 12 ? "morning" : hourOfDayInt < 17 ? "midday" : hourOfDayInt < 21 ? "evening" : "night";
+
 const instructions = `List the food items in them, output in a JSON object which contains keys: 
                  - "food" an array with the food icon, item name, amount (integer), and unit (g, ml, etc.), and noom color (green, yellow, orange).
-                 - "questions", with what you need to clarify uncertainties and possible answers. 
-                 - "nutrition", with the estimated nutrition information.
                  - "date," the date of the meal.  Usually the current date (today is ${dayOfWeek}, ${today} at ${timeAMPM} ), but could be in the past, if the description mentions a timeframe, such as "yesterday" or "on wednesday".  If the date is already specified in a previous attempt, keep that one, unless the user specifies a new date.
-                 - "time," the time of the meal.  Usually "midday" or "evening", but could be "morning" or "night".  Default is "midday".  Evening starts after 4:30pm.
+                 - "time," the time of the meal.  Usually "midday" or "evening", but could be "morning" or "night".  Default is "${time}", unless the user specifies a different time for the meal.
                  
                  For example:
                     { 
@@ -85,14 +87,6 @@ const instructions = `List the food items in them, output in a JSON object which
                           "noom_color": "orange"
                         }
                       ],
-                    "questions": 
-                        [
-                            ["Is that a salad dressing or a sauce?", ["Sauce", "Dressing"]],
-                            ["How big is that plate?", ["Dinner plate", "Side plate","Serving platter"]],
-                            ["Are those carrots or sweet potatoes?", ["Carrots", "Sweet potatoes", "Neither"]],
-                            ["What is under the sauce?", ["Pasta", "Rice", "Potatoes"]],
-                            ["Is that a whole grain bread?", ["Yes", "No"]],
-                        ]
                     }
                     
                     Additional instructions:
@@ -229,8 +223,6 @@ export const detectFoodFromTextDescription = async (text, attempt = 1) => {
         json.uuid = uuidv4();
         json.date = json.date || today;
         json.time = json.time || "midday";
-        json.nutrition = json.nutrition || [];
-        json.questions = json.questions || [];
         json.food = json.food || null;
         return json;
     } catch (error) {
