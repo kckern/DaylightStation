@@ -151,7 +151,7 @@ const updateItem = async (tableId, itemId, key, val) => {
 const loadData = async (name,req) => {
     let data = await loadTable(process.env.infinity[name]);
     data = await saveImages(data, name);
-    saveFile(name, data);
+    saveFile(`config/${name}`, data);
     return data;
 }
 

@@ -7,7 +7,7 @@ import moment from 'moment';
  
 
 const getYoutube = async () => {
-    const youtubeData = loadFile('youtube');
+    const youtubeData = loadFile('config/youtube');
     const commands = [];
     const shortcodes = [];
     const mediaPath = `${process.env.path.media}/news`;

@@ -151,9 +151,6 @@ const futureMonthlyBudget = ({ month, config }) => {
     const pastData = pastMonthlyBudget({ month, config, transactions });
     const futureData = futureMonthlyBudget({ month, config });
 
-    //write pastData to file for debugging
-    saveFile(`${month}-pastData`, pastData);
-    saveFile(`${month}-futureData`, futureData);
   
     // 2) Initialize current data from past data
     const currentData = { ...pastData };
@@ -392,8 +389,6 @@ export const dayToDayBudgetReducer = (acc, month, monthlyBudget, config) => {
   const adjustPercentage = parseFloat(((diff / dailySpend) * 100).toFixed(2));
   //const expectedBalanceAtEndOfMonth = parseFloat((dailyBudget * daysRemaining).toFixed(2));
 
-  //saveFile(`${month}-dayToDayBudget`, {expectedBalanceAtEndOfMonth,dailyBudget, dailySpend, diff, adjustPercentage, daysRemaining, daysCompleted,tomorrow,endOfMonth});
-  
 
  
   acc[month] = {

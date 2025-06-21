@@ -29,7 +29,7 @@ const listMails = async (job_id) => {
     }));
 
     console.log(`\t[${job_id}] Gmail: ${messages.length} messages found`);
-    saveFile('gmail', messages);
+    saveFile('lifelog/gmail', messages);
     return messages;
 }
 
