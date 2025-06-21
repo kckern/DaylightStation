@@ -3,7 +3,7 @@ import nodeFetch from 'node-fetch';
 import { createCanvas, loadImage } from 'canvas';
 import moment from "moment-timezone";
 import {  sendImageMessage, updateMessage, deleteMessage, updateMessageReplyMarkup, deleteSpecificMessage, sendMessage } from "./telegram.mjs";
-import { clearNutrilistByLogUUID, getNutriCursor, getNutrilListByDate, loadNutrilogsNeedingListing, nutriLogAlreadyListed, saveMessage, saveNutriDay, saveNutrilist, saveNutrilog, setNutriCursor } from "./db.mjs";
+import { clearNutrilistByLogUUID, getNutriCursor, getNutrilListByDate, loadNutrilogsNeedingListing, loadRecentNutriList, nutriLogAlreadyListed, saveMessage, saveNutriDay, saveNutrilist, saveNutrilog, setNutriCursor } from "./db.mjs";
 //uuid
 import { v4 as uuidv4 } from 'uuid';
 //jimp
@@ -264,5 +264,21 @@ export const compileDailyFoodReport = async (chat_id) => {
 
     saveNutriDay({chat_id, daily_data: pastWeekOfFood});
     return pastWeekOfFood;
+
+}
+
+
+
+export const loadHealthReportData = async (req, res) => {
+
+  const chat_id = req.query.chat_id || 'b6898194425_u575596036';
+  const nutrilistData = loadRecentNutriList(chat_id,7) || [];
+
+
+  return res.status(200).json({
+    message: "Food report data loaded successfully.",
+    nutrilistData
+  });
+
 
 }
