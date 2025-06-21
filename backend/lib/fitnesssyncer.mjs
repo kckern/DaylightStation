@@ -101,92 +101,92 @@ export const getActivities = async () => {
     return { items: activities };
 };
 
-export const harvestActivities = async () => {
-try {
+const harvestActivities = async () => {
+  try {
     const activitiesData = await getActivities();
     const activities = activitiesData.items.map(item => {
-        delete item.gps;
-        const src = "garmin";
-        const { date: timestamp, activity: type, itemId } = item;
-        const id = md5(itemId);
-        const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
-        const saveMe = { src, id, date, type, data: item };
-        return saveMe;
+      delete item.gps;
+      const src = "garmin";
+      const { date: timestamp, activity: type, itemId } = item;
+      const id = md5(itemId);
+      const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
+      const saveMe = { src, id, date, type, data: item };
+      return saveMe;
     });
 
     const harvestedDates = activities.map(activity => activity.date);
     const onFile = loadFile('lifelog/fitness') || {};
     const onFilesDates = Object.keys(onFile || {});
     const uniqueDates = [...new Set([...harvestedDates, ...onFilesDates])].sort((b, a) => new Date(a) - new Date(b))
-    .filter(date => moment(date, 'YYYY-MM-DD', true).isValid() && moment(date, 'YYYY-MM-DD').isBefore(moment().add(1, 'year')));
+      .filter(date => moment(date, 'YYYY-MM-DD', true).isValid() && moment(date, 'YYYY-MM-DD').isBefore(moment().add(1, 'year')));
 
     const saveMe = uniqueDates.reduce((acc, date) => {
-        acc[date] = activities
-            .filter(activity => activity.date === date)
-            .reduce((dateAcc, activity) => {
-            const keys = Object.keys(activity.data || {});
-            keys.forEach(key => {
-                if (!activity.data[key]) delete activity.data[key];
-            });
-            dateAcc[activity.id] = activity;
-            return dateAcc;
-            }, {});
-        return acc;
+      acc[date] = activities
+        .filter(activity => activity.date === date)
+        .reduce((dateAcc, activity) => {
+          const keys = Object.keys(activity.data || {});
+          keys.forEach(key => {
+            if (!activity.data[key]) delete activity.data[key];
+          });
+          dateAcc[activity.id] = activity;
+          return dateAcc;
+        }, {});
+      return acc;
     }, {});
 
     saveFile('lifelog/fitness_long', saveMe);
     //reduce
     const reducedSaveMe = Object.keys(saveMe).reduce((acc, date) => {
-        acc[date] = {
-            steps: {
-            steps_count: Object.values(saveMe[date])
+      acc[date] = {
+        steps: {
+          steps_count: Object.values(saveMe[date])
             .filter(activity => activity.type === 'Steps')
             .reduce((sum, activity) => sum + (activity.data.steps || 0), 0),
-            bmr: Object.values(saveMe[date])
+          bmr: Object.values(saveMe[date])
             .filter(activity => activity.type === 'Steps')
             .reduce((sum, activity) => sum + (activity.data.bmr || 0), 0),
-            duration: parseFloat(Object.values(saveMe[date])
+          duration: parseFloat(Object.values(saveMe[date])
             .filter(activity => activity.type === 'Steps')
-            .reduce((sum, activity) => sum + (activity.data.duration/60 || 0), 0)
+            .reduce((sum, activity) => sum + (activity.data.duration / 60 || 0), 0)
             .toFixed(2)),
-            calories: parseFloat(Object.values(saveMe[date])
+          calories: parseFloat(Object.values(saveMe[date])
             .filter(activity => activity.type === 'Steps')
             .reduce((sum, activity) => sum + (activity.data.calories || 0), 0)
             .toFixed(2)),
-            maxHeartRate: Math.max(
+          maxHeartRate: Math.max(
             ...Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps')
-            .map(activity => activity.data.maxHeartrate || 0)
-            ),
-            avgHeartRate: parseFloat(Math.round(
+              .filter(activity => activity.type === 'Steps')
+              .map(activity => activity.data.maxHeartrate || 0)
+          ),
+          avgHeartRate: parseFloat(Math.round(
             Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps')
-            .reduce((sum, activity) => sum + (activity.data.avgHeartrate || 0), 0) /
+              .filter(activity => activity.type === 'Steps')
+              .reduce((sum, activity) => sum + (activity.data.avgHeartrate || 0), 0) /
             Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps').length || 1
-            ).toFixed(2)),
-            },
-            activities: Object.values(saveMe[date])
-            .filter(activity => activity.type !== 'Steps')
-            .map(activity => ({
+              .filter(activity => activity.type === 'Steps').length || 1
+          ).toFixed(2)),
+        },
+        activities: Object.values(saveMe[date])
+          .filter(activity => activity.type !== 'Steps')
+          .map(activity => ({
             title: activity.data.title || '',
             calories: parseFloat((activity.data.calories || 0).toFixed(2)),
             distance: parseFloat((activity.data.distance || 0).toFixed(2)),
-            minutes: parseFloat((activity.data.duration/60 || 0).toFixed(2)),
+            minutes: parseFloat((activity.data.duration / 60 || 0).toFixed(2)),
             startTime: activity.data.date ? moment(activity.data.date).tz(timezone).format('hh:mm a') : '',
             endTime: activity.data.endDate ? moment(activity.data.endDate).tz(timezone).format('hh:mm a') : '',
             avgHeartrate: parseFloat((activity.data.avgHeartrate || 0).toFixed(2)),
-            })),
-        };
-        if(acc[date].activities.length === 0) delete acc[date].activities;
-        return acc;
+          })),
+      };
+      if (acc[date].activities.length === 0) delete acc[date].activities;
+      return acc;
     }, {});
     saveFile('lifelog/fitness', reducedSaveMe);
 
-
-
     return reducedSaveMe;
-} catch (error) {
-    return { success: false, error: error.message}
-}
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 };
+
+export default harvestActivities;
