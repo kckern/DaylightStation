@@ -3,6 +3,7 @@ import qs from 'querystring';
 import dotenv from 'dotenv';
 import moment from 'moment-timezone';
 import crypto from 'crypto';
+import { loadFile, saveFile } from './io.mjs';
 
 // Configure environment variables
 dotenv.config();
@@ -13,46 +14,33 @@ function md5(string) {
 }
 
 
-async function getAccessTokenFromRefreshToken(refreshToken) {
+async function getAccessTokenFromRefreshToken() {
   const { FITSYNC_CLIENT_ID, FITSYNC_CLIENT_SECRET } = process.env;
+  const {refresh} = loadFile('auth/fitnesssyncer');
   try {
     const response = await axios.post('https://www.fitnesssyncer.com/api/oauth/access_token',
       qs.stringify({
         grant_type: 'refresh_token',
-        refresh_token: refreshToken,
+        refresh_token: refresh,
         client_id: FITSYNC_CLIENT_ID,
         client_secret: FITSYNC_CLIENT_SECRET
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
-    return response.data;
+    const { access_token, refresh_token } = response.data;
+    saveFile('auth/fitnesssyncer', { refresh: refresh_token });
+    return {access_token, refresh_token};
   } catch (error) {
     console.error('Failed to get access token from refresh token.');
     throw error;
   }
 }
 
-async function loadCredentials(chatId, store) {
-  if (process.env.FITSYNC_ACCESS_TOKEN) {
-    return;
-  }
-
-  const userInfo = store[chatId] || {};
-  const { FITSYNC_REFRESH_TOKEN } = userInfo;
-
-  if (!FITSYNC_REFRESH_TOKEN) {
-    console.log(`No refresh token found for chatId ${chatId}. Please authorize: 
-https://www.fitnesssyncer.com/api/oauth/authorize?client_id=${process.env.FITSYNC_CLIENT_ID}&response_type=code&scope=Sources&redirect_uri=https://personal.fitnesssyncer.com/&state=InformationForYourService`);
-    throw new Error('Missing refresh token - cannot continue.');
-  }
-
-  const { access_token, refresh_token } = await getAccessTokenFromRefreshToken(FITSYNC_REFRESH_TOKEN);
-
+async function loadCredentials() {
+  if (process.env.FITSYNC_ACCESS_TOKEN)   return process.env.FITSYNC_ACCESS_TOKEN;
+  const { access_token } = await getAccessTokenFromRefreshToken();
   process.env.FITSYNC_ACCESS_TOKEN = access_token;
-  process.env.FITSYNC_REFRESH_TOKEN = refresh_token;
-
-  userInfo.FITSYNC_ACCESS_TOKEN = access_token;
-  userInfo.FITSYNC_REFRESH_TOKEN = refresh_token;
+  
 }
 
 async function setSourceId(chatId, sourceKey, store) {
