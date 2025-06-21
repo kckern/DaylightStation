@@ -23,7 +23,7 @@ const getMovies = async () => {
         }
 
     }).sort((a, b) => new Date(b.readAt) - new Date(a.readAt));
-    saveFile('goodreads', books);
+    saveFile('lifelog/goodreads', books);
     return books;
 }
 

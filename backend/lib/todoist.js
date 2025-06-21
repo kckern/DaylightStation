@@ -9,7 +9,7 @@ const getTasks = async (job_id) => {
         const api = new TodoistApi(TODOIST_KEY);
         const tasks = await api.getTasks()
         console.log(`\t[${job_id}] Todoist: ${tasks.length} tasks found`);
-        saveFile('todoist', tasks);
+        saveFile('lifelog/todoist', tasks);
         saveEvents(job_id);
         return tasks;
 }

@@ -8,7 +8,7 @@ const getWeightData = async (job_id) => {
     if(!!process.env.dev) return processWeight(job_id);
 
     const { WITHINGS_CLIENT, WITHINGS_SECRET,WITHINGS_REDIRECT } = process.env;
-    const {refresh} = loadFile('_tmp/withings');
+    const {refresh} = loadFile('auth/withings');
     //return {refresh};
     const params_auth = {
         action: 'requesttoken',
@@ -23,7 +23,7 @@ const getWeightData = async (job_id) => {
 
     const {access_token, refresh_token} = auth_data || {};
 
-    if(refresh_token) saveFile('_tmp/withings', {refresh: refresh_token});
+    if(refresh_token) saveFile('auth/withings', {refresh: refresh_token});
 
     if(!access_token){
 
@@ -68,7 +68,7 @@ const getWeightData = async (job_id) => {
 
     if(measurements.length === 0) return;
 
-    saveFile('withings', measurements);
+    saveFile('lifelog/withings', measurements);
     processWeight(job_id);
     return measurements;
 };

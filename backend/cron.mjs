@@ -88,7 +88,7 @@ function computeNextRun(job, fromMoment) {
 
 export const cronContinuous = async () => {
   const now = moment().tz(timeZone);
-  const cronJobs = loadFile("cron") || [];
+  const cronJobs = loadFile("config/cron") || [];
   for (const job of cronJobs) {
     if (!job.nextRun) {
       const nextMoment = computeNextRun(job, now);
@@ -111,7 +111,7 @@ export const cronContinuous = async () => {
       job.needsToRun = false;
     }
   }
-  saveFile("cron", cronJobs);
+  saveFile("config/cron", cronJobs);
   const runNow = [];
   for (const job of cronJobs) {
     if (job.needsToRun) {
@@ -131,10 +131,19 @@ export const cronContinuous = async () => {
           } else if (typeof item === "function") {
             return item;
           }
-          throw new Error(`Invalid cron item for ${jobName}`);
+          console.warn(`Invalid cron item for ${jobName}:`, item);
+          return null; // Gracefully handle invalid items
         })
       );
-      await Promise.all(funcs.map(fn => fn(guidId)));
+      await Promise.all(
+        funcs.map(fn => {
+          if (typeof fn === "function") {
+            return fn(guidId);
+          } else {
+            console.warn(`Skipped execution for non-function in ${jobName}:`, fn);
+          }
+        })
+      );
       job.messageIds = job.messageIds ? [...job.messageIds, guidId] : [guidId];
     }
     job.last_run = now.format("YYYY-MM-DD HH:mm:ss");
@@ -143,7 +152,7 @@ export const cronContinuous = async () => {
     job.secondsUntil = newNextRunMoment.unix() - now.unix();
     job.needsToRun = false;
   }
-  saveFile("cron", cronJobs);
+  saveFile("config/cron", cronJobs);
 };
 
 setInterval(() => {

@@ -123,7 +123,7 @@ const logToInfinity = async (media_key, { percent, seconds }) => {
     if (seconds < 10) return false;
     const duration = percent > 0 ? (seconds / (percent / 100)) : 0;
     const secondsRemaining = duration - seconds;
-    const watchList = loadFile('watchlist') || [];
+    const watchList = loadFile('config/watchlist') || [];
     const matches = watchList.filter(item => item.media_key === media_key) || [];
     if (!matches.length) return false;
     const uids = matches.map(item => item.uid);
@@ -151,14 +151,14 @@ mediaRouter.post('/log', async (req, res) => {
     }
     try {
         if(seconds<10) return res.status(400).json({ error: `Invalid request: seconds < 10` });
-        const log = loadFile('_media_memory') || {};
+        const log = loadFile('history/_media_memory') || {};
         log[type] = log[type] || {};
         log[type][media_key] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, media_key, seconds: parseInt(seconds), percent: parseFloat(percent) };
         if(!log[type][media_key].title) delete log[type][media_key].title;
         log[type] = Object.fromEntries(
             Object.entries(log[type]).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
         );
-        saveFile('_media_memory', log);
+        saveFile('history/_media_memory', log);
         console.log(`Log updated: ${JSON.stringify(log[type][media_key])}`);
         await logToInfinity(media_key,{percent, seconds});
         res.json({ response: {type,...log[type][media_key]} });
@@ -190,7 +190,7 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     const { fileSize,  extention } = findFileFromMediaKey(media_key);
     if(!extention) media_key = await (async () => {
         const mediakeys = media_key.split(/[|]/);
-        const watched = loadFile('_media_memory')?.media || {};
+        const watched = loadFile('history/_media_memory')?.media || {};
         const sortItems = (a, b) => {
             if(!a.media_key || !b.media_key) return 0;
             const lastLeafA = a.media_key.split('/').pop();

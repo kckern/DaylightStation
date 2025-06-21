@@ -40,7 +40,7 @@ const listCalendarEvents = async (job_id) => {
     allEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
 
     console.log(`\t[${job_id}] Calendar: ${allEvents.length} events found`);
-    saveFile('calendar', allEvents);
+    saveFile('lifelog/calendar', allEvents);
     saveEvents(job_id);
     return allEvents;
 }
