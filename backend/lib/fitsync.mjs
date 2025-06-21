@@ -15,7 +15,7 @@ export const getAccessToken = async () => {
 if(process.env.FITSYNC_ACCESS_TOKEN) return process.env.FITSYNC_ACCESS_TOKEN;
 
     const { FITSYNC_CLIENT_ID, FITSYNC_CLIENT_SECRET } = process.env;
-    const {refresh} = loadFile('_tmp/fitnesssyncer');
+    const {refresh} = loadFile('auth/fitnesssyncer');
     const curl = `curl -X POST https://www.fitnesssyncer.com/api/oauth/access_token -H "Content-Type: application/json" -d '${JSON.stringify({
         grant_type: 'refresh_token',
         refresh_token: refresh,
@@ -34,7 +34,7 @@ try {
     );
     const accessToken = tokenResponse.data.access_token;
     const refreshToken = tokenResponse.data.refresh_token;
-    if (refreshToken) saveFile('_tmp/fitnesssyncer', { refresh: refreshToken });
+    if (refreshToken) saveFile('auth/fitnesssyncer', { refresh: refreshToken });
     process.env.FITSYNC_ACCESS_TOKEN = accessToken;
     return accessToken;
 } catch (error) {

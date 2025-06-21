@@ -298,7 +298,7 @@ export class Plex {
   }
   selectKeyToPlay(keys, shuffle = false) {
     keys = keys?.[0]?.plex ? keys.map(x => x.plex) : keys || [];
-    let log = loadFile("_media_memory")?.plex || {};
+    let log = loadFile("history/_media_memory")?.plex || {};
 
     const watched = keys.filter(key => log[key]?.percent >= 90).sort((a, b) => log[b].time - log[a].time);
     const inProgress = keys.filter(key => log[key]?.percent > 0 && log[key]?.percent < 90).sort((b, a) => log[b].percent - log[a].percent);
@@ -340,8 +340,8 @@ export class Plex {
   }
 
   async loadSingleFromWatchlist(watchlist) {
-    let log = loadFile("_media_memory")?.plex || {};
-    let watchlists = loadFile("watchlists");
+    let log = loadFile("history/_media_memory")?.plex || {};
+    let watchlists = loadFile("config/watchlists");
     let list = watchlists[watchlist];
     if (!list) return [];
     let candidates = { normal: {}, urgent: {}, in_progress: {} };

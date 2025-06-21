@@ -325,7 +325,7 @@ export const generateImage = async (chat_id) => {
   }
 
   //save tmp data to a file for debugging
-  saveFile(`nutrichart`, data);
+  saveFile(`history/nutrichart`, data);
 
   let daysAgo = 0;
   let todaysFood;

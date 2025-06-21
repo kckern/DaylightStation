@@ -3,9 +3,9 @@ import { loadFile, saveFile } from '../lib/io.mjs';
 export default async (job_id) => {
 
 
-    const calendarEvents = loadFile('calendar') || [];
-    const todoItems = loadFile('todoist') || [];
-    const clickupData = loadFile('clickup') || [];
+    const calendarEvents = loadFile('lifelog/calendar') || [];
+    const todoItems = loadFile('lifelog/todoist') || [];
+    const clickupData = loadFile('lifelog/clickup') || [];
 
     const hasCalItems = !!calendarEvents.length
     const calendarItems = !hasCalItems ? [] : calendarEvents.map(event => {
@@ -58,7 +58,7 @@ export default async (job_id) => {
 
     const allItems = [...calendarItems, ...todoistItems, ...clickupItems].sort((a, b) => new Date(a.start) - new Date(b.start));
 
-    saveFile('events', allItems);
+    saveFile('lifelog/events', allItems);
 
     return allItems;
 

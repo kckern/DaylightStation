@@ -29,7 +29,7 @@ const getScrobbles = async () => {
         page++;
         tracks = [...tracks, ...recenttracks].sort((a, b) => b.unix - a.unix);
     }
-    saveFile('lastfm', tracks);
+    saveFile('lifelog/lastfm', tracks);
     return tracks;
 }
 

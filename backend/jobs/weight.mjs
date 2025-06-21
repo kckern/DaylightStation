@@ -6,7 +6,7 @@ import moment from 'moment';
 //
 const weightProcess = async (job_id) => {
     // Load data
-    const weightPoints = (loadFile('withings') || []).sort((a, b) => moment(a.date) - moment(b.date));
+    const weightPoints = (loadFile('lifelog/withings') || []).sort((a, b) => moment(a.date) - moment(b.date));
 
     // 1. Do a (re-implemented) linear interpolation over gaps for the last ~90 days
     let values = interpolateDays(weightPoints.slice(-90));
@@ -46,7 +46,7 @@ const weightProcess = async (job_id) => {
     values = sortedKeys.reduce((acc, key) => { acc[key] = values[key]; return acc; }, {});
 
     // Save final results
-    saveFile('weight', values);
+    saveFile('lifelog/weight', values);
 
     return values;
 };

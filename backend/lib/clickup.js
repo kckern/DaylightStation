@@ -82,7 +82,7 @@ const getTickets = async () => {
     });
 
     console.log('Total tickets fetched:', tickets.length);
-    saveFile('clickup', tickets);
+    saveFile('lifelog/clickup', tickets);
     console.log('Tickets saved to file.');
 
     return tickets;

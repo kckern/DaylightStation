@@ -24,7 +24,7 @@ const getMovies = async () => {
         page++;
         movies = [...movies, ...matches];
     }
-    saveFile('letterboxd', movies);
+    saveFile('lifelog/letterboxd', movies);
     return movies;
 }
 
