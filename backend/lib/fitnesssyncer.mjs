@@ -43,38 +43,22 @@ async function loadCredentials() {
   
 }
 
-async function setSourceId(chatId, sourceKey, store) {
-  const userInfo = store[chatId] || {};
 
-  const { items } = await baseAPI('sources');
-  const source = items.find((s) => s.providerType === sourceKey);
-  if (!source) return null;
+export const getSourceId = async (sourceKey) => {
+ const { items } = await baseAPI('sources');
+ const source = items.find(source => source.providerType === sourceKey);
+ if (!source) return false;
+ return source.id;
+};
 
-  userInfo[sourceKey] = source.id;
-  store[chatId] = userInfo;
 
-  return source.id;
-}
-
-async function getSourceId(chatId, sourceKey, store) {
-  const userInfo = store[chatId] || {};
-  if (!userInfo[sourceKey]) {
-    return await setSourceId(chatId, sourceKey, store);
-  }
-  return userInfo[sourceKey];
-}
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Base API for making GET requests to FitnessSyncer (private)
 // ────────────────────────────────────────────────────────────────────────────────
 async function baseAPI(endpoint) {
   const baseUrl = 'https://api.fitnesssyncer.com/api/providers';
-  const { FITSYNC_ACCESS_TOKEN } = process.env;
-
-  if (!FITSYNC_ACCESS_TOKEN) {
-    throw new Error('No access token available. Make sure loadCredentials() is called first.');
-  }
-
+  await loadCredentials();
   try {
     const url = `${baseUrl}/${endpoint}`;
     const headers = { Authorization: `Bearer ${FITSYNC_ACCESS_TOKEN}` };
@@ -91,42 +75,118 @@ async function baseAPI(endpoint) {
 // Publicly Exposed Functions
 // ────────────────────────────────────────────────────────────────────────────────
 
-export async function getActivities(chatId, store) {
-  await loadCredentials(chatId, store);
-  const garminSourceId = await getSourceId(chatId, 'GarminWellness', store);
-  if (!garminSourceId) {
-    throw new Error('Failed to determine Garmin source ID.');
-  }
-  return baseAPI(`sources/${garminSourceId}/items`);
+
+export const getActivities = async () => {
+    await getAccessToken();
+    const garminSourceId = await getSourceId('GarminWellness');
+    if (!garminSourceId) throw new Error('Failed to get garmin source id');
+
+    const activities = [];
+    let offset = 0;
+    const limit = 100; // Adjust limit as needed
+    const oneYearAgo = moment().subtract(1, 'year').startOf('day');
+
+    while (true) {
+        const response = await baseAPI(`sources/${garminSourceId}/items?offset=${offset}&limit=${limit}`);
+        const items = response.items || [];
+        if (items.length === 0) break;
+
+        const filteredItems = items.filter(item => moment(item.date).isAfter(oneYearAgo));
+        activities.push(...filteredItems);
+
+        if (filteredItems.length < items.length) break; // Stop if items are outside the 1-year range
+        offset += limit;
+    }
+
+    return { items: activities };
+};
+
+export const harvestActivities = async () => {
+try {
+    const activitiesData = await getActivities();
+    const activities = activitiesData.items.map(item => {
+        delete item.gps;
+        const src = "garmin";
+        const { date: timestamp, activity: type, itemId } = item;
+        const id = md5(itemId);
+        const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
+        const saveMe = { src, id, date, type, data: item };
+        return saveMe;
+    });
+
+    const harvestedDates = activities.map(activity => activity.date);
+    const onFile = loadFile('lifelog/fitness') || {};
+    const onFilesDates = Object.keys(onFile || {});
+    const uniqueDates = [...new Set([...harvestedDates, ...onFilesDates])].sort((b, a) => new Date(a) - new Date(b))
+    .filter(date => moment(date, 'YYYY-MM-DD', true).isValid() && moment(date, 'YYYY-MM-DD').isBefore(moment().add(1, 'year')));
+
+    const saveMe = uniqueDates.reduce((acc, date) => {
+        acc[date] = activities
+            .filter(activity => activity.date === date)
+            .reduce((dateAcc, activity) => {
+            const keys = Object.keys(activity.data || {});
+            keys.forEach(key => {
+                if (!activity.data[key]) delete activity.data[key];
+            });
+            dateAcc[activity.id] = activity;
+            return dateAcc;
+            }, {});
+        return acc;
+    }, {});
+
+    saveFile('lifelog/fitness_long', saveMe);
+    //reduce
+    const reducedSaveMe = Object.keys(saveMe).reduce((acc, date) => {
+        acc[date] = {
+            steps: {
+            steps_count: Object.values(saveMe[date])
+            .filter(activity => activity.type === 'Steps')
+            .reduce((sum, activity) => sum + (activity.data.steps || 0), 0),
+            bmr: Object.values(saveMe[date])
+            .filter(activity => activity.type === 'Steps')
+            .reduce((sum, activity) => sum + (activity.data.bmr || 0), 0),
+            duration: parseFloat(Object.values(saveMe[date])
+            .filter(activity => activity.type === 'Steps')
+            .reduce((sum, activity) => sum + (activity.data.duration/60 || 0), 0)
+            .toFixed(2)),
+            calories: parseFloat(Object.values(saveMe[date])
+            .filter(activity => activity.type === 'Steps')
+            .reduce((sum, activity) => sum + (activity.data.calories || 0), 0)
+            .toFixed(2)),
+            maxHeartRate: Math.max(
+            ...Object.values(saveMe[date])
+            .filter(activity => activity.type === 'Steps')
+            .map(activity => activity.data.maxHeartrate || 0)
+            ),
+            avgHeartRate: parseFloat(Math.round(
+            Object.values(saveMe[date])
+            .filter(activity => activity.type === 'Steps')
+            .reduce((sum, activity) => sum + (activity.data.avgHeartrate || 0), 0) /
+            Object.values(saveMe[date])
+            .filter(activity => activity.type === 'Steps').length || 1
+            ).toFixed(2)),
+            },
+            activities: Object.values(saveMe[date])
+            .filter(activity => activity.type !== 'Steps')
+            .map(activity => ({
+            title: activity.data.title || '',
+            calories: parseFloat((activity.data.calories || 0).toFixed(2)),
+            distance: parseFloat((activity.data.distance || 0).toFixed(2)),
+            minutes: parseFloat((activity.data.duration/60 || 0).toFixed(2)),
+            startTime: activity.data.date ? moment(activity.data.date).tz(timezone).format('hh:mm a') : '',
+            endTime: activity.data.endDate ? moment(activity.data.endDate).tz(timezone).format('hh:mm a') : '',
+            avgHeartrate: parseFloat((activity.data.avgHeartrate || 0).toFixed(2)),
+            })),
+        };
+        if(acc[date].activities.length === 0) delete acc[date].activities;
+        return acc;
+    }, {});
+    saveFile('lifelog/fitness', reducedSaveMe);
+
+
+
+    return reducedSaveMe;
+} catch (error) {
+    return { success: false, error: error.message}
 }
-
-export default async function harvestActivities(chatId, store) {
-  const data = await getActivities(chatId, store);
-  const items = data.items || [];
-
-  const activities = items.map((item) => {
-    const { date: timestamp, activity: type, itemId } = item;
-    const id = md5(itemId);
-    const date = moment(timestamp).tz(TIMEZONE).format('YYYY-MM-DD');
-
-    const safeItem = { ...item };
-    delete safeItem.gps;
-
-    return {
-      chatId,
-      src: 'garmin',
-      id,
-      date,
-      type,
-      data: safeItem,
-    };
-  });
-
-  const userInfo = store[chatId] || {};
-  const existingActivities = userInfo.activities || [];
-  const updatedActivities = [...existingActivities, ...activities];
-  userInfo.activities = updatedActivities;
-  store[chatId] = userInfo;
-
-  return activities;
-}
+};
