@@ -576,6 +576,11 @@ export function SinglePlayer(play) {
           }
         )
       )}
+      {isReady && !['dash_video', 'video', 'audio'].includes(mediaInfo.media_type) && (
+        <pre>
+          {JSON.stringify(mediaInfo, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }

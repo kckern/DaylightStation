@@ -302,32 +302,7 @@ async function makeFoodList(food, width, height) {
   return listCanvas;
 }
 
-/**
- * Generate either a placeholder or actual report for the user
- */
-const placeholderImage = async (width, height) => {
-  const placeholderCanvas = createCanvas(width, height);
-  const ctx = placeholderCanvas.getContext('2d');
 
-  // Set background color
-  ctx.fillStyle = '#f0f0f0';
-  ctx.fillRect(0, 0, width, height);
-
-  const now = moment().format('YYYY-MM-DD HH:mm:ss');
-
-  ctx.font = '48px "Roboto Condensed"';
-  ctx.fillStyle = '#333';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(now, width / 2, height / 2);
-
-  // Add border
-  ctx.strokeStyle = '#999';
-  ctx.lineWidth = 5;
-  ctx.strokeRect(0, 0, width, height);
-
-  return placeholderCanvas.toBuffer();
-};
 
 /**
  * The main function that compiles the day’s nutritional data
