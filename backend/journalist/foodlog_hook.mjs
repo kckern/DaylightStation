@@ -535,7 +535,7 @@ const processButtonpress = async (body, chat_id) => {
     const cursor = await getNutriCursor(chat_id);
 
     // Handle cancel action directly
-    if (choice === '❌ Cancel') {
+    if (choice === '❌ Cancel' || choice === '❌ Discard') {
         await deleteMessage(chat_id, messageId);
         if (cursor.adjusting) delete cursor.adjusting;
         if (cursor.upc) delete cursor.upc;
