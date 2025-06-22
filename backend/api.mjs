@@ -16,11 +16,15 @@ const timezone = (req, res) => {
     const today = moment().tz(timezone).format('YYYY-MM-DD');
     const dayOfWeek = moment().tz(timezone).format('dddd');
     const timeAMPM = moment().tz(timezone).format('h:mm a');
+    const unix = moment().tz(timezone).unix();
+    const momentTimezone = moment.tz.guess();
     res.status(200).json({
         timezone,
         today,
         dayOfWeek,
-        timeAMPM
+        timeAMPM,
+        unix,
+        momentTimezone
     });
 }
 

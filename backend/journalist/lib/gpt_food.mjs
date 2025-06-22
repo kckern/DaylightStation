@@ -37,12 +37,14 @@ const today = moment().tz(timezone).format('YYYY-MM-DD');
 const dayOfWeek = moment().tz(timezone).format('dddd');
 const timeAMPM = moment().tz(timezone).format('h:mm a');
 const hourOfDayInt = parseInt(moment().tz(timezone).hour());
+const unix = moment().tz(timezone).unix();
+const momentTimezone = moment.tz.guess();
 
 const time = hourOfDayInt < 12 ? "morning" : hourOfDayInt < 17 ? "midday" : hourOfDayInt < 21 ? "evening" : "night";
 
 const instructions = `List the food items in them, output in a JSON object which contains keys: 
                  - "food" an array with the food icon, item name, amount (integer), and unit (g, ml, etc.), and noom color (green, yellow, orange).
-                 - "date," the date of the meal.  Usually the current date (today is ${dayOfWeek}, ${today} at ${timeAMPM}, TZ: ${timezone} ), but could be in the past, if the description mentions a timeframe, such as "yesterday" or "on wednesday".  If the date is already specified in a previous attempt, keep that one, unless the user specifies a new date.
+                 - "date," the date of the meal.  Usually the current date (today is ${dayOfWeek}, ${today} at ${timeAMPM}, TZ: ${timezone} (${momentTimezone}), unix time: ${unix} ), but could be in the past, if the description mentions a timeframe, such as "yesterday" or "on wednesday".  If the date is already specified in a previous attempt, keep that one, unless the user specifies a new date.
                  - "time," the time of the meal.  Usually "midday" or "evening", but could be "morning" or "night".  Default is "${time}", unless the user specifies a different time for the meal.
                  
                  For example:
