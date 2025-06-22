@@ -79,13 +79,16 @@ export const getActivities = async () => {
     }
     const onFileActivities = loadFile('lifelog/strava_long') || {};
     const activitiesWithHeartRate = await Promise.all(
-        activities.map(async (activity) => {
+        activities
+        .slice(0, 50)
+        .map(async (activity) => {
+            if(!activity?.id) return null;
             if (activity.type === 'VirtualRide' || activity.type === 'VirtualRun') {
                 activity.heartRateOverTime = [9];
                 return activity; // Skip virtual activities
             }
             const onFileActivity = onFileActivities[moment(activity.start_date).tz(timezone).format('YYYY-MM-DD')] || {};
-            const alreadyHasHR = onFileActivity[md5(activity.id.toString())]?.data?.heartRateOverTime || null;
+            const alreadyHasHR = onFileActivity[md5(activity.id?.toString())]?.data?.heartRateOverTime || null;
             if(alreadyHasHR) return alreadyHasHR
             try {
                 const heartRateResponse = await baseAPI(`activities/${activity.id}/streams?keys=heartrate&key_by_type=true`);
@@ -117,11 +120,12 @@ const harvestActivities = async () => {
         const activities = activitiesData.items.map(item => {
             const src = "strava";
             const { start_date: timestamp, type, id: itemId } = item;
-            const id = md5(itemId.toString());
+            if(!itemId) return false;
+            const id = md5(itemId?.toString());
             const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
             const saveMe = { src, id, date, type, data: item };
             return saveMe;
-        });
+        }).filter(Boolean);
 
         const harvestedDates = activities.map(activity => activity.date);
         const onFile = loadFile('lifelog/strava') || {};
