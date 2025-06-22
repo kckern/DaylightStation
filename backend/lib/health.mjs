@@ -21,7 +21,7 @@ const dailyHealth = async (jobId) => {
     const dailyNutrition = getNutriDaysBack(nutribot_chat_id,30);
     const fitness = loadFile('lifelog/fitness');
 
-    const past90Days = Array.from({length: 14}, (_, i) => 
+    const past90Days = Array.from({length: 30}, (_, i) => 
         moment().subtract(i + 1, 'days').format('YYYY-MM-DD')
     );
     const dailyHealth = {};
