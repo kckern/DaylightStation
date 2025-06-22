@@ -16,6 +16,7 @@ import scripture from './lib/scriptureguide.mjs';
 import ldsgc from './lib/ldsgc.mjs';
 import youtube_dl from './lib/youtube.mjs';
 import { harvestActivities as fitness } from './lib/fitsync.mjs';
+import { harvestActivities as strava } from './lib/strava.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from './lib/budget.mjs';
 
 const harvesters = {
@@ -34,6 +35,7 @@ const harvesters = {
     budget,
     youtube_dl,
     fitness,
+    strava,
     payroll: payrollSyncJob
     
 }
