@@ -99,7 +99,7 @@ export const getActivities = async () => {
     return { items: activities };
 };
 
-export const harvestActivities = async () => {
+const harvestActivities = async () => {
 try {
     const activitiesData = await getActivities();
     const activities = activitiesData.items.map(item => {
@@ -189,3 +189,5 @@ try {
 }
 };
 
+
+export default harvestActivities;

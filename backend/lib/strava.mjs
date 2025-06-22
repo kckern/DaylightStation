@@ -109,7 +109,7 @@ export const getActivities = async () => {
     return { items: activitiesWithHeartRate };
 };
 
-export const harvestActivities = async () => {
+const harvestActivities = async () => {
     try {
         const activitiesData = await getActivities();
         if(!activitiesData) return await reauthSequence();
@@ -168,3 +168,5 @@ export const harvestActivities = async () => {
         return { success: false, error: error.message };
     }
 };
+
+export default harvestActivities;

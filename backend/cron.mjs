@@ -21,6 +21,7 @@ const cron = {
      "./lib/withings.mjs",
      "./lib/fitsync.mjs",
      "./lib/strava.mjs",
+     "./lib/health.mjs",
     // ...Infinity.keys.map(key => (req) => Infinity.loadData(key, req)),
   ],
   cronDaily: [
