@@ -12,7 +12,7 @@ export default function WeatherForecast() {
   const celciusToFahrenheit = (temp) => Math.round(temp * 9/5 + 32);
 
   const reloadData = () => {
-    DaylightAPI('/data/weather').then((response) => {
+    DaylightAPI('/data/lifelog/weather').then((response) => {
         const list = response.hourly || [];
         const endTime = moment().add(36, 'hours');
         const isFuture = ({time}) => moment(time).isAfter(moment()) && moment(time).isBefore(endTime);
