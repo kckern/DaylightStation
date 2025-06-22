@@ -77,14 +77,16 @@ export const getActivities = async () => {
         if (response.length < perPage) break; // Stop if fewer items than perPage are returned
         page++;
     }
-
+    const onFileActivities = loadFile('lifelog/strava_long') || {};
     const activitiesWithHeartRate = await Promise.all(
         activities.map(async (activity) => {
             if (activity.type === 'VirtualRide' || activity.type === 'VirtualRun') {
                 activity.heartRateOverTime = [9];
                 return activity; // Skip virtual activities
             }
-
+            const onFileActivity = onFileActivities[moment(activity.start_date).tz(timezone).format('YYYY-MM-DD')] || {};
+            const alreadyHasHR = onFileActivity[md5(activity.id.toString())]?.data?.heartRateOverTime || null;
+            if(alreadyHasHR) return alreadyHasHR
             try {
                 const heartRateResponse = await baseAPI(`activities/${activity.id}/streams?keys=heartrate&key_by_type=true`);
                 if (heartRateResponse && heartRateResponse.heartrate) {
