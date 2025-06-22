@@ -300,7 +300,7 @@ export default function Weather() {
   const [currentWeather, setCurrentWeather] = useState({});
 
   const reloadData = () => {
-    DaylightAPI("/data/weather").then(({ current }) => {
+    DaylightAPI("/data/lifelog/weather").then(({ current }) => {
 
       const descdata = (codes[current.code]?.[isDaytime() ? "day" : "night"]) || {};
       current.temp = celciusToFahrenheit(current.temp);
