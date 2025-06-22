@@ -5,7 +5,14 @@ import moment from 'moment-timezone';
 import { getBase64Url } from './food.mjs';
 import { getMostRecentNutrilistItems, getNutriDay, getNutriDaysBack, getNutrilListByDate, getNutrilog, saveNutriCoach } from './db.mjs';
 import { loadFile, saveFile } from '../../lib/io.mjs';
+import crypto from 'crypto';
 dotenv.config();
+
+
+const md5 = (string) => {
+    string = string.toString();
+    return crypto.createHash("md5").update(string).digest("hex");
+}
 
 
 const extractJSON = (openaiResponse) => {
@@ -124,7 +131,7 @@ const gptCall = async (endpoint, payload) => {
                 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
             }
         });
-        const month = moment().tz(timezone).format('YYYY-MM-DD');
+        const month = moment().tz(timezone).format('YYYY-MM');
         saveFile(`gpt/food/${month}/${Date.now()}`, {in: payload, out: response.data});
 
         return response.data;
@@ -548,29 +555,25 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
 
 export const generateCoachingMessageForDailyHealth = async (maxAttempts = 5, attempt = 1) => {
     if (attempt > maxAttempts) return null;
+    
 
     const dailyHealth = loadFile(`lifelog/health`);
     const dailyCoaching = loadFile(`lifelog/health_coaching`);
     let cursor_date = null;
     const history = [];
-
+    let inputHash = null;
     const dates = Object.keys(dailyHealth).sort();
+
     for (const date of dates) {
         const coachingData = dailyCoaching?.[date] || null;
 
         if (coachingData) {
-            history.push(
-                {
-                    role: 'user',
-                    content: JSON.stringify(dailyHealth[date]),
-                },
-                {
-                    role: 'assistant',
-                    content: JSON.stringify(coachingData),
-                }
-            );
-            continue;
+            const savedHash = coachingData.hash || null;
+            inputHash = md5(JSON.stringify(dailyHealth[date]));
+            console.log({ date, savedHash, inputHash });
+            if (savedHash === inputHash) continue;
         }
+
         history.push({
             role: 'user',
             content: JSON.stringify(dailyHealth[date]),
@@ -617,7 +620,7 @@ export const generateCoachingMessageForDailyHealth = async (maxAttempts = 5, att
         "overall": {
             "observation": "Overall, you're making good progress with a consistent calorie deficit and stable weight.",
             "guidance": "Keep up the good work, but focus on hitting your protein targets and maintaining muscle mass."
-        }
+        },
     }, {
         "date": "2024-04-02",
         "nutrition": {
@@ -661,11 +664,18 @@ export const generateCoachingMessageForDailyHealth = async (maxAttempts = 5, att
         const response = await gptCall('https://api.openai.com/v1/chat/completions', input);
         const coachingData = response.choices?.[0]?.message?.content || '{}';
         const coachingMessage = extractJSON(coachingData);
+        coachingMessage.hash = inputHash;
         dailyCoaching[cursor_date] = coachingMessage;
 
         const sortedKeysDesc = Object.keys(dailyCoaching).sort().reverse();
         const sortedCoaching = Object.fromEntries(sortedKeysDesc.map((key) => [key, dailyCoaching[key]]));
         saveFile(`lifelog/health_coaching`, sortedCoaching);
+
+        // Ensure the hash is saved correctly in the first iteration
+        if (dailyCoaching[cursor_date]?.hash !== inputHash) {
+            dailyCoaching[cursor_date].hash = inputHash;
+            saveFile(`lifelog/health_coaching`, dailyCoaching);
+        }
 
         // Recursively process the next date
         return await generateCoachingMessageForDailyHealth(maxAttempts, attempt + 1);
