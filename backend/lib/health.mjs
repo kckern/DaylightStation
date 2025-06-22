@@ -4,6 +4,7 @@ import { loadFile, saveFile } from "./io.mjs";
 import moment from "moment";
 import crypto from "crypto";
 import { load } from "js-yaml";
+import { generateCoachingMessageForDailyHealth } from "../journalist/lib/gpt_food.mjs";
 
 function md5(string) {
     string = string.toString(); 
@@ -28,13 +29,9 @@ const dailyHealth = async (jobId) => {
         const dayRawData = {
             date: day,
             weight: weight[day] || null,
-            //"weight": { "time": 1750519077, "date": "2025-06-21", "lbs": 177.7, "fat_lbs": 46.1, "fat_percent": 25.9, "lean_lbs": 131.6, "measurement": 177.7, "lbs_average": 178.69, "lbs_adjusted_average": 179.92, "fat_percent_average": 24.33, "fat_percent_adjusted_average": 24.11, "lbs_adjusted_average_14day_trend": -2.34, "lbs_adjusted_average_7day_trend": -1.41, "lbs_adjusted_average_1day_trend": -0.2, "calorie_balance": -700 },
             strava: strava[day] || [],
-            //"strava": [ { "title": "Morning Weight Training", "distance": 0, "minutes": 26.85, "startTime": "06:06 am", "suffer_score": 5, "avgHeartrate": 108.3, "maxHeartrate": 140, "heartRateOverTime": [] } ],
             nutrition: dailyNutrition[day] || null,
-            //"nutrition": { "calories": 1533, "protein": 78, "carbs": 126, "fat": 75, "fiber": 12, "sodium": 1588, "sugar": 58, "cholesterol": 186, "food_items": [ "🟠 100g Falafel (333 cal)", "🟠 30g Gorgonzola (116 cal)", "🟠 30g Peppercorn Ranch (110 cal)", "🟠 20g Crispy Onions (90 cal)", "🟠 30g Balsamic Glaze (82 cal)", "🟠 15g Fun-Sized Chocolate Bar (80 cal)", "🟠 12g Focaccia (35 cal)", "🟡 100g Steak (204 cal)", "🟡 100g Chicken (165 cal)", "🟡 30g Honey Mustard Dressing (120 cal)", "🟡 50g Roasted Sweet Potato (45 cal)", "🟡 20g Greek Yogurt (12 cal)", "🟢 100g Grapes (69 cal)", "🟢 50g Roasted Broccoli (17 cal)", "🟢 50g Arugula (13 cal)", "🟢 50g Salad Greens (10 cal)", "🟢 50g Romaine (9 cal)", "🟢 20g Salsa (8 cal)", "🟢 20g Jalapeño (6 cal)", "🟢 20g Spicy Peppers (6 cal)", "🟢 5g Grape (3 cal)" ] },
             fitness: fitness[day] || []
-            //"fitness": { "steps": { "steps_count": 2063, "bmr": 1531, "duration": 10.18, "calories": 0, "maxHeartRate": 150, "avgHeartRate": 70 }, "activities": [ { "title": "Strength Training", "calories": 176, "distance": 0, "minutes": 26.85, "startTime": "06:06 am", "endTime": "06:32 am", "avgHeartrate": 108 } ] }
         };
 
         const mergeWorkouts = (strava, activities) => {
@@ -101,8 +98,20 @@ const dailyHealth = async (jobId) => {
             return acc;
         }, {});
     saveFile('lifelog/health', saveMe);
+    await generateCoachingMessageForDailyHealth();
+
+    const healthCoaching = loadFile('lifelog/health_coaching');
+    for(const day of Object.keys(healthCoaching).sort().reverse()) {
+        if(dailyHealth[day]) {
+            dailyHealth[day].coaching = healthCoaching[day];
+        }
+    }
+
     return dailyHealth;
 }
+
+
+
 
 
 export default dailyHealth;

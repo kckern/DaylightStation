@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import moment from 'moment-timezone';
 import { getBase64Url } from './food.mjs';
 import { getMostRecentNutrilistItems, getNutriDay, getNutriDaysBack, getNutrilListByDate, getNutrilog, saveNutriCoach } from './db.mjs';
-import { saveFile } from '../../lib/io.mjs';
+import { loadFile, saveFile } from '../../lib/io.mjs';
 dotenv.config();
 
 
@@ -13,7 +13,7 @@ const extractJSON = (openaiResponse) => {
     .replace(/^[^{\[]*/s, '')
     .replace(/[^}\]]*$/s, '').trim()
 
-    console.log({jsonString});
+  
     let json = {};
     try {
         json = JSON.parse(jsonString);
@@ -124,7 +124,7 @@ const gptCall = async (endpoint, payload) => {
                 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
             }
         });
-        const month = moment().tz(timezone).format('YYYY-MM');
+        const month = moment().tz(timezone).format('YYYY-MM-DD');
         saveFile(`gpt/food/${month}/${Date.now()}`, {in: payload, out: response.data});
 
         return response.data;
@@ -545,3 +545,132 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
         return 'Keep going - you got this!';
     }
 }
+
+export const generateCoachingMessageForDailyHealth = async (maxAttempts = 5, attempt = 1) => {
+    if (attempt > maxAttempts) return null;
+
+    const dailyHealth = loadFile(`lifelog/health`);
+    const dailyCoaching = loadFile(`lifelog/health_coaching`);
+    let cursor_date = null;
+    const history = [];
+
+    const dates = Object.keys(dailyHealth).sort();
+    for (const date of dates) {
+        const coachingData = dailyCoaching?.[date] || null;
+
+        if (coachingData) {
+            history.push(
+                {
+                    role: 'user',
+                    content: JSON.stringify(dailyHealth[date]),
+                },
+                {
+                    role: 'assistant',
+                    content: JSON.stringify(coachingData),
+                }
+            );
+            continue;
+        }
+        history.push({
+            role: 'user',
+            content: JSON.stringify(dailyHealth[date]),
+        });
+        cursor_date = date;
+        break;
+    }
+
+    if (!cursor_date) return null;
+
+    const instructions = `You are a supportive nutrition and health coach providing daily summary messages based on the user's food intake and health data.
+    Each day, you receive a JSON object with the following keys:
+    - date: The date of the log entry (YYYY-MM-DD)
+    - lbs: The user's weight in pounds
+    - fat_percent: The user's body fat percentage
+    - weekly_delta: The change in weight over the past week
+    - calorie_balance: The net calorie balance for the day (calories consumed - calories burned)
+    - calories: Total calories consumed
+    - protein: Total protein consumed (grams)
+    - carbs: Total carbohydrates consumed (grams)
+    - fat: Total fat consumed (grams)
+    - fiber: Total fiber consumed (grams)
+    - sodium: Total sodium consumed (mg)
+    - sugar: Total sugar consumed (grams)
+    - cholesterol: Total cholesterol consumed (mg)
+    - food_items: An array of strings describing the food items consumed, each prefixed with a colored circle indicating its Noom color (🟢 green, 🟡 yellow, 🟠 orange)
+    - steps: Total steps taken
+    - workouts: An array of strings describing the workouts performed, including duration and calories burned
+    Your task is to generate coaching messages in a JSON object with the following format:
+    {
+        "date": "2024-04-01",
+        "nutrition": {
+            "observation": "Your calorie deficit has been consistent, averaging -500 calories per day over the past week, but your protein intake is slightly below the recommended 100g.",
+            "guidance": "Find ways to increase protein intake, such as adding a protein shake or lean meats to your meals."
+        },
+        "weight_and_composition": {
+            "observation": "Your weight is stable at 180.5 lbs with a slight decrease in body fat to 23.96%.",
+            "guidance": "Watch out for small weight gains; consider adjusting your calorie intake or increasing activity."
+        },
+        "fitness_and_activity": {
+            "observation": "You averaged 10,000 steps per day and completed 3 workouts this week, burning an average of 200 calories per session.",
+            "guidance": "Given your calorie deficit, keep the cardio light and focus on strength training to preserve muscle mass."
+        },
+        "overall": {
+            "observation": "Overall, you're making good progress with a consistent calorie deficit and stable weight.",
+            "guidance": "Keep up the good work, but focus on hitting your protein targets and maintaining muscle mass."
+        }
+    }, {
+        "date": "2024-04-02",
+        "nutrition": {
+            "observation": "The smoothie you had was a great choice, especially with the added spinach and chia seeds, it helpted you keep your fiber intake up, and calories under 1500.",
+            "guidance": "If this meal suits you, consider making it a regular part of your diet."
+        },
+        "weight_and_composition": {
+            "observation": "Trends are stable, but rate of change is slowing.",
+            "guidance": "It's probably just water weight, so go easy on the sodium and carbs, like that pasta dish you had last night—probably not the best choice."
+        },
+        "fitness_and_activity": {
+            "observation": "The cardio session probably felt good, but it didn't dent your calorie balance much. Remember, abs are made in the kitchen.",
+            "guidance": "Keep the cardio light and focus on strength training to preserve muscle mass. Flexibility and balance work are also good options."
+        },
+        "overall": {
+            "observation": "You've finally hit a consistent calorie deficit, and the scale is moving in the right direction.",
+            "guidance": "Keep up the good work, but focus on hitting your protein targets and maintaining muscle mass."
+        }
+    }
+    Tips:
+    - Use a positive, supportive tone, but call out bad choices or concerning trends.
+    - Be specific in your observations, not just numbers, but food choices and exercise habits.
+    - Infer meals based on food items.  Eg, "smoothie" might not be listed, but if the food items are banana, spinach, chia seeds, almond milk, you can infer a smoothie.
+    - Be specific about workouts, but speak conversationally.  Eg, "That workout keep your unbroken streak alive, nice job! You've been at it for 30 days now, impressive dedication."
+    - Consider already-provided coaching messages in the conversation history to maintain continuity and avoid repetition, and acknowledge any progress or changes that appear to be a result of previous coaching. Eg, "Today's food choices are compensating for the high sodium yesterday, nice job."
+`;
+
+    const input = {
+        model: 'gpt-4o',
+        messages: [
+            {
+                role: 'system',
+                content: `${instructions}`,
+            },
+            ...history,
+        ],
+        max_tokens: 1500,
+    };
+
+    try {
+        const response = await gptCall('https://api.openai.com/v1/chat/completions', input);
+        const coachingData = response.choices?.[0]?.message?.content || '{}';
+        const coachingMessage = extractJSON(coachingData);
+        dailyCoaching[cursor_date] = coachingMessage;
+
+        const sortedKeysDesc = Object.keys(dailyCoaching).sort().reverse();
+        const sortedCoaching = Object.fromEntries(sortedKeysDesc.map((key) => [key, dailyCoaching[key]]));
+        saveFile(`lifelog/health_coaching`, sortedCoaching);
+
+        // Recursively process the next date
+        return await generateCoachingMessageForDailyHealth(maxAttempts, attempt + 1);
+    } catch (error) {
+        console.error('Error generating daily health coaching message:', error);
+        return null;
+    }
+};
