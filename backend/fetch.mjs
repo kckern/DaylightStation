@@ -13,6 +13,7 @@ import { processListItem } from './jobs/nav.mjs';
 import {lookupReference, generateReference} from 'scripture-guide';
 import { Plex } from './lib/plex.mjs';
 import { parse } from 'path';
+import path from 'path';
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
 
@@ -640,11 +641,26 @@ apiRouter.get('/keyboard/:keyboard_id?', async (req, res) => {
 
 
 
-//list the *.yml files in data path /data
-const dataFiles = readdirSync(`${dataPath}`).filter(f => f.endsWith('.yaml')).map(f => f.replace('.yaml', ''));
-apiRouter.get('/list',  async (req, res, next) => {
+// Recursively list *.yaml files in the data path
+const listYamlFiles = (dir) => {
+    let results = [];
+    const files = readdirSync(dir);
+    for (const file of files) {
+        const filePath = path.join(dir, file);
+        const stat = fs.statSync(filePath);
+        if (stat && stat.isDirectory()) {
+            results = results.concat(listYamlFiles(filePath));
+        } else if (file.endsWith('.yaml')) {
+            results.push(filePath.replace(`${dataPath}/`, '').replace('.yaml', ''));
+        }
+    }
+    return results;
+};
+
+apiRouter.get('/list', async (req, res, next) => {
     try {
-        res.json({dataPath, dataFiles});
+        const dataFiles = listYamlFiles(dataPath);
+        res.json({ dataPath, dataFiles });
     } catch (err) {
         next(err);
     }
@@ -659,23 +675,33 @@ apiRouter.get('/test',  async (req, res, next) => {
     }
 });
 
-//add an endpoint to fetch a specific file
-apiRouter.get('/:file/:key',  async (req, res, next) => {
+// Unified endpoint to fetch data from YAML files with flexible parameters
+apiRouter.get('/*', async (req, res, next) => {
     try {
-        const file = req.params.file;
-        const data = yaml.load(readFileSync(`${dataPath}/${file}.yaml`, 'utf8'));
-        if(data?.[req.params.key]) return res.json(data[req.params.key]);
-        else res.json(data);
-    } catch (err) {
-        next(err);
-    }
-});
+        const params = req.params[0].split('/');
+        const filePath = path.join(dataPath, ...params) + '.yaml';
+        const key = params.pop(); // Last parameter could be a key
 
+        const parentPath = path.join(dataPath, ...params) + '.yaml';
+        if (fs.existsSync(parentPath)) {
+            const parentData = yaml.load(readFileSync(parentPath, 'utf8'));
+            if (parentData?.[key]) {
+            return res.json(parentData[key]);
+            }
+        }
 
-apiRouter.get('/:file',  async (req, res, next) => {
-    try {
-        const file = req.params.file;
-        const data = yaml.load(readFileSync(`${dataPath}/${file}.yaml`, 'utf8'));
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: `File not found: ${filePath}` });
+        }
+
+        const data = yaml.load(readFileSync(filePath, 'utf8'));
+
+        // If the key exists in the data, return the specific key's value
+        if (data?.[key]) {
+            return res.json(data[key]);
+        }
+
+        // Otherwise, return the entire file's content
         res.json(data);
     } catch (err) {
         next(err);

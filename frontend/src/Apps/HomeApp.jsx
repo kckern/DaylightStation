@@ -91,7 +91,7 @@ function HomeApp() {
 
   // Fetch the key map once
   useEffect(() => {
-    DaylightAPI('/data/keyboard/officekeypad')
+    DaylightAPI('/data/config/keyboard/officekeypad')
       .then((fetchedMap) => {
         setKeyMap(fetchedMap)
 
