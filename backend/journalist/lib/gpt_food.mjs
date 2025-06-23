@@ -570,7 +570,7 @@ export const generateCoachingMessageForDailyHealth = async (maxAttempts = 5, att
         if (coachingData) {
             const savedHash = coachingData.hash || null;
             inputHash = md5(JSON.stringify(dailyHealth[date]));
-            console.log({ date, savedHash, inputHash });
+           // console.log({ date, savedHash, inputHash });
             if (savedHash === inputHash) continue;
         }
 
