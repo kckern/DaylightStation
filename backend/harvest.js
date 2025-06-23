@@ -18,6 +18,7 @@ import youtube_dl from './lib/youtube.mjs';
 import health from './lib/health.mjs';
 import fitness from './lib/fitsync.mjs';
 import strava from './lib/strava.mjs';
+import garmin from './lib/garmin.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from './lib/budget.mjs';
 
 const harvesters = {
@@ -38,6 +39,7 @@ const harvesters = {
     fitness,
     strava,
     health,
+    garmin,
     payroll: payrollSyncJob
     
 }
