@@ -37,19 +37,28 @@ const icons = `almond apple_sauce apple artichoke asparagus avocado bacon bagel 
 guava gummybear hamburger_bun hamburger_patty hamburger hash hazelnut honey horseradish hot_dog_bun hot_dog hotpot ice_cream_bar ice_cream_sandwich ice_cream iced_coffee iced_tea jam jicama juice kale kebab ketchup kiwi lamb lasagna latte leeks lemon lemonade lime lobster macadamia macandcheese mango marshmallow mayonnaise meatballs melon milk_shake milk mixed_drink mixed_nuts molassescookie muffin mushroom mustard nigirisushi oatmeal octopus oil okra omelette onion orange_juice orange orangechicken pancakes papaya parfait parsnip pasta pastry pattysandwich pavlova peach peanut_butter peanut pear peas pecan peppers persimmon pickle pie_apple pie pill pine_nut pineapple pistachio pitasandwich pizza plum pocky pomegranate popcorn popsicle pork porkchop pot_pie potato_chip potato_salad potato powdereddrink prawn pretzel prune pudding pumpkin quesadilla quiche radish raisin ranch_dressing raspberry ravioli red_bean red_bell_pepper red_dip red_spice red_velvet_cookie red_wine relish rhubarb ribs rice_cake rice roll romaine salad salt sandwich sauce sausage seaweed seed sesame_bagel shallot shrimp smoothie snack snap_bean soft_drink souffle soup sour_cream soy_nut soysauce spaghetti_squash spinach springroll sprouts squash starfruit stewbrown stewyellow stir_fry stirfrynoodles strawberry_milk_shake strawberry stuffing sub_sandwich sugarcookie sushi syrup taco taro tater_tots tea tempura toast toaster_pastry tofu tomato tomatosoup tortilla_chip tortilla tostada turkey turnip turnover vanilla_cupcake vegetable waffles walnut water_chestnut water watermelon white_bean white_bread white_sugar white_wine wrap yam yellow_bell_pepper yellow_drink yellow_frosting yellow_spice yogurt zucchini`.replace(/\n/g, ' ');
 
 
-const timezone = process.env.TIMEZONE || 'America/Los_Angeles';
+    const timezone = process.env.TIMEZONE || 'America/Los_Angeles';
+export const getCurrentTimeDetails = () => {
+    const timezone = process.env.TIMEZONE || 'America/Los_Angeles';
+
+    const today = moment().tz(timezone).format('YYYY-MM-DD');
+    const dayOfWeek = moment().tz(timezone).format('dddd');
+    const timeAMPM = moment().tz(timezone).format('h:mm a');
+    const hourOfDayInt = parseInt(moment().tz(timezone).hour());
+    const unix = moment().tz(timezone).unix();
+    const momentTimezone = moment.tz.guess();
+
+    const time = hourOfDayInt < 12 ? "morning" : hourOfDayInt < 17 ? "midday" : hourOfDayInt < 21 ? "evening" : "night";
+
+    return { today,timezone, dayOfWeek, timeAMPM, hourOfDayInt, unix, momentTimezone, time };
+};
 
 // Replace hardcoded timezone with variable
-const today = moment().tz(timezone).format('YYYY-MM-DD');
-const dayOfWeek = moment().tz(timezone).format('dddd');
-const timeAMPM = moment().tz(timezone).format('h:mm a');
-const hourOfDayInt = parseInt(moment().tz(timezone).hour());
-const unix = moment().tz(timezone).unix();
-const momentTimezone = moment.tz.guess();
 
-const time = hourOfDayInt < 12 ? "morning" : hourOfDayInt < 17 ? "midday" : hourOfDayInt < 21 ? "evening" : "night";
+export const getInstructions = () => {
 
-const instructions = `List the food items in them, output in a JSON object which contains keys: 
+    const { today, dayOfWeek, timeAMPM, timezone, unix, momentTimezone, time } = getCurrentTimeDetails();
+    return `List the food items in them, output in a JSON object which contains keys: 
                  - "food" an array with the food icon, item name, amount (integer), and unit (g, ml, etc.), and noom color (green, yellow, orange).
                  - "date," the date of the meal.  Usually the current date (today is ${dayOfWeek}, ${today} at ${timeAMPM}, TZ: ${timezone} (${momentTimezone}), unix time: ${unix} ), but could be in the past, if the description mentions a timeframe, such as "yesterday" or "on wednesday".  If the date is already specified in a previous attempt, keep that one, unless the user specifies a new date.
                  - "time," the time of the meal.  Usually "midday" or "evening", but could be "morning" or "night".  Default is "${time}", unless the user specifies a different time for the meal.
@@ -118,8 +127,8 @@ const instructions = `List the food items in them, output in a JSON object which
                         3. Orange Foods: These have the highest calorie density, meaning they pack the most calories for the smallest amount of food. The system recommends being even more mindful of portions when eating orange foods. Examples include frozen entrees, dried beans, nut butters, jerky, dried fruits, crackers, biscuits, bagels, and protein powders.
 
                      - Food icon must be selected from one of the following:
-                        ${icons}
-`;
+                        ${icons}`;
+};
 
 
 // Abstract GPT call function
@@ -171,7 +180,7 @@ export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
             {
                 role: 'system',
                 content: `You are nutrition seer. You look at images and process them like this:
-                ${instructions}`
+                ${getInstructions()}`
             
             },
             {
@@ -213,7 +222,7 @@ export const detectFoodFromTextDescription = async (text, attempt = 1) => {
             {
                 role: 'system',
                 content: `You are nutrition reader. You read text descriptions of meals and snacks and process them like this:
-                ${instructions}`
+                ${getInstructions()}`
             },
             {
                 role: 'user',
