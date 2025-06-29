@@ -93,15 +93,19 @@ export const cronContinuous = async () => {
   const now = moment().tz(timeZone);
   const cronJobs = loadFile("config/cron") || [];
   for (const job of cronJobs) {
+    if (typeof job !== "object" || job === null) {
+      console.warn(`Invalid job format:`, job);
+      continue; // Skip invalid jobs
+    }
     if (!job.nextRun) {
       const nextMoment = computeNextRun(job, now);
       job.nextRun = nextMoment.format("YYYY-MM-DD HH:mm:ss");
       job.secondsUntil = nextMoment.unix() - now.unix();
       job.needsToRun = false;
       job.last_run = job.last_run || 0;
-    }else{
-      //echo countdown to job.nextRun
-     // console.log(`Job ${job.name} next run in ${job.secondsUntil} seconds`);
+    } else {
+      // echo countdown to job.nextRun
+      // console.log(`Job ${job.name} next run in ${job.secondsUntil} seconds`);
     }
   }
   for (const job of cronJobs) {
