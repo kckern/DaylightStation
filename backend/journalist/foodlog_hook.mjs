@@ -64,6 +64,10 @@ const processUPC = async (chat_id, upc, message_id, res) => {
     if (!foodData) return false;// await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
 
     const { image, label, nutrients } = foodData;
+    const sevingSizeLabel = `${parseInt(foodData.servingSizes[0]?.quantity || "0")}${foodData.servingSizes[0]?.label || 'g'}`;
+    const caption = `🔵 ${titleCase(label)} (${sevingSizeLabel})`
+    
+
     // If no nutritional data is available, just show what we found
     if (nutrients && typeof nutrients === 'object' && Object.keys(nutrients).length > 0) {
         // Prompt user for serving quantity
@@ -74,8 +78,6 @@ const processUPC = async (chat_id, upc, message_id, res) => {
             ["❌ Cancel"]
         ];
 
-        const sevingSizeLabel = `${parseInt(foodData.servingSizes[0]?.quantity || "0")}${foodData.servingSizes[0]?.label || 'g'}`;
-        const caption = `🔵 ${titleCase(label)} (${sevingSizeLabel})`
         const imageMsgResult = await sendImageMessage(chat_id, image, caption);
         const message_id = imageMsgResult.result?.message_id;
 
@@ -107,11 +109,20 @@ const processUPC = async (chat_id, upc, message_id, res) => {
 
         setNutriCursor(chat_id, cursor);
         // Ensure res.status().json() is only called if res is a valid response object
+
+
+
         if (res && typeof res.status === 'function') {
             res.status(200).json({nutrilogItem});
         }
     } else {
-         await sendMessage(chat_id, `🚫 No nutritional data found for UPC ${upc}`);
+        // If no nutritional data is found, ensure a message is sent to the user
+        if (image) {
+            const error_caption = `${caption}\n⬜ UPC: ${upc}\n🚫 No nutritional data found`;
+            await sendImageMessage(chat_id, image, error_caption);
+        } else {
+            await sendMessage(chat_id, error_caption);
+        }
         // Ensure res.status().send() is only called if res is a valid response object
         if (res && typeof res.status === 'function') {
             res.status(200).send(`No nutritional data found for UPC ${upc}`);
