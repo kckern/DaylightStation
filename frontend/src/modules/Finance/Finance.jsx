@@ -14,10 +14,17 @@ export function FinanceChart()
 {
   const [monthData, setMonthData] = useState({})
   useEffect(() => {
-    DaylightAPI('/data/budget/daytoday')
-      .then((data) => {
-        setMonthData(data)
-      })
+    const fetchData = () => {
+      DaylightAPI('/data/budget/daytoday')
+        .then((data) => {
+          setMonthData(data)
+        })
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 6 * 60 * 60 * 1000) // 6 hours in milliseconds
+
+    return () => clearInterval(interval) // Cleanup interval on component unmount
   }, [])
   if(!monthData) return null;
   const options = buildDayToDayBudgetOptions(monthData, null, {plotLineColor: '#444'});
