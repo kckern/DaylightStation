@@ -58,10 +58,23 @@ const weightProcess = async (job_id) => {
 function interpolateDays(values) {
     const keysToInterpolate = ['lbs', 'fat_percent'];
 
+
+    const today = moment().format('YYYY-MM-DD');
+    const maxDateFromValues = values.sort((a, b) => moment(b.date) - moment(a.date))[0]?.date;
+
+  
+
+    //extrapolate to today if needed
+    if (maxDateFromValues && moment(maxDateFromValues).isBefore(today)) {
+        const maxDateMeasurement = values.find(v => v.date === maxDateFromValues);
+        values.push({ ...maxDateMeasurement, date: today });
+    }
+
     // Sort the input records by date
     const sortedRecords = values
       .slice()
       .sort((a, b) => moment(a.date) - moment(b.date));
+
 
     // Identify the min and max date from those records
     const mindate = moment(sortedRecords[0].date).format('YYYY-MM-DD');
