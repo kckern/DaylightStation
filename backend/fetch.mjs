@@ -27,7 +27,7 @@ apiRouter.use((err, req, res, next) => {
 });
 
 export const findUnwatchedItems = (media_keys, category = "media", shuffle = false) => {
-    const media_memory = loadFile(`history/media_memory`)[category] || {};
+    const media_memory = loadFile(`history/media_memory/${category}`) || {};
     const unwatchedItems = media_keys.filter(key => {
         const watchedItem = media_memory[key];
         return !(watchedItem && watchedItem.percent > 0.5);
@@ -47,13 +47,13 @@ export const findUnwatchedItems = (media_keys, category = "media", shuffle = fal
 
 export const clearWatchedItems = (media_keys, category = "media") => {
 
-    const media_memory = loadFile(`history/media_memory`)[category] || {};
+    const media_memory = loadFile(`history/media_memory/${category}`) || {};
     for (const key of media_keys) {
         if (media_memory[key]) {
             delete media_memory[key];
         }
     }
-    saveFile(`history/media_memory`, media_memory);
+    saveFile(`history/media_memory/${category}`, media_memory);
     return media_memory;
 }
 apiRouter.get('/img/*', async (req, res, next) => {
@@ -447,10 +447,9 @@ const sortListByMenuMemory = (items, config) => {
 
 export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ignoreWatchStatus=false, ignoreWait=false) => {
     let candidates = { normal: {}, urgent: {}, in_progress: {} };
-    const alllogs = loadFile('history/media_memory') || {};
     for (let item of watchListItems) {
         let {media_key, src, percent: itemProgress, watched, hold, skip_after, wait_until, title, program} = item;
-        const log = alllogs[src] || {};
+        const log = loadFile(`history/media_memory/${src}`) || {};
         const percent = log[media_key]?.percent || itemProgress || 0;
         const seconds = log[media_key]?.seconds || 0;
 
