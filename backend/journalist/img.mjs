@@ -8,7 +8,7 @@ dotenv.config();
 
 export default async (req, res) => {
 
-    process.env.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_NUTRIBOT_TOKEN;
+    process.env.TELEGRAM_JOURNALIST_BOT_TOKEN = process.env.TELEGRAM_NUTRIBOT_TOKEN;
 
     //load image from tmp
     const file_id = req.query.file_id;

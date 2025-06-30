@@ -327,7 +327,7 @@ const processImgMsg = async (file_id, chat_id, host, payload) => {
         return false;
     }
 
-    const tmpUrl = `${host}/api/img?file_id=${file_id}`;
+    const tmpUrl = `${host}/telegram/img?file_id=${file_id}`;
     const message_id = payload.message.message_id;
 
     try {
