@@ -16,7 +16,7 @@ export function TVAppWrapper({ content }) {
   );
 }
 
-const backFunction = () => {
+let backFunction = () => {
   const event = new KeyboardEvent("keydown", { key: "Escape" });
   window.dispatchEvent(event);
 };
@@ -158,6 +158,9 @@ export default function TVApp() {
   function handleEscape() {
     setCurrentContent(null);
   }
+
+  // Update backFunction to use the same logic as handleEscape
+  backFunction = handleEscape;
 
   function handleAutoplay(entry) {
     const clear = () => setCurrentContent(null);
