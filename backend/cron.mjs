@@ -109,6 +109,11 @@ export const cronContinuous = async () => {
     }
   }
   for (const job of cronJobs) {
+    if (!moment.tz(job.nextRun, "YYYY-MM-DD HH:mm:ss", timeZone).isValid()) {
+      console.warn(`Invalid nextRun for job:`, job);
+      job.needsToRun = false;
+      continue; // Skip invalid jobs
+    }
     const jobNextRun = moment.tz(job.nextRun, "YYYY-MM-DD HH:mm:ss", timeZone);
     const diff = jobNextRun.unix() - now.unix();
     job.secondsUntil = diff;
@@ -153,6 +158,7 @@ export const cronContinuous = async () => {
       );
       job.messageIds = job.messageIds ? [...job.messageIds, guidId] : [guidId];
     }
+    delete job.messageIds; // Remove messageIds after running
     job.last_run = now.format("YYYY-MM-DD HH:mm:ss");
     const newNextRunMoment = computeNextRun(job, now);
     job.nextRun = newNextRunMoment.format("YYYY-MM-DD HH:mm:ss");

@@ -4,6 +4,7 @@ import { processWebhookPayload } from './journalist/telegram_hook.mjs';
 import {processFoodLogHook} from './journalist/foodlog_hook.mjs';
 import {foodReport, scanBarcode, canvasImageEndpoint} from './journalist/food_report.mjs';
 import { updateWebhook } from './journalist/lib/telegram.mjs';
+import imageHandler from './journalist/img.mjs';
 import moment from 'moment-timezone';
 const apiRouter = express.Router();
 apiRouter.use(express.json({
@@ -33,6 +34,8 @@ apiRouter.all(  '/journalist',    processWebhookPayload);
 apiRouter.all(  '/foodlog',       processFoodLogHook);
 apiRouter.all(  '/foodreport',    foodReport);
 apiRouter.all(  '/nutribot/images/:param1/:param2', canvasImageEndpoint);
+//add a handler for processImageUrl?
+apiRouter.all(  '/telegram/img',        imageHandler);
 apiRouter.all(  '/barcode',         scanBarcode);
 apiRouter.all(  '/time',         timezone);
 apiRouter.all('/:env(dev|prod)', async (req, res) => {

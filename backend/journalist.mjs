@@ -2,7 +2,6 @@ import express from 'express';
 const JournalistRouter = express.Router();
 import auth from './journalist/auth.mjs';
 import bump from './journalist/bump.mjs';
-import cron from './journalist/cron.mjs';
 import {processFoodLogHook as foodlog_hook} from './journalist/foodlog_hook.mjs';
 import img from './journalist/img.mjs';
 //import health from './journalist/health.mjs';
@@ -13,7 +12,6 @@ import webhook from './journalist/webhook.mjs';
 const endpoints = {
     auth,
     bump,
-    cron,
     foodlog_hook,
     img,
    // health,
