@@ -151,17 +151,16 @@ mediaRouter.post('/log', async (req, res) => {
     }
     try {
         if(seconds<10) return res.status(400).json({ error: `Invalid request: seconds < 10` });
-        const log = loadFile('history/media_memory') || {};
-        log[type] = log[type] || {};
-        log[type][media_key] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, media_key, seconds: parseInt(seconds), percent: parseFloat(percent) };
-        if(!log[type][media_key].title) delete log[type][media_key].title;
-        log[type] = Object.fromEntries(
-            Object.entries(log[type]).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
+        const log = loadFile(`history/media_memory/${type}`) || {};
+        log[media_key] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, media_key, seconds: parseInt(seconds), percent: parseFloat(percent) };
+        if(!log[media_key].title) delete log[media_key].title;
+        const sortedLog = Object.fromEntries(
+            Object.entries(log).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
         );
-        saveFile('history/media_memory', log);
-        console.log(`Log updated: ${JSON.stringify(log[type][media_key])}`);
+        saveFile(`history/media_memory/${type}`, sortedLog);
+        console.log(`Log updated: ${JSON.stringify(log[media_key])}`);
         await logToInfinity(media_key,{percent, seconds});
-        res.json({ response: {type,...log[type][media_key]} });
+        res.json({ response: {type,...log[media_key]} });
     } catch (error) {
         console.error('Error handling /log:', error.message);
         res.status(500).json({ error: 'Failed to process log.' });
@@ -190,7 +189,7 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     const { fileSize,  extention } = findFileFromMediaKey(media_key);
     if(!extention) media_key = await (async () => {
         const mediakeys = media_key.split(/[|]/);
-        const watched = loadFile('history/media_memory')?.media || {};
+        const watched = loadFile('history/media_memory/media') || {};
         const sortItems = (a, b) => {
             if(!a.media_key || !b.media_key) return 0;
             const lastLeafA = a.media_key.split('/').pop();
