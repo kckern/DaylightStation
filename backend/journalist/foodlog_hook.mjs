@@ -320,26 +320,35 @@ const saveToNutrilistFromUPCResult = async (chat_id, foodData) => {
 }
 
 
-const processText = async (chat_id, input_message_id, text) => {
-
+const processText = async (chat_id, input_message_id, text, source = 'text') => {
     await removeCurrentReport(chat_id);
-    const pendingNutrilog = await getPendingNutrilog(chat_id);
-    if(pendingNutrilog) return await processRevision(chat_id, input_message_id, text, pendingNutrilog);
-    console.log('Processing text:', {chat_id, input_message_id, text});
+    const cursor = await getNutriCursor(chat_id);
+
+    if (cursor.revising) {
+        const pendingNutrilog = await getPendingNutrilog(chat_id);
+        if (pendingNutrilog && pendingNutrilog.uuid === cursor.revising.uuid) {
+            return await processRevision(chat_id, input_message_id, text, pendingNutrilog);
+        } else {
+            // Cursor is out of sync with DB, clear it to prevent unexpected behavior
+            delete cursor.revising;
+            await setNutriCursor(chat_id, cursor);
+        }
+    }
+
+    console.log('Processing text:', { chat_id, input_message_id, text });
     await deleteMessage(chat_id, input_message_id);
-    const {message_id} = await sendMessage(chat_id, `📝 ${text}\n\n🔬 Analyzing description...`, {saveMessage: false}); 
-    await processTextInput(chat_id, message_id, text);  
-}
+    const icon = source === 'voice' ? '🎙️' : '📝';
+    const { message_id } = await sendMessage(chat_id, `${icon} ${text}\n\n🔬 Analyzing description...`, { saveMessage: false });
+    await processTextInput(chat_id, message_id, text);
+};
 
 const processVoice = async (chat_id, message) => {
     const voice = message.voice;
     const voice_message_id = message.message_id;
     const text = await transcribeVoiceMessage(voice);
-    await deleteMessage(chat_id, voice_message_id);
-    const {message_id} = await sendMessage(chat_id, `🎙️ ${text}\n\n🔬 Analyzing description...`, {saveMessage: false}); 
-    await processTextInput(chat_id, message_id, text);
+    await processText(chat_id, voice_message_id, text, 'voice');
     return true;
-}
+};
 
 const processImgMsg = async (file_id, chat_id, host, payload) => {
 
@@ -731,21 +740,25 @@ const reviseFoodLog = async (chat_id, message_id, uuid, {food_data}) => {
 }
 
 const processTextInput = async (chat_id, message_id, text) => {
-
-    const logItemBeingRevisedPromise = getPendingNutrilog(chat_id);
-    const removeReportPromise = removeCurrentReport(chat_id);
-    const [logItemBeingRevised, removeReport] = await Promise.all([logItemBeingRevisedPromise, removeReportPromise]);
-    if(logItemBeingRevised) return await processRevision(chat_id, message_id, text, logItemBeingRevised);
+    // Revision check is now handled in processText
     const jsondata = await detectFoodFromTextDescription(text);
-    if(!jsondata) return updateMessage(chat_id, {message_id, text: "🚫 No food items detected.", choices: [["🔄 Try Again"]], inline:true, key:"caption"});
+    if (!jsondata) return updateMessage(chat_id, { message_id, text: "🚫 No food items detected.", choices: [["🔄 Try Again"]], inline: true, key: "caption" });
     jsondata.text = text;
-    return await processFoodListData(jsondata, chat_id,message_id);
-}
+    return await processFoodListData(jsondata, chat_id, message_id);
+};
 
 
 const processRevision = async (chat_id, feedback_message_id, text, {message_id, uuid, food_data}) => {
 
     console.log('Processing revision', {chat_id, feedback_message_id, text, message_id, uuid, food_data});
+    
+    // Clear the revising state from the cursor now that we have the revision text
+    const cursor = await getNutriCursor(chat_id);
+    if (cursor.revising) {
+        delete cursor.revising;
+        await setNutriCursor(chat_id, cursor);
+    }
+
     const a =  deleteMessage(chat_id, feedback_message_id);
     const {img_url} = food_data;
     const c = updateMessage(chat_id, {message_id, text: "🔄 Revising...", choices: [], inline:true, key: img_url ? "caption" : null});
