@@ -158,7 +158,7 @@ export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
 
     const {food_data,text} = extras;
 
-    const extra_messages = food_data && text ? [
+    const extra_messages = (food_data && text) ? [
         { role: "assistant", content: JSON.stringify(food_data)},
         { role: "user", content: `Close, but needs some revisions based on clarifications from the user.` },
         { role: "assistant", content: `What did this user say?`},
@@ -170,7 +170,7 @@ export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
     ] : [];
 
 
-    if(attempt > 3) return false;
+    if(attempt > 3) return console.error('Too many attempts to detect food from image');
 
     console.log('Analyzing image...');
 
@@ -209,12 +209,19 @@ export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
 
 
 // Update detectFoodFromTextDescription to use gptCall
-export const detectFoodFromTextDescription = async (text, attempt = 1) => {
+export const detectFoodFromTextDescription = async (text, extras, attempt = 1) => {
     attempt = attempt || 1;
+    extras = extras || {};
+    const {food_data, text:original_text} = extras;
 
-    if(attempt > 3) return false;
+    if(attempt > 3) return console.error('Too many attempts to detect food from text');
 
     console.log('Analyzing text...');
+
+    const extra_messages = (food_data && original_text) ? [
+        { role: "assistant", content: JSON.stringify(food_data)},
+        { role: "user", content: `The user has provided the following feedback on this JSON data: "${text}".  Please make the appropriate adjustments.` },
+    ] : [];
 
     const data = {
         model: 'gpt-4o',
@@ -227,9 +234,10 @@ export const detectFoodFromTextDescription = async (text, attempt = 1) => {
             {
                 role: 'user',
                 content: [
-                    { type: 'text', text: text }
+                    { type: 'text', text: original_text || text }
                 ]
-            }
+            },
+            ...extra_messages
         ],
         max_tokens: 1000
     };
