@@ -176,6 +176,8 @@ const openFoodFacts = async (barcode) => {
         }
         
         const product = data.product;
+        product.product_name = product.product_name || product.product_name_en || product.product_name_en_imported;
+       // process.exit(console.log('OpenFoodFacts • Product data:', product));
         console.log('OpenFoodFacts • Product found:', product.product_name);
         
         // Extract image
@@ -189,8 +191,8 @@ const openFoodFacts = async (barcode) => {
         // Format nutrition data similar to Edamam format
         const food = {
             upc: barcode,
-            label: product.product_name || product.product_name_en,
-            brand: product.brands,
+            label: product.product_name || product.product_name_en || product.product_name_en_imported || product.ingredients_text || product.ingredients_text_en || product.ingredients_text_en_imported,
+            brand: product.brands || product.brand_owner || product.brand_owner_imported,
             date: moment().format('YYYY-MM-DD'),
             image: image,
             nutrients: {}
@@ -244,7 +246,7 @@ const openFoodFacts = async (barcode) => {
                 food.nutrientsFormatted = nutrientsFormatted;
             }
         }
-        const searchedImage = await searchImage(`${food.label} ${food.brand}`, barcode);
+        const searchedImage = await searchImage(`${food.label}${food.brand? ` (${food.brand})` : ''}`, barcode);
         if (searchedImage) {
             food['image'] = `${searchedImage}`;
         }
