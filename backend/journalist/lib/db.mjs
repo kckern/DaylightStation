@@ -988,9 +988,9 @@ export const getNutrilogByMessageId = (chat_id, message_id) => {
  * @param {string} chat_id
  * @returns {object|null}
  */
-export const getMidRevisionNutrilog = (chat_id) => {
+export const getSingleMidRevisionNutrilog = (chat_id) => {
   if (!chat_id) {
-    console.error('getMidRevisionNutrilog called with missing chat_id');
+    console.error('getSingleMidRevisionNutrilog called with missing chat_id');
     return null;
   }
   try {
@@ -1502,7 +1502,7 @@ export const loadWeight = (chat_id, days_since = 14) => {
 22. deleteNuriListById
 23. updateNutrilist
 24. getNutrilogByMessageId
-25. getMidRevisionNutrilog
+25. getSingleMidRevisionNutrilog
 26. loadJournalMessages
 27. deleteNutrilog
 28. saveNutrilist
