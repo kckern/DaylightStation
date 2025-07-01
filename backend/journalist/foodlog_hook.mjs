@@ -23,7 +23,7 @@
 import { compileDailyFoodReport, getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport } from "./lib/food.mjs";
 import dotenv from 'dotenv';
 import { deleteMessage, sendImageMessage, sendMessage, transcribeVoiceMessage, updateMessage, updateMessageReplyMarkup } from "./lib/telegram.mjs";
-import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getMidRevisionNutrilog, saveNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist, getPendingUPCNutrilogs, getTotalUPCNutrilogs, updateNutrilogStatus, getNonAcceptedNutrilogs } from "./lib/db.mjs";
+import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getSingleMidRevisionNutrilog, saveNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist, getPendingUPCNutrilogs, getTotalUPCNutrilogs, updateNutrilogStatus, getNonAcceptedNutrilogs } from "./lib/db.mjs";
 import { detectFoodFromImage, detectFoodFromTextDescription } from "./lib/gpt_food.mjs";
 import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
@@ -47,7 +47,7 @@ const assumeOldNutrilogs = async (chat_id)=>{
         await updateMessageReplyMarkup(chat_id,{ message_id, choices: [], inline: false });
         await updateNutrilogStatus(chat_id, uuid, 'assumed');
     }
-    return true;
+    return logs.length === 0; // Return true if no logs left to assume, false if there are still logs pending
 }
 
 
@@ -189,9 +189,9 @@ const processUPCServing = async (chat_id, message_id, factor, nutrilogItem) => {
     await updateNutrilogStatus(chat_id, uuid, "confirmed", factor);
 
     // Check if all UPC items are now confirmed
-    const pendingUPCItems =  getPendingUPCNutrilogs(chat_id);
+    const readyForReport =  assumeOldNutrilogs(chat_id);
     
-    if (pendingUPCItems.length === 0) {
+    if (readyForReport) {
         // All UPC items confirmed - generate report
         await compileDailyFoodReport(chat_id);
         await postItemizeFood(chat_id);
@@ -333,13 +333,13 @@ const processText = async (chat_id, input_message_id, text, source = 'text') => 
     const cursor = await getNutriCursor(chat_id);
 
     if (cursor.revising) {
-        const pendingNutrilog = await getMidRevisionNutrilog(chat_id);
+        const pendingNutrilog = await getSingleMidRevisionNutrilog(chat_id);
         if (pendingNutrilog && pendingNutrilog.uuid === cursor.revising.uuid) {
             return await processRevision(chat_id, input_message_id, text, pendingNutrilog);
         } else {
             // Cursor is out of sync with DB, clear it to prevent unexpected behavior
             delete cursor.revising;
-            await setNutriCursor(chat_id, cursor);
+            setNutriCursor(chat_id, cursor);
         }
     }
 
@@ -568,6 +568,8 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
 
 
 }
+
+
 
 
 const processButtonpress = async (body, chat_id) => {
