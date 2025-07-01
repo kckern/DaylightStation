@@ -42,6 +42,11 @@ export const processFoodLogHook = async (req, res) => {
     if(payload.message?.voice) await processVoice(chat_id, payload.message);
     if(text) await processText(chat_id, payload.message.message_id, text);
 
+    // Periodically check for auto-confirmation of pending UPC items
+    if (Math.random() < 0.1) { // 10% chance to check on each webhook
+        await autoConfirmPendingUPCItems(chat_id);
+    }
+
     //console.log(payload);
     return res.status(200).send(`Foodlog webhook received`);
 };
@@ -49,7 +54,13 @@ export const processFoodLogHook = async (req, res) => {
 
 
 const processUPC = async (chat_id, upc, message_id, res) => {
-    await removeCurrentReport(chat_id);
+    // Only remove current report if there are no pending UPC items
+    const cursor = await getNutriCursor(chat_id);
+    const hasPendingUPC = cursor?.upc_queue && cursor.upc_queue.some(item => item.status === 'pending');
+    
+    if (!hasPendingUPC) {
+        await removeCurrentReport(chat_id);
+    }
 
     if(message_id){
         //delete the message if it exists
@@ -105,7 +116,25 @@ const processUPC = async (chat_id, upc, message_id, res) => {
         await saveNutrilog(nutrilogItem);
 
         let cursor = await getNutriCursor(chat_id);
-        cursor.adjusting = {  upc, foodData, message_id}; // Set level to 2 to indicate we're adjusting serving size
+        
+        // Initialize UPC queue if it doesn't exist
+        if (!cursor.upc_queue) {
+            cursor.upc_queue = [];
+        }
+        
+        // Add this UPC item to the queue
+        const queueId = uuidv4(); // Unique identifier for this queue item
+        cursor.upc_queue.push({
+            id: queueId,
+            upc,
+            foodData,
+            message_id,
+            status: 'pending',
+            timestamp: Date.now()
+        });
+        
+        cursor.adjusting = { upc, foodData, message_id, queueId }; // Set level to 2 to indicate we're adjusting serving size
+        cursor.upc = true; // Flag to indicate we're in UPC flow
 
         setNutriCursor(chat_id, cursor);
         // Ensure res.status().json() is only called if res is a valid response object
@@ -158,9 +187,30 @@ const processServingQuantity = async (chat_id, message_id, factor) => {
     //update message with updated caption and clear choices
     await updateMessage(chat_id, { message_id, text: updatedText, choices: [], inline: true, key: "caption" });
 
-    // Generate food report
-    await compileDailyFoodReport(chat_id);
-    await postItemizeFood(chat_id);
+    // Update the UPC queue item status
+    if (cursor.upc_queue && cursor.adjusting?.queueId) {
+        const queueItem = cursor.upc_queue.find(item => item.id === cursor.adjusting.queueId);
+        if (queueItem) {
+            queueItem.status = 'confirmed';
+            queueItem.factor = factor;
+        }
+    }
+
+    // Check if all UPC items in queue are confirmed
+    const allConfirmed = cursor.upc_queue?.every(item => item.status === 'confirmed') ?? false;
+    
+    // Only generate report if all UPC items are confirmed
+    if (allConfirmed) {
+        await compileDailyFoodReport(chat_id);
+        await postItemizeFood(chat_id);
+        
+        // Clear the UPC queue after generating report
+        cursor.upc_queue = [];
+        cursor.upc = false;
+    } else {
+        // Notify user about pending items
+        await checkPendingUPCItems(chat_id);
+    }
 
     delete cursor.adjusting;
     setNutriCursor(chat_id, cursor);
@@ -534,6 +584,75 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
 }
 
 
+const checkPendingUPCItems = async (chat_id) => {
+    const cursor = await getNutriCursor(chat_id);
+    if (!cursor?.upc_queue) return;
+    
+    const pendingItems = cursor.upc_queue.filter(item => item.status === 'pending');
+    const confirmedItems = cursor.upc_queue.filter(item => item.status === 'confirmed');
+    
+    if (pendingItems.length > 0 && confirmedItems.length > 0) {
+        const pendingCount = pendingItems.length;
+        const confirmedCount = confirmedItems.length;
+        const totalCount = cursor.upc_queue.length;
+        
+        // Send a status message
+        await sendMessage(chat_id, `📊 Status: ${confirmedCount}/${totalCount} items confirmed. ${pendingCount} items still need portion selection. Report will generate after all items are confirmed.`);
+    }
+};
+
+const autoConfirmPendingUPCItems = async (chat_id, timeoutMinutes = 5) => {
+    const cursor = await getNutriCursor(chat_id);
+    if (!cursor?.upc_queue) return false;
+    
+    const now = Date.now();
+    let hasAutoConfirmed = false;
+    
+    for (const item of cursor.upc_queue) {
+        if (item.status === 'pending') {
+            // Check if item is older than timeout
+            const itemAge = now - (item.timestamp || now);
+            if (itemAge > timeoutMinutes * 60 * 1000) {
+                // Auto-confirm with 1 serving
+                item.status = 'confirmed';
+                item.factor = 1;
+                item.autoConfirmed = true;
+                hasAutoConfirmed = true;
+                
+                // Update the message to show auto-confirmation
+                const updatedText = `🔵 ${titleCase(item.foodData.label)} (1 serving) ⏰ Auto-confirmed`;
+                await updateMessage(chat_id, { 
+                    message_id: item.message_id, 
+                    text: updatedText, 
+                    choices: [], 
+                    inline: true, 
+                    key: "caption" 
+                });
+                
+                // Save to nutrilist
+                await saveToNutrilistFromUPCResult(chat_id, item.foodData);
+            }
+        }
+    }
+    
+    if (hasAutoConfirmed) {
+        // Check if all items are now confirmed
+        const allConfirmed = cursor.upc_queue.every(item => item.status === 'confirmed');
+        if (allConfirmed) {
+            await compileDailyFoodReport(chat_id);
+            await postItemizeFood(chat_id);
+            cursor.upc_queue = [];
+            cursor.upc = false;
+            setNutriCursor(chat_id, cursor);
+            
+            const autoConfirmedCount = cursor.upc_queue.filter(item => item.autoConfirmed).length;
+            await sendMessage(chat_id, `⏰ Auto-confirmed ${autoConfirmedCount} pending items with default serving sizes. Report generated.`);
+        }
+    }
+    
+    return hasAutoConfirmed;
+};
+
 const processButtonpress = async (body, chat_id) => {
 
 
@@ -548,8 +667,18 @@ const processButtonpress = async (body, chat_id) => {
     // Handle cancel action directly
     if (choice === '❌ Cancel' || choice === '❌ Discard') {
         await deleteMessage(chat_id, messageId);
+        
+        // If canceling a UPC item, remove it from the queue
+        if (cursor.upc_queue && cursor.adjusting?.queueId) {
+            cursor.upc_queue = cursor.upc_queue.filter(item => item.id !== cursor.adjusting.queueId);
+            
+            // If no more UPC items in queue, clear UPC flag
+            if (cursor.upc_queue.length === 0) {
+                cursor.upc = false;
+            }
+        }
+        
         if (cursor.adjusting) delete cursor.adjusting;
-        if (cursor.upc) delete cursor.upc;
         setNutriCursor(chat_id, cursor);
         return true;
     }
@@ -561,13 +690,14 @@ const processButtonpress = async (body, chat_id) => {
             console.error('Invalid factor for UPC adjustment', {chat_id, messageId, choice});
             return false;
         }
-        const result = await processServingQuantity(chat_id, messageId, choice);
+        const result = await processServingQuantity(chat_id, messageId, factor);
         if (!result) {
             console.error('Failed to process serving quantity', {chat_id, messageId, choice});
             return false;
         }
-        delete cursor.adjusting;
-        setNutriCursor(chat_id, cursor);
+        
+        // Don't clear cursor.adjusting and cursor.upc here anymore - 
+        // processServingQuantity handles this based on queue status
         return true;
     }
 
