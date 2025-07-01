@@ -244,7 +244,7 @@ const openFoodFacts = async (barcode) => {
                 food.nutrientsFormatted = nutrientsFormatted;
             }
         }
-        const searchedImage = await searchImage(`${food.label} ${food.brand}`);
+        const searchedImage = await searchImage(`${food.label} ${food.brand}`, barcode);
         if (searchedImage) {
             food['image'] = `${searchedImage}`;
         }
@@ -257,7 +257,7 @@ const openFoodFacts = async (barcode) => {
         return null;
     }
 }
-async function searchImage(keyword) {
+async function searchImage(keyword, upc = '') {
     const apiKey = process.env.GOOGLE_API_KEY;
     const searchEngineId = process.env.GOOGLE_CSE_ID;
 
@@ -281,7 +281,7 @@ async function searchImage(keyword) {
             console.log('Image URL:', firstImageResult.link);
 
             const nutribot_report_host = process.env.nutribot_report_host;
-            const framedImageUrl = `${nutribot_report_host}/nutribot/images/${encodeURIComponent(firstImageResult.link)}/${encodeURIComponent(keyword)}`;
+            const framedImageUrl = `${nutribot_report_host}/nutribot/images/${encodeURIComponent(firstImageResult.link)}/${encodeURIComponent(keyword)}/${upc}`;
             console.log('Framed Image URL:', framedImageUrl);
             return framedImageUrl;
         } else {
