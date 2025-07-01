@@ -53,16 +53,16 @@ export const sendImageMessage = async (chat_id, image_url, caption) => {
         },
         body
     });
-    const json = await response.json();
+    const {ok,result} = await response.json();
 
-    if (!json.ok) {
-        console.error('Failed to send image message:', json);
+    if (!ok) {
+        console.error('Failed to send image message:', result);
         console.log('Falling back to text message.');
         const fallbackCaption = caption || 'Image could not be sent.';
         return await sendMessage(chat_id, fallbackCaption);
     }
 
-    return json;
+    return result;
 }
 
 
