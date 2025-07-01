@@ -639,11 +639,11 @@ export const loadMessageFromDB = (chat_id, message_id) => {
 
 /**
  * Saves a nutrilog entry.
- * @param {object} param0 - { uuid, chat_id, timestamp, message_id, food_data, status }
+ * @param {object} param0 - { uuid, chat_id, timestamp, message_id, food_data, status, upc, factor, auto_confirmed }
  * @returns {object|null}
  */
-export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, status }) => {
-  console.log('Saving nutrilog:', { uuid, chat_id, message_id, food_data, status });
+export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, status, upc, factor, auto_confirmed }) => {
+  console.log('Saving nutrilog:', { uuid, chat_id, message_id, food_data, status, upc, factor, auto_confirmed });
   if (!uuid || !chat_id) {
     console.error('saveNutrilog called with missing uuid or chat_id');
     return null;
@@ -657,7 +657,10 @@ export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, 
       timestamp: timestamp || Math.floor(Date.now() / 1000),
       message_id,
       food_data: food_data || {},
-      status: status || 'pending'
+      status: status || 'pending',
+      upc: upc || null,
+      factor: factor || null,
+      auto_confirmed: auto_confirmed || false
     };
      saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
     return data[uuid];
@@ -1530,5 +1533,103 @@ export const deleteSpecificMessage = (chat_id, message_id) => {
   } catch (error) {
     console.error('Error deleting specific message:', error);
     return { success: false, error: error.message || 'Unknown error occurred' };
+  }
+};
+
+/**
+ * Gets all nutrilogs with pending UPC portion selection for a chat.
+ * @param {string} chat_id 
+ * @returns {Array} Array of nutrilogs with status "pending_portion" and non-null upc
+ */
+export const getPendingUPCNutrilogs = (chat_id) => {
+  if (!chat_id) {
+    console.error('getPendingUPCNutrilogs called with missing chat_id');
+    return [];
+  }
+  try {
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+    const rows = Object.values(data)
+      .filter(item => 
+        item.chat_id === chat_id && 
+        item.status === 'pending_portion' && 
+        item.upc
+      )
+      .sort((a, b) => b.timestamp - a.timestamp);
+    console.log('Found pending UPC nutrilogs:', { chat_id, count: rows.length });
+    return rows;
+  } catch (error) {
+    console.error('Error getting pending UPC nutrilogs:', error);
+    return [];
+  }
+};
+
+/**
+ * Gets the total count of UPC nutrilogs for today for a chat.
+ * @param {string} chat_id 
+ * @returns {number} Count of UPC nutrilogs from today
+ */
+export const getTotalUPCNutrilogs = (chat_id) => {
+  if (!chat_id) {
+    console.error('getTotalUPCNutrilogs called with missing chat_id');
+    return 0;
+  }
+  try {
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+    const today = moment().format('YYYY-MM-DD');
+    const todayStart = moment(today).unix();
+    const todayEnd = moment(today).add(1, 'day').unix();
+    
+    const rows = Object.values(data)
+      .filter(item => 
+        item.chat_id === chat_id && 
+        item.upc &&
+        item.timestamp >= todayStart &&
+        item.timestamp < todayEnd
+      );
+    console.log('Found total UPC nutrilogs for today:', { chat_id, today, count: rows.length });
+    return rows.length;
+  } catch (error) {
+    console.error('Error getting total UPC nutrilogs:', error);
+    return 0;
+  }
+};
+
+/**
+ * Updates the status and related fields of a nutrilog.
+ * @param {string} chat_id 
+ * @param {string} uuid 
+ * @param {string} status 
+ * @param {number|null} factor 
+ * @param {boolean|null} auto_confirmed 
+ * @returns {object|null} Updated nutrilog or null if not found
+ */
+export const updateNutrilogStatus = (chat_id, uuid, status, factor = null, auto_confirmed = null) => {
+  if (!chat_id || !uuid || !status) {
+    console.error('updateNutrilogStatus called with missing parameters:', { chat_id, uuid, status });
+    return null;
+  }
+  try {
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+    if (!data[uuid]) {
+      console.error('Nutrilog not found for update:', { chat_id, uuid });
+      return null;
+    }
+    
+    // Update the fields
+    data[uuid].status = status;
+    if (factor !== null) {
+      data[uuid].factor = factor;
+    }
+    if (auto_confirmed !== null) {
+      data[uuid].auto_confirmed = auto_confirmed;
+    }
+    data[uuid].updated_at = Math.floor(Date.now() / 1000);
+    
+    saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
+    console.log('Updated nutrilog status:', { chat_id, uuid, status, factor, auto_confirmed });
+    return data[uuid];
+  } catch (error) {
+    console.error('Error updating nutrilog status:', error);
+    return null;
   }
 };
