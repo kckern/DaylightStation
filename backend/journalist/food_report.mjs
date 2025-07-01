@@ -8,6 +8,7 @@ import { createCanvas, loadImage, registerFont } from 'canvas';
 import axios from 'axios';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import { canvasImage } from './foodlog_hook.mjs';
+import bwipjs from 'bwip-js';
 
 const iconPath = process.env.path?.icons;
 /**
@@ -671,6 +672,51 @@ async function generateSummary(ctx, counter, width, height) { // height here is 
   return scaledCanvas;
 };
 
+async function generateBarcode(upc) {
+  try {
+    const canvasWidth = 250; // Adjust width to include margins
+    const canvasHeight = 120; // Adjust height to include margins and text
+    const margin = { top: 15, right: 15, bottom: 30, left: 15 }; // Margins around the barcode
+
+    const canvas = createCanvas(canvasWidth, canvasHeight);
+    const ctx = canvas.getContext('2d');
+    console.log('Generating barcode for UPC:', upc);
+
+    // Generate the barcode using bwip-js toBuffer
+    const barcodeBuffer = await bwipjs.toBuffer({
+      bcid: 'code128', // Barcode type
+      text: upc, // Text to encode
+      scale: 3, // 3x scaling factor
+      height: canvasHeight - margin.top - margin.bottom, // Bar height adjusted for margins
+      width: canvasWidth - margin.left - margin.right, // Full width minus margins
+      includetext: false, // Hide human-readable text from barcode generator
+    });
+
+    // Load the barcode buffer as an image
+    const barcodeImage = await loadImage(barcodeBuffer);
+
+    // Draw the barcode onto the canvas with margins
+    ctx.drawImage(
+      barcodeImage,
+      margin.left,
+      margin.top,
+      canvasWidth - margin.left - margin.right,
+      canvasHeight - margin.top - margin.bottom
+    );
+
+    // Display the UPC centered in the bottom margin
+    ctx.font = '20px Arial';
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.fillText(upc, canvasWidth / 2, canvasHeight -( margin.bottom / 2) + 5); // Center text vertically in bottom margin
+
+    return canvas.toBuffer('image/png');
+  } catch (e) {
+    console.error('Error generating barcode:', e);
+    return null;
+  }
+}
+
 /**
  * Exported default route handler (Next.js, for example)
  */
@@ -766,9 +812,16 @@ export const canvasImageEndpoint = async (req, res) => {
   // Extract the image URL and caption from the route parameters
   const img_url_urleconded = req.params.param1;
   const caption = req.params.param2;
+  const upc = req.params.param3;
   const base64Image = await canvasImage(decodeURIComponent(img_url_urleconded),caption);
   if (!base64Image) {
-    return res.status(404).json({ error: 'Image not found' });
+    const barcodeBuffer = await generateBarcode(upc);
+    if (barcodeBuffer) {
+      res.set('Content-Type', 'image/png');
+      res.set('Content-Disposition', 'inline; filename="barcode.png"');
+      return res.send(barcodeBuffer);
+    }
+    return res.status(404).json({ error: 'Image not found and barcode could not be generated' });
   }
   console.log('Sending image:', base64Image.substring(0, 50), '...'); // Log first 50 chars for debugging
 

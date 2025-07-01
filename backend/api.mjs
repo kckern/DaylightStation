@@ -33,7 +33,7 @@ const timezone = (req, res) => {
 apiRouter.all(  '/journalist',    processWebhookPayload);
 apiRouter.all(  '/foodlog',       processFoodLogHook);
 apiRouter.all(  '/foodreport',    foodReport);
-apiRouter.all(  '/nutribot/images/:param1/:param2', canvasImageEndpoint);
+apiRouter.all(  '/nutribot/images/:param1/:param2/:param3?', canvasImageEndpoint);
 //add a handler for processImageUrl?
 apiRouter.all(  '/telegram/img',        imageHandler);
 apiRouter.all(  '/barcode',         scanBarcode);
