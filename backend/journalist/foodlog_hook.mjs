@@ -706,11 +706,17 @@ const reviseFoodLog = async (chat_id, message_id, uuid, {food_data}) => {
 
     const cursor = await getNutriCursor(chat_id);
 
-    //Handle any Pending Nutrilogs
+    //Handle any Pending Nutrilogs - restore original choices for previous revision
     const {revising} = cursor;
     if(revising?.message_id && revising?.uuid) {
-        await updateMessageReplyMarkup(chat_id, {message_id:revising.message_id, choices:["✅ Accept", "❌ Discard", "🔄 Revise"], inline: true});
-        saveNutrilog({uuid:revising.uuid,chat_id, message_id,food_data, status: "init"});
+        // Restore original choices for the previous item in revision
+        await updateMessageReplyMarkup(chat_id, {
+            message_id: revising.message_id, 
+            choices: [["✅ Accept", "❌ Discard", "🔄 Revise"]], 
+            inline: true
+        });
+        // Reset the previous nutrilog status back to initial state
+        saveNutrilog({uuid: revising.uuid, chat_id, message_id: revising.message_id, food_data, status: "init"});
         delete cursor.revising;
         setNutriCursor(chat_id, cursor);
     }
@@ -718,8 +724,8 @@ const reviseFoodLog = async (chat_id, message_id, uuid, {food_data}) => {
     //Process Current Nutrilog
     cursor['revising'] = {message_id, uuid};
     setNutriCursor(chat_id, cursor);
-    await updateMessageReplyMarkup(chat_id, {message_id, choices:["🗒️ Input your revision:"], inline: true});
-    saveNutrilog({uuid,chat_id, food_data,message_id, status: "revising"});
+    await updateMessageReplyMarkup(chat_id, {message_id, choices:[["🗒️ Input your revision:"]], inline: true});
+    saveNutrilog({uuid, chat_id, food_data, message_id, status: "revising"});
     return true;
 
 }
