@@ -79,7 +79,7 @@ const processUPC = async (chat_id, upc, message_id, res) => {
         ];
 
         const imageMsgResult = await sendImageMessage(chat_id, image, caption);
-        const message_id = imageMsgResult.result?.message_id;
+        const message_id = imageMsgResult.message_id;
 
         if (!message_id) {
             console.error("Failed to send image message or get message_id for UPC item:", {upc, foodData});

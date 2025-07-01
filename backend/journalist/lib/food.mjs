@@ -89,7 +89,7 @@ export const processImageUrl = async (url, chat_id) => {
     try {
 
         let msg = await sendImageMessage(chat_id, imgUrl, "🔬 Analyzing Image...");
-        let message_id = msg.result?.message_id;
+        let message_id = msg?.message_id;
         //Retry with smaller image
         if(!message_id) return console.error('No message_id found for image message', msg);
         const base64url = await getBase64Url(imgUrl);
@@ -196,7 +196,7 @@ const reportImgUrl = `${nutribot_report_host}/foodreport?chat_id=${chat_id}&uuid
     console.log(`Sending report image: ${reportImgUrl}`);
     const coachingMessage = await generateCoachingMessage(chat_id, attempt);
     const msg = await sendImageMessage(chat_id, reportImgUrl, coachingMessage);
-    const {message_id} = msg?.result || {}
+    const {message_id} = msg || {}
     await deleteMessage(chat_id, tmp_msg_id);
     if(!message_id) return await postItemizeFood(chat_id, attempt+1);
     const cursor = await getNutriCursor(chat_id);
