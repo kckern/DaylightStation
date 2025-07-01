@@ -988,9 +988,9 @@ export const getNutrilogByMessageId = (chat_id, message_id) => {
  * @param {string} chat_id
  * @returns {object|null}
  */
-export const getPendingNutrilog = (chat_id) => {
+export const getMidRevisionNutrilog = (chat_id) => {
   if (!chat_id) {
-    console.error('getPendingNutrilog called with missing chat_id');
+    console.error('getMidRevisionNutrilog called with missing chat_id');
     return null;
   }
   try {
@@ -1016,6 +1016,28 @@ export const getPendingNutrilog = (chat_id) => {
     return null;
   }
 };
+
+
+export const getNonAcceptedNutrilogs = (chat_id, minutesBack = 60) => {
+  if (!chat_id) {
+    console.error('getNonAcceptedNutrilogs called with missing chat_id');
+    return [];
+  }
+  try {
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+    // Filter out nutrilogs that are not accepted
+    const rows = Object.values(data).filter(item =>
+      item.chat_id === chat_id 
+      && !['accepted', 'assumed'].includes(item.status)
+      && item.timestamp >= (Math.floor(Date.now() / 1000) - (minutesBack * 60))
+    );
+    return rows;
+  } catch (error) {
+    console.error('Error getting non-accepted nutrilogs:', error);
+    return [];
+  }
+};
+
 
 /* ------------------------------------------------------------------
  * Journal messages
@@ -1480,7 +1502,7 @@ export const loadWeight = (chat_id, days_since = 14) => {
 22. deleteNuriListById
 23. updateNutrilist
 24. getNutrilogByMessageId
-25. getPendingNutrilog
+25. getMidRevisionNutrilog
 26. loadJournalMessages
 27. deleteNutrilog
 28. saveNutrilist
@@ -1539,7 +1561,7 @@ export const deleteSpecificMessage = (chat_id, message_id) => {
 /**
  * Gets all nutrilogs with pending UPC portion selection for a chat.
  * @param {string} chat_id 
- * @returns {Array} Array of nutrilogs with status "pending_portion" and non-null upc
+ * @returns {Array} Array of nutrilogs with status "init" and non-null upc
  */
 export const getPendingUPCNutrilogs = (chat_id) => {
   if (!chat_id) {
@@ -1551,7 +1573,7 @@ export const getPendingUPCNutrilogs = (chat_id) => {
     const rows = Object.values(data)
       .filter(item => 
         item.chat_id === chat_id && 
-        item.status === 'pending_portion' && 
+        ['init', 'revising'].includes(item.status) &&
         item.upc
       )
       .sort((a, b) => b.timestamp - a.timestamp);
