@@ -1,7 +1,29 @@
+/**
+ * REFACTORED ARCHITECTURE - MINIMAL CURSOR USAGE
+ * ===============================================
+ * 
+ * This file has been refactored to minimize cursor usage and only use it where absolutely necessary.
+ * 
+ * CURSOR IS USED FOR:
+ * 1. Revision Flow (cursor.revising) - Links text input to the message being revised
+ * 2. Multi-level Adjustment Menus (cursor.adjusting) - Maintains navigation state across button presses
+ * 
+ * MESSAGE ID LOOKUP IS USED FOR:
+ * 1. UPC Portion Selection - Button press includes message_id, lookup nutrilog directly
+ * 2. Accept/Discard/Clear Actions - Standard button actions on specific messages
+ * 3. UPC Queue Management - Database queries instead of cursor.upc_queue
+ * 
+ * BENEFITS:
+ * - Simpler logic - fewer state transitions
+ * - More reliable - database is source of truth
+ * - Better debugging - less complex state management
+ * - Cleaner separation - cursor only for conversation state, message_id for record actions
+ */
+
 import { compileDailyFoodReport, getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport } from "./lib/food.mjs";
 import dotenv from 'dotenv';
 import { deleteMessage, sendImageMessage, sendMessage, transcribeVoiceMessage, updateMessage, updateMessageReplyMarkup } from "./lib/telegram.mjs";
-import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getPendingNutrilog, saveNutrilog,  getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist } from "./lib/db.mjs";
+import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getPendingNutrilog, saveNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist, getPendingUPCNutrilogs, getTotalUPCNutrilogs, updateNutrilogStatus } from "./lib/db.mjs";
 import { detectFoodFromImage, detectFoodFromTextDescription } from "./lib/gpt_food.mjs";
 import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
@@ -55,10 +77,9 @@ export const processFoodLogHook = async (req, res) => {
 
 const processUPC = async (chat_id, upc, message_id, res) => {
     // Only remove current report if there are no pending UPC items
-    const cursor = await getNutriCursor(chat_id);
-    const hasPendingUPC = cursor?.upc_queue && cursor.upc_queue.some(item => item.status === 'pending');
+    const pendingUPCItems = await getPendingUPCNutrilogs(chat_id);
     
-    if (!hasPendingUPC) {
+    if (pendingUPCItems.length === 0) {
         await removeCurrentReport(chat_id);
     }
 
@@ -111,35 +132,9 @@ const processUPC = async (chat_id, upc, message_id, res) => {
             upc,
             food_data: foodData,
             message_id, // Use the message_id from the image message
-            status: "init"
+            status: "pending_portion" // Indicates waiting for portion selection
         };
         await saveNutrilog(nutrilogItem);
-
-        let cursor = await getNutriCursor(chat_id);
-        
-        // Initialize UPC queue if it doesn't exist
-        if (!cursor.upc_queue) {
-            cursor.upc_queue = [];
-        }
-        
-        // Add this UPC item to the queue
-        const queueId = uuidv4(); // Unique identifier for this queue item
-        cursor.upc_queue.push({
-            id: queueId,
-            upc,
-            foodData,
-            message_id,
-            status: 'pending',
-            timestamp: Date.now()
-        });
-        
-        cursor.adjusting = { upc, foodData, message_id, queueId }; // Set level to 2 to indicate we're adjusting serving size
-        cursor.upc = true; // Flag to indicate we're in UPC flow
-
-        setNutriCursor(chat_id, cursor);
-        // Ensure res.status().json() is only called if res is a valid response object
-
-
 
         if (res && typeof res.status === 'function') {
             res.status(200).json({nutrilogItem});
@@ -159,15 +154,9 @@ const processUPC = async (chat_id, upc, message_id, res) => {
     }
 };
 
-const processServingQuantity = async (chat_id, message_id, factor) => {
-    const cursor = await getNutriCursor(chat_id);
-    if (!cursor || !cursor.adjusting?.foodData) {
-        await sendMessage(chat_id, `🚫 No food data found for UPC adjustment. Cursor: ${JSON.stringify(cursor)}`);
-        return false;
-    }
-
-    const { foodData } = cursor.adjusting;
-
+const processUPCServing = async (chat_id, message_id, factor, nutrilogItem) => {
+    const { food_data: foodData, uuid } = nutrilogItem;
+    
     const { nutrients } = foodData;
     const adjustedNutrients = Object.keys(nutrients).reduce((acc, key) => {
         acc[key] = nutrients[key] * factor;
@@ -177,43 +166,29 @@ const processServingQuantity = async (chat_id, message_id, factor) => {
     foodData.nutrients = adjustedNutrients;
     await saveToNutrilistFromUPCResult(chat_id, foodData);
 
-    const servingUnit = foodData.servingSizes[0]?.label || 'g'; // Default to grams if no serving size is provided
-    const adjustedServingQuantity = foodData.servingSizes[0]?.quantity * factor || 100; // Default to 100g if no serving size is provided
-    const servingLabel = `${adjustedServingQuantity}${servingUnit}`; // e.g., "300g" 
+    const servingUnit = foodData.servingSizes[0]?.label || 'g';
+    const adjustedServingQuantity = foodData.servingSizes[0]?.quantity * factor || 100;
+    const servingLabel = `${adjustedServingQuantity}${servingUnit}`;
 
     // Update the message to include the selected serving quantity
     const updatedText = `🔵 ${titleCase(foodData.label)} (${servingLabel}) (${factor}x serving)`;
-
-    //update message with updated caption and clear choices
     await updateMessage(chat_id, { message_id, text: updatedText, choices: [], inline: true, key: "caption" });
 
-    // Update the UPC queue item status
-    if (cursor.upc_queue && cursor.adjusting?.queueId) {
-        const queueItem = cursor.upc_queue.find(item => item.id === cursor.adjusting.queueId);
-        if (queueItem) {
-            queueItem.status = 'confirmed';
-            queueItem.factor = factor;
-        }
-    }
+    // Update this nutrilog item to confirmed status
+    await updateNutrilogStatus(chat_id, uuid, "confirmed", factor);
 
-    // Check if all UPC items in queue are confirmed
-    const allConfirmed = cursor.upc_queue?.every(item => item.status === 'confirmed') ?? false;
+    // Check if all UPC items are now confirmed
+    const pendingUPCItems = await getPendingUPCNutrilogs(chat_id);
     
-    // Only generate report if all UPC items are confirmed
-    if (allConfirmed) {
+    if (pendingUPCItems.length === 0) {
+        // All UPC items confirmed - generate report
         await compileDailyFoodReport(chat_id);
         await postItemizeFood(chat_id);
-        
-        // Clear the UPC queue after generating report
-        cursor.upc_queue = [];
-        cursor.upc = false;
     } else {
-        // Notify user about pending items
-        await checkPendingUPCItems(chat_id);
+        // Notify user about remaining pending items
+        await notifyPendingUPCItems(chat_id, pendingUPCItems.length);
     }
 
-    delete cursor.adjusting;
-    setNutriCursor(chat_id, cursor);
     return true;
 };
 
@@ -449,17 +424,11 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
         return await processRevisionButtonpress(chat_id, message_id, adjusting.date);
     }
 
-    const {level, upc} = adjusting;
+    const {level} = adjusting;
 
-    if(upc) {
-        // Handle UPC adjustment
-        const factor = parseFloat(choice);
-        if(isNaN(factor)) return await sendMessage(chat_id, `🚫 Invalid factor selected for UPC adjustment. ${JSON.stringify(choice)}`);
-        const result = await processServingQuantity(chat_id, message_id, factor);
-        console.log('UPC adjustment result:', result);
-        return result;
+    // Remove UPC handling from here - now handled by message ID lookup in processButtonpress
 
-    }else if(level === 0) { //We just received the date
+    if(level === 0) { //We just received the date
         cursor.adjusting.level = 1;
         const offset = cursor.adjusting.offset || 0;
         const date = moment.tz(choice, "America/Los_Angeles").format('YYYY-MM-DD');
@@ -495,7 +464,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
         const emoji = noom_color === 'green' ? '🟢' : noom_color === 'yellow' ? '🟡' : noom_color === "orange" ? '🟠' : "🔴";
         const text = `${emoji} ${item.trim()} (${`${amount}`.trim()}${unit.trim()})\n🔥 ${parseInt(calories)} cal\n🧀 ${parseInt(fat)}g 🍖 ${parseInt(protein)}g 🍏 ${parseInt(carbs)}g\n\n↕️ How to adjust?`;
         const choices = [
-            [{"0.25":"¼"}, {"0.33":"⅓"}, {"0.5":"½"}, {"0.67":"⅔"}, {"0.75":"¾"}, {"0.8":"⅘"}],
+            [{"0.25":"¼"}, {"0.33":"⅓"}, {"0.5":"½"}, {"0.67":"⅔"}, {"0.75":"¾"}, {"0.8":"⅕"}],
             [{"1.25":"×1¼"}, {"1.5":"×1½"}, {"1.75":"×1¾"}, {"2":"×2"}, {"3":"×3"}, {"4":"×4"}],
             ["🗑️ Delete", {"📅":"📅 Move Day"},"↩️ Done"]
         ];
@@ -558,7 +527,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
             const emoji = noom_color === 'green' ? '🟢' : noom_color === 'yellow' ? '🟡' : noom_color === "orange" ? '🟠' : "🔴";
             const text = `${emoji} ${item.trim()} (${`${amount}`.trim()}${unit.trim()})\n🔥 ${parseInt(calories)} cal\n🧀 ${parseInt(fat)}g 🍖 ${parseInt(protein)}g 🍏 ${parseInt(carbs)}g\n\n↕️ How to adjust?`;
             const choices = [
-                [{"0.25":"¼"}, {"0.33":"⅓"}, {"0.5":"½"}, {"0.67":"⅔"}, {"0.75":"¾"}, {"0.8":"⅘"}],
+                [{"0.25":"¼"}, {"0.33":"⅓"}, {"0.5":"½"}, {"0.67":"⅔"}, {"0.75":"¾"}, {"0.8":"⅕"}],
                 [{"1.25":"×1¼"}, {"1.5":"×1½"}, {"1.75":"×1¾"}, {"2":"×2"}, {"3":"×3"}, {"4":"×4"}],
                 ["🗑️ Delete", {"📅":"📅 Move Day"},"↩️ Done"]
             ];
@@ -584,68 +553,58 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
 }
 
 
-const checkPendingUPCItems = async (chat_id) => {
-    const cursor = await getNutriCursor(chat_id);
-    if (!cursor?.upc_queue) return;
+const notifyPendingUPCItems = async (chat_id, pendingCount) => {
+    const totalUPCItems = await getTotalUPCNutrilogs(chat_id);
+    const confirmedCount = totalUPCItems - pendingCount;
     
-    const pendingItems = cursor.upc_queue.filter(item => item.status === 'pending');
-    const confirmedItems = cursor.upc_queue.filter(item => item.status === 'confirmed');
-    
-    if (pendingItems.length > 0 && confirmedItems.length > 0) {
-        const pendingCount = pendingItems.length;
-        const confirmedCount = confirmedItems.length;
-        const totalCount = cursor.upc_queue.length;
-        
+    if (pendingCount > 0 && confirmedCount > 0) {
         // Send a status message
-        await sendMessage(chat_id, `📊 Status: ${confirmedCount}/${totalCount} items confirmed. ${pendingCount} items still need portion selection. Report will generate after all items are confirmed.`);
+        await sendMessage(chat_id, `📊 Status: ${confirmedCount}/${totalUPCItems} items confirmed. ${pendingCount} items still need portion selection. Report will generate after all items are confirmed.`);
     }
 };
 
 const autoConfirmPendingUPCItems = async (chat_id, timeoutMinutes = 5) => {
-    const cursor = await getNutriCursor(chat_id);
-    if (!cursor?.upc_queue) return false;
+    const pendingItems = await getPendingUPCNutrilogs(chat_id);
+    if (pendingItems.length === 0) return false;
     
     const now = Date.now();
     let hasAutoConfirmed = false;
     
-    for (const item of cursor.upc_queue) {
-        if (item.status === 'pending') {
-            // Check if item is older than timeout
-            const itemAge = now - (item.timestamp || now);
-            if (itemAge > timeoutMinutes * 60 * 1000) {
-                // Auto-confirm with 1 serving
-                item.status = 'confirmed';
-                item.factor = 1;
-                item.autoConfirmed = true;
-                hasAutoConfirmed = true;
-                
-                // Update the message to show auto-confirmation
-                const updatedText = `🔵 ${titleCase(item.foodData.label)} (1 serving) ⏰ Auto-confirmed`;
-                await updateMessage(chat_id, { 
-                    message_id: item.message_id, 
-                    text: updatedText, 
-                    choices: [], 
-                    inline: true, 
-                    key: "caption" 
-                });
-                
-                // Save to nutrilist
-                await saveToNutrilistFromUPCResult(chat_id, item.foodData);
-            }
+    for (const item of pendingItems) {
+        // Check if item is older than timeout (using created timestamp from nutrilog)
+        const itemAge = now - (new Date(item.created_at).getTime());
+        if (itemAge > timeoutMinutes * 60 * 1000) {
+            // Auto-confirm with 1 serving
+            await updateNutrilogStatus(chat_id, item.uuid, "confirmed", 1, true);
+            hasAutoConfirmed = true;
+            
+            // Update the message to show auto-confirmation
+            const updatedText = `🔵 ${titleCase(item.food_data.label)} (1 serving) ⏰ Auto-confirmed`;
+            await updateMessage(chat_id, { 
+                message_id: item.message_id, 
+                text: updatedText, 
+                choices: [], 
+                inline: true, 
+                key: "caption" 
+            });
+            
+            // Save to nutrilist
+            await saveToNutrilistFromUPCResult(chat_id, item.food_data);
         }
     }
     
     if (hasAutoConfirmed) {
         // Check if all items are now confirmed
-        const allConfirmed = cursor.upc_queue.every(item => item.status === 'confirmed');
-        if (allConfirmed) {
+        const remainingPending = await getPendingUPCNutrilogs(chat_id);
+        if (remainingPending.length === 0) {
             await compileDailyFoodReport(chat_id);
             await postItemizeFood(chat_id);
-            cursor.upc_queue = [];
-            cursor.upc = false;
-            setNutriCursor(chat_id, cursor);
             
-            const autoConfirmedCount = cursor.upc_queue.filter(item => item.autoConfirmed).length;
+            const autoConfirmedCount = pendingItems.filter(item => {
+                const itemAge = now - (new Date(item.created_at).getTime());
+                return itemAge > timeoutMinutes * 60 * 1000;
+            }).length;
+            
             await sendMessage(chat_id, `⏰ Auto-confirmed ${autoConfirmedCount} pending items with default serving sizes. Report generated.`);
         }
     }
@@ -654,71 +613,59 @@ const autoConfirmPendingUPCItems = async (chat_id, timeoutMinutes = 5) => {
 };
 
 const processButtonpress = async (body, chat_id) => {
-
-
     const messageId = body.callback_query.message?.message_id; 
     const choice = body.callback_query.data;
     const leadingEmoji = choice?.match(/^\S+/g)[0];
     console.log({leadingEmoji, choice});
 
     console.log('Processing button press', leadingEmoji);
-    const cursor = await getNutriCursor(chat_id);
 
     // Handle cancel action directly
     if (choice === '❌ Cancel' || choice === '❌ Discard') {
         await deleteMessage(chat_id, messageId);
         
-        // If canceling a UPC item, remove it from the queue
-        if (cursor.upc_queue && cursor.adjusting?.queueId) {
-            cursor.upc_queue = cursor.upc_queue.filter(item => item.id !== cursor.adjusting.queueId);
-            
-            // If no more UPC items in queue, clear UPC flag
-            if (cursor.upc_queue.length === 0) {
-                cursor.upc = false;
-            }
+        // If canceling a UPC item, update its status
+        const nutrilogItem = await getNutrilogByMessageId(chat_id, messageId);
+        if (nutrilogItem?.upc) {
+            await updateNutrilogStatus(chat_id, nutrilogItem.uuid, "canceled");
         }
         
+        // Clean up any cursor state
+        const cursor = await getNutriCursor(chat_id);
         if (cursor.adjusting) delete cursor.adjusting;
+        if (cursor.revising) delete cursor.revising;
         setNutriCursor(chat_id, cursor);
         return true;
     }
 
-    // Handle UPC flow
-    if (cursor.upc) {
+    // First check if this is a UPC portion selection (message-based)
+    const nutrilogItem = await getNutrilogByMessageId(chat_id, messageId);
+    if (nutrilogItem?.upc && nutrilogItem.status === "pending_portion") {
         const factor = parseFloat(choice);
-        if (isNaN(factor)) {
-            console.error('Invalid factor for UPC adjustment', {chat_id, messageId, choice});
-            return false;
+        if (!isNaN(factor)) {
+            return await processUPCServing(chat_id, messageId, factor, nutrilogItem);
         }
-        const result = await processServingQuantity(chat_id, messageId, factor);
-        if (!result) {
-            console.error('Failed to process serving quantity', {chat_id, messageId, choice});
-            return false;
-        }
-        
-        // Don't clear cursor.adjusting and cursor.upc here anymore - 
-        // processServingQuantity handles this based on queue status
-        return true;
     }
 
-    // Handle revision flow
+    // Check if this is a revision flow (cursor-based)
+    const cursor = await getNutriCursor(chat_id);
     if (cursor.adjusting || leadingEmoji === '⬅️') {
         return processRevisionButtonpress(chat_id, messageId, choice);
     }
 
-    const nutrilogItem = await getNutrilogByMessageId(chat_id, messageId);
-    console.log({nutrilogItem});
-    if (!nutrilogItem) {
-        if (["✅","⭐"].includes(leadingEmoji)) return await clearKeyboard(chat_id, messageId);
-        if (leadingEmoji === '↩️') return await postItemizeFood(chat_id);
-        return false;
+    // Handle standard nutrilog actions (message-based)
+    if (nutrilogItem && !nutrilogItem.upc) {
+        const {uuid, food_data} = nutrilogItem;
+        if (!uuid) return console.error('No uuid found for nutrilog item', nutrilogItem);
+        if (leadingEmoji === '✅') return await acceptFoodLog(chat_id, messageId, uuid, food_data);
+        if (leadingEmoji === '❌') return await discardFoodLog(chat_id, messageId, uuid);
+        if (leadingEmoji === '🔄') return await reviseFoodLog(chat_id, messageId, uuid, nutrilogItem);
     }
 
-    const {uuid, food_data} = nutrilogItem;
-    if (!uuid) return console.error('No uuid found for nutrilog item', nutrilogItem);
-    if (leadingEmoji === '✅') return await acceptFoodLog(chat_id, messageId, uuid, food_data);
-    if (leadingEmoji === '❌') return await discardFoodLog(chat_id, messageId, uuid);
-    if (leadingEmoji === '🔄') return await reviseFoodLog(chat_id, messageId, uuid, nutrilogItem);
+    // Handle simple navigation actions
+    if (["✅","⭐"].includes(leadingEmoji)) return await clearKeyboard(chat_id, messageId);
+    if (leadingEmoji === '↩️') return await postItemizeFood(chat_id);
+    
     return false;
 };
 
