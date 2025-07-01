@@ -280,9 +280,9 @@ export const canvasImage = async (imageUrl, label) => {
         ctx.strokeStyle = 'black';
         ctx.stroke();
     } catch (error) {
-        console.error('Error loading image:', error);
-        throw new Error('Failed to load image for canvas');
-    }   
+        console.error('Error loading image:', error.message,{imageUrl});
+        return false; // Return false in case of failure
+    }
 
     return canvas.toDataURL('image/png').replace('data:image/png;base64,', '');
 

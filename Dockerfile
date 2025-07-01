@@ -1,5 +1,5 @@
 # Install OS
-ARG NODE_VERSION=18.4.0
+ARG NODE_VERSION=20.11.0
 FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine
 
 # Set work directory to /usr/src/app
