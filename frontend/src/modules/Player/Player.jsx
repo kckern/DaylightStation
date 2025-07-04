@@ -437,9 +437,13 @@ function useQueueController({ play, queue, clear }) {
 /*  MAIN PLAYER                                               */
 /*─────────────────────────────────────────────────────────────*/
 
-export default function Player({ play, queue, clear, playbackKeys, playbackrate }) {
-
-  if(playbackrate) play['playbackRate'] = playbackrate; //Override playback rate if passed in via menu selection
+export default function Player(props) {
+  console.log("Player props:", props);
+  if (props.play?.overlay || props.queue?.overlay) {
+    return <CompositePlayer {...props} />;
+  }
+  const { play, queue, clear, playbackrate, playbackKeys, playerType } = props || {};
+  if(playbackrate && play) play['playbackRate'] = playbackrate; //Override playback rate if passed in via menu selection
 
   const {
     classes,
@@ -464,6 +468,7 @@ export default function Player({ play, queue, clear, playbackKeys, playbackrate 
     classes,
     playbackRate,
     playbackKeys,
+    playerType,
     queuePosition,
   };
 
@@ -482,12 +487,43 @@ export default function Player({ play, queue, clear, playbackKeys, playbackrate 
   return singlePlayerProps ? (
     <SinglePlayer {...singlePlayerProps} {...playerProps} />
   ) : (
-    <div className={`player ${shader}`}>
+    <div className={`player ${shader} ${props.playerType || ''}`}>
       <LoadingOverlay />
     </div>
   );
 }
 
+
+/*─────────────────────────────────────────────────────────────*/
+/*  Compound Player (Video Player with Audio Overlay)       */
+/* Use cases: 
+/* - workout video with audio playlist,
+/* - ambient video with modular background music,
+/* - sermon video with background hymns or talks
+/* Required input variables:
+/* - play or queue: object with media details
+*/    
+
+function CompositePlayer(props) {
+  const { play, queue } = props;
+  const isQueue = !!queue;
+
+  const primaryProps = React.useMemo(() => {
+    const baseProps = { ...props };
+    const overlayKey = isQueue ? 'queue' : 'play';
+    if (baseProps[overlayKey]) {
+      baseProps[overlayKey] = { ...baseProps[overlayKey], overlay: undefined };
+    }
+    return baseProps;
+  }, [props, isQueue]);
+  const overlayProps = React.useMemo(() => ({ queue: { plex: isQueue ? queue.overlay : play.overlay }, shuffle: 1 }), [play, queue, isQueue]);
+  const shader = primaryProps.primary?.shader || primaryProps.overlay?.shader || 'regular';
+  return <div className={`player composite ${shader}`}>
+    <Player playerType="overlay" {...overlayProps} />
+    <Player playerType="primary" {...primaryProps} />
+    </div>;
+
+}
 
 /*─────────────────────────────────────────────────────────────*/
 /*  SINGLE PLAYER                                             */
@@ -509,6 +545,7 @@ export function SinglePlayer(play) {
     classes,
     playbackKeys,
     queuePosition,
+    playerType,
     //configs
     shader,
     volume,
@@ -551,7 +588,7 @@ export function SinglePlayer(play) {
 
   if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
   return (
-    <div className="player">
+    <div className={`player ${playerType || ''}`}>
       {!isReady && <div className={`shader on notReady ${shader}`}><LoadingOverlay /></div>}
       {isReady && ['dash_video', 'video', 'audio'].includes(mediaInfo.media_type) && (
         React.createElement(
@@ -626,20 +663,22 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
       <div className={`shader ${shaderState}`} />
       {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      <p>{header}</p>
-      <p>{formatTime(seconds)} / {formatTime(duration)}</p>
-      <div className="image-container">
-        {image && (
-          <>
-            <img src={image} alt={title} className="cover" />
-            <div className="image-backdrop" />
-          </>
-        )}
+      <div className="audio-content">
+        <div className="image-container">
+          {image && (
+            <>
+              <img src={image} alt={title} className="cover" />
+              <div className="image-backdrop" />
+            </>
+          )}
+        </div>
+        <div className="audio-info">
+          <p className="audio-header">{header}</p>
+          <p className="audio-timing">{formatTime(seconds)} / {formatTime(duration)}</p>
+          <p className="audio-footer">{footer}</p>
+        </div>
       </div>
-      <h3>
-        {footer}
-      </h3>
-      <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }}  />
+      <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }} />
     </div>
   );
 }

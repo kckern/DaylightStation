@@ -96,16 +96,36 @@
     }
 }
 
-.audio-player > .image-container {
+.audio-player .audio-content {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    height: calc(100% - 1ex);
+    padding: 0 2rem; /* Add padding to prevent overflow */
+    padding-bottom: 1rem;
+    p.audio-footer{
+        font-weight: bold;
+    }
+    p.audio-timing{
+        opacity: 0.5;
+        font-family: monospace;
+        font-size: 1rem;
+    }
+}
+
+.audio-player  .image-container {
     flex-grow: 1; /* Allow the image to grow and fill available space */
     height: 0; /* Set height to 0 to rely on flex-grow */
     max-height: 100%; /* Prevent overflow */
     aspect-ratio: 1 / 1; /* Maintain a square aspect ratio */
-    margin: 2rem;
+    margin: rem;
     border-radius: 1rem;
 
 }
-.audio-player > .image-container > img.cover {
+
+
+
+.audio-player  .image-container > img.cover {
     height: 100%;
     border: 1px solid #000;
     border-radius: 1rem;
@@ -113,7 +133,7 @@
     aspect-ratio: 1 / 1;
     box-shadow: 0 1ex 1ex rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
-.audio-player > .image-container > img.loading {
+.audio-player  .image-container > img.loading {
     position: absolute;
     top:30%;
     left: 30%;
@@ -228,4 +248,80 @@
 
   .shader.on{
     opacity: 1;
+  }
+
+ .tv-app .player > div.player.overlay > shader{display:none}
+  .tv-app .player > div.player.overlay{
+
+    
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 33%;
+    background: linear-gradient(to top, #00000066 0, transparent 66%);
+    z-index: 9999;
+    opacity: 1;
+    padding: 0rem;
+
+
+    .progress-bar{
+        bottom: 0;
+        top:auto;
+        .progress{
+        background-color: #FFFFFF22;
+        }
+    }
+    .audio-player{
+        padding: 0rem;
+        .audio-content{
+            display: flex;
+            flex-direction: row;
+            position: relative;;
+            height: calc(100% - 1ex);
+            .audio-info{
+                flex-grow: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+
+                flex-direction: row;
+                gap: 0;
+                align-items: flex-end;
+
+                p.audio-timing{display: none;}
+                p{
+                    text-align: left;
+                    font-size: 1rem;
+                }
+                p.audio-footer{
+                    font-weight: bold;
+                    &::before {
+                        content: ' • ';
+                    }
+                }
+            }
+            .image-container {
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: calc(100% - 10px);
+                aspect-ratio: 1 / 1;
+
+                margin: 5px; /* Remove margin to prevent overflow */
+                margin-left: 1rem;
+                img {
+                    height: 100%; /* Ensure the image fills the container */
+                    width: 100%; /* Ensure the image fills the container */
+                    border-radius: 5px;
+                    mix-blend-mode: screen;
+                    opacity: 0.6;
+                    object-fit: cover; /* Maintain aspect ratio and cover the container */
+                    box-shadow: 0 1ex 1ex rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+                }
+            }
+        }
+    }
+
   }
