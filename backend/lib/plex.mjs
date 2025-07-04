@@ -95,7 +95,7 @@ export class Plex {
     else if (type === 'show') list = await this.loadListFromShow(plex,playable); //598748
     else if (type === 'artist') list = await this.loadListFromArtist(plex,playable); //575855
     else if (type === 'album') list = await this.loadListFromAlbum(plex); //575876
-    else list = [plex]; //movie: 52769
+    else list = (await this.loadListKeys(plex)); // Fallback to metadata if no specific list type
     list = shuffle ? list.sort(() => Math.random() - 0.5) : list;
     return { plex, type, list };
   }
