@@ -65,7 +65,8 @@ function useCommonMediaController({
   shader,
   volume,
   cycleThroughClasses,
-  playbackKeys,queuePosition 
+  playbackKeys,queuePosition,
+  ignoreKeys
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id  || meta.plex || meta.media_url;
   const containerRef = useRef(null);
@@ -187,12 +188,12 @@ function useCommonMediaController({
     };
 
 
-    window.addEventListener('keydown', handleKeyDown);
+    if (!ignoreKeys) window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      if (!ignoreKeys) window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [onClear, onEnd, isAudio, isVideo, onShaderLevelChange, duration, cycleThroughClasses, playbackKeys]);
+  }, [onClear, onEnd, isAudio, isVideo, onShaderLevelChange, duration, cycleThroughClasses, playbackKeys, ignoreKeys]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -442,7 +443,7 @@ export default function Player(props) {
   if (props.play?.overlay || props.queue?.overlay) {
     return <CompositePlayer {...props} />;
   }
-  const { play, queue, clear, playbackrate, playbackKeys, playerType } = props || {};
+  const { play, queue, clear, playbackrate, playbackKeys, playerType, ignoreKeys } = props || {};
   if(playbackrate && play) play['playbackRate'] = playbackrate; //Override playback rate if passed in via menu selection
 
   const {
@@ -470,6 +471,7 @@ export default function Player(props) {
     playbackKeys,
     playerType,
     queuePosition,
+    ignoreKeys
   };
 
   const singlePlayerProps = (() => {
@@ -495,7 +497,7 @@ export default function Player(props) {
 
 
 /*─────────────────────────────────────────────────────────────*/
-/*  Compound Player (Video Player with Audio Overlay)       */
+/*  Composite Player (Video Player with Audio Overlay)       */
 /* Use cases: 
 /* - workout video with audio playlist,
 /* - ambient video with modular background music,
@@ -521,7 +523,7 @@ function CompositePlayer(props) {
   const shader = primaryProps.primary?.shader || primaryProps.overlay?.shader || 'regular';
   return <div className={`player composite ${shader}`}>
     <Player playerType="overlay" {...overlayProps} />
-    <Player playerType="primary" {...primaryProps} />
+    <Player playerType="primary" {...primaryProps} ignoreKeys={true} />
     </div>;
 
 }
@@ -547,6 +549,7 @@ export function SinglePlayer(play) {
     playbackKeys,
     queuePosition,
     playerType,
+    ignoreKeys,
     //configs
     shader,
     volume,
@@ -610,7 +613,8 @@ export function SinglePlayer(play) {
             classes,
             playbackKeys,
             queuePosition,
-            fetchVideoInfo
+            fetchVideoInfo,
+            ignoreKeys
           }
         )
       )}
@@ -628,7 +632,7 @@ export function SinglePlayer(play) {
 /*  AUDIO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo }) {
+function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const {
     timeSinceLastProgressUpdate,
@@ -651,7 +655,8 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
     cycleThroughClasses,
     classes,
     volume,
-    playbackKeys,queuePosition 
+    playbackKeys,queuePosition,
+    ignoreKeys
   });
 
   const { percent } = getProgressPercent(seconds, duration);
@@ -689,7 +694,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
 /*  VIDEO PLAYER                                              */
 /*─────────────────────────────────────────────────────────────*/
 
-function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo  }) {
+function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys  }) {
   const isPlex = ['dash_video'].includes(media.media_type);
   const {
     isDash,
@@ -714,7 +719,8 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
     setShader,
     cycleThroughClasses,
     classes,
-    playbackKeys,queuePosition 
+    playbackKeys,queuePosition,
+    ignoreKeys
   });
 
   const { show, season, title, media_url } = media;
