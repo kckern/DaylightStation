@@ -103,6 +103,9 @@
     height: calc(100% - 1ex);
     padding: 0 2rem; /* Add padding to prevent overflow */
     padding-bottom: 1rem;
+    p.audio-header{
+        text-align: right;
+    }
     p.audio-footer{
         font-weight: bold;
     }
@@ -117,6 +120,7 @@
     flex-grow: 1; /* Allow the image to grow and fill available space */
     height: 0; /* Set height to 0 to rely on flex-grow */
     max-height: 100%; /* Prevent overflow */
+    
     aspect-ratio: 1 / 1; /* Maintain a square aspect ratio */
     margin: rem;
     border-radius: 1rem;
@@ -250,7 +254,7 @@
     opacity: 1;
   }
 
- .tv-app .player > div.player.overlay > shader{display:none}
+ .tv-app .player > div.player.overlay  .shader{display:none}
   .tv-app .player > div.player.overlay{
 
     
@@ -277,9 +281,8 @@
         .audio-content{
             display: flex;
             flex-direction: row;
-            position: relative;;
-            height: calc(100% - 1ex);
             .audio-info{
+                margin-left: 10rem;
                 flex-grow: 1;
                 display: flex;
                 flex-direction: column;
@@ -287,19 +290,25 @@
                 align-items: center;
 
                 flex-direction: row;
-                gap: 0;
+                gap: 1ex;
                 align-items: flex-end;
 
                 p.audio-timing{display: none;}
-                p{
-                    text-align: left;
+                p {
+                    text-align: center;
                     font-size: 1rem;
+                    overflow-wrap: break-word; /* Prevent widdows */
+                    white-space: nowrap; /* Prevent orphans */
                 }
-                p.audio-footer{
-                    font-weight: bold;
-                    &::before {
-                        content: ' • ';
-                    }
+                p.audio-footer {
+                    font-weight: left;
+                    overflow-wrap: break-word; /* Prevent widdows */
+                    white-space: nowrap; /* Prevent orphans */
+                }
+                p.audio-header {
+                    text-align: right;
+                    overflow-wrap: break-word; /* Prevent widdows */
+                    white-space: nowrap; /* Prevent orphans */
                 }
             }
             .image-container {
