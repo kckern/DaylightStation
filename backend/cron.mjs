@@ -92,7 +92,10 @@ function computeNextRun(job, fromMoment) {
 export const cronContinuous = async () => {
   const now = moment().tz(timeZone);
   const cronJobs = loadFile("config/cron") || [];
-  for (const job of cronJobs) {
+  if (!Array.isArray(cronJobs)) {
+    console.error("cronJobs is not iterable. Cancelling execution.");
+    return;
+  }for (const job of cronJobs) {
     if (typeof job !== "object" || job === null) {
       console.warn(`Invalid job format:`, job);
       continue; // Skip invalid jobs

@@ -516,7 +516,8 @@ function CompositePlayer(props) {
     }
     return baseProps;
   }, [props, isQueue]);
-  const overlayProps = React.useMemo(() => ({ queue: { plex: isQueue ? queue.overlay : play.overlay }, shuffle: 1 }), [play, queue, isQueue]);
+
+  const overlayProps = React.useMemo(() => ({ queue: { plex: isQueue ? queue.overlay : play.overlay, shuffle: 1 } }), [play, queue, isQueue]);
   const shader = primaryProps.primary?.shader || primaryProps.overlay?.shader || 'regular';
   return <div className={`player composite ${shader}`}>
     <Player playerType="overlay" {...overlayProps} />
