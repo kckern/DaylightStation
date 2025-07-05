@@ -929,7 +929,7 @@ export const getNutrilListByDate = (chat_id, date) => {
       const bCals = b.calories || 0;
       return bCals - aCals;
     });
-    console.log('Retrieved nutrilist by date:', { chat_id, date, count: sorted.length, sorted });
+    //console.log('Retrieved nutrilist by date:', { chat_id, date, count: sorted.length, sorted });
     return sorted;
   } catch (error) {
     console.error('Error getting nutrilist by date:', error);
