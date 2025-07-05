@@ -30,7 +30,7 @@ export const findUnwatchedItems = (media_keys, category = "media", shuffle = fal
     const media_memory = loadFile(`history/media_memory/${category}`) || {};
     const unwatchedItems = media_keys.filter(key => {
         const watchedItem = media_memory[key];
-        return !(watchedItem && watchedItem.percent > 0.5);
+        return !(watchedItem && watchedItem.percent > 95);
     });
 
 

@@ -79,7 +79,7 @@ export default function TVApp() {
   const isQueueOrPlay = ["queue", "play"].some(key => Object.keys(queryEntries).includes(key));
 
   const autoplay = (() => {
-    const configList = ["volume","shader","playbackRate","shuffle","continuous"];
+    const configList = ["volume","shader","playbackRate","shuffle","continuous","repeat","loop","overlay"];
     const config = {};
     for (const configKey of configList) {
       if (queryEntries[configKey]) {

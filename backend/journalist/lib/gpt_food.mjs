@@ -381,7 +381,7 @@ export const itemizeFood = async (foodList, img, attempt = 1) => {
 
 
 
-export const generateCoachingMessage = async (chat_id, attempt=1)=>{
+export const generateCoachingMessage = async (chat_id, newFood, attempt=1)=>{
     try {
         const todaysDate = moment().tz('America/Los_Angeles').format('YYYY-MM-DD');
         
@@ -392,7 +392,7 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
         }, 0);
         
         // Get most recent items for context
-        const mostRecentItems = getMostRecentNutrilistItems(chat_id);
+        const mostRecentItems = newFood;
         const recentCalories = mostRecentItems.reduce((total, item) => {
             return total + (parseInt(item.calories || 0, 10));
         }, 0);
@@ -469,6 +469,10 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
                 });
                 
                 coachingMessage = response.data.choices?.[0].message?.content || `Great milestone! You've reached ${crossedThreshold} calories today.`;
+                saveFile(`gpt/coaching/${todaysDate}`, {
+                    in: data,
+                    out: response.data
+                });
             } catch (gptError) {
                 console.error('Error getting GPT threshold message:', gptError);
                 // Fallback threshold messages if GPT fails
@@ -510,9 +514,8 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
                 ],
                 max_tokens: 1000
             };
-            
-            try {
-                const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+
+            const data2 = {
                     model: 'gpt-4o',
                     messages: [
                         {
@@ -530,7 +533,10 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
                         }
                     ],
                     max_tokens: 1000
-                }, {
+                };
+            const useMe = data;
+            try {
+                const response = await axios.post('https://api.openai.com/v1/chat/completions', useMe, {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
@@ -538,6 +544,12 @@ export const generateCoachingMessage = async (chat_id, attempt=1)=>{
                 });
                 
                 coachingMessage = response.data.choices?.[0].message?.content || 'Great job logging that!';
+
+                saveFile(`gpt/coaching/${todaysDate}`, {
+                    in: useMe,
+                    out: response.data
+                });
+
             } catch (gptError) {
                 console.error('Error getting GPT minor message:', gptError);
                 // Fallback to simple messages if GPT fails
