@@ -157,7 +157,7 @@ export const handlePendingNutrilogs = async (chat_id) => {
     for(const log_item of log_items){
      //   console.log(`Processing log item: ${JSON.stringify(log_item)}`);
         const {uuid, food_data, chat_id, message_id} = log_item;
-        foodDatas.push(food_data);
+        foodDatas.push(...(food_data.food || []));
         max_message_id = Math.max(max_message_id, message_id);
         const {food, date, time, img_url} = food_data || {};
         if(!Array.isArray(food)) {
@@ -192,19 +192,24 @@ const reportImgUrl = `${nutribot_report_host}/foodreport?chat_id=${chat_id}&uuid
     if(attempt > 3) return await sendMessage(chat_id, `🚫 Error generating report. Please try again later.\n${reportImgUrl}`);
 
     //save tmp message id as report cursor
-    const assumedMessageIds = assumeOldNutrilogs(chat_id);
+    const {assumed, init} = assumeOldNutrilogs(chat_id);
     //process.exit(console.log({assumedMessageIds}));
     //remove response keyboard from assumed messages in promise all
-    await Promise.all(assumedMessageIds.map(message_id => {
+    await Promise.all(assumed.map(message_id => {
         return updateMessageReplyMarkup(chat_id, {message_id, choices:[["✅ Accept", "⬅️ Adjust"]], inline: true});
     }));
 
 
-    const statusCounts = getNutrilogSummary(chat_id);
-        await removeCurrentReport(chat_id);
+    await removeCurrentReport(chat_id);
 
     const logItemsToday = getNutrilListByDate(chat_id, moment.tz(timezone).format("YYYY-MM-DD"));
-    const todaysCalories = Object.values(logItemsToday || {}).reduce((acc, item) => acc + (item.calories || 0), 0);
+
+
+    if(init.length> 0) {
+        return console.log(`You have ${init.length} logs that need confirmation.`)
+        
+    }
+
     const message = `📊 Generating report...
 📋 Items logged: ${logItemsToday.length}`;
     const {message_id:tmp_msg_id} = await sendMessage(chat_id, message);

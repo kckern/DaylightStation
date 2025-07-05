@@ -799,25 +799,34 @@ export const assumeOldNutrilogs = (chat_id) => {
 
     // Update nutrilogs older than 24 hours to "assumed" only if status is in ["init", "input"]
     const messageIds = [];
+    const inits = [];
     let updated = false;
     for (const entry of Object.values(data)) {
+
+      const entryAgeInMinutes = (now - entry.timestamp) / 60;
+      const entryAgeInHours = entryAgeInMinutes / 60;
+
       if (entry.chat_id !== chat_id) continue; // Ensure we only update for the correct chat_id
       if (entry.status === 'canceled') {
       delete data[entry.uuid]; // Remove the entry from the data object
       updated = true;
-      } else if (entry.timestamp && (now - entry.timestamp) > 86400 && 
-      ["init", "input"].includes(entry.status)) {
+      } else if (entryAgeInHours > 24 && 
+      ["init"].includes(entry.status)) {
       entry.status = 'assumed';
+      console.log(`Assuming old nutrilog: ${entry.uuid} , age: ${entryAgeInHours.toFixed(2)} hours`);
       data[entry.uuid] = entry; // Update the entry in the data object
       updated = true;
       messageIds.push(entry.message_id);
+      }
+      else if(entry.status === 'init') {
+        inits.push(entry.message_id);
       }
     }
 
     if (updated) {
       saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
     }
-    return messageIds;
+    return {assumed:messageIds, init:inits};
   } catch (error) {
     console.error('Error assuming old nutrilogs:', error);
     return false;

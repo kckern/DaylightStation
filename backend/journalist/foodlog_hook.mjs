@@ -23,7 +23,7 @@
 import { compileDailyFoodReport, getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport } from "./lib/food.mjs";
 import dotenv from 'dotenv';
 import { deleteMessage, sendImageMessage, sendMessage, transcribeVoiceMessage, updateMessage, updateMessageReplyMarkup } from "./lib/telegram.mjs";
-import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getSingleMidRevisionNutrilog, saveNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist, getPendingUPCNutrilogs, getTotalUPCNutrilogs, updateNutrilogStatus, getNonAcceptedNutrilogs } from "./lib/db.mjs";
+import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getSingleMidRevisionNutrilog, saveNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist, getPendingUPCNutrilogs, getTotalUPCNutrilogs, updateNutrilogStatus, getNonAcceptedNutrilogs, assumeOldNutrilogs } from "./lib/db.mjs";
 import { detectFoodFromImage, detectFoodFromTextDescription } from "./lib/gpt_food.mjs";
 import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
@@ -38,18 +38,6 @@ import { createCanvas, loadImage, registerFont } from 'canvas';
 import { saveFile } from "../lib/io.mjs";
 
 
-const assumeOldNutrilogs = async (chat_id)=>{
-
-    const logs = getNonAcceptedNutrilogs(chat_id);
-    if(!logs || logs.length === 0) return false;
-    for(const log of logs) {
-        const {uuid,message_id} = log;
-        await updateMessageReplyMarkup(chat_id,{ message_id, choices: [], inline: false });
-        await updateNutrilogStatus(chat_id, uuid, 'assumed');
-    }
-    return logs.length === 0; // Return true if no logs left to assume, false if there are still logs pending
-}
-
 
 
 export const processFoodLogHook = async (req, res) => {
@@ -63,7 +51,7 @@ export const processFoodLogHook = async (req, res) => {
     const chat_id = `b${bot_id}_u${user_id}`;
     if(!bot_id) return res.status(400).send('No bot id found');
     if(!chat_id) return res.status(400).send('No chat id found');
-    await assumeOldNutrilogs(chat_id);
+    assumeOldNutrilogs(chat_id);
     const upcFromText = /^\d+$/.test(payload.message?.text || payload.text) ? payload.message?.text || payload.text : null;
     const upc = payload.upc || upcFromText || null;
     //console.log({upc, chat_id, payload, body: req.body, query: req.query});
@@ -189,9 +177,9 @@ const processUPCServing = async (chat_id, message_id, factor, nutrilogItem) => {
     await updateNutrilogStatus(chat_id, uuid, "accepted", factor);
 
     // Check if all UPC items are now confirmed
-    const readyForReport =  assumeOldNutrilogs(chat_id);
-    
-    if (readyForReport) {
+    const {init} =  assumeOldNutrilogs(chat_id);
+
+    if (init.length === 0) {
         // All UPC items confirmed - generate report
         await compileDailyFoodReport(chat_id);
         await postItemizeFood(chat_id);
