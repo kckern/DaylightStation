@@ -126,7 +126,6 @@ export const cronContinuous = async () => {
       job.needsToRun = false;
     }
   }
-  saveFile("config/cron", cronJobs);
   const runNow = [];
   for (const job of cronJobs) {
     if (job.needsToRun) {
@@ -163,10 +162,16 @@ export const cronContinuous = async () => {
     }
     delete job.messageIds; // Remove messageIds after running
     job.last_run = now.format("YYYY-MM-DD HH:mm:ss");
-    const newNextRunMoment = computeNextRun(job, now);
-    job.nextRun = newNextRunMoment.format("YYYY-MM-DD HH:mm:ss");
-    job.secondsUntil = newNextRunMoment.unix() - now.unix();
-    job.needsToRun = false;
+    try {
+      const newNextRunMoment = computeNextRun(job, now);
+      job.nextRun = newNextRunMoment.format("YYYY-MM-DD HH:mm:ss");
+      job.secondsUntil = newNextRunMoment.unix() - now.unix();
+      job.needsToRun = false;
+    } catch (e) {
+      console.error(`Error computing next run for ${job.name}, disabling it.`, e);
+      job.needsToRun = false;
+      job.error = "Invalid cron_tab";
+    }
   }
   saveFile("config/cron", cronJobs);
 };
