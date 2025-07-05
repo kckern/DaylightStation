@@ -66,7 +66,7 @@ export const processFoodLogHook = async (req, res) => {
     await assumeOldNutrilogs(chat_id);
     const upcFromText = /^\d+$/.test(payload.message?.text || payload.text) ? payload.message?.text || payload.text : null;
     const upc = payload.upc || upcFromText || null;
-    console.log({upc, chat_id, payload, body: req.body, query: req.query});
+    //console.log({upc, chat_id, payload, body: req.body, query: req.query});
     const img_url       = payload.img_url?.trim();
     const img_id        = payload.message?.photo?.reduce((acc, cur) => (cur.width > acc.width) ? cur : acc).file_id || payload.message?.document?.file_id;
     const hostname = req.headers.host;
@@ -186,7 +186,7 @@ const processUPCServing = async (chat_id, message_id, factor, nutrilogItem) => {
     await updateMessage(chat_id, { message_id, text: updatedText, choices: [], inline: true, key: "caption" });
 
     // Update this nutrilog item to confirmed status
-    await updateNutrilogStatus(chat_id, uuid, "confirmed", factor);
+    await updateNutrilogStatus(chat_id, uuid, "accepted", factor);
 
     // Check if all UPC items are now confirmed
     const readyForReport =  assumeOldNutrilogs(chat_id);
@@ -405,6 +405,10 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
         return await updateMessage(chat_id, {message_id, text: "", choices, inline: true, key: "caption"})
     }
 
+
+
+
+
     if(/^[☀️]/.test(choice)){
         if (cursor && cursor.adjusting) {
             cursor.adjusting.level = 0;
@@ -597,21 +601,33 @@ const processButtonpress = async (body, chat_id) => {
         setNutriCursor(chat_id, cursor);
         return true;
     }
-
-    // First check if this is a UPC portion selection (message-based)
-    const nutrilogItem = await getNutrilogByMessageId(chat_id, messageId);
-    if (nutrilogItem?.upc && nutrilogItem.status === "init") {
-        const factor = parseFloat(choice);
-        if (!isNaN(factor)) {
-            return await processUPCServing(chat_id, messageId, factor, nutrilogItem);
-        }
-    }
-
     // Check if this is a revision flow (cursor-based)
     const cursor = await getNutriCursor(chat_id);
     if (cursor.adjusting || leadingEmoji === '⬅️') {
         return processRevisionButtonpress(chat_id, messageId, choice);
     }
+
+    // First check if this is a UPC portion selection (message-based)
+    const nutrilogItem = await getNutrilogByMessageId(chat_id, messageId);
+    console.log('Nutrilog item:', nutrilogItem);
+
+
+    if (!nutrilogItem) {
+        console.warn(`Nutrilog item not found for message ID: ${messageId}`);
+        await deleteMessage(chat_id, messageId); // Clean up the message if no nutrilog item is found
+        return false;
+    }
+
+    if (nutrilogItem?.upc) {
+        const factor = parseFloat(choice);
+        if (!isNaN(factor)) {
+            return await processUPCServing(chat_id, messageId, factor, nutrilogItem);
+        } else {
+            // Delete the message if the choice is invalid
+            await deleteMessage(chat_id, messageId);
+        }
+    }
+
 
     // Handle standard nutrilog actions (message-based)
     if (nutrilogItem && !nutrilogItem.upc) {

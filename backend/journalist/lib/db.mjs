@@ -639,11 +639,11 @@ export const loadMessageFromDB = (chat_id, message_id) => {
 
 /**
  * Saves a nutrilog entry.
- * @param {object} param0 - { uuid, chat_id, timestamp, message_id, food_data, status, upc, factor, auto_confirmed }
+ * @param {object} param0 - { uuid, chat_id, timestamp, message_id, food_data, status, upc, factor, }
  * @returns {object|null}
  */
-export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, status, upc, factor, auto_confirmed }) => {
-  console.log('Saving nutrilog:', { uuid, chat_id, message_id, food_data, status, upc, factor, auto_confirmed });
+export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, status, upc, factor }) => {
+  console.log('Saving nutrilog:', { uuid, chat_id, message_id, food_data, status, upc, factor });
   if (!uuid || !chat_id) {
     console.error('saveNutrilog called with missing uuid or chat_id');
     return null;
@@ -659,8 +659,7 @@ export const saveNutrilog = ({ uuid, chat_id, timestamp, message_id, food_data, 
       food_data: food_data || {},
       status: status || 'pending',
       upc: upc || null,
-      factor: factor || null,
-      auto_confirmed: auto_confirmed || false
+      factor: factor || null
     };
      saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
     return data[uuid];
@@ -785,6 +784,66 @@ export const getNutrilog = (uuid, chat_id) => {
     return entry ? [entry] : [];
   } catch (error) {
     console.error('Error getting nutrilog:', error);
+    return [];
+  }
+};
+
+export const assumeOldNutrilogs = (chat_id) => {
+  if (!chat_id) {
+    console.error('assumeOldNutrilogs called with missing chat_id');
+    return false;
+  }
+  try {
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+    const now = Math.floor(Date.now() / 1000);
+
+    // Update nutrilogs older than 24 hours to "assumed" only if status is in ["init", "input"]
+    const messageIds = [];
+    let updated = false;
+    for (const entry of Object.values(data)) {
+      if (entry.chat_id !== chat_id) continue; // Ensure we only update for the correct chat_id
+      if (entry.status === 'canceled') {
+      delete data[entry.uuid]; // Remove the entry from the data object
+      updated = true;
+      } else if (entry.timestamp && (now - entry.timestamp) > 86400 && 
+      ["init", "input"].includes(entry.status)) {
+      entry.status = 'assumed';
+      data[entry.uuid] = entry; // Update the entry in the data object
+      updated = true;
+      messageIds.push(entry.message_id);
+      }
+    }
+
+    if (updated) {
+      saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
+    }
+    return messageIds;
+  } catch (error) {
+    console.error('Error assuming old nutrilogs:', error);
+    return false;
+  }
+};
+
+export const getNutrilogSummary = (chat_id) => {
+  if (!chat_id) {
+    console.error('getNutrilogSummary called with missing chat_id');
+    return [];
+  }
+  try {
+
+    
+    const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+
+    const countsByStatus = {};
+    for (const entry of Object.values(data)) {
+      if (entry.chat_id !== chat_id) continue; // Ensure we only count for the correct chat_id
+      const status = entry.status || 'unknown';
+      countsByStatus[status] = (countsByStatus[status] || 0) + 1;
+    }
+
+    return countsByStatus;
+  } catch (error) {
+    console.error('Error getting nutrilog summary:', error);
     return [];
   }
 };
@@ -974,7 +1033,7 @@ export const getNutrilogByMessageId = (chat_id, message_id) => {
   }
   try {
     const data = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
-    console.log('Loaded data:', data);
+  //  console.log('Loaded data:', data);
     const rows = Object.values(data).filter(item => item.chat_id === chat_id && item.message_id == message_id);
     return rows?.[0] || null;
   } catch (error) {
@@ -1020,7 +1079,7 @@ export const getSingleMidRevisionNutrilog = (chat_id) => {
 
 export const getNonAcceptedNutrilogs = (chat_id, minutesBack = 60) => {
   if (!chat_id) {
-    console.error('getNonAcceptedNutrilogs called with missing chat_id');
+    console.error('upcFromText called with missing chat_id');
     return [];
   }
   try {
@@ -1622,10 +1681,9 @@ export const getTotalUPCNutrilogs = (chat_id) => {
  * @param {string} uuid 
  * @param {string} status 
  * @param {number|null} factor 
- * @param {boolean|null} auto_confirmed 
  * @returns {object|null} Updated nutrilog or null if not found
  */
-export const updateNutrilogStatus = (chat_id, uuid, status, factor = null, auto_confirmed = null) => {
+export const updateNutrilogStatus = (chat_id, uuid, status, factor = null) => {
   if (!chat_id || !uuid || !status) {
     console.error('updateNutrilogStatus called with missing parameters:', { chat_id, uuid, status });
     return null;
@@ -1642,13 +1700,11 @@ export const updateNutrilogStatus = (chat_id, uuid, status, factor = null, auto_
     if (factor !== null) {
       data[uuid].factor = factor;
     }
-    if (auto_confirmed !== null) {
-      data[uuid].auto_confirmed = auto_confirmed;
-    }
+
     data[uuid].updated_at = Math.floor(Date.now() / 1000);
     
     saveFile(NUTRILOGS_STORE + "/" + chat_id, data);
-    console.log('Updated nutrilog status:', { chat_id, uuid, status, factor, auto_confirmed });
+    console.log('Updated nutrilog status:', { chat_id, uuid, status, factor });
     return data[uuid];
   } catch (error) {
     console.error('Error updating nutrilog status:', error);
