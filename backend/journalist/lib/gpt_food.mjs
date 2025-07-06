@@ -131,6 +131,63 @@ export const getInstructions = () => {
 };
 
 
+export const getIconAndNoomColorFromItem = async (item) => {
+    const noomColors = ["green", "yellow", "orange"];
+    const messages = [
+        { role: 'system', content: `You are food classifier. You classify food items into one of the following noom colors: ${noomColors.join(', ')}. You also provide an icon for the food item, based on the item name. Valid icons are: ${icons.split(' ').join(', ')}. Always respond in JSON, keys: { item, noom_color, icon }` },
+        { role: 'user', content: `Celery Stick (100g)` },
+        { role: 'assistant', content: JSON.stringify({ item: 'Celery Stick', noom_color: 'green', icon: 'celery' }) },
+        { role: 'user', content: `Burrito (250g)` },
+        { role: 'assistant', content: JSON.stringify({ item: 'Burrito', noom_color: 'orange', icon: 'burrito' }) },
+        { role: 'user', content: `Chocolate Chip Cookie (50g)` },
+        { role: 'assistant', content: JSON.stringify({ item: 'Chocolate Chip Cookie', noom_color: 'orange', icon: 'cookie' }) },
+        { role: 'user', content: `Brown Rice (150g)` },
+        { role: 'assistant', content: JSON.stringify({ item: 'Brown Rice', noom_color: 'yellow', icon: 'rice' }) },
+        { role: 'user', content: `Spinach (100g)` },
+        { role: 'assistant', content: JSON.stringify({ item: 'Spinach', noom_color: 'green', icon: 'spinach' }) },
+        { role: 'user', content: `Miracle Whip (50g)` },
+        { role: 'assistant', content: JSON.stringify({ item: 'Miracle Whip', noom_color: 'orange', icon: 'mayonnaise' }) },
+        { role: 'user', content: item }
+    ];
+    
+    const data = {
+        model: 'gpt-4o',
+        messages: messages,
+        max_tokens: 150
+    };
+    
+    try {
+        const response = await gptCall('https://api.openai.com/v1/chat/completions', data);
+        const result = extractJSON(response.choices?.[0]?.message?.content || '{}');
+        
+        if (!result.item || !result.noom_color || !result.icon) {
+            console.error('Failed to classify item:', item, result);
+            return { 
+                item: item.replace(/\s*\([^)]*\)\s*$/g, ''), // Remove weight info
+                noom_color: 'yellow', 
+                icon: 'default' 
+            };
+        }
+        
+        return {
+            item: result.item,
+            noom_color: result.noom_color,
+            icon: result.icon
+        };
+    } catch (error) {
+        console.error('Error classifying item:', error);
+        return { 
+            item: item.replace(/\s*\([^)]*\)\s*$/g, ''),
+            noom_color: 'yellow', 
+            icon: 'default' 
+        };
+    }
+};
+    //
+    
+
+
+
 // Abstract GPT call function
 const gptCall = async (endpoint, payload) => {
     try {

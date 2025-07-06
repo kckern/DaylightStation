@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import querystring from 'querystring';
 import axios from 'axios';
 import moment from 'moment-timezone';
+import { getIconAndNoomColorFromItem } from './gpt_food.mjs';
 //set timezone to los_angeles
 moment.tz.setDefault("America/Los_Angeles");
 
@@ -72,6 +73,16 @@ export const upcLookup = async (upc) => {
     if (food) {
         console.log('Edamam data found:', food);
         food.image = food.image || image;
+
+        // Ensure servingSizes is properly set for Edamam data
+        if (!food.servingSizes || !Array.isArray(food.servingSizes) || food.servingSizes.length === 0) {
+            food.servingSizes = [{ quantity: 100, label: 'g' }];
+        }
+        
+        // Ensure servingsPerContainer is set
+        if (!food.servingsPerContainer || typeof food.servingsPerContainer !== 'number' || food.servingsPerContainer <= 0) {
+            food.servingsPerContainer = 1;
+        }
 
         if (food.nutrients) {
             const keys = Object.keys(food.nutrients);
@@ -188,6 +199,11 @@ const openFoodFacts = async (barcode) => {
         const nutribot_report_host = process.env.nutribot_report_host;
         image = (new RegExp(nutribot_report_host)).test(image) ? image : `${nutribot_report_host}/nutribot/images/${encodeURIComponent(image)}/${encodeURIComponent(product.product_name)}`;
         
+        const servingsPerContainer = (product.product_quantity && product.serving_quantity) ? (parseFloat(product.product_quantity) / parseFloat(product.serving_quantity)) : 1;
+        
+        // Ensure servingsPerContainer is a valid number
+        const validServingsPerContainer = isNaN(servingsPerContainer) || servingsPerContainer <= 0 ? 1 : servingsPerContainer;
+
         // Format nutrition data similar to Edamam format
         const food = {
             upc: barcode,
@@ -195,15 +211,20 @@ const openFoodFacts = async (barcode) => {
             brand: product.brands || product.brand_owner || product.brand_owner_imported,
             date: moment().format('YYYY-MM-DD'),
             image: image,
-            nutrients: {}
+            nutrients: {},
+            servingsPerContainer: validServingsPerContainer,
         };
+
+        const {noom_color, icon} = await getIconAndNoomColorFromItem(food.label);
+        food.noom_color = noom_color;
+        food.icon = icon;
 
 
         //"energy-kcal": 22, "energy-kcal_100g": 22,
 
         // Add serving size if available
         if (product.serving_quantity && product.serving_quantity_unit) {
-            food.servingSizes = [{ quantity: parseFloat(product.serving_quantity), label: product.serving_quantity_unit }];
+            food.servingSizes = [{ quantity: parseInt(product.serving_quantity), label: product.serving_quantity_unit }];
         } else if (
             product.nutriments && product.nutriments['energy-kcal_100g'] && 
             product.nutriments['energy-kcal'] === product.nutriments['energy-kcal_100g']
@@ -294,4 +315,4 @@ async function searchImage(keyword, upc = '') {
         console.error('Error fetching image:', error.response ? error.response.data : error.message, fullURL);
         return null;
     }
-}  
+}
