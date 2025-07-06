@@ -76,7 +76,7 @@ export const processFoodLogHook = async (req, res) => {
 
 const processUPC = async (chat_id, upc, message_id, res) => {
     // Only remove current report if there are no pending UPC items
-    const pendingUPCItems = await getPendingUPCNutrilogs(chat_id);
+    const pendingUPCItems = getPendingUPCNutrilogs(chat_id);
     
     if (pendingUPCItems.length === 0) {
         await removeCurrentReport(chat_id);
@@ -92,15 +92,28 @@ const processUPC = async (chat_id, upc, message_id, res) => {
     }
 
     const foodData = await upcLookup(upc);
-    if (!foodData) return false;// await sendMessage(chat_id, `🚫 No results for UPC ${upc}`);
+    if (!foodData) return false;
 
     const { image, label, nutrients } = foodData;
-    const sevingSizeLabel = `${parseInt(foodData.servingSizes[0]?.quantity || "0")}${foodData.servingSizes[0]?.label || 'g'}`;
-    const caption = `🔵 ${titleCase(label)} (${sevingSizeLabel})`
     
-
     // If no nutritional data is available, just show what we found
     if (nutrients && typeof nutrients === 'object' && Object.keys(nutrients).length > 0) {
+        
+        // GET NOOM COLOR AND ICON FROM GPT BEFORE SHOWING TO USER
+        const { getIconAndNoomColorFromItem } = await import('./lib/gpt_food.mjs');
+        const { noom_color, icon } = await getIconAndNoomColorFromItem(label);
+        
+        // Add classification to foodData
+        foodData.noom_color = noom_color || 'yellow'; // Fallback if GPT fails
+        foodData.icon = icon || 'default';
+        
+        // Use proper emoji based on noom color
+        const emoji = noom_color === 'green' ? '🟢' : noom_color === 'yellow' ? '🟡' : noom_color === 'orange' ? '🟠' : '🔵';
+
+        const servingSizeLabel = `${parseInt(foodData.servingSizes[0]?.quantity || "0")} ${foodData.servingSizes[0]?.label || 'g'}`;
+        const caloriesPerServing = parseInt(foodData.nutrients.calories || 0);
+        const caption = `${emoji} ${titleCase(label)}\n ⬛ ${caloriesPerServing} cal for ${servingSizeLabel}`;
+
         // Prompt user for serving quantity
         const choices = [
             [{ "1": "One serving" }],
@@ -115,23 +128,22 @@ const processUPC = async (chat_id, upc, message_id, res) => {
         if (!message_id) {
             console.error("Failed to send image message or get message_id for UPC item:", {upc, foodData});
             await sendMessage(chat_id, "Error: Could not display food item. Please try again.");
-            // It's important to send a response to the HTTP request if this is an HTTP handler
             if (res && typeof res.status === 'function') {
                 res.status(500).send("Failed to send image message");
             }
-            return; // Stop further processing
+            return;
         }
 
         await updateMessageReplyMarkup(chat_id, { message_id, choices, inline: true });
 
-        //SAVE FOOD DATA TO NUTRILOG
+        //SAVE FOOD DATA TO NUTRILOG (now includes noom_color and icon)
         const nutrilogItem = {
             uuid: uuidv4(),
             chat_id,
             upc,
-            food_data: foodData,
-            message_id, // Use the message_id from the image message
-            status: "init" // Indicates waiting for portion selection
+            food_data: foodData, // Now includes noom_color and icon
+            message_id,
+            status: "init"
         };
         await saveNutrilog(nutrilogItem);
 
@@ -139,14 +151,14 @@ const processUPC = async (chat_id, upc, message_id, res) => {
             res.status(200).json({nutrilogItem});
         }
     } else {
-        // If no nutritional data is found, ensure a message is sent to the user
+        // If no nutritional data is found
+        const servingSizeLabel = `${parseInt(foodData.servingSizes[0]?.quantity || "0")}${foodData.servingSizes[0]?.label || 'g'}`;
+        const error_caption = `🔵 ${titleCase(label)} (${servingSizeLabel})\n⬜ UPC: ${upc}\n🚫 No nutritional data found`;
         if (image) {
-            const error_caption = `${caption}\n⬜ UPC: ${upc}\n🚫 No nutritional data found`;
             await sendImageMessage(chat_id, image, error_caption);
         } else {
             await sendMessage(chat_id, error_caption);
         }
-        // Ensure res.status().send() is only called if res is a valid response object
         if (res && typeof res.status === 'function') {
             res.status(200).send(`No nutritional data found for UPC ${upc}`);
         }
@@ -156,31 +168,41 @@ const processUPC = async (chat_id, upc, message_id, res) => {
 const processUPCServing = async (chat_id, message_id, factor, nutrilogItem) => {
     const { food_data: foodData, uuid } = nutrilogItem;
     
+    // Calculate adjusted nutrients based on serving factor
     const { nutrients } = foodData;
     const adjustedNutrients = Object.keys(nutrients).reduce((acc, key) => {
-        acc[key] = nutrients[key] * factor;
+        acc[key] = Math.round((nutrients[key] * factor) * 100) / 100;
         return acc;
     }, {});
 
-    foodData.nutrients = adjustedNutrients;
-    await saveToNutrilistFromUPCResult(chat_id, foodData);
+    // Calculate serving information
+    const servingSize = foodData.servingSizes[0] || { quantity: 100, label: 'g' };
+    const adjustedServingQuantity = Math.round((servingSize.quantity * factor) * 100) / 100;
+    const servingLabel = `${adjustedServingQuantity}${servingSize.label}`;
 
-    const servingUnit = foodData.servingSizes[0]?.label || 'g';
-    const adjustedServingQuantity = foodData.servingSizes[0]?.quantity * factor || 100;
-    const servingLabel = `${adjustedServingQuantity}${servingUnit}`;
+    // Create the final food data for saving (foodData already has noom_color and icon from processUPC)
+    const finalFoodData = {
+        ...foodData,
+        nutrients: adjustedNutrients,
+        selectedFactor: factor,
+        selectedServingSize: adjustedServingQuantity,
+        selectedServingUnit: servingSize.label
+    };
 
-    // Update the message to include the selected serving quantity
-    const updatedText = `🔵 ${titleCase(foodData.label)} (${servingLabel}) (${factor}x serving)`;
+    // Save to nutrilist with proper formatting
+    await saveToNutrilistFromUPCResult(chat_id, finalFoodData, adjustedServingQuantity, servingSize.label);
+
+    // Update message with proper emoji (foodData already has noom_color from GPT)
+    const emoji = foodData.noom_color === 'green' ? '🟢' : foodData.noom_color === 'yellow' ? '🟡' : foodData.noom_color === 'orange' ? '🟠' : '🔵';
+    const updatedText = `${emoji} ${titleCase(foodData.label)} (${servingLabel}) (${factor}x serving)`;
     await updateMessage(chat_id, { message_id, text: updatedText, choices: [], inline: true, key: "caption" });
 
-    // Update this nutrilog item to confirmed status
+    // Update nutrilog status
     await updateNutrilogStatus(chat_id, uuid, "accepted", factor);
 
-    // Check if all UPC items are now confirmed
-    const {init} =  assumeOldNutrilogs(chat_id);
-
+    // Check if all UPC items are processed
+    const { init } = assumeOldNutrilogs(chat_id);
     if (init.length === 0) {
-        // All UPC items confirmed - generate report
         await compileDailyFoodReport(chat_id);
         await postItemizeFood(chat_id);
     }
@@ -284,36 +306,52 @@ export const canvasImage = async (imageUrl, label) => {
 
 }
 
-const saveToNutrilistFromUPCResult = async (chat_id, foodData) => {
-    const {label, nutrients, servingSizes, servingsPerContainer} = foodData;
+const saveToNutrilistFromUPCResult = async (chat_id, foodData, selectedAmount, selectedUnit) => {
+    const { label, nutrients, noom_color, icon } = foodData;
+    
+    console.log('saveToNutrilistFromUPCResult - Saving with GPT classification:', {
+        label, 
+        selectedAmount, 
+        selectedUnit,
+        noom_color,
+        icon
+    });
 
-    const nutrientsToSave = nutrients;
-    const amount = servingsPerContainer * (servingSizes && servingSizes.length > 0 ? servingSizes.reduce((max, current) => current.quantity > max.quantity ? current : max).quantity : 100); // Default to 100g if no serving size is provided
-    const unit = servingSizes && servingSizes.length > 0 ? servingSizes[0].label : 'g'; // Default to the label of the first serving size if available, otherwise grams
-    const uuid = uuidv4();
+    // Validate that we have the required classification data
+    if (!noom_color || !['green', 'yellow', 'orange'].includes(noom_color)) {
+        console.warn('Invalid noom_color, using fallback yellow:', noom_color);
+        foodData.noom_color = 'yellow';
+    }
 
+    if (!icon || icon === 'default') {
+        console.warn('Missing or default icon for:', label);
+        foodData.icon = 'default';
+    }
 
+    // Create food item in the same format as non-UPC saves
     const foodItem = {
-        uuid,
+        uuid: uuidv4(),
         item: titleCase(label),
-        noom_color: "blue",
-        amount: parseFloat(amount),
-        unit: unit || 'g',
-        calories: parseInt(nutrientsToSave.calories),
-        fat: parseInt(nutrientsToSave.fat),
-        protein: parseInt(nutrientsToSave.protein),
-        carbs: parseInt(nutrientsToSave.carbs),
-        sugar: parseInt(nutrientsToSave.sugar),
-        fiber: parseInt(nutrientsToSave.fiber),
-        sodium: parseInt(nutrientsToSave.sodium),
-        cholesterol: parseInt(nutrientsToSave.cholesterol),
+        noom_color: foodData.noom_color, // Use actual GPT classification
+        icon: foodData.icon, // Use actual GPT classification
+        amount: parseFloat(selectedAmount) || 100,
+        unit: selectedUnit || 'g',
+        calories: parseInt(nutrients.calories || 0),
+        fat: parseFloat(nutrients.fat || 0),
+        protein: parseFloat(nutrients.protein || 0),
+        carbs: parseFloat(nutrients.carbs || 0),
+        sugar: parseFloat(nutrients.sugar || 0),
+        fiber: parseFloat(nutrients.fiber || 0),
+        sodium: parseFloat(nutrients.sodium || 0),
+        cholesterol: parseFloat(nutrients.cholesterol || 0),
         chat_id,
         date: moment().tz("America/Los_Angeles").format('YYYY-MM-DD'),
-        log_uuid: "UPC"
+        log_uuid: uuidv4() // Use proper UUID instead of "UPC"
     };
-    console.log('Saving food item to nutrilist:', foodItem);
-    return saveNutrilist([foodItem],chat_id );
-}
+
+    console.log('Saving UPC food item with proper classification:', foodItem);
+    return await saveNutrilist([foodItem], chat_id);
+};
 
 
 const processText = async (chat_id, input_message_id, text, source = 'text') => {
