@@ -140,12 +140,14 @@ export const handlePendingNutrilogs = async (chat_id) => {
     console.log(`Handling pending nutrilogs for chat_id: ${chat_id}`);
 
     const log_items_all = loadNutrilogsNeedingListing(chat_id) || [];
+    console.log(`loadNutrilogsNeedingListing returned ${log_items_all.length} items that need listing`);
+    
     const log_items = [];
     for(const log_item of log_items_all){
         const {uuid} = log_item;
-      //  console.log(`Checking if log item with UUID ${uuid} is already listed.`);
-        const isAlreadyListed = nutriLogAlreadyListed(uuid, chat_id);
-      //  console.log(`Is log item with UUID ${uuid} already listed? ${isAlreadyListed}`);
+        console.log(`Checking if log item with UUID ${uuid} is already listed.`);
+        const isAlreadyListed = nutriLogAlreadyListed(log_item, chat_id);
+        console.log(`Is log item with UUID ${uuid} already listed? ${isAlreadyListed}`);
         if(!isAlreadyListed) log_items.push(log_item);
     }
 
@@ -265,7 +267,8 @@ export const compileDailyFoodReport = async (chat_id) => {
         foodListKeys.forEach(key => {
             const item = foodList[key];
             //eg 30g of chicken breast (100 cal)
-            const label = `${item.amount}${item.unit} ${item.item} (${item.calories || 0} cal)`;
+            const noom_color_emoji = item.noom_color === 'green' ? '🟢' : item.noom_color === 'yellow' ? '🟡' : item.noom_color === 'orange' ? '🟠' : '🔵';
+            const label = `${noom_color_emoji} ${item.amount}${item.unit} ${item.item} (${item.calories || 0} cal)`;
             if(!item) return;
             foodItems.push(label);
             foodSums.calories += parseInt(item.calories || 0, 10);
@@ -308,3 +311,6 @@ export const loadHealthReportData = async (req, res) => {
 
 
 }
+
+// Export helper functions needed by foodlog_hook.mjs
+export { loadNutrilogsNeedingListing, nutriLogAlreadyListed } from "./db.mjs";

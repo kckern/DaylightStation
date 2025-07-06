@@ -1258,13 +1258,15 @@ export const saveNutrilist = (items, chat_id) => {
  */
 export const loadNutrilogsNeedingListing = (chat_id) => {
   try {
-    // We don't have stored procedures, so we can replicate logic:
-    // Return all nutrilogs with status in ['accepted', 'assumed'], for example.
+    // Return nutrilogs that need to be processed for listing
+    // These should be items that are NOT yet accepted/assumed
     const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
     const rows = Object.values(data).filter(item =>
       item.chat_id === chat_id &&
-      (item.status === 'accepted' || item.status === 'assumed')
+      // Only include items that are not yet processed (NOT accepted/assumed)
+      !["accepted", "assumed","revised"].includes(item.status)
     );
+    console.log(`loadNutrilogsNeedingListing: Found ${rows.length} items needing listing`);
     return rows;
   } catch (error) {
     console.error('Error getting nutrilogs needing listing:', error);
@@ -1322,12 +1324,21 @@ export const loadRecentNutriList = (chat_id, days_since = 14) => {
  * @param {string} uuid
  * @returns {boolean}
  */
-export const nutriLogAlreadyListed = (uuid, chat_id) => {
+export const nutriLogAlreadyListed = (item, chat_id) => {
+  const { uuid, status } = item;
+  console.log(`nutriLogAlreadyListed: Checking item with UUID ${uuid} and status ${status}`);
+  
+  // Double-check: If status is already accepted/assumed, it should not be in the list
+  if(["accepted", "assumed"].includes(status)) {
+    console.log(`nutriLogAlreadyListed: WARNING - item ${uuid} with status ${status} should not be passed to this function`);
+    return true; // Skip it anyway to prevent loops
+  }
+  
   try {
     const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
     // If there's any item with log_uuid = uuid
     const found = Object.values(data).some(item => item.log_uuid === uuid);
-   // console.log(`Checking if nutrilog ${uuid} is already listed:`, found);
+    console.log(`nutriLogAlreadyListed: Checking if nutrilog ${uuid} is already listed in nutrilist:`, found);
     return found;
   } catch (error) {
     console.error('Error checking if nutrilog is already listed:', error);
@@ -1718,5 +1729,69 @@ export const updateNutrilogStatus = (chat_id, uuid, status, factor = null) => {
   } catch (error) {
     console.error('Error updating nutrilog status:', error);
     return null;
+  }
+};
+
+// Get the last coaching message for a given chat_id and date
+export const getLastCoachingMessage = async (chat_id, date) => {
+    try {
+        const data = loadFile(NUTRICOACH_STORE + "/" + chat_id) || {};
+        const coachingMessages = Object.values(data).filter(item => item.date === date);
+        
+        if (coachingMessages.length === 0) {
+            return null;
+        }
+        
+        // Sort by timestamp descending and return the most recent
+        const sortedMessages = coachingMessages.sort((a, b) => {
+            const timeA = new Date(a.timestamp || a.created_at || 0).getTime();
+            const timeB = new Date(b.timestamp || b.created_at || 0).getTime();
+            return timeB - timeA;
+        });
+        
+        return sortedMessages[0];
+    } catch (error) {
+        console.error('Error getting last coaching message:', error);
+        return null;
+    }
+};
+
+// Get nutrilist items added since a specific timestamp
+export const getNutrilistItemsSince = async (chat_id, sinceTimestamp) => {
+  try {
+    const data = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
+    const sinceTime = new Date(sinceTimestamp).getTime();
+    
+    const recentItems = Object.values(data).filter(item => {
+      const itemTime = new Date(item.created_at || item.timestamp || item.date || 0).getTime();
+      return itemTime > sinceTime;
+    });
+    
+    // Sort by timestamp ascending (oldest first)
+    const sortedItems = recentItems.sort((a, b) => {
+      const timeA = new Date(a.created_at || a.timestamp || a.date || 0).getTime();
+      const timeB = new Date(b.created_at || b.timestamp || b.date || 0).getTime();
+      return timeA - timeB;
+    });
+    
+    if (sortedItems.length > 0) {
+      return sortedItems;
+    }
+
+    // If no results, return the most recent item
+    const allItems = Object.values(data);
+    if (allItems.length > 0) {
+      const mostRecentItem = allItems.sort((a, b) => {
+        const timeA = new Date(a.created_at || a.timestamp || a.date || 0).getTime();
+        const timeB = new Date(b.created_at || b.timestamp || b.date || 0).getTime();
+        return timeB - timeA;
+      })[0];
+      return [mostRecentItem];
+    }
+
+    return [];
+  } catch (error) {
+    console.error('Error getting nutrilist items since timestamp:', error);
+    return [];
   }
 };

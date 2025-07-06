@@ -20,10 +20,10 @@
  * - Cleaner separation - cursor only for conversation state, message_id for record actions
  */
 
-import { compileDailyFoodReport, getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport } from "./lib/food.mjs";
+import { compileDailyFoodReport, getBase64Url, postItemizeFood, processFoodListData, processImageUrl, removeCurrentReport, handlePendingNutrilogs, loadNutrilogsNeedingListing, nutriLogAlreadyListed } from "./lib/food.mjs";
 import dotenv from 'dotenv';
 import { deleteMessage, sendImageMessage, sendMessage, transcribeVoiceMessage, updateMessage, updateMessageReplyMarkup } from "./lib/telegram.mjs";
-import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getSingleMidRevisionNutrilog, saveNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist, getPendingUPCNutrilogs, getTotalUPCNutrilogs, updateNutrilogStatus, getNonAcceptedNutrilogs, assumeOldNutrilogs } from "./lib/db.mjs";
+import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getSingleMidRevisionNutrilog, saveNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist, getPendingUPCNutrilogs, getTotalUPCNutrilogs, updateNutrilogStatus, getNonAcceptedNutrilogs, assumeOldNutrilogs, getLastCoachingMessage, getNutrilistItemsSince } from "./lib/db.mjs";
 import { detectFoodFromImage, detectFoodFromTextDescription } from "./lib/gpt_food.mjs";
 import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
@@ -165,6 +165,68 @@ const processUPC = async (chat_id, upc, message_id, res) => {
     }
 };
 
+// REFACTORED: Single convergence point - only triggers when NO pending items remain
+const checkAndGenerateCoachingIfComplete = async (chat_id) => {
+    console.log('Checking if all items are complete for coaching generation...');
+    
+    try {
+        // Check for ANY pending UPC items
+        const { init: pendingUPCItems } = assumeOldNutrilogs(chat_id);
+        if (pendingUPCItems.length > 0) {
+            console.log(`Still have ${pendingUPCItems.length} pending UPC items - skipping coaching`);
+            return null;
+        }
+        
+        // Check for ANY pending nutrilog items (text/image)
+        const pendingNutrilogItems = loadNutrilogsNeedingListing(chat_id) || [];
+        const unprocessedNutrilogItems = pendingNutrilogItems.filter(item => !nutriLogAlreadyListed(item, chat_id));
+        console.log({unprocessedNutrilogItems});
+        if (unprocessedNutrilogItems.length > 0) {
+            console.log(`Still have ${unprocessedNutrilogItems.length} pending nutrilog items - skipping coaching`);
+            console.log('Pending items:', {unprocessedNutrilogItems});
+            return null;
+        }
+        
+        console.log('✅ All items are complete - generating coaching...');
+        
+        // Get timestamp of last coaching message
+        const todaysDate = moment().tz('America/Los_Angeles').format('YYYY-MM-DD');
+        const lastCoachingMessage = await getLastCoachingMessage(chat_id, todaysDate);
+        const lastCoachingTime = lastCoachingMessage ? 
+            moment(lastCoachingMessage.timestamp) : 
+            moment().startOf('day');
+        
+        // Get ALL newly accepted items since last coaching (UPC + non-UPC)
+        const newlyAcceptedItems = await getNutrilistItemsSince(chat_id, lastCoachingTime.toISOString());
+        
+        if (newlyAcceptedItems.length === 0) {
+            console.log('No new items to coach on since last coaching message');
+            return null;
+        }
+        
+        console.log(`🎯 Generating coaching for ${newlyAcceptedItems.length} items accepted since last coaching:`, 
+            newlyAcceptedItems.map(item => `${item.item} (${item.amount}${item.unit})`));
+        
+        // Use the EXISTING generateCoachingMessage function with ALL new items
+        const { generateCoachingMessage } = await import('./lib/gpt_food.mjs');
+        const coachingMessage = await generateCoachingMessage(chat_id, newlyAcceptedItems);
+        
+        if (coachingMessage) {
+            await sendMessage(chat_id, coachingMessage);
+        }
+        
+        // Generate reports only after coaching
+        await compileDailyFoodReport(chat_id);
+        await postItemizeFood(chat_id);
+        
+        return coachingMessage;
+        
+    } catch (error) {
+        console.error('Error in checkAndGenerateCoachingIfComplete:', error);
+        return null;
+    }
+};
+
 const processUPCServing = async (chat_id, message_id, factor, nutrilogItem) => {
     const { food_data: foodData, uuid } = nutrilogItem;
     
@@ -190,7 +252,7 @@ const processUPCServing = async (chat_id, message_id, factor, nutrilogItem) => {
     };
 
     // Save to nutrilist with proper formatting
-    await saveToNutrilistFromUPCResult(chat_id, finalFoodData, adjustedServingQuantity, servingSize.label);
+    await saveToNutrilistFromUPCResult(chat_id, finalFoodData, adjustedServingQuantity, servingSize.label, uuid);
 
     // Update message with proper emoji (foodData already has noom_color from GPT)
     const emoji = foodData.noom_color === 'green' ? '🟢' : foodData.noom_color === 'yellow' ? '🟡' : foodData.noom_color === 'orange' ? '🟠' : '🔵';
@@ -200,12 +262,8 @@ const processUPCServing = async (chat_id, message_id, factor, nutrilogItem) => {
     // Update nutrilog status
     await updateNutrilogStatus(chat_id, uuid, "accepted", factor);
 
-    // Check if all UPC items are processed
-    const { init } = assumeOldNutrilogs(chat_id);
-    if (init.length === 0) {
-        await compileDailyFoodReport(chat_id);
-        await postItemizeFood(chat_id);
-    }
+    // ONLY check for coaching when ALL items are complete
+    await checkAndGenerateCoachingIfComplete(chat_id);
 
     return true;
 };
@@ -306,7 +364,7 @@ export const canvasImage = async (imageUrl, label) => {
 
 }
 
-const saveToNutrilistFromUPCResult = async (chat_id, foodData, selectedAmount, selectedUnit) => {
+const saveToNutrilistFromUPCResult = async (chat_id, foodData, selectedAmount, selectedUnit, log_uuid) => {
     const { label, nutrients, noom_color, icon } = foodData;
     
     console.log('saveToNutrilistFromUPCResult - Saving with GPT classification:', {
@@ -346,7 +404,7 @@ const saveToNutrilistFromUPCResult = async (chat_id, foodData, selectedAmount, s
         cholesterol: parseFloat(nutrients.cholesterol || 0),
         chat_id,
         date: moment().tz("America/Los_Angeles").format('YYYY-MM-DD'),
-        log_uuid: uuidv4() // Use proper UUID instead of "UPC"
+        log_uuid: log_uuid // Use the nutrilog's UUID instead of generating a new one
     };
 
     console.log('Saving UPC food item with proper classification:', foodItem);
@@ -373,7 +431,15 @@ const processText = async (chat_id, input_message_id, text, source = 'text') => 
     await deleteMessage(chat_id, input_message_id);
     const icon = source === 'voice' ? '🎙️' : '📝';
     const { message_id } = await sendMessage(chat_id, `${icon} ${text}\n\n🔬 Analyzing description...`, { saveMessage: false });
+    
+    // Process the text input
     await processTextInput(chat_id, message_id, text);
+    
+    // Process any pending nutrilogs
+    await handlePendingNutrilogs(chat_id);
+    
+    // ONLY generate coaching if ALL items are complete
+    await checkAndGenerateCoachingIfComplete(chat_id);
 };
 
 const processVoice = async (chat_id, message) => {
@@ -402,6 +468,12 @@ const processImgMsg = async (file_id, chat_id, host, payload) => {
         const a = await deleteMessage(chat_id, message_id);
         const b = await processImageUrl(tmpUrl, chat_id);
         await Promise.all([a, b]);
+        
+        // Process any pending nutrilogs
+        await handlePendingNutrilogs(chat_id);
+        
+        // ONLY generate coaching if ALL items are complete
+        await checkAndGenerateCoachingIfComplete(chat_id);
     } catch (error) {
         console.error('Error processing image message:', error);
         await sendMessage(chat_id, '🚫 Failed to process image message.');
@@ -685,8 +757,12 @@ const acceptFoodLog = async (chat_id, message_id, uuid, food_data) => {
     const b = saveNutrilog({uuid, message_id, chat_id, food_data, status: "accepted"});
     const c = clearPendingCursor(chat_id);
     await Promise.all([a, b, c]);
-    compileDailyFoodReport(chat_id);
-    await postItemizeFood(chat_id);
+    
+    // Process any pending nutrilogs
+    await handlePendingNutrilogs(chat_id);
+    
+    // ONLY generate coaching if ALL items are complete
+    await checkAndGenerateCoachingIfComplete(chat_id);
 };
 
 const discardFoodLog = async (chat_id, messageId, uuid) => {
@@ -760,6 +836,9 @@ const processRevision = async (chat_id, feedback_message_id, text, {message_id, 
         processImageRevision(   chat_id, text, { uuid, message_id, img_url, food_data}) : 
         processTextRevision(    chat_id, text, { uuid, message_id, food_data});
     await rev_promise;
+    
+    // Check for completion after revision processing
+    await checkAndGenerateCoachingIfComplete(chat_id);
 
 }
 
