@@ -24,7 +24,7 @@ import { compileDailyFoodReport, getBase64Url, postItemizeFood, processFoodListD
 import dotenv from 'dotenv';
 import { deleteMessage, sendImageMessage, sendMessage, transcribeVoiceMessage, updateMessage, updateMessageReplyMarkup } from "./lib/telegram.mjs";
 import { deleteMessageFromDB, deleteNutrilog, getNutriCursor, setNutriCursor, getNutrilogByMessageId, getSingleMidRevisionNutrilog, saveNutrilog, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist, getPendingUPCNutrilogs, getTotalUPCNutrilogs, updateNutrilogStatus, getNonAcceptedNutrilogs, assumeOldNutrilogs, getLastCoachingMessage, getNutrilistItemsSince } from "./lib/db.mjs";
-import { detectFoodFromImage, detectFoodFromTextDescription } from "./lib/gpt_food.mjs";
+import { detectFoodFromImage, detectFoodFromTextDescription, generateCoachingMessage } from "./lib/gpt_food.mjs";
 import { upcLookup } from "./lib/upc.mjs";
 import moment from "moment-timezone";
 import { v4 as uuidv4 } from 'uuid';
@@ -165,9 +165,9 @@ const processUPC = async (chat_id, upc, message_id, res) => {
     }
 };
 
-// REFACTORED: Single convergence point - only triggers when NO pending items remain
+// REFACTORED: Single convergence point - only triggers report generation when NO pending items remain
 const checkAndGenerateCoachingIfComplete = async (chat_id) => {
-    console.log('Checking if all items are complete for coaching generation...');
+    console.log('Checking if all items are complete for coaching/report generation...');
     
     try {
         // Check for ANY pending UPC items
@@ -180,46 +180,17 @@ const checkAndGenerateCoachingIfComplete = async (chat_id) => {
         // Check for ANY pending nutrilog items (text/image)
         const pendingNutrilogItems = loadNutrilogsNeedingListing(chat_id) || [];
         const unprocessedNutrilogItems = pendingNutrilogItems.filter(item => !nutriLogAlreadyListed(item, chat_id));
-        console.log({unprocessedNutrilogItems});
         if (unprocessedNutrilogItems.length > 0) {
             console.log(`Still have ${unprocessedNutrilogItems.length} pending nutrilog items - skipping coaching`);
-            console.log('Pending items:', {unprocessedNutrilogItems});
+            console.log('Pending items:', unprocessedNutrilogItems.map(item => item.uuid));
             return null;
         }
         
-        console.log('✅ All items are complete - generating coaching...');
+        console.log('✅ All items are complete - triggering report generation...');
         
-        // Get timestamp of last coaching message
-        const todaysDate = moment().tz('America/Los_Angeles').format('YYYY-MM-DD');
-        const lastCoachingMessage = await getLastCoachingMessage(chat_id, todaysDate);
-        const lastCoachingTime = lastCoachingMessage ? 
-            moment(lastCoachingMessage.timestamp) : 
-            moment().startOf('day');
-        
-        // Get ALL newly accepted items since last coaching (UPC + non-UPC)
-        const newlyAcceptedItems = await getNutrilistItemsSince(chat_id, lastCoachingTime.toISOString());
-        
-        if (newlyAcceptedItems.length === 0) {
-            console.log('No new items to coach on since last coaching message');
-            return null;
-        }
-        
-        console.log(`🎯 Generating coaching for ${newlyAcceptedItems.length} items accepted since last coaching:`, 
-            newlyAcceptedItems.map(item => `${item.item} (${item.amount}${item.unit})`));
-        
-        // Use the EXISTING generateCoachingMessage function with ALL new items
-        const { generateCoachingMessage } = await import('./lib/gpt_food.mjs');
-        const coachingMessage = await generateCoachingMessage(chat_id, newlyAcceptedItems);
-        
-        if (coachingMessage) {
-            await sendMessage(chat_id, coachingMessage);
-        }
-        
-        // Generate reports only after coaching
-        await compileDailyFoodReport(chat_id);
-        await postItemizeFood(chat_id);
-        
-        return coachingMessage;
+        // Instead of generating coaching here, trigger the existing postItemizeFood function
+        // which already handles coaching + report generation together
+        return await postItemizeFood(chat_id);
         
     } catch (error) {
         console.error('Error in checkAndGenerateCoachingIfComplete:', error);
@@ -674,7 +645,7 @@ const processRevisionButtonpress = async (chat_id, message_id, choice) => {
 
 
 
-const processButtonpress = async (body, chat_id) => {
+export const processButtonpress = async (body, chat_id) => {
     const messageId = body.callback_query.message?.message_id; 
     const choice = body.callback_query.data;
     const leadingEmoji = choice?.match(/^\S+/g)[0];

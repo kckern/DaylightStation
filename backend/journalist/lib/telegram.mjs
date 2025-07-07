@@ -8,7 +8,7 @@ import { getMessages, saveMessage, findMostRecentUnansweredMessage, deleteMessag
 dotenv.config();
 
 
-const {journalist_telegram_bot_id} = process.env.journalist;
+const {journalist_telegram_bot_id} = process.env?.journalist || {}
 
 
 const openai = new OpenAI(process.env.OPENAI_API_KEY);
