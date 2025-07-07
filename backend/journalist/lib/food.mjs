@@ -3,7 +3,7 @@ import nodeFetch from 'node-fetch';
 import { createCanvas, loadImage } from 'canvas';
 import moment from "moment-timezone";
 import {  sendImageMessage, updateMessage, deleteMessage, updateMessageReplyMarkup, deleteSpecificMessage, sendMessage } from "./telegram.mjs";
-import { assumeOldNutrilogs, clearNutrilistByLogUUID, getNutriCursor, getNutrilListByDate, getNutrilog, getNutrilogSummary, loadNutrilogsNeedingListing, loadRecentNutriList, nutriLogAlreadyListed, saveMessage, saveNutriDay, saveNutrilist, saveNutrilog, setNutriCursor, getLastCoachingMessage, getNutrilistItemsSince, saveNutriCoach } from "./db.mjs";
+import { assumeOldNutrilogs, clearNutrilistByLogUUID, getNutriCursor, getNutrilListByDate, getNutrilog, getNutrilogSummary, loadNutrilogsNeedingListing, loadRecentNutriList, nutriLogAlreadyListed, saveMessage, saveNutriDay, saveNutrilist, saveNutrilog, setNutriCursor } from "./db.mjs";
 //uuid
 import { v4 as uuidv4 } from 'uuid';
 //jimp
@@ -225,34 +225,7 @@ const reportImgUrl = `${nutribot_report_host}/foodreport?chat_id=${chat_id}&uuid
     
     const newFood = await handlePendingNutrilogs(chat_id);
     console.log(`Sending report image: ${reportImgUrl}`);
-    
-    // Generate coaching message using the new logic (items since last coaching)
-    const todaysDate = moment.tz(timezone).format('YYYY-MM-DD');
-    const lastCoachingMessage = await getLastCoachingMessage(chat_id, todaysDate);
-    const lastCoachingTime = lastCoachingMessage ? 
-        moment(lastCoachingMessage.timestamp) : 
-        moment().startOf('day');
-    
-    // Get ALL newly accepted items since last coaching (UPC + non-UPC)
-    const newlyAcceptedItems = await getNutrilistItemsSince(chat_id, lastCoachingTime.toISOString());
-    
-    console.log(`🎯 Generating coaching for ${newlyAcceptedItems.length} items accepted since last coaching:`, 
-        newlyAcceptedItems.map(item => `${item.item} (${item.amount}${item.unit})`));
-    
-    const coachingMessage = newlyAcceptedItems.length > 0 ? 
-        await generateCoachingMessage(chat_id, newlyAcceptedItems, attempt) : 
-        null;
-    
-    // Save coaching message to database for tracking
-    if (coachingMessage && newlyAcceptedItems.length > 0) {
-        await saveNutriCoach({
-            chat_id,
-            date: todaysDate,
-            message: coachingMessage,
-            mostRecentItems: newlyAcceptedItems
-        });
-    }
-    
+    const coachingMessage = await generateCoachingMessage(chat_id, newFood, attempt);
     const msg = await sendImageMessage(chat_id, reportImgUrl, coachingMessage);
     const {message_id} = msg || {}
     await deleteMessage(chat_id, tmp_msg_id);
