@@ -3,7 +3,7 @@ import nodeFetch from 'node-fetch';
 import { createCanvas, loadImage } from 'canvas';
 import moment from "moment-timezone";
 import {  sendImageMessage, updateMessage, deleteMessage, updateMessageReplyMarkup, deleteSpecificMessage, sendMessage } from "./telegram.mjs";
-import { assumeOldNutrilogs, clearNutrilistByLogUUID, getNutriCursor, getNutrilListByDate, getNutrilog, getNutrilogSummary, loadNutrilogsNeedingListing, loadRecentNutriList, nutriLogAlreadyListed, saveMessage, saveNutriDay, saveNutrilist, saveNutrilog, setNutriCursor } from "./db.mjs";
+import { assumeOldNutrilogs, clearNutrilistByLogUUID, getNutriCursor, getNutrilListByDate, getNutrilog, getNutrilogSummary, loadNutrilogsNeedingListing, loadRecentNutriList, nutriLogAlreadyListed, saveMessage, saveNutriDay, saveNutrilist, saveNutrilog, setNutriCursor, getLastCoachingMessage, getNutrilistItemsSince, saveNutriCoach } from "./db.mjs";
 //uuid
 import { v4 as uuidv4 } from 'uuid';
 //jimp
@@ -56,13 +56,13 @@ ${Array.isArray(food) ?
     console.log(`Updating message with food list:\n${msg}`);
     await updateMessage(chat_id, {message_id, text: msg, choices: [["✅ Accept", "❌ Discard", "🔄 Revise"]], inline:true, key});
 
-    if(!revision) return true;
+    if(!revision) return message_id;
 
     //saveMessage = async (chatId, {messageId, senderId, senderName, text, foreign_key}) => {
     const bot_id = chat_id.match(/b(\d+)/)[1];
 
     await saveMessage(chat_id, {messageId:message_id, senderId: bot_id, senderName: "Nutribot", text: msg, foreign_key: {nutrilog: uuid}});
-
+    return message_id;
 
 };
 
@@ -77,9 +77,18 @@ export const processImageUrl = async (url, chat_id) => {
     const firstReponsePromise = nodeFetch(imgUrl);
     const removeReportPromise = removeCurrentReport(chat_id);
     const [firstReponse] = await Promise.all([firstReponsePromise, removeReportPromise]);
+    
+    console.log("Fetch response status:", firstReponse.status);
+    console.log("Fetch response ok:", firstReponse.ok);
+    
+    if (!firstReponse.ok) {
+        console.error(`Failed to fetch image: ${firstReponse.status} ${firstReponse.statusText}`);
+        return false;
+    }
+    
     const contentType = firstReponse.headers.get('content-type');
     console.log({url,contentType});
-    const isImage = /(image|application\/octet-stream)/.test(contentType);
+    const isImage = contentType && /(image|application\/octet-stream)/.test(contentType);
     let fetchedHTML = null;
     if(!isImage){
         fetchedHTML = await firstReponse.text();
@@ -222,7 +231,34 @@ const reportImgUrl = `${nutribot_report_host}/foodreport?chat_id=${chat_id}&uuid
     
     const newFood = await handlePendingNutrilogs(chat_id);
     console.log(`Sending report image: ${reportImgUrl}`);
-    const coachingMessage = await generateCoachingMessage(chat_id, newFood, attempt);
+    
+    // Generate coaching message using the new logic (items since last coaching)
+    const todaysDate = moment.tz(timezone).format('YYYY-MM-DD');
+    const lastCoachingMessage = await getLastCoachingMessage(chat_id, todaysDate);
+    const lastCoachingTime = lastCoachingMessage ? 
+        moment(lastCoachingMessage.timestamp) : 
+        moment().startOf('day');
+    
+    // Get ALL newly accepted items since last coaching (UPC + non-UPC)
+    const newlyAcceptedItems = await getNutrilistItemsSince(chat_id, lastCoachingTime.toISOString());
+    
+    console.log(`🎯 Generating coaching for ${newlyAcceptedItems.length} items accepted since last coaching:`, 
+        newlyAcceptedItems.map(item => `${item.item} (${item.amount}${item.unit})`));
+    
+    const coachingMessage = newlyAcceptedItems.length > 0 ? 
+        await generateCoachingMessage(chat_id, newlyAcceptedItems, attempt) : 
+        null;
+    
+    // Save coaching message to database for tracking
+    if (coachingMessage && newlyAcceptedItems.length > 0) {
+        await saveNutriCoach({
+            chat_id,
+            date: todaysDate,
+            message: coachingMessage,
+            mostRecentItems: newlyAcceptedItems
+        });
+    }
+    
     const msg = await sendImageMessage(chat_id, reportImgUrl, coachingMessage);
     const {message_id} = msg || {}
     await deleteMessage(chat_id, tmp_msg_id);
