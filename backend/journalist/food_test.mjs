@@ -64,4 +64,33 @@ const testImageFlow = async () => {
 };
 
 
-testImageFlow();
+//testImageFlow();
+
+
+const setSlashCommands = async () => {
+    const commands = [
+        { command: 'report', description: 'Generate the food report as of today' },
+        { command: 'coach', description: 'Get a coaching message' },
+    ],
+    url = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`,
+    body = {
+        commands,
+    };
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        if (data.ok) {
+            console.log("Slash commands set successfully:", data);
+        } else {
+            console.error("Failed to set slash commands:", data);
+        }
+    } catch (error) {
+        console.error("Error setting slash commands:", error);
+    }
+};  
+
+setSlashCommands();
