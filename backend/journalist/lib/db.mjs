@@ -1259,13 +1259,27 @@ export const saveNutrilist = (items, chat_id) => {
 export const loadNutrilogsNeedingListing = (chat_id) => {
   try {
     // Return nutrilogs that need to be processed for listing
-    // These should be items that are NOT yet accepted/assumed
     const data = loadFile(NUTRILOGS_STORE + "/" + chat_id);
-    const rows = Object.values(data).filter(item =>
-      item.chat_id === chat_id &&
-      // Only include items that are not yet processed (NOT accepted/assumed)
-      !["accepted", "assumed","revised"].includes(item.status)
-    );
+    const nutrilistData = loadFile(NUTRILIST_STORE + "/" + chat_id) || {};
+    
+    const rows = Object.values(data).filter(item => {
+      if (item.chat_id !== chat_id) return false;
+      
+      // Exclude revised items
+      if (item.status === "revised") return false;
+      
+      // Include accepted items that haven't been processed to nutrilist yet
+      if (item.status === "accepted") {
+        const alreadyProcessed = Object.values(nutrilistData).some(nutriItem => 
+          nutriItem.log_uuid === item.uuid
+        );
+        return !alreadyProcessed;
+      }
+      
+      // Include items that are not yet accepted/assumed
+      return !["assumed"].includes(item.status);
+    });
+    
     console.log(`loadNutrilogsNeedingListing: Found ${rows.length} items needing listing`);
     return rows;
   } catch (error) {

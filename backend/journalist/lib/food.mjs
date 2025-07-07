@@ -151,14 +151,8 @@ export const handlePendingNutrilogs = async (chat_id) => {
     const log_items_all = loadNutrilogsNeedingListing(chat_id) || [];
     console.log(`loadNutrilogsNeedingListing returned ${log_items_all.length} items that need listing`);
     
-    const log_items = [];
-    for(const log_item of log_items_all){
-        const {uuid} = log_item;
-        console.log(`Checking if log item with UUID ${uuid} is already listed.`);
-        const isAlreadyListed = nutriLogAlreadyListed(log_item, chat_id);
-        console.log(`Is log item with UUID ${uuid} already listed? ${isAlreadyListed}`);
-        if(!isAlreadyListed) log_items.push(log_item);
-    }
+    // The loadNutrilogsNeedingListing function already filters out items that are already processed
+    const log_items = log_items_all;
 
     console.log(`loadNutrilogsNeedingListing`);
     console.log(`Processing ${log_items.length} log items`);
