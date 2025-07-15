@@ -389,21 +389,30 @@ export const generateFamilyCard = async (code = "KWCF-2MD", options = {}) => {
   // Draw the QR canvas onto main canvas
   ctx.drawImage(qrCanvas, qrBoxX, qrBoxY);
   
-  // Draw outline around QR box for debugging
-  // ctx.strokeStyle = '#cccccc';
-  // ctx.lineWidth = Math.max(1, width * 0.001);
-  // ctx.strokeRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize);
-  
-  // Draw ID text below QR code
+  // Draw ID text below QR code, spaced to 80% of QR width
   const idTextY = qrBoxY + qrBoxSize + qrGap;
-  const idFontSize = qrBoxSize * 0.1; // 10% of QR size
+  const idFontSize = idTextHeight * 0.8; // Use 80% of available height for the font
   ctx.font = `${idFontSize}px "Roboto Condensed"`;
   ctx.fillStyle = '#666666';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
+
+  const targetIdTextWidth = qrBoxSize * 0.8;
+  const idCodeMetrics = ctx.measureText(code);
   
+  if (idCodeMetrics.width < targetIdTextWidth && code.length > 1) {
+    const totalSpacing = targetIdTextWidth - idCodeMetrics.width;
+    const letterSpacing = totalSpacing / (code.length - 1);
+    ctx.letterSpacing = `${letterSpacing}px`;
+  } else {
+    ctx.letterSpacing = '0px';
+  }
+
   const idTextCenterX = qrBoxX + qrBoxSize / 2;
   ctx.fillText(code, idTextCenterX, idTextY);
+
+  // Reset letter spacing
+  ctx.letterSpacing = '0px';
 
   // --- Relation Text Box Calculation and Drawing ---
 
