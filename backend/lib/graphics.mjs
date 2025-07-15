@@ -391,13 +391,13 @@ export const generateFamilyCard = async (code = "KWCF-2MD", options = {}) => {
   
   // Draw ID text below QR code, spaced to 80% of QR width
   const idTextY = qrBoxY + qrBoxSize + qrGap;
-  const idFontSize = idTextHeight * 0.8; // Use 80% of available height for the font
+  const idFontSize = idTextHeight * 1; // Use 80% of available height for the font
   ctx.font = `${idFontSize}px "Roboto Condensed"`;
   ctx.fillStyle = '#666666';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  const targetIdTextWidth = qrBoxSize * 0.8;
+  const targetIdTextWidth = qrBoxSize * 1;
   const idCodeMetrics = ctx.measureText(code);
   
   if (idCodeMetrics.width < targetIdTextWidth && code.length > 1) {
