@@ -467,5 +467,12 @@ export const generateFamilyCard = async (code = "KWCF-2MD", options = {}) => {
     ctx.fillText(line, relationCenterX, relationTextStartY + index * relationLineHeight);
   });
 
+  // Draw dashed border just inside the canvas edge
+  ctx.strokeStyle = '#dddddd';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]); // 5px dash, 5px gap
+  ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+  ctx.setLineDash([]); // Reset to solid line for future use
+
   return canvas;
 };
