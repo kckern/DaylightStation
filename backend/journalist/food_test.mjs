@@ -69,10 +69,10 @@ const testImageFlow = async () => {
 
 const setSlashCommands = async () => {
     const commands = [
-        { command: 'report', description: 'Generate the food report as of today' },
-        { command: 'coach', description: 'Get a coaching message' },
+        { command: 'report', description: '📊 Food Report' },
+        { command: 'coach', description: '💡 Coach' },
     ],
-    url = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`,
+    url = `https://api.telegram.org/bot${process.env.TELEGRAM_NUTRIBOT_TOKEN}/setMyCommands`,
     body = {
         commands,
     };
