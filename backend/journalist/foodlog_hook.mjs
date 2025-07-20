@@ -61,6 +61,9 @@ export const processFoodLogHook = async (req, res) => {
     const protocol =  /localhost/.test(hostname) ? 'http' : 'https';
     const host = `${protocol}://${hostname}`;
     const text = payload.message?.text;
+    //slash commands
+    const slashCommand = text?.match(/^\/(\w+)/)?.[1];
+    //if(slashCommand) return await processSlashCommand(chat_id, slashCommand);
     if(payload.callback_query) await processButtonpress(payload, chat_id);
     if(img_url) await processImageUrl(img_url,chat_id);
     if(img_id) await processImgMsg(img_id, chat_id, host, payload);
@@ -72,6 +75,21 @@ export const processFoodLogHook = async (req, res) => {
     return res.status(200).send(`Foodlog webhook received`);
 };
 
+
+const processSlashCommand = async (chat_id, command) => {
+    console.log('Processing slash command:', { chat_id, command });
+    if (command === 'report') {
+        // Handle report command
+        await removeCurrentReport(chat_id);
+        await compileDailyFoodReport(chat_id);
+    }
+    if (command === 'coach') {
+        // Handle coach command
+        const coachingMessage = await generateCoachingMessage(chat_id);
+        await sendMessage(chat_id, coachingMessage);
+    }
+
+};
 
 
 const processUPC = async (chat_id, upc, message_id, res) => {

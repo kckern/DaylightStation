@@ -11,6 +11,10 @@ import { canvasImage } from './foodlog_hook.mjs';
 import bwipjs from 'bwip-js';
 
 const iconPath = process.env.path?.icons;
+const allIcons = fs
+    .readdirSync(iconPath)
+    .filter((file) => file.endsWith('.png'))
+    .map((file) => file.replace('.png', ''));
 /**
  * REGISTER FONTS
  * --------------------------------------------------
@@ -236,6 +240,12 @@ async function makeFoodList(food, width, height) {
 
   // reset y to actually draw details
   y = 0;
+  const basePath = iconPath;
+  /*const allIcons = fs
+    .readdirSync(basePath)
+    .filter((file) => file.endsWith('.png'))
+    .map((file) => file.replace('.png', ''));*/
+
   for (const foodItem of food) {
     const rowY = y;
     const { item, calories, icon, carbs, protein, fat } = foodItem;
@@ -243,11 +253,6 @@ async function makeFoodList(food, width, height) {
     // Attempt to load the best matching icon from local images
     let loadedIcon;
     try {
-      const basePath = iconPath;
-      const allIcons = fs
-        .readdirSync(basePath)
-        .filter((file) => file.endsWith('.png'))
-        .map((file) => file.replace('.png', ''));
       const matches = stringSimilarity.findBestMatch(icon, allIcons);
       const iconImgPath = path.join(basePath, `${matches.bestMatch.target}.png`);
       loadedIcon = await loadImage(iconImgPath);
