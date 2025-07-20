@@ -1267,6 +1267,18 @@ export const loadNutrilogsNeedingListing = (chat_id) => {
       
       // Exclude revised items
       if (item.status === "revised") return false;
+
+      //if an item has been set to revising for over 1 hr, set it to assumed
+      const oneHourAgo = Math.floor(Date.now() / 1000) - 3600;
+      if (item.status === "revising" && item.timestamp < oneHourAgo) {
+        item.status = "assumed";
+        console.log(`Setting nutrilog ${item.uuid} to assumed due to being revising for over 1 hour`);
+        // Save the updated item back
+        const updatedData = loadFile(NUTRILOGS_STORE + "/" + chat_id) || {};
+        updatedData[item.uuid] = item;
+        saveFile(NUTRILOGS_STORE + "/" + chat_id, updatedData);
+        return false; // Exclude it from the list
+      }
       
       // Include accepted items that haven't been processed to nutrilist yet
       if (item.status === "accepted") {
