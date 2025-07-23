@@ -1,8 +1,7 @@
-
 import axios from 'axios';
-import { parseStringPromise } from 'xml2js';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import { clearWatchedItems } from '../fetch.mjs';
+import fs from 'fs';
 
 
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } }
@@ -298,7 +297,28 @@ export class Plex {
   }
   selectKeyToPlay(keys, shuffle = false) {
     keys = keys?.[0]?.plex ? keys.map(x => x.plex) : keys || [];
+    if (keys.length === 0) {
+      return [null, 0, 0];
+    }
+
     let log = loadFile("history/media_memory/plex") || {};
+    const plexLogDir = 'data/history/media_memory/plex';
+    if (fs.existsSync(plexLogDir)) {
+        const files = fs.readdirSync(plexLogDir);
+        for (const file of files) {
+            if (file.endsWith('.yml') || file.endsWith('.yaml')) {
+                const libraryLog = loadFile(`history/media_memory/plex/${file.replace(/\.ya?ml$/, '')}`);
+                if (libraryLog) {
+                    const foundKey = keys.find(key => libraryLog[key]);
+                    if (foundKey) {
+                        log = { ...log, ...libraryLog };
+                        break; 
+                    }
+                }
+            }
+        }
+    }
+    
 
     const watched = keys.filter(key => log[key]?.percent >= 90).sort((a, b) => log[b].time - log[a].time);
     const inProgress = keys.filter(key => log[key]?.percent > 0 && log[key]?.percent < 90).sort((b, a) => log[b].percent - log[a].percent);
