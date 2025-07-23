@@ -8,6 +8,7 @@ import { parseFile } from 'music-metadata';
 import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems } from './fetch.mjs';
 import { getChildrenFromMediaKey } from './fetch.mjs';
 import Infinity from './lib/infinity.js';
+import { slugify } from './lib/utils.mjs';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -151,13 +152,23 @@ mediaRouter.post('/log', async (req, res) => {
     }
     try {
         if(seconds<10) return res.status(400).json({ error: `Invalid request: seconds < 10` });
-        const log = loadFile(`history/media_memory/${type}`) || {};
+        
+        let logPath = `history/media_memory/${type}`;
+        if (type === 'plex') {
+            const plex = new Plex();
+            const [meta] = await plex.loadMeta(media_key);
+            if (meta && meta.librarySectionID) {
+                logPath = `history/media_memory/plex/${meta.librarySectionID}`;
+            }
+        }
+
+        const log = loadFile(logPath) || {};
         log[media_key] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, media_key, seconds: parseInt(seconds), percent: parseFloat(percent) };
         if(!log[media_key].title) delete log[media_key].title;
         const sortedLog = Object.fromEntries(
             Object.entries(log).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
         );
-        saveFile(`history/media_memory/${type}`, sortedLog);
+        saveFile(logPath, sortedLog);
         console.log(`Log updated: ${JSON.stringify(log[media_key])}`);
         await logToInfinity(media_key,{percent, seconds});
         res.json({ response: {type,...log[media_key]} });
