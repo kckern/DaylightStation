@@ -66,9 +66,67 @@ const testImageFlow = async () => {
 
 //testImageFlow();
 
+const testHelpCommand = async () => {
+    try {
+        console.log("🧪 Testing /help command processing...");
+        
+        const { processFoodLogHook } = await import("./foodlog_hook.mjs");
+        
+        // Simulate a /help command
+        const helpPayload = {
+            message: {
+                chat: { id: 575596036 },
+                message_id: 12345,
+                text: "/help"
+            }
+        };
+        
+        console.log("📤 Sending /help command...");
+        
+        // Create mock request and response objects
+        const req = {
+            body: helpPayload,
+            headers: { host: 'localhost:3000' }
+        };
+        
+        let responseStatus = null;
+        let responseMessage = null;
+        
+        const res = {
+            status: (code) => {
+                responseStatus = code;
+                return { 
+                    send: (msg) => {
+                        responseMessage = msg;
+                        console.log(`📥 Response ${code}: ${msg}`);
+                        return msg;
+                    }
+                };
+            }
+        };
+        
+        await processFoodLogHook(req, res);
+        
+        // Verify the response
+        if (responseStatus === 200 && responseMessage === "Slash command processed") {
+            console.log("✅ /help command processed correctly!");
+            console.log("✅ Not interpreted as food input!");
+        } else {
+            console.log(`❌ Unexpected response: ${responseStatus} - ${responseMessage}`);
+        }
+        
+        console.log("\n🎯 Test completed successfully!");
+        
+    } catch (error) {
+        console.error("❌ Test failed:", error.message);
+    }
+};
+
+testHelpCommand();
 
 const setSlashCommands = async () => {
     const commands = [
+        { command: 'help', description: '❓ Help Menu' },
         { command: 'report', description: '📊 Food Report' },
         { command: 'coach', description: '💡 Coach' },
     ],

@@ -158,7 +158,7 @@ mediaRouter.post('/log', async (req, res) => {
             const plex = new Plex();
             const [meta] = await plex.loadMeta(media_key);
             if (meta && meta.librarySectionID) {
-                logPath = `history/media_memory/plex/${meta.librarySectionID}`;
+                logPath = `history/media_memory/plex/${slugify(meta.librarySectionTitle)}`;
             }
         }
 
