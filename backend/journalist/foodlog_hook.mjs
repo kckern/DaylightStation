@@ -45,7 +45,7 @@ export const processFoodLogHook = async (req, res) => {
     const {TELEGRAM_NUTRIBOT_TOKEN:token,journalist:{journalist_user_id,nutribot_telegram_bot_id:bot_id}} = process.env;
     process.env.TELEGRAM_JOURNALIST_BOT_TOKEN = token; // TODO improve multi-bot support
     const payload = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
-    const user_id = parseInt(payload.message?.chat?.id || payload.chat_id || req.query.chat_id || journalist_user_id);
+    const user_id = parseInt(payload.message?.chat?.id || payload.callback_query?.message?.chat?.id || payload.chat_id || req.query.chat_id || journalist_user_id);
     const message_id = payload.message?.message_id || payload.message_id || payload.callback_query?.message?.message_id || null;
     //console.log({payload,user_id, bot_id});
     const chat_id = `b${bot_id}_u${user_id}`;
@@ -63,7 +63,7 @@ export const processFoodLogHook = async (req, res) => {
     const text = payload.message?.text;
     //slash commands
     const slashCommand = text?.match(/^\/(\w+)/)?.[1];
-    //if(slashCommand) return await processSlashCommand(chat_id, slashCommand);
+    if(slashCommand) return  await processSlashCommand(chat_id, slashCommand);
     if(payload.callback_query) await processButtonpress(payload, chat_id);
     if(img_url) await processImageUrl(img_url,chat_id);
     if(img_id) await processImgMsg(img_id, chat_id, host, payload);
@@ -78,16 +78,37 @@ export const processFoodLogHook = async (req, res) => {
 
 const processSlashCommand = async (chat_id, command) => {
     console.log('Processing slash command:', { chat_id, command });
-    if (command === 'report') {
-        // Handle report command
-        await removeCurrentReport(chat_id);
-        await compileDailyFoodReport(chat_id);
+    
+    if (command === 'help') {
+        // Handle help command with menu options
+        const helpMessage = "What can I help you with?";
+        
+        // Check for pending items
+        const pendingUPCItems = getPendingUPCNutrilogs(chat_id);
+        const pendingNutrilogItems = loadNutrilogsNeedingListing(chat_id) || [];
+        const unprocessedNutrilogItems = pendingNutrilogItems.filter(item => !nutriLogAlreadyListed(item, chat_id));
+        const totalPending = pendingUPCItems.length + unprocessedNutrilogItems.length;
+        
+        // Build choices array based on pending items
+        const choices = [];
+        
+        // Add Review button only if there are pending items
+        choices.push([totalPending > 0 ? `📋 Review (${totalPending})` : null, "📊 Report", "💡 Coach", "❌"].filter(Boolean));
+
+        try {
+            await sendMessage(chat_id, helpMessage, {
+                choices: choices,
+                inline: true,
+                saveMessage: false,
+                ignoreUnread: true
+            });
+        } catch (error) {
+            console.error('Error sending help message:', error);
+            // Return silently to avoid webhook errors
+        }
+        return;
     }
-    if (command === 'coach') {
-        // Handle coach command
-        const coachingMessage = await generateCoachingMessage(chat_id);
-        await sendMessage(chat_id, coachingMessage);
-    }
+    
 
 };
 
@@ -688,6 +709,21 @@ export const processButtonpress = async (body, chat_id) => {
         setNutriCursor(chat_id, cursor);
         return true;
     }
+    
+    // Handle help menu options first (before nutrilog lookups)
+    if (choice === '📋 Review' || choice.startsWith('📋 Review (')) {
+        return await handleReviewCommand(chat_id, messageId);
+    }
+    if (choice === '📊 Report') {
+        return await handleReportCommand(chat_id, messageId);
+    }
+    if (choice === '💡 Coach') {
+        return await handleCoachCommand(chat_id, messageId);
+    }    // Handle review confirmation
+    if (choice === '✅ Confirm All') {
+        return await handleConfirmAllCommand(chat_id, messageId);
+    }
+    
     // Check if this is a revision flow (cursor-based)
     const cursor = await getNutriCursor(chat_id);
     if (cursor.adjusting || leadingEmoji === '⬅️') {
@@ -730,6 +766,113 @@ export const processButtonpress = async (body, chat_id) => {
     if (leadingEmoji === '↩️') return await postItemizeFood(chat_id);
     
     return false;
+};
+
+// Help menu handlers
+const handleReviewCommand = async (chat_id, messageId) => {
+    // Clear the help menu message
+    await deleteMessage(chat_id, messageId);
+    
+    // Get pending UPC items
+    const pendingUPCItems = getPendingUPCNutrilogs(chat_id);
+    
+    // Get pending nutrilog items (text/image)
+    const pendingNutrilogItems = loadNutrilogsNeedingListing(chat_id) || [];
+    const unprocessedNutrilogItems = pendingNutrilogItems.filter(item => !nutriLogAlreadyListed(item, chat_id));
+    
+    const totalPending = pendingUPCItems.length + unprocessedNutrilogItems.length;
+    
+    if (totalPending === 0) {
+        await sendMessage(chat_id, "✅ No pending items to review! Everything looks good.");
+        return;
+    }
+    
+    let reviewMessage = `📋 **Review Pending Items**\n\n`;
+    reviewMessage += `📦 UPC items: ${pendingUPCItems.length}\n`;
+    reviewMessage += `📝 Text/Image items: ${unprocessedNutrilogItems.length}\n`;
+    reviewMessage += `\n**Total pending:** ${totalPending}`;
+    
+    await sendMessage(chat_id, reviewMessage, {
+        choices: [["✅ Confirm All", "❌ Cancel"]],
+        inline: true
+    });
+};
+
+const handleReportCommand = async (chat_id, messageId) => {
+    // Clear the help menu message
+    await deleteMessage(chat_id, messageId);
+    
+    // Set any pending items to assumed (auto-accept them)
+    const {assumed, init} = assumeOldNutrilogs(chat_id);
+    
+    if (assumed.length > 0) {
+        await sendMessage(chat_id, `🔄 Auto-accepted ${assumed.length} pending items and generating report...`, { saveMessage: false });
+        
+        // Remove response keyboards from assumed messages
+        await Promise.all(assumed.map(message_id => {
+            return updateMessageReplyMarkup(chat_id, {message_id, choices: null});
+        }));
+    }
+    
+    // Force generate the report
+    await removeCurrentReport(chat_id);
+    await postItemizeFood(chat_id);
+};
+
+const handleCoachCommand = async (chat_id, messageId) => {
+    // Clear the help menu message
+    await deleteMessage(chat_id, messageId);
+    
+    // Show loading message
+    const {message_id: loadingMsgId} = await sendMessage(chat_id, "💡 Analyzing your recent nutrition data...", { saveMessage: false });
+    
+    try {
+        // Generate coaching message based on past few days
+        const coachingMessage = await generateCoachingMessage(chat_id);
+        
+        // Delete loading message and send coaching
+        await deleteMessage(chat_id, loadingMsgId);
+        await sendMessage(chat_id, `💡 **Nutrition Coach**\n\n${coachingMessage}`);
+        
+    } catch (error) {
+        console.error('Error generating coaching message:', error);
+        await deleteMessage(chat_id, loadingMsgId);
+        await sendMessage(chat_id, "Sorry, I couldn't generate a coaching message right now. Please try again later.");
+    }
+};
+
+const handleConfirmAllCommand = async (chat_id, messageId) => {
+    // Clear the review message
+    await deleteMessage(chat_id, messageId);
+    
+    // Get pending items and accept them all
+    const pendingUPCItems = getPendingUPCNutrilogs(chat_id);
+    const pendingNutrilogItems = loadNutrilogsNeedingListing(chat_id) || [];
+    const unprocessedNutrilogItems = pendingNutrilogItems.filter(item => !nutriLogAlreadyListed(item, chat_id));
+    
+    let acceptedCount = 0;
+    
+    // Accept all UPC items by updating their status
+    for (const upcItem of pendingUPCItems) {
+        await updateNutrilogStatus(chat_id, upcItem.uuid, "accepted");
+        acceptedCount++;
+    }
+    
+    // Process and accept all nutrilog items
+    for (const nutrilogItem of unprocessedNutrilogItems) {
+        await acceptFoodLog(chat_id, nutrilogItem.message_id, nutrilogItem.uuid, nutrilogItem.food_data);
+        acceptedCount++;
+    }
+    
+    if (acceptedCount > 0) {
+        await sendMessage(chat_id, `✅ Confirmed ${acceptedCount} items successfully!`);
+        
+        // Process any remaining pending items and generate report if complete
+        await handlePendingNutrilogs(chat_id);
+        await checkAndGenerateCoachingIfComplete(chat_id);
+    } else {
+        await sendMessage(chat_id, "ℹ️ No items were found to confirm.");
+    }
 };
 
 const clearPendingCursor = async (chat_id) => {
