@@ -168,7 +168,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
 
 
     const loadScriptureWatchlist = (watchListFolder) => {
-        const watchListItems = loadFile('history/watchlist') || [];
+        const watchListItems = loadFile('config/watchlist') || [];
         const filteredItems = watchListItems.filter(w => w.folder === watchListFolder);
         console.log({watchListFolder,filteredItems,watchListFolder});
         const {items:[item]} = getChildrenFromWatchlist(filteredItems);
