@@ -25,9 +25,15 @@ const loadTable = async (tableId , data = [], after = "") => {
 
     const { INFINITY_WORKSPACE } = process.env;
 
-    if(!tableId) return false;
+    if(!tableId) {
+        console.log('loadTable: No tableId provided');
+        return [];
+    }
     const token = await authInfinity();
-    if (!token) return false;
+    if (!token) {
+        console.log('loadTable: No auth token available');
+        return [];
+    }
     try{
         
     let url = `https://app.startinfinity.com/api/v2/workspaces/${INFINITY_WORKSPACE}/boards/${tableId}/items?limit=100&expand%5B%5D=values.attribute&sort_direction=asc`;
@@ -61,12 +67,17 @@ const loadTable = async (tableId , data = [], after = "") => {
     
 
     }catch(e){
-        console.log(e.message);
-        console.log(e.response?.data);
-        return false;
+        console.log('loadTable error:', e.message);
+        console.log('loadTable error response:', e.response?.data);
+        return [];
     }
 }
 const processTable = (tableData, folders) => {
+    console.log(`processTable called with tableData type: ${typeof tableData}, isArray: ${Array.isArray(tableData)}`);
+    if (!Array.isArray(tableData)) {
+        console.error('processTable received non-array tableData:', tableData);
+        return [];
+    }
     const items = tableData.map(item => {
         const processedItem = item.values.reduce((acc, val) => {
             let key = val.attribute.name.toLowerCase().split(' ').join('_');
@@ -149,13 +160,30 @@ const updateItem = async (tableId, itemId, key, val) => {
 };
 
 const loadData = async (name,req) => {
+    console.log(`Loading data for: ${name}`);
+    console.log(`Table ID: ${process.env.infinity[name]}`);
+    
     let data = await loadTable(process.env.infinity[name]);
+    console.log(`loadTable returned:`, typeof data, Array.isArray(data), data?.length || 'no length property');
+    
+    if (!data || !Array.isArray(data)) {
+        console.error(`Failed to load table data for ${name}, or data is not an array:`, data);
+        return [];
+    }
+    
+    console.log(`About to call saveImages with ${data.length} items`);
     data = await saveImages(data, name);
     saveFile(`config/${name}`, data);
     return data;
 }
 
 const saveImages = async (items, table_name) => {
+    console.log(`saveImages called with items type: ${typeof items}, isArray: ${Array.isArray(items)}, length: ${items?.length || 'no length'}`);
+    
+    if (!items || !Array.isArray(items)) {
+        console.error(`saveImages received invalid items for table ${table_name}:`, items);
+        return [];
+    }
     const hasImages = items.filter(item => item.image);
     if (!hasImages.length) return items;
     const host = process.env.host || "";
@@ -170,6 +198,10 @@ const saveImages = async (items, table_name) => {
 }
 
 const checkForDupeImages = async (items) => {
+    if (!items || !Array.isArray(items)) {
+        console.error('checkForDupeImages received invalid items:', items);
+        return [];
+    }
     const itemsWithImages = items.filter(item => item.image);
     items.forEach(item => {
         if (!item.image) {

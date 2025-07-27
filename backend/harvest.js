@@ -49,11 +49,16 @@ const harvestKeys = Object.keys(harvesters);
 harvestKeys.forEach(key => {
     harvestRouter.get(`/${key}`, async (req, res) =>{
         try {
+            console.log(`Harvest endpoint called: ${key}`);
             const guidId = crypto.randomUUID().split('-').pop();
+            console.log(`About to call harvester for ${key} with guidId: ${guidId}`);
             const response = await harvesters[key](guidId,req);
+            console.log(`Harvester ${key} returned response type: ${typeof response}, isArray: ${Array.isArray(response)}`);
             return res.status(200).json(response);
         
         } catch (error) {
+            console.error(`Error in harvest endpoint ${key}:`, error.message);
+            console.error('Stack trace:', error.stack);
             return res.status(500).json({error: error.message});
         }
     });

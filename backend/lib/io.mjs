@@ -93,8 +93,10 @@ const loadFile = (path) => {
         saveFile(yamlPath, {});
         return null;
     }
+    let fileData = fs.readFileSync(fileToLoad, 'utf8').toString().trim();
+    // Remove null bytes and other problematic characters
+    fileData = fileData.replace(/\u0000/g, '');
 
-    const fileData = fs.readFileSync(fileToLoad, 'utf8').toString().trim();
     try {
         const object = yaml.load(fileData);
         //if {} then return null
