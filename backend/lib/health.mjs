@@ -16,10 +16,10 @@ function md5(string) {
 const dailyHealth = async (jobId) => {
     const {nutribot_chat_id} = process.env;
     await compileDailyFoodReport(nutribot_chat_id);
-    const weight = loadFile('lifelog/weight');
-    const strava = loadFile('lifelog/strava');
+    const weight = loadFile('lifelog/weight') || {};
+    const strava = loadFile('lifelog/strava') || {};
     const dailyNutrition = getNutriDaysBack(nutribot_chat_id,30);
-    const fitness = loadFile('lifelog/fitness');
+    const fitness = loadFile('lifelog/fitness') || {};
 
     const past90Days = Array.from({length: 30}, (_, i) => 
         moment().subtract(i + 1, 'days').format('YYYY-MM-DD')
