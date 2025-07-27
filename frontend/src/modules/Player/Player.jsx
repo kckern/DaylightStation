@@ -248,7 +248,17 @@ function useCommonMediaController({
       console.log({ volume, adjustedVolume });
 
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
-      const startTime = (duration > (12 * 60) || isVideo) ? start : 0;
+      let startTime = (duration > (12 * 60) || isVideo) ? start : 0;
+      
+      // Reset to beginning if progress > 95% or less than 30 seconds remaining
+      if (duration > 0 && startTime > 0) {
+        const progressPercent = (startTime / duration) * 100;
+        const secondsRemaining = duration - startTime;
+        if (progressPercent > 95 || secondsRemaining < 30) {
+          startTime = 0;
+        }
+      }
+      
       mediaEl.dataset.key = media_key;
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
