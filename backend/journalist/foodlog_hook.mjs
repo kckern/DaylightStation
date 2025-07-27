@@ -64,7 +64,7 @@ export const processFoodLogHook = async (req, res) => {
     //slash commands
     const slashCommand = text?.match(/^\/(\w+)/)?.[1];
     if(slashCommand) {
-        const commandHandled = await processSlashCommand(chat_id, slashCommand);
+        const commandHandled = await processSlashCommand(chat_id, slashCommand, message_id);
         if (commandHandled) {
             return res.status(200).send(`Slash command /${slashCommand} processed`);
         }
@@ -85,14 +85,17 @@ export const processFoodLogHook = async (req, res) => {
 // Keep track of last help message sent per chat_id
 const lastHelpMessageCache = new Map();
 
-const processSlashCommand = async (chat_id, command) => {
+const processSlashCommand = async (chat_id, command, message_id) => {
     console.log('Processing slash command:', { chat_id, command });
+
+    //remove message containing the command
+    await deleteMessage(chat_id, message_id);
 
     //remove remport
     await removeCurrentReport(chat_id);
     
     if (command === 'help') {
-        const helpMessage = "What can I help you with?";
+        const helpMessage = "Make your selection:";
         
         // Check if the last help message was already sent (simple duplicate prevention)
         if (lastHelpMessageCache.get(chat_id) === helpMessage) {
