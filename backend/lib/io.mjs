@@ -91,16 +91,18 @@ const loadFile = (path) => {
         console.warn(`File does not exist: ${yamlPath} or ${ymlPath}`);
         //touch file
         saveFile(yamlPath, {});
-        return {};
+        return null;
     }
 
     const fileData = fs.readFileSync(fileToLoad, 'utf8').toString().trim();
     try {
         const object = yaml.load(fileData);
-        return object || {};
+        //if {} then return null
+        if (object && Object.keys(object).length === 0) return null;
+        return object || null;
     } catch (e) {
         console.error(`Failed to parse YAML file: ${fileToLoad}`, e);
-        return fileData || {};
+        return fileData || null;
     }
 }
 
