@@ -126,9 +126,7 @@ testHelpCommand();
 
 const setSlashCommands = async () => {
     const commands = [
-        { command: 'help', description: '❓ Help Menu' },
-        { command: 'report', description: '📊 Food Report' },
-        { command: 'coach', description: '💡 Coach' },
+        { command: 'help', description: '🥦 Help Menu' }
     ],
     url = `https://api.telegram.org/bot${process.env.TELEGRAM_NUTRIBOT_TOKEN}/setMyCommands`,
     body = {

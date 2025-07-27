@@ -63,7 +63,12 @@ export const processFoodLogHook = async (req, res) => {
     const text = payload.message?.text;
     //slash commands
     const slashCommand = text?.match(/^\/(\w+)/)?.[1];
-    if(slashCommand) return  await processSlashCommand(chat_id, slashCommand);
+    if(slashCommand) {
+        const commandHandled = await processSlashCommand(chat_id, slashCommand);
+        if (commandHandled) {
+            return res.status(200).send(`Slash command /${slashCommand} processed`);
+        }
+    }
     if(payload.callback_query) await processButtonpress(payload, chat_id);
     if(img_url) await processImageUrl(img_url,chat_id);
     if(img_id) await processImgMsg(img_id, chat_id, host, payload);
@@ -78,10 +83,23 @@ export const processFoodLogHook = async (req, res) => {
 
 const processSlashCommand = async (chat_id, command) => {
     console.log('Processing slash command:', { chat_id, command });
+
+    //remove remport
+    await removeCurrentReport(chat_id);
     
     if (command === 'help') {
-        // Handle help command with menu options
+        // Check if the last sent message was already the help menu
+        // Import the function to get last message
+        const { getLastMessage } = await import('./lib/db.mjs');
+        const lastMessage = await getLastMessage(chat_id);
+        
         const helpMessage = "What can I help you with?";
+        
+        // If the last message was already this help message, don't send duplicate
+        if (lastMessage && lastMessage.text === helpMessage) {
+            console.log(`Help menu already sent for ${chat_id}, skipping duplicate`);
+            return true;
+        }
         
         // Check for pending items
         const pendingUPCItems = getPendingUPCNutrilogs(chat_id);
@@ -106,10 +124,10 @@ const processSlashCommand = async (chat_id, command) => {
             console.error('Error sending help message:', error);
             // Return silently to avoid webhook errors
         }
-        return;
+        return true;
     }
     
-
+    return false; // Command not handled
 };
 
 
@@ -712,6 +730,7 @@ export const processButtonpress = async (body, chat_id) => {
     
     // Handle help menu options first (before nutrilog lookups)
     if (choice === '📋 Review' || choice.startsWith('📋 Review (')) {
+        await deleteMessage(chat_id, messageId);
         return await handleReviewCommand(chat_id, messageId);
     }
     if (choice === '📊 Report') {
@@ -721,6 +740,7 @@ export const processButtonpress = async (body, chat_id) => {
         return await handleCoachCommand(chat_id, messageId);
     }    // Handle review confirmation
     if (choice === '✅ Confirm All') {
+        await deleteMessage(chat_id, messageId);
         return await handleConfirmAllCommand(chat_id, messageId);
     }
     
