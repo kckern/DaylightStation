@@ -1352,11 +1352,11 @@ export const loadRecentNutriList = (chat_id, days_since = 14) => {
  */
 export const nutriLogAlreadyListed = (item, chat_id) => {
   const { uuid, status } = item;
-  console.log(`nutriLogAlreadyListed: Checking item with UUID ${uuid} and status ${status}`);
+ // console.log(`nutriLogAlreadyListed: Checking item with UUID ${uuid} and status ${status}`);
   
   // Double-check: If status is already accepted/assumed, it should not be in the list
   if(["accepted", "assumed"].includes(status)) {
-    console.log(`nutriLogAlreadyListed: WARNING - item ${uuid} with status ${status} should not be passed to this function`);
+  //  console.log(`nutriLogAlreadyListed: WARNING - item ${uuid} with status ${status} should not be passed to this function`);
     return true; // Skip it anyway to prevent loops
   }
   

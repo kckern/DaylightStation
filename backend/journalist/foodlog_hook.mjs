@@ -74,12 +74,16 @@ export const processFoodLogHook = async (req, res) => {
     if(img_id) await processImgMsg(img_id, chat_id, host, payload);
     if(upc) return  await processUPC(chat_id,upc, message_id, res);
     if(payload.message?.voice) await processVoice(chat_id, payload.message);
-    if(text) await processText(chat_id, payload.message.message_id, text);
+    // Only process text if it's not a slash command (already handled above)
+    if(text && !slashCommand) await processText(chat_id, payload.message.message_id, text);
 
     //console.log(payload);
     return res.status(200).send(`Foodlog webhook received`);
 };
 
+
+// Keep track of last help message sent per chat_id
+const lastHelpMessageCache = new Map();
 
 const processSlashCommand = async (chat_id, command) => {
     console.log('Processing slash command:', { chat_id, command });
@@ -88,22 +92,20 @@ const processSlashCommand = async (chat_id, command) => {
     await removeCurrentReport(chat_id);
     
     if (command === 'help') {
-        // Check if the last sent message was already the help menu
-        // Import the function to get last message
-        const { getLastMessage } = await import('./lib/db.mjs');
-        const lastMessage = await getLastMessage(chat_id);
-        
         const helpMessage = "What can I help you with?";
         
-        // If the last message was already this help message, don't send duplicate
-        if (lastMessage && lastMessage.text === helpMessage) {
+        // Check if the last help message was already sent (simple duplicate prevention)
+        if (lastHelpMessageCache.get(chat_id) === helpMessage) {
             console.log(`Help menu already sent for ${chat_id}, skipping duplicate`);
             return true;
         }
         
-        // Check for pending items
+        // Check for pending items - but only get items that are NOT accepted
         const pendingUPCItems = getPendingUPCNutrilogs(chat_id);
-        const pendingNutrilogItems = loadNutrilogsNeedingListing(chat_id) || [];
+        const allNutrilogItems = loadNutrilogsNeedingListing(chat_id) || [];
+        
+        // Filter out items that are already accepted (shouldn't be passed to nutriLogAlreadyListed)
+        const pendingNutrilogItems = allNutrilogItems.filter(item => item.status !== 'accepted');
         const unprocessedNutrilogItems = pendingNutrilogItems.filter(item => !nutriLogAlreadyListed(item, chat_id));
         const totalPending = pendingUPCItems.length + unprocessedNutrilogItems.length;
         
@@ -120,6 +122,15 @@ const processSlashCommand = async (chat_id, command) => {
                 saveMessage: false,
                 ignoreUnread: true
             });
+            
+            // Cache the help message to prevent duplicates
+            lastHelpMessageCache.set(chat_id, helpMessage);
+            
+            // Clear cache after 5 seconds to allow new help commands
+            setTimeout(() => {
+                lastHelpMessageCache.delete(chat_id);
+            }, 5000);
+            
         } catch (error) {
             console.error('Error sending help message:', error);
             // Return silently to avoid webhook errors
