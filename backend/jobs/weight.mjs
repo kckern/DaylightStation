@@ -15,11 +15,13 @@ const weightProcess = async (job_id) => {
     for (let point of weightPoints) {
         const date = moment(point.date).format('YYYY-MM-DD');
         const measurement = point.lbs;
-        const previous = values[date] ? values[date]['measurement'] : null;
-
-        if(!!measurement && !!previous && previous < measurement)  continue;
-        values[date] = values[date] || { date , measurement: null };
-        values[date]['measurement'] = measurement;
+        
+        // Only attach measurements to dates that already exist in our interpolated data
+        if (values[date]) {
+            const previous = values[date]['measurement'];
+            if(!!measurement && !!previous && previous < measurement) continue;
+            values[date]['measurement'] = measurement;
+        }
     }
 
     // 2. Rolling averages on interpolated data
@@ -193,6 +195,9 @@ function rollingAverage(items, key, windowSize) {
 
         const avgDiff = queue.length ? sum / queue.length : 0;
         items[date][`${key}_diff_average`] = Math.round(avgDiff * 100) / 100;
+        // The adjusted average should be the rolling average MINUS the average bias
+        // If measurements are consistently above the rolling average (positive avgDiff),
+        // we want to adjust the average UP, not down
         items[date][`${key}_adjusted_average`] =
             Math.round((items[date][`${key}_average`] - avgDiff) * 100) / 100;
     }
