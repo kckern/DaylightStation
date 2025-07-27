@@ -172,7 +172,7 @@ function HomeApp() {
         return 
       }
 
-      const fn = buttonFns[action.function]
+      const fn = buttonFns[action?.function]
       if (fn) fn(action.params)
     }
 
