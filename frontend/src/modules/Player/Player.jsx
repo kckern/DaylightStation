@@ -156,7 +156,14 @@ function useCommonMediaController({
     const handleKeyDown = (event) => {
       if (event.repeat) return;
       const isPlaying = getMediaEl()?.paused === false;
+      const isPaused = getMediaEl()?.paused === true;
       const isFirstTrackInQueue = queuePosition === 0;
+      
+      // When paused and pressing up/down arrows, don't handle them here - let LoadingOverlay handle them
+      if (isPaused && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        return;
+      }
+      
       playbackKeys = playbackKeys || {};
       const keyMap = {
       Tab: skipToNextTrack,
@@ -263,6 +270,12 @@ function useCommonMediaController({
       if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
       mediaEl.autoplay = true;
       mediaEl.volume = adjustedVolume; // Set the volume level
+      
+      // Auto-loop videos that are under 20 seconds
+      if (isVideo && duration < 20) {
+        mediaEl.loop = true;
+      }
+      
       if (isVideo) {
       mediaEl.controls = false;
       mediaEl.addEventListener('play', () => {
@@ -774,14 +787,43 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
 /*  LOADING OVERLAY                                           */
 /*─────────────────────────────────────────────────────────────*/
 
-export function LoadingOverlay({ isPaused, fetchVideoInfo }) {
+// Global state to remember pause overlay visibility setting
+let pauseOverlayVisible = true;
+
+export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay }) {
   const [visible, setVisible] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
+  const [showPauseOverlay, setShowPauseOverlay] = useState(pauseOverlayVisible);
 
   useEffect(() => {
     const timeout = setTimeout(() => setVisible(true), 300);
     return () => clearTimeout(timeout);
   }, []);
+
+  useEffect(() => {
+    setShowPauseOverlay(pauseOverlayVisible);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (isPaused && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        const newVisibility = !showPauseOverlay;
+        setShowPauseOverlay(newVisibility);
+        pauseOverlayVisible = newVisibility; // Remember setting globally
+      }
+    };
+
+    if (isPaused) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      if (isPaused) {
+        window.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, [isPaused, showPauseOverlay]);
 
   useEffect(() => {
     if (!isPaused) {
@@ -801,6 +843,12 @@ export function LoadingOverlay({ isPaused, fetchVideoInfo }) {
   }, [isPaused, loadingTime, fetchVideoInfo]);
 
   const imgSrc = isPaused ? pause : spinner;
+
+  // Always show loading overlay when not paused (loading state)
+  // For paused state, respect the user's toggle setting
+  if (isPaused && !showPauseOverlay) {
+    return null;
+  }
 
   return (
     <div

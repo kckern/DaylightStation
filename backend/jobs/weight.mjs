@@ -39,6 +39,8 @@ const weightProcess = async (job_id) => {
     values = caloricBalance(values); 
     values = trendline(values, 'lbs_adjusted_average', 14);
     values = trendline(values, 'lbs_adjusted_average', 7);
+    // Add water_weight for each day
+    values = addWaterWeight(values);
 
     // Remove temporary "_diff" keys
     values = removeTempKeys(values);
@@ -203,6 +205,54 @@ function rollingAverage(items, key, windowSize) {
     }
 
     return items;
+}
+
+// For each day, add water_weight: shift the avg line so the minimum difference between measurement and avg is zero (i.e., the lowest point touches the line and all others are above)
+function addWaterWeight(values) {
+    const dates = Object.keys(values).sort((a, b) => moment(a) - moment(b));
+    // Find the minimum difference between measurement and avg
+    let minDiff = null;
+    for (let i = 0; i < dates.length; i++) {
+        const avg = values[dates[i]]['lbs_adjusted_average'];
+        const m = values[dates[i]]['measurement'];
+        if (typeof avg === 'number' && typeof m === 'number') {
+            const diff = avg - m;
+            if (minDiff === null || diff < minDiff) {
+                minDiff = diff;
+            }
+        }
+    }
+    // Shift avg line down by minDiff so the lowest measurement touches the line
+    for (let i = 0; i < dates.length; i++) {
+        const avg = values[dates[i]]['lbs_adjusted_average'];
+        if (typeof avg === 'number' && typeof minDiff === 'number') {
+            values[dates[i]]['translated_avg'] = avg - minDiff;
+        }
+    }
+    // Now calculate water_weight
+    const windowSize = 14;
+    for (let i = 0; i < dates.length; i++) {
+        const currentDate = dates[i];
+        const currentAvg = values[currentDate]['translated_avg'];
+        const currentMeasurement = values[currentDate]['measurement'];
+        // If current measurement equals the translated avg, water_weight is 0
+        if (typeof currentMeasurement === 'number' && typeof currentAvg === 'number' && Math.abs(currentMeasurement - currentAvg) < 0.01) {
+            values[currentDate]['water_weight'] = 0;
+            continue;
+        }
+        // Otherwise, rolling average of (translated_avg - measurement) for measurements below the translated line
+        let rollingDiffs = [];
+        for (let j = Math.max(0, i - windowSize + 1); j <= i; j++) {
+            const avg = values[dates[j]]['translated_avg'];
+            const m = values[dates[j]]['measurement'];
+            if (typeof m === 'number' && typeof avg === 'number' && m < avg) {
+                rollingDiffs.push(avg - m);
+            }
+        }
+        const waterWeight = rollingDiffs.length ? (rollingDiffs.reduce((a, b) => a + b, 0) / rollingDiffs.length) : 0;
+        values[currentDate]['water_weight'] = Math.round(waterWeight * 100) / 100;
+    }
+    return values;
 }
 
 //

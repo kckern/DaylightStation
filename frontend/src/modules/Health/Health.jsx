@@ -76,11 +76,13 @@ export default function Health() {
 
 function HealthChart({data}) {
 	data = data.sort((a, b) => new Date(a.date) - new Date(b.date)).slice(- 7 * 12);
+	const currentWaterWeight = data[data.length - 1]?.water_weight || 0;
 	const minValue = Math.min(...data.map(({lbs_adjusted_average, measurement}) => Math.min(lbs_adjusted_average, measurement || lbs_adjusted_average)));
 	const maxValue = Math.max(...data.map(({lbs_adjusted_average, measurement}) => Math.max(lbs_adjusted_average, measurement || lbs_adjusted_average)));
     const chartMin = Math.floor(minValue) - 1;
     const chartMax = Math.ceil(maxValue) + 1;
-    const avgData = data.map(({lbs_adjusted_average}) => lbs_adjusted_average);
+    const avgData = data.map(({lbs_adjusted_average}) => lbs_adjusted_average)
+    const nowaterData = data.map(({lbs_adjusted_average}) => lbs_adjusted_average - currentWaterWeight)
     const pointData = data.map(({measurement}) => measurement || null);
     const times = data.map(({date}) => moment(date).format('MMM D'));
 
@@ -173,7 +175,21 @@ function HealthChart({data}) {
 				},
 				lineWidth: 2,
 				lineColor: '#C5D2E0',
-				fillOpacity: 0.2
+				fillOpacity: 0.2,
+				tooltip: {
+					headerFormat: '',
+					pointFormatter: function() {
+						return `<b>${this.category}</b>: ${this.y.toFixed(1)} lbs`;
+					}
+				}
+			},
+			line: {
+				tooltip: {
+					headerFormat: '',
+					pointFormatter: function() {
+						return `<b>${this.category}</b>: ${this.y.toFixed(1)} lbs`;
+					}
+				}
 			},
 			scatter: {
 				marker: {
@@ -182,7 +198,9 @@ function HealthChart({data}) {
 				},
 				tooltip: {
 					headerFormat: '',
-					pointFormat: '<b>{point.category}</b>: {point.y} lbs'
+					pointFormatter: function() {
+						return `<b>${this.category}</b>: ${this.y.toFixed(1)} lbs`;
+					}
 				}
 			}
 		},
@@ -190,6 +208,14 @@ function HealthChart({data}) {
 			type: 'areaspline',
 			name: 'Rolling Average',
 			data: avgData,
+		},
+		//dotted line for lbs without water weight
+		{
+			type: 'line',
+			name: 'No Water Weight',
+			data: nowaterData,
+			color: '#C5D2E0AA', // 30% opacity
+			lineWidth: 0.5
 		},
 		{
 			type: 'scatter',
