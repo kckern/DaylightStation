@@ -1,13 +1,25 @@
-// Moved HealthApp.jsx to src/Apps
 import React from 'react';
-import "./HealthApp.scss"; // Importing CSS for HealthApp
+import { MantineProvider, Paper, Title, Group } from '@mantine/core';
+import '@mantine/core/styles.css';
+import "./HealthApp.scss";
+import Nutrition from '../modules/Health/Nutrition';
 
 const HealthApp = () => {
   return (
-    <div>
-      <h1>Health App</h1>
-      <p>Placeholder for Health-related features.</p>
-    </div>
+    <MantineProvider>
+      <Paper
+        shadow="md"
+        radius="md"
+        p="lg"
+        withBorder
+        style={{ minHeight: '100vh', minWidth: '100vw', boxSizing: 'border-box', margin: '2rem' }}
+      >
+        <Group position="apart" mb="md">
+          <Title order={2}>Health App</Title>
+        </Group>
+        <Nutrition />
+      </Paper>
+    </MantineProvider>
   );
 };
 

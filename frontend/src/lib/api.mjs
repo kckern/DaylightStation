@@ -1,8 +1,12 @@
 
 export const DaylightAPI = async (path, data = {}, method = 'GET') => {
 
-    method = Object.keys(data).length >= 1 ? 'POST' : method;
-    //console.log("DaylightAPI called with path:", path, "data:", data, "method:", method);
+    // Only auto-convert to POST if method is GET and data is provided
+    if (method === 'GET' && Object.keys(data).length >= 1) {
+        method = 'POST';
+    }
+    
+    console.log("DaylightAPI called with path:", path, "data:", data, "method:", method);
     //remove leading and trailing slashes
     path = path.replace(/^\/|\/$/g,'');
     const isLocalhost = /localhost/.test(window.location.href);
@@ -20,7 +24,17 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     }
 
     const response = await fetch(`${baseUrl}/${path}`, options);
+    
+    console.log("Response status:", response.status, response.statusText);
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error("API Error Response:", errorText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+    }
+    
     const response_data = await response.json();
+    console.log("Response data:", response_data);
     return response_data;
 };
 
