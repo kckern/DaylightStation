@@ -33,6 +33,7 @@ async function initializeApp() {
     const { default: JournalistRouter } = await import('./journalist.mjs');
     const { default: homeRouter } = await import('./home.mjs');
     const { default: mediaRouter } = await import('./media.mjs');
+    const { default: healthRouter } = await import('./health.mjs');
     const { default: exe } = await import('./exe.js');
     const { default: tts } = await import('./tts.mjs');
 
@@ -45,6 +46,7 @@ async function initializeApp() {
     app.use("/journalist", JournalistRouter);
     app.use("/home", homeRouter);
     app.use("/media", mediaRouter);
+    app.use("/health", healthRouter);
     app.use("/exe", exe);
     app.use("/tts", tts);
 
