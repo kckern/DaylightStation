@@ -1,34 +1,68 @@
 
   // WebSocket server
 
-  import { WebSocketServer } from 'ws'; // Import WebSocketServer
-  import { v4 as uuidv4 } from 'uuid';
+import { WebSocketServer } from 'ws';
+import { v4 as uuidv4 } from 'uuid';
 
 
-  export default function createWebsocketServer(server){
+let wssPing = null;
+let wssNav = null;
 
-    const wss = new WebSocketServer({ server, path: '/ws/ping' });
-
-    wss.on('connection', (ws) => {
-      console.log('WebSocket connection established on /ws/ping');
+export function createWebsocketServer(server) {
+  console.log('Creating WebSocket servers...');
   
-      let interval = null;
+  // /ws/ping: dial tone only - TEMPORARILY DISABLED
+  // if (!wssPing) {
+  //   wssPing = new WebSocketServer({ server, path: '/ws/ping' });
+  //   wssPing.on('connection', (ws) => {
+  //     console.log('WebSocket connection established on /ws/ping');
+  //     let interval = setInterval(() => {
+  //       if (ws.readyState === ws.OPEN) {
+  //         ws.send(JSON.stringify({ timestamp: new Date().toISOString(), guid: uuidv4() }));
+  //       }
+  //     }, 1000);
+  //     ws.on('close', () => {
+  //       console.log('WebSocket connection closed');
+  //       clearInterval(interval);
+  //     });
+  //   });
+  //   console.log('WebSocketServer for /ws/ping is online');
+  // }
 
-      ws.on('open', () => {
-        interval = setInterval(() => {
-          if (ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ timestamp: new Date().toISOString(), guid: uuidv4() }));
-          }
-        }, 1000);
-      });
-
+  // /ws/nav: navigation messages
+  if (!wssNav) {
+    console.log('Creating WebSocket server for /ws/nav...');
+    wssNav = new WebSocketServer({ server, path: '/ws/nav' });
+    console.log('WebSocket server created, adding listeners...');
+    wssNav.on('connection', (ws) => {
+      console.log('WebSocket connection established on /ws/nav');
       ws.on('close', () => {
-        console.log('WebSocket connection closed');
-        if (interval) {
-          clearInterval(interval);
-          interval = null;
-        }
+        console.log('WebSocket connection closed on /ws/nav');
       });
     });
-    return wss;
+    wssNav.on('error', (err) => {
+      console.error('WebSocket server error on /ws/nav:', err);
+    });
+    console.log('WebSocketServer for /ws/nav is online');
+  } else {
+    console.log('WebSocket server for /ws/nav already exists');
   }
+  return { wssPing, wssNav };
+}
+
+export function broadcastToWebsockets(data) {
+  console.log({broadcastToWebsockets:data})
+  if (!wssNav) return console.warn('No WebSocket server for navigation messages');
+  const msg = typeof data === 'string' ? data : JSON.stringify(data);
+  console.debug('Client Count: ', wssNav.clients.size);
+  wssNav.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      client.send(msg);
+      //on success, you can log or handle the message
+      console.debug('[WebSocket] Message sent:', msg);
+    }else{
+
+      console.warn('[WebSocket] Client not open, skipping send:', client.readyState);
+    }
+  });
+}

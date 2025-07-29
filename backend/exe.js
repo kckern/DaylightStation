@@ -4,6 +4,7 @@ import express from 'express';
 import { exec } from 'child_process';
 import axios from 'axios';
 import { loadFile, saveFile } from './lib/io.mjs';
+import { broadcastToWebsockets } from './websocket.js';
 
 const promiseExec = util.promisify(exec);
 const exeRouter = express.Router();
@@ -226,6 +227,11 @@ class Tasker {
     }
 }
 
+
+
+
+
+
 // Helper function for executing SSH commands
 async function executeCommand(sshCommand) {
     try {
@@ -322,6 +328,20 @@ exeRouter.get('/vol/:level', async (req, res) => {
 
 
 
+// POST /ws with JSON body, e.g. { url: "/tv?hymn=113" }
+exeRouter.post("/ws", async (req, res) => {
+    try {
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        if (!payload.url) {
+            return res.status(400).json({ error: 'Missing url in payload' });
+        }
+        broadcastToWebsockets(payload);
+        res.json({ status: 'forwarded', payload });
+    } catch (error) {
+        console.error('Error in /ws endpoint:', error.message || error);
+        res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
 
 
 

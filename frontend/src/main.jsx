@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom'; // Step 2: Import BrowserRouter, Routes, and Route
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import HomeApp from './Apps/HomeApp.jsx';
 import TVApp from './Apps/TVApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
@@ -9,20 +9,55 @@ import FitnessApp from './Apps/FitnessApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 
 
+// WebSocket listener component
+import { useEffect } from 'react';
+
+function WebSocketListener() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    // Use window.location for host/port, ws protocol
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsHost = window.location.hostname;
+    const wsPort = 3112;
+    const wsUrl = `${wsProtocol}://${wsHost}:${wsPort}/ws/nav`;
+    const ws = new window.WebSocket(wsUrl);
+    ws.onopen = () => {
+      // WebSocket connection opened
+    };
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.url) {
+          navigate(data.url);
+        }
+      } catch (e) {
+        // ignore non-JSON or irrelevant messages
+      }
+    };
+    ws.onclose = () => {
+      // WebSocket connection closed
+    };
+    ws.onerror = (err) => {
+      // WebSocket error occurred
+    };
+    return () => ws.close();
+  }, [navigate]);
+  return null;
+}
 
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter> {/* Step 3: Wrap with BrowserRouter */}
-      <Routes> {/* Step 4: Use Routes to define Route components */}
+    <BrowserRouter>
+      <WebSocketListener />
+      <Routes>
         <Route path="/" element={<HomeApp />} />
-        <Route path="/budget" element={<FinanceApp />} /> {/* Example of another route */}
-        <Route path="/finances" element={<FinanceApp />} /> {/* Example of another route */}
-        <Route path="/tv" element={<TVApp />} /> {/* Example of another route */}
-        <Route path="/health" element={<HealthApp />} /> {/* Added HealthApp route */}
-        <Route path="/fitness" element={<FitnessApp />} /> {/* Added FitnessApp route */}
-        {/* Evertyhign else */}
-        <Route path="*" element={<Blank />} /> {/* Fallback route */}
+        <Route path="/budget" element={<FinanceApp />} />
+        <Route path="/finances" element={<FinanceApp />} />
+        <Route path="/tv" element={<TVApp />} />
+        <Route path="/health" element={<HealthApp />} />
+        <Route path="/fitness" element={<FitnessApp />} />
+        <Route path="*" element={<Blank />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,
