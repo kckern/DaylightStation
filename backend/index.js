@@ -4,7 +4,8 @@ import { parse } from 'yaml';
 import path, { join } from 'path';
 import cors from 'cors'; // Step 2: Import cors
 import request from 'request'; // Import the request module
-import websocketServer from './websocket.js';
+import { createWebsocketServer } from './websocket.js';
+import { createServer } from 'http';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -14,8 +15,22 @@ const isDocker = existsSync('/.dockerenv');
 const app = express();
 app.use(cors()); // Step 3: Enable CORS for all routes
 
+// Create HTTP server
+const server = createServer(app);
+
 
 async function initializeApp() {
+  // Create WebSocket server FIRST, before any Express routes
+  createWebsocketServer(server);
+
+  // Exclude WebSocket paths from all Express middleware
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/ws/')) {
+      return next('route'); // Skip all remaining middleware for this route
+    }
+    next();
+  });
+
   if (configExists) {
 
     // Parse the YAML files
@@ -84,27 +99,34 @@ async function initializeApp() {
       // Serve the frontend from the root URL
       app.use(express.static(frontendPath));
 
-      // Forward non-matching paths to frontend for React Router to handle
-      app.get('*', (req, res) => {
+      // Forward non-matching paths to frontend for React Router to handle, but skip /ws/* for WebSocket
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/ws/')) {
+          // Let the WebSocket server handle this
+          return next();
+        }
         res.sendFile(join(frontendPath, 'index.html'));
       });
     } else {
       console.log('Frontend not found. Redirecting to localhost:3111');
       console.log(`I was expecting to find the frontend at ${frontendPath} but it was not there. Please run the frontend build script first.`);
-      app.use('/', (_, res) => res.redirect('http://localhost:3111'));
+      app.use('/', (req, res, next) => {
+        if (req.path.startsWith('/ws/')) return next();
+        res.redirect('http://localhost:3111');
+      });
     }
 
   } else {
-    app.get("*", function (req, res) {
+    app.get("*", function (req, res, next) {
+      if (req.path.startsWith('/ws/')) return next();
       res.status(500).json({ error: 'This application is not configured yet. Please add a config.app.yml file to the root of the project.' });
     });
   }
 
-  // Create an HTTP server and attach WebSocket server
-  const server = app.listen(3112, () => {
+  // Start HTTP server
+  server.listen(3112, () => {
     console.log('Listening on port 3112');
   });
-  websocketServer(server);
 }
 
 // Initialize the app
