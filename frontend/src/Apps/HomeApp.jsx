@@ -13,8 +13,10 @@ import { FinanceChart } from '../modules/Finance/Finance'
 import Player from '../modules/Player/Player'
 import {KeypadMenu} from '../modules/Menu/Menu'
 import AppContainer from '../modules/AppContainer/AppContainer'
+import ConnectionStatus from '../components/ConnectionStatus/ConnectionStatus'
 
 import { DaylightAPI } from '../lib/api.mjs'
+import { useWebSocket } from '../contexts/WebSocketContext.jsx'
 
 function HomeApp() {
   const [queue, setQueue] = useState([])
@@ -23,9 +25,49 @@ function HomeApp() {
   const [menuKey, setMenuKey] = useState(0)
   const [currentContent, setCurrentContent] = useState(null)
   const [keyMap, setKeyMap] = useState(null)
+  const [lastPayloadMessage, setLastPayloadMessage] = useState(null)
 
   // Keep playbackKeys separate so we can be sure to check it is never undefined
   const [playbackKeys, setPlaybackKeys] = useState(null)
+
+  // Get WebSocket functions
+  const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket()
+
+  // Register payload callbacks
+  useEffect(() => {
+    // Example callback for 'notification' type payloads
+    const handleNotification = (payload, fullMessage) => {
+      console.log('Received notification payload:', payload)
+      setLastPayloadMessage({ type: 'notification', payload, timestamp: fullMessage.timestamp })
+      // You could show a toast, modal, or update UI here
+    }
+
+    // Example callback for 'system' type payloads
+    const handleSystemMessage = (payload, fullMessage) => {
+      console.log('Received system payload:', payload)
+      setLastPayloadMessage({ type: 'system', payload, timestamp: fullMessage.timestamp })
+      // You could handle system commands here
+    }
+
+    // Example callback for 'update' type payloads
+    const handleUpdate = (payload, fullMessage) => {
+      console.log('Received update payload:', payload)
+      setLastPayloadMessage({ type: 'update', payload, timestamp: fullMessage.timestamp })
+      // You could trigger data refreshes here
+    }
+
+    // Register all callbacks
+    registerPayloadCallback('notification', handleNotification)
+    registerPayloadCallback('system', handleSystemMessage)
+    registerPayloadCallback('update', handleUpdate)
+
+    // Cleanup on unmount
+    return () => {
+      unregisterPayloadCallback('notification')
+      unregisterPayloadCallback('system')
+      unregisterPayloadCallback('update')
+    }
+  }, [registerPayloadCallback, unregisterPayloadCallback])
 
   const resetQueue = useCallback(() => {
     setQueue([])
@@ -225,18 +267,26 @@ function HomeApp() {
   return (
     <div className='App'>
       <div className='sidebar'>
-        <h2
-          style={{
-            color: '#FFFFFF88',
-            fontWeight: 'bold',
-            marginBottom: '-1ex',
-            textAlign: 'center',
-            marginTop: '1rem',
-            fontSize: '1.2rem'
-          }}
-        >
-          {moment().format('dddd, MMMM Do, YYYY')}
-        </h2>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          padding: '1rem 1rem 0 1rem'
+        }}>
+          <h2
+            style={{
+              color: '#FFFFFF88',
+              fontWeight: 'bold',
+              marginBottom: '-1ex',
+              textAlign: 'center',
+              fontSize: '1.2rem',
+              margin: 0
+            }}
+          >
+            {moment().format('dddd, MMMM Do, YYYY')}
+          </h2>
+          <ConnectionStatus size={16} />
+        </div>
         <Clock />
         <Weather />
         <WeatherForecast />
@@ -248,11 +298,26 @@ function HomeApp() {
             marginTop: '-0.5rem',
             borderRadius: '1ex',
             display: 'flex',
+            flexDirection: 'column',
             justifyContent: 'center',
-            alignItems: 'center'
+            alignItems: 'center',
+            padding: '1rem'
           }}
         >
-          Entropy Dashboard coming soon
+          <div>Entropy Dashboard coming soon</div>
+          {lastPayloadMessage && (
+            <div style={{ 
+              marginTop: '1rem', 
+              fontSize: '0.8rem', 
+              color: '#FFFFFF66',
+              textAlign: 'center' 
+            }}>
+              <div>Last Payload: {lastPayloadMessage.type}</div>
+              <div style={{ fontSize: '0.7rem' }}>
+                {JSON.stringify(lastPayloadMessage.payload)}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className='content'>

@@ -6,7 +6,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
         method = 'POST';
     }
     
-    console.log("DaylightAPI called with path:", path, "data:", data, "method:", method);
+   // console.log("DaylightAPI called with path:", path, "data:", data, "method:", method);
     //remove leading and trailing slashes
     path = path.replace(/^\/|\/$/g,'');
     const isLocalhost = /localhost/.test(window.location.href);
@@ -25,7 +25,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
 
     const response = await fetch(`${baseUrl}/${path}`, options);
     
-    console.log("Response status:", response.status, response.statusText);
+  //  console.log("Response status:", response.status, response.statusText);
     
     if (!response.ok) {
         const errorText = await response.text();
@@ -34,7 +34,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     }
     
     const response_data = await response.json();
-    console.log("Response data:", response_data);
+ //   console.log("Response data:", response_data);
     return response_data;
 };
 
