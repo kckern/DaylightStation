@@ -14,9 +14,9 @@ export function createWebsocketServer(server) {
     wssNav = new WebSocketServer({ server, path: '/ws/nav' });
     console.log('WebSocket server created, adding listeners...');
     wssNav.on('connection', (ws) => {
-      console.log('WebSocket connection established on /ws/nav');
+    //  console.log('WebSocket connection established on /ws/nav');
       ws.on('close', () => {
-        console.log('WebSocket connection closed on /ws/nav');
+      //  console.log('WebSocket connection closed on /ws/nav');
       });
     });
     wssNav.on('error', (err) => {

@@ -153,9 +153,9 @@ function MainItem({ item, className }) {
       {!!timeLabel && <h2>{timeLabel}</h2>}
       {!!locationLabel && <h3>{locationLabel}</h3>}
       {!!inXDays && <h4>{inXDays}</h4>}
-      {!!titleLabel && <p>{titleLabel} {!!subTitleLabel && <p><small
+      {!!titleLabel && <p>{titleLabel} {!!subTitleLabel && <span><small
         style={{ opacity: 0.5, fontSize: "2rem", lineHeight: "2rem" }}
-      >{subTitleLabel}</small></p>}</p>}
+      >{subTitleLabel}</small></span>}</p>}
      
     </div>
   );
