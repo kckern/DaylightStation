@@ -28,11 +28,9 @@ export const WebSocketProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    // Use window.location for host/port, ws protocol
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsHost = window.location.hostname;
-    const wsPort = 3112;
-    const wsUrl = `${wsProtocol}://${wsHost}:${wsPort}/ws/nav`;
+    const isLocalhost = /localhost/.test(window.location.href);
+    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+    const wsUrl = baseUrl.replace(/^http/, 'ws') + '/ws';
     const ws = new window.WebSocket(wsUrl);
 
     ws.onopen = () => {
