@@ -462,7 +462,7 @@ function useQueueController({ play, queue, clear }) {
 /*─────────────────────────────────────────────────────────────*/
 
 export default function Player(props) {
-  console.log("Player props:", props);
+//  console.log("Player props:", props);
   if (props.play?.overlay || props.queue?.overlay) {
     return <CompositePlayer {...props} />;
   }

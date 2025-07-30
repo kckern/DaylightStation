@@ -45,18 +45,18 @@ export const WebSocketProvider = ({ children }) => {
       setTimeout(() => setMessageReceived(false), 300);
       
       // Log any message that comes through
-      console.log('WebSocket message received:', event.data);
+    //  console.log('WebSocket message received:', event.data);
       
       try {
         const data = JSON.parse(event.data);
-        console.log('Parsed WebSocket data:', data);
+      //  console.log('Parsed WebSocket data:', data);
         
         // Call the callback with the raw data
         if (payloadCallbackRef.current && typeof payloadCallbackRef.current === 'function') {
           payloadCallbackRef.current(data);
         }
       } catch (e) {
-        console.log('WebSocket message was not JSON or failed to parse:', e);
+    //    console.log('WebSocket message was not JSON or failed to parse:', e);
         // ignore non-JSON or irrelevant messages
       }
     };
