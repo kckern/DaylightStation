@@ -55,6 +55,8 @@ function HomeApp() {
     setLastPayloadMessage(data)
     delete data.timestamp;
     console.log('WebSocket payload received:', data)
+    //reset first
+    resetQueue()
     handleMenuSelection({label: "wscmd",queue: data})
   }, [playbackKeys])
 
