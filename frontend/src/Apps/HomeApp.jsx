@@ -53,7 +53,10 @@ function HomeApp() {
 
   const handleWebSocketPayload = useCallback((data) => {
     setLastPayloadMessage(data)
-  }, [])
+    delete data.timestamp;
+    console.log('WebSocket payload received:', data)
+    handleMenuSelection({label: "wscmd",queue: data})
+  }, [playbackKeys])
 
   const handleMenuSelection = useCallback(
     (selection) => {
@@ -67,6 +70,7 @@ function HomeApp() {
         return
       }
       const props = {queue, ...selection,  clear, onSelection: handleMenuSelection, playbackKeys }
+      console.log({selection,props})
       const uuid = CryptoJS.lib.WordArray.random(16).toString()
       const options = {
         play:     <Player {...props} />,
