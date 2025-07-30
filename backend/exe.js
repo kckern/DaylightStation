@@ -328,83 +328,27 @@ exeRouter.get('/vol/:level', async (req, res) => {
 
 
 
-// POST /ws - send payload messages only
-exeRouter.post("/ws", async (req, res) => {
-    try {
-        const body = req.body && typeof req.body === 'object' ? req.body : {};
-        
-        // Validate payload - must have type
-        if (!body.type) {
-            return res.status(400).json({ 
-                error: 'Missing type in payload',
-                example: { type: "notification", payload: { message: "Hello from WebSocket!" } }
-            });
-        }
-        
-        const message = {
-            type: body.type,
-            payload: body.payload || {},
-            timestamp: new Date().toISOString(),
-            ...body
-        };
-        
-        // Remove duplicates
-        delete message.type;
-        delete message.payload;
-        message.type = body.type;
-        message.payload = body.payload || {};
-        
-        broadcastToWebsockets(message);
-        
-        res.json({ 
-            status: 'payload broadcasted', 
-            message,
-            description: `Frontend will receive payload of type: ${body.type}`
-        });
-    } catch (error) {
-        console.error('Error in /ws endpoint:', error.message || error);
-        res.status(500).json({ error: error.message || 'Internal Server Error' });
-    }
-});
-
-// GET /ws/payload/:type - send a payload message of a specific type
-exeRouter.get("/ws/payload/:type", async (req, res) => {
-    try {
-        const { type } = req.params;
-        const queryData = req.query;
-        
-        const message = {
-            type,
-            payload: queryData,
-            timestamp: new Date().toISOString()
-        };
-        
-        broadcastToWebsockets(message);
-        res.json({ 
-            status: 'payload broadcasted', 
-            message,
-            description: `Frontend will receive payload of type: ${type}`
-        });
-    } catch (error) {
-        console.error('Error in /ws/payload/:type endpoint:', error.message || error);
-        res.status(500).json({ error: error.message || 'Internal Server Error' });
-    }
-});
-
-// POST /ws/payload - send a payload message with custom data  
+// ALL /ws - send raw payload (body for POST, query for GET, params for others)
 exeRouter.all("/ws", async (req, res) => {
     try {
-        const payload = req.body || req.query || req.params;
-
+        // Prefer body, then query, then params
+        const payload = Object.keys(req.body || {}).length
+            ? req.body
+            : (Object.keys(req.query || {}).length
+                ? req.query
+                : (req.params || {}));
+        
         const message = {
             timestamp: new Date().toISOString(),
-            ...payload,
+            ...payload
         };
         
         broadcastToWebsockets(message);
+        
         res.json({ 
             status: 'payload broadcasted', 
             message,
+            description: 'Frontend will receive the raw payload data'
         });
     } catch (error) {
         console.error('Error in /ws endpoint:', error.message || error);
