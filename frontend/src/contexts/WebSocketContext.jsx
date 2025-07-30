@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 
 const WebSocketContext = createContext();
 
@@ -19,23 +19,24 @@ export const WebSocketProvider = ({ children }) => {
   const payloadCallbacksRef = useRef(payloadCallbacks);
 
   // Function to register payload callbacks
-  const registerPayloadCallback = (type, callback) => {
+  const registerPayloadCallback = useCallback((type, callback) => {
     setPayloadCallbacks(prev => {
-      const newMap = new Map(prev.set(type, callback));
+      const newMap = new Map(prev);
+      newMap.set(type, callback);
       payloadCallbacksRef.current = newMap;
       return newMap;
     });
-  };
+  }, []);
 
   // Function to unregister payload callbacks
-  const unregisterPayloadCallback = (type) => {
+  const unregisterPayloadCallback = useCallback((type) => {
     setPayloadCallbacks(prev => {
       const newMap = new Map(prev);
       newMap.delete(type);
       payloadCallbacksRef.current = newMap;
       return newMap;
     });
-  };
+  }, []);
 
   useEffect(() => {
     // Use window.location for host/port, ws protocol

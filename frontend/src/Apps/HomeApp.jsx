@@ -49,7 +49,7 @@ function HomeApp() {
     return () => {
       unregisterPayloadCallback('*')
     }
-  }, [registerPayloadCallback, unregisterPayloadCallback])
+  }, []) // Remove the functions from dependencies since they're now stable with useCallback
 
   const resetQueue = useCallback(() => {
     setQueue([])
