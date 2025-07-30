@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 
 const WebSocketContext = createContext();
 
@@ -14,10 +14,17 @@ export const WebSocketProvider = ({ children }) => {
   const [websocketConnected, setWebsocketConnected] = useState(false);
   const [messageReceived, setMessageReceived] = useState(false);
   const [payloadCallbacks, setPayloadCallbacks] = useState(new Map());
+  
+  // Use ref to access current callbacks in onmessage handler
+  const payloadCallbacksRef = useRef(payloadCallbacks);
 
   // Function to register payload callbacks
   const registerPayloadCallback = (type, callback) => {
-    setPayloadCallbacks(prev => new Map(prev.set(type, callback)));
+    setPayloadCallbacks(prev => {
+      const newMap = new Map(prev.set(type, callback));
+      payloadCallbacksRef.current = newMap;
+      return newMap;
+    });
   };
 
   // Function to unregister payload callbacks
@@ -25,6 +32,7 @@ export const WebSocketProvider = ({ children }) => {
     setPayloadCallbacks(prev => {
       const newMap = new Map(prev);
       newMap.delete(type);
+      payloadCallbacksRef.current = newMap;
       return newMap;
     });
   };
@@ -49,14 +57,12 @@ export const WebSocketProvider = ({ children }) => {
       try {
         const data = JSON.parse(event.data);
         
-        // Handle payload messages only
-        if (data.payload && data.type) {
-          const callback = payloadCallbacks.get(data.type);
-          if (callback && typeof callback === 'function') {
-            callback(data.payload, data);
-          } else {
-            console.warn(`No callback registered for payload type: ${data.type}`);
-          }
+        // Call the wildcard callback with the raw data
+        const wildcardCallback = payloadCallbacksRef.current.get('*');
+        if (wildcardCallback && typeof wildcardCallback === 'function') {
+          wildcardCallback(data);
+        } else {
+          console.warn('No wildcard callback registered for WebSocket messages');
         }
       } catch (e) {
         // ignore non-JSON or irrelevant messages
@@ -74,7 +80,7 @@ export const WebSocketProvider = ({ children }) => {
     return () => {
       ws.close();
     };
-  }, [payloadCallbacks]);
+  }, []); // Remove payloadCallbacks from dependencies to prevent reconnections
 
   const value = {
     websocketConnected,

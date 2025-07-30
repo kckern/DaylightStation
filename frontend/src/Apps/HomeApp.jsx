@@ -33,39 +33,21 @@ function HomeApp() {
   // Get WebSocket functions
   const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket()
 
-  // Register payload callbacks
+  // Register payload callback
   useEffect(() => {
-    // Example callback for 'notification' type payloads
-    const handleNotification = (payload, fullMessage) => {
-      console.log('Received notification payload:', payload)
-      setLastPayloadMessage({ type: 'notification', payload, timestamp: fullMessage.timestamp })
-      // You could show a toast, modal, or update UI here
+    // Single callback to handle all WebSocket messages (raw data)
+    const handleAnyPayload = (data) => {
+      console.log('Received WebSocket data:', data)
+      setLastPayloadMessage({ data, timestamp: data.timestamp || new Date().toISOString() })
+      // Handle any payload data here
     }
 
-    // Example callback for 'system' type payloads
-    const handleSystemMessage = (payload, fullMessage) => {
-      console.log('Received system payload:', payload)
-      setLastPayloadMessage({ type: 'system', payload, timestamp: fullMessage.timestamp })
-      // You could handle system commands here
-    }
-
-    // Example callback for 'update' type payloads
-    const handleUpdate = (payload, fullMessage) => {
-      console.log('Received update payload:', payload)
-      setLastPayloadMessage({ type: 'update', payload, timestamp: fullMessage.timestamp })
-      // You could trigger data refreshes here
-    }
-
-    // Register all callbacks
-    registerPayloadCallback('notification', handleNotification)
-    registerPayloadCallback('system', handleSystemMessage)
-    registerPayloadCallback('update', handleUpdate)
+    // Register callback for any message type using a wildcard
+    registerPayloadCallback('*', handleAnyPayload)
 
     // Cleanup on unmount
     return () => {
-      unregisterPayloadCallback('notification')
-      unregisterPayloadCallback('system')
-      unregisterPayloadCallback('update')
+      unregisterPayloadCallback('*')
     }
   }, [registerPayloadCallback, unregisterPayloadCallback])
 
@@ -312,9 +294,9 @@ function HomeApp() {
               color: '#FFFFFF66',
               textAlign: 'center' 
             }}>
-              <div>Last Payload: {lastPayloadMessage.type}</div>
+              <div>Last WebSocket Message:</div>
               <div style={{ fontSize: '0.7rem' }}>
-                {JSON.stringify(lastPayloadMessage.payload)}
+                {JSON.stringify(lastPayloadMessage.data, null, 2)}
               </div>
             </div>
           )}
