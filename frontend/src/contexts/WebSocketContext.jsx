@@ -13,29 +13,18 @@ export const useWebSocket = () => {
 export const WebSocketProvider = ({ children }) => {
   const [websocketConnected, setWebsocketConnected] = useState(false);
   const [messageReceived, setMessageReceived] = useState(false);
-  const [payloadCallbacks, setPayloadCallbacks] = useState(new Map());
   
-  // Use ref to access current callbacks in onmessage handler
-  const payloadCallbacksRef = useRef(payloadCallbacks);
+  // Use ref to store callback directly, no state needed
+  const payloadCallbackRef = useRef(null);
 
-  // Function to register payload callbacks
-  const registerPayloadCallback = useCallback((type, callback) => {
-    setPayloadCallbacks(prev => {
-      const newMap = new Map(prev);
-      newMap.set(type, callback);
-      payloadCallbacksRef.current = newMap;
-      return newMap;
-    });
+  // Function to register payload callback
+  const registerPayloadCallback = useCallback((callback) => {
+    payloadCallbackRef.current = callback;
   }, []);
 
-  // Function to unregister payload callbacks
-  const unregisterPayloadCallback = useCallback((type) => {
-    setPayloadCallbacks(prev => {
-      const newMap = new Map(prev);
-      newMap.delete(type);
-      payloadCallbacksRef.current = newMap;
-      return newMap;
-    });
+  // Function to unregister payload callback
+  const unregisterPayloadCallback = useCallback(() => {
+    payloadCallbackRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -55,17 +44,19 @@ export const WebSocketProvider = ({ children }) => {
       setMessageReceived(true);
       setTimeout(() => setMessageReceived(false), 300);
       
+      // Log any message that comes through
+      console.log('WebSocket message received:', event.data);
+      
       try {
         const data = JSON.parse(event.data);
+        console.log('Parsed WebSocket data:', data);
         
-        // Call the wildcard callback with the raw data
-        const wildcardCallback = payloadCallbacksRef.current.get('*');
-        if (wildcardCallback && typeof wildcardCallback === 'function') {
-          wildcardCallback(data);
-        } else {
-          console.warn('No wildcard callback registered for WebSocket messages');
+        // Call the callback with the raw data
+        if (payloadCallbackRef.current && typeof payloadCallbackRef.current === 'function') {
+          payloadCallbackRef.current(data);
         }
       } catch (e) {
+        console.log('WebSocket message was not JSON or failed to parse:', e);
         // ignore non-JSON or irrelevant messages
       }
     };

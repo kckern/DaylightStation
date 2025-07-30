@@ -33,24 +33,6 @@ function HomeApp() {
   // Get WebSocket functions
   const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket()
 
-  // Register payload callback
-  useEffect(() => {
-    // Single callback to handle all WebSocket messages (raw data)
-    const handleAnyPayload = (data) => {
-      console.log('Received WebSocket data:', data)
-      setLastPayloadMessage({ data, timestamp: data.timestamp || new Date().toISOString() })
-      // Handle any payload data here
-    }
-
-    // Register callback for any message type using a wildcard
-    registerPayloadCallback('*', handleAnyPayload)
-
-    // Cleanup on unmount
-    return () => {
-      unregisterPayloadCallback('*')
-    }
-  }, []) // Remove the functions from dependencies since they're now stable with useCallback
-
   const resetQueue = useCallback(() => {
     setQueue([])
   }, [])
@@ -66,6 +48,11 @@ function HomeApp() {
     setMenu(false)
     setMenuOpen(false)
     setMenuKey(0)
+  }, [])
+
+
+  const handleWebSocketPayload = useCallback((data) => {
+    setLastPayloadMessage(data)
   }, [])
 
   const handleMenuSelection = useCallback(
@@ -99,6 +86,18 @@ function HomeApp() {
     },
     [closeMenu, queue, clear, playbackKeys]
   )
+
+  // Register payload callback after handleWebSocketPayload is defined
+  useEffect(() => {
+    if (registerPayloadCallback) {
+      registerPayloadCallback(handleWebSocketPayload)
+    }
+    return () => {
+      if (unregisterPayloadCallback) {
+        unregisterPayloadCallback()
+      }
+    }
+  }, [handleWebSocketPayload, registerPayloadCallback, unregisterPayloadCallback])
 
   const openMenu = useCallback(
     (menuId) => {
@@ -296,7 +295,7 @@ function HomeApp() {
             }}>
               <div>Last WebSocket Message:</div>
               <div style={{ fontSize: '0.7rem' }}>
-                {JSON.stringify(lastPayloadMessage.data, null, 2)}
+                {JSON.stringify(lastPayloadMessage, null, 2)}
               </div>
             </div>
           )}
@@ -317,4 +316,7 @@ function HomeApp() {
   )
 }
 
+
 export default HomeApp
+
+
