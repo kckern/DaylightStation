@@ -236,23 +236,30 @@ function useCommonMediaController({
     const onEnded = () => onEnd();
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
-      if(volume < 1) volume = parseFloat(volume) * 100;
-      if(volume === 1)  volume = 100;
-      volume = parseFloat(volume || 100) / 100;
+      
+      // Process volume without mutating the parameter
+      let processedVolume = parseFloat(volume || 1);
+      if(processedVolume < 1 && processedVolume > 0) {
+        processedVolume = processedVolume * 100;
+      }
+      if(processedVolume === 1) {
+        processedVolume = 100;
+      }
+      processedVolume = processedVolume / 100;
 
       const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005, };
 
-      const adjustedVolume = ((volume) => {
+      const adjustedVolume = ((vol) => {
         const mappingKeys = Object.keys(mapping).map(Number).sort((a, b) => b - a); // Sort in descending order
         for (let i = 0; i < mappingKeys.length; i++) {
-          if (volume >= mappingKeys[i]) {
+          if (vol >= mappingKeys[i]) {
         return mapping[mappingKeys[i]];
           }
         }
         return 0; // If volume is less than the smallest key, return 0
-      })(volume);
+      })(processedVolume);
 
-      console.log({ volume, adjustedVolume });
+      console.log({ originalVolume: volume, processedVolume, adjustedVolume });
 
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
       let startTime = (duration > (12 * 60) || isVideo) ? start : 0;
@@ -462,7 +469,7 @@ function useQueueController({ play, queue, clear }) {
 /*─────────────────────────────────────────────────────────────*/
 
 export default function Player(props) {
-//  console.log("Player props:", props);
+  console.log("Player props:", props);
   if (props.play?.overlay || props.queue?.overlay) {
     return <CompositePlayer {...props} />;
   }
