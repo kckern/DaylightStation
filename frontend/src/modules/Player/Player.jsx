@@ -466,7 +466,18 @@ export default function Player(props) {
   if (props.play?.overlay || props.queue?.overlay) {
     return <CompositePlayer {...props} />;
   }
-  const { play, queue, clear, playbackrate, playbackKeys, playerType, ignoreKeys } = props || {};
+  let { play, queue, clear, playbackrate, playbackKeys, playerType, ignoreKeys } = props || {};
+  
+  // If queue contains play-like properties, treat it as a play object instead
+  if (queue && !play && typeof queue === 'object' && !Array.isArray(queue)) {
+    const playLikeProperties = ['hymn', 'scripture', 'talk', 'media', 'primary', 'open'];
+    const hasPlayLikeProperty = playLikeProperties.some(prop => queue.hasOwnProperty(prop));
+    if (hasPlayLikeProperty) {
+      play = queue;
+      queue = null;
+    }
+  }
+  
   if(playbackrate && play) play['playbackRate'] = playbackrate; //Override playback rate if passed in via menu selection
 
   const {
