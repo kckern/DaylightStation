@@ -54,10 +54,16 @@ function HomeApp() {
   const handleWebSocketPayload = useCallback((data) => {
     setLastPayloadMessage(data)
     delete data.timestamp;
+    const action = data.action || 'play';
+    delete data.action; // Remove action to avoid confusion
     console.log('WebSocket payload received:', data)
     //reset first
     resetQueue()
-    handleMenuSelection({label: "wscmd",queue: data})
+    handleMenuSelection({
+      label: "wscmd",
+      //folder: "Folder",
+      //uuid: CryptoJS.lib.WordArray.random(16).toString(),
+      [action]: data})
   }, [playbackKeys])
 
   const handleMenuSelection = useCallback(
