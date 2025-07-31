@@ -43,6 +43,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
     subtitle,
     mainMediaUrl,
     isVideo = false,
+    mainVolume = 1,
     ambientMediaUrl,
     ambientConfig,
     contentData,
@@ -164,8 +165,32 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
       const mainEl = mainRef.current;
       if (mainEl) {
         setDuration(mainEl.duration);
+        
+        // Apply volume using the same logic as useCommonMediaController
+        if (mainVolume !== undefined) {
+          let processedVolume = parseFloat(mainVolume || 1);
+          if(processedVolume < 1 && processedVolume > 0) {
+            processedVolume = processedVolume * 100;
+          }
+          if(processedVolume === 1) {
+            processedVolume = 100;
+          }
+          processedVolume = processedVolume / 100;
+          
+          const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005 };
+          const mappingKeys = Object.keys(mapping).map(Number).sort((a, b) => b - a);
+          for (let i = 0; i < mappingKeys.length; i++) {
+            if (processedVolume >= mappingKeys[i]) {
+              mainEl.volume = mapping[mappingKeys[i]];
+              break;
+            }
+          }
+          if (processedVolume < 0.01) {
+            mainEl.volume = 0;
+          }
+        }
       }
-    }, []);
+    }, [mainVolume]);
   
     // Seek bar click => set new currentTime
     const handleSeekBarClick = (e) => {
@@ -377,7 +402,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
   
   // This is the default export for Scriptures:
   export function Scriptures(play) {
-    const { scripture, advance, clear } = play;
+    const { scripture, advance, clear, volume } = play;
     const [titleHeader, setTitleHeader] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
     const [mainMediaUrl, setMainMediaUrl] = useState(null);
@@ -388,6 +413,34 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
       String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")
     );
     const ambientMediaUrl = DaylightMediaPath(`media/ambient/${music}`);
+
+    // Process volume parameter (same logic as in useCommonMediaController)
+    const ambientVolume = (() => {
+      if (!volume) return 0.1; // default
+      let processedVolume = parseFloat(volume);
+      if(processedVolume < 1 && processedVolume > 0) {
+        processedVolume = processedVolume * 100;
+      }
+      if(processedVolume === 1) {
+        processedVolume = 100;
+      }
+      processedVolume = processedVolume / 100;
+      
+      // Apply the same volume mapping as useCommonMediaController to get the "main" volume
+      const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005 };
+      const mappingKeys = Object.keys(mapping).map(Number).sort((a, b) => b - a);
+      let mappedVolume = 0;
+      for (let i = 0; i < mappingKeys.length; i++) {
+        if (processedVolume >= mappingKeys[i]) {
+          mappedVolume = mapping[mappingKeys[i]];
+          break;
+        }
+      }
+      
+      // Make ambient volume proportionally lower (10% of the mapped volume for scriptures)
+      const proportionalAmbient = mappedVolume * 0.1;
+      return Math.max(0.001, proportionalAmbient); // Ensure minimum audible volume
+    })();
   
     // Fetch the scripture text data
     useEffect(() => {
@@ -430,7 +483,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
           fadeOutStep: 0.01,
           fadeOutInterval: 400,
           fadeInDelay: 5000,
-          ambientVolume: 0.1,
+          ambientVolume: ambientVolume,
         }}
         contentData={scriptureTextData}
         parseContent={parseScriptureContent}
@@ -448,7 +501,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
    * No ambient track, just a single audio. 
    */
   export function Hymns(play) {
-    const { hymn, advance, clear, subfolder } = play;
+    const { hymn, advance, clear, subfolder, volume } = play;
     const [title, setTitle] = useState("");
     const [subtitle, setSubtitle] = useState("");
     const [verses, setHymnVerses] = useState([]);
@@ -498,6 +551,20 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
     if(!hymnNum) return null;
     const verseCount = verses.length;
     const yStartTime = (duration / verseCount) / 1.8;
+    
+    // Process volume parameter (same logic as in useCommonMediaController)
+    const mainVolume = (() => {
+      if (!volume) return 1; // default for hymns
+      let processedVolume = parseFloat(volume);
+      if(processedVolume < 1 && processedVolume > 0) {
+        processedVolume = processedVolume * 100;
+      }
+      if(processedVolume === 1) {
+        processedVolume = 100;
+      }
+      return processedVolume / 100;
+    })();
+    
     return (
       <ContentScroller
         type="hymn"
@@ -505,6 +572,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
         media_key={media_key}
         subtitle={subtitle}
         mainMediaUrl={mediaUrl}
+        mainVolume={mainVolume}
         contentData={verses}
         parseContent={parseHymnContent}
         onAdvance={advance}
@@ -591,7 +659,8 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
     const {
       talk,
       advance,
-      clear
+      clear,
+      volume
     } = play;
 
     // Fetch the talk data
@@ -631,6 +700,39 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
     </div>
   );
     const ambientMusicUrl = `${DaylightMediaPath(`media/ambient/${String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")}`)}`;
+    
+    // Process volume parameter for both main video and ambient audio
+    const processVolumeForTalk = (defaultValue) => {
+      if (!volume) return defaultValue;
+      let processedVolume = parseFloat(volume);
+      if(processedVolume < 1 && processedVolume > 0) {
+        processedVolume = processedVolume * 100;
+      }
+      if(processedVolume === 1) {
+        processedVolume = 100;
+      }
+      processedVolume = processedVolume / 100;
+      
+      // Apply the same volume mapping as useCommonMediaController
+      const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005 };
+      const mappingKeys = Object.keys(mapping).map(Number).sort((a, b) => b - a);
+      for (let i = 0; i < mappingKeys.length; i++) {
+        if (processedVolume >= mappingKeys[i]) {
+          return mapping[mappingKeys[i]];
+        }
+      }
+      return 0;
+    };
+    
+    const mainVolume = processVolumeForTalk(1); // Default to full volume for main video
+    
+    // Make ambient volume proportionally lower (5% of main volume)
+    const ambientVolume = (() => {
+      if (!volume) return 0.05; // default
+      const proportionalAmbient = mainVolume * 0.05; // 5% of main volume
+      return Math.max(0.001, proportionalAmbient); // Ensure minimum audible volume
+    })();
+    
     return (
       <ContentScroller
         type="talk"
@@ -638,6 +740,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
         media_key={media_key}
         subtitle={subtitle}
         mainMediaUrl={videoUrl}
+        mainVolume={mainVolume}
         isVideo={true}
         shaders={['regular', 'minimal', 'night', 'video', 'text', 'screensaver', 'dark']}
         ambientMediaUrl={ambientMusicUrl}
@@ -645,7 +748,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
           fadeOutStep: 0.01,
           fadeOutInterval: 400,
           fadeInDelay: 3000,
-          ambientVolume: 0.05
+          ambientVolume: ambientVolume
         }}
         contentData={transcriptData}
         parseContent={()=>content_jsx}
