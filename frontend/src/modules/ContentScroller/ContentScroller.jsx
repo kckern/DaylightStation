@@ -166,28 +166,16 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
       if (mainEl) {
         setDuration(mainEl.duration);
         
-        // Apply volume using the same logic as useCommonMediaController
+        // Apply volume using simple direct mapping
         if (mainVolume !== undefined) {
-          let processedVolume = parseFloat(mainVolume || 1);
-          if(processedVolume < 1 && processedVolume > 0) {
-            processedVolume = processedVolume * 100;
+          let processedVolume = parseFloat(mainVolume || 100);
+          if(processedVolume > 1) {
+            processedVolume = processedVolume / 100; // Convert percentage to decimal
           }
-          if(processedVolume === 1) {
-            processedVolume = 100;
-          }
-          processedVolume = processedVolume / 100;
           
-          const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005 };
-          const mappingKeys = Object.keys(mapping).map(Number).sort((a, b) => b - a);
-          for (let i = 0; i < mappingKeys.length; i++) {
-            if (processedVolume >= mappingKeys[i]) {
-              mainEl.volume = mapping[mappingKeys[i]];
-              break;
-            }
-          }
-          if (processedVolume < 0.01) {
-            mainEl.volume = 0;
-          }
+          // Direct mapping - no complex volume curves
+          const finalVolume = Math.min(1, Math.max(0, processedVolume));
+          mainEl.volume = finalVolume;
         }
       }
     }, [mainVolume]);
@@ -414,32 +402,28 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
     );
     const ambientMediaUrl = DaylightMediaPath(`media/ambient/${music}`);
 
-    // Process volume parameter (same logic as in useCommonMediaController)
+    // Process volume parameter for both main and ambient audio
+    const mainVolume = (() => {
+      if (!volume) return 1; // default
+      let processedVolume = parseFloat(volume);
+      if(processedVolume > 1) {
+        processedVolume = processedVolume / 100; // Convert percentage to decimal
+      }
+      return Math.min(1, Math.max(0, processedVolume));
+    })();
+
     const ambientVolume = (() => {
       if (!volume) return 0.1; // default
       let processedVolume = parseFloat(volume);
-      if(processedVolume < 1 && processedVolume > 0) {
-        processedVolume = processedVolume * 100;
-      }
-      if(processedVolume === 1) {
-        processedVolume = 100;
-      }
-      processedVolume = processedVolume / 100;
-      
-      // Apply the same volume mapping as useCommonMediaController to get the "main" volume
-      const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005 };
-      const mappingKeys = Object.keys(mapping).map(Number).sort((a, b) => b - a);
-      let mappedVolume = 0;
-      for (let i = 0; i < mappingKeys.length; i++) {
-        if (processedVolume >= mappingKeys[i]) {
-          mappedVolume = mapping[mappingKeys[i]];
-          break;
-        }
+      if(processedVolume > 1) {
+        processedVolume = processedVolume / 100; // Convert percentage to decimal
       }
       
-      // Make ambient volume proportionally lower (10% of the mapped volume for scriptures)
-      const proportionalAmbient = mappedVolume * 0.1;
-      return Math.max(0.001, proportionalAmbient); // Ensure minimum audible volume
+      // Make ambient volume always 10% of the main volume
+      const proportionalAmbient = processedVolume * 0.1; // Always 10% of main volume
+      const finalVolume = Math.max(0.001, proportionalAmbient); // Ensure minimum audible volume
+      
+      return finalVolume;
     })();
   
     // Fetch the scripture text data
@@ -477,6 +461,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
         media_key={media_key}
         subtitle={subtitle}
         mainMediaUrl={mainMediaUrl}
+        mainVolume={mainVolume}
         shaders={['regular', 'minimal', 'night', 'screensaver', 'dark']}
         ambientMediaUrl={ambientMediaUrl}
         ambientConfig={{
@@ -705,31 +690,20 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
     const processVolumeForTalk = (defaultValue) => {
       if (!volume) return defaultValue;
       let processedVolume = parseFloat(volume);
-      if(processedVolume < 1 && processedVolume > 0) {
-        processedVolume = processedVolume * 100;
+      if(processedVolume > 1) {
+        processedVolume = processedVolume / 100; // Convert percentage to decimal
       }
-      if(processedVolume === 1) {
-        processedVolume = 100;
-      }
-      processedVolume = processedVolume / 100;
       
-      // Apply the same volume mapping as useCommonMediaController
-      const mapping = { "1": 1, "0.9": 0.8, "0.8": 0.6, "0.7": 0.4, "0.6": 0.3, "0.5": 0.2, "0.4": 0.15, "0.3": 0.1, "0.2": 0.05, "0.1": 0.02, "0.05": 0.01, "0.01": 0.005 };
-      const mappingKeys = Object.keys(mapping).map(Number).sort((a, b) => b - a);
-      for (let i = 0; i < mappingKeys.length; i++) {
-        if (processedVolume >= mappingKeys[i]) {
-          return mapping[mappingKeys[i]];
-        }
-      }
-      return 0;
+      // Direct mapping - no complex volume curves
+      return Math.min(1, Math.max(0, processedVolume));
     };
     
     const mainVolume = processVolumeForTalk(1); // Default to full volume for main video
     
-    // Make ambient volume proportionally lower (5% of main volume)
+    // Make ambient volume always 10% of main volume
     const ambientVolume = (() => {
-      if (!volume) return 0.05; // default
-      const proportionalAmbient = mainVolume * 0.05; // 5% of main volume
+      if (!volume) return 0.1; // default 10% when no volume specified
+      const proportionalAmbient = mainVolume * 0.1; // Always 10% of main volume
       return Math.max(0.001, proportionalAmbient); // Ensure minimum audible volume
     })();
     
