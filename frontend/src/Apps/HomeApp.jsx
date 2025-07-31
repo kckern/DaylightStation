@@ -54,7 +54,7 @@ function HomeApp() {
   const handleWebSocketPayload = useCallback((data) => {
     setLastPayloadMessage(data)
     delete data.timestamp;
-    const action = data.action || 'play';
+    const action = data.action || 'queue';
     delete data.action; // Remove action to avoid confusion
     console.log('WebSocket payload received:', data)
     //reset first
