@@ -151,14 +151,16 @@ mediaRouter.post('/log', async (req, res) => {
         return res.status(400).json({ error: `Invalid request: Missing ${!type ? 'type' : !media_key ? 'media_key' : 'percent'}` });
     }
     try {
+        let librarystring = "";
         if(seconds<10) return res.status(400).json({ error: `Invalid request: seconds < 10` });
         
         let logPath = `history/media_memory/${type}`;
         if (type === 'plex') {
             const plex = new Plex();
             const [meta] = await plex.loadMeta(media_key);
+            librarystring = meta ? slugify(meta.librarySectionTitle) : 'media';
             if (meta && meta.librarySectionID) {
-                logPath = `history/media_memory/plex/${slugify(meta.librarySectionTitle)}`;
+                logPath = `history/media_memory/plex/${librarystring}`;
             }
         }
 
@@ -171,7 +173,7 @@ mediaRouter.post('/log', async (req, res) => {
         saveFile(logPath, sortedLog);
         console.log(`Log updated: ${JSON.stringify(log[media_key])}`);
         await logToInfinity(media_key,{percent, seconds});
-        res.json({ response: {type,...log[media_key]} });
+        res.json({ response: {type,library:librarystring,...log[media_key]} });
     } catch (error) {
         console.error('Error handling /log:', error.message);
         res.status(500).json({ error: 'Failed to process log.' });
