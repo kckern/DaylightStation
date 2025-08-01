@@ -39,7 +39,7 @@ function ScriptureText({ scriptureTextData, panelHeight, yProgress }) {
     }
   }, [blocks]);
 
-  const YPosition = (yProgress * textHeight) - (panelHeight * yProgress);
+  const YPosition = (yProgress * textHeight) - (panelHeight * (1 || yProgress));
 
   if (!scriptureTextData) {
     return null;

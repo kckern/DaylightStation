@@ -308,6 +308,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                     type: type,
                     plex: plex,
                     image: handleDevImage(req, image),
+                    ...req.query
                 };
             }),
             ...items
@@ -334,7 +335,8 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             label: title,
             type: type,
             plex: key || plex,
-            image: handleDevImage(req, image)
+            image: handleDevImage(req, image),
+            ...req.query
         };
     });
     try {
