@@ -441,7 +441,7 @@ function useQueueController({ play, queue, clear }) {
     volume,
     isContinuous,
     playQueue,
-    playbackRate: play?.playbackRate || queue?.playbackRate || 1,
+    playbackRate: play?.playbackRate || play?.playbackrate || queue?.playbackRate || queue?.playbackrate || 1,
     setQueue,
     advance,
     queuePosition
@@ -470,6 +470,7 @@ export default function Player(props) {
   }
   
   if(playbackrate && play) play['playbackRate'] = playbackrate; //Override playback rate if passed in via menu selection
+  if(play?.playbackrate && !play?.playbackRate) play['playbackRate'] = play.playbackrate; //Convert lowercase to camelCase
 
   const {
     classes,
@@ -599,12 +600,12 @@ export function SinglePlayer(play) {
     setIsReady(false);
     if (!!plex) {
       const infoResponse = await DaylightAPI(`media/plex/info/${plex}`);
-      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1, media_key: infoResponse.plex });
+      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || play?.playbackrate || rate || 1, media_key: infoResponse.plex });
       setIsReady(true);
     } else if (!!media) {
       const infoResponse = await DaylightAPI(`media/info/${media}`);
       console.log({ infoResponse });
-      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || rate || 1, media_key: infoResponse.media_key  || infoResponse.listkey });
+      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || play?.playbackrate || rate || 1, media_key: infoResponse.media_key  || infoResponse.listkey });
       setIsReady(true);
     } else if (!!open) {
       setGoToApp(open);
