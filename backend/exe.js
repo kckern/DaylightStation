@@ -4,7 +4,7 @@ import express from 'express';
 import { exec } from 'child_process';
 import axios from 'axios';
 import { loadFile, saveFile } from './lib/io.mjs';
-import { broadcastToWebsockets } from './websocket.js';
+import { broadcastToWebsockets, restartWebsocketServer } from './websocket.js';
 
 const promiseExec = util.promisify(exec);
 const exeRouter = express.Router();
@@ -352,6 +352,29 @@ exeRouter.all("/ws", async (req, res) => {
         });
     } catch (error) {
         console.error('Error in /ws endpoint:', error.message || error);
+        res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
+
+// WebSocket restart endpoint
+exeRouter.post("/ws/restart", async (req, res) => {
+    try {
+        console.log('WebSocket restart requested...');
+        const success = restartWebsocketServer();
+        
+        if (success) {
+            res.json({ 
+                status: 'WebSocket server restarted successfully',
+                timestamp: new Date().toISOString()
+            });
+        } else {
+            res.status(500).json({ 
+                error: 'Failed to restart WebSocket server',
+                timestamp: new Date().toISOString()
+            });
+        }
+    } catch (error) {
+        console.error('Error in /ws/restart endpoint:', error.message || error);
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
