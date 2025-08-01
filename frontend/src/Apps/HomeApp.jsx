@@ -54,8 +54,13 @@ function HomeApp() {
   const handleWebSocketPayload = useCallback((data) => {
     setLastPayloadMessage(data)
     delete data.timestamp;
-    const action = data.action || Object.keys(data).includes('play') ? 'play' : 'queue'
+    const action = data.action || Object.keys(data).includes('play') ? 'play' : 'queue';
+     if(/^\d+$/.test(data.play || data.queue)){
+      data.plex = data.play || data.queue;
+     }
     delete data.action; // Remove action to avoid confusion
+    delete data[action]; // Remove action to avoid confusion
+
     console.log('WebSocket payload received:', data)
     //reset first
     resetQueue()
