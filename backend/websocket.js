@@ -4,9 +4,11 @@
 import { WebSocketServer } from 'ws';
 
 let wssNav = null;
+let httpServer = null;
 
 export function createWebsocketServer(server) {
   console.log('Creating WebSocket servers...');
+  httpServer = server; // Store reference to HTTP server
   
   // /ws: WebSocket messages
   if (!wssNav) {
@@ -27,6 +29,30 @@ export function createWebsocketServer(server) {
     console.log('WebSocket server for /ws already exists');
   }
   return { wssNav };
+}
+
+export function restartWebsocketServer() {
+  console.log('Restarting WebSocket server...');
+  
+  if (wssNav) {
+    console.log('Closing existing WebSocket server...');
+    // Close all existing connections
+    wssNav.clients.forEach((client) => {
+      client.close();
+    });
+    wssNav.close();
+    wssNav = null;
+  }
+  
+  if (httpServer) {
+    // Recreate WebSocket server
+    createWebsocketServer(httpServer);
+    console.log('WebSocket server restarted successfully');
+    return true;
+  } else {
+    console.error('No HTTP server reference available for restart');
+    return false;
+  }
 }
 
 export function broadcastToWebsockets(data) {
