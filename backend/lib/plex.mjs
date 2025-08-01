@@ -301,23 +301,32 @@ export class Plex {
       return [null, 0, 0];
     }
 
-    let log = loadFile("history/media_memory/plex") || {};
-    const plexLogDir = 'data/history/media_memory/plex';
-    if (fs.existsSync(plexLogDir)) {
-        const files = fs.readdirSync(plexLogDir);
+    let log = {}
+    const plexLogPath = 'history/media_memory/plex';
+    const fullPlexLogDir = `${process.env.path.data}/${plexLogPath}`;
+   // console.log(`selectKeyToPlay: Looking for keys ${keys.join(', ')} in ${fullPlexLogDir}`);
+    if (fs.existsSync(fullPlexLogDir)) {
+        const files = fs.readdirSync(fullPlexLogDir);
+     //   console.log(`selectKeyToPlay: Found files ${files.join(', ')}`);
         for (const file of files) {
             if (file.endsWith('.yml') || file.endsWith('.yaml')) {
                 const libraryLog = loadFile(`history/media_memory/plex/${file.replace(/\.ya?ml$/, '')}`);
+              //  console.log(`selectKeyToPlay: Loaded ${file}, got ${libraryLog ? Object.keys(libraryLog).length : 0} entries`);
                 if (libraryLog) {
-                    const foundKey = keys.find(key => libraryLog[key]);
-                    if (foundKey) {
-                        log = { ...log, ...libraryLog };
-                        break; 
-                    }
+                    log = { ...log, ...libraryLog };
                 }
             }
         }
+    } else {
+      console.log(`selectKeyToPlay: Directory ${fullPlexLogDir} does not exist`);
     }
+    
+    console.log(`selectKeyToPlay: Final log has ${Object.keys(log).length} entries, looking for keys: ${keys.join(', ')}`);
+    keys.forEach(key => {
+      if (log[key]) {
+        console.log(`selectKeyToPlay: Found key ${key} with data:`, log[key]);
+      }
+    });
     
 
     const watched = keys.filter(key => log[key]?.percent >= 90).sort((a, b) => log[b].time - log[a].time);

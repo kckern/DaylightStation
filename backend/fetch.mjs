@@ -409,7 +409,7 @@ export const loadMetadataFromMediaKey = (media_key, keys = []) => {
 
 const applyParentTags = (items, parent) => {
 
-    const inheritableTags = ['volume', 'shuffle', 'continuous', 'image', 'rate'];
+    const inheritableTags = ['volume', 'shuffle', 'continuous', 'image', 'rate', 'playbackrate'];
     for (const tag of inheritableTags) {
         for(const item of items) {
             if (item[tag] === undefined && parent[tag] !== undefined) {
