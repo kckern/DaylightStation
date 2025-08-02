@@ -337,9 +337,6 @@ exeRouter.get('/vol/:level', async (req, res) => {
                 stout = await execmd(`amixer set Master mute`);
             }
         } else {
-            if (!cycleLevels.includes(parseInt(level))) {
-                return res.status(400).json({ error: `Invalid volume level: ${level}. Valid levels are: ${cycleLevels.join(', ')}, mute, unmute, togglemute` });
-            }
             if (parseInt(level) === 0) {
                 saveFile('0', volumeStateFile);
                 saveFile('true', muteStateFile);
@@ -353,6 +350,23 @@ exeRouter.get('/vol/:level', async (req, res) => {
         res.json({ stout });
     } catch (error) {
         console.error('Error in /vol/:level endpoint:', error.message || error);
+        res.status(500).json({ error: error.message || 'Internal Server Error', body: req.body, query: req.query });
+    }
+});
+
+exeRouter.get('/audio/:device', async (req, res) => {
+    const { device } = req.params;
+    try {
+        const cmd = `wpctl set-default \\$(wpctl status | grep '${device}' | sed 's/.*│[[:space:]]*\\([0-9]*\\)\\..*/\\1/')`;
+        const stout = await execmd(cmd);
+        
+        res.json({ 
+            device,
+            command: cmd,
+            stout 
+        });
+    } catch (error) {
+        console.error('Error in /audio/:device endpoint:', error.message || error);
         res.status(500).json({ error: error.message || 'Internal Server Error', body: req.body, query: req.query });
     }
 });
