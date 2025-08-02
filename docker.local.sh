@@ -1,3 +1,5 @@
+docker system prune -f
+
 docker build -t kckern/daylight-station:latest .
 docker stop daylight-station
 docker rm daylight-station
