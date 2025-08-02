@@ -54,19 +54,44 @@ function HomeApp() {
   const handleWebSocketPayload = useCallback((data) => {
     setLastPayloadMessage(data)
     delete data.timestamp;
+
+    if(data.menu) {
+      setMenu(data.menu)
+      setMenuOpen(true)
+      return
+    }
+
+    if(data.action==="reset") {
+      resetQueue()
+      setCurrentContent(null)
+      setMenu(false)
+      setMenuOpen(false)
+      setMenuKey(0)
+      return
+    }
+
+
     const action = data.action || Object.keys(data).includes('play') ? 'play' : 'queue';
      if(/^\d+$/.test(data.play || data.queue)){
       data.plex = data.play || data.queue;
-     }
+     }else if (data.play || data.queue) {
+      data.media = data.play || data.queue;
+    }
     delete data.action; // Remove action to avoid confusion
     delete data[action]; // Remove action to avoid confusion
 
+    //get key and value from data
     console.log('WebSocket payload received:', data)
-    //reset first
-    resetQueue()
-    handleMenuSelection({
+
+    console.log('WebSocket payload received:', data)
+    const selection = {
       label: "wscmd",
-      [action]: data})
+      [action]: [data]
+    }
+    //reset first
+    console.log({selection})  
+    resetQueue()
+    handleMenuSelection(selection)
   }, [playbackKeys])
 
   const handleMenuSelection = useCallback(
@@ -81,7 +106,6 @@ function HomeApp() {
         return
       }
       const props = {queue, ...selection,  clear, onSelection: handleMenuSelection, playbackKeys }
-      console.log({selection,props})
       const uuid = CryptoJS.lib.WordArray.random(16).toString()
       const options = {
         play:     <Player {...props} />,
@@ -160,10 +184,23 @@ function HomeApp() {
 
     const subMenu = currentContent?.props?.list?.menu || currentContent?.props?.list?.plex
 
+
+    const openPlayer = (type, params) => {
+
+      const parseParams = p => p?.includes?.(":") ? p.split(":").map(s => s.trim()) : ["plex", p ?? ""];
+      const [key, val] = parseParams(params);
+      handleMenuSelection({
+        label: "keypad",
+        [type]: { [key]: val },
+      })
+    }
+
     const buttonFns = {
       menu: (params) => {
         openMenu(params)
       },
+      play: (params) => openPlayer("play", params),
+      queue: (params) => openPlayer("queue", params),
       escape: () => {
         if (currentContent) {
           setCurrentContent(null)
@@ -210,6 +247,7 @@ function HomeApp() {
         return 
       }
 
+      console.log('Key pressed:', event.key, 'Action:', action);
       const fn = buttonFns[action?.function]
       if (fn) fn(action.params)
     }
