@@ -467,30 +467,15 @@ export default function Player(props) {
   const {
     classes,
     cycleThroughClasses,
-    shader,
+    shader: queueShader,
     setShader,
     isQueue,
-    volume,
+    volume: queueVolume,
     queuePosition,
-    playbackRate,
+    playbackRate: queuePlaybackRate,
     playQueue,
     advance
   } = useQueueController({ play, queue, clear });
-
-  const playerProps = {
-    advance: isQueue ? advance : clear,
-    clear,
-    shader,
-    volume,
-    setShader,
-    cycleThroughClasses,
-    classes,
-    playbackRate,
-    playbackKeys,
-    playerType,
-    queuePosition,
-    ignoreKeys
-  };
 
   const singlePlayerProps = (() => {
     if (isQueue && playQueue?.length > 0) {
@@ -501,13 +486,40 @@ export default function Player(props) {
     }
     return null;
   })();
+
+  // Get playback rate from the current item, falling back to queue/play level, then default
+  const currentItemPlaybackRate = singlePlayerProps?.playbackRate || singlePlayerProps?.playbackrate;
+  const effectivePlaybackRate = currentItemPlaybackRate || queuePlaybackRate;
+
+  // Get volume from the current item, falling back to queue/play level, then default
+  const currentItemVolume = singlePlayerProps?.volume;
+  const effectiveVolume = currentItemVolume !== undefined ? currentItemVolume : queueVolume;
+
+  // Get shader from the current item, falling back to queue/play level, then default
+  const currentItemShader = singlePlayerProps?.shader;
+  const effectiveShader = currentItemShader || queueShader;
+
+  const playerProps = {
+    advance: isQueue ? advance : clear,
+    clear,
+    shader: effectiveShader,
+    volume: effectiveVolume,
+    setShader,
+    cycleThroughClasses,
+    classes,
+    playbackRate: effectivePlaybackRate,
+    playbackKeys,
+    playerType,
+    queuePosition,
+    ignoreKeys
+  };
   if(singlePlayerProps?.key) delete singlePlayerProps.key;
 
 
   return singlePlayerProps ? (
     <SinglePlayer {...singlePlayerProps} {...playerProps} />
   ) : (
-    <div className={`player ${shader} ${props.playerType || ''}`}>
+    <div className={`player ${effectiveShader} ${props.playerType || ''}`}>
       <LoadingOverlay />
     </div>
   );
@@ -592,17 +604,17 @@ export function SinglePlayer(play) {
     setIsReady(false);
     if (!!plex) {
       const infoResponse = await DaylightAPI(`media/plex/info/${plex}`);
-      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || play?.playbackrate || rate || 1, media_key: infoResponse.plex });
+      setMediaInfo({ ...infoResponse, media_key: infoResponse.plex });
       setIsReady(true);
     } else if (!!media) {
       const infoResponse = await DaylightAPI(`media/info/${media}`);
       console.log({ infoResponse });
-      setMediaInfo({ ...infoResponse, playbackRate: playbackRate || play?.playbackrate || rate || 1, media_key: infoResponse.media_key  || infoResponse.listkey });
+      setMediaInfo({ ...infoResponse, media_key: infoResponse.media_key  || infoResponse.listkey });
       setIsReady(true);
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open]);
+  }, [plex, media, rate, open, playbackRate, play]);
 
   useEffect(() => {
     fetchVideoInfo();
