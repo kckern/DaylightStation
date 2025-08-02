@@ -306,7 +306,8 @@ async function execmd(cmd) {
 exeRouter.get('/vol/:level', async (req, res) => {
     const { level } = req.params;
     const cycleLevels = [70, 50, 30, 20, 10, 0];
-    const volumeStateFile = '_volLevel';
+    const volumeStateFile = 'history/hardware/volLevel';
+    const muteStateFile = 'history/hardware/muteState';
     try {
         let stout;
         if (level === 'cycle') {
@@ -315,9 +316,39 @@ exeRouter.get('/vol/:level', async (req, res) => {
             let nextLevel = cycleLevels[nextIndex];
             saveFile(nextLevel.toString(), volumeStateFile);
             stout = await execmd(`amixer set Master ${nextLevel}%`);
+        } else if (["-","+"].includes(level)) {
+            let currentLevel = parseInt(loadFile(volumeStateFile)) || 70;
+            let nextLevel = level === '+' ? Math.min(currentLevel + 20, 100) : Math.max(currentLevel - 20, 0);
+            saveFile(nextLevel.toString(), volumeStateFile);
+            stout = await execmd(`amixer set Master ${nextLevel}%`);
+        } else if (level === 'mute') {
+            saveFile('true', muteStateFile);
+            stout = await execmd(`amixer set Master mute`);
+        } else if (level === 'unmute') {
+            saveFile('false', muteStateFile);
+            stout = await execmd(`amixer set Master unmute`);
+        } else if (level === 'togglemute') {
+            let isMuted = loadFile(muteStateFile) === 'true';
+            if (isMuted) {
+                saveFile('false', muteStateFile);
+                stout = await execmd(`amixer set Master unmute`);
+            } else {
+                saveFile('true', muteStateFile);
+                stout = await execmd(`amixer set Master mute`);
+            }
         } else {
-            saveFile(level, volumeStateFile);
-            stout = await execmd(`amixer set Master ${level}%`);
+            if (!cycleLevels.includes(parseInt(level))) {
+                return res.status(400).json({ error: `Invalid volume level: ${level}. Valid levels are: ${cycleLevels.join(', ')}, mute, unmute, togglemute` });
+            }
+            if (parseInt(level) === 0) {
+                saveFile('0', volumeStateFile);
+                saveFile('true', muteStateFile);
+                stout = await execmd(`amixer set Master mute`);
+            } else {
+                saveFile(level, volumeStateFile);
+                saveFile('false', muteStateFile);
+                stout = await execmd(`amixer set Master ${level}%`);
+            }
         }
         res.json({ stout });
     } catch (error) {
