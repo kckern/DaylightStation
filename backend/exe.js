@@ -310,18 +310,9 @@ exeRouter.get('/vol/:level', async (req, res) => {
     const muteStateFile = 'history/hardware/muteState';
     try {
         let stout;
-        if (level === 'cycle') {
-            let currentLevel = parseInt(loadFile(volumeStateFile)) || 70;
-            let nextIndex = (cycleLevels.indexOf(currentLevel) + 1) % cycleLevels.length;
-            let nextLevel = cycleLevels[nextIndex];
-            saveFile(nextLevel.toString(), volumeStateFile);
-            stout = await execmd(`amixer set Master ${nextLevel}%`);
-        } else if (["-","+"].includes(level)) {
-            let currentLevel = parseInt(loadFile(volumeStateFile)) || 70;
-            let nextLevel = level === '+' ? Math.min(currentLevel + 20, 100) : Math.max(currentLevel - 20, 0);
-            saveFile(nextLevel.toString(), volumeStateFile);
-            stout = await execmd(`amixer set Master ${nextLevel}%`);
-        } else if (level === 'mute') {
+        
+        // Handle mute operations first
+        if (level === 'mute') {
             saveFile('true', muteStateFile);
             stout = await execmd(`amixer set Master mute`);
         } else if (level === 'unmute') {
@@ -337,14 +328,33 @@ exeRouter.get('/vol/:level', async (req, res) => {
                 stout = await execmd(`amixer set Master mute`);
             }
         } else {
-            if (parseInt(level) === 0) {
-                saveFile('0', volumeStateFile);
-                saveFile('true', muteStateFile);
-                stout = await execmd(`amixer set Master mute`);
-            } else {
-                saveFile(level, volumeStateFile);
+            // For all other operations, unmute first if currently muted
+            let isMuted = loadFile(muteStateFile) === 'true';
+            if (isMuted) {
                 saveFile('false', muteStateFile);
-                stout = await execmd(`amixer set Master ${level}%`);
+                await execmd(`amixer set Master unmute`);
+            }
+            
+            if (level === 'cycle') {
+                let currentLevel = parseInt(loadFile(volumeStateFile)) || 70;
+                let nextIndex = (cycleLevels.indexOf(currentLevel) + 1) % cycleLevels.length;
+                let nextLevel = cycleLevels[nextIndex];
+                saveFile(nextLevel.toString(), volumeStateFile);
+                stout = await execmd(`amixer set Master ${nextLevel}%`);
+            } else if (["-","+"].includes(level)) {
+                let currentLevel = parseInt(loadFile(volumeStateFile)) || 70;
+                let nextLevel = level === '+' ? Math.min(currentLevel + 20, 100) : Math.max(currentLevel - 20, 0);
+                saveFile(nextLevel.toString(), volumeStateFile);
+                stout = await execmd(`amixer set Master ${nextLevel}%`);
+            } else {
+                if (parseInt(level) === 0) {
+                    saveFile('0', volumeStateFile);
+                    saveFile('true', muteStateFile);
+                    stout = await execmd(`amixer set Master mute`);
+                } else {
+                    saveFile(level, volumeStateFile);
+                    stout = await execmd(`amixer set Master ${level}%`);
+                }
             }
         }
         res.json({ stout });
