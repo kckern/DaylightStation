@@ -545,7 +545,7 @@ export const getChildrenFromMediaKey = async ({media_key, config, req}) => {
     const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
     const itemsFromList = listItems.filter(filterFn) || [];
     const noSort = itemsFromList.some(item => item?.folder_color);  // Color is used as an indicator for no sorting, since folders have no other attributes besides title
-    if (!!itemsFromList.length) return { items: noSort ? itemsFromList : sortListByMenuMemory(itemsFromList,config) };
+    if (!!itemsFromList.length) return { items: applyParamsToItems(noSort ? itemsFromList : sortListByMenuMemory(itemsFromList,config)) };
 
     // If no list items, check if it's a Plex key
     const isPlex = /^\d+$/.test(media_key);
@@ -564,7 +564,7 @@ export const getChildrenFromMediaKey = async ({media_key, config, req}) => {
             };
         }).sort(() => shuffle ? Math.random() - 0.5 : 0);
         delete plexResponse.list;
-        if (plexList) return { meta: plexResponse, items: plexList };
+        if (plexList) return { meta: plexResponse, items: applyParamsToItems(plexList) };
     }
 
     // If no list or Plex items, check the mediaPath
@@ -599,11 +599,49 @@ export const getChildrenFromMediaKey = async ({media_key, config, req}) => {
 
         if (shuffle) items_full = items_full.sort(() => Math.random() - 0.5);
 
-        return { items: items_full, parentMetadata };
+        return { items: applyParamsToItems(items_full), parentMetadata };
     }
 
     // If no folder exists, return an empty result
     return { items: [] };
+};
+
+// Normalize parameter structure for queue items
+export const applyParamsToItems = (items) => {
+    return items.map(item => {
+        // Convert legacy parameter names
+        if (item.playbackrate) {
+            item.playbackRate = item.playbackrate;
+            delete item.playbackrate;
+        }
+        
+        const keysToMove = ['playbackRate', 'volume', 'loop', 'shader'];
+        
+        // Find the media/action key by looking for object values that could contain nested parameters
+        // Media keys typically have object values, while metadata keys have primitive values
+        const allKeys = Object.keys(item);
+        const mediaKey = allKeys.find(key => {
+            const value = item[key];
+            // Look for objects that aren't null and could reasonably contain media configuration
+            return typeof value === 'object' && 
+                   value !== null && 
+                   !Array.isArray(value) &&
+                   // Exclude objects that are clearly metadata (have primitive-like structure)
+                   !keysToMove.includes(key);
+        });
+        
+        if (mediaKey) {
+            for (const key of keysToMove) {
+                if (item[key] !== undefined) {
+                    item[mediaKey] = item[mediaKey] || {};
+                    item[mediaKey][key] = item[key];
+                    delete item[key];
+                }
+            }
+        }
+        
+        return item;
+    }).filter(item => item?.active !== false);
 };
 
 apiRouter.get('/list/*', async (req, res, next) => {
