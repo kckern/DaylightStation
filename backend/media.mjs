@@ -5,7 +5,7 @@ import {Plex} from './lib/plex.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
-import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems } from './fetch.mjs';
+import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems, applyParamsToItems } from './fetch.mjs';
 import { getChildrenFromMediaKey } from './fetch.mjs';
 import Infinity from './lib/infinity.js';
 import { slugify } from './lib/utils.mjs';
@@ -342,7 +342,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
         };
     });
     try {
-        res.json({...info, items: list});
+        res.json({...info, items: applyParamsToItems(list)});
     } catch (error) {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }
