@@ -104,7 +104,7 @@ function useCommonMediaController({
       if (mediaEl) {
       const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
       const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '')
-      DaylightAPI(`media/log`, { title, type, media_key, seconds: mediaEl.currentTime, percent:100, title });
+      DaylightAPI(`media/log`, { title, type, media_key, seconds: mediaEl.currentTime, percent:100 });
       DaylightAPI(`harvest/watchlist`);
       }
       onEnd(1);
@@ -222,7 +222,7 @@ function useCommonMediaController({
       const seconds = mediaEl.currentTime || 0;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
         lastLoggedTimeRef.current = now;
-        if(seconds > 10)  await DaylightAPI(`media/log`, { title, type, media_key, seconds, percent, title });
+        if(seconds > 10)  await DaylightAPI(`media/log`, { title, type, media_key, seconds, percent });
       }
     };
 
@@ -732,7 +732,6 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
     meta: media,
     type: isPlex ? 'plex' : 'media',
     shader,
-    playbackRate,
     volume,
     setShader,
     cycleThroughClasses,
