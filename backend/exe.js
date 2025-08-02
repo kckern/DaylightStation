@@ -372,7 +372,7 @@ async function handleVolumeRequest(req, res) {
 exeRouter.get('/audio/:device', async (req, res) => {
     const { device } = req.params;
     try {
-        const cmd = `wpctl set-default \\$(wpctl status | grep '${device}' | sed 's/.*│[[:space:]]*\\([0-9]*\\)\\..*/\\1/')`;
+        const cmd = `wpctl set-default $(wpctl status | grep '${device}' | sed 's/.*│[[:space:]]*\\([0-9]*\\)\\..*/\\1/')`;
         const stout = await execmd(cmd);
         
         res.json({ 
