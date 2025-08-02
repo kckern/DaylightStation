@@ -41,19 +41,15 @@ export const createWebSocketHandler = (callbacks) => {
     // Transform numeric values to plex, otherwise to media
     if (/^\d+$/.test(data.play || data.queue)) {
       data.plex = data.play || data.queue;
-    } else if (data.play || data.queue) {
-      data.media = data.play || data.queue;
+      delete data.play;
+      delete data.queue;
     }
-    
-    // Clean up action properties to avoid confusion
-    delete data.action;
-    delete data[action];
 
-    console.log('WebSocket payload received:', data);
+    delete data.action;
 
     const selection = {
       label: "wscmd",
-      [action]: [data]
+      [action]: data
     };
     
     console.log({selection});
