@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { DaylightAPI } from '../api.mjs';
 
 /**
  * Keyboard event handler for HomeApp
@@ -46,8 +47,29 @@ export const createKeyboardHandler = (dependencies) => {
       }
       closeMenu();
     },
-    volume: () => {
-      console.log('Volume');
+    volume: async (params) => {
+      try {
+        let endpoint;
+        switch (params) {
+          case '+1':
+            endpoint = 'exe/vol/+';
+            break;
+          case '-1':
+            endpoint = 'exe/vol/-';
+            break;
+          case 'mute_toggle':
+            endpoint = 'exe/vol/togglemute';
+            break;
+          default:
+            // If no specific param, default to cycling through volume levels
+            endpoint = 'exe/vol/cycle';
+        }
+        
+        const response = await DaylightAPI(endpoint);
+        console.log('Volume control response:', response);
+      } catch (error) {
+        console.error('Volume control error:', error);
+      }
     },
     sleep: () => {
       console.log('Sleep');
