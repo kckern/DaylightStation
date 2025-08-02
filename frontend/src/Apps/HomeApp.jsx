@@ -17,8 +17,13 @@ import ConnectionStatus from '../components/ConnectionStatus/ConnectionStatus'
 
 import { DaylightAPI } from '../lib/api.mjs'
 import { useWebSocket } from '../contexts/WebSocketContext.jsx'
+import { createWebSocketHandler } from '../lib/HomeApp/websocketHandler.js'
+import { useKeyboardHandler } from '../lib/HomeApp/keyboardHandler.js'
+import { createMenuSelectionHandler } from '../lib/HomeApp/menuHandler.js'
 
 function HomeApp() {
+  console.log('HomeApp component is rendering...');
+  
   const [queue, setQueue] = useState([])
   const [menu, setMenu] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -32,6 +37,7 @@ function HomeApp() {
 
   // Get WebSocket functions
   const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket()
+  console.log('WebSocket context:', { registerPayloadCallback: !!registerPayloadCallback, unregisterPayloadCallback: !!unregisterPayloadCallback });
 
   const resetQueue = useCallback(() => {
     setQueue([])
@@ -50,80 +56,32 @@ function HomeApp() {
     setMenuKey(0)
   }, [])
 
+  // Create menu selection handler
+  const handleMenuSelection = useCallback((selection) => {
+    const handler = createMenuSelectionHandler({
+      queue,
+      clear,
+      playbackKeys,
+      setMenuOpen,
+      closeMenu,
+      setCurrentContent,
+      handleMenuSelection: (sel) => handleMenuSelection(sel) // Recursive reference
+    });
+    return handler(selection);
+  }, [closeMenu, queue, clear, playbackKeys])
 
-  const handleWebSocketPayload = useCallback((data) => {
-    setLastPayloadMessage(data)
-    delete data.timestamp;
-
-    if(data.menu) {
-      setMenu(data.menu)
-      setMenuOpen(true)
-      return
-    }
-
-    if(data.action==="reset") {
-      resetQueue()
-      setCurrentContent(null)
-      setMenu(false)
-      setMenuOpen(false)
-      setMenuKey(0)
-      return
-    }
-
-
-    const action = data.action || Object.keys(data).includes('play') ? 'play' : 'queue';
-     if(/^\d+$/.test(data.play || data.queue)){
-      data.plex = data.play || data.queue;
-     }else if (data.play || data.queue) {
-      data.media = data.play || data.queue;
-    }
-    delete data.action; // Remove action to avoid confusion
-    delete data[action]; // Remove action to avoid confusion
-
-    //get key and value from data
-    console.log('WebSocket payload received:', data)
-
-    console.log('WebSocket payload received:', data)
-    const selection = {
-      label: "wscmd",
-      [action]: [data]
-    }
-    //reset first
-    console.log({selection})  
-    resetQueue()
-    handleMenuSelection(selection)
-  }, [playbackKeys])
-
-  const handleMenuSelection = useCallback(
-    (selection) => {
-      setMenuOpen(false)
-      if (!selection || !selection.label) {
-        closeMenu()
-        return
-      }
-      if (!playbackKeys) {
-        console.error('Playback keys are not yet loaded.')
-        return
-      }
-      const props = {queue, ...selection,  clear, onSelection: handleMenuSelection, playbackKeys }
-      const uuid = CryptoJS.lib.WordArray.random(16).toString()
-      const options = {
-        play:     <Player {...props} />,
-        queue:    <Player {...props} />,
-        playlist: <Player {...props} />,
-        list:     <KeypadMenu {...props} key={uuid} />,
-        menu:     <KeypadMenu {...props} key={uuid} />,
-        open:     <AppContainer {...props} />,
-      }
-      const selectionKeys = Object.keys(selection)
-      const availableKeys = Object.keys(options)
-      const firstMatch = selectionKeys.find((key) => availableKeys.includes(key))
-      if (firstMatch) {
-        setCurrentContent(options[firstMatch])
-        closeMenu()
-      }
-    },
-    [closeMenu, queue, clear, playbackKeys]
+  // Create websocket handler
+  const handleWebSocketPayload = useCallback(
+    createWebSocketHandler({
+      setLastPayloadMessage,
+      setMenu,
+      setMenuOpen,
+      resetQueue,
+      setCurrentContent,
+      setMenuKey,
+      handleMenuSelection
+    }),
+    [handleMenuSelection]
   )
 
   // Register payload callback after handleWebSocketPayload is defined
@@ -153,8 +111,10 @@ function HomeApp() {
 
   // Fetch the key map once
   useEffect(() => {
+    console.log('Fetching keyboard configuration...');
     DaylightAPI('/data/keyboard/officekeypad')
       .then((fetchedMap) => {
+        console.log('Keyboard configuration loaded:', fetchedMap);
         setKeyMap(fetchedMap)
 
         // Rename to avoid overshadowing state variable
@@ -169,6 +129,7 @@ function HomeApp() {
             return acc
           }, {})
 
+        console.log('Playback keys processed:', newPlaybackKeys);
         setPlaybackKeys(newPlaybackKeys)
       })
       .catch((error) => {
@@ -177,90 +138,38 @@ function HomeApp() {
   }, [])
 
   // Attach keydown listener once keyMap is loaded
-  useEffect(() => {
-    // Only attach if we actually have a working keyMap
-    if (!keyMap) return
-
-
-    const subMenu = currentContent?.props?.list?.menu || currentContent?.props?.list?.plex
-
-
-    const openPlayer = (type, params) => {
-
-      const parseParams = p => p?.includes?.(":") ? p.split(":").map(s => s.trim()) : ["plex", p ?? ""];
-      const [key, val] = parseParams(params);
-      handleMenuSelection({
-        label: "keypad",
-        [type]: { [key]: val },
-      })
-    }
-
-    const buttonFns = {
-      menu: (params) => {
-        openMenu(params)
-      },
-      play: (params) => openPlayer("play", params),
-      queue: (params) => openPlayer("queue", params),
-      escape: () => {
-        if (currentContent) {
-          setCurrentContent(null)
-          return
-        }
-        if (!currentContent && !menuOpen) {
-          setMenuOpen(false)
-          window.location.reload()
-          return
-        }
-        closeMenu()
-      },
-      volume: () => {
-        console.log('Volume')
-      },
-      sleep: () => {
-        console.log('Sleep')
-      }
-    }
-
-    const handleKeyDown = (event) => {
-      // Check for escape
-      if (event.key === 'Escape') {
-        return buttonFns.escape()
-      }
-      if (!keyMap[event.key]?.function) {
-        //return console.log('No action found for key:', event.key)
-      }
-      const action = keyMap[event.key]
-
-      // If the menu is already open, or if there’s a subMenu, skip processing
-      if (
-        subMenu ||
-        (menu && menuOpen && action?.function === 'menu' && action?.params === menu)
-      ) {
-        return 
-      }
-
-      // If something is playing and "menu" is pressed
-      if (currentContent && action?.function === 'menu') {
-        resetQueue()
-        setCurrentContent(null)
-        openMenu(action.params)
-        return 
-      }
-
-      console.log('Key pressed:', event.key, 'Action:', action);
-      const fn = buttonFns[action?.function]
-      if (fn) fn(action.params)
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [keyMap, menu, menuOpen, closeMenu, currentContent, openMenu, resetQueue])
-
+  useKeyboardHandler(keyMap, {
+    menu,
+    menuOpen,
+    currentContent,
+    closeMenu,
+    openMenu,
+    resetQueue,
+    setCurrentContent,
+    handleMenuSelection
+  })
 
   // If we have an active content component (like a sub-menu, player, etc.)
   if (currentContent) {
+    // Handle new format from menuHandler
+    if (currentContent.type && currentContent.props) {
+      const uuid = CryptoJS.lib.WordArray.random(16).toString();
+      const componentMap = {
+        play: <Player {...currentContent.props} />,
+        queue: <Player {...currentContent.props} />,
+        playlist: <Player {...currentContent.props} />,
+        list: <KeypadMenu {...currentContent.props} key={uuid} />,
+        menu: <KeypadMenu {...currentContent.props} key={uuid} />,
+        open: <AppContainer {...currentContent.props} />,
+      };
+      
+      const component = componentMap[currentContent.type];
+      if (component) {
+        return <div className='App'>{component}</div>;
+      }
+    }
+    
+    // Handle legacy JSX format
     return <div className='App'>{currentContent}</div>
   }
 
@@ -290,9 +199,12 @@ function HomeApp() {
 
   // Optional: if keyMap or playbackKeys doesn't exist yet, you can show a loading screen
   if (!keyMap || !playbackKeys) {
+    console.log('Loading state:', { keyMap: !!keyMap, playbackKeys: !!playbackKeys });
     return (
       <div className="App">
         <p>Loading key map...</p>
+        <p>KeyMap: {keyMap ? 'Loaded' : 'Loading...'}</p>
+        <p>PlaybackKeys: {playbackKeys ? 'Loaded' : 'Loading...'}</p>
       </div>
     )
   }
@@ -369,7 +281,4 @@ function HomeApp() {
   )
 }
 
-
 export default HomeApp
-
-

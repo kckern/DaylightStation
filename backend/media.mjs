@@ -276,7 +276,7 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
         infos.push(info);
     }
     //pick one
-    const plexInfo = infos[Math.floor(Math.random() * infos.length)];
+    const plexInfo = infos[Math.floor(Math.random() * infos.length)] || {};
     plexInfo['image'] = handleDevImage(req, plexInfo.image || `${host}/media/plex/img/notfound.png`);
     
     try {
