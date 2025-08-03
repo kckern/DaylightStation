@@ -182,12 +182,15 @@ mediaRouter.post('/log', async (req, res) => {
 mediaRouter.all(`/info/*`, async (req, res) => {
     let media_key = req.params[0] || Object.values(req.query)[0];
     if(!media_key) return res.status(400).json({ error: 'No media_key provided', param: req.params, query: req.query });
+    const { config } = req.params;
 
+    // Extract shuffle from query parameters
+        const shuffle = req.query.shuffle === 'true' || req.query.shuffle === true || Object.keys(req.query).includes('shuffle');
     //Watch List
     const watchListItems = watchListFromMediaKey(media_key);
     if(watchListItems?.length) {
         const {items:[{plex}]} = getChildrenFromWatchlist(watchListItems);
-        const info = await (new Plex()).loadPlayableItemFromKey(plex);
+        const info = await (new Plex()).loadPlayableItemFromKey(plex, shuffle);
         return res.json({
             media_key,
             ...info,
@@ -269,7 +272,10 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     const { plex_key, config } = req.params;
     const {host} = process.env;
     const plex_keys = plex_key.split(',');
-    const shuffle = /shuffle/i.test(config);
+    
+    // Check for shuffle in both config parameter and query parameters
+    const shuffle = /shuffle/i.test(config) || req.query.shuffle === 'true' || req.query.shuffle === true || Object.keys(req.query).includes('shuffle');
+    
     let infos = [];
     for (const key of plex_keys) {
         const info = await (new Plex()).loadPlayableItemFromKey(key, shuffle);

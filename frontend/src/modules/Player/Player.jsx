@@ -580,6 +580,7 @@ export function SinglePlayer(play) {
     queuePosition,
     playerType,
     ignoreKeys,
+    shuffle,
     //configs
     shader,
     volume,
@@ -603,18 +604,20 @@ export function SinglePlayer(play) {
   const fetchVideoInfo = useCallback(async () => {
     setIsReady(false);
     if (!!plex) {
-      const infoResponse = await DaylightAPI(`media/plex/info/${plex}`);
+      const url = shuffle ? `media/plex/info/${plex}?shuffle=${shuffle}` : `media/plex/info/${plex}`;
+      const infoResponse = await DaylightAPI(url);
       setMediaInfo({ ...infoResponse, media_key: infoResponse.plex });
       setIsReady(true);
     } else if (!!media) {
-      const infoResponse = await DaylightAPI(`media/info/${media}`);
+      const url = shuffle ? `media/info/${media}?shuffle=${shuffle}` : `media/info/${media}`;
+      const infoResponse = await DaylightAPI(url);
       console.log({ infoResponse });
       setMediaInfo({ ...infoResponse, media_key: infoResponse.media_key  || infoResponse.listkey });
       setIsReady(true);
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, playbackRate, play]);
+  }, [plex, media, rate, open, shuffle, play]);
 
   useEffect(() => {
     fetchVideoInfo();
