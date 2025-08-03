@@ -343,9 +343,9 @@ async function handleVolumeRequest(req, res) {
                 await execmd(`amixer set Master unmute`);
                 muted = false;
             }
-            
+            const increment = 12;
             if (["-","+"].includes(level)) {
-                let nextLevel = level === '+' ? Math.min(volume + 20, 100) : Math.max(volume - 20, 0);
+                let nextLevel = level === '+' ? Math.min(volume + increment, 100) : Math.max(volume - increment, 0);
                 saveFile(volumeStateFile, { volume: nextLevel, muted });
                 stout = await execmd(`amixer set Master ${nextLevel}%`);
             } else if (parseInt(level) === 0) {
