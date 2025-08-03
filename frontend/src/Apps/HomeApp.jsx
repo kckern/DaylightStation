@@ -163,43 +163,40 @@ function HomeApp() {
     setShaderOpacity
   })
 
-  // If we have an active content component (like a sub-menu, player, etc.)
-  if (currentContent) {
-    // Handle new format from menuHandler
-    if (currentContent.type && currentContent.props) {
-      const uuid = CryptoJS.lib.WordArray.random(16).toString();
-      const componentMap = {
-        play: <Player {...currentContent.props} />,
-        queue: <Player {...currentContent.props} />,
-        playlist: <Player {...currentContent.props} />,
-        list: <KeypadMenu {...currentContent.props} key={uuid} />,
-        menu: <KeypadMenu {...currentContent.props} key={uuid} />,
-        open: <AppContainer {...currentContent.props} />,
-      };
-      
-      const component = componentMap[currentContent.type];
-      if (component) {
-        return <div className='App'>{component}</div>;
+  // Helper function to render content based on current state
+  const renderContent = () => {
+    // If we have an active content component (like a sub-menu, player, etc.)
+    if (currentContent) {
+      // Handle new format from menuHandler
+      if (currentContent.type && currentContent.props) {
+        const uuid = CryptoJS.lib.WordArray.random(16).toString();
+        const componentMap = {
+          play: <Player {...currentContent.props} />,
+          queue: <Player {...currentContent.props} />,
+          playlist: <Player {...currentContent.props} />,
+          list: <KeypadMenu {...currentContent.props} key={uuid} />,
+          menu: <KeypadMenu {...currentContent.props} key={uuid} />,
+          open: <AppContainer {...currentContent.props} />,
+        };
+        
+        const component = componentMap[currentContent.type];
+        if (component) {
+          return component;
+        }
       }
+      
+      // Handle legacy JSX format
+      return currentContent;
     }
-    
-    // Handle legacy JSX format
-    return <div className='App'>{currentContent}</div>
-  }
 
-  // If there's a queue, but also require both keyMap and playbackKeys to be present
-  if (queue.length && keyMap && playbackKeys) {
-    return (
-      <div className='App'>
-        <Player queue={queue} clear={resetQueue} playbackKeys={playbackKeys} />
-      </div>
-    )
-  }
+    // If there's a queue, but also require both keyMap and playbackKeys to be present
+    if (queue.length && keyMap && playbackKeys) {
+      return <Player queue={queue} clear={resetQueue} playbackKeys={playbackKeys} />;
+    }
 
-  // If there's a menu open
-  if (menu) {
-    return (
-      <div className='App'>
+    // If there's a menu open
+    if (menu) {
+      return (
         <KeypadMenu
           key={menuKey}
           list={menu}
@@ -207,31 +204,25 @@ function HomeApp() {
           onClose={clear}
           onMenuState={setMenuOpen}
         />
-      </div>
-    )
-  }
+      );
+    }
 
-  // Optional: if keyMap or playbackKeys doesn't exist yet, you can show a loading screen
-  if (!keyMap || !playbackKeys) {
-    console.log('Loading state:', { keyMap: !!keyMap, playbackKeys: !!playbackKeys });
+    // Optional: if keyMap or playbackKeys doesn't exist yet, you can show a loading screen
+    if (!keyMap || !playbackKeys) {
+      console.log('Loading state:', { keyMap: !!keyMap, playbackKeys: !!playbackKeys });
+      return (
+        <>
+          <p>Loading key map...</p>
+          <p>KeyMap: {keyMap ? 'Loaded' : 'Loading...'}</p>
+          <p>PlaybackKeys: {playbackKeys ? 'Loaded' : 'Loading...'}</p>
+        </>
+      );
+    }
+
+    // Otherwise, the main dashboard UI
     return (
-      <div className="App">
-        <p>Loading key map...</p>
-        <p>KeyMap: {keyMap ? 'Loaded' : 'Loading...'}</p>
-        <p>PlaybackKeys: {playbackKeys ? 'Loaded' : 'Loading...'}</p>
-      </div>
-    )
-  }
-
-  // Otherwise, the main dashboard UI
-  return (
-    <div className='App'>
-      <div 
-        className='shader' 
-        style={{opacity: shaderOpacity}}
-        data-opacity={shaderOpacity === 1 ? "1" : "0"}
-      ></div>
-      <div className='sidebar'>
+      <>
+        <div className='sidebar'>
         <div style={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
@@ -268,34 +259,47 @@ function HomeApp() {
             alignItems: 'center',
             padding: '1rem'
           }}
-        >
-          <div>Entropy Dashboard coming soon</div>
-          {lastPayloadMessage && (
-            <div style={{ 
-              marginTop: '1rem', 
-              fontSize: '0.8rem', 
-              color: '#FFFFFF66',
-              textAlign: 'center' 
-            }}>
-              <div>Last WebSocket Message:</div>
-              <div style={{ fontSize: '0.7rem' }}>
-                {JSON.stringify(lastPayloadMessage, null, 2)}
+          >
+            <div>Entropy Dashboard coming soon</div>
+            {lastPayloadMessage && (
+              <div style={{ 
+                marginTop: '1rem', 
+                fontSize: '0.8rem', 
+                color: '#FFFFFF66',
+                textAlign: 'center' 
+              }}>
+                <div>Last WebSocket Message:</div>
+                <div style={{ fontSize: '0.7rem' }}>
+                  {JSON.stringify(lastPayloadMessage, null, 2)}
+                </div>
               </div>
+            )}
+          </div>
+        </div>
+        <div className='content'>
+          <Upcoming />
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+            <div style={{ width: 'calc(50% - 0.5rem)', marginTop: '2rem' }}>
+              <FinanceChart />
             </div>
-          )}
-        </div>
-      </div>
-      <div className='content'>
-        <Upcoming />
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-          <div style={{ width: 'calc(50% - 0.5rem)', marginTop: '2rem' }}>
-            <FinanceChart />
-          </div>
-          <div style={{ width: 'calc(50% - 0.5rem)' }}>
-            <Health />
+            <div style={{ width: 'calc(50% - 0.5rem)' }}>
+              <Health />
+            </div>
           </div>
         </div>
-      </div>
+      </>
+    );
+  };
+
+  // Main render with consistent outer wrapper and shader
+  return (
+    <div className='App'>
+      <div 
+        className='shader' 
+        style={{opacity: shaderOpacity}}
+        data-opacity={shaderOpacity === 1 ? "1" : "0"}
+      ></div>
+      {renderContent()}
     </div>
   )
 }
