@@ -76,7 +76,7 @@ export const createKeyboardHandler = (dependencies) => {
     },
     shader: (params) => {
       setShaderOpacity((currentOpacity) => {
-        const opacityLevels = [0, 0.25, 0.5, 0.75];
+        const opacityLevels = [0, 0.25, 0.5, 0.75, 0.9];
         const currentIndex = opacityLevels.findIndex(level => Math.abs(level - currentOpacity) < 0.01);
 
         if (currentIndex === -1) {
