@@ -226,7 +226,11 @@ function HomeApp() {
   // Otherwise, the main dashboard UI
   return (
     <div className='App'>
-      <div className='shader' style={{opacity: shaderOpacity}}></div>
+      <div 
+        className='shader' 
+        style={{opacity: shaderOpacity}}
+        data-opacity={shaderOpacity === 1 ? "1" : "0"}
+      ></div>
       <div className='sidebar'>
         <div style={{ 
           display: 'flex', 

@@ -591,10 +591,10 @@ export function SinglePlayer(play) {
   } = play || {};
   
 
-  if (!!scripture)    return <Scriptures {...play} />;
-  if (!!hymn)         return <Hymns {...play} />;
-  if (!!primary)      return <Hymns {...{...play,hymn: primary, subfolder:"primary"}}/>;
-  if (!!talk)         return <Talk {...play} />;
+  if (!!scripture)    return <Scriptures {...play} playbackKeys={playbackKeys} ignoreKeys={ignoreKeys} />;
+  if (!!hymn)         return <Hymns {...play} playbackKeys={playbackKeys} ignoreKeys={ignoreKeys} />;
+  if (!!primary)      return <Hymns {...{...play,hymn: primary, subfolder:"primary"}} playbackKeys={playbackKeys} ignoreKeys={ignoreKeys} />;
+  if (!!talk)         return <Talk {...play} playbackKeys={playbackKeys} ignoreKeys={ignoreKeys} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
