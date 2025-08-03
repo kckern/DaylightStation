@@ -10,6 +10,7 @@ import React, {
 import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
 import paperBackground from "../../assets/backgrounds/paper.jpg";
 import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scripture-guide.jsx";
+import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandler.js';
   
   /**
    * ContentScroller (superclass)
@@ -226,113 +227,17 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
       }, fadeInDelay);
     }, [fadeInDelay, ambientVolume]);
   
-    // Keyboard shortcuts
-    useEffect(() => {
-      if (ignoreKeys) return;
-      
-      const handleKeyDown = (event) => {
-        const mainEl = mainRef.current;
-        if (!mainEl) return;
-
-        const mainDuration = mainEl.duration || 0;
-        const increment = Math.max(5, mainDuration / 30);
-
-        // Create playback key mappings similar to Player component
-        const keyMappings = {
-          // Default keyboard shortcuts
-          Tab: () => onAdvance && onAdvance(),
-          ArrowUp: () => cycleThroughClasses(1),
-          ArrowDown: () => cycleThroughClasses(-1),
-          ArrowLeft: () => {
-            const newT = Math.max(mainEl.currentTime - increment, 0);
-            mainEl.currentTime = newT;
-            setCurrentTime(newT);
-          },
-          ArrowRight: () => {
-            const newT = Math.min(mainEl.currentTime + increment, mainDuration);
-            mainEl.currentTime = newT;
-            setCurrentTime(newT);
-          },
-          Enter: () => {
-            if (mainEl.paused) {
-              mainEl.play().catch(() => {});
-            } else {
-              mainEl.pause();
-            }
-          },
-          ' ': () => {
-            if (mainEl.paused) {
-              mainEl.play().catch(() => {});
-            } else {
-              mainEl.pause();
-            }
-          },
-          MediaPlayPause: () => {
-            if (mainEl.paused) {
-              mainEl.play().catch(() => {});
-            } else {
-              mainEl.pause();
-            }
-          },
-          Escape: () => onClear && onClear(),
-          
-          // Add playback key mappings from keypad
-          ...(playbackKeys['prev'] || []).reduce((map, key) => ({ 
-            ...map, 
-            [key]: () => {
-              mainEl.currentTime = 0;
-              setCurrentTime(0);
-            }
-          }), {}),
-          ...(playbackKeys['play'] || []).reduce((map, key) => ({ 
-            ...map, 
-            [key]: () => {
-              if (!mainEl.paused) {
-                onAdvance && onAdvance();
-              } else {
-                mainEl.play().catch(() => {});
-              }
-            }
-          }), {}),
-          ...(playbackKeys['pause'] || []).reduce((map, key) => ({ 
-            ...map, 
-            [key]: () => {
-              if (mainEl.paused) {
-                mainEl.play().catch(() => {});
-              } else {
-                mainEl.pause();
-              }
-            }
-          }), {}),
-          ...(playbackKeys['rew'] || []).reduce((map, key) => ({ 
-            ...map, 
-            [key]: () => {
-              const newT = Math.max(mainEl.currentTime - increment, 0);
-              mainEl.currentTime = newT;
-              setCurrentTime(newT);
-            }
-          }), {}),
-          ...(playbackKeys['fwd'] || []).reduce((map, key) => ({ 
-            ...map, 
-            [key]: () => {
-              const newT = Math.min(mainEl.currentTime + increment, mainDuration);
-              mainEl.currentTime = newT;
-              setCurrentTime(newT);
-            }
-          }), {})
-        };
-
-        // Execute the mapped function if it exists
-        const mappedFunction = keyMappings[event.key];
-        if (mappedFunction) {
-          event.preventDefault();
-          mappedFunction();
-        }
-      };
-
-      window.addEventListener("keydown", handleKeyDown);
-      return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [onClear, cycleThroughClasses, onAdvance, playbackKeys, ignoreKeys]);    // If no ambient, try to play main right away
+    // Use centralized keyboard handler
+    useMediaKeyboardHandler({
+      mediaRef: mainRef,
+      onEnd: onAdvance,
+      onClear,
+      cycleThroughClasses,
+      playbackKeys,
+      queuePosition: 0, // ContentScroller is always single item, not a queue
+      ignoreKeys,
+      setCurrentTime // Pass state setter for time synchronization
+    });    // If no ambient, try to play main right away
     useEffect(() => {
       if (!ambientMediaUrl && mainRef.current) {
         mainRef.current.play().catch(() => {});
@@ -440,7 +345,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
   // This is the default export for Scriptures:
   export function Scriptures(play) {
     console.log('Scriptures component rendered with props:', play);
-    const { scripture, advance, clear, volume } = play;
+    const { scripture, advance, clear, volume, playbackKeys, ignoreKeys } = play;
     const [titleHeader, setTitleHeader] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
     const [mainMediaUrl, setMainMediaUrl] = useState(null);
@@ -534,6 +439,8 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
         parseContent={parseScriptureContent}
         onAdvance={advance}
         onClear={clear}
+        playbackKeys={playbackKeys}
+        ignoreKeys={ignoreKeys}
         /* Start scrolling after 15 seconds, same as original code */
         yStartTime={15}
       />
@@ -546,7 +453,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
    * No ambient track, just a single audio. 
    */
   export function Hymns(play) {
-    const { hymn, advance, clear, subfolder, volume } = play;
+    const { hymn, advance, clear, subfolder, volume, playbackKeys, ignoreKeys } = play;
     const [title, setTitle] = useState("");
     const [subtitle, setSubtitle] = useState("");
     const [verses, setHymnVerses] = useState([]);
@@ -622,6 +529,8 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
         parseContent={parseHymnContent}
         onAdvance={advance}
         onClear={clear}
+        playbackKeys={playbackKeys}
+        ignoreKeys={ignoreKeys}
         yStartTime={yStartTime}
       />
     );
@@ -705,7 +614,9 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
       talk,
       advance,
       clear,
-      volume
+      volume,
+      playbackKeys,
+      ignoreKeys
     } = play;
 
     // Fetch the talk data
@@ -788,6 +699,8 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
         parseContent={()=>content_jsx}
         onAdvance={advance}
         onClear={clear}
+        playbackKeys={playbackKeys}
+        ignoreKeys={ignoreKeys}
         yStartTime={30}
       />
     );
