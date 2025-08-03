@@ -71,6 +71,37 @@ export const createKeyboardHandler = (dependencies) => {
         console.error('Volume control error:', error);
       }
     },
+    rate: () => {
+      // Find the currently playing media element, excluding overlay/background music and ambient audio
+      // Select the main media element (audio, video, or dash-video) inside .player, excluding overlays and ambient elements
+      const player = document.querySelector('.player:not(.overlay)');
+      let mediaElement = null;
+      if (player) {
+        mediaElement = player.querySelector('audio:not(.ambient), video:not(.ambient), dash-video:not(.ambient)');
+      }
+      
+      if (!mediaElement) {
+        console.log('No media element found');
+        return;
+      }
+
+      // Get current playback rate
+      const currentRate = mediaElement.playbackRate;
+      
+      // Cycle through rates: 1.0 -> 1.5 -> 2.0 -> 1.0
+      let nextRate;
+      if (currentRate === 1.0) {
+        nextRate = 1.5;
+      } else if (currentRate === 1.5) {
+        nextRate = 2.0;
+      } else {
+        nextRate = 1.0; // Default back to 1.0 for any other rate (including 2.0)
+      }
+      
+      // Set the new playback rate
+      mediaElement.playbackRate = nextRate;
+      console.log(`Playback rate changed from ${currentRate}x to ${nextRate}x`);
+    },
     sleep: () => {
       console.log('Sleep');
     }

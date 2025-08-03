@@ -364,6 +364,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
           {ambientMediaUrl && (
             <audio
               ref={ambientRef}
+              className="ambient"
               autoPlay
               src={ambientMediaUrl}
               style={{ display: "none" }}
