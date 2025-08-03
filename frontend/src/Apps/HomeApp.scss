@@ -67,4 +67,10 @@ h2{
     background-color: #000;
     pointer-events: none;
     transition: opacity 0.1s ease-in-out;
+    z-index: 9999;
+}
+
+.shader[data-opacity="1"] {
+    cursor: none;
+    pointer-events: all;
 }

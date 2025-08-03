@@ -33,6 +33,8 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
    *  - onAdvance: function => called when main media ends
    *  - onClear: function => called on Escape key
    *  - yStartTime: number => seconds before scrolling starts
+   *  - playbackKeys: object => keypad mappings for playback control
+   *  - ignoreKeys: boolean => whether to ignore global key handling
    */
   
   export default function ContentScroller({
@@ -51,7 +53,9 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
     onAdvance,
     onClear,
     shaders,
-    yStartTime = 15
+    yStartTime = 15,
+    playbackKeys = {},
+    ignoreKeys = false
   }) {
     // Refs for media elements
     const mainRef = useRef(null);
@@ -224,67 +228,111 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
   
     // Keyboard shortcuts
     useEffect(() => {
+      if (ignoreKeys) return;
+      
       const handleKeyDown = (event) => {
         const mainEl = mainRef.current;
         if (!mainEl) return;
-  
+
         const mainDuration = mainEl.duration || 0;
         const increment = Math.max(5, mainDuration / 30);
-  
-        switch (event.key) {
-          case "Tab":
-            event.preventDefault();
-            onAdvance && onAdvance();
-            break; // trigger on advance
-            
-          case "ArrowUp":
-            event.preventDefault();
-            cycleThroughClasses(1);
-            break;
-          case "ArrowDown":
-            event.preventDefault();
-            cycleThroughClasses(-1);
-            break;
-          case "ArrowLeft":
-            event.preventDefault();
-            {
-              const newT = Math.max(mainEl.currentTime - increment, 0);
-              mainEl.currentTime = newT;
-              setCurrentTime(newT);
-            }
-            break;
-          case "ArrowRight":
-            event.preventDefault();
-            {
-              const newT = Math.min(mainEl.currentTime + increment, mainDuration);
-              mainEl.currentTime = newT;
-              setCurrentTime(newT);
-            }
-            break;
-          case "Enter":
-          case " ":
-          case "MediaPlayPause":
-            event.preventDefault();
+
+        // Create playback key mappings similar to Player component
+        const keyMappings = {
+          // Default keyboard shortcuts
+          Tab: () => onAdvance && onAdvance(),
+          ArrowUp: () => cycleThroughClasses(1),
+          ArrowDown: () => cycleThroughClasses(-1),
+          ArrowLeft: () => {
+            const newT = Math.max(mainEl.currentTime - increment, 0);
+            mainEl.currentTime = newT;
+            setCurrentTime(newT);
+          },
+          ArrowRight: () => {
+            const newT = Math.min(mainEl.currentTime + increment, mainDuration);
+            mainEl.currentTime = newT;
+            setCurrentTime(newT);
+          },
+          Enter: () => {
             if (mainEl.paused) {
               mainEl.play().catch(() => {});
             } else {
               mainEl.pause();
             }
-            break;
-          case "Escape":
-            event.preventDefault();
-            onClear && onClear();
-            break;
-          default:
-            break;
+          },
+          ' ': () => {
+            if (mainEl.paused) {
+              mainEl.play().catch(() => {});
+            } else {
+              mainEl.pause();
+            }
+          },
+          MediaPlayPause: () => {
+            if (mainEl.paused) {
+              mainEl.play().catch(() => {});
+            } else {
+              mainEl.pause();
+            }
+          },
+          Escape: () => onClear && onClear(),
+          
+          // Add playback key mappings from keypad
+          ...(playbackKeys['prev'] || []).reduce((map, key) => ({ 
+            ...map, 
+            [key]: () => {
+              mainEl.currentTime = 0;
+              setCurrentTime(0);
+            }
+          }), {}),
+          ...(playbackKeys['play'] || []).reduce((map, key) => ({ 
+            ...map, 
+            [key]: () => {
+              if (!mainEl.paused) {
+                onAdvance && onAdvance();
+              } else {
+                mainEl.play().catch(() => {});
+              }
+            }
+          }), {}),
+          ...(playbackKeys['pause'] || []).reduce((map, key) => ({ 
+            ...map, 
+            [key]: () => {
+              if (mainEl.paused) {
+                mainEl.play().catch(() => {});
+              } else {
+                mainEl.pause();
+              }
+            }
+          }), {}),
+          ...(playbackKeys['rew'] || []).reduce((map, key) => ({ 
+            ...map, 
+            [key]: () => {
+              const newT = Math.max(mainEl.currentTime - increment, 0);
+              mainEl.currentTime = newT;
+              setCurrentTime(newT);
+            }
+          }), {}),
+          ...(playbackKeys['fwd'] || []).reduce((map, key) => ({ 
+            ...map, 
+            [key]: () => {
+              const newT = Math.min(mainEl.currentTime + increment, mainDuration);
+              mainEl.currentTime = newT;
+              setCurrentTime(newT);
+            }
+          }), {})
+        };
+
+        // Execute the mapped function if it exists
+        const mappedFunction = keyMappings[event.key];
+        if (mappedFunction) {
+          event.preventDefault();
+          mappedFunction();
         }
       };
-  
+
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [onClear]);
-  
-    // If no ambient, try to play main right away
+    }, [onClear, cycleThroughClasses, onAdvance, playbackKeys, ignoreKeys]);    // If no ambient, try to play main right away
     useEffect(() => {
       if (!ambientMediaUrl && mainRef.current) {
         mainRef.current.play().catch(() => {});
@@ -391,6 +439,7 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
   
   // This is the default export for Scriptures:
   export function Scriptures(play) {
+    console.log('Scriptures component rendered with props:', play);
     const { scripture, advance, clear, volume } = play;
     const [titleHeader, setTitleHeader] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
@@ -429,7 +478,15 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
   
     // Fetch the scripture text data
     useEffect(() => {
+      console.log('Scriptures useEffect triggered with scripture:', scripture);
+      if (!scripture) {
+        console.log('No scripture parameter provided');
+        return;
+      }
+      
+      console.log('Making API call to:', `data/scripture/${scripture}`);
       DaylightAPI(`data/scripture/${scripture}`).then(({reference, media_key,mediaUrl, verses}) => {
+        console.log('Scripture API response:', {reference, media_key, mediaUrl, verses: verses?.length});
         setScriptureTextData(verses);
         setTitleHeader(reference);
         setMediaKey(media_key);
@@ -438,6 +495,8 @@ import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scri
           const { title, subtitle: st } = verses[0].headings;
           setSubtitle([title, st].filter(Boolean).join(" • "));
         }
+      }).catch(error => {
+        console.error('Scripture API call failed:', error);
       });
     }, [scripture]);
   
