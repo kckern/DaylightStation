@@ -106,14 +106,13 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
             res.status(response.status).json({ 
                 error: 'Error fetching from Plex server!', 
                 status: response.status, 
-                message: response.statusText,
-                plexUrl: plexUrl
+                message: response.statusText
             });
             return;
         }
         res.redirect(plexUrl);
     } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server!', message: error.message, plexUrl: plexUrl, 
+        res.status(500).json({ error: 'Error fetching from Plex server!', message: error.message, 
             params: req.params, paths: req.path, query: req.query });
     }
 });
@@ -287,7 +286,7 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     try {
         res.json(plexInfo);
     } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, plexUrl: plexUrl });
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }
 });
 
@@ -494,7 +493,7 @@ mediaRouter.all('/plex/audio/:plex_key', async (req, res) => {
         res.setHeader('Content-Disposition', `inline; filename="${plex_key}.mp3"`);
         response.data.pipe(res);
     } catch (error) {
-        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message, media_url });
+        res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }
 });
 
