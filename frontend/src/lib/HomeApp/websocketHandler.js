@@ -41,21 +41,17 @@ export const createWebSocketHandler = (callbacks) => {
     const hasPlayKey = Object.keys(data).includes('play');
     const hasQueueKey = Object.keys(data).includes('queue');
     const isPlaylistItem = /^\d+$/.test(Object.values(data)[0]) || data.plex; // Numeric IDs or plex usually indicate playlists
-    
-    let action;
-    if (data.action) {
-      action = data.action;
-    } else if (hasPlayKey) {
-      action = 'play';
-    } else if (hasQueueKey) {
-      action = 'queue';
-    } else if (isPlaylistItem) {
-      action = 'queue';
-    } else {
-      // Default to 'play' for single content items like scripture, hymn, talk
-      action = 'play';
-    }
-    
+    // Use an object with test functions to determine the action type
+    const actionTests = {
+      play: () => hasPlayKey,
+      queue: () => hasQueueKey || isPlaylistItem
+    };
+
+    const action =
+      data.action ||
+      Object.keys(actionTests).find(key => actionTests[key]()) ||
+      'play';
+      
     // Transform numeric values to plex, otherwise to media
     if (/^\d+$/.test(data.play || data.queue)) {
       data.plex = data.play || data.queue;
