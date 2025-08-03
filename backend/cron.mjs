@@ -89,9 +89,44 @@ function computeNextRun(job, fromMoment) {
   return moment(rawNext).add(offsetMinutes, "minutes").tz(timeZone);
 }
 
+// Helper function to safely load cron config with backup fallback
+const loadCronConfig = () => {
+  let cronJobs = loadFile("config/cron");
+  
+  // If cron config is corrupt, empty, or not an array, try to load backup
+  if (!cronJobs || !Array.isArray(cronJobs) || cronJobs.length === 0) {
+    console.warn("Main cron config is empty or corrupt, attempting to load backup...");
+    const cronBackup = loadFile("config/cron_bak");
+    
+    if (cronBackup && Array.isArray(cronBackup) && cronBackup.length > 0) {
+      console.log("Successfully loaded cron backup, restoring main config...");
+      cronJobs = cronBackup;
+      // Restore the main config file from backup
+      saveFile("config/cron", cronJobs);
+    } else {
+      console.error("Both main cron config and backup are unavailable or corrupt.");
+      return [];
+    }
+  }
+  
+  return cronJobs;
+};
+
+// Helper function to create backup after successful execution
+const backupCronConfig = (cronJobs) => {
+  if (Array.isArray(cronJobs) && cronJobs.length > 0) {
+    try {
+      saveFile("config/cron_bak", cronJobs);
+      console.log(`Cron config backed up with ${cronJobs.length} jobs`);
+    } catch (error) {
+      console.error("Failed to backup cron config:", error);
+    }
+  }
+};
+
 export const cronContinuous = async () => {
   const now = moment().tz(timeZone);
-  const cronJobs = loadFile("config/cron") || [];
+  const cronJobs = loadCronConfig();
   if (!Array.isArray(cronJobs)) {
     console.error("cronJobs is not iterable. Cancelling execution.");
     return;
@@ -174,6 +209,9 @@ export const cronContinuous = async () => {
     }
   }
   saveFile("config/cron", cronJobs);
+  
+  // Create backup after successful execution if there are jobs
+  backupCronConfig(cronJobs);
 };
 
 setInterval(() => {
