@@ -32,6 +32,7 @@ function HomeApp() {
   const [keyMap, setKeyMap] = useState(null)
   const [lastPayloadMessage, setLastPayloadMessage] = useState(null)
   const [weatherData, setWeatherData] = useState(null)
+  const [shaderOpacity, setShaderOpacity] = useState(0)
 
   // Keep playbackKeys separate so we can be sure to check it is never undefined
   const [playbackKeys, setPlaybackKeys] = useState(null)
@@ -158,7 +159,8 @@ function HomeApp() {
     openMenu,
     resetQueue,
     setCurrentContent,
-    handleMenuSelection
+    handleMenuSelection,
+    setShaderOpacity
   })
 
   // If we have an active content component (like a sub-menu, player, etc.)
@@ -224,6 +226,7 @@ function HomeApp() {
   // Otherwise, the main dashboard UI
   return (
     <div className='App'>
+      <div className='shader' style={{opacity: shaderOpacity}}></div>
       <div className='sidebar'>
         <div style={{ 
           display: 'flex', 

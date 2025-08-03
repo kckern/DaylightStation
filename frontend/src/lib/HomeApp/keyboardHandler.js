@@ -16,7 +16,8 @@ export const createKeyboardHandler = (dependencies) => {
     openMenu,
     resetQueue,
     setCurrentContent,
-    handleMenuSelection
+    handleMenuSelection,
+    setShaderOpacity
   } = dependencies;
 
   const parseParams = (p) => 
@@ -70,6 +71,31 @@ export const createKeyboardHandler = (dependencies) => {
       } catch (error) {
         console.error('Volume control error:', error);
       }
+    },
+    shader: (params) => {
+      // cycle through shaderOpacity values: 0, 0.25, 0.5, 0.75, 1.0, then back to 0.75, 0.5, 0.25, 0, etc.
+      setShaderOpacity((currentOpacity) => {
+      const opacityLevels = [0, 0.25, 0.5, 0.75, 1.0];
+      const currentIndex = opacityLevels.findIndex(level => Math.abs(level - currentOpacity) < 0.01);
+
+      // Determine direction: if at 1.0, start going down; if at 0, start going up
+      let nextIndex;
+      if (typeof setShaderOpacity._direction === 'undefined') {
+        setShaderOpacity._direction = 1; // start going up
+      }
+      if (currentIndex === opacityLevels.length - 1) {
+        setShaderOpacity._direction = -1; // reached top, go down
+      } else if (currentIndex === 0) {
+        setShaderOpacity._direction = 1; // reached bottom, go up
+      }
+      nextIndex = currentIndex + setShaderOpacity._direction;
+      // Clamp nextIndex to valid range
+      nextIndex = Math.max(0, Math.min(opacityLevels.length - 1, nextIndex));
+
+      const nextOpacity = opacityLevels[nextIndex];
+      console.log(`Shader opacity changed from ${Math.round(currentOpacity * 100)}% to ${Math.round(nextOpacity * 100)}%`);
+      return nextOpacity;
+      });
     },
     rate: () => {
       // Find the currently playing media element, excluding overlay/background music and ambient audio
@@ -160,5 +186,6 @@ export const useKeyboardHandler = (keyMap, dependencies) => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [keyMap, dependencies.menu, dependencies.menuOpen, dependencies.closeMenu, 
-      dependencies.currentContent, dependencies.openMenu, dependencies.resetQueue, dependencies.handleMenuSelection]);
+      dependencies.currentContent, dependencies.openMenu, dependencies.resetQueue, 
+      dependencies.handleMenuSelection, dependencies.setShaderOpacity]);
 };
