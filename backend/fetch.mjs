@@ -608,6 +608,34 @@ export const getChildrenFromMediaKey = async ({media_key, config, req}) => {
 
 // Normalize parameter structure for queue items
 export const applyParamsToItems = (items) => {
+
+    const dayFilter = ({days}) => {
+        if(!days || days.length === 0) return true; 
+        const weekdayInt = moment().isoWeekday();
+        const daysMap = {
+            "Monday": [1],
+            "Tuesday": [2],
+            "Wednesday": [3],
+            "Thursday": [4],
+            "Friday": [5],
+            "Saturday": [6],
+            "Sunday": [7],
+            //compounds
+            "Weekdays": [1, 2, 3, 4, 5],
+            "Weekend": [6, 7],
+            "M•W•F": [1, 3, 5],
+            "T•Th": [2, 4],
+            "M•W": [1, 3]
+        };
+        const dayArray = daysMap[days];
+        if(!dayArray) {
+            console.warn(`Unknown days format: ${days}`);
+            return true; // If unknown, don't filter out
+        }
+        return dayArray.includes(weekdayInt);
+    };
+
+
     return items.map(item => {
         // Convert legacy parameter names
         if (item.playbackrate) {
@@ -617,8 +645,7 @@ export const applyParamsToItems = (items) => {
         
         const keysToMove = ['playbackRate', 'volume', 'loop', 'shader'];
         
-        // Find the media/action key by looking for object values that could contain nested parameters
-        // Media keys typically have object values, while metadata keys have primitive values
+
         const allKeys = Object.keys(item);
         const mediaKey = allKeys.find(key => {
             const value = item[key];
@@ -641,7 +668,7 @@ export const applyParamsToItems = (items) => {
         }
         
         return item;
-    }).filter(item => item?.active !== false);
+    }).filter(item => item?.active !== false).filter(dayFilter);
 };
 
 apiRouter.get('/list/*', async (req, res, next) => {
