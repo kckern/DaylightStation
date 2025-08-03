@@ -46,10 +46,10 @@ export class Plex {
       if (media_type === 'audio') {
       const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
       if (!mediaKey) throw new Error("Media key not found for audio.");
-      return `${plexProxyHost}${mediaKey}?X-Plex-Token=${token}`;
+      return `${plexProxyHost}${mediaKey}`;
       } else {
         if (!key) throw new Error("Rating key not found for video.");
-        const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}&X-Plex-Token=${token}`;
+        const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}`;
         const isValid = await axios.get(url).then((response) => {
           return response.status >= 200 && response.status < 300;
         }).catch(() => false);
@@ -494,8 +494,7 @@ export class Plex {
 
   artUrl(item, id, type = 'art') {
     let paramString = `library/metadata/${item}/${type}/${id}`;
-    let url = `${this.baseUrl}/${paramString}?X-Plex-Token=${this.token}`;
-    return url;
+    return `/plex_proxy/${paramString}`;
   }
   thumbUrl(paramString) {
     if (!paramString) return "";
