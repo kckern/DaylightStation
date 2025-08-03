@@ -3,7 +3,8 @@ import React, {
     useState,
     useRef,
     useEffect,
-    useCallback
+    useCallback,
+    useMemo
   } from "react";
   import moment from "moment";
   import "./ContentScroller.scss";
@@ -11,6 +12,7 @@ import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
 import paperBackground from "../../assets/backgrounds/paper.jpg";
 import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scripture-guide.jsx";
 import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandler.js';
+import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
   
   /**
    * ContentScroller (superclass)
@@ -67,11 +69,13 @@ import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandle
     const [currentTime, setCurrentTime] = useState(0);
     const [progress, setProgress] = useState(0);
   
-    // For measuring scrolled layout
-    const panelRef = useRef(null);
-    const contentRef = useRef(null);
-    const [panelHeight, setPanelHeight] = useState(0);
-    const [contentHeight, setContentHeight] = useState(0);
+    // Use dynamic dimensions hook for layout measurement
+    const {
+      panelRef,
+      contentRef,
+      panelHeight,
+      contentHeight
+    } = useDynamicDimensions([contentData, duration]);
 
 
   const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
@@ -85,8 +89,6 @@ import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandle
     }
     );
   };
-
-
 
     // Fade-in class
     const [init, setInit] = useState(true);
@@ -105,14 +107,11 @@ import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandle
       currentTime < yStartTime || movingTime <= 0
         ? 0
         : (currentTime - yStartTime) / movingTime;
-  
-    // On mount or after data changes, measure the textpanel
+
+    // Set init to false after first render
     useEffect(() => {
-      if (panelRef.current) {
-        setPanelHeight(panelRef.current.clientHeight);
-      }
       setInit(false);
-    }, [panelRef, contentData, duration]);
+    }, []);
 
     // Logger for media progress
     const lastLoggedTimeRef = useRef(Date.now());
@@ -141,13 +140,6 @@ import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandle
       mainEl.addEventListener('timeupdate', onTimeUpdate);
       return () => mainEl.removeEventListener('timeupdate', onTimeUpdate);
     }, [mainMediaUrl, duration, title]);
-  
-    // After content is rendered, measure the actual content height
-    useEffect(() => {
-      if (contentRef.current) {
-        setContentHeight(contentRef.current.clientHeight);
-      }
-    }, [contentData]);
   
     // Keep time and progress in sync while playing
     useEffect(() => {
@@ -248,11 +240,21 @@ import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandle
     const renderedContent = parseContent
       ? parseContent(contentData)
       : (contentData || []).map((line, idx) => <p key={idx}>{line}</p>);
-  
-    // Final transform for scrolling
-    const yOffset = (yProgress * contentHeight) - (panelHeight * yProgress); 
+   
+    // Final transform for scrolling with safeguards against jitter
+    const yOffset = useMemo(() => {
+      // Ensure we have valid dimensions before calculating
+      if (!contentHeight || !panelHeight) return 0;
+      
+      // Calculate base offset
+      const baseOffset = (yProgress * contentHeight) - (panelHeight * yProgress);
+      
+      // Clamp to reasonable bounds to prevent over-scrolling
+      const maxOffset = Math.max(0, contentHeight - panelHeight);
+      return Math.max(0, Math.min(maxOffset, baseOffset));
+    }, [yProgress, contentHeight, panelHeight]); 
     return (
-      <div className={`content-scroller ${type} ${className} ${shader}`}>
+      <div className={`content-scroller ${type} ${className} ${shader}`} style={{ backgroundImage: `url(${paperBackground})` }}>
         {(title || subtitle) && (
           <>
             {title && <h2>{title}</h2>}
@@ -413,7 +415,7 @@ import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandle
       const data = convertVersesToScriptureData(allVerses);
   
       return (
-        <div className="scripture-text" style={{ backgroundImage: `url(${paperBackground})` }}>
+        <div className="scripture-text">
           {scriptureDataToJSX(data)}
         </div>
       );
