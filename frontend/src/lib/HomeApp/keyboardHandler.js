@@ -65,7 +65,6 @@ export const createKeyboardHandler = (dependencies) => {
             endpoint = 'exe/vol/togglemute';
             break;
           default:
-            // If no specific param, default to cycling through volume levels
             endpoint = 'exe/vol/cycle';
         }
         
@@ -76,40 +75,33 @@ export const createKeyboardHandler = (dependencies) => {
       }
     },
     shader: (params) => {
-      // cycle through shaderOpacity values: 0.25, 0.5, 0.75, 1.0, then back to 0.75, 0.5, 0.25, etc.
-      // Never cycle to 0 (100% opacity) - that's only for sleep toggle
       setShaderOpacity((currentOpacity) => {
-      const opacityLevels = [0.25, 0.5, 0.75, 1.0];
-      const currentIndex = opacityLevels.findIndex(level => Math.abs(level - currentOpacity) < 0.01);
+        const opacityLevels = [0.25, 0.5, 0.75, 1.0];
+        const currentIndex = opacityLevels.findIndex(level => Math.abs(level - currentOpacity) < 0.01);
 
-      // If current opacity is not in our cycle (like 0), start at first level
-      if (currentIndex === -1) {
-        console.log(`Shader opacity changed from ${Math.round(currentOpacity * 100)}% to 25%`);
-        return 0.25;
-      }
+        if (currentIndex === -1) {
+          console.log(`Shader opacity changed from ${Math.round(currentOpacity * 100)}% to 25%`);
+          return 0.25;
+        }
 
-      // Determine direction: if at 1.0, start going down; if at 0.25, start going up
-      let nextIndex;
-      if (typeof setShaderOpacity._direction === 'undefined') {
-        setShaderOpacity._direction = 1; // start going up
-      }
-      if (currentIndex === opacityLevels.length - 1) {
-        setShaderOpacity._direction = -1; // reached top, go down
-      } else if (currentIndex === 0) {
-        setShaderOpacity._direction = 1; // reached bottom, go up
-      }
-      nextIndex = currentIndex + setShaderOpacity._direction;
-      // Clamp nextIndex to valid range
-      nextIndex = Math.max(0, Math.min(opacityLevels.length - 1, nextIndex));
+        let nextIndex;
+        if (typeof setShaderOpacity._direction === 'undefined') {
+          setShaderOpacity._direction = 1;
+        }
+        if (currentIndex === opacityLevels.length - 1) {
+          setShaderOpacity._direction = -1;
+        } else if (currentIndex === 0) {
+          setShaderOpacity._direction = 1;
+        }
+        nextIndex = currentIndex + setShaderOpacity._direction;
+        nextIndex = Math.max(0, Math.min(opacityLevels.length - 1, nextIndex));
 
-      const nextOpacity = opacityLevels[nextIndex];
-      console.log(`Shader opacity changed from ${Math.round(currentOpacity * 100)}% to ${Math.round(nextOpacity * 100)}%`);
-      return nextOpacity;
+        const nextOpacity = opacityLevels[nextIndex];
+        console.log(`Shader opacity changed from ${Math.round(currentOpacity * 100)}% to ${Math.round(nextOpacity * 100)}%`);
+        return nextOpacity;
       });
     },
     rate: () => {
-      // Find the currently playing media element, excluding overlay/background music and ambient audio
-      // Select the main media element (audio, video, or dash-video) inside .player, excluding overlays and ambient elements
       const player = document.querySelector('.player:not(.overlay)');
       let mediaElement = null;
       if (player) {
@@ -121,36 +113,43 @@ export const createKeyboardHandler = (dependencies) => {
         return;
       }
 
-      // Get current playback rate
       const currentRate = mediaElement.playbackRate;
-      
-      // Cycle through rates: 1.0 -> 1.5 -> 2.0 -> 1.0
       let nextRate;
       if (currentRate === 1.0) {
         nextRate = 1.5;
       } else if (currentRate === 1.5) {
         nextRate = 2.0;
       } else {
-        nextRate = 1.0; // Default back to 1.0 for any other rate (including 2.0)
+        nextRate = 1.0;
       }
-      
-      // Set the new playback rate
       mediaElement.playbackRate = nextRate;
       console.log(`Playback rate changed from ${currentRate}x to ${nextRate}x`);
     },
     sleep: () => {
-      // Toggle shader like sleep/wake - always between previous level and 100% (off/invisible)
       setShaderOpacity((currentOpacity) => {
         if (currentOpacity === 1.0) {
-          // Currently "off" (100%), restore previous opacity
-          // If no previous state or previous was also 100%, default to 0% (fully visible)
+          // Already asleep, so wake up
           const restoreOpacity = (previousShaderOpacity === null || previousShaderOpacity === 1.0) ? 0 : previousShaderOpacity;
           console.log(`Sleep wake: Restoring shader opacity to ${Math.round(restoreOpacity * 100)}%`);
+          previousShaderOpacity = null;
           return restoreOpacity;
         } else {
-          // Currently has some visibility, turn "off" (set to 100%) and remember the current value
+          // Not asleep, so go to sleep
           previousShaderOpacity = currentOpacity;
           console.log(`Sleep off: Storing opacity ${Math.round(currentOpacity * 100)}% and turning off (100%)`);
+          // Add a one-time keydown listener to wake up
+          const wakeUp = (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            setShaderOpacity((_) => {
+              const restoreOpacity = (previousShaderOpacity === null || previousShaderOpacity === 1.0) ? 0 : previousShaderOpacity;
+              console.log(`Sleep wake (keydown): Restoring shader opacity to ${Math.round(restoreOpacity * 100)}%`);
+              previousShaderOpacity = null;
+              return restoreOpacity;
+            });
+            window.removeEventListener('keydown', wakeUp, true);
+          };
+          window.addEventListener('keydown', wakeUp, true);
           return 1.0;
         }
       });
