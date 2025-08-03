@@ -604,7 +604,7 @@ export function SinglePlayer(play) {
   const fetchVideoInfo = useCallback(async () => {
     setIsReady(false);
     if (!!plex) {
-      const url =  `media/plex/info/${plex}${shuffle ? `/shuffle` : ''}`;
+      const url = shuffle ? `media/plex/info/${plex}/shuffle` : `media/plex/info/${plex}`;
       const infoResponse = await DaylightAPI(url);
       setMediaInfo({ ...infoResponse, media_key: infoResponse.plex });
       setIsReady(true);
@@ -617,7 +617,7 @@ export function SinglePlayer(play) {
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, shuffle, play]);
+  }, [plex, media, rate, open, shuffle]);
 
   useEffect(() => {
     fetchVideoInfo();
