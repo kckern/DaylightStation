@@ -5,34 +5,33 @@ import Highcharts, { color } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
 
-export default function WeatherForecast() {
+export default function WeatherForecast({ weatherData }) {
   const [temps, setTemps] = useState([]);
   const [times, setTimes] = useState([]);
 
   const celciusToFahrenheit = (temp) => Math.round(temp * 9/5 + 32);
 
-  const reloadData = () => {
-    DaylightAPI('/data/lifelog/weather').then((response) => {
-        const list = response.hourly || [];
-        const endTime = moment().add(36, 'hours');
-        const isFuture = ({time}) => moment(time).isAfter(moment()) && moment(time).isBefore(endTime);
-      const futureList = list.filter(isFuture);
-      const temps = futureList.map((item) => ({temp: celciusToFahrenheit(item.temp), precip:item.precip}));
-      const times = futureList.map((item) => item.time).map((time) => moment(time).format('ha')) || [];
+  const processWeatherData = (data) => {
+    if (!data?.hourly) return;
+    
+    const list = data.hourly || [];
+    const endTime = moment().add(36, 'hours');
+    const isFuture = ({time}) => moment(time).isAfter(moment()) && moment(time).isBefore(endTime);
+    const futureList = list.filter(isFuture);
+    const temps = futureList.map((item) => ({temp: celciusToFahrenheit(item.temp), precip:item.precip}));
+    const times = futureList.map((item) => item.time).map((time) => moment(time).format('ha')) || [];
 
-      //every n hours
-      const n = 5;
-      setTemps(temps.filter((_, i) => i % n === 0));
-      setTimes(times.filter((_, i) => i % n === 0));
+    //every n hours
+    const n = 5;
+    setTemps(temps.filter((_, i) => i % n === 0));
+    setTimes(times.filter((_, i) => i % n === 0));
+  };
+
+  useEffect(() => {
+    if (weatherData) {
+      processWeatherData(weatherData);
     }
-    );
-  }
-
-    useEffect(() => {
-        reloadData();
-        const interval = setInterval(reloadData, 300000);
-        return () => clearInterval(interval);
-    }, []);
+  }, [weatherData]);
 
 const minTemp = Math.min(...temps.map(({temp}) => temp)) - 5;
 const options = {
