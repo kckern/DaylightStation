@@ -20,6 +20,9 @@ export const createKeyboardHandler = (dependencies) => {
     setShaderOpacity
   } = dependencies;
 
+  // Store the previous shader opacity for sleep toggle (like mute/unmute)
+  let previousShaderOpacity = null;
+
   const parseParams = (p) => 
     p?.includes?.(":") ? p.split(":").map(s => s.trim()) : ["plex", p ?? ""];
 
@@ -129,7 +132,21 @@ export const createKeyboardHandler = (dependencies) => {
       console.log(`Playback rate changed from ${currentRate}x to ${nextRate}x`);
     },
     sleep: () => {
-      console.log('Sleep');
+      // Toggle shader like sleep/wake - always between previous level and 100% (off/invisible)
+      setShaderOpacity((currentOpacity) => {
+        if (currentOpacity === 1.0) {
+          // Currently "off" (100%), restore previous opacity
+          // If no previous state or previous was also 100%, default to 0% (fully visible)
+          const restoreOpacity = (previousShaderOpacity === null || previousShaderOpacity === 1.0) ? 0 : previousShaderOpacity;
+          console.log(`Sleep wake: Restoring shader opacity to ${Math.round(restoreOpacity * 100)}%`);
+          return restoreOpacity;
+        } else {
+          // Currently has some visibility, turn "off" (set to 100%) and remember the current value
+          previousShaderOpacity = currentOpacity;
+          console.log(`Sleep off: Storing opacity ${Math.round(currentOpacity * 100)}% and turning off (100%)`);
+          return 1.0;
+        }
+      });
     }
   };
 
