@@ -31,6 +31,7 @@ function HomeApp() {
   const [currentContent, setCurrentContent] = useState(null)
   const [keyMap, setKeyMap] = useState(null)
   const [lastPayloadMessage, setLastPayloadMessage] = useState(null)
+  const [weatherData, setWeatherData] = useState(null)
 
   // Keep playbackKeys separate so we can be sure to check it is never undefined
   const [playbackKeys, setPlaybackKeys] = useState(null)
@@ -137,6 +138,17 @@ function HomeApp() {
       })
   }, [])
 
+  // Fetch weather data once
+  useEffect(() => {
+    DaylightAPI('/data/lifelog/weather')
+      .then((data) => {
+        setWeatherData(data)
+      })
+      .catch((error) => {
+        console.error('Failed to fetch weather data:', error)
+      })
+  }, [])
+
   // Attach keydown listener once keyMap is loaded
   useKeyboardHandler(keyMap, {
     menu,
@@ -234,8 +246,8 @@ function HomeApp() {
           <ConnectionStatus size={16} />
         </div>
         <Clock />
-        <Weather />
-        <WeatherForecast />
+        <Weather weatherData={weatherData} />
+        <WeatherForecast weatherData={weatherData} />
         <div
           style={{
             flexGrow: 1,

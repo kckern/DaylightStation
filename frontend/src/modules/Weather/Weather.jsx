@@ -289,7 +289,7 @@ const codes = {
   }
 };
 
-export default function Weather() {
+export default function Weather({ weatherData }) {
   const celciusToFahrenheit = temp => Math.round(temp * 9 / 5 + 32);
   const isDaytime = () =>
     moment().isBetween(
@@ -299,29 +299,29 @@ export default function Weather() {
 
   const [currentWeather, setCurrentWeather] = useState({});
 
-  const reloadData = () => {
-    DaylightAPI("/data/lifelog/weather").then(({ current }) => {
-
-      const descdata = (codes[current.code]?.[isDaytime() ? "day" : "night"]) || {};
-      current.temp = celciusToFahrenheit(current.temp);
-      current.feel = celciusToFahrenheit(current.feel);
-      current = {
-        ...current,
-        ...descdata
-      };
-      current.aircolor =
-        current.aqi >= 150
-          ? red
-          : current.aqi >= 100 ? yellow : current.aqi >= 50 ? lime : green;
-      setCurrentWeather(current);
-    });
+  const processWeatherData = (data) => {
+    if (!data?.current) return;
+    
+    const { current } = data;
+    const descdata = (codes[current.code]?.[isDaytime() ? "day" : "night"]) || {};
+    const processedCurrent = {
+      ...current,
+      temp: celciusToFahrenheit(current.temp),
+      feel: celciusToFahrenheit(current.feel),
+      ...descdata
+    };
+    processedCurrent.aircolor =
+      processedCurrent.aqi >= 150
+        ? red
+        : processedCurrent.aqi >= 100 ? yellow : processedCurrent.aqi >= 50 ? lime : green;
+    setCurrentWeather(processedCurrent);
   };
 
   useEffect(() => {
-    reloadData();
-    const interval = setInterval(reloadData, 300000);
-    return () => clearInterval(interval);
-  }, []);
+    if (weatherData) {
+      processWeatherData(weatherData);
+    }
+  }, [weatherData]);
   if (!currentWeather.temp) return null;
 
   return (

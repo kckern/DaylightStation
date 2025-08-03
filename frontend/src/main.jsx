@@ -17,17 +17,15 @@ const HomeAppWithWebSocket = () => (
 );
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<HomeAppWithWebSocket />} />
-        <Route path="/budget" element={<FinanceApp />} />
-        <Route path="/finances" element={<FinanceApp />} />
-        <Route path="/tv" element={<TVApp />} />
-        <Route path="/health" element={<HealthApp />} />
-        <Route path="/fitness" element={<FitnessApp />} />
-        <Route path="*" element={<Blank />} />
-      </Routes>
-    </BrowserRouter>
-  </React.StrictMode>,
+  <BrowserRouter>
+    <Routes>
+      <Route path="/" element={<HomeAppWithWebSocket />} />
+      <Route path="/budget" element={<FinanceApp />} />
+      <Route path="/finances" element={<FinanceApp />} />
+      <Route path="/tv" element={<TVApp />} />
+      <Route path="/health" element={<HealthApp />} />
+      <Route path="/fitness" element={<FitnessApp />} />
+      <Route path="*" element={<Blank />} />
+    </Routes>
+  </BrowserRouter>,
 );
