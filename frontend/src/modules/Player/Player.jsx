@@ -7,6 +7,7 @@ import 'dash-video-element';
 import spinner from '../../assets/icons/spinner.svg';
 import pause from '../../assets/icons/pause.svg';
 import AppContainer from '../AppContainer/AppContainer.jsx';
+import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandler.js';
 
 
 /*─────────────────────────────────────────────────────────────*/
@@ -94,113 +95,19 @@ function useCommonMediaController({
   };
 
 
-  const lastKeypressTimeRef = useRef(0);
-  const delta = 350;
-
-
-  useEffect(() => {
-    const skipToNextTrack = () => {
-      const mediaEl = getMediaEl();
-      if (mediaEl) {
-      const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
-      const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '')
-      DaylightAPI(`media/log`, { title, type, media_key, seconds: mediaEl.currentTime, percent:100 });
-      DaylightAPI(`harvest/watchlist`);
-      }
-      onEnd(1);
-    };
-    const skipToPrevTrack = () => {
-      const mediaEl = getMediaEl();
-      if (mediaEl && mediaEl.currentTime > 5) {
-      mediaEl.currentTime = 0;
-      } else {
-      onEnd(-1);
-      }
-    };
-    const advanceInCurrentTrack = (seconds) => {
-      const mediaEl = getMediaEl();
-      if (mediaEl) {
-      const increment = mediaEl.duration
-        ? Math.max(5, Math.floor(mediaEl.duration / 50))
-        : 5;
-      mediaEl.currentTime = seconds > 0
-        ? Math.min(mediaEl.currentTime + Math.max(seconds, increment), mediaEl.duration || 0)
-        : Math.max(mediaEl.currentTime + Math.min(seconds, -increment), 0);
-      }
-    };
-    const togglePlayPause = () => {
-      const mediaEl = getMediaEl();
-      if (mediaEl) mediaEl.paused ? mediaEl.play() : mediaEl.pause();
-    };
-    const startTrackOver = () => {
-      const mediaEl = getMediaEl();
-      if (mediaEl) mediaEl.currentTime = 0;
-    };
-
-
-    const handleRightArrow = (e) => {
-      const isDoubleClick = Date.now() - lastKeypressTimeRef.current < delta;
-      console.log({ isDoubleClick, lastKeypressTime: lastKeypressTimeRef.current });
-      lastKeypressTimeRef.current = Date.now();
-      if (isDoubleClick) return skipToNextTrack();
-      return advanceInCurrentTrack(10);
-    };
-
-    const handleLeftArrow = (e) => {
-      const isDoubleClick = Date.now() - lastKeypressTimeRef.current < delta;
-      lastKeypressTimeRef.current = Date.now();
-      if (isDoubleClick) return skipToPrevTrack();
-      return advanceInCurrentTrack(-10);
-    };
-
-    const handleKeyDown = (event) => {
-      if (event.repeat) return;
-      const isPlaying = getMediaEl()?.paused === false;
-      const isPaused = getMediaEl()?.paused === true;
-      const isFirstTrackInQueue = queuePosition === 0;
-      
-      // When paused and pressing up/down arrows, don't handle them here - let LoadingOverlay handle them
-      if (isPaused && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-        return;
-      }
-      
-      playbackKeys = playbackKeys || {};
-      const keyMap = {
-      Tab: skipToNextTrack,
-      Backspace: skipToPrevTrack,
-      ArrowRight: (e) => handleRightArrow(e),
-      ArrowLeft: (e)=> handleLeftArrow(e),
-      ArrowUp: () => cycleThroughClasses(1),
-      ArrowDown: () => cycleThroughClasses(-1),
-      Escape: onClear,
-      Enter: togglePlayPause,
-      ' ': togglePlayPause,
-      Space: togglePlayPause,
-      Spacebar: togglePlayPause,
-      MediaPlayPause: togglePlayPause,
-      ...(playbackKeys['prev'] || []).reduce((map, key) => ({ ...map, [key]: isFirstTrackInQueue ? startTrackOver : skipToPrevTrack }), {}),
-      ...(playbackKeys['play'] || []).reduce((map, key) => ({ ...map, [key]: () => !isPlaying ? getMediaEl()?.play() : skipToNextTrack() }), {}),
-      ...(playbackKeys['pause'] || []).reduce((map, key) => ({ ...map, [key]: togglePlayPause }), {}),
-      ...(playbackKeys['rew'] || []).reduce((map, key) => ({ ...map, [key]: () => advanceInCurrentTrack(-10) }), {}),
-      ...(playbackKeys['fwd'] || []).reduce((map, key) => ({ ...map, [key]: () => advanceInCurrentTrack(10) }), {}),
-      };
-
-      const action = keyMap[event.key];
-      if (action) {
-      event.preventDefault();
-      action();
-      } else {
-     // alert(`Key "${event.key}" is not supported.`);
-      }
-    };
-
-
-    if (!ignoreKeys) window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      if (!ignoreKeys) window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onClear, onEnd, isAudio, isVideo, onShaderLevelChange, duration, cycleThroughClasses, playbackKeys, ignoreKeys]);
+  // Use centralized keyboard handler
+  useMediaKeyboardHandler({
+    getMediaEl,
+    onEnd,
+    onClear,
+    cycleThroughClasses,
+    playbackKeys,
+    queuePosition,
+    ignoreKeys,
+    meta,
+    type,
+    media_key
+  });
 
   useEffect(() => {
     const interval = setInterval(() => {
