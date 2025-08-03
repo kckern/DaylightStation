@@ -76,7 +76,7 @@ export const createKeyboardHandler = (dependencies) => {
     },
     shader: (params) => {
       setShaderOpacity((currentOpacity) => {
-        const opacityLevels = [0.25, 0.5, 0.75, 1.0];
+        const opacityLevels = [0, 0.25, 0.5, 0.75];
         const currentIndex = opacityLevels.findIndex(level => Math.abs(level - currentOpacity) < 0.01);
 
         if (currentIndex === -1) {
@@ -102,7 +102,7 @@ export const createKeyboardHandler = (dependencies) => {
       });
     },
     rate: () => {
-      const player = document.querySelector('.player:not(.overlay)');
+      const player = document.querySelector('.player:not(.overlay), .content-scroller:not(.overlay)');
       let mediaElement = null;
       if (player) {
         mediaElement = player.querySelector('audio:not(.ambient), video:not(.ambient), dash-video:not(.ambient)');

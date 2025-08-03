@@ -95,16 +95,16 @@ const loadCronConfig = () => {
   
   // If cron config is corrupt, empty, or not an array, try to load backup
   if (!cronJobs || !Array.isArray(cronJobs) || cronJobs.length === 0) {
-    console.warn("Main cron config is empty or corrupt, attempting to load backup...");
+ //   console.warn("Main cron config is empty or corrupt, attempting to load backup...");
     const cronBackup = loadFile("config/cron_bak");
     
     if (cronBackup && Array.isArray(cronBackup) && cronBackup.length > 0) {
-      console.log("Successfully loaded cron backup, restoring main config...");
+   //   console.log("Successfully loaded cron backup, restoring main config...");
       cronJobs = cronBackup;
       // Restore the main config file from backup
       saveFile("config/cron", cronJobs);
     } else {
-      console.error("Both main cron config and backup are unavailable or corrupt.");
+    //  console.error("Both main cron config and backup are unavailable or corrupt.");
       return [];
     }
   }
@@ -117,9 +117,9 @@ const backupCronConfig = (cronJobs) => {
   if (Array.isArray(cronJobs) && cronJobs.length > 0) {
     try {
       saveFile("config/cron_bak", cronJobs);
-      console.log(`Cron config backed up with ${cronJobs.length} jobs`);
+    //  console.log(`Cron config backed up with ${cronJobs.length} jobs`);
     } catch (error) {
-      console.error("Failed to backup cron config:", error);
+    //  console.error("Failed to backup cron config:", error);
     }
   }
 };
