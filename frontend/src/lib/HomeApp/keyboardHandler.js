@@ -76,12 +76,19 @@ export const createKeyboardHandler = (dependencies) => {
       }
     },
     shader: (params) => {
-      // cycle through shaderOpacity values: 0, 0.25, 0.5, 0.75, 1.0, then back to 0.75, 0.5, 0.25, 0, etc.
+      // cycle through shaderOpacity values: 0.25, 0.5, 0.75, 1.0, then back to 0.75, 0.5, 0.25, etc.
+      // Never cycle to 0 (100% opacity) - that's only for sleep toggle
       setShaderOpacity((currentOpacity) => {
-      const opacityLevels = [0, 0.25, 0.5, 0.75, 1.0];
+      const opacityLevels = [0.25, 0.5, 0.75, 1.0];
       const currentIndex = opacityLevels.findIndex(level => Math.abs(level - currentOpacity) < 0.01);
 
-      // Determine direction: if at 1.0, start going down; if at 0, start going up
+      // If current opacity is not in our cycle (like 0), start at first level
+      if (currentIndex === -1) {
+        console.log(`Shader opacity changed from ${Math.round(currentOpacity * 100)}% to 25%`);
+        return 0.25;
+      }
+
+      // Determine direction: if at 1.0, start going down; if at 0.25, start going up
       let nextIndex;
       if (typeof setShaderOpacity._direction === 'undefined') {
         setShaderOpacity._direction = 1; // start going up
