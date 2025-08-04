@@ -33,6 +33,7 @@ export default function AppContainer({ open, clear }) {
   if (app === "art") return <ArtApp />;
   if (app === "webcam") return <WebcamApp />;
   if (app === "wrapup") return <WrapUp clear={clear} />;
+  if (app === "office_off") return <OfficeOff clear={clear} />;
   return (
     <div>
       <h2>App Container</h2>
@@ -47,6 +48,18 @@ export default function AppContainer({ open, clear }) {
 function WrapUp({ clear }) {
   useEffect(() => {
     DaylightAPI("exe/tv/off").then(()=>{
+      //trigger escape key
+      const event = new KeyboardEvent("keydown", { key: "Escape" });
+      window.dispatchEvent(event);
+      clear();
+    });
+  }, []);
+  return null;
+}
+
+function OfficeOff({ clear }) {
+  useEffect(() => {
+    DaylightAPI("exe/office_tv/off").then(()=>{
       //trigger escape key
       const event = new KeyboardEvent("keydown", { key: "Escape" });
       window.dispatchEvent(event);
