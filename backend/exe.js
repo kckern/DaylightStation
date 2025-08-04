@@ -12,6 +12,21 @@ const exeRouter = express.Router();
 exeRouter.use(express.json());
 
 // Helper class for Home Assistant
+// Expected Home Assistant entities and interfaces:
+// Binary Sensors:
+//   - binary_sensor.living_room_tv_state (TV power state for living room)
+//   - binary_sensor.office_tv_state (TV power state for office)
+// Scripts:
+//   - script.living_room_tv_on (Turn on living room TV)
+//   - script.living_room_tv_off (Turn off living room TV)
+//   - script.living_room_tv_volume (Set living room TV volume)
+//   - script.office_tv_on (Turn on office TV)
+//   - script.office_tv_off (Turn off office TV)
+//   - script.office_tv_volume (Set office TV volume)
+// API Endpoints Used:
+//   - /api/states/{entity_id} (GET) - Get entity state
+//   - /api/services/{domain}/{service} (POST) - Call service
+//   - /api/services/script/turn_on (POST) - Run script
 class HomeAssistant {
     constructor(host, port, token) {
         this.host = host;
@@ -86,32 +101,32 @@ class HomeAssistant {
         return Math.floor((Date.now() - startTime) / 1000);
     }
 
-    async turnOnTV() {
+    async turnOnTV(location = 'living_room') {
         const startTime = Date.now();
-        let { state } = await this.getSensorData('binary_sensor.living_room_tv_state');
+        let { state } = await this.getSensorData(`binary_sensor.${location}_tv_state`);
         if (state === 'on') {
-            await this.runScript('script.living_room_tv_volume');
+            await this.runScript(`script.${location}_tv_volume`);
             return Math.floor((Date.now() - startTime) / 1000);
         }
-        await this.runScript('script.living_room_tv_on');
-        await this.waitForState('binary_sensor.living_room_tv_state', 'on');
+        await this.runScript(`script.${location}_tv_on`);
+        await this.waitForState(`binary_sensor.${location}_tv_state`, 'on');
         return Math.floor((Date.now() - startTime) / 1000);
     }
 
-    async turnOffTV() {
+    async turnOffTV(location = 'living_room') {
         const startTime = Date.now();
-        let { state } = await this.getSensorData('binary_sensor.living_room_tv_state');
+        let { state } = await this.getSensorData(`binary_sensor.${location}_tv_state`);
         if (state === 'off') return Math.floor((Date.now() - startTime) / 1000);
-        await this.runScript('script.living_room_tv_off');
-        await this.waitForState('binary_sensor.living_room_tv_state', 'off');
+        await this.runScript(`script.${location}_tv_off`);
+        await this.waitForState(`binary_sensor.${location}_tv_state`, 'off');
         return Math.floor((Date.now() - startTime) / 1000);
     }
-    async toggleTV() {
-        const { state } = await this.getEntityState('binary_sensor.living_room_tv_state');
+    async toggleTV(location = 'living_room') {
+        const { state } = await this.getEntityState(`binary_sensor.${location}_tv_state`);
         if (state === 'on') {
-            await this.turnOffTV();
+            await this.turnOffTV(location);
         } else {
-            await this.turnOnTV();
+            await this.turnOnTV(location);
         }
     }
 
@@ -265,16 +280,28 @@ const tasker = new Tasker(
 // Routes
 exeRouter.get('/tv/:state(on|off|toggle)', async (req, res) => {
     try {
-
         console.log('param:', req.params.state);
         let result;
         if (req.params.state === 'toggle') result = await homeAssistant.toggleTV();
         if (req.params.state === 'on') result = await homeAssistant.turnOnTV();
         if (req.params.state === 'off') result = await homeAssistant.turnOffTV();
         res.json({ result });
-
     } catch (error) {
         console.error('Error in /tv/:state endpoint:', error.message || error);
+        res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
+
+exeRouter.get('/office_tv/:state(on|off|toggle)', async (req, res) => {
+    try {
+        console.log('param:', req.params.state);
+        let result;
+        if (req.params.state === 'toggle') result = await homeAssistant.toggleTV('office');
+        if (req.params.state === 'on') result = await homeAssistant.turnOnTV('office');
+        if (req.params.state === 'off') result = await homeAssistant.turnOffTV('office');
+        res.json({ result });
+    } catch (error) {
+        console.error('Error in /office_tv/:state endpoint:', error.message || error);
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
