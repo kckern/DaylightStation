@@ -40,10 +40,12 @@ export const createWebSocketHandler = (callbacks) => {
     // Only use 'queue' when explicitly specified or when it's clearly a playlist
     const hasPlayKey = Object.keys(data).includes('play');
     const hasQueueKey = Object.keys(data).includes('queue');
-    const isPlaylistItem = /^\d+$/.test(Object.values(data)[0]) || data.plex; // Numeric IDs or plex usually indicate playlists
+    const isContentItem = data.hymn || data.scripture || data.talk || data.primary; // These are always 'play' actions
+    const isPlaylistItem = (/^\d+$/.test(Object.values(data)[0]) || data.plex) && !isContentItem; // Numeric IDs or plex usually indicate playlists, but not if it's content
+    
     // Use an object with test functions to determine the action type
     const actionTests = {
-      play: () => hasPlayKey,
+      play: () => hasPlayKey || isContentItem,
       queue: () => hasQueueKey || isPlaylistItem
     };
 
