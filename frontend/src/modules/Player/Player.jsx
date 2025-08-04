@@ -633,11 +633,6 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
       {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
-      {media.continuous && (
-        <div className="continuous-indicator" title="Continuous Loop">
-          <span>🔄</span>
-        </div>
-      )}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -707,11 +702,6 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
       <h2>
         {heading} {`(${playbackRate}×)`}
       </h2>
-      {media.continuous && (
-        <div className="continuous-indicator" title="Continuous Loop">
-          <span>🔄</span>
-        </div>
-      )}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       {(seconds === 0 || timeSinceLastProgressUpdate > 1000) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
       {isDash ? (
