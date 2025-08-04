@@ -255,7 +255,10 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       return Math.max(0, Math.min(maxOffset, baseOffset));
     }, [yProgress, contentHeight, panelHeight]); 
     return (
-      <div className={`content-scroller ${type} ${className} ${shader}`} style={{ backgroundImage: `url(${paperBackground})` }}>
+      <div className={`content-scroller ${type} ${className} ${shader}`} style={{ 
+        backgroundImage: `url(${paperBackground})`,
+        backgroundPosition: `0px ${-yOffset}px`
+      }}>
         {(title || subtitle) && (
           <>
             {title && <h2>{title}</h2>}
