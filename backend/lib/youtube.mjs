@@ -37,7 +37,7 @@ const getYoutube = async () => {
     for(const item of youtubeData) {
         const { type, shortcode, playlist, volume, sort, uid, folder} = item;
         const input = type === 'Channel' ? `'https://www.youtube.com/channel/${playlist}'` : `'${playlist}'`;
-        const ytdlp =  `yt-dlp -f '[height<=720]/best' -o '${process.env.path.media}/news/${shortcode}/%(upload_date)s.%(ext)s' --max-downloads 1 --playlist-items 1 --match-filter "duration <= 900 & aspect_ratio>1" ${input}`;
+        const ytdlp =  `yt-dlp -f "bestvideo[vcodec^=hevc][height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best" --remux-video mp4 -o '${process.env.path.media}/news/${shortcode}/%(upload_date)s.%(ext)s' --max-downloads 1 --playlist-items 1 --match-filter "duration <= 900 & aspect_ratio>1" ${input}`;
         commands.push(ytdlp);
         shortcodes.push(`${shortcode}`);
 
