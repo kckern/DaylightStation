@@ -296,8 +296,8 @@
     opacity: 1;
   }
 
- .tv-app .player > div.player.overlay  .shader{display:none}
-  .tv-app .player > div.player.overlay{
+.player.composite > div.player.overlay  .shader{display:none}
+ .player.composite > div.player.overlay{
 
     
     position: absolute;
