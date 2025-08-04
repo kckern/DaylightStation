@@ -56,7 +56,9 @@ export const loadRandom = (folder) => {
         return false;
     }
 
-    const files = fs.readdirSync(path).filter(file => file.endsWith('.yaml'));
+    const files = fs.readdirSync(path).filter(file => 
+        file.endsWith('.yaml') && !file.startsWith('._')
+    );
     if (files.length === 0) {
         console.error(`No YAML files found in folder: ${path}`);
         return false;
@@ -78,6 +80,14 @@ export const loadRandom = (folder) => {
 
 const loadFile = (path) => {
     path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
+    
+    // Skip macOS resource fork files
+    const filename = path.split('/').pop();
+    if (filename && filename.startsWith('._')) {
+        console.warn(`Skipping macOS resource fork file: ${path}`);
+        return null;
+    }
+    
     // Try .yaml first, then .yml
     const yamlPath = `${process.env.path.data}/${path}.yaml`;
     const ymlPath = `${process.env.path.data}/${path}.yml`;
