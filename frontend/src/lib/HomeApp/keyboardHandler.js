@@ -23,8 +23,53 @@ export const createKeyboardHandler = (dependencies) => {
   // Store the previous shader opacity for sleep toggle (like mute/unmute)
   let previousShaderOpacity = null;
 
-  const parseParams = (p) => 
-    p?.includes?.(":") ? p.split(":").map(s => s.trim()) : ["plex", p ?? ""];
+  // Helper function to check if there's an active media player
+  const hasActivePlayer = () => {
+    const player = document.querySelector('.player:not(.overlay), .content-scroller:not(.overlay)');
+    const mediaElement = player && player.querySelector('audio:not(.ambient), video:not(.ambient), dash-video:not(.ambient)');
+    return !!mediaElement;
+  };
+
+  // Helper function to advance to next track
+  const advanceToNextTrack = () => {
+    const keyboardEvent = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      code: 'Tab',
+      bubbles: true,
+      cancelable: true
+    });
+    window.dispatchEvent(keyboardEvent);
+    console.log('Playback control: next track');
+  };
+
+  // Helper function to execute secondary/fallback action
+  const executeSecondaryAction = (secondary) => {
+    const colonIndex = secondary.indexOf(':');
+    if (colonIndex === -1) return false;
+
+    const functionName = secondary.substring(0, colonIndex).trim().toLowerCase();
+    const params = secondary.substring(colonIndex + 1).trim();
+    const fn = buttonFunctions[functionName];
+    
+    if (fn) {
+      console.log(`Executing fallback: ${functionName}(${params})`);
+      fn(params);
+      return true;
+    }
+    return false;
+  };
+
+  const parseParams = (p) => {
+    if (p?.includes?.(":")) {
+      return p.split(":").map(s => s.trim());
+    }
+    // Only default to plex if value is numeric
+    if (/^\d+$/.test(p)) {
+      return ["plex", p ?? ""];
+    }
+    // Otherwise default to media
+    return ["media", p ?? ""];
+  };
 
   const openPlayer = (type, params) => {
     const [key, val] = parseParams(params);
@@ -40,6 +85,17 @@ export const createKeyboardHandler = (dependencies) => {
     },
     play: (params) => openPlayer("play", params),
     queue: (params) => openPlayer("queue", params),
+    playback: (params, action) => {
+      if (hasActivePlayer()) {
+        advanceToNextTrack();
+      } else if (action?.secondary) {
+        if (!executeSecondaryAction(action.secondary)) {
+          console.warn('Failed to execute secondary action:', action.secondary);
+        }
+      } else {
+        console.log('No active player and no secondary function defined');
+      }
+    },
     escape: () => {
       if (currentContent) {
         setCurrentContent(null);
@@ -188,7 +244,14 @@ export const createKeyboardHandler = (dependencies) => {
 
     console.log('Key pressed:', event.key, 'Action:', action);
     const fn = buttonFunctions[action?.function];
-    if (fn) fn(action.params);
+    if (fn) {
+      // Pass the action object for playback function to access secondary property
+      if (action?.function === 'playback') {
+        fn(action.params, action);
+      } else {
+        fn(action.params);
+      }
+    }
   };
 };
 
