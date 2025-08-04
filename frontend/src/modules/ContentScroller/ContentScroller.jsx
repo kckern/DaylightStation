@@ -423,6 +423,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
   
     return (
       <ContentScroller
+        key={`scripture-${scripture}-${media_key}`} // Force re-render when scripture changes
         type="scriptures"
         title={titleHeader}
         media_key={media_key}
@@ -521,6 +522,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     
     return (
       <ContentScroller
+        key={`hymn-${hymn}-${hymnNum}`} // Force re-render when hymn changes
         type="hymn"
         title={title}
         media_key={media_key}
@@ -625,7 +627,6 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     const [title, setTitle] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
     const [videoUrl, setVideoUrl] = useState(null);
-    // Removed unused ambientMusicUrl state
     const [transcriptData, setTranscriptData] = useState(null);
     const [media_key, setMediaKey] = useState(null);
 
@@ -682,6 +683,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     
     return (
       <ContentScroller
+        key={`talk-${talk}-${media_key}`} // Force re-render when talk changes
         type="talk"
         title={title}
         media_key={media_key}
