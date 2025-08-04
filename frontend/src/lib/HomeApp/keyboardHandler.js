@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import { DaylightAPI } from '../api.mjs';
 
 /**
- * Keyboard event handler for HomeApp
- * Manages keydown events and maps them to application actions
+ * Application-level keyboard handler for HomeApp
+ * Handles menu navigation, app functions, and hardware keypad integration
+ * Media playback is now handled by the centralized keyboardManager system
  */
 
 export const createKeyboardHandler = (dependencies) => {
@@ -30,16 +31,27 @@ export const createKeyboardHandler = (dependencies) => {
     return !!mediaElement;
   };
 
-  // Helper function to advance to next track
-  const advanceToNextTrack = () => {
+  // Simplified playback dispatcher - just maps params to keyboard events
+  const dispatchPlaybackKey = (params) => {
+    const keyMapping = {
+      'play': 'Enter',
+      'pause': 'Enter', 
+      'prev': 'Backspace',
+      'rew': 'ArrowLeft',
+      'fwd': 'ArrowRight'
+    };
+    
+    const keyToDispatch = keyMapping[params] || 'Tab';
+    
     const keyboardEvent = new KeyboardEvent('keydown', {
-      key: 'Tab',
-      code: 'Tab',
+      key: keyToDispatch,
+      code: keyToDispatch,
       bubbles: true,
       cancelable: true
     });
+    
     window.dispatchEvent(keyboardEvent);
-    console.log('Playback control: next track');
+    console.log(`App dispatched: ${params} -> ${keyToDispatch}`);
   };
 
   // Helper function to execute secondary/fallback action
@@ -87,7 +99,9 @@ export const createKeyboardHandler = (dependencies) => {
     queue: (params) => openPlayer("queue", params),
     playback: (params, action) => {
       if (hasActivePlayer()) {
-        advanceToNextTrack();
+        // Player components handle their own keyboard events directly
+        // Don't dispatch synthetic events to avoid double handling
+        console.log(`Active player detected, letting it handle ${params} directly`);
       } else if (action?.secondary) {
         if (!executeSecondaryAction(action.secondary)) {
           console.warn('Failed to execute secondary action:', action.secondary);

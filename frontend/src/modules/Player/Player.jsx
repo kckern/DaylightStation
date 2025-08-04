@@ -106,7 +106,8 @@ function useCommonMediaController({
     ignoreKeys,
     meta,
     type,
-    media_key
+    media_key,
+    setCurrentTime: setSeconds // Add the missing setCurrentTime parameter
   });
 
   useEffect(() => {
@@ -497,11 +498,18 @@ export function SinglePlayer(play) {
 
   } = play || {};
   
+  // Prepare common props for content scroller components
+  const contentProps = {
+    ...play,
+    playbackKeys,
+    ignoreKeys,
+    queuePosition
+  };
 
-  if (!!scripture)    return <Scriptures {...play} playbackKeys={playbackKeys} ignoreKeys={ignoreKeys} />;
-  if (!!hymn)         return <Hymns {...play} playbackKeys={playbackKeys} ignoreKeys={ignoreKeys} />;
-  if (!!primary)      return <Hymns {...{...play,hymn: primary, subfolder:"primary"}} playbackKeys={playbackKeys} ignoreKeys={ignoreKeys} />;
-  if (!!talk)         return <Talk {...play} playbackKeys={playbackKeys} ignoreKeys={ignoreKeys} />;
+  if (!!scripture)    return <Scriptures {...contentProps} />;
+  if (!!hymn)         return <Hymns {...contentProps} />;
+  if (!!primary)      return <Hymns {...{ ...contentProps, hymn: primary, subfolder: "primary" }} />;
+  if (!!talk)         return <Talk {...contentProps} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
