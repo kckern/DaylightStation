@@ -3,6 +3,66 @@
  * Handles incoming websocket messages and transforms them into menu selections
  */
 
+/**
+ * Handles media playback control commands by simulating keyboard events
+ * Maps playback commands to keyboard shortcuts that the media players understand
+ */
+const handleMediaPlaybackControl = (playbackCommand) => {
+  const playbackMap = {
+    // Basic playback controls
+    'play': ' ', // Space key to play/pause
+    'pause': ' ', // Space key to play/pause
+    'toggle': ' ', // Space key to play/pause
+    'playpause': ' ', // Space key to play/pause
+    'play_pause': ' ', // Space key to play/pause
+    
+    // Navigation controls
+    'next': 'Tab', // Tab key to skip to next track
+    'previous': 'Backspace', // Backspace to skip to previous track
+    'prev': 'Backspace', // Short form for previous
+    'skip': 'Tab', // Skip to next
+    'back': 'Backspace', // Go back
+    
+    // Seeking controls
+    'forward': 'ArrowRight', // Seek forward
+    'rewind': 'ArrowLeft', // Seek backward
+    'fwd': 'ArrowRight', // Short form for forward
+    'rew': 'ArrowLeft', // Short form for rewind
+    'ff': 'ArrowRight', // Fast forward
+    'rw': 'ArrowLeft', // Rewind
+    
+    // Stop/clear controls
+    'stop': 'Escape', // Escape to stop/clear
+    'clear': 'Escape', // Clear the current content
+    'exit': 'Escape', // Exit current playback
+    
+    // Shader/display controls
+    'shader_up': 'ArrowUp', // Cycle shader up
+    'shader_down': 'ArrowDown', // Cycle shader down
+    'display_up': 'ArrowUp', // Display mode up
+    'display_down': 'ArrowDown' // Display mode down
+  };
+
+  const keyToPress = playbackMap[playbackCommand.toLowerCase()];
+  
+  if (keyToPress) {
+    // Create and dispatch a keyboard event
+    const keyboardEvent = new KeyboardEvent('keydown', {
+      key: keyToPress,
+      code: keyToPress === ' ' ? 'Space' : keyToPress,
+      bubbles: true,
+      cancelable: true
+    });
+    
+    // Dispatch the event on the window to ensure it reaches the media handlers
+    window.dispatchEvent(keyboardEvent);
+    
+    console.log(`Playback control: ${playbackCommand} -> ${keyToPress}`);
+  } else {
+    console.warn(`Unknown playback command: ${playbackCommand}`);
+  }
+};
+
 export const createWebSocketHandler = (callbacks) => {
   const {
     setLastPayloadMessage,
@@ -32,6 +92,12 @@ export const createWebSocketHandler = (callbacks) => {
       setMenu(false);
       setMenuOpen(false);
       setMenuKey(0);
+      return;
+    }
+
+    // Handle playback control actions
+    if (data.playback) {
+      handleMediaPlaybackControl(data.playback);
       return;
     }
 
