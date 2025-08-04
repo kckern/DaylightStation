@@ -84,7 +84,7 @@ const loadFile = (path) => {
     // Skip macOS resource fork files
     const filename = path.split('/').pop();
     if (filename && filename.startsWith('._')) {
-        console.warn(`Skipping macOS resource fork file: ${path}`);
+       // console.warn(`Skipping macOS resource fork file: ${path}`);
         return null;
     }
     
