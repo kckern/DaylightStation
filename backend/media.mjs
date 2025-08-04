@@ -170,7 +170,7 @@ mediaRouter.post('/log', async (req, res) => {
             Object.entries(log).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
         );
         saveFile(logPath, sortedLog);
-        console.log(`Log updated: ${JSON.stringify(log[media_key])}`);
+       // console.log(`Log updated: ${JSON.stringify(log[media_key])}`);
         await logToInfinity(media_key,{percent, seconds});
         res.json({ response: {type,library:librarystring,...log[media_key]} });
     } catch (error) {

@@ -79,6 +79,41 @@
     background-color: #2a9d8f99;
 }
 
+.continuous-indicator {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 999;
+    background-color: rgba(42, 157, 143, 0.9);
+    color: white;
+    padding: 0.5rem;
+    border-radius: 50%;
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    animation: pulse 2s infinite;
+    
+    span {
+        animation: spin 3s linear infinite;
+        display: inline-block;
+    }
+}
+
+@keyframes pulse {
+    0% { opacity: 0.8; }
+    50% { opacity: 1; }
+    100% { opacity: 0.8; }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 .audio-player {
     display: flex;
     text-align: center;
