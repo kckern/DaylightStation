@@ -224,7 +224,7 @@ export async function flattenQueueItems(items, level = 1) {
 
   for (const item of items) {
     if (item.queue) {
-      const shuffle = !!item.shuffle;
+      const shuffle = !!item.queue.shuffle || item.shuffle || false;
       if (item.queue.playlist || item.queue.queue) {
         const queueKey = item.queue.playlist ?? item.queue.queue;
         const { items: nestedItems } = await DaylightAPI(`data/list/${queueKey}/playable${shuffle ? ',shuffle' : ''}`);
