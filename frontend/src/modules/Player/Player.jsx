@@ -171,8 +171,8 @@ function useCommonMediaController({
       mediaEl.autoplay = true;
       mediaEl.volume = adjustedVolume; // Set the volume level
       
-      // Auto-loop videos that are under 20 seconds
-      if (isVideo && duration < 20) {
+      // Auto-loop videos that are under 20 seconds OR if marked as continuous
+      if ((isVideo && duration < 20) || meta.continuous) {
         mediaEl.loop = true;
       }
       
@@ -407,8 +407,24 @@ export default function Player(props) {
   const currentItemShader = singlePlayerProps?.shader;
   const effectiveShader = currentItemShader || queueShader;
 
+  // Create appropriate advance function for single continuous items
+  const singleAdvance = useCallback(() => {
+    if (singlePlayerProps?.continuous) {
+      // For continuous single items, check if native loop is already handling it
+      const mediaEl = document.querySelector(`[data-key="${singlePlayerProps.media_key || singlePlayerProps.plex}"]`);
+      if (mediaEl && !mediaEl.loop) {
+        // If not using native loop, manually restart
+        mediaEl.currentTime = 0;
+        mediaEl.play();
+      }
+      // If using native loop (mediaEl.loop = true), the browser handles it automatically
+    } else {
+      clear();
+    }
+  }, [singlePlayerProps?.continuous, singlePlayerProps?.media_key, singlePlayerProps?.plex, clear]);
+
   const playerProps = {
-    advance: isQueue ? advance : clear,
+    advance: isQueue ? advance : singleAdvance,
     clear,
     shader: effectiveShader,
     volume: effectiveVolume,
@@ -489,6 +505,7 @@ export function SinglePlayer(play) {
     playerType,
     ignoreKeys,
     shuffle,
+    continuous,
     //configs
     shader,
     volume,
@@ -521,18 +538,18 @@ export function SinglePlayer(play) {
     if (!!plex) {
       const url = shuffle ? `media/plex/info/${plex}/shuffle` : `media/plex/info/${plex}`;
       const infoResponse = await DaylightAPI(url);
-      setMediaInfo({ ...infoResponse, media_key: infoResponse.plex });
+      setMediaInfo({ ...infoResponse, media_key: infoResponse.plex, continuous });
       setIsReady(true);
     } else if (!!media) {
       const url = shuffle ? `media/info/${media}?shuffle=${shuffle}` : `media/info/${media}`;
       const infoResponse = await DaylightAPI(url);
       console.log({ infoResponse });
-      setMediaInfo({ ...infoResponse, media_key: infoResponse.media_key  || infoResponse.listkey });
+      setMediaInfo({ ...infoResponse, media_key: infoResponse.media_key  || infoResponse.listkey, continuous });
       setIsReady(true);
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, shuffle]);
+  }, [plex, media, rate, open, shuffle, continuous]);
 
   useEffect(() => {
     fetchVideoInfo();
@@ -616,6 +633,11 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
       {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
+      {media.continuous && (
+        <div className="continuous-indicator" title="Continuous Loop">
+          <span>🔄</span>
+        </div>
+      )}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -685,6 +707,11 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
       <h2>
         {heading} {`(${playbackRate}×)`}
       </h2>
+      {media.continuous && (
+        <div className="continuous-indicator" title="Continuous Loop">
+          <span>🔄</span>
+        </div>
+      )}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       {(seconds === 0 || timeSinceLastProgressUpdate > 1000) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
       {isDash ? (
