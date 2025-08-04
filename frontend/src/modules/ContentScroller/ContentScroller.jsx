@@ -58,7 +58,8 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     shaders,
     yStartTime = 15,
     playbackKeys = {},
-    ignoreKeys = false
+    ignoreKeys = false,
+    queuePosition = 0  // Accept queuePosition from parent (Player)
   }) {
     // Refs for media elements
     const mainRef = useRef(null);
@@ -226,7 +227,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       onClear,
       cycleThroughClasses,
       playbackKeys,
-      queuePosition: 0, // ContentScroller is always single item, not a queue
+      queuePosition, // Use the queuePosition passed from parent
       ignoreKeys,
       setCurrentTime // Pass state setter for time synchronization
     });    // If no ambient, try to play main right away
@@ -346,8 +347,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
   
   // This is the default export for Scriptures:
   export function Scriptures(play) {
-    console.log('Scriptures component rendered with props:', play);
-    const { scripture, advance, clear, volume, playbackKeys, ignoreKeys } = play;
+    const { scripture, advance, clear, volume, playbackKeys, ignoreKeys, queuePosition } = play;
     const [titleHeader, setTitleHeader] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
     const [mainMediaUrl, setMainMediaUrl] = useState(null);
@@ -444,6 +444,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
         onClear={clear}
         playbackKeys={playbackKeys}
         ignoreKeys={ignoreKeys}
+        queuePosition={queuePosition}
         /* Start scrolling after 15 seconds, same as original code */
         yStartTime={15}
       />
@@ -456,7 +457,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
    * No ambient track, just a single audio. 
    */
   export function Hymns(play) {
-    const { hymn, advance, clear, subfolder, volume, playbackKeys, ignoreKeys } = play;
+    const { hymn, advance, clear, subfolder, volume, playbackKeys, ignoreKeys, queuePosition } = play;
     const [title, setTitle] = useState("");
     const [subtitle, setSubtitle] = useState("");
     const [verses, setHymnVerses] = useState([]);
@@ -535,6 +536,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
         onClear={clear}
         playbackKeys={playbackKeys}
         ignoreKeys={ignoreKeys}
+        queuePosition={queuePosition}
         yStartTime={yStartTime}
       />
     );
@@ -620,7 +622,8 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       clear,
       volume,
       playbackKeys,
-      ignoreKeys
+      ignoreKeys,
+      queuePosition
     } = play;
 
     // Fetch the talk data
@@ -705,6 +708,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
         onClear={clear}
         playbackKeys={playbackKeys}
         ignoreKeys={ignoreKeys}
+        queuePosition={queuePosition}
         yStartTime={30}
       />
     );
