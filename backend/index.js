@@ -72,7 +72,7 @@ async function initializeApp() {
       const url = `${host}${req.url.replace(/\/plex_proxy/, '')}${req.url.includes('?') ? '&' : '?'}${req.url.includes('X-Plex-Token') ? '' : `X-Plex-Token=${process.env.PLEX_TOKEN}`}`;
       // localhost:3112/plex_proxy/library/metadata/311217/thumb/1614603573
 
-      console.log(`Proxying request to: ${url}`);
+     // console.log(`Proxying request to: ${url}`);
 
       const proxyRequest = request({ qs: req.query, uri: url });
 
