@@ -12,7 +12,7 @@ const HealthApp = () => {
   useEffect(() => {
     const fetchHealthData = async () => {
       try {
-        const response = await DaylightAPI('/health');
+        const response = await DaylightAPI('/api/health/status');
         setHealthMessage(response);
       } catch (error) {
         console.error('Error fetching health data:', error);
@@ -40,7 +40,7 @@ const HealthApp = () => {
         {loading ? (
           <Text>Loading health data...</Text>
         ) : healthMessage ? (
-          <Alert color={healthMessage.status === 'success' ? 'green' : 'red'} mb="md">
+          <Alert color={!!healthMessage.message ? 'green' : 'red'} mb="md">
             {healthMessage.message}
           </Alert>
         ) : null}
