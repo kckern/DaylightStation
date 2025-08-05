@@ -141,7 +141,12 @@ function useCommonMediaController({
       logTime(type, media_key, percent, title);
     };
     const onDurationChange = () => setDuration(mediaEl.duration);
-    const onEnded = () => onEnd();
+    const onEnded = () => {
+      // Log 100% completion when content ends
+      const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+      logTime(type, media_key, '100.0', title);
+      onEnd();
+    };
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
       
