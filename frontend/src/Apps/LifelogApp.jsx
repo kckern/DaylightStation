@@ -12,7 +12,7 @@ const LifelogApp = () => {
   useEffect(() => {
     const fetchLifelogData = async () => {
       try {
-        const response = await DaylightAPI('/lifelog');
+        const response = await DaylightAPI('/api/lifelog');
         setLifelogMessage(response);
       } catch (error) {
         console.error('Error fetching lifelog data:', error);
