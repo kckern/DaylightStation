@@ -49,6 +49,10 @@ async function initializeApp() {
     const { default: homeRouter } = await import('./home.mjs');
     const { default: mediaRouter } = await import('./media.mjs');
     const { default: healthRouter } = await import('./health.mjs');
+    const { default: lifelogRouter } = await import('./lifelog.mjs');
+    const { default: fitnessRouter } = await import('./fitness.mjs');
+
+
     const { default: exe } = await import('./exe.js');
     const { default: tts } = await import('./tts.mjs');
 
@@ -62,6 +66,8 @@ async function initializeApp() {
     app.use("/home", homeRouter);
     app.use("/media", mediaRouter);
     app.use("/health", healthRouter);
+    app.use("/lifelog", lifelogRouter);
+    app.use("/fitness", fitnessRouter);
     app.use("/exe", exe);
     app.use("/tts", tts);
 
