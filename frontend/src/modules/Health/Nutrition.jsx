@@ -78,7 +78,7 @@ const Nutrition = () => {
         // Only refresh the specific date data, not the entire overview
         if (selectedDate) {
             try {
-                const response = await DaylightAPI(`health/nutrilist/${selectedDate}`);
+                const response = await DaylightAPI(`api/health/nutrilist/${selectedDate}`);
                 setSelectedDateData(response.data || []);
                 
                 // Update the overview data for this specific date without re-fetching everything
@@ -258,7 +258,7 @@ const Nutrition = () => {
                     setDrawerOpen(false);
                     // Sync data when drawer closes to ensure overview is updated
                     if (selectedDate) {
-                        DaylightAPI(`health/nutrilist/${selectedDate}`)
+                        DaylightAPI(`api/health/nutrilist/${selectedDate}`)
                             .then(response => {
                                 setOverviewData(prev => ({
                                     ...prev,
