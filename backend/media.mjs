@@ -8,6 +8,7 @@ import { parseFile } from 'music-metadata';
 import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems, applyParamsToItems } from './fetch.mjs';
 import { getChildrenFromMediaKey } from './fetch.mjs';
 import Infinity from './lib/infinity.js';
+import { isWatched } from './lib/utils.mjs';
 import { slugify } from './lib/utils.mjs';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
@@ -220,8 +221,7 @@ mediaRouter.all(`/info/*`, async (req, res) => {
         const filterItems = item => {
             const { media_key } = item;
             const { percent } = watched[media_key] || {};
-            const isWatched = percent && percent >= 50;
-            return !isWatched;
+            return !isWatched(percent, 50); // Using 50% alternative threshold
         };
 
         let unfilteredItems = (await Promise.all(

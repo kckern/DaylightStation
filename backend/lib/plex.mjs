@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import { clearWatchedItems } from '../fetch.mjs';
+import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';
 import fs from 'fs';
 
 
@@ -319,10 +320,8 @@ export class Plex {
     // Debug output
     console.log(`selectKeyToPlay: Loaded ${Object.keys(log).length} history entries for ${keys.length} keys`);
     
-    // Categorize episodes by viewing status
-    const watched = keys.filter(key => log[key]?.percent >= 90);
-    const inProgress = keys.filter(key => log[key]?.percent > 0 && log[key]?.percent < 90);
-    const unwatched = keys.filter(key => !log[key]?.percent);
+    // Categorize episodes by viewing status using centralized utility
+    const { watched, inProgress, unwatched } = categorizeByWatchStatus(keys, log);
 
     console.log(`selectKeyToPlay: Watched: ${watched.length}, In Progress: ${inProgress.length}, Unwatched: ${unwatched.length}`);
 
@@ -390,8 +389,8 @@ export class Plex {
     for (let plexkey in list) {
       let item = list[plexkey];
       let percent = log[plexkey]?.percent || 0;
-      percent = percent > 15 ? percent : 0; // need seconds: TODO
-      if (percent > 90) continue;
+      percent = getEffectivePercent(percent);
+      if (isWatched(percent)) continue;
       if (item.watched) continue;
       if (item.hold) continue;
       if (item.skip_after) {

@@ -14,6 +14,7 @@ import {lookupReference, generateReference} from 'scripture-guide';
 import { Plex } from './lib/plex.mjs';
 import { parse } from 'path';
 import path from 'path';
+import { isWatched, getEffectivePercent } from './lib/utils.mjs';
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
 
@@ -30,8 +31,7 @@ export const findUnwatchedItems = (media_keys, category = "media", shuffle = fal
     const media_memory = loadFile(`history/media_memory/${category}`) || {};
     const unwatchedItems = media_keys.filter(key => {
         const watchedItem = media_memory[key];
-        const isWatched = watchedItem && watchedItem.percent >= 90;
-        return !isWatched;
+        return !isWatched(watchedItem);
     });
 
 
@@ -454,8 +454,8 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
         const percent = log[media_key]?.percent || itemProgress || 0;
         const seconds = log[media_key]?.seconds || 0;
 
-        const usepercent = percent > 15 ? percent : 0; // Ignore progress below 15%
-        if (usepercent > 90 && !ignoreWatchStatus) continue; // Skip if watched more than 90%
+        const usepercent = getEffectivePercent(percent);
+        if (isWatched(usepercent) && !ignoreWatchStatus) continue; // Skip if watched more than 90%
         if (item.watched && !ignoreWatchStatus) continue; // Skip if marked as watched
         if (item.hold) continue; // Skip if on hold
         if (!ignoreSkips && item.skip_after && moment(item.skip_after).isBefore(moment())) continue; // Skip if past the skip_after date
