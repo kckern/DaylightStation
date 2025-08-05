@@ -296,76 +296,76 @@ export class Plex {
     return this.selectKeyToPlay(keys, shuffle);
   }
   selectKeyToPlay(keys, shuffle = false) {
+    // Normalize keys array
     keys = keys?.[0]?.plex ? keys.map(x => x.plex) : keys || [];
-    if (keys.length === 0) {
-      return [null, 0, 0];
+    if (keys.length === 0) return [null, 0, 0];
+
+    // Load viewing history from all plex library logs
+    const log = this.loadPlexViewingHistory();
+    
+    // Debug output
+    console.log(`selectKeyToPlay: Loaded ${Object.keys(log).length} history entries for ${keys.length} keys`);
+    
+    // Categorize episodes by viewing status
+    const watched = keys.filter(key => log[key]?.percent >= 90);
+    const inProgress = keys.filter(key => log[key]?.percent > 0 && log[key]?.percent < 90);
+    const unwatched = keys.filter(key => !log[key]?.percent);
+
+    console.log(`selectKeyToPlay: Watched: ${watched.length}, In Progress: ${inProgress.length}, Unwatched: ${unwatched.length}`);
+
+    // Sequential selection logic
+    return this.selectEpisodeByPriority(unwatched, inProgress, watched, log, shuffle);
+  }
+
+  loadPlexViewingHistory() {
+    const plexLogDir = `${process.env.path.data}/history/media_memory/plex`;
+    let log = {};
+
+    if (!fs.existsSync(plexLogDir)) {
+      console.log(`selectKeyToPlay: History directory ${plexLogDir} does not exist`);
+      return log;
     }
 
-    let log = {}
-    const plexLogPath = 'history/media_memory/plex';
-    const fullPlexLogDir = `${process.env.path.data}/${plexLogPath}`;
-   // console.log(`selectKeyToPlay: Looking for keys ${keys.join(', ')} in ${fullPlexLogDir}`);
-    if (fs.existsSync(fullPlexLogDir)) {
-        const files = fs.readdirSync(fullPlexLogDir);
-     //   console.log(`selectKeyToPlay: Found files ${files.join(', ')}`);
-        for (const file of files) {
-            if (file.endsWith('.yml') || file.endsWith('.yaml')) {
-                const libraryLog = loadFile(`history/media_memory/plex/${file.replace(/\.ya?ml$/, '')}`);
-              //  console.log(`selectKeyToPlay: Loaded ${file}, got ${libraryLog ? Object.keys(libraryLog).length : 0} entries`);
-                if (libraryLog) {
-                    log = { ...log, ...libraryLog };
-                }
-            }
+    const files = fs.readdirSync(plexLogDir);
+    for (const file of files) {
+      if (file.endsWith('.yml') || file.endsWith('.yaml')) {
+        const libraryLog = loadFile(`history/media_memory/plex/${file.replace(/\.ya?ml$/, '')}`);
+        if (libraryLog) {
+          log = { ...log, ...libraryLog };
         }
-    } else {
-      console.log(`selectKeyToPlay: Directory ${fullPlexLogDir} does not exist`);
-    }
-    
-    console.log(`selectKeyToPlay: Final log has ${Object.keys(log).length} entries, looking for keys: ${keys.join(', ')}`);
-    keys.forEach(key => {
-      if (log[key]) {
-        console.log(`selectKeyToPlay: Found key ${key} with data:`, log[key]);
       }
-    });
-    
+    }
 
-    const watched = keys.filter(key => log[key]?.percent >= 90).sort((a, b) => log[b].time - log[a].time);
-    const inProgress = keys.filter(key => log[key]?.percent > 0 && log[key]?.percent < 90).sort((b, a) => log[b].percent - log[a].percent);
+    return log;
+  }
 
-    const unwatched = keys.filter(key => !log[key]?.percent) || [];
+  selectEpisodeByPriority(unwatched, inProgress, watched, log, shuffle) {
+    // Priority 1: First unwatched episode in sequence
+    if (unwatched.length > 0) {
+      const selected = shuffle ? unwatched[Math.floor(Math.random() * unwatched.length)] : unwatched[0];
+      console.log(`selectKeyToPlay: Selected unwatched episode: ${selected}`);
+      return [selected, 0, 0];
+    }
 
-
+    // Priority 2: First in-progress episode in sequence
     if (inProgress.length > 0) {
-      const selected = inProgress[0];
+      const selected = shuffle ? inProgress[Math.floor(Math.random() * inProgress.length)] : inProgress[0];
       const { seconds = 0, percent = 0 } = log[selected] || {};
+      console.log(`selectKeyToPlay: Selected in-progress episode: ${selected} at ${percent}%`);
       return [selected, seconds, percent];
     }
 
-    if (unwatched.length === 0) {
-      if (watched.length > 0) {
-        const selected = watched[0];
-        const { seconds = 0, percent = 0 } = log[selected] || {};
-        return [selected, seconds, percent];
-      }
-      return [null, 0, 0];
-    }
-
-    const sortFunction = shuffle ? () => Math.random() - 0.5 : () => true;
-    const queue = unwatched.sort(sortFunction);
-
-    if (queue.length === 0) {
+    // Priority 3: Restart from first watched episode (clear watch status)
+    if (watched.length > 0) {
       clearWatchedItems(watched, "plex");
-      if (watched.length > 0) {
-        const selected = watched[0];
-        const { seconds = 0, percent = 0 } = log[selected] || {};
-        return [selected, seconds, percent];
-      }
-      return [null, 0, 0];
+      const selected = watched[0];
+      const { seconds = 0, percent = 0 } = log[selected] || {};
+      console.log(`selectKeyToPlay: All episodes watched, restarting from: ${selected}`);
+      return [selected, seconds, percent];
     }
 
-    const selected = queue[0];
-    const { seconds = 0, percent = 0 } = log[selected] || {};
-    return [selected, seconds, percent];
+    console.log(`selectKeyToPlay: No episodes found`);
+    return [null, 0, 0];
   }
 
   async loadSingleFromWatchlist(watchlist) {
