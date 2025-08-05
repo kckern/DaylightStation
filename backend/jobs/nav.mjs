@@ -37,7 +37,7 @@ export const processListItem = async (item) => {
     if(item.volume) {inputObject['volume'] = item.volume; delete item.volume;}
     if(item.rate) {inputObject['rate'] = item.rate; delete item.rate;}
     if(item.playbackrate) {inputObject['playbackrate'] = item.playbackrate; delete item.playbackrate;}
-    if(item.image) {inputObject['image'] = item.image; delete item.image;}
+   // if(item.image) {inputObject['image'] = item.image; delete item.image;}
     if (item.playable) { inputObject['playable'] = item.playable; delete item.playable;}
     item.input = inputObject;
     const actionKey = item.action || 'play';
