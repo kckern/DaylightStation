@@ -324,6 +324,8 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
 
     let list = [];
     let info = {};
+    let librarySection = null;
+    
     for (const plex_key of plex_keys) {
         const {list:items, plex, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, playable, shuffle);
         list = list.concat(items);
@@ -332,9 +334,18 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             title: info.title ? `${info.title} • ${title}` : title,
             image: info.img ? handleDevImage(req, `${info.image}`) : handleDevImage(req, image)
         }
+        
+        // Get library section for the first plex key to determine correct category
+        if (!librarySection && plex_key) {
+            const plexInstance = new Plex();
+            const [meta] = await plexInstance.loadMeta(plex_key);
+            librarySection = meta ? slugify(meta.librarySectionTitle) : null;
+        }
     }
+    
     const list_keys = list.map(item => item.key || item.plex || item.media_key).filter(Boolean);
-    const unwatched_keys = findUnwatchedItems(list_keys,"plex",shuffle);
+    const category = librarySection ? `plex/${librarySection}` : "plex";
+    const unwatched_keys = findUnwatchedItems(list_keys, category, shuffle);
     const unwatchedList = list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
     list = unwatchedList.map(({key,plex,type,title,image}) => {
         return {
