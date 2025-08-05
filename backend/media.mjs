@@ -291,6 +291,7 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
 });
 
 export const handleDevImage = (req,image) => {
+    if (!image) return null; // Return null for undefined/empty images
     const isDev = !!process.env.dev;
     const host = req.headers.host || process.env.host || "";
     return isDev && host ? `http://${host}${image}` : image;
@@ -339,7 +340,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
         if (!librarySection && plex_key) {
             const plexInstance = new Plex();
             const [meta] = await plexInstance.loadMeta(plex_key);
-            librarySection = meta ? slugify(meta.librarySectionTitle) : null;
+            librarySection = meta && meta.librarySectionTitle ? slugify(meta.librarySectionTitle) : null;
         }
     }
     
