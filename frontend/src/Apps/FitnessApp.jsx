@@ -11,7 +11,7 @@ const FitnessApp = () => {
   useEffect(() => {
     const fetchFitnessData = async () => {
       try {
-        const response = await DaylightAPI('/fitness');
+        const response = await DaylightAPI('/api/fitness');
         setFitnessMessage(response);
       } catch (error) {
         console.error('Error fetching fitness data:', error);

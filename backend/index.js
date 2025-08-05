@@ -65,9 +65,9 @@ async function initializeApp() {
     app.use("/journalist", JournalistRouter);
     app.use("/home", homeRouter);
     app.use("/media", mediaRouter);
-    app.use("/health", healthRouter);
-    app.use("/lifelog", lifelogRouter);
-    app.use("/fitness", fitnessRouter);
+    app.use("/api/health", healthRouter);
+    app.use("/api/lifelog", lifelogRouter);
+    app.use("/api/fitness", fitnessRouter);
     app.use("/exe", exe);
     app.use("/tts", tts);
 

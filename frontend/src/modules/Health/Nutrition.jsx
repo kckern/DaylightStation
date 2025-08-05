@@ -43,7 +43,7 @@ const Nutrition = () => {
             
             const overviewPromises = days.map(async (date) => {
                 try {
-                    const response = await DaylightAPI(`health/nutrilist/${date}`);
+                    const response = await DaylightAPI(`api/health/nutrilist/${date}`);
                     console.log(`Data for ${date}:`, response);
                     return { date, data: response.data || [] };
                 } catch (error) {
