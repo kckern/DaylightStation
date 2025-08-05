@@ -69,7 +69,8 @@ function useCommonMediaController({
   playbackKeys,queuePosition,
   ignoreKeys
 }) {
-  const media_key = meta.media_key || meta.key || meta.guid || meta.id  || meta.plex || meta.media_url;
+  // Prioritize key (actual playable item) over media_key (list key) and other fallbacks
+  const media_key = meta.key || meta.media_key || meta.listkey || meta.guid || meta.id || meta.plex || meta.media_url;
   const containerRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
