@@ -210,17 +210,30 @@ export class Plex {
     // Get the "list" from the key
     const { type: parentType, list } = await this.loadListFromKey(key, shuffle);
     // Pick one item from the list (or strings)
-    const [selectedKey, seconds,percent] = this.selectKeyToPlay(list, shuffle);
+    const [selectedKey, seconds, percent] = this.selectKeyToPlay(list, shuffle);
     if (!selectedKey) return false;
-    // Load its metadata
+    
+    // Load its metadata to check if it's playable
     const [itemData] = await this.loadMeta(selectedKey.plex || selectedKey);
     if (!itemData) {
       return false;
     }
 
+    // If the selected item is not directly playable (e.g., season, show), drill down further
+    if (!this.isPlayableType(itemData.type)) {
+      console.log(`Item ${selectedKey} is not playable (type: ${itemData.type}), drilling down...`);
+      return await this.loadPlayableItemFromKey(selectedKey.plex || selectedKey, shuffle);
+    }
+
     // Build playable object with the shared helper
     const playableItem = await this.buildPlayableObject(itemData, key, parentType, percent, seconds);
     return playableItem;
+  }
+
+  isPlayableType(type) {
+    // Define which types are directly playable
+    const playableTypes = ['movie', 'episode', 'track', 'clip'];
+    return playableTypes.includes(type);
   }
 
   // Returns an array of playable items
