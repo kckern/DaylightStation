@@ -6,6 +6,7 @@ import HomeApp from './Apps/HomeApp.jsx';
 import TVApp from './Apps/TVApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
+import LifelogApp from './Apps/LifelogApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 
@@ -25,6 +26,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Route path="/tv" element={<TVApp />} />
       <Route path="/health" element={<HealthApp />} />
       <Route path="/fitness" element={<FitnessApp />} />
+      <Route path="/lifelog" element={<LifelogApp />} />
       <Route path="*" element={<Blank />} />
     </Routes>
   </BrowserRouter>,
