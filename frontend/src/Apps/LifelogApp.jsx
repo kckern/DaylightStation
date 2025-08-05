@@ -1,9 +1,10 @@
 import React from 'react';
 import { MantineProvider, Paper, Title, Group } from '@mantine/core';
 import '@mantine/core/styles.css';
-import "./FitnessApp.scss";
+import "./LifelogApp.scss";
+import Nutrition from '../modules/Health/Nutrition';
 
-const FitnessApp = () => {
+const LifelogApp = () => {
   return (
     <MantineProvider>
       <Paper
@@ -14,12 +15,12 @@ const FitnessApp = () => {
         style={{ minHeight: '100vh', minWidth: '100vw', boxSizing: 'border-box', margin: '2rem' }}
       >
         <Group position="apart" mb="md">
-          <Title order={2}>Fitness App</Title>
+          <Title order={2}>Lifelog App</Title>
         </Group>
-        <p>Placeholder for Fitness-related features.</p>
+        <Nutrition />
       </Paper>
     </MantineProvider>
   );
 };
 
-export default FitnessApp;
+export default LifelogApp;
