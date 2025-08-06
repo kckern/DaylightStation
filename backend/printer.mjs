@@ -18,6 +18,7 @@ printerRouter.get('/', (req, res) => {
             'GET /canvas': 'Generate 550x1000px PNG with pixel-art text and lorem ipsum',
             'GET /canvas/print': 'Generate canvas content and send directly to thermal printer',
             'GET /checkerboard/:width?': 'Print checkerboard pattern (width in squares, default 48)',
+            'GET /img/:filename': 'Find image file, convert to B&W 575px wide and print',
             'POST /print': 'Print custom print job object'
         }
     });
@@ -474,6 +475,127 @@ printerRouter.get('/checkerboard/:width?', async (req, res) => {
 
 
 
+
+// Print image by filename - converts to B&W and resizes to 575px wide
+printerRouter.get('/img/:filename', async (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const imgDir = `${process.env.path?.img || './data/img'}/bw`;
+        
+        // Look for the file with various extensions
+        const extensions = ['png', 'jpg', 'jpeg', 'webp', 'bmp'];
+        let foundPath = null;
+        
+        const fs = await import('fs');
+        const path = await import('path');
+        
+        // Try to find the file with any of the supported extensions
+        for (const ext of extensions) {
+            const testPath = path.join(imgDir, `${filename}.${ext}`);
+            if (fs.existsSync(testPath)) {
+                foundPath = testPath;
+                break;
+            }
+        }
+        
+        // Also try the filename as provided (in case it already has extension)
+        if (!foundPath) {
+            const directPath = path.join(imgDir, filename);
+            if (fs.existsSync(directPath)) {
+                foundPath = directPath;
+            }
+        }
+        
+        if (!foundPath) {
+            return res.status(404).json({ 
+                error: `Image file '${filename}' not found in ${imgDir}`,
+                searchedExtensions: extensions
+            });
+        }
+        
+        // Load and process the image with Canvas
+        const { createCanvas, loadImage } = await import('canvas');
+        
+        // Load the original image
+        const originalImage = await loadImage(foundPath);
+        
+        // Calculate dimensions maintaining aspect ratio
+        const targetWidth = 575;
+        const aspectRatio = originalImage.height / originalImage.width;
+        const targetHeight = Math.round(targetWidth * aspectRatio);
+        
+        // Create canvas and draw the image
+        const canvas = createCanvas(targetWidth, targetHeight);
+        const ctx = canvas.getContext('2d');
+        
+        // Draw the image scaled to target size
+        ctx.drawImage(originalImage, 0, 0, targetWidth, targetHeight);
+        
+        // Get image data and convert to black and white
+        const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+        const data = imageData.data;
+        
+        // Convert to grayscale and then to black/white
+        for (let i = 0; i < data.length; i += 4) {
+            // Calculate grayscale value using luminance formula
+            const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+            
+            // Convert to pure black or white using threshold
+            const bw = gray > 128 ? 255 : 0;
+            
+            data[i] = bw;     // Red
+            data[i + 1] = bw; // Green
+            data[i + 2] = bw; // Blue
+            // Alpha channel (data[i + 3]) remains unchanged
+        }
+        
+        // Put the modified image data back to canvas
+        ctx.putImageData(imageData, 0, 0);
+        
+        // Flip canvas upside down before printing
+        const flippedCanvas = createCanvas(targetWidth, targetHeight);
+        const flippedCtx = flippedCanvas.getContext('2d');
+        flippedCtx.translate(targetWidth, targetHeight);
+        flippedCtx.scale(-1, -1);
+        flippedCtx.drawImage(canvas, 0, 0);
+        
+        // Convert flipped canvas to buffer and save as temporary file
+        const buffer = flippedCanvas.toBuffer('image/png');
+        const tempPath = `/tmp/processed_${Date.now()}_${path.basename(filename)}.png`;
+        fs.writeFileSync(tempPath, buffer);
+        
+        // Create print job using the processed image
+        const printJob = createImagePrint(tempPath, {
+            width: targetWidth,
+            height: targetHeight,
+            align: 'center',
+            threshold: 128
+        });
+        
+        const success = await thermalPrint(printJob);
+        
+        // Clean up temp file
+        try {
+            fs.unlinkSync(tempPath);
+        } catch (err) {
+            console.warn('Could not delete temp file:', err.message);
+        }
+        
+        res.json({
+            success,
+            message: success ? `Image '${filename}' printed successfully` : 'Print failed',
+            originalFile: foundPath,
+            dimensions: {
+                original: { width: originalImage.width, height: originalImage.height },
+                processed: { width: targetWidth, height: targetHeight }
+            },
+            printJob
+        });
+        
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Print custom job
 printerRouter.post('/print', async (req, res) => {
