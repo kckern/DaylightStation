@@ -536,14 +536,26 @@ export function createUpsideDownPrint(printObject) {
  * @returns {Object} - Print object ready for thermalPrint()
  */
 export function createImagePrint(imagePath, options = {}) {
+
+    //use canvas to measure image size
+    if (!imagePath || !fs.existsSync(imagePath)) {
+        console.error(`Image file not found: ${imagePath}`);
+        return null;
+    }
+    const image = loadImage(imagePath);
+    console.log(`Loaded image: ${image.width}x${image.height}`);
+    const targetWidth = options.width || 575; // Default width
+    const targetHeight = options.height || Math.round((image.height / image.width) * targetWidth);
+    const [imgW, imgH] = [targetWidth, targetHeight];
+
     return {
         config: options.config,
         items: [
             {
                 type: 'image',
                 path: imagePath,
-                width: options.width,
-                height: options.height,
+                width: imgW,
+                height: imgH,
                 align: options.align || 'center',
                 threshold: options.threshold
             }
