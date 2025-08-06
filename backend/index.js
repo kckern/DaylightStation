@@ -14,6 +14,7 @@ const isDocker = existsSync('/.dockerenv');
 
 const app = express();
 app.use(cors()); // Step 3: Enable CORS for all routes
+app.use(express.json()); // Parse JSON request bodies
 
 // Create HTTP server
 const server = createServer(app);
@@ -51,6 +52,7 @@ async function initializeApp() {
     const { default: healthRouter } = await import('./health.mjs');
     const { default: lifelogRouter } = await import('./lifelog.mjs');
     const { default: fitnessRouter } = await import('./fitness.mjs');
+    const { default: printerRouter } = await import('./printer.mjs');
 
 
     const { default: exe } = await import('./exe.js');
@@ -69,6 +71,7 @@ async function initializeApp() {
     app.use("/api/lifelog", lifelogRouter);
     app.use("/api/fitness", fitnessRouter);
     app.use("/exe", exe);
+    app.use("/print", printerRouter);
     app.use("/tts", tts);
 
 
