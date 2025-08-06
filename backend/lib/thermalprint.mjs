@@ -91,6 +91,10 @@ export async function thermalPrint(printObject) {
                     // Initialize printer
                     let commands = Buffer.from([0x1B, 0x40]); // ESC @ - Initialize
                     
+                    // Set character set to support Unicode
+                    // ESC t n - Select character code table (UTF-8 = 16)
+                    commands = Buffer.concat([commands, Buffer.from([0x1B, 0x74, 16])]);
+                    
                     // Set upside down mode if configured
                     if (config.upsideDown) {
                         commands = Buffer.concat([commands, Buffer.from([0x1B, 0x7B, 0x01])]);
@@ -244,7 +248,9 @@ function processTextItem(item, config) {
     
     // Add the text content
     if (item.content) {
-        commands = Buffer.concat([commands, Buffer.from(item.content + '\n', item.encoding || config.encoding)]);
+        // Use UTF-8 encoding for Unicode support
+        const textBuffer = Buffer.from(item.content + '\n', 'utf8');
+        commands = Buffer.concat([commands, textBuffer]);
     }
     
     // Reset styles after text
@@ -401,7 +407,7 @@ function processLineItem(item, config) {
         commands = Buffer.concat([commands, Buffer.from([0x1B, 0x61, alignCode])]);
     }
     
-    commands = Buffer.concat([commands, Buffer.from(line + '\n', config.encoding)]);
+    commands = Buffer.concat([commands, Buffer.from(line + '\n', 'utf8')]);
     
     // Reset alignment
     commands = Buffer.concat([commands, Buffer.from([0x1B, 0x61, 0x00])]);
@@ -632,6 +638,164 @@ export function createReceiptPrint(receiptData) {
         config: receiptData.config,
         items,
         footer: { paddingLines: 3, autoCut: true }
+    };
+}
+
+/**
+ * Helper function to create a table print job with ASCII formatting
+ * @param {Object} tableData - Table data and configuration
+ * @returns {Object} - Print object ready for thermalPrint()
+ */
+export function createTablePrint(tableData) {
+    const { 
+        title, 
+        headers = [], 
+        rows = [], 
+        width = 48,
+        config,
+        footer 
+    } = tableData;
+    
+    const items = [];
+    
+    // Calculate column widths
+    const numCols = headers.length || (rows.length > 0 ? rows[0].length : 0);
+    if (numCols === 0) {
+        throw new Error('Table must have headers or data rows');
+    }
+    
+    // Reserve space for separators (| between columns and at edges)
+    const separatorSpace = numCols + 1;
+    const availableWidth = width - separatorSpace;
+    const colWidth = Math.floor(availableWidth / numCols);
+    
+    // Helper function to pad text to specific width
+    const padText = (text, width, align = 'left') => {
+        const str = String(text || '');
+        
+        // Calculate visual width considering wide characters (like Korean)
+        let visualWidth = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str[i];
+            // Korean characters and other wide characters typically take 2 spaces
+            if (char.match(/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/)) {
+                visualWidth += 2;
+            } else {
+                visualWidth += 1;
+            }
+        }
+        
+        // Truncate if too long
+        if (visualWidth > width) {
+            let truncated = '';
+            let currentWidth = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str[i];
+                const charWidth = char.match(/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/) ? 2 : 1;
+                if (currentWidth + charWidth > width) break;
+                truncated += char;
+                currentWidth += charWidth;
+            }
+            return truncated.padEnd(width, ' ');
+        }
+        
+        // Pad based on alignment
+        const padding = width - visualWidth;
+        if (align === 'center') {
+            const leftPad = Math.floor(padding / 2);
+            const rightPad = padding - leftPad;
+            return ' '.repeat(leftPad) + str + ' '.repeat(rightPad);
+        } else if (align === 'right') {
+            return ' '.repeat(padding) + str;
+        }
+        return str + ' '.repeat(padding);
+    };
+    
+    // Helper function to create separator line
+    const createSeparator = (type = 'normal') => {
+        const chars = {
+            top: { left: '+', middle: '+', right: '+', horizontal: '-' },
+            normal: { left: '+', middle: '+', right: '+', horizontal: '-' },
+            bottom: { left: '+', middle: '+', right: '+', horizontal: '-' }
+        };
+        
+        const char = chars[type] || chars.normal;
+        let line = char.left;
+        for (let i = 0; i < numCols; i++) {
+            line += char.horizontal.repeat(colWidth);
+            if (i < numCols - 1) {
+                line += char.middle;
+            }
+        }
+        line += char.right;
+        return line;
+    };
+    
+    // Helper function to create table row
+    const createRow = (data, style = {}) => {
+        let row = '|';
+        for (let i = 0; i < numCols; i++) {
+            const cellData = data[i] || '';
+            const align = (i === numCols - 1 && !isNaN(cellData)) ? 'right' : 'left';
+            row += padText(cellData, colWidth, align) + '|';
+        }
+        return row;
+    };
+    
+    // Title
+    if (title) {
+        items.push({
+            type: 'text',
+            content: title,
+            align: 'center',
+            style: { bold: true }
+        });
+        items.push({ type: 'space', lines: 1 });
+    }
+    
+    // Top border
+    items.push({
+        type: 'text',
+        content: createSeparator('top'),
+        align: 'left'
+    });
+    
+    // Headers
+    if (headers.length > 0) {
+        items.push({
+            type: 'text',
+            content: createRow(headers),
+            align: 'left',
+            style: { bold: true }
+        });
+        
+        items.push({
+            type: 'text',
+            content: createSeparator('normal'),
+            align: 'left'
+        });
+    }
+    
+    // Data rows
+    rows.forEach((row, index) => {
+        items.push({
+            type: 'text',
+            content: createRow(row),
+            align: 'left'
+        });
+    });
+    
+    // Bottom border
+    items.push({
+        type: 'text',
+        content: createSeparator('bottom'),
+        align: 'left'
+    });
+    
+    return {
+        config: config,
+        items,
+        footer: footer || { paddingLines: 2, autoCut: true }
     };
 }
 
