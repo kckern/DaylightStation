@@ -44,12 +44,10 @@ printerRouter.post('/text', async (req, res) => {
 printerRouter.post('/image', async (req, res) => {
     try {
         const { path, options = {} } = req.body;
-        
-        if (!path) {
-            return res.status(400).json({ error: 'Image path is required' });
-        }
-        
-        const printJob = createImagePrint(path, options);
+
+        const imgpath = path || `${process.env.path.img}/bw/logo.png`;
+
+        const printJob = createImagePrint(imgpath, options);
         const success = await thermalPrint(printJob);
         
         res.json({
