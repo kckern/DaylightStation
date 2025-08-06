@@ -9,7 +9,7 @@ const DEFAULT_CONFIG = {
     port: process.env.printer?.port || 9100,
     timeout: 5000,
     encoding: 'utf8',
-    upsideDown: false
+    upsideDown: true
 };
 
 /**
@@ -97,7 +97,10 @@ export async function thermalPrint(printObject) {
                     }
                     
                     // Process each item in the print job
-                    for (const item of printObject.items) {
+                    const sortedItems = config.upsideDown ? printObject.items.reverse() : printObject.items;
+                    console.log(`Processing ${sortedItems.length} items...`);
+                  //  console.log('Printer configuration:', config);
+                    for (const item of sortedItems) {
                         const itemCommands = await processItem(item, config);
                         if (itemCommands) {
                             commands = Buffer.concat([commands, itemCommands]);
