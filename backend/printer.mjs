@@ -1,6 +1,7 @@
 import express from 'express';
 import moment from 'moment-timezone';
-import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint } from './lib/thermalprint.mjs';
+import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint, setFeedButton, queryPrinterStatus, testFeedButton } from './lib/thermalprint.mjs';
+import { getSelectionsForPrint } from './gratitude.mjs';
 
 const printerRouter = express.Router();
 
@@ -19,7 +20,11 @@ printerRouter.get('/', (req, res) => {
             'GET /canvas/print': 'Generate canvas content and send directly to thermal printer',
             'GET /checkerboard/:width?': 'Print checkerboard pattern (width in squares, default 48)',
             'GET /img/:filename': 'Find image file, convert to B&W 575px wide and print',
-            'POST /print': 'Print custom print job object'
+            'POST /print': 'Print custom print job object',
+            'GET /feed-button': 'Get current feed button status',
+            'GET /feed-button/on': 'Enable the printer feed button',
+            'GET /feed-button/off': 'Disable the printer feed button',
+            'GET /feed-button/test': 'Test feed button functionality'
         }
     });
 });
@@ -175,56 +180,39 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     const fontFamily = 'Roboto Condensed';
     const fontDir = process.env.path?.font || './backend/journalist/fonts/roboto-condensed';
     const fontPath = fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
-        
-    // Random items bank
-    const gratitudeItems = [
+    
+    // Get selections from gratitude data
+    const selections = getSelectionsForPrint();
+    
+    // Fallback items if no selections
+    const fallbackGratitudeItems = [
         'Family health and happiness',
         'Safe travels and journeys',
         'Meaningful friendships',
         'Daily bread and nourishment',
-        'Peaceful moments of rest',
-        'Opportunities to serve others',
-        'Beautiful sunrises and sunsets',
-        'Acts of unexpected kindness',
-        'Wisdom in difficult decisions',
-        'Strength during challenges',
-        'Laughter shared with loved ones',
-        'Shelter and warmth',
-        'Clean water and fresh air',
-        'Moments of quiet reflection',
-        'Creative inspiration',
-        'Good books and learning',
-        'Music that lifts the spirit',
-        'Gardens and growing things',
-        'Second chances and forgiveness',
-        'The gift of today'
+        'Peaceful moments of rest'
     ];
 
-    const wishItems = [
+    const fallbackWishItems = [
         'Peace in troubled hearts',
         'Healing for the sick',
         'Comfort for those who mourn',
         'Guidance for lost souls',
-        'Unity in divided communities',
-        'Hope for the discouraged',
-        'Provision for those in need',
-        'Wisdom for leaders',
-        'Safety for travelers',
-        'Joy to fill empty spaces',
-        'Patience in waiting seasons',
-        'Courage for the fearful',
-        'Understanding between differences',
-        'Protection for the vulnerable',
-        'Restoration of broken relationships',
-        'Clarity in confusion',
-        'Strength for caregivers',
-        'Dreams to be fulfilled',
-        'Love to overcome hatred',
-        'Light in dark places'
+        'Unity in divided communities'
     ];
 
-    // Function to get random items
+    // Use selections if available, otherwise use fallback items
+    const gratitudeTexts = selections.gratitude.length > 0 
+        ? selections.gratitude.map(item => item.text)
+        : fallbackGratitudeItems;
+        
+    const wishTexts = selections.desires.length > 0 
+        ? selections.desires.map(item => item.text)
+        : fallbackWishItems;
+
+    // Function to get random items or take all if fewer than requested
     const getRandomItems = (items, count) => {
+        if (items.length <= count) return items;
         const shuffled = [...items].sort(() => 0.5 - Math.random());
         return shuffled.slice(0, count);
     };
@@ -296,7 +284,7 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     
     // Gratitude items
     ctx.font = `36px "${fontFamily}"`; // 24 * 1.5 = 36
-    const selectedGratitude = getRandomItems(gratitudeItems, 2);
+    const selectedGratitude = getRandomItems(gratitudeTexts, 2);
     for (const item of selectedGratitude) {
         ctx.fillText(`• ${item}`, margin + 15, gratitudeItemsY);
         gratitudeItemsY += 53; // adjusted for larger font
@@ -321,7 +309,7 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     
     // Wishes items
     ctx.font = `36px "${fontFamily}"`; // 24 * 1.5 = 36
-    const selectedWishes = getRandomItems(wishItems, 2);
+    const selectedWishes = getRandomItems(wishTexts, 2);
     for (const item of selectedWishes) {
         ctx.fillText(`• ${item}`, margin + 15, wishesItemsY);
         wishesItemsY += 53; // adjusted for larger font
@@ -519,17 +507,40 @@ printerRouter.get('/img/:filename', async (req, res) => {
         // Load the original image
         const originalImage = await loadImage(foundPath);
         
-        // Calculate dimensions maintaining aspect ratio
-        const targetWidth = 575;
-        const aspectRatio = originalImage.height / originalImage.width;
-        const targetHeight = Math.round(targetWidth * aspectRatio);
+        // Determine orientation and calculate dimensions
+        const isWideImage = originalImage.width > originalImage.height;
+        let targetWidth, targetHeight, canvas, ctx;
         
-        // Create canvas and draw the image
-        const canvas = createCanvas(targetWidth, targetHeight);
-        const ctx = canvas.getContext('2d');
-        
-        // Draw the image scaled to target size
-        ctx.drawImage(originalImage, 0, 0, targetWidth, targetHeight);
+        if (isWideImage) {
+            // For wide images: make height 575px and rotate 90 degrees
+            const targetHeightForWide = 575;
+            const aspectRatio = originalImage.width / originalImage.height;
+            const targetWidthForWide = Math.round(targetHeightForWide * aspectRatio);
+            
+            // Create canvas for the rotated image (swap width/height for final orientation)
+            canvas = createCanvas(targetHeightForWide, targetWidthForWide);
+            ctx = canvas.getContext('2d');
+            
+            // Rotate 270 degrees clockwise and draw
+            ctx.translate(0, targetWidthForWide);
+            ctx.rotate(-Math.PI / 2);
+            ctx.drawImage(originalImage, 0, 0, targetWidthForWide, targetHeightForWide);
+            
+            // Update target dimensions for the rotated result
+            targetWidth = targetHeightForWide;
+            targetHeight = targetWidthForWide;
+        } else {
+            // For tall images: keep 575px wide (existing behavior)
+            targetWidth = 575;
+            const aspectRatio = originalImage.height / originalImage.width;
+            targetHeight = Math.round(targetWidth * aspectRatio);
+            
+            canvas = createCanvas(targetWidth, targetHeight);
+            ctx = canvas.getContext('2d');
+            
+            // Draw the image scaled to target size
+            ctx.drawImage(originalImage, 0, 0, targetWidth, targetHeight);
+        }
         
         // Get image data and convert to black and white
         const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
@@ -585,6 +596,7 @@ printerRouter.get('/img/:filename', async (req, res) => {
             success,
             message: success ? `Image '${filename}' printed successfully` : 'Print failed',
             originalFile: foundPath,
+            orientation: isWideImage ? 'wide (rotated 90°)' : 'tall',
             dimensions: {
                 original: { width: originalImage.width, height: originalImage.height },
                 processed: { width: targetWidth, height: targetHeight }
@@ -594,6 +606,123 @@ printerRouter.get('/img/:filename', async (req, res) => {
         
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Feed button status
+printerRouter.get('/feed-button', async (req, res) => {
+    try {
+        // Query actual printer status
+        const printerStatus = await queryPrinterStatus();
+        
+        if (!printerStatus.success) {
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to query printer status',
+                details: printerStatus.error,
+                fallback: {
+                    message: 'Feed Button Control API',
+                    endpoints: {
+                        'GET /feed-button': 'Get printer status including feed button state',
+                        'GET /feed-button/on': 'Enable the printer feed button',
+                        'GET /feed-button/off': 'Disable the printer feed button'
+                    }
+                }
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Printer status retrieved successfully',
+            status: {
+                online: printerStatus.online,
+                feedButtonEnabled: printerStatus.feedButtonEnabled,
+                paperPresent: printerStatus.paperPresent,
+                coverOpen: printerStatus.coverOpen,
+                errors: printerStatus.errors,
+                timestamp: printerStatus.timestamp,
+                note: printerStatus.note
+            },
+            endpoints: {
+                'GET /feed-button': 'Get printer status including feed button state',
+                'GET /feed-button/on': 'Enable the printer feed button',
+                'GET /feed-button/off': 'Disable the printer feed button'
+            },
+            usage: {
+                enable: 'GET /printer/feed-button/on',
+                disable: 'GET /printer/feed-button/off'
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false,
+            error: 'Status query failed', 
+            details: error.message,
+            fallback: {
+                message: 'Feed Button Control API',
+                endpoints: {
+                    'GET /feed-button': 'Get printer status including feed button state',
+                    'GET /feed-button/on': 'Enable the printer feed button',
+                    'GET /feed-button/off': 'Disable the printer feed button'
+                }
+            }
+        });
+    }
+});
+
+// Control feed button - Enable
+printerRouter.get('/feed-button/on', async (req, res) => {
+    try {
+        const printJob = setFeedButton(true);
+        const success = await thermalPrint(printJob);
+        
+        res.json({
+            success,
+            message: success 
+                ? 'Feed button enabled successfully'
+                : 'Feed button enable failed',
+            enabled: true,
+            printJob
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Control feed button - Disable
+printerRouter.get('/feed-button/off', async (req, res) => {
+    try {
+        const printJob = setFeedButton(false);
+        const success = await thermalPrint(printJob);
+        
+        res.json({
+            success,
+            message: success 
+                ? 'Feed button disabled successfully'
+                : 'Feed button disable failed',
+            enabled: false,
+            printJob
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Test feed button functionality
+printerRouter.get('/feed-button/test', async (req, res) => {
+    try {
+        const testResult = await testFeedButton();
+        
+        res.json({
+            ...testResult,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false,
+            error: 'Feed button test failed', 
+            details: error.message 
+        });
     }
 });
 

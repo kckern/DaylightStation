@@ -189,6 +189,10 @@ async function processItem(item, config) {
                 commands = Buffer.from([0x1D, 0x56, 0x00]); // Cut paper
                 break;
                 
+            case 'feedButton':
+                commands = processFeedButtonItem(item, config);
+                break;
+                
             default:
                 console.warn(`Unknown item type: ${item.type}`);
         }
@@ -430,6 +434,25 @@ function processSpaceItem(item, config) {
     }
     
     return commands;
+}
+
+/**
+ * Process feed button control item
+ * @param {Object} item - Feed button item configuration
+ * @param {Object} config - Printer configuration
+ * @returns {Buffer} - ESC/POS commands
+ */
+function processFeedButtonItem(item, config) {
+    // ESC c 5 n - Enable/disable panel buttons
+    // ESC = 0x1B, c = 0x63, 5 = 0x35 (ASCII '5')
+    // n = 0: disable feed button, n = 1: enable feed button
+    
+    const enableCode = item.enabled ? 0x01 : 0x00;
+    const command = Buffer.from([0x1B, 0x63, 0x35, enableCode]);
+    
+    console.log(`Setting feed button: ${item.enabled ? 'enabled' : 'disabled'} (command: ${Array.from(command).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')})`);
+    
+    return command;
 }
 
 /**
@@ -796,6 +819,224 @@ export function createTablePrint(tableData) {
         config: config,
         items,
         footer: footer || { paddingLines: 2, autoCut: true }
+    };
+}
+
+/**
+ * Query printer status including feed button state
+ * @param {Object} config - Optional printer configuration
+ * @returns {Promise<Object>} - Printer status information
+ */
+export async function queryPrinterStatus(config = {}) {
+    try {
+        // Merge config with defaults
+        const printerConfig = { ...DEFAULT_CONFIG, ...config };
+        
+        // Check if printer IP is configured
+        if (!printerConfig.ip) {
+            console.error('Printer IP address is not configured');
+            return { success: false, error: 'Printer IP not configured' };
+        }
+        
+        console.log(`Querying printer status at ${printerConfig.ip}:${printerConfig.port}...`);
+        
+        // Create network device
+        const device = new Network(printerConfig.ip, printerConfig.port);
+        
+        return new Promise((resolve) => {
+            // Set timeout for connection
+            const timeoutId = setTimeout(() => {
+                console.error('Printer status query timeout');
+                resolve({ success: false, error: 'Connection timeout' });
+            }, printerConfig.timeout);
+
+            device.open(async function(error) {
+                clearTimeout(timeoutId);
+                
+                if (error) {
+                    console.error('Failed to connect to printer for status query:', error);
+                    resolve({ success: false, error: 'Connection failed', details: error.message });
+                    return;
+                }
+                
+                try {
+                    console.log('Connected successfully! Querying printer status...');
+                    
+                    // Query real-time status using DLE EOT commands
+                    // DLE EOT 1 - Printer status
+                    // DLE EOT 2 - Offline status  
+                    // DLE EOT 3 - Error status
+                    // DLE EOT 4 - Paper sensor status
+                    
+                    const queries = [
+                        Buffer.from([0x10, 0x04, 0x01]), // Printer status
+                        Buffer.from([0x10, 0x04, 0x02]), // Offline status
+                        Buffer.from([0x10, 0x04, 0x03]), // Error status
+                        Buffer.from([0x10, 0x04, 0x04])  // Paper sensor status
+                    ];
+                    
+                    const responses = [];
+                    let queryIndex = 0;
+                    
+                    // Function to send next query
+                    const sendNextQuery = () => {
+                        if (queryIndex < queries.length) {
+                            device.write(queries[queryIndex]);
+                            queryIndex++;
+                            setTimeout(sendNextQuery, 100); // Wait 100ms between queries
+                        } else {
+                            // All queries sent, wait for responses then close
+                            setTimeout(() => {
+                                device.close();
+                                
+                                // Parse responses and determine feed button status
+                                const status = parseStatusResponses(responses);
+                                console.log('Printer status query completed');
+                                resolve({ 
+                                    success: true, 
+                                    ...status,
+                                    timestamp: new Date().toISOString()
+                                });
+                            }, 200);
+                        }
+                    };
+                    
+                    // Listen for data responses
+                    device.on('data', (data) => {
+                        responses.push(data);
+                    });
+                    
+                    // Start querying
+                    sendNextQuery();
+                    
+                } catch (processingError) {
+                    console.error('Error querying printer status:', processingError);
+                    device.close();
+                    resolve({ success: false, error: 'Query processing error', details: processingError.message });
+                }
+            });
+        });
+        
+    } catch (error) {
+        console.error('Printer status query error:', error);
+        return { success: false, error: 'Query failed', details: error.message };
+    }
+}
+
+/**
+ * Parse status response bytes from printer
+ * @param {Array<Buffer>} responses - Array of response buffers
+ * @returns {Object} - Parsed status information
+ */
+function parseStatusResponses(responses) {
+    const status = {
+        online: false,
+        feedButtonEnabled: null, // Cannot be directly determined from most printers
+        paperPresent: false,
+        errors: [],
+        coverOpen: false,
+        cutterOk: true,
+        rawResponses: responses.map(r => Array.from(r))
+    };
+    
+    responses.forEach((response, index) => {
+        if (response.length > 0) {
+            const byte = response[0];
+            
+            switch (index) {
+                case 0: // Printer status
+                    status.online = (byte & 0x08) === 0; // Bit 3: 0 = online, 1 = offline
+                    status.coverOpen = (byte & 0x04) !== 0; // Bit 2: cover open
+                    break;
+                    
+                case 1: // Offline status
+                    status.coverOpen = status.coverOpen || (byte & 0x04) !== 0;
+                    break;
+                    
+                case 2: // Error status
+                    if (byte & 0x08) status.errors.push('cutter_error');
+                    if (byte & 0x20) status.errors.push('unrecoverable_error');
+                    if (byte & 0x40) status.errors.push('auto_recoverable_error');
+                    break;
+                    
+                case 3: // Paper sensor status
+                    status.paperPresent = (byte & 0x60) === 0; // Bits 5-6: paper status
+                    break;
+            }
+        }
+    });
+    
+    // Note: Feed button status cannot be reliably queried from most ESC/POS printers
+    // The ESC c 5 command only sets the state, it doesn't provide a way to read it back
+    status.feedButtonEnabled = 'unknown';
+    status.note = 'Feed button status cannot be queried directly from most ESC/POS printers';
+    
+    return status;
+}
+
+/**
+ * Test feed button functionality with printer
+ * @param {Object} config - Optional printer configuration
+ * @returns {Promise<Object>} - Test results
+ */
+export async function testFeedButton(config = {}) {
+    try {
+        console.log('Testing feed button functionality...');
+        
+        // Test disabling feed button
+        console.log('Step 1: Disabling feed button...');
+        const disableResult = await thermalPrint(setFeedButton(false, config));
+        
+        if (!disableResult) {
+            return { success: false, error: 'Failed to disable feed button' };
+        }
+        
+        // Wait a moment
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Test enabling feed button
+        console.log('Step 2: Enabling feed button...');
+        const enableResult = await thermalPrint(setFeedButton(true, config));
+        
+        if (!enableResult) {
+            return { success: false, error: 'Failed to enable feed button' };
+        }
+        
+        return {
+            success: true,
+            message: 'Feed button test completed successfully',
+            steps: {
+                disable: disableResult,
+                enable: enableResult
+            },
+            note: 'Check printer physically to verify feed button response'
+        };
+        
+    } catch (error) {
+        return {
+            success: false,
+            error: 'Feed button test failed',
+            details: error.message
+        };
+    }
+}
+
+/**
+ * Helper function to control the feed button on the thermal printer
+ * @param {boolean} enabled - Whether to enable (true) or disable (false) the feed button
+ * @param {Object} config - Optional printer configuration
+ * @returns {Object} - Print object ready for thermalPrint()
+ */
+export function setFeedButton(enabled, config = {}) {
+    return {
+        config: config,
+        items: [
+            {
+                type: 'feedButton',
+                enabled: enabled
+            }
+        ],
+        footer: { paddingLines: 0, autoCut: false }
     };
 }
 
