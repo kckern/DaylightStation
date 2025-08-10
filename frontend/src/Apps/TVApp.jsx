@@ -53,7 +53,7 @@ function setupNavigationHandlers() {
   };
 }
 
-export default function TVApp() {
+export default function TVApp({ appParam }) {
   const [list, setList] = useState([]);
   const [autoplayed, setAutoplayed] = useState(false);
 
@@ -183,6 +183,12 @@ export default function TVApp() {
       setAutoplayed(true);
     }
   }, [autoplay, autoplayed, setCurrentContent]);
+
+  useEffect(() => {
+    if (appParam) {
+      setContentStack([<AppContainer open={{ app: appParam }} clear={() => setContentStack([])} />]);
+    }
+  }, [appParam]);
 
   if (list.length === 0 && (isQueueOrPlay && !autoplayed)) {
     return <TVAppWrapper content={<LoadingOverlay />} />;
