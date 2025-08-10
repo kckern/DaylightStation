@@ -7,6 +7,7 @@ import {
 } from "../../lib/api.mjs";
 import "./AppContainer.scss";
 import  WebcamApp  from "../Input/Webcam.jsx";
+import Gratitude from "./Apps/Gratitude.jsx";
 
 export default function AppContainer({ open, clear }) {
   const app = open?.app || open.open || open;
@@ -34,6 +35,7 @@ export default function AppContainer({ open, clear }) {
   if (app === "webcam") return <WebcamApp />;
   if (app === "wrapup") return <WrapUp clear={clear} />;
   if (app === "office_off") return <OfficeOff clear={clear} />;
+  if( app === "gratitude" ) return <Gratitude clear={clear} />;
   return (
     <div>
       <h2>App Container</h2>

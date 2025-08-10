@@ -53,6 +53,7 @@ async function initializeApp() {
     const { default: lifelogRouter } = await import('./lifelog.mjs');
     const { default: fitnessRouter } = await import('./fitness.mjs');
     const { default: printerRouter } = await import('./printer.mjs');
+    const { default: gratitudeRouter } = await import('./gratitude.mjs');
 
 
     const { default: exe } = await import('./exe.js');
@@ -73,6 +74,7 @@ async function initializeApp() {
     app.use("/exe", exe);
     app.use("/print", printerRouter);
     app.use("/tts", tts);
+    app.use("/api/gratitude", gratitudeRouter);
 
 
     // Proxy app for Plex

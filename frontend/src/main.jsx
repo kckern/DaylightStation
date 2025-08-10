@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
 import TVApp from './Apps/TVApp.jsx';
@@ -17,6 +17,12 @@ const HomeAppWithWebSocket = () => (
   </WebSocketProvider>
 );
 
+// Wrapper component for TVApp with app parameter
+const TVAppWithParams = () => {
+  const { app } = useParams();
+  return <TVApp appParam={app} />;
+};
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <BrowserRouter>
     <Routes>
@@ -24,6 +30,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Route path="/budget" element={<FinanceApp />} />
       <Route path="/finances" element={<FinanceApp />} />
       <Route path="/tv" element={<TVApp />} />
+      <Route path="/tv/app/:app" element={<TVAppWithParams />} />
       <Route path="/health" element={<HealthApp />} />
       <Route path="/fitness" element={<FitnessApp />} />
       <Route path="/lifelog" element={<LifelogApp />} />
