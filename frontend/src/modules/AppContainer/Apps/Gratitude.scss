@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   height: 100%;
   width: 100%;
   border: 1px solid #ccc;
@@ -10,3 +10,144 @@
   padding: 16px;
   background-color: #111;
 }
+
+// TV App Theme Variables
+$bg-dark: #111;
+$bg-panel: #1d1f24;
+$bg-panel-alt: #222831;
+$accent: #ffb347; // soft orange
+$accent-alt: #5ac8fa; // cyan
+$accent-desire: #c678dd; // purple
+$text-light: #f5f7fa;
+$text-dim: #99a2b2;
+$danger: #ff5f56;
+$radius-sm: 6px;
+$radius-md: 12px;
+$radius-lg: 24px;
+$transition: 140ms cubic-bezier(.4,.2,.2,1);
+$shadow-focus: 0 0 0 3px rgba($accent, .4), 0 6px 18px -4px rgba(0,0,0,.6);
+
+// Shared utilities
+@mixin focus-ring($color: $accent) {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba($color, .5), 0 4px 16px -2px rgba(0,0,0,.7);
+}
+
+@mixin scrollbars {
+  scrollbar-width: thin;
+  scrollbar-color: $accent $bg-panel;
+  &::-webkit-scrollbar { width: 10px; }
+  &::-webkit-scrollbar-track { background: $bg-panel; }
+  &::-webkit-scrollbar-thumb { background: linear-gradient($accent, $accent-alt); border-radius: 6px; }
+}
+
+.user-selector {
+  width: 100%;
+  max-width: 900px;
+  text-align: center;
+  h3 { color: $text-light; font-size: 2.2rem; letter-spacing: .5px; margin-bottom: 1.5rem; }
+  ul { list-style: none; padding: 0; margin: 0; display: flex; gap: 1.2rem; justify-content: center; flex-wrap: wrap; }
+  li {
+    background: linear-gradient(145deg, $bg-panel, $bg-panel-alt);
+    padding: 1rem 1.6rem;
+    border-radius: $radius-md;
+    font-size: 1.25rem;
+    color: $text-light;
+    cursor: pointer;
+    min-width: 160px;
+    border: 1px solid #2a2f37;
+    position: relative;
+    transition: $transition;
+    &:hover, &:focus { transform: translateY(-4px); background: linear-gradient(145deg, $accent-alt, $accent); color: #101316; }
+    &:active { transform: scale(.94); }
+  }
+}
+
+.gratitude-selections-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.2rem;
+  background: linear-gradient(145deg, $bg-panel, #181b20);
+  padding: 1rem 1.5rem;
+  border-radius: $radius-lg;
+  width: 100%;
+  max-width: 1200px;
+  color: $text-light;
+  margin-bottom: 1.5rem;
+  cursor: pointer;
+  border: 1px solid #252a31;
+  transition: $transition;
+  &:hover, &:focus { box-shadow: $shadow-focus; }
+  .counts { display: flex; gap: 2rem; font-size: 1.3rem; letter-spacing: .5px; span { position: relative; } }
+  .actions button { background: $accent; color: #222; font-weight: 600; border: none; padding: .8rem 1.2rem; border-radius: $radius-sm; cursor: pointer; font-size: 1rem; transition: $transition; &:hover { background: lighten($accent, 5%); } &:active { transform: scale(.94); } }
+}
+
+.gratitude-selections-fullscreen {
+  position: relative;
+  width: 100%;
+  max-width: 1400px;
+  background: radial-gradient(circle at 20% 20%, #1e242c, #121518 60%);
+  padding: 2rem clamp(1rem, 2vw, 3rem) 3rem;
+  border-radius: $radius-lg;
+  border: 1px solid #262c33;
+  color: $text-light;
+  animation: fadeIn .35s ease;
+  .toolbar { display: flex; gap: 1rem; margin-bottom: 1.5rem; button { background: $accent-alt; border: none; padding: .9rem 1.4rem; font-size: 1rem; font-weight: 600; border-radius: $radius-sm; cursor: pointer; color: #101316; transition: $transition; &:hover { background: lighten($accent-alt, 6%); } &:active { transform: scale(.93); } &:last-child { background: $accent; &:hover { background: lighten($accent, 6%); } } } }
+  h2 { font-size: 2.4rem; margin: 0 0 1.3rem; letter-spacing: .8px; }
+  .category-group { margin-bottom: 2.2rem; }
+  h3 { font-size: 1.4rem; margin-bottom: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; opacity: .9; }
+  .selected-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .9rem; @include scrollbars; max-height: 320px; overflow: auto; }
+  .selected-list li { background: linear-gradient(140deg, $bg-panel-alt, $bg-panel 80%); padding: .85rem 1rem; border-radius: $radius-md; position: relative; font-size: .95rem; line-height: 1.2; border: 1px solid #2b3037; cursor: pointer; display: flex; align-items: center; gap: .6rem; transition: $transition; color: $text-light; &:hover { background: linear-gradient(140deg, $accent 10%, $accent-alt); color: #101316; } .remove { margin-left: auto; font-size: 1rem; opacity: .7; transition: $transition; } &:hover .remove { opacity: 1; } }
+  .selected-list li.empty { background: #1a2026; color: $text-dim; font-style: italic; pointer-events: none; }
+}
+
+// Override: make base mode picker buttons subdued; highlight only on .focused
+.gratitude-mode-picker {
+  button {
+    background: #1d2329 !important;
+    color: $text-dim !important;
+    opacity: .65;
+    box-shadow: none !important;
+    transform: none !important;
+    transition: $transition;
+  }
+  button.focused {
+    background: linear-gradient(140deg, $accent 5%, $accent-alt) !important;
+    color: #111 !important;
+    opacity: 1;
+    transform: translateY(-4px) !important;
+    box-shadow: $shadow-focus !important;
+  }
+}
+
+.gratitude-selector-wrapper { width: 100%; max-width: 1400px; }
+
+.mode-switcher { display: flex; gap: .8rem; margin: 0 0 1.2rem; flex-wrap: wrap; button { background: #1d2329; color: $text-light; padding: .75rem 1.3rem; border-radius: $radius-md; border: 1px solid #2a3037; font-size: .95rem; letter-spacing: .5px; cursor: pointer; font-weight: 600; transition: $transition; &:hover { background: #262e36; } &.active { background: linear-gradient(140deg, $accent 10%, $accent-alt); color: #111; box-shadow: $shadow-focus; } &:active { transform: scale(.93); } }}
+
+.gratitude-selector-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 1rem; width: 100%; max-height: 520px; overflow-y: auto; padding-right: .4rem; @include scrollbars; }
+
+.gratitude-option { background: linear-gradient(150deg, #1f252c, #181b1f 70%); padding: 1.1rem 1rem; border-radius: $radius-md; border: 1px solid #2b3139; font-size: .95rem; line-height: 1.15; color: $text-light; letter-spacing: .3px; cursor: pointer; position: relative; display: flex; align-items: flex-start; transition: $transition; min-height: 80px; box-shadow: 0 4px 14px -6px rgba(0,0,0,.55); &:hover { transform: translateY(-4px); background: linear-gradient(150deg, $accent-alt 5%, $accent); color: #111; } &.selected { background: linear-gradient(150deg, $accent 10%, $accent-desire); color: #111; box-shadow: $shadow-focus; } }
+
+// Accessibility focus states
+.user-selector li:focus,
+.mode-switcher button:focus,
+.gratitude-option:focus,
+.gratitude-selections-header:focus,
+.gratitude-selections-fullscreen button:focus { @include focus-ring(); }
+
+.user-selector li.focused,
+.mode-switcher button.focused,
+.gratitude-option.focused,
+.gratitude-selections-header .counts.focused,
+.gratitude-selections-header .actions button.focused,
+.gratitude-selections-fullscreen .toolbar button.focused,
+.gratitude-selections-fullscreen .selected-list li.focused { 
+  outline: none;
+  transform: translateY(-4px);
+  background: linear-gradient(140deg, $accent-alt 5%, $accent) !important;
+  color: #111 !important;
+  box-shadow: $shadow-focus;
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
