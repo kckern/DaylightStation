@@ -2,6 +2,113 @@ import escpos from 'escpos';
 import Network from 'escpos-network';
 import { createCanvas, loadImage } from 'canvas';
 import fs from 'fs';
+import yaml from 'js-yaml';
+import { saveFile } from './io.mjs';
+
+// Printer logging utility
+const printerLog = {
+    info: (message, data = null) => {
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            timestamp,
+            level: 'INFO',
+            message,
+            data
+        };
+        printerLog._writeLog(logEntry);
+    },
+    error: (message, error = null) => {
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            timestamp,
+            level: 'ERROR',
+            message,
+            error: error ? error.toString() : null
+        };
+        printerLog._writeLog(logEntry);
+    },
+    warn: (message, data = null) => {
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            timestamp,
+            level: 'WARN',
+            message,
+            data
+        };
+        printerLog._writeLog(logEntry);
+    },
+    jobStart: (config, itemCount) => {
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            timestamp,
+            level: 'JOB_START',
+            message: 'Print job initiated',
+            config: {
+                target: `${config.ip}:${config.port}`,
+                itemCount,
+                upsideDown: config.upsideDown,
+                timeout: config.timeout
+            }
+        };
+        printerLog._writeLog(logEntry);
+    },
+    jobComplete: (success, duration) => {
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            timestamp,
+            level: 'JOB_COMPLETE',
+            message: 'Print job finished',
+            success,
+            duration: `${duration}ms`
+        };
+        printerLog._writeLog(logEntry);
+    },
+    dataPreview: (commands, description = '') => {
+        const timestamp = new Date().toISOString();
+        const preview = commands.slice(0, 50).toString('hex');
+        const logEntry = {
+            timestamp,
+            level: 'DATA_PREVIEW',
+            message: description || 'Data sent to printer',
+            size: commands.length,
+            preview: `${preview}...`
+        };
+        printerLog._writeLog(logEntry);
+    },
+    _writeLog: (logEntry) => {
+        try {
+            const date = new Date().toISOString().split('T')[0];
+            const logPath = `logs/printer/${date}`;
+            
+            // Load existing logs for the day or create empty array
+            let dailyLogs = [];
+            try {
+                const existingFile = fs.readFileSync(`${process.env.path.data}/${logPath}.yaml`, 'utf8');
+                const existingData = yaml.load(existingFile);
+                if (Array.isArray(existingData)) {
+                    dailyLogs = existingData;
+                }
+            } catch (e) {
+                // File doesn't exist or is invalid, start fresh
+            }
+            
+            // Add new log entry
+            dailyLogs.push(logEntry);
+            
+            // Keep only last 1000 entries per day to prevent file bloat
+            if (dailyLogs.length > 1000) {
+                dailyLogs = dailyLogs.slice(-1000);
+            }
+            
+            // Save updated logs
+            saveFile(logPath, dailyLogs);
+        } catch (error) {
+            // Fallback to console if file logging fails
+            console.error('Printer log write failed:', error);
+            console.log('PRINTER_LOG:', logEntry);
+        }
+    }
+};
 
 // Default thermal printer configuration
 const DEFAULT_CONFIG = {
@@ -48,10 +155,12 @@ const DEFAULT_CONFIG = {
  * }
  */
 export async function thermalPrint(printObject) {
+    const startTime = Date.now();
+    
     try {
         // Validate input
         if (!printObject || !printObject.items || !Array.isArray(printObject.items)) {
-            console.error('Invalid printObject: must have items array');
+            printerLog.error('Invalid printObject: must have items array');
             return false;
         }
 
@@ -60,11 +169,12 @@ export async function thermalPrint(printObject) {
         
         // Check if printer IP is configured
         if (!config.ip) {
-            console.error('Printer IP address is not configured');
+            printerLog.error('Printer IP address is not configured');
             return false;
         }
         
-        console.log(`Connecting to thermal printer at ${config.ip}:${config.port}...`);
+        // Log job start
+        printerLog.jobStart(config, printObject.items.length);
         
         // Create network device
         const device = new Network(config.ip, config.port);
@@ -72,7 +182,8 @@ export async function thermalPrint(printObject) {
         return new Promise((resolve) => {
             // Set timeout for connection
             const timeoutId = setTimeout(() => {
-                console.error('Printer connection timeout');
+                printerLog.error('Printer connection timeout', { timeout: config.timeout });
+                printerLog.jobComplete(false, Date.now() - startTime);
                 resolve(false);
             }, config.timeout);
 
@@ -80,16 +191,18 @@ export async function thermalPrint(printObject) {
                 clearTimeout(timeoutId);
                 
                 if (error) {
-                    console.error('Failed to connect to printer:', error);
+                    printerLog.error('Failed to connect to printer', error);
+                    printerLog.jobComplete(false, Date.now() - startTime);
                     resolve(false);
                     return;
                 }
                 
                 try {
-                    console.log('Connected successfully! Processing print job...');
+                    printerLog.info('Connected successfully! Processing print job...');
                     
                     // Initialize printer
                     let commands = Buffer.from([0x1B, 0x40]); // ESC @ - Initialize
+                    printerLog.dataPreview(commands, 'Initialization commands');
                     
                     // Set character set to support Unicode
                     // ESC t n - Select character code table (UTF-8 = 16)
@@ -98,16 +211,23 @@ export async function thermalPrint(printObject) {
                     // Set upside down mode if configured
                     if (config.upsideDown) {
                         commands = Buffer.concat([commands, Buffer.from([0x1B, 0x7B, 0x01])]);
+                        printerLog.info('Upside down mode enabled');
                     }
                     
                     // Process each item in the print job
                     const sortedItems = config.upsideDown ? printObject.items.reverse() : printObject.items;
-                    console.log(`Processing ${sortedItems.length} items...`);
-                  //  console.log('Printer configuration:', config);
+                    printerLog.info(`Processing ${sortedItems.length} items...`, { 
+                        itemTypes: sortedItems.map(item => item.type) 
+                    });
+                    
                     for (const item of sortedItems) {
                         const itemCommands = await processItem(item, config);
                         if (itemCommands) {
                             commands = Buffer.concat([commands, itemCommands]);
+                            printerLog.info(`Processed item: ${item.type}`, { 
+                                size: itemCommands.length,
+                                totalSize: commands.length 
+                            });
                         }
                     }
                     
@@ -123,6 +243,7 @@ export async function thermalPrint(printObject) {
                     // Cut paper if requested
                     if (autoCut) {
                         commands = Buffer.concat([commands, Buffer.from([0x1D, 0x56, 0x00])]);
+                        printerLog.info('Auto-cut enabled');
                     }
                     
                     // Reset upside down mode
@@ -130,26 +251,32 @@ export async function thermalPrint(printObject) {
                         commands = Buffer.concat([commands, Buffer.from([0x1B, 0x7B, 0x00])]);
                     }
                     
+                    // Log final data being sent to printer
+                    printerLog.dataPreview(commands, 'Complete print job data');
+                    
                     // Send all commands to printer
                     device.write(commands);
+                    printerLog.info('Data sent to printer successfully');
                     
                     // Wait a moment then close connection
                     setTimeout(() => {
                         device.close();
-                        console.log('Print job completed successfully!');
+                        printerLog.jobComplete(true, Date.now() - startTime);
                         resolve(true);
                     }, 1000);
                     
                 } catch (processingError) {
-                    console.error('Error processing print job:', processingError);
+                    printerLog.error('Error processing print job', processingError);
                     device.close();
+                    printerLog.jobComplete(false, Date.now() - startTime);
                     resolve(false);
                 }
             });
         });
         
     } catch (error) {
-        console.error('Thermal print error:', error);
+        printerLog.error('Thermal print function error', error);
+        printerLog.jobComplete(false, Date.now() - startTime);
         return false;
     }
 }
@@ -1040,4 +1167,59 @@ export function setFeedButton(enabled, config = {}) {
     };
 }
 
+// Log container startup to help correlate with printer issues
+export function logContainerStartup() {
+    printerLog.info('DaylightStation container started', {
+        timestamp: new Date().toISOString(),
+        printerConfig: {
+            host: DEFAULT_CONFIG.ip,
+            port: DEFAULT_CONFIG.port,
+            timeout: DEFAULT_CONFIG.timeout
+        }
+    });
+    
+    // Test printer connectivity on startup
+    testPrinterConnection();
+}
+
+// Test printer connection without printing
+async function testPrinterConnection() {
+    try {
+        const config = DEFAULT_CONFIG;
+        if (!config.ip) {
+            printerLog.warn('Printer IP not configured for startup test');
+            return false;
+        }
+        
+        const device = new Network(config.ip, config.port);
+        
+        return new Promise((resolve) => {
+            const timeoutId = setTimeout(() => {
+                printerLog.warn('Startup printer test timeout');
+                resolve(false);
+            }, 3000); // Shorter timeout for startup test
+            
+            device.open(function(error) {
+                clearTimeout(timeoutId);
+                
+                if (error) {
+                    printerLog.warn('Startup printer test failed', error);
+                    resolve(false);
+                    return;
+                }
+                
+                device.close();
+                printerLog.info('Startup printer test successful');
+                resolve(true);
+            });
+        });
+        
+    } catch (error) {
+        printerLog.error('Startup printer test error', error);
+        return false;
+    }
+}
+
+// Call startup logging when this module is loaded
+logContainerStartup();
 export default thermalPrint;

@@ -28,7 +28,7 @@ export function FinanceChart()
   }, [])
   if(!monthData) return null;
   const options = buildDayToDayBudgetOptions(monthData, null, {plotLineColor: '#444'});
-  if(!options.chart) return null;
+  if(!options || !options.chart) return null;
   options.chart.backgroundColor = 'transparent';
   options.title = {text: ''};
   options.subtitle = {text: ''};
@@ -45,18 +45,16 @@ const budgetBlockDimensions = { height : 240}
 //...monthlyBudget[month], balance, spent, daysRemaining, dailySpend, dailyBudget, dailyAdjustment: adjustPercentage, adjustPercentage
  
   const info = {
-    budget: monthData.budget,
-    remaining: monthData.balance,
-    spent: monthData.spent,
-    spentPercentage: monthData.spent / monthData.budget,
-    dailySpending: monthData.dailySpend,
-    daysRemaining: monthData.daysRemaining,
-    dailyBudget: monthData.dailyBudget,
-    adjust: Math.round(monthData.dailyAdjustment)
-
-
+    budget: monthData.budget || 0,
+    remaining: monthData.balance || 0,
+    spent: monthData.spent || 0,
+    spentPercentage: (monthData.spent || 0) / (monthData.budget || 1),
+    dailySpending: monthData.dailySpend || 0,
+    daysRemaining: monthData.daysRemaining || 0,
+    dailyBudget: monthData.dailyBudget || 0,
+    adjust: Math.round(monthData.dailyAdjustment || 0)
   }
-    const adjustIcon = monthData.dailyAdjustment > 0 ? 
+    const adjustIcon = (monthData.dailyAdjustment || 0) > 0 ? 
     <img src={upArrow} alt="up" style={{height: "1.3em", marginBottom: "-0.3em"}} /> : 
     <img src={downArrow} alt="down" style={{height: "1.3em", marginBottom: "-0.3em"}} />;
 return (
