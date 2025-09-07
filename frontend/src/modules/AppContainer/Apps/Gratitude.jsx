@@ -35,8 +35,33 @@ function GratitudeBreadcrumbs({ currentUser, onBackToHome }) {
     return (
         <div className="breadcrumbs">
             <span className="breadcrumb-link" onClick={onBackToHome}>Home</span> 
-            &gt; 
+            {" > "}
             <span>{currentUser ? currentUser.name : "Select User"}</span>
+        </div>
+    );
+}
+
+function UserSelection({ userData, onUserSelect }) {
+    return (
+        <div className="user-selection">
+            <h2>Select User</h2>
+            <div className="user-buttons-container">
+                {userData.map(user => (
+                    <button key={user.id} onClick={() => onUserSelect(user)} className="user-button">
+                        {user.name}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function UserContent({ currentUser, onSwitchUser }) {
+    return (
+        <div className="user-content">
+            <h2>Welcome, {currentUser.name}!</h2>
+            <p>This is where the main app content would go.</p>
+            <button onClick={onSwitchUser} className="switch-user-button">Switch User</button>
         </div>
     );
 }
@@ -51,25 +76,24 @@ export default function Gratitude({ clear }) {
     return (
     <MantineProvider withGlobalStyles withNormalizeCSS>
         <div className="app gratitude-app">
-            <h1>Gratitude</h1>
+            <div className="app-header">
+                <h1>Gratitude</h1>
+                <button onClick={clear} className="close-button">×</button>
+            </div>
             <GratitudeBreadcrumbs currentUser={currentUser} onBackToHome={handleBackToHome} />
-            {currentUser ? (
-                <div>
-                    <h2>Welcome, {currentUser.name}!</h2>
-                    <p>This is where the main app content would go.</p>
-                    <button onClick={() => setCurrentUser(null)} className="switch-user-button">Switch User</button>
-                </div>
-            ) : (
-                <div className="user-selection">
-                    <h2>Select User</h2>
-                    {userData.map(user => (
-                        <button key={user.id} onClick={() => setCurrentUser(user)} className="user-button">
-                            {user.name}
-                        </button>
-                    ))}
-                </div>
-            )}
-            <button onClick={clear} className="close-button">Close App</button>
+            <div className="main-content">
+                {currentUser ? (
+                    <UserContent 
+                        currentUser={currentUser} 
+                        onSwitchUser={() => setCurrentUser(null)} 
+                    />
+                ) : (
+                    <UserSelection 
+                        userData={userData} 
+                        onUserSelect={setCurrentUser} 
+                    />
+                )}
+            </div>
         </div>
     </MantineProvider>
   );
