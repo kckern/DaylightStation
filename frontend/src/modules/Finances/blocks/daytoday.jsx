@@ -20,13 +20,13 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   if (!dayKeys.length) return {};
 
   // Basic info about the month
-  const firstDayKey = dayKeys[1];
+  const firstDayKey = dayKeys[0];
   const lastDayKey = dayKeys[dayKeys.length - 1];
   const inferredMonth = moment(firstDayKey).format('YYYY-MM');
   const currentMonth = moment().format('YYYY-MM');
   const daysInMonth = dayKeys.length - 1;
   const isCurrentMonth = inferredMonth === currentMonth;
-  const today = moment().date(); // 1-based day of the month
+  const today = moment().date() - 1; // Convert to 0-based for array indexing
 
   // Build the actual data series
   const actualData = dayKeys.map((dateKey, idx) => {
@@ -41,8 +41,8 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   });
 
   // Budget stats
-  const initialBudget = dailyBalances[firstDayKey].startingBalance;
-  const endingBalance = dailyBalances[lastDayKey].endingBalance;
+  const initialBudget = dailyBalances[firstDayKey]?.startingBalance || 0;
+  const endingBalance = dailyBalances[lastDayKey]?.endingBalance || 0;
   const spent = initialBudget - endingBalance;
 
   // Build projected data for future days in the current month
@@ -52,7 +52,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
     ? (actualData[0].y - actualData[today].y) / (today + 1)
     : 0;
 
-  const projectedData = isCurrentMonth && today < daysInMonth && actualData[today]
+  const projectedData = isCurrentMonth && today < daysInMonth && actualData[today] && today >= 0
     ? [actualData[today].y].concat(
         Array.from({ length: daysInMonth - today }, (_, i) => {
           const val = actualData[today].y - (i + 1) * averageDailyBurn;
@@ -61,7 +61,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
       )
     : [];
 
-  const projectedDataWithNulls = isCurrentMonth && today < daysInMonth && actualData[today]
+  const projectedDataWithNulls = isCurrentMonth && today < daysInMonth && actualData[today] && today >= 0
     ? Array(today).fill(null).concat(projectedData)
     : [];
 
