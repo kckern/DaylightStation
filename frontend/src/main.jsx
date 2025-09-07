@@ -29,8 +29,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Route path="/" element={<HomeAppWithWebSocket />} />
       <Route path="/budget" element={<FinanceApp />} />
       <Route path="/finances" element={<FinanceApp />} />
-      <Route path="/tv" element={<TVApp />} />
       <Route path="/tv/app/:app" element={<TVAppWithParams />} />
+      <Route path="/tv" element={<TVApp />} />
       <Route path="/health" element={<HealthApp />} />
       <Route path="/fitness" element={<FitnessApp />} />
       <Route path="/lifelog" element={<LifelogApp />} />
