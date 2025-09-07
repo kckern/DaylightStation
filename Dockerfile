@@ -10,7 +10,8 @@ RUN apk add --no-cache openssh-client \
     && apk add --no-cache python3 py3-pip \
     && apk add --no-cache cairo-dev jpeg-dev pango-dev giflib-dev g++ build-base \
     && apk add --no-cache ffmpeg \
-    && pip3 install --no-cache-dir --break-system-packages yt-dlp
+    && apk add --no-cache git \
+    && pip3 install --no-cache-dir --break-system-packages git+https://github.com/yt-dlp/yt-dlp.git
 
 # Bundle app source
 COPY . .
