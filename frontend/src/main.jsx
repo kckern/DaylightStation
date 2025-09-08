@@ -15,7 +15,7 @@ const HomeAppWithWebSocket = () => (
   <WebSocketProvider>
     <HomeApp />
   </WebSocketProvider>
-);
+); 
 
 // Wrapper component for TVApp with app parameter
 const TVAppWithParams = () => {
