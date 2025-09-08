@@ -56,7 +56,7 @@ export function getSelectionsForPrint() {
     // Return empty selections for now - can be implemented later
     return {
         gratitude: [],
-        desires: []
+        hopes: []
     };
 }
 
