@@ -1,5 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { WebSocketProvider, useWebSocket } from "../../../contexts/WebSocketContext.jsx";
 import "./Gratitude.scss";
 
 const userData = [
@@ -66,6 +67,84 @@ function OptionSelector({ title, options, currentUser, onBack }) {
     const [moveHistory, setMoveHistory] = useState([]); // Track moves for undo
     const [highlightedItems, setHighlightedItems] = useState({}); // Track highlighted items with timestamps
     const containerRef = useRef(null);
+    
+    // WebSocket integration
+    const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket();
+
+    // Handle WebSocket payload to add items to selected
+    const handleWebSocketPayload = useCallback((payload) => {
+        console.log('WebSocket payload received:', payload);
+        
+        // Check if payload contains an item that should be added to selected
+        if (payload && payload.item && payload.item.id) {
+            const item = payload.item;
+            console.log('Processing item:', item);
+            
+            // For custom items (isCustom flag), always add them to selected
+            // For predefined items, check if they exist in options and aren't already selected
+            const isCustomItem = payload.isCustom || false;
+            const existsInOptions = options.some(option => option.id === item.id);
+            const alreadySelected = selected.some(selectedItem => selectedItem.id === item.id);
+            
+            console.log('Item validation:', { isCustomItem, existsInOptions, alreadySelected });
+            
+            if ((isCustomItem || existsInOptions) && !alreadySelected && !animatingItem) {
+                console.log('Adding item to selected with animation');
+                
+                // Follow the EXACT same pattern as moveToSelected()
+                // Step 1: Set up animation state FIRST (before moving item)
+                setAnimatingItem(item);
+                setAnimationDirection('webhook-right'); // Use a specific direction for webhook
+                console.log('Animation state set:', { animatingItem: item, animationDirection: 'webhook-right' });
+                
+                // Step 2: Start animation, then move after animation completes (just like keystroke)
+                setTimeout(() => {
+                    // Remove from queue if it's there (only for predefined items)
+                    if (!isCustomItem) {
+                        setQueue(prev => prev.filter(queueItem => queueItem.id !== item.id));
+                    }
+                    
+                    // Add to selected
+                    setSelected(prev => [item, ...prev]);
+                    
+                    // Clear animation state
+                    setAnimatingItem(null);
+                    setAnimationDirection(null);
+                    
+                    // Use newlyAddedItem for slide-in effect (just like keystroke)
+                    setNewlyAddedItem({ item: item, column: 'selected' });
+                    
+                    // Start highlighting the item
+                    const highlightKey = `selected-${item.id}`;
+                    setHighlightedItems(prev => ({ ...prev, [highlightKey]: Date.now() }));
+                    
+                    // Remove highlight after 5 seconds
+                    setTimeout(() => {
+                        setHighlightedItems(prev => {
+                            const updated = { ...prev };
+                            delete updated[highlightKey];
+                            return updated;
+                        });
+                    }, 5000);
+                    
+                    // Clear the newly added animation after it completes
+                    setTimeout(() => setNewlyAddedItem(null), 300);
+                    
+                    console.log('Animation sequence completed');
+                }, 300); // Match CSS animation duration exactly like keystroke
+            } else {
+                console.log('Item not added - validation failed, already selected, or animation in progress');
+            }
+        } else {
+            console.log('Invalid payload structure');
+        }
+    }, [options, selected, animatingItem]);
+
+    // Register/unregister WebSocket callback
+    useEffect(() => {
+        registerPayloadCallback(handleWebSocketPayload);
+        return () => unregisterPayloadCallback();
+    }, [registerPayloadCallback, unregisterPayloadCallback, handleWebSocketPayload]);
 
     // Focus the container on mount to enable keyboard navigation immediately
     useEffect(() => {
@@ -274,6 +353,9 @@ function OptionSelector({ title, options, currentUser, onBack }) {
                     if (animatingItem && animatingItem.id === item.id && isQueue && index === 0) {
                         if (animationDirection === 'left' || animationDirection === 'right') {
                             itemClass += ` sliding-${animationDirection}`;
+                        } else if (animationDirection === 'webhook-right') {
+                            // Webhook items slide from right side of screen
+                            itemClass += ' sliding-right';
                         }
                     }
                     
@@ -291,7 +373,8 @@ function OptionSelector({ title, options, currentUser, onBack }) {
                         if (className === 'discarded-column' && newlyAddedItem.column === 'discarded') {
                             itemClass += ' slide-in-from-right';
                         } else if (className === 'selected-column' && newlyAddedItem.column === 'selected') {
-                            itemClass += ' slide-in-from-left';
+                            // For webhook items, slide in from RIGHT instead of left
+                            itemClass += ' slide-in-from-right';
                         } else if (className === 'queue-column' && newlyAddedItem.column === 'queue') {
                             itemClass += ' slide-in-to-queue';
                         }
@@ -326,23 +409,27 @@ function OptionSelector({ title, options, currentUser, onBack }) {
 
 function GratitudeSelector({ currentUser, onBack }) {
     return (
-        <OptionSelector 
-            title="Gratitude"
-            options={optionData.gratitude}
-            currentUser={currentUser}
-            onBack={onBack}
-        />
+        <WebSocketProvider>
+            <OptionSelector 
+                title="Gratitude"
+                options={optionData.gratitude}
+                currentUser={currentUser}
+                onBack={onBack}
+            />
+        </WebSocketProvider>
     );
 }
 
 function DesiresSelector({ currentUser, onBack }) {
     return (
-        <OptionSelector 
-            title="Desires"
-            options={optionData.desires}
-            currentUser={currentUser}
-            onBack={onBack}
-        />
+        <WebSocketProvider>
+            <OptionSelector 
+                title="Desires"
+                options={optionData.desires}
+                currentUser={currentUser}
+                onBack={onBack}
+            />
+        </WebSocketProvider>
     );
 }
 
@@ -388,7 +475,6 @@ function UserSelection({ userData, onUserSelect }) {
 
     return (
         <div className="user-selection" ref={containerRef} tabIndex={0}>
-            <h2>Select User</h2>
             <div className="user-buttons-container">
                 {userData.map((user, index) => (
                     <button 
@@ -451,8 +537,6 @@ function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
 
     return (
         <div className="user-content" ref={containerRef} tabIndex={0}>
-            <h2>Welcome, {currentUser.name}!</h2>
-            <p>What would you like to explore today?</p>
             <div className="option-buttons-container">
                 <button 
                     onClick={() => onSelectOption('gratitude')} 
@@ -467,7 +551,6 @@ function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
                     Desires
                 </button>
             </div>
-            <button onClick={onSwitchUser} className="switch-user-button">Switch User</button>
         </div>
     );
 }
@@ -487,6 +570,26 @@ export default function Gratitude({ clear }) {
 
     const handleSelectOption = (option) => {
         setCurrentView(option);
+    };
+
+    const getTitle = () => {
+        if (!currentUser) {
+            return "Select Person";
+        }
+        
+        if (!currentView) {
+            return currentUser.name;
+        }
+        
+        if (currentView === 'gratitude') {
+            return `${currentUser.name}'s Gratitude`;
+        }
+        
+        if (currentView === 'desires') {
+            return `${currentUser.name}'s Desires`;
+        }
+        
+        return currentUser.name;
     };
 
     const renderCurrentView = () => {
@@ -530,15 +633,9 @@ export default function Gratitude({ clear }) {
     <MantineProvider withGlobalStyles withNormalizeCSS>
         <div className="app gratitude-app">
             <div className="app-header">
-                <h1>Gratitude</h1>
+                <h1>{getTitle()}</h1>
                 <button onClick={clear} className="close-button">×</button>
             </div>
-            <GratitudeBreadcrumbs 
-                currentUser={currentUser} 
-                currentView={currentView}
-                onBackToHome={handleBackToHome}
-                onBackToUser={handleBackToUser}
-            />
             <div className="main-content">
                 {renderCurrentView()}
             </div>

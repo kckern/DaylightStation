@@ -12,14 +12,17 @@
 .app-header {
   width: 100%;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   background-color: transparent;
+  position: relative;
 }
 
 .gratitude-app h1{
   padding: 0 1rem;
   margin: 0;
+  text-align: center;
+  font-size: 3rem;
 }
 
 .breadcrumbs {
@@ -217,10 +220,10 @@ h2 {
   
   h3 {
     margin: 0;
-    padding: 15px;
+    padding: 3px;
     background-color: #e9ecef;
     text-align: center;
-    font-size: 1.2rem;
+    font-size: 1.8rem;
     border-bottom: 1px solid #ddd;
     flex-shrink: 0; // Keep header fixed size
   }
@@ -261,7 +264,8 @@ h2 {
   background-color: white;
   border: 1px solid #ddd;
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 1.5rem;
+  font-weight: 800;
   transition: all 0.2s ease;
   position: relative;
   
@@ -299,6 +303,10 @@ h2 {
 
   &.slide-in-to-queue {
     animation: slideInToQueue 0.3s ease-out forwards;
+  }
+
+  &.webhook-slide-in {
+    animation: webhookSlideIn 0.5s ease-out forwards;
   }
 
   &.recently-added {
@@ -415,6 +423,34 @@ h2 {
   }
 }
 
+@keyframes webhookSlideIn {
+  0% {
+    transform: translateX(500px) scale(0.6);
+    opacity: 0;
+    filter: blur(8px);
+  }
+  25% {
+    transform: translateX(300px) scale(0.7);
+    opacity: 0.3;
+    filter: blur(4px);
+  }
+  50% {
+    transform: translateX(150px) scale(0.85);
+    opacity: 0.6;
+    filter: blur(2px);
+  }
+  75% {
+    transform: translateX(50px) scale(0.95);
+    opacity: 0.8;
+    filter: blur(1px);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
 @keyframes highlightFade {
   0% {
     font-weight: bold;
@@ -522,6 +558,10 @@ h2 {
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
   
   &:hover {
     background-color: #dc3545;
