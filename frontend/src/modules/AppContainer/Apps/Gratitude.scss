@@ -3,8 +3,8 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: #f0f8ff;
-  color: black;
+  background-color: #1a1a1a;
+  color: #e0e0e0;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -27,18 +27,18 @@
 
 .breadcrumbs {
   font-size: 14px;
-  color: #666;
-  background-color: #00000022;
+  color: #b0b0b0;
+  background-color: #2a2a2a;
   width: 100%;
   padding: 1ex 1rem;
   
   .breadcrumb-link {
-    color: #007bff;
+    color: #4da6ff;
     cursor: pointer;
     text-decoration: underline;
     
     &:hover {
-      color: #0056b3;
+      color: #66b3ff;
     }
   }
 }
@@ -92,8 +92,8 @@ h2 {
   min-width: 120px;
   margin: 0;
   padding: 10px 20px;
-  background-color: #3e3e3e;
-  color: white;
+  background-color: #333333;
+  color: #e0e0e0;
   border: none;
   height: 100%;
   border-radius: 5px;
@@ -103,14 +103,14 @@ h2 {
   transition: all 0.2s ease;
 
   &:hover {
-    background-color: #676767;
+    background-color: #444444;
   }
 
   &.focused {
-    background-color: #007bff;
+    background-color: #4da6ff;
     outline: 3px solid #ffffff;
     outline-offset: 2px;
-    box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
+    box-shadow: 0 0 10px rgba(77, 166, 255, 0.5);
     transform: scale(1.05);
   }
 }
@@ -126,8 +126,8 @@ h2 {
 
 .option-button {
   padding: 15px 30px;
-  background-color: #6c757d;
-  color: white;
+  background-color: #404040;
+  color: #e0e0e0;
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -137,38 +137,38 @@ h2 {
   transition: all 0.2s ease;
 
   &:hover {
-    background-color: #5a6268;
+    background-color: #505050;
   }
 
   &.focused {
-    background-color: #007bff;
+    background-color: #4da6ff;
     outline: 3px solid #ffffff;
     outline-offset: 2px;
-    box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
+    box-shadow: 0 0 10px rgba(77, 166, 255, 0.5);
     transform: scale(1.05);
   }
 
   &.gratitude-button {
-    background-color: #6c757d;
+    background-color: #404040;
     
     &:hover {
-      background-color: #5a6268;
+      background-color: #505050;
     }
     
     &.focused {
-      background-color: #007bff;
+      background-color: #4da6ff;
     }
   }
 
   &.desires-button {
-    background-color: #6c757d;
+    background-color: #404040;
     
     &:hover {
-      background-color: #5a6268;
+      background-color: #505050;
     }
     
     &.focused {
-      background-color: #007bff;
+      background-color: #4da6ff;
     }
   }
 }
@@ -212,39 +212,40 @@ h2 {
   flex: 1;
   display: flex;
   flex-direction: column;
-  border: 2px solid #ddd;
+  border: 2px solid #444444;
   border-radius: 8px;
-  background-color: #f8f9fa;
+  background-color: #2a2a2a;
   overflow: hidden; // Prevent column overflow
   min-width: 0; // Allow flex item to shrink below content size
   
   h3 {
     margin: 0;
     padding: 3px;
-    background-color: #e9ecef;
+    background-color: #3a3a3a;
+    color: #e0e0e0;
     text-align: center;
     font-size: 1.8rem;
-    border-bottom: 1px solid #ddd;
+    border-bottom: 1px solid #444444;
     flex-shrink: 0; // Keep header fixed size
   }
   
   &.discarded-column h3 {
-    background-color: #f8d7da;
-    color: #721c24;
+    background-color: #4a2a2a;
+    color: #ffaaaa;
   }
   
   &.queue-column {
-    border-color: #007bff;
+    border-color: #4da6ff;
     
     h3 {
-      background-color: #cce7ff;
-      color: #004085;
+      background-color: #2a3a4a;
+      color: #99ccff;
     }
   }
   
   &.selected-column h3 {
-    background-color: #d4edda;
-    color: #155724;
+    background-color: #2a4a2a;
+    color: #aaffaa;
   }
 }
 
@@ -261,8 +262,9 @@ h2 {
 
 .selector-item {
   padding: 12px 15px;
-  background-color: white;
-  border: 1px solid #ddd;
+  background-color: #333333;
+  color: #e0e0e0;
+  border: 1px solid #555555;
   border-radius: 6px;
   font-size: 1.5rem;
   font-weight: 800;
@@ -270,10 +272,10 @@ h2 {
   position: relative;
   
   &.focused {
-    background-color: #007bff;
+    background-color: #4da6ff;
     color: white;
-    border-color: #0056b3;
-    box-shadow: 0 0 10px rgba(0, 123, 255, 0.3);
+    border-color: #3399ff;
+    box-shadow: 0 0 10px rgba(77, 166, 255, 0.3);
     transform: scale(1.02);
   }
 
@@ -311,9 +313,10 @@ h2 {
 
   &.recently-added {
     font-weight: bold;
-    background-color: #fff3cd;
-    border-color: #ffeaa7;
-    box-shadow: 0 0 15px rgba(255, 193, 7, 0.4);
+    background-color: #4a4a2a;
+    color: #2a2a2a;
+    border-color: #ffcc66;
+    box-shadow: 0 0 15px rgba(255, 204, 102, 0.4);
     animation: highlightFade 5s ease-out forwards;
   }
 }
@@ -487,7 +490,14 @@ h2 {
   .selection-summary {
     margin-bottom: 15px;
     font-size: 1.1rem;
-    color: #666;
+    color: #b0b0b0;
+  }
+  
+  .instructions {
+    text-align: center;
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+    color: #b0b0b0;
   }
   
   .selector-actions {
@@ -504,24 +514,24 @@ h2 {
       transition: all 0.2s ease;
       
       &.back-button {
-        background-color: #6c757d;
-        color: white;
+        background-color: #404040;
+        color: #e0e0e0;
         
         &:hover {
-          background-color: #5a6268;
+          background-color: #505050;
         }
       }
       
       &.submit-button {
-        background-color: #28a745;
+        background-color: #4da6ff;
         color: white;
         
         &:hover:not(:disabled) {
-          background-color: #218838;
+          background-color: #3399ff;
         }
         
         &:disabled {
-          background-color: #6c757d;
+          background-color: #555555;
           cursor: not-allowed;
         }
       }
@@ -532,14 +542,14 @@ h2 {
 .switch-user-button {
   margin: 20px;
   padding: 8px 16px;
-  background-color: #6c757d;
-  color: white;
+  background-color: #404040;
+  color: #e0e0e0;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   
   &:hover {
-    background-color: #545b62;
+    background-color: #505050;
   }
 }
 
@@ -548,7 +558,7 @@ h2 {
   border: none;
   font-size: 24px;
   font-weight: bold;
-  color: #666;
+  color: #b0b0b0;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 50%;

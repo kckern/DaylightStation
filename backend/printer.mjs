@@ -206,8 +206,8 @@ async function createCanvasTypographyDemo(upsidedown=false) {
         ? selections.gratitude.map(item => item.text)
         : fallbackGratitudeItems;
         
-    const wishTexts = selections.desires.length > 0 
-        ? selections.desires.map(item => item.text)
+    const wishTexts = selections.hopes.length > 0 
+        ? selections.hopes.map(item => item.text)
         : fallbackWishItems;
 
     // Function to get random items or take all if fewer than requested
@@ -304,7 +304,7 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     
     // Wishes header (vertically centered in section)
     ctx.font = `bold 48px "${fontFamily}"`; // 32 * 1.5 = 48
-    ctx.fillText('Desires', margin, wishesContentStartY);
+    ctx.fillText('Hopes', margin, wishesContentStartY);
     let wishesItemsY = wishesContentStartY + 68; // adjusted for larger header font
     
     // Wishes items

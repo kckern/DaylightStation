@@ -20,7 +20,7 @@ const optionData = {
         { text: "Music", id: 8 },
         { text: "Art", id: 9 },
     ],
-    desires: [
+    hopes: [
         { text: "Travel", id: 1 },
         { text: "Learning", id: 2 },
         { text: "Adventure", id: 3 },
@@ -50,7 +50,7 @@ function GratitudeBreadcrumbs({ currentUser, currentView, onBackToHome, onBackTo
             {currentView && (
                 <>
                     {" > "}
-                    <span>{currentView === 'gratitude' ? 'Gratitude' : 'Desires'}</span>
+                    <span>{currentView === 'gratitude' ? 'Gratitude' : 'Hopes'}</span>
                 </>
             )}
         </div>
@@ -420,12 +420,12 @@ function GratitudeSelector({ currentUser, onBack }) {
     );
 }
 
-function DesiresSelector({ currentUser, onBack }) {
+function HopesSelector({ currentUser, onBack }) {
     return (
         <WebSocketProvider>
             <OptionSelector 
-                title="Desires"
-                options={optionData.desires}
+                title="Hopes"
+                options={optionData.hopes}
                 currentUser={currentUser}
                 onBack={onBack}
             />
@@ -493,7 +493,7 @@ function UserSelection({ userData, onUserSelect }) {
 function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
     const [focusedIndex, setFocusedIndex] = useState(0);
     const containerRef = useRef(null);
-    const options = ['gratitude', 'desires'];
+    const options = ['gratitude', 'hopes'];
 
     // Focus the container on mount to enable keyboard navigation immediately
     useEffect(() => {
@@ -545,10 +545,10 @@ function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
                     Gratitude
                 </button>
                 <button 
-                    onClick={() => onSelectOption('desires')} 
-                    className={`option-button desires-button ${focusedIndex === 1 ? 'focused' : ''}`}
+                    onClick={() => onSelectOption('hopes')} 
+                    className={`option-button hopes-button ${focusedIndex === 1 ? 'focused' : ''}`}
                 >
-                    Desires
+                    Hopes
                 </button>
             </div>
         </div>
@@ -557,7 +557,7 @@ function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
 
 export default function Gratitude({ clear }) {
     const [currentUser, setCurrentUser] = useState(null);
-    const [currentView, setCurrentView] = useState(null); // 'gratitude' or 'desires'
+    const [currentView, setCurrentView] = useState(null); // 'gratitude' or 'hopes'
 
     const handleBackToHome = () => {
         setCurrentUser(null);
@@ -582,11 +582,11 @@ export default function Gratitude({ clear }) {
         }
         
         if (currentView === 'gratitude') {
-            return `${currentUser.name}'s Gratitude`;
+            return `${currentUser.name}’s Gratitude`;
         }
         
-        if (currentView === 'desires') {
-            return `${currentUser.name}'s Desires`;
+        if (currentView === 'hopes') {
+            return `${currentUser.name}’s Hopes`;
         }
         
         return currentUser.name;
@@ -611,9 +611,9 @@ export default function Gratitude({ clear }) {
             );
         }
 
-        if (currentView === 'desires') {
+        if (currentView === 'hopes') {
             return (
-                <DesiresSelector 
+                <HopesSelector 
                     currentUser={currentUser}
                     onBack={handleBackToUser}
                 />
