@@ -7,7 +7,7 @@ import moment from 'moment';
 
 const formatAsCurrency = (value) => {
   if (!value && value !== 0) return '$Ø';
-  return `$${value.toLocaleString()}`;
+  return `$${Math.round(value).toLocaleString()}`;
 };
 
 export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override) {
@@ -16,15 +16,15 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   setDrawerContent = setDrawerContent || (() => {});
   const dailyBalances = monthData.dailyBalances;
   const transactions = monthData.transactions || [];
-  const dayKeys = Object.keys(dailyBalances).sort();
+  const dayKeys = Object.keys(dailyBalances).filter(key => !key.endsWith('-start')).sort();
   if (!dayKeys.length) return {};
 
   // Basic info about the month
   const firstDayKey = dayKeys[0];
   const lastDayKey = dayKeys[dayKeys.length - 1];
-  const inferredMonth = moment(firstDayKey).format('YYYY-MM');
+  const inferredMonth = monthData.month || moment(firstDayKey).format('YYYY-MM');
   const currentMonth = moment().format('YYYY-MM');
-  const daysInMonth = dayKeys.length - 1;
+  const daysInMonth = moment(inferredMonth).daysInMonth();
   const isCurrentMonth = inferredMonth === currentMonth;
   const today = moment().date() - 1; // Convert to 0-based for array indexing
 
@@ -41,7 +41,8 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   });
 
   // Budget stats
-  const initialBudget = dailyBalances[firstDayKey]?.startingBalance || 0;
+  const startKey = `${inferredMonth}-start`;
+  const initialBudget = dailyBalances[startKey]?.startingBalance || 0;
   const endingBalance = dailyBalances[lastDayKey]?.endingBalance || 0;
   const spent = initialBudget - endingBalance;
 
@@ -95,6 +96,14 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
 
   return {
     chart: { animation: false, marginTop: 50 },
+    tooltip: {
+      formatter: function () {
+        if (!this.y && this.y !== 0) return false;
+        const dayNum = parseInt(this.key) || this.x + 1;
+        const date = moment(inferredMonth).date(dayNum).format('MMMM D, YYYY');
+        return `<b>${this.series.name}: ${formatAsCurrency(this.y)}</b><br/>${date}`;
+      }
+    },
     title: {
       text: moment(inferredMonth).format('MMMM YYYY'),
       align: 'right',
@@ -113,25 +122,33 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
       labels: {
         y: 15,
         formatter: function () {
-          const date = moment(firstDayKey).date(this.value);
-          const label = moment(firstDayKey).date(this.value).format('MMM D');
+          // Skip the first empty category
+          if (!this.value || this.value === '') return '';
+          
+          const dayNum = parseInt(this.value);
+          if (isNaN(dayNum) || dayNum < 1 || dayNum > daysInMonth) return '';
+          
+          const date = moment(firstDayKey).date(dayNum);
+          const label = date.format('MMM D');
           const isMonday = date.day() === 1;
-          const isCloseToEnd = moment(firstDayKey).date(this.value).isAfter(moment(firstDayKey).endOf('month').subtract(4, 'days'));
-          const isLastDay = +this.value === daysInMonth;
+          const isCloseToEnd = date.isAfter(moment(firstDayKey).endOf('month').subtract(4, 'days'));
+          const isLastDay = dayNum === daysInMonth;
           const showableMonday = isMonday && !isCloseToEnd;
           return (showableMonday || isLastDay) ? label : '';
         }
       },
       tickPositions: Array.from({ length: daysInMonth }, (_, i) => {
-        const date = moment(firstDayKey).date(i + 1);
-        if (i === 0) return i + 1;
+        const dayNum = i + 1;
+        const date = moment(firstDayKey).date(dayNum);
+        if (i === 0) return dayNum;
         const isMonday = date.day() === 1;
-        const isLastDay = (i + 1) === daysInMonth;
-        return (isMonday || isLastDay) ? i + 1 : null;
+        const isLastDay = dayNum === daysInMonth;
+        return (isMonday || isLastDay) ? dayNum : null;
       }).filter(Boolean),
       plotLines: Array.from({ length: daysInMonth }, (_, i) => {
-        const date = moment(firstDayKey).date(i + 1);
-        return date.day() === 1 ? { color: override.plotLineColor || '#EEE', width: 1, value: i + 1 } : null;
+        const dayNum = i + 1;
+        const date = moment(firstDayKey).date(dayNum);
+        return date.day() === 1 ? { color: override.plotLineColor || '#EEE', width: 1, value: dayNum } : null;
       }).filter(Boolean),
       plotBands: zeroCrossingIndex >= 0 ? [{
         from: zeroCrossingIndex,
@@ -176,13 +193,6 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
         type: 'column',
         zIndex: 2,
         cursor: setDrawerContent ? 'pointer' : undefined,
-        // add tooltip events
-        tooltip: {
-          pointFormatter: function () {
-            const date = moment(firstDayKey).date(this.category).format('MMMM D, YYYY');
-            return `<b>${date}: ${formatAsCurrency(this.y)}</b>`;
-          }
-        },
         events: setDrawerContent ? {
           click: function (e) {
             const header = `Day-to-day transactions for ${moment(inferredMonth).format('MMMM YYYY')}`;
