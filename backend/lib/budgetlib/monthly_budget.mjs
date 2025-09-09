@@ -322,19 +322,19 @@ export const dayToDayBudgetReducer = (acc, month, monthlyBudget, config) => {
 
   const daysInMonth = moment(month, 'YYYY-MM').daysInMonth();
   const daysArray = [0, ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
-    .map(i => `${month}-${i.toString().padStart(2, '0')}`);
+    .map(i => i === 0 ? `${month}-start` : `${month}-${i.toString().padStart(2, '0')}`);
   acc[month].dailyBalances = daysArray.reduce((ccc, day) => {
     const dayTransactions = transactions.filter(txn => txn.date === day);
-    const dayInt = parseInt(day.slice(-2));
+    const dayInt = day.endsWith('-start') ? 0 : parseInt(day.slice(-2));
 
     // Always reference the previous day if dayInt > 0, otherwise null for day 0
     const yesterDayString =
-      dayInt > 0 ? `${month}-${(dayInt - 1).toString().padStart(2, '0')}` : null;
+      dayInt > 0 ? (dayInt === 1 ? `${month}-start` : `${month}-${(dayInt - 1).toString().padStart(2, '0')}`) : null;
 
     const yesterday = yesterDayString ? ccc[yesterDayString] : null;
     const transactionCount = dayTransactions.length;
 
-    // If there's no "yesterday" entry and we're not day 0, default to zero instead of budget
+    // If there's no "yesterday" entry and we're on day 0, use the budget as starting balance
     const startingBalance = yesterday
       ? yesterday.endingBalance
       : dayInt === 0
