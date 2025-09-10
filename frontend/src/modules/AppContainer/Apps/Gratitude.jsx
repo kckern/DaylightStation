@@ -399,7 +399,6 @@ function OptionSelector({ title, options, currentUser, onBack }) {
         <div className="option-selector" ref={containerRef} tabIndex={0}>
            
             <div className="selector-columns">
-                {renderColumn(discarded, `${discarded.length} Discarded`, 'discarded-column')}
                 {renderColumn(queue, title, 'queue-column', true)}
                 {renderColumn(selected, `${selected.length} Selected`, 'selected-column')}
             </div>

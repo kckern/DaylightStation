@@ -203,9 +203,11 @@ h2 {
 .selector-columns {
   display: flex;
   flex: 1;
-  gap: 20px;
+  gap: 2rem;
   min-height: 0; // Critical for flex children to shrink properly
   overflow: hidden; // Prevent spillover at this level
+  justify-content: center; // Center the 2 columns
+  padding: 0 20px; // Add some padding for better spacing
 }
 
 .selector-column {
@@ -216,7 +218,7 @@ h2 {
   border-radius: 8px;
   background-color: #2a2a2a;
   overflow: hidden; // Prevent column overflow
-  min-width: 0; // Allow flex item to shrink below content size
+  min-width: 250px; // Set minimum width for usability
   
   h3 {
     margin: 0;
