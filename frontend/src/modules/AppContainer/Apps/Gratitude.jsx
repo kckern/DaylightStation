@@ -2,6 +2,8 @@ import { MantineProvider } from "@mantine/core";
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { WebSocketProvider, useWebSocket } from "../../../contexts/WebSocketContext.jsx";
 import "./Gratitude.scss";
+import thanksIcon from "../../../assets/icons/thanks.svg";
+import hopesIcon from "../../../assets/icons/hopes.svg";
 
 const userData = [
   { name: "Alice" , id: 1 },
@@ -541,12 +543,18 @@ function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
                     onClick={() => onSelectOption('gratitude')} 
                     className={`option-button gratitude-button ${focusedIndex === 0 ? 'focused' : ''}`}
                 >
+                    <div className="icon-container">
+                        <img src={thanksIcon} alt="Gratitude" />
+                    </div>
                     Gratitude
                 </button>
                 <button 
                     onClick={() => onSelectOption('hopes')} 
                     className={`option-button hopes-button ${focusedIndex === 1 ? 'focused' : ''}`}
                 >
+                    <div className="icon-container">
+                        <img src={hopesIcon} alt="Hopes" />
+                    </div>
                     Hopes
                 </button>
             </div>
