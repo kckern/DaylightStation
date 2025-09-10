@@ -98,6 +98,7 @@ export default function TVApp({ appParam }) {
       song:      (value) => ({ play: { song: value, ...config } }),
       primary:   (value) => ({ play: { primary: value, ...config } }),
       talk:      (value) => ({ play: { talk: value, ...config } }),
+      poem:      (value) => ({ play: { poem: value, ...config } }),
       scripture: (value) => ({ play: { scripture: value, ...config } }),
     };
 

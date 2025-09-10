@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './Player.scss';
 import moment from 'moment';
-import {Scriptures,Hymns, Talk} from './../ContentScroller/ContentScroller.jsx';
+import {Scriptures,Hymns, Talk, Poetry} from './../ContentScroller/ContentScroller.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
 import 'dash-video-element';
 import spinner from '../../assets/icons/spinner.svg';
@@ -498,6 +498,7 @@ export function SinglePlayer(play) {
     primary,
     scripture,
     talk,
+    poem,
     rate,
     advance,
     open,
@@ -532,6 +533,7 @@ export function SinglePlayer(play) {
   if (!!hymn)         return <Hymns {...contentProps} />;
   if (!!primary)      return <Hymns {...{ ...contentProps, hymn: primary, subfolder: "primary" }} />;
   if (!!talk)         return <Talk {...contentProps} />;
+  if (!!poem)         return <Poetry {...contentProps} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
