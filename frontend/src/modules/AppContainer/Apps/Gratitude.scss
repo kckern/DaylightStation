@@ -118,23 +118,50 @@ h2 {
 .option-buttons-container {
   display: flex;
   flex-direction: row;
-  gap: 20px;
-  justify-content: center;
-  align-items: center;
-  margin: 20px 0;
+  gap: 40px;
+  justify-content: stretch;
+  align-items: stretch;
+  margin: 40px;
+  flex: 1;
+  min-height: 0;
+  width: calc(100% - 80px);
 }
 
 .option-button {
-  padding: 15px 30px;
+  flex: 1;
+  width: 100%;
+  height: 100%;
   background-color: #404040;
   color: #e0e0e0;
   border: none;
-  border-radius: 8px;
+  border-radius: 24px;
   cursor: pointer;
-  font-size: 1.5rem;
+  font-size: 2rem;
   font-weight: bold;
-  min-width: 150px;
   transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  position: relative;
+  min-height: 300px;
+
+  // Icon container for img elements
+  .icon-container {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+    
+    img {
+      width: 100%;
+      height: 100%;
+      filter: brightness(0) invert(1); // Make black SVGs white
+    }
+  }
 
   &:hover {
     background-color: #505050;
