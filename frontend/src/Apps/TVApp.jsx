@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import "./TVApp.scss";
 import { DaylightAPI } from "../lib/api.mjs";
 import { TVMenu } from "../modules/Menu/Menu";
@@ -23,26 +23,34 @@ let backFunction = () => {
 
 function setupNavigationHandlers() {
   const handlePopState = (event) => {
+    // Always prevent default browser navigation and use our stack-based navigation instead
     event.preventDefault();
+    
+    // Use our escape function to go back one level in the content stack
     if (backFunction) {
       backFunction();
-      window.history.pushState(null, "", window.location.href);
-      return false;
     }
+    
+    // Prevent the browser from actually navigating
     return false;
   };
 
   const handleBeforeUnload = (event) => {
-    event.preventDefault();
-    event.returnValue = "";
-    if (backFunction) {
-      backFunction();
-      window.history.pushState(null, "", window.location.href);
-      return false;
+    // Only prevent leaving if actually leaving the site/domain
+    const currentPath = window.location.pathname;
+    if (!currentPath.startsWith('/tv')) {
+      event.preventDefault();
+      event.returnValue = "";
+      if (backFunction) {
+        backFunction();
+        window.history.pushState(null, "", window.location.href);
+        return false;
+      }
     }
-    return false;
+    return true;
   };
 
+  // Push an initial state to capture back button presses
   window.history.pushState(null, "", window.location.href);
   window.addEventListener("popstate", handlePopState);
   window.addEventListener("beforeunload", handleBeforeUnload);
@@ -130,10 +138,16 @@ export default function TVApp({ subPath }) {
     // Add menu slugs from the stack
     stack.forEach((item, index) => {
       console.log(`Stack item ${index}:`, item);
-      // Include menu, list, and play types for URL navigation
-      if (item.slug && (item.type === 'menu' || item.type === 'list' || item.type === 'play')) {
-        pathParts.push(item.slug);
-        console.log(`Added slug "${item.slug}" to path`);
+      // Include menu, list, play, and app types for URL navigation
+      if (item.slug) {
+        if (item.type === 'app') {
+          // For apps, add the 'app' prefix before the app name
+          pathParts.push('app', item.slug);
+          console.log(`Added app slug "app/${item.slug}" to path`);
+        } else if (item.type === 'menu' || item.type === 'list' || item.type === 'play') {
+          pathParts.push(item.slug);
+          console.log(`Added slug "${item.slug}" to path`);
+        }
       }
     });
     
@@ -143,7 +157,128 @@ export default function TVApp({ subPath }) {
     console.log('URL updated. Current location:', window.location.pathname);
   }, []);
 
-  const parsedRoute = parseSubPath(subPath);
+  const parsedRoute = useMemo(() => parseSubPath(subPath), [parseSubPath, subPath]);
+
+  // Override setCurrentContent to push or pop from contentStack and update URL
+  const setCurrentContent = useCallback((newContent, contentMeta = {}) => {
+    console.log('setCurrentContent called with:', { newContent: !!newContent, contentMeta });
+    
+    if (!newContent) {
+      // Pop one item from stack (go back one level)
+      setContentStack((oldStack) => {
+        console.log('Popping from stack. Old stack length:', oldStack.length);
+        const newStack = oldStack.length > 0 ? oldStack.slice(0, -1) : [];
+        console.log('New stack after pop:', newStack);
+        // Update URL to reflect new stack
+        setTimeout(() => updateURL(newStack), 0);
+        return newStack;
+      });
+    } else {
+      // Push new content to stack with metadata
+      setContentStack((oldStack) => {
+        console.log('Pushing to stack. Old stack length:', oldStack.length);
+        const stackItem = {
+          content: newContent,
+          type: contentMeta.type || 'unknown',
+          slug: contentMeta.slug
+        };
+        console.log('New stack item:', stackItem);
+        const newStack = [...oldStack, stackItem];
+        console.log('New stack after push:', newStack);
+        // Update URL to reflect new stack
+        setTimeout(() => updateURL(newStack), 0);
+        return newStack;
+      });
+    }
+  }, [updateURL]);
+
+  // Define handlers early to avoid hoisting issues
+  const handleEscape = useCallback(() => {
+    console.log('handleEscape called - going back one level, isEscaping:', isEscaping);
+    
+    // Prevent multiple simultaneous escape calls
+    if (isEscaping) {
+      console.log('Escape already in progress, ignoring');
+      return;
+    }
+    
+    setIsEscaping(true);
+    setCurrentContent(null);
+    
+    // Reset the escape flag after a short delay
+    setTimeout(() => {
+      setIsEscaping(false);
+    }, 100);
+  }, [isEscaping, setCurrentContent]);
+
+  const handleSelection = useCallback((selection) => {
+    console.log('handleSelection called with:', selection);
+    
+    const clear = () => setCurrentContent(null);
+    
+    // Debug: Log the selection to understand its structure
+    console.log('Selection received:', selection);
+    
+    // Create enhanced props with slug generation for menus
+    const createMenuProps = (selection) => {
+      const props = { ...selection, clear, onSelect: handleSelection, onEscape: handleEscape };
+      return props;
+    };
+
+    const props = createMenuProps(selection);
+    const options = {
+      play:      <Player {...props} />,
+      queue:     <Player {...props} />,
+      playlist:  <Player {...props} />,
+      list:      <TVMenu {...props} />,
+      menu:      <TVMenu {...props} />,
+      open:      <AppContainer {...props} />
+    };
+
+    const selectionKeys = Object.keys(selection);
+    const match = selectionKeys.find(k => Object.keys(options).includes(k));
+    
+    // Try to extract title/label for slug generation
+    let titleForSlug = selection.label || selection.title || selection.name;
+    
+    // If it's a list/menu selection, try to get the title from the nested object
+    if ((match === 'list' || match === 'menu') && selection[match]) {
+      titleForSlug = titleForSlug || selection[match].title || selection[match].label || selection[match].name;
+    }
+    
+    // For app selections, extract the app name
+    let appName = null;
+    if (match === 'open' && selection.open && selection.open.app) {
+      appName = selection.open.app;
+      titleForSlug = appName; // Use app name as the slug
+    }
+    
+    console.log('Title for slug:', titleForSlug, 'Match type:', match, 'App name:', appName);
+    console.log('Generated slug:', titleForSlug ? slugify(titleForSlug) : 'NO SLUG');
+    
+    const meta = { 
+      type: match === 'open' ? 'app' : match, // Convert 'open' to 'app' for consistency
+      slug: titleForSlug ? slugify(titleForSlug) : undefined,
+      appName: appName
+    };
+    
+    console.log('Meta object:', meta);
+    
+    const result = match ? { 
+      content: options[match], 
+      meta 
+    } : null;
+    
+    console.log('mapSelectionToContent returned:', result);
+    
+    if (result) {
+      setCurrentContent(result.content, result.meta);
+    } else {
+      alert(
+        "No valid action found for selection: " + JSON.stringify(Object.keys(selection))
+      );
+    }
+  }, [slugify, handleEscape, setCurrentContent]);
 
   useEffect(setupNavigationHandlers, []);
 
@@ -206,7 +341,7 @@ export default function TVApp({ subPath }) {
         setContentStack([{ content, ...meta }]);
       }
     }
-  }, [parsedRoute, handleSelection, handleEscape]);
+  }, [parsedRoute?.type, parsedRoute?.app, parsedRoute?.mediaType, parsedRoute?.mediaId, JSON.stringify(parsedRoute?.menuPath)]);
 
   const params = new URLSearchParams(window.location.search);
   const queryEntries = Object.fromEntries(params.entries());
@@ -245,120 +380,6 @@ export default function TVApp({ subPath }) {
 
     return null;
   })();
-
-  function mapSelectionToContent(selection) {
-    const clear = () => setCurrentContent(null);
-    
-    // Debug: Log the selection to understand its structure
-    console.log('Selection received:', selection);
-    
-    // Create enhanced props with slug generation for menus
-    const createMenuProps = (selection) => {
-      const props = { ...selection, clear, onSelect: handleSelection, onEscape: handleEscape };
-      return props;
-    };
-
-    const props = createMenuProps(selection);
-    const options = {
-      play:      <Player {...props} />,
-      queue:     <Player {...props} />,
-      playlist:  <Player {...props} />,
-      list:      <TVMenu {...props} />,
-      menu:      <TVMenu {...props} />,
-      open:      <AppContainer {...props} />
-    };
-
-    const selectionKeys = Object.keys(selection);
-    const match = selectionKeys.find(k => Object.keys(options).includes(k));
-    
-    // Try to extract title/label for slug generation
-    let titleForSlug = selection.label || selection.title || selection.name;
-    
-    // If it's a list/menu selection, try to get the title from the nested object
-    if ((match === 'list' || match === 'menu') && selection[match]) {
-      titleForSlug = titleForSlug || selection[match].title || selection[match].label || selection[match].name;
-    }
-    
-    console.log('Title for slug:', titleForSlug, 'Match type:', match);
-    console.log('Generated slug:', titleForSlug ? slugify(titleForSlug) : 'NO SLUG');
-    
-    const meta = { 
-      type: match, 
-      slug: titleForSlug ? slugify(titleForSlug) : undefined 
-    };
-    
-    console.log('Meta object:', meta);
-    
-    return match ? { 
-      content: options[match], 
-      meta 
-    } : null;
-  }
-
-  // Override setCurrentContent to push or pop from contentStack and update URL
-  const setCurrentContent = useCallback((newContent, contentMeta = {}) => {
-    console.log('setCurrentContent called with:', { newContent: !!newContent, contentMeta });
-    
-    if (!newContent) {
-      // Pop one item from stack (go back one level)
-      setContentStack((oldStack) => {
-        console.log('Popping from stack. Old stack length:', oldStack.length);
-        const newStack = oldStack.length > 0 ? oldStack.slice(0, -1) : [];
-        console.log('New stack after pop:', newStack);
-        // Update URL to reflect new stack
-        setTimeout(() => updateURL(newStack), 0);
-        return newStack;
-      });
-    } else {
-      // Push new content to stack with metadata
-      setContentStack((oldStack) => {
-        console.log('Pushing to stack. Old stack length:', oldStack.length);
-        const stackItem = {
-          content: newContent,
-          type: contentMeta.type || 'unknown',
-          slug: contentMeta.slug
-        };
-        console.log('New stack item:', stackItem);
-        const newStack = [...oldStack, stackItem];
-        console.log('New stack after push:', newStack);
-        // Update URL to reflect new stack
-        setTimeout(() => updateURL(newStack), 0);
-        return newStack;
-      });
-    }
-  }, [updateURL]);
-
-  function handleSelection(selection) {
-    console.log('handleSelection called with:', selection);
-    const result = mapSelectionToContent(selection);
-    console.log('mapSelectionToContent returned:', result);
-    
-    if (result) {
-      setCurrentContent(result.content, result.meta);
-    } else {
-      alert(
-        "No valid action found for selection: " + JSON.stringify(Object.keys(selection))
-      );
-    }
-  }
-
-  function handleEscape() {
-    console.log('handleEscape called - going back one level, isEscaping:', isEscaping);
-    
-    // Prevent multiple simultaneous escape calls
-    if (isEscaping) {
-      console.log('Escape already in progress, ignoring');
-      return;
-    }
-    
-    setIsEscaping(true);
-    setCurrentContent(null);
-    
-    // Reset the escape flag after a short delay
-    setTimeout(() => {
-      setIsEscaping(false);
-    }, 100);
-  }
 
   // Update backFunction to use the same logic as handleEscape
   backFunction = handleEscape;
