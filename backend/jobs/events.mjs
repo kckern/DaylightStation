@@ -31,7 +31,23 @@ export default async (job_id) => {
             extractedUrl = markdownMatch[2]; // Extract the URL inside the parentheses
         }
         const domain = extractedUrl && extractedUrl.match(/https?:\/\/([^\/]+)/) ? extractedUrl.match(/https?:\/\/([^\/]+)/)[1] : null;
-        return { id, start: due ? new Date(due).toISOString() : null, summary: extractedContent, description, type: 'todoist', domain, url: extractedUrl };
+        
+        // Handle due date properly - due can be null or an object with date/datetime
+        let startDate = null;
+        if (due) {
+            if (typeof due === 'string') {
+                const dateObj = new Date(due);
+                startDate = !isNaN(dateObj.getTime()) ? dateObj.toISOString() : null;
+            } else if (due.datetime) {
+                const dateObj = new Date(due.datetime);
+                startDate = !isNaN(dateObj.getTime()) ? dateObj.toISOString() : null;
+            } else if (due.date) {
+                const dateObj = new Date(due.date);
+                startDate = !isNaN(dateObj.getTime()) ? dateObj.toISOString() : null;
+            }
+        }
+        
+        return { id, start: startDate, summary: extractedContent, description, type: 'todoist', domain, url: extractedUrl };
     });
 
     const lists = process.env.clickup?.todo_lists || null
