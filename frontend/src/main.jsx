@@ -17,10 +17,10 @@ const HomeAppWithWebSocket = () => (
   </WebSocketProvider>
 ); 
 
-// Wrapper component for TVApp with app parameter
+// Wrapper component for TVApp with all sub-routing
 const TVAppWithParams = () => {
-  const { app } = useParams();
-  return <TVApp appParam={app} />;
+  const { "*": subPath } = useParams();
+  return <TVApp subPath={subPath} />;
 };
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -29,8 +29,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Route path="/" element={<HomeAppWithWebSocket />} />
       <Route path="/budget" element={<FinanceApp />} />
       <Route path="/finances" element={<FinanceApp />} />
-      <Route path="/tv/app/:app" element={<TVAppWithParams />} />
-      <Route path="/tv" element={<TVApp />} />
+      <Route path="/tv/*" element={<TVAppWithParams />} />
       <Route path="/health" element={<HealthApp />} />
       <Route path="/fitness" element={<FitnessApp />} />
       <Route path="/lifelog" element={<LifelogApp />} />
