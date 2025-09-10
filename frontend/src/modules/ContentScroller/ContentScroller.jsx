@@ -716,3 +716,178 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       />
     );
   }
+
+  /**
+   * Poetry
+   * ------
+   * Audio-based poetry reading with scrolling text, similar to Hymns.
+   */
+  export function Poetry(play) {
+    console.log('Poetry component called with play:', play);
+    const { poem, advance, clear, volume, playbackKeys, ignoreKeys, queuePosition } = play;
+    console.log('Poetry destructured values:', { poem, volume, playbackKeys, ignoreKeys, queuePosition });
+    
+    const [title, setTitle] = useState("");
+    const [subtitle, setSubtitle] = useState("");
+    const [verses, setPoetryVerses] = useState([]);
+    const [poemID, setPoemID] = useState(null);
+    const [mediaUrl, setMediaUrl] = useState(null);
+    const [duration, setDuration] = useState(0);
+    const [media_key, setMediaKey] = useState(null);
+    const poetryTextRef = useRef(null);
+
+    useEffect(() => {
+      console.log('Poetry useEffect triggered with poem:', poem);
+      if (!poem) {
+        console.log('No poem parameter provided');
+        return;
+      }
+      
+      let poem_id = poem.toString().padStart(3, "0");
+      
+      // If poem_id doesn't end with a digit, append a random 2-digit number from 01-74
+      if (!/\d$/.test(poem_id)) {
+        const randomSuffix = String(Math.floor(Math.random() * 74) + 1).padStart(2, "0");
+        poem_id = (poem_id + "/" + randomSuffix).replace("//", "/");
+      }
+      
+      console.log('Making API call to:', `data/poetry/${poem_id}`);
+      
+      DaylightAPI(`data/poetry/${poem_id}`).then(({title, author, condition, also_suitable_for, poem_id: apiPoemId, verses, duration}) => {
+        console.log('Poetry API response:', {title, poem_id: apiPoemId, verses: verses?.length, duration});
+        
+        // Use the API poem_id if available, otherwise fall back to our calculated poem_id
+        const finalPoemId = apiPoemId || poem_id;
+        console.log('Using poem ID:', finalPoemId, 'from API:', apiPoemId, 'calculated:', poem_id);
+        
+        setPoetryVerses(verses);
+        setTitle(`${title} (${author})`);
+        setPoemID(finalPoemId);
+        setMediaUrl(DaylightMediaPath(`media/poetry/${finalPoemId}`));
+        setSubtitle([condition, ...(also_suitable_for || [])].filter(Boolean).join(" • "));
+        setMediaKey(`poetry/${finalPoemId}`);
+        setDuration(duration);
+        console.log('Poetry state updated with:', {
+          title,
+          poemID: finalPoemId,
+          mediaUrl: DaylightMediaPath(`media/poetry/${finalPoemId}`),
+          subtitle: `Poem #${finalPoemId}`,
+          media_key: `poetry/${finalPoemId}`,
+          duration,
+          versesLength: verses?.length
+        });
+      }).catch(error => {
+        console.error('Poetry API call failed:', error);
+      });
+    }, [poem]);
+
+    const parsePoetryContent = useCallback((allVerses) => {
+      console.log('parsePoetryContent called with verses:', allVerses);
+      if (!allVerses || !allVerses.length) {
+        console.log('No verses provided to parsePoetryContent');
+        return null;
+      }
+      
+      useEffect(() => {
+        if (poetryTextRef.current) {
+          // Wait for next tick to ensure DOM is rendered
+          setTimeout(() => {
+            const stanzas = poetryTextRef.current.querySelectorAll('.stanza');
+            let maxWidth = 0;
+            
+            // Temporarily set width to auto to measure natural width
+            poetryTextRef.current.style.width = 'auto';
+            
+            // Find the widest stanza
+            stanzas.forEach(stanza => {
+              const stanzaWidth = stanza.offsetWidth;
+              if (stanzaWidth > maxWidth) {
+                maxWidth = stanzaWidth;
+              }
+            });
+            
+            // Set the poetry-text container to the width of the widest stanza
+            if (maxWidth > 0) {
+              poetryTextRef.current.style.width = `${maxWidth}px`;
+            }
+            
+            // Center the container within the panel
+            const panelWidth = poetryTextRef.current.closest(".textpanel").offsetWidth;
+            const diff = panelWidth - maxWidth;
+            const marginLeft = Math.max(0, diff / 2);
+            poetryTextRef.current.style.marginLeft = `${marginLeft}px`;
+          }, 0);
+        }
+      }, [allVerses]);
+      
+      return (
+        <div className="poetry-text" ref={poetryTextRef}>
+          {allVerses.map((stanza, sIdx) => (
+            <div key={`stanza-${sIdx}`} className="stanza">
+              {stanza.map((line, lIdx) => (
+                <p 
+                  key={`line-${sIdx}-${lIdx}`} 
+                  className="line"
+                  style={{
+                    marginLeft: /^[a-z]/.test(line) ? "2rem" : "0",
+                  }}
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
+          ))}
+        </div>
+      );
+    }, []);
+
+    console.log('Poetry render check - poemID:', poemID, 'verses:', verses?.length, 'title:', title, 'mediaUrl:', mediaUrl);
+    
+    if(!poemID) {
+      console.log('Poetry returning null - no poemID');
+      return null;
+    }
+    
+    // Process volume parameter (same logic as Hymns)
+    const mainVolume = (() => {
+      if (!volume) return 1; // default for poetry
+      let processedVolume = parseFloat(volume);
+      if(processedVolume < 1 && processedVolume > 0) {
+        processedVolume = processedVolume * 100;
+      }
+      if(processedVolume === 1) {
+        processedVolume = 100;
+      }
+      return processedVolume / 100;
+    })();
+    
+    console.log('Poetry about to render ContentScroller with:', {
+      type: "poetry",
+      title,
+      media_key,
+      subtitle,
+      mainMediaUrl: mediaUrl,
+      mainVolume,
+      contentData: verses
+    });
+    
+    return (
+      <ContentScroller
+        key={`poetry-${poem}-${poemID}`} // Force re-render when poem changes
+        type="poetry"
+        title={title}
+        media_key={media_key}
+        subtitle={subtitle}
+        mainMediaUrl={mediaUrl}
+        mainVolume={mainVolume}
+        contentData={verses}
+        parseContent={parsePoetryContent}
+        onAdvance={advance}
+        onClear={clear}
+        playbackKeys={playbackKeys}
+        ignoreKeys={ignoreKeys}
+        queuePosition={queuePosition}
+        yStartTime={15}
+      />
+    );
+  }
