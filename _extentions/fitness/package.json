@@ -1,0 +1,30 @@
+{
+  "name": "fitness-controller",
+  "version": "1.0.0",
+  "description": "ANT+ fitness device scanner and TV controller for DaylightStation",
+  "type": "module",
+  "main": "src/server.mjs",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --env-file=.env.dev --watch src/server.mjs",
+    "dev:legacy": "export $(cat .env.dev | xargs) && node --watch src/server.mjs"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "incyclist-ant-plus": "^0.3.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ant+",
+    "fitness",
+    "heart-rate",
+    "power-meter",
+    "tv-control",
+    "serial"
+  ],
+  "author": "DaylightStation",
+  "license": "MIT"
+}
