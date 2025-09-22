@@ -31,7 +31,25 @@ export default async (job_id) => {
             extractedUrl = markdownMatch[2]; // Extract the URL inside the parentheses
         }
         const domain = extractedUrl && extractedUrl.match(/https?:\/\/([^\/]+)/) ? extractedUrl.match(/https?:\/\/([^\/]+)/)[1] : null;
-        return { id, start: due ? new Date(due).toISOString() : null, summary: extractedContent, description, type: 'todoist', domain, url: extractedUrl };
+        
+        // Safe date parsing - handle different due date formats
+        let startDate = null;
+        if (due) {
+            try {
+                // Handle Todoist due date format (could be string, object with date property, etc.)
+                const dateValue = typeof due === 'object' ? due.date || due.datetime : due;
+                if (dateValue) {
+                    const parsedDate = new Date(dateValue);
+                    if (!isNaN(parsedDate.getTime())) {
+                        startDate = parsedDate.toISOString();
+                    }
+                }
+            } catch (error) {
+                console.warn('Invalid date format for Todoist item:', id, due);
+            }
+        }
+        
+        return { id, start: startDate, summary: extractedContent, description, type: 'todoist', domain, url: extractedUrl };
     });
 
     const lists = process.env.clickup?.todo_lists || null
@@ -56,7 +74,13 @@ export default async (job_id) => {
         
 
 
-    const allItems = [...calendarItems, ...todoistItems, ...clickupItems].sort((a, b) => new Date(a.start) - new Date(b.start));
+    const allItems = [...calendarItems, ...todoistItems, ...clickupItems].sort((a, b) => {
+        // Handle null dates by putting them at the end
+        if (!a.start && !b.start) return 0;
+        if (!a.start) return 1;
+        if (!b.start) return -1;
+        return new Date(a.start) - new Date(b.start);
+    });
 
     saveFile('lifelog/events', allItems);
 
