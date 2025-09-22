@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  fitness-controller:
+    image: kckern/daylight-station-fitness:latest
+    container_name: daylight-fitness
+    restart: unless-stopped
+    privileged: true  # Required for USB device access
+    
+    # Environment variables
+    environment:
+      - PORT=3000
+      - DAYLIGHT_HOST=${DAYLIGHT_HOST:-10.0.0.10}
+      - DAYLIGHT_PORT=${DAYLIGHT_PORT:-3113}
+      - SERIAL_DEVICE=${SERIAL_DEVICE:-/dev/ttyUSB0}
+      - TV_ON_COMMAND=${TV_ON_COMMAND:-01 30 41 30 41 30 43 02 43 32 30 33 44 36 30 30 30 31 03 73 0D}
+      - TV_OFF_COMMAND=${TV_OFF_COMMAND:-01 30 41 30 41 30 43 02 43 32 30 33 44 36 30 30 30 34 03 76 0D}
+    
+    # Device access for ANT+ USB dongle and serial port
+    devices:
+      - /dev/bus/usb:/dev/bus/usb  # ANT+ USB dongle access
+      - ${SERIAL_DEVICE:-/dev/ttyUSB0}:${SERIAL_DEVICE:-/dev/ttyUSB0}  # Serial port for TV control
+    
+    # Volume mounts for USB device detection
+    volumes:
+      - /dev:/dev
+      - /sys:/sys
+      - /run/udev:/run/udev:ro
+    
+    # Network configuration
+    ports:
+      - "${FITNESS_PORT:-3001}:3000"
+    
+    # Add to host network for easier USB device access (alternative approach)
+    # network_mode: host
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

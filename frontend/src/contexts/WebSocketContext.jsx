@@ -90,7 +90,13 @@ export const WebSocketProvider = ({ children }) => {
       try {
         const data = JSON.parse(event.data);
         
-        // Call the callback with the raw data
+        // Filter out fitness messages - they'll be handled by FitnessApp separately
+        if (data.topic === 'fitness') {
+          //console.debug('Filtering out fitness message for HomeApp');
+          return;
+        }
+        
+        // Call the callback with the raw data (non-fitness messages only)
         if (payloadCallbackRef.current && typeof payloadCallbackRef.current === 'function') {
           payloadCallbackRef.current(data);
         }
