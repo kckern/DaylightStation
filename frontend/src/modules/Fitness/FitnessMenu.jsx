@@ -85,14 +85,6 @@ const FitnessMenu = ({ activeCollection }) => {
 
   return (
     <div className="fitness-menu">
-      {collectionName && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px' }}>
-          <div style={{ color: '#fff', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span role="img" aria-label="tv">📺</span> {collectionName}
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>{shows.length} shows</div>
-        </div>
-      )}
       {shows.length > 0 ? (
         <div className="fitness-grid">
           {shows.map((show, index) => (
@@ -107,13 +99,6 @@ const FitnessMenu = ({ activeCollection }) => {
                   className="show-image"
                 />
               )}
-              <div className="show-title">
-                {show.label}
-              </div>
-              <div className="show-info">
-                <span className="show-type">{show.type}</span>
-                <span className="show-id">ID: {show.plex}</span>
-              </div>
             </div>
           ))}
         </div>

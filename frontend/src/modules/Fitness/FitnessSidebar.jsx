@@ -1,26 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { DaylightAPI } from '../../lib/api.mjs';
+import React from 'react';
 import './FitnessSidebar.scss';
 
-const FitnessSidebar = ({ activeCollection, onCollectionChange }) => {
-  const [collections, setCollections] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchCollections = async () => {
-      try {
-        const response = await DaylightAPI('/api/fitness');
-        const fitnessCollections = response.fitness?.plex?.collections || response.plex?.collections || [];
-        setCollections(fitnessCollections);
-      } catch (error) {
-        console.error('Error fetching fitness collections:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCollections();
-  }, []);
+const FitnessSidebar = ({ collections = [], activeCollection, onCollectionChange }) => {
 
   const getCollectionIcon = (name) => {
     switch (name.toLowerCase()) {
@@ -42,7 +23,7 @@ const FitnessSidebar = ({ activeCollection, onCollectionChange }) => {
       </div>
       
       <nav className="sidebar-nav">
-        {loading ? (
+        {collections.length === 0 ? (
           <div className="loading-state">
             <div className="loading-icon">⏳</div>
           </div>
@@ -50,7 +31,7 @@ const FitnessSidebar = ({ activeCollection, onCollectionChange }) => {
           collections.map((collection, index) => (
             <button
               key={collection.id || index}
-              className={`nav-item ${activeCollection === collection.id ? 'active' : ''}`}
+              className={`nav-item ${String(activeCollection) === String(collection.id) ? 'active' : ''}`}
               onClick={() => onCollectionChange && onCollectionChange(collection)}
             >
               <div className="nav-icon">{getCollectionIcon(collection.name)}</div>
