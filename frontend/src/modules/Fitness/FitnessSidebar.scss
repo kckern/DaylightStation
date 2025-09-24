@@ -7,9 +7,10 @@
   align-items: center;
   position: absolute;
   top: 0;
-  left:0;
+  left: 0;
+  bottom: 0;
+  margin-right: 1ex;
   z-index: 1000;
-  transition: width 0.3s ease;
 
 
   .sidebar-header {
@@ -141,11 +142,3 @@
   75% { transform: scale(1.05); }
 }
 
-// Adjust main content area when sidebar is present
-.fitness-app-container {
-  .fitness-app-viewport {
-    margin-left: 80px;
-    width: calc(100vw - 80px);
-    transition: margin-left 0.3s ease, width 0.3s ease;
-  }
-}
