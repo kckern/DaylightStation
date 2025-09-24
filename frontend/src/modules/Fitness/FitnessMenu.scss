@@ -1,0 +1,94 @@
+.fitness-menu {
+  .fitness-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1ex;
+    padding: 1ex 0;
+  }
+
+.show-card {
+    background: rgba(0, 0, 0, 0.7);
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1ex;
+    padding: 0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    position: relative;
+
+    &:hover {
+        background-color: rgba(0, 0, 0, 0.9);
+        transform: scale(1.05);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .show-image {
+        width: 100%;
+        object-fit: cover;
+        border-radius: calc(1ex - 3px);
+
+        &:hover {
+            filter: brightness(1.1);
+        }
+    }
+
+    .show-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 4px;
+      line-height: 1.2;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .show-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.6);
+
+      .show-type {
+        text-transform: capitalize;
+      }
+    }
+
+    .episode-count {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+  }
+
+  .no-shows {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 48px 24px;
+    text-align: center;
+
+    .no-shows-title {
+      font-size: 18px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-bottom: 8px;
+    }
+
+    .no-shows-text {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+  }
+}
