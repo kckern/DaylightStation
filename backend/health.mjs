@@ -75,6 +75,11 @@ healthRouter.get('/nutrition', async (req, res, next) => {
     try {
         const days = parseInt(req.query.days) || 30;
         const { nutribot_chat_id } = process.env;
+        
+        if (!nutribot_chat_id) {
+            return res.status(500).json({ error: 'Missing nutribot_chat_id environment variable' });
+        }
+        
         const nutritionData = getNutriDaysBack(nutribot_chat_id, days);
         res.json({ 
             message: 'Nutrition data retrieved successfully',
@@ -93,6 +98,10 @@ healthRouter.get('/nutrilist/:date', async (req, res, next) => {
     try {
         const { date } = req.params;
         const { nutribot_chat_id } = process.env;
+        
+        if (!nutribot_chat_id) {
+            return res.status(500).json({ error: 'Missing nutribot_chat_id environment variable' });
+        }
         
         if (!date.match(/^\d{4}-\d{2}-\d{2}$/)) {
             return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
@@ -115,6 +124,11 @@ healthRouter.get('/nutrilist', async (req, res, next) => {
     try {
         const today = moment().format('YYYY-MM-DD');
         const { nutribot_chat_id } = process.env;
+        
+        if (!nutribot_chat_id) {
+            return res.status(500).json({ error: 'Missing nutribot_chat_id environment variable' });
+        }
+        
         const nutrilistData = getNutrilListByDate(nutribot_chat_id, today);
         res.json({ 
             message: 'Today\'s nutrilist items retrieved successfully',
