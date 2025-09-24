@@ -15,6 +15,12 @@ function md5(string) {
 
 const dailyHealth = async (jobId) => {
     const {nutribot_chat_id} = process.env;
+    
+    if (!nutribot_chat_id) {
+        console.error('Missing nutribot_chat_id environment variable');
+        return null;
+    }
+    
     await compileDailyFoodReport(nutribot_chat_id);
     const weight = loadFile('lifelog/weight') || {};
     const strava = loadFile('lifelog/strava') || {};

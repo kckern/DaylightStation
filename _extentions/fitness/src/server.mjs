@@ -24,60 +24,79 @@ let websocketClient = null;
 let antInitialized = false;
 let reconnectInterval = null;
 
-// ANT+ Device scanning and management (Simplified for development)
+// ANT+ Device scanning and management (Multi-dongle support)
 class ANTPlusManager {
   constructor() {
-    this.device = null;
+    this.devices = new Map(); // Map of device index -> AntDevice
     this.sensors = new Map();
     this.scanInterval = null;
   }
 
   async initialize() {
-    console.log('🔍 Initializing ANT+ device...');
+    console.log('🔍 Initializing ANT+ devices...');
     
     // First, check for USB devices that might be ANT+ dongles
     try {
       console.log('📡 Scanning for USB devices...');
-      const { stdout } = await execAsync('system_profiler SPUSBDataType | grep -A 10 -B 2 -i "ant\\|garmin\\|dynastream"');
+      const { stdout } = await execAsync('lsusb | grep -i "dynastream\\|ant"');
       if (stdout.trim()) {
-        console.log('✅ Found potential ANT+ devices:');
-        console.log(stdout);
+        console.log('✅ Found ANT+ devices:');
+        const lines = stdout.trim().split('\n');
+        lines.forEach((line, index) => {
+          console.log(`  Device ${index}: ${line}`);
+        });
       } else {
         console.log('⚠️  No ANT+ dongles detected in USB devices');
       }
     } catch (error) {
-      console.log('📋 USB device scan: No ANT+ dongles found or system_profiler not available');
+      console.log('📋 USB device scan: No ANT+ dongles found or lsusb not available');
     }
 
-    // Try to initialize real ANT+ hardware
+    // Try to initialize multiple ANT+ hardware devices
+    let successCount = 0;
     try {
       const { AntDevice } = require('incyclist-ant-plus/lib/bindings/index.js');
       
-      this.device = new AntDevice({ startupTimeout: 5000 });
-      console.log('🔌 Attempting to open ANT+ device...');
+      // Try to open multiple devices (typically 0, 1, 2...)
+      for (let deviceIndex = 0; deviceIndex < 4; deviceIndex++) {
+        try {
+          console.log(`🔌 Attempting to open ANT+ device ${deviceIndex}...`);
+          const device = new AntDevice({ 
+            startupTimeout: 5000,
+            deviceNo: deviceIndex  // Specify device number
+          });
+          
+          const success = await device.open();
+          
+          if (success) {
+            this.devices.set(deviceIndex, device);
+            console.log(`✅ ANT+ device ${deviceIndex} opened successfully!`);
+            successCount++;
+          } else {
+            console.log(`⚠️  ANT+ device ${deviceIndex} failed to open`);
+          }
+        } catch (deviceError) {
+          console.log(`⚠️  ANT+ device ${deviceIndex} not available: ${deviceError.message}`);
+          // Continue trying other devices
+        }
+      }
       
-      const success = await this.device.open();
-      
-      if (success) {
-        console.log('✅ ANT+ hardware device opened successfully!');
+      if (successCount > 0) {
+        console.log(`✅ Successfully initialized ${successCount} ANT+ device(s)`);
         console.log('📡 Starting real ANT+ device scanning...');
         this.startScanning();
         return true;
       } else {
-        throw new Error('ANT+ device failed to open');
+        throw new Error('No ANT+ devices could be opened');
       }
     } catch (error) {
-      console.log('🧪 No ANT+ hardware detected - running in simulation mode for development');
+      console.log('❌ ANT+ hardware initialization failed:', error.message);
+      console.log('🔍 Error details:', error);
+      console.log('� ANT+ functionality disabled - continuing without heart rate monitoring');
       
-      // Only run simulation if explicitly requested
-      if (process.env.ENABLE_SIMULATION === 'true') {
-        console.log('📊 Starting ANT+ simulation (ENABLE_SIMULATION=true)...');
-        this.startSimulation();
-      } else {
-        console.log('💤 ANT+ simulation disabled - set ENABLE_SIMULATION=true to enable mock data');
-      }
-      
-      return true;
+      // Clear device references to prevent further ANT+ operations
+      this.devices.clear();
+      return false;
     }
   }
 
@@ -114,22 +133,44 @@ class ANTPlusManager {
   }
 
   startScanning() {
-    console.log('📡 Starting ANT+ heart rate sensor scan...');
+    if (this.devices.size === 0) {
+      console.log('⚠️  No ANT+ devices available - skipping sensor scanning');
+      return;
+    }
     
-    // Focus only on heart rate sensors
+    console.log(`📡 Starting ANT+ heart rate sensor scan on ${this.devices.size} device(s)...`);
+    
+    // Focus only on heart rate sensors - scan with all available devices
     this.scanForHeartRateSensors();
     
     console.log('❤️  Scanning for heart rate monitors - waiting for device connections...');
   }
 
   async scanForHeartRateSensors() {
+    if (this.devices.size === 0) {
+      console.log('⚠️  No ANT+ devices available - cannot scan for heart rate sensors');
+      return;
+    }
+    
+    // Set up scanning for each device
+    for (const [deviceIndex, device] of this.devices) {
+      try {
+        console.log(`🔗 Setting up heart rate scanning on ANT+ device ${deviceIndex}...`);
+        await this.setupHeartRateScanning(device, deviceIndex);
+      } catch (error) {
+        console.error(`❌ Failed to setup scanning on device ${deviceIndex}:`, error.message);
+      }
+    }
+  }
+
+  async setupHeartRateScanning(device, deviceIndex) {
     try {
       // Use the same import approach as the working reference
       const { HeartRateSensor } = require('incyclist-ant-plus');
       
-      console.log('🔗 Getting ANT+ channel...');
-      const channel = this.device.getChannel();
-      console.log('✅ ANT+ channel reserved');
+      console.log(`🔗 Getting ANT+ channel for device ${deviceIndex}...`);
+      const channel = device.getChannel();
+      console.log(`✅ ANT+ channel reserved for device ${deviceIndex}`);
 
       // Track detected devices
       const detectedDevices = new Map();
@@ -141,13 +182,14 @@ class ANTPlusManager {
         rawDetectionCount++;
         const timestamp = new Date().toISOString().split('T')[1].slice(0, -5);
         
-        console.log(`[${timestamp}] DETECTED ${deviceId} ${profile}`);
+        console.log(`[${timestamp}] DETECTED ${deviceId} ${profile} (Dongle ${deviceIndex})`);
         
         if (!detectedDevices.has(deviceId)) {
           detectedDevices.set(deviceId, {
             profile: profile,
             firstSeen: timestamp,
-            dataPackets: 0
+            dataPackets: 0,
+            dongleIndex: deviceIndex
           });
         }
       });
@@ -163,37 +205,37 @@ class ANTPlusManager {
         
         // Only log heart rate data
         if (data.ComputedHeartRate) {
-          console.log(`[${timestamp}] ${deviceId} bpm ${data.ComputedHeartRate}`);
+          console.log(`[${timestamp}] ${deviceId} bpm ${data.ComputedHeartRate} (Dongle ${deviceIndex})`);
           
-          // Broadcast heart rate data
+          // Broadcast heart rate data with dongle information
           this.broadcastFitnessData({
             type: 'heart_rate',
             deviceId: deviceId,
             heartRate: data.ComputedHeartRate,
             batteryLevel: data.BatteryLevel || null,
             heartBeatCount: data.HeartBeatCount || null,
-            profile: profile
+            profile: profile,
+            dongleIndex: deviceIndex
           });
         }
       });
 
       // Create and attach heart rate sensor (like hardware diagnostic)
-      console.log('❤️  Creating heart rate sensor...');
+      console.log(`❤️  Creating heart rate sensor for device ${deviceIndex}...`);
       const hrSensor = new HeartRateSensor();
-      console.log('🔗 Attaching heart rate sensor to channel...');
+      console.log(`🔗 Attaching heart rate sensor to channel ${deviceIndex}...`);
       channel.attach(hrSensor);
       
-      console.log('🔍 Starting ANT+ scanner for heart rate devices...');
-      console.log('💡 Turn on your heart rate monitor now!');
-      console.log('📻 Looking for heart rate monitors broadcasting...\n');
+      console.log(`🔍 Starting ANT+ scanner for device ${deviceIndex}...`);
+      console.log(`💡 Device ${deviceIndex} ready for heart rate monitors!`);
       
       // Start scanning (indefinitely)
       await channel.startScanner();
-      console.log('✅ Heart Rate scanning active - waiting for device broadcasts...');
+      console.log(`✅ Heart Rate scanning active on device ${deviceIndex} - waiting for broadcasts...`);
       
     } catch (error) {
-      console.error('❌ Heart Rate Sensor setup failed:', error.message);
-      console.log('💡 Try turning on your heart rate monitor and ensure it\'s broadcasting');
+      console.error(`❌ Heart Rate Sensor setup failed on device ${deviceIndex}:`, error.message);
+      console.log(`💡 ANT+ scanning disabled on device ${deviceIndex} due to initialization failure`);
     }
   }
 
@@ -222,14 +264,15 @@ class ANTPlusManager {
 
   // Cleanup method
   async cleanup() {
-    if (this.device) {
+    for (const [deviceIndex, device] of this.devices) {
       try {
-        await this.device.close();
-        console.log('✅ ANT+ device closed successfully');
+        await device.close();
+        console.log(`✅ ANT+ device ${deviceIndex} closed successfully`);
       } catch (error) {
-        console.error('❌ Error closing ANT+ device:', error.message);
+        console.error(`❌ Error closing ANT+ device ${deviceIndex}:`, error.message);
       }
     }
+    this.devices.clear();
   }
 }
 
@@ -237,19 +280,30 @@ class ANTPlusManager {
 const antManager = new ANTPlusManager();
 
 // WebSocket connection management
+let reconnectAttempts = 0;
+
 async function connectWebSocket() {
   const protocol = DAYLIGHT_PORT == 443 ? 'wss' : 'ws';
   const wsUrl = `${protocol}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/ws`;
   
-  console.log(`🔗 Connecting to DaylightStation WebSocket: ${wsUrl}`);
+  // Only log initial connection attempt, not reconnections
+  if (reconnectAttempts === 0) {
+    console.log(`🔗 Connecting to DaylightStation WebSocket: ${wsUrl}`);
+  }
   
   try {
     websocketClient = new WebSocket(wsUrl);
     
     websocketClient.on('open', () => {
-      console.log('✅ Connected to DaylightStation WebSocket server');
+      // Only log successful connection after failures or initial connection
+      if (reconnectAttempts > 0) {
+        console.log('✅ WebSocket reconnected successfully');
+      } else {
+        console.log('✅ Connected to DaylightStation WebSocket server');
+      }
       clearInterval(reconnectInterval);
       reconnectInterval = null;
+      reconnectAttempts = 0;
     });
     
     websocketClient.on('message', (data) => {
@@ -262,12 +316,18 @@ async function connectWebSocket() {
     });
     
     websocketClient.on('close', () => {
-      console.log('❌ WebSocket connection closed');
+      // Only log close if we haven't already started reconnecting
+      if (reconnectAttempts === 0) {
+        console.log('⚠️  WebSocket connection lost, will retry...');
+      }
       scheduleReconnect();
     });
     
     websocketClient.on('error', (error) => {
-      console.error('❌ WebSocket error:', error.message);
+      // Only log errors that aren't routine connection issues
+      if (!error.message.includes('ECONNREFUSED') && !error.message.includes('ETIMEDOUT')) {
+        console.error('❌ WebSocket error:', error.message);
+      }
       scheduleReconnect();
     });
     
@@ -279,7 +339,11 @@ async function connectWebSocket() {
 
 function scheduleReconnect() {
   if (!reconnectInterval) {
-    console.log('🔄 Scheduling WebSocket reconnection in 30 seconds...');
+    // Only log the first reconnection attempt, then stay quiet
+    if (reconnectAttempts === 0) {
+      console.log('🔄 Scheduling WebSocket reconnection...');
+    }
+    reconnectAttempts++;
     reconnectInterval = setInterval(connectWebSocket, 30000);
   }
 }
@@ -312,7 +376,8 @@ app.get('/status', (req, res) => {
     timestamp: new Date().toISOString(),
     ant_plus: {
       initialized: antInitialized,
-      device_connected: !!antManager.device,
+      devices_connected: antManager.devices.size,
+      device_indices: Array.from(antManager.devices.keys()),
       sensors_active: antManager.sensors.size
     },
     websocket: {
@@ -328,13 +393,13 @@ app.get('/status', (req, res) => {
   res.json(status);
 });
 
-app.post('/tv/on', async (req, res) => {
+app.get('/tv/on', async (req, res) => {
   console.log('📺 TV ON command received');
   const result = await sendTVCommand(TV_ON_COMMAND);
   res.json(result);
 });
 
-app.post('/tv/off', async (req, res) => {
+app.get('/tv/off', async (req, res) => {
   console.log('📺 TV OFF command received');
   const result = await sendTVCommand(TV_OFF_COMMAND);
   res.json(result);
@@ -408,7 +473,7 @@ async function startServer() {
     console.log(`✅ Fitness Controller Server running on port ${PORT}`);
     console.log(`🌐 Health check: http://localhost:${PORT}/health`);
     console.log(`📊 Status: http://localhost:${PORT}/status`);
-    console.log(`📺 TV Control: POST http://localhost:${PORT}/tv/on or /tv/off`);
+    console.log(`📺 TV Control: GET http://localhost:${PORT}/tv/on or /tv/off`);
     console.log('🎯 Ready for ANT+ heart rate monitoring and TV control!');
   });
   

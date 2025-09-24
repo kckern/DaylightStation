@@ -862,7 +862,7 @@ const handleCoachCommand = async (chat_id, messageId) => {
     
     try {
         // Generate coaching message based on past few days
-        const coachingMessage = await generateCoachingMessage(chat_id);
+        const coachingMessage = await generateCoachingMessage(chat_id, []);
         
         // Delete loading message and send coaching
         await deleteMessage(chat_id, loadingMsgId);
