@@ -33,7 +33,12 @@ export class Plex {
   async loadmedia_url(itemData, attempt = 0) {
     const plex = itemData?.plex || itemData?.ratingKey;
     if(!attempt >= 1) console.log("Attempting to load media URL for itemData: " , plex);
-    itemData = typeof itemData === 'string' ?( await this.loadMeta(itemData))[0] : itemData;
+    if (typeof itemData === 'string') {
+      const meta = await this.loadMeta(itemData);
+      if (!meta || !meta.length) return null;
+      itemData = meta[0];
+    }
+    if (!itemData) return null;
     const {host, plex: { host:plexHost,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
     const plexProxyHost = `${host || ""}/plex_proxy`;
     const { ratingKey:key, type } = itemData;
@@ -77,16 +82,22 @@ export class Plex {
   }
   async loadChildrenFromKey(plex, playable = false, shuffle = false) {
     if (!plex) return { plex: false, list: [] };
-    const [{ title, thumb, type, labels }] = await this.loadMeta(plex) || [{}];
-    shuffle = shuffle || labels.includes('shuffle');
+    const meta = await this.loadMeta(plex);
+    if (!meta || !meta.length) {
+      return { plex: false, list: [], error: 'Failed to load metadata' };
+    }
+    const [{ title, thumb, type, labels }] = meta;
+    shuffle = shuffle || (labels && labels.includes('shuffle'));
     const image = this.thumbUrl(thumb);
     const {list} = await this.loadListFromKey(plex, playable, shuffle);
     return { plex, type, title, image, list };
   }
 
   async loadListFromKey(plex = false, playable=false, shuffle = false) {
-    const [data] = await this.loadMeta(plex);
-    if (!data) return false;
+    const meta = await this.loadMeta(plex);
+    if (!meta || !meta.length) return { list: [] };
+    const [data] = meta;
+    if (!data) return { list: [] };
     const { type, title } = data;
     let list = [];
     if (type === 'playlist') list = await this.loadListFromPlaylist(plex); //video 12944 audio 321217
@@ -121,10 +132,14 @@ export class Plex {
   }
   async loadListFromCollection(plex, playable = false) {
     const collection = await this.fetch(`library/collections/${plex}/items`);
+    if (!collection?.MediaContainer?.Metadata) return [];
+    
     const items = await Promise.all(
       collection.MediaContainer.Metadata.map(async ({ ratingKey, title, thumb, type }) => {
-        const item = { plex: ratingKey, title, type, art: this.thumbUrl(thumb) };
-        if (["show", "artist", "album"].includes(type)) {
+        const item = { plex: ratingKey, title, type, image: this.thumbUrl(thumb), key: ratingKey };
+        
+        // Only expand to children if specifically requesting playable items
+        if (playable && ["show", "artist", "album"].includes(type)) {
           const subItems = await this.loadListKeys(item.plex, '/children');
           return subItems;
         }
@@ -468,7 +483,10 @@ export class Plex {
   }
 
   async loadShow(key) {
-    const [show] = await this.loadMeta(key, '');
+    const meta = await this.loadMeta(key, '');
+    if (!meta || !meta.length) return null;
+    const [show] = meta;
+    if (!show) return null;
     let out = {
       ratingKey: show.ratingKey,
       studio: show.studio,
