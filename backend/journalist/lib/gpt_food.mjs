@@ -8,6 +8,32 @@ import { loadFile, saveFile } from '../../lib/io.mjs';
 import crypto from 'crypto';
 dotenv.config();
 
+// Rate limiting to prevent API abuse
+const API_CALL_TRACKER = new Map();
+const MAX_CALLS_PER_MINUTE = 20;
+
+const isRateLimited = (functionName) => {
+    const now = Date.now();
+    const windowStart = now - 60000; // 1 minute window
+    
+    if (!API_CALL_TRACKER.has(functionName)) {
+        API_CALL_TRACKER.set(functionName, []);
+    }
+    
+    const calls = API_CALL_TRACKER.get(functionName);
+    // Remove old calls outside the window
+    const recentCalls = calls.filter(timestamp => timestamp > windowStart);
+    
+    if (recentCalls.length >= MAX_CALLS_PER_MINUTE) {
+        console.error(`Rate limit exceeded for ${functionName}: ${recentCalls.length} calls in last minute`);
+        return true;
+    }
+    
+    // Add current call
+    recentCalls.push(now);
+    API_CALL_TRACKER.set(functionName, recentCalls);
+    return false;
+};
 
 const md5 = (string) => {
     string = string.toString();
@@ -16,21 +42,32 @@ const md5 = (string) => {
 
 
 const extractJSON = (openaiResponse) => {
-    const jsonString =  openaiResponse
-    .replace(/^[^{\[]*/s, '')
-    .replace(/[^}\]]*$/s, '').trim()
+    // Handle null/undefined responses
+    if (!openaiResponse || typeof openaiResponse !== 'string') {
+        console.error('extractJSON received invalid response:', typeof openaiResponse, openaiResponse);
+        return {};
+    }
+    
+    const jsonString = openaiResponse
+        .replace(/^[^{\[]*/s, '')
+        .replace(/[^}\]]*$/s, '').trim();
 
+    // Handle empty strings after cleaning
+    if (!jsonString) {
+        console.error('extractJSON: No JSON content found in response');
+        return {};
+    }
   
     let json = {};
     try {
         json = JSON.parse(jsonString);
     } catch (error) {
         console.error('Failed to parse JSON:', error.message);
-        console.error('JSON:', openaiResponse);
+        console.error('Cleaned JSON string:', jsonString);
+        console.error('Original response:', openaiResponse);
         return {};
     }
     return json;
-
 }
 
 const icons = `almond apple_sauce apple artichoke asparagus avocado bacon bagel baguette baked_beans bamboo banana bananapepper bar beef beer beet biscuit biscuitcracker black_bean black_olive blackberry blueberry_bagel blueberry breadsticks breakfast breakfastsandwich broccoli brown_spice brown_sugar brownie brussels_sprout burrito butter cabbage cake calamari calories candy candybar carrot_cupcake carrot cashew casserole cauliflower celery cereal_bar cereal cheese cheesecake cherry chestnut chicken_wing chicken chickentenders chickpea chocolate_chip_bagel chocolate_frosting chocolate_milk_shake chocolate chocolatechip chocolatechips christmas_cookie churro cider cinnamon_roll clam coconut coffee coleslaw cookie corn cornbread cottage_cheese crab cracker cranberry cream croissant crouton cucumber cupcake curry date default deli_meat dinner_roll dish donut dumpling eclair egg_roll egg eggplant enchilada falafel fern fig filbert fish fowl french_fries french_toast fritter fruit_cocktail fruit_leather game garlic gobo_root gourd graham_cracker grain grapefruit grapes green_bean green_bell_pepper green_dip green_olive green_spice grilled_cheese 
@@ -190,19 +227,40 @@ export const getIconAndNoomColorFromItem = async (item) => {
 
 // Abstract GPT call function
 const gptCall = async (endpoint, payload) => {
+    if (isRateLimited('gptCall')) {
+        throw new Error('Rate limit exceeded for OpenAI API calls');
+    }
+
     try {
+        // Validate inputs
+        if (!process.env.OPENAI_API_KEY) {
+            throw new Error('Missing OPENAI_API_KEY environment variable');
+        }
+        
+        if (!payload || !payload.messages) {
+            throw new Error('Invalid payload: missing messages');
+        }
+
         const response = await axios.post(endpoint, payload, {
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-            }
+            },
+            timeout: 30000 // 30 second timeout
         });
+        
+        // Validate response
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+            throw new Error('Invalid OpenAI response: no choices returned');
+        }
+        
         const month = moment().tz(timezone).format('YYYY-MM');
         saveFile(`gpt/food/${month}/${Date.now()}`, {in: payload, out: response.data});
 
         return response.data;
     } catch (error) {
-        console.error('Error during GPT call:', error);
+        console.error('Error during GPT call:', error.message);
+        console.error('Error details:', error.response?.data || error.message);
         throw error;
     }
 };
@@ -212,6 +270,12 @@ export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
     //console.log('detectFoodFromImage', {imgUrl,extras});
     attempt = attempt || 1;
     extras = extras || {};
+
+    // Circuit breaker - prevent infinite loops
+    if (attempt > 3) {
+        console.error('Too many attempts to detect food from image, aborting');
+        return { uuid: uuidv4(), food: [], date: moment().tz(timezone).format('YYYY-MM-DD'), time: 'midday' };
+    }
 
     const {food_data,text} = extras;
 
@@ -225,9 +289,6 @@ export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
         { role: "assistant", content: `Got it.  Should I still response in pure JSON format?`},
         { role: "user", content: `Yes, please respond in pure JSON format, no commentary or markdown.`}
     ] : [];
-
-
-    if(attempt > 3) return console.error('Too many attempts to detect food from image');
 
     console.log('Analyzing image...');
 
@@ -271,7 +332,11 @@ export const detectFoodFromTextDescription = async (text, extras, attempt = 1) =
     extras = extras || {};
     const {food_data, text:original_text} = extras;
 
-    if(attempt > 3) return console.error('Too many attempts to detect food from text');
+    // Circuit breaker - prevent infinite loops
+    if(attempt > 3) {
+        console.error('Too many attempts to detect food from text, aborting');
+        return { uuid: uuidv4(), food: [], date: moment().tz(timezone).format('YYYY-MM-DD'), time: 'midday' };
+    }
 
     console.log('Analyzing text...');
 
@@ -448,8 +513,8 @@ export const generateCoachingMessage = async (chat_id, newFood, attempt=1)=>{
             return total + (parseInt(item.calories || 0, 10));
         }, 0);
         
-        // Get most recent items for context
-        const mostRecentItems = newFood;
+        // Get most recent items for context - handle undefined newFood
+        const mostRecentItems = newFood || [];
         const recentCalories = mostRecentItems.reduce((total, item) => {
             return total + (parseInt(item.calories || 0, 10));
         }, 0);
@@ -630,11 +695,18 @@ export const generateCoachingMessage = async (chat_id, newFood, attempt=1)=>{
             mostRecentItems: JSON.stringify(mostRecentItems)
         });
         
+        const endTime = Date.now();
+        console.log(`generateCoachingMessage: SUCCESS - chat_id: ${chat_id}, attempt: ${attempt}, duration: ${endTime - (Date.now() - 5000)}ms, message length: ${coachingMessage?.length || 0}`);
+        
         return coachingMessage;
         
     } catch (error) {
-        console.error('Error getting coaching message:', error);
-        if(attempt < 3) return await generateCoachingMessage(chat_id, attempt + 1);
+        console.error(`generateCoachingMessage: ERROR - chat_id: ${chat_id}, attempt: ${attempt}, error:`, error);
+        if(attempt < 3) {
+            console.log(`generateCoachingMessage: RETRY - chat_id: ${chat_id}, attempt: ${attempt + 1}`);
+            return await generateCoachingMessage(chat_id, newFood, attempt + 1);
+        }
+        console.error(`generateCoachingMessage: FAILED - chat_id: ${chat_id}, max attempts reached`);
         return 'Keep going - you got this!';
     }
 }
