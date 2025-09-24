@@ -2,12 +2,11 @@ import express from 'express';
 
 const fitnessRouter = express.Router();
 
-// Hello world endpoint
+// Fitness config endpoint
 fitnessRouter.get('/', (req, res) => {
-    res.json({ 
-        message: 'Hello World from Fitness API',
-        status: 'success'
-    });
+    const fitnessData = process.env.fitness;
+    if(!fitnessData) return res.status(404).json({ error: 'Fitness configuration not found' });
+    res.json(fitnessData);
 });
 
 export default fitnessRouter;
