@@ -1,14 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
 import { DaylightAPI } from '../lib/api.mjs';
 import FitnessUsers from '../modules/Fitness/FitnessUsers.jsx';
 import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
+import FitnessSidebar from '../modules/Fitness/FitnessSidebar.jsx';
 
 const FitnessApp = () => {
   const [fitnessMessage, setFitnessMessage] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeCollection, setActiveCollection] = useState(null);
+  
+  // Derive collections from the API response
+  const collections = useMemo(() => {
+    const src =
+      fitnessMessage?.fitness?.plex?.collections ||
+      fitnessMessage?.plex?.collections ||
+      [];
+    return Array.isArray(src) ? src : [];
+  }, [fitnessMessage]);
+
+  const handleCollectionChange = (collectionOrId) => {
+    const id =
+      typeof collectionOrId === 'object' && collectionOrId !== null
+        ? collectionOrId.id
+        : collectionOrId;
+    setActiveCollection(id);
+  };
 
   useEffect(() => {
     const fetchFitnessData = async () => {
@@ -26,11 +45,23 @@ const FitnessApp = () => {
     fetchFitnessData();
   }, []);
 
+  // Initialize the active collection once collections arrive
+  useEffect(() => {
+    if (!activeCollection && collections.length > 0) {
+      setActiveCollection(collections[0].id);
+    }
+  }, [collections, activeCollection]);
+
   return (
     <MantineProvider theme={{ colorScheme: 'dark' }}>
-      <div className="fitness-app-container" >
-        <div className="fitness-app-viewport">
-          <FitnessMenu />
+      <div className="fitness-app-container">
+        <div className="fitness-app-viewport" style={{ position: 'relative' }}>
+          <FitnessSidebar 
+            collections={collections}
+            activeCollection={activeCollection}
+            onCollectionChange={handleCollectionChange}
+          />
+          <FitnessMenu collections={collections} activeCollection={activeCollection} />
         </div>
       </div>
     </MantineProvider>

@@ -1,0 +1,151 @@
+.fitness-sidebar {
+  width: 3rem;
+  height: 100%;
+  background: #00000055;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: absolute;
+  top: 0;
+  left:0;
+  z-index: 1000;
+  transition: width 0.3s ease;
+
+
+  .sidebar-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 32px;
+    width: 100%;
+
+    .app-icon {
+      font-size: 32px;
+      filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+    }
+
+    .app-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: white;
+      opacity: 0;
+      transform: translateX(-20px);
+      transition: all 0.3s ease;
+      white-space: nowrap;
+    }
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      width: 100%;
+      text-align: left;
+      position: relative;
+
+      &.active {
+        background: rgba(255, 255, 255, 0.15);
+        
+        .nav-icon {
+          transform: scale(1.2);
+          filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
+        }
+      }
+
+      .nav-icon {
+        font-size: 24px;
+        margin-right: 12px;
+        transition: all 0.3s ease;
+        min-width: 32px;
+        display: flex;
+        justify-content: center;
+      }
+
+      .nav-label {
+        font-size: 14px;
+        font-weight: 500;
+        color: white;
+        opacity: 0;
+        transform: translateX(-20px);
+        transition: all 0.3s ease;
+        white-space: nowrap;
+      }
+    }
+
+    .loading-state {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+
+      .loading-icon {
+        font-size: 24px;
+        animation: spin 1s linear infinite;
+      }
+    }
+  }
+
+  .sidebar-footer {
+    margin-top: auto;
+    width: 100%;
+    padding: 0 16px;
+
+    .heart-rate-indicator {
+      display: flex;
+      align-items: center;
+      padding: 12px 8px;
+      border-radius: 8px;
+      background: rgba(255, 0, 0, 0.1);
+      border: 1px solid rgba(255, 0, 0, 0.2);
+
+      .hr-icon {
+        font-size: 20px;
+        margin-right: 12px;
+        animation: heartbeat 1.5s ease-in-out infinite;
+        min-width: 32px;
+        display: flex;
+        justify-content: center;
+      }
+
+      .hr-label {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.8);
+        opacity: 0;
+        transform: translateX(-20px);
+        transition: all 0.3s ease;
+        white-space: nowrap;
+      }
+    }
+  }
+}
+
+// Animations
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes heartbeat {
+  0%, 50%, 100% { transform: scale(1); }
+  25% { transform: scale(1.1); }
+  75% { transform: scale(1.05); }
+}
+
+// Adjust main content area when sidebar is present
+.fitness-app-container {
+  .fitness-app-viewport {
+    margin-left: 80px;
+    width: calc(100vw - 80px);
+    transition: margin-left 0.3s ease, width 0.3s ease;
+  }
+}
