@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LoadingOverlay, Alert } from '@mantine/core';
 import { DaylightAPI } from '../../lib/api.mjs';
 import './FitnessShow.scss';
@@ -11,6 +11,13 @@ const formatDuration = (seconds) => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
+// Utility function to format duration for badges (rounded minutes)
+const formatDurationBadge = (seconds) => {
+  if (!seconds || seconds <= 0) return null;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes}m`;
+};
+
 const FitnessShow = ({ showId, onBack }) => {
   const [showData, setShowData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,6 +25,7 @@ const FitnessShow = ({ showId, onBack }) => {
   const [selectedEpisode, setSelectedEpisode] = useState(null);
   const [posterWidth, setPosterWidth] = useState(0);
   const posterRef = useRef(null);
+  const [activeSeasonId, setActiveSeasonId] = useState(null);
 
   useEffect(() => {
     const fetchShowData = async () => {
@@ -118,6 +126,60 @@ const FitnessShow = ({ showId, onBack }) => {
 
   const { info, items = [] } = showData || {};
 
+  // Derive seasons from items (episodes)
+  const seasons = useMemo(() => {
+    const map = new Map();
+    for (const ep of items) {
+      if (!ep.seasonId) continue;
+      if (!map.has(ep.seasonId)) {
+        map.set(ep.seasonId, {
+          id: ep.seasonId,
+          name: ep.seasonName || `Season ${ep.seasonNumber ?? ''}`.trim(),
+          // Use first episode's image as season image (best available without extra calls)
+          image: ep.image,
+          count: 1,
+        });
+      } else {
+        const cur = map.get(ep.seasonId);
+        cur.count += 1;
+        // Prefer first available image; keep existing
+      }
+    }
+    // Sort by numeric seasonId if possible
+    return Array.from(map.values()).sort((a, b) => {
+      const na = Number(a.id), nb = Number(b.id);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return String(a.id).localeCompare(String(b.id));
+    });
+  }, [items]);
+
+  // Initialize/adjust active season when items or seasons change
+  useEffect(() => {
+    if (seasons.length > 1) {
+      // Default to first season (sorted)
+      setActiveSeasonId((prev) => (prev && seasons.find(s => s.id === prev) ? prev : seasons[0].id));
+    } else {
+      setActiveSeasonId(null);
+    }
+  }, [seasons]);
+
+  // Keep selected episode in sync with filter
+  useEffect(() => {
+    const filtered = seasons.length > 1 && activeSeasonId
+      ? items.filter(ep => ep.seasonId === activeSeasonId)
+      : items;
+    if (filtered.length && (!selectedEpisode || !filtered.some(ep => ep.plex === selectedEpisode.plex))) {
+      setSelectedEpisode(filtered[0]);
+    }
+  }, [items, seasons, activeSeasonId]);
+
+  const filteredItems = useMemo(() => {
+    if (seasons.length > 1 && activeSeasonId) {
+      return items.filter(ep => ep.seasonId === activeSeasonId);
+    }
+    return items;
+  }, [items, seasons, activeSeasonId]);
+
   return (
     <div className="fitness-show">
 
@@ -171,15 +233,15 @@ const FitnessShow = ({ showId, onBack }) => {
         {/* Right Panel - Episodes List */}
         <div className="episodes-panel">
           <div className="episodes-section">
-            {items.length > 0 ? (
+            {filteredItems.length > 0 ? (
               <div className="episodes-container">
                 {/* Group episodes by season */}
                 {Object.entries(
-                  items.reduce((seasons, episode) => {
+                  filteredItems.reduce((seasonsMap, episode) => {
                     const seasonKey = episode.seasonName || 'Unknown Season';
-                    if (!seasons[seasonKey]) seasons[seasonKey] = [];
-                    seasons[seasonKey].push(episode);
-                    return seasons;
+                    if (!seasonsMap[seasonKey]) seasonsMap[seasonKey] = [];
+                    seasonsMap[seasonKey].push(episode);
+                    return seasonsMap;
                   }, {})
                 ).map(([seasonName, seasonEpisodes]) => (
                   <div key={seasonName} className="season-group">
@@ -200,6 +262,36 @@ const FitnessShow = ({ showId, onBack }) => {
                     {episode.image && (
                       <div className="episode-thumbnail">
                         <img src={episode.image} alt={episode.label} />
+                        
+                        {/* Corner Badges */}
+                        <div className="thumbnail-badges">
+                          {/* Top Left - Watched Status (placeholder) */}
+                          <div className="badge watched">
+                            {/* Future: watched indicator */}
+                          </div>
+                          
+                          {/* Top Right - Up Next Status (placeholder) */}
+                          <div className="badge up-next">
+                            {/* Future: up next indicator */}
+                          </div>
+                          
+                          {/* Bottom Left - Custom Status (placeholder) */}
+                          <div className="badge custom-status">
+                            {/* Future: custom status */}
+                          </div>
+                          
+                          {/* Bottom Right - Duration */}
+                          <div className="badge duration">
+                            {episode.duration && formatDurationBadge(episode.duration)}
+                          </div>
+                        </div>
+                        
+                        {/* Progress Bar */}
+                        <div className="thumbnail-progress">
+                          {/* Future: dynamic progress based on watch status */}
+                          <div className="progress-bar" style={{ width: '50%' }}></div>
+                        </div>
+                        
                         <div className="thumbnail-overlay">
                           <button 
                             className="episode-play-btn"
@@ -215,24 +307,11 @@ const FitnessShow = ({ showId, onBack }) => {
                     )}
                     
                     <div className="episode-info">
-                      <h3 className="episode-title">{episode.label}</h3>
                       {episode.episodeDescription && (
-                        <p className="episode-description">{episode.episodeDescription}</p>
+                        <p className="episode-description">
+                          <b>{episode.label}</b><span>—{episode.episodeDescription}</span>
+                        </p>
                       )}
-                      <div className="episode-meta">
-                        {episode.seasonName && (
-                          <span className="episode-season">
-                            📁 {episode.seasonName}
-                            {episode.episodeNumber && ` • E${episode.episodeNumber}`}
-                          </span>
-                        )}
-                        {episode.duration && (
-                          <span className="episode-duration">
-                            ⏱️ {formatDuration(episode.duration)}
-                          </span>
-                        )}
-                        <span className="episode-type">{episode.type}</span>
-                      </div>
                     </div>
                         </div>
                       ))}
@@ -248,6 +327,27 @@ const FitnessShow = ({ showId, onBack }) => {
               </div>
             )}
           </div>
+          {/* Season filter bar (shows only when more than one season) */}
+          {seasons.length > 1 && (
+            <div className="season-filter-bar">
+              {seasons.map((s) => (
+                <button
+                  key={s.id}
+                  className={`season-item ${activeSeasonId === s.id ? 'active' : ''}`}
+                  onClick={() => setActiveSeasonId(s.id)}
+                >
+                  <div className="season-image-wrapper">
+                    {s.image ? (
+                      <img src={s.image} alt={s.name} className="season-image" />
+                    ) : (
+                      <div className="season-image placeholder">S</div>
+                    )}
+                  </div>
+                  <div className="season-name" title={s.name}>{s.name || 'Season'}</div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

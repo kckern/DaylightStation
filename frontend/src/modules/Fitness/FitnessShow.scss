@@ -72,6 +72,7 @@
     flex: 1;
     overflow-y: auto;
     padding-left: 1ex;
+    margin-top: -1ex;
   }
 
   .show-navigation {
@@ -264,6 +265,8 @@
       display: flex;
       flex-direction: column;
       gap: 2ex;
+      // Make room for the season filter bar when present
+      padding-bottom: 80px;
 
       .season-group {
         .season-title {
@@ -294,7 +297,7 @@
 
     .episodes-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      grid-template-columns: 1fr;
       gap: 1ex;
 
       .episode-card {
@@ -321,12 +324,13 @@
 
         .episode-thumbnail {
           position: relative;
-          width: 120px;
-          height: 68px;
+          width: 160px;
+          height: 5.6em;
           flex-shrink: 0;
           border-radius: 0.5ex;
           overflow: hidden;
           background: rgba(255, 255, 255, 0.1);
+          margin-right:1ex;
 
           img {
             width: 100%;
@@ -393,7 +397,7 @@
           }
 
           .episode-description {
-            font-size: 0.85rem;
+            font-size: 1.2rem;
             color: rgba(255, 255, 255, 0.7);
             line-height: 1.4;
             margin: 0.5ex 0;
@@ -403,6 +407,10 @@
             -webkit-box-orient: vertical;
             overflow: hidden;
             text-overflow: ellipsis;
+          }
+
+          .episode-description  span{
+            color: #666;
           }
 
           .episode-meta {
@@ -458,6 +466,148 @@
   }
 }
 
+// Horizontal season filter bar (appears when >1 season)
+.season-filter-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.7);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-x: auto;
+  z-index: 5;
+
+  .season-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    background: transparent;
+    border: none;
+    color: white;
+    cursor: pointer;
+    padding: 0.25rem 0.25rem;
+    border-radius: 0.75rem;
+    min-width: 60px;
+    flex: 0 0 auto;
+    transition: transform 0.15s ease, background 0.15s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+      transform: translateY(-2px);
+    }
+
+    &.active {
+      background: rgba(255, 255, 255, 0.12);
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+    }
+
+    .season-image-wrapper {
+      width: 44px;
+      height: 66px; // Tall poster-like
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      .season-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .placeholder {
+        color: rgba(255, 255, 255, 0.6);
+        font-weight: 700;
+        font-size: 1rem;
+      }
+    }
+
+    .season-name {
+      font-size: 0.75rem;
+      max-width: 72px;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: rgba(255, 255, 255, 0.85);
+    }
+  }
+}
+
+// Badge and Progress Bar Styles
+.thumbnail-badges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 3;
+
+  .badge {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.3rem;
+    white-space: nowrap;
+    opacity: 0.9;
+    transition: opacity 0.2s ease;
+
+    &.watched {
+      top: 0.3rem;
+      left: 0.3rem;
+      background: rgba(76, 175, 80, 0.9);
+    }
+
+    &.up-next {
+      top: 0.3rem;
+      right: 0.3rem;
+      background: rgba(33, 150, 243, 0.9);
+    }
+
+    &.custom-status {
+      bottom: 0.3rem;
+      left: 0.3rem;
+      background: rgba(255, 152, 0, 0.9);
+    }
+
+    &.duration {
+      bottom: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.8);
+      font-size: 0.65rem;
+      border-radius: 0.3rem 0 0 0;
+    }
+  }
+}
+
+.thumbnail-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 0.25rem;
+  background: rgba(255, 255, 255, 0.2);
+  z-index: 4;
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #afa74c 0%, #f39f21 100%);
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+}
+
 // Responsive adjustments
 @media (max-width: 768px) {
   .fitness-show {
@@ -471,5 +621,44 @@
     .episodes-grid {
       grid-template-columns: 1fr !important;
     }
+  }
+
+  // Mobile badge adjustments
+  .thumbnail-badges {
+    .badge {
+      font-size: 0.6rem;
+      padding: 0.15rem 0.3rem;
+
+      &.watched,
+      &.up-next {
+        top: 0.2rem;
+      }
+
+      &.watched {
+        left: 0.2rem;
+      }
+
+      &.up-next {
+        right: 0.2rem;
+      }
+
+      &.custom-status,
+      &.duration {
+        bottom: 0.2rem;
+      }
+
+      &.custom-status {
+        left: 0.2rem;
+      }
+
+      &.duration {
+        right: 0.2rem;
+        font-size: 0.55rem;
+      }
+    }
+  }
+
+  .season-filter-bar {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
