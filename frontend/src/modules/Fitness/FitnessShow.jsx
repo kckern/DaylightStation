@@ -365,6 +365,7 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
                   const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
                   const n = seasons.length || 1;
                   const horizontalPaddingRem = 1; // 0.5rem left + 0.5rem right
+                  const captionRem = 1.5; // space for number+name label under image
                   // Use the actual season bar width; cap by viewport if provided
                   const baseWidthPx = Math.min(
                     seasonBarWidth || 0,
@@ -377,8 +378,8 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
                   // widthPerItemPx = floor(availablePx / n)
                   // height = widthPerItemPx * 3 / 2 (to keep 2:3 ratio)
                   const widthPerItemPx = Math.max(0, Math.floor(availablePx / n));
-                  const heightPxFit = (widthPerItemPx * 3) / 2;
-                  const heightRemFit = heightPxFit / remPx;
+                  const imageHeightPx = (widthPerItemPx * 3) / 2;
+                  const heightRemFit = imageHeightPx / remPx + captionRem;
                   const heightRem = Math.max(minRem, Math.min(maxRem, heightRemFit));
                   return `${heightRem}rem`;
                 })(),
@@ -392,16 +393,15 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
                 >
                   <div className="season-image-wrapper">
                     {s.image ? (
-                      <img src={DaylightMediaPath(`media/plex/img/${s.id}`)} alt={s.name} className="season-image" />
+                      <img src={DaylightMediaPath(`media/plex/img/${s.id}`)} alt={s.rawName || s.name || 'Season'} className="season-image" />
                     ) : (
                       <div className="season-image placeholder">S</div>
                     )}
-                    <div className="season-index" title={s.name}>
-                      <span className="season-num">{Number.isFinite(s.number) ? s.number : ''}</span>
-                      <span className="season-title-text">{s.name || 'Season'}</span>
-                    </div>
                   </div>
-                  {/* Name moved into overlay next to number */}
+                  <div className="season-caption" title={s.rawName || s.name}>
+                    <span className="season-num">{Number.isFinite(s.number) ? s.number : ''}</span>
+                    <span className="season-title-text">{s.rawName || s.name || 'Season'}</span>
+                  </div>
                 </button>
               ))}
             </div>
