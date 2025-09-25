@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LoadingOverlay, Alert } from '@mantine/core';
-import { DaylightAPI } from '../../lib/api.mjs';
+import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import './FitnessShow.scss';
 
 // Utility function to format duration from seconds to mm:ss
@@ -95,38 +95,57 @@ const FitnessShow = ({ showId, onBack }) => {
 
   const { info, items = [] } = showData || {};
 
-  // Derive seasons from items (episodes)
+  // Derive seasons from items (episodes), track seasonNumber for sorting/labels
   const seasons = useMemo(() => {
     const map = new Map();
     for (const ep of items) {
       if (!ep.seasonId) continue;
+      const number = Number.isFinite(ep.seasonNumber) ? ep.seasonNumber : (ep.seasonNumber != null ? parseInt(ep.seasonNumber) : undefined);
+      const image = ep.seasonThumbUrl || ep.image;
       if (!map.has(ep.seasonId)) {
         map.set(ep.seasonId, {
           id: ep.seasonId,
-          name: ep.seasonName || `Season ${ep.seasonNumber ?? ''}`.trim(),
-          // Use first episode's image as season image (best available without extra calls)
-          image: ep.image,
+          number: Number.isNaN(number) ? undefined : number,
+          rawName: ep.seasonName,
+          image,
           count: 1,
         });
       } else {
         const cur = map.get(ep.seasonId);
         cur.count += 1;
-        // Prefer first available image; keep existing
+        if (!cur.image && image) cur.image = image;
+        if (cur.number == null && number != null && !Number.isNaN(number)) cur.number = number;
+        if (!cur.rawName && ep.seasonName) cur.rawName = ep.seasonName;
       }
     }
-    // Sort by numeric seasonId if possible
-    return Array.from(map.values()).sort((a, b) => {
+    // Build final array and names: prefer numeric label Season N
+    const arr = Array.from(map.values()).map(s => ({
+      ...s,
+      name: (Number.isFinite(s.number) && s.number > 0)
+        ? `Season ${s.number}`
+        : (s.rawName || (Number.isFinite(s.number) ? `Season ${s.number}` : 'Season')),
+    }));
+    // Sort by seasonNumber when available, fallback to id then name
+    arr.sort((a, b) => {
+      const an = a.number, bn = b.number;
+      const aHas = Number.isFinite(an), bHas = Number.isFinite(bn);
+      if (aHas && bHas && an !== bn) return an - bn;
+      if (aHas && !bHas) return -1;
+      if (!aHas && bHas) return 1;
       const na = Number(a.id), nb = Number(b.id);
-      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
-      return String(a.id).localeCompare(String(b.id));
+      if (!Number.isNaN(na) && !Number.isNaN(nb) && na !== nb) return na - nb;
+      return String(a.name || a.id).localeCompare(String(b.name || b.id));
     });
+    return arr;
   }, [items]);
 
   // Initialize/adjust active season when items or seasons change
   useEffect(() => {
     if (seasons.length > 1) {
-      // Default to first season (sorted)
-      setActiveSeasonId((prev) => (prev && seasons.find(s => s.id === prev) ? prev : seasons[0].id));
+      // Prefer Season 1 if present; otherwise first sorted season
+      const seasonOne = seasons.find(s => s.number === 1);
+      const fallbackId = seasonOne ? seasonOne.id : seasons[0].id;
+      setActiveSeasonId(prev => (prev && seasons.some(s => s.id === prev)) ? prev : fallbackId);
     } else {
       setActiveSeasonId(null);
     }
@@ -143,10 +162,19 @@ const FitnessShow = ({ showId, onBack }) => {
   }, [items, seasons, activeSeasonId]);
 
   const filteredItems = useMemo(() => {
-    if (seasons.length > 1 && activeSeasonId) {
-      return items.filter(ep => ep.seasonId === activeSeasonId);
-    }
-    return items;
+    const list = (seasons.length > 1 && activeSeasonId)
+      ? items.filter(ep => ep.seasonId === activeSeasonId)
+      : items;
+    // Sort by episodeNumber ascending when available
+    return [...list].sort((a, b) => {
+      const an = Number.isFinite(a.episodeNumber) ? a.episodeNumber : (a.episodeNumber != null ? parseInt(a.episodeNumber) : NaN);
+      const bn = Number.isFinite(b.episodeNumber) ? b.episodeNumber : (b.episodeNumber != null ? parseInt(b.episodeNumber) : NaN);
+      const aHas = !Number.isNaN(an), bHas = !Number.isNaN(bn);
+      if (aHas && bHas && an !== bn) return an - bn;
+      if (aHas && !bHas) return -1;
+      if (!aHas && bHas) return 1;
+      return String(a.label || '').localeCompare(String(b.label || ''));
+    });
   }, [items, seasons, activeSeasonId]);
 
   // Early return UI states (after all hooks above to keep hook order stable)
@@ -236,89 +264,63 @@ const FitnessShow = ({ showId, onBack }) => {
           <div className="episodes-section">
             {filteredItems.length > 0 ? (
               <div className="episodes-container">
-                {/* Group episodes by season */}
-                {Object.entries(
-                  filteredItems.reduce((seasonsMap, episode) => {
-                    const seasonKey = episode.seasonName || 'Unknown Season';
-                    if (!seasonsMap[seasonKey]) seasonsMap[seasonKey] = [];
-                    seasonsMap[seasonKey].push(episode);
-                    return seasonsMap;
-                  }, {})
-                ).map(([seasonName, seasonEpisodes]) => (
-                  <div key={seasonName} className="season-group">
-                    <h3 className="season-title">
-                      <span className="season-icon">📁</span>
-                      {seasonName}
-                      <span className="episode-count">({seasonEpisodes.length} episodes)</span>
-                    </h3>
-                    <div className="episodes-grid">
-                      {seasonEpisodes.map((episode, index) => (
-                        <div 
-                          key={episode.plex || index}
-                          className={`episode-card ${selectedEpisode?.plex === episode.plex ? 'selected' : ''}`}
-                          onClick={() => handleEpisodeSelect(episode)}
-                          onDoubleClick={() => handlePlayEpisode(episode)}
-                          title={episode.episodeDescription}
-                        >
-                    {episode.image && (
-                      <div className="episode-thumbnail">
-                        <img src={episode.image} alt={episode.label} />
-                        
-                        {/* Corner Badges */}
-                        <div className="thumbnail-badges">
-                          {/* Top Left - Watched Status (placeholder) */}
-                          <div className="badge watched">
-                            {/* Future: watched indicator */}
-                          </div>
-                          
-                          {/* Top Right - Up Next Status (placeholder) */}
-                          <div className="badge up-next">
-                            {/* Future: up next indicator */}
-                          </div>
-                          
-                          {/* Bottom Left - Custom Status (placeholder) */}
-                          <div className="badge custom-status">
-                            {/* Future: custom status */}
-                          </div>
-                          
-                          {/* Bottom Right - Duration */}
-                          <div className="badge duration">
-                            {episode.duration && formatDurationBadge(episode.duration)}
-                          </div>
-                        </div>
-                        
-                        {/* Progress Bar */}
-                        <div className="thumbnail-progress">
-                          {/* Future: dynamic progress based on watch status */}
-                          <div className="progress-bar" style={{ width: '50%' }}></div>
-                        </div>
-                        
-                        <div className="thumbnail-overlay">
-                          <button 
-                            className="episode-play-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handlePlayEpisode(episode);
-                            }}
+                {/* Group episodes by season, render in sorted season order */}
+                {seasons.map((s) => {
+                  const seasonEpisodes = filteredItems.filter(ep => ep.seasonId === s.id);
+                  if (!seasonEpisodes.length) return null;
+                  const title = Number.isFinite(s.number) && s.number > 0 ? `Season ${s.number}` : (s.rawName || s.name || 'Season');
+                  return (
+                    <div key={s.id} className="season-group">
+                      <h3 className="season-title">
+                        <span className="season-icon">📁</span>
+                        {title}
+                        <span className="episode-count">({seasonEpisodes.length} episodes)</span>
+                      </h3>
+                      <div className="episodes-grid">
+                        {seasonEpisodes.map((episode, index) => (
+                          <div
+                            key={episode.plex || index}
+                            className={`episode-card vertical ${selectedEpisode?.plex === episode.plex ? 'selected' : ''}`}
+                            onClick={() => handleEpisodeSelect(episode)}
+                            onDoubleClick={() => handlePlayEpisode(episode)}
+                            title={episode.label}
                           >
-                            ▶️
-                          </button>
-                        </div>
+                            {episode.image && (
+                              <div className="episode-thumbnail">
+                                <img src={episode.image} alt={episode.label} />
+                                <div className="thumbnail-badges">
+                                  <div className="badge watched" />
+                                  <div className="badge up-next" />
+                                  <div className="badge custom-status" />
+                                  <div className="badge duration">
+                                    {episode.duration && formatDurationBadge(episode.duration)}
+                                  </div>
+                                </div>
+                                <div className="thumbnail-progress">
+                                  <div className="progress-bar" style={{ width: '50%' }} />
+                                </div>
+                                <div className="thumbnail-overlay">
+                                  <button
+                                    className="episode-play-btn"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePlayEpisode(episode);
+                                    }}
+                                  >
+                                    ▶️
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            <div className="episode-title" aria-label={episode.label}>
+                              <span className="episode-title-text">{episode.label}</span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                    
-                    <div className="episode-info">
-                      {episode.label && (
-                        <p className="episode-description">
-                          <b>{episode.label}</b><span>{episode.episodeDescription && <>{"—"}<i>{episode.episodeDescription}</i></>}</span>
-                        </p>
-                      )}
                     </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="no-episodes">
@@ -339,11 +341,11 @@ const FitnessShow = ({ showId, onBack }) => {
                 >
                   <div className="season-image-wrapper">
                     {s.image ? (
-                      <img src={s.image} alt={s.name} className="season-image" />
+                      <img src={DaylightMediaPath(`media/plex/img/${s.id}`)} alt={s.name} className="season-image" />
                     ) : (
                       <div className="season-image placeholder">S</div>
                     )}
-                    <div className="season-index">{idx + 1}</div>
+                    <div className="season-index">{Number.isFinite(s.number) ? s.number : ''}</div>
                   </div>
                   <div className="season-name" title={s.name}>{s.name || 'Season'}</div>
                 </button>

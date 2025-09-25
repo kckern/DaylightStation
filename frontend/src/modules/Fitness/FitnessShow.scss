@@ -5,159 +5,88 @@
   display: flex;
   flex-direction: column;
 
+  /* Two-panel layout: left info (25%), right episodes (fill) */
+  .show-content {
+    display: grid;
+    grid-template-columns: minmax(220px, 25%) 1fr;
+    gap: 1rem;
+    height: 100%;
+    min-height: 0; /* allow children to manage overflow */
+
+    @media (max-width: 900px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .show-info-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-width: 0;
+    height: 100%;
+    min-height: 0; /* allow inner scroll areas */
+
+    .show-poster {
+      flex: 0 0 auto; /* fixed block at top */
+    }
+
+    .show-description {
+      flex: 1 1 auto; /* take remaining height */
+      min-height: 0;  /* required for flex children to allow overflow */
+      overflow-y: auto; /* scrollable description */
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+
+      .show-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 0 0 0.25rem 0;
+        color: white;
+      }
+
+      .show-tagline {
+        font-size: 1.1rem;
+        color: rgba(255, 255, 255, 0.8);
+        font-style: italic;
+      }
+
+      .show-summary {
+        font-size: 1rem;
+        line-height: 1.4;
+        color: rgba(255, 255, 255, 0.9);
+        margin: 0;
+      }
+
+      .show-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+
+        .meta-item {
+          background: rgba(255, 255, 255, 0.1);
+          padding: 0.25rem 0.6rem;
+          border-radius: 0.6rem;
+          font-size: 0.9rem;
+          color: rgba(255, 255, 255, 0.85);
+        }
+      }
+    }
+  }
+
+  .episodes-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%; /* don't exceed parent height */
+  }
+
   &.no-selection {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 100%;
-
-    .no-selection-content {
-      text-align: center;
-      color: rgba(255, 255, 255, 0.6);
-
-      .no-selection-icon {
-        font-size: 4rem;
-        margin-bottom: 1rem;
-        opacity: 0.5;
-      }
-
-      .no-selection-title {
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-      }
-
-      .no-selection-text {
-        font-size: 1rem;
-        opacity: 0.8;
-      }
-    }
-  }
-
-  &.loading {
-    position: relative;
-    min-height: 200px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    .loading-text {
-      color: rgba(255, 255, 255, 0.8);
-      margin-top: 1rem;
-    }
-  }
-
-  &.error {
-    padding: 2rem;
-  }
-
-  .show-content {
-    display: flex;
-    flex: 1;
-    gap: 1ex;
-    min-height: 0;
-  }
-
-  .show-info-panel {
-    padding-top: 1ex;
-    width: 25%;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    overflow-y: auto;
-  }
-
-  .episodes-panel {
-    width: 75%;
-    flex: 1;
-    /* Panel is a flex column; section scrolls, bar sits at bottom */
-    padding-left: 1ex;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .show-navigation {
-    margin-bottom: 1ex;
-
-    .back-button {
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: white;
-      padding: 0.75ex 1.5ex;
-      border-radius: 1ex;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 0.5ex;
-      font-size: 0.9rem;
-      transition: all 0.2s ease;
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.2);
-        border-color: rgba(255, 255, 255, 0.4);
-        transform: translateX(-2px);
-      }
-
-      .back-icon {
-        font-size: 1.1rem;
-        transition: transform 0.2s ease;
-      }
-
-      &:hover .back-icon {
-        transform: translateX(-2px);
-      }
-    }
-  }
-
-  // Legacy show-header styles (now using two-panel layout)
-  .show-header-legacy {
-    display: flex;
-    gap: 2ex;
-    margin-bottom: 2ex;
-    padding-bottom: 2ex;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
-.show-poster {
-    position: relative;
-    flex: 0 0 auto;
-    border-radius: 1ex;
-    overflow: hidden;
-    background: rgba(255, 255, 255, 0.1);
-    margin-bottom: 1ex;
-    /* height will be set dynamically by JavaScript */
-
-    .poster-image {
-        object-fit: cover;
-        display: block;
-    }
-
-    .poster-overlay {
-      display:none;
-    }
-
-    &:hover .poster-overlay {
-      opacity: 1;
-    }
-  }
-  
-  .show-description {
-    flex: 1;
-    padding: 1ex 0;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-
-    .show-title {
-      font-size: 1.5rem;
-      font-weight: 700;
-      margin: 0 0 0.0 0;
-      padding:0;
-      color: white;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+    
 
     .show-tagline {
       font-size: 0.9rem;
@@ -243,11 +172,11 @@
     }
 
   .episodes-section {
-    /* Take remaining height and scroll */
+    /* Take remaining space; inner container will scroll */
     flex: 1 1 auto;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
+    min-height: 0; /* required for child overflow */
     
     .section-title {
       display: flex;
@@ -265,6 +194,8 @@
 
     .episodes-container {
       flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto; /* scroll episodes here */
       display: flex;
       flex-direction: column;
       gap: 2ex;
@@ -301,19 +232,29 @@
 
     .episodes-grid {
       display: grid;
-      grid-template-columns: 1fr;
-      gap: 1ex;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
 
-      .episode-card {
+      @media (max-width: 1200px) {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      @media (max-width: 900px) {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      @media (max-width: 600px) {
+        grid-template-columns: 1fr;
+      }
+
+      .episode-card.vertical {
         background: rgba(0, 0, 0, 0.5);
         border: 2px solid rgba(255, 255, 255, 0.1);
         border-radius: 1ex;
-        padding: 1ex;
+        padding: 0.5rem;
         cursor: pointer;
         transition: all 0.2s ease;
         display: flex;
-        gap: 1ex;
-        min-height: 120px;
+        flex-direction: column;
+        align-items: stretch;
 
         &:hover {
           background: rgba(0, 0, 0, 0.7);
@@ -328,13 +269,11 @@
 
         .episode-thumbnail {
           position: relative;
+          width: 100%;
           aspect-ratio: 16 / 9;
-          height: 8rem;
-          flex-shrink: 0;
-          border-radius: 0.5ex;
+          border-radius: 0.5rem;
           overflow: hidden;
           background: rgba(255, 255, 255, 0.1);
-          margin-right:1ex;
 
           img {
             width: 100%;
@@ -344,10 +283,7 @@
 
           .thumbnail-overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
             background: rgba(0, 0, 0, 0.6);
             display: flex;
             align-items: center;
@@ -379,67 +315,24 @@
           }
         }
 
-        .episode-info {
-          flex: 1;
-          min-width: 0;
+        .episode-title {
+          margin-top: 0.5rem;
+          min-height: calc(2 * 1.2em); /* reserve space for 2 lines */
           display: flex;
-          flex-direction: column;
-          justify-content: space-between;
+          align-items: center; /* centers single line vertically */
 
-          .episode-title {
-            font-size: 1rem;
-            font-weight: 600;
+          .episode-title-text {
+            width: 100%;
+            font-size: 0.95rem;
+            font-weight: 700;
             color: white;
-            margin: 0 0 0.5ex 0;
-            line-height: 1.3;
+            line-height: 1.2em;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
             text-overflow: ellipsis;
-          }
-
-          .episode-description {
-            font-size: 1.4rem;
-            color: rgba(255, 255, 255, 0.7);
-            line-height: 1.4;
-            margin: 0.5ex 0;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            text-overflow: ellipsis;
-          }
-
-          .episode-description  span{
-            color: #666;
-          }
-
-          .episode-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5ex;
-            font-size: 0.8rem;
-            color: rgba(255, 255, 255, 0.6);
-            margin-top: auto;
-
-            .episode-season {
-              display: flex;
-              align-items: center;
-              gap: 0.25ex;
-              font-weight: 500;
-              color: rgba(255, 255, 255, 0.8);
-            }
-
-            .episode-type {
-              text-transform: capitalize;
-              background: rgba(255, 255, 255, 0.1);
-              padding: 0.25ex 0.5ex;
-              border-radius: 0.5ex;
-              width: fit-content;
-            }
           }
         }
       }
@@ -473,7 +366,7 @@
 // Horizontal season filter bar (appears when >1 season) with fixed height, no scrolling
 .season-filter-bar {
   flex: 0 0 5rem;
-  height: 8rem;
+  height: 15rem;
   display: flex;
   align-items: stretch;
   gap: 0.5rem;
@@ -523,6 +416,16 @@
       align-items: center;
       justify-content: center;
       position: relative;
+
+      /* Always make the image fill the wrapper */
+      img,
+      .season-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center top;
+        display: block;
+      }
 
       .placeholder {
         color: rgba(255, 255, 255, 0.6);

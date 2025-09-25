@@ -383,7 +383,9 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const category = librarySection ? `plex/${librarySection}` : "plex";
     const unwatched_keys = findUnwatchedItems(list_keys, category, shuffle);
     const unwatchedList = list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
-    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration}) => {
+    // Prepare Plex instance for building thumb URLs (season thumbnails)
+    const plexThumb = new Plex();
+    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex}) => {
         const item = {
             label: title,
             type: type,
@@ -404,17 +406,23 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                 item.episodeDescription = summary;
             }
             
-            // Add episode number (index)
-            if (index) {
-                item.episodeNumber = parseInt(index);
+            // Add episode number (index) as integer (even if 0)
+            if (index !== undefined && index !== null) {
+                const num = parseInt(index);
+                if (!Number.isNaN(num)) item.episodeNumber = num;
             }
             
             // Add season information
             if (parent || parentTitle || parentRatingKey) {
                 item.seasonId = parent || parentRatingKey;
                 item.seasonName = parentTitle;
+                // Prefer Plex's parentIndex as the numeric season number
+                if (parentIndex !== undefined && parentIndex !== null) {
+                    const sNum = parseInt(parentIndex);
+                    if (!Number.isNaN(sNum)) item.seasonNumber = sNum;
+                }
                 // Extract season number from season name or index if available
-                if (parentTitle) {
+                if (item.seasonNumber == null && parentTitle) {
                     const seasonMatch = parentTitle.match(/season\s*(\d+)/i);
                     if (seasonMatch) {
                         item.seasonNumber = parseInt(seasonMatch[1]);
@@ -425,6 +433,19 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                             item.seasonNumber = parseInt(numberMatch[1]);
                         }
                     }
+                }
+            }
+
+            // Add season thumbnail URL when available (prefer parentThumb)
+            const seasonThumbPath = parentThumb || grandparentThumb;
+            if (seasonThumbPath) {
+                try {
+                    item.seasonThumbUrl = handleDevImage(
+                        req,
+                        plexThumb.thumbUrl(seasonThumbPath) || `${process.env.host}/media/plex/img/notfound.png`
+                    );
+                } catch (e) {
+                    // noop; do not block response on thumbnail issues
                 }
             }
         }
