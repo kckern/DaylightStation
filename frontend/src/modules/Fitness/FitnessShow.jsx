@@ -397,7 +397,7 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
                   className={`season-item ${activeSeasonId === s.id ? 'active' : ''}`}
                   onClick={() => setActiveSeasonId(s.id)}
                 >
-                  <div className="season-image-wrapper">
+                  <div className="season-image-wrapper" style={{backgroundImage: s.image ? `url(${DaylightMediaPath(`media/plex/img/${s.id}`)})` : 'none'}}>
                     {s.image ? (
                       <img src={DaylightMediaPath(`media/plex/img/${s.id}`)} alt={s.rawName || s.name || 'Season'} className="season-image" />
                     ) : (
