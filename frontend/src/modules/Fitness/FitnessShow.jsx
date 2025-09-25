@@ -18,7 +18,7 @@ const formatDurationBadge = (seconds) => {
   return `${minutes}m`;
 };
 
-const FitnessShow = ({ showId, onBack }) => {
+const FitnessShow = ({ showId, onBack, viewportRef }) => {
   const [showData, setShowData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -26,6 +26,8 @@ const FitnessShow = ({ showId, onBack }) => {
   const [posterWidth, setPosterWidth] = useState(0);
   const posterRef = useRef(null);
   const [activeSeasonId, setActiveSeasonId] = useState(null);
+  const seasonBarRef = useRef(null);
+  const [seasonBarWidth, setSeasonBarWidth] = useState(0);
 
   useEffect(() => {
     const fetchShowData = async () => {
@@ -83,6 +85,29 @@ const FitnessShow = ({ showId, onBack }) => {
       resizeObserver.disconnect();
     };
   }, [showData]); // Re-run when showData changes
+
+  // Track season filter bar width to compute dynamic height that ensures all items fit
+  useEffect(() => {
+    if (!seasonBarRef.current) return;
+    const el = seasonBarRef.current;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setSeasonBarWidth(entry.contentRect.width);
+      }
+    });
+    ro.observe(el);
+    // Initial measure
+    setSeasonBarWidth(el.getBoundingClientRect().width);
+    return () => ro.disconnect();
+  }, [seasonBarRef.current]);
+
+  // Derive viewport dimensions if provided, to avoid using window
+  const viewportSize = useMemo(() => {
+    const el = viewportRef?.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  }, [viewportRef?.current, seasonBarWidth]);
 
   const handleEpisodeSelect = (episode) => {
     setSelectedEpisode(episode);
@@ -231,16 +256,6 @@ const FitnessShow = ({ showId, onBack }) => {
                     }}
                   />
                 )}
-                <div className="poster-overlay">
-                  <button 
-                    className="play-button"
-                    onClick={() => handlePlayEpisode(selectedEpisode)}
-                    disabled={!selectedEpisode}
-                  >
-                    <span className="play-icon">▶️</span>
-                    Play
-                  </button>
-                </div>
               </div>
               
               {/* Show Description - Bottom 50% */}
@@ -332,7 +347,36 @@ const FitnessShow = ({ showId, onBack }) => {
           </div>
           {/* Season filter bar (shows only when more than one season) */}
           {seasons.length > 1 && (
-            <div className="season-filter-bar">
+            <div
+              className="season-filter-bar"
+              ref={seasonBarRef}
+              style={{
+                /* Dynamic height based on container width and number of seasons to fit all images at 2:3 ratio */
+                height: (() => {
+                  const maxRem = 12;
+                  const minRem = 4;
+                  const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+                  const n = seasons.length || 1;
+                  const horizontalPaddingRem = 1; // 0.5rem left + 0.5rem right
+                  // Use the actual season bar width; cap by viewport if provided
+                  const baseWidthPx = Math.min(
+                    seasonBarWidth || 0,
+                    viewportSize?.width ?? Number.POSITIVE_INFINITY
+                  );
+                  // Subtract padding and a tiny epsilon to avoid rounding overflow
+                  const epsilonPx = 2;
+                  const availablePx = Math.max(0, baseWidthPx - horizontalPaddingRem * remPx - epsilonPx);
+                  // To avoid fractional rounding overflow, quantize per-item width:
+                  // widthPerItemPx = floor(availablePx / n)
+                  // height = widthPerItemPx * 3 / 2 (to keep 2:3 ratio)
+                  const widthPerItemPx = Math.max(0, Math.floor(availablePx / n));
+                  const heightPxFit = (widthPerItemPx * 3) / 2;
+                  const heightRemFit = heightPxFit / remPx;
+                  const heightRem = Math.max(minRem, Math.min(maxRem, heightRemFit));
+                  return `${heightRem}rem`;
+                })(),
+              }}
+            >
               {seasons.map((s, idx) => (
                 <button
                   key={s.id}
