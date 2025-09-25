@@ -10,10 +10,11 @@
 
 .fitness-app-viewport {
   display: flex;
-  width: min(calc(100vw - 1em), 1280px);
-  height: min(calc(100vh - 1em), 720px);
+  //1366 x 768
+  width: min(calc(100vw - 1em), 1366px);
+  height: min(calc(100vh - 1em), 768px);
   aspect-ratio: 16/9;
-  padding: 1ex;
+  padding: 0;
   box-sizing: border-box;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   background-color: #333;
