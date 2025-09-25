@@ -27,4 +27,16 @@
   overflow-y: scroll;
   padding-left: 4rem;
   
+  /* Ensure we maintain aspect ratio when constrained by either dimension */
+  @media (max-aspect-ratio: 16/9) {
+    /* Window is taller than 16:9, constrain by width */
+    width: 1380px;
+    height: 768px;
+  }
+  
+  @media (min-aspect-ratio: 16/9) {
+    /* Window is wider than 16:9, constrain by height */
+    width: 1380px;
+    height: 768px;
+  }
 }
