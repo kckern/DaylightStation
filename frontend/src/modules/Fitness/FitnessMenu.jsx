@@ -94,21 +94,24 @@ const FitnessMenu = ({ activeCollection, onShowSelect }) => {
     <div className="fitness-menu">
       {shows.length > 0 ? (
         <div className="fitness-grid">
-          {shows.map((show, index) => (
-            <div 
-              key={show.plex || index} 
-              className="show-card"
-              onClick={() => handleShowClick(show)}
-            >
-              {show.image && (
-                <img
-                  src={show.image}
-                  alt={show.label}
-                  className="show-image"
-                />
-              )}
-            </div>
-          ))}
+          {shows
+            // sort by show.rating DESC
+            .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+            .map((show, index) => (
+              <div 
+                key={show.plex || index} 
+                className="show-card"
+                onClick={() => handleShowClick(show)}
+              >
+                {show.image && (
+                  <img
+                    src={show.image}
+                    alt={show.label}
+                    className="show-image"
+                  />
+                )}
+              </div>
+            ))}
         </div>
       ) : (
         <div className="no-shows">
