@@ -7,13 +7,17 @@
   box-sizing: border-box;
   background-color: #000;
   font-family: 'Roboto Condensed', sans-serif;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .fitness-app-viewport {
   display: flex;
   //1366 x 768
-  width: min(calc(100vw - 1em), 1423px);
-  height: min(calc(100vh - 1em), 800px);
+  width:1366;
+  height: 768;
   aspect-ratio: 16/9;
   padding: 0;
   box-sizing: border-box;

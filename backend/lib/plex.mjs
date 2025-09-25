@@ -126,7 +126,8 @@ export class Plex {
       index,
       parentIndex,
       parentThumb,
-      grandparentThumb
+      grandparentThumb,
+      userRating
     })=>{
       return {
         plex: plex || ratingKey,
@@ -142,7 +143,8 @@ export class Plex {
         index,
         parentIndex,
         parentThumb,
-        grandparentThumb
+        grandparentThumb,
+        userRating
       }
     }) || [];
     return items.length ? items : [];
@@ -166,8 +168,8 @@ export class Plex {
     if (!collection?.MediaContainer?.Metadata) return [];
     
     const items = await Promise.all(
-      collection.MediaContainer.Metadata.map(async ({ ratingKey, title, thumb, type }) => {
-        const item = { plex: ratingKey, title, type, image: this.thumbUrl(thumb), key: ratingKey };
+      collection.MediaContainer.Metadata.map(async ({ ratingKey, title, thumb, type, userRating }) => {
+        const item = { plex: ratingKey, title, type, image: this.thumbUrl(thumb), key: ratingKey, userRating };
         
         // Only expand to children if specifically requesting playable items
         if (playable && ["show", "artist", "album"].includes(type)) {
