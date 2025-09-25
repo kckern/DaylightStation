@@ -3,7 +3,7 @@ import { LoadingOverlay, Alert } from '@mantine/core';
 import { DaylightAPI } from '../../lib/api.mjs';
 import './FitnessMenu.scss';
 
-const FitnessMenu = ({ activeCollection }) => {
+const FitnessMenu = ({ activeCollection, onShowSelect }) => {
   const [shows, setShows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -83,6 +83,13 @@ const FitnessMenu = ({ activeCollection }) => {
 
   const collectionName = selectedCollection?.name || 'Fitness Shows';
 
+  const handleShowClick = (show) => {
+    console.log('🎬 Show selected:', show);
+    if (onShowSelect) {
+      onShowSelect(show);
+    }
+  };
+
   return (
     <div className="fitness-menu">
       {shows.length > 0 ? (
@@ -91,6 +98,7 @@ const FitnessMenu = ({ activeCollection }) => {
             <div 
               key={show.plex || index} 
               className="show-card"
+              onClick={() => handleShowClick(show)}
             >
               {show.image && (
                 <img

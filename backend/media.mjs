@@ -326,9 +326,44 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     let list = [];
     let info = {};
     let librarySection = null;
+    let plexInfo = null;
+    
+    // Get info for the first plex_key (show-level metadata, not episode)
+    if (plex_keys.length > 0) {
+        try {
+            const plexInstance = new Plex();
+            const [showMeta] = await plexInstance.loadMeta(plex_keys[0]);
+            if (showMeta) {
+                plexInfo = {
+                    key: showMeta.ratingKey,
+                    type: showMeta.type,
+                    title: showMeta.title,
+                    summary: showMeta.summary,
+                    year: showMeta.year,
+                    studio: showMeta.studio,
+                    tagline: showMeta.tagline,
+                    image: handleDevImage(req, plexInstance.thumbUrl(showMeta.thumb) || `${process.env.host}/media/plex/img/notfound.png`)
+                };
+                
+                // Remove any undefined/falsey keys
+                Object.keys(plexInfo).forEach(key => {
+                    if (plexInfo[key] == null || plexInfo[key] === "") {
+                        delete plexInfo[key];
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error loading plex info:', error);
+        }
+    }
     
     for (const plex_key of plex_keys) {
         const {list:items, plex, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, playable, shuffle);
+        // Debug: log the first item to see available fields
+        if (items.length > 0) {
+            console.log('🎬 DEBUG: Available fields in Plex item:', Object.keys(items[0]));
+            console.log('🎬 DEBUG: First item data:', JSON.stringify(items[0], null, 2));
+        }
         list = list.concat(items);
         info = {
             plex: info.plex ? `${info.plex},${plex}` : plex,
@@ -348,17 +383,61 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const category = librarySection ? `plex/${librarySection}` : "plex";
     const unwatched_keys = findUnwatchedItems(list_keys, category, shuffle);
     const unwatchedList = list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
-    list = unwatchedList.map(({key,plex,type,title,image}) => {
-        return {
+    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration}) => {
+        const item = {
             label: title,
             type: type,
             plex: key || plex,
             image: handleDevImage(req, image),
             ...req.query
         };
+        
+        // Add duration for all items (in seconds)
+        if (duration) {
+            item.duration = parseInt(duration / 1000); // Convert from milliseconds to seconds
+        }
+        
+        // Add episode-specific information
+        if (type === 'episode') {
+            // Add episode description (summary)
+            if (summary) {
+                item.episodeDescription = summary;
+            }
+            
+            // Add episode number (index)
+            if (index) {
+                item.episodeNumber = parseInt(index);
+            }
+            
+            // Add season information
+            if (parent || parentTitle || parentRatingKey) {
+                item.seasonId = parent || parentRatingKey;
+                item.seasonName = parentTitle;
+                // Extract season number from season name or index if available
+                if (parentTitle) {
+                    const seasonMatch = parentTitle.match(/season\s*(\d+)/i);
+                    if (seasonMatch) {
+                        item.seasonNumber = parseInt(seasonMatch[1]);
+                    } else if (parentTitle.toLowerCase().includes('season')) {
+                        // Try to extract number from various season formats
+                        const numberMatch = parentTitle.match(/(\d+)/);
+                        if (numberMatch) {
+                            item.seasonNumber = parseInt(numberMatch[1]);
+                        }
+                    }
+                }
+            }
+        }
+        
+        return item;
     });
     try {
-        res.json({...info, items: applyParamsToItems(list)});
+        const responseData = {...info};
+        if (plexInfo) {
+            responseData.info = plexInfo;
+        }
+        responseData.items = applyParamsToItems(list);
+        res.json(responseData);
     } catch (error) {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });
     }
