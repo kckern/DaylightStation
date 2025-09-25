@@ -291,7 +291,14 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
                         {title}
                         <span className="episode-count">({seasonEpisodes.length} episodes)</span>
                       </h3>
-                      <div className="episodes-grid">
+                      <div className={`episodes-grid ${(() => {
+                        const n = seasonEpisodes.length;
+                        if (n <= 1) return 'zoom-400';
+                        if (n <= 3) return 'zoom-300';
+                        if (n <= 4) return 'zoom-200';
+                        if (n <= 9) return 'zoom-150';
+                        return '';
+                      })()}`}>
                         {seasonEpisodes.map((episode, index) => (
                           <div
                             key={episode.plex || index}
@@ -389,9 +396,12 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
                     ) : (
                       <div className="season-image placeholder">S</div>
                     )}
-                    <div className="season-index">{Number.isFinite(s.number) ? s.number : ''}</div>
+                    <div className="season-index" title={s.name}>
+                      <span className="season-num">{Number.isFinite(s.number) ? s.number : ''}</span>
+                      <span className="season-title-text">{s.name || 'Season'}</span>
+                    </div>
                   </div>
-                  <div className="season-name" title={s.name}>{s.name || 'Season'}</div>
+                  {/* Name moved into overlay next to number */}
                 </button>
               ))}
             </div>
