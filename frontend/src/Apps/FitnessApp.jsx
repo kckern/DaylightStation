@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
@@ -13,6 +13,7 @@ const FitnessApp = () => {
   const [loading, setLoading] = useState(true);
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
+  const viewportRef = useRef(null);
   
   // Derive collections from the API response
   const collections = useMemo(() => {
@@ -68,7 +69,7 @@ const FitnessApp = () => {
   return (
     <MantineProvider theme={{ colorScheme: 'dark' }}>
       <div className="fitness-app-container">
-        <div className="fitness-app-viewport" style={{ position: 'relative' }}>
+        <div className="fitness-app-viewport" style={{ position: 'relative' }} ref={viewportRef}>
           <FitnessSidebar 
             collections={collections}
             activeCollection={activeCollection}
@@ -78,6 +79,7 @@ const FitnessApp = () => {
             <FitnessShow 
               showId={selectedShow} 
               onBack={handleBackToMenu}
+              viewportRef={viewportRef}
             />
           ) : (
             <FitnessMenu 
