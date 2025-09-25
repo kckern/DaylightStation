@@ -429,7 +429,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    gap: 0.35rem;
+  gap: 0.35rem;
     background: transparent;
     border: none;
   color: white;
@@ -437,7 +437,8 @@
     flex: 1 1 0;
     min-width: 0;
     height: 100%;
-    box-sizing: border-box;
+  box-sizing: border-box;
+  overflow: hidden; /* prevent spill below bar due to rounding */
     cursor: pointer;
     border-radius: 0.5rem;
     transition: transform 0.15s ease, background 0.15s ease;
@@ -455,9 +456,10 @@
 
     .season-image-wrapper {
       width: 100%;
-      /* Fill available vertical space minus caption; keep poster ratio */
-      flex: 1 1 auto;
-      aspect-ratio: 2 / 3;
+      /* Constrain image to fit within bar: total height minus caption + gap */
+      height: calc(100% - var(--caption-rem, 1.5rem) - var(--caption-gap, 0.35rem));
+      /* Keep content nicely framed even when height < width*3/2 */
+      aspect-ratio: 1 / 1.5;
       flex-shrink: 0; /* do not shrink when there is text */
       border-radius: 0.5rem;
       overflow: hidden;
@@ -470,10 +472,9 @@
       /* Always make the image fill the wrapper */
       img,
       .season-image {
-        width: 100%;
         height: 100%;
         object-fit: cover;
-        object-position: center top;
+       // object-position: center top;
         display: block;
         aspect-ratio: 1 / 1.5;
       }
@@ -493,11 +494,14 @@
       align-items: center;
       justify-content: center;
       gap: 0.4rem;
-      padding: 0 0.25rem;
+      padding: 0 0.25rem 0.05rem; /* tiny bottom padding */
       font-weight: 800;
       color: rgba(255, 255, 255, 0.95);
-      line-height: 1.2;
-      min-height: 1.2rem;
+      font-size: 0.95rem;
+      line-height: 1.15;
+      height: var(--caption-rem, 1.5rem); /* fixed caption box height */
+      max-height: var(--caption-rem, 1.5rem);
+      overflow: hidden;
 
       .season-num {
         background: rgba(255, 255, 255, 0.15);
