@@ -6,11 +6,13 @@ import { DaylightAPI } from '../lib/api.mjs';
 import FitnessUsers from '../modules/Fitness/FitnessUsers.jsx';
 import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessSidebar from '../modules/Fitness/FitnessSidebar.jsx';
+import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 
 const FitnessApp = () => {
   const [fitnessMessage, setFitnessMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeCollection, setActiveCollection] = useState(null);
+  const [selectedShow, setSelectedShow] = useState(null);
   
   // Derive collections from the API response
   const collections = useMemo(() => {
@@ -27,6 +29,17 @@ const FitnessApp = () => {
         ? collectionOrId.id
         : collectionOrId;
     setActiveCollection(id);
+    // Reset selected show when collection changes
+    setSelectedShow(null);
+  };
+
+  const handleShowSelect = (show) => {
+    console.log('🎬 FitnessApp: Show selected:', show);
+    setSelectedShow(show.plex);
+  };
+
+  const handleBackToMenu = () => {
+    setSelectedShow(null);
   };
 
   useEffect(() => {
@@ -61,7 +74,18 @@ const FitnessApp = () => {
             activeCollection={activeCollection}
             onCollectionChange={handleCollectionChange}
           />
-          <FitnessMenu collections={collections} activeCollection={activeCollection} />
+          {selectedShow ? (
+            <FitnessShow 
+              showId={selectedShow} 
+              onBack={handleBackToMenu}
+            />
+          ) : (
+            <FitnessMenu 
+              collections={collections} 
+              activeCollection={activeCollection} 
+              onShowSelect={handleShowSelect}
+            />
+          )}
         </div>
       </div>
     </MantineProvider>
