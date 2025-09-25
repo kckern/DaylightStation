@@ -44,10 +44,12 @@
       gap: 0.5rem;
 
       .show-title {
-        font-size: 2rem;
+        font-size: 1.5rem;
+        line-height: 2.2rem;
         font-weight: 700;
         margin: 0 0 0.25rem 0;
         color: white;
+        margin-bottom: 0;;
       }
 
       .show-tagline {
@@ -57,8 +59,9 @@
       }
 
       .show-summary {
-        font-size: 1rem;
-        line-height: 1.4;
+        font-size: 0.8rem;
+        text-align: justify ;
+        line-height: 1rem;
         color: rgba(255, 255, 255, 0.9);
         margin: 0;
       }
@@ -237,17 +240,51 @@
 
     .episodes-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      /* Use 8 tracks so default span=2 gives 4 columns baseline */
+      grid-template-columns: repeat(8, 1fr);
       gap: 0.5ex;
 
+      /* Zoom via column spans; 2 tracks is baseline (4 columns). */
+      .episode-card.vertical { grid-column: span 2; }
+      /* zoom-150: show 3 tiles per row by switching to 6 tracks and span 2 */
+      &.zoom-150 {
+        grid-template-columns: repeat(6, 1fr);
+        .episode-card.vertical { grid-column: span 2; }
+      }
+      &.zoom-200 .episode-card.vertical { grid-column: span 4; } /* 50% width = 200% */
+      /* zoom-300: force 2 tiles per row */
+      &.zoom-300 {
+        grid-template-columns: repeat(4, 1fr);
+        .episode-card.vertical { grid-column: span 2; }
+      }
+      &.zoom-400 .episode-card.vertical { grid-column: span 8; } /* 100% width = 400% */
+
+      /* Responsive breakpoints adjust base track count accordingly */
       @media (max-width: 1200px) {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(6, 1fr); /* baseline 3 columns */
+        .episode-card.vertical { grid-column: span 2; }
+        &.zoom-150 { grid-template-columns: repeat(6, 1fr); .episode-card.vertical { grid-column: span 2; } }
+        &.zoom-200 .episode-card.vertical { grid-column: span 4; }
+  /* keep 2-per-row within this breakpoint: 6 tracks → span 3 */
+  &.zoom-300 .episode-card.vertical { grid-column: span 3; }
+        &.zoom-400 .episode-card.vertical { grid-column: span 6; }
       }
       @media (max-width: 900px) {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(4, 1fr); /* baseline 2 columns */
+        .episode-card.vertical { grid-column: span 2; }
+        &.zoom-150 { grid-template-columns: repeat(4, 1fr); .episode-card.vertical { grid-column: span 2; } }
+        &.zoom-200 .episode-card.vertical { grid-column: span 4; }
+  /* base is 4 tracks → span 2 for 2-per-row */
+  &.zoom-300 .episode-card.vertical { grid-column: span 2; }
+        &.zoom-400 .episode-card.vertical { grid-column: span 4; }
       }
       @media (max-width: 600px) {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr); /* baseline 1 column */
+        .episode-card.vertical { grid-column: span 2; }
+        &.zoom-150 .episode-card.vertical,
+        &.zoom-200 .episode-card.vertical,
+        &.zoom-300 .episode-card.vertical,
+        &.zoom-400 .episode-card.vertical { grid-column: span 2; }
       }
 
       .episode-card.vertical {
@@ -329,7 +366,7 @@
 
           .episode-title-text {
             width: 100%;
-            font-size: 0.95rem;
+            font-size: calc(0.95rem * var(--tile-zoom, 1));
             font-weight: 700;
             color: white;
             line-height: 1.2em;
@@ -443,32 +480,38 @@
         position: absolute;
         top: 0.25rem;
         left: 0.25rem;
-        background: rgba(0, 0, 0, 0.7);
+        right: 0.25rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        max-width: calc(100% - 0.5rem);
+        background: rgba(0, 0, 0, 0.6);
         color: white;
-        font-size: 0.7rem;
-        font-weight: 700;
-        line-height: 1;
-        padding: 0.15rem 0.3rem;
-        border-radius: 0.35rem;
+        font-size: 0.8rem;
+        font-weight: 800;
+        line-height: 1.1;
+        padding: 0.25rem 0.4rem;
+        border-radius: 0.4rem;
+        backdrop-filter: blur(2px);
+
+        .season-num {
+          background: rgba(255, 255, 255, 0.15);
+          padding: 0.05rem 0.4rem;
+          border-radius: 0.35rem;
+          font-size: 0.8em;
+        }
+
+        .season-title-text {
+          flex: 1 1 auto;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          opacity: 0.95;
+        }
       }
     }
 
-    .season-name {
-      font-size: 1rem;
-      line-height: 1.1rem;
-      font-weight: 800;
-      flex: 1 1 auto;
-      min-width: 3rem;
-      text-align: center; /* center text in remaining space */
-      overflow: hidden;
-      text-overflow: ellipsis;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow-wrap: anywhere; /* wrap long words */
-      color: rgba(255, 255, 255, 0.85);
-    }
 
     /* When the item gets too narrow to provide >= 8rem of text space,
        switch to thumbnail-only mode. Threshold math:
@@ -478,9 +521,7 @@
       padding: 0; /* remove side padding so image can be full-bleed */
       gap: 0;
 
-      .season-name {
-        display: none;
-      }
+      /* Title already inside badge; it will truncate automatically */
 
       .season-image-wrapper {
         /* keep fixed 2:3 ratio; no overrides to aspect-ratio */
