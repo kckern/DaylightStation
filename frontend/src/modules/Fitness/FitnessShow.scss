@@ -419,19 +419,25 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   overflow: hidden; /* no scrolling */
   border-top-left-radius: 1ex;
+  /* Ensure children know their height */
+  min-height: 4rem;
 
   .season-item {
     /* Enable container queries based on each item's width */
     container-type: inline-size;
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    gap: 0.5rem;
+    gap: 0.35rem;
     background: transparent;
     border: none;
-    color: white;
-    aspect-ratio: 1/1.5;;
+  color: white;
+    /* Make each tile take an equal share of the row width */
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+    box-sizing: border-box;
     cursor: pointer;
     border-radius: 0.5rem;
     transition: transform 0.15s ease, background 0.15s ease;
@@ -448,8 +454,10 @@
     }
 
     .season-image-wrapper {
-  height: 100%; /* fill item height */
-  width: 100%;
+      width: 100%;
+      /* Fill available vertical space minus caption; keep poster ratio */
+      flex: 1 1 auto;
+      aspect-ratio: 2 / 3;
       flex-shrink: 0; /* do not shrink when there is text */
       border-radius: 0.5rem;
       overflow: hidden;
@@ -476,58 +484,42 @@
         font-size: 0.9rem;
       }
 
-      .season-index {
-        position: absolute;
-        top: 0.25rem;
-        left: 0.25rem;
-        right: 0.25rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        max-width: calc(100% - 0.5rem);
-        background: rgba(0, 0, 0, 0.6);
-        color: white;
-        font-size: 0.8rem;
-        font-weight: 800;
-        line-height: 1.1;
-        padding: 0.25rem 0.4rem;
-        border-radius: 0.4rem;
-        backdrop-filter: blur(2px);
-
-        .season-num {
-          background: rgba(255, 255, 255, 0.15);
-          padding: 0.05rem 0.4rem;
-          border-radius: 0.35rem;
-          font-size: 0.8em;
-        }
-
-        .season-title-text {
-          flex: 1 1 auto;
-          min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          opacity: 0.95;
-        }
-      }
+      /* overlay removed */
     }
 
+    .season-caption {
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0 0.25rem;
+      font-weight: 800;
+      color: rgba(255, 255, 255, 0.95);
+      line-height: 1.2;
+      min-height: 1.2rem;
+
+      .season-num {
+        background: rgba(255, 255, 255, 0.15);
+        padding: 0.05rem 0.45rem;
+        border-radius: 0.4rem;
+        font-size: 0.8rem;
+      }
+
+      .season-title-text {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
 
     /* When the item gets too narrow to provide >= 8rem of text space,
        switch to thumbnail-only mode. Threshold math:
        total width <= poster(8rem * 2/3 ≈ 5.33rem) + gap(0.5rem) + text(8rem) + padding(0.5rem)
        ⇒ ≈ 14rem. */
-    @container (max-width: 14rem) {
-      padding: 0; /* remove side padding so image can be full-bleed */
-      gap: 0;
-
-      /* Title already inside badge; it will truncate automatically */
-
-      .season-image-wrapper {
-        /* keep fixed 2:3 ratio; no overrides to aspect-ratio */
-        height: 100%;
-      }
-    }
+    /* Keep names visible; allow truncation instead of hiding at narrow widths */
   }
 }
 
