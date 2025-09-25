@@ -111,8 +111,39 @@ export class Plex {
     return { plex, type, list };
   }
   async loadListKeys(input, path) {
-    const items = (await this.loadMeta(input, path))?.map(({ plex,ratingKey, parentRatingKey,parentTitle, grandparentRatingKey, grandparentTitle, title,summary, type, thumb, duration })=>{
-      return { plex:plex ||ratingKey,title, parent:parentRatingKey, parentTitle, grandparent: grandparentRatingKey, grandparentTitle, type, summary, image: this.thumbUrl(thumb), duration }
+    const items = (await this.loadMeta(input, path))?.map(({ 
+      plex,
+      ratingKey,
+      parentRatingKey,
+      parentTitle,
+      grandparentRatingKey,
+      grandparentTitle,
+      title,
+      summary,
+      type,
+      thumb,
+      duration,
+      index,
+      parentIndex,
+      parentThumb,
+      grandparentThumb
+    })=>{
+      return {
+        plex: plex || ratingKey,
+        title,
+        parent: parentRatingKey,
+        parentTitle,
+        grandparent: grandparentRatingKey,
+        grandparentTitle,
+        type,
+        summary,
+        image: this.thumbUrl(thumb),
+        duration,
+        index,
+        parentIndex,
+        parentThumb,
+        grandparentThumb
+      }
     }) || [];
     return items.length ? items : [];
   }
