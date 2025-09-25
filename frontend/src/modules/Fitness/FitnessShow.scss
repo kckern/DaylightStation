@@ -468,6 +468,29 @@
       align-items: center;
       justify-content: center;
       position: relative;
+      background-position: center top;
+      background-size: cover;
+      background-repeat: no-repeat;
+
+      /* Blur only the background image using a layered pseudo-element */
+      &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: inherit; /* use the inline backgroundImage passed in */
+        background-position: inherit;
+        background-size: inherit;
+        background-repeat: no-repeat;
+        filter: blur(5px);
+        transform: scale(1.05); /* avoid edge clipping when blurred */
+        z-index: 0;
+      }
+
+      /* Keep actual contents (img, placeholder, etc.) sharp above the blur */
+      > * {
+        position: relative;
+        z-index: 1;
+      }
 
       /* Always make the image fill the wrapper */
       img,
