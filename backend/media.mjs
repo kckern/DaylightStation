@@ -385,7 +385,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const unwatchedList = list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
     // Prepare Plex instance for building thumb URLs (season thumbnails)
     const plexThumb = new Plex();
-    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex}) => {
+    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex,userRating}) => {
         const item = {
             label: title,
             type: type,
@@ -447,6 +447,14 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                 } catch (e) {
                     // noop; do not block response on thumbnail issues
                 }
+            }
+        }
+        
+        // For shows, expose integer rating from Plex userRating
+        if (type === 'show' && userRating != null) {
+            const parsed = parseInt(userRating, 10);
+            if (!Number.isNaN(parsed)) {
+                item.rating = parsed;
             }
         }
         
