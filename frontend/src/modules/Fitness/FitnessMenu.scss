@@ -1,10 +1,14 @@
 .fitness-menu {
+      display: flex;
+    width: 100%;
+    justify-content: center;
   .fitness-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
     gap: 1ex;
     padding: 1ex 0;
-    margin-top: -1ex;
+    margin-top: 0.5ex;
+    margin-right: 1ex;
   }
 
 .show-card {
@@ -19,6 +23,7 @@
     align-items: center;
     text-align: center;
     position: relative;
+    aspect-ratio: 1 / 1.5;
 
     &:hover {
         background-color: rgba(0, 0, 0, 0.9);
