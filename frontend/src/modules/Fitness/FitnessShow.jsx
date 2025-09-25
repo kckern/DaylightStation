@@ -93,37 +93,6 @@ const FitnessShow = ({ showId, onBack }) => {
     // TODO: Implement play functionality
   };
 
-  if (!showId) {
-    return (
-      <div className="fitness-show no-selection">
-        <div className="no-selection-content">
-          <div className="no-selection-icon">📺</div>
-          <div className="no-selection-title">Select a Show</div>
-          <div className="no-selection-text">Choose a fitness show from the menu to get started</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="fitness-show loading">
-        <LoadingOverlay visible={true} />
-        <div className="loading-text">Loading show details...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="fitness-show error">
-        <Alert color="red">
-          Error loading show: {error}
-        </Alert>
-      </div>
-    );
-  }
-
   const { info, items = [] } = showData || {};
 
   // Derive seasons from items (episodes)
@@ -179,6 +148,38 @@ const FitnessShow = ({ showId, onBack }) => {
     }
     return items;
   }, [items, seasons, activeSeasonId]);
+
+  // Early return UI states (after all hooks above to keep hook order stable)
+  if (!showId) {
+    return (
+      <div className="fitness-show no-selection">
+        <div className="no-selection-content">
+          <div className="no-selection-icon">📺</div>
+          <div className="no-selection-title">Select a Show</div>
+          <div className="no-selection-text">Choose a fitness show from the menu to get started</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="fitness-show loading">
+        <LoadingOverlay visible={true} />
+        <div className="loading-text">Loading show details...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="fitness-show error">
+        <Alert color="red">
+          Error loading show: {error}
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <div className="fitness-show">
@@ -307,9 +308,9 @@ const FitnessShow = ({ showId, onBack }) => {
                     )}
                     
                     <div className="episode-info">
-                      {episode.episodeDescription && (
+                      {episode.label && (
                         <p className="episode-description">
-                          <b>{episode.label}</b><span>—{episode.episodeDescription}</span>
+                          <b>{episode.label}</b><span>{episode.episodeDescription && <>{"—"}<i>{episode.episodeDescription}</i></>}</span>
                         </p>
                       )}
                     </div>
@@ -330,7 +331,7 @@ const FitnessShow = ({ showId, onBack }) => {
           {/* Season filter bar (shows only when more than one season) */}
           {seasons.length > 1 && (
             <div className="season-filter-bar">
-              {seasons.map((s) => (
+              {seasons.map((s, idx) => (
                 <button
                   key={s.id}
                   className={`season-item ${activeSeasonId === s.id ? 'active' : ''}`}
@@ -342,6 +343,7 @@ const FitnessShow = ({ showId, onBack }) => {
                     ) : (
                       <div className="season-image placeholder">S</div>
                     )}
+                    <div className="season-index">{idx + 1}</div>
                   </div>
                   <div className="season-name" title={s.name}>{s.name || 'Season'}</div>
                 </button>
