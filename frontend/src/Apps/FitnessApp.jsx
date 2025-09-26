@@ -9,7 +9,7 @@ import FitnessSidebar from '../modules/Fitness/FitnessSidebar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 
 const FitnessApp = () => {
-  const [fitnessMessage, setFitnessMessage] = useState(null);
+  const [fitnessConfiguration, setFitnessConfiguration] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show'
   const [activeCollection, setActiveCollection] = useState(null);
@@ -19,11 +19,11 @@ const FitnessApp = () => {
   // Derive collections from the API response
   const collections = useMemo(() => {
     const src =
-      fitnessMessage?.fitness?.plex?.collections ||
-      fitnessMessage?.plex?.collections ||
+      fitnessConfiguration?.fitness?.plex?.collections ||
+      fitnessConfiguration?.plex?.collections ||
       [];
     return Array.isArray(src) ? src : [];
-  }, [fitnessMessage]);
+  }, [fitnessConfiguration]);
 
   const handleContentSelect = (category, value) => {
     console.log('📱 FitnessApp: Content selected:', { category, value });
@@ -59,10 +59,10 @@ const FitnessApp = () => {
     const fetchFitnessData = async () => {
       try {
         const response = await DaylightAPI('/api/fitness');
-        setFitnessMessage(response);
+        setFitnessConfiguration(response);
       } catch (error) {
         console.error('Error fetching fitness data:', error);
-        setFitnessMessage({ message: 'Error loading fitness data', status: 'error' });
+        setFitnessConfiguration({ message: 'Error loading fitness data', status: 'error' });
       } finally {
         setLoading(false);
       }
@@ -86,10 +86,11 @@ const FitnessApp = () => {
             collections={collections}
             activeCollection={activeCollection}
             onContentSelect={handleContentSelect}
+            fitnessConfiguration={fitnessConfiguration}
           />
           <div className="fitness-main-content">
             {currentView === 'users' && (
-              <FitnessUsers />
+              <FitnessUsers fitnessConfiguration={fitnessConfiguration} />
             )}
             {currentView === 'show' && selectedShow && (
               <FitnessShow 
