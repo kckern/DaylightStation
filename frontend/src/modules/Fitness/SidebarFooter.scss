@@ -1,0 +1,183 @@
+.sidebar-footer {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-right: 1ex;
+  padding-bottom: 1ex;
+
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: calc(100% -  1ex);
+    text-align: center;
+    position: relative;
+    margin-left: 1ex;
+    border-radius: 0.4ex;
+    background: rgba(255, 255, 255, 0.15);
+
+    .device-header {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 2px;
+      background-color: #000;
+      border-top-right-radius: 0.4ex;
+      border-top-left-radius: 0.4ex;
+
+      .device-value {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: white;
+        text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+        line-height: 1;
+      }
+    }
+
+    .device-icon {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      .icon-main {
+        font-size: 18px;
+        transition: all 0.3s ease;
+      }
+    }
+
+    &.active {
+      
+      .device-icon .icon-main {
+        transform: scale(1.1);
+        filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
+      }
+    }
+
+    &.inactive {
+      opacity: 0.6;
+      
+      .device-icon .icon-main {
+        filter: grayscale(0.5);
+      }
+    }
+
+    // Connection state styling
+    &.connected {
+      .nav-icon .icon-main {
+        filter: drop-shadow(0 0 4px rgba(0, 255, 0, 0.4));
+      }
+    }
+
+    &.disconnected {
+      opacity: 0.6;
+      
+      .nav-icon .icon-main {
+        filter: grayscale(0.5) drop-shadow(0 0 4px rgba(255, 0, 0, 0.3));
+      }
+    }
+
+    // Enhanced styling when active data is present
+    &.active-data {
+      .nav-icon .icon-main {
+        animation: pulse 2s ease-in-out infinite;
+      }
+    }
+
+    // Device type specific styling
+    &.heart-rate {
+      .device-header .device-value {
+        color: #ff6b6b;
+      }
+      
+      .device-icon .icon-main {
+        color: #ff6b6b;
+        filter: drop-shadow(0 0 4px rgba(255, 107, 107, 0.4));
+      }
+      
+      &.active .device-icon .icon-main {
+        animation: heartbeat 1.2s ease-in-out infinite;
+      }
+    }
+
+    &.power {
+      .device-header .device-value {
+        color: #ffd43b;
+      }
+      
+      .device-icon .icon-main {
+        color: #ffd43b;
+        filter: drop-shadow(0 0 4px rgba(255, 212, 59, 0.4));
+      }
+    }
+
+    &.cadence {
+      .device-header .device-value {
+        color: #ff922b;
+      }
+      
+      .device-icon .icon-main {
+        color: #ff922b;
+        filter: drop-shadow(0 0 4px rgba(255, 146, 43, 0.4));
+      }
+    }
+
+    &.speed {
+      .device-header .device-value {
+        color: #339af0;
+      }
+      
+      .device-icon .icon-main {
+        color: #339af0;
+        filter: drop-shadow(0 0 4px rgba(51, 154, 240, 0.4));
+      }
+    }
+
+    &.unknown {
+      .device-header .device-value {
+        color: #adb5bd;
+      }
+      
+      .device-icon .icon-main {
+        color: #adb5bd;
+        filter: drop-shadow(0 0 4px rgba(173, 181, 189, 0.4));
+      }
+    }
+
+
+  }
+}
+
+// Pulse animation for active devices
+@keyframes pulse {
+  0%, 100% { 
+    transform: scale(1); 
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.05); 
+    opacity: 0.8;
+  }
+}
+
+// Heartbeat animation for heart rate devices
+@keyframes heartbeat {
+  0%, 50%, 100% { 
+    transform: scale(1); 
+    filter: drop-shadow(0 0 4px rgba(255, 107, 107, 0.4));
+  }
+  25% { 
+    transform: scale(1.15); 
+    filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.8));
+  }
+  75% { 
+    transform: scale(1.05); 
+    filter: drop-shadow(0 0 6px rgba(255, 107, 107, 0.6));
+  }
+}

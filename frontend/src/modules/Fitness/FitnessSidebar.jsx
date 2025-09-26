@@ -1,7 +1,8 @@
 import React from 'react';
+import SidebarFooter from './SidebarFooter.jsx';
 import './FitnessSidebar.scss';
 
-const FitnessSidebar = ({ collections = [], activeCollection, onCollectionChange }) => {
+const FitnessSidebar = ({ collections = [], activeCollection, onContentSelect }) => {
 
   const getCollectionIcon = (name) => {
     switch (name.toLowerCase()) {
@@ -32,7 +33,7 @@ const FitnessSidebar = ({ collections = [], activeCollection, onCollectionChange
             <button
               key={collection.id || index}
               className={`nav-item ${String(activeCollection) === String(collection.id) ? 'active' : ''}`}
-              onClick={() => onCollectionChange && onCollectionChange(collection)}
+              onClick={() => onContentSelect && onContentSelect('collection', collection)}
             >
               <div className="nav-icon">{getCollectionIcon(collection.name)}</div>
               <span className="nav-label">{collection.name}</span>
@@ -40,6 +41,8 @@ const FitnessSidebar = ({ collections = [], activeCollection, onCollectionChange
           ))
         )}
       </nav>
+      
+      <SidebarFooter onContentSelect={onContentSelect} />
       
     </div>
   );

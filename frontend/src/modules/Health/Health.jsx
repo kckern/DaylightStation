@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { DaylightAPI } from "../../lib/api.mjs";
 import "./Health.scss";
-import Highcharts, { color } from 'highcharts';
+import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
 import upArrow from '../../assets/icons/up.svg';
@@ -99,10 +99,8 @@ function HealthChart({data}) {
 			min: chartMin,
 			max: chartMax,
 			minorTickInterval: 1,
-			minorGridLineWidth: 1,
 			minorGridLineColor: '#4E657E',
 			tickInterval: 1,
-			gridLineWidth: 5,
 			gridLineColor: '#FFFFFF66',
 			opposite: true,
 			offset: -8,
@@ -120,7 +118,6 @@ function HealthChart({data}) {
 			},
 			minorTickLength: 1,
 			tickLength: 3,
-			minorGridLineWidth: 1,
 			gridLineWidth: 1
 		},
 		xAxis: {

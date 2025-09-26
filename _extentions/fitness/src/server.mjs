@@ -100,73 +100,41 @@ class ANTPlusManager {
     }
   }
 
-  startSimulation() {
-    console.log('📡 Starting ANT+ simulation mode...');
-    
-    // Simulate heart rate data every 30 seconds (less frequent)
-    setInterval(() => {
-      const simulatedData = {
-        type: 'heart_rate',
-        deviceId: 12345,
-        heartRate: 65 + Math.floor(Math.random() * 40), // 65-105 BPM
-        batteryLevel: 85
-      };
-      
-      console.log('📊 Simulated HR:', simulatedData.heartRate, 'BPM');
-      this.broadcastFitnessData(simulatedData);
-    }, 30000); // Every 30 seconds
-
-    // Simulate power data every 20 seconds (less frequent)
-    setInterval(() => {
-      const simulatedData = {
-        type: 'power',
-        deviceId: 67890,
-        power: 150 + Math.floor(Math.random() * 100), // 150-250 watts
-        cadence: 80 + Math.floor(Math.random() * 20) // 80-100 RPM
-      };
-      
-      console.log('📊 Simulated Power:', simulatedData.power, 'W,', simulatedData.cadence, 'RPM');
-      this.broadcastFitnessData(simulatedData);
-    }, 20000); // Every 20 seconds
-
-    console.log('🔔 Simulation will log data every 20-30 seconds');
-  }
-
   startScanning() {
     if (this.devices.size === 0) {
       console.log('⚠️  No ANT+ devices available - skipping sensor scanning');
       return;
     }
     
-    console.log(`📡 Starting ANT+ heart rate sensor scan on ${this.devices.size} device(s)...`);
+    console.log(`📡 Starting ANT+ sensor scan on ${this.devices.size} device(s)...`);
     
-    // Focus only on heart rate sensors - scan with all available devices
-    this.scanForHeartRateSensors();
+    // Scan with all available devices and attach all sensors dynamically
+    this.scanForAllSensors();
     
-    console.log('❤️  Scanning for heart rate monitors - waiting for device connections...');
+    console.log('🛰️  Scanning for ANT+ devices - waiting for broadcasts...');
   }
 
-  async scanForHeartRateSensors() {
+  async scanForAllSensors() {
     if (this.devices.size === 0) {
-      console.log('⚠️  No ANT+ devices available - cannot scan for heart rate sensors');
+      console.log('⚠️  No ANT+ devices available - cannot scan for sensors');
       return;
     }
     
     // Set up scanning for each device
     for (const [deviceIndex, device] of this.devices) {
       try {
-        console.log(`🔗 Setting up heart rate scanning on ANT+ device ${deviceIndex}...`);
-        await this.setupHeartRateScanning(device, deviceIndex);
+        console.log(`🔗 Setting up scanning on ANT+ device ${deviceIndex}...`);
+        await this.setupSensorScanning(device, deviceIndex);
       } catch (error) {
         console.error(`❌ Failed to setup scanning on device ${deviceIndex}:`, error.message);
       }
     }
   }
 
-  async setupHeartRateScanning(device, deviceIndex) {
+  async setupSensorScanning(device, deviceIndex) {
     try {
-      // Use the same import approach as the working reference
-      const { HeartRateSensor } = require('incyclist-ant-plus');
+      // Dynamically import all available sensor classes from incyclist-ant-plus
+      const ant = require('incyclist-ant-plus');
       
       console.log(`🔗 Getting ANT+ channel for device ${deviceIndex}...`);
       const channel = device.getChannel();
@@ -202,56 +170,62 @@ class ANTPlusManager {
         if (detectedDevices.has(deviceId)) {
           detectedDevices.get(deviceId).dataPackets++;
         }
-        
-        // Only log heart rate data
-        if (data.ComputedHeartRate) {
-          console.log(`[${timestamp}] ${deviceId} bpm ${data.ComputedHeartRate} (Dongle ${deviceIndex})`);
-          
-          // Broadcast heart rate data with dongle information
-          this.broadcastFitnessData({
-            type: 'heart_rate',
-            deviceId: deviceId,
-            heartRate: data.ComputedHeartRate,
-            batteryLevel: data.BatteryLevel || null,
-            heartBeatCount: data.HeartBeatCount || null,
-            profile: profile,
-            dongleIndex: deviceIndex
-          });
-        }
+        // Log generic ANT+ data and broadcast raw content without guessing names
+        console.log(`[${timestamp}] ${deviceId} ${profile}:`, JSON.stringify(data));
+
+        this.broadcastFitnessData({
+          type: 'ant',
+          profile,
+          deviceId,
+          dongleIndex: deviceIndex,
+          data
+        });
       });
 
-      // Create and attach heart rate sensor (like hardware diagnostic)
-      console.log(`❤️  Creating heart rate sensor for device ${deviceIndex}...`);
-      const hrSensor = new HeartRateSensor();
-      console.log(`🔗 Attaching heart rate sensor to channel ${deviceIndex}...`);
-      channel.attach(hrSensor);
+      // Attach all available sensors dynamically (without hardcoding names)
+      const sensorEntries = Object.entries(ant)
+        .filter(([name, ctor]) => typeof ctor === 'function' && /Sensor$/.test(name));
+
+      if (sensorEntries.length === 0) {
+        console.log(`⚠️  No sensor classes found in incyclist-ant-plus export; proceeding with raw scanner`);
+      } else {
+        for (const [name, SensorClass] of sensorEntries) {
+          try {
+            const sensorInstance = new SensorClass();
+            channel.attach(sensorInstance);
+            console.log(`🔗 Attached ${name} on device ${deviceIndex}`);
+          } catch (attachErr) {
+            console.log(`⚠️  Failed to attach ${name} on device ${deviceIndex}: ${attachErr.message}`);
+          }
+        }
+      }
       
       console.log(`🔍 Starting ANT+ scanner for device ${deviceIndex}...`);
-      console.log(`💡 Device ${deviceIndex} ready for heart rate monitors!`);
+      console.log(`💡 Device ${deviceIndex} ready for ANT+ devices!`);
       
       // Start scanning (indefinitely)
       await channel.startScanner();
-      console.log(`✅ Heart Rate scanning active on device ${deviceIndex} - waiting for broadcasts...`);
+      console.log(`✅ Scanning active on device ${deviceIndex} - waiting for broadcasts...`);
       
     } catch (error) {
-      console.error(`❌ Heart Rate Sensor setup failed on device ${deviceIndex}:`, error.message);
+      console.error(`❌ Sensor setup failed on device ${deviceIndex}:`, error.message);
       console.log(`💡 ANT+ scanning disabled on device ${deviceIndex} due to initialization failure`);
     }
   }
 
   startRawChannelMonitoring() {
     // Simple channel monitoring as fallback
-    console.log('📡 Monitoring ANT+ channels for heart rate data...');
+    console.log('📡 Monitoring ANT+ channels for data...');
     // This would require more low-level ANT+ implementation
     // For now, just log that we're ready
-    console.log('📡 Ready to receive heart rate data - start your workout!');
+    console.log('📡 Ready to receive ANT+ data - start your workout!');
   }
 
   broadcastFitnessData(data) {
     const message = {
       topic: 'fitness',
       source: 'fitness',
-      type: data.type || 'heart_rate',
+      type: data.type || 'ant',
       timestamp: new Date().toISOString(),
       ...data
     };
@@ -474,7 +448,7 @@ async function startServer() {
     console.log(`🌐 Health check: http://localhost:${PORT}/health`);
     console.log(`📊 Status: http://localhost:${PORT}/status`);
     console.log(`📺 TV Control: GET http://localhost:${PORT}/tv/on or /tv/off`);
-    console.log('🎯 Ready for ANT+ heart rate monitoring and TV control!');
+    console.log('🎯 Ready for ANT+ monitoring and TV control!');
   });
   
   return server;
