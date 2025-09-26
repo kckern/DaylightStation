@@ -79,7 +79,7 @@ class SpeedDevice extends Device {
     this.smoothedRpm = 0;     // exponentially smoothed RPM
     this._rpmAlpha = 0.3;     // smoothing factor (EMA)
     this.lastRevolutionEpoch = null; // Date of last revolution (wall clock)
-    this._rpmInactivityMs = 15000;   // 15s inactivity threshold
+    this._rpmInactivityMs = 5000;   // 15s inactivity threshold
   }
 
   updateData(rawData) {
@@ -654,7 +654,7 @@ export const useFitnessWebSocket = (fitnessConfiguration) => {
         
         return hasChanges ? newDevices : prevDevices;
       });
-    }, 10000); // Check every 10 seconds
+    }, 3000); // Check every 3 seconds
 
     return () => clearInterval(cleanupInterval);
   }, []);
