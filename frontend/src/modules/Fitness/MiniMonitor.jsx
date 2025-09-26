@@ -35,9 +35,10 @@ const MiniMonitor = ({ devices = [], type = 'heart-rate' }) => {
     if (activeDevice.cadence) {
       return { value: activeDevice.cadence, unit: 'RPM', type: 'cadence' };
     }
-    
-    if (activeDevice.speedKmh) {
-      return { value: activeDevice.speedKmh.toFixed(1), unit: 'km/h', type: 'speed' };
+    // Treat speed devices as RPM-only wheel sensors
+    if (activeDevice.type === 'speed') {
+      const rpm = activeDevice.wheelRpm || activeDevice.smoothedRpm || activeDevice.instantRpm || 0;
+      return { value: Math.round(rpm), unit: 'RPM', type: 'rpm' };
     }
     
     return null;
@@ -56,7 +57,7 @@ const MiniMonitor = ({ devices = [], type = 'heart-rate' }) => {
       case 'heart-rate': return 'heart-rate';
       case 'power': return 'power';
       case 'cadence': return 'cadence';
-      case 'speed': return 'speed';
+      case 'rpm': return 'rpm';
       default: return 'default';
     }
   };

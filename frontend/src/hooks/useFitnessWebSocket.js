@@ -63,9 +63,13 @@ class SpeedDevice extends Device {
   constructor(deviceId, rawData = {}) {
     super(deviceId, 'Speed', rawData);
     this.type = 'speed';
-    this.speed = rawData.CalculatedSpeed || 0; // m/s
-    this.speedKmh = rawData.CalculatedSpeed ? (rawData.CalculatedSpeed * 3.6) : 0;
-    this.distance = rawData.CalculatedDistance || 0;
+    // If the cumulative revolution field exists, we treat this device as an RPM (wheel) meter only
+    // and intentionally ignore instantaneous speed so the UI does not show speed before RPM is available.
+    this.isRpmOnly = rawData.CumulativeSpeedRevolutionCount !== undefined;
+    this.speed = this.isRpmOnly ? 0 : (rawData.CalculatedSpeed || 0); // m/s (suppressed when rpm-only)
+    this.speedKmh = this.isRpmOnly ? 0 : (rawData.CalculatedSpeed ? (rawData.CalculatedSpeed * 3.6) : 0);
+    // Distance can also be misleading for rpm-only usage; keep but zero if rpm-only to avoid premature display.
+    this.distance = this.isRpmOnly ? 0 : (rawData.CalculatedDistance || 0);
     this.revolutionCount = rawData.CumulativeSpeedRevolutionCount || 0;
     this.eventTime = rawData.SpeedEventTime || 0;
     // RPM tracking (wheel RPM derived from revolution count & event time)
@@ -74,6 +78,8 @@ class SpeedDevice extends Device {
     this.instantRpm = 0;      // raw instantaneous RPM calculation
     this.smoothedRpm = 0;     // exponentially smoothed RPM
     this._rpmAlpha = 0.3;     // smoothing factor (EMA)
+    this.lastRevolutionEpoch = null; // Date of last revolution (wall clock)
+    this._rpmInactivityMs = 15000;   // 15s inactivity threshold
   }
 
   updateData(rawData) {
@@ -84,9 +90,20 @@ class SpeedDevice extends Device {
     const prevTime = this.eventTime;
 
     // Update with new raw values
-    this.speed = rawData.CalculatedSpeed || 0;
-    this.speedKmh = rawData.CalculatedSpeed ? (rawData.CalculatedSpeed * 3.6) : 0;
-    this.distance = rawData.CalculatedDistance || 0;
+    // If at any point we detect the cumulative revolution field, lock into rpm-only mode
+    if (rawData.CumulativeSpeedRevolutionCount !== undefined) {
+      this.isRpmOnly = true;
+    }
+    if (this.isRpmOnly) {
+      // Suppress speed & distance so UI relies solely on RPM
+      this.speed = 0;
+      this.speedKmh = 0;
+      this.distance = 0; // Could keep accumulating if desired; requirement says to ignore speed entirely
+    } else {
+      this.speed = rawData.CalculatedSpeed || 0;
+      this.speedKmh = rawData.CalculatedSpeed ? (rawData.CalculatedSpeed * 3.6) : 0;
+      this.distance = rawData.CalculatedDistance || 0;
+    }
     this.revolutionCount = rawData.CumulativeSpeedRevolutionCount || 0;
     this.eventTime = rawData.SpeedEventTime || 0;
 
@@ -103,19 +120,34 @@ class SpeedDevice extends Device {
       // Convert event time ticks (1/1024 s) to seconds
       const seconds = timeDiff / 1024;
       if (seconds > 0 && revDiff >= 0) {
-        const rpm = (revDiff / seconds) * 60; // revolutions per minute
-        // Basic sanity filter: ignore implausible spikes
-        if (rpm > 0 && rpm < 400) {
-          this.instantRpm = rpm;
-          this.smoothedRpm = this.smoothedRpm === 0
-            ? rpm
-            : (this._rpmAlpha * rpm) + (1 - this._rpmAlpha) * this.smoothedRpm;
+        if (revDiff > 0) {
+          const rpm = (revDiff / seconds) * 60; // revolutions per minute
+          // Basic sanity filter: ignore implausible spikes
+            if (rpm > 0 && rpm < 400) {
+              this.instantRpm = rpm;
+              this.smoothedRpm = this.smoothedRpm === 0
+                ? rpm
+                : (this._rpmAlpha * rpm) + (1 - this._rpmAlpha) * this.smoothedRpm;
+              this.lastRevolutionEpoch = Date.now();
+            }
+        } else {
+          // No new revolutions; check inactivity window based on wall clock
+          if (this.lastRevolutionEpoch && (Date.now() - this.lastRevolutionEpoch) > this._rpmInactivityMs) {
+            this.instantRpm = 0;
+            this.smoothedRpm = 0;
+          }
         }
       }
     }
 
     this.prevRevolutionCount = this.revolutionCount;
     this.prevEventTime = this.eventTime;
+
+    // If we have never recorded a revolution yet, ensure RPM is zero
+    if (this.lastRevolutionEpoch === null) {
+      this.instantRpm = 0;
+      this.smoothedRpm = 0;
+    }
   }
 
   // Getter to expose the best RPM estimate (prefer smoothed)
@@ -604,6 +636,19 @@ export const useFitnessWebSocket = (fitnessConfiguration) => {
           } else if (timeSinceLastSeen > 60000 && device.isActive) { // 60 seconds
             newDevices.set(deviceId, { ...device, isActive: false });
             hasChanges = true;
+          }
+
+          // Additional RPM inactivity handling: if this is a speed (rpm-only) device and
+          // no revolutions have occurred within the inactivity window (10-15s), force RPM to zero
+          if (device.type === 'speed' && device.isRpmOnly && device.lastRevolutionEpoch) {
+            const inactivityMs = device._rpmInactivityMs || 8000;
+            if ((Date.now() - device.lastRevolutionEpoch) > inactivityMs) {
+              if (device.instantRpm !== 0 || device.smoothedRpm !== 0) {
+                device.instantRpm = 0;
+                device.smoothedRpm = 0;
+                hasChanges = true; // reflect change so state updates
+              }
+            }
           }
         }
         
