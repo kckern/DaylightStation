@@ -57,7 +57,10 @@ const FitnessUsers = ({ fitnessConfiguration }) => {
     if (device.heartRate !== undefined) return '❤️';
     if (device.power !== undefined) return '⚡';
     if (device.cadence !== undefined) return '⚙️';
-    if (device.speedKmh !== undefined) return '🚴';
+    if (device.type === 'speed') {
+      // RPM-only wheel sensor
+      return '�';
+    }
     return '📡';
   };
 
@@ -65,7 +68,11 @@ const FitnessUsers = ({ fitnessConfiguration }) => {
     if (device.heartRate) return `${device.heartRate}`;
     if (device.power) return `${device.power}`;
     if (device.cadence) return `${device.cadence}`;
-    if (device.speedKmh) return `${device.speedKmh.toFixed(1)}`;
+    if (device.type === 'speed') {
+      const rpm = device.wheelRpm || device.smoothedRpm || device.instantRpm;
+      if (rpm) return `${Math.round(rpm)}`;
+      return '0';
+    }
     return '--';
   };
 
@@ -73,7 +80,7 @@ const FitnessUsers = ({ fitnessConfiguration }) => {
     if (device.heartRate) return 'BPM';
     if (device.power) return 'W';
     if (device.cadence) return 'RPM';
-    if (device.speedKmh) return 'km/h';
+    if (device.type === 'speed') return 'RPM';
     return '';
   };
 
@@ -81,7 +88,7 @@ const FitnessUsers = ({ fitnessConfiguration }) => {
     if (device.heartRate !== undefined) return 'heart-rate';
     if (device.power !== undefined) return 'power';
     if (device.cadence !== undefined) return 'cadence';
-    if (device.speedKmh !== undefined) return 'speed';
+    if (device.type === 'speed') return 'rpm';
     return 'unknown';
   };
 
