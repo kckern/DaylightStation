@@ -2,7 +2,7 @@ import React from 'react';
 import SidebarFooter from './SidebarFooter.jsx';
 import './FitnessSidebar.scss';
 
-const FitnessSidebar = ({ collections = [], activeCollection, onContentSelect }) => {
+const FitnessSidebar = ({ collections = [], activeCollection, onContentSelect, fitnessConfiguration }) => {
 
   const getCollectionIcon = (name) => {
     switch (name.toLowerCase()) {
@@ -41,9 +41,9 @@ const FitnessSidebar = ({ collections = [], activeCollection, onContentSelect })
           ))
         )}
       </nav>
-      
-      <SidebarFooter onContentSelect={onContentSelect} />
-      
+
+      <SidebarFooter onContentSelect={onContentSelect} fitnessConfiguration={fitnessConfiguration} />
+
     </div>
   );
 };

@@ -3,7 +3,7 @@ import { Group, Text, Badge, Stack } from '@mantine/core';
 import { useFitnessWebSocket } from '../../hooks/useFitnessWebSocket.js';
 import './FitnessUsers.scss';
 
-const FitnessUsers = () => {
+const FitnessUsers = ({ fitnessConfiguration }) => {
   // Use the fitness-specific WebSocket hook
   const { 
     connected, 
@@ -16,7 +16,7 @@ const FitnessUsers = () => {
     deviceCount, 
     latestData, 
     lastUpdate 
-  } = useFitnessWebSocket();
+  } = useFitnessWebSocket(fitnessConfiguration);
 
   // Debug logging
   useEffect(() => {
