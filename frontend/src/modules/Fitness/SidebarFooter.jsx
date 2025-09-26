@@ -21,9 +21,11 @@ const SidebarFooter = ({ onContentSelect, fitnessConfiguration }) => {
     if (device.heartRate !== undefined) return '❤️';
     if (device.power !== undefined) return '⚡';
     if (device.cadence !== undefined) return '⚙️';
-    // If speed sensor and has wheelRPM emphasize wheel
-    if (device.type === 'speed' && (device.wheelRpm || device.instantRpm || device.smoothedRpm)) return '🛞';
-    if (device.speedKmh !== undefined) return '🚴';
+    // Treat former speed devices as RPM-only wheel sensors; use wheel icon when RPM present, else generic
+    if (device.type === 'speed') {
+      if (device.wheelRpm || device.instantRpm || device.smoothedRpm) return '🛞';
+      return '🛞'; // keep wheel even if zero to avoid cyclist icon
+    }
     return '📡';
   };
 
@@ -39,8 +41,7 @@ const SidebarFooter = ({ onContentSelect, fitnessConfiguration }) => {
       const rpm = device.wheelRpm || device.smoothedRpm || device.instantRpm;
       if (rpm) return `${Math.round(rpm)}`;
     }
-    // Speed
-    if (device.speedKmh) return `${device.speedKmh.toFixed(1)}`;
+    // Former speed (suppressed) intentionally ignored; RPM-only mode
     return '--';
   };
 
@@ -48,8 +49,7 @@ const SidebarFooter = ({ onContentSelect, fitnessConfiguration }) => {
     if (device.heartRate !== undefined) return 'heart-rate';
     if (device.power !== undefined) return 'power';
     if (device.cadence !== undefined) return 'cadence';
-    if (device.type === 'speed' && (device.wheelRpm || device.smoothedRpm || device.instantRpm)) return 'rpm';
-    if (device.speedKmh !== undefined) return 'speed';
+    if (device.type === 'speed') return 'rpm';
     return 'unknown';
   };
 
