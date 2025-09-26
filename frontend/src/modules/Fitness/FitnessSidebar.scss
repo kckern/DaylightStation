@@ -1,5 +1,5 @@
 .fitness-sidebar {
-  width: 3rem;
+  width: 4rem;
   height: 100%;
   background: #00000055;
   display: flex;
@@ -11,6 +11,7 @@
   bottom: 0;
   margin-right: 1ex;
   z-index: 1000;
+  overflow: hidden;
 
 
   .sidebar-header {
@@ -53,6 +54,7 @@
       width: 100%;
       text-align: left;
       position: relative;
+      padding-left: 1rem;
 
       &.active {
         background: rgba(255, 255, 255, 0.15);
@@ -92,39 +94,6 @@
       .loading-icon {
         font-size: 24px;
         animation: spin 1s linear infinite;
-      }
-    }
-  }
-
-  .sidebar-footer {
-    margin-top: auto;
-    width: 100%;
-    padding: 0 16px;
-
-    .heart-rate-indicator {
-      display: flex;
-      align-items: center;
-      padding: 12px 8px;
-      border-radius: 8px;
-      background: rgba(255, 0, 0, 0.1);
-      border: 1px solid rgba(255, 0, 0, 0.2);
-
-      .hr-icon {
-        font-size: 20px;
-        margin-right: 12px;
-        animation: heartbeat 1.5s ease-in-out infinite;
-        min-width: 32px;
-        display: flex;
-        justify-content: center;
-      }
-
-      .hr-label {
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.8);
-        opacity: 0;
-        transform: translateX(-20px);
-        transition: all 0.3s ease;
-        white-space: nowrap;
       }
     }
   }

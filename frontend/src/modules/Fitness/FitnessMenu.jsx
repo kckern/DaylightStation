@@ -3,7 +3,7 @@ import { LoadingOverlay, Alert } from '@mantine/core';
 import { DaylightAPI } from '../../lib/api.mjs';
 import './FitnessMenu.scss';
 
-const FitnessMenu = ({ activeCollection, onShowSelect }) => {
+const FitnessMenu = ({ activeCollection, onContentSelect }) => {
   const [shows, setShows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -66,9 +66,8 @@ const FitnessMenu = ({ activeCollection, onShowSelect }) => {
 
   if (loading) {
     return (
-      <div style={{ position: 'relative', minHeight: '200px' }}>
+      <div style={{ position: 'relative', height:"100%", width:"100%" }}>
         <LoadingOverlay visible={true} />
-        <div style={{ color: '#fff', marginTop: 8 }}>Loading fitness shows...</div>
       </div>
     );
   }
@@ -85,8 +84,8 @@ const FitnessMenu = ({ activeCollection, onShowSelect }) => {
 
   const handleShowClick = (show) => {
     console.log('🎬 Show selected:', show);
-    if (onShowSelect) {
-      onShowSelect(show);
+    if (onContentSelect) {
+      onContentSelect('show', show);
     }
   };
 

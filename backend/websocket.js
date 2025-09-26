@@ -16,7 +16,6 @@ export function createWebsocketServer(server) {
     wssNav = new WebSocketServer({ server, path: '/ws' });
     console.log('WebSocket server created, adding listeners...');
     wssNav.on('connection', (ws) => {
-    //  console.log('WebSocket connection established on /ws');
       
       // Handle incoming messages from fitness controller
       ws.on('message', (message) => {
@@ -24,9 +23,7 @@ export function createWebsocketServer(server) {
           const data = JSON.parse(message.toString());
           
           // Check if message is from fitness controller
-          if (data.source === 'fitness') {
-        //    console.log('📊 Received fitness data:', data);
-            
+          if (data.source === 'fitness' || data.source === 'fitness-simulator') {
             // Broadcast to all connected UI clients with fitness topic
             broadcastToWebsockets({
               topic: 'fitness',
@@ -35,12 +32,11 @@ export function createWebsocketServer(server) {
           }
         } catch (error) {
           // Ignore non-JSON messages or parsing errors
-          console.debug('Non-JSON WebSocket message received');
         }
       });
       
       ws.on('close', () => {
-      //  console.log('WebSocket connection closed on /ws');
+        // Connection closed
       });
     });
     wssNav.on('error', (err) => {
@@ -78,18 +74,13 @@ export function restartWebsocketServer() {
 }
 
 export function broadcastToWebsockets(data) {
-//  console.log({ broadcastToWebsockets: data });
-  if (!wssNav) return console.warn('No WebSocket server for messages');
+  if (!wssNav) return;
   
   const msg = typeof data === 'string' ? data : JSON.stringify(data);
-//  console.debug('Client Count:', wssNav.clients.size);
   
   wssNav.clients.forEach((client) => {
     if (client.readyState === client.OPEN) {
       client.send(msg);
-   //   console.debug('[WebSocket] Message sent:', msg);
-    } else {
-      console.warn('[WebSocket] Client not open, skipping send:', client.readyState);
     }
   });
 }

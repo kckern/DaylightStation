@@ -1,0 +1,75 @@
+.mini-monitor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.8;
+  transition: all 0.3s ease;
+
+  .monitor-value {
+    font-size: 12px;
+    font-weight: 700;
+    color: white;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  }
+
+  .monitor-unit {
+    font-size: 8px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: -1px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  // Type-specific styling and animations
+  &.heart-rate {
+    .monitor-value {
+      color: #ff6b6b;
+      animation: heartbeat 1.2s ease-in-out infinite;
+    }
+  }
+
+  &.power {
+    .monitor-value {
+      color: #ffd43b;
+    }
+  }
+
+  &.cadence {
+    .monitor-value {
+      color: #ff922b;
+    }
+  }
+
+  &.speed {
+    .monitor-value {
+      color: #339af0;
+    }
+  }
+
+  &.default {
+    .monitor-value {
+      color: #adb5bd;
+    }
+  }
+}
+
+// Heartbeat animation
+@keyframes heartbeat {
+  0%, 50%, 100% { 
+    transform: scale(1); 
+    text-shadow: 0 0 4px rgba(255, 107, 107, 0.3);
+  }
+  25% { 
+    transform: scale(1.05); 
+    text-shadow: 0 0 8px rgba(255, 107, 107, 0.6);
+  }
+  75% { 
+    transform: scale(1.02); 
+    text-shadow: 0 0 6px rgba(255, 107, 107, 0.4);
+  }
+}

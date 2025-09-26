@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "ws": "^8.14.2",
-    "incyclist-ant-plus": "^0.3.5"
+    "incyclist-ant-plus": "^0.3.5",
+    "ws": "^8.18.3"
   },
   "engines": {
     "node": ">=18.0.0"
