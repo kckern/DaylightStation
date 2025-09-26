@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 
 /**
- * Custom hook for listening to fitness-specific WebSocket messages
+ *Custom hook for listening to fitness-specific WebSocket messages
  * Connects to the same /ws endpoint but only processes fitness topic messages
  */
 export const useFitnessWebSocket = () => {
   const [connected, setConnected] = useState(false);
   const [latestData, setLatestData] = useState(null);
-  const [heartRateDevices, setHeartRateDevices] = useState(new Map());
+  const [fitnessDevices, setFitnessDevices] = useState(new Map());
   const [lastUpdate, setLastUpdate] = useState(null);
   
   const wsRef = useRef(null);
@@ -33,7 +33,6 @@ export const useFitnessWebSocket = () => {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('Fitness WebSocket connected successfully');
       setConnected(true);
       reconnectAttemptsRef.current = 0;
     };
@@ -44,39 +43,65 @@ export const useFitnessWebSocket = () => {
         
         // Only process fitness messages
         if (data.topic === 'fitness') {
-          console.log('📊 Fitness WebSocket received:', data);
-          console.log('📊 Message keys:', Object.keys(data));
           setLatestData(data);
           setLastUpdate(new Date());
           
-          // Extract heart rate data specifically - check all possible field names
-          if (data.type === 'heart_rate' && data.deviceId) {
-            const heartRateValue = data.heartRate || data.bpm || data.ComputedHeartRate || data.value;
+          // Process ANT+ device data
+          if (data.type === 'ant' && data.deviceId && data.data) {
+            const deviceId = String(data.deviceId);
+            const profile = data.profile;
+            const rawData = data.data;
             
-            console.log(`💓 Processing device ${data.deviceId}: heartRate=${heartRateValue}`);
+            console.log(`� Processing ${profile} device ${deviceId}:`, rawData);
             
-            if (heartRateValue !== undefined && heartRateValue !== null) {
-              const deviceId = String(data.deviceId);
-              
-              console.log(`✅ Adding/updating device ${deviceId} with BPM: ${heartRateValue}`);
-              
-              setHeartRateDevices(prevDevices => {
-                const newDevices = new Map(prevDevices);
-                newDevices.set(deviceId, {
-                  deviceId: deviceId,
-                  value: heartRateValue,
-                  timestamp: data.timestamp,
-                  batteryLevel: data.batteryLevel,
-                  heartBeatCount: data.heartBeatCount,
-                  lastSeen: new Date(),
-                  isActive: true
-                });
-                console.log(`📊 Device map now has ${newDevices.size} devices:`, Array.from(newDevices.keys()));
-                return newDevices;
-              });
+            // Extract metrics based on profile type
+            let deviceInfo = {
+              deviceId,
+              profile,
+              dongleIndex: data.dongleIndex,
+              timestamp: data.timestamp,
+              lastSeen: new Date(),
+              isActive: true,
+              batteryLevel: rawData.BatteryLevel,
+              batteryVoltage: rawData.BatteryVoltage,
+              serialNumber: rawData.SerialNumber,
+              manufacturerId: rawData.ManId
+            };
+            
+            // Add profile-specific metrics
+            if (profile === 'HR' || profile === 'HeartRate') {
+              deviceInfo.type = 'heart_rate';
+              deviceInfo.heartRate = rawData.ComputedHeartRate;
+              deviceInfo.beatCount = rawData.BeatCount;
+              deviceInfo.beatTime = rawData.BeatTime;
+            } else if (profile === 'SPD' || profile === 'Speed') {
+              deviceInfo.type = 'speed';
+              deviceInfo.speed = rawData.CalculatedSpeed; // m/s
+              deviceInfo.speedKmh = rawData.CalculatedSpeed ? (rawData.CalculatedSpeed * 3.6) : null;
+              deviceInfo.distance = rawData.CalculatedDistance;
+              deviceInfo.revolutionCount = rawData.CumulativeSpeedRevolutionCount;
+              deviceInfo.eventTime = rawData.SpeedEventTime;
+            } else if (profile === 'CAD' || profile === 'Cadence') {
+              deviceInfo.type = 'cadence';
+              deviceInfo.cadence = rawData.CalculatedCadence;
+              deviceInfo.revolutionCount = rawData.CumulativeCadenceRevolutionCount;
+              deviceInfo.eventTime = rawData.CadenceEventTime;
+            } else if (profile === 'PWR' || profile === 'Power') {
+              deviceInfo.type = 'power';
+              deviceInfo.power = rawData.InstantaneousPower;
+              deviceInfo.cadence = rawData.Cadence;
+              deviceInfo.pedalPowerBalance = rawData.PedalPowerBalance;
             } else {
-              console.log('⚠️ Heart rate message missing BPM value:', data);
+              deviceInfo.type = 'unknown';
+              deviceInfo.rawData = rawData;
             }
+            
+            setFitnessDevices(prevDevices => {
+              const newDevices = new Map(prevDevices);
+              newDevices.set(deviceId, deviceInfo);
+
+              return newDevices;
+            });
           }
         }
       } catch (e) {
@@ -114,17 +139,17 @@ export const useFitnessWebSocket = () => {
   useEffect(() => {
     const cleanupInterval = setInterval(() => {
       const now = new Date();
-      setHeartRateDevices(prevDevices => {
+      setFitnessDevices(prevDevices => {
         const newDevices = new Map(prevDevices);
         let hasChanges = false;
         
         for (const [deviceId, device] of newDevices.entries()) {
           const timeSinceLastSeen = now - device.lastSeen;
-          // Mark as inactive after 30 seconds, remove after 5 minutes
-          if (timeSinceLastSeen > 300000) { // 5 minutes
+          // Mark as inactive after 60 seconds, remove after 3 minutes
+          if (timeSinceLastSeen > 180000) { // 3 minutes
             newDevices.delete(deviceId);
             hasChanges = true;
-          } else if (timeSinceLastSeen > 30000 && device.isActive) { // 30 seconds
+          } else if (timeSinceLastSeen > 60000 && device.isActive) { // 60 seconds
             newDevices.set(deviceId, { ...device, isActive: false });
             hasChanges = true;
           }
@@ -150,13 +175,21 @@ export const useFitnessWebSocket = () => {
     };
   }, []);
 
+  const allDevices = Array.from(fitnessDevices.values());
+  
   return {
     connected,
     latestData,
-    heartRateDevices: Array.from(heartRateDevices.values()),
-    deviceCount: heartRateDevices.size,
+    allDevices,
+    deviceCount: fitnessDevices.size,
     lastUpdate,
-    // Legacy compatibility - return the most recent device
-    heartRate: heartRateDevices.size > 0 ? Array.from(heartRateDevices.values())[0] : null
+    // Categorized device arrays
+    heartRateDevices: allDevices.filter(d => d.type === 'heart_rate'),
+    speedDevices: allDevices.filter(d => d.type === 'speed'),
+    cadenceDevices: allDevices.filter(d => d.type === 'cadence'),
+    powerDevices: allDevices.filter(d => d.type === 'power'),
+    unknownDevices: allDevices.filter(d => d.type === 'unknown'),
+    // Legacy compatibility - return the most recent heart rate device
+    heartRate: allDevices.find(d => d.type === 'heart_rate') || null
   };
 };

@@ -7,7 +7,7 @@
   box-sizing: border-box;
   background-color: #000;
   font-family: 'Roboto Condensed', sans-serif;
-  touch-action: none;
+  touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -24,8 +24,8 @@
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   background-color: #333;
   color: #FFF;
-  overflow-y: scroll;
-  padding-left: 4rem;
+  overflow: hidden;
+  position: relative;
   
   /* Ensure we maintain aspect ratio when constrained by either dimension */
   @media (max-aspect-ratio: 16/9) {
@@ -38,5 +38,15 @@
     /* Window is wider than 16:9, constrain by height */
     width: 1380px;
     height: 768px;
+  }
+
+  .fitness-main-content {
+    flex: 1;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-left: 5rem;
+    padding: 0;
+    box-sizing: border-box;
   }
 }

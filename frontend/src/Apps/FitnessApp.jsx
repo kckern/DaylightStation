@@ -11,6 +11,7 @@ import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 const FitnessApp = () => {
   const [fitnessMessage, setFitnessMessage] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show'
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
   const viewportRef = useRef(null);
@@ -24,22 +25,33 @@ const FitnessApp = () => {
     return Array.isArray(src) ? src : [];
   }, [fitnessMessage]);
 
-  const handleCollectionChange = (collectionOrId) => {
-    const id =
-      typeof collectionOrId === 'object' && collectionOrId !== null
-        ? collectionOrId.id
-        : collectionOrId;
-    setActiveCollection(id);
-    // Reset selected show when collection changes
-    setSelectedShow(null);
-  };
-
-  const handleShowSelect = (show) => {
-    console.log('🎬 FitnessApp: Show selected:', show);
-    setSelectedShow(show.plex);
+  const handleContentSelect = (category, value) => {
+    console.log('📱 FitnessApp: Content selected:', { category, value });
+    
+    switch (category) {
+      case 'collection':
+        const id = typeof value === 'object' && value !== null ? value.id : value;
+        setActiveCollection(id);
+        setCurrentView('menu');
+        setSelectedShow(null);
+        break;
+        
+      case 'show':
+        setSelectedShow(value.plex);
+        setCurrentView('show');
+        break;
+        
+      case 'users':
+        setCurrentView('users');
+        break;
+        
+      default:
+        console.warn('Unknown content category:', category);
+    }
   };
 
   const handleBackToMenu = () => {
+    setCurrentView('menu'); // Switch back to menu view
     setSelectedShow(null);
   };
 
@@ -73,21 +85,27 @@ const FitnessApp = () => {
           <FitnessSidebar 
             collections={collections}
             activeCollection={activeCollection}
-            onCollectionChange={handleCollectionChange}
+            onContentSelect={handleContentSelect}
           />
-          {selectedShow ? (
-            <FitnessShow 
-              showId={selectedShow} 
-              onBack={handleBackToMenu}
-              viewportRef={viewportRef}
-            />
-          ) : (
-            <FitnessMenu 
-              collections={collections} 
-              activeCollection={activeCollection} 
-              onShowSelect={handleShowSelect}
-            />
-          )}
+          <div className="fitness-main-content">
+            {currentView === 'users' && (
+              <FitnessUsers />
+            )}
+            {currentView === 'show' && selectedShow && (
+              <FitnessShow 
+                showId={selectedShow} 
+                onBack={handleBackToMenu}
+                viewportRef={viewportRef}
+              />
+            )}
+            {currentView === 'menu' && (
+              <FitnessMenu 
+                collections={collections} 
+                activeCollection={activeCollection} 
+                onContentSelect={handleContentSelect}
+              />
+            )}
+          </div>
         </div>
       </div>
     </MantineProvider>

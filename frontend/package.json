@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 3111",
-    "build": "vite build",
+    "dev": "SASS_SILENCE_DEPRECATIONS=legacy-js-api vite --port 3111",
+    "build": "SASS_SILENCE_DEPRECATIONS=legacy-js-api vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
@@ -52,7 +52,8 @@
     "postcss": "^8.4.39",
     "postcss-preset-mantine": "^1.15.0",
     "postcss-simple-vars": "^7.0.1",
-    "sass": "^1.85.1",
+    "sass": "npm:sass-embedded@^1.93.2",
+    "sass-embedded": "^1.93.2",
     "vite": "^5.1.4"
   }
 }
