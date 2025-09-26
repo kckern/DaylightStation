@@ -3,7 +3,7 @@ import { useFitnessWebSocket } from '../../hooks/useFitnessWebSocket.js';
 import MiniMonitor from './MiniMonitor.jsx';
 import './SidebarFooter.scss';
 
-const SidebarFooter = ({ onContentSelect }) => {
+const SidebarFooter = ({ onContentSelect, fitnessConfiguration }) => {
   const { 
     connected, 
     allDevices,    heartRateDevices, 
@@ -11,7 +11,7 @@ const SidebarFooter = ({ onContentSelect }) => {
     cadenceDevices,
     powerDevices,
     deviceCount
-  } = useFitnessWebSocket();
+  } = useFitnessWebSocket(fitnessConfiguration);
 
   const activeDevices = allDevices.filter(device => device.isActive);
   const hasActiveDevices = activeDevices.length > 0;
@@ -21,14 +21,25 @@ const SidebarFooter = ({ onContentSelect }) => {
     if (device.heartRate !== undefined) return '❤️';
     if (device.power !== undefined) return '⚡';
     if (device.cadence !== undefined) return '⚙️';
+    // If speed sensor and has wheelRPM emphasize wheel
+    if (device.type === 'speed' && (device.wheelRpm || device.instantRpm || device.smoothedRpm)) return '🛞';
     if (device.speedKmh !== undefined) return '🚴';
     return '📡';
   };
 
   const getDeviceValue = (device) => {
+    // Heart rate first
     if (device.heartRate) return `${device.heartRate}`;
+    // Power
     if (device.power) return `${device.power}`;
+    // Cadence
     if (device.cadence) return `${device.cadence}`;
+    // Wheel RPM (new) before speed, prefer smoothed then instant
+    if (device.type === 'speed') {
+      const rpm = device.wheelRpm || device.smoothedRpm || device.instantRpm;
+      if (rpm) return `${Math.round(rpm)}`;
+    }
+    // Speed
     if (device.speedKmh) return `${device.speedKmh.toFixed(1)}`;
     return '--';
   };
@@ -37,6 +48,7 @@ const SidebarFooter = ({ onContentSelect }) => {
     if (device.heartRate !== undefined) return 'heart-rate';
     if (device.power !== undefined) return 'power';
     if (device.cadence !== undefined) return 'cadence';
+    if (device.type === 'speed' && (device.wheelRpm || device.smoothedRpm || device.instantRpm)) return 'rpm';
     if (device.speedKmh !== undefined) return 'speed';
     return 'unknown';
   };
@@ -46,7 +58,7 @@ const SidebarFooter = ({ onContentSelect }) => {
       {/* Show individual device icons if we have devices */}
       {allDevices.length > 0 ? (
         allDevices.map((device) => (
-                    <div 
+          <div 
             key={`footer-device-${device.deviceId}`} 
             className={`nav-item device-item ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
             onClick={() => onContentSelect && onContentSelect('users')}
