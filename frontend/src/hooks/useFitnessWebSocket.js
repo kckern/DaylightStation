@@ -87,14 +87,14 @@ class CadenceDevice extends Device {
   constructor(deviceId, rawData = {}) {
     super(deviceId, 'CAD', rawData);
     this.type = 'cadence';
-    this.cadence = rawData.CalculatedCadence || 0;
+    this.cadence = Math.round(rawData.CalculatedCadence || 0);
     this.revolutionCount = rawData.CumulativeCadenceRevolutionCount || 0;
     this.eventTime = rawData.CadenceEventTime || 0;
   }
 
   updateData(rawData) {
     super.updateData(rawData);
-    this.cadence = rawData.CalculatedCadence || 0;
+    this.cadence = Math.round(rawData.CalculatedCadence || 0);
     this.revolutionCount = rawData.CumulativeCadenceRevolutionCount || 0;
     this.eventTime = rawData.CadenceEventTime || 0;
   }
@@ -109,14 +109,14 @@ class PowerDevice extends Device {
     this.type = 'power';
     this.power = rawData.InstantaneousPower || 0; // watts
     // Some power meters also report cadence
-    this.cadence = rawData.Cadence || rawData.CalculatedCadence || 0;
+    this.cadence = Math.round(rawData.Cadence || rawData.CalculatedCadence || 0);
     this.leftRightBalance = rawData.PedalPowerBalance; // optional
   }
 
   updateData(rawData) {
     super.updateData(rawData);
     this.power = rawData.InstantaneousPower || 0;
-    this.cadence = rawData.Cadence || rawData.CalculatedCadence || 0;
+    this.cadence = Math.round(rawData.Cadence || rawData.CalculatedCadence || 0);
     this.leftRightBalance = rawData.PedalPowerBalance;
   }
 }
