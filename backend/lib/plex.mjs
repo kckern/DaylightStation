@@ -127,7 +127,8 @@ export class Plex {
       parentIndex,
       parentThumb,
       grandparentThumb,
-      userRating
+      userRating,
+      Media
     })=>{
       return {
         plex: plex || ratingKey,
@@ -144,7 +145,8 @@ export class Plex {
         parentIndex,
         parentThumb,
         grandparentThumb,
-        userRating
+        userRating,
+        thumb_id: Media?.[0]?.Part?.[0]?.id
       }
     }) || [];
     return items.length ? items : [];
@@ -239,6 +241,7 @@ export class Plex {
       year: year || "",
       media_type: this.determinemedia_type(type),
       media_url,
+      thumb_id: itemData.Media?.[0]?.Part?.[0]?.id,
       image: this.thumbUrl(thumb),
       percent: percent || 0,
       seconds: seconds || 0,

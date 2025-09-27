@@ -385,12 +385,13 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const unwatchedList = list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
     // Prepare Plex instance for building thumb URLs (season thumbnails)
     const plexThumb = new Plex();
-    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex,userRating}) => {
+    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex,userRating,thumb_id}) => {
         const item = {
             label: title,
             type: type,
             plex: key || plex,
             image: handleDevImage(req, image),
+            thumb_id,
             ...req.query
         };
         
@@ -411,6 +412,8 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                 const num = parseInt(index);
                 if (!Number.isNaN(num)) item.episodeNumber = num;
             }
+
+            
             
             // Add season information
             if (parent || parentTitle || parentRatingKey) {
