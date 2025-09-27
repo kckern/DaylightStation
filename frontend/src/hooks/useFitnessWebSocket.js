@@ -41,7 +41,7 @@ class Device {
  */
 class HeartRateDevice extends Device {
   constructor(deviceId, rawData = {}) {
-    super(deviceId, 'HeartRate', rawData);
+    super(deviceId, 'HR', rawData);
     this.type = 'heart_rate';
     this.heartRate = rawData.ComputedHeartRate || 0;
     this.beatCount = rawData.BeatCount || 0;
@@ -137,7 +137,7 @@ class UnknownDevice extends Device {
 export class DeviceFactory {
   static createDevice(deviceId, profile, rawData = {}) {
     switch (profile) {
-      case 'HeartRate':
+      case 'HR':
         return new HeartRateDevice(deviceId, rawData);
       case 'Speed':
         return new SpeedDevice(deviceId, rawData);
