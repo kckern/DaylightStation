@@ -85,7 +85,7 @@ class SpeedDevice extends Device {
  */
 class CadenceDevice extends Device {
   constructor(deviceId, rawData = {}) {
-    super(deviceId, 'Cadence', rawData);
+    super(deviceId, 'CAD', rawData);
     this.type = 'cadence';
     this.cadence = rawData.CalculatedCadence || 0;
     this.revolutionCount = rawData.CumulativeCadenceRevolutionCount || 0;
@@ -141,7 +141,7 @@ export class DeviceFactory {
         return new HeartRateDevice(deviceId, rawData);
       case 'Speed':
         return new SpeedDevice(deviceId, rawData);
-      case 'Cadence':
+      case 'CAD':
         return new CadenceDevice(deviceId, rawData);
       case 'Power':
         return new PowerDevice(deviceId, rawData);

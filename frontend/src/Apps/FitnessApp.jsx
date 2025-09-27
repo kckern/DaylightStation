@@ -10,7 +10,7 @@ import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 
 const FitnessApp = () => {
-  // Start with default configuration that includes HR colors to avoid null mapping
+  // Start with default configuration that includes HR colors and equipment to avoid null mapping
   const [fitnessConfiguration, setFitnessConfiguration] = useState({
     fitness: {
       ant_devices: {
@@ -20,8 +20,20 @@ const FitnessApp = () => {
           "28676": "green",
           "29413": "blue",
           "40475": "watch"
+        },
+        cadence: {
+          "49904": "orange"
         }
-      }
+      },
+      equipment: [
+        {
+          name: "CycleAce",
+          id: "cycle_ace",
+          type: "stationary_bike",
+          cadence: "49904",
+          speed: null
+        }
+      ]
     }
   });
   const [loading, setLoading] = useState(true);
@@ -73,6 +85,18 @@ const FitnessApp = () => {
     const fetchFitnessData = async () => {
       try {
         const response = await DaylightAPI('/api/fitness');
+        console.log('Fetched fitness configuration:', response);
+        console.log('Equipment configuration:', response?.fitness?.equipment);
+        
+        // Preserve hardcoded equipment configuration if not present in API response
+        if (!response?.fitness?.equipment) {
+          response.fitness = {
+            ...response.fitness,
+            equipment: fitnessConfiguration.fitness.equipment
+          };
+          console.log('Using hardcoded equipment configuration');
+        }
+        
         setFitnessConfiguration(response);
       } catch (error) {
         console.error('Error fetching fitness data:', error);
