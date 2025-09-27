@@ -73,7 +73,7 @@ Object.keys(hrDevicesConfig).forEach(id => {
 Object.keys(cadenceDevicesConfig).forEach(id => {
   devices.push({
     deviceId: Number(id),
-    profile: 'Cadence',
+    profile: 'CAD',
     type: 'cadence',
     serialNumber: Number(id),
     baseCadence: 80,
@@ -179,19 +179,28 @@ class FitnessSimulator {
     const cadenceFactor = intervalPhase === 0 ? 0.95 : 1.05;
     const targetCadence = device.baseCadence * cadenceFactor;
     const variation = (Math.random() - 0.5) * device.cadenceVariability;
-    const cadence = Math.max(50, Math.round(targetCadence + variation));
+    const cadence = Math.max(0, Math.round(targetCadence + variation)); // Allow zero for inactive periods
     device.revolutionCount += Math.round(cadence / 30); // approx over 2s
     const eventTime = (elapsedSeconds * 1024) % 65536;
+    const updateTime = Date.now();
+    
+    // Generate dummy Buffer data similar to real device
+    const rawDataArray = Array(24).fill(0).map(() => Math.floor(Math.random() * 256));
+    
     return {
       ManId: 255,
       SerialNumber: device.serialNumber,
-      BatteryStatus: 'Good',
-      BatteryLevel: device.batteryLevel,
+      BatteryStatus: "Invalid", // Match real device format
       DeviceID: device.deviceId,
+      _UpdateTime: updateTime,
+      CalculatedCadence: cadence,
       Channel: 0,
+      _RawData: {
+        type: "Buffer",
+        data: rawDataArray
+      },
       CadenceEventTime: eventTime,
-      CumulativeCadenceRevolutionCount: device.revolutionCount,
-      CalculatedCadence: cadence
+      CumulativeCadenceRevolutionCount: device.revolutionCount
     };
   }
 
