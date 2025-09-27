@@ -17,21 +17,12 @@ dash-video {
   pointer-events: none !important;
 }
 
+/* Remove viewport-based max-height; rely on container sizing */
 .fitness-video video,
 .fitness-video dash-video,
 .fitness-video .video-element {
   max-width: 100%;
-  max-height: calc(100vh - 120px);
-  width: auto !important;
-  height: auto !important;
-  z-index: 2;
-}
-
-.fitness-video video,
-.fitness-video dash-video,
-.fitness-video .video-element {
-  max-width: 100%;
-  max-height: calc(100vh - 120px);
+  max-height: 100%;
   width: auto !important;
   height: auto !important;
   z-index: 2;
@@ -66,7 +57,7 @@ dash-video {
   flex-direction: row;
   z-index: 100;
   overflow: hidden; /* Prevent content from overflowing */
-  height: 100vh; /* Ensure full height of viewport */
+  height: 100%; /* Constrain to parent viewportRef height */
   
   /* Header removed as it's no longer needed */
   
@@ -308,8 +299,8 @@ dash-video {
   }
   
   .fitness-player-footer {
-    /* Occupy all leftover vertical space; can collapse to 0 if no space */
-    flex: 1 1 0;
+    /* Footer should size to its intrinsic content height (no growth) */
+    flex: 0 0 auto;
     background-color: #222;
     padding: 0;
     border-top: 1px solid #333;
@@ -318,6 +309,7 @@ dash-video {
     align-items: center;
     justify-content: space-between;
     min-height: 0;
+    flex-grow: 1;
     overflow: hidden; /* If collapsed, hide its content cleanly */
     
     /* Panel 1: Previous and Play/Pause buttons */
@@ -385,14 +377,14 @@ dash-video {
     
     /* Panel 2: Seek thumbnails */
     .footer-seek-thumbnails {
-      flex: 1;
+      flex: 1 1 auto;
       display: flex;
       flex-direction: column;
       gap: 5px;
       overflow: hidden;
       margin: 0 25px;
-      height: 100%;
-      min-height: 0; /* Allow container to shrink below content size */
+      height: 100%; /* Let content define height */
+      min-height: 0;
       
       .progress-bar {
         width: 100%;
@@ -420,9 +412,9 @@ dash-video {
         gap: 2px;
         padding: 5px 0;
         width: 100%;
-        height: calc(100% - 13px); /* Account for progress bar height and gap */
         justify-content: space-between;
-        flex-shrink: 1; /* Allow shrinking */
+        flex-shrink: 1;
+        height: 100%;
         
         &::-webkit-scrollbar {
           height: 5px;

@@ -143,7 +143,7 @@ const FitnessApp = () => {
         setFitnessPlayQueue={setFitnessPlayQueue}
       >
         <div className="fitness-app-container">
-          <div className="fitness-app-viewport" style={{ position: 'relative' }} ref={viewportRef}>
+          <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
             {/* Base UI - Always render but hide when player is shown */}
             <div style={{ 
               display: 'flex', 
@@ -192,6 +192,7 @@ const FitnessApp = () => {
                 <FitnessPlayer 
                   playQueue={fitnessPlayQueue}
                   setPlayQueue={setFitnessPlayQueue}
+                  viewportRef={viewportRef}
                 />
               </div>
             )}
