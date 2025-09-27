@@ -4,6 +4,63 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import './FitnessShow.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 
+// Season Info Component - Shows detailed info for a season or episode
+const SeasonInfo = ({ item, type = 'episode' }) => {
+  if (!item) return null;
+  
+  return (
+    <div className={`season-info ${type}-info`}>
+      {item.image && (
+        <div className="info-image-container">
+          <img 
+            src={type === 'season' && item.id ? DaylightMediaPath(`media/plex/img/${item.id}`) : item.image} 
+            alt={item.title || item.label || item.name} 
+            className="info-image" 
+          />
+        </div>
+      )}
+      
+      <div className="info-details">
+        <h2 className="info-title">{item.title || item.label || item.name || 'Details'}</h2>
+        
+        {type === 'season' && (
+          <div className="info-metadata">
+            <div className="info-episodes-count">
+              <span className="info-label">Episodes:</span> {item.episodeCount || 'Unknown'}
+            </div>
+            {item.year && (
+              <div className="info-year">
+                <span className="info-label">Year:</span> {item.year}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {type === 'episode' && (
+          <div className="info-metadata">
+            {item.duration && (
+              <div className="info-duration">
+                <span className="info-label">Duration:</span> {formatDuration(item.duration)}
+              </div>
+            )}
+            {item.index && (
+              <div className="info-episode-number">
+                <span className="info-label">Episode:</span> {item.index}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {item.summary && (
+          <div className="info-summary">
+            <p>{item.summary}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Utility function to format duration from seconds to mm:ss
 const formatDuration = (seconds) => {
   if (!seconds || seconds <= 0) return null;
@@ -29,6 +86,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   const [activeSeasonId, setActiveSeasonId] = useState(null);
   const seasonBarRef = useRef(null);
   const [seasonBarWidth, setSeasonBarWidth] = useState(0);
+  const [selectedInfo, setSelectedInfo] = useState(null); // Selected episode or season for info panel
+  const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
   
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
   const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue } = useFitness() || {};
@@ -145,10 +204,12 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       };
       
       console.log('🎬 Created queue item:', queueItem);
-      console.log('🎬 Available queue setters:', {
-        props: setFitnessPlayQueue ? 'YES' : 'NO',
-        context: contextSetPlayQueue ? 'YES' : 'NO'
-      });
+      
+      // Update the selected episode for the UI
+      setSelectedEpisode(episode);
+      
+      // Clear any selected info to return to show mode
+      setSelectedInfo(null);
       
       // Directly use the setter from props if available (from FitnessApp)
       if (setFitnessPlayQueue) {
@@ -271,7 +332,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     return (
       <div className="fitness-show no-selection">
         <div className="no-selection-content">
-          <div className="no-selection-icon">📺</div>
+          <div className="no-selection-icon">🏋️</div>
           <div className="no-selection-title">Select a Show</div>
           <div className="no-selection-text">Choose a fitness show from the menu to get started</div>
         </div>
@@ -298,60 +359,48 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     );
   }
 
-  // Debug function to explicitly test queue functionality
-  const debugAddToQueue = () => {
+  // Helper function to add an episode to the queue
+  const addToQueue = (episode) => {
     try {
-      // Create a test item - using a safe URL that we know exists
-      const testItem = {
-        id: `debug-test-${Date.now()}`,
-        title: 'Debug Test Item',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', // Public test video
-        duration: 120
-      };
+      // Get URL for the playable item if not present
+      let episodeUrl = episode.url;
+      if (!episodeUrl && episode.plex) {
+        // Construct the URL using the helper function
+        episodeUrl = DaylightMediaPath(`media/plex/url/${episode.plex}`);
+        console.log(`🎬 Constructed media URL for queue: ${episodeUrl}`);
+      }
 
-      console.log('🎬 DEBUG: Testing queue add with:', testItem);
-      console.log('🎬 DEBUG: Available setters:', {
-        props: setFitnessPlayQueue ? 'YES' : 'NO',
-        context: contextSetPlayQueue ? 'YES' : 'NO'
-      });
-      
-      // Try both methods
-      if (setFitnessPlayQueue) {
-        console.log('🎬 DEBUG: Using props setter');
-        setFitnessPlayQueue([testItem]); // Replace instead of append for testing
-      } else if (contextSetPlayQueue) {
-        console.log('🎬 DEBUG: Using context setter');
-        contextSetPlayQueue([testItem]); // Replace instead of append for testing
-      } else {
-        console.error('🎬 DEBUG: No queue setter available!');
+      if (episodeUrl) {
+        const queueItem = {
+          id: episode.plex || `episode-${Date.now()}`,
+          title: episode.label,
+          videoUrl: episodeUrl,
+          duration: episode.duration,
+          image: episode.image
+        };
+        
+        // Use the appropriate setter
+        if (setFitnessPlayQueue) {
+          setFitnessPlayQueue(prevQueue => [...prevQueue, queueItem]);
+        } else if (contextSetPlayQueue) {
+          contextSetPlayQueue(prevQueue => [...prevQueue, queueItem]);
+        }
+        console.log('🎬 Added to queue:', episode);
       }
     } catch (error) {
-      console.error('🎬 DEBUG: Error in test:', error);
+      console.error('🎬 Error adding to queue:', error);
     }
   };
   
   return (
     <div className="fitness-show">
-      {/* Debug button */}
-      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000 }}>
-        <button 
-          onClick={debugAddToQueue}
-          style={{ 
-            padding: '5px 10px', 
-            backgroundColor: 'red', 
-            color: 'white', 
-            border: 'none',
-            borderRadius: '4px'
-          }}
-        >
-          Debug: Add to Queue
-        </button>
-      </div>
 
       <div className="show-content">
         {/* Left Panel - Show Info */}
         <div className="show-info-panel">
-          {info && (
+          {selectedInfo ? (
+            <SeasonInfo item={selectedInfo} type={infoType} />
+          ) : info && (
             <>
               {/* Show Image - Top 50% */}
               <div className="show-poster" ref={posterRef}>
@@ -376,8 +425,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                   <p className="show-summary">{info.summary}</p>
                 )}
                 <div className="show-meta">
-                  {info.year && <span className="meta-item">📅 {info.year}</span>}
-                  {info.studio && <span className="meta-item">🏢 {info.studio}</span>}
+                  {info.year && <span className="meta-item">{info.year}</span>}
+                  {info.studio && <span className="meta-item">{info.studio}</span>}
                 </div>
               </div>
             </>
@@ -397,7 +446,6 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                   return (
                     <div key={s.id} className="season-group">
                       <h3 className="season-title">
-                        <span className="season-icon">📁</span>
                         {title}
                         <span className="episode-count">({seasonEpisodes.length} episodes)</span>
                       </h3>
@@ -413,17 +461,15 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                           <div
                             key={episode.plex || index}
                             className={`episode-card vertical ${selectedEpisode?.plex === episode.plex ? 'selected' : ''}`}
-                            onClick={() => handleEpisodeSelect(episode)}
-                            onDoubleClick={() => handlePlayEpisode(episode)}
                             title={episode.label}
                           >
                             {episode.image && (
-                              <div className="episode-thumbnail">
+                              <div 
+                                className="episode-thumbnail"
+                                onClick={() => handlePlayEpisode(episode)}
+                              >
                                 <img src={episode.image} alt={episode.label} />
                                 <div className="thumbnail-badges">
-                                  <div className="badge watched" />
-                                  <div className="badge up-next" />
-                                  <div className="badge custom-status" />
                                   <div className="badge duration">
                                     {episode.duration && formatDurationBadge(episode.duration)}
                                   </div>
@@ -431,55 +477,20 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                                 <div className="thumbnail-progress">
                                   <div className="progress-bar" style={{ width: '50%' }} />
                                 </div>
-                                <div className="thumbnail-overlay">
-                                  <div className="thumbnail-controls">
-                                    <button
-                                      className="episode-play-btn"
-                                      title="Play Now"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handlePlayEpisode(episode);
-                                      }}
-                                    >
-                                      ▶️
-                                    </button>
-                                    <button
-                                      className="episode-queue-btn"
-                                      title="Add to Queue"
-                                      onClick={async (e) => {
-                                        e.stopPropagation();
-                                        // Add to queue without playing immediately
-                                        try {
-                                          // Get URL for the playable item if not present
-                                          let episodeUrl = episode.url;
-                                          if (!episodeUrl && episode.plex) {
-                                            // Construct the URL using the helper function
-                                            episodeUrl = DaylightMediaPath(`media/plex/url/${episode.plex}`);
-                                            console.log(`🎬 Constructed media URL: ${episodeUrl}`);
-                                          }
-
-                                          if (contextSetPlayQueue && episodeUrl) {
-                                            contextSetPlayQueue(prevQueue => [...prevQueue, {
-                                              id: episode.plex || `episode-${Date.now()}`,
-                                              title: episode.label,
-                                              videoUrl: episodeUrl,
-                                              duration: episode.duration,
-                                              image: episode.image
-                                            }]);
-                                            console.log('🎬 Added to queue:', episode);
-                                          }
-                                        } catch (error) {
-                                          console.error('🎬 Error adding to queue:', error);
-                                        }
-                                      }}
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </div>
                               </div>
                             )}
-                            <div className="episode-title" aria-label={episode.label}>
+                            <div 
+                              className="episode-title" 
+                              aria-label={episode.label}
+                              onClick={() => {
+                                setSelectedInfo({
+                                  ...episode,
+                                  title: episode.label
+                                });
+                                setInfoType('episode');
+                                handleEpisodeSelect(episode);
+                              }}
+                            >
                               <span className="episode-title-text">{episode.label}</span>
                             </div>
                           </div>
@@ -491,7 +502,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
               </div>
             ) : (
               <div className="no-episodes">
-                <div className="no-episodes-icon">📺</div>
+                <div className="no-episodes-icon">🏋️</div>
                 <div className="no-episodes-title">No Episodes Found</div>
                 <div className="no-episodes-text">This show doesn't have any available episodes</div>
               </div>
@@ -540,7 +551,16 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                 <button
                   key={s.id}
                   className={`season-item ${activeSeasonId === s.id ? 'active' : ''}`}
-                  onClick={() => setActiveSeasonId(s.id)}
+                  onClick={() => {
+                    setActiveSeasonId(s.id);
+                    // Get the episode count for this season
+                    const episodeCount = items.filter(ep => ep.seasonId === s.id).length;
+                    setSelectedInfo({
+                      ...s,
+                      episodeCount
+                    });
+                    setInfoType('season');
+                  }}
                 >
                   <div className="season-image-wrapper" style={{backgroundImage: s.image ? `url(${DaylightMediaPath(`media/plex/img/${s.id}`)})` : 'none'}}>
                     {s.image ? (
