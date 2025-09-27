@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Group, Text, Badge, Stack } from '@mantine/core';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
+import FlipMove from 'react-flip-move';
 import './FitnessUsers.scss';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 
@@ -19,6 +20,9 @@ const FitnessUsers = () => {
     lastUpdate,
     deviceConfiguration
   } = useFitnessContext();
+  
+  // State for sorted devices
+  const [sortedDevices, setSortedDevices] = useState([]);
 
   // Build lookup maps for heart rate device colors and user assignments
   // Use a hardcoded fallback for color mapping if all else fails
@@ -133,6 +137,44 @@ const FitnessUsers = () => {
     if (device.type === 'speed') return 'speed';
     return 'unknown';
   };
+  
+  // Sort devices whenever allDevices changes
+  useEffect(() => {
+    // First prioritize heart rate monitors
+    const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
+    const otherDevices = allDevices.filter(d => d.type !== 'heart_rate');
+    
+    // Sort heart rate devices by value
+    hrDevices.sort((a, b) => {
+      // First by active status
+      if (a.isActive && !b.isActive) return -1;
+      if (!a.isActive && b.isActive) return 1;
+      
+      // Then by heart rate value (higher first)
+      return (b.heartRate || 0) - (a.heartRate || 0);
+    });
+    
+    // Sort other devices by type then value
+    otherDevices.sort((a, b) => {
+      // First by device type
+      const typeOrder = { power: 1, cadence: 2, speed: 3, unknown: 4 };
+      const typeA = typeOrder[a.type] || 4;
+      const typeB = typeOrder[b.type] || 4;
+      if (typeA !== typeB) return typeA - typeB;
+      
+      // Then by active status
+      if (a.isActive && !b.isActive) return -1;
+      if (!a.isActive && b.isActive) return 1;
+      
+      // Then by value
+      const valueA = a.power || a.cadence || (a.speedKmh || 0);
+      const valueB = b.power || b.cadence || (b.speedKmh || 0);
+      return valueB - valueA;
+    });
+    
+    // Combine sorted arrays
+    setSortedDevices([...hrDevices, ...otherDevices]);
+  }, [allDevices]);
 
   return (
     <div className="fitness-devices-nav">
@@ -144,9 +186,17 @@ const FitnessUsers = () => {
       
       {/* Fitness Devices as Nav Icons */}
       <div className="fitness-devices">
-        {allDevices.length > 0 ? (
-          <div className="device-grid">
-            {allDevices.map((device) => {
+        {sortedDevices.length > 0 ? (
+          <FlipMove 
+            className="device-grid"
+            duration={300}
+            easing="ease-out"
+            staggerDelayBy={20}
+            enterAnimation="fade"
+            leaveAnimation="fade"
+            maintainContainerHeight={true}
+          >
+            {sortedDevices.map((device) => {
               const ownerName = device.type === 'heart_rate' ? hrOwnerMap[String(device.deviceId)] : null;
               // Get name from hardcoded map for HR devices
               const deviceName = device.type === 'heart_rate' ? 
@@ -175,7 +225,7 @@ const FitnessUsers = () => {
                 </div>
               );
             })}
-          </div>
+          </FlipMove>
         ) : (
           <div className="nav-empty">
             <div className="empty-icon">📡</div>
