@@ -7,6 +7,7 @@ import FitnessUsers from '../modules/Fitness/FitnessUsers.jsx';
 import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessSidebar from '../modules/Fitness/FitnessSidebar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
+import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 
 const FitnessApp = () => {
@@ -40,7 +41,23 @@ const FitnessApp = () => {
   const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show'
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
+  const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
   const viewportRef = useRef(null);
+  
+  // Expose the queue setter globally for emergency access
+  useEffect(() => {
+    if (window) {
+      window.addToFitnessQueue = (item) => {
+        console.log('🎬 Using global queue setter with:', item);
+        setFitnessPlayQueue(prev => [...prev, item]);
+      };
+    }
+    return () => {
+      if (window && window.addToFitnessQueue) {
+        delete window.addToFitnessQueue;
+      }
+    };
+  }, []);
   
   // Derive collections from the API response
   const collections = useMemo(() => {
@@ -116,35 +133,68 @@ const FitnessApp = () => {
     }
   }, [collections, activeCollection]);
 
+  console.log('🎬 FitnessApp: Rendering with queue:', fitnessPlayQueue);
+  
   return (
     <MantineProvider theme={{ colorScheme: 'dark' }}>
-      <FitnessProvider fitnessConfiguration={fitnessConfiguration}>
+      <FitnessProvider 
+        fitnessConfiguration={fitnessConfiguration}
+        fitnessPlayQueue={fitnessPlayQueue}
+        setFitnessPlayQueue={setFitnessPlayQueue}
+      >
         <div className="fitness-app-container">
           <div className="fitness-app-viewport" style={{ position: 'relative' }} ref={viewportRef}>
-            <FitnessSidebar 
-              collections={collections}
-              activeCollection={activeCollection}
-              onContentSelect={handleContentSelect}
-            />
-            <div className="fitness-main-content">
-              {currentView === 'users' && (
-                <FitnessUsers />
-              )}
-              {currentView === 'show' && selectedShow && (
-                <FitnessShow 
-                  showId={selectedShow} 
-                  onBack={handleBackToMenu}
-                  viewportRef={viewportRef}
-                />
-              )}
-              {currentView === 'menu' && (
-                <FitnessMenu 
-                  collections={collections} 
-                  activeCollection={activeCollection} 
-                  onContentSelect={handleContentSelect}
-                />
-              )}
+            {/* Base UI - Always render but hide when player is shown */}
+            <div style={{ 
+              display: 'flex', 
+              height: '100%', 
+              width: '100%',
+              visibility: fitnessPlayQueue.length > 0 ? 'hidden' : 'visible'
+            }}>
+              <FitnessSidebar 
+                collections={collections}
+                activeCollection={activeCollection}
+                onContentSelect={handleContentSelect}
+              />
+              <div className="fitness-main-content">
+                {currentView === 'users' && (
+                  <FitnessUsers />
+                )}
+                {currentView === 'show' && selectedShow && (
+                  <FitnessShow 
+                    showId={selectedShow} 
+                    onBack={handleBackToMenu}
+                    viewportRef={viewportRef}
+                    setFitnessPlayQueue={setFitnessPlayQueue}
+                  />
+                )}
+                {currentView === 'menu' && (
+                  <FitnessMenu 
+                    collections={collections} 
+                    activeCollection={activeCollection} 
+                    onContentSelect={handleContentSelect}
+                  />
+                )}
+              </div>
             </div>
+            
+            {/* Player overlay - only rendered when needed */}
+            {fitnessPlayQueue.length > 0 && (
+              <div style={{
+                position: 'absolute', 
+                top: 0, 
+                left: 0, 
+                right: 0, 
+                bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.9)',
+                zIndex: 1000
+              }}>
+                <FitnessPlayer 
+                  playQueue={fitnessPlayQueue}
+                  setPlayQueue={setFitnessPlayQueue}
+                />
+              </div>
+            )}
           </div>
         </div>
       </FitnessProvider>
