@@ -58,7 +58,7 @@ Object.keys(hrDevicesConfig).forEach(id => {
   const { baseHeartRate, variability } = baselineForDevice(id);
   devices.push({
     deviceId: Number(id),
-    profile: 'HeartRate',
+    profile: 'HR',
     type: 'heart_rate',
     serialNumber: Number(id),
     baseHeartRate,
