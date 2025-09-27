@@ -6,38 +6,54 @@
   gap: 1rem;
   padding-right: 1ex;
   padding-bottom: 1ex;
-
-  .nav-item {
+  
+  .device-container {
+    width: 100%;
+    min-height: 50px;
+    position: relative;
+  }
+  
+  .device-card {
+    width: calc(100% - 10px);
+    margin: 5px;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.3);
     display: flex;
     flex-direction: column;
+    justify-content: center;
     align-items: center;
-    background: transparent;
-    border: none;
     cursor: pointer;
-    transition: all 0.3s ease;
-    width: calc(100% -  1ex);
-    text-align: center;
-    position: relative;
-    margin-left: 1ex;
-    border-radius: 0.4ex;
-    background: rgba(255, 255, 255, 0.15);
-
+    z-index: 1;
+    overflow: hidden;
+    transition: background-color 0.2s ease;
+    height: 70px;
+    
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    &.inactive {
+      opacity: 0.6;
+    }
+    
     .device-header {
       width: 100%;
       display: flex;
       justify-content: center;
       align-items: center;
-      margin-bottom: 2px;
+      margin-bottom: 0;
       background-color: #000;
-      border-top-right-radius: 0.4ex;
-      border-top-left-radius: 0.4ex;
-
+      border-top-right-radius: 8px;
+      border-top-left-radius: 8px;
+      
       .device-value {
+        min-width: 30px;
         font-size: 1.3rem;
         font-weight: 700;
         color: white;
         text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
         line-height: 1;
+        padding: 5px 0;
       }
     }
 
@@ -45,48 +61,11 @@
       display: flex;
       justify-content: center;
       align-items: center;
-
+      padding: 5px 0;
+      
       .icon-main {
         font-size: 18px;
         transition: all 0.3s ease;
-      }
-    }
-
-    &.active {
-      
-      .device-icon .icon-main {
-        transform: scale(1.1);
-        filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
-      }
-    }
-
-    &.inactive {
-      opacity: 0.6;
-      
-      .device-icon .icon-main {
-        filter: grayscale(0.5);
-      }
-    }
-
-    // Connection state styling
-    &.connected {
-      .nav-icon .icon-main {
-        filter: drop-shadow(0 0 4px rgba(0, 255, 0, 0.4));
-      }
-    }
-
-    &.disconnected {
-      opacity: 0.6;
-      
-      .nav-icon .icon-main {
-        filter: grayscale(0.5) drop-shadow(0 0 4px rgba(255, 0, 0, 0.3));
-      }
-    }
-
-    // Enhanced styling when active data is present
-    &.active-data {
-      .nav-icon .icon-main {
-        animation: pulse 2s ease-in-out infinite;
       }
     }
 
@@ -138,35 +117,26 @@
         filter: drop-shadow(0 0 4px rgba(51, 154, 240, 0.4));
       }
     }
-
-    &.unknown {
-      .device-header .device-value {
-        color: #adb5bd;
-      }
-      
-      .device-icon .icon-main {
-        color: #adb5bd;
-        filter: drop-shadow(0 0 4px rgba(173, 181, 189, 0.4));
+  }
+  
+  .fitness-monitor {
+    &.connected {
+      .device-icon {
+        filter: drop-shadow(0 0 4px rgba(0, 255, 0, 0.4));
       }
     }
 
-
+    &.disconnected {
+      opacity: 0.6;
+      
+      .device-icon {
+        filter: grayscale(0.5) drop-shadow(0 0 4px rgba(255, 0, 0, 0.3));
+      }
+    }
   }
 }
 
-// Pulse animation for active devices
-@keyframes pulse {
-  0%, 100% { 
-    transform: scale(1); 
-    opacity: 1;
-  }
-  50% { 
-    transform: scale(1.05); 
-    opacity: 0.8;
-  }
-}
-
-// Heartbeat animation for heart rate devices
+// Animations
 @keyframes heartbeat {
   0%, 50%, 100% { 
     transform: scale(1); 

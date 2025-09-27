@@ -1,92 +1,143 @@
-import React from 'react';
-import { useFitnessWebSocket } from '../../hooks/useFitnessWebSocket.js';
+import React, { useState, useEffect, useRef } from 'react';
+import { useFitnessContext } from '../../context/FitnessContext.jsx';
+import FlipMove from 'react-flip-move';
 import MiniMonitor from './MiniMonitor.jsx';
 import './SidebarFooter.scss';
 
-const SidebarFooter = ({ onContentSelect, fitnessConfiguration }) => {
+const SidebarFooter = ({ onContentSelect }) => {
   const { 
     connected, 
-    allDevices,    heartRateDevices, 
+    allDevices,
+    heartRateDevices, 
     speedDevices,
     cadenceDevices,
     powerDevices,
-    deviceCount
-  } = useFitnessWebSocket(fitnessConfiguration);
+    deviceCount,
+    deviceConfiguration
+  } = useFitnessContext();
+  
+  // State for sorted devices
+  const [sortedDevices, setSortedDevices] = useState([]);
 
-  const activeDevices = allDevices.filter(device => device.isActive);
-  const hasActiveDevices = activeDevices.length > 0;
+  // Sort devices whenever allDevices changes
+  useEffect(() => {
+    const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
+    const otherDevices = allDevices.filter(d => d.type !== 'heart_rate');
 
-  // Helper functions from FitnessUsers
+    // First by active status, then by heart rate
+    hrDevices.sort((a, b) => {
+      if (a.isActive && !b.isActive) return -1;
+      if (!a.isActive && b.isActive) return 1;
+      return (b.heartRate || 0) - (a.heartRate || 0);
+    });
+    
+    // Sort other devices
+    otherDevices.sort((a, b) => {
+      const typeOrder = { power: 1, cadence: 2, speed: 3, unknown: 4 };
+      const typeA = typeOrder[a.type] || 4;
+      const typeB = typeOrder[b.type] || 4;
+      if (typeA !== typeB) return typeA - typeB;
+      
+      if (a.isActive && !b.isActive) return -1;
+      if (!a.isActive && b.isActive) return 1;
+      
+      const valueA = a.power || a.cadence || (a.speedKmh || 0);
+      const valueB = b.power || b.cadence || (b.speedKmh || 0);
+      return valueB - valueA;
+    });
+    
+    // Update the sorted devices
+    setSortedDevices([...hrDevices, ...otherDevices]);
+  }, [allDevices]);
+
+  // Heart rate device color mapping
+  const hrColorMap = {
+    "90003": "red",
+    "90001": "yellow", 
+    "28676": "green",
+    "90005": "blue",
+    "40475": "watch"
+  };
+
+  // Helper functions
   const getDeviceIcon = (device) => {
-    if (device.heartRate !== undefined) return '❤️';
-    if (device.power !== undefined) return '⚡';
-    if (device.cadence !== undefined) return '⚙️';
-    // Treat former speed devices as RPM-only wheel sensors; use wheel icon when RPM present, else generic
-    if (device.type === 'speed') {
-      if (device.wheelRpm || device.instantRpm || device.smoothedRpm) return '🛞';
-      return '🛞'; // keep wheel even if zero to avoid cyclist icon
+    if (device.type === 'heart_rate') {
+      const colorKey = hrColorMap[String(device.deviceId)];
+      if (!colorKey) return '🧡'; // Default orange
+      
+      const colorIcons = {
+        red: '❤️',     // Red heart
+        yellow: '💛',  // Yellow heart
+        green: '💚',   // Green heart
+        blue: '💙',    // Blue heart
+        watch: '🤍'    // White heart (for watch)
+      };
+      
+      return colorIcons[colorKey] || '🧡';
     }
-    return '📡';
+    if (device.type === 'power') return '⚡';
+    if (device.type === 'cadence') return '⚙️';
+    if (device.type === 'speed') return '🚴';
+    return '';
   };
 
   const getDeviceValue = (device) => {
-    // Heart rate first
-    if (device.heartRate) return `${device.heartRate}`;
-    // Power
-    if (device.power) return `${device.power}`;
-    // Cadence
-    if (device.cadence) return `${device.cadence}`;
-    // Wheel RPM (new) before speed, prefer smoothed then instant
-    if (device.type === 'speed') {
-      const rpm = device.wheelRpm || device.smoothedRpm || device.instantRpm;
-      if (rpm) return `${Math.round(rpm)}`;
-    }
-    // Former speed (suppressed) intentionally ignored; RPM-only mode
+    if (device.type === 'heart_rate' && device.heartRate) return `${device.heartRate}`;
+    if (device.type === 'power' && device.power) return `${device.power}`;
+    if (device.type === 'cadence' && device.cadence) return `${device.cadence}`;
+    if (device.type === 'speed' && device.speedKmh) return `${device.speedKmh.toFixed(1)}`;
     return '--';
   };
 
   const getDeviceColor = (device) => {
-    if (device.heartRate !== undefined) return 'heart-rate';
-    if (device.power !== undefined) return 'power';
-    if (device.cadence !== undefined) return 'cadence';
-    if (device.type === 'speed') return 'rpm';
+    if (device.type === 'heart_rate') return 'heart-rate';
+    if (device.type === 'power') return 'power';
+    if (device.type === 'cadence') return 'cadence';
+    if (device.type === 'speed') return 'speed';
     return 'unknown';
   };
 
   return (
     <div className="sidebar-footer">
-      {/* Show individual device icons if we have devices */}
-      {allDevices.length > 0 ? (
-        allDevices.map((device) => (
-          <div 
-            key={`footer-device-${device.deviceId}`} 
-            className={`nav-item device-item ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
-            onClick={() => onContentSelect && onContentSelect('users')}
-            title={`${getDeviceIcon(device)} Device ${device.deviceId} - ${getDeviceValue(device)}`}
-          >
-            <div className="device-header">
-              <div className="device-value">{getDeviceValue(device)}</div>
-            </div>
-            <div className="device-icon">
-              <div className="icon-main">{getDeviceIcon(device)}</div>
-            </div>
-          </div>
-        ))
-      ) : (
-        /* Fallback when no devices */
-        <div
-          className={`nav-item fitness-monitor ${connected ? 'connected' : 'disconnected'}`}
-          onClick={() => onContentSelect && onContentSelect('users')}
-          title={`Fitness Devices ${connected ? '(Connected)' : '(Disconnected)'}`}
-        >
-          <div className="nav-icon">
-            <div className="icon-main">❤️</div>
-          </div>
+      <FlipMove 
+        className="device-container" 
+        duration={300} 
+        easing="ease-out"
+        staggerDelayBy={20}
+        enterAnimation="fade"
+        leaveAnimation="fade"
+        maintainContainerHeight={true}
+        typeName="div"
+      >
+        {sortedDevices.map((device) => {
+          const deviceId = String(device.deviceId);
+          const deviceValue = getDeviceValue(device);
           
-          <div className="nav-content">
-            <div className="connection-status">
-              <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
+          return (
+            <div
+              key={deviceId}
+              className={`device-card ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
+              onClick={() => onContentSelect && onContentSelect('users')}
+            >
+              <div className="device-header">
+                <div className="device-value">{deviceValue}</div>
+              </div>
+              <div className="device-icon">
+                <span className="icon-main">{getDeviceIcon(device)}</span>
+              </div>
             </div>
+          );
+        })}
+      </FlipMove>
+      
+      {sortedDevices.length === 0 && (
+        <div
+          className={`device-card fitness-monitor ${connected ? 'connected' : 'disconnected'}`}
+          onClick={() => onContentSelect && onContentSelect('users')}
+        >
+          <div className="device-icon">❤️</div>
+          <div className="connection-status">
+            <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
           </div>
         </div>
       )}
