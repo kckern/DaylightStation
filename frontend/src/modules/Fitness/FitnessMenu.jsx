@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LoadingOverlay, Alert } from '@mantine/core';
+import { LoadingOverlay, Alert, Text } from '@mantine/core';
 import { DaylightAPI } from '../../lib/api.mjs';
 import './FitnessMenu.scss';
 
-const FitnessMenu = ({ activeCollection, onContentSelect }) => {
+const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue }) => {
   const [shows, setShows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -88,6 +88,18 @@ const FitnessMenu = ({ activeCollection, onContentSelect }) => {
       onContentSelect('show', show);
     }
   };
+  
+  const handleAddToQueue = (event, show) => {
+    event.stopPropagation(); // Prevent triggering the show click
+    console.log('🎬 Adding to queue:', show);
+    if (setFitnessPlayQueue) {
+      setFitnessPlayQueue(prevQueue => [...prevQueue, {
+        id: show.plex || show.id,
+        title: show.label,
+        videoUrl: show.url || show.videoUrl
+      }]);
+    }
+  };
 
   return (
     <div className="fitness-menu">
@@ -108,6 +120,15 @@ const FitnessMenu = ({ activeCollection, onContentSelect }) => {
                     alt={show.label}
                     className="show-image"
                   />
+                )}
+                {setFitnessPlayQueue && (
+                  <button 
+                    className="add-to-queue-btn" 
+                    onClick={(e) => handleAddToQueue(e, show)}
+                    title="Add to play queue"
+                  >
+                    +
+                  </button>
                 )}
               </div>
             ))}

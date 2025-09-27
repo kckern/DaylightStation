@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LoadingOverlay, Alert } from '@mantine/core';
 import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import './FitnessShow.scss';
+import { useFitness } from '../../context/FitnessContext.jsx';
 
 // Utility function to format duration from seconds to mm:ss
 const formatDuration = (seconds) => {
@@ -18,7 +19,7 @@ const formatDurationBadge = (seconds) => {
   return `${minutes}m`;
 };
 
-const FitnessShow = ({ showId, onBack, viewportRef }) => {
+const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   const [showData, setShowData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,6 +29,15 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
   const [activeSeasonId, setActiveSeasonId] = useState(null);
   const seasonBarRef = useRef(null);
   const [seasonBarWidth, setSeasonBarWidth] = useState(0);
+  
+  // Access the setFitnessPlayQueue from the parent component (FitnessApp)
+  const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue } = useFitness() || {};
+  
+  console.log('🎬 FitnessShow: Props and Context:', { 
+    propsSetQueue: setFitnessPlayQueue, 
+    contextSetQueue: contextSetPlayQueue,
+    contextQueue: fitnessPlayQueue
+  });
 
   useEffect(() => {
     const fetchShowData = async () => {
@@ -113,9 +123,63 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
     setSelectedEpisode(episode);
   };
 
-  const handlePlayEpisode = (episode) => {
+  const handlePlayEpisode = async (episode) => {
     console.log('🎬 Play episode:', episode);
-    // TODO: Implement play functionality
+    
+    try {
+      // Get URL for the playable item if not present
+      let episodeUrl = episode.url;
+      if (!episodeUrl && episode.plex) {
+        // Construct the URL using the helper function
+        episodeUrl = DaylightMediaPath(`media/plex/url/${episode.plex}`);
+        console.log(`🎬 Constructed media URL: ${episodeUrl}`);
+      }
+      
+      // Create the queue item with all available information
+      const queueItem = {
+        id: episode.plex || `episode-${Date.now()}`,
+        title: episode.label,
+        videoUrl: episodeUrl || 'https://example.com/fallback.mp4', // Add fallback for testing
+        duration: episode.duration,
+        image: episode.image
+      };
+      
+      console.log('🎬 Created queue item:', queueItem);
+      console.log('🎬 Available queue setters:', {
+        props: setFitnessPlayQueue ? 'YES' : 'NO',
+        context: contextSetPlayQueue ? 'YES' : 'NO'
+      });
+      
+      // Directly use the setter from props if available (from FitnessApp)
+      if (setFitnessPlayQueue) {
+        console.log('🎬 Using prop setter directly');
+        // Force a new array to ensure state change is detected
+        setFitnessPlayQueue([queueItem]);
+        return;
+      }
+      
+      // Try the context setter as fallback
+      if (contextSetPlayQueue) {
+        console.log('🎬 Using context setter as fallback');
+        // Force a new array to ensure state change is detected
+        contextSetPlayQueue([queueItem]);
+        return;
+      }
+      
+      console.error('🎬 CRITICAL: No queue setter function available!');
+      
+      // Last resort: Try to access the window object and modify app state directly
+      try {
+        if (window && window.addToFitnessQueue) {
+          console.log('🎬 Using window.addToFitnessQueue as last resort');
+          window.addToFitnessQueue(queueItem);
+        }
+      } catch (e) {
+        console.error('🎬 Window method failed:', e);
+      }
+    } catch (error) {
+      console.error('🎬 Error adding episode to play queue:', error);
+    }
   };
 
   const { info, items = [] } = showData || {};
@@ -234,9 +298,55 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
     );
   }
 
+  // Debug function to explicitly test queue functionality
+  const debugAddToQueue = () => {
+    try {
+      // Create a test item - using a safe URL that we know exists
+      const testItem = {
+        id: `debug-test-${Date.now()}`,
+        title: 'Debug Test Item',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', // Public test video
+        duration: 120
+      };
+
+      console.log('🎬 DEBUG: Testing queue add with:', testItem);
+      console.log('🎬 DEBUG: Available setters:', {
+        props: setFitnessPlayQueue ? 'YES' : 'NO',
+        context: contextSetPlayQueue ? 'YES' : 'NO'
+      });
+      
+      // Try both methods
+      if (setFitnessPlayQueue) {
+        console.log('🎬 DEBUG: Using props setter');
+        setFitnessPlayQueue([testItem]); // Replace instead of append for testing
+      } else if (contextSetPlayQueue) {
+        console.log('🎬 DEBUG: Using context setter');
+        contextSetPlayQueue([testItem]); // Replace instead of append for testing
+      } else {
+        console.error('🎬 DEBUG: No queue setter available!');
+      }
+    } catch (error) {
+      console.error('🎬 DEBUG: Error in test:', error);
+    }
+  };
+  
   return (
     <div className="fitness-show">
-
+      {/* Debug button */}
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000 }}>
+        <button 
+          onClick={debugAddToQueue}
+          style={{ 
+            padding: '5px 10px', 
+            backgroundColor: 'red', 
+            color: 'white', 
+            border: 'none',
+            borderRadius: '4px'
+          }}
+        >
+          Debug: Add to Queue
+        </button>
+      </div>
 
       <div className="show-content">
         {/* Left Panel - Show Info */}
@@ -322,15 +432,50 @@ const FitnessShow = ({ showId, onBack, viewportRef }) => {
                                   <div className="progress-bar" style={{ width: '50%' }} />
                                 </div>
                                 <div className="thumbnail-overlay">
-                                  <button
-                                    className="episode-play-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handlePlayEpisode(episode);
-                                    }}
-                                  >
-                                    ▶️
-                                  </button>
+                                  <div className="thumbnail-controls">
+                                    <button
+                                      className="episode-play-btn"
+                                      title="Play Now"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePlayEpisode(episode);
+                                      }}
+                                    >
+                                      ▶️
+                                    </button>
+                                    <button
+                                      className="episode-queue-btn"
+                                      title="Add to Queue"
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        // Add to queue without playing immediately
+                                        try {
+                                          // Get URL for the playable item if not present
+                                          let episodeUrl = episode.url;
+                                          if (!episodeUrl && episode.plex) {
+                                            // Construct the URL using the helper function
+                                            episodeUrl = DaylightMediaPath(`media/plex/url/${episode.plex}`);
+                                            console.log(`🎬 Constructed media URL: ${episodeUrl}`);
+                                          }
+
+                                          if (contextSetPlayQueue && episodeUrl) {
+                                            contextSetPlayQueue(prevQueue => [...prevQueue, {
+                                              id: episode.plex || `episode-${Date.now()}`,
+                                              title: episode.label,
+                                              videoUrl: episodeUrl,
+                                              duration: episode.duration,
+                                              image: episode.image
+                                            }]);
+                                            console.log('🎬 Added to queue:', episode);
+                                          }
+                                        } catch (error) {
+                                          console.error('🎬 Error adding to queue:', error);
+                                        }
+                                      }}
+                                    >
+                                      +
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             )}
