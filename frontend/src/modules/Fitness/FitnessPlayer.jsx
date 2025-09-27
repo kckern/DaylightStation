@@ -149,7 +149,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
       const effectiveSidebar = sidebarWidth; // always reserve current sidebar width
       const footerEl = footerRef.current;
-      const footerNatural = footerEl ? footerEl.scrollHeight : 0;
+      let footerNatural = 0;
+      if (footerEl) {
+        // Temporarily allow auto height to get intrinsic
+        const prevDisplay = footerEl.style.display;
+        if (videoDims.hideFooter) footerEl.style.display = 'none'; else footerEl.style.display = '';
+        footerNatural = footerEl.scrollHeight;
+        footerEl.style.display = prevDisplay; // restore
+      }
       const availableW = Math.max(0, totalW - effectiveSidebar);
       let videoW = availableW;
       let videoH = Math.round(videoW * 9 / 16);
@@ -573,6 +580,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   
   return (
     <div className="fitness-player">
+
+      <pre style={{ position: 'fixed', top: 0, left: 0, color: '#fff', background: 'rgba(0,0,0,0.5)', zIndex: 1000, padding: '4px', fontSize: '10px' }}>
+        🎬 FitnessPlayer Debug Info:
+        {JSON.stringify({
+          viewportHeight: viewportRef.current ? Math.round(viewportRef.current.clientHeight) : 'N/A',
+          viewportWidth: viewportRef.current ? Math.round(viewportRef.current.clientWidth) : 'N/A',
+          sidebarWidth: sidebarWidth,
+          footerHeight: footerRef.current ? footerRef.current.scrollHeight : 0,   
+          videoPanel:{
+            height: videoDims.height,
+            width: videoDims.width,
+            ratio: videoDims.width && videoDims.height ? (videoDims.width / videoDims.height).toFixed(2) : 'N/A',
+          }
+        })}
+      </pre>
+      
       {/* SideBar Panel */}
       <div
         className="fitness-player-sidebar"
