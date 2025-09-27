@@ -227,9 +227,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
       metadata: currentItem.metadata
     };
     
-    // Basic logging for plexObj
-    console.log('🎬 Using plexObj for thumbnails with thumb_id:', plexObj.thumb_id);
-    
     // Create a button to go back to the beginning - always use black thumbnail
     buttons.push(
       <div className="seek-button-container" key="seek-start" onClick={() => handleSeek(0)}>
@@ -479,8 +476,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
     continuous: false // Don't loop videos
   };
   
-  console.log('🎬 FitnessPlayer: Enhanced item for Player:', enhancedCurrentItem);
-
   return (
     <div className="fitness-player">
       {/* SideBar Panel */}
