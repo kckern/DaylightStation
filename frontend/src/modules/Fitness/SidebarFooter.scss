@@ -54,6 +54,7 @@
         text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
         line-height: 1;
         padding: 5px 0;
+        text-align: center;
       }
     }
 
@@ -72,11 +73,10 @@
     // Device type specific styling
     &.heart-rate {
       .device-header .device-value {
-        color: #ff6b6b;
+        //color: #ff6b6b;
       }
       
       .device-icon .icon-main {
-        color: #ff6b6b;
         filter: drop-shadow(0 0 4px rgba(255, 107, 107, 0.4));
       }
       
