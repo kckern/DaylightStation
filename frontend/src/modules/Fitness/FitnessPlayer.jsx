@@ -112,8 +112,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [duration, setDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   // Layout adaptation state
-  const [stackMode, setStackMode] = useState(false); // when thumbnails become too tall (skinny aspect)
-  const THUMB_ASPECT_THRESHOLD = 16/9 / 2; // if (width/height) < ~0.89 (i.e. thumbnail column too tall)
+  const [stackMode, setStackMode] = useState(false); // layout adaptation flag
+  // Replace aspect-ratio heuristics with per-thumb width heuristic to avoid feedback oscillation
+  const MIN_THUMB_WIDTH_ENTER = 120; // if average per-thumb width falls below this, enter stack mode
+  const MIN_THUMB_WIDTH_EXIT  = 135; // must expand beyond this to exit (hysteresis)
+  const stackEvalRef = useRef({ lastPerThumb: null, lastComputeTs: 0, pending: false });
+  const measureRafRef = useRef(null);
+  const computeRef = useRef(null); // expose compute so other effects can trigger it safely
   const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
   
   // Use props if provided, otherwise fall back to context
@@ -147,64 +152,112 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   useLayoutEffect(() => {
     if (!viewportRef?.current) return;
 
-    const compute = () => {
+    const compute = (reason = 'resize') => {
       if (!viewportRef.current) return;
-      const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
-      const effectiveSidebar = sidebarWidth; // always reserve current sidebar width
-      const footerEl = footerRef.current;
-      let footerNatural = 0;
-      if (footerEl) {
-        // Temporarily allow auto height to get intrinsic
-        const prevDisplay = footerEl.style.display;
-        if (videoDims.hideFooter) footerEl.style.display = 'none'; else footerEl.style.display = '';
-        footerNatural = footerEl.scrollHeight;
-        footerEl.style.display = prevDisplay; // restore
-      }
-      const availableW = Math.max(0, totalW - effectiveSidebar);
-      let videoW = availableW;
-      let videoH = Math.round(videoW * 9 / 16);
-      const maxVideoH = Math.max(0, totalH - footerNatural);
-      if (videoH > maxVideoH) {
-        videoH = maxVideoH;
-        videoW = Math.round(videoH * 16 / 9);
-      }
-      videoW = Math.max(0, videoW);
-      videoH = Math.max(0, videoH);
-      let hideFooter = false;
-      // Only allow footer collapse if sidebar width is zero and still overflowing
-      if (sidebarWidth === 0 && (videoH + footerNatural > totalH)) {
-        const maxVideoHNoFooter = totalH;
-        if (videoH > maxVideoHNoFooter) {
-          videoH = maxVideoHNoFooter;
+      // Throttle layout compute to animation frames & avoid back-to-back redundant runs
+      const now = performance.now();
+      if (stackEvalRef.current.pending) return; // a compute already queued
+      stackEvalRef.current.pending = true;
+      if (measureRafRef.current) cancelAnimationFrame(measureRafRef.current);
+      measureRafRef.current = requestAnimationFrame(() => {
+        stackEvalRef.current.pending = false;
+        stackEvalRef.current.lastComputeTs = now;
+
+        const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
+        const effectiveSidebar = sidebarWidth; // always reserve current sidebar width
+        const footerEl = footerRef.current;
+        let footerNatural = 0;
+        if (footerEl) {
+          // Temporarily allow auto height to get intrinsic
+          const prevDisplay = footerEl.style.display;
+            if (videoDims.hideFooter) footerEl.style.display = 'none'; else footerEl.style.display = '';
+          footerNatural = footerEl.scrollHeight;
+          footerEl.style.display = prevDisplay; // restore
+        }
+        const availableW = Math.max(0, totalW - effectiveSidebar);
+        let videoW = availableW;
+        let videoH = Math.round(videoW * 9 / 16);
+        const maxVideoH = Math.max(0, totalH - footerNatural);
+        if (videoH > maxVideoH) {
+          videoH = maxVideoH;
           videoW = Math.round(videoH * 16 / 9);
         }
-        hideFooter = true;
-      }
-      setVideoDims(prev => (prev.width === videoW && prev.height === videoH && prev.hideFooter === hideFooter)
-        ? prev
-        : { width: videoW, height: videoH, hideFooter });
-
-      // After sizing video + footer, evaluate a SINGLE thumbnail's aspect to toggle stack mode
-      // Prefer wrapper then fallback to the image element
-      const sampleThumb = footerRef.current?.querySelector('.seek-thumbnails .thumbnail-wrapper')
-        || footerRef.current?.querySelector('.seek-thumbnails .seek-thumbnail');
-      if (sampleThumb) {
-        const rect = sampleThumb.getBoundingClientRect();
-        if (rect.height > 0) {
-          const thumbAspect = rect.width / rect.height; // width / height of one thumbnail
-          const shouldStack = thumbAspect < THUMB_ASPECT_THRESHOLD;
-          setStackMode(prev => prev !== shouldStack ? shouldStack : prev);
+        videoW = Math.max(0, videoW);
+        videoH = Math.max(0, videoH);
+        let hideFooter = false;
+        if (sidebarWidth === 0 && (videoH + footerNatural > totalH)) {
+          const maxVideoHNoFooter = totalH;
+          if (videoH > maxVideoHNoFooter) {
+            videoH = maxVideoHNoFooter;
+            videoW = Math.round(videoH * 16 / 9);
+          }
+          hideFooter = true;
         }
-      }
+        setVideoDims(prev => (prev.width === videoW && prev.height === videoH && prev.hideFooter === hideFooter)
+          ? prev
+          : { width: videoW, height: videoH, hideFooter });
+
+        // Evaluate stack mode based on average available width per thumbnail (capacity heuristic)
+        const thumbsContainer = footerRef.current?.querySelector('.seek-thumbnails');
+        if (thumbsContainer) {
+          const count = thumbsContainer.children.length;
+          if (count > 0) {
+            const style = getComputedStyle(thumbsContainer);
+            const gap = parseFloat(style.gap || style.columnGap || '8') || 8;
+            const containerW = thumbsContainer.clientWidth;
+            const perThumb = (containerW - (count - 1) * gap) / count;
+            stackEvalRef.current.lastPerThumb = perThumb;
+            setStackMode(prev => {
+              if (prev) {
+                if (perThumb > MIN_THUMB_WIDTH_EXIT) return false;
+                return prev;
+              } else {
+                if (perThumb < MIN_THUMB_WIDTH_ENTER) return true;
+                return prev;
+              }
+            });
+          }
+        }
+      });
     };
 
-    const ro = new ResizeObserver(() => window.requestAnimationFrame(compute));
+    computeRef.current = compute; // expose
+
+    const ro = new ResizeObserver(() => compute('resizeObserverViewport'));
     ro.observe(viewportRef.current);
     if (mainPlayerRef.current) ro.observe(mainPlayerRef.current);
-    if (footerRef.current) ro.observe(footerRef.current);
-    compute();
-    return () => ro.disconnect();
+    // Guarded footer observer: only react when width meaningfully changes
+    let lastFooterWidth = 0;
+    if (footerRef.current) {
+      const footerRO = new ResizeObserver(entries => {
+        const entry = entries[0];
+        if (!entry) return;
+        const w = entry.contentRect.width;
+        if (Math.abs(w - lastFooterWidth) > 4) { // ignore tiny jitter
+          lastFooterWidth = w;
+          compute('resizeObserverFooter');
+        }
+      });
+      footerRO.observe(footerRef.current);
+      // Store disconnect function
+      stackEvalRef.current.footerRO = footerRO;
+    }
+    compute('initial');
+    return () => {
+      ro.disconnect();
+      if (stackEvalRef.current.footerRO) {
+        stackEvalRef.current.footerRO.disconnect();
+        delete stackEvalRef.current.footerRO;
+      }
+    };
   }, [viewportRef, sidebarWidth]);
+
+  // Recompute when stackMode flips (its className may change per-thumb width) to allow exiting when space increases
+  useEffect(() => {
+    if (!computeRef.current) return;
+    const id = requestAnimationFrame(() => computeRef.current('stackModeChange'));
+    return () => cancelAnimationFrame(id);
+  }, [stackMode]);
 
   // Mouse drag handlers for sidebar resize
   useEffect(() => {
@@ -597,34 +650,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   return (
     <div className="fitness-player">
 
-      <pre style={{ position: 'fixed', top: 0, left: 0, color: '#fff', background: 'rgba(0,0,0,0.5)', zIndex: 1000, padding: '4px', fontSize: '10px' }}>
-        🎬 FitnessPlayer Debug Info:
-        {JSON.stringify({
-          viewportHeight: viewportRef.current ? Math.round(viewportRef.current.clientHeight) : 'N/A',
-          viewportWidth: viewportRef.current ? Math.round(viewportRef.current.clientWidth) : 'N/A',
-          sidebarWidth: sidebarWidth,
-          footerHeight: footerRef.current ? footerRef.current.scrollHeight : 0,   
-          videoPanel:{
-            height: videoDims.height,
-            width: videoDims.width,
-            ratio: videoDims.width && videoDims.height ? (videoDims.width / videoDims.height).toFixed(2) : 'N/A',
-          },
-          thumbnails: (() => {
-            const sample = footerRef.current?.querySelector('.seek-thumbnails .thumbnail-wrapper')
-              || footerRef.current?.querySelector('.seek-thumbnails .seek-thumbnail');
-            if (!sample) return null;
-            const r = sample.getBoundingClientRect();
-            return {
-              sampleWidth: Math.round(r.width),
-              sampleHeight: Math.round(r.height),
-              sampleAspect: r.height ? (r.width / r.height).toFixed(3) : 'N/A',
-              threshold: THUMB_ASPECT_THRESHOLD.toFixed(3),
-              belowThreshold: r.height ? ((r.width / r.height) < THUMB_ASPECT_THRESHOLD) : false,
-              stackMode
-            };
-          })()
-        },null,2)}
-      </pre>
+      {/* Debug JSON overlay removed for production cleanliness */}
       
       {/* SideBar Panel */}
       <div
