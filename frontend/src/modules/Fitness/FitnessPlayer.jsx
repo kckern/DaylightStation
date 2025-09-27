@@ -116,8 +116,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Footer aspect (width/height) hysteresis thresholds
   // When the footer becomes "too tall" relative to width (low aspect ratio) we enter stack mode.
   // Using width/height so a wider, shorter footer has a HIGHER aspect value.
-  const FOOTER_ASPECT_ENTER = 5.0; // enter stack when ratio drops below this
-  const FOOTER_ASPECT_EXIT  = 5.6; // exit stack when ratio rises above this (hysteresis ~12%)
+  const FOOTER_ASPECT_ENTER = 4.0; // enter stack when ratio drops below this
+  const FOOTER_ASPECT_EXIT  = 4.5; // exit stack when ratio rises above this (hysteresis ~12%)
   const stackEvalRef = useRef({ lastFooterAspect: null, lastComputeTs: 0, pending: false });
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
