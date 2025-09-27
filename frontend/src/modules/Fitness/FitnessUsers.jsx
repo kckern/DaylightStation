@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Group, Text, Badge, Stack } from '@mantine/core';
-import { useFitnessWebSocket } from '../../hooks/useFitnessWebSocket.js';
+import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import './FitnessUsers.scss';
+import { DaylightMediaPath } from '../../lib/api.mjs';
 
-const FitnessUsers = ({ fitnessConfiguration }) => {
-  // Use the fitness-specific WebSocket hook
+const FitnessUsers = () => {
+  // Use the fitness context
   const { 
     connected, 
     allDevices,
@@ -15,31 +16,77 @@ const FitnessUsers = ({ fitnessConfiguration }) => {
     unknownDevices,
     deviceCount, 
     latestData, 
-    lastUpdate 
-  } = useFitnessWebSocket(fitnessConfiguration);
+    lastUpdate,
+    deviceConfiguration
+  } = useFitnessContext();
 
-  // Debug logging
-  useEffect(() => {
-    console.log(`🎯 FitnessUsers: ${deviceCount} devices, connected: ${connected}`);
-    console.log('🎯 ALL DEVICES LENGTH:', allDevices.length);
-    console.log('🎯 ALL DEVICES RAW:', allDevices);
-    console.log('🎯 ALL DEVICES:', allDevices.map(d => `${d.deviceId}:${d.type}:${d.isActive ? 'active' : 'inactive'}`));
-    console.log('🎯 HR devices:', heartRateDevices.map(d => d.deviceId));
-    console.log('🎯 Speed devices:', speedDevices.map(d => d.deviceId));
-    console.log('🎯 Cadence devices:', cadenceDevices.map(d => d.deviceId));
-    console.log('🎯 Power devices:', powerDevices.map(d => d.deviceId));
-    
-    // Check if the hook is actually returning data
-    console.log('🎯 Hook return values:', {
-      connected,
-      deviceCount,
-      allDevicesLength: allDevices?.length || 0,
-      heartRateLength: heartRateDevices?.length || 0,
-      speedLength: speedDevices?.length || 0,
-      cadenceLength: cadenceDevices?.length || 0,
-      powerLength: powerDevices?.length || 0
+  // Build lookup maps for heart rate device colors and user assignments
+  // Use a hardcoded fallback for color mapping if all else fails
+  const hardcodedColorMap = {
+    "28812": "red",
+    "28688": "yellow", 
+    "28676": "green",
+    "29413": "blue",
+    "40475": "watch"
+  };
+  
+  // Hardcoded name mapping for each heart rate device
+  const hardcodedNameMap = {
+    "28812": "Felix",
+    "28688": "Milo", 
+    "28676": "Alan",
+    "29413": "Soren",
+    "40475": "Dad"
+  };
+  
+  const rawHrColorMap = (deviceConfiguration?.hr) || 
+                       hardcodedColorMap;
+  
+  // Ensure all keys are strings for consistent lookup
+  const hrColorMap = React.useMemo(() => {
+    const map = {};
+    if (rawHrColorMap && typeof rawHrColorMap === 'object') {
+      Object.keys(rawHrColorMap).forEach(key => {
+        map[String(key)] = rawHrColorMap[key];
+      });
+    }
+    return map;
+  }, [rawHrColorMap]);
+  
+  // Get users directly from the context
+  const { primaryUsers = [], secondaryUsers = [] } = useFitnessContext();
+
+  // Map of deviceId -> user name (first match wins from primary then secondary)
+  const hrOwnerMap = React.useMemo(() => {
+    const map = {};
+    [...primaryUsers, ...secondaryUsers].forEach(u => {
+      if (u?.hr !== undefined && u?.hr !== null) {
+        map[String(u.hr)] = u.name;
+      }
     });
-  }, [allDevices, deviceCount, connected, heartRateDevices, speedDevices, cadenceDevices, powerDevices]);
+    return map;
+  }, [primaryUsers, secondaryUsers]);
+
+  const heartColorIcon = (deviceId) => {
+    const deviceIdStr = String(deviceId);
+    const colorKey = hrColorMap[deviceIdStr];
+    
+    if (!colorKey) {
+      return '🧡'; // Default to orange if not found
+    }
+    
+    // Map color key to colored heart emojis
+    const colorIcons = {
+      red: '❤️',     // Red heart
+      yellow: '💛',  // Yellow heart
+      green: '💚',   // Green heart
+      blue: '💙',    // Blue heart
+      watch: '🤍'    // White heart (for watch)
+    };
+    
+    const icon = colorIcons[colorKey] || '🧡';
+    return icon;
+  };
 
   // Format time ago helper
   const formatTimeAgo = (timestamp) => {
@@ -54,41 +101,36 @@ const FitnessUsers = ({ fitnessConfiguration }) => {
   };
 
   const getDeviceIcon = (device) => {
-    if (device.heartRate !== undefined) return '❤️';
-    if (device.power !== undefined) return '⚡';
-    if (device.cadence !== undefined) return '⚙️';
-    if (device.type === 'speed') {
-      // RPM-only wheel sensor
-      return '�';
+    if (device.type === 'heart_rate') {
+      return heartColorIcon(device.deviceId);
     }
+    if (device.type === 'power') return '⚡';
+    if (device.type === 'cadence') return '⚙️';
+    if (device.type === 'speed') return '🚴';
     return '📡';
   };
 
   const getDeviceValue = (device) => {
-    if (device.heartRate) return `${device.heartRate}`;
-    if (device.power) return `${device.power}`;
-    if (device.cadence) return `${device.cadence}`;
-    if (device.type === 'speed') {
-      const rpm = device.wheelRpm || device.smoothedRpm || device.instantRpm;
-      if (rpm) return `${Math.round(rpm)}`;
-      return '0';
-    }
+    if (device.type === 'heart_rate' && device.heartRate) return `${device.heartRate}`;
+    if (device.type === 'power' && device.power) return `${device.power}`;
+    if (device.type === 'cadence' && device.cadence) return `${device.cadence}`;
+    if (device.type === 'speed' && device.speedKmh) return `${device.speedKmh.toFixed(1)}`;
     return '--';
   };
 
   const getDeviceUnit = (device) => {
-    if (device.heartRate) return 'BPM';
-    if (device.power) return 'W';
-    if (device.cadence) return 'RPM';
-    if (device.type === 'speed') return 'RPM';
+    if (device.type === 'heart_rate') return 'BPM';
+    if (device.type === 'power') return 'W';
+    if (device.type === 'cadence') return 'RPM';
+    if (device.type === 'speed') return 'km/h';
     return '';
   };
 
   const getDeviceColor = (device) => {
-    if (device.heartRate !== undefined) return 'heart-rate';
-    if (device.power !== undefined) return 'power';
-    if (device.cadence !== undefined) return 'cadence';
-    if (device.type === 'speed') return 'rpm';
+    if (device.type === 'heart_rate') return 'heart-rate';
+    if (device.type === 'power') return 'power';
+    if (device.type === 'cadence') return 'cadence';
+    if (device.type === 'speed') return 'speed';
     return 'unknown';
   };
 
@@ -101,38 +143,39 @@ const FitnessUsers = ({ fitnessConfiguration }) => {
       </div>
       
       {/* Fitness Devices as Nav Icons */}
-      <div className="nav-devices">
+      <div className="fitness-devices">
         {allDevices.length > 0 ? (
-          <Stack spacing="md">
-            {allDevices.map((device) => (
-              <div 
-                key={`device-${device.deviceId}`} 
-                className={`nav-device ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
-                title={`Device ID: ${device.deviceId} - ${formatTimeAgo(device.lastSeen)}`}
-              >
-                <div className="device-icon">
-                  {getDeviceIcon(device)}
-                  <div className="device-number">{device.deviceId}</div>
-                  {device.batteryLevel && (
-                    <div className="battery-indicator">
-                      <div 
-                        className="battery-level" 
-                        style={{ width: `${device.batteryLevel}%` }}
-                      ></div>
+          <div className="device-grid">
+            {allDevices.map((device) => {
+              const ownerName = device.type === 'heart_rate' ? hrOwnerMap[String(device.deviceId)] : null;
+              // Get name from hardcoded map for HR devices
+              const deviceName = device.type === 'heart_rate' ? 
+                hardcodedNameMap[String(device.deviceId)] || String(device.deviceId) : 
+                String(device.deviceId);
+                
+              return (
+                <div 
+                  key={`device-${device.deviceId}`} 
+                  className={`fitness-device card-horizontal ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
+                  title={`Device: ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
+                >
+                  <div className="user-profile-img-container">
+                    <img src={DaylightMediaPath(`/media/img/users/${ownerName || 'user'}.png`)} alt={`${ownerName || 'user'} profile`} />
+                  </div>
+                  <div className="device-info">
+                    <div className="device-name">
+                      {deviceName}
                     </div>
-                  )}
+                    <div className="device-stats">
+                      <span className="device-icon">{getDeviceIcon(device)}</span>
+                      <span className="device-value">{getDeviceValue(device)}</span>
+                      <span className="device-unit">{getDeviceUnit(device)}</span>
+                    </div>
+                  </div>
                 </div>
-                
-                <div className="device-value">
-                  {getDeviceValue(device)}
-                </div>
-                
-                <div className="device-unit">
-                  {getDeviceUnit(device)}
-                </div>
-              </div>
-            ))}
-          </Stack>
+              );
+            })}
+          </div>
         ) : (
           <div className="nav-empty">
             <div className="empty-icon">📡</div>

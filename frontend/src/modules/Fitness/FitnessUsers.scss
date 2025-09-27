@@ -30,26 +30,101 @@
     }
   }
 
-  .nav-devices {
+  .fitness-devices {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 20px;
+    padding: 0 16px;
+    overflow-y: auto;
 
-    .nav-device {
+      .device-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 3rem;
+        width: 100%;
+        padding: 1rem 0;
+        max-width: 100%;
+        justify-items: center;
+         }
+
+
+    .fitness-device {
       display: flex;
-      flex-direction: column;
       align-items: center;
-      justify-content: center;
-      width: 60px;
-      height: 80px;
-      background: transparent;
-      border-radius: 8px;
+      width: 100%;
+      height: 8rem;
+      background: rgba(40, 40, 40, 0.7);
+      border-radius: 10px;
       cursor: pointer;
       transition: all 0.3s ease;
       position: relative;
-      padding: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+      padding: 0 16px;
+      max-width: 15rem;
+      
+      &.card-horizontal {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        padding: 0;
+        
+        .user-profile-img-container {
+          width: 4rem;
+          height: 4rem;
+          margin: 1rem;
+          flex-shrink: 0;
+          position: relative;
+          
+          img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%
+          }
+
+        }
+        
+        .device-info {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          
+          .device-name {
+            font-size: 2rem;
+            font-weight: 600;
+            color: white;
+            text-align: left;
+            margin-bottom: 4px;
+          }
+          
+          .device-stats {
+            display: flex;
+            justify-content: flex-start;
+            align-items: baseline;
+            gap: 6px;
+            
+            .device-icon {
+              font-size: 16px;
+            }
+            
+            .device-value {
+              font-size: 20px;
+              font-weight: 700;
+              color: white;
+            }
+            
+            .device-unit {
+              font-size: 10px;
+              font-weight: 500;
+              color: rgba(255, 255, 255, 0.7);
+              text-transform: uppercase;
+            }
+          }
+        }
+      }
 
       &:hover {
         background: rgba(255, 255, 255, 0.1);
@@ -84,10 +159,11 @@
         .device-number {
           position: absolute;
           top: -6px;
-          right: -6px;
+          left: 50%;
+          transform: translateX(-50%);
           background: rgba(0, 0, 0, 0.8);
           color: white;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 700;
           min-width: 16px;
           height: 16px;
@@ -95,10 +171,11 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 0 4px;
+          padding: 0 6px;
           line-height: 1;
           box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
           border: 1px solid rgba(255, 255, 255, 0.2);
+          white-space: nowrap;
         }
 
         .battery-indicator {
