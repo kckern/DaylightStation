@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
@@ -94,7 +94,18 @@ const formatTime = (seconds) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
+const MIN_SIDEBAR = 160;
+const MAX_SIDEBAR = 600;
+const DEFAULT_SIDEBAR = 250;
+
+const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
+  const mainPlayerRef = useRef(null);
+  const contentRef = useRef(null);
+  const footerRef = useRef(null);
+  const videoShellRef = useRef(null);
+  const [videoDims, setVideoDims] = useState({ width: 0, height: 0, hideFooter: false });
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
+  const resizingRef = useRef(false);
   // Declare hooks
   const [currentItem, setCurrentItem] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -127,6 +138,88 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
       (typeof plexId === 'string' && plexId.includes('metadata')) ||
       (typeof plexId === 'object' && (plexId.id || plexId.ratingKey || plexId.metadata))
     );
+  };
+
+  // Container-based sizing: baseline is .fitness-app-viewport
+  useLayoutEffect(() => {
+    if (!viewportRef?.current) return;
+
+    const compute = () => {
+      if (!viewportRef.current) return;
+      const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
+      const effectiveSidebar = sidebarWidth; // always reserve current sidebar width
+      const footerEl = footerRef.current;
+      const footerNatural = footerEl ? footerEl.scrollHeight : 0;
+      const availableW = Math.max(0, totalW - effectiveSidebar);
+      let videoW = availableW;
+      let videoH = Math.round(videoW * 9 / 16);
+      const maxVideoH = Math.max(0, totalH - footerNatural);
+      if (videoH > maxVideoH) {
+        videoH = maxVideoH;
+        videoW = Math.round(videoH * 16 / 9);
+      }
+      videoW = Math.max(0, videoW);
+      videoH = Math.max(0, videoH);
+      let hideFooter = false;
+      // Only allow footer collapse if sidebar width is zero and still overflowing
+      if (sidebarWidth === 0 && (videoH + footerNatural > totalH)) {
+        const maxVideoHNoFooter = totalH;
+        if (videoH > maxVideoHNoFooter) {
+          videoH = maxVideoHNoFooter;
+          videoW = Math.round(videoH * 16 / 9);
+        }
+        hideFooter = true;
+      }
+      setVideoDims(prev => (prev.width === videoW && prev.height === videoH && prev.hideFooter === hideFooter)
+        ? prev
+        : { width: videoW, height: videoH, hideFooter });
+    };
+
+    const ro = new ResizeObserver(() => window.requestAnimationFrame(compute));
+    ro.observe(viewportRef.current);
+    if (mainPlayerRef.current) ro.observe(mainPlayerRef.current);
+    if (footerRef.current) ro.observe(footerRef.current);
+    compute();
+    return () => ro.disconnect();
+  }, [viewportRef, sidebarWidth]);
+
+  // Mouse drag handlers for sidebar resize
+  useEffect(() => {
+    const handleMove = (e) => {
+      if (!resizingRef.current || !viewportRef?.current) return;
+      const rect = viewportRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left; // position inside viewport
+      const newWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, x));
+      setSidebarWidth(newWidth);
+    };
+    const stop = () => { resizingRef.current = false; };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', stop);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', stop);
+    };
+  }, [viewportRef]);
+
+  const handleResizeMouseDown = (e) => {
+    e.preventDefault();
+    resizingRef.current = true;
+  };
+
+  const handleResizeKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setSidebarWidth(DEFAULT_SIDEBAR);
+      return;
+    }
+    const step = (e.shiftKey ? 40 : 10);
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setSidebarWidth(w => Math.max(MIN_SIDEBAR, w - step));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setSidebarWidth(w => Math.min(MAX_SIDEBAR, w + step));
+    }
   };
   
   // Handle image loading errors for thumbnails
@@ -449,6 +542,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
       });
     }
   }, [currentItem]);
+  
+  // Removed manual JS aspect ratio enforcement in favor of pure CSS layout.
 
   if (!currentItem) return null;
 
@@ -479,7 +574,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
   return (
     <div className="fitness-player">
       {/* SideBar Panel */}
-      <div className="fitness-player-sidebar">
+      <div
+        className="fitness-player-sidebar"
+        style={{ width: sidebarWidth, flex: `0 0 ${sidebarWidth}px` }}
+      >
         {currentItem ? (
           <div className="sidebar-content">
             <h3>{currentItem.title || 'Fitness Video'}</h3>
@@ -528,12 +626,32 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
             <p>No video selected</p>
           </div>
         )}
+        {/* Drag handle */}
+        <div
+          className="fitness-player-sidebar-resizer"
+          onMouseDown={handleResizeMouseDown}
+          onKeyDown={handleResizeKeyDown}
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          tabIndex={0}
+          title="Drag (or use arrows) to resize sidebar. Double-click or press Enter to reset."
+          onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR)}
+        />
       </div>
       
       {/* MainPlayer Panel */}
-      <div className="fitness-player-main">
+      <div className="fitness-player-main" ref={mainPlayerRef}>
         {/* MainContent - 16:9 aspect ratio container */}
-        <div className="fitness-player-content">
+        <div
+          className="fitness-player-content"
+          ref={contentRef}
+          style={{
+            width: videoDims.width ? videoDims.width + 'px' : '100%',
+            height: videoDims.height ? videoDims.height + 'px' : 'auto',
+            margin: videoDims.width && videoDims.width < (mainPlayerRef.current?.clientWidth || 0) ? '0 auto' : '0'
+          }}
+        >
           {/* Add an overlay just to block the top-right close button */}
           <div className="player-controls-blocker"></div>
           <Player 
@@ -557,7 +675,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
         </div>
         
         {/* Footer with 3 panels */}
-        <div className="fitness-player-footer">
+  <div className="fitness-player-footer" ref={footerRef} style={videoDims.hideFooter ? { display: 'none' } : undefined}>
           {/* Panel 1: Previous and Play/Pause buttons */}
           <div className="footer-controls-left">
             <div className="control-buttons-container">
