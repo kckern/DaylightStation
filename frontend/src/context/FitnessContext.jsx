@@ -17,6 +17,7 @@ export const useFitnessContext = () => {
 export const FitnessProvider = ({ children, fitnessConfiguration }) => {
   const ant_devices = fitnessConfiguration?.fitness?.ant_devices || {};
   const usersConfig = fitnessConfiguration?.fitness?.users || {};
+  const equipmentConfig = fitnessConfiguration?.fitness?.equipment || [];
 
   const [connected, setConnected] = useState(false);
   const [latestData, setLatestData] = useState(null);
@@ -252,6 +253,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration }) => {
     
     // Device configuration info
     deviceConfiguration: ant_devices,
+    equipment: equipmentConfig,
     
     // Categorized device arrays
     heartRateDevices,

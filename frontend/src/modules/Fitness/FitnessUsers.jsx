@@ -7,6 +7,9 @@ import { DaylightMediaPath } from '../../lib/api.mjs';
 
 const FitnessUsers = () => {
   // Use the fitness context
+  const fitnessContext = useFitnessContext();
+  console.log('Full Fitness Context:', fitnessContext);
+  
   const { 
     connected, 
     allDevices,
@@ -18,8 +21,11 @@ const FitnessUsers = () => {
     deviceCount, 
     latestData, 
     lastUpdate,
-    deviceConfiguration
-  } = useFitnessContext();
+    deviceConfiguration,
+    equipment,
+    primaryUsers,
+    secondaryUsers
+  } = fitnessContext;
   
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
@@ -57,8 +63,7 @@ const FitnessUsers = () => {
     return map;
   }, [rawHrColorMap]);
   
-  // Get users directly from the context
-  const { primaryUsers = [], secondaryUsers = [] } = useFitnessContext();
+  // Users are already available from the context
 
   // Map of deviceId -> user name (first match wins from primary then secondary)
   const hrOwnerMap = React.useMemo(() => {
@@ -70,6 +75,38 @@ const FitnessUsers = () => {
     });
     return map;
   }, [primaryUsers, secondaryUsers]);
+  
+  // Map of deviceId -> user ID (for profile images)
+  const userIdMap = React.useMemo(() => {
+    const map = {};
+    [...primaryUsers, ...secondaryUsers].forEach(u => {
+      if (u?.hr !== undefined && u?.hr !== null) {
+        map[String(u.hr)] = u.id || u.name.toLowerCase();
+      }
+    });
+    return map;
+  }, [primaryUsers, secondaryUsers]);
+  
+  // Map of deviceId -> equipment name and ID
+  const equipmentMap = React.useMemo(() => {
+    const map = {};
+    console.log('Equipment config:', equipment);
+    if (Array.isArray(equipment)) {
+      equipment.forEach(e => {
+        console.log('Processing equipment:', e);
+        if (e?.cadence) {
+          map[String(e.cadence)] = { name: e.name, id: e.id || e.name.toLowerCase() };
+          console.log(`Mapped cadence ${e.cadence} to ${e.name}`);
+        }
+        if (e?.speed) {
+          map[String(e.speed)] = { name: e.name, id: e.id || e.name.toLowerCase() };
+          console.log(`Mapped speed ${e.speed} to ${e.name}`);
+        }
+      });
+    }
+    console.log('Final equipment map:', map);
+    return map;
+  }, [equipment]);
 
   const heartColorIcon = (deviceId) => {
     const deviceIdStr = String(deviceId);
@@ -198,10 +235,21 @@ const FitnessUsers = () => {
           >
             {sortedDevices.map((device) => {
               const ownerName = device.type === 'heart_rate' ? hrOwnerMap[String(device.deviceId)] : null;
-              // Get name from hardcoded map for HR devices
+              
+              // Get equipment info for cadence/speed devices
+              const equipmentInfo = equipmentMap[String(device.deviceId)];
+              
+              // Get name from equipment for cadence/speed, hardcoded map for HR devices, or device ID
               const deviceName = device.type === 'heart_rate' ? 
                 hardcodedNameMap[String(device.deviceId)] || String(device.deviceId) : 
-                String(device.deviceId);
+                (device.type === 'cadence' && equipmentInfo?.name) ? equipmentInfo.name : String(device.deviceId);
+                
+              console.log(`Device ${device.deviceId} (${device.type}) name: ${deviceName}`, equipmentInfo);
+              
+              // Get profile image ID for either user or equipment
+              const profileId = device.type === 'heart_rate' ?
+                (userIdMap[String(device.deviceId)] || 'user') :
+                (equipmentInfo?.id || 'equipment');
                 
               return (
                 <div 
@@ -210,7 +258,39 @@ const FitnessUsers = () => {
                   title={`Device: ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                 >
                   <div className="user-profile-img-container">
-                    <img src={DaylightMediaPath(`/media/img/users/${ownerName || 'user'}.png`)} alt={`${ownerName || 'user'} profile`} />
+                    {device.type === 'cadence' && (
+                      <div 
+                        className="equipment-icon"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '100%',
+                          height: '100%',
+                          fontSize: '2rem',
+                          background: '#333',
+                          borderRadius: '50%',
+                          color: '#fff'
+                        }}
+                      >
+                        ⚙️
+                      </div>
+                    )}
+                    {device.type !== 'cadence' && (
+                      <img 
+                        src={DaylightMediaPath(device.type === 'heart_rate' ?
+                          `/media/img/users/${profileId}.png` :
+                          `/media/img/equipment/${profileId}.png`
+                        )}
+                        alt={`${deviceName} profile`}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = DaylightMediaPath(device.type === 'heart_rate' ? 
+                            `/media/img/users/user.png` : 
+                            `/media/img/equipment/equipment.png`);
+                        }}
+                      />
+                    )}
                   </div>
                   <div className="device-info">
                     <div className="device-name">
