@@ -113,10 +113,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [isPaused, setIsPaused] = useState(false);
   // Layout adaptation state
   const [stackMode, setStackMode] = useState(false); // layout adaptation flag
-  // Replace aspect-ratio heuristics with per-thumb width heuristic to avoid feedback oscillation
-  const MIN_THUMB_WIDTH_ENTER = 120; // if average per-thumb width falls below this, enter stack mode
-  const MIN_THUMB_WIDTH_EXIT  = 135; // must expand beyond this to exit (hysteresis)
-  const stackEvalRef = useRef({ lastPerThumb: null, lastComputeTs: 0, pending: false });
+  // Footer aspect (width/height) hysteresis thresholds
+  // When the footer becomes "too tall" relative to width (low aspect ratio) we enter stack mode.
+  // Using width/height so a wider, shorter footer has a HIGHER aspect value.
+  const FOOTER_ASPECT_ENTER = 5.0; // enter stack when ratio drops below this
+  const FOOTER_ASPECT_EXIT  = 5.6; // exit stack when ratio rises above this (hysteresis ~12%)
+  const stackEvalRef = useRef({ lastFooterAspect: null, lastComputeTs: 0, pending: false });
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
   const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
@@ -197,22 +199,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           ? prev
           : { width: videoW, height: videoH, hideFooter });
 
-        // Evaluate stack mode based on average available width per thumbnail (capacity heuristic)
-        const thumbsContainer = footerRef.current?.querySelector('.seek-thumbnails');
-        if (thumbsContainer) {
-          const count = thumbsContainer.children.length;
-          if (count > 0) {
-            const style = getComputedStyle(thumbsContainer);
-            const gap = parseFloat(style.gap || style.columnGap || '8') || 8;
-            const containerW = thumbsContainer.clientWidth;
-            const perThumb = (containerW - (count - 1) * gap) / count;
-            stackEvalRef.current.lastPerThumb = perThumb;
+        // Evaluate stack mode from footer aspect ratio (width/height)
+        if (footerRef.current) {
+          const fr = footerRef.current.getBoundingClientRect();
+          if (fr.height > 0) {
+            const footerAspect = fr.width / fr.height;
+            stackEvalRef.current.lastFooterAspect = footerAspect;
             setStackMode(prev => {
               if (prev) {
-                if (perThumb > MIN_THUMB_WIDTH_EXIT) return false;
+                // Currently stacked, look to exit only if aspect grows sufficiently
+                if (footerAspect > FOOTER_ASPECT_EXIT) return false;
                 return prev;
               } else {
-                if (perThumb < MIN_THUMB_WIDTH_ENTER) return true;
+                // Currently normal; enter if aspect shrinks below ENTER threshold
+                if (footerAspect < FOOTER_ASPECT_ENTER) return true;
                 return prev;
               }
             });
