@@ -13,8 +13,11 @@ export const useFitnessContext = () => {
   return context;
 };
 
+// Alias for compatibility
+export const useFitness = useFitnessContext;
+
 // Provider component
-export const FitnessProvider = ({ children, fitnessConfiguration }) => {
+export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue }) => {
   const ant_devices = fitnessConfiguration?.fitness?.ant_devices || {};
   const usersConfig = fitnessConfiguration?.fitness?.users || {};
   const equipmentConfig = fitnessConfiguration?.fitness?.equipment || [];
@@ -24,6 +27,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration }) => {
   const [fitnessDevices, setFitnessDevices] = useState(new Map());
   const [users, setUsers] = useState(new Map());
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [internalPlayQueue, setInternalPlayQueue] = useState([]);
+  
+  // Use the provided queue state from props if available, otherwise use internal state
+  const fitnessPlayQueue = propPlayQueue !== undefined ? propPlayQueue : internalPlayQueue;
+  const setFitnessPlayQueue = propSetPlayQueue || setInternalPlayQueue;
+  
+  console.log('🎬 FitnessProvider: Queue state:', { 
+    props: propPlayQueue, 
+    internal: internalPlayQueue, 
+    resolved: fitnessPlayQueue,
+    hasPropSetter: !!propSetPlayQueue
+  });
   
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -240,6 +255,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration }) => {
     allDevices,
     deviceCount: fitnessDevices.size,
     lastUpdate,
+    
+    // Play queue state
+    fitnessPlayQueue,
+    setFitnessPlayQueue,
     
     // User-related data
     users: allUsers,
