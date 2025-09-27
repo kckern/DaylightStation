@@ -293,7 +293,14 @@ const FitnessUsers = () => {
                     )}
                   </div>
                   <div className="device-info">
-                    <div className="device-name">
+                    <div 
+                      className="device-name"
+                      style={device.type === 'cadence' ? {
+                        fontWeight: '600',
+                        fontSize: '2.2rem',
+                        color: '#ffb700'
+                      } : {}}
+                    >
                       {deviceName}
                     </div>
                     <div className="device-stats">
