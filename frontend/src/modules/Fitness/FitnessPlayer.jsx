@@ -111,6 +111,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  // Layout adaptation state
+  const [stackMode, setStackMode] = useState(false); // when thumbnails become too tall (skinny aspect)
+  const THUMB_ASPECT_THRESHOLD = 16/9 / 2; // if (width/height) < ~0.89 (i.e. thumbnail column too tall)
   const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
   
   // Use props if provided, otherwise fall back to context
@@ -180,6 +183,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setVideoDims(prev => (prev.width === videoW && prev.height === videoH && prev.hideFooter === hideFooter)
         ? prev
         : { width: videoW, height: videoH, hideFooter });
+
+      // After sizing video + footer, evaluate seek thumbnail container aspect to toggle stack mode
+      const seekContainer = footerRef.current?.querySelector('.seek-thumbnails');
+      if (seekContainer) {
+        const rect = seekContainer.getBoundingClientRect();
+        if (rect.height > 0) {
+          const aspect = rect.width / rect.height; // wide/height; when < threshold we need more horizontal space
+          const shouldStack = aspect < THUMB_ASPECT_THRESHOLD;
+          setStackMode(prev => prev !== shouldStack ? shouldStack : prev);
+        }
+      }
     };
 
     const ro = new ResizeObserver(() => window.requestAnimationFrame(compute));
@@ -698,7 +712,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         </div>
         
         {/* Footer with 3 panels */}
-  <div className="fitness-player-footer" ref={footerRef} style={videoDims.hideFooter ? { display: 'none' } : undefined}>
+  <div className={`fitness-player-footer${stackMode ? ' stack-mode' : ''}`} ref={footerRef} style={videoDims.hideFooter ? { display: 'none' } : undefined}>
           {/* Panel 1: Previous and Play/Pause buttons */}
           <div className="footer-controls-left">
             <div className="control-buttons-container">

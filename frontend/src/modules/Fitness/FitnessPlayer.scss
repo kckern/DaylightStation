@@ -581,4 +581,41 @@ dash-video {
     
     /* Removed mobile-specific styling since this is a TV app */
   }
+
+  /* Stack mode: when thumbnails too skinny, reflow footer */
+  .fitness-player-footer.stack-mode {
+    align-items: stretch;
+    .footer-controls-left, .footer-controls-right {
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 10px;
+      padding-bottom: 10px;
+      .control-buttons-container {
+        flex-direction: column;
+        gap: 12px;
+      }
+    }
+    .footer-seek-thumbnails {
+      display: flex;
+      flex-direction: column;
+      .seek-thumbnails {
+        display: flex;
+        flex-wrap: wrap;
+        row-gap: 6px;
+        column-gap: 4px;
+        justify-content: flex-start;
+        align-content: flex-start;
+        height: auto;
+        max-height: none;
+      }
+      .seek-button-container {
+        flex: 1 0 calc(20% - 4px); /* 5 per row typical */
+        max-width: none;
+        height: 70px; /* enforce shorter height to move toward 16:9 */
+        .thumbnail-wrapper {
+          height: 100%;
+        }
+      }
+    }
+  }
 }
