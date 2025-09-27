@@ -7,9 +7,23 @@ import FitnessUsers from '../modules/Fitness/FitnessUsers.jsx';
 import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessSidebar from '../modules/Fitness/FitnessSidebar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
+import { FitnessProvider } from '../context/FitnessContext.jsx';
 
 const FitnessApp = () => {
-  const [fitnessConfiguration, setFitnessConfiguration] = useState(null);
+  // Start with default configuration that includes HR colors to avoid null mapping
+  const [fitnessConfiguration, setFitnessConfiguration] = useState({
+    fitness: {
+      ant_devices: {
+        hr: {
+          "28812": "red",
+          "28688": "yellow",
+          "28676": "green",
+          "29413": "blue",
+          "40475": "watch"
+        }
+      }
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show'
   const [activeCollection, setActiveCollection] = useState(null);
@@ -80,35 +94,36 @@ const FitnessApp = () => {
 
   return (
     <MantineProvider theme={{ colorScheme: 'dark' }}>
-      <div className="fitness-app-container">
-        <div className="fitness-app-viewport" style={{ position: 'relative' }} ref={viewportRef}>
-          <FitnessSidebar 
-            collections={collections}
-            activeCollection={activeCollection}
-            onContentSelect={handleContentSelect}
-            fitnessConfiguration={fitnessConfiguration}
-          />
-          <div className="fitness-main-content">
-            {currentView === 'users' && (
-              <FitnessUsers fitnessConfiguration={fitnessConfiguration} />
-            )}
-            {currentView === 'show' && selectedShow && (
-              <FitnessShow 
-                showId={selectedShow} 
-                onBack={handleBackToMenu}
-                viewportRef={viewportRef}
-              />
-            )}
-            {currentView === 'menu' && (
-              <FitnessMenu 
-                collections={collections} 
-                activeCollection={activeCollection} 
-                onContentSelect={handleContentSelect}
-              />
-            )}
+      <FitnessProvider fitnessConfiguration={fitnessConfiguration}>
+        <div className="fitness-app-container">
+          <div className="fitness-app-viewport" style={{ position: 'relative' }} ref={viewportRef}>
+            <FitnessSidebar 
+              collections={collections}
+              activeCollection={activeCollection}
+              onContentSelect={handleContentSelect}
+            />
+            <div className="fitness-main-content">
+              {currentView === 'users' && (
+                <FitnessUsers />
+              )}
+              {currentView === 'show' && selectedShow && (
+                <FitnessShow 
+                  showId={selectedShow} 
+                  onBack={handleBackToMenu}
+                  viewportRef={viewportRef}
+                />
+              )}
+              {currentView === 'menu' && (
+                <FitnessMenu 
+                  collections={collections} 
+                  activeCollection={activeCollection} 
+                  onContentSelect={handleContentSelect}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </FitnessProvider>
     </MantineProvider>
   );
 };

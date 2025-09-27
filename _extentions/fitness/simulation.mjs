@@ -1,63 +1,88 @@
 #!/usr/bin/env node
 
 import WebSocket from 'ws';
+import fs from 'fs';
+import path from 'path';
+import yaml from 'js-yaml';
 
 // Configuration
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
 const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
-const SIMULATION_DURATION = 60 * 1000; // 1 minute in milliseconds
+const SIMULATION_DURATION = 180 * 1000; // 3 minutes in milliseconds
 const UPDATE_INTERVAL = 2000; // Send data every 2 seconds
 
-// Simulated device data for 2 people with 2 sensors each
-const devices = [
-  // Person 1 - Heart Rate Monitor
-  {
-    deviceId: 12345,
-    profile: 'HR',
-    type: 'heart_rate',
-    serialNumber: 12345,
-    baseHeartRate: 75,
-    variability: 15,
-    batteryLevel: 85,
-    beatCount: 0
-  },
-  // Person 1 - Speed Sensor  
-  {
-    deviceId: 23456,
-    profile: 'SPD', 
-    type: 'speed',
-    serialNumber: 23456,
-    baseSpeed: 25, // km/h
-    variability: 5,
-    batteryLevel: 92,
-    revolutionCount: 0,
-    distance: 0
-  },
-  // Person 2 - Heart Rate Monitor
-  {
-    deviceId: 34567,
-    profile: 'HR',
-    type: 'heart_rate', 
-    serialNumber: 34567,
-    baseHeartRate: 68,
-    variability: 12,
-    batteryLevel: 78,
-    beatCount: 0
-  },
-  // Person 2 - Power Meter with Cadence
-  {
-    deviceId: 45678,
-    profile: 'PWR',
-    type: 'power',
-    serialNumber: 45678,
-    basePower: 180,
-    powerVariability: 30,
-    baseCadence: 85,
-    cadenceVariability: 10,
-    batteryLevel: 65,
-    revolutionCount: 0
+// Locate and parse the root config.app.yml
+function loadConfig() {
+  // In ESM, __dirname is not available, use import.meta.url instead
+  const __filename = new URL(import.meta.url).pathname;
+  const rootDir = path.resolve(path.dirname(__filename), '..', '..');
+  const configPath = path.join(rootDir, 'config.app.yml');
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    return yaml.load(raw);
+  } catch (err) {
+    console.error('❌ Failed to load config.app.yml:', err.message);
+    return {};
   }
-];
+}
+
+const appConfig = loadConfig();
+const fitnessCfg = appConfig?.fitness || {};
+const antDevices = fitnessCfg?.ant_devices || {};
+const hrDevicesConfig = antDevices?.hr || {}; // { deviceId: color }
+const cadenceDevicesConfig = antDevices?.cadence || {}; // { deviceId: color }
+const usersCfg = fitnessCfg?.users || {};
+const primaryUsers = usersCfg.primary || [];
+const secondaryUsers = usersCfg.secondary || [];
+
+// Build mapping deviceId -> user (first come first serve from primary then secondary)
+const hrUserMap = {};
+[...primaryUsers, ...secondaryUsers].forEach(u => {
+  if (u?.hr !== undefined && u?.hr !== null) {
+    hrUserMap[String(u.hr)] = u.name;
+  }
+});
+
+// Utility to create baseline heart rate characteristics per user/device
+function baselineForDevice(deviceId) {
+  // Provide varied but deterministic base using deviceId hash
+  const base = 70 + (parseInt(deviceId, 10) % 10); // 70-79
+  const variability = 10 + (parseInt(deviceId, 10) % 6); // 10-15
+  return { baseHeartRate: base, variability };
+}
+
+// Create device list dynamically (heart rate + cadence only)
+const devices = [];
+
+Object.keys(hrDevicesConfig).forEach(id => {
+  const { baseHeartRate, variability } = baselineForDevice(id);
+  devices.push({
+    deviceId: Number(id),
+    profile: 'HeartRate',
+    type: 'heart_rate',
+    serialNumber: Number(id),
+    baseHeartRate,
+    variability,
+    batteryLevel: 80,
+    beatCount: 0,
+    owner: hrUserMap[String(id)],
+    color: hrDevicesConfig[id]
+  });
+});
+
+Object.keys(cadenceDevicesConfig).forEach(id => {
+  devices.push({
+    deviceId: Number(id),
+    profile: 'Cadence',
+    type: 'cadence',
+    serialNumber: Number(id),
+    baseCadence: 80,
+    cadenceVariability: 8,
+    batteryLevel: 75,
+    revolutionCount: 0
+  });
+});
+console.log('🧪 Loaded config devices:', devices.map(d => ({ id: d.deviceId, type: d.type, owner: d.owner || null })));
 
 class FitnessSimulator {
   constructor() {
@@ -147,86 +172,32 @@ class FitnessSimulator {
     };
   }
 
-  generateSpeedData(device, elapsedSeconds) {
-    // Simulate varying speed during workout
-    let speedFactor = 1.0;
-    if (elapsedSeconds < 15) {
-      speedFactor = 0.6 + (elapsedSeconds / 15) * 0.4; // Gradual speed increase
-    } else if (elapsedSeconds > 45) {
-      speedFactor = 1.2; // Sprint finish
-    }
-
-    const targetSpeed = device.baseSpeed * speedFactor;
-    const variation = (Math.random() - 0.5) * device.variability;
-    const speedKmh = Math.max(5, targetSpeed + variation);
-    const speedMs = speedKmh / 3.6;
-    
-    // Update cumulative values
-    device.distance += speedMs * 2; // 2 second intervals
-    device.revolutionCount += Math.round(speedMs * 2 / 2.1); // Assume ~2.1m wheel circumference
-    
-    const eventTime = (elapsedSeconds * 1024) % 65536; // ANT+ event time format
-
-    return {
-      ManId: 255,
-      SerialNumber: device.serialNumber,
-      BatteryStatus: "Good",
-      BatteryLevel: device.batteryLevel,
-      DeviceID: device.deviceId,
-      Channel: 0,
-      SpeedEventTime: eventTime,
-      CumulativeSpeedRevolutionCount: device.revolutionCount,
-      CalculatedDistance: Math.round(device.distance),
-      CalculatedSpeed: parseFloat(speedMs.toFixed(2))
-    };
-  }
-
-  generatePowerData(device, elapsedSeconds) {
-    // Simulate power curve with intervals
-    let powerFactor = 1.0;
-    let cadenceFactor = 1.0;
-    
-    // Create interval training pattern
-    const intervalPhase = Math.floor(elapsedSeconds / 15) % 3;
-    if (intervalPhase === 0) {
-      powerFactor = 0.7; // Recovery
-      cadenceFactor = 0.9;
-    } else if (intervalPhase === 1) {
-      powerFactor = 1.3; // High intensity
-      cadenceFactor = 1.1;
-    } else {
-      powerFactor = 1.0; // Steady state
-      cadenceFactor = 1.0;
-    }
-
-    const targetPower = device.basePower * powerFactor;
-    const powerVariation = (Math.random() - 0.5) * device.powerVariability;
-    const power = Math.max(50, Math.round(targetPower + powerVariation));
-    
+  // Generate cadence-only data
+  generateCadenceData(device, elapsedSeconds) {
+    // Mild oscillation pattern
+    const intervalPhase = Math.floor(elapsedSeconds / 20) % 2; // alternate every 20s
+    const cadenceFactor = intervalPhase === 0 ? 0.95 : 1.05;
     const targetCadence = device.baseCadence * cadenceFactor;
-    const cadenceVariation = (Math.random() - 0.5) * device.cadenceVariability;
-    const cadence = Math.max(60, Math.round(targetCadence + cadenceVariation));
-    
-    device.revolutionCount += Math.round(cadence / 30); // Approximate revolutions in 2 seconds
-
+    const variation = (Math.random() - 0.5) * device.cadenceVariability;
+    const cadence = Math.max(50, Math.round(targetCadence + variation));
+    device.revolutionCount += Math.round(cadence / 30); // approx over 2s
+    const eventTime = (elapsedSeconds * 1024) % 65536;
     return {
       ManId: 255,
       SerialNumber: device.serialNumber,
-      BatteryStatus: "Good", 
+      BatteryStatus: 'Good',
       BatteryLevel: device.batteryLevel,
       DeviceID: device.deviceId,
       Channel: 0,
-      InstantaneousPower: power,
-      Cadence: cadence,
-      PedalPowerBalance: 50, // Balanced pedaling
-      CumulativeCrankRevolutionCount: device.revolutionCount,
-      EventCount: Math.floor(elapsedSeconds / 2)
+      CadenceEventTime: eventTime,
+      CumulativeCadenceRevolutionCount: device.revolutionCount,
+      CalculatedCadence: cadence
     };
   }
 
   startSimulation() {
     console.log(`🚀 Starting fitness simulation for ${SIMULATION_DURATION / 1000} seconds`);
-    console.log(`📊 Simulating ${devices.length} devices:`);
+  console.log(`📊 Simulating ${devices.length} devices:`);
     
     devices.forEach(device => {
       console.log(`  - Device ${device.deviceId}: ${device.profile} (${device.type})`);
@@ -240,10 +211,8 @@ class FitnessSimulator {
         let data;
         if (device.type === 'heart_rate') {
           data = this.generateHeartRateData(device, elapsedSeconds);
-        } else if (device.type === 'speed') {
-          data = this.generateSpeedData(device, elapsedSeconds);
-        } else if (device.type === 'power') {
-          data = this.generatePowerData(device, elapsedSeconds);
+        } else if (device.type === 'cadence') {
+          data = this.generateCadenceData(device, elapsedSeconds);
         }
         
         if (data) {
@@ -280,11 +249,9 @@ class FitnessSimulator {
     console.log('\n📈 Simulation Summary:');
     devices.forEach(device => {
       if (device.type === 'heart_rate') {
-        console.log(`  Heart Rate ${device.deviceId}: ${device.beatCount} beats total`);
-      } else if (device.type === 'speed') {
-        console.log(`  Speed ${device.deviceId}: ${(device.distance / 1000).toFixed(2)}km distance`);
-      } else if (device.type === 'power') {
-        console.log(`  Power ${device.deviceId}: ${device.revolutionCount} crank revolutions`);
+        console.log(`  Heart Rate ${device.deviceId} (${device.owner || 'Unassigned'}): ${device.beatCount} beats total`);
+      } else if (device.type === 'cadence') {
+        console.log(`  Cadence ${device.deviceId}: ${device.revolutionCount} crank revolutions`);
       }
     });
     
