@@ -7,11 +7,42 @@ dash-video {
   opacity: 1 !important;
 }
 
+.fitness-video video,
+.fitness-video dash-video,
+.fitness-video .video-element {
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  width: auto !important;
+  height: auto !important;
+  z-index: 2;
+}
+
+.fitness-video video,
+.fitness-video dash-video,
+.fitness-video .video-element {
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  width: auto !important;
+  height: auto !important;
+  z-index: 2;
+}
+
 /* Player component styling */
 .fitness-video.player {
   background-color: black;
   width: 100%;
   height: 100%;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  
+  video, dash-video {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto !important;
+    height: auto !important;
+    display: block !important;
+  }
 }
 
 .fitness-player {
@@ -22,79 +53,18 @@ dash-video {
   bottom: 0;
   background-color: #111;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   z-index: 100;
   
-  .fitness-player-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px;
-    background-color: #222;
-    
-    .header-content {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      
-      h3 {
-        margin: 0;
-        color: white;
-      }
-      
-      .keyboard-shortcuts {
-        font-size: 0.8rem;
-        color: #aaa;
-        
-        kbd {
-          display: inline-block;
-          background: #333;
-          border: 1px solid #555;
-          border-radius: 3px;
-          padding: 1px 4px;
-          margin: 0 2px;
-          font-size: 0.75rem;
-          color: #ddd;
-          box-shadow: 0 1px 0 rgba(0,0,0,.3);
-          vertical-align: middle;
-          font-family: monospace;
-        }
-        
-        @media (max-width: 768px) {
-          display: none; /* Hide keyboard shortcuts on small screens */
-        }
-      }
-    }
-    
-    .fitness-player-controls {
-      display: flex;
-      gap: 10px;
-      
-      button {
-        background-color: #444;
-        color: white;
-        border: none;
-        padding: 8px 15px;
-        border-radius: 4px;
-        cursor: pointer;
-        
-        &:hover {
-          background-color: #555;
-        }
-      }
-    }
-  }
+  /* Header removed as it's no longer needed */
   
   .fitness-player-main {
     flex-grow: 1;
     display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    
-    @media (max-width: 768px) {
-      flex-direction: column;
-    }
   }
   
   .fitness-player-sidebar {
@@ -103,13 +73,11 @@ dash-video {
     padding: 15px;
     overflow-y: auto;
     border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
     
     @media (max-width: 768px) {
-      flex: 0 0 auto;
-      max-height: 150px;
-      border-right: none;
-      border-bottom: 1px solid #333;
-      order: 2; /* Move below content on mobile */
+      display: none; /* Hide sidebar on mobile */
     }
     
     h4 {
@@ -121,8 +89,16 @@ dash-video {
       padding-bottom: 8px;
     }
     
-    .sidebar-placeholder {
+    .sidebar-content {
       color: #aaa;
+      
+      h3 {
+        color: white;
+        margin: 0 0 20px;
+        font-size: 1.2rem;
+        border-bottom: 1px solid #333;
+        padding-bottom: 10px;
+      }
       
       h5 {
         color: #ddd;
@@ -176,6 +152,33 @@ dash-video {
           font-size: 0.85rem;
         }
       }
+      
+      .keyboard-shortcuts {
+        margin-top: 20px;
+        
+        ul {
+          list-style-type: none;
+          padding-left: 0;
+          margin: 0;
+          
+          li {
+            padding: 5px 0;
+            font-size: 0.85rem;
+            
+            kbd {
+              display: inline-block;
+              background: #333;
+              border: 1px solid #555;
+              border-radius: 3px;
+              padding: 1px 4px;
+              margin: 0 2px;
+              font-size: 0.75rem;
+              color: #ddd;
+              box-shadow: 0 1px 0 rgba(0,0,0,.3);
+            }
+          }
+        }
+      }
     }
   }
   
@@ -185,8 +188,10 @@ dash-video {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
+    background-color: #000;
     overflow: hidden;
+    position: relative;
+    z-index: 1;
     
     @media (max-width: 768px) {
       order: 1; /* Show first on mobile */
@@ -201,21 +206,25 @@ dash-video {
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      position: relative;
       
       .video-player {
         width: 100%;
         height: 100%;
         display: flex;
         flex-direction: column;
+        align-items: center;
+        justify-content: center;
         
         h2 {
           margin-bottom: 10px;
         }
         
         .video-element {
-          width: 100%;
+          width: auto;
           height: auto;
-          max-height: calc(100vh - 150px);
+          max-height: calc(100vh - 120px);
+          max-width: 100%;
           display: block !important;
           visibility: visible !important;
         }
@@ -224,8 +233,10 @@ dash-video {
       video, dash-video {
         display: block !important;
         visibility: visible !important;
-        width: 100%;
-        max-height: calc(100vh - 200px); /* Reduced to accommodate the footer */
+        max-width: 100%;
+        max-height: calc(100vh - 120px);
+        width: auto !important;
+        height: auto !important;
       }
     }
     
@@ -241,189 +252,253 @@ dash-video {
   .fitness-player-footer {
     flex: 0 0 auto;
     background-color: #222;
-    padding: 15px;
+    padding: 10px;
     border-top: 1px solid #333;
     display: flex;
-    flex-direction: column;
-    gap: 15px;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    height: 100px;
     
-    .player-time-info {
-      text-align: center;
-      color: #ddd;
-      font-size: 0.9rem;
-      font-family: monospace;
-      margin-bottom: 5px;
-    }
-    
-    .progress-bar {
-      width: 100%;
-      height: 10px;
-      background-color: #444;
-      border-radius: 5px;
-      overflow: hidden;
-      cursor: pointer;
-      margin: 0 0 10px;
+    /* Panel 1: Previous and Play/Pause buttons */
+    .footer-controls-left {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 15px;
       
-      .progress {
-        height: 100%;
-        background-color: #0084ff;
-        border-radius: 5px;
-        transition: width 0.1s linear;
+      .control-button {
+        background-color: #444;
+        color: white;
+        border: none;
+        padding: 10px;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 0.2s ease;
+        
+        &:hover {
+          background-color: #555;
+        }
+        
+        &:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        &.play-pause-button {
+          background-color: #0084ff;
+          
+          &:hover {
+            background-color: #1e90ff;
+          }
+        }
+        
+        .icon {
+          font-size: 18px;
+        }
       }
       
-      &:hover {
+      .time-display {
+        color: #ddd;
+        font-size: 0.9rem;
+        font-family: monospace;
+        padding: 0 10px;
+      }
+    }
+    
+    /* Panel 2: Seek thumbnails */
+    .footer-seek-thumbnails {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      overflow: hidden;
+      
+      .progress-bar {
+        width: 100%;
+        height: 8px;
+        background-color: #444;
+        border-radius: 4px;
+        overflow: hidden;
+        cursor: pointer;
+        
         .progress {
+          height: 100%;
+          background-color: #0084ff;
+          border-radius: 4px;
+          transition: width 0.1s linear;
+        }
+        
+        &:hover .progress {
           background-color: #1e90ff;
+        }
+      }
+      
+      .seek-thumbnails {
+        display: flex;
+        overflow-x: auto;
+        gap: 2px;
+        padding: 5px 0;
+        width: 100%;
+        justify-content: space-between;
+        
+        &::-webkit-scrollbar {
+          height: 5px;
+        }
+        
+        &::-webkit-scrollbar-track {
+          background: #333;
+          border-radius: 3px;
+        }
+        
+        &::-webkit-scrollbar-thumb {
+          background: #555;
+          border-radius: 3px;
+        }
+      }
+    }
+    
+    /* Panel 3: Next and Close buttons */
+    .footer-controls-right {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 15px;
+      
+      .control-button {
+        background-color: #444;
+        color: white;
+        border: none;
+        padding: 10px;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 0.2s ease;
+        
+        &:hover {
+          background-color: #555;
+        }
+        
+        &:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        &.close-button {
+          background-color: #d32f2f;
+          
+          &:hover {
+            background-color: #f44336;
+          }
+        }
+        
+        .icon {
+          font-size: 18px;
+        }
+      }
+    }
+    
+    /* Seek thumbnails styling */
+    .seek-button-container {
+      flex: 1 1 0;
+      min-width: 0;
+      cursor: pointer;
+      max-width: 100px;
+      
+      .thumbnail-wrapper {
+        position: relative;
+        width: 100%;
+        height: 56px; /* 16:9 aspect ratio */
+        border-radius: 3px;
+        overflow: hidden;
+        background-color: #222;
+        border: 1px solid #333;
+        
+        .seek-thumbnail {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          object-position: center;
+          transition: transform 0.2s ease;
+          flex-shrink: 1;
+        }
+        
+        .black-thumbnail {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: #000;
+          color: white;
+        }
+        
+        .thumbnail-time {
+          position: absolute;
+          bottom: 2px;
+          right: 2px;
+          background-color: rgba(0, 0, 0, 0.7);
+          color: white;
+          font-size: 0.7rem;
+          padding: 2px 4px;
+          border-radius: 2px;
+          font-family: monospace;
+        }
+        
+        .thumbnail-fallback {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          display: none;
+          justify-content: center;
+          align-items: center;
+          font-size: 0.8rem;
+          color: #ddd;
+          background-color: #1f1f1f;
+        }
+        
+        &:hover .seek-thumbnail {
+          transform: scale(1.05);
+        }
+      }
+      
+      &:hover .thumbnail-wrapper {
+        border-color: #0084ff;
+      }
+      
+      @media (max-width: 768px) {
+        .thumbnail-wrapper {
+          width: 80px;
+          height: 45px;
         }
       }
     }
     
     @media (max-width: 768px) {
-      padding: 10px;
+      flex-wrap: wrap;
+      height: auto;
       
-      .player-time-info {
-        font-size: 0.8rem;
-      }
-    }
-    
-    .seek-buttons-wrapper {
-      width: 100%;
-      overflow-x: auto;
-      padding: 10px 0;
-      
-      &::-webkit-scrollbar {
-        height: 8px;
+      .footer-controls-left,
+      .footer-controls-right {
+        flex: 1 0 auto;
       }
       
-      &::-webkit-scrollbar-track {
-        background: #333;
-        border-radius: 4px;
-      }
-      
-      &::-webkit-scrollbar-thumb {
-        background: #555;
-        border-radius: 4px;
-      }
-      
-      &::-webkit-scrollbar-thumb:hover {
-        background: #666;
-      }
-    }
-    
-    .seek-buttons {
-      display: flex;
-      justify-content: center;
-      gap: 16px;
-      margin: 0 auto;
-      min-width: min-content;
-      
-      .seek-button-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 5px;
-        position: relative;
-        
-        .thumbnail-wrapper {
-          width: 120px;
-          height: 67px; // 16:9 aspect ratio
-          position: relative;
-          border-radius: 4px;
-          overflow: hidden;
-          background-color: #222;
-          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
-          border: 1px solid #333;
-          
-          .seek-thumbnail {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform 0.2s ease;
-          }
-          
-          .thumbnail-fallback {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #ddd;
-            background-color: #1f1f1f;
-            background-image: linear-gradient(135deg, #282828 25%, #222 25%, #222 50%, #282828 50%, #282828 75%, #222 75%, #222 100%);
-            background-size: 8px 8px;
-            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-          }
-          
-          &:hover .seek-thumbnail {
-            transform: scale(1.05);
-          }
-          
-          &::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.8));
-            pointer-events: none;
-          }
-        }
-      
-        .seek-button {
-          background-color: #444;
-          color: white;
-          border: none;
-          padding: 6px 8px;
-          border-radius: 4px;
-          cursor: pointer;
-          min-width: 60px;
-          font-size: 0.85rem;
-          transition: background-color 0.2s ease, transform 0.1s ease;
-          text-align: center;
-          width: 100%;
-          
-          &:hover {
-            background-color: #555;
-          }
-          
-          &:active {
-            transform: scale(0.95);
-            background-color: #666;
-          }
-        }
-        
-        @media (max-width: 768px) {
-          .thumbnail-wrapper {
-            width: 90px;
-            height: 50px;
-          }
-          
-          .seek-button {
-            padding: 4px 6px;
-            font-size: 0.75rem;
-            min-width: 40px;
-          }
-        }
-        
-        @media (max-width: 480px) {
-          .thumbnail-wrapper {
-            width: 70px;
-            height: 39px;
-          }
-          
-          .seek-button {
-            padding: 3px 5px;
-            font-size: 0.7rem;
-            min-width: 30px;
-          }
-        }
+      .footer-seek-thumbnails {
+        flex: 1 0 100%;
+        order: -1;
       }
     }
   }
