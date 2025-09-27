@@ -320,6 +320,7 @@ dash-video {
       align-items: center;
       gap: 5px;
       padding: 0 15px;
+      justify-content: center;
       
       .control-buttons-container {
         display: flex;
@@ -440,7 +441,7 @@ dash-video {
       justify-content: flex-end;
       gap: 25px;
       padding: 0 20px;
-      min-width: 150px; /* Ensure there's enough space */
+      justify-content: center;
       
       .control-button {
         background-color: #444;
@@ -602,16 +603,17 @@ dash-video {
         display: flex;
         flex-wrap: wrap;
         row-gap: 6px;
+
         column-gap: 4px;
         justify-content: flex-start;
         align-content: flex-start;
-        height: auto;
+        height: 100%;
         max-height: none;
       }
       .seek-button-container {
         flex: 1 0 calc(20% - 4px); /* 5 per row typical */
         max-width: none;
-        height: 70px; /* enforce shorter height to move toward 16:9 */
+        height: 50%; /* enforce shorter height to move toward 16:9 */
         .thumbnail-wrapper {
           height: 100%;
         }
