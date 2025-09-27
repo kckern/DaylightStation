@@ -46,7 +46,8 @@
         padding: 1rem 0;
         max-width: 100%;
         justify-items: center;
-         }
+        position: relative; /* Important for FlipMove */
+      }
 
 
     .fitness-device {
@@ -57,7 +58,7 @@
       background: rgba(40, 40, 40, 0.7);
       border-radius: 10px;
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: background-color 0.3s ease; /* Modified to avoid conflicts with FlipMove */
       position: relative;
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
       overflow: hidden;
