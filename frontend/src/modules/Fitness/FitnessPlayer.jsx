@@ -2,6 +2,83 @@ import React, { useState, useEffect } from 'react';
 import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
+import { DaylightMediaPath } from '../../lib/api.mjs';
+
+// Helper function to generate Plex thumbnail URLs for specific timestamps
+const generateThumbnailUrl = (plexObj, timeInSeconds) => {
+  console.log('Generating thumbnail for:', {plexObj, timeInSeconds});
+  
+  if (!plexObj) {
+    // Generate a fallback SVG with timestamp
+    return generateFallbackThumbnail(timeInSeconds);
+  }
+  
+  try {
+    // Convert seconds to milliseconds (Plex uses milliseconds for timestamps)
+    const timeInMillis = Math.floor(timeInSeconds * 1000);
+    
+    // Check for available properties to use in URL generation
+    let thumbId = plexObj.thumb_id || null;
+    let image = plexObj.image || null;
+    let mediaId = typeof plexObj === 'object' ? plexObj.id || plexObj.plex : plexObj;
+    
+    // Basic logging
+    
+    // Option 1: Use thumb_id directly with library/parts pattern (best quality)
+    if (thumbId) {
+      // Ensure thumb_id is treated as a number not a string for consistency
+      const numericThumbId = parseInt(thumbId, 10);
+      return DaylightMediaPath(`/plex_proxy/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/parts/${numericThumbId}/indexes/sd/${timeInMillis}`);
+    }
+    
+    // Option 2: If we have mediaId, use library/metadata pattern 
+    if (mediaId) {
+      return DaylightMediaPath(`/plex_proxy/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/metadata/${mediaId}/thumb/${timeInMillis}`);
+    }
+    
+    // Option 3: If we have an image URL that already has a timestamp, replace the timestamp
+    if (image && image.includes('/thumb/')) {
+      // Replace the existing timestamp with our new one
+      return image.replace(/\/thumb\/\d+/, `/thumb/${timeInMillis}`);
+    }
+    
+    // Option 4: Last resort fallback
+    return generateFallbackThumbnail(timeInSeconds);
+  } catch (error) {
+    console.error('Error generating thumbnail URL:', error);
+    return generateFallbackThumbnail(timeInSeconds);
+  }
+};
+
+// Generate a fallback thumbnail with timestamp when Plex thumbnail is unavailable
+const generateFallbackThumbnail = (timeInSeconds) => {
+  // Create formatted time display (MM:SS)
+  const minutes = Math.floor(timeInSeconds / 60);
+  const seconds = Math.floor(timeInSeconds % 60);
+  const formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  
+  // Calculate percentage position in video (assuming 10-minute default if we don't know)
+  const defaultDuration = 600; // 10 minutes
+  const percentage = Math.min(Math.floor((timeInSeconds / defaultDuration) * 100), 100);
+  
+  // Generate an SVG with the timestamp and a visual indicator
+  return `data:image/svg+xml;utf8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="135" viewBox="0 0 240 135">
+      <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#1f1f1f;stop-opacity:1" />
+          <stop offset="100%" style="stop-color:#282828;stop-opacity:1" />
+        </linearGradient>
+      </defs>
+      <rect width="240" height="135" fill="url(#grad)" />
+      <rect x="20" y="95" width="200" height="8" rx="4" ry="4" fill="#444" />
+      <rect x="20" y="95" width="${percentage * 2}" height="8" rx="4" ry="4" fill="#0084ff" />
+      <text x="120" y="67.5" font-family="Arial" font-size="24" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">${formattedTime}</text>
+      <text x="120" y="110" font-family="Arial" font-size="12" fill="#aaaaaa" text-anchor="middle" dominant-baseline="middle">${percentage}%</text>
+      <path d="M120 35 L135 60 L105 60 Z" fill="#ffffff" />
+    </svg>
+  `)}`;
+};
 
 // Helper function to format time in MM:SS or HH:MM:SS format
 const formatTime = (seconds) => {
@@ -19,6 +96,7 @@ const formatTime = (seconds) => {
 };
 
 const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
+  // Declare hooks
   const [currentItem, setCurrentItem] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -34,7 +112,216 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
     resolvedQueue: queue, 
     currentItem 
   });
+
+  // Helper function to check if a plex object is valid for thumbnail generation
+  const isValidPlexObj = (plexObj) => {
+    if (!plexObj) return false;
+    
+    // First check if there's a thumb_id available
+    if (typeof plexObj === 'object' && plexObj.thumb_id) return true;
+    
+    // Fallback to checking if it's a numeric ID or a path that contains metadata
+    const plexId = typeof plexObj === 'object' ? plexObj.id || plexObj.plex || plexObj.ratingKey : plexObj;
+    return (
+      /^\d+$/.test(String(plexId)) || 
+      (typeof plexId === 'string' && plexId.includes('metadata')) ||
+      (typeof plexId === 'object' && (plexId.id || plexId.ratingKey || plexId.metadata))
+    );
+  };
   
+  // Handle image loading errors for thumbnails
+  const handleThumbnailError = (e, label) => {
+    console.warn(`Thumbnail failed to load for ${label}`, e.target.src);
+    e.target.style.display = 'none';
+    if (e.target.nextSibling) {
+      e.target.nextSibling.style.display = 'flex';
+    }
+  };
+  
+  // Function to handle seeking to a specific point in the video
+  const handleSeek = (seconds) => {
+    console.log(`🎬 FitnessPlayer: Seeking to ${seconds} seconds`);
+    // Access the media element directly
+    const mediaElement = document.querySelector('.fitness-player-content video') || 
+                          document.querySelector('.fitness-player-content dash-video') ||
+                          document.querySelector('.fitness-player-content .video-element');
+    
+    if (mediaElement) {
+      // Set the currentTime property to seek to the specified position
+      mediaElement.currentTime = seconds;
+      console.log(`🎬 FitnessPlayer: Seek executed to ${seconds} seconds`);
+    } else {
+      console.error('🎬 FitnessPlayer: Could not find video element to seek');
+    }
+  };
+
+  const handleClose = () => {
+    console.log('🎬 FitnessPlayer: Closing player');
+    if (setQueue) {
+      setQueue([]);
+    }
+    setCurrentItem(null);
+  };
+
+  const handleNext = () => {
+    console.log('🎬 FitnessPlayer: Next item requested');
+    const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
+    if (currentIndex < queue.length - 1) {
+      const nextItem = queue[currentIndex + 1];
+      // Ensure the video URL is properly formatted
+      if (nextItem && !nextItem.media_url && nextItem.videoUrl) {
+        nextItem.media_url = nextItem.videoUrl;
+      }
+      console.log('🎬 FitnessPlayer: Moving to next item:', nextItem);
+      setCurrentItem(nextItem);
+    } else {
+      // End of queue
+      console.log('🎬 FitnessPlayer: End of queue reached');
+      handleClose();
+    }
+  };
+
+  const handlePrev = () => {
+    console.log('🎬 FitnessPlayer: Previous item requested');
+    const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
+    if (currentIndex > 0) {
+      const prevItem = queue[currentIndex - 1];
+      // Ensure the video URL is properly formatted
+      if (prevItem && !prevItem.media_url && prevItem.videoUrl) {
+        prevItem.media_url = prevItem.videoUrl;
+      }
+      console.log('🎬 FitnessPlayer: Moving to previous item:', prevItem);
+      setCurrentItem(prevItem);
+    } else {
+      // Already at first item
+      console.log('🎬 FitnessPlayer: Already at first item');
+    }
+  };
+
+  // Create 10 seek buttons at different intervals with thumbnails
+  const generateSeekButtons = () => {
+    if (!currentItem) return null;
+    
+    const buttons = [];
+    // Use a default of 10 minutes if no duration is available
+    // Try to get duration from various possible sources
+    const totalDuration = currentItem.duration || 
+                          currentItem.length || 
+                          (currentItem.metadata && currentItem.metadata.duration) || 
+                          600;
+    
+    // Get the plexObj from the current item - create an object that includes ALL possible ID properties
+    const plexObj = {
+      // Core identifiers
+      plex: currentItem.plex,
+      id: currentItem.id,
+      // Make sure thumb_id is correctly extracted as a number if possible
+      thumb_id: currentItem.thumb_id ? 
+                (typeof currentItem.thumb_id === 'number' ? currentItem.thumb_id : parseInt(currentItem.thumb_id, 10)) :
+                null,
+      // Image source for direct URL
+      image: currentItem.image,
+      // Additional metadata
+      media_key: currentItem.media_key,
+      ratingKey: currentItem.ratingKey,
+      metadata: currentItem.metadata
+    };
+    
+    // Basic logging for plexObj
+    console.log('🎬 Using plexObj for thumbnails with thumb_id:', plexObj.thumb_id);
+    
+    // Create a button to go back to the beginning - always use black thumbnail
+    buttons.push(
+      <div className="seek-button-container" key="seek-start">
+        <div className="thumbnail-wrapper">
+          <div 
+            className="black-thumbnail seek-thumbnail" 
+            style={{
+              backgroundColor: '#000',
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <span style={{ color: '#fff', fontSize: '14px' }}>0:00</span>
+          </div>
+          <div className="thumbnail-fallback">Start</div>
+        </div>
+        <button 
+          className="seek-button"
+          onClick={() => handleSeek(0)}
+          title="Jump to the beginning"
+        >
+          Start
+        </button>
+      </div>
+    );
+    
+    // Create 8 evenly spaced seek buttons
+    for (let i = 1; i <= 8; i++) {
+      // Calculate position as a percentage of the total duration
+      const position = Math.floor((i / 9) * totalDuration);
+      const minutes = Math.floor(position / 60);
+      const seconds = position % 60;
+      const label = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      
+      buttons.push(
+        <div className="seek-button-container" key={`seek-${i}`}>
+          <div className="thumbnail-wrapper">
+            <img 
+              src={generateThumbnailUrl(plexObj, position)} 
+              alt={`Thumbnail at ${label}`}
+              className="seek-thumbnail"
+              loading="lazy"
+              onError={(e) => handleThumbnailError(e, `Position ${label}`)}
+            />
+            <div className="thumbnail-fallback">{label}</div>
+          </div>
+          <button 
+            className="seek-button"
+            onClick={() => handleSeek(position)}
+            title={`Jump to ${label}`}
+          >
+            {label}
+          </button>
+        </div>
+      );
+    }
+    
+    // Create a button to jump to near the end
+    const endPosition = Math.floor(totalDuration * 0.95);
+    const endMinutes = Math.floor(endPosition / 60);
+    const endSeconds = endPosition % 60;
+    const endLabel = `${endMinutes}:${endSeconds.toString().padStart(2, '0')}`;
+    
+    buttons.push(
+      <div className="seek-button-container" key="seek-end">
+        <div className="thumbnail-wrapper">
+          <img 
+            src={generateThumbnailUrl(plexObj, endPosition)} 
+            alt={`Thumbnail at ${endLabel}`}
+            className="seek-thumbnail"
+            loading="lazy"
+            onError={(e) => handleThumbnailError(e, `End position ${endLabel}`)}
+          />
+          <div className="thumbnail-fallback">End</div>
+        </div>
+        <button 
+          className="seek-button"
+          onClick={() => handleSeek(endPosition)}
+          title="Jump to near the end"
+        >
+          {endLabel}
+        </button>
+      </div>
+    );
+    
+    return buttons;
+  };
+
+  // Effect to track queue changes and set current item
   useEffect(() => {
     console.log('🎬 FitnessPlayer useEffect: Queue length:', queue.length, 'Current item:', currentItem);
     // Queue initialization logic
@@ -75,34 +362,133 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
     // Clean up the interval when the component unmounts or currentItem changes
     return () => clearInterval(interval);
   }, [queue, currentItem]);
-
-  const handleClose = () => {
-    console.log('🎬 FitnessPlayer: Closing player');
-    if (setQueue) {
-      setQueue([]);
+  
+  // Add keyboard navigation support for the player
+  useEffect(() => {
+    // Skip keyboard handling if no current item
+    if (!currentItem) {
+      return;
     }
-    setCurrentItem(null);
-  };
-
-  const handleNext = () => {
-    console.log('🎬 FitnessPlayer: Next item requested');
-    const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
-    if (currentIndex < queue.length - 1) {
-      const nextItem = queue[currentIndex + 1];
-      // Ensure the video URL is properly formatted
-      if (nextItem && !nextItem.media_url && nextItem.videoUrl) {
-        nextItem.media_url = nextItem.videoUrl;
+    
+    const handleKeyDown = (event) => {
+      // Calculate jump points based on duration for navigation
+      const totalDuration = duration || currentItem.duration || 600;
+      const jumpPoints = [0]; // Start with 0
+      
+      // Add 8 evenly spaced points
+      for (let i = 1; i <= 8; i++) {
+        jumpPoints.push(Math.floor((i / 9) * totalDuration));
       }
-      console.log('🎬 FitnessPlayer: Moving to next item:', nextItem);
-      setCurrentItem(nextItem);
-    } else {
-      // End of queue
-      console.log('🎬 FitnessPlayer: End of queue reached');
-      handleClose();
+      
+      // Add the end point (95%)
+      jumpPoints.push(Math.floor(totalDuration * 0.95));
+      
+      switch (event.key) {
+        case 'ArrowRight':
+          // If shift is pressed, jump to next section instead of 30 seconds
+          if (event.shiftKey) {
+            // Find the next jump point
+            const nextPoint = jumpPoints.find(point => point > currentTime + 5);
+            if (nextPoint) {
+              handleSeek(nextPoint);
+            } else {
+              handleSeek(Math.min(currentTime + 30, totalDuration));
+            }
+          } else {
+            // Standard 30 second jump
+            handleSeek(Math.min(currentTime + 30, totalDuration));
+          }
+          break;
+        case 'ArrowLeft':
+          // If shift is pressed, jump to previous section instead of 30 seconds
+          if (event.shiftKey) {
+            // Find the previous jump point
+            const reversedPoints = [...jumpPoints].reverse();
+            const prevPoint = reversedPoints.find(point => point < currentTime - 5);
+            if (prevPoint) {
+              handleSeek(prevPoint);
+            } else {
+              handleSeek(Math.max(currentTime - 30, 0));
+            }
+          } else {
+            // Standard 30 second jump back
+            handleSeek(Math.max(currentTime - 30, 0));
+          }
+          break;
+        case 'Escape':
+          handleClose();
+          break;
+        case ' ': // Spacebar
+          if (document.activeElement.tagName !== 'BUTTON') {
+            // Toggle play/pause if a player control is available
+            const videoElement = document.querySelector('.fitness-player-content video') || 
+                                document.querySelector('.fitness-player-content dash-video');
+            if (videoElement) {
+              if (videoElement.paused) {
+                videoElement.play();
+              } else {
+                videoElement.pause();
+              }
+            }
+          }
+          break;
+        default:
+          break;
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [currentTime, duration, currentItem]);
+  
+  // Preload thumbnails when player loads to make seek operations smoother
+  useEffect(() => {
+    if (!currentItem) return;
+    
+    const plexObj = {
+      // Core identifiers
+      plex: currentItem.plex,
+      id: currentItem.id,
+      // Make sure thumb_id is correctly extracted as a number if possible
+      thumb_id: currentItem.thumb_id ? 
+                (typeof currentItem.thumb_id === 'number' ? currentItem.thumb_id : parseInt(currentItem.thumb_id, 10)) :
+                null,
+      // Image source for direct URL
+      image: currentItem.image,
+      // Additional metadata
+      media_key: currentItem.media_key,
+      ratingKey: currentItem.ratingKey,
+      metadata: currentItem.metadata
+    };
+    
+    if (isValidPlexObj(plexObj)) {
+      console.log('🎬 FitnessPlayer: Preloading thumbnails...');
+      const totalDuration = currentItem.duration || currentItem.length || 600;
+      
+      // Create array of positions to preload
+      const positions = [0]; // Start with 0
+      for (let i = 1; i <= 8; i++) {
+        positions.push(Math.floor((i / 9) * totalDuration));
+      }
+      positions.push(Math.floor(totalDuration * 0.95)); // End position
+      
+      // Preload images by creating them but not appending to DOM
+      positions.forEach(position => {
+        const img = new Image();
+        img.src = generateThumbnailUrl(plexObj, position);
+      });
     }
-  };
+  }, [currentItem]);
 
   if (!currentItem) return null;
+
+  // Check if there are previous/next items in the queue
+  const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex < queue.length - 1;
 
   // Prepare additional metadata that might be useful for the Player
   const enhancedCurrentItem = {
@@ -113,6 +499,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
     media_type: 'video',
     type: 'video',
     media_key: currentItem.id || `fitness-${Date.now()}`,
+    // Make sure thumb_id is passed along
+    thumb_id: currentItem.thumb_id,
     // Additional properties that might help the Player component
     show: currentItem.show || 'Fitness',
     season: currentItem.season || 'Workout',
@@ -122,123 +510,62 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
   };
   
   console.log('🎬 FitnessPlayer: Enhanced item for Player:', enhancedCurrentItem);
-  
-  // Track current time and duration will be handled in the first useEffect
-
-  // Function to handle seeking to a specific point in the video
-  const handleSeek = (seconds) => {
-    console.log(`🎬 FitnessPlayer: Seeking to ${seconds} seconds`);
-    // Access the media element directly
-    const mediaElement = document.querySelector('.fitness-player-content video') || 
-                          document.querySelector('.fitness-player-content dash-video') ||
-                          document.querySelector('.fitness-player-content .video-element');
-    
-    if (mediaElement) {
-      // Set the currentTime property to seek to the specified position
-      mediaElement.currentTime = seconds;
-      console.log(`🎬 FitnessPlayer: Seek executed to ${seconds} seconds`);
-    } else {
-      console.error('🎬 FitnessPlayer: Could not find video element to seek');
-    }
-  };
-
-  // Create 10 seek buttons at different intervals
-  const generateSeekButtons = () => {
-    const buttons = [];
-    // Use a default of 10 minutes if no duration is available
-    // Try to get duration from various possible sources
-    const totalDuration = currentItem.duration || 
-                          currentItem.length || 
-                          (currentItem.metadata && currentItem.metadata.duration) || 
-                          600;
-    
-    // Create a button to go back to the beginning
-    buttons.push(
-      <button 
-        key="seek-start" 
-        className="seek-button"
-        onClick={() => handleSeek(0)}
-      >
-        Start
-      </button>
-    );
-    
-    // Create 8 evenly spaced seek buttons
-    for (let i = 1; i <= 8; i++) {
-      // Calculate position as a percentage of the total duration
-      const position = Math.floor((i / 9) * totalDuration);
-      const minutes = Math.floor(position / 60);
-      const seconds = position % 60;
-      const label = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-      
-      buttons.push(
-        <button 
-          key={`seek-${i}`} 
-          className="seek-button"
-          onClick={() => handleSeek(position)}
-          title={`Jump to ${minutes} min ${seconds} sec`}
-        >
-          {label}
-        </button>
-      );
-    }
-    
-    // Create a button to jump to near the end (95%)
-    const endPosition = Math.floor(totalDuration * 0.95);
-    const endMinutes = Math.floor(endPosition / 60);
-    const endSeconds = endPosition % 60;
-    
-    buttons.push(
-      <button 
-        key="seek-end" 
-        className="seek-button"
-        onClick={() => handleSeek(endPosition)}
-      >
-        {`${endMinutes}:${endSeconds.toString().padStart(2, '0')}`}
-      </button>
-    );
-    
-    return buttons;
-  };
 
   return (
     <div className="fitness-player">
       <div className="fitness-player-header">
-        <h3>{currentItem.title || currentItem.label}</h3>
+        <div className="header-content">
+          <h3>{currentItem.title || 'Fitness Video'}</h3>
+          <div className="keyboard-shortcuts">
+            <span title="Keyboard shortcuts">
+              <kbd>←</kbd> / <kbd>→</kbd> Skip 30s | <kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd> Jump between thumbnails | <kbd>Space</kbd> Play/Pause | <kbd>Esc</kbd> Close
+            </span>
+          </div>
+        </div>
         <div className="fitness-player-controls">
-          <button onClick={handleNext}>Next</button>
+          <button onClick={handlePrev} disabled={!hasPrev}>Previous</button>
+          <button onClick={handleNext} disabled={!hasNext}>Next</button>
           <button onClick={handleClose}>Close</button>
         </div>
       </div>
       
       <div className="fitness-player-main">
         <div className="fitness-player-sidebar">
-          <h4>Workout Details</h4>
-          <div className="sidebar-placeholder">
-            {currentItem.description && (
-              <div className="workout-description">
-                <h5>Description</h5>
-                <p>{currentItem.description}</p>
+          {currentItem ? (
+            <div className="sidebar-placeholder">
+              <div className="workout-info">
+                <h4>Workout Details</h4>
               </div>
-            )}
-            
-            <div className="workout-details">
-              <h5>Information</h5>
-              <ul>
-                <li><span>Type:</span> {currentItem.type || currentItem.show || 'Workout'}</li>
-                <li><span>Duration:</span> {formatTime(currentItem.duration || duration || 600)}</li>
-                <li><span>Instructor:</span> {currentItem.instructor || currentItem.author || 'Unknown'}</li>
-                <li><span>Difficulty:</span> {currentItem.difficulty || 'Intermediate'}</li>
-                <li><span>Equipment:</span> {currentItem.equipment || 'Basic'}</li>
-              </ul>
+              
+              {currentItem.description && (
+                <div className="workout-description">
+                  <h5>Description</h5>
+                  <p>{currentItem.description}</p>
+                </div>
+              )}
+              
+              <div className="workout-details">
+                <h5>Information</h5>
+                <ul>
+                  <li><span>Type:</span> {currentItem.type || currentItem.show || 'Workout'}</li>
+                  <li><span>Duration:</span> {formatTime(currentItem.duration || duration || 600)}</li>
+                  <li><span>Instructor:</span> {currentItem.instructor || currentItem.author || 'Unknown'}</li>
+                  <li><span>Difficulty:</span> {currentItem.difficulty || 'Intermediate'}</li>
+                  <li><span>Equipment:</span> {currentItem.equipment || 'Basic'}</li>
+                </ul>
+              </div>
+              
+              <div className="queue-info">
+                <h5>Queue</h5>
+                <p>{queue.length} item{queue.length !== 1 ? 's' : ''} in queue</p>
+                <p>Currently playing {queue.findIndex(item => item.id === currentItem?.id) + 1} of {queue.length}</p>
+              </div>
             </div>
-            
-            <div className="queue-info">
-              <h5>Queue</h5>
-              <p>{queue.length} item{queue.length !== 1 ? 's' : ''} in queue</p>
-              <p>Currently playing {queue.findIndex(item => item.id === currentItem?.id) + 1} of {queue.length}</p>
+          ) : (
+            <div className="sidebar-placeholder">
+              <p>No video selected</p>
             </div>
-          </div>
+          )}
         </div>
         
         <div className="fitness-player-content">
@@ -276,8 +603,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
         }}>
           <div className="progress" style={{ width: `${((currentTime / (duration || currentItem.duration || 600)) * 100)}%` }}></div>
         </div>
-        <div className="seek-buttons">
-          {generateSeekButtons()}
+        <div className="seek-buttons-wrapper">
+          <div className="seek-buttons">
+            {generateSeekButtons()}
+          </div>
         </div>
       </div>
     </div>

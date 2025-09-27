@@ -32,9 +32,38 @@ dash-video {
     padding: 15px;
     background-color: #222;
     
-    h3 {
-      margin: 0;
-      color: white;
+    .header-content {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      
+      h3 {
+        margin: 0;
+        color: white;
+      }
+      
+      .keyboard-shortcuts {
+        font-size: 0.8rem;
+        color: #aaa;
+        
+        kbd {
+          display: inline-block;
+          background: #333;
+          border: 1px solid #555;
+          border-radius: 3px;
+          padding: 1px 4px;
+          margin: 0 2px;
+          font-size: 0.75rem;
+          color: #ddd;
+          box-shadow: 0 1px 0 rgba(0,0,0,.3);
+          vertical-align: middle;
+          font-family: monospace;
+        }
+        
+        @media (max-width: 768px) {
+          display: none; /* Hide keyboard shortcuts on small screens */
+        }
+      }
     }
     
     .fitness-player-controls {
@@ -212,17 +241,18 @@ dash-video {
   .fitness-player-footer {
     flex: 0 0 auto;
     background-color: #222;
-    padding: 10px 15px;
+    padding: 15px;
     border-top: 1px solid #333;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 15px;
     
     .player-time-info {
       text-align: center;
       color: #ddd;
       font-size: 0.9rem;
       font-family: monospace;
+      margin-bottom: 5px;
     }
     
     .progress-bar {
@@ -232,7 +262,7 @@ dash-video {
       border-radius: 5px;
       overflow: hidden;
       cursor: pointer;
-      margin: 0;
+      margin: 0 0 10px;
       
       .progress {
         height: 100%;
@@ -249,54 +279,150 @@ dash-video {
     }
     
     @media (max-width: 768px) {
-      padding: 8px;
+      padding: 10px;
       
       .player-time-info {
         font-size: 0.8rem;
       }
     }
     
+    .seek-buttons-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      padding: 10px 0;
+      
+      &::-webkit-scrollbar {
+        height: 8px;
+      }
+      
+      &::-webkit-scrollbar-track {
+        background: #333;
+        border-radius: 4px;
+      }
+      
+      &::-webkit-scrollbar-thumb {
+        background: #555;
+        border-radius: 4px;
+      }
+      
+      &::-webkit-scrollbar-thumb:hover {
+        background: #666;
+      }
+    }
+    
     .seek-buttons {
       display: flex;
       justify-content: center;
-      flex-wrap: wrap;
-      gap: 8px;
-      max-width: 800px;
+      gap: 16px;
       margin: 0 auto;
+      min-width: min-content;
       
-      .seek-button {
-        background-color: #444;
-        color: white;
-        border: none;
-        padding: 8px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        min-width: 60px;
-        font-size: 0.9rem;
-        flex-grow: 1;
-        transition: background-color 0.2s ease, transform 0.1s ease;
-        text-align: center;
+      .seek-button-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        position: relative;
         
-        &:hover {
-          background-color: #555;
+        .thumbnail-wrapper {
+          width: 120px;
+          height: 67px; // 16:9 aspect ratio
+          position: relative;
+          border-radius: 4px;
+          overflow: hidden;
+          background-color: #222;
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+          border: 1px solid #333;
+          
+          .seek-thumbnail {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.2s ease;
+          }
+          
+          .thumbnail-fallback {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #ddd;
+            background-color: #1f1f1f;
+            background-image: linear-gradient(135deg, #282828 25%, #222 25%, #222 50%, #282828 50%, #282828 75%, #222 75%, #222 100%);
+            background-size: 8px 8px;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+          }
+          
+          &:hover .seek-thumbnail {
+            transform: scale(1.05);
+          }
+          
+          &::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.8));
+            pointer-events: none;
+          }
         }
-        
-        &:active {
-          transform: scale(0.95);
-          background-color: #666;
+      
+        .seek-button {
+          background-color: #444;
+          color: white;
+          border: none;
+          padding: 6px 8px;
+          border-radius: 4px;
+          cursor: pointer;
+          min-width: 60px;
+          font-size: 0.85rem;
+          transition: background-color 0.2s ease, transform 0.1s ease;
+          text-align: center;
+          width: 100%;
+          
+          &:hover {
+            background-color: #555;
+          }
+          
+          &:active {
+            transform: scale(0.95);
+            background-color: #666;
+          }
         }
         
         @media (max-width: 768px) {
-          padding: 6px 10px;
-          font-size: 0.8rem;
-          min-width: 50px;
+          .thumbnail-wrapper {
+            width: 90px;
+            height: 50px;
+          }
+          
+          .seek-button {
+            padding: 4px 6px;
+            font-size: 0.75rem;
+            min-width: 40px;
+          }
         }
         
         @media (max-width: 480px) {
-          padding: 5px 8px;
-          font-size: 0.75rem;
-          min-width: 40px;
-          margin: 2px 1px;
+          .thumbnail-wrapper {
+            width: 70px;
+            height: 39px;
+          }
+          
+          .seek-button {
+            padding: 3px 5px;
+            font-size: 0.7rem;
+            min-width: 30px;
+          }
         }
       }
     }
