@@ -1,10 +1,20 @@
-/* Global overrides to ensure video visibility */
+/* Global overrides to ensure video visibility and hide unwanted elements */
 .video-element, 
 video, 
 dash-video {
   display: block !important;
   visibility: visible !important;
   opacity: 1 !important;
+}
+
+/* Only hide the close button in the Player component (top right corner) */
+.fitness-player-content .player > div > button:first-child,
+.fitness-player-content .video-player > div:first-child > button:first-child,
+.fitness-player-content .video-player > button:first-of-type {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .fitness-video video,
@@ -193,6 +203,18 @@ dash-video {
     position: relative;
     z-index: 1;
     
+    /* Overlay to block only the top-right corner close button */
+    .player-controls-blocker {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 80px;
+      height: 80px;
+      z-index: 1000;
+      background-color: transparent;
+      pointer-events: none; /* Allow clicks to pass through except for the close button */
+    }
+    
     @media (max-width: 768px) {
       order: 1; /* Show first on mobile */
     }
@@ -252,21 +274,28 @@ dash-video {
   .fitness-player-footer {
     flex: 0 0 auto;
     background-color: #222;
-    padding: 10px;
+    padding: 15px;
     border-top: 1px solid #333;
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 10px;
-    height: 100px;
+    justify-content: space-between;
+    height: 130px; /* Increase height to fit larger buttons */
     
     /* Panel 1: Previous and Play/Pause buttons */
     .footer-controls-left {
       flex: 0 0 auto;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 10px;
+      gap: 5px;
       padding: 0 15px;
+      
+      .control-buttons-container {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
       
       .control-button {
         background-color: #444;
@@ -277,7 +306,10 @@ dash-video {
         width: 40px;
         height: 40px;
         cursor: pointer;
-        display: flex;
+        display: flex !important; /* Force display */
+        visibility: visible !important; /* Force visibility */
+        opacity: 1 !important; /* Force opacity */
+        pointer-events: auto !important; /* Force clickability */
         align-items: center;
         justify-content: center;
         transition: background-color 0.2s ease;
@@ -306,9 +338,10 @@ dash-video {
       
       .time-display {
         color: #ddd;
-        font-size: 0.9rem;
+        font-size: 0.8rem;
         font-family: monospace;
-        padding: 0 10px;
+        padding: 2px 0;
+        text-align: center;
       }
     }
     
@@ -319,6 +352,7 @@ dash-video {
       flex-direction: column;
       gap: 5px;
       overflow: hidden;
+      margin: 0 25px;
       
       .progress-bar {
         width: 100%;
@@ -369,8 +403,10 @@ dash-video {
       flex: 0 0 auto;
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 0 15px;
+      justify-content: flex-end;
+      gap: 25px;
+      padding: 0 20px;
+      min-width: 150px; /* Ensure there's enough space */
       
       .control-button {
         background-color: #444;
@@ -378,8 +414,8 @@ dash-video {
         border: none;
         padding: 10px;
         border-radius: 50%;
-        width: 40px;
-        height: 40px;
+        width: 45px;
+        height: 45px;
         cursor: pointer;
         display: flex;
         align-items: center;
@@ -395,16 +431,37 @@ dash-video {
           cursor: not-allowed;
         }
         
+        &.next-button {
+          background-color: #444;
+          margin-right: 0;
+        }
+        
         &.close-button {
           background-color: #d32f2f;
+
+          border: 4px solid #fff;
+          z-index: 999; /* Ensure it's above everything */
+          box-shadow: 0 0 15px rgba(0,0,0,0.7); /* Add shadow for better visibility */
+          display: flex !important;
+          visibility: visible !important;
+          opacity: 1 !important;
+          pointer-events: auto !important;
           
-          &:hover {
-            background-color: #f44336;
+          
+          .icon {
+            font-size: 40px;
+            font-weight: bold;
+            color: white;
+            line-height: 1;
+          }
+          
+          .sr-only {
+            overflow: hidden;
           }
         }
         
         .icon {
-          font-size: 18px;
+          font-size: 20px;
         }
       }
     }
@@ -487,19 +544,6 @@ dash-video {
       }
     }
     
-    @media (max-width: 768px) {
-      flex-wrap: wrap;
-      height: auto;
-      
-      .footer-controls-left,
-      .footer-controls-right {
-        flex: 1 0 auto;
-      }
-      
-      .footer-seek-thumbnails {
-        flex: 1 0 100%;
-        order: -1;
-      }
-    }
+    /* Removed mobile-specific styling since this is a TV app */
   }
 }
