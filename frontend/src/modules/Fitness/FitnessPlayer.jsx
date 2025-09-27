@@ -6,7 +6,6 @@ import { DaylightMediaPath } from '../../lib/api.mjs';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
-  console.log('Generating thumbnail for:', {plexObj, timeInSeconds});
   
   if (!plexObj) {
     // Generate a fallback SVG with timestamp
@@ -540,6 +539,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
       <div className="fitness-player-main">
         {/* MainContent - 16:9 aspect ratio container */}
         <div className="fitness-player-content">
+          {/* Add an overlay just to block the top-right close button */}
+          <div className="player-controls-blocker"></div>
           <Player 
             key={enhancedCurrentItem.media_key || enhancedCurrentItem.plex || Date.now()}
             play={{
@@ -564,12 +565,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
         <div className="fitness-player-footer">
           {/* Panel 1: Previous and Play/Pause buttons */}
           <div className="footer-controls-left">
-            <button onClick={handlePrev} disabled={!hasPrev} className="control-button prev-button">
-              <span className="icon">⏮</span>
-            </button>
-            <button onClick={() => setIsPaused(!isPaused)} className="control-button play-pause-button">
-              <span className="icon">{isPaused ? "▶" : "⏸"}</span>
-            </button>
+            <div className="control-buttons-container">
+              <button onClick={() => setIsPaused(!isPaused)} className="control-button play-pause-button">
+                <span className="icon">{isPaused ? "▶" : "⏸"}</span>
+              </button>
+              <button onClick={handlePrev} disabled={!hasPrev} className="control-button prev-button">
+                <span className="icon">⏮</span>
+              </button>
+            </div>
             <div className="time-display">
               {formatTime(currentTime)} / {formatTime(duration || (currentItem.duration || 600))}
             </div>
@@ -598,6 +601,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
             </button>
             <button onClick={handleClose} className="control-button close-button">
               <span className="icon">✖</span>
+              <span className="sr-only">Close</span>
             </button>
           </div>
         </div>
