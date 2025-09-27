@@ -100,6 +100,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
   const [currentItem, setCurrentItem] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
   const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
   
   // Use props if provided, otherwise fall back to context
@@ -232,30 +233,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
     
     // Create a button to go back to the beginning - always use black thumbnail
     buttons.push(
-      <div className="seek-button-container" key="seek-start">
+      <div className="seek-button-container" key="seek-start" onClick={() => handleSeek(0)}>
         <div className="thumbnail-wrapper">
-          <div 
-            className="black-thumbnail seek-thumbnail" 
-            style={{
-              backgroundColor: '#000',
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <span style={{ color: '#fff', fontSize: '14px' }}>0:00</span>
+          <div className="black-thumbnail seek-thumbnail">
+            <span className="thumbnail-time">0:00</span>
           </div>
-          <div className="thumbnail-fallback">Start</div>
         </div>
-        <button 
-          className="seek-button"
-          onClick={() => handleSeek(0)}
-          title="Jump to the beginning"
-        >
-          Start
-        </button>
       </div>
     );
     
@@ -268,7 +251,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
       const label = `${minutes}:${seconds.toString().padStart(2, '0')}`;
       
       buttons.push(
-        <div className="seek-button-container" key={`seek-${i}`}>
+        <div className="seek-button-container" key={`seek-${i}`} onClick={() => handleSeek(position)}>
           <div className="thumbnail-wrapper">
             <img 
               src={generateThumbnailUrl(plexObj, position)} 
@@ -277,15 +260,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
               loading="lazy"
               onError={(e) => handleThumbnailError(e, `Position ${label}`)}
             />
+            <span className="thumbnail-time">{label}</span>
             <div className="thumbnail-fallback">{label}</div>
           </div>
-          <button 
-            className="seek-button"
-            onClick={() => handleSeek(position)}
-            title={`Jump to ${label}`}
-          >
-            {label}
-          </button>
         </div>
       );
     }
@@ -297,7 +274,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
     const endLabel = `${endMinutes}:${endSeconds.toString().padStart(2, '0')}`;
     
     buttons.push(
-      <div className="seek-button-container" key="seek-end">
+      <div className="seek-button-container" key="seek-end" onClick={() => handleSeek(endPosition)}>
         <div className="thumbnail-wrapper">
           <img 
             src={generateThumbnailUrl(plexObj, endPosition)} 
@@ -306,15 +283,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
             loading="lazy"
             onError={(e) => handleThumbnailError(e, `End position ${endLabel}`)}
           />
+          <span className="thumbnail-time">{endLabel}</span>
           <div className="thumbnail-fallback">End</div>
         </div>
-        <button 
-          className="seek-button"
-          onClick={() => handleSeek(endPosition)}
-          title="Jump to near the end"
-        >
-          {endLabel}
-        </button>
       </div>
     );
     
@@ -513,61 +484,61 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
 
   return (
     <div className="fitness-player">
-      <div className="fitness-player-header">
-        <div className="header-content">
-          <h3>{currentItem.title || 'Fitness Video'}</h3>
-          <div className="keyboard-shortcuts">
-            <span title="Keyboard shortcuts">
-              <kbd>←</kbd> / <kbd>→</kbd> Skip 30s | <kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd> Jump between thumbnails | <kbd>Space</kbd> Play/Pause | <kbd>Esc</kbd> Close
-            </span>
+      {/* SideBar Panel */}
+      <div className="fitness-player-sidebar">
+        {currentItem ? (
+          <div className="sidebar-content">
+            <h3>{currentItem.title || 'Fitness Video'}</h3>
+            
+            <div className="workout-info">
+              <h4>Workout Details</h4>
+            </div>
+            
+            {currentItem.description && (
+              <div className="workout-description">
+                <h5>Description</h5>
+                <p>{currentItem.description}</p>
+              </div>
+            )}
+            
+            <div className="workout-details">
+              <h5>Information</h5>
+              <ul>
+                <li><span>Type:</span> {currentItem.type || currentItem.show || 'Workout'}</li>
+                <li><span>Duration:</span> {formatTime(currentItem.duration || duration || 600)}</li>
+                <li><span>Instructor:</span> {currentItem.instructor || currentItem.author || 'Unknown'}</li>
+                <li><span>Difficulty:</span> {currentItem.difficulty || 'Intermediate'}</li>
+                <li><span>Equipment:</span> {currentItem.equipment || 'Basic'}</li>
+              </ul>
+            </div>
+            
+            <div className="queue-info">
+              <h5>Queue</h5>
+              <p>{queue.length} item{queue.length !== 1 ? 's' : ''} in queue</p>
+              <p>Currently playing {queue.findIndex(item => item.id === currentItem?.id) + 1} of {queue.length}</p>
+            </div>
+            
+            <div className="keyboard-shortcuts">
+              <h5>Keyboard Shortcuts</h5>
+              <ul>
+                <li><kbd>←</kbd> / <kbd>→</kbd> Skip 30s</li>
+                <li><kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd> Jump between thumbnails</li>
+                <li><kbd>Space</kbd> Play/Pause</li>
+                <li><kbd>Esc</kbd> Close</li>
+              </ul>
+            </div>
           </div>
-        </div>
-        <div className="fitness-player-controls">
-          <button onClick={handlePrev} disabled={!hasPrev}>Previous</button>
-          <button onClick={handleNext} disabled={!hasNext}>Next</button>
-          <button onClick={handleClose}>Close</button>
-        </div>
+        ) : (
+          <div className="sidebar-content">
+            <h3>Fitness Player</h3>
+            <p>No video selected</p>
+          </div>
+        )}
       </div>
       
+      {/* MainPlayer Panel */}
       <div className="fitness-player-main">
-        <div className="fitness-player-sidebar">
-          {currentItem ? (
-            <div className="sidebar-placeholder">
-              <div className="workout-info">
-                <h4>Workout Details</h4>
-              </div>
-              
-              {currentItem.description && (
-                <div className="workout-description">
-                  <h5>Description</h5>
-                  <p>{currentItem.description}</p>
-                </div>
-              )}
-              
-              <div className="workout-details">
-                <h5>Information</h5>
-                <ul>
-                  <li><span>Type:</span> {currentItem.type || currentItem.show || 'Workout'}</li>
-                  <li><span>Duration:</span> {formatTime(currentItem.duration || duration || 600)}</li>
-                  <li><span>Instructor:</span> {currentItem.instructor || currentItem.author || 'Unknown'}</li>
-                  <li><span>Difficulty:</span> {currentItem.difficulty || 'Intermediate'}</li>
-                  <li><span>Equipment:</span> {currentItem.equipment || 'Basic'}</li>
-                </ul>
-              </div>
-              
-              <div className="queue-info">
-                <h5>Queue</h5>
-                <p>{queue.length} item{queue.length !== 1 ? 's' : ''} in queue</p>
-                <p>Currently playing {queue.findIndex(item => item.id === currentItem?.id) + 1} of {queue.length}</p>
-              </div>
-            </div>
-          ) : (
-            <div className="sidebar-placeholder">
-              <p>No video selected</p>
-            </div>
-          )}
-        </div>
-        
+        {/* MainContent - 16:9 aspect ratio container */}
         <div className="fitness-player-content">
           <Player 
             key={enhancedCurrentItem.media_key || enhancedCurrentItem.plex || Date.now()}
@@ -588,24 +559,46 @@ const FitnessPlayer = ({ playQueue, setPlayQueue }) => {
             playerType="fitness-video"
           />
         </div>
-      </div>
-      
-      <div className="fitness-player-footer">
-        <div className="player-time-info">
-          {formatTime(currentTime)} / {formatTime(duration || (currentItem.duration || 600))}
-        </div>
-        <div className="progress-bar" onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const clickX = e.clientX - rect.left;
-          const percent = clickX / rect.width;
-          const seekTime = percent * (duration || currentItem.duration || 600);
-          handleSeek(seekTime);
-        }}>
-          <div className="progress" style={{ width: `${((currentTime / (duration || currentItem.duration || 600)) * 100)}%` }}></div>
-        </div>
-        <div className="seek-buttons-wrapper">
-          <div className="seek-buttons">
-            {generateSeekButtons()}
+        
+        {/* Footer with 3 panels */}
+        <div className="fitness-player-footer">
+          {/* Panel 1: Previous and Play/Pause buttons */}
+          <div className="footer-controls-left">
+            <button onClick={handlePrev} disabled={!hasPrev} className="control-button prev-button">
+              <span className="icon">⏮</span>
+            </button>
+            <button onClick={() => setIsPaused(!isPaused)} className="control-button play-pause-button">
+              <span className="icon">{isPaused ? "▶" : "⏸"}</span>
+            </button>
+            <div className="time-display">
+              {formatTime(currentTime)} / {formatTime(duration || (currentItem.duration || 600))}
+            </div>
+          </div>
+          
+          {/* Panel 2: Seek thumbnails */}
+          <div className="footer-seek-thumbnails">
+            <div className="progress-bar" onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const clickX = e.clientX - rect.left;
+              const percent = clickX / rect.width;
+              const seekTime = percent * (duration || currentItem.duration || 600);
+              handleSeek(seekTime);
+            }}>
+              <div className="progress" style={{ width: `${((currentTime / (duration || currentItem.duration || 600)) * 100)}%` }}></div>
+            </div>
+            <div className="seek-thumbnails">
+              {generateSeekButtons()}
+            </div>
+          </div>
+          
+          {/* Panel 3: Next and Close buttons */}
+          <div className="footer-controls-right">
+            <button onClick={handleNext} disabled={!hasNext} className="control-button next-button">
+              <span className="icon">⏭</span>
+            </button>
+            <button onClick={handleClose} className="control-button close-button">
+              <span className="icon">✖</span>
+            </button>
           </div>
         </div>
       </div>
