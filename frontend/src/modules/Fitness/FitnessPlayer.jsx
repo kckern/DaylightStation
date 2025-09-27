@@ -184,13 +184,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         ? prev
         : { width: videoW, height: videoH, hideFooter });
 
-      // After sizing video + footer, evaluate seek thumbnail container aspect to toggle stack mode
-      const seekContainer = footerRef.current?.querySelector('.seek-thumbnails');
-      if (seekContainer) {
-        const rect = seekContainer.getBoundingClientRect();
+      // After sizing video + footer, evaluate a SINGLE thumbnail's aspect to toggle stack mode
+      // Prefer wrapper then fallback to the image element
+      const sampleThumb = footerRef.current?.querySelector('.seek-thumbnails .thumbnail-wrapper')
+        || footerRef.current?.querySelector('.seek-thumbnails .seek-thumbnail');
+      if (sampleThumb) {
+        const rect = sampleThumb.getBoundingClientRect();
         if (rect.height > 0) {
-          const aspect = rect.width / rect.height; // wide/height; when < threshold we need more horizontal space
-          const shouldStack = aspect < THUMB_ASPECT_THRESHOLD;
+          const thumbAspect = rect.width / rect.height; // width / height of one thumbnail
+          const shouldStack = thumbAspect < THUMB_ASPECT_THRESHOLD;
           setStackMode(prev => prev !== shouldStack ? shouldStack : prev);
         }
       }
@@ -606,8 +608,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             height: videoDims.height,
             width: videoDims.width,
             ratio: videoDims.width && videoDims.height ? (videoDims.width / videoDims.height).toFixed(2) : 'N/A',
-          }
-        })}
+          },
+          thumbnails: (() => {
+            const sample = footerRef.current?.querySelector('.seek-thumbnails .thumbnail-wrapper')
+              || footerRef.current?.querySelector('.seek-thumbnails .seek-thumbnail');
+            if (!sample) return null;
+            const r = sample.getBoundingClientRect();
+            return {
+              sampleWidth: Math.round(r.width),
+              sampleHeight: Math.round(r.height),
+              sampleAspect: r.height ? (r.width / r.height).toFixed(3) : 'N/A',
+              threshold: THUMB_ASPECT_THRESHOLD.toFixed(3),
+              belowThreshold: r.height ? ((r.width / r.height) < THUMB_ASPECT_THRESHOLD) : false,
+              stackMode
+            };
+          })()
+        },null,2)}
       </pre>
       
       {/* SideBar Panel */}
