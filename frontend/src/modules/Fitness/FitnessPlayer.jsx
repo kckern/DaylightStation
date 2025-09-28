@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import FitnessPlayerSidebar from './FitnessPlayerSidebar.jsx';
 import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
+import FitnessUsers from './FitnessUsers.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -105,6 +107,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const videoShellRef = useRef(null);
   const [videoDims, setVideoDims] = useState({ width: 0, height: 0, hideFooter: false });
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
+  const [sidebarSide, setSidebarSide] = useState('right'); // 'left' | 'right'
+  // Mode: fullscreen (no sidebar/ no footer), normal (standard layout), maximal (sidebar 50%, stacked footer)
+  const [playerMode, setPlayerMode] = useState('normal'); // 'fullscreen' | 'normal' | 'maximal'
+  const lastNonFullscreenRef = useRef('normal');
   const resizingRef = useRef(false);
   // Declare hooks
   const [currentItem, setCurrentItem] = useState(null);
@@ -166,7 +172,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         stackEvalRef.current.lastComputeTs = now;
 
         const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
-        const effectiveSidebar = sidebarWidth; // always reserve current sidebar width
+        // Determine effective sidebar width based on mode
+        let effectiveSidebar;
+        if (playerMode === 'fullscreen') {
+          effectiveSidebar = 0;
+        } else if (playerMode === 'maximal') {
+          effectiveSidebar = Math.round(totalW * 0.5);
+        } else { // normal
+          effectiveSidebar = sidebarWidth;
+        }
         const footerEl = footerRef.current;
         let footerNatural = 0;
         if (footerEl) {
@@ -186,8 +200,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         }
         videoW = Math.max(0, videoW);
         videoH = Math.max(0, videoH);
-        let hideFooter = false;
-        if (sidebarWidth === 0 && (videoH + footerNatural > totalH)) {
+        let hideFooter = (playerMode === 'fullscreen');
+        if (!hideFooter && effectiveSidebar === 0 && (videoH + footerNatural > totalH)) {
           const maxVideoHNoFooter = totalH;
           if (videoH > maxVideoHNoFooter) {
             videoH = maxVideoHNoFooter;
@@ -200,7 +214,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           : { width: videoW, height: videoH, hideFooter });
 
         // Evaluate stack mode from footer aspect ratio (width/height)
-        if (footerRef.current) {
+        if (playerMode === 'maximal') {
+          // Force stack mode in maximal
+          setStackMode(true);
+        } else if (footerRef.current) {
           const fr = footerRef.current.getBoundingClientRect();
           if (fr.height > 0) {
             const footerAspect = fr.width / fr.height;
@@ -250,7 +267,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         delete stackEvalRef.current.footerRO;
       }
     };
-  }, [viewportRef, sidebarWidth]);
+  }, [viewportRef, sidebarWidth, playerMode]);
 
   // Recompute when stackMode flips (its className may change per-thumb width) to allow exiting when space increases
   useEffect(() => {
@@ -264,8 +281,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const handleMove = (e) => {
       if (!resizingRef.current || !viewportRef?.current) return;
       const rect = viewportRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left; // position inside viewport
-      const newWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, x));
+      let newWidth;
+      if (sidebarSide === 'right') {
+        const distanceFromRight = rect.right - e.clientX;
+        newWidth = distanceFromRight;
+      } else {
+        const distanceFromLeft = e.clientX - rect.left;
+        newWidth = distanceFromLeft;
+      }
+      newWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, newWidth));
       setSidebarWidth(newWidth);
     };
     const stop = () => { resizingRef.current = false; };
@@ -457,114 +481,51 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     return buttons;
   };
 
-  // Effect to track queue changes and set current item
+  // Effect: initialize current item from queue & setup keyboard shortcuts
   useEffect(() => {
-    console.log('🎬 FitnessPlayer useEffect: Queue length:', queue.length, 'Current item:', currentItem);
-    // Queue initialization logic
     if (queue.length > 0 && !currentItem) {
-      console.log('🎬 FitnessPlayer: Setting current item to first in queue:', queue[0]);
-      // Prepare the media item with proper URL structure
-      const firstItem = queue[0];
-      // Ensure the video URL is properly formatted
-      if (firstItem && !firstItem.media_url && firstItem.videoUrl) {
-        firstItem.media_url = firstItem.videoUrl;
-      }
-      setCurrentItem(firstItem);
+      // Normalize first item (ensure media_url exists)
+      const first = { ...queue[0] };
+      if (!first.media_url && first.videoUrl) first.media_url = first.videoUrl;
+      setCurrentItem(first);
     }
-    
-    // No need to track progress if there's no current item
-    if (!currentItem) return;
-    
-    // Progress tracking logic
-    const updateVideoProgress = () => {
-      const mediaElement = document.querySelector('.fitness-player-content video') || 
-                          document.querySelector('.fitness-player-content dash-video') ||
-                          document.querySelector('.fitness-player-content .video-element');
-      
-      if (mediaElement) {
-        setCurrentTime(mediaElement.currentTime || 0);
-        if (mediaElement.duration && !isNaN(mediaElement.duration)) {
-          setDuration(mediaElement.duration || 0);
-        }
-      }
-    };
-    
-    // Update every second
-    const interval = setInterval(updateVideoProgress, 1000);
-    
-    // Call once immediately to initialize
-    updateVideoProgress();
-    
-    // Clean up the interval when the component unmounts or currentItem changes
-    return () => clearInterval(interval);
-  }, [queue, currentItem]);
-  
-  // Add keyboard navigation support for the player
-  useEffect(() => {
-    // Skip keyboard handling if no current item
-    if (!currentItem) {
-      return;
-    }
-    
+
     const handleKeyDown = (event) => {
-      // Calculate jump points based on duration for navigation
-      const totalDuration = duration || currentItem.duration || 600;
-      const jumpPoints = [0]; // Start with 0
-      
-      // Add 8 evenly spaced points
-      for (let i = 1; i <= 8; i++) {
-        jumpPoints.push(Math.floor((i / 9) * totalDuration));
-      }
-      
-      // Add the end point (95%)
-      jumpPoints.push(Math.floor(totalDuration * 0.95));
-      
+      if (!currentItem) return; // nothing playing
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       switch (event.key) {
-        case 'ArrowRight':
-          // If shift is pressed, jump to next section instead of 30 seconds
+        case 'ArrowRight': {
           if (event.shiftKey) {
-            // Find the next jump point
-            const nextPoint = jumpPoints.find(point => point > currentTime + 5);
-            if (nextPoint) {
-              handleSeek(nextPoint);
-            } else {
-              handleSeek(Math.min(currentTime + 30, totalDuration));
-            }
+            // Jump forward to next seek button time (approx 1/9 increments)
+            const total = duration || currentItem.duration || 600;
+            const interval = total / 9;
+            const nextTarget = Math.ceil(currentTime / interval) * interval;
+            handleSeek(Math.min(nextTarget, total - 1));
           } else {
-            // Standard 30 second jump
-            handleSeek(Math.min(currentTime + 30, totalDuration));
+            handleSeek(Math.min(currentTime + 30, (duration || currentItem.duration || 600) - 1));
           }
-          break;
-        case 'ArrowLeft':
-          // If shift is pressed, jump to previous section instead of 30 seconds
+          break; }
+        case 'ArrowLeft': {
           if (event.shiftKey) {
-            // Find the previous jump point
-            const reversedPoints = [...jumpPoints].reverse();
-            const prevPoint = reversedPoints.find(point => point < currentTime - 5);
-            if (prevPoint) {
-              handleSeek(prevPoint);
-            } else {
-              handleSeek(Math.max(currentTime - 30, 0));
-            }
+            const total = duration || currentItem.duration || 600;
+            const interval = total / 9;
+            const prevTarget = Math.floor((currentTime - 1) / interval) * interval;
+            handleSeek(Math.max(prevTarget, 0));
           } else {
-            // Standard 30 second jump back
             handleSeek(Math.max(currentTime - 30, 0));
           }
-          break;
+          break; }
         case 'Escape':
           handleClose();
           break;
-        case ' ': // Spacebar
-          if (document.activeElement.tagName !== 'BUTTON') {
-            // Toggle play/pause if a player control is available
+        case ' ': // Spacebar toggles play/pause unless focused on a button
+          if (document.activeElement?.tagName !== 'BUTTON') {
             const videoElement = document.querySelector('.fitness-player-content video') || 
-                                document.querySelector('.fitness-player-content dash-video');
+                                 document.querySelector('.fitness-player-content dash-video');
             if (videoElement) {
-              if (videoElement.paused) {
-                videoElement.play();
-              } else {
-                videoElement.pause();
-              }
+              if (videoElement.paused) videoElement.play(); else videoElement.pause();
+              setIsPaused(videoElement.paused);
             }
           }
           break;
@@ -572,13 +533,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           break;
       }
     };
-    
+
     document.addEventListener('keydown', handleKeyDown);
-    
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [currentTime, duration, currentItem]);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [queue, currentItem, currentTime, duration]);
   
   // Preload thumbnails when player loads to make seek operations smoother
   useEffect(() => {
@@ -621,7 +579,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   
   // Removed manual JS aspect ratio enforcement in favor of pure CSS layout.
 
-  if (!currentItem) return null;
+  // Track last non-fullscreen mode whenever mode changes (must be before any conditional return to keep hook order stable)
+  useEffect(() => {
+    if (playerMode !== 'fullscreen') {
+      lastNonFullscreenRef.current = playerMode;
+    }
+  }, [playerMode]);
+
+  // If we have no current item yet, render nothing (after stabilizing hook order)
+  if (!currentItem) {
+    return null;
+  }
 
   // Check if there are previous/next items in the queue
   const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
@@ -647,84 +615,39 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     continuous: false // Don't loop videos
   };
   
-  return (
-    <div className="fitness-player">
+  // Sidebar width for render (mirrors compute logic; may lag first frame until measure)
+  const viewportW = viewportRef?.current?.clientWidth || 0;
+  let sidebarRenderWidth;
+  if (playerMode === 'fullscreen') sidebarRenderWidth = 0; else if (playerMode === 'maximal') sidebarRenderWidth = Math.round(viewportW * 0.5) || Math.round((sidebarWidth || 250) * 1.6); else sidebarRenderWidth = sidebarWidth;
 
-      {/* Debug JSON overlay removed for production cleanliness */}
-      
-      {/* SideBar Panel */}
-      <div
-        className="fitness-player-sidebar"
-        style={{ width: sidebarWidth, flex: `0 0 ${sidebarWidth}px` }}
-      >
-        {currentItem ? (
-          <div className="sidebar-content">
-            <h3>{currentItem.title || 'Fitness Video'}</h3>
-            
-            <div className="workout-info">
-              <h4>Workout Details</h4>
-            </div>
-            
-            {currentItem.description && (
-              <div className="workout-description">
-                <h5>Description</h5>
-                <p>{currentItem.description}</p>
-              </div>
-            )}
-            
-            <div className="workout-details">
-              <h5>Information</h5>
-              <ul>
-                <li><span>Type:</span> {currentItem.type || currentItem.show || 'Workout'}</li>
-                <li><span>Duration:</span> {formatTime(currentItem.duration || duration || 600)}</li>
-                <li><span>Instructor:</span> {currentItem.instructor || currentItem.author || 'Unknown'}</li>
-                <li><span>Difficulty:</span> {currentItem.difficulty || 'Intermediate'}</li>
-                <li><span>Equipment:</span> {currentItem.equipment || 'Basic'}</li>
-              </ul>
-            </div>
-            
-            <div className="queue-info">
-              <h5>Queue</h5>
-              <p>{queue.length} item{queue.length !== 1 ? 's' : ''} in queue</p>
-              <p>Currently playing {queue.findIndex(item => item.id === currentItem?.id) + 1} of {queue.length}</p>
-            </div>
-            
-            <div className="keyboard-shortcuts">
-              <h5>Keyboard Shortcuts</h5>
-              <ul>
-                <li><kbd>←</kbd> / <kbd>→</kbd> Skip 30s</li>
-                <li><kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd> Jump between thumbnails</li>
-                <li><kbd>Space</kbd> Play/Pause</li>
-                <li><kbd>Esc</kbd> Close</li>
-              </ul>
-            </div>
-          </div>
-        ) : (
-          <div className="sidebar-content">
-            <h3>Fitness Player</h3>
-            <p>No video selected</p>
-          </div>
-        )}
-        {/* Drag handle */}
-        <div
-          className="fitness-player-sidebar-resizer"
-          onMouseDown={handleResizeMouseDown}
-          onKeyDown={handleResizeKeyDown}
-          role="separator"
-          aria-label="Resize sidebar"
-          aria-orientation="vertical"
-          tabIndex={0}
-          title="Drag (or use arrows) to resize sidebar. Double-click or press Enter to reset."
-          onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR)}
-        />
-      </div>
-      
-      {/* MainPlayer Panel */}
-      <div className="fitness-player-main" ref={mainPlayerRef}>
+  const toggleFullscreen = () => {
+    setPlayerMode(m => m === 'fullscreen' ? (lastNonFullscreenRef.current || 'normal') : 'fullscreen');
+  };
+
+  return (
+    <div className={`fitness-player mode-${playerMode}`}>
+      {/* Sidebar Component */}
+      <FitnessPlayerSidebar
+        currentItem={currentItem}
+        queue={queue}
+        duration={duration}
+        formatTime={formatTime}
+        sidebarWidth={sidebarRenderWidth}
+        side={sidebarSide}
+        mode={playerMode}
+        onResizeMouseDown={handleResizeMouseDown}
+        onResizeKeyDown={handleResizeKeyDown}
+        onResetWidth={() => setSidebarWidth(DEFAULT_SIDEBAR)}
+        toggleSide={() => setSidebarSide(s => s === 'right' ? 'left' : 'right')}
+        setMode={setPlayerMode}
+      />
+      {/* Main Player Panel */}
+      <div className="fitness-player-main" ref={mainPlayerRef} style={{ order: sidebarSide === 'right' ? 1 : 2 }}>
         {/* MainContent - 16:9 aspect ratio container */}
         <div
           className="fitness-player-content"
           ref={contentRef}
+          onClick={toggleFullscreen}
           style={{
             width: videoDims.width ? videoDims.width + 'px' : '100%',
             height: videoDims.height ? videoDims.height + 'px' : 'auto',

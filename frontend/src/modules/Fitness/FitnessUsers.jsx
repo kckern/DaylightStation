@@ -216,10 +216,7 @@ const FitnessUsers = () => {
   return (
     <div className="fitness-devices-nav">
       {/* Connection Status Header */}
-      <div className="nav-header">
-        <Text size="sm" fw={600} c="white">Fitness Devices</Text>
-        <div className={`connection-indicator ${connected ? 'connected' : 'disconnected'}`}></div>
-      </div>
+      <div className={`connection-indicator ${connected ? 'connected' : 'disconnected'}`}></div>
       
       {/* Fitness Devices as Nav Icons */}
       <div className="fitness-devices">
@@ -293,14 +290,7 @@ const FitnessUsers = () => {
                     )}
                   </div>
                   <div className="device-info">
-                    <div 
-                      className="device-name"
-                      style={device.type === 'cadence' ? {
-                        fontWeight: '600',
-                        fontSize: '2.2rem',
-                        color: '#ffb700'
-                      } : {}}
-                    >
+                    <div className="device-name">
                       {deviceName}
                     </div>
                     <div className="device-stats">
