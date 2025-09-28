@@ -360,76 +360,74 @@ const FitnessUsers = () => {
              
 
               return (
-                <>
-                <div className="device-zone-info" key={`zoneinfo-${device.deviceId}`}>
-                  {device.type === 'heart_rate' && (
-                    <Badge 
-                      color="blue" 
-                      variant="light" 
-                      size="xs"
-                      title={`Current Zone: ${getCurrentZone(device) || 'N/A'}`}
-                    >
-                      {getCurrentZone(device) ? `Zone: ${getCurrentZone(device)}` : 'No Zone'}
-                    </Badge>
-                  )}
-                </div>
-                <div 
-                  key={`device-${device.deviceId}`} 
-                  className={`fitness-device card-horizontal ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
-                  title={`Device: ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
-                >
-                  <div className={`user-profile-img-container ${getZoneClass(device)}`}>
-                    {device.type === 'cadence' && (
-                      <div 
-                        className="equipment-icon"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '100%',
-                          height: '100%',
-                          fontSize: '2rem',
-                          background: '#333',
-                          borderRadius: '50%',
-                          color: '#fff'
-                        }}
+                <div className="device-wrapper" key={`device-${device.deviceId}`}>
+                  <div className={`device-zone-info ${getZoneClass(device)}`}>
+                    {device.type === 'heart_rate' && (
+                      <Badge 
+                        variant="light" 
+                        size="xs"
+                        title={`Current Zone: ${getCurrentZone(device) || 'N/A'}`}
                       >
-                        ⚙️
-                      </div>
-                    )}
-                    {device.type !== 'cadence' && (
-                      <img
-                        src={DaylightMediaPath(device.type === 'heart_rate'
-                          ? `/media/img/users/${profileId}.png`
-                          : `/media/img/equipment/${profileId}.png`
-                        )}
-                        alt={`${deviceName} profile`}
-                        onError={(e) => {
-                          // Prevent infinite error loops and hide broken image after fallback
-                          if (e.target.dataset.fallback) {
-                            e.target.style.display = 'none';
-                            return;
-                          }
-                          e.target.dataset.fallback = '1';
-                          e.target.src = DaylightMediaPath(device.type === 'heart_rate'
-                            ? `/media/img/users/user.png`
-                            : `/media/img/equipment/equipment.png`);
-                        }}
-                      />
+                        {getCurrentZone(device) ? `Zone: ${getCurrentZone(device)}` : 'No Zone'}
+                      </Badge>
                     )}
                   </div>
-                  <div className="device-info">
-                    <div className="device-name">
-                      {deviceName} 
+                  <div 
+                    className={`fitness-device card-horizontal ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
+                    title={`Device: ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
+                  >
+                    <div className={`user-profile-img-container ${getZoneClass(device)}`}>
+                      {device.type === 'cadence' && (
+                        <div 
+                          className="equipment-icon"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '100%',
+                            height: '100%',
+                            fontSize: '2rem',
+                            background: '#333',
+                            borderRadius: '50%',
+                            color: '#fff'
+                          }}
+                        >
+                          ⚙️
+                        </div>
+                      )}
+                      {device.type !== 'cadence' && (
+                        <img
+                          src={DaylightMediaPath(device.type === 'heart_rate'
+                            ? `/media/img/users/${profileId}.png`
+                            : `/media/img/equipment/${profileId}.png`
+                          )}
+                          alt={`${deviceName} profile`}
+                          onError={(e) => {
+                            // Prevent infinite error loops and hide broken image after fallback
+                            if (e.target.dataset.fallback) {
+                              e.target.style.display = 'none';
+                              return;
+                            }
+                            e.target.dataset.fallback = '1';
+                            e.target.src = DaylightMediaPath(device.type === 'heart_rate'
+                              ? `/media/img/users/user.png`
+                              : `/media/img/equipment/equipment.png`);
+                          }}
+                        />
+                      )}
                     </div>
-                    <div className="device-stats">
-                      <span className="device-icon">{getDeviceIcon(device)}</span>
-                      <span className="device-value">{getDeviceValue(device)}</span>
-                      <span className="device-unit">{getDeviceUnit(device)}</span>
+                    <div className="device-info">
+                      <div className="device-name">
+                        {deviceName} 
+                      </div>
+                      <div className="device-stats">
+                        <span className="device-icon">{getDeviceIcon(device)}</span>
+                        <span className="device-value">{getDeviceValue(device)}</span>
+                        <span className="device-unit">{getDeviceUnit(device)}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-                </>
               );
             })}
           </FlipMove>
