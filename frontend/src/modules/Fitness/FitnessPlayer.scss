@@ -474,67 +474,73 @@ dash-video {
     flex-grow: 1;
     overflow: hidden; /* If collapsed, hide its content cleanly */
     
+    /* Shared control button styling (moved out of left cluster so right cluster also inherits) */
+    .control-button {
+      background: radial-gradient(circle at 30% 30%, #4d4d4d, #333);
+      color: #fff;
+      border: 1px solid #555;
+      padding: 0;
+      border-radius: 50%;
+      width: 46px;
+      height: 46px;
+      cursor: pointer;
+      display: flex !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.05);
+      transition: background-color 0.18s ease, transform 0.15s ease, box-shadow 0.2s ease;
+      user-select: none;
+      -webkit-user-select: none;
+      
+      &:hover { background: radial-gradient(circle at 30% 30%, #5a5a5a, #3b3b3b); }
+      &:active { transform: scale(.94); }
+      &:focus-visible { outline: 2px solid #0a84ff; outline-offset: 2px; }
+      &[aria-disabled='true'] { opacity: .45; cursor: not-allowed; }
+
+      &.play-pause-button,
+      &.close-button,
+      &.close-video-button {
+        background: linear-gradient(145deg, #0a84ff, #006ad1);
+        border-color: #0a76e6;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.08);
+        &:hover { background: linear-gradient(145deg, #1d8eff, #0b72d4); }
+      }
+
+      .icon { font-size: 20px; line-height: 1; display:flex; align-items:center; justify-content:center; font-weight:600; }
+    }
+
     /* Panel 1: Previous and Play/Pause buttons */
     .footer-controls-left {
-      flex: 0 0 auto;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 5px;
-      padding: 0 15px;
-      justify-content: center;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px 6px 14px;
+  justify-content: center;
       
       .control-buttons-container {
         display: flex;
-        gap: 10px;
-        align-items: center;
-      }
-      
-      .control-button {
-        background-color: #444;
-        color: white;
-        border: none;
-        padding: 10px;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        cursor: pointer;
-        display: flex !important; /* Force display */
-        visibility: visible !important; /* Force visibility */
-        opacity: 1 !important; /* Force opacity */
-        pointer-events: auto !important; /* Force clickability */
+        gap: 8px;
         align-items: center;
         justify-content: center;
-        transition: background-color 0.2s ease;
-        
-        &:hover {
-          background-color: #555;
-        }
-        
-        &:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-        
-        &.play-pause-button {
-          background-color: #0084ff;
-          
-          &:hover {
-            background-color: #1e90ff;
-          }
-        }
-        
-        .icon {
-          font-size: 18px;
-        }
+        min-height: 46px;
       }
       
+      /* .control-button styles now global within footer */
+      
       .time-display {
-        color: #ddd;
-        font-size: 0.8rem;
+        color: #cfcfcf;
+        font-size: 0.72rem;
         font-family: monospace;
-        padding: 2px 0;
+        padding: 0;
         text-align: center;
+        line-height: 1.1;
+        letter-spacing: .5px;
       }
     }
     
@@ -545,7 +551,7 @@ dash-video {
       flex-direction: column;
       gap: 5px;
       overflow: hidden;
-      margin: 0 25px;
+      margin: 0 0;
       height: calc(100% - 1ex);
       min-height: 0;
       
@@ -599,70 +605,14 @@ dash-video {
     
     /* Panel 3: Next and Close buttons */
     .footer-controls-right {
-      flex: 0 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 25px;
-      padding: 0 20px;
-      justify-content: center;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 4px 16px 6px 12px;
       
-      .control-button {
-        background-color: #444;
-        color: white;
-        border: none;
-        padding: 10px;
-        border-radius: 50%;
-        width: 45px;
-        height: 45px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background-color 0.2s ease;
-        
-        &:hover {
-          background-color: #555;
-        }
-        
-        &:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-        
-        &.next-button {
-          background-color: #444;
-          margin-right: 0;
-        }
-        
-        &.close-button {
-          background-color: #d32f2f;
-
-          border: 4px solid #fff;
-          z-index: 999; /* Ensure it's above everything */
-          box-shadow: 0 0 15px rgba(0,0,0,0.7); /* Add shadow for better visibility */
-          display: flex !important;
-          visibility: visible !important;
-          opacity: 1 !important;
-          pointer-events: auto !important;
-          
-          
-          .icon {
-            font-size: 40px;
-            font-weight: bold;
-            color: white;
-            line-height: 1;
-          }
-          
-          .sr-only {
-            overflow: hidden;
-          }
-        }
-        
-        .icon {
-          font-size: 20px;
-        }
-      }
+  /* Right cluster uses the same .control-button styles defined in left cluster; no overrides needed. */
     }
     
     /* Seek thumbnails styling */
