@@ -30,7 +30,8 @@ export class Plex {
     }
   }
 
-  async loadmedia_url(itemData, attempt = 0) {
+  async loadmedia_url(itemData, attempt = 0, opts = {}) {
+    // opts: { forceH264?: boolean, maxVideoBitrate?: number }
     const plex = itemData?.plex || itemData?.ratingKey;
     if(!attempt >= 1) console.log("Attempting to load media URL for itemData: " , plex);
     if (typeof itemData === 'string') {
@@ -47,7 +48,8 @@ export class Plex {
       const [item] = this.selectKeyToPlay(list);
       return await this.loadmedia_url(item.key || item);
     }
-    const media_type = this.determinemedia_type(type);
+  const media_type = this.determinemedia_type(type);
+  const { forceH264 = false, maxVideoBitrate = 5000 } = opts || {};
     try {
       if (media_type === 'audio') {
       const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
@@ -55,12 +57,31 @@ export class Plex {
       return `${plexProxyHost}${mediaKey}`;
       } else {
         if (!key) throw new Error("Rating key not found for video.");
-        const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F${key}&protocol=${protocol}&X-Plex-Client-Identifier=${session}&maxVideoBitrate=5000&X-Plex-Platform=${platform}`;
+        // Build base params
+        const baseParams = [
+          `path=%2Flibrary%2Fmetadata%2F${key}`,
+          `protocol=${protocol}`,
+          `X-Plex-Client-Identifier=${session}`,
+          `maxVideoBitrate=${maxVideoBitrate}`,
+          `X-Plex-Platform=${platform}`
+        ];
+        if(forceH264) {
+          baseParams.push(
+            'videoCodec=h264',
+            'audioCodec=aac',
+            'container=mp4',
+            'directPlay=0',
+            'directStream=1',
+            'fastSeek=1',
+            'videoQuality=100'
+          );
+        }
+        const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
         const isValid = await axios.get(url).then((response) => {
           return response.status >= 200 && response.status < 300;
         }).catch(() => false);
         if(isValid || attempt > 10) return url;
-        else return await this.loadmedia_url(itemData, attempt + 1);
+        else return await this.loadmedia_url(itemData, attempt + 1, opts);
       }
     } catch (error) {
       console.error("Error generating media URL:", error.message);
@@ -215,13 +236,13 @@ export class Plex {
 
 
   // Helper that takes Plex metadata, plus extra info, and returns a “playable” object
-  async buildPlayableObject(itemData, parentKey, parentType, percent = 0, seconds = 0) {
+  async buildPlayableObject(itemData, parentKey, parentType, percent = 0, seconds = 0, opts = {}) {
     if (!itemData) {
       return null;
     }
 
     const { title, type, parentTitle, grandparentTitle, summary, year, thumb } = itemData;
-    const media_url = await this.loadmedia_url(itemData);
+  const media_url = await this.loadmedia_url(itemData, 0, opts);
 
     // Construct the 'playable item' result
     const result = {
@@ -258,11 +279,11 @@ export class Plex {
   }
 
   // Returns a single playable item
-  async loadPlayableItemFromKey(key, shuffle = false) {
+  async loadPlayableItemFromKey(key, shuffle = false, opts = {}) {
     // Get the "list" from the key
     const { type: parentType, list } = await this.loadListFromKey(key, shuffle);
     // Pick one item from the list (or strings)
-    const [selectedKey, seconds, percent] = this.selectKeyToPlay(list, shuffle);
+  const [selectedKey, seconds, percent] = this.selectKeyToPlay(list, shuffle);
     if (!selectedKey) return false;
     
     // Load its metadata to check if it's playable
@@ -274,11 +295,11 @@ export class Plex {
     // If the selected item is not directly playable (e.g., season, show), drill down further
     if (!this.isPlayableType(itemData.type)) {
       console.log(`Item ${selectedKey} is not playable (type: ${itemData.type}), drilling down...`);
-      return await this.loadPlayableItemFromKey(selectedKey.plex || selectedKey, shuffle);
+  return await this.loadPlayableItemFromKey(selectedKey.plex || selectedKey, shuffle, opts);
     }
 
     // Build playable object with the shared helper
-    const playableItem = await this.buildPlayableObject(itemData, key, parentType, percent, seconds);
+    const playableItem = await this.buildPlayableObject(itemData, key, parentType, percent, seconds, opts);
     return playableItem;
   }
 
