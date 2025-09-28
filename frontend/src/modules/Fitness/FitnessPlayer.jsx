@@ -594,7 +594,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               volume: currentItem.volume || 1.0,
               playbackRate: currentItem.playbackRate || 1.0,
               type: 'video',
-              continuous: false
+              continuous: false,
+              forceH264: true
             }}
             clear={handleClose}
             advance={handleNext}

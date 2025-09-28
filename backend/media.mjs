@@ -273,10 +273,11 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     
     // Check for shuffle - prefer path config, fallback to query parameters
     const shuffle = /shuffle/i.test(config) || Object.keys(req.query).includes('shuffle');
+    const forceH264 = 'forceH264' in req.query || req.query.force_h264 === '1' || req.query.forceH264 === '1';
     
     let infos = [];
     for (const key of plex_keys) {
-        const info = await (new Plex()).loadPlayableItemFromKey(key, shuffle);
+        const info = await (new Plex()).loadPlayableItemFromKey(key, shuffle, { forceH264 });
         infos.push(info);
     }
     //pick one
