@@ -143,10 +143,19 @@ dash-video {
         border-radius: 50%;
         overflow: hidden;
         background: #222;
+        border: 5px solid #333; /* default fallback */
         display: flex;
         align-items: center;
         justify-content: center;
         img { width: 100%; height: 100%; object-fit: cover; }
+        /* Transition so zone changes animate subtly */
+        transition: border-color .25s ease, box-shadow .25s ease;
+        &.zone-cool   { border-color: var(--zone-cool-color, #1e3a8a); box-shadow: 0 0 0 2px rgba(59,130,246,0.35); }
+        &.zone-active { border-color: var(--zone-active-color, #059669); box-shadow: 0 0 0 2px rgba(16,185,129,0.35); }
+        &.zone-warm   { border-color: var(--zone-warm-color, #ca8a04); box-shadow: 0 0 0 2px rgba(234,179,8,0.35); }
+        &.zone-hot    { border-color: var(--zone-hot-color, #ea580c); box-shadow: 0 0 0 2px rgba(234,88,12,0.4); }
+        &.zone-fire   { border-color: var(--zone-fire-color, #dc2626); box-shadow: 0 0 0 2px rgba(220,38,38,0.45); }
+        &.no-zone     { border-color: #333; box-shadow:none; }
       }
 
       .device-info {

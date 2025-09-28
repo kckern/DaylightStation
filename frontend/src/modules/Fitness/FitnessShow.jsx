@@ -94,11 +94,6 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
   const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue } = useFitness() || {};
   
-  console.log('🎬 FitnessShow: Props and Context:', { 
-    propsSetQueue: setFitnessPlayQueue, 
-    contextSetQueue: contextSetPlayQueue,
-    contextQueue: fitnessPlayQueue
-  });
 
   useEffect(() => {
     const fetchShowData = async () => {

@@ -8,7 +8,7 @@ import { DaylightMediaPath } from '../../lib/api.mjs';
 const FitnessUsers = () => {
   // Use the fitness context
   const fitnessContext = useFitnessContext();
-  console.log('Full Fitness Context:', fitnessContext);
+  //console.log('Full Fitness Context:', fitnessContext);
   
   const { 
     connected, 
@@ -26,15 +26,13 @@ const FitnessUsers = () => {
     primaryUsers,
     secondaryUsers,
     hrColorMap: contextHrColorMap,
-    usersConfigRaw
+    usersConfigRaw,
+    userCurrentZones,
+    zones
   } = fitnessContext;
 
   // Diagnostic: log user arrays when they change
   React.useEffect(() => {
-    console.log('[FitnessUsers][DIAG] primaryUsers length:', primaryUsers?.length || 0);
-    console.table((primaryUsers||[]).map(u => ({ name: u.name, hr: u.hrDeviceId, cadence: u.cadenceDeviceId, id: u.id })));
-    console.log('[FitnessUsers][DIAG] secondaryUsers length:', secondaryUsers?.length || 0);
-    console.table((secondaryUsers||[]).map(u => ({ name: u.name, hr: u.hrDeviceId, cadence: u.cadenceDeviceId, id: u.id })));
   }, [primaryUsers, secondaryUsers]);
   
   // State for sorted devices
@@ -54,10 +52,7 @@ const FitnessUsers = () => {
     return rebuilt;
   }, [contextHrColorMap, deviceConfiguration]);
 
-  useEffect(() => {
-    console.log('[FitnessUsers][DIAG] hrColorMap keys:', Object.keys(hrColorMap));
-  }, [hrColorMap]);
-  
+
   // Users are already available from the context
 
   // Map of deviceId -> user name (first match wins from primary then secondary)
@@ -88,9 +83,8 @@ const FitnessUsers = () => {
   // Build a map of deviceId -> displayName applying group_label rule
   const hrDisplayNameMap = React.useMemo(() => {
     // Determine if multi-user session (more than one primary user active overall)
-    const multi = primaryUsers.length > 1; // criteria (1)
+    const multi = primaryUsers.length > 1;
     if (!multi) return hrOwnerMap; // no change if single user
-
     // We need group_label info; get from raw config
     const labelLookup = {};
     const gather = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
@@ -100,9 +94,7 @@ const FitnessUsers = () => {
     });
     gather(usersConfigRaw?.primary);
     gather(usersConfigRaw?.secondary);
-
     if (Object.keys(labelLookup).length === 0) return hrOwnerMap; // nothing to substitute
-
     const out = { ...hrOwnerMap };
     Object.keys(labelLookup).forEach(deviceId => {
       if (out[deviceId]) {
@@ -111,6 +103,69 @@ const FitnessUsers = () => {
     });
     return out;
   }, [hrOwnerMap, primaryUsers.length, usersConfigRaw]);
+
+  // Build color -> zoneId map from zones config
+  const colorToZoneId = React.useMemo(() => {
+    const map = {};
+    (zones || []).forEach(z => {
+      if (z?.color && z?.id) {
+        map[String(z.color).toLowerCase()] = String(z.id).toLowerCase();
+      }
+    });
+    return map;
+  }, [zones]);
+
+  const getZoneClass = (device) => {
+    if (device.type !== 'heart_rate') return 'no-zone';
+    const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
+    if (!userObj) return 'no-zone';
+    const color = userCurrentZones?.[userObj.name];
+    if (!color) return 'no-zone';
+    const zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
+    const canonical = ['cool','active','warm','hot','fire'];
+    if (canonical.includes(zoneId)) return `zone-${zoneId}`;
+    return 'no-zone';
+  };
+
+  // Return a human-readable current zone for a device (used in inline <code> block)
+  // Handles multiple possible shapes of userCurrentZones values:
+  //  - string color (e.g. 'yellow')
+  //  - string id (e.g. 'warm')
+  //  - object { id, color, coins? }
+  const getCurrentZone = (device) => {
+    try {
+      if (!device || device.type !== 'heart_rate') return '';
+      const userObj = [...primaryUsers, ...secondaryUsers]
+        .find(u => String(u.hrDeviceId) === String(device.deviceId));
+      if (!userObj) return '';
+      const raw = userCurrentZones?.[userObj.name];
+      if (!raw) return '';
+
+      let zoneId; let zoneColor;
+      if (typeof raw === 'object') {
+        zoneId = raw.id || undefined;
+        zoneColor = raw.color || undefined;
+      } else {
+        // raw is a string (either color or id)
+        zoneColor = raw;
+      }
+
+      // If we only have a color, map to id
+      if (!zoneId && zoneColor) {
+        zoneId = colorToZoneId[String(zoneColor).toLowerCase()] || String(zoneColor).toLowerCase();
+      }
+
+      // Normalize to canonical list
+      const canonical = ['cool','active','warm','hot','fire'];
+      if (!zoneId || !canonical.includes(zoneId)) return '';
+
+      // Pretty label (capitalize first letter)
+      return zoneId.charAt(0).toUpperCase() + zoneId.slice(1);
+    } catch (e) {
+      console.warn('[FitnessUsers][getCurrentZone] Failed to resolve zone', e);
+      return '';
+    }
+  };
   
   // Map of deviceId -> user ID (for profile images)
   const userIdMap = React.useMemo(() => {
@@ -140,7 +195,6 @@ const FitnessUsers = () => {
         }
       });
     }
-    console.log('Final equipment map:', map);
     return map;
   }, [equipment]);
 
@@ -294,7 +348,7 @@ const FitnessUsers = () => {
                   className={`fitness-device card-horizontal ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
                   title={`Device: ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                 >
-                  <div className="user-profile-img-container">
+                  <div className={`user-profile-img-container ${getZoneClass(device)}`}>
                     {device.type === 'cadence' && (
                       <div 
                         className="equipment-icon"
@@ -336,7 +390,10 @@ const FitnessUsers = () => {
                   </div>
                   <div className="device-info">
                     <div className="device-name">
-                      {deviceName}
+                      {deviceName} 
+                        <code>
+                          Current Zone: {getCurrentZone(device)}
+                        </code>
                     </div>
                     <div className="device-stats">
                       <span className="device-icon">{getDeviceIcon(device)}</span>
