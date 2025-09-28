@@ -5,10 +5,12 @@ import './FitnessMenu.scss';
 
 const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue }) => {
   const [shows, setShows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // initial config loading
+  const [showsLoading, setShowsLoading] = useState(true); // loading shows list
   const [error, setError] = useState(null);
   const [fitnessConfig, setFitnessConfig] = useState(null);
   const [selectedCollection, setSelectedCollection] = useState(null);
+  const [loadedImages, setLoadedImages] = useState({});
 
   const collectionsFromConfig = useMemo(() => {
     if (!fitnessConfig) return [];
@@ -52,12 +54,23 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
         const collectionId = collectionToUse.id;
         console.log(`🎬 DEBUG: Making API call to: /media/plex/list/${collectionId}`);
+        setShowsLoading(true);
         const showsResponse = await DaylightAPI(`/media/plex/list/${collectionId}`);
         console.log('🎬 DEBUG: Shows response:', JSON.stringify(showsResponse, null, 2));
-        setShows(showsResponse.items || []);
+        const newItems = showsResponse.items || [];
+        setShows(newItems);
+        // reset loaded images tracking for new set
+        const reset = {};
+        newItems.forEach(item => {
+          const id = item.plex || item.id;
+          if (id !== undefined) reset[id] = false;
+        });
+        setLoadedImages(reset);
       } catch (err) {
         console.error('🎬 ERROR: Error loading shows:', err);
         setError(err.message);
+      } finally {
+        setShowsLoading(false);
       }
     };
 
@@ -103,14 +116,20 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
   return (
     <div className="fitness-menu">
-      {shows.length > 0 ? (
-        <div className="fitness-grid">
-          {shows
-            // sort by show.rating DESC
+      <div className="fitness-grid">
+        {showsLoading && (
+          Array.from({ length: 12 }).map((_, i) => (
+            <div key={`skeleton-${i}`} className="show-card skeleton-card">
+              <div className="skeleton-shimmer" />
+            </div>
+          ))
+        )}
+        {!showsLoading && shows.length > 0 && (
+          shows
             .sort((a, b) => (b.rating || 0) - (a.rating || 0))
             .map((show, index) => (
-              <div 
-                key={show.plex || index} 
+              <div
+                key={show.plex || index}
                 className="show-card"
                 onClick={() => handleShowClick(show)}
               >
@@ -118,12 +137,18 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
                   <img
                     src={show.image}
                     alt={show.label}
-                    className="show-image"
+                    className={`show-image ${loadedImages[show.plex || show.id] ? 'loaded' : ''}`}
+                    onLoad={() => {
+                      const key = show.plex || show.id;
+                      if (key !== undefined) {
+                        setLoadedImages(prev => ({ ...prev, [key]: true }));
+                      }
+                    }}
                   />
                 )}
                 {setFitnessPlayQueue && (
-                  <button 
-                    className="add-to-queue-btn" 
+                  <button
+                    className="add-to-queue-btn"
                     onClick={(e) => handleAddToQueue(e, show)}
                     title="Add to play queue"
                   >
@@ -131,9 +156,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
                   </button>
                 )}
               </div>
-            ))}
-        </div>
-      ) : (
+            ))
+        )}
+      </div>
+      {!showsLoading && shows.length === 0 && (
         <div className="no-shows">
           <div className="no-shows-title">No shows found</div>
           {collectionName && (

@@ -5,6 +5,61 @@
   display: flex;
   flex-direction: column;
 
+  &.loading {
+    .skeleton-block,
+    .skeleton-line,
+    .skeleton-tag {
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(135deg, rgba(70,70,70,0.35), rgba(40,40,40,0.35));
+      border-radius: 0.5rem;
+    }
+    .skeleton-tag { width: 3rem; height: 1rem; border-radius: 1rem; }
+    .skeleton-line { height: 0.9rem; margin-bottom: 0.6rem; }
+    .line-lg { width: 70%; height: 1.4rem; }
+    .line-md { width: 55%; }
+    .line-sm { width: 40%; }
+    .line-ep { width: 80%; height: 0.85rem; }
+    .line-caption { width: 60%; height: 0.7rem; border-radius: 0.35rem; }
+    .line-title { height: 1.1rem; }
+    .line-count { height: 0.9rem; }
+
+    .poster-skeleton {
+      aspect-ratio: 1 / 1.5;
+      width: 100%;
+      border-radius: 1rem;
+      border: 3px solid rgba(0,0,0,0.5);
+      flex: 0 0 auto;
+    }
+    .episodes-grid .episode-skeleton {
+      .episode-thumbnail {
+        aspect-ratio: 16 / 9;
+        border-radius: 0.5rem;
+        background: rgba(255,255,255,0.08);
+        margin-bottom: 0.25rem;
+      }
+      .episode-title { padding: 0.25rem 0.35rem; }
+    }
+    .season-filter-bar.skeleton-season-bar {
+      .season-item.season-skeleton {
+        background: rgba(255,255,255,0.04);
+        .season-image-wrapper { background: transparent; }
+        .season-image.skeleton-block { width:100%; height:100%; }
+      }
+    }
+    /* shimmer */
+    .skeleton-block::after,
+    .skeleton-line::after,
+    .skeleton-tag::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.18), rgba(255,255,255,0));
+      animation: fitness-show-skeleton 1.25s linear infinite;
+      background-size: 200% 100%;
+    }
+  }
+
   /* Two-panel layout: left info (25%), right episodes (fill) */
   .show-content {
     display: grid;
@@ -270,7 +325,7 @@
       margin-left: 0.3ex;
 
       .season-group {
-        padding-top: 1ex;
+        padding-top: 1rem;
         padding-right: 1ex;
         .season-title {
           display: flex;
@@ -403,6 +458,15 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+            opacity: 0;
+            transform: scale(1.02);
+            filter: brightness(0.7);
+            transition: opacity 400ms ease, transform 600ms ease, filter 600ms ease;
+            &.loaded {
+              opacity: 1;
+              transform: scale(1);
+              filter: none;
+            }
           }
 
           .thumbnail-overlay {
@@ -509,6 +573,11 @@
   }
 }
 
+@keyframes fitness-show-skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 // Horizontal season filter bar (appears when >1 season) with fixed height, no scrolling
 .season-filter-bar {
   flex: 0 0 auto; /* do not grow; height set inline dynamically */
@@ -600,9 +669,17 @@
       .season-image {
         height: 100%;
         object-fit: cover;
-       // object-position: center top;
         display: block;
         aspect-ratio: 1 / 1.5;
+        opacity: 0;
+        transform: scale(1.04);
+        filter: brightness(0.65);
+        transition: opacity 450ms ease, transform 650ms ease, filter 650ms ease;
+        &.loaded {
+          opacity: 1;
+          transform: scale(1);
+          filter: none;
+        }
       }
 
       .placeholder {
