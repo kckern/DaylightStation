@@ -394,56 +394,49 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Create 10 seek buttons at different intervals with thumbnails
   const generateSeekButtons = () => {
     if (!currentItem) return null;
-    
-    const buttons = [];
-    // Use a default of 10 minutes if no duration is available
-    // Try to get duration from various possible sources
-    const totalDuration = currentItem.duration || 
-                          currentItem.length || 
-                          (currentItem.metadata && currentItem.metadata.duration) || 
-                          600;
-    
-    // Get the plexObj from the current item - create an object that includes ALL possible ID properties
+    // Use a default if no duration is available
+    const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 600;
+    // Build positions identical to previous logic: start, 8 midpoints, near-end
+    const positions = [0];
+    for (let i = 1; i <= 8; i++) positions.push(Math.floor((i / 9) * totalDuration));
+    const endPosition = Math.floor(totalDuration * 0.95);
+    positions.push(endPosition);
+
+    // Determine active index: largest position <= currentTime
+    let activeIndex = 0;
+    for (let i = 0; i < positions.length; i++) {
+      if (positions[i] <= currentTime) activeIndex = i; else break;
+    }
+
+    // Plex / image source object (for thumbnails)
     const plexObj = {
-      // Core identifiers
       plex: currentItem.plex,
       id: currentItem.id,
-      // Make sure thumb_id is correctly extracted as a number if possible
-      thumb_id: currentItem.thumb_id ? 
-                (typeof currentItem.thumb_id === 'number' ? currentItem.thumb_id : parseInt(currentItem.thumb_id, 10)) :
-                null,
-      // Image source for direct URL
+      thumb_id: currentItem.thumb_id ? (typeof currentItem.thumb_id === 'number' ? currentItem.thumb_id : parseInt(currentItem.thumb_id, 10)) : null,
       image: currentItem.image,
-      // Additional metadata
       media_key: currentItem.media_key,
       ratingKey: currentItem.ratingKey,
       metadata: currentItem.metadata
     };
-    
-    // Create a button to go back to the beginning - always use black thumbnail
-    buttons.push(
-      <div className="seek-button-container" key="seek-start" onClick={() => handleSeek(0)}>
-        <div className="thumbnail-wrapper">
-          <div className="black-thumbnail seek-thumbnail">
-            <span className="thumbnail-time">0:00</span>
-          </div>
-        </div>
-      </div>
-    );
-    
-    // Create 8 evenly spaced seek buttons
-    for (let i = 1; i <= 8; i++) {
-      // Calculate position as a percentage of the total duration
-      const position = Math.floor((i / 9) * totalDuration);
-      const minutes = Math.floor(position / 60);
-      const seconds = position % 60;
+
+    return positions.map((pos, idx) => {
+      const minutes = Math.floor(pos / 60);
+      const seconds = pos % 60;
       const label = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-      
-      buttons.push(
-        <div className="seek-button-container" key={`seek-${i}`} onClick={() => handleSeek(position)}>
+      const isOrigin = idx === 0;
+      const isActive = idx === activeIndex;
+      const isPast = idx < activeIndex;
+      const classes = ["seek-button-container"]; if (isOrigin) classes.push('origin'); if (isPast) classes.push('past'); if (isActive) classes.push('active');
+
+      // For origin (0s) use season/video image if available (full color) otherwise generated frame
+      const originSrc = isOrigin && currentItem.image ? currentItem.image : generateThumbnailUrl(plexObj, pos);
+      const imgSrc = isOrigin ? originSrc : generateThumbnailUrl(plexObj, pos);
+
+      return (
+        <div className={classes.join(' ')} key={`seek-${idx}`} onClick={() => handleSeek(pos)}>
           <div className="thumbnail-wrapper">
-            <img 
-              src={generateThumbnailUrl(plexObj, position)} 
+            <img
+              src={imgSrc}
               alt={`Thumbnail at ${label}`}
               className="seek-thumbnail"
               loading="lazy"
@@ -454,31 +447,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           </div>
         </div>
       );
-    }
-    
-    // Create a button to jump to near the end
-    const endPosition = Math.floor(totalDuration * 0.95);
-    const endMinutes = Math.floor(endPosition / 60);
-    const endSeconds = endPosition % 60;
-    const endLabel = `${endMinutes}:${endSeconds.toString().padStart(2, '0')}`;
-    
-    buttons.push(
-      <div className="seek-button-container" key="seek-end" onClick={() => handleSeek(endPosition)}>
-        <div className="thumbnail-wrapper">
-          <img 
-            src={generateThumbnailUrl(plexObj, endPosition)} 
-            alt={`Thumbnail at ${endLabel}`}
-            className="seek-thumbnail"
-            loading="lazy"
-            onError={(e) => handleThumbnailError(e, `End position ${endLabel}`)}
-          />
-          <span className="thumbnail-time">{endLabel}</span>
-          <div className="thumbnail-fallback">End</div>
-        </div>
-      </div>
-    );
-    
-    return buttons;
+    });
   };
 
   // Effect: initialize current item from queue & setup keyboard shortcuts
@@ -537,6 +506,32 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [queue, currentItem, currentTime, duration]);
+
+  // Sync video playback state (time, duration, play/pause) with footer controls
+  useEffect(() => {
+    const el = contentRef.current?.querySelector('video, dash-video, .video-element');
+    if (!el) return; // Player not yet rendered
+    const update = () => {
+      setCurrentTime(el.currentTime || 0);
+      if (!isNaN(el.duration) && el.duration) setDuration(el.duration);
+    };
+    const handlePlay = () => { setIsPaused(false); update(); };
+    const handlePause = () => { setIsPaused(true); update(); };
+    const handleTime = () => update();
+    el.addEventListener('play', handlePlay);
+    el.addEventListener('pause', handlePause);
+    el.addEventListener('timeupdate', handleTime);
+    el.addEventListener('durationchange', handleTime);
+    // Initial snapshot
+    setIsPaused(el.paused);
+    update();
+    return () => {
+      el.removeEventListener('play', handlePlay);
+      el.removeEventListener('pause', handlePause);
+      el.removeEventListener('timeupdate', handleTime);
+      el.removeEventListener('durationchange', handleTime);
+    };
+  }, [currentItem]);
   
   // Preload thumbnails when player loads to make seek operations smoother
   useEffect(() => {
@@ -681,7 +676,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           {/* Panel 1: Previous and Play/Pause buttons */}
           <div className="footer-controls-left">
             <div className="control-buttons-container">
-              <button onClick={() => setIsPaused(!isPaused)} className="control-button play-pause-button">
+              <button
+                onClick={() => {
+                  const el = contentRef.current?.querySelector('video, dash-video, .video-element');
+                  if (!el) return;
+                  if (el.paused) { el.play(); } else { el.pause(); }
+                  setIsPaused(el.paused);
+                }}
+                className="control-button play-pause-button"
+              >
                 <span className="icon">{isPaused ? "▶" : "⏸"}</span>
               </button>
               <button onClick={handlePrev} disabled={!hasPrev} className="control-button prev-button">
@@ -698,11 +701,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             <div className="progress-bar" onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               const clickX = e.clientX - rect.left;
-              const percent = clickX / rect.width;
-              const seekTime = percent * (duration || currentItem.duration || 600);
+              const percent = Math.min(1, Math.max(0, clickX / rect.width));
+              const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem.duration || 600));
+              const seekTime = percent * baseDuration;
               handleSeek(seekTime);
             }}>
-              <div className="progress" style={{ width: `${((currentTime / (duration || currentItem.duration || 600)) * 100)}%` }}></div>
+              {(() => {
+                const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem.duration || 600));
+                const pct = baseDuration > 0 ? (currentTime / baseDuration) * 100 : 0;
+                return <div className="progress" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}></div>;
+              })()}
             </div>
             <div className="seek-thumbnails">
               {generateSeekButtons()}
