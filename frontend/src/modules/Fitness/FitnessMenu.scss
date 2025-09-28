@@ -9,6 +9,33 @@
     padding: 1ex 0;
     margin-top: 0.5ex;
     margin-right: 1ex;
+    width: 100%; // ensure it stretches inside flex parent so auto-fill can create multiple columns
+    flex: 1 1 auto; // allow growth in flex context
+  }
+
+  // Skeleton loader
+  .skeleton-card {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(60,60,60,0.4), rgba(40,40,40,0.4));
+    border-color: rgba(255,255,255,0.05);
+    pointer-events: none;
+    .skeleton-shimmer {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg,
+        rgba(255,255,255,0.05) 0%,
+        rgba(255,255,255,0.15) 40%,
+        rgba(255,255,255,0.05) 80%);
+      animation: fitness-skeleton-shimmer 1.2s ease-in-out infinite;
+      background-size: 200% 100%;
+      border-radius: inherit;
+    }
+  }
+
+  @keyframes fitness-skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
 .show-card {
@@ -36,10 +63,19 @@
         height: 100%;
         object-fit: cover;
         border-radius: calc(1ex - 3px);
+    opacity: 0;
+    transform: scale(1.02);
+    filter: brightness(0.6);
+    transition: opacity 400ms ease, transform 600ms ease, filter 600ms ease;
 
         &:hover {
             filter: brightness(1.1);
         }
+    &.loaded {
+      opacity: 1;
+      transform: scale(1);
+      filter: none;
+    }
     }
     
     .add-to-queue-btn {

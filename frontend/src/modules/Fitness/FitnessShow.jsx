@@ -88,6 +88,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   const [seasonBarWidth, setSeasonBarWidth] = useState(0);
   const [selectedInfo, setSelectedInfo] = useState(null); // Selected episode or season for info panel
   const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
+  const [loadedEpisodeImages, setLoadedEpisodeImages] = useState({});
+  const [loadedSeasonImages, setLoadedSeasonImages] = useState({});
   
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
   const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue } = useFitness() || {};
@@ -292,6 +294,23 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     return arr;
   }, [items]);
 
+  // Initialize load tracking when items/seasons change
+  useEffect(() => {
+    const epMap = {};
+    for (const ep of items) {
+      const key = ep.plex || ep.id;
+      if (key !== undefined) epMap[key] = false;
+    }
+    setLoadedEpisodeImages(epMap);
+
+    const seasonMap = {};
+    for (const s of seasons) {
+      const key = s.id;
+      if (key !== undefined) seasonMap[key] = false;
+    }
+    setLoadedSeasonImages(seasonMap);
+  }, [items, seasons]);
+
   // Initialize/adjust active season when items or seasons change
   useEffect(() => {
     if (seasons.length > 1) {
@@ -346,8 +365,53 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   if (loading) {
     return (
       <div className="fitness-show loading">
-        <LoadingOverlay visible={true} />
-        <div className="loading-text">Loading show details...</div>
+        <div className="show-content">
+          {/* Left skeleton poster & info */}
+          <div className="show-info-panel">
+            <div className="show-poster skeleton-block poster-skeleton" />
+            <div className="show-description">
+              <div className="skeleton-line line-lg" />
+              <div className="skeleton-line line-md" />
+              <div className="skeleton-line line-sm" />
+              <div className="skeleton-tags">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="skeleton-tag" />
+                ))}
+              </div>
+            </div>
+          </div>
+          {/* Right panel skeleton */}
+          <div className="episodes-panel">
+            <div className="episodes-section">
+              <div className="episodes-container">
+                <div className="season-group">
+                  <div className="episodes-grid">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <div key={i} className="episode-card vertical episode-skeleton">
+                        <div className="episode-thumbnail skeleton-block" />
+                        <div className="episode-title">
+                          <div className="skeleton-line line-ep" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="season-filter-bar skeleton-season-bar">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="season-item season-skeleton">
+                  <div className="season-image-wrapper">
+                    <div className="season-image skeleton-block" />
+                  </div>
+                  <div className="season-caption">
+                    <div className="skeleton-line line-caption" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -451,10 +515,6 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                   const title = Number.isFinite(s.number) && s.number > 0 ? `Season ${s.number}` : (s.rawName || s.name || 'Season');
                   return (
                     <div key={s.id} className="season-group">
-                      <h3 className="season-title">
-                        {title}
-                        <span className="episode-count">({seasonEpisodes.length} episodes)</span>
-                      </h3>
                       <div className={`episodes-grid ${(() => {
                         const n = seasonEpisodes.length;
                         if (n <= 1) return 'zoom-400';
@@ -474,7 +534,17 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                                 className="episode-thumbnail"
                                 onClick={() => handlePlayEpisode(episode)}
                               >
-                                <img src={episode.image} alt={episode.label} />
+                                <img
+                                  src={episode.image}
+                                  alt={episode.label}
+                                  className={`episode-img ${loadedEpisodeImages[episode.plex || episode.id] ? 'loaded' : ''}`}
+                                  onLoad={() => {
+                                    const key = episode.plex || episode.id;
+                                    if (key !== undefined) {
+                                      setLoadedEpisodeImages(prev => ({ ...prev, [key]: true }));
+                                    }
+                                  }}
+                                />
                                 <div className="thumbnail-badges">
                                   <div className="badge duration">
                                     {episode.duration && formatDurationBadge(episode.duration)}
@@ -570,7 +640,17 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                 >
                   <div className="season-image-wrapper" style={{backgroundImage: s.image ? `url(${DaylightMediaPath(`media/plex/img/${s.id}`)})` : 'none'}}>
                     {s.image ? (
-                      <img src={DaylightMediaPath(`media/plex/img/${s.id}`)} alt={s.rawName || s.name || 'Season'} className="season-image" />
+                      <img
+                        src={DaylightMediaPath(`media/plex/img/${s.id}`)}
+                        alt={s.rawName || s.name || 'Season'}
+                        className={`season-image ${loadedSeasonImages[s.id] ? 'loaded' : ''}`}
+                        onLoad={() => {
+                          const key = s.id;
+                          if (key !== undefined) {
+                            setLoadedSeasonImages(prev => ({ ...prev, [key]: true }));
+                          }
+                        }}
+                      />
                     ) : (
                       <div className="season-image placeholder">S</div>
                     )}
