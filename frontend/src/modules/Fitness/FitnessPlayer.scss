@@ -71,29 +71,107 @@ dash-video {
   }
   
   .fitness-player-sidebar {
+    order: 2; /* move to the right side */
     flex: 0 0 250px; /* Initial width; overridden inline when resizing */
     background-color: #1a1a1a;
-    padding: 15px 10px 15px 15px; /* leave space near resizer */
+  padding: 14px 14px 14px 14px; /* symmetric padding */
     overflow-y: auto;
-    border-right: 1px solid #333;
+    border-left: 1px solid #333; /* border now on left */
+    border-right: none;
     display: flex;
     flex-direction: column;
     position: relative;
 
+    /* When FitnessUsers (fitness-devices-nav) is rendered inside the sidebar, switch to vertical layout */
+    .fitness-devices-nav {
+      margin: 6px 0 0;
+      padding: 0 2px 6px 2px; /* slight inset both sides */
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: transparent; /* inherit */
+      box-shadow: none;
+
+      .nav-header {
+        margin: 0 0 4px;
+        padding: 0 0 6px;
+        border-bottom: 1px solid #2a2a2a;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .fitness-devices {
+        flex: 1 1 auto;
+        overflow-y: visible; /* rely on sidebar scroll */
+        width: 100%;
+      }
+
+      /* Override device-grid to be a simple vertical stack */
+      .device-grid {
+        display: flex !important;
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+      }
+
+      .fitness-device.card-horizontal {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        margin: 0;
+        padding: 8px 10px;
+        background: #181818;
+        border: 1px solid #262626;
+        border-radius: 6px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+        transition: background .15s ease, border-color .15s ease;
+
+        &:hover {
+          background: #202020;
+          border-color: #2e2e2e;
+        }
+      }
+
+      .user-profile-img-container {
+        flex: 0 0 46px;
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        overflow: hidden;
+        background: #222;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        img { width: 100%; height: 100%; object-fit: cover; }
+      }
+
+      .device-info {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        .device-name { font-size: 0.9rem; line-height: 1.1; }
+        .device-stats { font-size: 0.75rem; display: flex; align-items: center; gap: 6px; }
+      }
+    }
+
     .fitness-player-sidebar-resizer {
       position: absolute;
       top: 0;
-      right: 0;
+      left: 0; /* moved to left edge */
       width: 6px;
       height: 100%;
       cursor: col-resize;
-      background: linear-gradient(to right, rgba(255,255,255,0.05), rgba(255,255,255,0.15), rgba(255,255,255,0.05));
+      background: linear-gradient(to left, rgba(255,255,255,0.05), rgba(255,255,255,0.15), rgba(255,255,255,0.05));
       transition: background 0.15s ease;
       z-index: 10;
     }
     .fitness-player-sidebar-resizer:hover,
     .fitness-player-sidebar-resizer:active {
-      background: linear-gradient(to right, #0af, #08f, #0af);
+      background: linear-gradient(to left, #0af, #08f, #0af);
     }
     
     @media (max-width: 768px) {
@@ -200,6 +278,85 @@ dash-video {
         }
       }
     }
+
+    /* Minimized state: collapse width but keep a subtle edge for restore FAB positioning */
+    &.minimized {
+      padding: 0;
+      overflow: visible; /* allow fab to sit outside */
+      border-left: none;
+      background: transparent;
+      .sidebar-content, .fitness-player-sidebar-resizer { display: none; }
+    }
+
+    /* Footer controls inside sidebar */
+    .sidebar-footer-controls {
+      margin-top: auto;
+      display: flex;
+      gap: 6px;
+      padding: 10px 4px 0 4px;
+      border-top: 1px solid #262626;
+      position: sticky;
+      bottom: 0;
+      background: linear-gradient(to top, rgba(26,26,26,0.95), rgba(26,26,26,0.6));
+      backdrop-filter: blur(2px);
+      z-index: 5;
+      .sidebar-footer-btn {
+        flex: 1 1 0;
+        background: #262626;
+        color: #ddd;
+        border: 1px solid #333;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        padding: 6px 4px;
+        cursor: pointer;
+        letter-spacing: .5px;
+        text-transform: uppercase;
+        font-weight: 600;
+        transition: background .15s, border-color .15s, color .15s;
+        &:hover { background:#2e2e2e; border-color:#3a3a3a; color:#fff; }
+        &:active { background:#1f1f1f; }
+        &.active { background:#0a5fa5; border-color:#1281da; color:#fff; }
+      }
+    }
+
+    /* Floating restore button when minimized */
+    .sidebar-restore-fab {
+      position: absolute;
+      top: 12px;
+      /* Place based on side using data attribute on parent via order */
+      right: 14px;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 2px solid #0af;
+      background: rgba(0,0,0,0.55);
+      color: #0af;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 50;
+      box-shadow: 0 4px 10px rgba(0,0,0,.5);
+      backdrop-filter: blur(4px);
+      transition: background .2s, transform .2s, color .2s;
+      &:hover { background: rgba(0,0,0,0.75); transform: scale(1.05); }
+      &:active { transform: scale(.95); }
+    }
+
+    &.sidebar-left {
+      order: 0;
+      border-left: none;
+      border-right: 1px solid #333;
+      padding: 15px 10px 15px 15px; /* mirror padding */
+      .fitness-player-sidebar-resizer {
+        left: auto;
+        right: 0; /* resizer on right when on left side */
+        background: linear-gradient(to right, rgba(255,255,255,0.05), rgba(255,255,255,0.15), rgba(255,255,255,0.05));
+      }
+      &.minimized .sidebar-restore-fab { left: 14px; right: auto; }
+    }
+    &.sidebar-right { &.minimized .sidebar-restore-fab { right: 14px; } }
   }
   
   .fitness-player-content {
@@ -620,4 +777,20 @@ dash-video {
       }
     }
   }
+}
+
+/* Mode modifiers */
+.fitness-player.mode-fullscreen {
+  .fitness-player-sidebar { display: flex; width:0; flex:0 0 0; }
+  .fitness-player-footer { display: none !important; }
+}
+
+.fitness-player.mode-maximal {
+  .fitness-player-sidebar { flex: 0 0 50% !important; width:50%!important; }
+  .fitness-player-main { flex: 1 1 50%; }
+  .fitness-player-footer { /* stack enforced via JS but ensure visibility */ display:flex; }
+}
+
+.fitness-player.mode-normal {
+  .fitness-player-footer { display:flex; }
 }
