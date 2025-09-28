@@ -594,7 +594,8 @@ export function SinglePlayer(play) {
   const fetchVideoInfo = useCallback(async () => {
     setIsReady(false);
     if (!!plex) {
-      const url = shuffle ? `media/plex/info/${plex}/shuffle` : `media/plex/info/${plex}`;
+      const force = play.forceH264 ? (shuffle ? '&forceH264=1' : '?forceH264=1') : '';
+      const url = shuffle ? `media/plex/info/${plex}/shuffle${force}` : `media/plex/info/${plex}${force}`;
       const infoResponse = await DaylightAPI(url);
       setMediaInfo({ ...infoResponse, media_key: infoResponse.plex, continuous });
       setIsReady(true);
