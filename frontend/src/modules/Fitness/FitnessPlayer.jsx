@@ -142,12 +142,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const queue = playQueue || fitnessPlayQueue || [];
   const setQueue = setPlayQueue || setFitnessPlayQueue;
   
-  console.log('🎬 FitnessPlayer: Queue state:', { 
-    propsQueue: playQueue, 
-    contextQueue: fitnessPlayQueue, 
-    resolvedQueue: queue, 
-    currentItem 
-  });
+  
 
   // Helper function to check if a plex object is valid for thumbnail generation
   const isValidPlexObj = (plexObj) => {
