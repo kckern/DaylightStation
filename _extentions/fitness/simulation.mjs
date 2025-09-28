@@ -45,9 +45,11 @@ const hrUserMap = {};
 
 // Utility to create baseline heart rate characteristics per user/device
 function baselineForDevice(deviceId) {
-  // Provide varied but deterministic base using deviceId hash
-  const base = 70 + (parseInt(deviceId, 10) % 10); // 70-79
-  const variability = 10 + (parseInt(deviceId, 10) % 6); // 10-15
+  // Deterministic seed based on device id for reproducibility
+  const seed = parseInt(deviceId, 10) % 10; // 0-9
+  // Center base near moderate intensity (we will shape phases around this)
+  const base = 105 + seed; // 105-114
+  const variability = 15 + (seed % 5); // 15-19 bpm jitter envelope
   return { baseHeartRate: base, variability };
 }
 
@@ -138,19 +140,37 @@ class FitnessSimulator {
   }
 
   generateHeartRateData(device, elapsedSeconds) {
-    // Simulate workout intensity curve (starts low, builds up, then steady)
-    let intensityFactor = 1.0;
-    if (elapsedSeconds < 10) {
-      intensityFactor = 0.7 + (elapsedSeconds / 10) * 0.3; // Warm up
-    } else if (elapsedSeconds > 45) {
-      intensityFactor = 1.1; // High intensity finish
+    // Four phase waveform to span 95-180 bpm range
+    const phaseDur = 45; // seconds
+    const phase = Math.floor(elapsedSeconds / phaseDur) % 4; // 0..3
+    let target;
+    switch (phase) {
+      case 0: { // Warm-up: 95 -> 125
+        const t = Math.min(elapsedSeconds, phaseDur) / phaseDur; // 0..1
+        target = 95 + t * 30; // 95-125
+        break; }
+      case 1: { // Build: 125 -> 155
+        const t = (elapsedSeconds - phaseDur) / phaseDur;
+        target = 125 + t * 30; // 125-155
+        break; }
+      case 2: { // Peak oscillation: 160 +/- 20 (160->180->160)
+        const t = (elapsedSeconds - 2 * phaseDur) / phaseDur; // 0..1
+        target = 160 + Math.sin(t * Math.PI) * 20; // 160-180-160
+        break; }
+      case 3:
+      default: { // Cooldown: 150 -> 110
+        const t = (elapsedSeconds - 3 * phaseDur) / phaseDur; // 0..1
+        target = 150 - t * 40; // 150-110
+        break; }
     }
-
-    const targetHR = Math.round(device.baseHeartRate * intensityFactor);
-    const variation = (Math.random() - 0.5) * device.variability;
-    const heartRate = Math.max(50, Math.round(targetHR + variation));
+    // Add device-specific base modifier (kept subtle to stay within bounds)
+    target += (device.baseHeartRate - 110) * 0.4; // shift +/- a few bpm
+    const variation = (Math.random() - 0.5) * device.variability; // jitter
+    let heartRate = Math.round(target + variation);
+    if (heartRate < 95) heartRate = 95;
+    if (heartRate > 180) heartRate = 180;
     
-    device.beatCount += Math.round(heartRate / 30); // Approximate beats in 2 seconds
+  device.beatCount += Math.round(heartRate / 30); // Approximate beats in 2 seconds
     const beatTime = (elapsedSeconds * 1024) % 65536; // ANT+ beat time format
 
     return {

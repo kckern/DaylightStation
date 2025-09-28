@@ -221,6 +221,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               } catch (e) {
                 console.warn('FitnessSession record error', e);
               }
+              // If a treasure box was just created by recordDeviceActivity (first activity), configure it immediately
+              try {
+                const tb = fitnessSessionRef.current.treasureBox;
+                if (tb && tb.globalZones && tb.globalZones.length === 0) {
+                  tb.configure({
+                    coinTimeUnitMs,
+                    zones: zoneConfig,
+                    users: usersConfig
+                  });
+                }
+              } catch (e) {
+                console.warn('TreasureBox immediate configure failed', e);
+              }
               // If this is a heart rate device, attempt to map to user and record heart rate for treasure box
               try {
                 if (device.type === 'heart_rate' && fitnessSessionRef.current.treasureBox) {
@@ -444,8 +457,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (!tb) return {};
       const out = {};
       tb.perUser.forEach((val, key) => {
-        // currentColor already tracked; derive zone by matching global zone color if needed
-        out[key] = val.currentColor || null;
+        const color = val.currentColor || null;
+        if (!color) { out[key] = null; return; }
+        // Attempt to resolve zone id from global zone list
+        let zoneId = null;
+        if (tb.globalZones && tb.globalZones.length) {
+          const match = tb.globalZones.find(z => String(z.color).toLowerCase() === String(color).toLowerCase());
+          if (match) zoneId = match.id || match.name;
+        }
+        out[key] = { id: zoneId, color };
       });
       return out;
     })(),

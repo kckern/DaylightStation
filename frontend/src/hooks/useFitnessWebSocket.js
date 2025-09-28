@@ -572,6 +572,8 @@ export class FitnessTreasureBox {
         highestZone: null, // zone object of highest seen this interval
         lastHR: null,
         currentColor: null,
+        lastColor: null,
+        lastZoneId: null,
       };
       this.perUser.set(userName, acc);
     }
@@ -589,6 +591,8 @@ export class FitnessTreasureBox {
       if (!acc.highestZone || zone.min > acc.highestZone.min) {
         acc.highestZone = zone;
         acc.currentColor = zone.color;
+        acc.lastColor = zone.color; // update persistent last color
+        acc.lastZoneId = zone.id || zone.name || null;
       }
     }
     acc.lastHR = hr;
@@ -601,7 +605,8 @@ export class FitnessTreasureBox {
       // Start new interval after awarding (or discard if none)
       acc.currentIntervalStart = now;
       acc.highestZone = null;
-      acc.currentColor = null;
+      // Do NOT clear currentColor entirely; instead clear only the transient highest but keep lastColor
+      acc.currentColor = null; // transient blank means we haven't seen a new zone this interval
     }
   }
 
@@ -623,7 +628,8 @@ export class FitnessTreasureBox {
       buckets: { ...this.buckets },
       perUser: Array.from(this.perUser.entries()).map(([user, data]) => ({
         user,
-        currentColor: data.currentColor,
+        currentColor: data.currentColor || data.lastColor || null,
+        zoneId: data.lastZoneId || null,
         // Do not expose internal timing details for now
       })),
     };
