@@ -507,41 +507,79 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [queue, currentItem, currentTime, duration]);
 
-  // Sync video playback state (time, duration, play/pause) with footer controls.
-  // Some custom video wrappers or dash.js elements may throttle 'timeupdate'; add an rAF fallback.
+  // Robust sync of playback state: waits for underlying media element, attaches listeners once, rAF polls as fallback.
   useEffect(() => {
-    const el = contentRef.current?.querySelector('video, dash-video, .video-element');
-    if (!el) return; // Player not yet rendered
-    let rafId;
+    let mounted = true;
+    let mediaEl = null;
+    let rafId = null;
     let lastT = -1;
-    const update = () => {
-      const ct = el.currentTime || 0;
-      if (ct !== lastT) {
-        lastT = ct;
-        setCurrentTime(ct);
+    let observer;
+    const attach = (el) => {
+      if (!el || !mounted) return;
+      mediaEl = el;
+      console.debug('[FitnessPlayer] media element attached', el.tagName, { paused: el.paused, duration: el.duration });
+      const update = () => {
+        if (!mounted || !mediaEl) return;
+        const ct = mediaEl.currentTime || 0;
+        if (ct !== lastT) { lastT = ct; setCurrentTime(ct); }
+        if (!isNaN(mediaEl.duration) && mediaEl.duration && mediaEl.duration !== duration) setDuration(mediaEl.duration);
+      };
+      const handlePlay = () => { setIsPaused(false); update(); };
+      const handlePause = () => { setIsPaused(true); update(); };
+      const handleTime = () => update();
+      mediaEl.addEventListener('play', handlePlay);
+      mediaEl.addEventListener('pause', handlePause);
+      mediaEl.addEventListener('timeupdate', handleTime);
+      mediaEl.addEventListener('durationchange', handleTime);
+      // Initial snapshot
+      setIsPaused(mediaEl.paused);
+      update();
+      const tick = () => { if (!mounted) return; update(); rafId = requestAnimationFrame(tick); };
+      rafId = requestAnimationFrame(tick);
+      // Cleanup closure
+      return () => {
+        mediaEl.removeEventListener('play', handlePlay);
+        mediaEl.removeEventListener('pause', handlePause);
+        mediaEl.removeEventListener('timeupdate', handleTime);
+        mediaEl.removeEventListener('durationchange', handleTime);
+      };
+    };
+    // Try immediate
+    const immediate = contentRef.current?.querySelector('video, dash-video, .video-element');
+    let detach;
+    if (immediate) {
+      detach = attach(immediate);
+    } else if (contentRef.current) {
+      // Observe for late insertion
+      observer = new MutationObserver(() => {
+        const candidate = contentRef.current?.querySelector('video, dash-video, .video-element');
+        if (candidate) {
+          detach = attach(candidate);
+          observer.disconnect();
+        }
+      });
+      observer.observe(contentRef.current, { childList: true, subtree: true });
+    }
+    // Retry a few times in case Player mounts async (e.g., streaming lib)
+    let retries = 0;
+    const retry = () => {
+      if (mediaEl || !mounted || retries > 20) return;
+      const candidate = contentRef.current?.querySelector('video, dash-video, .video-element');
+      if (candidate) {
+        detach = attach(candidate);
+        return;
       }
-      if (!isNaN(el.duration) && el.duration && el.duration !== duration) setDuration(el.duration);
+      retries += 1;
+      setTimeout(retry, 100);
     };
-    const handlePlay = () => { setIsPaused(false); update(); };
-    const handlePause = () => { setIsPaused(true); update(); };
-    const handleTime = () => update();
-    const tick = () => { update(); rafId = requestAnimationFrame(tick); };
-    el.addEventListener('play', handlePlay);
-    el.addEventListener('pause', handlePause);
-    el.addEventListener('timeupdate', handleTime);
-    el.addEventListener('durationchange', handleTime);
-    // Initial snapshot
-    setIsPaused(el.paused);
-    update();
-    rafId = requestAnimationFrame(tick);
+    if (!mediaEl) retry();
     return () => {
-      cancelAnimationFrame(rafId);
-      el.removeEventListener('play', handlePlay);
-      el.removeEventListener('pause', handlePause);
-      el.removeEventListener('timeupdate', handleTime);
-      el.removeEventListener('durationchange', handleTime);
+      mounted = false;
+      if (observer) observer.disconnect();
+      if (detach) detach();
+      if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [currentItem, duration]);
+  }, [currentItem]);
   
   // Preload thumbnails when player loads to make seek operations smoother
   useEffect(() => {
