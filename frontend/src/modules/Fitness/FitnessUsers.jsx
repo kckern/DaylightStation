@@ -66,7 +66,7 @@ const FitnessUsers = () => {
     const populated = [...primaryUsers, ...secondaryUsers];
     populated.forEach(u => {
       if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
-        map[String(u.hrDeviceId)] = u.name;
+        map[String(u.hrDeviceId)] = u.name; // preliminary; name may be replaced later by group_label rule
       }
     });
     if (Object.keys(map).length === 0 && usersConfigRaw) {
@@ -84,6 +84,33 @@ const FitnessUsers = () => {
     }
     return map;
   }, [primaryUsers, secondaryUsers, usersConfigRaw]);
+
+  // Build a map of deviceId -> displayName applying group_label rule
+  const hrDisplayNameMap = React.useMemo(() => {
+    // Determine if multi-user session (more than one primary user active overall)
+    const multi = primaryUsers.length > 1; // criteria (1)
+    if (!multi) return hrOwnerMap; // no change if single user
+
+    // We need group_label info; get from raw config
+    const labelLookup = {};
+    const gather = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
+      if (cfg?.hr !== undefined && cfg?.hr !== null && cfg.group_label) {
+        labelLookup[String(cfg.hr)] = cfg.group_label;
+      }
+    });
+    gather(usersConfigRaw?.primary);
+    gather(usersConfigRaw?.secondary);
+
+    if (Object.keys(labelLookup).length === 0) return hrOwnerMap; // nothing to substitute
+
+    const out = { ...hrOwnerMap };
+    Object.keys(labelLookup).forEach(deviceId => {
+      if (out[deviceId]) {
+        out[deviceId] = labelLookup[deviceId];
+      }
+    });
+    return out;
+  }, [hrOwnerMap, primaryUsers.length, usersConfigRaw]);
   
   // Map of deviceId -> user ID (for profile images)
   const userIdMap = React.useMemo(() => {
@@ -244,7 +271,7 @@ const FitnessUsers = () => {
             maintainContainerHeight={true}
           >
             {sortedDevices.map((device) => {
-              const ownerName = device.type === 'heart_rate' ? hrOwnerMap[String(device.deviceId)] : null;
+              const ownerName = device.type === 'heart_rate' ? hrDisplayNameMap[String(device.deviceId)] : null;
               
               // Get equipment info for cadence/speed devices
               const equipmentInfo = equipmentMap[String(device.deviceId)];
