@@ -51,8 +51,8 @@ const FitnessUsers = () => {
   const hrOwnerMap = React.useMemo(() => {
     const map = {};
     [...primaryUsers, ...secondaryUsers].forEach(u => {
-      if (u?.hr !== undefined && u?.hr !== null) {
-        map[String(u.hr)] = u.name;
+      if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
+        map[String(u.hrDeviceId)] = u.name;
       }
     });
     return map;
@@ -62,8 +62,8 @@ const FitnessUsers = () => {
   const userIdMap = React.useMemo(() => {
     const map = {};
     [...primaryUsers, ...secondaryUsers].forEach(u => {
-      if (u?.hr !== undefined && u?.hr !== null) {
-        map[String(u.hr)] = u.id || u.name.toLowerCase();
+      if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
+        map[String(u.hrDeviceId)] = u.id || u.name.toLowerCase();
       }
     });
     return map;
