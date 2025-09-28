@@ -130,47 +130,45 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   }, [showId]);
 
   // Handle poster aspect ratio with JavaScript
+  // Poster size effect: run on mount and when showId changes; guard against state churn
   useEffect(() => {
+    let frame;
     const updatePosterSize = () => {
-      if (posterRef.current) {
-        const width = posterRef.current.offsetWidth;
-        const height = width * 1.5; // 2:1 aspect ratio (height = 2 * width)
+      if (!posterRef.current) return;
+      const width = posterRef.current.offsetWidth;
+      if (width && width !== posterWidth) {
+        const height = width * 1.5;
         posterRef.current.style.height = `${height}px`;
-        setPosterWidth(width); // Update state to trigger re-render
+        setPosterWidth(width);
       }
     };
-
-    // Initial size
     updatePosterSize();
-
-    // Handle window resize
     const resizeObserver = new ResizeObserver(() => {
-      updatePosterSize();
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(updatePosterSize);
     });
-
-    if (posterRef.current) {
-      resizeObserver.observe(posterRef.current);
-    }
-
+    if (posterRef.current) resizeObserver.observe(posterRef.current);
     return () => {
+      cancelAnimationFrame(frame);
       resizeObserver.disconnect();
     };
-  }, [showData]); // Re-run when showData changes
+  }, [showId, posterWidth]);
 
   // Track season filter bar width to compute dynamic height that ensures all items fit
   useEffect(() => {
-    if (!seasonBarRef.current) return;
     const el = seasonBarRef.current;
+    if (!el) return;
+    let width = el.getBoundingClientRect().width;
+    setSeasonBarWidth(prev => (prev !== width ? width : prev));
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        setSeasonBarWidth(entry.contentRect.width);
+        const newWidth = entry.contentRect.width;
+        setSeasonBarWidth(prev => (prev !== newWidth ? newWidth : prev));
       }
     });
     ro.observe(el);
-    // Initial measure
-    setSeasonBarWidth(el.getBoundingClientRect().width);
     return () => ro.disconnect();
-  }, [seasonBarRef.current]);
+  }, [showId]);
 
   // Derive viewport dimensions if provided, to avoid using window
   const viewportSize = useMemo(() => {
@@ -178,7 +176,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return { width: rect.width, height: rect.height };
-  }, [viewportRef?.current, seasonBarWidth]);
+  }, [showId]);
 
   const handleEpisodeSelect = (episode) => {
     setSelectedEpisode(episode);

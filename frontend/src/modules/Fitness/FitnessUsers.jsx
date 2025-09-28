@@ -24,39 +24,66 @@ const FitnessUsers = () => {
     deviceConfiguration,
     equipment,
     primaryUsers,
-    secondaryUsers
+    secondaryUsers,
+    hrColorMap: contextHrColorMap,
+    usersConfigRaw
   } = fitnessContext;
+
+  // Diagnostic: log user arrays when they change
+  React.useEffect(() => {
+    console.log('[FitnessUsers][DIAG] primaryUsers length:', primaryUsers?.length || 0);
+    console.table((primaryUsers||[]).map(u => ({ name: u.name, hr: u.hrDeviceId, cadence: u.cadenceDeviceId, id: u.id })));
+    console.log('[FitnessUsers][DIAG] secondaryUsers length:', secondaryUsers?.length || 0);
+    console.table((secondaryUsers||[]).map(u => ({ name: u.name, hr: u.hrDeviceId, cadence: u.cadenceDeviceId, id: u.id })));
+  }, [primaryUsers, secondaryUsers]);
   
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
 
   // Build lookup maps for heart rate device colors and user assignments
   // Color mapping now comes solely from configuration (no hardcoded fallback)
-  const rawHrColorMap = (deviceConfiguration?.hr) || {};
-  
-  // Ensure all keys are strings for consistent lookup
+  // hrColorMap now comes directly from context (already has stringified keys)
+  // Provide a fallback reconstruction from deviceConfiguration.hr if the context map is empty
   const hrColorMap = React.useMemo(() => {
-    const map = {};
-    if (rawHrColorMap && typeof rawHrColorMap === 'object') {
-      Object.keys(rawHrColorMap).forEach(key => {
-        map[String(key)] = rawHrColorMap[key];
-      });
-    }
-    return map;
-  }, [rawHrColorMap]);
+    const direct = contextHrColorMap || {};
+    if (direct && Object.keys(direct).length > 0) return direct;
+    const fallbackSrc = deviceConfiguration?.hr || {};
+    const rebuilt = {};
+    Object.keys(fallbackSrc).forEach(k => { rebuilt[String(k)] = fallbackSrc[k]; });
+    console.warn('[FitnessUsers][WARN] Context hrColorMap empty; using fallback from deviceConfiguration.hr', rebuilt);
+    return rebuilt;
+  }, [contextHrColorMap, deviceConfiguration]);
+
+  useEffect(() => {
+    console.log('[FitnessUsers][DIAG] hrColorMap keys:', Object.keys(hrColorMap));
+  }, [hrColorMap]);
   
   // Users are already available from the context
 
   // Map of deviceId -> user name (first match wins from primary then secondary)
   const hrOwnerMap = React.useMemo(() => {
     const map = {};
-    [...primaryUsers, ...secondaryUsers].forEach(u => {
+    const populated = [...primaryUsers, ...secondaryUsers];
+    populated.forEach(u => {
       if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
         map[String(u.hrDeviceId)] = u.name;
       }
     });
+    if (Object.keys(map).length === 0 && usersConfigRaw) {
+      // Fallback: build from raw config (pre-User objects) using hr field
+      const addFrom = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
+        if (cfg && (cfg.hr !== undefined && cfg.hr !== null)) {
+          map[String(cfg.hr)] = cfg.name;
+        }
+      });
+      addFrom(usersConfigRaw.primary);
+      addFrom(usersConfigRaw.secondary);
+      if (Object.keys(map).length > 0) {
+        console.log('[FitnessUsers][FALLBACK] Built hrOwnerMap from raw config', map);
+      }
+    }
     return map;
-  }, [primaryUsers, secondaryUsers]);
+  }, [primaryUsers, secondaryUsers, usersConfigRaw]);
   
   // Map of deviceId -> user ID (for profile images)
   const userIdMap = React.useMemo(() => {
@@ -93,6 +120,9 @@ const FitnessUsers = () => {
   const heartColorIcon = (deviceId) => {
     const deviceIdStr = String(deviceId);
     const colorKey = hrColorMap[deviceIdStr];
+    if (!colorKey) {
+      console.log('[FitnessUsers][DIAG] No color mapping for device', deviceIdStr, 'available keys', Object.keys(hrColorMap));
+    }
     
     if (!colorKey) {
       return '🧡'; // Default to orange if not found
@@ -104,7 +134,8 @@ const FitnessUsers = () => {
       yellow: '💛',  // Yellow heart
       green: '💚',   // Green heart
       blue: '💙',    // Blue heart
-      watch: '🤍'    // White heart (for watch)
+      watch: '🤍',   // White heart (for watch)
+      orange: '🧡'   // Explicit orange to allow config use
     };
     
     const icon = colorIcons[colorKey] || '🧡';
@@ -223,7 +254,7 @@ const FitnessUsers = () => {
                 (ownerName || String(device.deviceId)) :
                 (device.type === 'cadence' && equipmentInfo?.name) ? equipmentInfo.name : String(device.deviceId);
                 
-              console.log(`Device ${device.deviceId} (${device.type}) name: ${deviceName}`, equipmentInfo);
+              //console.log(`Device ${device.deviceId} (${device.type}) name: ${deviceName}`, equipmentInfo);
               
               // Get profile image ID for either user or equipment
               const profileId = device.type === 'heart_rate' ?
@@ -256,17 +287,22 @@ const FitnessUsers = () => {
                       </div>
                     )}
                     {device.type !== 'cadence' && (
-                      <img 
-                        src={DaylightMediaPath(device.type === 'heart_rate' ?
-                          `/media/img/users/${profileId}.png` :
-                          `/media/img/equipment/${profileId}.png`
+                      <img
+                        src={DaylightMediaPath(device.type === 'heart_rate'
+                          ? `/media/img/users/${profileId}.png`
+                          : `/media/img/equipment/${profileId}.png`
                         )}
                         alt={`${deviceName} profile`}
                         onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = DaylightMediaPath(device.type === 'heart_rate' ? 
-                            `/media/img/users/user.png` : 
-                            `/media/img/equipment/equipment.png`);
+                          // Prevent infinite error loops and hide broken image after fallback
+                          if (e.target.dataset.fallback) {
+                            e.target.style.display = 'none';
+                            return;
+                          }
+                          e.target.dataset.fallback = '1';
+                          e.target.src = DaylightMediaPath(device.type === 'heart_rate'
+                            ? `/media/img/users/user.png`
+                            : `/media/img/equipment/equipment.png`);
                         }}
                       />
                     )}
