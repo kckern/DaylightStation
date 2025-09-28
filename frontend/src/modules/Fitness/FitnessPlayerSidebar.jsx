@@ -50,13 +50,6 @@ const FitnessPlayerSidebar = ({
         <button type="button" onClick={toggleSide} className="sidebar-footer-btn switch-side" title="Switch sidebar side">{side === 'right' ? '◀' : '▶'}</button>
       </div>
 
-      {minimized && (
-        <button
-          className="sidebar-restore-fab"
-          onClick={() => setMode('normal')}
-          title="Restore sidebar"
-        >☰</button>
-      )}
     </div>
   );
 };

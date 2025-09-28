@@ -5,6 +5,7 @@ import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import FitnessUsers from './FitnessUsers.jsx';
+import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -104,7 +105,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const mainPlayerRef = useRef(null);
   const contentRef = useRef(null);
   const footerRef = useRef(null);
-  const [videoDims, setVideoDims] = useState({ width: 0, height: 0, hideFooter: false });
+  const [videoDims, setVideoDims] = useState({ width: 0, height: 0, hideFooter: false, footerHeight: 0 });
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
   const [sidebarSide, setSidebarSide] = useState('right'); // 'left' | 'right'
   // Mode: fullscreen (no sidebar/ no footer), normal (standard layout), maximal (sidebar 50%, stacked footer)
@@ -164,15 +165,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     );
   };
 
-  // Container-based sizing: baseline is .fitness-app-viewport
+  // Container-based sizing with 16:9 invariant: we derive video FIRST then leftover height becomes footer.
   useLayoutEffect(() => {
     if (!viewportRef?.current) return;
 
     const compute = (reason = 'resize') => {
       if (!viewportRef.current) return;
-      // Throttle layout compute to animation frames & avoid back-to-back redundant runs
       const now = performance.now();
-      if (stackEvalRef.current.pending) return; // a compute already queued
+      if (stackEvalRef.current.pending) return;
       stackEvalRef.current.pending = true;
       if (measureRafRef.current) cancelAnimationFrame(measureRafRef.current);
       measureRafRef.current = requestAnimationFrame(() => {
@@ -180,64 +180,56 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         stackEvalRef.current.lastComputeTs = now;
 
         const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
-        // Determine effective sidebar width based on mode
-        let effectiveSidebar;
+
+        // Effective sidebar width per mode
+        let effectiveSidebar = 0;
         if (playerMode === 'fullscreen') {
           effectiveSidebar = 0;
         } else if (playerMode === 'maximal') {
           effectiveSidebar = Math.round(totalW * 0.5);
-        } else { // normal
+        } else {
           effectiveSidebar = sidebarWidth;
         }
-        const footerEl = footerRef.current;
-        let footerNatural = 0;
-        if (footerEl) {
-          // Temporarily allow auto height to get intrinsic
-          const prevDisplay = footerEl.style.display;
-            if (videoDims.hideFooter) footerEl.style.display = 'none'; else footerEl.style.display = '';
-          footerNatural = footerEl.scrollHeight;
-          footerEl.style.display = prevDisplay; // restore
-        }
-        const availableW = Math.max(0, totalW - effectiveSidebar);
-        let videoW = availableW;
-        let videoH = Math.round(videoW * 9 / 16);
-        const maxVideoH = Math.max(0, totalH - footerNatural);
-        if (videoH > maxVideoH) {
-          videoH = maxVideoH;
-          videoW = Math.round(videoH * 16 / 9);
-        }
-        videoW = Math.max(0, videoW);
-        videoH = Math.max(0, videoH);
-        let hideFooter = (playerMode === 'fullscreen');
-        if (!hideFooter && effectiveSidebar === 0 && (videoH + footerNatural > totalH)) {
-          const maxVideoHNoFooter = totalH;
-          if (videoH > maxVideoHNoFooter) {
-            videoH = maxVideoHNoFooter;
-            videoW = Math.round(videoH * 16 / 9);
-          }
-          hideFooter = true;
-        }
-        setVideoDims(prev => (prev.width === videoW && prev.height === videoH && prev.hideFooter === hideFooter)
-          ? prev
-          : { width: videoW, height: videoH, hideFooter });
 
-        // Evaluate stack mode from footer aspect ratio (width/height)
-        if (playerMode === 'maximal') {
-          // Force stack mode in maximal
-          setStackMode(true);
-        } else if (footerRef.current) {
+        const availableW = Math.max(0, totalW - effectiveSidebar);
+        // Start with width-driven sizing
+        let videoW = availableW;
+        let videoH = videoW * 9 / 16;
+        // If too tall for viewport, clamp by height and recalc width
+        if (videoH > totalH) {
+          videoH = totalH;
+          videoW = videoH * 16 / 9;
+        }
+        videoW = Math.max(0, Math.round(videoW));
+        videoH = Math.max(0, Math.round(videoH));
+
+        // Remaining space allocated to footer unless fullscreen
+        let footerHeight = playerMode === 'fullscreen' ? 0 : Math.max(0, totalH - videoH);
+        const footerRatio = totalH > 0 ? (footerHeight / totalH) : 0;
+
+        // Snap to fullscreen if footer would be under 5% of viewport (per spec)
+        if (playerMode !== 'fullscreen' && footerRatio < 0.05) {
+          setPlayerMode('fullscreen');
+          return; // another effect run will size again
+        }
+
+        const hideFooter = (playerMode === 'fullscreen');
+        setVideoDims(prev => (prev.width === videoW && prev.height === videoH && prev.hideFooter === hideFooter && prev.footerHeight === footerHeight)
+          ? prev
+          : { width: videoW, height: videoH, hideFooter, footerHeight });
+
+        // STACK MODE: evaluate based on thumbnail squish heuristic using footer *width/height* aspect
+        if (!hideFooter && footerRef.current) {
           const fr = footerRef.current.getBoundingClientRect();
-          if (fr.height > 0) {
-            const footerAspect = fr.width / fr.height;
-            stackEvalRef.current.lastFooterAspect = footerAspect;
+          if (fr.width > 0) {
+            const aspect = fr.width / Math.max(1, footerHeight || fr.height || 1);
+            stackEvalRef.current.lastFooterAspect = aspect;
             setStackMode(prev => {
               if (prev) {
-                // Currently stacked, look to exit only if aspect grows sufficiently
-                if (footerAspect > FOOTER_ASPECT_EXIT) return false;
+                if (aspect > FOOTER_ASPECT_EXIT) return false;
                 return prev;
               } else {
-                // Currently normal; enter if aspect shrinks below ENTER threshold
-                if (footerAspect < FOOTER_ASPECT_ENTER) return true;
+                if (aspect < FOOTER_ASPECT_ENTER) return true;
                 return prev;
               }
             });
@@ -246,34 +238,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       });
     };
 
-    computeRef.current = compute; // expose
+    computeRef.current = compute;
 
-    const ro = new ResizeObserver(() => compute('resizeObserverViewport'));
+    const ro = new ResizeObserver(() => compute('viewport'));
     ro.observe(viewportRef.current);
     if (mainPlayerRef.current) ro.observe(mainPlayerRef.current);
-    // Guarded footer observer: only react when width meaningfully changes
-    let lastFooterWidth = 0;
-    if (footerRef.current) {
-      const footerRO = new ResizeObserver(entries => {
-        const entry = entries[0];
-        if (!entry) return;
-        const w = entry.contentRect.width;
-        if (Math.abs(w - lastFooterWidth) > 4) { // ignore tiny jitter
-          lastFooterWidth = w;
-          compute('resizeObserverFooter');
-        }
-      });
-      footerRO.observe(footerRef.current);
-      // Store disconnect function
-      stackEvalRef.current.footerRO = footerRO;
-    }
+    // Sidebar width changes already cause re-run via dep array
     compute('initial');
     return () => {
       ro.disconnect();
-      if (stackEvalRef.current.footerRO) {
-        stackEvalRef.current.footerRO.disconnect();
-        delete stackEvalRef.current.footerRO;
-      }
     };
   }, [viewportRef, sidebarWidth, playerMode]);
 
@@ -617,7 +590,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               media_type: 'video',
               media_key: enhancedCurrentItem.media_key,
               title: enhancedCurrentItem.title,
-              shader: 'regular',
+              shader: 'minimal',
               volume: currentItem.volume || 1.0,
               playbackRate: currentItem.playbackRate || 1.0,
               type: 'video',
@@ -632,63 +605,26 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           />
         </div>
         
-        {/* Footer with 3 panels */}
-  <div className={`fitness-player-footer${stackMode ? ' stack-mode' : ''}`} ref={footerRef} style={videoDims.hideFooter ? { display: 'none' } : undefined}>
-          {/* Panel 1: Previous and Play/Pause buttons */}
-          <div className="footer-controls-left">
-            <div className="control-buttons-container">
-              <button
-                onClick={() => {
-                  const el = mediaElRef.current;
-                  if (!el) return;
-                  if (el.paused) { el.play(); } else { el.pause(); }
-                  setIsPaused(el.paused);
-                }}
-                className="control-button play-pause-button"
-              >
-                <span className="icon">{isPaused ? "▶" : "⏸"}</span>
-              </button>
-              <button onClick={handlePrev} disabled={!hasPrev} className="control-button prev-button">
-                <span className="icon">⏮</span>
-              </button>
-            </div>
-            <div className="time-display">
-              <TimeDisplay ct={currentTime} dur={duration || (currentItem.duration || 600)} />
-              <span className="render-counter" style={{ marginLeft: 8, opacity: 0.5 }}>r:{renderCountRef.current}</span>
-            </div>
-          </div>
-          
-          {/* Panel 2: Seek thumbnails */}
-          <div className="footer-seek-thumbnails">
-            <div className="progress-bar" onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const clickX = e.clientX - rect.left;
-              const percent = Math.min(1, Math.max(0, clickX / rect.width));
-              const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem.duration || 600));
-              handleSeek(percent * baseDuration);
-            }}>
-              {(() => {
-                const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem.duration || 600));
-                const pct = baseDuration > 0 ? (currentTime / baseDuration) * 100 : 0;
-                return <div className="progress" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}></div>;
-              })()}
-            </div>
-            <div className="seek-thumbnails">
-              {seekButtons}
-            </div>
-          </div>
-          
-          {/* Panel 3: Next and Close buttons */}
-          <div className="footer-controls-right">
-            <button onClick={handleNext} disabled={!hasNext} className="control-button next-button">
-              <span className="icon">⏭</span>
-            </button>
-            <button onClick={handleClose} className="control-button close-button">
-              <span className="icon">✖</span>
-              <span className="sr-only">Close</span>
-            </button>
-          </div>
-        </div>
+        <FitnessPlayerFooter
+          ref={footerRef}
+          hidden={videoDims.hideFooter}
+          height={videoDims.footerHeight}
+          stackMode={stackMode}
+          currentTime={currentTime}
+          duration={duration}
+          currentItem={currentItem}
+          seekButtons={seekButtons}
+          onSeek={handleSeek}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          onClose={handleClose}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+          isPaused={isPaused}
+          mediaElRef={mediaElRef}
+          TimeDisplay={TimeDisplay}
+          renderCount={renderCountRef.current}
+        />
       </div>
     </div>
   );
