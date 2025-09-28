@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import FitnessPlayerSidebar from './FitnessPlayerSidebar.jsx';
 import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
@@ -104,7 +104,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const mainPlayerRef = useRef(null);
   const contentRef = useRef(null);
   const footerRef = useRef(null);
-  const videoShellRef = useRef(null);
   const [videoDims, setVideoDims] = useState({ width: 0, height: 0, hideFooter: false });
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
   const [sidebarSide, setSidebarSide] = useState('right'); // 'left' | 'right'
@@ -128,6 +127,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
   const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
+  const mediaElRef = useRef(null);
   
   // Use props if provided, otherwise fall back to context
   const queue = playQueue || fitnessPlayQueue || [];
@@ -278,6 +278,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   // Mouse drag handlers for sidebar resize
   useEffect(() => {
+    let rafId = null;
+    let pendingWidth = null;
+    const commit = () => {
+      if (pendingWidth != null) {
+        setSidebarWidth(pendingWidth);
+        pendingWidth = null;
+      }
+      rafId = null;
+    };
     const handleMove = (e) => {
       if (!resizingRef.current || !viewportRef?.current) return;
       const rect = viewportRef.current.getBoundingClientRect();
@@ -290,16 +299,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         newWidth = distanceFromLeft;
       }
       newWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, newWidth));
-      setSidebarWidth(newWidth);
+      pendingWidth = newWidth;
+      if (!rafId) rafId = requestAnimationFrame(commit);
     };
-    const stop = () => { resizingRef.current = false; };
+    const stop = () => { resizingRef.current = false; if (rafId) { cancelAnimationFrame(rafId); rafId = null; commit(); } };
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseup', stop);
     return () => {
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('mouseup', stop);
+      if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [viewportRef]);
+  }, [viewportRef, sidebarSide]);
 
   const handleResizeMouseDown = (e) => {
     e.preventDefault();
@@ -332,21 +343,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   };
   
   // Function to handle seeking to a specific point in the video
-  const handleSeek = (seconds) => {
-    console.log(`🎬 FitnessPlayer: Seeking to ${seconds} seconds`);
-    // Access the media element directly
-    const mediaElement = document.querySelector('.fitness-player-content video') || 
-                          document.querySelector('.fitness-player-content dash-video') ||
-                          document.querySelector('.fitness-player-content .video-element');
-    
-    if (mediaElement) {
-      // Set the currentTime property to seek to the specified position
-      mediaElement.currentTime = seconds;
-      console.log(`🎬 FitnessPlayer: Seek executed to ${seconds} seconds`);
-    } else {
-      console.error('🎬 FitnessPlayer: Could not find video element to seek');
+  const handleSeek = useCallback((seconds) => {
+    const el = mediaElRef.current;
+    if (el && Number.isFinite(seconds)) {
+      try { el.currentTime = Math.max(0, Math.min(seconds, (el.duration || seconds))); } catch {}
     }
-  };
+  }, []);
 
   const handleClose = () => {
     console.log('🎬 FitnessPlayer: Closing player');
@@ -391,24 +393,37 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
   };
 
-  // Create 10 seek buttons at different intervals with thumbnails
-  const generateSeekButtons = () => {
-    if (!currentItem) return null;
-    // Use a default if no duration is available
+  const enhancedCurrentItem = useMemo(() => currentItem ? ({
+    ...currentItem,
+    plex: currentItem.id || currentItem.plex,
+    media_url: currentItem.media_url || currentItem.videoUrl,
+    title: currentItem.title || currentItem.label,
+    media_type: 'video',
+    type: 'video',
+    media_key: currentItem.id || currentItem.media_key || `fitness-${currentItem.id || ''}`,
+    thumb_id: currentItem.thumb_id,
+    show: currentItem.show || 'Fitness',
+    season: currentItem.season || 'Workout',
+    percent: 0,
+    seconds: 0,
+    continuous: false
+  }) : null, [currentItem]);
+
+  const seekPositions = useMemo(() => {
+    if (!currentItem) return [];
     const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 600;
-    // Build positions identical to previous logic: start, 8 midpoints, near-end
     const positions = [0];
     for (let i = 1; i <= 8; i++) positions.push(Math.floor((i / 9) * totalDuration));
-    const endPosition = Math.floor(totalDuration * 0.95);
-    positions.push(endPosition);
+    positions.push(Math.floor(totalDuration * 0.95));
+    return positions;
+  }, [currentItem]);
 
-    // Determine active index: largest position <= currentTime
+  const seekButtons = useMemo(() => {
+    if (!currentItem) return null;
     let activeIndex = 0;
-    for (let i = 0; i < positions.length; i++) {
-      if (positions[i] <= currentTime) activeIndex = i; else break;
+    for (let i = 0; i < seekPositions.length; i++) {
+      if (seekPositions[i] <= currentTime) activeIndex = i; else break;
     }
-
-    // Plex / image source object (for thumbnails)
     const plexObj = {
       plex: currentItem.plex,
       id: currentItem.id,
@@ -418,8 +433,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       ratingKey: currentItem.ratingKey,
       metadata: currentItem.metadata
     };
-
-    return positions.map((pos, idx) => {
+    return seekPositions.map((pos, idx) => {
       const minutes = Math.floor(pos / 60);
       const seconds = pos % 60;
       const label = `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -427,11 +441,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       const isActive = idx === activeIndex;
       const isPast = idx < activeIndex;
       const classes = ["seek-button-container"]; if (isOrigin) classes.push('origin'); if (isPast) classes.push('past'); if (isActive) classes.push('active');
-
-  // For origin (0s) use seasonImage first, then item image, otherwise generated frame
-  const originSrc = isOrigin ? (currentItem.seasonImage || currentItem.image || generateThumbnailUrl(plexObj, pos)) : null;
+      const originSrc = isOrigin ? (currentItem.seasonImage || currentItem.image || generateThumbnailUrl(plexObj, pos)) : null;
       const imgSrc = isOrigin ? originSrc : generateThumbnailUrl(plexObj, pos);
-
       return (
         <div className={classes.join(' ')} key={`seek-${idx}`} onClick={() => handleSeek(pos)}>
           <div className="thumbnail-wrapper">
@@ -448,7 +459,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         </div>
       );
     });
-  };
+  }, [currentItem, currentTime, seekPositions, handleSeek]);
 
   // Effect: initialize current item from queue & setup keyboard shortcuts
   useEffect(() => {
@@ -490,8 +501,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           break;
         case ' ': // Spacebar toggles play/pause unless focused on a button
           if (document.activeElement?.tagName !== 'BUTTON') {
-            const videoElement = document.querySelector('.fitness-player-content video') || 
-                                 document.querySelector('.fitness-player-content dash-video');
+            const videoElement = mediaElRef.current;
             if (videoElement) {
               if (videoElement.paused) videoElement.play(); else videoElement.pause();
               setIsPaused(videoElement.paused);
@@ -507,119 +517,23 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [queue, currentItem, currentTime, duration]);
 
-  // Robust sync of playback state: waits for underlying media element, attaches listeners once, rAF polls as fallback.
-  useEffect(() => {
-    let mounted = true;
-    let mediaEl = null;
-    let rafId = null;
-    let lastT = -1;
-    let observer;
-    const attach = (el) => {
-      if (!el || !mounted) return;
-      mediaEl = el;
-      console.debug('[FitnessPlayer] media element attached', el.tagName, { paused: el.paused, duration: el.duration });
-      const update = () => {
-        if (!mounted || !mediaEl) return;
-        const ct = mediaEl.currentTime || 0;
-        if (ct !== lastT) { lastT = ct; setCurrentTime(ct); }
-        if (!isNaN(mediaEl.duration) && mediaEl.duration && mediaEl.duration !== duration) setDuration(mediaEl.duration);
-      };
-      const handlePlay = () => { setIsPaused(false); update(); };
-      const handlePause = () => { setIsPaused(true); update(); };
-      const handleTime = () => update();
-      mediaEl.addEventListener('play', handlePlay);
-      mediaEl.addEventListener('pause', handlePause);
-      mediaEl.addEventListener('timeupdate', handleTime);
-      mediaEl.addEventListener('durationchange', handleTime);
-      // Initial snapshot
-      setIsPaused(mediaEl.paused);
-      update();
-      const tick = () => { if (!mounted) return; update(); rafId = requestAnimationFrame(tick); };
-      rafId = requestAnimationFrame(tick);
-      // Cleanup closure
-      return () => {
-        mediaEl.removeEventListener('play', handlePlay);
-        mediaEl.removeEventListener('pause', handlePause);
-        mediaEl.removeEventListener('timeupdate', handleTime);
-        mediaEl.removeEventListener('durationchange', handleTime);
-      };
-    };
-    // Try immediate
-    const immediate = contentRef.current?.querySelector('video, dash-video, .video-element');
-    let detach;
-    if (immediate) {
-      detach = attach(immediate);
-    } else if (contentRef.current) {
-      // Observe for late insertion
-      observer = new MutationObserver(() => {
-        const candidate = contentRef.current?.querySelector('video, dash-video, .video-element');
-        if (candidate) {
-          detach = attach(candidate);
-          observer.disconnect();
-        }
-      });
-      observer.observe(contentRef.current, { childList: true, subtree: true });
+  const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
+
+  const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused }) => {
+    // Throttle currentTime updates to ~4Hz
+    const now = performance.now();
+    const last = progressMetaRef.current.lastSetTime;
+    if (now - last > 250) {
+      progressMetaRef.current.lastSetTime = now;
+      setCurrentTime(ct);
     }
-    // Retry a few times in case Player mounts async (e.g., streaming lib)
-    let retries = 0;
-    const retry = () => {
-      if (mediaEl || !mounted || retries > 20) return;
-      const candidate = contentRef.current?.querySelector('video, dash-video, .video-element');
-      if (candidate) {
-        detach = attach(candidate);
-        return;
-      }
-      retries += 1;
-      setTimeout(retry, 100);
-    };
-    if (!mediaEl) retry();
-    return () => {
-      mounted = false;
-      if (observer) observer.disconnect();
-      if (detach) detach();
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [currentItem]);
-  
-  // Preload thumbnails when player loads to make seek operations smoother
-  useEffect(() => {
-    if (!currentItem) return;
-    
-    const plexObj = {
-      // Core identifiers
-      plex: currentItem.plex,
-      id: currentItem.id,
-      // Make sure thumb_id is correctly extracted as a number if possible
-      thumb_id: currentItem.thumb_id ? 
-                (typeof currentItem.thumb_id === 'number' ? currentItem.thumb_id : parseInt(currentItem.thumb_id, 10)) :
-                null,
-      // Image source for direct URL
-      image: currentItem.image,
-      // Additional metadata
-      media_key: currentItem.media_key,
-      ratingKey: currentItem.ratingKey,
-      metadata: currentItem.metadata
-    };
-    
-    if (isValidPlexObj(plexObj)) {
-      console.log('🎬 FitnessPlayer: Preloading thumbnails...');
-      const totalDuration = currentItem.duration || currentItem.length || 600;
-      
-      // Create array of positions to preload
-      const positions = [0]; // Start with 0
-      for (let i = 1; i <= 8; i++) {
-        positions.push(Math.floor((i / 9) * totalDuration));
-      }
-      positions.push(Math.floor(totalDuration * 0.95)); // End position
-      
-      // Preload images by creating them but not appending to DOM
-      positions.forEach(position => {
-        const img = new Image();
-        img.src = generateThumbnailUrl(plexObj, position);
-      });
+    if (d && d !== progressMetaRef.current.lastDuration) {
+      progressMetaRef.current.lastDuration = d;
+      setDuration(d);
     }
-  }, [currentItem]);
-  
+    setIsPaused(paused);
+  }, []);
+
   // Removed manual JS aspect ratio enforcement in favor of pure CSS layout.
 
   // Track last non-fullscreen mode whenever mode changes (must be before any conditional return to keep hook order stable)
@@ -640,23 +554,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const hasNext = currentIndex < queue.length - 1;
 
   // Prepare additional metadata that might be useful for the Player
-  const enhancedCurrentItem = {
-    ...currentItem,
-    plex: currentItem.id || currentItem.plex,
-    media_url: currentItem.media_url || currentItem.videoUrl,
-    title: currentItem.title || currentItem.label,
-    media_type: 'video',
-    type: 'video',
-    media_key: currentItem.id || `fitness-${Date.now()}`,
-    // Make sure thumb_id is passed along
-    thumb_id: currentItem.thumb_id,
-    // Additional properties that might help the Player component
-    show: currentItem.show || 'Fitness',
-    season: currentItem.season || 'Workout',
-    percent: 0, // Start from beginning
-    seconds: 0, // Start from beginning
-    continuous: false // Don't loop videos
-  };
+  // const enhancedCurrentItem = { ... old implementation removed };
   
   // Sidebar width for render (mirrors compute logic; may lag first frame until measure)
   const viewportW = viewportRef?.current?.clientWidth || 0;
@@ -700,7 +598,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           {/* Add an overlay just to block the top-right close button */}
           <div className="player-controls-blocker"></div>
           <Player 
-            key={enhancedCurrentItem.media_key || enhancedCurrentItem.plex || Date.now()}
+            key={enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}
             play={{
               plex: enhancedCurrentItem.plex,
               media_url: enhancedCurrentItem.media_url,
@@ -716,6 +614,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             clear={handleClose}
             advance={handleNext}
             playerType="fitness-video"
+            onProgress={handlePlayerProgress}
+            onMediaRef={(el)=>{ mediaElRef.current = el; }}
           />
         </div>
         
@@ -726,7 +626,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             <div className="control-buttons-container">
               <button
                 onClick={() => {
-                  const el = contentRef.current?.querySelector('video, dash-video, .video-element');
+                  const el = mediaElRef.current;
                   if (!el) return;
                   if (el.paused) { el.play(); } else { el.pause(); }
                   setIsPaused(el.paused);
@@ -751,8 +651,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               const clickX = e.clientX - rect.left;
               const percent = Math.min(1, Math.max(0, clickX / rect.width));
               const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem.duration || 600));
-              const seekTime = percent * baseDuration;
-              handleSeek(seekTime);
+              handleSeek(percent * baseDuration);
             }}>
               {(() => {
                 const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem.duration || 600));
@@ -761,7 +660,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               })()}
             </div>
             <div className="seek-thumbnails">
-              {generateSeekButtons()}
+              {seekButtons}
             </div>
           </div>
           
