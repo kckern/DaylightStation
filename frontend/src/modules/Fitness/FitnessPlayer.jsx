@@ -128,6 +128,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
   const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
   const mediaElRef = useRef(null);
+  const playerRef = useRef(null); // imperative Player API
+  const renderCountRef = useRef(0);
+  // Simple render counter (environment gating removed per instruction)
+  renderCountRef.current += 1;
+
+  const TimeDisplay = useMemo(() => React.memo(({ ct, dur }) => (
+    <>{formatTime(ct)} / {formatTime(dur)}</>
+  )), []);
   
   // Use props if provided, otherwise fall back to context
   const queue = playQueue || fitnessPlayQueue || [];
@@ -534,6 +542,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     setIsPaused(paused);
   }, []);
 
+  const handlePlayerReady = useCallback(({ duration: d }) => {
+    if (d && !duration) setDuration(d);
+  }, [duration]);
+
   // Removed manual JS aspect ratio enforcement in favor of pure CSS layout.
 
   // Track last non-fullscreen mode whenever mode changes (must be before any conditional return to keep hook order stable)
@@ -616,6 +628,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             playerType="fitness-video"
             onProgress={handlePlayerProgress}
             onMediaRef={(el)=>{ mediaElRef.current = el; }}
+            ref={playerRef}
           />
         </div>
         
@@ -640,7 +653,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               </button>
             </div>
             <div className="time-display">
-              {formatTime(currentTime)} / {formatTime(duration || (currentItem.duration || 600))}
+              <TimeDisplay ct={currentTime} dur={duration || (currentItem.duration || 600)} />
+              <span className="render-counter" style={{ marginLeft: 8, opacity: 0.5 }}>r:{renderCountRef.current}</span>
             </div>
           </div>
           

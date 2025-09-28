@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import PropTypes from 'prop-types';
 import './Player.scss';
 import moment from 'moment';
 import {Scriptures,Hymns, Talk, Poetry} from './../ContentScroller/ContentScroller.jsx';
@@ -31,9 +32,8 @@ function formatTime(seconds) {
 }
 
 function getProgressPercent(progress, duration) {
-  if (!duration) return { percent: 0 };
-  const percent = ((progress / duration) * 100).toFixed(1);
-  return { percent };
+  if (!duration) return 0;
+  return ((progress / duration) * 100).toFixed(1);
 }
 
 function ProgressBar({ percent, onClick }) {
@@ -68,7 +68,8 @@ function useCommonMediaController({
   cycleThroughClasses,
   playbackKeys,queuePosition,
   ignoreKeys,
-  onProgress, onMediaRef // new
+  onProgress,
+  onMediaRef
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id  || meta.plex || meta.media_url;
   const containerRef = useRef(null);
@@ -76,7 +77,7 @@ function useCommonMediaController({
   const [duration, setDuration] = useState(0);
   const lastLoggedTimeRef = useRef(0);
   const lastUpdatedTimeRef = useRef(0);
-  const [timeSinceLastProgressUpdate, setTimeSinceLastProgressUpdate] = useState(0);
+  // Removed stalled-progress timing logic (simplified)
 
   const getMediaEl = () => {
     const mediaEl = containerRef.current?.shadowRoot?.querySelector('video') || containerRef.current;
@@ -111,59 +112,49 @@ function useCommonMediaController({
     setCurrentTime: setSeconds // Add the missing setCurrentTime parameter
   });
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const diff = now - lastUpdatedTimeRef.current;
-      setTimeSinceLastProgressUpdate(diff);
-    }, 50);
-    return () => clearInterval(interval);
-  }, [meta.key, meta.title]);
+  // Removed interval-based stall detection
 
   useEffect(() => {
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
 
-    const logTime = async (type, media_key, percent, title) => {
+    const logProgress = async () => {
       const now = Date.now();
       lastUpdatedTimeRef.current = now;
-      const timeSinceLastLog = now - lastLoggedTimeRef.current;
-      const seconds = mediaEl.currentTime || 0;
-      if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
+      const diff = now - lastLoggedTimeRef.current;
+      const pct = getProgressPercent(mediaEl.currentTime || 0, mediaEl.duration || 0);
+      if (diff > 10000 && parseFloat(pct) > 0) {
         lastLoggedTimeRef.current = now;
-        if(seconds > 10)  await DaylightAPI(`media/log`, { title, type, media_key, seconds, percent });
+        const secs = mediaEl.currentTime || 0;
+        if (secs > 10) {
+          const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+          await DaylightAPI(`media/log`, { title, type, media_key, seconds: secs, percent: pct });
+        }
       }
     };
 
     const onTimeUpdate = () => {
       setSeconds(mediaEl.currentTime);
-      const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
-      const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
-      logTime(type, media_key, percent, title);
+      logProgress();
       if (onProgress) {
         onProgress({
           currentTime: mediaEl.currentTime || 0,
           duration: mediaEl.duration || 0,
           paused: mediaEl.paused,
-          media: meta
+          media: meta,
+          percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration)
         });
       }
     };
     const onDurationChange = () => {
       setDuration(mediaEl.duration);
-      if (onProgress) {
-        onProgress({
-          currentTime: mediaEl.currentTime || 0,
-          duration: mediaEl.duration || 0,
-          paused: mediaEl.paused,
-          media: meta
-        });
-      }
     };
     const onEnded = () => {
       // Log 100% completion when content ends
       const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
-      logTime(type, media_key, '100.0', title);
+      // Force one final log at completion
+      lastLoggedTimeRef.current = 0; // reset so logProgress will pass time gate
+      logProgress();
       onEnd();
     };
     const onLoadedMetadata = () => {
@@ -211,6 +202,7 @@ function useCommonMediaController({
       } else {
       mediaEl.playbackRate = playbackRate;
       }
+      // onReady removed (simplified pipeline)
     };
 
     mediaEl.addEventListener('timeupdate', onTimeUpdate);
@@ -234,12 +226,11 @@ function useCommonMediaController({
   return {
     containerRef,
     seconds,
-    percent: getProgressPercent(seconds, duration).percent,
+  percent: getProgressPercent(seconds, duration),
     duration,
     isPaused: !seconds ? false : getMediaEl()?.paused || false,
     isDash,
     shader,
-    timeSinceLastProgressUpdate,
     handleProgressClick
   };
 }
@@ -387,7 +378,7 @@ function useQueueController({ play, queue, clear }) {
 /*  MAIN PLAYER                                               */
 /*─────────────────────────────────────────────────────────────*/
 
-export default function Player(props) {
+const Player = forwardRef(function Player(props, ref) {
   if (props.play?.overlay || props.queue?.overlay) {
     return <CompositePlayer {...props} />;
   }
@@ -449,6 +440,24 @@ export default function Player(props) {
     }
   }, [singlePlayerProps?.continuous, singlePlayerProps?.media_key, singlePlayerProps?.plex, clear]);
 
+  const exposedMediaRef = useRef(null);
+
+  // Compose onMediaRef so we keep existing external callback semantics.
+  const handleMediaRef = useCallback((el) => {
+    exposedMediaRef.current = el;
+    if (props.onMediaRef) props.onMediaRef(el);
+  }, [props.onMediaRef]);
+
+  useImperativeHandle(ref, () => ({
+    seek: (t) => { const el = exposedMediaRef.current; if (el && Number.isFinite(t)) { try { el.currentTime = t; } catch(_){} } },
+    play: () => { const el = exposedMediaRef.current; try { el?.play(); } catch(_){} },
+    pause: () => { const el = exposedMediaRef.current; try { el?.pause(); } catch(_){} },
+    toggle: () => { const el = exposedMediaRef.current; if (el) { el.paused ? el.play() : el.pause(); } },
+    getCurrentTime: () => exposedMediaRef.current?.currentTime || 0,
+    getDuration: () => exposedMediaRef.current?.duration || 0,
+    getMediaElement: () => exposedMediaRef.current,
+  }), []);
+
   const playerProps = {
     advance: isQueue ? advance : singleAdvance,
     clear,
@@ -463,7 +472,8 @@ export default function Player(props) {
     queuePosition,
     ignoreKeys,
     onProgress: props.onProgress,
-    onMediaRef: props.onMediaRef
+    onMediaRef: handleMediaRef,
+    // onReady removed
   };
   if(singlePlayerProps?.key) delete singlePlayerProps.key;
 
@@ -475,7 +485,21 @@ export default function Player(props) {
       <LoadingOverlay />
     </div>
   );
-}
+});
+
+Player.propTypes = {
+  play: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
+  queue: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
+  clear: PropTypes.func,
+  playbackrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  playbackKeys: PropTypes.arrayOf(PropTypes.string),
+  playerType: PropTypes.string,
+  ignoreKeys: PropTypes.bool,
+  onProgress: PropTypes.func,
+  onMediaRef: PropTypes.func
+};
+
+export default Player;
 
 
 /*─────────────────────────────────────────────────────────────*/
@@ -538,7 +562,11 @@ export function SinglePlayer(play) {
     //configs
     shader,
     volume,
-    playbackRate
+    playbackRate,
+    // newly forwarded callbacks from parent Player (were previously implicitly referenced)
+    onProgress,
+    onMediaRef,
+  // onReady removed
 
 
 
@@ -627,7 +655,6 @@ export function SinglePlayer(play) {
 function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys, onProgress, onMediaRef }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const {
-    timeSinceLastProgressUpdate,
     seconds,
     duration,
     containerRef,
@@ -653,7 +680,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
     onMediaRef
   });
 
-  const { percent } = getProgressPercent(seconds, duration);
+  const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
 
@@ -661,7 +688,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-      {seconds > 2 && timeSinceLastProgressUpdate > 1000 && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
+  {seconds === 0 && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -690,7 +717,6 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
     containerRef,
     seconds,
     isPaused,
-    timeSinceLastProgressUpdate,
     duration,
     handleProgressClick,
   } = useCommonMediaController({
@@ -714,7 +740,7 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
   });
 
   const { show, season, title, media_url } = media;
-  const { percent } = getProgressPercent(seconds, duration);
+  const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const heading = !!show && !!season && !!title
     ? `${show} - ${season}: ${title}`
     : !!show && !!season
@@ -729,7 +755,7 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
         {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {(seconds === 0 || timeSinceLastProgressUpdate > 1000) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
+  {seconds === 0 && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
       {isDash ? (
         <dash-video
           ref={containerRef}
