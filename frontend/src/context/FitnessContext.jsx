@@ -279,12 +279,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         }
       } catch (e) {
         // ignore non-JSON or irrelevant messages
-        console.debug('Fitness WebSocket: Non-JSON message received');
+     //   console.debug('Fitness WebSocket: Non-JSON message received');
       }
     };
 
     ws.onclose = (event) => {
-      console.log('Fitness WebSocket disconnected:', event.code, event.reason);
+   //   console.log('Fitness WebSocket disconnected:', event.code, event.reason);
       setConnected(false);
       wsRef.current = null;
       
