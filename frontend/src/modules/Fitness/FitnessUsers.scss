@@ -247,6 +247,23 @@
           color: #adb5bd;
         }
       }
+
+      // Zone pill styling (placed before card for layout) using same zone-* classes applied to profile ring
+      + .device-zone-info, .device-zone-info { // allow either structural order
+        margin: 0 0 4px 64px; // indent to align under avatar
+        font-size: 0.55rem;
+        letter-spacing: .5px;
+        text-transform: uppercase;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        .mantine-Badge-root { background: rgba(255,255,255,0.08); }
+        &.zone-cool .mantine-Badge-root { background: rgba(0,123,255,0.15); color:#6ab8ff; border:1px solid rgba(106,184,255,0.3); }
+        &.zone-active .mantine-Badge-root { background: rgba(0,150,80,0.18); color:#51cf66; border:1px solid rgba(81,207,102,0.35); }
+        &.zone-warm .mantine-Badge-root { background: rgba(255,200,0,0.20); color:#ffd43b; border:1px solid rgba(255,212,59,0.35); }
+        &.zone-hot .mantine-Badge-root { background: rgba(255,128,0,0.22); color:#ff922b; border:1px solid rgba(255,146,43,0.4); }
+        &.zone-fire .mantine-Badge-root { background: rgba(255,0,0,0.25); color:#ff6b6b; border:1px solid rgba(255,107,107,0.45); }
+      }
     }
   }
 
