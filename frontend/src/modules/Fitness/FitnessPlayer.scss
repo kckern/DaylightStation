@@ -579,7 +579,7 @@ dash-video {
         justify-content: space-between;
         flex-shrink: 1;
         height: 100%;
-        overflow-y: visible; /* allow active outline glow to show */
+        overflow-y: hidden; /* allow active outline glow to show */
         
         &::-webkit-scrollbar {
           height: 5px;
