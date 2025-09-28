@@ -18,11 +18,23 @@ export const useFitness = useFitnessContext;
 
 // Provider component
 export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue }) => {
-  const ant_devices = fitnessConfiguration?.fitness?.ant_devices || {};
-  const usersConfig = fitnessConfiguration?.fitness?.users || {};
-  const equipmentConfig = fitnessConfiguration?.fitness?.equipment || [];
-  const coinTimeUnitMs = fitnessConfiguration?.fitness?.coin_time_unit_ms;
-  const zoneConfig = fitnessConfiguration?.fitness?.zones;
+  const FITNESS_DEBUG = false; // set false to silence diagnostic logs
+  // Accept either shape: { fitness: {...} } or flattened keys directly
+  const fitnessRoot = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
+  if (FITNESS_DEBUG) {
+    try {
+      console.log('[FitnessContext][PROP] top-level keys:', Object.keys(fitnessConfiguration||{}));
+      console.log('[FitnessContext][PROP] resolved fitnessRoot keys:', Object.keys(fitnessRoot||{}));
+    } catch(_) {}
+  }
+  const ant_devices = fitnessRoot?.ant_devices || {};
+  let usersConfig = fitnessRoot?.users || {};
+  if (FITNESS_DEBUG && (!usersConfig.primary || usersConfig.primary.length === 0)) {
+    console.warn('[FitnessContext][WARN] usersConfig.primary empty (resolved).');
+  }
+  const equipmentConfig = fitnessRoot?.equipment || [];
+  const coinTimeUnitMs = fitnessRoot?.coin_time_unit_ms;
+  const zoneConfig = fitnessRoot?.zones;
 
   const [connected, setConnected] = useState(false);
   const [latestData, setLatestData] = useState(null);
@@ -52,44 +64,69 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const deviceUpdateRef = useRef(null);
   // Session ref
   const fitnessSessionRef = useRef(new FitnessSession());
-
-  // Initialize users from configuration - done only once
+  // Keep a ref mirror of users map to avoid stale closures inside ws handlers
+  const usersRef = useRef(users);
+  useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => {
-    if (!usersConfig) return;
-    
+    if (FITNESS_DEBUG) {
+      console.log('[FitnessContext][USERS_REF] Updated usersRef size=', usersRef.current.size);
+      usersRef.current.forEach(u => console.log('[FitnessContext][USERS_REF] user', { name: u.name, hr: u.hrDeviceId, cadence: u.cadenceDeviceId, id: u.id }));
+    }
+  }, [users]);
+  // Fast lookup map (hr device id -> user object)
+  const hrDeviceUserMapRef = useRef(new Map());
+  useEffect(() => {
+    const map = new Map();
+    users.forEach(u => {
+      if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
+        map.set(String(u.hrDeviceId), u);
+      }
+    });
+    hrDeviceUserMapRef.current = map;
+    if (FITNESS_DEBUG) {
+      console.log('[FitnessContext][HR_LOOKUP] Rebuilt. Keys=', Array.from(map.keys()));
+    }
+  }, [users]);
+
+  // Initialize / refresh users when configuration becomes available or changes
+  useEffect(() => {
+    if (!usersConfig || ( !usersConfig.primary && !usersConfig.secondary)) {
+      if (FITNESS_DEBUG) console.log('[FitnessContext][INIT] usersConfig not ready yet');
+      return;
+    }
+    // Build a new set of names to detect if we already initialized with identical config
+    const incomingNames = new Set([...(usersConfig.primary||[]).map(u=>u.name), ...(usersConfig.secondary||[]).map(u=>u.name)]);
+    const existingNames = new Set(Array.from(usersRef.current.keys()));
+    let identical = incomingNames.size === existingNames.size;
+    if (identical) {
+      for (const n of incomingNames) { if (!existingNames.has(n)) { identical = false; break; } }
+    }
+    if (identical && usersRef.current.size > 0) {
+      if (FITNESS_DEBUG) console.log('[FitnessContext][INIT] Skipping rebuild; user set unchanged');
+      return; // no rebuild needed
+    }
+
     const userMap = new Map();
-    
-    // Process primary users
     if (usersConfig.primary) {
       usersConfig.primary.forEach(userConfig => {
-        const user = new User(
-          userConfig.name,
-          userConfig.birthyear,
-          userConfig.hr,
-          userConfig.cadence
-        );
-        // Attach stable id for downstream lookups / images
+        const user = new User(userConfig.name, userConfig.birthyear, userConfig.hr, userConfig.cadence);
         if (userConfig.id) user.id = userConfig.id;
         userMap.set(userConfig.name, user);
       });
     }
-
-    // Process secondary users
     if (usersConfig.secondary) {
       usersConfig.secondary.forEach(userConfig => {
-        const user = new User(
-          userConfig.name,
-          userConfig.birthyear,
-          userConfig.hr,
-          userConfig.cadence
-        );
+        const user = new User(userConfig.name, userConfig.birthyear, userConfig.hr, userConfig.cadence);
         if (userConfig.id) user.id = userConfig.id;
         userMap.set(userConfig.name, user);
       });
     }
-
+    if (FITNESS_DEBUG) {
+      console.log('[FitnessContext][INIT] Users (re)built from config');
+      console.table(Array.from(userMap.values()).map(u => ({ name: u.name, hr: u.hrDeviceId, cadence: u.cadenceDeviceId, id: u.id })));
+    }
     setUsers(userMap);
-  }, []);  // Empty dependency array ensures this only runs once
+  }, [usersConfig]);
 
   // Function to create WebSocket connection
   const connectWebSocket = () => {
@@ -124,8 +161,32 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           // Process ANT+ device data
           if (data.type === 'ant' && data.deviceId && data.data) {
             const deviceId = String(data.deviceId);
-            const profile = data.profile;
+            const rawProfile = data.profile || '';
+            // Normalize profile to match DeviceFactory expectations
+            const upper = String(rawProfile).toUpperCase();
+            let profile;
+            switch (upper) {
+              case 'HR':
+              case 'HEART':
+              case 'HEARTRATE':
+              case 'HEART_RATE':
+                profile = 'HR'; break;
+              case 'SPEED':
+              case 'SPD':
+                profile = 'Speed'; break;
+              case 'CAD':
+              case 'CADENCE':
+                profile = 'CAD'; break;
+              case 'POWER':
+              case 'PWR':
+                profile = 'Power'; break;
+              default:
+                profile = rawProfile; // let factory fall back to UnknownDevice
+            }
             const rawData = data.data;
+            if (FITNESS_DEBUG) {
+              console.log('[FitnessContext][WS] Incoming ANT', { deviceId, rawProfile, normalizedProfile: profile, dataKeys: Object.keys(rawData||{}) });
+            }
             
             setFitnessDevices(prevDevices => {
               const newDevices = new Map(prevDevices);
@@ -163,12 +224,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               // If this is a heart rate device, attempt to map to user and record heart rate for treasure box
               try {
                 if (device.type === 'heart_rate' && fitnessSessionRef.current.treasureBox) {
-                  // Find user by HR device id
-                  users.forEach((userObj, userName) => {
+                  const matches = [];
+                  usersRef.current.forEach((userObj) => {
                     if (String(userObj.hrDeviceId) === String(device.deviceId)) {
+                      matches.push(userObj.name);
                       fitnessSessionRef.current.treasureBox.recordUserHeartRate(userObj.name, device.heartRate);
                     }
                   });
+                  if (FITNESS_DEBUG) {
+                    console.log('[FitnessContext][WS] HR scan mapping', { deviceId, matches, hr: device.heartRate });
+                  }
                 }
               } catch (e) {
                 console.warn('TreasureBox HR record error', e);
@@ -181,21 +246,34 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               const { deviceId, device } = deviceUpdateRef.current;
               
               setUsers(prevUsers => {
-                const newUsers = new Map(prevUsers);
-                let userUpdated = false;
-                
-                for (const [userName, user] of newUsers.entries()) {
+                // Use ref for iteration to ensure latest map
+                const refUsers = usersRef.current;
+                let mutated = false;
+                refUsers.forEach((user, userName) => {
                   if (String(user.hrDeviceId) === deviceId || String(user.cadenceDeviceId) === deviceId) {
                     user.updateFromDevice(device);
-                    newUsers.set(userName, user);
-                    userUpdated = true;
+                    mutated = true;
                   }
-                }
-                
-                return userUpdated ? newUsers : prevUsers;
+                });
+                if (!mutated) return prevUsers; // no changes
+                // Return a new Map reference so React notices update
+                const cloned = new Map(refUsers);
+                return cloned;
               });
               
               deviceUpdateRef.current = null;
+            }
+            // Attempt heart rate -> user treasure coin mapping via quick lookup ref (redundant safeguard)
+            if (device.type === 'heart_rate' && fitnessSessionRef.current.treasureBox) {
+              const matchedUser = hrDeviceUserMapRef.current.get(deviceId);
+              if (FITNESS_DEBUG) {
+                console.log('[FitnessContext][WS] HR quick lookup', { deviceId, found: !!matchedUser, user: matchedUser?.name, hr: device.heartRate });
+              }
+              if (matchedUser) {
+                try {
+                  fitnessSessionRef.current.treasureBox.recordUserHeartRate(matchedUser.name, device.heartRate);
+                } catch (e) { /* ignore */ }
+              }
             }
           }
         }
@@ -328,16 +406,29 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // User-related data
     users: allUsers,
     userCount: users.size,
-    primaryUsers: allUsers.filter(user => 
-      usersConfig.primary?.some(config => config.name === user.name)
-    ),
-    secondaryUsers: allUsers.filter(user => 
-      usersConfig.secondary?.some(config => config.name === user.name)
-    ),
+  usersConfigRaw: usersConfig,
+    // Fallback logic: if config primary list is missing/empty but we DO have users, treat all as primary.
+    // This ensures device->name mapping works even when upstream config shape failed to populate.
+    primaryUsers: (usersConfig.primary && usersConfig.primary.length > 0)
+      ? allUsers.filter(user => usersConfig.primary.some(config => config.name === user.name))
+      : allUsers,
+    // Secondary only if explicitly provided; otherwise empty to avoid accidental duplication
+    secondaryUsers: (usersConfig.secondary && usersConfig.secondary.length > 0)
+      ? allUsers.filter(user => usersConfig.secondary.some(config => config.name === user.name))
+      : [],
     
     // Device configuration info
     deviceConfiguration: ant_devices,
     equipment: equipmentConfig,
+    // Precomputed heart rate color map (stringified keys)
+    hrColorMap: (() => {
+      const map = {};
+      try {
+        const src = ant_devices?.hr || {};
+        Object.keys(src).forEach(k => { map[String(k)] = src[k]; });
+      } catch (_) {}
+      return map;
+    })(),
     
     // Categorized device arrays
     heartRateDevices,

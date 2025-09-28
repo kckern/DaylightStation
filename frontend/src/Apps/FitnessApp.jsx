@@ -11,32 +11,9 @@ import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 
 const FitnessApp = () => {
-  // Start with default configuration that includes HR colors and equipment to avoid null mapping
-  const [fitnessConfiguration, setFitnessConfiguration] = useState({
-    fitness: {
-      ant_devices: {
-        hr: {
-          "28812": "red",
-          "28688": "yellow",
-          "28676": "green",
-          "29413": "blue",
-          "40475": "watch"
-        },
-        cadence: {
-          "49904": "orange"
-        }
-      },
-      equipment: [
-        {
-          name: "CycleAce",
-          id: "cycle_ace",
-          type: "stationary_bike",
-          cadence: "49904",
-          speed: null
-        }
-      ]
-    }
-  });
+  // Security / compliance: start with empty config; all data must come from /api/fitness
+  const [fitnessConfiguration, setFitnessConfiguration] = useState({});
+  const [fetchError, setFetchError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show'
   const [activeCollection, setActiveCollection] = useState(null);
@@ -102,22 +79,29 @@ const FitnessApp = () => {
     const fetchFitnessData = async () => {
       try {
         const response = await DaylightAPI('/api/fitness');
-        console.log('Fetched fitness configuration:', response);
-        console.log('Equipment configuration:', response?.fitness?.equipment);
-        
-        // Preserve hardcoded equipment configuration if not present in API response
-        if (!response?.fitness?.equipment) {
-          response.fitness = {
-            ...response.fitness,
-            equipment: fitnessConfiguration.fitness.equipment
-          };
-          console.log('Using hardcoded equipment configuration');
-        }
-        
+        console.log('[FitnessApp][FETCH] Raw /api/fitness response keys:', Object.keys(response||{}));
+        // Always ensure nested fitness object (the context prefers nested if present)
+        if (!response.fitness) response.fitness = {};
+
+        // Normalize: move top-level domain keys into response.fitness if not already nested
+        const unifyKeys = ['ant_devices','equipment','users','coin_time_unit_ms','zones','plex'];
+        unifyKeys.forEach(k => {
+          if (response[k] !== undefined && response.fitness[k] === undefined) {
+            response.fitness[k] = response[k];
+          }
+        });
+
+        // Diagnostics for user + HR color availability
+        const primaryLen = response.fitness?.users?.primary?.length || 0;
+        const secondaryLen = response.fitness?.users?.secondary?.length || 0;
+        console.log(`[FitnessApp][FETCH] Users primary=${primaryLen} secondary=${secondaryLen}`);
+        console.log('[FitnessApp][FETCH] HR color keys:', Object.keys(response.fitness?.ant_devices?.hr || {}));
+
+        // Provide the normalized config to provider
         setFitnessConfiguration(response);
       } catch (error) {
         console.error('Error fetching fitness data:', error);
-        setFitnessConfiguration({ message: 'Error loading fitness data', status: 'error' });
+        setFetchError(error);
       } finally {
         setLoading(false);
       }
@@ -144,12 +128,22 @@ const FitnessApp = () => {
       >
         <div className="fitness-app-container">
           <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
+            {loading && (
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',position:'absolute',inset:0}}>
+                <Text size="lg">Loading fitness configuration…</Text>
+              </div>
+            )}
+            {fetchError && !loading && (
+              <div style={{padding:'1rem',color:'tomato'}}>
+                <Text size="sm">Failed to load fitness configuration. Check console / API.</Text>
+              </div>
+            )}
             {/* Base UI - Always render but hide when player is shown */}
             <div style={{ 
               display: 'flex', 
               height: '100%', 
               width: '100%',
-              visibility: fitnessPlayQueue.length > 0 ? 'hidden' : 'visible'
+              visibility: fitnessPlayQueue.length > 0 || loading ? 'hidden' : 'visible'
             }}>
               <FitnessSidebar 
                 collections={collections}
