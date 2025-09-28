@@ -119,9 +119,11 @@ const FitnessUsers = () => {
     if (device.type !== 'heart_rate') return 'no-zone';
     const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
     if (!userObj) return 'no-zone';
-    const color = userCurrentZones?.[userObj.name];
+    const zoneEntry = userCurrentZones?.[userObj.name];
+    const color = zoneEntry && typeof zoneEntry === 'object' ? zoneEntry.color : zoneEntry;
     if (!color) return 'no-zone';
-    const zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
+    const zoneIdRaw = (zoneEntry && typeof zoneEntry === 'object' && zoneEntry.id) ? zoneEntry.id : null;
+    const zoneId = (zoneIdRaw || colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase());
     const canonical = ['cool','active','warm','hot','fire'];
     if (canonical.includes(zoneId)) return `zone-${zoneId}`;
     return 'no-zone';
@@ -138,28 +140,15 @@ const FitnessUsers = () => {
       const userObj = [...primaryUsers, ...secondaryUsers]
         .find(u => String(u.hrDeviceId) === String(device.deviceId));
       if (!userObj) return '';
-      const raw = userCurrentZones?.[userObj.name];
-      if (!raw) return '';
-
-      let zoneId; let zoneColor;
-      if (typeof raw === 'object') {
-        zoneId = raw.id || undefined;
-        zoneColor = raw.color || undefined;
-      } else {
-        // raw is a string (either color or id)
-        zoneColor = raw;
+      const entry = userCurrentZones?.[userObj.name];
+      if (!entry) return '';
+      let zoneId = (typeof entry === 'object') ? (entry.id || null) : null;
+      let color = (typeof entry === 'object') ? entry.color : entry;
+      if (!zoneId && color) {
+        zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
       }
-
-      // If we only have a color, map to id
-      if (!zoneId && zoneColor) {
-        zoneId = colorToZoneId[String(zoneColor).toLowerCase()] || String(zoneColor).toLowerCase();
-      }
-
-      // Normalize to canonical list
       const canonical = ['cool','active','warm','hot','fire'];
       if (!zoneId || !canonical.includes(zoneId)) return '';
-
-      // Pretty label (capitalize first letter)
       return zoneId.charAt(0).toUpperCase() + zoneId.slice(1);
     } catch (e) {
       console.warn('[FitnessUsers][getCurrentZone] Failed to resolve zone', e);
@@ -268,6 +257,25 @@ const FitnessUsers = () => {
     if (device.type === 'speed') return 'speed';
     return 'unknown';
   };
+
+  // Helper: derive canonical zone id (cool..fire) for a heart rate device or null
+  const canonicalZones = ['cool','active','warm','hot','fire'];
+  const zoneRankMap = { cool:0, active:1, warm:2, hot:3, fire:4 };
+  const getDeviceZoneId = (device) => {
+    if (device.type !== 'heart_rate') return null;
+    const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
+    if (!userObj) return null;
+    const entry = userCurrentZones?.[userObj.name];
+    if (!entry) return null;
+    let zoneId = (typeof entry === 'object') ? entry.id : null;
+    let color = (typeof entry === 'object') ? entry.color : entry;
+    if (!zoneId && color) {
+      zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
+    }
+    if (!zoneId) return null;
+    zoneId = zoneId.toLowerCase();
+    return canonicalZones.includes(zoneId) ? zoneId : null;
+  };
   
   // Sort devices whenever allDevices changes
   useEffect(() => {
@@ -275,14 +283,21 @@ const FitnessUsers = () => {
     const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
     const otherDevices = allDevices.filter(d => d.type !== 'heart_rate');
     
-    // Sort heart rate devices by value
+    // Sort heart rate devices: zone rank DESC (fire top, cool bottom), then HR DESC, then active status as tertiary
     hrDevices.sort((a, b) => {
-      // First by active status
+      const aZone = getDeviceZoneId(a);
+      const bZone = getDeviceZoneId(b);
+      const aRank = aZone ? zoneRankMap[aZone] : -1; // unknown below cool
+      const bRank = bZone ? zoneRankMap[bZone] : -1;
+      if (bRank !== aRank) return bRank - aRank; // higher rank first
+      // Within same zone: heart rate descending
+      const hrDelta = (b.heartRate || 0) - (a.heartRate || 0);
+      if (hrDelta !== 0) return hrDelta;
+      // Tertiary: active devices first
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
-      
-      // Then by heart rate value (higher first)
-      return (b.heartRate || 0) - (a.heartRate || 0);
+      // Stable fallback by deviceId
+      return String(a.deviceId).localeCompare(String(b.deviceId));
     });
     
     // Sort other devices by type then value
@@ -341,8 +356,23 @@ const FitnessUsers = () => {
               const profileId = device.type === 'heart_rate' ?
                 (userIdMap[String(device.deviceId)] || 'user') :
                 (equipmentInfo?.id || 'equipment');
-                
+              
+             
+
               return (
+                <>
+                <div className="device-zone-info" key={`zoneinfo-${device.deviceId}`}>
+                  {device.type === 'heart_rate' && (
+                    <Badge 
+                      color="blue" 
+                      variant="light" 
+                      size="xs"
+                      title={`Current Zone: ${getCurrentZone(device) || 'N/A'}`}
+                    >
+                      {getCurrentZone(device) ? `Zone: ${getCurrentZone(device)}` : 'No Zone'}
+                    </Badge>
+                  )}
+                </div>
                 <div 
                   key={`device-${device.deviceId}`} 
                   className={`fitness-device card-horizontal ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
@@ -391,9 +421,6 @@ const FitnessUsers = () => {
                   <div className="device-info">
                     <div className="device-name">
                       {deviceName} 
-                        <code>
-                          Current Zone: {getCurrentZone(device)}
-                        </code>
                     </div>
                     <div className="device-stats">
                       <span className="device-icon">{getDeviceIcon(device)}</span>
@@ -402,6 +429,7 @@ const FitnessUsers = () => {
                     </div>
                   </div>
                 </div>
+                </>
               );
             })}
           </FlipMove>
