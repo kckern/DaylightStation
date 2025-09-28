@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { User, DeviceFactory } from '../hooks/useFitnessWebSocket.js';
+import { User, DeviceFactory, setFitnessTimeouts, getFitnessTimeouts, FitnessSession } from '../hooks/useFitnessWebSocket.js';
 
 // Create context
 const FitnessContext = createContext(null);
@@ -21,6 +21,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const ant_devices = fitnessConfiguration?.fitness?.ant_devices || {};
   const usersConfig = fitnessConfiguration?.fitness?.users || {};
   const equipmentConfig = fitnessConfiguration?.fitness?.equipment || [];
+  const coinTimeUnitMs = fitnessConfiguration?.fitness?.coin_time_unit_ms;
+  const zoneConfig = fitnessConfiguration?.fitness?.zones;
 
   const [connected, setConnected] = useState(false);
   const [latestData, setLatestData] = useState(null);
@@ -48,6 +50,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   
   // Use ref for device updates to prevent state management issues
   const deviceUpdateRef = useRef(null);
+  // Session ref
+  const fitnessSessionRef = useRef(new FitnessSession());
 
   // Initialize users from configuration - done only once
   useEffect(() => {
@@ -125,18 +129,47 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               let device = newDevices.get(deviceId);
 
               if (device) {
-                device.updateData({ ...rawData, dongleIndex: data.dongleIndex, timestamp: data.timestamp });
+                // Guard against prototype loss (e.g. earlier code replaced class instance with plain object)
+                if (typeof device.updateData !== 'function') {
+                  // Reconstruct correct device instance preserving lastSeen if possible
+                  const reconstructed = DeviceFactory.createDevice(deviceId, profile, { ...rawData, dongleIndex: data.dongleIndex, timestamp: data.timestamp });
+                  // Attempt to copy a few runtime fields from stale object
+                  if (device.lastSeen) reconstructed.lastSeen = device.lastSeen;
+                  if (device.isActive === false) reconstructed.isActive = false;
+                  device = reconstructed;
+                } else {
+                  device.updateData({ ...rawData, dongleIndex: data.dongleIndex, timestamp: data.timestamp });
+                }
               } else {
                 device = DeviceFactory.createDevice(deviceId, profile, { ...rawData, dongleIndex: data.dongleIndex, timestamp: data.timestamp });
               }
-              
-              // Store reference to updated device for user updates
+
+              // Store reference (no cloning so we keep prototype); downstream only reads scalar fields
               deviceUpdateRef.current = {
                 deviceId,
-                device: { ...device }
+                device
               };
               
               newDevices.set(deviceId, device);
+              // Record session activity
+              try {
+                fitnessSessionRef.current.recordDeviceActivity(device);
+              } catch (e) {
+                console.warn('FitnessSession record error', e);
+              }
+              // If this is a heart rate device, attempt to map to user and record heart rate for treasure box
+              try {
+                if (device.type === 'heart_rate' && fitnessSessionRef.current.treasureBox) {
+                  // Find user by HR device id
+                  users.forEach((userObj, userName) => {
+                    if (String(userObj.hrDeviceId) === String(device.deviceId)) {
+                      fitnessSessionRef.current.treasureBox.recordUserHeartRate(userObj.name, device.heartRate);
+                    }
+                  });
+                }
+              } catch (e) {
+                console.warn('TreasureBox HR record error', e);
+              }
               return newDevices;
             });
             
@@ -194,26 +227,52 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     };
   };
 
-  // Clean up inactive devices periodically
+  // Apply configuration-based timeouts when configuration changes
+  useEffect(() => {
+    const inactive = ant_devices?.timeout?.inactive;
+    const remove = ant_devices?.timeout?.remove;
+    setFitnessTimeouts({ inactive, remove });
+  }, [ant_devices?.timeout?.inactive, ant_devices?.timeout?.remove]);
+
+  // Configure treasure box when session first starts OR when zone configuration changes
+  useEffect(() => {
+    if (fitnessSessionRef.current && fitnessSessionRef.current.treasureBox) {
+      fitnessSessionRef.current.treasureBox.configure({
+        coinTimeUnitMs,
+        zones: zoneConfig,
+        users: usersConfig
+      });
+    }
+  }, [coinTimeUnitMs, zoneConfig, usersConfig]);
+
+  // Clean up inactive devices periodically using dynamic timeouts
   useEffect(() => {
     const cleanupInterval = setInterval(() => {
+      const { inactive, remove } = getFitnessTimeouts();
       const now = new Date();
       setFitnessDevices(prevDevices => {
         const newDevices = new Map(prevDevices);
         let hasChanges = false;
-        
+
         for (const [deviceId, device] of newDevices.entries()) {
           const timeSinceLastSeen = now - device.lastSeen;
-          // Mark as inactive after 60 seconds, remove after 3 minutes
-          if (timeSinceLastSeen > 180000) { // 3 minutes
+          if (timeSinceLastSeen > remove) {
             newDevices.delete(deviceId);
             hasChanges = true;
-          } else if (timeSinceLastSeen > 60000 && device.isActive) { // 60 seconds
-            newDevices.set(deviceId, { ...device, isActive: false });
-            hasChanges = true;
+          } else if (timeSinceLastSeen > inactive && device.isActive) {
+            // Mutate in place to preserve prototype / methods
+            device.isActive = false;
+            hasChanges = true; // Map reference changed earlier, so state update will propagate
           }
         }
-        
+
+        // Update session active device list and maybe end session
+        try {
+          fitnessSessionRef.current.updateActiveDevices(newDevices);
+        } catch (e) {
+          console.warn('FitnessSession cleanup error', e);
+        }
+
         return hasChanges ? newDevices : prevDevices;
       });
     }, 3000); // Check every 3 seconds
@@ -255,6 +314,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     allDevices,
     deviceCount: fitnessDevices.size,
     lastUpdate,
+    fitnessSession: fitnessSessionRef.current.summary,
+    isSessionActive: fitnessSessionRef.current.isActive,
+    treasureBox: fitnessSessionRef.current.treasureBox ? fitnessSessionRef.current.treasureBox.summary : null,
     
     // Play queue state
     fitnessPlayQueue,
@@ -280,6 +342,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     cadenceDevices,
     powerDevices,
     unknownDevices,
+
+    // Zone / treasure data
+    zones: zoneConfig || [],
+    userCurrentZones: (() => {
+      const tb = fitnessSessionRef.current.treasureBox;
+      if (!tb) return {};
+      const out = {};
+      tb.perUser.forEach((val, key) => {
+        // currentColor already tracked; derive zone by matching global zone color if needed
+        out[key] = val.currentColor || null;
+      });
+      return out;
+    })(),
     
     // Legacy compatibility - return the most recent heart rate device
     heartRate: heartRateDevices[0] || null,
