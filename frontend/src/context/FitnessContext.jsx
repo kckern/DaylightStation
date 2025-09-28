@@ -68,6 +68,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           userConfig.hr,
           userConfig.cadence
         );
+        // Attach stable id for downstream lookups / images
+        if (userConfig.id) user.id = userConfig.id;
         userMap.set(userConfig.name, user);
       });
     }
@@ -81,6 +83,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           userConfig.hr,
           userConfig.cadence
         );
+        if (userConfig.id) user.id = userConfig.id;
         userMap.set(userConfig.name, user);
       });
     }
