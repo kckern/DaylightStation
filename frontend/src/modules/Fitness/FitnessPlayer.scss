@@ -68,6 +68,7 @@ dash-video {
     width: 100%;
     height: 100%;
     overflow: hidden; /* Prevent content from overflowing */
+    align-items: stretch;
   }
   
   .fitness-player-sidebar {
@@ -355,6 +356,10 @@ dash-video {
         background: linear-gradient(to right, rgba(255,255,255,0.05), rgba(255,255,255,0.15), rgba(255,255,255,0.05));
       }
       &.minimized .sidebar-restore-fab { left: 14px; right: auto; }
+      /* Ensure main content abuts sidebar when on left (remove any centering gap) */
+      ~ .fitness-player-main .fitness-player-content {
+        margin-left: 0 !important;
+      }
     }
     &.sidebar-right { &.minimized .sidebar-restore-fab { right: 14px; } }
   }
@@ -573,6 +578,7 @@ dash-video {
         justify-content: space-between;
         flex-shrink: 1;
         height: 100%;
+        overflow-y: visible; /* allow active outline glow to show */
         
         &::-webkit-scrollbar {
           height: 5px;
@@ -665,13 +671,35 @@ dash-video {
       cursor: pointer;
       max-width: 90px; /* Slightly smaller to fit better */
       height: 100%;
+      transition: filter .25s ease, opacity .25s ease, border-color .25s ease;
+
+      &.past:not(.origin) {
+        .thumbnail-wrapper {
+          filter: grayscale(1) brightness(.6) contrast(1.05);
+          opacity: .75;
+        }
+      }
+      &.active .thumbnail-wrapper {
+        outline: 2px solid #0a84ff;
+        outline-offset: 0;
+        box-shadow: 0 0 0 2px rgba(10,132,255,0.4), 0 0 10px rgba(10,132,255,0.65), 0 0 18px rgba(10,132,255,0.35);
+        filter: none;
+        opacity: 1;
+        position: relative;
+        z-index: 5; /* elevate above neighbors */
+      }
+      &.origin .thumbnail-wrapper {
+        filter: none !important;
+        opacity: 1 !important;
+      }
       
       .thumbnail-wrapper {
         position: relative;
         width: 100%;
         height: 100%; /* 16:9 aspect ratio */
         border-radius: 3px;
-        overflow: hidden;
+  overflow: hidden;
+  z-index: 1;
         background-color: #222;
         border: 1px solid #333;
         
@@ -781,7 +809,16 @@ dash-video {
 
 /* Mode modifiers */
 .fitness-player.mode-fullscreen {
-  .fitness-player-sidebar { display: flex; width:0; flex:0 0 0; }
+  .fitness-player-sidebar { 
+    display: flex; 
+    width:0; 
+    flex:0 0 0; 
+    padding:0 !important; 
+    background:transparent !important; 
+    border:none !important; 
+    &.sidebar-left { padding:0 !important; }
+  }
+  .fitness-player-sidebar .sidebar-footer-controls { display: none !important; }
   .fitness-player-footer { display: none !important; }
 }
 
