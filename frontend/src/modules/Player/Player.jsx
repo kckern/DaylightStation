@@ -67,7 +67,8 @@ function useCommonMediaController({
   volume,
   cycleThroughClasses,
   playbackKeys,queuePosition,
-  ignoreKeys
+  ignoreKeys,
+  onProgress, onMediaRef // new
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id  || meta.plex || meta.media_url;
   const containerRef = useRef(null);
@@ -139,8 +140,26 @@ function useCommonMediaController({
       const percent = getProgressPercent(mediaEl.currentTime, mediaEl.duration).percent;
       const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
       logTime(type, media_key, percent, title);
+      if (onProgress) {
+        onProgress({
+          currentTime: mediaEl.currentTime || 0,
+          duration: mediaEl.duration || 0,
+          paused: mediaEl.paused,
+          media: meta
+        });
+      }
     };
-    const onDurationChange = () => setDuration(mediaEl.duration);
+    const onDurationChange = () => {
+      setDuration(mediaEl.duration);
+      if (onProgress) {
+        onProgress({
+          currentTime: mediaEl.currentTime || 0,
+          duration: mediaEl.duration || 0,
+          paused: mediaEl.paused,
+          media: meta
+        });
+      }
+    };
     const onEnded = () => {
       // Log 100% completion when content ends
       const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
@@ -205,10 +224,12 @@ function useCommonMediaController({
       mediaEl.removeEventListener('ended', onEnded);
       mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta.percent, meta.title, type, media_key]);
+  }, [onEnd, playbackRate, start, isVideo, meta.percent, meta.title, type, media_key, onProgress]);
 
-
-
+  useEffect(() => {
+    const mediaEl = getMediaEl();
+    if (mediaEl && onMediaRef) onMediaRef(mediaEl);
+  }, [meta.media_key, onMediaRef]);
 
   return {
     containerRef,
@@ -440,7 +461,9 @@ export default function Player(props) {
     playbackKeys,
     playerType,
     queuePosition,
-    ignoreKeys
+    ignoreKeys,
+    onProgress: props.onProgress,
+    onMediaRef: props.onMediaRef
   };
   if(singlePlayerProps?.key) delete singlePlayerProps.key;
 
@@ -586,7 +609,9 @@ export function SinglePlayer(play) {
             playbackKeys,
             queuePosition,
             fetchVideoInfo,
-            ignoreKeys
+            ignoreKeys,
+            onProgress,
+            onMediaRef
           }
         )
       )}
@@ -599,12 +624,7 @@ export function SinglePlayer(play) {
   );
 }
 
-
-/*─────────────────────────────────────────────────────────────*/
-/*  AUDIO PLAYER                                              */
-/*─────────────────────────────────────────────────────────────*/
-
-function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys }) {
+function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys, onProgress, onMediaRef }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const {
     timeSinceLastProgressUpdate,
@@ -628,7 +648,9 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
     classes,
     volume,
     playbackKeys,queuePosition,
-    ignoreKeys
+    ignoreKeys,
+    onProgress,
+    onMediaRef
   });
 
   const { percent } = getProgressPercent(seconds, duration);
@@ -661,12 +683,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
   );
 }
 
-
-/*─────────────────────────────────────────────────────────────*/
-/*  VIDEO PLAYER                                              */
-/*─────────────────────────────────────────────────────────────*/
-
-function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys  }) {
+function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys, onProgress, onMediaRef  }) {
   const isPlex = ['dash_video'].includes(media.media_type);
   const {
     isDash,
@@ -691,7 +708,9 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
     cycleThroughClasses,
     classes,
     playbackKeys,queuePosition,
-    ignoreKeys
+    ignoreKeys,
+    onProgress,
+    onMediaRef
   });
 
   const { show, season, title, media_url } = media;
