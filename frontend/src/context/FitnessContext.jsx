@@ -457,15 +457,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (!tb) return {};
       const out = {};
       tb.perUser.forEach((val, key) => {
-        const color = val.currentColor || null;
-        if (!color) { out[key] = null; return; }
-        // Attempt to resolve zone id from global zone list
-        let zoneId = null;
-        if (tb.globalZones && tb.globalZones.length) {
+        if (!val) { out[key] = null; return; }
+        // Accept currentColor or fallback to lastColor
+        const color = val.currentColor || val.lastColor || null;
+        let zoneId = val.zoneId || val.lastZoneId || null;
+        // If zoneId missing but we have a color, resolve from globalZones
+        if (!zoneId && color && tb.globalZones && tb.globalZones.length) {
           const match = tb.globalZones.find(z => String(z.color).toLowerCase() === String(color).toLowerCase());
-          if (match) zoneId = match.id || match.name;
+          if (match) zoneId = match.id || match.name || null;
         }
-        out[key] = { id: zoneId, color };
+        if (!color && !zoneId) { out[key] = null; return; }
+        out[key] = { id: zoneId ? String(zoneId).toLowerCase() : null, color };
       });
       return out;
     })(),
