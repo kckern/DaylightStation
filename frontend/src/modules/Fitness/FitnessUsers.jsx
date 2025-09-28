@@ -31,26 +31,8 @@ const FitnessUsers = () => {
   const [sortedDevices, setSortedDevices] = useState([]);
 
   // Build lookup maps for heart rate device colors and user assignments
-  // Use a hardcoded fallback for color mapping if all else fails
-  const hardcodedColorMap = {
-    "90003": "red",
-    "90001": "yellow", 
-    "28676": "green",
-    "90005": "blue",
-    "40475": "watch"
-  };
-  
-  // Hardcoded name mapping for each heart rate device
-  const hardcodedNameMap = {
-    "90003": "User_2",
-    "90001": "User_3", 
-    "28676": "User_4",
-    "90005": "User_5",
-    "40475": "Dad"
-  };
-  
-  const rawHrColorMap = (deviceConfiguration?.hr) || 
-                       hardcodedColorMap;
+  // Color mapping now comes solely from configuration (no hardcoded fallback)
+  const rawHrColorMap = (deviceConfiguration?.hr) || {};
   
   // Ensure all keys are strings for consistent lookup
   const hrColorMap = React.useMemo(() => {
@@ -238,7 +220,7 @@ const FitnessUsers = () => {
               
               // Get name from equipment for cadence/speed, hardcoded map for HR devices, or device ID
               const deviceName = device.type === 'heart_rate' ? 
-                hardcodedNameMap[String(device.deviceId)] || String(device.deviceId) : 
+                (ownerName || String(device.deviceId)) :
                 (device.type === 'cadence' && equipmentInfo?.name) ? equipmentInfo.name : String(device.deviceId);
                 
               console.log(`Device ${device.deviceId} (${device.type}) name: ${deviceName}`, equipmentInfo);
