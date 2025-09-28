@@ -428,8 +428,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       const isPast = idx < activeIndex;
       const classes = ["seek-button-container"]; if (isOrigin) classes.push('origin'); if (isPast) classes.push('past'); if (isActive) classes.push('active');
 
-      // For origin (0s) use season/video image if available (full color) otherwise generated frame
-      const originSrc = isOrigin && currentItem.image ? currentItem.image : generateThumbnailUrl(plexObj, pos);
+  // For origin (0s) use seasonImage first, then item image, otherwise generated frame
+  const originSrc = isOrigin ? (currentItem.seasonImage || currentItem.image || generateThumbnailUrl(plexObj, pos)) : null;
       const imgSrc = isOrigin ? originSrc : generateThumbnailUrl(plexObj, pos);
 
       return (
@@ -507,17 +507,25 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [queue, currentItem, currentTime, duration]);
 
-  // Sync video playback state (time, duration, play/pause) with footer controls
+  // Sync video playback state (time, duration, play/pause) with footer controls.
+  // Some custom video wrappers or dash.js elements may throttle 'timeupdate'; add an rAF fallback.
   useEffect(() => {
     const el = contentRef.current?.querySelector('video, dash-video, .video-element');
     if (!el) return; // Player not yet rendered
+    let rafId;
+    let lastT = -1;
     const update = () => {
-      setCurrentTime(el.currentTime || 0);
-      if (!isNaN(el.duration) && el.duration) setDuration(el.duration);
+      const ct = el.currentTime || 0;
+      if (ct !== lastT) {
+        lastT = ct;
+        setCurrentTime(ct);
+      }
+      if (!isNaN(el.duration) && el.duration && el.duration !== duration) setDuration(el.duration);
     };
     const handlePlay = () => { setIsPaused(false); update(); };
     const handlePause = () => { setIsPaused(true); update(); };
     const handleTime = () => update();
+    const tick = () => { update(); rafId = requestAnimationFrame(tick); };
     el.addEventListener('play', handlePlay);
     el.addEventListener('pause', handlePause);
     el.addEventListener('timeupdate', handleTime);
@@ -525,13 +533,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     // Initial snapshot
     setIsPaused(el.paused);
     update();
+    rafId = requestAnimationFrame(tick);
     return () => {
+      cancelAnimationFrame(rafId);
       el.removeEventListener('play', handlePlay);
       el.removeEventListener('pause', handlePause);
       el.removeEventListener('timeupdate', handleTime);
       el.removeEventListener('durationchange', handleTime);
     };
-  }, [currentItem]);
+  }, [currentItem, duration]);
   
   // Preload thumbnails when player loads to make seek operations smoother
   useEffect(() => {

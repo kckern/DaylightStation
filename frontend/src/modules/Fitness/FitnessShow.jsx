@@ -201,7 +201,9 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         videoUrl: episodeUrl || 'https://example.com/fallback.mp4', // Add fallback for testing
         duration: episode.duration,
         thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
-        image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image
+        image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,
+        seasonId: episode.seasonId,
+        seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined))
       };
       
       console.log('🎬 Created queue item:', queueItem);
@@ -377,8 +379,10 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
           title: episode.label,
           videoUrl: episodeUrl,
           duration: episode.duration,
-          thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
-          image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image
+            thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
+          image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,
+          seasonId: episode.seasonId,
+          seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined))
         };
         
         // Use the appropriate setter
