@@ -107,16 +107,14 @@ export default function FitnessPlayerFooterControls({
           <span className="icon"><Icon.Next /></span>
         </div>
       )}
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         onClick={onClose}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); } }}
         className="control-button close-button"
         aria-label="Close"
       >
         <span className="icon" aria-hidden="true"><Icon.Close /></span>
-      </div>
+      </button>
     </div>
   );
 }
