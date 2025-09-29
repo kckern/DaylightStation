@@ -1,5 +1,6 @@
 import React, { forwardRef, useCallback } from 'react';
 import FitnessPlayerFooterControls from './FitnessPlayerFooterControls.jsx';
+import FitnessPlayerFooterSeekThumbnails from './FitnessPlayerFooterSeekThumbnails.jsx';
 
 /*
  * FitnessPlayerFooter
@@ -38,16 +39,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
 
   if (hidden) return null;
 
-  const handleProgressBarClick = useCallback((e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percent = Math.min(1, Math.max(0, clickX / rect.width));
-    const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem?.duration || 600));
-    onSeek(percent * baseDuration);
-  }, [duration, currentItem, onSeek]);
-
   const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem?.duration || 600));
-  const pct = baseDuration > 0 ? (currentTime / baseDuration) * 100 : 0;
 
   return (
     <div
@@ -70,14 +62,12 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         onClose={onClose}
       />
 
-      <div className="footer-seek-thumbnails">
-        <div className="progress-bar" onClick={handleProgressBarClick}>
-          <div className="progress" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-        </div>
-        <div className="seek-thumbnails">
-          {seekButtons}
-        </div>
-      </div>
+      <FitnessPlayerFooterSeekThumbnails
+        duration={baseDuration}
+        currentTime={currentTime}
+        onSeek={onSeek}
+        seekButtons={seekButtons}
+      />
 
       <FitnessPlayerFooterControls
         section="right"
