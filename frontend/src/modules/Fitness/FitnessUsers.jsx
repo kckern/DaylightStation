@@ -115,6 +115,15 @@ const FitnessUsers = () => {
     return map;
   }, [zones]);
 
+  // Map zone id -> color for styling badges
+  const zoneColorMap = React.useMemo(() => {
+    const map = {};
+    (zones || []).forEach(z => {
+      if (z?.id && z?.color) map[String(z.id).toLowerCase()] = z.color;
+    });
+    return map;
+  }, [zones]);
+
   // Fallback zone derivation using configured zones + per-user overrides
   const deriveZoneFromHR = React.useCallback((hr, userName) => {
     if (!hr || hr <= 0 || !Array.isArray(zones) || zones.length === 0) return null;
@@ -308,6 +317,44 @@ const FitnessUsers = () => {
     zoneId = zoneId.toLowerCase();
     return canonicalZones.includes(zoneId) ? zoneId : null;
   };
+
+  // Simple contrast text color chooser
+  const pickTextColor = (bg) => {
+    if (!bg) return '#222';
+    // Normalize hex like #ff0000 or named css color; attempt to parse
+    const ctx = document.createElement ? document.createElement('canvas') : null; // guard SSR
+    let hex = bg;
+    if (/^[a-zA-Z]+$/.test(bg) && ctx) {
+      const c = ctx.getContext('2d');
+      if (c) {
+        c.fillStyle = bg;
+        hex = c.fillStyle; // browser resolves named color to rgb(...)
+      }
+    }
+    // Convert rgb(...) to components
+    let r,g,b;
+    if (hex.startsWith('rgb')) {
+      const m = hex.match(/rgb[a]?\(([^)]+)\)/);
+      if (m) {
+        [r,g,b] = m[1].split(',').map(x => parseFloat(x));
+      }
+    } else if (hex[0] === '#') {
+      const clean = hex.replace('#','');
+      if (clean.length === 3) {
+        r = parseInt(clean[0]+clean[0],16);
+        g = parseInt(clean[1]+clean[1],16);
+        b = parseInt(clean[2]+clean[2],16);
+      } else if (clean.length >= 6) {
+        r = parseInt(clean.slice(0,2),16);
+        g = parseInt(clean.slice(2,4),16);
+        b = parseInt(clean.slice(4,6),16);
+      }
+    }
+    if ([r,g,b].some(v => v === undefined)) return '#222';
+    // Luminance
+    const luminance = (0.299*r + 0.587*g + 0.114*b)/255;
+    return luminance > 0.6 ? '#222' : '#fff';
+  };
   
   // Sort devices whenever allDevices changes
   useEffect(() => {
@@ -406,17 +453,33 @@ const FitnessUsers = () => {
                 <div className="device-wrapper" key={`device-${device.deviceId}`}>
                   <div className={`device-zone-info ${getZoneClass(device)}`}>
                     {showZoneBadge && (
-                      <Badge 
-                        variant="light" 
-                        size="xs"
-                        title={zoneIdForGrouping ? `Zone group: ${readableZone}` : 'No Zone'}
-                      >
-                        {zoneIdForGrouping ? `Zone: ${readableZone}` : 'No Zone'}
-                      </Badge>
+                      (() => {
+                        const zid = zoneIdForGrouping;
+                        const zoneColor = zid ? zoneColorMap[zid] : null;
+                        const bg = zoneColor || '#555';
+                        const text = pickTextColor(bg);
+                        const style = { 
+                          backgroundColor: bg,
+                          color: text,
+                          border: `1px solid ${bg}`,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
+                        };
+                        return (
+                          <Badge 
+                            variant="filled" 
+                            size="xs"
+                            style={style}
+                            title={zid ? `Zone group: ${readableZone}` : 'No Zone'}
+                          >
+                            {zid ? readableZone : 'No Zone'}
+                          </Badge>
+                        );
+                      })()
                     )}
                   </div>
                   <div 
-                    className={`fitness-device card-horizontal ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
+                    className={`fitness-device card-horizontal ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${getZoneClass(device)}`}
                     title={`Device: ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                   >
                     <div className={`user-profile-img-container ${getZoneClass(device)}`}>
