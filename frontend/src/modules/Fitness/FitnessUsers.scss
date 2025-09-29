@@ -10,11 +10,11 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 10px 14px 12px;
+    padding: 1ex;
     background: linear-gradient(180deg, rgba(40,40,40,0.85), rgba(24,24,24,0.85));
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 10px;
-    margin: 8px 16px 12px;
+    margin: -1ex 1ex 0;
     font-family: inherit;
     backdrop-filter: blur(4px);
     box-shadow: 0 2px 6px rgba(0,0,0,0.4);
@@ -41,14 +41,16 @@
   .tb-timer { font-variant-numeric: tabular-nums; font-weight:700; font-size:1.28rem; letter-spacing:.5px; }
     .tb-icon { filter: drop-shadow(0 0 4px rgba(255,255,255,0.25)); }
     .tb-color-grid { 
-      display: grid; 
-      grid-template-columns: repeat(4, 1fr); 
-      grid-auto-rows: 54px;
-      gap: 8px; 
+      /* Convert to flex so only existing color coins show, centered */
+      display: flex;
+      flex-wrap: nowrap; /* Typically 5 or fewer colors */
       width: 100%;
+      justify-content: space-around; /* even spacing with gaps at edges */
       align-items: stretch;
-      justify-items: stretch;
+      gap: 8px; /* still apply for visual separation */
+      min-height: 54px; /* preserve previous row height */
     }
+    .tb-color-grid .tb-color-coin { flex: 0 1 52px; }
     .tb-color-coin { 
       display:flex; 
       flex-direction: column; 
@@ -136,7 +138,7 @@
       position: relative;
       box-shadow: 0 1px 3px rgba(0,0,0,0.5);
       overflow: hidden;
-  padding: 8px 16px; /* symmetric */
+  padding: 4px 14px; /* tighter vertical & horizontal to let avatar expand */
       max-width: 100%;
 
       /* Zone tinted backgrounds (improved visibility) */
@@ -196,15 +198,19 @@
         }
         
         .user-profile-img-container {
-          width: 42px;
-          height: 42px;
-          margin: 0 14px 0 2px; /* tighter left edge, consistent right gap before text */
+          width: 58px; /* enlarged */
+          height: 58px;
+          margin: 0 12px 0 0; /* reduce right gap, remove extra left inset */
           flex-shrink: 0;
           position: relative;
-          flex: 0 0 42px; /* lock size in flex row */
-          min-width: 42px;
-          min-height: 42px;
+          flex: 0 0 58px; /* lock size in flex row */
+          min-width: 58px;
+          min-height: 58px;
           aspect-ratio: 1 / 1;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           
           img {
             width: 100%;
@@ -223,13 +229,13 @@
           justify-content: center;
           
           .device-name {
-            font-size: 1.28rem;
+            font-size: 1.34rem; /* slight bump to balance larger avatar */
             font-weight: 600;
             color: #fff;
             text-align: left;
-            margin: 0 0 2px;
-            line-height: 1.05;
-            letter-spacing: .3px;
+            margin: 0 0 1px;
+            line-height: 1.02;
+            letter-spacing: .35px;
           }
           
           .device-stats {
@@ -381,7 +387,7 @@
 
       // Zone pill styling (placed before card for layout) using same zone-* classes applied to profile ring
       + .device-zone-info, .device-zone-info { // allow either structural order
-        margin: 0 0 4px 64px; // indent to align under avatar
+        margin: 0 0 4px 70px; // adjust indent for larger avatar
         font-size: 0.55rem;
         letter-spacing: .5px;
         text-transform: uppercase;
