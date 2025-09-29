@@ -66,17 +66,14 @@
       overflow: hidden;
     }
     .tb-color-coin .swatch { 
-      width:18px; 
-      height:18px; 
+      width:1rem; 
       border-radius:50%; 
       box-shadow:0 0 0 1px rgba(255,255,255,0.25), 0 0 6px rgba(0,0,0,0.6); 
       aspect-ratio: 1 / 1; 
-      flex: 0 0 18px; 
-      min-width: 18px; 
-      min-height: 18px; 
+      margin-bottom: -1ex;
     }
     .tb-color-coin .count { 
-      font-size:0.8rem; 
+      font-size:1rem; 
       min-width: 24px; 
       text-align: center; 
       font-variant-numeric: tabular-nums; 
