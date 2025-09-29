@@ -209,6 +209,7 @@
       .info-image-container {
         flex: 0 0 auto;
         margin-top: 1rem;
+        aspect-ratio: 1 / 1.5; /* enforce 1:1.5 ratio */
         
         img {
           width: 100%;

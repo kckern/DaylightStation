@@ -180,9 +180,9 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
 
       try {
         setLoading(true);
-        console.log(`🎬 DEBUG: Fetching show data for ID: ${showId}`);
+  // fetching show data (debug removed)
         const response = await DaylightAPI(`/media/plex/list/${showId}/playable`);
-        console.log('🎬 DEBUG: Show response:', JSON.stringify(response, null, 2));
+  // show response (debug removed)
         setShowData(response);
         
         // Auto-select first episode if available
@@ -254,7 +254,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   };
 
   const handlePlayEpisode = async (episode) => {
-    console.log('🎬 Play episode:', episode);
+  // play episode (debug removed)
     
     try {
       // Get URL for the playable item if not present
@@ -262,7 +262,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       if (!episodeUrl && episode.plex) {
         // Construct the URL using the helper function
         episodeUrl = DaylightMediaPath(`media/plex/url/${episode.plex}`);
-        console.log(`🎬 Constructed media URL: ${episodeUrl}`);
+  // constructed media URL (debug removed)
       }
       
       // Create the queue item with all available information
@@ -277,7 +277,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined))
       };
       
-      console.log('🎬 Created queue item:', queueItem);
+  // created queue item (debug removed)
       
       // Update the selected episode for the UI
       setSelectedEpisode(episode);
@@ -287,7 +287,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       
       // Directly use the setter from props if available (from FitnessApp)
       if (setFitnessPlayQueue) {
-        console.log('🎬 Using prop setter directly');
+  // using prop setter directly (debug removed)
         // Force a new array to ensure state change is detected
         setFitnessPlayQueue([queueItem]);
         return;
@@ -295,7 +295,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       
       // Try the context setter as fallback
       if (contextSetPlayQueue) {
-        console.log('🎬 Using context setter as fallback');
+  // using context setter fallback (debug removed)
         // Force a new array to ensure state change is detected
         contextSetPlayQueue([queueItem]);
         return;
@@ -306,7 +306,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       // Last resort: Try to access the window object and modify app state directly
       try {
         if (window && window.addToFitnessQueue) {
-          console.log('🎬 Using window.addToFitnessQueue as last resort');
+          // using window.addToFitnessQueue (debug removed)
           window.addToFitnessQueue(queueItem);
         }
       } catch (e) {
@@ -524,7 +524,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       if (!episodeUrl && episode.plex) {
         // Construct the URL using the helper function
         episodeUrl = DaylightMediaPath(`media/plex/url/${episode.plex}`);
-        console.log(`🎬 Constructed media URL for queue: ${episodeUrl}`);
+  // constructed media URL for queue (debug removed)
       }
 
       if (episodeUrl) {
@@ -545,7 +545,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         } else if (contextSetPlayQueue) {
           contextSetPlayQueue(prevQueue => [...prevQueue, queueItem]);
         }
-        console.log('🎬 Added to queue:', episode);
+  // added to queue (debug removed)
       }
     } catch (error) {
       console.error('🎬 Error adding to queue:', error);

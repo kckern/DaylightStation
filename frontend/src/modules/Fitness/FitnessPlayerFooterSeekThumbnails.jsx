@@ -159,11 +159,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   // ---------- Event Handlers ----------
   const handleClick = useCallback((e) => {
     /* eslint-disable no-console */
-    console.log('[FooterSeekThumbnails] progress-bar pointerDown seek', {
-      targetClass: e.target?.className,
-      currentTargetClass: e.currentTarget?.className,
-      x: e.clientX
-    });
+    // progress-bar seek (debug log removed)
     /* eslint-enable no-console */
     const rect = e.currentTarget.getBoundingClientRect();
     commit(positionToSeconds(e.clientX, rect));
@@ -208,7 +204,13 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       const minutes = Math.floor(pos / 60);
       const seconds = Math.floor(pos % 60);
       const label = `${minutes}:${String(seconds).padStart(2,'0')}`;
-      const imgSrc = generateThumbnailUrl ? generateThumbnailUrl(plexObj, pos) : undefined;
+      const isOrigin = pos === 0; // ensure the very first (0:00) uses season / show artwork
+      let imgSrc;
+      if (isOrigin) {
+        imgSrc = currentItem?.seasonImage || currentItem?.image || (generateThumbnailUrl ? generateThumbnailUrl(plexObj, pos) : undefined);
+      } else {
+        imgSrc = generateThumbnailUrl ? generateThumbnailUrl(plexObj, pos) : undefined;
+      }
       const state = activePos != null && Math.abs(activePos - pos) < 0.001 ? 'active' : (activePos != null && pos < activePos ? 'past' : 'future');
       return (
         <SingleThumbnailButton
