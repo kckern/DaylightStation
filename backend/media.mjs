@@ -464,10 +464,57 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
         
         return item;
     });
+    // Build seasons map if episodes are present
+    let seasons = null;
+    try {
+        const episodeItems = list.filter(i => i.type === 'episode');
+        if (episodeItems.length) {
+            const uniqueSeasonIds = [...new Set(episodeItems.map(i => i.seasonId).filter(Boolean))];
+            if (uniqueSeasonIds.length) {
+                const plexInstance = new Plex();
+                seasons = {};
+                // Fetch metadata for each season to enrich description & canonical thumb
+                const seasonMetaArray = await Promise.all(uniqueSeasonIds.map(async sid => {
+                    try {
+                        const [meta] = await plexInstance.loadMeta(sid);
+                        return { sid, meta };
+                    } catch (e) {
+                        return { sid, meta: null };
+                    }
+                }));
+                for (const { sid, meta } of seasonMetaArray) {
+                    // Find one representative episode item for fallback values
+                    const sample = episodeItems.find(i => i.seasonId === sid) || {};
+                    // Prefer meta fields, fallback to episode derived fields
+                    const seasonNumber = (meta && (meta.index != null)) ? parseInt(meta.index) : sample.seasonNumber;
+                    const seasonName = (meta && meta.title) || sample.seasonName || `Season ${seasonNumber || ''}`.trim();
+                    const seasonThumbUrl = handleDevImage(req, (meta && plexThumb.thumbUrl(meta.thumb)) || sample.seasonThumbUrl || `${process.env.host}/media/plex/img/notfound.png`);
+                    const seasonDescription = (meta && meta.summary) || null;
+                    seasons[sid] = {
+                        seasonNumber,
+                        seasonName,
+                        seasonThumbUrl,
+                        seasonDescription
+                    };
+                }
+                // Remove season detail fields from episode items (leave seasonId only for mapping)
+                for (const ep of episodeItems) {
+                    delete ep.seasonName;
+                    delete ep.seasonNumber;
+                    delete ep.seasonThumbUrl;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to build seasons map:', e.message);
+    }
     try {
         const responseData = {...info};
         if (plexInfo) {
             responseData.info = plexInfo;
+        }
+        if (seasons) {
+            responseData.seasons = seasons; // Insert seasons before items
         }
         responseData.items = applyParamsToItems(list);
         res.json(responseData);
