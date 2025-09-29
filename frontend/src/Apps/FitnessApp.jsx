@@ -11,6 +11,11 @@ import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 
 const FitnessApp = () => {
+  // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
+  // all interactive controls inside the Fitness modules use onPointerDown instead of onClick.
+  // onClick fires after pointerup + potential capture delays; pointerDown gives immediate
+  // feedback for tap interactions while we still provide keyboard accessibility (Enter/Space)
+  // on focusable elements. If adding new buttons/interactive divs, prefer onPointerDown.
   // Security / compliance: start with empty config; all data must come from /api/fitness
   const [fitnessConfiguration, setFitnessConfiguration] = useState({});
   const [fetchError, setFetchError] = useState(null);

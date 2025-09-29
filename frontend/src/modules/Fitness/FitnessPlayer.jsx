@@ -563,7 +563,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         <div
           className="fitness-player-content"
           ref={contentRef}
-          onClick={toggleFullscreen}
+          onPointerDown={toggleFullscreen}
           style={{
             width: videoDims.width ? videoDims.width + 'px' : '100%',
             height: videoDims.height ? videoDims.height + 'px' : 'auto',

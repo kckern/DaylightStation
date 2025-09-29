@@ -44,10 +44,10 @@ const FitnessPlayerSidebar = ({
       )}
 
       <div className="sidebar-footer-controls">
-        <button type="button" onClick={() => setMode('fullscreen')} className={`sidebar-footer-btn${mode==='fullscreen'?' active':''}`} title="Fullscreen">Full</button>
-        <button type="button" onClick={() => setMode('normal')} className={`sidebar-footer-btn${mode==='normal'?' active':''}`} title="Normal">Norm</button>
-        <button type="button" onClick={() => setMode('maximal')} className={`sidebar-footer-btn${mode==='maximal'?' active':''}`} title="Maximal">Max</button>
-        <button type="button" onClick={toggleSide} className="sidebar-footer-btn switch-side" title="Switch sidebar side">{side === 'right' ? '◀' : '▶'}</button>
+        <button type="button" onPointerDown={() => setMode('fullscreen')} className={`sidebar-footer-btn${mode==='fullscreen'?' active':''}`} title="Fullscreen">Full</button>
+        <button type="button" onPointerDown={() => setMode('normal')} className={`sidebar-footer-btn${mode==='normal'?' active':''}`} title="Normal">Norm</button>
+        <button type="button" onPointerDown={() => setMode('maximal')} className={`sidebar-footer-btn${mode==='maximal'?' active':''}`} title="Maximal">Max</button>
+        <button type="button" onPointerDown={toggleSide} className="sidebar-footer-btn switch-side" title="Switch sidebar side">{side === 'right' ? '◀' : '▶'}</button>
       </div>
 
     </div>

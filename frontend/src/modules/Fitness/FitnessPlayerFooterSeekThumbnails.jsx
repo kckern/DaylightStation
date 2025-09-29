@@ -191,7 +191,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       <div
         className="progress-bar"
         data-intent={showingIntent ? '1' : '0'}
-        onClick={handleClick}
+        onPointerDown={handleClick}
         onMouseMove={handlePointerMove}
         onMouseLeave={handleLeave}
         onTouchStart={handlePointerMove}

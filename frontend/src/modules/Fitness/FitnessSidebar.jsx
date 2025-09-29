@@ -33,7 +33,7 @@ const FitnessSidebar = ({ collections = [], activeCollection, onContentSelect })
             <button
               key={collection.id || index}
               className={`nav-item ${String(activeCollection) === String(collection.id) ? 'active' : ''}`}
-              onClick={() => onContentSelect && onContentSelect('collection', collection)}
+              onPointerDown={() => onContentSelect && onContentSelect('collection', collection)}
             >
               <div className="nav-icon">{getCollectionIcon(collection.name)}</div>
               <span className="nav-label">{collection.name}</span>
