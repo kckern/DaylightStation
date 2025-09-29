@@ -5,8 +5,12 @@ import './FitnessShow.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 
 // Season Info Component - Shows detailed info for a season or episode
-const SeasonInfo = ({ item, type = 'episode' }) => {
+// showSummary: parent show (series) summary for fallback when season summary absent
+const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
   if (!item) return null;
+  console.log('🎬 SeasonInfo item:', item);
+  // Prefer item's own summary; if season and summary missing, fallback to showSummary
+  const effectiveSummary = item.summary || (type === 'season' ? showSummary : null);
   
   return (
     <div className={`season-info ${type}-info`}>
@@ -51,9 +55,9 @@ const SeasonInfo = ({ item, type = 'episode' }) => {
           </div>
         )}
         
-        {item.summary && (
+        {effectiveSummary && (
           <div className="info-summary">
-            <p>{item.summary}</p>
+            <p>{effectiveSummary}</p>
           </div>
         )}
       </div>
@@ -249,17 +253,20 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     if (seasonsMap && typeof seasonsMap === 'object' && Object.keys(seasonsMap).length) {
       const arr = Object.entries(seasonsMap).map(([id, s]) => {
         const count = items.filter(ep => ep.seasonId === id).length;
-        const numRaw = s.seasonNumber;
-        const number = Number.isFinite(numRaw) ? numRaw : (numRaw != null ? parseInt(numRaw) : undefined);
-        const image = s.seasonThumbUrl || (items.find(ep => ep.seasonId === id)?.image);
+        // Support both legacy (seasonNumber, seasonName, seasonThumbUrl, seasonDescription) and new (num, title, img, summary) keys
+        const numRaw = s.seasonNumber != null ? s.seasonNumber : s.num;
+        const number = (numRaw != null && !Number.isNaN(parseInt(numRaw))) ? parseInt(numRaw) : undefined;
+        const nameRaw = s.seasonName || s.title; // prefer explicit seasonName
+        const image = s.seasonThumbUrl || s.img || (items.find(ep => ep.seasonId === id)?.image);
+        const description = s.seasonDescription || s.summary || null;
         return {
           id,
-            number: (number != null && !Number.isNaN(number)) ? number : undefined,
-          rawName: s.seasonName,
+          number,
+          rawName: nameRaw,
           image,
           count,
-          description: s.seasonDescription,
-          name: s.seasonName || (Number.isFinite(number) ? `Season ${number}` : 'Season')
+          description,
+          name: nameRaw || (Number.isFinite(number) ? `Season ${number}` : 'Season')
         };
       });
       arr.sort((a, b) => {
@@ -470,7 +477,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         {/* Left Panel - Show Info */}
         <div className="show-info-panel">
           {selectedInfo ? (
-            <SeasonInfo item={selectedInfo} type={infoType} />
+            <SeasonInfo item={selectedInfo} type={infoType} showSummary={info?.summary} />
           ) : info && (
             <>
               {/* Show Image - Top 50% */}
@@ -603,13 +610,15 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                   onClick={() => {
                     setActiveSeasonId(s.id);
                     // Get the episode count for this season
-                                  const episodeCount = items.filter(ep => ep.seasonId === s.id).length;
-                                  setSelectedInfo({
-                                    ...s,
-                                    episodeCount,
-                                    title: s.name || s.rawName,
-                                    summary: s.description || s.rawName || s.name
-                                  });
+                    const episodeCount = items.filter(ep => ep.seasonId === s.id).length;
+                    // Only include summary if we have a real description; otherwise let SeasonInfo fall back to show summary
+                    const hasRealDescription = !!(s.description && s.description.trim());
+                    setSelectedInfo({
+                      ...s,
+                      episodeCount,
+                      title: s.name || s.rawName,
+                      ...(hasRealDescription ? { summary: s.description } : {})
+                    });
                     setInfoType('season');
                   }}
                 >
