@@ -487,15 +487,16 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                     const sample = episodeItems.find(i => i.seasonId === sid) || {};
                     // Prefer meta fields, fallback to episode derived fields
                     const seasonNumber = (meta && (meta.index != null)) ? parseInt(meta.index) : sample.seasonNumber;
-                    const seasonName = (meta && meta.title) || sample.seasonName || `Season ${seasonNumber || ''}`.trim();
-                    const seasonThumbUrl = handleDevImage(req, (meta && plexThumb.thumbUrl(meta.thumb)) || sample.seasonThumbUrl || `${process.env.host}/media/plex/img/notfound.png`);
-                    const seasonDescription = (meta && meta.summary) || null;
+                    const title = (meta && meta.title) || sample.seasonName || `Season ${seasonNumber || ''}`.trim();
+                    const img = handleDevImage(req, (meta && plexThumb.thumbUrl(meta.thumb)) || sample.seasonThumbUrl || `${process.env.host}/media/plex/img/notfound.png`);
+                    const summary = (meta && meta.summary) || null;
                     seasons[sid] = {
-                        seasonNumber,
-                        seasonName,
-                        seasonThumbUrl,
-                        seasonDescription
+                                num:seasonNumber,
+                                title,
+                               img,
+                               summary,
                     };
+                    if(!seasons[sid].summary) delete seasons[sid].summary;
                 }
                 // Remove season detail fields from episode items (leave seasonId only for mapping)
                 for (const ep of episodeItems) {
