@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback } from 'react';
+import React, { forwardRef, useCallback, useState, useRef } from 'react';
 import FitnessPlayerFooterControls from './FitnessPlayerFooterControls.jsx';
 import FitnessPlayerFooterSeekThumbnails from './FitnessPlayerFooterSeekThumbnails.jsx';
 
@@ -41,6 +41,16 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
 
   const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem?.duration || 600));
 
+  // Zoom wiring (thumbnails expose onZoomChange + reset ref)
+  const [isZoomed, setIsZoomed] = useState(false);
+  const zoomResetRef = useRef(null);
+  const handleBack = useCallback(() => {
+    if (zoomResetRef.current) {
+      zoomResetRef.current();
+      setIsZoomed(false);
+    }
+  }, []);
+
   return (
     <div
       ref={ref}
@@ -67,17 +77,21 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         currentTime={currentTime}
         onSeek={onSeek}
         seekButtons={seekButtons}
+        onZoomChange={setIsZoomed}
+        onZoomReset={zoomResetRef}
       />
 
       <FitnessPlayerFooterControls
         section="right"
         isPaused={isPaused}
-  playerRef={playerRef}
+        playerRef={playerRef}
         onPrev={onPrev}
         onNext={onNext}
         hasPrev={hasPrev}
         hasNext={hasNext}
-        onClose={onClose}
+        onClose={isZoomed ? handleBack : onClose}
+        isZoomed={isZoomed}
+        onBack={handleBack}
       />
     </div>
   );
