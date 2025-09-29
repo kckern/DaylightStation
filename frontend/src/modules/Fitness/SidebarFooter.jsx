@@ -117,7 +117,7 @@ const SidebarFooter = ({ onContentSelect }) => {
             <div
               key={deviceId}
               className={`device-card ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'}`}
-              onClick={() => onContentSelect && onContentSelect('users')}
+              onPointerDown={() => onContentSelect && onContentSelect('users')}
             >
               <div className="device-header">
                 <div className="device-value">{deviceValue}</div>
@@ -133,7 +133,7 @@ const SidebarFooter = ({ onContentSelect }) => {
       {sortedDevices.length === 0 && (
         <div
           className={`device-card fitness-monitor ${connected ? 'connected' : 'disconnected'}`}
-          onClick={() => onContentSelect && onContentSelect('users')}
+          onPointerDown={() => onContentSelect && onContentSelect('users')}
         >
           <div className="device-icon">❤️</div>
           <div className="connection-status">

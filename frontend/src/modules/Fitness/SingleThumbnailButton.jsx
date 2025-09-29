@@ -50,7 +50,7 @@ export default function SingleThumbnailButton({
     return false;
   };
 
-  const handleClick = (e) => {
+  const activate = (e) => {
     const timeClick = downOnTimeRef.current || (btnRange && isTimeElement(e));
     downOnTimeRef.current = false; // reset
     if (btnRange && timeClick) {
@@ -75,7 +75,7 @@ export default function SingleThumbnailButton({
   const handleTouchCancel = () => clearLong();
 
   return React.cloneElement(React.Children.only(children), {
-    onClick: handleClick,
+    onPointerDown: activate,
     onContextMenu: btnRange ? handleContext : undefined,
     onMouseDown: btnRange ? handleMouseDown : undefined,
     onTouchStart: btnRange ? handleTouchStart : undefined,
