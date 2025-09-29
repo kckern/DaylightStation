@@ -76,6 +76,8 @@ function useCommonMediaController({
   const containerRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
+  // Track active seek operations to display immediate feedback (spinner) during scrubs
+  const [isSeeking, setIsSeeking] = useState(false);
   const lastLoggedTimeRef = useRef(0);
   const lastUpdatedTimeRef = useRef(0);
   // Stall detection refs (Phase 1 reintroduction - event driven, no tight polling)
@@ -351,6 +353,15 @@ function useCommonMediaController({
     mediaEl.addEventListener('durationchange', onDurationChange);
     mediaEl.addEventListener('ended', onEnded);
     mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
+    // Seeking lifecycle: show spinner immediately on seeking, hide on seeked/playing
+    const handleSeeking = () => setIsSeeking(true);
+    const clearSeeking = () => {
+      // Allow a frame so stalled detection (if any) can assert before we hide
+      requestAnimationFrame(() => setIsSeeking(false));
+    };
+    mediaEl.addEventListener('seeking', handleSeeking);
+    mediaEl.addEventListener('seeked', clearSeeking);
+    mediaEl.addEventListener('playing', clearSeeking);
     if (enabled) {
       const onWaiting = () => { dlog('waiting event'); scheduleStallDetection(); };
       const onStalled = () => { dlog('stalled event'); scheduleStallDetection(); };
@@ -366,6 +377,9 @@ function useCommonMediaController({
         mediaEl.removeEventListener('waiting', onWaiting);
         mediaEl.removeEventListener('stalled', onStalled);
         mediaEl.removeEventListener('playing', onPlaying);
+        mediaEl.removeEventListener('seeking', handleSeeking);
+        mediaEl.removeEventListener('seeked', clearSeeking);
+        mediaEl.removeEventListener('playing', clearSeeking);
       };
     }
 
@@ -374,6 +388,9 @@ function useCommonMediaController({
       mediaEl.removeEventListener('durationchange', onDurationChange);
       mediaEl.removeEventListener('ended', onEnded);
       mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
+      mediaEl.removeEventListener('seeking', handleSeeking);
+      mediaEl.removeEventListener('seeked', clearSeeking);
+      mediaEl.removeEventListener('playing', clearSeeking);
     };
   }, [onEnd, playbackRate, start, isVideo, meta.percent, meta.title, type, media_key, onProgress, enabled, softMs, hardMs, maxRetries, mode]);
 
@@ -391,6 +408,7 @@ function useCommonMediaController({
     isDash,
     shader,
     isStalled,
+    isSeeking,
     handleProgressClick
   };
 }
@@ -833,6 +851,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
     containerRef,
     isPaused,
     isStalled,
+    isSeeking,
     handleProgressClick
   } = useCommonMediaController({
     start: media.seconds,
@@ -863,7 +882,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-  {(seconds === 0 || isStalled) && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} stalled={isStalled} initialStart={media.seconds || 0} seconds={seconds} />}
+  {(seconds === 0 || isStalled || isSeeking) && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} stalled={isStalled} initialStart={media.seconds || 0} seconds={seconds} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -895,6 +914,7 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
     isPaused,
     duration,
     isStalled,
+    isSeeking,
     handleProgressClick,
   } = useCommonMediaController({
     start: media.seconds,
@@ -933,7 +953,7 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
         {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-  {(seconds === 0 || isStalled) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} stalled={isStalled} initialStart={media.seconds || 0} />}
+  {(seconds === 0 || isStalled || isSeeking) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} stalled={isStalled} initialStart={media.seconds || 0} />}
       {isDash ? (
         <dash-video
           ref={containerRef}

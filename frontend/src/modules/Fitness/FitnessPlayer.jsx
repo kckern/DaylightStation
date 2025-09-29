@@ -3,6 +3,7 @@ import FitnessPlayerSidebar from './FitnessPlayerSidebar.jsx';
 import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
+import usePlayerController from '../Player/usePlayerController.js';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import FitnessUsers from './FitnessUsers.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
@@ -128,8 +129,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
   const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
-  const mediaElRef = useRef(null);
   const playerRef = useRef(null); // imperative Player API
+  const { seek: seekTo, toggle: togglePlay, getCurrentTime: getPlayerTime, getDuration: getPlayerDuration } = usePlayerController(playerRef);
   const renderCountRef = useRef(0);
   // Simple render counter (environment gating removed per instruction)
   renderCountRef.current += 1;
@@ -171,8 +172,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       stackEvalRef.current.pending = true;
       if (measureRafRef.current) cancelAnimationFrame(measureRafRef.current);
       measureRafRef.current = requestAnimationFrame(() => {
-        stackEvalRef.current.pending = false;
-        stackEvalRef.current.lastComputeTs = now;
+    stackEvalRef.current.pending = false;
 
         const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
 
@@ -320,11 +320,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   
   // Function to handle seeking to a specific point in the video
   const handleSeek = useCallback((seconds) => {
-    const el = mediaElRef.current;
-    if (el && Number.isFinite(seconds)) {
-      try { el.currentTime = Math.max(0, Math.min(seconds, (el.duration || seconds))); } catch {}
-    }
-  }, []);
+    if (Number.isFinite(seconds)) seekTo(seconds);
+  }, [seekTo]);
 
   const handleClose = () => {
     console.log('🎬 FitnessPlayer: Closing player');
@@ -420,7 +417,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       const originSrc = isOrigin ? (currentItem.seasonImage || currentItem.image || generateThumbnailUrl(plexObj, pos)) : null;
       const imgSrc = isOrigin ? originSrc : generateThumbnailUrl(plexObj, pos);
       return (
-        <div className={classes.join(' ')} key={`seek-${idx}`} onClick={() => handleSeek(pos)}>
+        <div className={classes.join(' ')} key={`seek-${idx}`} data-pos={pos}>
           <div className="thumbnail-wrapper">
             <img
               src={imgSrc}
@@ -475,15 +472,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         case 'Escape':
           handleClose();
           break;
-        case ' ': // Spacebar toggles play/pause unless focused on a button
+        case ' ': { // Spacebar toggles play/pause unless focus is on a button
           if (document.activeElement?.tagName !== 'BUTTON') {
-            const videoElement = mediaElRef.current;
-            if (videoElement) {
-              if (videoElement.paused) videoElement.play(); else videoElement.pause();
-              setIsPaused(videoElement.paused);
-            }
+            togglePlay();
+            // Pause state will sync via onProgress; optimistic update for snappier UI
+            setIsPaused(prev => !prev);
           }
-          break;
+          break; }
         default:
           break;
       }
@@ -596,7 +591,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             advance={handleNext}
             playerType="fitness-video"
             onProgress={handlePlayerProgress}
-            onMediaRef={(el)=>{ mediaElRef.current = el; }}
+            onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
             ref={playerRef}
           />
         </div>
@@ -617,7 +612,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           hasPrev={hasPrev}
           hasNext={hasNext}
           isPaused={isPaused}
-          mediaElRef={mediaElRef}
+          playerRef={playerRef}
           TimeDisplay={TimeDisplay}
           renderCount={renderCountRef.current}
         />

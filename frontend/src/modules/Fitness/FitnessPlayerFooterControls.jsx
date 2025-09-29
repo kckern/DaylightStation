@@ -5,13 +5,13 @@ import React from 'react';
  * Reusable control clusters (left/right) so future footer variants can opt in/out.
  * Props:
  *  - section: 'left' | 'right'
- *  - isPaused, mediaElRef, onPrev, onNext, hasPrev, hasNext, onClose
+ *  - isPaused, playerRef (imperative Player ref), onPrev, onNext, hasPrev, hasNext, onClose
  *  - currentTime, duration, TimeDisplay, renderCount (only used on left)
  */
 export default function FitnessPlayerFooterControls({
   section,
   isPaused,
-  mediaElRef,
+  playerRef,
   onPrev,
   onNext,
   hasPrev,
@@ -23,10 +23,15 @@ export default function FitnessPlayerFooterControls({
   renderCount
 }) {
   const isLeft = section === 'left';
+  
+  /*
+   * Toggle playback using the Player imperative interface when available.
+   * Falls back to legacy direct media element access only if playerRef not provided.
+   */
   const playPause = () => {
-    const el = mediaElRef?.current;
-    if (!el) return;
-    if (el.paused) el.play(); else el.pause();
+    const api = playerRef?.current; if (!api) return;
+    if (typeof api.toggle === 'function') { api.toggle(); return; }
+    const media = api.getMediaElement?.(); if (media) { media.paused ? api.play?.() : api.pause?.(); }
   };
   // Determine if navigation controls should be shown (only when queue has >1 items)
   const showNav = (hasPrev || hasNext);

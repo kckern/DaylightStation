@@ -8,7 +8,6 @@ import { useFitness } from '../../context/FitnessContext.jsx';
 // showSummary: parent show (series) summary for fallback when season summary absent
 const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
   if (!item) return null;
-  console.log('🎬 SeasonInfo item:', item);
   // Prefer item's own summary; if season and summary missing, fallback to showSummary
   const effectiveSummary = item.summary || (type === 'season' ? showSummary : null);
   
@@ -60,6 +59,79 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
             <p>{effectiveSummary}</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// Episode Info Component - Rich layout for an episode with season context
+const EpisodeInfo = ({ episode, showInfo, seasonsMap, seasonsList, onPlay }) => {
+  if (!episode) return null;
+  const seasonId = episode.seasonId;
+  // Try map first, then list
+  const seasonFromMap = seasonsMap && seasonId ? seasonsMap[seasonId] : null;
+  const seasonFromList = !seasonFromMap && seasonsList ? seasonsList.find(s => s.id === seasonId) : null;
+  const season = seasonFromMap || seasonFromList || {};
+  // Robust season name fallback priority
+  const rawSeasonName = season.title || season.seasonName || season.name;
+  const numericSeason = (() => {
+    // prefer explicit numeric properties
+    if (Number.isFinite(season.num)) return season.num;
+    if (Number.isFinite(season.number)) return season.number;
+    const parsed = parseInt(season.id, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  })();
+  const seasonName = rawSeasonName && rawSeasonName.toString().trim().length
+    ? rawSeasonName
+    : (Number.isFinite(numericSeason) ? `Season ${numericSeason}` : 'Season');
+
+  // Season description fallback chain: explicit summary/description -> show summary
+  const seasonDescription = [season.summary, season.seasonDescription, season.description, showInfo?.summary]
+    .find(v => typeof v === 'string' && v.trim().length) || '';
+
+  const seasonImage = season.img || season.seasonThumbUrl || season.image || (seasonId ? DaylightMediaPath(`media/plex/img/${seasonId}`) : showInfo?.image);
+  // Use the same episode image source as grid: primary is episode.image; fallback to thumb_id path
+  const episodeImage = (episode.image && episode.image.trim())
+    ? episode.image
+    : (episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : null);
+  const durationText = episode.duration ? formatDuration(episode.duration) : null;
+  const epTitle = episode.label || episode.title || `Episode ${episode.episodeNumber || ''}`.trim();
+  const epNumber = episode.episodeNumber;
+  const epDescription = episode.episodeDescription || episode.summary || '';
+
+  return (
+    <div className="episode-info">
+      <div className="episode-season-header">
+        {seasonImage && (
+          <div className="season-thumb-wrapper">
+            <img src={seasonImage} alt={seasonName} className="season-thumb" />
+          </div>
+        )}
+        <div className="season-meta">
+          <h2 className="show-name">{showInfo?.title}</h2>
+          {seasonDescription && (
+            <div className="season-description"><p>{seasonName}—{seasonDescription}</p></div>
+          )}
+        </div>
+      </div>
+      <div className="episode-media-section">
+        {episodeImage && (
+          <div className="episode-image-wrapper">
+            <img src={episodeImage} alt={epTitle} className="episode-image" />
+          </div>
+        )}
+        <div className="episode-meta-block">
+          <div className="episode-heading-row">
+            <h3 className="episode-heading">
+              {epNumber != null && <span className="episode-number">E{epNumber}</span>} {epTitle}
+            </h3>
+            {durationText && <span className="duration-badge">{durationText}</span>}
+          </div>
+          {epDescription && <div className="episode-description"><p>{epDescription}</p></div>}
+        </div>
+      </div>
+      <div className="episode-actions center">
+        <button className="play-button" onClick={() => onPlay && onPlay(episode)}>▶ Play</button>
       </div>
     </div>
   );
@@ -304,31 +376,40 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
 
   // Initialize load tracking when items/seasons change
   useEffect(() => {
-    const epMap = {};
+    // Build episode image map only if it actually changes size / keys
+    const nextEpMap = {};
     for (const ep of items) {
       const key = ep.plex || ep.id;
-      if (key !== undefined) epMap[key] = false;
+      if (key !== undefined) nextEpMap[key] = loadedEpisodeImages[key] || false;
     }
-    setLoadedEpisodeImages(epMap);
+    const epKeysChanged = Object.keys(nextEpMap).length !== Object.keys(loadedEpisodeImages).length ||
+      Object.keys(nextEpMap).some(k => !(k in loadedEpisodeImages));
+    if (epKeysChanged) setLoadedEpisodeImages(nextEpMap);
 
-    const seasonMap = {};
+    const nextSeasonMap = {};
     for (const s of seasons) {
       const key = s.id;
-      if (key !== undefined) seasonMap[key] = false;
+      if (key !== undefined) nextSeasonMap[key] = loadedSeasonImages[key] || false;
     }
-    setLoadedSeasonImages(seasonMap);
+    const seasonKeysChanged = Object.keys(nextSeasonMap).length !== Object.keys(loadedSeasonImages).length ||
+      Object.keys(nextSeasonMap).some(k => !(k in loadedSeasonImages));
+    if (seasonKeysChanged) setLoadedSeasonImages(nextSeasonMap);
   }, [items, seasons]);
 
   // Initialize/adjust active season when items or seasons change
   useEffect(() => {
-    if (seasons.length > 1) {
-      // Prefer Season 1 if present; otherwise first sorted season
-      const seasonOne = seasons.find(s => s.number === 1);
-      const fallbackId = seasonOne ? seasonOne.id : seasons[0].id;
-      setActiveSeasonId(prev => (prev && seasons.some(s => s.id === prev)) ? prev : fallbackId);
-    } else {
-      setActiveSeasonId(null);
+    if (!seasons.length) {
+      if (activeSeasonId !== null) setActiveSeasonId(null);
+      return;
     }
+    if (seasons.length === 1) {
+      if (activeSeasonId !== null) setActiveSeasonId(null); // no filter when single season
+      return;
+    }
+    // Multiple seasons: derive fallback
+    const seasonOne = seasons.find(s => s.number === 1);
+    const fallbackId = seasonOne ? seasonOne.id : seasons[0].id;
+    setActiveSeasonId(prev => (prev && seasons.some(s => s.id === prev)) ? prev : fallbackId);
   }, [seasons]);
 
   // Keep selected episode in sync with filter
@@ -336,7 +417,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     const filtered = seasons.length > 1 && activeSeasonId
       ? items.filter(ep => ep.seasonId === activeSeasonId)
       : items;
-    if (filtered.length && (!selectedEpisode || !filtered.some(ep => ep.plex === selectedEpisode.plex))) {
+    if (!filtered.length) return;
+    if (!selectedEpisode || !filtered.some(ep => ep.plex === selectedEpisode.plex)) {
       setSelectedEpisode(filtered[0]);
     }
   }, [items, seasons, activeSeasonId]);
@@ -476,9 +558,19 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       <div className="show-content">
         {/* Left Panel - Show Info */}
         <div className="show-info-panel">
-          {selectedInfo ? (
-            <SeasonInfo item={selectedInfo} type={infoType} showSummary={info?.summary} />
-          ) : info && (
+          {selectedInfo && infoType === 'season' && (
+            <SeasonInfo item={selectedInfo} type="season" showSummary={info?.summary} />
+          )}
+          {selectedInfo && infoType === 'episode' && (
+            <EpisodeInfo
+              episode={selectedInfo}
+              showInfo={info}
+              seasonsMap={seasonsMap}
+              seasonsList={seasons}
+              onPlay={handlePlayEpisode}
+            />
+          )}
+          {!selectedInfo && info && (
             <>
               {/* Show Image - Top 50% */}
               <div className="show-poster" ref={posterRef}>
@@ -567,10 +659,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                               className="episode-title" 
                               aria-label={episode.label}
                               onClick={() => {
-                                setSelectedInfo({
-                                  ...episode,
-                                  title: episode.label
-                                });
+                                setSelectedInfo({ ...episode, title: episode.label });
                                 setInfoType('episode');
                                 handleEpisodeSelect(episode);
                               }}
