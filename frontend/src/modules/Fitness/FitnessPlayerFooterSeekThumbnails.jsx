@@ -13,24 +13,73 @@ import usePlayerController from '../Player/usePlayerController.js';
  *  - range: [startSeconds, endSeconds] optional; defines the time window represented by the thumbnails & progress bar
  *           Defaults to [0, duration] (or fallback) when omitted/invalid. All thumbnail positions are clamped to this window.
  */
-const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset }) => {
+const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl }) => {
   // ---------- Helpers ----------
   const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   const percentOf = (t, total) => total > 0 ? clamp01(t / total) : 0;
   const BASE_PENDING_TOLERANCE = 0.05;  // keeps optimistic bar until near actual
   const CLEAR_PENDING_TOLERANCE = 0.25; // when to clear internal pending state
+  // Hoisted time formatter (used in synthetic thumbnail generation)
+  function formatTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return m + ':' + String(s).padStart(2,'0');
+  }
 
   const baseDurationProp = (duration && !isNaN(duration) ? duration : fallbackDuration);
 
   // Zoom state: null = not zoomed, [start,end] = zoomed range
+  // Special anchor signal: [p,p] means user tapped time-label at position p and we should create
+  // a synthetic 10-thumbnail window starting at that anchor using original thumbnail spacing.
   const [zoomRange, setZoomRange] = useState(null);
+  // Preserve the last un-zoomed thumbnail positions so an anchor signal [p,p] can expand to its neighbor
+  const unzoomedPositionsRef = useRef([]);
+
+  // Capture original thumbnail positions (stable across zooms) for synthetic generation
+  // Helper to derive a 10-point array for a given [start,end]
+  const buildRangePositions = useCallback((start, end) => {
+    if (!(Number.isFinite(start) && Number.isFinite(end) && end > start)) return [];
+    const span = end - start;
+    const arr = [];
+    for (let i = 0; i < 10; i++) {
+      const frac = i / 9; // 0..1
+      arr.push(start + frac * span);
+    }
+    return arr;
+  }, []);
   const effectiveRange = useMemo(() => {
-    if (zoomRange && Array.isArray(zoomRange) && zoomRange.length === 2) return zoomRange;
+    // Base (non-zoom) range resolution
+    let baseRange = [0, baseDurationProp];
     if (Array.isArray(range) && range.length === 2) {
       const [rs, re] = range.map(parseFloat);
-      if (Number.isFinite(rs) && Number.isFinite(re) && re > rs) return [rs, re];
+      if (Number.isFinite(rs) && Number.isFinite(re) && re > rs) baseRange = [rs, re];
     }
-    return [0, baseDurationProp];
+    if (!zoomRange) return baseRange;
+    if (!Array.isArray(zoomRange) || zoomRange.length !== 2) return baseRange;
+    const [zs, ze] = zoomRange;
+    // Normal zoom (explicit range)
+    if (Number.isFinite(zs) && Number.isFinite(ze) && ze > zs) return [zs, ze];
+    // Anchor signal (zs === ze). We expand to the next (preferred) or previous base position.
+    if (Number.isFinite(zs) && zs === ze) {
+      const basePositions = unzoomedPositionsRef.current || [];
+      if (basePositions.length) {
+        // Find index of anchor within tolerance
+        const idx = basePositions.findIndex(p => Math.abs(p - zs) < 0.51); // ~0.5s tolerance
+        if (idx >= 0) {
+          if (idx < basePositions.length - 1) {
+            return [basePositions[idx], basePositions[idx + 1]];
+          } else if (idx > 0) {
+            return [basePositions[idx - 1], basePositions[idx]];
+          }
+        }
+      }
+      // Fallback: create a small window (1/10th of duration) forward
+      const segment = baseDurationProp / 10;
+      const end = Math.min(zs + segment, baseRange[1]);
+      if (end > zs) return [zs, end];
+    }
+    return baseRange;
   }, [zoomRange, range, baseDurationProp]);
   const [rangeStart, rangeEnd] = effectiveRange;
   const rangeSpan = Math.max(0, rangeEnd - rangeStart);
@@ -48,27 +97,14 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   // ---------- Seek Positions & Total Duration ----------
   // Each button can have its own range: data-range-start, data-range-end
-  const seekMeta = useMemo(() => {
-    if (!seekButtons) return { positions: [], total: rangeSpan, ranges: [] };
-    const positions = [];
-    const ranges = [];
-    React.Children.forEach(seekButtons, (child) => {
-      if (!React.isValidElement(child)) return;
-      const raw = parseFloat(child.props['data-pos']);
-      let rStart = child.props['data-range-start'], rEnd = child.props['data-range-end'];
-      rStart = Number.isFinite(parseFloat(rStart)) ? parseFloat(rStart) : null;
-      rEnd = Number.isFinite(parseFloat(rEnd)) ? parseFloat(rEnd) : null;
-      if (Number.isFinite(raw)) {
-        if (raw >= rangeStart && raw <= rangeEnd) positions.push(raw);
-        if (rStart != null && rEnd != null && rEnd > rStart) ranges.push([rStart, rEnd]);
-        else ranges.push(null);
-      } else {
-        ranges.push(null);
-      }
-    });
-      positions.sort((a,b)=>a-b);
-      return { positions, total: rangeSpan, ranges };
-    }, [seekButtons, rangeStart, rangeEnd, rangeSpan]);
+  // Build the 10 evenly spaced positions for current effective range
+  const rangePositions = useMemo(() => buildRangePositions(rangeStart, rangeEnd), [rangeStart, rangeEnd, buildRangePositions]);
+  // Capture unzoomed positions for future anchor zoom expansion
+  useEffect(() => {
+    if (!zoomRange) {
+      unzoomedPositionsRef.current = rangePositions;
+    }
+  }, [zoomRange, rangePositions]);
 
   // ---------- Display Time Resolution ----------
   const displayTime = useMemo(() => {
@@ -79,14 +115,13 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   // ---------- Active Thumbnail (binary search) ----------
   const activePos = useMemo(() => {
-    const arr = seekMeta.positions;
-    if (!arr.length) return null;
-    let lo = 0, hi = arr.length - 1, ans = null;
+    if (!rangePositions.length) return null;
+    let lo = 0, hi = rangePositions.length - 1, ans = null;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if (arr[mid] <= displayTime) { ans = arr[mid]; lo = mid + 1; } else hi = mid - 1; }
+      if (rangePositions[mid] <= displayTime) { ans = rangePositions[mid]; lo = mid + 1; } else hi = mid - 1; }
     return ans;
-  }, [seekMeta.positions, displayTime]);
+  }, [rangePositions, displayTime]);
 
   // ---------- Effects ----------
   useEffect(() => {
@@ -159,32 +194,46 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   };
 
   const renderedSeekButtons = useMemo(() => {
-    if (!seekButtons) return null;
-    return React.Children.map(seekButtons, (child) => {
-      if (!React.isValidElement(child)) return child;
-      const raw = parseFloat(child.props['data-pos']);
-      if (!Number.isFinite(raw)) return child;
-      let rStart = child.props['data-range-start'], rEnd = child.props['data-range-end'];
-      rStart = Number.isFinite(parseFloat(rStart)) ? parseFloat(rStart) : null;
-      rEnd = Number.isFinite(parseFloat(rEnd)) ? parseFloat(rEnd) : null;
-      const state = activePos != null && raw === activePos ? 'active' : (activePos != null && raw < activePos ? 'past' : 'future');
+    if (!currentItem) return null;
+    const plexObj = {
+      plex: currentItem.plex || currentItem.id,
+      id: currentItem.id,
+      thumb_id: currentItem.thumb_id ? (typeof currentItem.thumb_id === 'number' ? currentItem.thumb_id : parseInt(currentItem.thumb_id,10)) : null,
+      image: currentItem.image,
+      media_key: currentItem.media_key,
+      ratingKey: currentItem.ratingKey,
+      metadata: currentItem.metadata
+    };
+    return rangePositions.map((pos, idx) => {
+      const minutes = Math.floor(pos / 60);
+      const seconds = Math.floor(pos % 60);
+      const label = `${minutes}:${String(seconds).padStart(2,'0')}`;
+      const imgSrc = generateThumbnailUrl ? generateThumbnailUrl(plexObj, pos) : undefined;
+      const state = activePos != null && Math.abs(activePos - pos) < 0.001 ? 'active' : (activePos != null && pos < activePos ? 'past' : 'future');
       return (
         <SingleThumbnailButton
-          key={raw + ':' + rStart + ':' + rEnd}
-          pos={raw}
-          rangeStart={rStart}
-          rangeEnd={rEnd}
+          key={'rng-'+idx+'-'+Math.round(pos)}
+          pos={pos}
+          rangeStart={null}
+          rangeEnd={null}
           state={state}
           onSeek={commit}
           onZoom={setZoomRange}
           globalStart={rangeStart}
           globalEnd={rangeEnd}
         >
-          {child}
+          <div className={`seek-button-container${state==='active'?' active':''}`} data-pos={pos}>
+            <div className="thumbnail-wrapper">
+              {imgSrc && (
+                <img src={imgSrc} alt={`Thumbnail ${label}`} className="seek-thumbnail" loading="lazy" />
+              )}
+              <span className="thumbnail-time">{label}</span>
+            </div>
+          </div>
         </SingleThumbnailButton>
       );
     });
-  }, [seekButtons, activePos, commit]);
+  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, commit, rangeStart, rangeEnd]);
 
   const progressPct = useMemo(() => {
     if (!rangeSpan) return 0;

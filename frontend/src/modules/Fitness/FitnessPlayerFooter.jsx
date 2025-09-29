@@ -75,6 +75,8 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
       <FitnessPlayerFooterSeekThumbnails
         duration={baseDuration}
         currentTime={currentTime}
+        currentItem={currentItem}
+        generateThumbnailUrl={props.generateThumbnailUrl || undefined}
         onSeek={onSeek}
         seekButtons={seekButtons}
         onZoomChange={setIsZoomed}
