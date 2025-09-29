@@ -31,10 +31,18 @@
     width: calc(100% + 2px);
     height: calc(100% + 2px);
     opacity: 0;
+    visibility: hidden;
+    transition: opacity 400ms ease-in-out, visibility 0s linear 400ms; // delay visibility removal until fade completes
+    // Hide native controls aggressively (fallback)
+    &::-webkit-media-controls { display: none !important; }
+    &::-webkit-media-controls-enclosure { display: none !important; }
+    &::-webkit-media-controls-panel { display: none !important; }
 }
 
 .video-element.show{
     opacity: 1;
+    visibility: visible;
+    transition: opacity 400ms ease-in-out;
 }
 
 .vjs-control-bar{
@@ -249,6 +257,16 @@
 .loading-overlay img{
   width: 10rem;
   height: 10rem;
+}
+
+.loading-overlay .loading-info{
+    margin-top: 1rem;
+    font-family: monospace;
+    font-size: 1.1rem;
+    letter-spacing: 0.05em;
+    color: #ddd;
+    text-shadow: 0 1px 2px #000;
+    opacity: 0.9;
 }
 
 .loading-overlay.loading img{
