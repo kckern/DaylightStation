@@ -241,51 +241,59 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     }
   };
 
-  const { info, items = [] } = showData || {};
+  const { info, items = [], seasons: seasonsMap = null } = showData || {};
 
-  // Derive seasons from items (episodes), track seasonNumber for sorting/labels
+  // Derive seasons from new seasonsMap (backend seasons object) with fallback to legacy per-episode fields
   const seasons = useMemo(() => {
+    // Preferred: seasonsMap provided by API
+    if (seasonsMap && typeof seasonsMap === 'object' && Object.keys(seasonsMap).length) {
+      const arr = Object.entries(seasonsMap).map(([id, s]) => {
+        const count = items.filter(ep => ep.seasonId === id).length;
+        const numRaw = s.seasonNumber;
+        const number = Number.isFinite(numRaw) ? numRaw : (numRaw != null ? parseInt(numRaw) : undefined);
+        const image = s.seasonThumbUrl || (items.find(ep => ep.seasonId === id)?.image);
+        return {
+          id,
+            number: (number != null && !Number.isNaN(number)) ? number : undefined,
+          rawName: s.seasonName,
+          image,
+          count,
+          description: s.seasonDescription,
+          name: s.seasonName || (Number.isFinite(number) ? `Season ${number}` : 'Season')
+        };
+      });
+      arr.sort((a, b) => {
+        const an = a.number, bn = b.number;
+        const aHas = Number.isFinite(an), bHas = Number.isFinite(bn);
+        if (aHas && bHas && an !== bn) return an - bn;
+        if (aHas && !bHas) return -1;
+        if (!aHas && bHas) return 1;
+        const na = Number(a.id), nb = Number(b.id);
+        if (!Number.isNaN(na) && !Number.isNaN(nb) && na !== nb) return na - nb;
+        return String(a.name || a.id).localeCompare(String(b.name || b.id));
+      });
+      return arr;
+    }
+    // Fallback (legacy): derive from episodes
     const map = new Map();
     for (const ep of items) {
       if (!ep.seasonId) continue;
-      const number = Number.isFinite(ep.seasonNumber) ? ep.seasonNumber : (ep.seasonNumber != null ? parseInt(ep.seasonNumber) : undefined);
-      const image = ep.seasonThumbUrl || ep.image;
+      const number = undefined; // legacy seasonNumber removed from episode items
+      const image = ep.image;
       if (!map.has(ep.seasonId)) {
-        map.set(ep.seasonId, {
-          id: ep.seasonId,
-          number: Number.isNaN(number) ? undefined : number,
-          rawName: ep.seasonName,
-          image,
-          count: 1,
-        });
+        map.set(ep.seasonId, { id: ep.seasonId, number, rawName: undefined, image, count: 1 });
       } else {
         const cur = map.get(ep.seasonId);
         cur.count += 1;
         if (!cur.image && image) cur.image = image;
-        if (cur.number == null && number != null && !Number.isNaN(number)) cur.number = number;
-        if (!cur.rawName && ep.seasonName) cur.rawName = ep.seasonName;
       }
     }
-    // Build final array and names: prefer numeric label Season N
     const arr = Array.from(map.values()).map(s => ({
       ...s,
-      name: (Number.isFinite(s.number) && s.number > 0)
-        ? `Season ${s.number}`
-        : (s.rawName || (Number.isFinite(s.number) ? `Season ${s.number}` : 'Season')),
+      name: (Number.isFinite(s.number) && s.number > 0) ? `Season ${s.number}` : (s.rawName || 'Season')
     }));
-    // Sort by seasonNumber when available, fallback to id then name
-    arr.sort((a, b) => {
-      const an = a.number, bn = b.number;
-      const aHas = Number.isFinite(an), bHas = Number.isFinite(bn);
-      if (aHas && bHas && an !== bn) return an - bn;
-      if (aHas && !bHas) return -1;
-      if (!aHas && bHas) return 1;
-      const na = Number(a.id), nb = Number(b.id);
-      if (!Number.isNaN(na) && !Number.isNaN(nb) && na !== nb) return na - nb;
-      return String(a.name || a.id).localeCompare(String(b.name || b.id));
-    });
     return arr;
-  }, [items]);
+  }, [items, seasonsMap]);
 
   // Initialize load tracking when items/seasons change
   useEffect(() => {
@@ -595,18 +603,20 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                   onClick={() => {
                     setActiveSeasonId(s.id);
                     // Get the episode count for this season
-                    const episodeCount = items.filter(ep => ep.seasonId === s.id).length;
-                    setSelectedInfo({
-                      ...s,
-                      episodeCount
-                    });
+                                  const episodeCount = items.filter(ep => ep.seasonId === s.id).length;
+                                  setSelectedInfo({
+                                    ...s,
+                                    episodeCount,
+                                    title: s.name || s.rawName,
+                                    summary: s.description || s.rawName || s.name
+                                  });
                     setInfoType('season');
                   }}
                 >
-                  <div className="season-image-wrapper" style={{backgroundImage: s.image ? `url(${DaylightMediaPath(`media/plex/img/${s.id}`)})` : 'none'}}>
-                    {s.image ? (
-                      <img
-                        src={DaylightMediaPath(`media/plex/img/${s.id}`)}
+                                <div className="season-image-wrapper" style={{backgroundImage: s.image ? `url(${s.image})` : 'none'}}>
+                                  {s.image ? (
+                                    <img
+                                      src={s.image}
                         alt={s.rawName || s.name || 'Season'}
                         className={`season-image ${loadedSeasonImages[s.id] ? 'loaded' : ''}`}
                         onLoad={() => {
