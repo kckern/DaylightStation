@@ -123,6 +123,13 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   // ---------- Event Handlers ----------
   const handleClick = useCallback((e) => {
+    /* eslint-disable no-console */
+    console.log('[FooterSeekThumbnails] progress-bar pointerDown seek', {
+      targetClass: e.target?.className,
+      currentTargetClass: e.currentTarget?.className,
+      x: e.clientX
+    });
+    /* eslint-enable no-console */
     const rect = e.currentTarget.getBoundingClientRect();
     commit(positionToSeconds(e.clientX, rect));
   }, [positionToSeconds, commit]);
@@ -170,6 +177,8 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
           state={state}
           onSeek={commit}
           onZoom={setZoomRange}
+          globalStart={rangeStart}
+          globalEnd={rangeEnd}
         >
           {child}
         </SingleThumbnailButton>
