@@ -20,7 +20,10 @@ export default function SingleThumbnailButton({
   onSeek,
   onZoom,
   enableZoom = true,
-  children
+  children,
+  globalStart = 0,
+  globalEnd = null,
+  fallbackZoomWindow = 120 // seconds
 }) {
   const longPressTimeout = useRef();
   const hasRange = enableZoom && Number.isFinite(rangeStart) && Number.isFinite(rangeEnd) && rangeEnd > rangeStart;
@@ -33,11 +36,7 @@ export default function SingleThumbnailButton({
     longPressTimeout.current = setTimeout(() => onZoom?.(btnRange), 400);
   };
 
-  // Track whether the preceding pointer/mouse down happened on a .thumbnail-time element
-  const downOnTimeRef = useRef(false);
-
   const isTimeElement = (e) => {
-    // Prefer composedPath for better shadow / text node support
     const path = e.nativeEvent?.composedPath?.() || [];
     for (const node of path) {
       if (node && node.classList && node.classList.contains('thumbnail-time')) return true;
@@ -50,34 +49,66 @@ export default function SingleThumbnailButton({
     return false;
   };
 
-  const activate = (e) => {
-    const timeClick = downOnTimeRef.current || (btnRange && isTimeElement(e));
-    downOnTimeRef.current = false; // reset
-    if (btnRange && timeClick) {
+  const handlePointerDown = (e) => {
+    const timeElt = isTimeElement(e);
+    const reason = timeElt ? 'time-label' : (e.button === 2 ? 'right-button' : 'seek-default');
+    /* eslint-disable no-console */
+    console.log('[SingleThumbnailButton] pointerDown', {
+      pos,
+      btnRange,
+      button: e.button,
+      reason,
+      targetClass: e.target?.className,
+      hasRange,
+      timeElt
+    });
+    /* eslint-enable no-console */
+    if ((e.button === 2 || timeElt) && enableZoom) {
       e.preventDefault();
       e.stopPropagation();
-      onZoom?.(btnRange);
+      if (btnRange) {
+        console.log('[SingleThumbnailButton] -> ZOOM (explicit range)', btnRange);
+        onZoom?.(btnRange);
+      } else if (timeElt) {
+        // Fallback: derive a window centered on pos
+        const durationEnd = Number.isFinite(globalEnd) ? globalEnd : (pos + fallbackZoomWindow);
+        const half = fallbackZoomWindow / 2;
+        let zs = Math.max(globalStart || 0, pos - half);
+        let ze = Math.min(durationEnd, pos + half);
+        if (ze - zs < 5) { // ensure minimal span
+          if (ze + (5 - (ze - zs)) <= durationEnd) {
+            ze = ze + (5 - (ze - zs));
+          } else if (zs - (5 - (ze - zs)) >= (globalStart || 0)) {
+            zs = zs - (5 - (ze - zs));
+          } else {
+            // fallback: stretch to at least 1s
+            ze = Math.min(durationEnd, zs + 1);
+          }
+        }
+        if (ze > zs) {
+          const fallbackRange = [zs, ze];
+            console.log('[SingleThumbnailButton] -> ZOOM (fallback range)', fallbackRange);
+            onZoom?.(fallbackRange);
+        } else {
+          console.log('[SingleThumbnailButton] (fallback zoom aborted) invalid window', { zs, ze });
+        }
+      }
       return;
     }
+    console.log('[SingleThumbnailButton] -> SEEK', pos);
     onSeek?.(pos);
   };
   const handleContext = (e) => {
-    if (!btnRange) return;
-    e.preventDefault(); e.stopPropagation(); onZoom?.(btnRange);
-  };
-  const handleMouseDown = (e) => {
-    // Record if the initial down was on .thumbnail-time (for browsers where click target may change)
-    if (btnRange && isTimeElement(e)) downOnTimeRef.current = true;
-    if (e.button === 2 && btnRange) { e.preventDefault(); e.stopPropagation(); onZoom?.(btnRange); }
+    if (!btnRange) return; e.preventDefault(); e.stopPropagation(); onZoom?.(btnRange);
   };
   const handleTouchStart = () => startLong();
   const handleTouchEnd = () => clearLong();
   const handleTouchCancel = () => clearLong();
 
   return React.cloneElement(React.Children.only(children), {
-    onPointerDown: activate,
+    // Immediate pointerDown activation; if on the time label we zoom & stop propagation
+    onPointerDown: handlePointerDown,
     onContextMenu: btnRange ? handleContext : undefined,
-    onMouseDown: btnRange ? handleMouseDown : undefined,
     onTouchStart: btnRange ? handleTouchStart : undefined,
     onTouchEnd: btnRange ? handleTouchEnd : undefined,
     onTouchCancel: btnRange ? handleTouchCancel : undefined,
