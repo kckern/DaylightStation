@@ -42,17 +42,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [users, setUsers] = useState(new Map());
   const [lastUpdate, setLastUpdate] = useState(null);
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
+  const [, forceVersion] = useState(0); // used to force re-render on treasure box coin mutation
+  const scheduledUpdateRef = useRef(false); // debounce for mutation callback
+
+  // Lightweight heartbeat to refresh UI (zones, elapsed) without per-sample churn
+  useEffect(() => {
+    const interval = setInterval(() => {
+      forceVersion(v => v + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
   
   // Use the provided queue state from props if available, otherwise use internal state
   const fitnessPlayQueue = propPlayQueue !== undefined ? propPlayQueue : internalPlayQueue;
   const setFitnessPlayQueue = propSetPlayQueue || setInternalPlayQueue;
   
-  console.log('🎬 FitnessProvider: Queue state:', { 
-    props: propPlayQueue, 
-    internal: internalPlayQueue, 
-    resolved: fitnessPlayQueue,
-    hasPropSetter: !!propSetPlayQueue
-  });
   
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -230,6 +234,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
                     zones: zoneConfig,
                     users: usersConfig
                   });
+                  // Register mutation callback once
+                  tb.setMutationCallback(() => {
+                    if (scheduledUpdateRef.current) return;
+                    scheduledUpdateRef.current = true;
+                    requestAnimationFrame(() => {
+                      forceVersion(v => v + 1);
+                      scheduledUpdateRef.current = false;
+                    });
+                  });
                 }
               } catch (e) {
                 console.warn('TreasureBox immediate configure failed', e);
@@ -336,8 +349,36 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         zones: zoneConfig,
         users: usersConfig
       });
+      // Guarantee callback registered (idempotent)
+      try { 
+        fitnessSessionRef.current.treasureBox.setMutationCallback(() => {
+          if (scheduledUpdateRef.current) return;
+            scheduledUpdateRef.current = true;
+            requestAnimationFrame(() => {
+              forceVersion(v => v + 1);
+              scheduledUpdateRef.current = false;
+            });
+        });
+      } catch(_){}
+      // Seed treasure box with current HR readings (handles case monitors already on when session starts)
+      try {
+        const tb = fitnessSessionRef.current.treasureBox;
+        if (tb) {
+          fitnessDevices.forEach((device, id) => {
+            if (device.type === 'heart_rate' && device.heartRate && device.heartRate > 0) {
+              // Find matching user quickly
+              users.forEach(u => {
+                if (String(u.hrDeviceId) === String(device.deviceId)) {
+                  // prime perUser record
+                  tb.recordUserHeartRate(u.name, device.heartRate);
+                }
+              });
+            }
+          });
+        }
+      } catch(e) { /* ignore seeding errors */ }
     }
-  }, [coinTimeUnitMs, zoneConfig, usersConfig]);
+  }, [coinTimeUnitMs, zoneConfig, usersConfig, fitnessDevices, users]);
 
   // Clean up inactive devices periodically using dynamic timeouts
   useEffect(() => {
