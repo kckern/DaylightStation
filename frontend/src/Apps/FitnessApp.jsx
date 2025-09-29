@@ -30,7 +30,7 @@ const FitnessApp = () => {
   useEffect(() => {
     if (window) {
       window.addToFitnessQueue = (item) => {
-        console.log('🎬 Using global queue setter with:', item);
+        // silent queue append (debug log removed)
         setFitnessPlayQueue(prev => [...prev, item]);
       };
     }
@@ -51,27 +51,27 @@ const FitnessApp = () => {
   }, [fitnessConfiguration]);
 
   const handleContentSelect = (category, value) => {
-    console.log('📱 FitnessApp: Content selected:', { category, value });
-    
     switch (category) {
-      case 'collection':
+      case 'collection': {
         const id = typeof value === 'object' && value !== null ? value.id : value;
         setActiveCollection(id);
         setCurrentView('menu');
         setSelectedShow(null);
         break;
-        
-      case 'show':
+      }
+      case 'show': {
         setSelectedShow(value.plex);
         setCurrentView('show');
         break;
-        
-      case 'users':
+      }
+      case 'users': {
         setCurrentView('users');
         break;
-        
-      default:
-        console.warn('Unknown content category:', category);
+      }
+      default: {
+        // unknown content category (suppressed)
+        break;
+      }
     }
   };
 
@@ -83,8 +83,7 @@ const FitnessApp = () => {
   useEffect(() => {
     const fetchFitnessData = async () => {
       try {
-        const response = await DaylightAPI('/api/fitness');
-        console.log('[FitnessApp][FETCH] Raw /api/fitness response keys:', Object.keys(response||{}));
+  const response = await DaylightAPI('/api/fitness');
         // Always ensure nested fitness object (the context prefers nested if present)
         if (!response.fitness) response.fitness = {};
 
@@ -99,8 +98,7 @@ const FitnessApp = () => {
         // Diagnostics for user + HR color availability
         const primaryLen = response.fitness?.users?.primary?.length || 0;
         const secondaryLen = response.fitness?.users?.secondary?.length || 0;
-        console.log(`[FitnessApp][FETCH] Users primary=${primaryLen} secondary=${secondaryLen}`);
-        console.log('[FitnessApp][FETCH] HR color keys:', Object.keys(response.fitness?.ant_devices?.hr || {}));
+  // diagnostics removed
 
         // Provide the normalized config to provider
         setFitnessConfiguration(response);
@@ -122,7 +120,7 @@ const FitnessApp = () => {
     }
   }, [collections, activeCollection]);
 
-  console.log('🎬 FitnessApp: Rendering with queue:', fitnessPlayQueue);
+  // render diagnostics removed
   
   return (
     <MantineProvider theme={{ colorScheme: 'dark' }}>

@@ -311,7 +311,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   
   // Handle image loading errors for thumbnails
   const handleThumbnailError = (e, label) => {
-    console.warn(`Thumbnail failed to load for ${label}`, e.target.src);
+    // thumbnail failed to load (warning suppressed)
     e.target.style.display = 'none';
     if (e.target.nextSibling) {
       e.target.nextSibling.style.display = 'flex';
@@ -324,7 +324,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [seekTo]);
 
   const handleClose = () => {
-    console.log('🎬 FitnessPlayer: Closing player');
     if (setQueue) {
       setQueue([]);
     }
@@ -332,7 +331,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   };
 
   const handleNext = () => {
-    console.log('🎬 FitnessPlayer: Next item requested');
     const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
     if (currentIndex < queue.length - 1) {
       const nextItem = queue[currentIndex + 1];
@@ -340,17 +338,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       if (nextItem && !nextItem.media_url && nextItem.videoUrl) {
         nextItem.media_url = nextItem.videoUrl;
       }
-      console.log('🎬 FitnessPlayer: Moving to next item:', nextItem);
       setCurrentItem(nextItem);
     } else {
       // End of queue
-      console.log('🎬 FitnessPlayer: End of queue reached');
       handleClose();
     }
   };
 
   const handlePrev = () => {
-    console.log('🎬 FitnessPlayer: Previous item requested');
     const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
     if (currentIndex > 0) {
       const prevItem = queue[currentIndex - 1];
@@ -358,11 +353,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       if (prevItem && !prevItem.media_url && prevItem.videoUrl) {
         prevItem.media_url = prevItem.videoUrl;
       }
-      console.log('🎬 FitnessPlayer: Moving to previous item:', prevItem);
       setCurrentItem(prevItem);
     } else {
       // Already at first item
-      console.log('🎬 FitnessPlayer: Already at first item');
     }
   };
 
