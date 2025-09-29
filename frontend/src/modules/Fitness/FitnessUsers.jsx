@@ -115,17 +115,39 @@ const FitnessUsers = () => {
     return map;
   }, [zones]);
 
+  // Fallback zone derivation using configured zones + per-user overrides
+  const deriveZoneFromHR = React.useCallback((hr, userName) => {
+    if (!hr || hr <= 0 || !Array.isArray(zones) || zones.length === 0) return null;
+    const cfg = usersConfigRaw?.primary?.find(u => u.name === userName) 
+      || usersConfigRaw?.secondary?.find(u => u.name === userName);
+    const overrides = cfg?.zones || {};
+    const sorted = [...zones].sort((a,b) => b.min - a.min); // highest min first
+    for (const z of sorted) {
+      const overrideMin = overrides[z.id];
+      const min = (typeof overrideMin === 'number') ? overrideMin : z.min;
+      if (hr >= min) return { id: z.id, color: z.color };
+    }
+    return null;
+  }, [zones, usersConfigRaw]);
+
   const getZoneClass = (device) => {
     if (device.type !== 'heart_rate') return 'no-zone';
     const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
     if (!userObj) return 'no-zone';
     const zoneEntry = userCurrentZones?.[userObj.name];
-    const color = zoneEntry && typeof zoneEntry === 'object' ? zoneEntry.color : zoneEntry;
-    if (!color) return 'no-zone';
-    const zoneIdRaw = (zoneEntry && typeof zoneEntry === 'object' && zoneEntry.id) ? zoneEntry.id : null;
-    const zoneId = (zoneIdRaw || colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase());
+    let color = zoneEntry && typeof zoneEntry === 'object' ? zoneEntry.color : zoneEntry;
+    let zoneIdRaw = (zoneEntry && typeof zoneEntry === 'object' && zoneEntry.id) ? zoneEntry.id : null;
+    if ((!color || !zoneIdRaw) && device.heartRate) {
+      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
+      if (derived) {
+        if (!zoneIdRaw) zoneIdRaw = derived.id;
+        if (!color) color = derived.color;
+      }
+    }
+    if (!color && !zoneIdRaw) return 'no-zone';
+    const zoneId = (zoneIdRaw || (color ? colorToZoneId[String(color).toLowerCase()] : null) || (color ? String(color).toLowerCase() : null));
     const canonical = ['cool','active','warm','hot','fire'];
-    if (canonical.includes(zoneId)) return `zone-${zoneId}`;
+    if (zoneId && canonical.includes(zoneId)) return `zone-${zoneId}`;
     return 'no-zone';
   };
 
@@ -141,13 +163,20 @@ const FitnessUsers = () => {
         .find(u => String(u.hrDeviceId) === String(device.deviceId));
       if (!userObj) return '';
       const entry = userCurrentZones?.[userObj.name];
-      if (!entry) return '';
-      let zoneId = (typeof entry === 'object') ? (entry.id || null) : null;
-      let color = (typeof entry === 'object') ? entry.color : entry;
-      if (!zoneId && color) {
-        zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
+      let zoneId = null;
+      let color = null;
+      if (entry) {
+        zoneId = (typeof entry === 'object') ? (entry.id || null) : null;
+        color = (typeof entry === 'object') ? entry.color : entry;
+        if (!zoneId && color) {
+          zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
+        }
       }
       const canonical = ['cool','active','warm','hot','fire'];
+      if ((!zoneId || !canonical.includes(zoneId)) && device.heartRate) {
+        const derived = deriveZoneFromHR(device.heartRate, userObj.name);
+        if (derived) zoneId = derived.id;
+      }
       if (!zoneId || !canonical.includes(zoneId)) return '';
       return zoneId.charAt(0).toUpperCase() + zoneId.slice(1);
     } catch (e) {
@@ -170,17 +199,13 @@ const FitnessUsers = () => {
   // Map of deviceId -> equipment name and ID
   const equipmentMap = React.useMemo(() => {
     const map = {};
-    console.log('Equipment config:', equipment);
     if (Array.isArray(equipment)) {
       equipment.forEach(e => {
-        console.log('Processing equipment:', e);
         if (e?.cadence) {
           map[String(e.cadence)] = { name: e.name, id: e.id || e.name.toLowerCase() };
-          console.log(`Mapped cadence ${e.cadence} to ${e.name}`);
         }
         if (e?.speed) {
           map[String(e.speed)] = { name: e.name, id: e.id || e.name.toLowerCase() };
-          console.log(`Mapped speed ${e.speed} to ${e.name}`);
         }
       });
     }
@@ -266,11 +291,18 @@ const FitnessUsers = () => {
     const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
     if (!userObj) return null;
     const entry = userCurrentZones?.[userObj.name];
-    if (!entry) return null;
-    let zoneId = (typeof entry === 'object') ? entry.id : null;
-    let color = (typeof entry === 'object') ? entry.color : entry;
-    if (!zoneId && color) {
-      zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
+    let zoneId = null;
+    let color = null;
+    if (entry) {
+      zoneId = (typeof entry === 'object') ? entry.id : null;
+      color = (typeof entry === 'object') ? entry.color : entry;
+      if (!zoneId && color) {
+        zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
+      }
+    }
+    if ((!zoneId || !canonicalZones.includes(zoneId)) && device.heartRate) {
+      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
+      if (derived) zoneId = derived.id;
     }
     if (!zoneId) return null;
     zoneId = zoneId.toLowerCase();
@@ -339,7 +371,10 @@ const FitnessUsers = () => {
             leaveAnimation="fade"
             maintainContainerHeight={true}
           >
-            {sortedDevices.map((device) => {
+            {(() => {
+              const seenZones = new Set();
+              let noZoneShown = false;
+              return sortedDevices.map((device) => {
               const ownerName = device.type === 'heart_rate' ? hrDisplayNameMap[String(device.deviceId)] : null;
               
               // Get equipment info for cadence/speed devices
@@ -359,16 +394,24 @@ const FitnessUsers = () => {
               
              
 
+              const zoneIdForGrouping = getDeviceZoneId(device) || (device.type === 'heart_rate' ? null : null);
+              const readableZone = zoneIdForGrouping ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1) : '';
+              const showZoneBadge = device.type === 'heart_rate' && (
+                (zoneIdForGrouping && !seenZones.has(zoneIdForGrouping)) || (!zoneIdForGrouping && !noZoneShown)
+              );
+              if (zoneIdForGrouping) seenZones.add(zoneIdForGrouping);
+              if (!zoneIdForGrouping && device.type === 'heart_rate' && !noZoneShown) noZoneShown = true;
+
               return (
                 <div className="device-wrapper" key={`device-${device.deviceId}`}>
                   <div className={`device-zone-info ${getZoneClass(device)}`}>
-                    {device.type === 'heart_rate' && (
+                    {showZoneBadge && (
                       <Badge 
                         variant="light" 
                         size="xs"
-                        title={`Current Zone: ${getCurrentZone(device) || 'N/A'}`}
+                        title={zoneIdForGrouping ? `Zone group: ${readableZone}` : 'No Zone'}
                       >
-                        {getCurrentZone(device) ? `Zone: ${getCurrentZone(device)}` : 'No Zone'}
+                        {zoneIdForGrouping ? `Zone: ${readableZone}` : 'No Zone'}
                       </Badge>
                     )}
                   </div>
@@ -429,7 +472,8 @@ const FitnessUsers = () => {
                   </div>
                 </div>
               );
-            })}
+              });
+            })()}
           </FlipMove>
         ) : (
           <div className="nav-empty">
