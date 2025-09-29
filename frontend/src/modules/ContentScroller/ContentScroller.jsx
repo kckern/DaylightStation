@@ -9,6 +9,7 @@ import React, {
   import moment from "moment";
   import "./ContentScroller.scss";
 import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
+import { useCenterByWidest } from '../../lib/Player/useCenterByWidest.js';
 import paperBackground from "../../assets/backgrounds/paper.jpg";
 import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scripture-guide.jsx";
 import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandler.js';
@@ -470,9 +471,22 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     const [media_key, setMediaKey] = useState(null);
     const hymnTextRef = useRef(null);
     const folder = subfolder || `hymn`;
-    console.log(`Loading hymn: ${hymn} from folder: ${folder}`);
+    // Normalize the incoming hymn identifier by trimming any leading zeros (e.g. "007" -> "7")
+    // Keep boolean true (random/next?) untouched. Numbers are already normalized.
+    const normalizedHymn = (() => {
+      if (hymn === true) return hymn;
+      if (hymn === null || hymn === undefined) return hymn;
+      if (typeof hymn === 'number') return hymn; // already numeric
+      if (typeof hymn === 'string') {
+        const trimmed = hymn.replace(/^0+/, '');
+        return trimmed === '' ? '0' : trimmed; // safeguard if value was all zeros
+      }
+      return hymn;
+    })();
+
+    console.log(`Loading hymn: raw=${hymn} normalized=${normalizedHymn} from folder: ${folder}`);
     useEffect(() => {
-        const path = hymn === true ? `data/${folder}` : `data/${folder}/${hymn}`;
+        const path = normalizedHymn === true ? `data/${folder}` : `data/${folder}/${normalizedHymn}`;
         DaylightAPI(path).then(({title, hymn_num, song_number, mediaUrl, verses, duration}) => {
           const num = hymn_num || song_number;
           setHymnVerses(verses);
@@ -483,30 +497,22 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
           setMediaKey(`${folder}/${num}`);
           setDuration(duration);
         });
-    }, [hymn]);
+    }, [hymn, normalizedHymn, folder]);
 
-    const parseHymnContent = useCallback((allVerses) => {
-        useEffect(() => {
-            const panelWidth = hymnTextRef.current.closest(".textpanel").offsetWidth; 
-            const hymnTextWidth = hymnTextRef.current.offsetWidth;
-            const diff = panelWidth - hymnTextWidth;
-            const marginLeft = (diff) / 2;
-            hymnTextRef.current.style.marginLeft = `${marginLeft}px`;
-            },
-         [allVerses]);
+    // Apply centering behavior once verses/hymnNum change
+    useCenterByWidest(hymnTextRef, [verses, hymnNum]);
 
-        return (
-            <div className="hymn-text" ref={hymnTextRef}>
-                {allVerses.map((stanza, sIdx) => (
-                    <div key={`stanza-${sIdx}`} className="stanza">
-                        {stanza.map((line, lIdx) => (
-                            <p key={`line-${sIdx}-${lIdx}`} className="line">{line}</p>
-                        ))}
-                    </div>
-                ))}
-            </div>
-        );
-    }, []);
+    const parseHymnContent = useCallback((allVerses) => (
+      <div className="hymn-text" ref={hymnTextRef}>
+        {allVerses.map((stanza, sIdx) => (
+          <div key={`stanza-${sIdx}`} className="stanza">
+            {stanza.map((line, lIdx) => (
+              <p key={`line-${sIdx}-${lIdx}`} className="line">{line}</p>
+            ))}
+          </div>
+        ))}
+      </div>
+    ), []);
     if(!hymnNum) return null;
     const verseCount = verses.length;
     const yStartTime = (duration / verseCount) / 1.8;
@@ -526,7 +532,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     
     return (
       <ContentScroller
-        key={`hymn-${hymn}-${hymnNum}`} // Force re-render when hymn changes
+        key={`hymn-${normalizedHymn}-${hymnNum}`} // Force re-render when hymn changes (normalized)
         type="hymn"
         title={title}
         media_key={media_key}
@@ -781,56 +787,20 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       });
     }, [poem]);
 
+    // Apply width + centering when verses / poemID change
+    useCenterByWidest(poetryTextRef, [verses, poemID]);
+
     const parsePoetryContent = useCallback((allVerses) => {
-      console.log('parsePoetryContent called with verses:', allVerses);
-      if (!allVerses || !allVerses.length) {
-        console.log('No verses provided to parsePoetryContent');
-        return null;
-      }
-      
-      useEffect(() => {
-        if (poetryTextRef.current) {
-          // Wait for next tick to ensure DOM is rendered
-          setTimeout(() => {
-            const stanzas = poetryTextRef.current.querySelectorAll('.stanza');
-            let maxWidth = 0;
-            
-            // Temporarily set width to auto to measure natural width
-            poetryTextRef.current.style.width = 'auto';
-            
-            // Find the widest stanza
-            stanzas.forEach(stanza => {
-              const stanzaWidth = stanza.offsetWidth;
-              if (stanzaWidth > maxWidth) {
-                maxWidth = stanzaWidth;
-              }
-            });
-            
-            // Set the poetry-text container to the width of the widest stanza
-            if (maxWidth > 0) {
-              poetryTextRef.current.style.width = `${maxWidth}px`;
-            }
-            
-            // Center the container within the panel
-            const panelWidth = poetryTextRef.current.closest(".textpanel").offsetWidth;
-            const diff = panelWidth - maxWidth;
-            const marginLeft = Math.max(0, diff / 2);
-            poetryTextRef.current.style.marginLeft = `${marginLeft}px`;
-          }, 0);
-        }
-      }, [allVerses]);
-      
+      if (!allVerses || !allVerses.length) return null;
       return (
         <div className="poetry-text" ref={poetryTextRef}>
           {allVerses.map((stanza, sIdx) => (
             <div key={`stanza-${sIdx}`} className="stanza">
               {stanza.map((line, lIdx) => (
-                <p 
-                  key={`line-${sIdx}-${lIdx}`} 
+                <p
+                  key={`line-${sIdx}-${lIdx}`}
                   className="line"
-                  style={{
-                    marginLeft: /^[a-z]/.test(line) ? "2rem" : "0",
-                  }}
+                  style={{ marginLeft: /^[a-z]/.test(line) ? '2rem' : '0' }}
                 >
                   {line}
                 </p>

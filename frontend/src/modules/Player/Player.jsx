@@ -69,7 +69,8 @@ function useCommonMediaController({
   playbackKeys,queuePosition,
   ignoreKeys,
   onProgress,
-  onMediaRef
+  onMediaRef,
+  stallConfig = {}
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id  || meta.plex || meta.media_url;
   const containerRef = useRef(null);
@@ -77,7 +78,29 @@ function useCommonMediaController({
   const [duration, setDuration] = useState(0);
   const lastLoggedTimeRef = useRef(0);
   const lastUpdatedTimeRef = useRef(0);
-  // Removed stalled-progress timing logic (simplified)
+  // Stall detection refs (Phase 1 reintroduction - event driven, no tight polling)
+  const stallStateRef = useRef({
+    lastProgressTs: 0,
+    stallCandidateTs: 0,
+    softTimer: null,
+    hardTimer: null,
+    retryCount: 0,
+    isStalled: false,
+    recoveryPhase: 'none'
+  });
+  const [isStalled, setIsStalled] = useState(false);
+
+  // Config with sane defaults
+  const {
+    enabled = true,
+    softMs = 1200,
+    hardMs = 8000,
+    maxRetries = 1,
+    mode = 'auto', // 'auto' | 'observe'
+    debug = false,
+    enablePhase2 = true,
+    phase2SeekBackSeconds = 2
+  } = stallConfig || {};
 
   const getMediaEl = () => {
     const mediaEl = containerRef.current?.shadowRoot?.querySelector('video') || containerRef.current;
@@ -112,7 +135,118 @@ function useCommonMediaController({
     setCurrentTime: setSeconds // Add the missing setCurrentTime parameter
   });
 
-  // Removed interval-based stall detection
+  // Helper: debug log
+  const dlog = (...args) => { if (debug) console.log('[PlayerStall]', ...args); };
+
+  // Clear timers utility
+  const clearTimers = () => {
+    const s = stallStateRef.current;
+    if (s.softTimer) { clearTimeout(s.softTimer); s.softTimer = null; }
+    if (s.hardTimer) { clearTimeout(s.hardTimer); s.hardTimer = null; }
+  };
+
+  const markProgress = () => {
+    const s = stallStateRef.current;
+    s.lastProgressTs = Date.now();
+    if (s.isStalled) {
+      dlog('Recovery: progress resumed');
+      s.isStalled = false;
+      s.stallCandidateTs = 0;
+      clearTimers();
+      setIsStalled(false);
+      // Re-arm detection after a recovery so future stalls are caught
+      scheduleStallDetection();
+    }
+    // Ensure a detection timer is armed after normal progress if none active
+    if (!s.softTimer && !s.isStalled) {
+      scheduleStallDetection();
+    }
+  };
+
+  const scheduleStallDetection = () => {
+    if (!enabled) return;
+    const s = stallStateRef.current;
+    if (s.softTimer || s.isStalled) return; // already monitoring
+    const mediaEl = getMediaEl();
+    if (!mediaEl) return;
+    // Don't treat lack of progress while paused as stall
+    if (mediaEl.paused) return;
+    s.softTimer = setTimeout(() => {
+      const now = Date.now();
+      if (s.lastProgressTs === 0) return; // no baseline yet
+      const diff = now - s.lastProgressTs;
+      if (diff >= softMs) {
+        // Soft stall confirmed
+        s.isStalled = true;
+        setIsStalled(true);
+        dlog('Soft stall confirmed after', diff, 'ms');
+        if (mode === 'auto') {
+          // Start hard timer for escalation / light recovery
+          s.hardTimer = setTimeout(() => {
+            if (!s.isStalled) return;
+            if (s.retryCount < maxRetries) {
+              // Phase 1: light recovery
+              s.retryCount += 1;
+              s.recoveryPhase = 'light';
+              dlog('Attempt light recovery, retry #', s.retryCount);
+              try {
+                const mediaEl = getMediaEl();
+                if (mediaEl) {
+                  const t = mediaEl.currentTime;
+                  mediaEl.pause();
+                  mediaEl.currentTime = Math.max(0, t - 0.001);
+                  mediaEl.play().catch(()=>{});
+                }
+              } catch(_) {}
+              clearTimers();
+              s.softTimer = null;
+              s.hardTimer = null;
+              scheduleStallDetection();
+            } else if (enablePhase2) {
+              // Phase 2: reload element preserving approximate position
+              const mediaEl = getMediaEl();
+              if (mediaEl) {
+                s.recoveryPhase = 'reload';
+                dlog('Phase 2: reloading media element');
+                const priorTime = mediaEl.currentTime || 0;
+                try {
+                  const src = mediaEl.getAttribute('src');
+                  // Force reload sequence
+                  mediaEl.pause();
+                  mediaEl.removeAttribute('src');
+                  mediaEl.load();
+                  setTimeout(() => {
+                    try {
+                      if (src) mediaEl.setAttribute('src', src);
+                      mediaEl.load();
+                      mediaEl.addEventListener('loadedmetadata', function handleOnce() {
+                        mediaEl.removeEventListener('loadedmetadata', handleOnce);
+                        const target = Math.max(0, priorTime - phase2SeekBackSeconds);
+                        if (!isNaN(target)) {
+                          try { mediaEl.currentTime = target; } catch(_){}
+                        }
+                        mediaEl.play().catch(()=>{});
+                      });
+                    } catch(_) {}
+                  }, 50);
+                } catch(_) {}
+                // After reload attempt, reschedule stall detection if still needed
+                clearTimers();
+                s.softTimer = null;
+                s.hardTimer = null;
+                // Keep isStalled true until progress resumes
+                scheduleStallDetection();
+              } else {
+                dlog('Phase 2 requested but media element unavailable');
+              }
+            } else {
+              dlog('Max light retries reached; Phase 2 disabled; leaving stalled state');
+            }
+          }, Math.max(0, hardMs - softMs));
+        }
+      }
+    }, softMs);
+  };
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -136,13 +270,18 @@ function useCommonMediaController({
     const onTimeUpdate = () => {
       setSeconds(mediaEl.currentTime);
       logProgress();
+      // mark progress for stall detection
+      markProgress();
       if (onProgress) {
         onProgress({
           currentTime: mediaEl.currentTime || 0,
           duration: mediaEl.duration || 0,
           paused: mediaEl.paused,
           media: meta,
-          percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration)
+          percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration),
+          stalled: isStalled,
+          retryCount: stallStateRef.current.retryCount,
+          recoveryPhase: stallStateRef.current.recoveryPhase
         });
       }
     };
@@ -203,12 +342,32 @@ function useCommonMediaController({
       mediaEl.playbackRate = playbackRate;
       }
       // onReady removed (simplified pipeline)
+      // Establish initial stall baseline & arm detection
+      stallStateRef.current.lastProgressTs = Date.now();
+      scheduleStallDetection();
     };
 
     mediaEl.addEventListener('timeupdate', onTimeUpdate);
     mediaEl.addEventListener('durationchange', onDurationChange);
     mediaEl.addEventListener('ended', onEnded);
     mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
+    if (enabled) {
+      const onWaiting = () => { dlog('waiting event'); scheduleStallDetection(); };
+      const onStalled = () => { dlog('stalled event'); scheduleStallDetection(); };
+      const onPlaying = () => { dlog('playing event'); markProgress(); };
+      mediaEl.addEventListener('waiting', onWaiting);
+      mediaEl.addEventListener('stalled', onStalled);
+      mediaEl.addEventListener('playing', onPlaying);
+      return () => {
+        mediaEl.removeEventListener('timeupdate', onTimeUpdate);
+        mediaEl.removeEventListener('durationchange', onDurationChange);
+        mediaEl.removeEventListener('ended', onEnded);
+        mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
+        mediaEl.removeEventListener('waiting', onWaiting);
+        mediaEl.removeEventListener('stalled', onStalled);
+        mediaEl.removeEventListener('playing', onPlaying);
+      };
+    }
 
     return () => {
       mediaEl.removeEventListener('timeupdate', onTimeUpdate);
@@ -216,7 +375,7 @@ function useCommonMediaController({
       mediaEl.removeEventListener('ended', onEnded);
       mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta.percent, meta.title, type, media_key, onProgress]);
+  }, [onEnd, playbackRate, start, isVideo, meta.percent, meta.title, type, media_key, onProgress, enabled, softMs, hardMs, maxRetries, mode]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -231,6 +390,7 @@ function useCommonMediaController({
     isPaused: !seconds ? false : getMediaEl()?.paused || false,
     isDash,
     shader,
+    isStalled,
     handleProgressClick
   };
 }
@@ -474,6 +634,7 @@ const Player = forwardRef(function Player(props, ref) {
     onProgress: props.onProgress,
     onMediaRef: handleMediaRef,
     // onReady removed
+    stallConfig: props.stallConfig
   };
   if(singlePlayerProps?.key) delete singlePlayerProps.key;
 
@@ -496,7 +657,17 @@ Player.propTypes = {
   playerType: PropTypes.string,
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
-  onMediaRef: PropTypes.func
+  onMediaRef: PropTypes.func,
+  stallConfig: PropTypes.shape({
+    enabled: PropTypes.bool,
+    softMs: PropTypes.number,
+    hardMs: PropTypes.number,
+    maxRetries: PropTypes.number,
+    mode: PropTypes.oneOf(['auto','observe']),
+    debug: PropTypes.bool,
+    enablePhase2: PropTypes.bool,
+    phase2SeekBackSeconds: PropTypes.number
+  })
 };
 
 export default Player;
@@ -640,7 +811,8 @@ export function SinglePlayer(play) {
             fetchVideoInfo,
             ignoreKeys,
             onProgress,
-            onMediaRef
+            onMediaRef,
+            stallConfig: play?.stallConfig
           }
         )
       )}
@@ -653,13 +825,14 @@ export function SinglePlayer(play) {
   );
 }
 
-function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys, onProgress, onMediaRef }) {
+function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbackRate, cycleThroughClasses, classes,playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys, onProgress, onMediaRef, stallConfig }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const {
     seconds,
     duration,
     containerRef,
     isPaused,
+    isStalled,
     handleProgressClick
   } = useCommonMediaController({
     start: media.seconds,
@@ -678,7 +851,8 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
     playbackKeys,queuePosition,
     ignoreKeys,
     onProgress,
-    onMediaRef
+    onMediaRef,
+    stallConfig
   });
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
@@ -689,7 +863,7 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-  {seconds === 0 && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
+  {(seconds === 0 || isStalled) && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} stalled={isStalled} initialStart={media.seconds || 0} seconds={seconds} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -711,14 +885,16 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
   );
 }
 
-function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys, onProgress, onMediaRef  }) {
+function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setShader, cycleThroughClasses, classes, playbackKeys,queuePosition, fetchVideoInfo, ignoreKeys, onProgress, onMediaRef, stallConfig  }) {
   const isPlex = ['dash_video'].includes(media.media_type);
+  const [displayReady, setDisplayReady] = useState(false);
   const {
     isDash,
     containerRef,
     seconds,
     isPaused,
     duration,
+    isStalled,
     handleProgressClick,
   } = useCommonMediaController({
     start: media.seconds,
@@ -737,7 +913,8 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
     playbackKeys,queuePosition,
     ignoreKeys,
     onProgress,
-    onMediaRef
+    onMediaRef,
+    stallConfig
   });
 
   const { show, season, title, media_url } = media;
@@ -756,20 +933,25 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
         {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-  {seconds === 0 && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} />}
+  {(seconds === 0 || isStalled) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} stalled={isStalled} initialStart={media.seconds || 0} />}
       {isDash ? (
         <dash-video
           ref={containerRef}
-          class={`video-element ${(seconds || 0) > 0 && 'show'}`}
-          controls
+          class={`video-element ${displayReady ? 'show' : ''}`}
+          // controls intentionally omitted to avoid native chrome flash
           src={media_url}
+          onCanPlay={() => setDisplayReady(true)}
+          onPlaying={() => setDisplayReady(true)}
         />
       ) : (
         <video
           autoPlay
           ref={containerRef}
-          className={`video-element show`}
+          className={`video-element ${displayReady ? 'show' : ''}`}
           src={media_url}
+          // controls omitted (custom minimal UI elsewhere)
+          onCanPlay={() => setDisplayReady(true)}
+          onPlaying={() => setDisplayReady(true)}
         />
       )}
     </div>
@@ -784,7 +966,7 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
 // Global state to remember pause overlay visibility setting
 let pauseOverlayVisible = true;
 
-export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay }) {
+export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay, initialStart = 0, seconds = 0, stalled }) {
   const [visible, setVisible] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
   const [showPauseOverlay, setShowPauseOverlay] = useState(pauseOverlayVisible);
@@ -837,6 +1019,13 @@ export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay 
   }, [isPaused, loadingTime, fetchVideoInfo]);
 
   const imgSrc = isPaused ? pause : spinner;
+  const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled;
+  const formatSeek = (s) => {
+    if (!Number.isFinite(s)) return '';
+    const mm = Math.floor(s / 60).toString().padStart(2,'0');
+    const ss = Math.floor(s % 60).toString().padStart(2,'0');
+    return `${mm}:${ss}`;
+  };
 
   // Always show loading overlay when not paused (loading state)
   // For paused state, respect the user's toggle setting
@@ -853,6 +1042,9 @@ export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay 
       }}
     >
       <img src={imgSrc} alt="" />
+      {showSeekInfo && (
+        <div className="loading-info">Loading at {formatSeek(initialStart)}</div>
+      )}
     </div>
   );
 }
