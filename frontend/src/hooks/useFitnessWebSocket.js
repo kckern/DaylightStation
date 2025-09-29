@@ -451,6 +451,7 @@ export class FitnessSession {
     if (!this.lastActivityTime || (now - this.lastActivityTime) < remove) return false;
     this.endTime = now;
     this._log('end', { sessionId: this.sessionId, durationMs: this.endTime - this.startTime });
+    try { if (this.treasureBox) this.treasureBox.stop(); } catch(_){}
     return true;
   }
 
@@ -509,7 +510,13 @@ export class FitnessTreasureBox {
     this.totalCoins = 0;
     this.perUser = new Map(); // userName -> accumulator
     this.lastTick = Date.now(); // for elapsed computation if needed
+    // External mutation callback (set by context) to trigger UI re-render
+    this._mutationCb = null;
+    this._autoInterval = null; // timer id
   }
+
+  setMutationCallback(cb) { this._mutationCb = typeof cb === 'function' ? cb : null; }
+  _notifyMutation() { if (this._mutationCb) { try { this._mutationCb(); } catch(_){} } }
 
   configure({ coinTimeUnitMs, zones, users }) {
     if (typeof coinTimeUnitMs === 'number' && coinTimeUnitMs > 0) {
@@ -541,6 +548,56 @@ export class FitnessTreasureBox {
       };
       collectOverrides(users.primary);
       collectOverrides(users.secondary);
+    }
+    // Start / restart autonomous interval processing so awards happen even without continuous HR samples
+    this._backfillExistingUsers();
+    this._startAutoTicker();
+  }
+
+  _startAutoTicker() {
+    if (this._autoInterval) clearInterval(this._autoInterval);
+    // Run at half the coin unit granularity to be responsive but not heavy
+    const tickMs = Math.max(1000, Math.min( this.coinTimeUnitMs / 2, 5000));
+    this._autoInterval = setInterval(() => {
+      try { this._processIntervals(); } catch(_){}
+    }, tickMs);
+  }
+
+  stop() { if (this._autoInterval) { clearInterval(this._autoInterval); this._autoInterval = null; } }
+
+  // Backfill highestZone from lastHR so already-on monitors immediately accrue coins
+  _backfillExistingUsers() {
+    if (!this.perUser.size || !this.globalZones.length) return;
+    const now = Date.now();
+    for (const [userName, acc] of this.perUser.entries()) {
+      if (!acc.currentIntervalStart) acc.currentIntervalStart = now;
+      if (acc.lastHR && acc.lastHR > 0 && !acc.highestZone) {
+        const zone = this.resolveZone(userName, acc.lastHR);
+        if (zone) {
+          acc.highestZone = zone;
+          acc.currentColor = zone.color;
+          acc.lastColor = zone.color;
+          acc.lastZoneId = zone.id || zone.name || null;
+        }
+      }
+    }
+  }
+
+  // Walk each user accumulator and see if its interval window is complete even if no new HR sample arrived
+  _processIntervals() {
+    if (!this.perUser.size) return;
+    const now = Date.now();
+    for (const [userName, acc] of this.perUser.entries()) {
+      if (!acc.currentIntervalStart) { acc.currentIntervalStart = now; continue; }
+      const elapsed = now - acc.currentIntervalStart;
+      if (elapsed >= this.coinTimeUnitMs) {
+        if (acc.highestZone) {
+          this._awardCoins(userName, acc.highestZone);
+        }
+        acc.currentIntervalStart = now;
+        acc.highestZone = null;
+        acc.currentColor = null;
+      }
     }
   }
 
@@ -619,6 +676,7 @@ export class FitnessTreasureBox {
     try {
       this.sessionRef._log('coin_award', { user: userName, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
     } catch (_) { /* ignore */ }
+    this._notifyMutation();
   }
 
   get summary() {

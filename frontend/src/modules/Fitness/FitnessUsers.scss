@@ -6,6 +6,85 @@
   flex-direction: column;
   padding: 0;
 
+  .treasure-box-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 14px 12px;
+    background: linear-gradient(180deg, rgba(40,40,40,0.85), rgba(24,24,24,0.85));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    margin: 8px 16px 12px;
+    font-family: inherit;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    h3 { 
+      margin: 0!important;
+      padding: 0; 
+      text-align: center  ;
+      font-weight: 700; 
+      letter-spacing: .6px; 
+      line-height: 1.1; 
+      position: relative;
+    }
+    h3::after { 
+      content: ''; 
+      flex: 1; 
+      height: 1px; 
+      background: linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0)); 
+      margin-left: 10px; 
+      opacity: .5; 
+    }
+  .tb-row { display: flex; align-items: center; width: 100%; }
+  .tb-row-head { justify-content: space-between; padding-bottom: 2px; }
+  .tb-total { display: flex; align-items: center; gap: 6px; font-weight:700; font-size:1.28rem; letter-spacing:.5px; }
+  .tb-timer { font-variant-numeric: tabular-nums; font-weight:700; font-size:1.28rem; letter-spacing:.5px; }
+    .tb-icon { filter: drop-shadow(0 0 4px rgba(255,255,255,0.25)); }
+    .tb-color-grid { 
+      display: grid; 
+      grid-template-columns: repeat(4, 1fr); 
+      grid-auto-rows: 54px;
+      gap: 8px; 
+      width: 100%;
+      align-items: stretch;
+      justify-items: stretch;
+    }
+    .tb-color-coin { 
+      display:flex; 
+      flex-direction: column; 
+      align-items:center; 
+      justify-content:center; 
+      gap:6px; 
+      background: rgba(255,255,255,0.07); 
+      border:1px solid rgba(255,255,255,0.09);
+      padding:6px 4px; 
+      border-radius: 10px; 
+      font-size:0.7rem; 
+      font-weight:600; 
+      letter-spacing:.5px; 
+      position: relative;
+      overflow: hidden;
+    }
+    .tb-color-coin .swatch { 
+      width:18px; 
+      height:18px; 
+      border-radius:50%; 
+      box-shadow:0 0 0 1px rgba(255,255,255,0.25), 0 0 6px rgba(0,0,0,0.6); 
+      aspect-ratio: 1 / 1; 
+      flex: 0 0 18px; 
+      min-width: 18px; 
+      min-height: 18px; 
+    }
+    .tb-color-coin .count { 
+      font-size:0.8rem; 
+      min-width: 24px; 
+      text-align: center; 
+      font-variant-numeric: tabular-nums; 
+      font-weight: 600; 
+    }
+    .tb-empty { font-size: 0.6rem; opacity: .5; }
+  }
+
   .nav-header {
     display: flex;
     align-items: center;
@@ -113,18 +192,29 @@
         align-items: center;
         padding: 0;
         
+        /* Generic safeguard: any immediate child with data-circle attr stays a circle */
+        [data-circle] { 
+          aspect-ratio: 1 / 1; 
+          flex: 0 0 auto; 
+        }
+        
         .user-profile-img-container {
           width: 42px;
           height: 42px;
           margin: 0 14px 0 2px; /* tighter left edge, consistent right gap before text */
           flex-shrink: 0;
           position: relative;
+          flex: 0 0 42px; /* lock size in flex row */
+          min-width: 42px;
+          min-height: 42px;
+          aspect-ratio: 1 / 1;
           
           img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            border-radius: 50%
+            border-radius: 50%;
+            aspect-ratio: 1 / 1;
           }
 
         }
