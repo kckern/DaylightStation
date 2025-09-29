@@ -88,7 +88,8 @@ export default function FitnessPlayerFooterControls({
           <div
             role="button"
             tabIndex={0}
-            onClick={playPause}
+            // Use pointerDown for faster activation on large touch display
+            onPointerDown={playPause}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playPause(); } }}
             className="control-button play-pause-button"
             aria-label={isPaused ? 'Play' : 'Pause'}
@@ -100,7 +101,7 @@ export default function FitnessPlayerFooterControls({
               role="button"
               tabIndex={hasPrev ? 0 : -1}
               aria-disabled={!hasPrev}
-              onClick={() => { if (hasPrev) onPrev(); }}
+              onPointerDown={() => { if (hasPrev) onPrev(); }}
               onKeyDown={(e) => { if (hasPrev && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onPrev(); } }}
               className="control-button prev-button"
               aria-label="Previous"
@@ -120,7 +121,7 @@ export default function FitnessPlayerFooterControls({
           role="button"
           tabIndex={hasNext ? 0 : -1}
           aria-disabled={!hasNext}
-          onClick={() => { if (hasNext) onNext(); }}
+          onPointerDown={() => { if (hasNext) onNext(); }}
           onKeyDown={(e) => { if (hasNext && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onNext(); } }}
           className="control-button next-button"
           aria-label="Next"
@@ -131,7 +132,8 @@ export default function FitnessPlayerFooterControls({
       {isZoomed ? (
         <button
           type="button"
-          onClick={onBack}
+          onPointerDown={onBack}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBack?.(e); } }}
           className="control-button back-button"
           aria-label="Back"
         >

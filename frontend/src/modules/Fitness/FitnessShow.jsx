@@ -131,7 +131,7 @@ const EpisodeInfo = ({ episode, showInfo, seasonsMap, seasonsList, onPlay }) => 
         </div>
       </div>
       <div className="episode-actions center">
-        <button className="play-button" onClick={() => onPlay && onPlay(episode)}>▶ Play</button>
+  <button className="play-button" onPointerDown={() => onPlay && onPlay(episode)}>▶ Play</button>
       </div>
     </div>
   );
@@ -632,7 +632,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                             {episode.image && (
                               <div 
                                 className="episode-thumbnail"
-                                onClick={() => handlePlayEpisode(episode)}
+                                onPointerDown={() => handlePlayEpisode(episode)}
                               >
                                 <img
                                   src={episode.image}
@@ -658,7 +658,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                             <div 
                               className="episode-title" 
                               aria-label={episode.label}
-                              onClick={() => {
+                              onPointerDown={() => {
                                 setSelectedInfo({ ...episode, title: episode.label });
                                 setInfoType('episode');
                                 handleEpisodeSelect(episode);
@@ -696,7 +696,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                 <button
                   key={s.id}
                   className={`season-item ${activeSeasonId === s.id ? 'active' : ''}`}
-                  onClick={() => {
+                  onPointerDown={() => {
                     setActiveSeasonId(s.id);
                     // Get the episode count for this season
                     const episodeCount = items.filter(ep => ep.seasonId === s.id).length;

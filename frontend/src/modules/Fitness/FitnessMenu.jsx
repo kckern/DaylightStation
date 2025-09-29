@@ -131,7 +131,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
               <div
                 key={show.plex || index}
                 className="show-card"
-                onClick={() => handleShowClick(show)}
+                onPointerDown={() => handleShowClick(show)}
               >
                 {show.image && (
                   <img
@@ -149,7 +149,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
                 {setFitnessPlayQueue && (
                   <button
                     className="add-to-queue-btn"
-                    onClick={(e) => handleAddToQueue(e, show)}
+                    onPointerDown={(e) => handleAddToQueue(e, show)}
                     title="Add to play queue"
                   >
                     +
