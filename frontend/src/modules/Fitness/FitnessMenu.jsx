@@ -21,11 +21,11 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   useEffect(() => {
     const fetchFitnessData = async () => {
       try {
-        console.log('🎬 DEBUG: Starting fitness data fetch...');
+  // fetch start (debug removed)
         
         // First get the fitness config to get the collections
         const configResponse = await DaylightAPI('/api/fitness');
-        console.log('🎬 DEBUG: Config response:', JSON.stringify(configResponse, null, 2));
+  // config response (debug removed)
         setFitnessConfig(configResponse.fitness || configResponse);
         // Defer show loading to the effect below
       } catch (err) {
@@ -53,10 +53,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
         setSelectedCollection(collectionToUse);
 
         const collectionId = collectionToUse.id;
-        console.log(`🎬 DEBUG: Making API call to: /media/plex/list/${collectionId}`);
+  // API call (debug removed)
         setShowsLoading(true);
         const showsResponse = await DaylightAPI(`/media/plex/list/${collectionId}`);
-        console.log('🎬 DEBUG: Shows response:', JSON.stringify(showsResponse, null, 2));
+  // shows response (debug removed)
         const newItems = showsResponse.items || [];
         setShows(newItems);
         // reset loaded images tracking for new set
@@ -96,7 +96,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   const collectionName = selectedCollection?.name || 'Fitness Shows';
 
   const handleShowClick = (show) => {
-    console.log('🎬 Show selected:', show);
+  // show selected (debug removed)
     if (onContentSelect) {
       onContentSelect('show', show);
     }
@@ -104,7 +104,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   
   const handleAddToQueue = (event, show) => {
     event.stopPropagation(); // Prevent triggering the show click
-    console.log('🎬 Adding to queue:', show);
+  // adding to queue (debug removed)
     if (setFitnessPlayQueue) {
       setFitnessPlayQueue(prevQueue => [...prevQueue, {
         id: show.plex || show.id,

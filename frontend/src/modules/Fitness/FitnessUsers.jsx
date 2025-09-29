@@ -121,7 +121,7 @@ const FitnessUsers = () => {
     const fallbackSrc = deviceConfiguration?.hr || {};
     const rebuilt = {};
     Object.keys(fallbackSrc).forEach(k => { rebuilt[String(k)] = fallbackSrc[k]; });
-    console.warn('[FitnessUsers][WARN] Context hrColorMap empty; using fallback from deviceConfiguration.hr', rebuilt);
+  // hrColorMap empty fallback (warning suppressed)
     return rebuilt;
   }, [contextHrColorMap, deviceConfiguration]);
 
@@ -147,7 +147,7 @@ const FitnessUsers = () => {
       addFrom(usersConfigRaw.primary);
       addFrom(usersConfigRaw.secondary);
       if (Object.keys(map).length > 0) {
-        console.log('[FitnessUsers][FALLBACK] Built hrOwnerMap from raw config', map);
+  // built hrOwnerMap (debug removed)
       }
     }
     return map;
@@ -262,7 +262,7 @@ const FitnessUsers = () => {
       if (!zoneId || !canonical.includes(zoneId)) return '';
       return zoneId.charAt(0).toUpperCase() + zoneId.slice(1);
     } catch (e) {
-      console.warn('[FitnessUsers][getCurrentZone] Failed to resolve zone', e);
+  // zone resolution failure (warning suppressed)
       return '';
     }
   };
@@ -298,7 +298,7 @@ const FitnessUsers = () => {
     const deviceIdStr = String(deviceId);
     const colorKey = hrColorMap[deviceIdStr];
     if (!colorKey) {
-      console.log('[FitnessUsers][DIAG] No color mapping for device', deviceIdStr, 'available keys', Object.keys(hrColorMap));
+  // missing color mapping (debug removed)
     }
     
     if (!colorKey) {

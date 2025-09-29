@@ -53,30 +53,22 @@ export default function SingleThumbnailButton({
     const timeElt = isTimeElement(e);
     const reason = timeElt ? 'time-label' : (e.button === 2 ? 'right-button' : 'seek-default');
     /* eslint-disable no-console */
-    console.log('[SingleThumbnailButton] pointerDown', {
-      pos,
-      btnRange,
-      button: e.button,
-      reason,
-      targetClass: e.target?.className,
-      hasRange,
-      timeElt
-    });
+    // pointerDown diagnostics removed
     /* eslint-enable no-console */
     if ((e.button === 2 || timeElt) && enableZoom) {
       e.preventDefault();
       e.stopPropagation();
       if (btnRange) {
-        console.log('[SingleThumbnailButton] -> ZOOM (explicit range)', btnRange);
+  // zoom (explicit range)
         onZoom?.(btnRange);
       } else if (timeElt) {
-        console.log('[SingleThumbnailButton] -> ZOOM (anchor only signal)', { anchor: pos });
+  // zoom (anchor only signal)
         // Send anchor-only signal (start=end) so parent can expand to next 9 thumbnails
         onZoom?.([pos, pos]);
       }
       return;
     }
-    console.log('[SingleThumbnailButton] -> SEEK', pos);
+  // seek action
     onSeek?.(pos);
   };
   const handleContext = (e) => {
