@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { DaylightAPI } from '../lib/api.mjs';
 
 /**
  * Base Device class for all ANT+ fitness devices
@@ -381,6 +382,7 @@ export class FitnessSession {
     this.activeDeviceIds = new Set();
     this.eventLog = []; // lightweight chronological log
     this.treasureBox = null; // Will be instantiated when session starts
+    this._saveTriggered = false; // guard against duplicate saves
   }
 
   // Internal helper to log events (kept small to avoid memory bloat)
@@ -451,7 +453,33 @@ export class FitnessSession {
     if (!this.lastActivityTime || (now - this.lastActivityTime) < remove) return false;
     this.endTime = now;
     this._log('end', { sessionId: this.sessionId, durationMs: this.endTime - this.startTime });
-    try { if (this.treasureBox) this.treasureBox.stop(); } catch(_){}
+    let sessionData = null;
+    try {
+      if (this.treasureBox) this.treasureBox.stop();
+      // Capture summary BEFORE resetting state so we can persist it
+      sessionData = this.summary;
+    } catch(_){}
+    // Kick off async save (non-blocking)
+    if (sessionData) this._persistSession(sessionData);
+    // Immediately reset so a new session can start on next device activity
+    this.reset();
+    return true;
+  }
+
+  // Persist session to backend using DaylightAPI
+  _persistSession(sessionData) {
+    if (this._saveTriggered) return; // already saving
+    this._saveTriggered = true;
+    DaylightAPI('api/fitness/save_session', { sessionData }, 'POST')
+    .then(resp => {
+      // eslint-disable-next-line no-console
+      console.log('Fitness session saved', resp);
+    }).catch(err => {
+      // eslint-disable-next-line no-console
+      console.error('Failed to save fitness session', err);
+    }).finally(() => {
+      this._saveTriggered = false; // allow future sessions to save
+    });
     return true;
   }
 
@@ -487,6 +515,11 @@ export class FitnessSession {
     this.lastActivityTime = null;
     this.activeDeviceIds.clear();
     this.eventLog = [];
+    if (this.treasureBox) {
+      try { this.treasureBox.stop(); } catch(_){}
+    }
+    this.treasureBox = null; // ensure fresh treasure box for next session
+    this._saveTriggered = false; // allow new session save
   }
 }
 
@@ -500,6 +533,8 @@ export class FitnessSession {
 //  - Only HR-based (requires positive HR reading)
 //  - Multiple users earn independently; coins aggregated into color buckets plus total
 //  - Event log entries for coin awards
+const NO_ZONE_LABEL = 'No Zone';
+
 export class FitnessTreasureBox {
   constructor(sessionRef) {
     this.sessionRef = sessionRef; // reference to owning FitnessSession
@@ -628,18 +663,20 @@ export class FitnessTreasureBox {
         currentIntervalStart: now,
         highestZone: null, // zone object of highest seen this interval
         lastHR: null,
-        currentColor: null,
-        lastColor: null,
+        currentColor: NO_ZONE_LABEL,
+        lastColor: NO_ZONE_LABEL,
         lastZoneId: null,
       };
       this.perUser.set(userName, acc);
     }
     // HR dropout (<=0) resets interval without award
-    if (!hr || hr <= 0) {
+    if (!hr || hr <= 0 || Number.isNaN(hr)) {
       acc.currentIntervalStart = now;
       acc.highestZone = null;
       acc.lastHR = hr;
-      acc.currentColor = null;
+      acc.currentColor = NO_ZONE_LABEL;
+      acc.lastColor = NO_ZONE_LABEL; // persist display as No Zone until first valid reading
+      acc.lastZoneId = null;
       return;
     }
     // Determine zone for this reading
@@ -662,8 +699,8 @@ export class FitnessTreasureBox {
       // Start new interval after awarding (or discard if none)
       acc.currentIntervalStart = now;
       acc.highestZone = null;
-      // Do NOT clear currentColor entirely; instead clear only the transient highest but keep lastColor
-      acc.currentColor = null; // transient blank means we haven't seen a new zone this interval
+      // If last HR went invalid later we'll set No Zone in HR branch; here we keep the lastColor but clear currentColor to signal awaiting new reading
+      acc.currentColor = NO_ZONE_LABEL;
     }
   }
 
