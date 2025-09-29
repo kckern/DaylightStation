@@ -70,28 +70,9 @@ export default function SingleThumbnailButton({
         console.log('[SingleThumbnailButton] -> ZOOM (explicit range)', btnRange);
         onZoom?.(btnRange);
       } else if (timeElt) {
-        // Fallback: derive a window centered on pos
-        const durationEnd = Number.isFinite(globalEnd) ? globalEnd : (pos + fallbackZoomWindow);
-        const half = fallbackZoomWindow / 2;
-        let zs = Math.max(globalStart || 0, pos - half);
-        let ze = Math.min(durationEnd, pos + half);
-        if (ze - zs < 5) { // ensure minimal span
-          if (ze + (5 - (ze - zs)) <= durationEnd) {
-            ze = ze + (5 - (ze - zs));
-          } else if (zs - (5 - (ze - zs)) >= (globalStart || 0)) {
-            zs = zs - (5 - (ze - zs));
-          } else {
-            // fallback: stretch to at least 1s
-            ze = Math.min(durationEnd, zs + 1);
-          }
-        }
-        if (ze > zs) {
-          const fallbackRange = [zs, ze];
-            console.log('[SingleThumbnailButton] -> ZOOM (fallback range)', fallbackRange);
-            onZoom?.(fallbackRange);
-        } else {
-          console.log('[SingleThumbnailButton] (fallback zoom aborted) invalid window', { zs, ze });
-        }
+        console.log('[SingleThumbnailButton] -> ZOOM (anchor only signal)', { anchor: pos });
+        // Send anchor-only signal (start=end) so parent can expand to next 9 thumbnails
+        onZoom?.([pos, pos]);
       }
       return;
     }

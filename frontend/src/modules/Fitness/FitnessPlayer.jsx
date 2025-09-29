@@ -615,6 +615,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           playerRef={playerRef}
           TimeDisplay={TimeDisplay}
           renderCount={renderCountRef.current}
+          generateThumbnailUrl={generateThumbnailUrl}
         />
       </div>
     </div>
