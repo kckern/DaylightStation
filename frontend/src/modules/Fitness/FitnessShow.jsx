@@ -583,34 +583,6 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
               className="season-filter-bar"
               ref={seasonBarRef}
               style={{
-                /* Dynamic height based on container width and number of seasons to fit all images at 2:3 ratio */
-                height: (() => {
-                  const maxRem = 12;
-                  const minRem = 4;
-                  const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-                  const n = seasons.length || 1;
-                  const horizontalPaddingRem = 1; // 0.5rem left + 0.5rem right
-                  const captionRem = 1.5; // space for number+name label under image
-                  const captionGapRem = 0.35; // gap between image and caption
-                  const verticalPaddingRem = 1; // 0.5rem top + 0.5rem bottom
-                  // Use the actual season bar width; cap by viewport if provided
-                  const baseWidthPx = Math.min(
-                    seasonBarWidth || 0,
-                    viewportSize?.width ?? Number.POSITIVE_INFINITY
-                  );
-                  // Subtract padding and a tiny epsilon to avoid rounding overflow
-                  const epsilonPx = 2;
-                  const availablePx = Math.max(0, baseWidthPx - horizontalPaddingRem * remPx - epsilonPx);
-                  // To avoid fractional rounding overflow, quantize per-item width:
-                  // widthPerItemPx = floor(availablePx / n)
-                  // height = widthPerItemPx * 3 / 2 (to keep 2:3 ratio)
-                  const widthPerItemPx = Math.max(0, Math.floor(availablePx / n));
-                  const imageHeightPx = (widthPerItemPx * 3) / 2;
-                  const heightRemFit = imageHeightPx / remPx + captionRem + captionGapRem + verticalPaddingRem;
-                  const epsilonRemOut = 0.1; // shave a hair to avoid rounding overflow
-                  const heightRem = Math.max(minRem, Math.min(maxRem, heightRemFit) - epsilonRemOut);
-                  return `${heightRem}rem`;
-                })(),
                 // Expose caption metrics to CSS for precise wrapper sizing
                 ['--caption-rem']: '1.5rem',
                 ['--caption-gap']: '0.35rem',

@@ -89,7 +89,6 @@ dash-video {
       padding: 0 2px 6px 2px; /* slight inset both sides */
       display: flex;
       flex-direction: column;
-      gap: 14px;
       background: transparent; /* inherit */
       box-shadow: none;
 
@@ -138,8 +137,8 @@ dash-video {
 
       .user-profile-img-container {
         flex: 0 0 46px;
-        width: 46px;
-        height: 46px;
+        width: 4rem;
+        height: 3rem;
         border-radius: 50%;
         overflow: hidden;
         background: #222;
