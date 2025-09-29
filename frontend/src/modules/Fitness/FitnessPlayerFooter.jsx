@@ -12,7 +12,7 @@ import FitnessPlayerFooterSeekThumbnails from './FitnessPlayerFooterSeekThumbnai
  *  - seekButtons (React nodes)
  *  - onSeek(percentSeconds), onPrev, onNext, onClose
  *  - hasPrev, hasNext, isPaused
- *  - mediaElRef (ref to underlying video element)
+ *  - playerRef (ref to <Player /> imperative API)
  *  - TimeDisplay (memoized component)
  *  - renderCount (number) render counter
  */
@@ -32,7 +32,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
     hasPrev,
     hasNext,
     isPaused,
-    mediaElRef,
+  playerRef,
     TimeDisplay,
     renderCount
   } = props;
@@ -54,7 +54,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         TimeDisplay={TimeDisplay}
         renderCount={renderCount}
         isPaused={isPaused}
-        mediaElRef={mediaElRef}
+  playerRef={playerRef}
         onPrev={onPrev}
         onNext={onNext}
         hasPrev={hasPrev}
@@ -72,7 +72,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
       <FitnessPlayerFooterControls
         section="right"
         isPaused={isPaused}
-        mediaElRef={mediaElRef}
+  playerRef={playerRef}
         onPrev={onPrev}
         onNext={onNext}
         hasPrev={hasPrev}
