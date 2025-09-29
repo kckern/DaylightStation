@@ -41,6 +41,7 @@ const FitnessTreasureBox = ({ box, session }) => {
   const colors = Object.keys(colorCoins)
     .filter(c => (colorCoins[c] || 0) > 0)
     .sort((a,b) => colorRank(b) - colorRank(a));
+  const hasCoins = colors.length > 0;
 
   // Consistent hex mapping for semantic color names (match zone styling palette)
   const colorHexMap = {
@@ -58,17 +59,19 @@ const FitnessTreasureBox = ({ box, session }) => {
         <div className="tb-total"><span className="tb-icon" role="img" aria-label="coins">💰</span>{totalCoins}</div>
   <div className="tb-timer" title={`Started: ${startTime ? new Date(startTime).toLocaleTimeString() : 'N/A'}`}>{mm}:{ss}</div>
       </div>
-      <div className="tb-row tb-color-grid">
-        {colors.map(c => {
-          const hex = colorHexMap[c] || c; // fallback to original if unexpected key
-          return (
-            <div key={c} className="tb-color-coin" title={`${c}: ${colorCoins[c]} coins`}>
-              <span className="swatch" style={{ background: hex }} />
-              <span className="count">{colorCoins[c]}</span>
-            </div>
-          );
-        })}
-      </div>
+      {hasCoins && (
+        <div className="tb-row tb-color-grid">
+          {colors.map(c => {
+            const hex = colorHexMap[c] || c; // fallback to original if unexpected key
+            return (
+              <div key={c} className="tb-color-coin" title={`${c}: ${colorCoins[c]} coins`}>
+                <span className="swatch" style={{ background: hex }} />
+                <span className="count">{colorCoins[c]}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
