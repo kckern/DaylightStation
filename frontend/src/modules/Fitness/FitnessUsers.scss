@@ -53,7 +53,7 @@
       align-items: center;
       width: 100%;
       min-height: 3.2rem;
-      background: rgba(34, 34, 34, 0.85);
+      background: rgba(34, 34, 34, 0.6); /* base neutral */
       border-radius: 8px;
       cursor: pointer;
       transition: background-color 0.3s ease; /* Modified to avoid conflicts with FlipMove */
@@ -62,6 +62,50 @@
       overflow: hidden;
   padding: 8px 16px; /* symmetric */
       max-width: 100%;
+
+      /* Zone tinted backgrounds (improved visibility) */
+      &.zone-cool,
+      &.zone-active,
+      &.zone-warm,
+      &.zone-hot,
+      &.zone-fire { position: relative; }
+
+      &.zone-cool::before { background: linear-gradient(90deg, rgba(70,120,255,0.22), rgba(30,40,70,0.10)); }
+      &.zone-active::before { background: linear-gradient(90deg, rgba(60,200,120,0.22), rgba(30,60,40,0.10)); }
+      &.zone-warm::before { background: linear-gradient(90deg, rgba(255,210,70,0.25), rgba(70,55,10,0.10)); }
+      &.zone-hot::before { background: linear-gradient(90deg, rgba(255,150,60,0.25), rgba(70,35,5,0.10)); }
+      &.zone-fire::before { background: linear-gradient(90deg, rgba(255,90,90,0.30), rgba(70,15,15,0.12)); }
+
+      &.zone-cool::before,
+      &.zone-active::before,
+      &.zone-warm::before,
+      &.zone-hot::before,
+      &.zone-fire::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border-radius: 8px;
+        opacity: 1;
+        mix-blend-mode: normal;
+      }
+
+      /* Left accent bar for zone identity */
+      &.zone-cool { border-left: 4px solid rgba(106,184,255,0.9); }
+      &.zone-active { border-left: 4px solid rgba(81,207,102,0.9); }
+      &.zone-warm { border-left: 4px solid rgba(255,212,59,0.9); }
+      &.zone-hot { border-left: 4px solid rgba(255,146,43,0.9); }
+      &.zone-fire { border-left: 4px solid rgba(255,107,107,0.9); }
+
+      /* Ensure active state doesn't erase tints */
+      &.active.zone-cool { background: rgba(34,34,60,0.55); }
+      &.active.zone-active { background: rgba(20,60,40,0.55); }
+      &.active.zone-warm { background: rgba(80,60,10,0.55); }
+      &.active.zone-hot { background: rgba(90,40,5,0.55); }
+      &.active.zone-fire { background: rgba(90,10,10,0.55); }
+
+      /* Slight lift for active */
+      &.active { box-shadow: 0 2px 6px rgba(0,0,0,0.6); }
       
       &.card-horizontal {
         display: flex;
