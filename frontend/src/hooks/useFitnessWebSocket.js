@@ -622,6 +622,14 @@ export class FitnessTreasureBox {
   }
 
   get summary() {
+    // Derive session timing from owning sessionRef (if available and started)
+    const sessionStarted = this.sessionRef?.startTime || null;
+    const sessionEnded = this.sessionRef?.endTime || null;
+    const now = Date.now();
+    const elapsedSeconds = sessionStarted ? Math.floor(((sessionEnded || now) - sessionStarted) / 1000) : 0;
+
+    // Backward compatible fields retained: coinTimeUnitMs, totalCoins, buckets, perUser
+    // New self-contained fields: sessionStartTime, sessionElapsedSeconds, colorCoins (alias of buckets), totalCoinsAllColors (alias totalCoins)
     return {
       coinTimeUnitMs: this.coinTimeUnitMs,
       totalCoins: this.totalCoins,
@@ -630,8 +638,12 @@ export class FitnessTreasureBox {
         user,
         currentColor: data.currentColor || data.lastColor || null,
         zoneId: data.lastZoneId || null,
-        // Do not expose internal timing details for now
       })),
+      // Added fields
+      sessionStartTime: sessionStarted,
+      sessionElapsedSeconds: elapsedSeconds,
+      colorCoins: { ...this.buckets },
+      totalCoinsAllColors: this.totalCoins,
     };
   }
 }
