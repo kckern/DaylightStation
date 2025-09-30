@@ -139,7 +139,18 @@ export const askGPTWithJSONOutput = async (messages, model = 'gpt-4o', extraconf
   if (!response) return false;
 
   try {
-    return JSON.parse(response);
+    let txt = response.trim();
+    // Remove markdown code fences if present
+    if (/^```/.test(txt)) {
+      txt = txt.replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
+    }
+    // Attempt to isolate first JSON object if extra prose present
+    const firstBrace = txt.indexOf('{');
+    const lastBrace = txt.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      txt = txt.slice(firstBrace, lastBrace + 1);
+    }
+    return JSON.parse(txt);
   } catch (error) {
     console.error('Error parsing JSON response:', error.message);
     return false;

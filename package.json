@@ -20,11 +20,14 @@
     "@babel/core": "^7.27.4",
     "@babel/preset-env": "^7.27.2",
     "concurrently": "^7.6.0",
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
   },
   "scripts": {
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
     "backend": "node backend/index.js",
-    "frontend": "npm run dev --prefix frontend"
+    "frontend": "npm run dev --prefix frontend",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test:nutribot": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/chatbots/nutribot/_test"
   }
 }

@@ -1,7 +1,7 @@
 module.exports = {
   testMatch: ['**/backend/**/*.test.mjs'],
   transform: {
-    '^.+\\.mjs$': 'babel-jest',
+    '^.+\\.[tj]s$': 'babel-jest',
   },
-  extensionsToTreatAsEsm: ['.mjs'],
+  // .mjs is already treated as ESM by Node; no need for extensionsToTreatAsEsm
 };
