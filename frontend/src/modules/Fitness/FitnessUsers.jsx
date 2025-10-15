@@ -155,9 +155,13 @@ const FitnessUsers = () => {
 
   // Build a map of deviceId -> displayName applying group_label rule
   const hrDisplayNameMap = React.useMemo(() => {
-    // Determine if multi-user session (more than one primary user active overall)
-    const multi = primaryUsers.length > 1;
-    if (!multi) return hrOwnerMap; // no change if single user
+    // Count total active HR devices (primary + secondary)
+    const populated = [...primaryUsers, ...secondaryUsers];
+    const activeHrDevices = populated.filter(u => u?.hrDeviceId !== undefined && u?.hrDeviceId !== null);
+    
+    // Only apply group_label if more than 1 HR device is active
+    if (activeHrDevices.length <= 1) return hrOwnerMap;
+    
     // We need group_label info; get from raw config
     const labelLookup = {};
     const gather = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
@@ -175,7 +179,7 @@ const FitnessUsers = () => {
       }
     });
     return out;
-  }, [hrOwnerMap, primaryUsers.length, usersConfigRaw]);
+  }, [hrOwnerMap, primaryUsers, secondaryUsers, usersConfigRaw]);
 
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
