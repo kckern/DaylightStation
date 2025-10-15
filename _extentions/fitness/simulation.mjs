@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { loadFile } from '../../backend/lib/io.mjs';
 
 // Configuration
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
@@ -11,23 +12,33 @@ const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
 const SIMULATION_DURATION = 180 * 1000; // 3 minutes in milliseconds
 const UPDATE_INTERVAL = 2000; // Send data every 2 seconds
 
+  const __filename = new URL(import.meta.url).pathname;
+  const rootDir = path.resolve(path.dirname(__filename), '..', '..');
+  const configPath = path.join(rootDir, 'config.app-local.yml');
+  const raw = fs.readFileSync(configPath, 'utf8');
+  const appConfigdata = yaml.load(raw);
+  
+  // Merge config into process.env (same as backend/index.js does)
+  process.env = { ...process.env, ...appConfigdata };
+  
+  console.log('Data path:', process.env.path?.data);
+
 // Locate and parse the root config.app.yml
 function loadConfig() {
   // In ESM, __dirname is not available, use import.meta.url instead
-  const __filename = new URL(import.meta.url).pathname;
-  const rootDir = path.resolve(path.dirname(__filename), '..', '..');
-  const configPath = path.join(rootDir, 'config.app.yml');
   try {
-    const raw = fs.readFileSync(configPath, 'utf8');
-    return yaml.load(raw);
+    const parsed = loadFile("fitness/config");
+    console.log('🧪 Config structure keys:', Object.keys(parsed || {}));
+    return parsed;
   } catch (err) {
-    console.error('❌ Failed to load config.app.yml:', err.message);
+    console.error('🧪 Config load error:', err.message);
     return {};
   }
 }
 
 const appConfig = loadConfig();
-const fitnessCfg = appConfig?.fitness || {};
+// The config is flat, not nested under 'fitness'
+const fitnessCfg = appConfig || {};
 const antDevices = fitnessCfg?.ant_devices || {};
 const hrDevicesConfig = antDevices?.hr || {}; // { deviceId: color }
 const cadenceDevicesConfig = antDevices?.cadence || {}; // { deviceId: color }
