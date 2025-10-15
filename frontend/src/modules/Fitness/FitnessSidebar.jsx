@@ -1,20 +1,15 @@
 import React from 'react';
+import { DaylightImagePath } from '../../lib/api.mjs';
 import SidebarFooter from './SidebarFooter.jsx';
 import './FitnessSidebar.scss';
 
 const FitnessSidebar = ({ collections = [], activeCollection, onContentSelect }) => {
 
-  const getCollectionIcon = (name) => {
-    switch (name.toLowerCase()) {
-      case 'favorites':
-        return '⭐';
-      case 'kids':
-        return '👶';
-      case 'cardio':
-        return '❤️';
-      default:
-        return '📺';
-    }
+  const getCollectionIcon = (icon) => {
+    if (!icon) return null;
+    const iconUrl = DaylightImagePath(`icons/${icon}.svg`);
+    console.log('Generated icon URL:', iconUrl);
+    return iconUrl;
   };
 
   return (
@@ -35,7 +30,22 @@ const FitnessSidebar = ({ collections = [], activeCollection, onContentSelect })
               className={`nav-item ${String(activeCollection) === String(collection.id) ? 'active' : ''}`}
               onPointerDown={() => onContentSelect && onContentSelect('collection', collection)}
             >
-              <div className="nav-icon">{getCollectionIcon(collection.name)}</div>
+              <div className="nav-icon">
+                {collection.icon ? (
+                  <img 
+                    src={getCollectionIcon(collection.icon)} 
+                    alt={collection.name}
+                    onError={(e) => {
+                      console.error('Failed to load icon:', collection.icon, e.target.src);
+                      e.target.style.display = 'none';
+                      e.target.nextSibling.style.display = 'inline';
+                    }}
+                  />
+                ) : (
+                  <span>📺</span>
+                )}
+                <span style={{display: 'none'}}>📺</span>
+              </div>
               <span className="nav-label">{collection.name}</span>
             </button>
           ))

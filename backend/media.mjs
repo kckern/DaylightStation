@@ -364,24 +364,53 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     }
     
     for (const plex_key of plex_keys) {
-        const {list:items, plex, title, image} = await (new Plex()).loadChildrenFromKey(plex_key, playable, shuffle);
-        // Debug: log the first item to see available fields
-        if (items.length > 0) {
-            console.log('🎬 DEBUG: Available fields in Plex item:', Object.keys(items[0]));
-            console.log('🎬 DEBUG: First item data:', JSON.stringify(items[0], null, 2));
-        }
-        list = list.concat(items);
-        info = {
-            plex: info.plex ? `${info.plex},${plex}` : plex,
-            title: info.title ? `${info.title} • ${title}` : title,
-            image: info.img ? handleDevImage(req, `${info.image}`) : handleDevImage(req, image)
-        }
-        
-        // Get library section for the first plex key to determine correct category
-        if (!librarySection && plex_key) {
-            const plexInstance = new Plex();
-            const [meta] = await plexInstance.loadMeta(plex_key);
-            librarySection = meta && meta.librarySectionTitle ? slugify(meta.librarySectionTitle) : null;
+        try {
+            const result = await (new Plex()).loadChildrenFromKey(plex_key, playable, shuffle);
+            
+            // Handle case where Plex item is not found or invalid
+            if (!result || result.error) {
+                console.warn(`⚠️ Plex item not found or invalid: ${plex_key}`, result?.error || 'Unknown error');
+                continue; // Skip this item and continue with the next one
+            }
+            
+            const {list: items = [], plex, title, image} = result;
+            
+            // Debug: log the first item to see available fields
+            if (items && items.length > 0) {
+                console.log('🎬 DEBUG: Available fields in Plex item:', Object.keys(items[0]));
+                console.log('🎬 DEBUG: First item data:', JSON.stringify(items[0], null, 2));
+            }
+            
+            // Only process if we have valid items
+            if (items && Array.isArray(items)) {
+                list = list.concat(items);
+            }
+            
+            // Update info only if we have valid data
+            if (plex || title || image) {
+                info = {
+                    plex: info.plex && plex ? `${info.plex},${plex}` : (info.plex || plex),
+                    title: info.title && title ? `${info.title} • ${title}` : (info.title || title),
+                    image: info.image && image ? handleDevImage(req, `${info.image}`) : (image ? handleDevImage(req, image) : info.image)
+                };
+            }
+            
+            // Get library section for the first plex key to determine correct category
+            if (!librarySection && plex_key) {
+                try {
+                    const plexInstance = new Plex();
+                    const metaResult = await plexInstance.loadMeta(plex_key);
+                    const [meta] = metaResult || [];
+                    librarySection = meta && meta.librarySectionTitle ? slugify(meta.librarySectionTitle) : null;
+                } catch (metaError) {
+                    console.warn(`⚠️ Failed to get library section for ${plex_key}:`, metaError.message);
+                }
+            }
+        } catch (error) {
+            console.error(`❌ Error processing Plex key ${plex_key}:`, error.message);
+            console.error('Stack trace:', error.stack);
+            // Continue processing other items instead of crashing
+            continue;
         }
     }
     
