@@ -3,124 +3,134 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding-right: 1ex;
-  padding-bottom: 1ex;
+  gap: 0.5rem;
+  padding: 0 4px 8px 4px;
   
   .device-container {
     width: 100%;
     min-height: 50px;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
   
   .device-card {
-    width: calc(100% - 10px);
-    margin: 5px;
-    border-radius: 8px;
-    background-color: rgba(0, 0, 0, 0.3);
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
     display: flex;
-    flex-direction: column;
     justify-content: center;
     align-items: center;
     cursor: pointer;
-    z-index: 1;
-    overflow: hidden;
-    transition: background-color 0.2s ease;
-    height: 70px;
+    position: relative;
+    transition: all 0.3s ease;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.4);
     
     &:hover {
-      background-color: rgba(0, 0, 0, 0.5);
+      transform: scale(1.05);
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
     }
     
     &.inactive {
-      opacity: 0.6;
+      opacity: 0.5;
+      filter: grayscale(0.5);
     }
-    
-    .device-header {
+
+    // Zone-based border colors for heart rate devices
+    &.zone-fire {
+      border-color: #ff6b6b;
+      box-shadow: 0 0 8px rgba(255, 107, 107, 0.5);
+    }
+
+    &.zone-hot {
+      border-color: #ff922b;
+      box-shadow: 0 0 8px rgba(255, 146, 43, 0.5);
+    }
+
+    &.zone-warm {
+      border-color: #ffd43b;
+      box-shadow: 0 0 8px rgba(255, 212, 59, 0.5);
+    }
+
+    &.zone-active {
+      border-color: #51cf66;
+      box-shadow: 0 0 8px rgba(81, 207, 102, 0.5);
+    }
+
+    &.zone-cool {
+      border-color: #6ab8ff;
+      box-shadow: 0 0 8px rgba(106, 184, 255, 0.5);
+    }
+
+    &.no-zone {
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .device-avatar-container {
       width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      overflow: hidden;
+      position: relative;
       display: flex;
       justify-content: center;
       align-items: center;
-      margin-bottom: 0;
-      background-color: #000;
-      border-top-right-radius: 8px;
-      border-top-left-radius: 8px;
-      
-      .device-value {
-        min-width: 30px;
-        font-size: 1.3rem;
-        font-weight: 700;
+
+      .device-avatar {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+      }
+
+      .bpm-overlay {
+        position: absolute;
+        bottom: -16px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.8);
         color: white;
-        text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-        line-height: 1;
-        padding: 5px 0;
+        font-size: 0.5rem;
+        font-weight: 700;
+        padding: 1px 3px;
+        border-radius: 3px;
+        min-width: 16px;
         text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
       }
-    }
 
-    .device-icon {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 5px 0;
-      
-      .icon-main {
-        font-size: 18px;
-        transition: all 0.3s ease;
-      }
-    }
-
-    // Device type specific styling
-    &.heart-rate {
-      .device-header .device-value {
-        //color: #ff6b6b;
-      }
-      
-      .device-icon .icon-main {
-        filter: drop-shadow(0 0 4px rgba(255, 107, 107, 0.4));
-      }
-      
-      &.active .device-icon .icon-main {
-        animation: heartbeat 1.2s ease-in-out infinite;
-      }
-    }
-
-    &.power {
-      .device-header .device-value {
-        color: #ffd43b;
-      }
-      
-      .device-icon .icon-main {
-        color: #ffd43b;
-        filter: drop-shadow(0 0 4px rgba(255, 212, 59, 0.4));
-      }
-    }
-
-    &.cadence {
-      .device-header .device-value {
-        color: #ff922b;
-      }
-      
-      .device-icon .icon-main {
-        color: #ff922b;
-        filter: drop-shadow(0 0 4px rgba(255, 146, 43, 0.4));
-      }
-    }
-
-    &.speed {
-      .device-header .device-value {
-        color: #339af0;
-      }
-      
-      .device-icon .icon-main {
-        color: #339af0;
-        filter: drop-shadow(0 0 4px rgba(51, 154, 240, 0.4));
+      .device-icon-fallback {
+        font-size: 1.5rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.1);
       }
     }
   }
   
   .fitness-monitor {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.4);
+    
     &.connected {
+      border-color: rgba(0, 255, 0, 0.5);
+      box-shadow: 0 0 8px rgba(0, 255, 0, 0.4);
+      
       .device-icon {
         filter: drop-shadow(0 0 4px rgba(0, 255, 0, 0.4));
       }
@@ -128,10 +138,15 @@
 
     &.disconnected {
       opacity: 0.6;
+      border-color: rgba(255, 0, 0, 0.3);
       
       .device-icon {
         filter: grayscale(0.5) drop-shadow(0 0 4px rgba(255, 0, 0, 0.3));
       }
+    }
+    
+    .device-icon {
+      font-size: 2rem;
     }
   }
 }
