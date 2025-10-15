@@ -4,63 +4,10 @@ import { WebSocketProvider, useWebSocket } from "../../../contexts/WebSocketCont
 import "./Gratitude.scss";
 import thanksIcon from "../../../assets/icons/thanks.svg";
 import hopesIcon from "../../../assets/icons/hopes.svg";
+import { DaylightAPI } from '../../../lib/api.mjs'
 
-const userData = [
-  { name: "Alice" , id: 1 },
-  { name: "Bob" , id: 2 },
-  { name: "Charlie" , id: 3 },
-];
-const optionData = {
-    gratitude: [
-        { text: "Warm blanket", id: 1 },
-        { text: "Food", id: 2 },
-        { text: "Family", id: 3 },
-        { text: "Friends", id: 4 },
-        { text: "Health", id: 5 },
-        { text: "Nature", id: 6 },
-        { text: "Technology", id: 7 },
-        { text: "Music", id: 8 },
-        { text: "Art", id: 9 },
-    ],
-    hopes: [
-        { text: "Travel", id: 1 },
-        { text: "Learning", id: 2 },
-        { text: "Adventure", id: 3 },
-        { text: "Peace", id: 4 },
-        { text: "Joy", id: 5 },
-        { text: "Success", id: 6 },
-        { text: "Creativity", id: 7 },
-        { text: "Community", id: 8 },
-    ]
-}
-
-function GratitudeBreadcrumbs({ currentUser, currentView, onBackToHome, onBackToUser }) {
-    return (
-        <div className="breadcrumbs">
-            <span className="breadcrumb-link" onClick={onBackToHome}>Home</span> 
-            {currentUser && (
-                <>
-                    {" > "}
-                    <span 
-                        className={currentView ? "breadcrumb-link" : ""}
-                        onClick={currentView ? onBackToUser : undefined}
-                    >
-                        {currentUser.name}
-                    </span>
-                </>
-            )}
-            {currentView && (
-                <>
-                    {" > "}
-                    <span>{currentView === 'gratitude' ? 'Gratitude' : 'Hopes'}</span>
-                </>
-            )}
-        </div>
-    );
-}
-
-function OptionSelector({ title, options, currentUser, onBack }) {
-    const [queue, setQueue] = useState([...options]);
+function OptionSelector({ title, options = [], currentUser, onBack }) {
+    const [queue, setQueue] = useState([...(options || [])]);
     const [discarded, setDiscarded] = useState([]);
     const [selected, setSelected] = useState([]);
     const [animatingItem, setAnimatingItem] = useState(null);
@@ -160,9 +107,13 @@ function OptionSelector({ title, options, currentUser, onBack }) {
         const handleKeyDown = (event) => {
             switch (event.key) {
                 case 'ArrowLeft':
-                case 'ArrowUp':
                     event.preventDefault();
                     moveToDiscard();
+                    break;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    // Up behaves like Right
+                    moveToSelected();
                     break;
                 case 'ArrowRight':
                 case 'Enter':
@@ -171,7 +122,9 @@ function OptionSelector({ title, options, currentUser, onBack }) {
                     break;
                 case 'ArrowDown':
                     event.preventDefault();
-                    undoLastMove();
+                    // Down behaves like Escape (back)
+                    event.stopPropagation();
+                    onBack();
                     break;
                 case 'Escape':
                     event.preventDefault();
@@ -408,12 +361,12 @@ function OptionSelector({ title, options, currentUser, onBack }) {
     );
 }
 
-function GratitudeSelector({ currentUser, onBack }) {
+function GratitudeSelector({ currentUser, options, onBack }) {
     return (
         <WebSocketProvider>
             <OptionSelector 
                 title="Gratitude"
-                options={optionData.gratitude}
+                options={options?.gratitude || []}
                 currentUser={currentUser}
                 onBack={onBack}
             />
@@ -421,12 +374,12 @@ function GratitudeSelector({ currentUser, onBack }) {
     );
 }
 
-function HopesSelector({ currentUser, onBack }) {
+function HopesSelector({ currentUser, options, onBack }) {
     return (
         <WebSocketProvider>
             <OptionSelector 
                 title="Hopes"
-                options={optionData.hopes}
+                options={options?.hopes || []}
                 currentUser={currentUser}
                 onBack={onBack}
             />
@@ -507,13 +460,12 @@ function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
     useEffect(() => {
         const handleKeyDown = (event) => {
             switch (event.key) {
-                case 'ArrowUp':
                 case 'ArrowLeft':
                     event.preventDefault();
                     setFocusedIndex(prev => prev > 0 ? prev - 1 : options.length - 1);
                     break;
-                case 'ArrowDown':
                 case 'ArrowRight':
+                case 'ArrowUp':
                     event.preventDefault();
                     setFocusedIndex(prev => prev < options.length - 1 ? prev + 1 : 0);
                     break;
@@ -522,6 +474,7 @@ function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
                     onSelectOption(options[focusedIndex]);
                     break;
                 case 'Escape':
+                case 'ArrowDown':
                     event.preventDefault();
                     event.stopPropagation();
                     onSwitchUser();
@@ -565,6 +518,69 @@ function UserContent({ currentUser, onSwitchUser, onSelectOption }) {
 export default function Gratitude({ clear }) {
     const [currentUser, setCurrentUser] = useState(null);
     const [currentView, setCurrentView] = useState(null); // 'gratitude' or 'hopes'
+    const [users, setUsers] = useState([]);
+    const [options, setOptions] = useState({ gratitude: [], hopes: [] });
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const isLocalhost = /localhost/.test(window.location.href);
+
+    const reloadData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const data = await DaylightAPI('/api/gratitude/bootstrap');
+            setUsers(data.users || []);
+            setOptions(data.options || { gratitude: [], hopes: [] });
+            setError(null);
+        } catch (e) {
+            setError(e);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        let mounted = true;
+        (async () => { if (mounted) await reloadData(); })();
+        return () => { mounted = false; };
+    }, [reloadData]);
+
+    // Snapshot controls (dev only)
+    const [snapshots, setSnapshots] = useState([]);
+    const [snapLoading, setSnapLoading] = useState(false);
+
+    const refreshSnapshots = useCallback(async () => {
+        if (!isLocalhost) return;
+        setSnapLoading(true);
+        try {
+            const resp = await DaylightAPI('/api/gratitude/snapshot/list');
+            setSnapshots(resp.snapshots || []);
+        } catch (e) {
+            console.error('Failed to list snapshots', e);
+        } finally {
+            setSnapLoading(false);
+        }
+    }, [isLocalhost]);
+
+    useEffect(() => { if (isLocalhost) refreshSnapshots(); }, [isLocalhost, refreshSnapshots]);
+
+    const saveSnapshot = async () => {
+        try {
+            await DaylightAPI('/api/gratitude/snapshot/save', {}, 'POST');
+            await refreshSnapshots();
+        } catch (e) {
+            console.error('Failed to save snapshot', e);
+        }
+    };
+
+    const restoreSnapshot = async (nameOrId) => {
+        try {
+            const body = nameOrId?.file ? { name: nameOrId.file } : (typeof nameOrId === 'string' ? { name: nameOrId } : {});
+            await DaylightAPI('/api/gratitude/snapshot/restore', body, 'POST');
+            await reloadData();
+        } catch (e) {
+            console.error('Failed to restore snapshot', e);
+        }
+    };
 
     const handleBackToHome = () => {
         setCurrentUser(null);
@@ -600,10 +616,20 @@ export default function Gratitude({ clear }) {
     };
 
     const renderCurrentView = () => {
+        if (loading) {
+            return (
+                <div className="loading">Loading…</div>
+            );
+        }
+        if (error) {
+            return (
+                <div className="error">Failed to load. Please retry.</div>
+            );
+        }
         if (!currentUser) {
             return (
                 <UserSelection 
-                    userData={userData} 
+                    userData={users} 
                     onUserSelect={setCurrentUser} 
                 />
             );
@@ -613,6 +639,7 @@ export default function Gratitude({ clear }) {
             return (
                 <GratitudeSelector 
                     currentUser={currentUser}
+                    options={options}
                     onBack={handleBackToUser}
                 />
             );
@@ -622,6 +649,7 @@ export default function Gratitude({ clear }) {
             return (
                 <HopesSelector 
                     currentUser={currentUser}
+                    options={options}
                     onBack={handleBackToUser}
                 />
             );
@@ -643,7 +671,26 @@ export default function Gratitude({ clear }) {
                 <h1>{getTitle()}</h1>
                 <button onClick={clear} className="close-button">×</button>
             </div>
-            <div className="main-content">
+            {isLocalhost && (
+                <div className="dev-controls" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 16px' }}>
+                    <button onClick={saveSnapshot} disabled={snapLoading}>
+                        {snapLoading ? 'Saving…' : 'Save Snapshot'}
+                    </button>
+                    <button onClick={() => restoreSnapshot()}>
+                        Restore Latest
+                    </button>
+                    <select onChange={(e) => e.target.value && restoreSnapshot(e.target.value)} defaultValue="">
+                        <option value="" disabled>Restore…</option>
+                        {snapshots.map(s => (
+                            <option key={s.file} value={s.file}>
+                                {s.createdAt ? `${s.createdAt} (${s.file})` : s.file}
+                            </option>
+                        ))}
+                    </select>
+                    <button onClick={refreshSnapshots}>↻</button>
+                </div>
+            )}
+                        <div className="main-content">
                 {renderCurrentView()}
             </div>
         </div>

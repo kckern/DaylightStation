@@ -365,7 +365,9 @@ function useCommonMediaController({
     if (enabled) {
       const onWaiting = () => { dlog('waiting event'); scheduleStallDetection(); };
       const onStalled = () => { dlog('stalled event'); scheduleStallDetection(); };
-      const onPlaying = () => { dlog('playing event'); markProgress(); };
+      // Do not mark progress on 'playing' (it can fire while still stalled).
+      // Only re-arm detection; real progress is tracked by 'timeupdate'.
+      const onPlaying = () => { dlog('playing event'); scheduleStallDetection(); };
       mediaEl.addEventListener('waiting', onWaiting);
       mediaEl.addEventListener('stalled', onStalled);
       mediaEl.addEventListener('playing', onPlaying);
@@ -392,7 +394,7 @@ function useCommonMediaController({
       mediaEl.removeEventListener('seeked', clearSeeking);
       mediaEl.removeEventListener('playing', clearSeeking);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta.percent, meta.title, type, media_key, onProgress, enabled, softMs, hardMs, maxRetries, mode]);
+  }, [onEnd, playbackRate, start, isVideo, meta.percent, meta.title, type, media_key, onProgress, enabled, softMs, hardMs, maxRetries, mode, isStalled]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -783,8 +785,8 @@ export function SinglePlayer(play) {
   const fetchVideoInfo = useCallback(async () => {
     setIsReady(false);
     if (!!plex) {
-      const force = play.forceH264 ? (shuffle ? '&forceH264=1' : '?forceH264=1') : '';
-      const url = shuffle ? `media/plex/info/${plex}/shuffle${force}` : `media/plex/info/${plex}${force}`;
+      const bitrate = play.maxVideoBitrate ? (shuffle ? `&maxVideoBitrate=${encodeURIComponent(play.maxVideoBitrate)}` : `?maxVideoBitrate=${encodeURIComponent(play.maxVideoBitrate)}`) : '';
+      const url = shuffle ? `media/plex/info/${plex}/shuffle${bitrate}` : `media/plex/info/${plex}${bitrate}`;
       const infoResponse = await DaylightAPI(url);
       setMediaInfo({ ...infoResponse, media_key: infoResponse.plex, continuous });
       setIsReady(true);
@@ -882,7 +884,32 @@ function AudioPlayer({ media, advance, clear, shader, setShader, volume, playbac
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-  {(seconds === 0 || isStalled || isSeeking) && <LoadingOverlay isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} stalled={isStalled} initialStart={media.seconds || 0} seconds={seconds} />}
+  {(seconds === 0 || isStalled || isSeeking) && (
+        <LoadingOverlay
+          isPaused={isPaused}
+          fetchVideoInfo={fetchVideoInfo}
+          stalled={isStalled}
+          initialStart={media.seconds || 0}
+          seconds={seconds}
+          // Provide context and element introspection for debug
+          debugContext={{
+            scope: 'audio',
+            mediaType: media?.media_type,
+            type,
+            title,
+            artist,
+            album,
+            albumArtist,
+            url: media_url,
+            media_key: media?.media_key || media?.key || media?.plex,
+            shader
+          }}
+          getMediaEl={() => {
+            const el = (containerRef.current?.shadowRoot?.querySelector('video')) || containerRef.current;
+            return el || null;
+          }}
+        />
+      )}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -953,7 +980,30 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
         {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-  {(seconds === 0 || isStalled || isSeeking) && <LoadingOverlay seconds={seconds} isPaused={isPaused} fetchVideoInfo={fetchVideoInfo} stalled={isStalled} initialStart={media.seconds || 0} />}
+  {(seconds === 0 || isStalled || isSeeking) && (
+        <LoadingOverlay
+          seconds={seconds}
+          isPaused={isPaused}
+          fetchVideoInfo={fetchVideoInfo}
+          stalled={isStalled}
+          initialStart={media.seconds || 0}
+          debugContext={{
+            scope: 'video',
+            mediaType: media?.media_type,
+            title,
+            show,
+            season,
+            url: media_url,
+            media_key: media?.media_key || media?.key || media?.plex,
+            isDash,
+            shader
+          }}
+          getMediaEl={() => {
+            const el = (containerRef.current?.shadowRoot?.querySelector('video')) || containerRef.current;
+            return el || null;
+          }}
+        />
+      )}
       {isDash ? (
         <dash-video
           ref={containerRef}
@@ -986,10 +1036,12 @@ function VideoPlayer({ media, advance, clear, shader, volume, playbackRate,setSh
 // Global state to remember pause overlay visibility setting
 let pauseOverlayVisible = true;
 
-export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay, initialStart = 0, seconds = 0, stalled }) {
+export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay, initialStart = 0, seconds = 0, stalled, debugContext, getMediaEl }) {
   const [visible, setVisible] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
   const [showPauseOverlay, setShowPauseOverlay] = useState(pauseOverlayVisible);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugSnapshot, setDebugSnapshot] = useState(null);
 
   useEffect(() => {
     const timeout = setTimeout(() => setVisible(true), 300);
@@ -1038,6 +1090,52 @@ export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay,
     }
   }, [isPaused, loadingTime, fetchVideoInfo]);
 
+  // After 3s on initial load (seconds===0), reveal debug info
+  useEffect(() => {
+    if (isPaused) { setShowDebug(false); return; }
+    let to;
+    if (visible && seconds === 0) {
+      to = setTimeout(() => setShowDebug(true), 3000);
+    } else {
+      setShowDebug(false);
+    }
+    return () => { if (to) clearTimeout(to); };
+  }, [visible, seconds, isPaused]);
+
+  // Build a snapshot of media element state for debugging
+  useEffect(() => {
+    if (!showDebug) return;
+    const mapReady = (n) => ({0:'HAVE_NOTHING',1:'HAVE_METADATA',2:'HAVE_CURRENT_DATA',3:'HAVE_FUTURE_DATA',4:'HAVE_ENOUGH_DATA'}[n] || String(n));
+    const mapNetwork = (n) => ({0:'NETWORK_EMPTY',1:'NETWORK_IDLE',2:'NETWORK_LOADING',3:'NETWORK_NO_SOURCE'}[n] || String(n));
+    const collect = () => {
+      const el = typeof getMediaEl === 'function' ? getMediaEl() : null;
+      const err = el?.error ? (el.error.message || el.error.code) : undefined;
+      const bufferedEnd = (() => { try { return el?.buffered?.length ? el.buffered.end(el.buffered.length - 1).toFixed(2) : undefined; } catch { return undefined; } })();
+      setDebugSnapshot({
+        when: new Date().toISOString(),
+        context: debugContext || {},
+        elPresent: !!el,
+        readyState: el?.readyState,
+        readyStateText: mapReady(el?.readyState),
+        networkState: el?.networkState,
+        networkStateText: mapNetwork(el?.networkState),
+        paused: el?.paused,
+        seeking: el?.seeking,
+        ended: el?.ended,
+        currentTime: el?.currentTime,
+        duration: el?.duration,
+        bufferedEnd,
+        src: el?.getAttribute?.('src'),
+        currentSrc: el?.currentSrc,
+        error: err,
+        stalled
+      });
+    };
+    collect();
+    const id = setInterval(collect, 1000);
+    return () => clearInterval(id);
+  }, [showDebug, getMediaEl, debugContext, stalled]);
+
   const imgSrc = isPaused ? pause : spinner;
   const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled;
   const formatSeek = (s) => {
@@ -1062,8 +1160,15 @@ export function LoadingOverlay({ isPaused, fetchVideoInfo, onTogglePauseOverlay,
       }}
     >
       <img src={imgSrc} alt="" />
-      {showSeekInfo && (
-        <div className="loading-info">Loading at {formatSeek(initialStart)}</div>
+      {(showSeekInfo || showDebug) && (
+        <div className="loading-info">
+          {showSeekInfo && <div>Loading at {formatSeek(initialStart)}</div>}
+          {showDebug && (
+            <pre style={{ textAlign: 'left', whiteSpace: 'pre-wrap' }}>
+{JSON.stringify(debugSnapshot, null, 2)}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );
