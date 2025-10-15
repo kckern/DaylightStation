@@ -6,6 +6,7 @@ import { formatSeekTime, mapReadyState, mapNetworkState } from '../lib/helpers.j
 
 // Global state for pause overlay visibility preference
 let pauseOverlayVisible = true;
+const debugTimeout = 5000; // ms
 
 /**
  * Loading overlay component for displaying loading/paused state with debug info
@@ -78,7 +79,7 @@ export function LoadingOverlay({
     if (isPaused) { setShowDebug(false); return; }
     let to;
     if (visible && seconds === 0) {
-      to = setTimeout(() => setShowDebug(true), 3000);
+      to = setTimeout(() => setShowDebug(true), debugTimeout || 3000);
     } else {
       setShowDebug(false);
     }
