@@ -100,7 +100,10 @@ mediaRouter.get('/img/*', async (req, res) => {
 
 mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
     const plex_key = req.params.plex_key;
-    const plexUrl = await ( new Plex()).loadmedia_url(plex_key);
+    // Optional bitrate cap via query
+    const qBitrate = parseInt(req.query.maxVideoBitrate, 10);
+    const opts = Number.isFinite(qBitrate) ? { maxVideoBitrate: qBitrate } : {};
+    const plexUrl = await ( new Plex()).loadmedia_url(plex_key, 0, opts);
     try {
         const response = await axios.get(plexUrl);
         if (response.status !== 200) {
@@ -273,11 +276,13 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     
     // Check for shuffle - prefer path config, fallback to query parameters
     const shuffle = /shuffle/i.test(config) || Object.keys(req.query).includes('shuffle');
-    const forceH264 = 'forceH264' in req.query || req.query.force_h264 === '1' || req.query.forceH264 === '1';
+    // Optional bitrate cap via query
+    const qBitrate = parseInt(req.query.maxVideoBitrate, 10);
+    const opts = Number.isFinite(qBitrate) ? { maxVideoBitrate: qBitrate } : {};
     
     let infos = [];
     for (const key of plex_keys) {
-        const info = await (new Plex()).loadPlayableItemFromKey(key, shuffle, { forceH264 });
+        const info = await (new Plex()).loadPlayableItemFromKey(key, shuffle, opts);
         infos.push(info);
     }
     //pick one

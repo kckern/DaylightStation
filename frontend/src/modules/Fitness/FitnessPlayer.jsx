@@ -578,7 +578,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               playbackRate: currentItem.playbackRate || 1.0,
               type: 'video',
               continuous: false,
-              forceH264: true
+              // Prefer controlling quality via bitrate instead of forcing codecs
+              maxVideoBitrate: 2000
             }}
             clear={handleClose}
             advance={handleNext}

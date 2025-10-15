@@ -31,7 +31,7 @@ export class Plex {
   }
 
   async loadmedia_url(itemData, attempt = 0, opts = {}) {
-    // opts: { forceH264?: boolean, maxVideoBitrate?: number }
+    // opts: { maxVideoBitrate?: number }
     const plex = itemData?.plex || itemData?.ratingKey;
     if(!attempt >= 1) console.log("Attempting to load media URL for itemData: " , plex);
     if (typeof itemData === 'string') {
@@ -49,7 +49,7 @@ export class Plex {
       return await this.loadmedia_url(item.key || item);
     }
   const media_type = this.determinemedia_type(type);
-  const { forceH264 = false, maxVideoBitrate = 5000 } = opts || {};
+  const { maxVideoBitrate = 5000 } = opts || {};
     try {
       if (media_type === 'audio') {
       const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
@@ -65,17 +65,7 @@ export class Plex {
           `maxVideoBitrate=${maxVideoBitrate}`,
           `X-Plex-Platform=${platform}`
         ];
-        if(forceH264) {
-          baseParams.push(
-            'videoCodec=h264',
-            'audioCodec=aac',
-            'container=mp4',
-            'directPlay=0',
-            'directStream=1',
-            'fastSeek=1',
-            'videoQuality=100'
-          );
-        }
+        // Note: codec/container forcing removed; rely on server capabilities and bitrate
         const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
         const isValid = await axios.get(url).then((response) => {
           return response.status >= 200 && response.status < 300;
