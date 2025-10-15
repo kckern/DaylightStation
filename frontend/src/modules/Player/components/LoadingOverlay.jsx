@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import pause from '../../../assets/icons/pause.svg';
-import { formatSeekTime, mapReadyState, mapNetworkState } from '../lib/helpers.js';
+import { formatSeekTime } from '../lib/helpers.js';
+import { DebugInfo } from './DebugInfo.jsx';
 
 // Global state for pause overlay visibility preference
 let pauseOverlayVisible = true;
@@ -25,7 +26,6 @@ export function LoadingOverlay({
   const [loadingTime, setLoadingTime] = useState(0);
   const [showPauseOverlay, setShowPauseOverlay] = useState(pauseOverlayVisible);
   const [showDebug, setShowDebug] = useState(false);
-  const [debugSnapshot, setDebugSnapshot] = useState(null);
 
   useEffect(() => {
     const timeout = setTimeout(() => setVisible(true), 300);
@@ -86,47 +86,6 @@ export function LoadingOverlay({
     return () => { if (to) clearTimeout(to); };
   }, [visible, seconds, isPaused]);
 
-  // Build a snapshot of media element state for debugging
-  useEffect(() => {
-    if (!showDebug) return;
-    
-    const collect = () => {
-      const el = typeof getMediaEl === 'function' ? getMediaEl() : null;
-      const err = el?.error ? (el.error.message || el.error.code) : undefined;
-      const bufferedEnd = (() => { 
-        try { 
-          return el?.buffered?.length ? el.buffered.end(el.buffered.length - 1).toFixed(2) : undefined; 
-        } catch { 
-          return undefined; 
-        } 
-      })();
-      
-      setDebugSnapshot({
-        when: new Date().toISOString(),
-        context: debugContext || {},
-        elPresent: !!el,
-        readyState: el?.readyState,
-        readyStateText: mapReadyState(el?.readyState),
-        networkState: el?.networkState,
-        networkStateText: mapNetworkState(el?.networkState),
-        paused: el?.paused,
-        seeking: el?.seeking,
-        ended: el?.ended,
-        currentTime: el?.currentTime,
-        duration: el?.duration,
-        bufferedEnd,
-        src: el?.getAttribute?.('src'),
-        currentSrc: el?.currentSrc,
-        error: err,
-        stalled
-      });
-    };
-    
-    collect();
-    const id = setInterval(collect, 1000);
-    return () => clearInterval(id);
-  }, [showDebug, getMediaEl, debugContext, stalled]);
-
   const imgSrc = isPaused ? pause : spinner;
   const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled;
 
@@ -148,11 +107,12 @@ export function LoadingOverlay({
       {(showSeekInfo || showDebug) && (
         <div className="loading-info">
           {showSeekInfo && <div>Loading at {formatSeekTime(initialStart)}</div>}
-          {showDebug && (
-            <pre style={{ textAlign: 'left', whiteSpace: 'pre-wrap' }}>
-{JSON.stringify(debugSnapshot, null, 2)}
-            </pre>
-          )}
+          <DebugInfo 
+            show={showDebug}
+            debugContext={debugContext}
+            getMediaEl={getMediaEl}
+            stalled={stalled}
+          />
         </div>
       )}
     </div>
