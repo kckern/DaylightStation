@@ -42,7 +42,8 @@ export function useCommonMediaController({
     hardTimer: null,
     recoveryAttempt: 0,
     isStalled: false,
-    lastStrategy: 'none'
+    lastStrategy: 'none',
+    hasEnded: false  // Flag to prevent recovery after media ends
   });
   const [isStalled, setIsStalled] = useState(false);
 
@@ -58,8 +59,7 @@ export function useCommonMediaController({
     hardMs = 8000,
     recoveryStrategies = ['nudge', 'reload'],
     seekBackOnReload = 2,
-    mode = 'auto',
-    debug = false
+    mode = 'auto'
   } = stallConfig || {};
 
   const getMediaEl = useCallback(() => {
@@ -94,11 +94,6 @@ export function useCommonMediaController({
     setCurrentTime: setSeconds
   });
 
-  // Helper: debug log
-  const dlog = useCallback((...args) => { 
-    if (debug) console.log('[PlayerStall]', ...args); 
-  }, [debug]);
-
   // Memoize check interval
   const checkInterval = Math.min(500, softMs / 3);
 
@@ -116,7 +111,6 @@ export function useCommonMediaController({
       const mediaEl = getMediaEl();
       if (!mediaEl) return false;
       
-      dlog('Recovery: nudge currentTime');
       try {
         const t = mediaEl.currentTime;
         mediaEl.pause();
@@ -126,17 +120,15 @@ export function useCommonMediaController({
       } catch (_) {
         return false;
       }
-    }, [getMediaEl, dlog]),
+    }, [getMediaEl]),
 
     // Reload: Full media element reset
     reload: useCallback(() => {
       const mediaEl = getMediaEl();
       if (!mediaEl) {
-        dlog('Recovery: reload failed, no media element');
         return false;
       }
       
-      dlog('Recovery: reloading media element');
       const priorTime = mediaEl.currentTime || 0;
       const src = mediaEl.getAttribute('src');
       
@@ -163,21 +155,20 @@ export function useCommonMediaController({
       } catch (_) {
         return false;
       }
-    }, [getMediaEl, dlog, seekBackOnReload]),
+    }, [getMediaEl, seekBackOnReload]),
 
     // Seek back: Jump back a few seconds
     seekback: useCallback((seconds = 5) => {
       const mediaEl = getMediaEl();
       if (!mediaEl) return false;
       
-      dlog(`Recovery: seeking back ${seconds}s`);
       try {
         mediaEl.currentTime = Math.max(0, mediaEl.currentTime - seconds);
         return true;
       } catch (_) {
         return false;
       }
-    }, [getMediaEl, dlog])
+    }, [getMediaEl])
   };
 
   // Execute next recovery strategy
@@ -186,13 +177,11 @@ export function useCommonMediaController({
     const strategy = recoveryStrategies[s.recoveryAttempt];
     
     if (!strategy) {
-      dlog('No more recovery strategies available');
       return false;
     }
     
     const method = recoveryMethods[strategy];
     if (!method) {
-      dlog(`Unknown recovery strategy: ${strategy}`);
       s.recoveryAttempt++;
       return attemptRecovery();
     }
@@ -202,18 +191,32 @@ export function useCommonMediaController({
     s.recoveryAttempt++;
     
     return success;
-  }, [dlog, recoveryStrategies, recoveryMethods]);
+  }, [recoveryStrategies, recoveryMethods]);
 
   const scheduleStallDetection = useCallback(() => {
     if (!enabled) return;
     const s = stallStateRef.current;
-    if (s.softTimer || s.isStalled) return;
+    if (s.hasEnded) {
+      return;
+    }
+    if (s.softTimer) {
+      return;
+    }
+    if (s.isStalled) {
+      return;
+    }
     
     const mediaEl = getMediaEl();
-    if (!mediaEl || mediaEl.paused) return;
+    if (!mediaEl) {
+      return;
+    }
+    if (mediaEl.paused) {
+      return;
+    }
     
     s.softTimer = setTimeout(() => {
       const mediaEl = getMediaEl();
+      const s = stallStateRef.current;
       
       // If media element is gone or paused, stop checking
       if (!mediaEl || mediaEl.paused) {
@@ -221,7 +224,12 @@ export function useCommonMediaController({
         return;
       }
       
-      const s = stallStateRef.current;
+      // Check if media has ended or is very close to end
+      if (s.hasEnded || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
+        s.hasEnded = true;
+        clearTimers();
+        return;
+      }
       
       if (s.lastProgressTs === 0) {
         // No progress yet, reschedule
@@ -231,24 +239,33 @@ export function useCommonMediaController({
       }
       
       const diff = Date.now() - s.lastProgressTs;
+      
       if (diff >= softMs) {
         s.isStalled = true;
         setIsStalled(true);
-        dlog('Soft stall confirmed after', diff, 'ms');
         
         if (mode === 'auto') {
+          const recoveryDelay = Math.max(0, hardMs - softMs);
           s.hardTimer = setTimeout(() => {
             const s = stallStateRef.current;
-            if (!s.isStalled) return;
+            const mediaEl = getMediaEl();
+            
+            // Don't attempt recovery if media has ended
+            if (s.hasEnded || !mediaEl || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
+              clearTimers();
+              return;
+            }
+            
+            if (!s.isStalled) {
+              return;
+            }
             
             if (s.recoveryAttempt < recoveryStrategies.length) {
               clearTimers();
               attemptRecovery();
               scheduleStallDetection();
-            } else {
-              dlog('All recovery strategies exhausted');
             }
-          }, Math.max(0, hardMs - softMs));
+          }, recoveryDelay);
         }
       } else {
         // Not stalled yet, keep checking
@@ -256,21 +273,26 @@ export function useCommonMediaController({
         scheduleStallDetection();
       }
     }, checkInterval);
-  }, [enabled, softMs, hardMs, recoveryStrategies, checkInterval, getMediaEl, dlog, clearTimers, attemptRecovery]);
+  }, [enabled, softMs, hardMs, recoveryStrategies, checkInterval, getMediaEl, clearTimers, attemptRecovery]);
 
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
+    if (s.hasEnded) {
+      return;
+    }
+    
+    const wasStalled = s.isStalled;
     s.lastProgressTs = Date.now();
-    if (s.isStalled) {
-      dlog('Recovery: progress resumed');
+    
+    if (wasStalled) {
       s.isStalled = false;
-      s.recoveryAttempt = 0; // Reset recovery attempts
+      s.recoveryAttempt = 0;
       clearTimers();
       setIsStalled(false);
       scheduleStallDetection();
     }
     // Continuous polling in scheduleStallDetection handles rescheduling
-  }, [dlog, clearTimers, scheduleStallDetection]);
+  }, [clearTimers, scheduleStallDetection]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -314,8 +336,23 @@ export function useCommonMediaController({
     };
 
     const onEnded = () => {
+      const mediaEl = getMediaEl();
       const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+      
       lastLoggedTimeRef.current = 0;
+      
+      // Immediately flag as ended to prevent any recovery attempts
+      const s = stallStateRef.current;
+      s.hasEnded = true;
+      
+      // Clear stall detection when track ends
+      clearTimers();
+      
+      if (s.isStalled) {
+        s.isStalled = false;
+        setIsStalled(false);
+      }
+      
       logProgress();
       onEnd();
     };
@@ -345,8 +382,20 @@ export function useCommonMediaController({
       mediaEl.autoplay = true;
       mediaEl.volume = adjustedVolume;
       
-      if ((isVideo && duration < 20) || meta.continuous) {
+      // Loop logic:
+      // - Only loop the element when queue length is 1 (single item queue)
+      // - For queue length > 1, let the queue behavior handle looping
+      // - For queue length 0 (no queue), loop if continuous flag is set, OR loop short videos (<20s)
+      // Derive queue length from meta.queueLength if available (set by parent queue controller)
+      const queueLength = meta.queueLength || 0;
+      const shouldLoopElement = queueLength === 1 || 
+                                 (queueLength === 0 && meta.continuous) ||
+                                 (queueLength === 0 && isVideo && duration < 20);
+      
+      if (shouldLoopElement) {
         mediaEl.loop = true;
+      } else {
+        mediaEl.loop = false;
       }
       
       if (isVideo) {
@@ -361,6 +410,9 @@ export function useCommonMediaController({
         mediaEl.playbackRate = playbackRate;
       }
       
+      // Reset ended flag for new media
+      stallStateRef.current.hasEnded = false;
+      stallStateRef.current.recoveryAttempt = 0;
       stallStateRef.current.lastProgressTs = Date.now();
       scheduleStallDetection();
     };
@@ -379,9 +431,9 @@ export function useCommonMediaController({
     mediaEl.addEventListener('playing', clearSeeking);
 
     if (enabled) {
-      const onWaiting = () => { dlog('waiting event'); scheduleStallDetection(); };
-      const onStalled = () => { dlog('stalled event'); scheduleStallDetection(); };
-      const onPlaying = () => { dlog('playing event'); scheduleStallDetection(); };
+      const onWaiting = () => { scheduleStallDetection(); };
+      const onStalled = () => { scheduleStallDetection(); };
+      const onPlaying = () => { scheduleStallDetection(); };
       
       mediaEl.addEventListener('waiting', onWaiting);
       mediaEl.addEventListener('stalled', onStalled);
@@ -408,7 +460,7 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', clearSeeking);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta, type, media_key, onProgress, enabled, softMs, hardMs, recoveryStrategies, mode, isStalled, volume, getMediaEl, dlog, markProgress, scheduleStallDetection]);
+  }, [onEnd, playbackRate, start, isVideo, meta, type, media_key, onProgress, enabled, softMs, hardMs, recoveryStrategies, mode, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();

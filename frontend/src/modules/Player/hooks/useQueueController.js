@@ -25,7 +25,7 @@ export function useQueueController({ play, queue, clear }) {
     });
   }, []);
 
-  const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
+  const isQueue = !!queue || (play && (play.playlist || play.queue || play.plex)) || Array.isArray(play);
 
   useEffect(() => {
     async function initQueue() {
@@ -40,8 +40,9 @@ export function useQueueController({ play, queue, clear }) {
           const { items } = await DaylightAPI(`data/list/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
-        } else if (queue?.plex) {
-          const { items } = await DaylightAPI(`media/plex/list/${queue.plex}/playable${isShuffle ? ',shuffle' : ''}`);
+        } else if (queue?.plex || play?.plex) {
+          const plexId = queue?.plex || play?.plex;
+          const { items } = await DaylightAPI(`media/plex/list/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
         }
