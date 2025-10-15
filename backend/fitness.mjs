@@ -1,12 +1,12 @@
 import express from 'express';
-import { saveFile } from './lib/io.mjs';
+import { loadFile, saveFile } from './lib/io.mjs';
 import moment from 'moment-timezone';
 
 const fitnessRouter = express.Router();
 
 // Fitness config endpoint
 fitnessRouter.get('/', (req, res) => {
-    const fitnessData = process.env.fitness;
+    const fitnessData = loadFile('fitness/config');
     if(!fitnessData) return res.status(404).json({ error: 'Fitness configuration not found' });
     res.json(fitnessData);
 });

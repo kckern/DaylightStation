@@ -41,7 +41,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 8px;
     width: 100%;
 
     .nav-item {
@@ -54,10 +54,12 @@
       width: 100%;
       text-align: left;
       position: relative;
-      padding-left: 1rem;
+      padding: 12px 8px;
+      margin: 0 4px;
+      border-radius: 8px;
 
       &.active {
-        background: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.2);
         
         .nav-icon {
           transform: scale(1.2);
@@ -67,11 +69,23 @@
 
       .nav-icon {
         font-size: 24px;
-        margin-right: 12px;
+        margin-right: 8px;
         transition: all 0.3s ease;
         min-width: 32px;
         display: flex;
         justify-content: center;
+        align-items: center;
+        
+        img {
+          width: 24px;
+          height: 24px;
+          filter: invert(1) brightness(0.9);
+          transition: all 0.3s ease;
+        }
+        
+        span {
+          font-size: 24px;
+        }
       }
 
       .nav-label {
