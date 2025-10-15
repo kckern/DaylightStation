@@ -38,25 +38,28 @@ export function useCommonMediaController({
   // Stall detection refs
   const stallStateRef = useRef({
     lastProgressTs: 0,
-    stallCandidateTs: 0,
     softTimer: null,
     hardTimer: null,
-    retryCount: 0,
+    recoveryAttempt: 0,
     isStalled: false,
-    recoveryPhase: 'none'
+    lastStrategy: 'none'
   });
   const [isStalled, setIsStalled] = useState(false);
 
   // Config with sane defaults
+  // recoveryStrategies: Array of strategies to attempt in order
+  //   - 'nudge': Tiny time adjustment (fastest, least disruptive)
+  //   - 'reload': Full media element reload (more aggressive)
+  //   - 'seekback': Jump back several seconds
+  // Example: ['nudge', 'nudge', 'reload'] tries nudge twice, then reload
   const {
     enabled = true,
     softMs = 1200,
     hardMs = 8000,
-    maxRetries = 1,
+    recoveryStrategies = ['nudge', 'reload'],
+    seekBackOnReload = 2,
     mode = 'auto',
-    debug = false,
-    enablePhase2 = true,
-    phase2SeekBackSeconds = 2
+    debug = false
   } = stallConfig || {};
 
   const getMediaEl = useCallback(() => {
@@ -96,6 +99,9 @@ export function useCommonMediaController({
     if (debug) console.log('[PlayerStall]', ...args); 
   }, [debug]);
 
+  // Memoize check interval
+  const checkInterval = Math.min(500, softMs / 3);
+
   // Clear timers utility
   const clearTimers = useCallback(() => {
     const s = stallStateRef.current;
@@ -103,18 +109,128 @@ export function useCommonMediaController({
     if (s.hardTimer) { clearTimeout(s.hardTimer); s.hardTimer = null; }
   }, []);
 
+  // Recovery strategies
+  const recoveryMethods = {
+    // Nudge: Tiny time adjustment to trigger buffer reload
+    nudge: useCallback(() => {
+      const mediaEl = getMediaEl();
+      if (!mediaEl) return false;
+      
+      dlog('Recovery: nudge currentTime');
+      try {
+        const t = mediaEl.currentTime;
+        mediaEl.pause();
+        mediaEl.currentTime = Math.max(0, t - 0.001);
+        mediaEl.play().catch(() => {});
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }, [getMediaEl, dlog]),
+
+    // Reload: Full media element reset
+    reload: useCallback(() => {
+      const mediaEl = getMediaEl();
+      if (!mediaEl) {
+        dlog('Recovery: reload failed, no media element');
+        return false;
+      }
+      
+      dlog('Recovery: reloading media element');
+      const priorTime = mediaEl.currentTime || 0;
+      const src = mediaEl.getAttribute('src');
+      
+      try {
+        mediaEl.pause();
+        mediaEl.removeAttribute('src');
+        mediaEl.load();
+        
+        setTimeout(() => {
+          try {
+            if (src) mediaEl.setAttribute('src', src);
+            mediaEl.load();
+            mediaEl.addEventListener('loadedmetadata', function handleOnce() {
+              mediaEl.removeEventListener('loadedmetadata', handleOnce);
+              const target = Math.max(0, priorTime - seekBackOnReload);
+              if (Number.isFinite(target)) {
+                try { mediaEl.currentTime = target; } catch (_) {}
+              }
+              mediaEl.play().catch(() => {});
+            }, { once: true });
+          } catch (_) {}
+        }, 50);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }, [getMediaEl, dlog, seekBackOnReload]),
+
+    // Seek back: Jump back a few seconds
+    seekback: useCallback((seconds = 5) => {
+      const mediaEl = getMediaEl();
+      if (!mediaEl) return false;
+      
+      dlog(`Recovery: seeking back ${seconds}s`);
+      try {
+        mediaEl.currentTime = Math.max(0, mediaEl.currentTime - seconds);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }, [getMediaEl, dlog])
+  };
+
+  // Execute next recovery strategy
+  const attemptRecovery = useCallback(() => {
+    const s = stallStateRef.current;
+    const strategy = recoveryStrategies[s.recoveryAttempt];
+    
+    if (!strategy) {
+      dlog('No more recovery strategies available');
+      return false;
+    }
+    
+    const method = recoveryMethods[strategy];
+    if (!method) {
+      dlog(`Unknown recovery strategy: ${strategy}`);
+      s.recoveryAttempt++;
+      return attemptRecovery();
+    }
+    
+    s.lastStrategy = strategy;
+    const success = method();
+    s.recoveryAttempt++;
+    
+    return success;
+  }, [dlog, recoveryStrategies, recoveryMethods]);
+
   const scheduleStallDetection = useCallback(() => {
     if (!enabled) return;
     const s = stallStateRef.current;
     if (s.softTimer || s.isStalled) return;
+    
     const mediaEl = getMediaEl();
-    if (!mediaEl) return;
-    if (mediaEl.paused) return;
+    if (!mediaEl || mediaEl.paused) return;
     
     s.softTimer = setTimeout(() => {
-      const now = Date.now();
-      if (s.lastProgressTs === 0) return;
-      const diff = now - s.lastProgressTs;
+      const mediaEl = getMediaEl();
+      
+      // If media element is gone or paused, stop checking
+      if (!mediaEl || mediaEl.paused) {
+        clearTimers();
+        return;
+      }
+      
+      const s = stallStateRef.current;
+      
+      if (s.lastProgressTs === 0) {
+        // No progress yet, reschedule
+        s.softTimer = null;
+        scheduleStallDetection();
+        return;
+      }
+      
+      const diff = Date.now() - s.lastProgressTs;
       if (diff >= softMs) {
         s.isStalled = true;
         setIsStalled(true);
@@ -122,67 +238,25 @@ export function useCommonMediaController({
         
         if (mode === 'auto') {
           s.hardTimer = setTimeout(() => {
+            const s = stallStateRef.current;
             if (!s.isStalled) return;
-            if (s.retryCount < maxRetries) {
-              // Phase 1: light recovery
-              s.retryCount += 1;
-              s.recoveryPhase = 'light';
-              dlog('Attempt light recovery, retry #', s.retryCount);
-              try {
-                const mediaEl = getMediaEl();
-                if (mediaEl) {
-                  const t = mediaEl.currentTime;
-                  mediaEl.pause();
-                  mediaEl.currentTime = Math.max(0, t - 0.001);
-                  mediaEl.play().catch(() => {});
-                }
-              } catch (_) {}
+            
+            if (s.recoveryAttempt < recoveryStrategies.length) {
               clearTimers();
-              s.softTimer = null;
-              s.hardTimer = null;
+              attemptRecovery();
               scheduleStallDetection();
-            } else if (enablePhase2) {
-              // Phase 2: reload element
-              const mediaEl = getMediaEl();
-              if (mediaEl) {
-                s.recoveryPhase = 'reload';
-                dlog('Phase 2: reloading media element');
-                const priorTime = mediaEl.currentTime || 0;
-                try {
-                  const src = mediaEl.getAttribute('src');
-                  mediaEl.pause();
-                  mediaEl.removeAttribute('src');
-                  mediaEl.load();
-                  setTimeout(() => {
-                    try {
-                      if (src) mediaEl.setAttribute('src', src);
-                      mediaEl.load();
-                      mediaEl.addEventListener('loadedmetadata', function handleOnce() {
-                        mediaEl.removeEventListener('loadedmetadata', handleOnce);
-                        const target = Math.max(0, priorTime - phase2SeekBackSeconds);
-                        if (!isNaN(target)) {
-                          try { mediaEl.currentTime = target; } catch (_) {}
-                        }
-                        mediaEl.play().catch(() => {});
-                      });
-                    } catch (_) {}
-                  }, 50);
-                } catch (_) {}
-                clearTimers();
-                s.softTimer = null;
-                s.hardTimer = null;
-                scheduleStallDetection();
-              } else {
-                dlog('Phase 2 requested but media element unavailable');
-              }
             } else {
-              dlog('Max light retries reached; Phase 2 disabled; leaving stalled state');
+              dlog('All recovery strategies exhausted');
             }
           }, Math.max(0, hardMs - softMs));
         }
+      } else {
+        // Not stalled yet, keep checking
+        s.softTimer = null;
+        scheduleStallDetection();
       }
-    }, softMs);
-  }, [enabled, softMs, hardMs, maxRetries, mode, enablePhase2, phase2SeekBackSeconds, getMediaEl, dlog, clearTimers]);
+    }, checkInterval);
+  }, [enabled, softMs, hardMs, recoveryStrategies, checkInterval, getMediaEl, dlog, clearTimers, attemptRecovery]);
 
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
@@ -190,14 +264,12 @@ export function useCommonMediaController({
     if (s.isStalled) {
       dlog('Recovery: progress resumed');
       s.isStalled = false;
-      s.stallCandidateTs = 0;
+      s.recoveryAttempt = 0; // Reset recovery attempts
       clearTimers();
       setIsStalled(false);
       scheduleStallDetection();
     }
-    if (!s.softTimer && !s.isStalled) {
-      scheduleStallDetection();
-    }
+    // Continuous polling in scheduleStallDetection handles rescheduling
   }, [dlog, clearTimers, scheduleStallDetection]);
 
   useEffect(() => {
@@ -231,8 +303,8 @@ export function useCommonMediaController({
           media: meta,
           percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
-          retryCount: stallStateRef.current.retryCount,
-          recoveryPhase: stallStateRef.current.recoveryPhase
+          recoveryAttempt: stallStateRef.current.recoveryAttempt,
+          lastStrategy: stallStateRef.current.lastStrategy
         });
       }
     };
@@ -336,7 +408,7 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', clearSeeking);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta, type, media_key, onProgress, enabled, softMs, hardMs, maxRetries, mode, isStalled, volume, getMediaEl, dlog, markProgress, scheduleStallDetection]);
+  }, [onEnd, playbackRate, start, isVideo, meta, type, media_key, onProgress, enabled, softMs, hardMs, recoveryStrategies, mode, isStalled, volume, getMediaEl, dlog, markProgress, scheduleStallDetection]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
