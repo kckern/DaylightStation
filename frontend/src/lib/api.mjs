@@ -119,6 +119,13 @@ export const DaylightMediaPath = (path) => {
     const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
     return `${baseUrl}/${path}`;
 }
+
+export const DaylightImagePath = (key) => {
+    const isLocalhost = /localhost/.test(window.location.href);
+    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+    return `${baseUrl}/data/img/${key}`;
+}
+
 export const DaylightPlexPath = (key) => {
     const isLocalhost = /localhost/.test(window.location.href);
     const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;

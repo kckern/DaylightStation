@@ -59,12 +59,35 @@ export const clearWatchedItems = (media_keys, category = "media") => {
 }
 apiRouter.get('/img/*', async (req, res, next) => {
     try {
-        const imgPath = `${mediaPath}/img/${req.params[0]}`;
+        const imgPath = `${dataPath}/img/${req.params[0]}`;
         if (!fs.existsSync(imgPath)) {
             return res.status(404).json({ error: 'Image not found' });
         }
+        
+        // Determine content type based on file extension
+        const ext = path.extname(imgPath).toLowerCase();
+        let contentType = 'image/jpeg'; // default
+        switch (ext) {
+            case '.svg':
+                contentType = 'image/svg+xml';
+                break;
+            case '.png':
+                contentType = 'image/png';
+                break;
+            case '.gif':
+                contentType = 'image/gif';
+                break;
+            case '.webp':
+                contentType = 'image/webp';
+                break;
+            case '.jpg':
+            case '.jpeg':
+                contentType = 'image/jpeg';
+                break;
+        }
+        
         const imgStream = fs.createReadStream(imgPath);
-        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Content-Type', contentType);
         imgStream.pipe(res);
     } catch (err) {
         next(err);
