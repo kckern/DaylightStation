@@ -3,7 +3,7 @@ import util from 'util';
 import path from 'path';
 import express from 'express';
 import { exec } from 'child_process';
-import axios from 'axios';
+import axios from './lib/http.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
 import { broadcastToWebsockets, restartWebsocketServer } from './websocket.js';
 

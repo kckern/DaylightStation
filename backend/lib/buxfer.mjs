@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './http.mjs';
 import { URLSearchParams } from 'url';
 import yaml from 'js-yaml';
 import { readFileSync, writeFileSync } from 'fs';

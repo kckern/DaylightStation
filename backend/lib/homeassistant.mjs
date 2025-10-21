@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios from "./http.mjs";
 
 const HomeAPI = async (path, data) => {
     const { HOME_ASSISTANT_TOKEN, home_assistant: { host, port } } = process.env;

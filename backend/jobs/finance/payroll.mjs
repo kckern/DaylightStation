@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from '../../lib/http.mjs';
 import yaml from 'js-yaml';
 import { readFileSync } from 'fs';
 import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';

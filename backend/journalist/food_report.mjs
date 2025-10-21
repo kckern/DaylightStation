@@ -5,7 +5,7 @@ import moment from 'moment-timezone';
 import { loadNutrilogsNeedingListing, loadRecentNutriList } from './lib/db.mjs';
 import { handlePendingNutrilogs } from './lib/food.mjs';
 import { createCanvas, loadImage, registerFont } from 'canvas';
-import axios from 'axios';
+import axios from '../lib/http.mjs';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import { canvasImage } from './foodlog_hook.mjs';
 import bwipjs from 'bwip-js';

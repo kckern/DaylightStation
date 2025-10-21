@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 import { appendFile } from 'fs';
 import yaml from 'js-yaml';
 import { readFileSync } from 'fs';
-import axios from 'axios';
+import axios from './http.mjs';
 import crypto from 'crypto';
 import fs from 'fs';
 
@@ -110,24 +110,30 @@ export const askGPT = async (messages, model = 'gpt-4o', extraconfig) => {
 
 
 export async function generateSpeech(text, voice, instructions) {
+  try {
     // Example for OpenAI TTS API with axios
     const response = await axios({
-        method: 'post',
-        url: 'https://api.openai.com/v1/audio/speech',
-        headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-        },
-        data: {
-            model: 'tts-1',
-            input: text,
-            voice,
-            // ...other params...
-        },
-        responseType: 'stream'
+      method: 'post',
+      url: 'https://api.openai.com/v1/audio/speech',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      data: {
+        model: 'tts-1',
+        input: text,
+        voice,
+        // ...other params...
+      },
+      responseType: 'stream'
     });
 
     return response.data; // This is a readable stream
+  } catch (error) {
+    const line = error?.shortMessage || `${error?.message || 'TTS request failed'}`;
+    console.error(`[TTS] ${line}`);
+    throw error; // rethrow to allow upstream handling while keeping logs clean
+  }
 }
 
 
