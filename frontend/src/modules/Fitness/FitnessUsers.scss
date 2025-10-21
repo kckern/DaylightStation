@@ -420,7 +420,143 @@
   }
 }
 
+// RPM Group styling
+.rpm-group-container {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 3.2rem;
+  background: rgba(34, 34, 34, 0.6);
+  border-radius: 8px;
+  padding: 4px 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  gap: 4px;
+  
+  &.single-device .rpm-group-title {
+    display: block;
+  }
+  
+  &.multi-device .rpm-group-title {
+    display: none;
+  }
+  
+  .rpm-group-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    margin-right: 8px;
+    white-space: nowrap;
+    letter-spacing: 0.35px;
+  }
+  
+  .rpm-devices {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+  }
+  
+  .rpm-device-avatar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    
+    .rpm-avatar-wrapper {
+      position: relative;
+      width: 58px;
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      
+      .rpm-spinning-border {
+        position: absolute;
+        inset: -4px;
+        border-radius: 50%;
+        border: 2px dashed rgba(255, 146, 43, 0.7);
+        animation: spin-rpm 1s linear infinite;
+        
+        &.rpm-zero {
+          border-color: rgba(255, 146, 43, 0.2);
+          animation: none;
+        }
+      }
+      
+      .rpm-avatar-content {
+        width: 58px;
+        height: 58px;
+        border-radius: 50%;
+        overflow: hidden;
+        background: #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 1;
+        
+        .rpm-device-image {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+        }
+        
+        .rpm-value-overlay {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          height: 50%;
+          background: rgba(255, 146, 43, 0.9);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: #fff;
+          letter-spacing: 0.5px;
+          z-index: 1;
+          
+          &.rpm-zero {
+            background: rgba(100, 100, 100, 0.7);
+          }
+        }
+      }
+    }
+    
+    .rpm-device-name {
+      font-size: 0.6rem;
+      color: rgba(255, 255, 255, 0.7);
+      text-align: center;
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0 1px;
+    }
+  }
+}
+
 // Animations
+@keyframes spin-rpm {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes pulse {
   0%, 100% { 
     transform: scale(1); 

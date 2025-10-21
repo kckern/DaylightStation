@@ -1,5 +1,6 @@
 import fs from 'fs';
 import util from 'util';
+import path from 'path';
 import express from 'express';
 import { exec } from 'child_process';
 import axios from 'axios';
@@ -323,11 +324,58 @@ exeRouter.get('/tv', async (req, res) => {
 
 async function execmd(cmd) {
     const { cmd: { host, user, port, known_hosts, private_key } } = process.env;
-    const knownIsEmpty = !fs.readFileSync(known_hosts).toString().length;
+
+    // Bulletproof known_hosts path resolution
+    let resolvedKnownHosts = known_hosts || './known_hosts';
+    
+    // Always resolve to absolute path
+    if (!path.isAbsolute(resolvedKnownHosts)) {
+        resolvedKnownHosts = path.resolve(process.cwd(), resolvedKnownHosts);
+    }
+    
+    console.log(`[execmd] Using known_hosts: ${resolvedKnownHosts}`);
+
+    // Ensure directory exists
+    let knownIsEmpty = true;
+    try {
+        const dir = path.dirname(resolvedKnownHosts);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        
+        // Create or check known_hosts file
+        if (!fs.existsSync(resolvedKnownHosts)) {
+            fs.writeFileSync(resolvedKnownHosts, '', { mode: 0o600 });
+            console.log(`[execmd] Created known_hosts at ${resolvedKnownHosts}`);
+            knownIsEmpty = true;
+        } else {
+            const content = fs.readFileSync(resolvedKnownHosts, 'utf8');
+            knownIsEmpty = !content || content.trim().length === 0;
+            console.log(`[execmd] known_hosts exists, isEmpty: ${knownIsEmpty}`);
+        }
+    } catch (err) {
+        console.error(`[execmd] Error handling known_hosts file:`, err);
+        // Continue anyway - SSH will use StrictHostKeyChecking=no
+        knownIsEmpty = true;
+    }
+
     const base64Cmd = Buffer.from(cmd).toString('base64');
-    const options = `${knownIsEmpty ? `-o StrictHostKeyChecking=no` : ""} -o UserKnownHostsFile=./known_hosts`;
-    const sshCommand = `ssh ${options} -i ${private_key} -p ${port} ${user}@${host} "echo ${base64Cmd} | base64 -d | bash"`;
-    return await executeCommand(sshCommand);
+    const sshOptions = [
+        knownIsEmpty ? '-o StrictHostKeyChecking=no' : '',
+        `-o UserKnownHostsFile=${resolvedKnownHosts}`,
+        `-i ${private_key}`,
+        `-p ${port}`
+    ].filter(Boolean).join(' ');
+    
+    const sshCommand = `ssh ${sshOptions} ${user}@${host} "echo ${base64Cmd} | base64 -d | bash"`;
+    console.log(`[execmd] Executing SSH command to ${user}@${host}`);
+    
+    try {
+        return await executeCommand(sshCommand);
+    } catch (err) {
+        console.error(`[execmd] Command failed:`, err);
+        throw err;
+    }
 }
 
 exeRouter.get('/vol/:level', handleVolumeRequest);

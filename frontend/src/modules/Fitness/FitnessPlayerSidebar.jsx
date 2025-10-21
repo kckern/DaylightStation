@@ -43,7 +43,7 @@ const FitnessPlayerSidebar = ({
         </div>
       )}
 
-      <div className="sidebar-footer-controls">
+      <div className="sidebar-footer-controls" style={{display:"none"}}>
         <button type="button" onPointerDown={() => setMode('fullscreen')} className={`sidebar-footer-btn${mode==='fullscreen'?' active':''}`} title="Fullscreen">Full</button>
         <button type="button" onPointerDown={() => setMode('normal')} className={`sidebar-footer-btn${mode==='normal'?' active':''}`} title="Normal">Norm</button>
         <button type="button" onPointerDown={() => setMode('maximal')} className={`sidebar-footer-btn${mode==='maximal'?' active':''}`} title="Maximal">Max</button>
