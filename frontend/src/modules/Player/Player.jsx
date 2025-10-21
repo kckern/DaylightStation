@@ -127,11 +127,14 @@ const Player = forwardRef(function Player(props, ref) {
   
   if (singlePlayerProps?.key) delete singlePlayerProps.key;
 
+  // Extract plexId for health checks (from queue or play object)
+  const plexId = queue?.plex || play?.plex || singlePlayerProps?.plex || singlePlayerProps?.media_key || null;
+
   return singlePlayerProps ? (
     <SinglePlayer {...singlePlayerProps} {...playerProps} />
   ) : (
     <div className={`player ${effectiveShader} ${props.playerType || ''}`}>
-      <LoadingOverlay />
+      <LoadingOverlay plexId={plexId} />
     </div>
   );
 });
