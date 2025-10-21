@@ -57,8 +57,10 @@
 /* Video quality overlay (dropped frames) */
 .video-player .quality-overlay{
     position: absolute;
-    left: 8px;
-    bottom: 8px;
+    bottom: 1rem;
+    left: 1rem;
+    width: auto;
+    height: auto;
     background: rgba(0,0,0,0.55);
     color: #fff;
     font-size: 12px;
