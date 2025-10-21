@@ -125,6 +125,13 @@ const FitnessUsers = () => {
     return rebuilt;
   }, [contextHrColorMap, deviceConfiguration]);
 
+  // Build cadence color map from device configuration
+  const cadenceColorMap = React.useMemo(() => {
+    const map = {};
+    const cadenceSrc = deviceConfiguration?.cadence || {};
+    Object.keys(cadenceSrc).forEach(k => { map[String(k)] = cadenceSrc[k]; });
+    return map;
+  }, [deviceConfiguration]);
 
   // Users are already available from the context
 
@@ -155,12 +162,13 @@ const FitnessUsers = () => {
 
   // Build a map of deviceId -> displayName applying group_label rule
   const hrDisplayNameMap = React.useMemo(() => {
-    // Count total active HR devices (primary + secondary)
-    const populated = [...primaryUsers, ...secondaryUsers];
-    const activeHrDevices = populated.filter(u => u?.hrDeviceId !== undefined && u?.hrDeviceId !== null);
+    // Count total active HR devices that are actually present in allDevices
+    const activeHrDeviceIds = allDevices
+      .filter(d => d.type === 'heart_rate')
+      .map(d => String(d.deviceId));
     
-    // Only apply group_label if more than 1 HR device is active
-    if (activeHrDevices.length <= 1) return hrOwnerMap;
+    // Only apply group_label if more than 1 HR device is currently active
+    if (activeHrDeviceIds.length <= 1) return hrOwnerMap;
     
     // We need group_label info; get from raw config
     const labelLookup = {};
@@ -179,7 +187,7 @@ const FitnessUsers = () => {
       }
     });
     return out;
-  }, [hrOwnerMap, primaryUsers, secondaryUsers, usersConfigRaw]);
+  }, [hrOwnerMap, allDevices, usersConfigRaw]);
 
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
@@ -516,7 +524,7 @@ const FitnessUsers = () => {
               // Handle RPM group separately
               if (device.type === 'rpm-group') {
                 const rpmDevices = device.devices;
-                const isMultiDevice = rpmDevices.length > 1;
+                const isMultiDevice = true; rpmDevices.length > 1;
                 
                 return (
                   <div key="rpm-group" className={`rpm-group-container ${isMultiDevice ? 'multi-device' : 'single-device'}`}>
@@ -529,18 +537,32 @@ const FitnessUsers = () => {
                         const rpm = rpmDevice.cadence || 0;
                         const isZero = rpm === 0;
                         
-                        // Calculate animation duration based on RPM (60s / RPM = seconds per revolution)
-                        const animationDuration = rpm > 0 ? `${60 / rpm}s` : '0s';
+                        // Calculate animation duration based on RPM (120s / RPM = seconds per revolution at half speed)
+                        const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
+                        
+                        // Get the device color from cadenceColorMap
+                        const deviceColor = cadenceColorMap[String(rpmDevice.deviceId)];
+                        const colorMap = {
+                          red: '#ff6b6b',
+                          orange: '#ff922b',
+                          yellow: '#f0c836ff',
+                          green: '#51cf66',
+                          blue: '#6ab8ff'
+                        };
+                        const borderColor = deviceColor ? colorMap[deviceColor] || deviceColor : '#51cf66';
                         
                         return (
                           <div key={`rpm-${rpmDevice.deviceId}`} className="rpm-device-avatar">
                             <div className="rpm-avatar-wrapper">
-                              <div 
-                                className={`rpm-spinning-border ${isZero ? 'rpm-zero' : ''}`}
-                                style={{
-                                  animationDuration: animationDuration
-                                }}
-                              />
+                              {!isZero && (
+                                <div 
+                                  className="rpm-spinning-border"
+                                  style={{
+                                    '--spin-duration': animationDuration,
+                                    borderColor: borderColor
+                                  }}
+                                />
+                              )}
                               <div className="rpm-avatar-content">
                                 <img
                                   src={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
@@ -552,15 +574,19 @@ const FitnessUsers = () => {
                                       return;
                                     }
                                     e.target.dataset.fallback = '1';
-                                    e.target.src = DaylightMediaPath('/media/img/equipment/equipment');
+                                  e.target.src = DaylightMediaPath('/media/img/equipment/equipment');
+                                }}
+                              />
+                                <div 
+                                  className={`rpm-value-overlay ${isZero ? 'rpm-zero' : ''}`}
+                                  style={{
+                                    background: "#00000088"
                                   }}
-                                />
-                                <div className={`rpm-value-overlay ${isZero ? 'rpm-zero' : ''}`}>
+                                >
                                   {rpm}
                                 </div>
                               </div>
                             </div>
-                            <div className="rpm-device-name">{deviceName}</div>
                           </div>
                         );
                       })}
