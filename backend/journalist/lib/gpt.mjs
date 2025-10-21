@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import fetch from '../../lib/httpFetch.mjs';
 import { appendFile } from 'fs';
 import dotenv from 'dotenv';
 import openaiTokenCounter from 'openai-gpt-token-counter';

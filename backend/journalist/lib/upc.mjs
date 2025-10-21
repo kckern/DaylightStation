@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import fetch from '../../lib/httpFetch.mjs';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import querystring from 'querystring';

@@ -1,5 +1,5 @@
 
-import fetch from 'node-fetch';
+import fetch from '../lib/httpFetch.mjs';
 
 
 export default async (req, res) => {
