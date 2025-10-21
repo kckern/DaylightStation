@@ -1,4 +1,5 @@
 import axios from './http.mjs';
+import { buildCurl } from './httpUtils.mjs';
 import { saveFile } from './io.mjs';
 
 const getTickets = async () => {
@@ -34,8 +35,10 @@ const getTickets = async () => {
             page++;
         } catch (error) {
             console.error(`Error fetching tickets:`, error?.shortMessage || error.message);
-            const curlString = `curl -s -H 'Authorization: ${CLICKUP_PK}' '${url}' | jq -C . | less -R`;
-            if (process.env.DEBUG_CURL === '1') console.error(curlString);
+            if (process.env.DEBUG_CURL === '1') {
+                const curlString = buildCurl({ method: 'GET', url, headers: { Authorization: CLICKUP_PK } });
+                console.error(curlString);
+            }
             break; // Exit the loop on error
         }
     }

@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import fetch from './httpFetch.mjs';
 import { appendFile } from 'fs';
 import yaml from 'js-yaml';
 import { readFileSync } from 'fs';
