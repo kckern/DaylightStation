@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './http.mjs';
 import crypto from 'crypto';
 import { saveFile } from './io.mjs';
 

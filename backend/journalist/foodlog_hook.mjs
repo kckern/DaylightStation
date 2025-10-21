@@ -33,7 +33,7 @@ import { titleCase } from "title-case";
 dotenv.config();
 //canvas, axios
 
-import axios from 'axios';
+import axios from '../lib/http.mjs';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 import { saveFile } from "../lib/io.mjs";
 

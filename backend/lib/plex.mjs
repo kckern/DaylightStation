@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './http.mjs';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import { clearWatchedItems } from '../fetch.mjs';
 import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';

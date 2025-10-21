@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './http.mjs';
 import { saveFile, loadFile } from './io.mjs';
 import processWeight from '../jobs/weight.mjs';
 

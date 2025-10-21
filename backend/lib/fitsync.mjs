@@ -1,7 +1,7 @@
 import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile } from './io.mjs';
-import axios from 'axios';
+import axios from './http.mjs';
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
