@@ -42,10 +42,12 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     if (!(Number.isFinite(start) && Number.isFinite(end) && end > start)) return [];
     const span = end - start;
     const arr = [];
-    for (let i = 0; i < 10; i++) {
-      const frac = i / 9; // 0..1
+    for (let i = 0; i < 11; i++) {
+      const frac = i / 9.5; // 0..1
       arr.push(start + frac * span);
     }
+    //remove last item because it duplicates end time
+    arr.pop();
     return arr;
   }, []);
   const effectiveRange = useMemo(() => {
