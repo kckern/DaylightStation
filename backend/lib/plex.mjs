@@ -49,7 +49,7 @@ export class Plex {
       return await this.loadmedia_url(item.key || item);
     }
   const media_type = this.determinemedia_type(type);
-  const { maxVideoBitrate = 5000 } = opts || {};
+  const { maxVideoBitrate = null } = opts || {};
     try {
       if (media_type === 'audio') {
       const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
@@ -62,9 +62,11 @@ export class Plex {
           `path=%2Flibrary%2Fmetadata%2F${key}`,
           `protocol=${protocol}`,
           `X-Plex-Client-Identifier=${session}`,
-          `maxVideoBitrate=${maxVideoBitrate}`,
           `X-Plex-Platform=${platform}`
         ];
+        if (maxVideoBitrate != null) {
+          baseParams.splice(3, 0, `maxVideoBitrate=${maxVideoBitrate}`);
+        }
         // Note: codec/container forcing removed; rely on server capabilities and bitrate
         const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
         const isValid = await axios.get(url).then((response) => {

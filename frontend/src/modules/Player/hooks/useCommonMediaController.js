@@ -26,7 +26,8 @@ export function useCommonMediaController({
   onProgress,
   onMediaRef,
   stallConfig = {},
-  showQuality = false
+  showQuality = false,
+  onRequestBitrateChange
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.plex || meta.media_url;
   const containerRef = useRef(null);
@@ -51,6 +52,15 @@ export function useCommonMediaController({
   const [quality, setQuality] = useState({ droppedVideoFrames: 0, totalVideoFrames: 0, droppedPct: 0, supported: true });
   const lastQualityRef = useRef({ droppedVideoFrames: 0, totalVideoFrames: 0, droppedPct: 0, supported: true });
 
+  // Rolling dropped-frame average (fraction 0-1) over recent samples
+  const [droppedFramePct, setDroppedFramePct] = useState(0);
+  const pctSamplesRef = useRef([]); // store last N per-second pct samples (fractions)
+  const lastFramesRef = useRef({ dropped: 0, total: 0 });
+  const stableBelowMsRef = useRef(0);
+  const lastAdaptTsRef = useRef(0);
+  const pendingAdaptRef = useRef(false);
+  const currentMaxKbpsRef = useRef(null);
+
   // Config with sane defaults
   // recoveryStrategies: Array of strategies to attempt in order
   //   - 'nudge': Tiny time adjustment (fastest, least disruptive)
@@ -63,7 +73,22 @@ export function useCommonMediaController({
     hardMs = 8000,
     recoveryStrategies = ['nudge', 'reload'],
     seekBackOnReload = 2,
-    mode = 'auto'
+    mode = 'auto',
+    // Adaptation config defaults
+    droppedFrameAllowance = 0.5, // fraction 0-1
+    rampUpStableSecs = 60,
+    rampUpLowPct = 0.01, // <=1%
+    initialCapKbps = 2000,
+    minCapKbps = 125,
+    sampleIntervalMs = 1000,
+    avgWindowSecs = 10,
+    minAdaptIntervalMs = 8000,
+    // Optional ceiling & reset-to-unlimited controls (disabled by default)
+    maxCapKbps = null,
+    resetToUnlimitedAtKbps = null,
+    resetStableSecs = 60,
+    // Optional manual reset key (disabled by default)
+    manualResetKey = null
   } = stallConfig || {};
 
   const getMediaEl = useCallback(() => {
@@ -73,6 +98,22 @@ export function useCommonMediaController({
   }, []);
 
   const isDash = meta.media_type === 'dash_video';
+  // Seed current cap if provided on meta
+  useEffect(() => {
+    if (Number.isFinite(meta?.maxVideoBitrate)) {
+      currentMaxKbpsRef.current = Number(meta.maxVideoBitrate);
+    } else {
+      currentMaxKbpsRef.current = null;
+    }
+  }, [meta?.maxVideoBitrate, meta?.media_key]);
+
+  // Reset sampling state on media change to prevent carryover
+  useEffect(() => {
+    pctSamplesRef.current = [];
+    lastFramesRef.current = { dropped: 0, total: 0 };
+    stableBelowMsRef.current = 0;
+    // Do not reset currentMaxKbpsRef here; it seeds from meta.maxVideoBitrate effect above
+  }, [media_key]);
 
   const handleProgressClick = useCallback((event) => {
     if (!duration || !containerRef.current) return;
@@ -331,7 +372,8 @@ export function useCommonMediaController({
           stalled: isStalled,
           recoveryAttempt: stallStateRef.current.recoveryAttempt,
           lastStrategy: stallStateRef.current.lastStrategy,
-          quality
+          quality,
+          droppedFramePct
         });
       }
     };
@@ -504,26 +546,115 @@ export function useCommonMediaController({
           const next = { droppedVideoFrames: dropped, totalVideoFrames: total, droppedPct: pct, supported: true };
           lastQualityRef.current = next;
           setQuality(next);
+          // Compute per-interval delta-based fraction and rolling average
+          const dDropped = Math.max(0, dropped - (lastFramesRef.current.dropped || 0));
+          const dTotal = Math.max(0, total - (lastFramesRef.current.total || 0));
+          lastFramesRef.current = { dropped, total };
+          const frac = dTotal > 0 ? (dDropped / dTotal) : 0; // 0-1
+          // Maintain last N samples
+          const N = Math.max(1, Math.floor(avgWindowSecs));
+          pctSamplesRef.current = [...pctSamplesRef.current.slice(-N + 1), frac];
+          const avg = pctSamplesRef.current.length
+            ? (pctSamplesRef.current.reduce((a, b) => a + b, 0) / pctSamplesRef.current.length)
+            : 0;
+          setDroppedFramePct(avg);
+          // Track stability window for ramp-up
+          if (avg <= rampUpLowPct) {
+            stableBelowMsRef.current = Math.min(rampUpStableSecs * 1000, stableBelowMsRef.current + sampleIntervalMs);
+          } else {
+            stableBelowMsRef.current = 0;
+          }
         }
       } catch (_) {}
     };
-    timerId = setInterval(sample, 1000);
+    timerId = setInterval(sample, sampleIntervalMs);
     sample();
     return () => { if (timerId) clearInterval(timerId); };
-  }, [showQuality, isVideo, getMediaEl]);
+  }, [showQuality, isVideo, getMediaEl, avgWindowSecs, rampUpLowPct, rampUpStableSecs, sampleIntervalMs]);
 
-  // Placeholder for dynamic bitrate adaptation based on quality
-  const adaptVideoBitrate = useCallback((q) => {
-    // Placeholder implementation: hook for future ABR control
-    // Example real impl (dash.js): player.updateSettings({ streaming: { abr: { maxBitrate: { video: X }}} })
-    if (!q || !showQuality || !isVideo) return false;
-    // Intentionally no-op; just return false and log once when severe drops are detected
-    if (q.totalVideoFrames > 300 && q.droppedPct > 5) {
-      // eslint-disable-next-line no-console
-      console.debug('[adaptVideoBitrate] High dropped frames detected', q);
+  // Bitrate adaptation engine (dash-only)
+  useEffect(() => {
+    if (!isDash || !quality?.supported || !showQuality) return;
+    const now = Date.now();
+    if (pendingAdaptRef.current) return;
+    // Don’t adapt when seeking/paused/stalled heavily – rely on outer controls
+    const mediaEl = getMediaEl();
+    if (!mediaEl || mediaEl.paused) return;
+
+    // Downscale when over allowance
+    if (droppedFramePct > droppedFrameAllowance && (now - lastAdaptTsRef.current) >= minAdaptIntervalMs) {
+      const curr = currentMaxKbpsRef.current;
+      let next = (curr == null) ? initialCapKbps : Math.max(minCapKbps, Math.floor(curr / 2));
+      if (maxCapKbps != null) next = Math.min(next, maxCapKbps);
+      if (next !== curr && typeof onRequestBitrateChange === 'function') {
+        pendingAdaptRef.current = true;
+        lastAdaptTsRef.current = now;
+        currentMaxKbpsRef.current = next;
+        try {
+          // eslint-disable-next-line no-console
+          console.info('[ABR] downscale', { plexId: media_key, from: curr, to: next, droppedFramePct });
+          onRequestBitrateChange(next, { media_key, reason: 'over_allowance', droppedFramePct });
+        } finally {
+          // The caller is responsible for clearing any UI; we only unlock the guard after a grace period
+          setTimeout(() => { pendingAdaptRef.current = false; }, 50);
+        }
+      }
+      return;
     }
-    return false;
-  }, [showQuality, isVideo]);
+
+    // Ramp-up when stable at low drops
+    if (currentMaxKbpsRef.current != null && droppedFramePct <= rampUpLowPct && stableBelowMsRef.current >= rampUpStableSecs * 1000 && (now - lastAdaptTsRef.current) >= minAdaptIntervalMs) {
+      const curr = currentMaxKbpsRef.current;
+      let next = Math.max(minCapKbps, curr * 2); // double each step per spec
+      if (maxCapKbps != null) next = Math.min(next, maxCapKbps);
+      if (typeof onRequestBitrateChange === 'function') {
+        pendingAdaptRef.current = true;
+        lastAdaptTsRef.current = now;
+        currentMaxKbpsRef.current = next;
+        stableBelowMsRef.current = 0; // reset window after ramp
+        try {
+          // eslint-disable-next-line no-console
+          console.info('[ABR] ramp-up', { plexId: media_key, from: curr, to: next, droppedFramePct });
+          onRequestBitrateChange(next, { media_key, reason: 'ramp_up', droppedFramePct });
+        } finally {
+          setTimeout(() => { pendingAdaptRef.current = false; }, 50);
+        }
+      }
+    }
+    // Reset to unlimited when stable at high cap threshold
+    if (resetToUnlimitedAtKbps != null && currentMaxKbpsRef.current != null && currentMaxKbpsRef.current >= resetToUnlimitedAtKbps && droppedFramePct <= rampUpLowPct && stableBelowMsRef.current >= resetStableSecs * 1000 && (now - lastAdaptTsRef.current) >= minAdaptIntervalMs) {
+      const curr = currentMaxKbpsRef.current;
+      if (typeof onRequestBitrateChange === 'function') {
+        pendingAdaptRef.current = true;
+        lastAdaptTsRef.current = now;
+        currentMaxKbpsRef.current = null;
+        stableBelowMsRef.current = 0;
+        try {
+          // eslint-disable-next-line no-console
+          console.info('[ABR] reset-to-unlimited', { plexId: media_key, from: curr, to: null, droppedFramePct });
+          onRequestBitrateChange(null, { media_key, reason: 'reset_unlimited', droppedFramePct });
+        } finally {
+          setTimeout(() => { pendingAdaptRef.current = false; }, 50);
+        }
+      }
+    }
+  }, [isDash, quality?.supported, showQuality, droppedFramePct, droppedFrameAllowance, minAdaptIntervalMs, onRequestBitrateChange, initialCapKbps, minCapKbps, rampUpLowPct, rampUpStableSecs, getMediaEl, media_key, maxCapKbps, resetToUnlimitedAtKbps, resetStableSecs]);
+
+  // Manual reset keyboard handler (optional)
+  useEffect(() => {
+    if (!manualResetKey || !isDash) return;
+    const handler = (e) => {
+      if (e.key === manualResetKey && typeof onRequestBitrateChange === 'function') {
+        const curr = currentMaxKbpsRef.current;
+        currentMaxKbpsRef.current = null;
+        // eslint-disable-next-line no-console
+        console.info('[ABR] manual reset to unlimited', { plexId: media_key, from: curr });
+        onRequestBitrateChange(null, { media_key, reason: 'manual_reset', droppedFramePct });
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [manualResetKey, isDash, onRequestBitrateChange, media_key, droppedFramePct]);
 
   return {
     containerRef,
@@ -537,6 +668,6 @@ export function useCommonMediaController({
     isSeeking,
     handleProgressClick,
     quality,
-    adaptVideoBitrate
+    droppedFramePct
   };
 }

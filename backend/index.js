@@ -6,6 +6,7 @@ import cors from 'cors'; // Step 2: Import cors
 import request from 'request'; // Import the request module
 import { createWebsocketServer } from './websocket.js';
 import { createServer } from 'http';
+import { loadFile } from './lib/io.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -61,6 +62,21 @@ async function initializeApp() {
 
     // Backend API
     app.get('/debug', (_, res) => res.json({ process: { __dirname, env: process.env } }));
+    
+    // Health check endpoints
+    app.get('/api/ping', (_, res) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() }));
+    app.get('/api/status', (_, res) => res.status(200).json({ 
+      status: 'ok', 
+      uptime: process.uptime(), 
+      timestamp: new Date().toISOString(),
+      serverdata: loadFile("config/cron")
+    }));
+    app.get('/api/status/nas', (_, res) => res.status(200).json({ 
+      status: 'ok', 
+      accessible: true,
+      timestamp: new Date().toISOString()
+    }));
+    
     app.use('/data', fetchRouter);
     
     app.use('/cron', cron);

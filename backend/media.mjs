@@ -121,6 +121,27 @@ mediaRouter.all('/plex/play/:plex_key', async (req, res) => {
     }
 });
 
+mediaRouter.all('/plex/mpd/:plex_key', async (req, res) => {
+    const plex_key = req.params.plex_key;
+    const qBitrate = parseInt(req.query.maxVideoBitrate, 10);
+    const opts = Number.isFinite(qBitrate) ? { maxVideoBitrate: qBitrate } : {};
+    try {
+        const plexUrl = await (new Plex()).loadmedia_url(plex_key, 0, opts);
+        if (!plexUrl) {
+            return res.status(404).json({ error: 'Media URL not found', plex_key });
+        }
+        // Redirect through plex_proxy
+        const proxyUrl = plexUrl.replace(process.env.plex.host, '/plex_proxy');
+        res.redirect(proxyUrl);
+    } catch (error) {
+        res.status(500).json({ 
+            error: 'Error generating media URL', 
+            message: error.message,
+            plex_key 
+        });
+    }
+});
+
 const logToInfinity = async (media_key, { percent, seconds }) => {
     percent = parseFloat(percent);
     seconds = parseInt(seconds);

@@ -21,7 +21,8 @@ export function LoadingOverlay({
   stalled, 
   debugContext, 
   getMediaEl,
-  plexId
+  plexId,
+  message
 }) {
   const [visible, setVisible] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
@@ -105,6 +106,11 @@ export function LoadingOverlay({
       }}
     >
       <img src={imgSrc} alt="" />
+      {message && (
+        <div className="loading-message" style={{ marginTop: 8 }}>
+          {message}
+        </div>
+      )}
       {(showSeekInfo || showDebug) && (
         <div className="loading-info">
           {showSeekInfo && <div>Loading at {formatSeekTime(initialStart)}</div>}
@@ -130,5 +136,6 @@ LoadingOverlay.propTypes = {
   stalled: PropTypes.bool,
   debugContext: PropTypes.object,
   getMediaEl: PropTypes.func,
-  plexId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+  plexId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  message: PropTypes.string
 };

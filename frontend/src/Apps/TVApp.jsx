@@ -115,6 +115,8 @@ export default function TVApp({ appParam }) {
   function mapSelectionToContent(selection) {
     const clear = () => setCurrentContent(null);
     const props = { ...selection, clear, onSelect: handleSelection, onEscape: handleEscape };
+    console.log('[TVApp] mapSelectionToContent - selection:', selection);
+    console.log('[TVApp] props being passed to Player/Menu:', props);
     const options = {
       play:      <Player {...props} />,
       queue:     <Player {...props} />,
