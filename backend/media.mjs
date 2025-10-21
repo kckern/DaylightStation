@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './lib/http.mjs';
 import express from 'express';
 import fs from 'fs';
 import {Plex} from './lib/plex.mjs';

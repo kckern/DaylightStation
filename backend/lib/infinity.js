@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './http.mjs';
 import { saveFile, saveImage } from './io.mjs';
 
 const keys = Object.keys(process.env.infinity);
@@ -151,10 +151,12 @@ const updateItem = async (tableId, itemId, key, val) => {
         });
         return response.data;
     } catch (e) {
-        console.error("Error updating item:", e.message);
-        console.error("Response data:", e.response?.data);
-        console.error("Curl equivalent:");
-        console.error(`curl -X PUT '${url}' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d '${JSON.stringify(data)}'`);
+        console.error("Error updating item:", e?.shortMessage || e.message);
+        // To debug full payload, enable DEBUG_CURL=1 env
+        if (process.env.DEBUG_CURL === '1') {
+            console.error("Curl equivalent:");
+            console.error(`curl -X PUT '${url}' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d '${JSON.stringify(data)}'`);
+        }
         return false;
     }
 };

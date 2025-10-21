@@ -1,6 +1,6 @@
 import { createCanvas, registerFont, loadImage } from 'canvas';
 import QRCode from 'qrcode';
-import axios from 'axios';
+import axios from './http.mjs';
 
 /**
  * Register fonts for canvas text rendering

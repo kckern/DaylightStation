@@ -1,5 +1,5 @@
 import { saveFile } from './io.mjs';
-import axios from 'axios';
+import axios from './http.mjs';
 import {lookupReference} from 'scripture-guide';
 const volumes = {
     "ot": 1,

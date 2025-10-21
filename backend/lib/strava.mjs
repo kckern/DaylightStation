@@ -1,7 +1,7 @@
 import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile } from './io.mjs';
-import axios from 'axios';
+import axios from './http.mjs';
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
@@ -29,7 +29,7 @@ export const getAccessToken = async () => {
         process.env.STRAVA_ACCESS_TOKEN = accessToken;
         return accessToken;
     } catch (error) {
-        console.error('Error fetching Strava access token:', error);
+    console.error('Error fetching Strava access token:', error?.shortMessage || error.message);
         return false;
     }
 };

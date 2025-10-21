@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import axios from 'axios';
+import axios from '../../lib/http.mjs';
 import { v4 as uuidv4 } from 'uuid';
 import moment from 'moment-timezone';
 import { getBase64Url } from './food.mjs';
@@ -259,8 +259,8 @@ const gptCall = async (endpoint, payload) => {
 
         return response.data;
     } catch (error) {
-        console.error('Error during GPT call:', error.message);
-        console.error('Error details:', error.response?.data || error.message);
+    console.error('Error during GPT call:', error?.shortMessage || error.message);
+    // Details suppressed to keep logs concise
         throw error;
     }
 };
@@ -320,7 +320,7 @@ export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
         json.uuid = uuidv4();
         return json;
     } catch (error) {
-        console.error('Error describing image:', error);
+    console.error('Error describing image:', error?.shortMessage || error.message);
         return await detectFoodFromImage(imgUrl, extras, attempt + 1);
     }
 };
@@ -374,7 +374,7 @@ export const detectFoodFromTextDescription = async (text, extras, attempt = 1) =
         json.food = json.food || null;
         return json;
     } catch (error) {
-        console.error('Error describing text:', error);
+    console.error('Error describing text:', error?.shortMessage || error.message);
         return await detectFoodFromTextDescription(text, attempt + 1);
     }
 };
@@ -494,7 +494,7 @@ export const itemizeFood = async (foodList, img, attempt = 1) => {
         });
         return validated_data;
     } catch (error) {
-        console.error('Error itemizing food:', error);
+    console.error('Error itemizing food:', error?.shortMessage || error.message);
         return false;
     }
 
@@ -596,7 +596,7 @@ export const generateCoachingMessage = async (chat_id, newFood, attempt=1)=>{
                     out: response.data
                 });
             } catch (gptError) {
-                console.error('Error getting GPT threshold message:', gptError);
+                console.error('Error getting GPT threshold message:', gptError?.shortMessage || gptError.message);
                 // Fallback threshold messages if GPT fails
                 switch (crossedThreshold) {
                     case 400:
@@ -673,7 +673,7 @@ export const generateCoachingMessage = async (chat_id, newFood, attempt=1)=>{
                 });
 
             } catch (gptError) {
-                console.error('Error getting GPT minor message:', gptError);
+                console.error('Error getting GPT minor message:', gptError?.shortMessage || gptError.message);
                 // Fallback to simple messages if GPT fails
                 const fallbackMessages = [
                     "Good job logging that!",
@@ -701,7 +701,7 @@ export const generateCoachingMessage = async (chat_id, newFood, attempt=1)=>{
         return coachingMessage;
         
     } catch (error) {
-        console.error(`generateCoachingMessage: ERROR - chat_id: ${chat_id}, attempt: ${attempt}, error:`, error);
+    console.error(`generateCoachingMessage: ERROR - chat_id: ${chat_id}, attempt: ${attempt}, error:`, error?.shortMessage || error.message);
         if(attempt < 3) {
             console.log(`generateCoachingMessage: RETRY - chat_id: ${chat_id}, attempt: ${attempt + 1}`);
             return await generateCoachingMessage(chat_id, newFood, attempt + 1);
@@ -838,7 +838,7 @@ export const generateCoachingMessageForDailyHealth = async (maxAttempts = 5, att
         // Recursively process the next date
         return await generateCoachingMessageForDailyHealth(maxAttempts, attempt + 1);
     } catch (error) {
-        console.error('Error generating daily health coaching message:', error);
+    console.error('Error generating daily health coaching message:', error?.shortMessage || error.message);
         return null;
     }
 };

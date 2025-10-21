@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './http.mjs';
 import { saveFile } from './io.mjs';
 
 const getTickets = async () => {
@@ -33,11 +33,9 @@ const getTickets = async () => {
             lastPage = team_tickets.last_page;
             page++;
         } catch (error) {
-            console.error(`Error fetching tickets:`, error.message);
-            const curlString = `curl -X GET "${url}" -H "Authorization: ${CLICKUP_PK}"`;
-            if (error.response && error.response.data) {
-                console.error(curlString, error.response.data);
-            }
+            console.error(`Error fetching tickets:`, error?.shortMessage || error.message);
+            const curlString = `curl -s -H 'Authorization: ${CLICKUP_PK}' '${url}' | jq -C . | less -R`;
+            if (process.env.DEBUG_CURL === '1') console.error(curlString);
             break; // Exit the loop on error
         }
     }

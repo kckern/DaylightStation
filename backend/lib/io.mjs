@@ -2,7 +2,7 @@ import fs from 'fs';
 import yaml from 'js-yaml';
 import {decode} from 'html-entities';
 import smartquotes from 'smartquotes';
-import axios from 'axios';
+import axios from './http.mjs';
 
 
 export const saveImage = async (url, folder, uid) => {
@@ -44,7 +44,7 @@ export const saveImage = async (url, folder, uid) => {
             writer.on('error', reject);
         });
     } catch (error) {
-        console.error(`Failed to save image from ${url}:`, error);
+    console.error(`Failed to save image from ${url}:`, error?.shortMessage || error.message);
         return false;
     }
 };

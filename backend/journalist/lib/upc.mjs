@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import querystring from 'querystring';
-import axios from 'axios';
+import axios from '../../lib/http.mjs';
 import moment from 'moment-timezone';
 import { getIconAndNoomColorFromItem } from './gpt_food.mjs';
 //set timezone to los_angeles
@@ -276,7 +276,7 @@ const openFoodFacts = async (barcode) => {
         return food;
         
     } catch (error) {
-        console.error('OpenFoodFacts • Error:', error);
+    console.error('OpenFoodFacts • Error:', error?.shortMessage || error.message);
         return null;
     }
 }
@@ -312,7 +312,7 @@ async function searchImage(keyword, upc = '') {
             return null;
         }
     } catch (error) {
-        console.error('Error fetching image:', error.response ? error.response.data : error.message, fullURL);
+    console.error('Error fetching image:', error?.shortMessage || error.message, fullURL);
         return null;
     }
 }
