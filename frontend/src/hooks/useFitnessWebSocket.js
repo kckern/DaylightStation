@@ -9,7 +9,7 @@ import { DaylightAPI } from '../lib/api.mjs';
 const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 180000,
-  rpmZero: 5000  // RPM devices show 0 after 5 seconds of no updates
+  rpmZero: 12000  // RPM devices show 0 after 12 seconds of no updates
 };
 
 // Setter to override timeouts from external configuration
