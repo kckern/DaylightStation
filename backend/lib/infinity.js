@@ -1,7 +1,8 @@
 import axios from './http.mjs';
+import { buildCurl } from './httpUtils.mjs';
 import { saveFile, saveImage } from './io.mjs';
 
-const keys = Object.keys(process.env.infinity);
+const keys = Object.keys(process.env.infinity || {});
 
 const authInfinity = async () => {
     const { INFINITY_DEV  } = process.env;
@@ -155,7 +156,7 @@ const updateItem = async (tableId, itemId, key, val) => {
         // To debug full payload, enable DEBUG_CURL=1 env
         if (process.env.DEBUG_CURL === '1') {
             console.error("Curl equivalent:");
-            console.error(`curl -X PUT '${url}' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d '${JSON.stringify(data)}'`);
+            console.error(buildCurl({ method: 'PUT', url, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, data }));
         }
         return false;
     }

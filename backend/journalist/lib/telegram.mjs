@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import fetch from '../../lib/httpFetch.mjs';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import util from 'util';

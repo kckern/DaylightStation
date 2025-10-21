@@ -1,7 +1,7 @@
 
 import fs from 'fs';
 import { getPhotoUrl } from './lib/telegram.mjs';
-import fetch from 'node-fetch'; 
+import fetch from '../lib/httpFetch.mjs'; 
 import dotenv from 'dotenv';
 dotenv.config();
 

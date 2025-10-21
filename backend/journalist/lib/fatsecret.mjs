@@ -1,6 +1,6 @@
 
 import dotenv from 'dotenv';
-import fetch from 'node-fetch';
+import fetch from '../../lib/httpFetch.mjs';
 import crypto from 'crypto'; // Node.js crypto module
 import qs from 'querystring'; // For URL query string manipulation
 dotenv.config();
