@@ -72,6 +72,7 @@ export function AudioPlayer({
           stalled={isStalled}
           initialStart={media.seconds || 0}
           seconds={seconds}
+          plexId={media?.media_key || media?.key || media?.plex || null}
           debugContext={{
             scope: 'audio',
             mediaType: media?.media_type,

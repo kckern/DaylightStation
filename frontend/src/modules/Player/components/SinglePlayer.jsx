@@ -59,22 +59,62 @@ export function SinglePlayer(play) {
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
 
-  const fetchVideoInfoCallback = useCallback(async () => {
+  // LocalStorage helpers (per-device, per-plexId)
+  const bitrateKey = useCallback((plexId) => `dashMaxBitrate:${plexId}`, []);
+  const readStoredBitrate = useCallback((plexId) => {
+    try {
+      const raw = window.localStorage.getItem(bitrateKey(plexId));
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return null;
+      const now = Date.now();
+      if (obj.expiresAt && now > obj.expiresAt) {
+        window.localStorage.removeItem(bitrateKey(plexId));
+        return null;
+      }
+      return (obj.valueKbps ?? null);
+    } catch {
+      return null;
+    }
+  }, [bitrateKey]);
+  const writeStoredBitrate = useCallback((plexId, valueKbps) => {
+    try {
+      const now = Date.now();
+      const ttl = 30 * 24 * 60 * 60 * 1000; // 30 days
+      const payload = { valueKbps: valueKbps ?? null, updatedAt: now, expiresAt: now + ttl };
+      window.localStorage.setItem(bitrateKey(plexId), JSON.stringify(payload));
+    } catch {}
+  }, [bitrateKey]);
+
+  const fetchVideoInfoCallback = useCallback(async (opts = {}) => {
     setIsReady(false);
+    // Determine plexId (prefer explicit plex prop)
+    const plexId = plex || mediaInfo?.media_key || play?.media_key || play?.plex;
+    // Respect override; else use stored; else use prop-level maxVideoBitrate if provided
+    const override = opts?.maxVideoBitrateOverride;
+    const stored = plexId ? readStoredBitrate(plexId) : null;
+    const effectiveMax = (override !== undefined) ? override : (stored != null ? stored : play.maxVideoBitrate);
+
     const info = await fetchMediaInfo({ 
       plex, 
       media, 
       shuffle, 
-      maxVideoBitrate: play.maxVideoBitrate 
+      maxVideoBitrate: effectiveMax 
     });
     
     if (info) {
-      setMediaInfo({ ...info, continuous });
+      // Attach current max to mediaInfo so the hook can seed its ref
+      const withCap = { ...info, continuous, maxVideoBitrate: effectiveMax ?? null };
+      setMediaInfo(withCap);
       setIsReady(true);
+      // Persist override if provided
+      if (override !== undefined && plexId) {
+        writeStoredBitrate(plexId, override);
+      }
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, shuffle, continuous, play.maxVideoBitrate]);
+  }, [plex, media, rate, open, shuffle, continuous, play.maxVideoBitrate, mediaInfo?.media_key, play?.media_key, play?.plex, readStoredBitrate, writeStoredBitrate]);
 
   useEffect(() => {
     fetchVideoInfoCallback();
@@ -82,11 +122,14 @@ export function SinglePlayer(play) {
 
   if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
   
+  // Calculate plexId from available sources - plex prop is passed directly from Player
+  const initialPlexId = plex || media || mediaInfo?.media_key || mediaInfo?.key || mediaInfo?.plex || null;
+  
   return (
     <div className={`player ${playerType || ''}`}>
       {!isReady && (
         <div className={`shader on notReady ${shader}`}>
-          <LoadingOverlay />
+          <LoadingOverlay plexId={initialPlexId} />
         </div>
       )}
       {isReady && ['dash_video', 'video', 'audio'].includes(mediaInfo.media_type) && (

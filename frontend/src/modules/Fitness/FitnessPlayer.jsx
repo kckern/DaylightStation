@@ -578,6 +578,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               type: 'video',
               continuous: false,
               // maxVideoBitrate: 2000
+              stallConfig: { droppedFrameAllowance: 0.15 }
             }}
             clear={handleClose}
             advance={handleNext}
