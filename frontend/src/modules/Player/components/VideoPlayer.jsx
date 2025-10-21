@@ -24,6 +24,7 @@ export function VideoPlayer({
   ignoreKeys, 
   onProgress, 
   onMediaRef, 
+  showQuality,
   stallConfig 
 }) {
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -38,6 +39,8 @@ export function VideoPlayer({
     isStalled,
     isSeeking,
     handleProgressClick,
+    quality,
+    adaptVideoBitrate
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -57,6 +60,7 @@ export function VideoPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
+    showQuality,
     stallConfig
   });
 
@@ -119,9 +123,30 @@ export function VideoPlayer({
           onPlaying={() => setDisplayReady(true)}
         />
       )}
+      {showQuality && quality?.supported && (
+        <QualityOverlay stats={quality} />
+      )}
     </div>
   );
 }
+
+function QualityOverlay({ stats }) {
+  const pctText = `${stats.totalVideoFrames > 0 ? stats.droppedPct.toFixed(1) : '0.0'}%`;
+  return (
+    <div className="quality-overlay">
+      Dropped Frames: {stats.droppedVideoFrames} ({pctText})
+    </div>
+  );
+}
+
+QualityOverlay.propTypes = {
+  stats: PropTypes.shape({
+    droppedVideoFrames: PropTypes.number,
+    totalVideoFrames: PropTypes.number,
+    droppedPct: PropTypes.number,
+    supported: PropTypes.bool
+  })
+};
 
 VideoPlayer.propTypes = {
   media: PropTypes.object.isRequired,
@@ -139,5 +164,6 @@ VideoPlayer.propTypes = {
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
+  showQuality: PropTypes.bool,
   stallConfig: PropTypes.object
 };
