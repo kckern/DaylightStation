@@ -113,7 +113,7 @@
     display: flex;
     flex-direction: column;
     align-items: stretch; /* allow cards to span full width */
-    padding: 0 16px;
+    padding: 0 1ex 0 0 ;
     overflow-y: auto;
 
       .device-grid {
@@ -465,6 +465,7 @@
     position: relative;
     flex: 1;
     min-width: 0;
+        padding-bottom: 1ex;
     
     .rpm-avatar-wrapper {
       position: relative;
@@ -479,8 +480,10 @@
         position: absolute;
         inset: -4px;
         border-radius: 50%;
-        border: 2px dashed rgba(255, 146, 43, 0.7);
-        animation: spin-rpm 1s linear infinite;
+        border: 5px dashed rgba(255, 146, 43, 0.7);
+        animation: spin-rpm linear infinite;
+        animation-duration: var(--spin-duration, 1s);
+        transition: animation-duration 0.3s ease-out;
         
         &.rpm-zero {
           border-color: rgba(255, 146, 43, 0.2);
@@ -521,8 +524,8 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 0.85rem;
-          font-weight: 700;
+          font-size: 1.2rem;
+          font-weight: 800;
           color: #fff;
           letter-spacing: 0.5px;
           z-index: 1;

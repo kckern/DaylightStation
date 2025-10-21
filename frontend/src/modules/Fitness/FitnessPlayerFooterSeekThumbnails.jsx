@@ -162,7 +162,8 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     // progress-bar seek (debug log removed)
     /* eslint-enable no-console */
     const rect = e.currentTarget.getBoundingClientRect();
-    commit(positionToSeconds(e.clientX, rect));
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    commit(positionToSeconds(clientX, rect));
   }, [positionToSeconds, commit]);
 
   const handlePointerMove = useCallback((e) => {
@@ -212,6 +213,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         imgSrc = generateThumbnailUrl ? generateThumbnailUrl(plexObj, pos) : undefined;
       }
       const state = activePos != null && Math.abs(activePos - pos) < 0.001 ? 'active' : (activePos != null && pos < activePos ? 'past' : 'future');
+      const classNames = `seek-button-container ${state}${isOrigin ? ' origin' : ''}`;
       return (
         <SingleThumbnailButton
           key={'rng-'+idx+'-'+Math.round(pos)}
@@ -224,7 +226,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
           globalStart={rangeStart}
           globalEnd={rangeEnd}
         >
-          <div className={`seek-button-container${state==='active'?' active':''}`} data-pos={pos}>
+          <div className={classNames} data-pos={pos}>
             <div className="thumbnail-wrapper">
               {imgSrc && (
                 <img src={imgSrc} alt={`Thumbnail ${label}`} className="seek-thumbnail" loading="lazy" />

@@ -465,12 +465,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         case 'Escape':
           handleClose();
           break;
-        case ' ': { // Spacebar toggles play/pause unless focus is on a button
-          if (document.activeElement?.tagName !== 'BUTTON') {
-            togglePlay();
-            // Pause state will sync via onProgress; optimistic update for snappier UI
-            setIsPaused(prev => !prev);
-          }
+        case ' ': { // Spacebar toggles play/pause unless focus is on input/textarea
+          event.preventDefault(); // prevent page scroll
+          togglePlay();
+          // Pause state will sync via onProgress; optimistic update for snappier UI
+          setIsPaused(prev => !prev);
           break; }
         default:
           break;
@@ -479,7 +478,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [queue, currentItem, currentTime, duration]);
+  }, [queue, currentItem, currentTime, duration, togglePlay]);
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
 
