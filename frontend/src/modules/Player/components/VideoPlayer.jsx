@@ -87,12 +87,6 @@ export function VideoPlayer({
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.media_key || media?.key || media?.plex || null;
   
-  // Debug logging
-  console.log('[VideoPlayer] media object:', media);
-  console.log('[VideoPlayer] plexId value:', plexIdValue);
-  console.log('[VideoPlayer] media.media_key:', media?.media_key);
-  console.log('[VideoPlayer] media.key:', media?.key);
-  console.log('[VideoPlayer] media.plex:', media?.plex);
   
   const heading = !!show && !!season && !!title
     ? `${show} - ${season}: ${title}`
