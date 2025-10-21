@@ -437,7 +437,8 @@ const FitnessUsers = () => {
   useEffect(() => {
     // First prioritize heart rate monitors
     const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
-    const otherDevices = allDevices.filter(d => d.type !== 'heart_rate');
+    const cadenceDevicesOnly = allDevices.filter(d => d.type === 'cadence');
+    const otherDevices = allDevices.filter(d => d.type !== 'heart_rate' && d.type !== 'cadence');
     
     // Sort heart rate devices: zone rank DESC (fire top, cool bottom), then HR DESC, then active status as tertiary
     hrDevices.sort((a, b) => {
@@ -456,12 +457,19 @@ const FitnessUsers = () => {
       return String(a.deviceId).localeCompare(String(b.deviceId));
     });
     
+    // Sort cadence devices by value
+    cadenceDevicesOnly.sort((a, b) => {
+      if (a.isActive && !b.isActive) return -1;
+      if (!a.isActive && b.isActive) return 1;
+      return (b.cadence || 0) - (a.cadence || 0);
+    });
+    
     // Sort other devices by type then value
     otherDevices.sort((a, b) => {
       // First by device type
-      const typeOrder = { power: 1, cadence: 2, speed: 3, unknown: 4 };
-      const typeA = typeOrder[a.type] || 4;
-      const typeB = typeOrder[b.type] || 4;
+      const typeOrder = { power: 1, speed: 2, unknown: 3 };
+      const typeA = typeOrder[a.type] || 3;
+      const typeB = typeOrder[b.type] || 3;
       if (typeA !== typeB) return typeA - typeB;
       
       // Then by active status
@@ -469,13 +477,18 @@ const FitnessUsers = () => {
       if (!a.isActive && b.isActive) return 1;
       
       // Then by value
-      const valueA = a.power || a.cadence || (a.speedKmh || 0);
-      const valueB = b.power || b.cadence || (b.speedKmh || 0);
+      const valueA = a.power || (a.speedKmh || 0);
+      const valueB = b.power || (b.speedKmh || 0);
       return valueB - valueA;
     });
     
-    // Combine sorted arrays
-    setSortedDevices([...hrDevices, ...otherDevices]);
+    // Combine sorted arrays with cadence devices grouped as a single item
+    const combined = [...hrDevices];
+    if (cadenceDevicesOnly.length > 0) {
+      combined.push({ type: 'rpm-group', devices: cadenceDevicesOnly });
+    }
+    combined.push(...otherDevices);
+    setSortedDevices(combined);
   }, [allDevices]);
 
   return (
@@ -500,25 +513,77 @@ const FitnessUsers = () => {
               const seenZones = new Set();
               let noZoneShown = false;
               return sortedDevices.map((device) => {
+              // Handle RPM group separately
+              if (device.type === 'rpm-group') {
+                const rpmDevices = device.devices;
+                const isMultiDevice = rpmDevices.length > 1;
+                
+                return (
+                  <div key="rpm-group" className={`rpm-group-container ${isMultiDevice ? 'multi-device' : 'single-device'}`}>
+                    <div className="rpm-group-title">RPM Devices</div>
+                    <div className="rpm-devices">
+                      {rpmDevices.map(rpmDevice => {
+                        const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
+                        const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
+                        const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
+                        const rpm = rpmDevice.cadence || 0;
+                        const isZero = rpm === 0;
+                        
+                        // Calculate animation duration based on RPM (60s / RPM = seconds per revolution)
+                        const animationDuration = rpm > 0 ? `${60 / rpm}s` : '0s';
+                        
+                        return (
+                          <div key={`rpm-${rpmDevice.deviceId}`} className="rpm-device-avatar">
+                            <div className="rpm-avatar-wrapper">
+                              <div 
+                                className={`rpm-spinning-border ${isZero ? 'rpm-zero' : ''}`}
+                                style={{
+                                  animationDuration: animationDuration
+                                }}
+                              />
+                              <div className="rpm-avatar-content">
+                                <img
+                                  src={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
+                                  alt={deviceName}
+                                  className="rpm-device-image"
+                                  onError={(e) => {
+                                    if (e.target.dataset.fallback) {
+                                      e.target.style.display = 'none';
+                                      return;
+                                    }
+                                    e.target.dataset.fallback = '1';
+                                    e.target.src = DaylightMediaPath('/media/img/equipment/equipment');
+                                  }}
+                                />
+                                <div className={`rpm-value-overlay ${isZero ? 'rpm-zero' : ''}`}>
+                                  {rpm}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rpm-device-name">{deviceName}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              }
+              
+              // Regular device rendering
               const ownerName = device.type === 'heart_rate' ? hrDisplayNameMap[String(device.deviceId)] : null;
               
-              // Get equipment info for cadence/speed devices
+              // Get equipment info for speed devices
               const equipmentInfo = equipmentMap[String(device.deviceId)];
               
-              // Get name from equipment for cadence/speed, hardcoded map for HR devices, or device ID
+              // Get name from equipment for speed, hardcoded map for HR devices, or device ID
               const deviceName = device.type === 'heart_rate' ? 
-                (ownerName || String(device.deviceId)) :
-                (device.type === 'cadence' && equipmentInfo?.name) ? equipmentInfo.name : String(device.deviceId);
-                
-              //console.log(`Device ${device.deviceId} (${device.type}) name: ${deviceName}`, equipmentInfo);
+                (ownerName || String(device.deviceId)) : String(device.deviceId);
               
               // Get profile image ID for either user or equipment
               const profileId = device.type === 'heart_rate' ?
                 (userIdMap[String(device.deviceId)] || 'user') :
                 (equipmentInfo?.id || 'equipment');
               
-             
-
               const zoneIdForGrouping = getDeviceZoneId(device) || (device.type === 'heart_rate' ? null : null);
               const readableZone = zoneIdForGrouping ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1) : '';
               const showZoneBadge = device.type === 'heart_rate' && (
@@ -561,44 +626,24 @@ const FitnessUsers = () => {
                     title={`Device: ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                   >
                     <div className={`user-profile-img-container ${getZoneClass(device)}`}>
-                      {device.type === 'cadence' && (
-                        <div 
-                          className="equipment-icon"
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '100%',
-                            height: '100%',
-                            fontSize: '2rem',
-                            background: '#333',
-                            borderRadius: '50%',
-                            color: '#fff'
-                          }}
-                        >
-                          ⚙️
-                        </div>
-                      )}
-                      {device.type !== 'cadence' && (
-                        <img
-                          src={DaylightMediaPath(device.type === 'heart_rate'
-                            ? `/media/img/users/${profileId}`
-                            : `/media/img/equipment/${profileId}.png`
-                          )}
-                          alt={`${deviceName} profile`}
-                          onError={(e) => {
-                            // Prevent infinite error loops and hide broken image after fallback
-                            if (e.target.dataset.fallback) {
-                              e.target.style.display = 'none';
-                              return;
-                            }
-                            e.target.dataset.fallback = '1';
-                            e.target.src = DaylightMediaPath(device.type === 'heart_rate'
-                              ? `/media/img/users/user.png`
-                              : `/media/img/equipment/equipment.png`);
-                          }}
-                        />
-                      )}
+                      <img
+                        src={DaylightMediaPath(device.type === 'heart_rate'
+                          ? `/media/img/users/${profileId}`
+                          : `/media/img/equipment/${profileId}.png`
+                        )}
+                        alt={`${deviceName} profile`}
+                        onError={(e) => {
+                          // Prevent infinite error loops and hide broken image after fallback
+                          if (e.target.dataset.fallback) {
+                            e.target.style.display = 'none';
+                            return;
+                          }
+                          e.target.dataset.fallback = '1';
+                          e.target.src = DaylightMediaPath(device.type === 'heart_rate'
+                            ? `/media/img/users/user`
+                            : `/media/img/equipment/equipment`);
+                        }}
+                      />
                     </div>
                     <div className="device-info">
                       <div className="device-name">

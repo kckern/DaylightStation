@@ -8,16 +8,20 @@ import { DaylightAPI } from '../lib/api.mjs';
 // Defaults match previous hardcoded values (60s inactive, 180s removal)
 const FITNESS_TIMEOUTS = {
   inactive: 60000,
-  remove: 180000
+  remove: 180000,
+  rpmZero: 5000  // RPM devices show 0 after 5 seconds of no updates
 };
 
 // Setter to override timeouts from external configuration
-export const setFitnessTimeouts = ({ inactive, remove } = {}) => {
+export const setFitnessTimeouts = ({ inactive, remove, rpmZero } = {}) => {
   if (typeof inactive === 'number' && !Number.isNaN(inactive)) {
     FITNESS_TIMEOUTS.inactive = inactive;
   }
   if (typeof remove === 'number' && !Number.isNaN(remove)) {
     FITNESS_TIMEOUTS.remove = remove;
+  }
+  if (typeof rpmZero === 'number' && !Number.isNaN(rpmZero)) {
+    FITNESS_TIMEOUTS.rpmZero = rpmZero;
   }
 };
 
@@ -108,16 +112,30 @@ class CadenceDevice extends Device {
   constructor(deviceId, rawData = {}) {
     super(deviceId, 'CAD', rawData);
     this.type = 'cadence';
-    this.cadence = Math.round(rawData.CalculatedCadence || 0);
+    this._cadenceValue = Math.round(rawData.CalculatedCadence || 0);
+    this.lastCadenceUpdate = new Date();
     this.revolutionCount = rawData.CumulativeCadenceRevolutionCount || 0;
     this.eventTime = rawData.CadenceEventTime || 0;
   }
 
   updateData(rawData) {
     super.updateData(rawData);
-    this.cadence = Math.round(rawData.CalculatedCadence || 0);
+    const newCadence = Math.round(rawData.CalculatedCadence || 0);
+    if (newCadence !== this._cadenceValue) {
+      this.lastCadenceUpdate = new Date();
+    }
+    this._cadenceValue = newCadence;
     this.revolutionCount = rawData.CumulativeCadenceRevolutionCount || 0;
     this.eventTime = rawData.CadenceEventTime || 0;
+  }
+
+  // Getter that returns 0 if cadence hasn't been updated in rpmZero timeout
+  get cadence() {
+    const timeSinceUpdate = new Date() - this.lastCadenceUpdate;
+    if (timeSinceUpdate > FITNESS_TIMEOUTS.rpmZero) {
+      return 0;
+    }
+    return this._cadenceValue;
   }
 }
 
@@ -130,15 +148,29 @@ class PowerDevice extends Device {
     this.type = 'power';
     this.power = rawData.InstantaneousPower || 0; // watts
     // Some power meters also report cadence
-    this.cadence = Math.round(rawData.Cadence || rawData.CalculatedCadence || 0);
+    this._cadenceValue = Math.round(rawData.Cadence || rawData.CalculatedCadence || 0);
+    this.lastCadenceUpdate = new Date();
     this.leftRightBalance = rawData.PedalPowerBalance; // optional
   }
 
   updateData(rawData) {
     super.updateData(rawData);
     this.power = rawData.InstantaneousPower || 0;
-    this.cadence = Math.round(rawData.Cadence || rawData.CalculatedCadence || 0);
+    const newCadence = Math.round(rawData.Cadence || rawData.CalculatedCadence || 0);
+    if (newCadence !== this._cadenceValue) {
+      this.lastCadenceUpdate = new Date();
+    }
+    this._cadenceValue = newCadence;
     this.leftRightBalance = rawData.PedalPowerBalance;
+  }
+
+  // Getter that returns 0 if cadence hasn't been updated in rpmZero timeout
+  get cadence() {
+    const timeSinceUpdate = new Date() - this.lastCadenceUpdate;
+    if (timeSinceUpdate > FITNESS_TIMEOUTS.rpmZero) {
+      return 0;
+    }
+    return this._cadenceValue;
   }
 }
 

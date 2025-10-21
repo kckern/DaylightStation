@@ -20,7 +20,8 @@ export function LoadingOverlay({
   seconds = 0, 
   stalled, 
   debugContext, 
-  getMediaEl 
+  getMediaEl,
+  plexId
 }) {
   const [visible, setVisible] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
@@ -112,6 +113,7 @@ export function LoadingOverlay({
             debugContext={debugContext}
             getMediaEl={getMediaEl}
             stalled={stalled}
+            plexId={plexId}
           />
         </div>
       )}
@@ -127,5 +129,6 @@ LoadingOverlay.propTypes = {
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
   debugContext: PropTypes.object,
-  getMediaEl: PropTypes.func
+  getMediaEl: PropTypes.func,
+  plexId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
 };

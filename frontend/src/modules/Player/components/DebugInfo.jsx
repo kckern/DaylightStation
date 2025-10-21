@@ -10,7 +10,8 @@ export function DebugInfo({
   show, 
   debugContext, 
   getMediaEl, 
-  stalled 
+  stalled,
+  plexId 
 }) {
   const [debugSnapshot, setDebugSnapshot] = useState(null);
   const [networkErrors, setNetworkErrors] = useState([]);
@@ -256,6 +257,7 @@ export function DebugInfo({
       
       setDebugSnapshot({
         when: new Date().toISOString(),
+        plexId: plexId || null,
         mainIssue,
         issueDetails: issueDetails.length > 0 ? issueDetails : undefined,
         context: debugContext || {},
@@ -292,7 +294,7 @@ export function DebugInfo({
     collect();
     const id = setInterval(collect, 1000);
     return () => clearInterval(id);
-  }, [show, getMediaEl, debugContext, stalled, networkErrors, pendingRequests]);
+  }, [show, getMediaEl, debugContext, stalled, networkErrors, pendingRequests, plexId]);
 
   if (!show || !debugSnapshot) {
     return null;
@@ -344,5 +346,6 @@ DebugInfo.propTypes = {
   show: PropTypes.bool,
   debugContext: PropTypes.object,
   getMediaEl: PropTypes.func,
-  stalled: PropTypes.bool
+  stalled: PropTypes.bool,
+  plexId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
 };
