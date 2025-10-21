@@ -577,14 +577,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               playbackRate: currentItem.playbackRate || 1.0,
               type: 'video',
               continuous: false,
-              // Prefer controlling quality via bitrate instead of forcing codecs
-              maxVideoBitrate: 2000
+              // maxVideoBitrate: 2000
             }}
             clear={handleClose}
             advance={handleNext}
             playerType="fitness-video"
             onProgress={handlePlayerProgress}
             onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
+            showQuality
             ref={playerRef}
           />
         </div>

@@ -25,7 +25,8 @@ export function useCommonMediaController({
   ignoreKeys,
   onProgress,
   onMediaRef,
-  stallConfig = {}
+  stallConfig = {},
+  showQuality = false
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.plex || meta.media_url;
   const containerRef = useRef(null);
@@ -46,6 +47,9 @@ export function useCommonMediaController({
     hasEnded: false  // Flag to prevent recovery after media ends
   });
   const [isStalled, setIsStalled] = useState(false);
+  // Quality sampling state
+  const [quality, setQuality] = useState({ droppedVideoFrames: 0, totalVideoFrames: 0, droppedPct: 0, supported: true });
+  const lastQualityRef = useRef({ droppedVideoFrames: 0, totalVideoFrames: 0, droppedPct: 0, supported: true });
 
   // Config with sane defaults
   // recoveryStrategies: Array of strategies to attempt in order
@@ -326,7 +330,8 @@ export function useCommonMediaController({
           percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
           recoveryAttempt: stallStateRef.current.recoveryAttempt,
-          lastStrategy: stallStateRef.current.lastStrategy
+          lastStrategy: stallStateRef.current.lastStrategy,
+          quality
         });
       }
     };
@@ -467,6 +472,59 @@ export function useCommonMediaController({
     if (mediaEl && onMediaRef) onMediaRef(mediaEl);
   }, [meta.media_key, onMediaRef, getMediaEl]);
 
+  // Sample video playback quality metrics (dropped/decoded frames)
+  useEffect(() => {
+    if (!showQuality || !isVideo) return;
+    const el = getMediaEl();
+    if (!el) return;
+
+    let timerId;
+    const sample = () => {
+      try {
+        let dropped = 0, total = 0;
+        if (typeof el.getVideoPlaybackQuality === 'function') {
+          const q = el.getVideoPlaybackQuality();
+          dropped = q?.droppedVideoFrames || 0;
+          total = q?.totalVideoFrames || 0;
+        } else if ('webkitDroppedFrameCount' in el || 'webkitDecodedFrameCount' in el) {
+          dropped = Number(el.webkitDroppedFrameCount || 0);
+          total = Number(el.webkitDecodedFrameCount || 0);
+        } else {
+          // Not supported
+          if (lastQualityRef.current.supported) {
+            lastQualityRef.current = { ...lastQualityRef.current, supported: false };
+            setQuality(prev => ({ ...prev, supported: false }));
+          }
+          return;
+        }
+        const pct = total > 0 ? (dropped / total) * 100 : 0;
+        // Update only when values change to avoid churn
+        const prev = lastQualityRef.current;
+        if (prev.droppedVideoFrames !== dropped || prev.totalVideoFrames !== total) {
+          const next = { droppedVideoFrames: dropped, totalVideoFrames: total, droppedPct: pct, supported: true };
+          lastQualityRef.current = next;
+          setQuality(next);
+        }
+      } catch (_) {}
+    };
+    timerId = setInterval(sample, 1000);
+    sample();
+    return () => { if (timerId) clearInterval(timerId); };
+  }, [showQuality, isVideo, getMediaEl]);
+
+  // Placeholder for dynamic bitrate adaptation based on quality
+  const adaptVideoBitrate = useCallback((q) => {
+    // Placeholder implementation: hook for future ABR control
+    // Example real impl (dash.js): player.updateSettings({ streaming: { abr: { maxBitrate: { video: X }}} })
+    if (!q || !showQuality || !isVideo) return false;
+    // Intentionally no-op; just return false and log once when severe drops are detected
+    if (q.totalVideoFrames > 300 && q.droppedPct > 5) {
+      // eslint-disable-next-line no-console
+      console.debug('[adaptVideoBitrate] High dropped frames detected', q);
+    }
+    return false;
+  }, [showQuality, isVideo]);
+
   return {
     containerRef,
     seconds,
@@ -477,6 +535,8 @@ export function useCommonMediaController({
     shader,
     isStalled,
     isSeeking,
-    handleProgressClick
+    handleProgressClick,
+    quality,
+    adaptVideoBitrate
   };
 }

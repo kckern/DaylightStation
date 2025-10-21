@@ -38,6 +38,7 @@ export function SinglePlayer(play) {
     playbackRate,
     onProgress,
     onMediaRef,
+    showQuality,
   } = play || {};
   
   // Prepare common props for content scroller components
@@ -111,6 +112,7 @@ export function SinglePlayer(play) {
             ignoreKeys,
             onProgress,
             onMediaRef,
+            showQuality,
             stallConfig: play?.stallConfig
           }
         )
@@ -150,5 +152,6 @@ SinglePlayer.propTypes = {
   playbackRate: PropTypes.number,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
+  showQuality: PropTypes.bool,
   stallConfig: PropTypes.object
 };
