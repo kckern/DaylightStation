@@ -83,6 +83,7 @@ export function VideoPlayer({
           fetchVideoInfo={fetchVideoInfo}
           stalled={isStalled}
           initialStart={media.seconds || 0}
+          plexId={media?.media_key || media?.key || media?.plex || null}
           debugContext={{
             scope: 'video',
             mediaType: media?.media_type,
