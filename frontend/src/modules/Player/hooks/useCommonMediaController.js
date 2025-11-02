@@ -27,7 +27,8 @@ export function useCommonMediaController({
   onMediaRef,
   stallConfig = {},
   showQuality = false,
-  onRequestBitrateChange
+  onRequestBitrateChange,
+  keyboardOverrides
 }) {
   const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.plex || meta.media_url;
   const containerRef = useRef(null);
@@ -59,7 +60,16 @@ export function useCommonMediaController({
   const stableBelowMsRef = useRef(0);
   const lastAdaptTsRef = useRef(0);
   const pendingAdaptRef = useRef(false);
-  const currentMaxKbpsRef = useRef(null);
+  // Initialize with meta.maxVideoBitrate if available, to avoid initial "unlimited" flash
+  const [currentMaxKbps, setCurrentMaxKbps] = useState(() => {
+    const initial = Number.isFinite(meta?.maxVideoBitrate) ? Number(meta.maxVideoBitrate) : null;
+    console.log('[Bitrate] State initialization:', {
+      'meta.maxVideoBitrate': meta?.maxVideoBitrate,
+      'initial value': initial,
+      'meta': meta
+    });
+    return initial;
+  });
 
   // Config with sane defaults
   // recoveryStrategies: Array of strategies to attempt in order
@@ -101,9 +111,19 @@ export function useCommonMediaController({
   // Seed current cap if provided on meta
   useEffect(() => {
     if (Number.isFinite(meta?.maxVideoBitrate)) {
-      currentMaxKbpsRef.current = Number(meta.maxVideoBitrate);
+      const capValue = Number(meta.maxVideoBitrate);
+      console.log('[Bitrate] Initializing cap from meta.maxVideoBitrate:', {
+        maxVideoBitrate: meta.maxVideoBitrate,
+        capKbps: capValue,
+        mediaKey: meta?.media_key
+      });
+      setCurrentMaxKbps(capValue);
     } else {
-      currentMaxKbpsRef.current = null;
+      console.log('[Bitrate] No maxVideoBitrate set, cap is unlimited', {
+        maxVideoBitrate: meta?.maxVideoBitrate,
+        mediaKey: meta?.media_key
+      });
+      setCurrentMaxKbps(null);
     }
   }, [meta?.maxVideoBitrate, meta?.media_key]);
 
@@ -112,7 +132,7 @@ export function useCommonMediaController({
     pctSamplesRef.current = [];
     lastFramesRef.current = { dropped: 0, total: 0 };
     stableBelowMsRef.current = 0;
-    // Do not reset currentMaxKbpsRef here; it seeds from meta.maxVideoBitrate effect above
+    // Do not reset currentMaxKbps here; it seeds from meta.maxVideoBitrate effect above
   }, [media_key]);
 
   const handleProgressClick = useCallback((event) => {
@@ -136,7 +156,8 @@ export function useCommonMediaController({
     meta,
     type,
     media_key,
-    setCurrentTime: setSeconds
+    setCurrentTime: setSeconds,
+    keyboardOverrides
   });
 
   // Memoize check interval
@@ -583,13 +604,21 @@ export function useCommonMediaController({
 
     // Downscale when over allowance
     if (droppedFramePct > droppedFrameAllowance && (now - lastAdaptTsRef.current) >= minAdaptIntervalMs) {
-      const curr = currentMaxKbpsRef.current;
+      const curr = currentMaxKbps;
       let next = (curr == null) ? initialCapKbps : Math.max(minCapKbps, Math.floor(curr / 2));
       if (maxCapKbps != null) next = Math.min(next, maxCapKbps);
       if (next !== curr && typeof onRequestBitrateChange === 'function') {
         pendingAdaptRef.current = true;
         lastAdaptTsRef.current = now;
-        currentMaxKbpsRef.current = next;
+        setCurrentMaxKbps(next);
+        console.log('[Bitrate] Cap updated (downscale):', {
+          from: curr === null ? 'unlimited' : `${curr} kbps`,
+          to: `${next} kbps`,
+          reason: 'over_allowance',
+          droppedFramePct: `${(droppedFramePct * 100).toFixed(2)}%`,
+          allowance: `${(droppedFrameAllowance * 100).toFixed(2)}%`,
+          mediaKey: media_key
+        });
         try {
           // eslint-disable-next-line no-console
           console.info('[ABR] downscale', { plexId: media_key, from: curr, to: next, droppedFramePct });
@@ -603,15 +632,23 @@ export function useCommonMediaController({
     }
 
     // Ramp-up when stable at low drops
-    if (currentMaxKbpsRef.current != null && droppedFramePct <= rampUpLowPct && stableBelowMsRef.current >= rampUpStableSecs * 1000 && (now - lastAdaptTsRef.current) >= minAdaptIntervalMs) {
-      const curr = currentMaxKbpsRef.current;
+    if (currentMaxKbps != null && droppedFramePct <= rampUpLowPct && stableBelowMsRef.current >= rampUpStableSecs * 1000 && (now - lastAdaptTsRef.current) >= minAdaptIntervalMs) {
+      const curr = currentMaxKbps;
       let next = Math.max(minCapKbps, curr * 2); // double each step per spec
       if (maxCapKbps != null) next = Math.min(next, maxCapKbps);
       if (typeof onRequestBitrateChange === 'function') {
         pendingAdaptRef.current = true;
         lastAdaptTsRef.current = now;
-        currentMaxKbpsRef.current = next;
+        setCurrentMaxKbps(next);
         stableBelowMsRef.current = 0; // reset window after ramp
+        console.log('[Bitrate] Cap updated (ramp-up):', {
+          from: `${curr} kbps`,
+          to: `${next} kbps`,
+          reason: 'stable_performance',
+          droppedFramePct: `${(droppedFramePct * 100).toFixed(2)}%`,
+          stableSeconds: rampUpStableSecs,
+          mediaKey: media_key
+        });
         try {
           // eslint-disable-next-line no-console
           console.info('[ABR] ramp-up', { plexId: media_key, from: curr, to: next, droppedFramePct });
@@ -622,12 +659,12 @@ export function useCommonMediaController({
       }
     }
     // Reset to unlimited when stable at high cap threshold
-    if (resetToUnlimitedAtKbps != null && currentMaxKbpsRef.current != null && currentMaxKbpsRef.current >= resetToUnlimitedAtKbps && droppedFramePct <= rampUpLowPct && stableBelowMsRef.current >= resetStableSecs * 1000 && (now - lastAdaptTsRef.current) >= minAdaptIntervalMs) {
-      const curr = currentMaxKbpsRef.current;
+    if (resetToUnlimitedAtKbps != null && currentMaxKbps != null && currentMaxKbps >= resetToUnlimitedAtKbps && droppedFramePct <= rampUpLowPct && stableBelowMsRef.current >= resetStableSecs * 1000 && (now - lastAdaptTsRef.current) >= minAdaptIntervalMs) {
+      const curr = currentMaxKbps;
       if (typeof onRequestBitrateChange === 'function') {
         pendingAdaptRef.current = true;
         lastAdaptTsRef.current = now;
-        currentMaxKbpsRef.current = null;
+        setCurrentMaxKbps(null);
         stableBelowMsRef.current = 0;
         try {
           // eslint-disable-next-line no-console
@@ -638,15 +675,15 @@ export function useCommonMediaController({
         }
       }
     }
-  }, [isDash, quality?.supported, showQuality, droppedFramePct, droppedFrameAllowance, minAdaptIntervalMs, onRequestBitrateChange, initialCapKbps, minCapKbps, rampUpLowPct, rampUpStableSecs, getMediaEl, media_key, maxCapKbps, resetToUnlimitedAtKbps, resetStableSecs]);
+  }, [isDash, quality?.supported, showQuality, droppedFramePct, droppedFrameAllowance, minAdaptIntervalMs, onRequestBitrateChange, initialCapKbps, minCapKbps, rampUpLowPct, rampUpStableSecs, getMediaEl, media_key, maxCapKbps, resetToUnlimitedAtKbps, resetStableSecs, currentMaxKbps]);
 
   // Manual reset keyboard handler (optional)
   useEffect(() => {
     if (!manualResetKey || !isDash) return;
     const handler = (e) => {
       if (e.key === manualResetKey && typeof onRequestBitrateChange === 'function') {
-        const curr = currentMaxKbpsRef.current;
-        currentMaxKbpsRef.current = null;
+        const curr = currentMaxKbps;
+        setCurrentMaxKbps(null);
         // eslint-disable-next-line no-console
         console.info('[ABR] manual reset to unlimited', { plexId: media_key, from: curr });
         onRequestBitrateChange(null, { media_key, reason: 'manual_reset', droppedFramePct });
@@ -654,7 +691,7 @@ export function useCommonMediaController({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [manualResetKey, isDash, onRequestBitrateChange, media_key, droppedFramePct]);
+  }, [manualResetKey, isDash, onRequestBitrateChange, media_key, droppedFramePct, currentMaxKbps]);
 
   return {
     containerRef,
@@ -668,6 +705,7 @@ export function useCommonMediaController({
     isSeeking,
     handleProgressClick,
     quality,
-    droppedFramePct
+    droppedFramePct,
+    currentMaxKbps
   };
 }

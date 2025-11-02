@@ -12,8 +12,9 @@ import usePlayerController from '../Player/usePlayerController.js';
  *  - seekButtons (React nodes)
  *  - range: [startSeconds, endSeconds] optional; defines the time window represented by the thumbnails & progress bar
  *           Defaults to [0, duration] (or fallback) when omitted/invalid. All thumbnail positions are clamped to this window.
+ *  - commitRef: optional ref to expose commit function for external use
  */
-const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl }) => {
+const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl, commitRef, getTimeRef }) => {
   // ---------- Helpers ----------
   const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   const percentOf = (t, total) => total > 0 ? clamp01(t / total) : 0;
@@ -110,8 +111,16 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   // ---------- Display Time Resolution ----------
   const displayTime = useMemo(() => {
-    if (pendingTime != null && currentTime < pendingTime - BASE_PENDING_TOLERANCE) return pendingTime;
-    if (isSeeking && previewTime != null) return previewTime;
+    // Show pendingTime if it's significantly different from currentTime (either direction)
+    if (pendingTime != null && Math.abs(currentTime - pendingTime) > BASE_PENDING_TOLERANCE) {
+      // console.log('[FitnessPlayerFooterSeekThumbnails] displayTime using pendingTime:', { pendingTime, currentTime, diff: Math.abs(currentTime - pendingTime) });
+      return pendingTime;
+    }
+    if (isSeeking && previewTime != null) {
+      // console.log('[FitnessPlayerFooterSeekThumbnails] displayTime using previewTime:', previewTime);
+      return previewTime;
+    }
+    // console.log('[FitnessPlayerFooterSeekThumbnails] displayTime using currentTime:', currentTime);
     return currentTime;
   }, [pendingTime, previewTime, currentTime, isSeeking]);
 
@@ -128,7 +137,9 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   // ---------- Effects ----------
   useEffect(() => {
     if (pendingTime == null) return;
-    if (currentTime >= pendingTime - CLEAR_PENDING_TOLERANCE) {
+    // Clear pendingTime once currentTime catches up (within tolerance)
+    if (Math.abs(currentTime - pendingTime) <= CLEAR_PENDING_TOLERANCE) {
+      console.log('[FitnessPlayerFooterSeekThumbnails] Clearing pendingTime:', { currentTime, pendingTime, diff: Math.abs(currentTime - pendingTime) });
       setPendingTime(null);
     }
   }, [currentTime, pendingTime]);
@@ -142,10 +153,25 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   }, [rangeStart, rangeSpan]);
 
   const commit = useCallback((t) => {
+    console.log('[FitnessPlayerFooterSeekThumbnails] commit called:', { t, currentPendingTime: pendingTime });
     setPendingTime(t);
     seek(t);
     onSeek?.(t);
   }, [seek, onSeek]);
+
+  // Expose commit function to parent via ref
+  useEffect(() => {
+    if (commitRef) {
+      commitRef.current = commit;
+    }
+  }, [commitRef, commit]);
+
+  // Expose getTime function to parent via ref (returns displayTime for arrow key calculations)
+  useEffect(() => {
+    if (getTimeRef) {
+      getTimeRef.current = () => displayTime;
+    }
+  }, [getTimeRef, displayTime]);
 
   const updatePreview = useCallback((clientX, rect) => {
     if (!isSeeking) return; // only show preview while in seeking phase
@@ -160,12 +186,11 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   // ---------- Event Handlers ----------
   const handleClick = useCallback((e) => {
-    /* eslint-disable no-console */
-    // progress-bar seek (debug log removed)
-    /* eslint-enable no-console */
     const rect = e.currentTarget.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    commit(positionToSeconds(clientX, rect));
+    const seekTime = positionToSeconds(clientX, rect);
+    console.log('[FitnessPlayerFooterSeekThumbnails] Progress bar clicked:', { seekTime, clientX });
+    commit(seekTime);
   }, [positionToSeconds, commit]);
 
   const handlePointerMove = useCallback((e) => {

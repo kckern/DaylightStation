@@ -16,7 +16,9 @@ const Player = forwardRef(function Player(props, ref) {
     return <CompositePlayer {...props} Player={Player} />;
   }
   
-  let { play, queue, clear, playbackrate, playbackKeys, playerType, ignoreKeys, showQuality } = props || {};
+  let { play, queue, clear, playbackrate, playbackKeys, playerType, ignoreKeys, showQuality, keyboardOverrides } = props || {};
+  
+  // console.log('[Player] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   
   // Override playback rate if passed in via menu selection
   if (playbackrate && play) play['playbackRate'] = playbackrate;
@@ -120,6 +122,7 @@ const Player = forwardRef(function Player(props, ref) {
     queuePosition,
     ignoreKeys,
     showQuality,
+    keyboardOverrides,
     onProgress: props.onProgress,
     onMediaRef: handleMediaRef,
     stallConfig: props.stallConfig
@@ -148,6 +151,7 @@ Player.propTypes = {
   playerType: PropTypes.string,
   ignoreKeys: PropTypes.bool,
   showQuality: PropTypes.bool,
+  keyboardOverrides: PropTypes.object,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   stallConfig: PropTypes.shape({

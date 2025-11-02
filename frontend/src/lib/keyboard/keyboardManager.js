@@ -198,6 +198,14 @@ export function useAdvancedKeyboardHandler(config = {}) {
     const handleKeyDown = (event) => {
       if (event.repeat) return;
 
+      // Log arrow key presses for debugging
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+        console.log('[keyboardManager] Arrow key pressed:', event.key, { 
+          hasComponentOverride: !!componentOverrides[event.key],
+          overrideKeys: Object.keys(componentOverrides)
+        });
+      }
+
       // Check component-specific overrides first
       if (componentOverrides[event.key]) {
         event.preventDefault();

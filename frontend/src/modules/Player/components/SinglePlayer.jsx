@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { Scriptures, Hymns, Talk, Poetry } from '../../ContentScroller/ContentScroller.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
@@ -59,6 +59,16 @@ export function SinglePlayer(play) {
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
 
+  // Store initial maxVideoBitrate to prevent it being lost on re-renders
+  const initialMaxBitrateRef = useRef(play.maxVideoBitrate);
+  
+  // Update ref if prop changes
+  useEffect(() => {
+    if (play.maxVideoBitrate !== undefined) {
+      initialMaxBitrateRef.current = play.maxVideoBitrate;
+    }
+  }, [play.maxVideoBitrate]);
+
   // LocalStorage helpers (per-device, per-plexId)
   const bitrateKey = useCallback((plexId) => `dashMaxBitrate:${plexId}`, []);
   const readStoredBitrate = useCallback((plexId) => {
@@ -90,10 +100,19 @@ export function SinglePlayer(play) {
     setIsReady(false);
     // Determine plexId (prefer explicit plex prop)
     const plexId = plex || mediaInfo?.media_key || play?.media_key || play?.plex;
-    // Respect override; else use stored; else use prop-level maxVideoBitrate if provided
+    // Respect override; else use stored; else use initial maxVideoBitrate from ref
     const override = opts?.maxVideoBitrateOverride;
     const stored = plexId ? readStoredBitrate(plexId) : null;
-    const effectiveMax = (override !== undefined) ? override : (stored != null ? stored : play.maxVideoBitrate);
+    const effectiveMax = (override !== undefined) ? override : (stored != null ? stored : initialMaxBitrateRef.current);
+
+    console.log('[SinglePlayer] fetchVideoInfo bitrate logic:', {
+      'initialMaxBitrateRef.current': initialMaxBitrateRef.current,
+      'play.maxVideoBitrate': play.maxVideoBitrate,
+      override,
+      stored,
+      effectiveMax,
+      plexId
+    });
 
     const info = await fetchMediaInfo({ 
       plex, 
@@ -105,6 +124,10 @@ export function SinglePlayer(play) {
     if (info) {
       // Attach current max to mediaInfo so the hook can seed its ref
       const withCap = { ...info, continuous, maxVideoBitrate: effectiveMax ?? null };
+      console.log('[SinglePlayer] Setting mediaInfo with cap:', {
+        maxVideoBitrate: withCap.maxVideoBitrate,
+        media_key: withCap.media_key
+      });
       setMediaInfo(withCap);
       setIsReady(true);
       // Persist override if provided
@@ -114,7 +137,8 @@ export function SinglePlayer(play) {
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, shuffle, continuous, play.maxVideoBitrate, mediaInfo?.media_key, play?.media_key, play?.plex, readStoredBitrate, writeStoredBitrate]);
+  }, [plex, media, rate, open, shuffle, continuous, mediaInfo?.media_key, play?.media_key, play?.plex, readStoredBitrate, writeStoredBitrate]);
+  // Note: initialMaxBitrateRef intentionally not in deps - we use the ref to preserve the initial value
 
   useEffect(() => {
     fetchVideoInfoCallback();
@@ -156,7 +180,8 @@ export function SinglePlayer(play) {
             onProgress,
             onMediaRef,
             showQuality,
-            stallConfig: play?.stallConfig
+            stallConfig: play?.stallConfig,
+            keyboardOverrides: play?.keyboardOverrides
           }
         )
       )}
@@ -196,5 +221,6 @@ SinglePlayer.propTypes = {
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   showQuality: PropTypes.bool,
-  stallConfig: PropTypes.object
+  stallConfig: PropTypes.object,
+  keyboardOverrides: PropTypes.objectOf(PropTypes.func)
 };
