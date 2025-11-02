@@ -130,7 +130,45 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
   const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
+  const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
+  const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
   const { seek: seekTo, toggle: togglePlay, getCurrentTime: getPlayerTime, getDuration: getPlayerDuration } = usePlayerController(playerRef);
+  
+  // Memoize keyboard overrides to prevent recreation on every render
+  const keyboardOverrides = useMemo(() => ({
+    'Escape': () => handleClose(),
+    'ArrowLeft': (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      // Use display time from thumbnails if available (includes pendingTime), otherwise fall back to player time
+      const actualCurrentTime = thumbnailsGetTimeRef.current ? thumbnailsGetTimeRef.current() : getPlayerTime();
+      const actualDuration = getPlayerDuration();
+      const increment = actualDuration ? Math.max(5, Math.floor(actualDuration / 50)) : 10;
+      const newTime = Math.max(actualCurrentTime - increment, 0);
+      console.log('[FitnessPlayer] ArrowLeft pressed:', { currentTime: actualCurrentTime, newTime, increment, hasCommitRef: !!thumbnailsCommitRef.current });
+      if (thumbnailsCommitRef.current) {
+        thumbnailsCommitRef.current(newTime);
+      } else {
+        seekTo(newTime);
+      }
+    },
+    'ArrowRight': (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      // Use display time from thumbnails if available (includes pendingTime), otherwise fall back to player time
+      const actualCurrentTime = thumbnailsGetTimeRef.current ? thumbnailsGetTimeRef.current() : getPlayerTime();
+      const actualDuration = getPlayerDuration();
+      const increment = actualDuration ? Math.max(5, Math.floor(actualDuration / 50)) : 10;
+      const newTime = Math.min(actualCurrentTime + increment, actualDuration || 0);
+      console.log('[FitnessPlayer] ArrowRight pressed:', { currentTime: actualCurrentTime, newTime, increment, hasCommitRef: !!thumbnailsCommitRef.current });
+      if (thumbnailsCommitRef.current) {
+        thumbnailsCommitRef.current(newTime);
+      } else {
+        seekTo(newTime);
+      }
+    }
+  }), [getPlayerTime, getPlayerDuration, seekTo]);
+  
   const renderCountRef = useRef(0);
   // Simple render counter (environment gating removed per instruction)
   renderCountRef.current += 1;
@@ -427,7 +465,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     });
   }, [currentItem, currentTime, seekPositions, handleSeek]);
 
-  // Effect: initialize current item from queue & setup keyboard shortcuts
+  // Effect: initialize current item from queue
   useEffect(() => {
     if (queue.length > 0 && !currentItem) {
       // Normalize first item (ensure media_url exists)
@@ -435,50 +473,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       if (!first.media_url && first.videoUrl) first.media_url = first.videoUrl;
       setCurrentItem(first);
     }
-
-    const handleKeyDown = (event) => {
-      if (!currentItem) return; // nothing playing
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      switch (event.key) {
-        case 'ArrowRight': {
-          if (event.shiftKey) {
-            // Jump forward to next seek button time (approx 1/9 increments)
-            const total = duration || currentItem.duration || 600;
-            const interval = total / 9;
-            const nextTarget = Math.ceil(currentTime / interval) * interval;
-            handleSeek(Math.min(nextTarget, total - 1));
-          } else {
-            handleSeek(Math.min(currentTime + 30, (duration || currentItem.duration || 600) - 1));
-          }
-          break; }
-        case 'ArrowLeft': {
-          if (event.shiftKey) {
-            const total = duration || currentItem.duration || 600;
-            const interval = total / 9;
-            const prevTarget = Math.floor((currentTime - 1) / interval) * interval;
-            handleSeek(Math.max(prevTarget, 0));
-          } else {
-            handleSeek(Math.max(currentTime - 30, 0));
-          }
-          break; }
-        case 'Escape':
-          handleClose();
-          break;
-        case ' ': { // Spacebar toggles play/pause unless focus is on input/textarea
-          event.preventDefault(); // prevent page scroll
-          togglePlay();
-          // Pause state will sync via onProgress; optimistic update for snappier UI
-          setIsPaused(prev => !prev);
-          break; }
-        default:
-          break;
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [queue, currentItem, currentTime, duration, togglePlay]);
+  }, [queue, currentItem]);
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
 
@@ -488,6 +483,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const last = progressMetaRef.current.lastSetTime;
     if (now - last > 250) {
       progressMetaRef.current.lastSetTime = now;
+      // console.log('[FitnessPlayer] currentTime updated:', ct);
       setCurrentTime(ct);
     }
     if (d && d !== progressMetaRef.current.lastDuration) {
@@ -577,9 +573,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               playbackRate: currentItem.playbackRate || 1.0,
               type: 'video',
               continuous: false,
-              // maxVideoBitrate: 2000
-              stallConfig: { droppedFrameAllowance: 0.15 }
+              maxVideoBitrate: 800, // limit to 8Mbps for fitness videos
+              stallConfig: { droppedFrameAllowance: 0.30 }
             }}
+            keyboardOverrides={keyboardOverrides}
             clear={handleClose}
             advance={handleNext}
             playerType="fitness-video"
@@ -610,6 +607,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           TimeDisplay={TimeDisplay}
           renderCount={renderCountRef.current}
           generateThumbnailUrl={generateThumbnailUrl}
+          thumbnailsCommitRef={thumbnailsCommitRef}
+          thumbnailsGetTimeRef={thumbnailsGetTimeRef}
         />
       </div>
     </div>

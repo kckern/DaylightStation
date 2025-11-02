@@ -25,8 +25,10 @@ export function VideoPlayer({
   onProgress, 
   onMediaRef, 
   showQuality,
-  stallConfig 
+  stallConfig,
+  keyboardOverrides
 }) {
+  // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
   const [displayReady, setDisplayReady] = useState(false);
   const [isAdapting, setIsAdapting] = useState(false);
@@ -42,7 +44,8 @@ export function VideoPlayer({
     isSeeking,
     handleProgressClick,
     quality,
-    droppedFramePct
+    droppedFramePct,
+    currentMaxKbps
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -64,6 +67,7 @@ export function VideoPlayer({
     onMediaRef,
     showQuality,
     stallConfig,
+    keyboardOverrides,
     onRequestBitrateChange: useCallback(async (newCapKbps, { reason }) => {
       // Trigger a refetch with bitrate override and show overlay message
       try {
@@ -84,6 +88,11 @@ export function VideoPlayer({
   });
 
   const { show, season, title, media_url } = media;
+
+  // If the media_url (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
+  React.useEffect(() => {
+    setDisplayReady(false);
+  }, [media_url, media?.maxVideoBitrate]);
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.media_key || media?.key || media?.plex || null;
   
@@ -130,6 +139,7 @@ export function VideoPlayer({
       )}
       {isDash ? (
         <dash-video
+          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`}
           ref={containerRef}
           class={`video-element ${displayReady ? 'show' : ''}`}
           src={media_url}
@@ -138,6 +148,7 @@ export function VideoPlayer({
         />
       ) : (
         <video
+          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`}
           autoPlay
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''}`}
@@ -147,13 +158,14 @@ export function VideoPlayer({
         />
       )}
       {showQuality && quality?.supported && (
-        <QualityOverlay stats={quality} capKbps={media?.maxVideoBitrate ?? null} avgPct={droppedFramePct} />
+        <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} />
       )}
     </div>
   );
 }
 
 function QualityOverlay({ stats, capKbps, avgPct }) {
+  // console.log('[QualityOverlay] Rendering with capKbps:', capKbps);
   const pctText = `${stats.totalVideoFrames > 0 ? stats.droppedPct.toFixed(1) : '0.0'}%`;
   const avgText = typeof avgPct === 'number' ? `${(avgPct * 100).toFixed(1)}%` : null;
   return (
