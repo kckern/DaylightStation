@@ -52,9 +52,7 @@ export default function SingleThumbnailButton({
   const handlePointerDown = (e) => {
     const timeElt = isTimeElement(e);
     const reason = timeElt ? 'time-label' : (e.button === 2 ? 'right-button' : 'seek-default');
-    /* eslint-disable no-console */
-    // pointerDown diagnostics removed
-    /* eslint-enable no-console */
+    console.log('[SingleThumbnailButton] pointerDown:', { pos, reason, timeElt, rightButton: e.button === 2 });
     if ((e.button === 2 || timeElt) && enableZoom) {
       e.preventDefault();
       e.stopPropagation();
@@ -69,6 +67,7 @@ export default function SingleThumbnailButton({
       return;
     }
   // seek action
+    console.log('[SingleThumbnailButton] Seeking to:', pos);
     onSeek?.(pos);
   };
   const handleContext = (e) => {

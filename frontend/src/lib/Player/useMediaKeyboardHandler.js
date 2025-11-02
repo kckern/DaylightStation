@@ -19,7 +19,8 @@ export function useMediaKeyboardHandler(config) {
     meta,
     type,
     media_key,
-    setCurrentTime
+    setCurrentTime,
+    keyboardOverrides = {}
   } = config;
 
   // Custom action handlers for Player-specific logging
@@ -75,7 +76,7 @@ export function useMediaKeyboardHandler(config) {
   };
 
   // Custom key mappings for when paused (skip up/down arrow handling)
-  const conditionalOverrides = {};
+  const conditionalOverrides = { ...keyboardOverrides };
   const mediaEl = getMediaEl ? getMediaEl() : mediaRef?.current;
   const isPaused = mediaEl?.paused === true;
   

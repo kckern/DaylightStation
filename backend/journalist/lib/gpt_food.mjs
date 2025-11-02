@@ -246,7 +246,7 @@ const gptCall = async (endpoint, payload) => {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
             },
-            timeout: 30000 // 30 second timeout
+            timeout: 60000 // 60 second timeout - health coaching needs extra time
         });
         
         // Validate response

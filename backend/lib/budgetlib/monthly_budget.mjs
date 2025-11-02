@@ -174,37 +174,63 @@ const futureMonthlyBudget = ({ month, config }) => {
       },
     ];
 
+    // 4) Add anticipated taxes for anticipated income
     const anticipatedTaxRate = process.env.buxfer.taxRate || 0.2;
-    //loop through anticipated income transactions and add anticipated tax txn to currentData.monthlyCategories['Taxes']
-    currentData.incomeTransactions.forEach(txn => {
-      if(txn.flag === 'Anticipated' && txn.transactionType === 'income'){
-        const taxAmount = parseFloat((txn.amount * anticipatedTaxRate).toFixed(2));
-        if(!currentData.monthlyCategories['Taxes']){
-          currentData.monthlyCategories['Taxes'] = {amount: 0, credits: 0, debits: 0, transactions: []};
-        }
-        currentData.monthlyCategories['Taxes'].amount += taxAmount;
-        currentData.monthlyCategories['Taxes'].debits += taxAmount;
-        currentData.monthlyCategories['Taxes'].transactions.push({
-          date: txn.date,
-          transactionType: 'expense',
-          amount: taxAmount,
-          expenseAmount: taxAmount,
-          description: 'Anticipated Withholding',
-          tagNames: ['Taxes'],
-          tag: 'Taxes',
-        });
+    const anticipatedTaxAmount = parseFloat((anticipatedIncome * anticipatedTaxRate).toFixed(2));
+    
+    if (anticipatedTaxAmount > 0) {
+      if (!currentData.monthlyCategories['Taxes']) {
+        currentData.monthlyCategories['Taxes'] = {amount: 0, credits: 0, debits: 0, transactions: []};
       }
+      currentData.monthlyCategories['Taxes'].amount += anticipatedTaxAmount;
+      currentData.monthlyCategories['Taxes'].debits += anticipatedTaxAmount;
+      currentData.monthlyCategories['Taxes'].transactions.push({
+        date: endOfMonth,
+        transactionType: 'expense',
+        amount: anticipatedTaxAmount,
+        expenseAmount: anticipatedTaxAmount,
+        description: 'Anticipated Withholding',
+        tagNames: ['Taxes'],
+        tag: 'Taxes',
+        flag: 'Anticipated',
+      });
+    }
+
+    // 5) Helper function to add anticipated category
+    const addAnticipatedCategory = (categoryLabel, anticipatedAmount, description) => {
+      if (anticipatedAmount <= 0) return;
+      
+      if (!currentData.monthlyCategories[categoryLabel]) {
+        currentData.monthlyCategories[categoryLabel] = {amount: 0, credits: 0, debits: 0, transactions: []};
+      }
+      
+      currentData.monthlyCategories[categoryLabel].amount += anticipatedAmount;
+      currentData.monthlyCategories[categoryLabel].debits += anticipatedAmount;
+      currentData.monthlyCategories[categoryLabel].transactions.push({
+        date: endOfMonth,
+        transactionType: 'expense',
+        amount: anticipatedAmount,
+        expenseAmount: anticipatedAmount,
+        description,
+        tagNames: [categoryLabel],
+        tag: categoryLabel,
+        flag: 'Anticipated',
+      });
+    };
+
+    // 6) Merge in anticipated monthly categories from future data
+    Object.keys(futureData.monthlyCategories).forEach(categoryLabel => {
+      const futureCategory = futureData.monthlyCategories[categoryLabel];
+      const pastCategory = pastData.monthlyCategories[categoryLabel];
+      const anticipatedAmount = parseFloat((futureCategory.amount - (pastCategory?.amount || 0)).toFixed(2));
+      addAnticipatedCategory(categoryLabel, anticipatedAmount, `Anticipated ${categoryLabel}`);
     });
 
 
 
-    // 5) Calculate and append anticipated day-to-day spending
-    const anticipatedDayToDaySpending =
-      parseFloat(futureData.dayToDaySpending) -
-      parseFloat(pastData.dayToDaySpending);
-  
-    currentData.dayToDaySpending =
-      parseFloat(pastData.dayToDaySpending) + anticipatedDayToDaySpending;
+    // 7) Calculate and append anticipated day-to-day spending
+    const anticipatedDayToDaySpending = parseFloat(futureData.dayToDaySpending) - parseFloat(pastData.dayToDaySpending);
+    currentData.dayToDaySpending = parseFloat(pastData.dayToDaySpending) + anticipatedDayToDaySpending;
   
     currentData.dayToDayTransactions = [
       ...pastData.dayToDayTransactions,
@@ -218,7 +244,8 @@ const futureMonthlyBudget = ({ month, config }) => {
       },
     ];
 
-    //recalculate surplus
+    // 8) Recalculate totals
+    currentData.monthlySpending = Object.values(currentData.monthlyCategories).reduce((acc, { amount }) => acc + amount, 0);
     currentData.surplus = parseFloat((currentData.income - currentData.monthlySpending - currentData.dayToDaySpending).toFixed(2));
 
   
@@ -234,6 +261,9 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
     const dayToDayTransactions = [];
     const transferTransactions = [];
 
+    // Helper to round to 2 decimals
+    const round2 = (num) => parseFloat(num.toFixed(2));
+
     for(const txn of transactions){
         const {label,bucket} = findBucket(config, txn);
         txn['label'] = label;
@@ -248,30 +278,30 @@ const pastMonthlyBudget = ({month, config, transactions}) => {
             monthlyCategories[label].debits += txn.expenseAmount > 0 ? txn.expenseAmount : 0;
             monthlyCategories[label].transactions.push(txn);
 
-            monthlyCategories[label].amount = parseFloat(monthlyCategories[label].amount.toFixed(2));
-            monthlyCategories[label].credits = parseFloat(monthlyCategories[label].credits.toFixed(2));
-            monthlyCategories[label].debits = parseFloat(monthlyCategories[label].debits.toFixed(2));
+            monthlyCategories[label].amount = round2(monthlyCategories[label].amount);
+            monthlyCategories[label].credits = round2(monthlyCategories[label].credits);
+            monthlyCategories[label].debits = round2(monthlyCategories[label].debits);
 
         }
         else if(bucket === 'shortTerm'){
             shortTermTransactions.push(txn);
         }
         else{
-            monthlyCategories['Unbudgeted'] = categories['Unbudgeted'] || {amount: 0, transactions: []};
+            monthlyCategories['Unbudgeted'] = monthlyCategories['Unbudgeted'] || {amount: 0, transactions: []};
             monthlyCategories['Unbudgeted'].amount += txn.amount;
             monthlyCategories['Unbudgeted'].transactions.push(txn);
         }
     }
-    const income = parseFloat(incomeTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2));
-    const nonBonusIncome = parseFloat(incomeTransactions.filter(txn => txn.tagNames.includes('Income')).reduce((acc, txn) => acc + txn.amount, 0).toFixed(2));
-    const monthlyCategorySpending = parseFloat(Object.values(monthlyCategories).reduce((acc, {amount}) => acc + amount, 0).toFixed(2));
-    const dayToDaySpending = parseFloat(dayToDayTransactions.reduce((acc, txn) => acc + txn.amount, 0).toFixed(2));
-    const monthlySpending = parseFloat((monthlyCategorySpending).toFixed(2));
-    const spending = parseFloat((dayToDaySpending + monthlySpending).toFixed(2));
-    const surplus = parseFloat((income - monthlySpending - dayToDaySpending).toFixed(2));
+    const income = round2(incomeTransactions.reduce((acc, txn) => acc + txn.amount, 0));
+    const nonBonusIncome = round2(incomeTransactions.filter(txn => txn.tagNames.includes('Income')).reduce((acc, txn) => acc + txn.amount, 0));
+    const monthlyCategorySpending = round2(Object.values(monthlyCategories).reduce((acc, {amount}) => acc + amount, 0));
+    const dayToDaySpending = round2(dayToDayTransactions.reduce((acc, txn) => acc + txn.amount, 0));
+    const monthlySpending = round2(monthlyCategorySpending);
+    const spending = round2(dayToDaySpending + monthlySpending);
+    const surplus = round2(income - monthlySpending - dayToDaySpending);
 
-    const monthlyDebits = parseFloat(shortTermTransactions.filter(txn => txn.expenseAmount > 0).reduce((acc, txn) => acc + txn.expenseAmount, 0).toFixed(2));
-    const monthlyCredits = Math.abs(parseFloat(shortTermTransactions.filter(txn => txn.expenseAmount < 0).reduce((acc, txn) => acc + txn.expenseAmount, 0).toFixed(2)));
+    const monthlyDebits = round2(shortTermTransactions.filter(txn => txn.expenseAmount > 0).reduce((acc, txn) => acc + txn.expenseAmount, 0));
+    const monthlyCredits = Math.abs(round2(shortTermTransactions.filter(txn => txn.expenseAmount < 0).reduce((acc, txn) => acc + txn.expenseAmount, 0)));
 
     return {
         income,
