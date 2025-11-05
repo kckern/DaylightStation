@@ -50,3 +50,9 @@
     box-sizing: border-box;
   }
 }
+
+// Kiosk UI mode - hide cursor after first touch event detected
+.fitness-app-container.kiosk-ui,
+.fitness-app-container.kiosk-ui * {
+  cursor: none !important;
+}
