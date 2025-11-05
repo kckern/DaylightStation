@@ -217,6 +217,17 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
   };
 
+  // Generate a consistent random dark grey color based on position
+  const getGreyShade = useCallback((pos) => {
+    // Use position as seed for consistent color per thumbnail
+    const seed = Math.floor(pos * 1000);
+    const hash = (seed * 9301 + 49297) % 233280;
+    const normalized = hash / 233280;
+    // Generate grey value between 25-60 (dark greys)
+    const greyValue = Math.floor(25 + normalized * 35);
+    return `rgb(${greyValue}, ${greyValue}, ${greyValue})`;
+  }, []);
+
   const renderedSeekButtons = useMemo(() => {
     if (!currentItem) return null;
     const plexObj = {
@@ -241,6 +252,8 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       }
       const state = activePos != null && Math.abs(activePos - pos) < 0.001 ? 'active' : (activePos != null && pos < activePos ? 'past' : 'future');
       const classNames = `seek-button-container ${state}${isOrigin ? ' origin' : ''}`;
+      const greyBg = getGreyShade(pos);
+      
       return (
         <SingleThumbnailButton
           key={'rng-'+idx+'-'+Math.round(pos)}
@@ -255,16 +268,38 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         >
           <div className={classNames} data-pos={pos}>
             <div className="thumbnail-wrapper">
-              {imgSrc && (
-                <img src={imgSrc} alt={`Thumbnail ${label}`} className="seek-thumbnail" loading="lazy" />
-              )}
+              {imgSrc ? (
+                <img 
+                  src={imgSrc} 
+                  alt="" 
+                  className="seek-thumbnail" 
+                  loading="lazy"
+                  onError={(e) => {
+                    // Hide image and show grey fallback on error
+                    e.target.style.display = 'none';
+                  }}
+                />
+              ) : null}
+              <div 
+                className="thumbnail-fallback" 
+                style={{ 
+                  backgroundColor: greyBg,
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  display: imgSrc ? 'none' : 'block',
+                  zIndex: 0
+                }}
+              />
               <span className="thumbnail-time">{label}</span>
             </div>
           </div>
         </SingleThumbnailButton>
       );
     });
-  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, commit, rangeStart, rangeEnd]);
+  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, commit, rangeStart, rangeEnd, getGreyShade]);
 
   const progressPct = useMemo(() => {
     if (!rangeSpan) return 0;

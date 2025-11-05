@@ -24,7 +24,23 @@ const FitnessApp = () => {
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
+  const [kioskUI, setKioskUI] = useState(false);
   const viewportRef = useRef(null);
+  
+  // Detect touch events and switch to kiosk mode (hides cursor)
+  useEffect(() => {
+    const handleFirstTouch = () => {
+      setKioskUI(true);
+      // Remove listener after first touch detected
+      window.removeEventListener('touchstart', handleFirstTouch);
+    };
+    
+    window.addEventListener('touchstart', handleFirstTouch, { passive: true });
+    
+    return () => {
+      window.removeEventListener('touchstart', handleFirstTouch);
+    };
+  }, []);
   
   // Expose the queue setter globally for emergency access
   useEffect(() => {
@@ -129,7 +145,7 @@ const FitnessApp = () => {
         fitnessPlayQueue={fitnessPlayQueue}
         setFitnessPlayQueue={setFitnessPlayQueue}
       >
-        <div className="fitness-app-container">
+        <div className={`fitness-app-container ${kioskUI ? 'kiosk-ui' : ''}`}>
           <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
             {loading && (
               <div style={{display:'flex',alignItems:'center',justifyContent:'center',position:'absolute',inset:0}}>
