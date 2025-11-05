@@ -66,11 +66,6 @@ export function useCommonMediaController({
   // Initialize with meta.maxVideoBitrate if available, to avoid initial "unlimited" flash
   const [currentMaxKbps, setCurrentMaxKbps] = useState(() => {
     const initial = Number.isFinite(meta?.maxVideoBitrate) ? Number(meta.maxVideoBitrate) : null;
-    console.log('[Bitrate] State initialization:', {
-      'meta.maxVideoBitrate': meta?.maxVideoBitrate,
-      'initial value': initial,
-      'meta': meta
-    });
     return initial;
   });
 
@@ -112,20 +107,11 @@ export function useCommonMediaController({
 
   const isDash = meta.media_type === 'dash_video';
   // Seed current cap if provided on meta
-  useEffect(() => {
+    useEffect(() => {
     if (Number.isFinite(meta?.maxVideoBitrate)) {
       const capValue = Number(meta.maxVideoBitrate);
-      console.log('[Bitrate] Initializing cap from meta.maxVideoBitrate:', {
-        maxVideoBitrate: meta.maxVideoBitrate,
-        capKbps: capValue,
-        mediaKey: meta?.media_key
-      });
       setCurrentMaxKbps(capValue);
     } else {
-      console.log('[Bitrate] No maxVideoBitrate set, cap is unlimited', {
-        maxVideoBitrate: meta?.maxVideoBitrate,
-        mediaKey: meta?.media_key
-      });
       setCurrentMaxKbps(null);
     }
   }, [meta?.maxVideoBitrate, meta?.media_key]);
@@ -444,7 +430,8 @@ export function useCommonMediaController({
       // Only apply start time on initial load, not on recovery reloads
       let startTime = 0;
       if (isInitialLoadRef.current) {
-        startTime = (duration > (12 * 60) || isVideo) ? start : 0;
+        const shouldApplyStart = (duration > (12 * 60) || isVideo);
+        startTime = shouldApplyStart ? start : 0;
         
         if (duration > 0 && startTime > 0) {
           const progressPercent = (startTime / duration) * 100;
@@ -459,7 +446,9 @@ export function useCommonMediaController({
       }
       
       mediaEl.dataset.key = media_key;
-      if (Number.isFinite(startTime)) mediaEl.currentTime = startTime;
+      if (Number.isFinite(startTime)) {
+        mediaEl.currentTime = startTime;
+      }
       mediaEl.autoplay = true;
       mediaEl.volume = adjustedVolume;
       

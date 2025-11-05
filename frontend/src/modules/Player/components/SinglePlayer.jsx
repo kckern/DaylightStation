@@ -105,15 +105,6 @@ export function SinglePlayer(play) {
     const stored = plexId ? readStoredBitrate(plexId) : null;
     const effectiveMax = (override !== undefined) ? override : (stored != null ? stored : initialMaxBitrateRef.current);
 
-    console.log('[SinglePlayer] fetchVideoInfo bitrate logic:', {
-      'initialMaxBitrateRef.current': initialMaxBitrateRef.current,
-      'play.maxVideoBitrate': play.maxVideoBitrate,
-      override,
-      stored,
-      effectiveMax,
-      plexId
-    });
-
     const info = await fetchMediaInfo({ 
       plex, 
       media, 
@@ -124,10 +115,12 @@ export function SinglePlayer(play) {
     if (info) {
       // Attach current max to mediaInfo so the hook can seed its ref
       const withCap = { ...info, continuous, maxVideoBitrate: effectiveMax ?? null };
-      console.log('[SinglePlayer] Setting mediaInfo with cap:', {
-        maxVideoBitrate: withCap.maxVideoBitrate,
-        media_key: withCap.media_key
-      });
+      
+      // Override seconds if explicitly provided in play object
+      if (play?.seconds !== undefined) {
+        withCap.seconds = play.seconds;
+      }
+      
       setMediaInfo(withCap);
       setIsReady(true);
       // Persist override if provided

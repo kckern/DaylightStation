@@ -25,7 +25,7 @@ export function useQueueController({ play, queue, clear }) {
     });
   }, []);
 
-  const isQueue = !!queue || (play && (play.playlist || play.queue || play.plex)) || Array.isArray(play);
+  const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
 
   useEffect(() => {
     async function initQueue() {
