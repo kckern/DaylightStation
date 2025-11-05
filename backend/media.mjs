@@ -438,7 +438,8 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const list_keys = list.map(item => item.key || item.plex || item.media_key).filter(Boolean);
     const category = librarySection ? `plex/${librarySection}` : "plex";
     const unwatched_keys = findUnwatchedItems(list_keys, category, shuffle);
-    const unwatchedList = list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
+    // We will handle filtering history later, not needed for menu lists where this is used
+    const unwatchedList = list; //list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
     // Prepare Plex instance for building thumb URLs (season thumbnails)
     const plexThumb = new Plex();
     list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex,userRating,thumb_id}) => {

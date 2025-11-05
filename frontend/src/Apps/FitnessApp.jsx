@@ -24,7 +24,11 @@ const FitnessApp = () => {
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
-  const [kioskUI, setKioskUI] = useState(false);
+  const [kioskUI, setKioskUI] = useState(() => {
+    // Check if Firefox on initial load
+    const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+    return isFirefox;
+  });
   const viewportRef = useRef(null);
   
   // Detect touch events and switch to kiosk mode (hides cursor)
