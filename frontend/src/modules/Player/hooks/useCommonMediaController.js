@@ -30,6 +30,12 @@ export function useCommonMediaController({
   onRequestBitrateChange,
   keyboardOverrides
 }) {
+  const DEBUG_MEDIA = false;
+  // Global guards persisted across remounts (per media_key)
+  if (!useCommonMediaController.__appliedStartByKey) useCommonMediaController.__appliedStartByKey = Object.create(null);
+  if (!useCommonMediaController.__lastPosByKey) useCommonMediaController.__lastPosByKey = Object.create(null);
+  if (!useCommonMediaController.__lastSeekByKey) useCommonMediaController.__lastSeekByKey = Object.create(null);
+
   const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.plex || meta.media_url;
   const containerRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
@@ -37,9 +43,17 @@ export function useCommonMediaController({
   const [isSeeking, setIsSeeking] = useState(false);
   const lastLoggedTimeRef = useRef(0);
   const lastUpdatedTimeRef = useRef(0);
+  // Track last known playback position from timeupdate events
+  const lastPlaybackPosRef = useRef(0);
   
   // Track if this is the initial load (for start time application)
   const isInitialLoadRef = useRef(true);
+  
+  // Track if we're in a stall recovery reload to prevent applying initial start time
+  const isRecoveringRef = useRef(false);
+  
+  // Track the last seek intent (what time user tried to seek to)
+  const lastSeekIntentRef = useRef(null);
   
   // Stall detection refs
   const stallStateRef = useRef({
@@ -118,6 +132,16 @@ export function useCommonMediaController({
 
   // Reset sampling state on media change to prevent carryover
   useEffect(() => {
+    // Log media key changes to catch unexpected resets
+    try {
+      if (media_key) {
+        if (!useCommonMediaController.__prevKeyLog) useCommonMediaController.__prevKeyLog = media_key;
+        if (useCommonMediaController.__prevKeyLog !== media_key) {
+          if (DEBUG_MEDIA) console.log('[MediaKey] change detected', { from: useCommonMediaController.__prevKeyLog, to: media_key });
+          useCommonMediaController.__prevKeyLog = media_key;
+        }
+      }
+    } catch {}
     pctSamplesRef.current = [];
     lastFramesRef.current = { dropped: 0, total: 0 };
     stableBelowMsRef.current = 0;
@@ -186,8 +210,13 @@ export function useCommonMediaController({
         return false;
       }
       
-      const priorTime = mediaEl.currentTime || 0;
+      // Use lastSeekIntentRef if available (user tried to seek), otherwise use current time
+      const priorTime = lastSeekIntentRef.current !== null ? lastSeekIntentRef.current : (mediaEl.currentTime || 0);
       const src = mediaEl.getAttribute('src');
+      
+      // Set recovery flag to prevent applying initial start time
+      isRecoveringRef.current = true;
+  if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: begin', { priorTime, intent: lastSeekIntentRef.current, seekBackOnReload, hasSrc: !!src });
       
       try {
         mediaEl.pause();
@@ -201,15 +230,27 @@ export function useCommonMediaController({
             mediaEl.addEventListener('loadedmetadata', function handleOnce() {
               mediaEl.removeEventListener('loadedmetadata', handleOnce);
               const target = Math.max(0, priorTime - seekBackOnReload);
+              if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: loadedmetadata; seeking to target', { target, priorTime, seekBackOnReload });
               if (Number.isFinite(target)) {
                 try { mediaEl.currentTime = target; } catch (_) {}
               }
               mediaEl.play().catch(() => {});
+              // Clear recovery flag and seek intent after recovery is complete
+              isRecoveringRef.current = false;
+              lastSeekIntentRef.current = null;
+              if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: complete');
             }, { once: true });
-          } catch (_) {}
+          } catch (_) {
+            isRecoveringRef.current = false;
+            lastSeekIntentRef.current = null;
+            console.warn('[Stall Recovery] reload: error after reattaching src');
+          }
         }, 50);
         return true;
       } catch (_) {
+        isRecoveringRef.current = false;
+        lastSeekIntentRef.current = null;
+        console.warn('[Stall Recovery] reload: error during element reset');
         return false;
       }
     }, [getMediaEl, seekBackOnReload]),
@@ -233,12 +274,22 @@ export function useCommonMediaController({
     const s = stallStateRef.current;
     const strategy = recoveryStrategies[s.recoveryAttempt];
     
+    if (DEBUG_MEDIA) console.log('[Stall Recovery] Attempting recovery:', {
+      attempt: s.recoveryAttempt,
+      strategy,
+      totalStrategies: recoveryStrategies.length,
+      lastStrategy: s.lastStrategy,
+      lastSeekIntent: lastSeekIntentRef.current
+    });
+    
     if (!strategy) {
+      if (DEBUG_MEDIA) console.log('[Stall Recovery] No more strategies available');
       return false;
     }
     
     const method = recoveryMethods[strategy];
     if (!method) {
+      console.warn('[Stall Recovery] Strategy method not found:', strategy);
       s.recoveryAttempt++;
       return attemptRecovery();
     }
@@ -247,6 +298,12 @@ export function useCommonMediaController({
     const success = method();
     s.recoveryAttempt++;
     
+    if (DEBUG_MEDIA) console.log('[Stall Recovery] Recovery method executed:', {
+      strategy,
+      success,
+      nextAttempt: s.recoveryAttempt
+    });
+    
     return success;
   }, [recoveryStrategies, recoveryMethods]);
 
@@ -254,35 +311,44 @@ export function useCommonMediaController({
     if (!enabled) return;
     const s = stallStateRef.current;
     if (s.hasEnded) {
+      if (DEBUG_MEDIA) console.log('[Stall] schedule: skip (hasEnded=true)');
       return;
     }
     if (s.softTimer) {
+      // A soft timer is already scheduled
       return;
     }
     if (s.isStalled) {
+      if (DEBUG_MEDIA) console.log('[Stall] schedule: already marked stalled; awaiting recovery');
       return;
     }
     
     const mediaEl = getMediaEl();
     if (!mediaEl) {
+      if (DEBUG_MEDIA) console.log('[Stall] schedule: no media element');
       return;
     }
     if (mediaEl.paused) {
+      // Don't stall-check while paused
       return;
     }
     
+    // Schedule a soft stall check
+    if (DEBUG_MEDIA) console.log('[Stall] schedule: set softTimer', { checkInterval, currentTime: mediaEl.currentTime, duration: mediaEl.duration });
     s.softTimer = setTimeout(() => {
       const mediaEl = getMediaEl();
       const s = stallStateRef.current;
       
       // If media element is gone or paused, stop checking
       if (!mediaEl || mediaEl.paused) {
+        if (DEBUG_MEDIA) console.log('[Stall] softTimer: cancel (no media or paused)');
         clearTimers();
         return;
       }
       
       // Check if media has ended or is very close to end
       if (s.hasEnded || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
+        if (DEBUG_MEDIA) console.log('[Stall] softTimer: media ended or near end; cancel timers');
         s.hasEnded = true;
         clearTimers();
         return;
@@ -291,6 +357,7 @@ export function useCommonMediaController({
       if (s.lastProgressTs === 0) {
         // No progress yet, reschedule
         s.softTimer = null;
+        if (DEBUG_MEDIA) console.log('[Stall] softTimer: no progress yet; reschedule');
         scheduleStallDetection();
         return;
       }
@@ -298,6 +365,7 @@ export function useCommonMediaController({
       const diff = Date.now() - s.lastProgressTs;
       
       if (diff >= softMs) {
+  if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff, softMs, hardMs, mode, currentTime: mediaEl.currentTime, duration: mediaEl.duration, droppedFramePct, quality });
         s.isStalled = true;
         setIsStalled(true);
         
@@ -309,24 +377,30 @@ export function useCommonMediaController({
             
             // Don't attempt recovery if media has ended
             if (s.hasEnded || !mediaEl || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
+              if (DEBUG_MEDIA) console.log('[Stall] hardTimer: skip recovery (ended or invalid)');
               clearTimers();
               return;
             }
             
             if (!s.isStalled) {
+              if (DEBUG_MEDIA) console.log('[Stall] hardTimer: not stalled anymore; abort');
               return;
             }
             
             if (s.recoveryAttempt < recoveryStrategies.length) {
+              if (DEBUG_MEDIA) console.log('[Stall] hardTimer: attempting recovery', { attempt: s.recoveryAttempt, strategy: recoveryStrategies[s.recoveryAttempt], lastSeekIntent: lastSeekIntentRef.current });
               clearTimers();
               attemptRecovery();
               scheduleStallDetection();
+            } else {
+              if (DEBUG_MEDIA) console.log('[Stall] hardTimer: no strategies left');
             }
           }, recoveryDelay);
         }
       } else {
         // Not stalled yet, keep checking
         s.softTimer = null;
+        if (DEBUG_MEDIA) console.log('[Stall] softTimer: no stall yet; diff < softMs; reschedule', { diff, softMs });
         scheduleStallDetection();
       }
     }, checkInterval);
@@ -342,6 +416,8 @@ export function useCommonMediaController({
     s.lastProgressTs = Date.now();
     
     if (wasStalled) {
+  const mediaEl = getMediaEl();
+  if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, recoveryAttempt: s.recoveryAttempt, lastStrategy: s.lastStrategy });
       s.isStalled = false;
       s.recoveryAttempt = 0;
       clearTimers();
@@ -349,7 +425,7 @@ export function useCommonMediaController({
       scheduleStallDetection();
     }
     // Continuous polling in scheduleStallDetection handles rescheduling
-  }, [clearTimers, scheduleStallDetection]);
+  }, [clearTimers, scheduleStallDetection, getMediaEl]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -372,6 +448,10 @@ export function useCommonMediaController({
 
     const onTimeUpdate = () => {
       setSeconds(mediaEl.currentTime);
+      // Keep a sticky record of the last known good time
+      lastPlaybackPosRef.current = mediaEl.currentTime || 0;
+      // Persist last position per media_key across remounts
+      try { useCommonMediaController.__lastPosByKey[media_key] = lastPlaybackPosRef.current; } catch {}
       logProgress();
       markProgress();
       if (onProgress) {
@@ -426,13 +506,15 @@ export function useCommonMediaController({
       
       const adjustedVolume = Math.min(1, Math.max(0, processedVolume));
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
-      
-      // Only apply start time on initial load, not on recovery reloads
+
+      // Only apply start time on effective initial load (first time for this media_key), not on recovery reloads
       let startTime = 0;
-      if (isInitialLoadRef.current) {
+      const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[media_key];
+      const isEffectiveInitial = isInitialLoadRef.current && !isRecoveringRef.current && !hasAppliedForKey;
+      if (isEffectiveInitial) {
         const shouldApplyStart = (duration > (12 * 60) || isVideo);
         startTime = shouldApplyStart ? start : 0;
-        
+
         if (duration > 0 && startTime > 0) {
           const progressPercent = (startTime / duration) * 100;
           const secondsRemaining = duration - startTime;
@@ -440,15 +522,53 @@ export function useCommonMediaController({
             startTime = 0;
           }
         }
-        
-        // Mark that we've completed the initial load
+
+        // Mark that we've completed the initial load for this key
         isInitialLoadRef.current = false;
+        try { useCommonMediaController.__appliedStartByKey[media_key] = true; } catch {}
+        if (DEBUG_MEDIA) console.log('[StartTime] initial load applying start', { startTime, start, isVideo, duration });
+      } else {
+        if (DEBUG_MEDIA) console.log('[StartTime] treating as non-initial load', {
+          isRecovering: isRecoveringRef.current,
+          hasAppliedForKey,
+          wasInitial: isInitialLoadRef.current,
+          duration
+        });
+        if (isRecoveringRef.current) {
+          if (DEBUG_MEDIA) console.log('[StartTime] skip applying start during recovery');
+        }
+      }
+
+      // If an unexpected loadedmetadata occurs and we're not in recovery,
+      // avoid snapping to 0 if we have a recent seek intent or a last known good position.
+      if (!isRecoveringRef.current) {
+        const candidates = [
+          lastSeekIntentRef.current,
+          useCommonMediaController.__lastSeekByKey[media_key],
+          lastPlaybackPosRef.current,
+          useCommonMediaController.__lastPosByKey[media_key]
+        ];
+        const sticky = candidates.find(v => v != null && Number.isFinite(v)) || 0;
+        const nearStart = (sticky <= 1);
+        const nearEnd = (duration > 0) ? (sticky >= duration - 1) : false;
+        const recent = (Date.now() - (stallStateRef.current.lastProgressTs || 0)) <= 15000;
+        if (startTime === 0 && !nearStart && !nearEnd && (recent || sticky > 5)) {
+          const stickyTarget = Math.max(0, sticky - 1); // small cushion back
+          if (DEBUG_MEDIA) console.log('[StartTime] sticky resume on unexpected metadata', { sticky, stickyTarget, duration, recent });
+          startTime = stickyTarget;
+        } else if (startTime === 0) {
+          if (DEBUG_MEDIA) console.log('[StartTime] sticky resume skipped', { sticky, nearStart, nearEnd, recent, duration });
+        }
       }
       
       mediaEl.dataset.key = media_key;
-      if (Number.isFinite(startTime)) {
+      
+      // Don't set currentTime during recovery - let the recovery handler do it
+      if (!isRecoveringRef.current && Number.isFinite(startTime)) {
         mediaEl.currentTime = startTime;
+        if (DEBUG_MEDIA) console.log('[StartTime] set currentTime on load', { startTime });
       }
+      
       mediaEl.autoplay = true;
       mediaEl.volume = adjustedVolume;
       
@@ -487,7 +607,16 @@ export function useCommonMediaController({
       scheduleStallDetection();
     };
 
-    const handleSeeking = () => setIsSeeking(true);
+    const handleSeeking = () => {
+      // Capture the seek intent (where the user is trying to seek to)
+      const mediaEl = getMediaEl();
+      if (mediaEl && Number.isFinite(mediaEl.currentTime)) {
+        lastSeekIntentRef.current = mediaEl.currentTime;
+        try { useCommonMediaController.__lastSeekByKey[media_key] = mediaEl.currentTime; } catch {}
+        if (DEBUG_MEDIA) console.log('[Seek] seeking event: intent captured', { intent: lastSeekIntentRef.current, duration: mediaEl.duration });
+      }
+      setIsSeeking(true);
+    };
     const clearSeeking = () => {
       requestAnimationFrame(() => setIsSeeking(false));
     };
@@ -501,9 +630,21 @@ export function useCommonMediaController({
     mediaEl.addEventListener('playing', clearSeeking);
 
     if (enabled) {
-      const onWaiting = () => { scheduleStallDetection(); };
-      const onStalled = () => { scheduleStallDetection(); };
-      const onPlaying = () => { scheduleStallDetection(); };
+      const onWaiting = () => { 
+        const el = getMediaEl();
+        if (DEBUG_MEDIA) console.log('[Media] waiting event', { currentTime: el?.currentTime, duration: el?.duration });
+        scheduleStallDetection(); 
+      };
+      const onStalled = () => { 
+        const el = getMediaEl();
+        if (DEBUG_MEDIA) console.log('[Media] stalled event', { currentTime: el?.currentTime, duration: el?.duration });
+        scheduleStallDetection(); 
+      };
+      const onPlaying = () => { 
+        const el = getMediaEl();
+        if (DEBUG_MEDIA) console.log('[Media] playing event', { currentTime: el?.currentTime, duration: el?.duration });
+        scheduleStallDetection(); 
+      };
       
       mediaEl.addEventListener('waiting', onWaiting);
       mediaEl.addEventListener('stalled', onStalled);
@@ -622,8 +763,7 @@ export function useCommonMediaController({
           mediaKey: media_key
         });
         try {
-          // eslint-disable-next-line no-console
-          console.info('[ABR] downscale', { plexId: media_key, from: curr, to: next, droppedFramePct });
+          if (DEBUG_MEDIA) console.info('[ABR] downscale', { plexId: media_key, from: curr, to: next, droppedFramePct });
           onRequestBitrateChange(next, { media_key, reason: 'over_allowance', droppedFramePct });
         } finally {
           // The caller is responsible for clearing any UI; we only unlock the guard after a grace period
@@ -652,8 +792,7 @@ export function useCommonMediaController({
           mediaKey: media_key
         });
         try {
-          // eslint-disable-next-line no-console
-          console.info('[ABR] ramp-up', { plexId: media_key, from: curr, to: next, droppedFramePct });
+          if (DEBUG_MEDIA) console.info('[ABR] ramp-up', { plexId: media_key, from: curr, to: next, droppedFramePct });
           onRequestBitrateChange(next, { media_key, reason: 'ramp_up', droppedFramePct });
         } finally {
           setTimeout(() => { pendingAdaptRef.current = false; }, 50);
@@ -669,8 +808,7 @@ export function useCommonMediaController({
         setCurrentMaxKbps(null);
         stableBelowMsRef.current = 0;
         try {
-          // eslint-disable-next-line no-console
-          console.info('[ABR] reset-to-unlimited', { plexId: media_key, from: curr, to: null, droppedFramePct });
+          if (DEBUG_MEDIA) console.info('[ABR] reset-to-unlimited', { plexId: media_key, from: curr, to: null, droppedFramePct });
           onRequestBitrateChange(null, { media_key, reason: 'reset_unlimited', droppedFramePct });
         } finally {
           setTimeout(() => { pendingAdaptRef.current = false; }, 50);
@@ -686,8 +824,7 @@ export function useCommonMediaController({
       if (e.key === manualResetKey && typeof onRequestBitrateChange === 'function') {
         const curr = currentMaxKbps;
         setCurrentMaxKbps(null);
-        // eslint-disable-next-line no-console
-        console.info('[ABR] manual reset to unlimited', { plexId: media_key, from: curr });
+        if (DEBUG_MEDIA) console.info('[ABR] manual reset to unlimited', { plexId: media_key, from: curr });
         onRequestBitrateChange(null, { media_key, reason: 'manual_reset', droppedFramePct });
       }
     };
