@@ -397,21 +397,33 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
   };
 
-  const enhancedCurrentItem = useMemo(() => currentItem ? ({
-    ...currentItem,
-    plex: currentItem.id || currentItem.plex,
-    media_url: currentItem.media_url || currentItem.videoUrl,
-    title: currentItem.title || currentItem.label,
-    media_type: 'video',
-    type: 'video',
-    media_key: currentItem.id || currentItem.media_key || `fitness-${currentItem.id || ''}`,
-    thumb_id: currentItem.thumb_id,
-    show: currentItem.show || 'Fitness',
-    season: currentItem.season || 'Workout',
-    percent: 0,
-    seconds: 0,
-    continuous: false
-  }) : null, [currentItem]);
+  const enhancedCurrentItem = useMemo(() => {
+    if (!currentItem) return null;
+    
+    // Get duration in seconds from various possible sources
+    const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 0;
+    const thirtyMinutes = 30 * 60; // 1800 seconds
+    
+    // For videos < 30 minutes, always start from 0
+    // For videos ≥ 30 minutes, allow resume from saved position
+    const resumeSeconds = totalDuration < thirtyMinutes ? 0 : (currentItem.seconds || 0);
+    
+    return {
+      ...currentItem,
+      plex: currentItem.id || currentItem.plex,
+      media_url: currentItem.media_url || currentItem.videoUrl,
+      title: currentItem.title || currentItem.label,
+      media_type: 'video',
+      type: 'video',
+      media_key: currentItem.id || currentItem.media_key || `fitness-${currentItem.id || ''}`,
+      thumb_id: currentItem.thumb_id,
+      show: currentItem.show || 'Fitness',
+      season: currentItem.season || 'Workout',
+      percent: 0,
+      seconds: resumeSeconds,
+      continuous: false
+    };
+  }, [currentItem]);
 
   const seekPositions = useMemo(() => {
     if (!currentItem) return [];
@@ -573,8 +585,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               playbackRate: currentItem.playbackRate || 1.0,
               type: 'video',
               continuous: false,
-              maxVideoBitrate: 800, // limit to 8Mbps for fitness videos
-              stallConfig: { droppedFrameAllowance: 0.30 }
+          //    maxVideoBitrate: 800, // limit to 8Mbps for fitness videos
+            //  stallConfig: { droppedFrameAllowance: 0.30 }
             }}
             keyboardOverrides={keyboardOverrides}
             clear={handleClose}
