@@ -95,6 +95,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   // ---------- Intent State ----------
   const [pendingTime, setPendingTime] = useState(null);   // committed seek awaiting media time
+  const awaitingSettleRef = useRef(false);                // guard to hold highlight until playback resumes
   const [previewTime, setPreviewTime] = useState(null);   // hover / drag preview (only while seeking)
   const rafRef = useRef(); // for throttling preview updates
 
@@ -111,16 +112,9 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   // ---------- Display Time Resolution ----------
   const displayTime = useMemo(() => {
-    // Show pendingTime if it's significantly different from currentTime (either direction)
-    if (pendingTime != null && Math.abs(currentTime - pendingTime) > BASE_PENDING_TOLERANCE) {
-      // console.log('[FitnessPlayerFooterSeekThumbnails] displayTime using pendingTime:', { pendingTime, currentTime, diff: Math.abs(currentTime - pendingTime) });
-      return pendingTime;
-    }
-    if (isSeeking && previewTime != null) {
-      // console.log('[FitnessPlayerFooterSeekThumbnails] displayTime using previewTime:', previewTime);
-      return previewTime;
-    }
-    // console.log('[FitnessPlayerFooterSeekThumbnails] displayTime using currentTime:', currentTime);
+    // Optimistic: while a seek is pending, keep highlighting the intended target
+    if (pendingTime != null) return pendingTime;
+    if (isSeeking && previewTime != null) return previewTime;
     return currentTime;
   }, [pendingTime, previewTime, currentTime, isSeeking]);
 
@@ -137,9 +131,8 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   // ---------- Effects ----------
   useEffect(() => {
     if (pendingTime == null) return;
-    // Clear pendingTime once currentTime catches up (within tolerance)
-    if (Math.abs(currentTime - pendingTime) <= CLEAR_PENDING_TOLERANCE) {
-      console.log('[FitnessPlayerFooterSeekThumbnails] Clearing pendingTime:', { currentTime, pendingTime, diff: Math.abs(currentTime - pendingTime) });
+    // Only clear when we're close AND not explicitly waiting for settle
+    if (!awaitingSettleRef.current && Math.abs(currentTime - pendingTime) <= CLEAR_PENDING_TOLERANCE) {
       setPendingTime(null);
     }
   }, [currentTime, pendingTime]);
@@ -153,11 +146,29 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   }, [rangeStart, rangeSpan]);
 
   const commit = useCallback((t) => {
-    console.log('[FitnessPlayerFooterSeekThumbnails] commit called:', { t, currentPendingTime: pendingTime });
     setPendingTime(t);
+    awaitingSettleRef.current = true;
     seek(t);
     onSeek?.(t);
   }, [seek, onSeek]);
+
+  // Clear pendingTime on playback resume/seek settled
+  useEffect(() => {
+    const el = playerRef?.current?.getMediaElement?.();
+    if (!el) return;
+    const handleSettled = () => {
+      if (awaitingSettleRef.current) {
+        awaitingSettleRef.current = false;
+        setPendingTime(null);
+      }
+    };
+    el.addEventListener('seeked', handleSettled);
+    el.addEventListener('playing', handleSettled);
+    return () => {
+      el.removeEventListener('seeked', handleSettled);
+      el.removeEventListener('playing', handleSettled);
+    };
+  }, [playerRef]);
 
   // Expose commit function to parent via ref
   useEffect(() => {
