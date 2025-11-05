@@ -430,6 +430,23 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     return enhanced;
   }, [currentItem]);
 
+  const playObject = useMemo(() => {
+    if (!enhancedCurrentItem) return null;
+    return {
+      plex: enhancedCurrentItem.plex,
+      media_url: enhancedCurrentItem.media_url,
+      media_type: 'video',
+      media_key: enhancedCurrentItem.media_key,
+      title: enhancedCurrentItem.title,
+      seconds: enhancedCurrentItem.seconds,
+      shader: 'minimal',
+      volume: currentItem?.volume || 1.0,
+      playbackRate: currentItem?.playbackRate || 1.0,
+      type: 'video',
+      continuous: false,
+    };
+  }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate]);
+
   const seekPositions = useMemo(() => {
     if (!currentItem) return [];
     const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 600;
@@ -579,24 +596,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           <div className="player-controls-blocker"></div>
           <Player 
             key={enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}
-            play={(() => {
-              const playObj = {
-                plex: enhancedCurrentItem.plex,
-                media_url: enhancedCurrentItem.media_url,
-                media_type: 'video',
-                media_key: enhancedCurrentItem.media_key,
-                title: enhancedCurrentItem.title,
-                seconds: enhancedCurrentItem.seconds,
-                shader: 'minimal',
-                volume: currentItem.volume || 1.0,
-                playbackRate: currentItem.playbackRate || 1.0,
-                type: 'video',
-                continuous: false,
-            //    maxVideoBitrate: 800, // limit to 8Mbps for fitness videos
-              //  stallConfig: { droppedFrameAllowance: 0.30 }
-              };
-              return playObj;
-            })()}
+            play={playObject}
             keyboardOverrides={keyboardOverrides}
             clear={handleClose}
             advance={handleNext}
