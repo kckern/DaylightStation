@@ -406,9 +406,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     
     // For videos < 30 minutes, always start from 0
     // For videos ≥ 30 minutes, allow resume from saved position
-    const resumeSeconds = totalDuration < thirtyMinutes ? 0 : (currentItem.seconds || 0);
+    let resumeSeconds = 0;
+    if (totalDuration >= thirtyMinutes && currentItem.seconds) {
+      resumeSeconds = currentItem.seconds;
+    }
     
-    return {
+    const enhanced = {
       ...currentItem,
       plex: currentItem.id || currentItem.plex,
       media_url: currentItem.media_url || currentItem.videoUrl,
@@ -423,6 +426,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       seconds: resumeSeconds,
       continuous: false
     };
+    
+    return enhanced;
   }, [currentItem]);
 
   const seekPositions = useMemo(() => {
@@ -574,27 +579,30 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           <div className="player-controls-blocker"></div>
           <Player 
             key={enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}
-            play={{
-              plex: enhancedCurrentItem.plex,
-              media_url: enhancedCurrentItem.media_url,
-              media_type: 'video',
-              media_key: enhancedCurrentItem.media_key,
-              title: enhancedCurrentItem.title,
-              shader: 'minimal',
-              volume: currentItem.volume || 1.0,
-              playbackRate: currentItem.playbackRate || 1.0,
-              type: 'video',
-              continuous: false,
-          //    maxVideoBitrate: 800, // limit to 8Mbps for fitness videos
-            //  stallConfig: { droppedFrameAllowance: 0.30 }
-            }}
+            play={(() => {
+              const playObj = {
+                plex: enhancedCurrentItem.plex,
+                media_url: enhancedCurrentItem.media_url,
+                media_type: 'video',
+                media_key: enhancedCurrentItem.media_key,
+                title: enhancedCurrentItem.title,
+                seconds: enhancedCurrentItem.seconds,
+                shader: 'minimal',
+                volume: currentItem.volume || 1.0,
+                playbackRate: currentItem.playbackRate || 1.0,
+                type: 'video',
+                continuous: false,
+            //    maxVideoBitrate: 800, // limit to 8Mbps for fitness videos
+              //  stallConfig: { droppedFrameAllowance: 0.30 }
+              };
+              return playObj;
+            })()}
             keyboardOverrides={keyboardOverrides}
             clear={handleClose}
             advance={handleNext}
             playerType="fitness-video"
             onProgress={handlePlayerProgress}
             onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
-            showQuality
             ref={playerRef}
           />
         </div>
