@@ -38,6 +38,9 @@ export function useCommonMediaController({
   const lastLoggedTimeRef = useRef(0);
   const lastUpdatedTimeRef = useRef(0);
   
+  // Track if this is the initial load (for start time application)
+  const isInitialLoadRef = useRef(true);
+  
   // Stall detection refs
   const stallStateRef = useRef({
     lastProgressTs: 0,
@@ -132,6 +135,8 @@ export function useCommonMediaController({
     pctSamplesRef.current = [];
     lastFramesRef.current = { dropped: 0, total: 0 };
     stableBelowMsRef.current = 0;
+    // Reset initial load flag when media changes
+    isInitialLoadRef.current = true;
     // Do not reset currentMaxKbps here; it seeds from meta.maxVideoBitrate effect above
   }, [media_key]);
 
@@ -435,14 +440,22 @@ export function useCommonMediaController({
       
       const adjustedVolume = Math.min(1, Math.max(0, processedVolume));
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
-      let startTime = (duration > (12 * 60) || isVideo) ? start : 0;
       
-      if (duration > 0 && startTime > 0) {
-        const progressPercent = (startTime / duration) * 100;
-        const secondsRemaining = duration - startTime;
-        if (progressPercent > 95 || secondsRemaining < 30) {
-          startTime = 0;
+      // Only apply start time on initial load, not on recovery reloads
+      let startTime = 0;
+      if (isInitialLoadRef.current) {
+        startTime = (duration > (12 * 60) || isVideo) ? start : 0;
+        
+        if (duration > 0 && startTime > 0) {
+          const progressPercent = (startTime / duration) * 100;
+          const secondsRemaining = duration - startTime;
+          if (progressPercent > 95 || secondsRemaining < 30) {
+            startTime = 0;
+          }
         }
+        
+        // Mark that we've completed the initial load
+        isInitialLoadRef.current = false;
       }
       
       mediaEl.dataset.key = media_key;
