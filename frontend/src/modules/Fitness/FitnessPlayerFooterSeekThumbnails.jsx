@@ -104,11 +104,11 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   // Build the 10 evenly spaced positions for current effective range
   const rangePositions = useMemo(() => buildRangePositions(rangeStart, rangeEnd), [rangeStart, rangeEnd, buildRangePositions]);
   // Capture unzoomed positions for future anchor zoom expansion
+  // Always remember the positions from the last rendered level so an anchor ([p,p]) can
+  // expand against the immediate prior level, enabling multi-level drill-down.
   useEffect(() => {
-    if (!zoomRange) {
-      unzoomedPositionsRef.current = rangePositions;
-    }
-  }, [zoomRange, rangePositions]);
+    unzoomedPositionsRef.current = rangePositions;
+  }, [rangePositions]);
 
   // ---------- Display Time Resolution ----------
   const displayTime = useMemo(() => {
@@ -162,13 +162,23 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         setPendingTime(null);
       }
     };
+    // Also clear on 'loadedmetadata' which fires during stall recovery reloads
+    const handleRecovery = () => {
+      // If we get a fresh loadedmetadata while waiting for settle, clear the pending state
+      if (awaitingSettleRef.current || pendingTime != null) {
+        awaitingSettleRef.current = false;
+        setPendingTime(null);
+      }
+    };
     el.addEventListener('seeked', handleSettled);
     el.addEventListener('playing', handleSettled);
+    el.addEventListener('loadedmetadata', handleRecovery);
     return () => {
       el.removeEventListener('seeked', handleSettled);
       el.removeEventListener('playing', handleSettled);
+      el.removeEventListener('loadedmetadata', handleRecovery);
     };
-  }, [playerRef]);
+  }, [playerRef, pendingTime]);
 
   // Expose commit function to parent via ref
   useEffect(() => {
@@ -251,9 +261,21 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       metadata: currentItem.metadata
     };
     return rangePositions.map((pos, idx) => {
+      const isActive = activePos != null && Math.abs(activePos - pos) < 0.001;
       const minutes = Math.floor(pos / 60);
       const seconds = Math.floor(pos % 60);
-      const label = `${minutes}:${String(seconds).padStart(2,'0')}`;
+      const baseLabel = `${minutes}:${String(seconds).padStart(2,'0')}`;
+      
+      // For active thumbnail, show current playback time instead of thumbnail position
+      let label;
+      if (isActive) {
+        const currentMinutes = Math.floor(displayTime / 60);
+        const currentSeconds = Math.floor(displayTime % 60);
+        label = `${currentMinutes}:${String(currentSeconds).padStart(2,'0')}`;
+      } else {
+        label = baseLabel;
+      }
+      
       const isOrigin = pos === 0; // ensure the very first (0:00) uses season / show artwork
       let imgSrc;
       if (isOrigin) {
@@ -261,7 +283,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       } else {
         imgSrc = generateThumbnailUrl ? generateThumbnailUrl(plexObj, pos) : undefined;
       }
-      const state = activePos != null && Math.abs(activePos - pos) < 0.001 ? 'active' : (activePos != null && pos < activePos ? 'past' : 'future');
+      const state = isActive ? 'active' : (activePos != null && pos < activePos ? 'past' : 'future');
       const classNames = `seek-button-container ${state}${isOrigin ? ' origin' : ''}`;
       const greyBg = getGreyShade(pos);
       
@@ -310,14 +332,33 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         </SingleThumbnailButton>
       );
     });
-  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, commit, rangeStart, rangeEnd, getGreyShade]);
+  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, commit, rangeStart, rangeEnd, getGreyShade, displayTime]);
 
+  // Progress bar should always represent entire video duration, independent of zoomed thumbnail range
+  const fullDuration = baseDurationProp || 0;
   const progressPct = useMemo(() => {
-    if (!rangeSpan) return 0;
-    const normalized = (displayTime - rangeStart) / rangeSpan;
-    return clamp01(normalized) * 100;
-  }, [displayTime, rangeStart, rangeSpan]);
+    if (!Number.isFinite(fullDuration) || fullDuration <= 0) return 0;
+    // Use displayTime so pending seeks reflect optimistically on bar
+    const normalized = clamp01(displayTime / fullDuration);
+    return normalized * 100;
+  }, [displayTime, fullDuration]);
   const showingIntent = pendingTime != null || (isSeeking && previewTime != null);
+
+  // Zoom overlay box (perimeter) indicates the currently drilled-in thumbnail window on top of full-duration progress bar
+  const zoomOverlay = useMemo(() => {
+    if (!isZoomed || !Number.isFinite(fullDuration) || fullDuration <= 0) return null;
+    // Avoid drawing if zoom covers essentially entire duration
+    const start = Number.isFinite(rangeStart) ? rangeStart : 0;
+    const end = Number.isFinite(rangeEnd) ? rangeEnd : 0;
+    const span = end - start;
+    if (!Number.isFinite(span) || span <= 0) return null;
+    if (span >= fullDuration * 0.98) return null; // nearly full length
+    // Clamp to bar bounds and compute width as right-left to avoid overflow
+    const leftUnit = clamp01(start / fullDuration);
+    const rightUnit = clamp01(end / fullDuration);
+    const widthUnit = Math.max(0, rightUnit - leftUnit);
+    return { leftPct: leftUnit * 100, widthPct: widthUnit * 100 };
+  }, [isZoomed, rangeStart, rangeEnd, fullDuration]);
 
   // Removed global capture listeners; rely on per-thumbnail handlers for zoom.
 
@@ -332,8 +373,25 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         onTouchStart={handlePointerMove}
         onTouchMove={handlePointerMove}
         onTouchEnd={handleTouchEnd}
+        style={{ position: 'relative', overflow: 'hidden' }}
       >
         <div className="progress" style={{ width: `${progressPct}%` }} />
+        {zoomOverlay && (
+          <div
+            className="progress-zoom-window"
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              left: `${zoomOverlay.leftPct}%`,
+              width: `${zoomOverlay.widthPct}%`,
+              boxSizing: 'border-box',
+              border: '1px solid #FFD400',
+              background: 'rgba(255, 212, 0, 0.12)',
+              pointerEvents: 'none'
+            }}
+          />
+        )}
       </div>
       <div className="seek-thumbnails">
         {renderedSeekButtons}
