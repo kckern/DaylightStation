@@ -31,6 +31,31 @@ const FitnessApp = () => {
   });
   const viewportRef = useRef(null);
   
+  // In kiosk mode, block right-click/context menu and secondary button actions
+  useEffect(() => {
+    if (!kioskUI) return;
+    const preventContext = (e) => {
+      e.preventDefault();
+      return false;
+    };
+    const preventSecondary = (e) => {
+      // 2 = secondary button for mouse; also cover auxiliary (1) just in case
+      if (e.button === 2 || e.button === 1) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+    window.addEventListener('contextmenu', preventContext, { capture: true });
+    window.addEventListener('mousedown', preventSecondary, { capture: true });
+    window.addEventListener('pointerdown', preventSecondary, { capture: true });
+    return () => {
+      window.removeEventListener('contextmenu', preventContext, { capture: true });
+      window.removeEventListener('mousedown', preventSecondary, { capture: true });
+      window.removeEventListener('pointerdown', preventSecondary, { capture: true });
+    };
+  }, [kioskUI]);
+  
   // Detect touch events and switch to kiosk mode (hides cursor)
   useEffect(() => {
     const handleFirstTouch = () => {

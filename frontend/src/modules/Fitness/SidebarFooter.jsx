@@ -245,7 +245,7 @@ const SidebarFooter = ({ onContentSelect }) => {
           className={`device-card fitness-monitor ${connected ? 'connected' : 'disconnected'}`}
           onPointerDown={() => onContentSelect && onContentSelect('users')}
         >
-          <div className="device-icon">❤️</div>
+          <div className="device-icon">📶</div>
           <div className="connection-status">
             <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
           </div>
