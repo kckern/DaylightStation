@@ -415,6 +415,22 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return () => clearInterval(cleanupInterval);
   }, []); // Empty dependency array ensures this runs only once
 
+  // Manual reconnect helper exposed via context
+  const reconnectFitnessWebSocket = React.useCallback(() => {
+    try {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      reconnectAttemptsRef.current = 0;
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch(_) {}
+        wsRef.current = null;
+      }
+      connectWebSocket();
+    } catch(_) {}
+  }, []);
+
   // Connect to WebSocket when the hook is initialized
   useEffect(() => {
     connectWebSocket();
@@ -445,6 +461,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Context value
   const value = {
     connected,
+    reconnectFitnessWebSocket,
     latestData,
     allDevices,
     deviceCount: fitnessDevices.size,

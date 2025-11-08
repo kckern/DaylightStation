@@ -689,10 +689,49 @@ const FitnessUsers = () => {
           </FlipMove>
         ) : (
           <div className="nav-empty">
-            <div className="empty-icon">📡</div>
-            <Text size="xs" c="dimmed" ta="center">
-              No devices
-            </Text>
+            <div className="empty-icon">📶</div>
+            <div
+              className="live-status"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: '12px',
+                opacity: 0.95,
+                marginBottom: 6
+              }}
+            >
+              <span
+                aria-label={connected ? 'Connected' : 'Disconnected'}
+                title={connected ? 'Connected' : 'Disconnected'}
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  background: connected ? '#51cf66' : '#ff6b6b',
+                  boxShadow: `0 0 6px ${connected ? '#51cf66' : '#ff6b6b'}, 0 0 12px ${connected ? '#51cf66aa' : '#ff6b6baa'}`
+                }}
+              />
+              <span>{connected ? 'Connected' : 'Disconnected'}</span>
+            </div>
+            {!connected && (
+              <button
+                type="button"
+                className="ws-reconnect-btn"
+                onClick={() => fitnessContext?.reconnectFitnessWebSocket?.()}
+                style={{
+                  background: '#222',
+                  color: '#ffd43b',
+                  border: '1px solid #444',
+                  padding: '4px 8px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontSize: '11px'
+                }}
+              >
+                Reconnect
+              </button>
+            )}
           </div>
         )}
       </div>
