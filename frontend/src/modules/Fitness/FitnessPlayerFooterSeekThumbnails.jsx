@@ -249,6 +249,12 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     return `rgb(${greyValue}, ${greyValue}, ${greyValue})`;
   }, []);
 
+  const handleThumbnailSeek = useCallback((t) => {
+    commit(t);
+    // When zoomed, reset zoom after a thumbnail-initiated seek
+    if (zoomRange) setZoomRange(null);
+  }, [commit, zoomRange]);
+
   const renderedSeekButtons = useMemo(() => {
     if (!currentItem) return null;
     const plexObj = {
@@ -269,8 +275,9 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       // For active thumbnail, show current playback time instead of thumbnail position
       let label;
       if (isActive) {
-        const currentMinutes = Math.floor(displayTime / 60);
-        const currentSeconds = Math.floor(displayTime % 60);
+        // Show real-time player clock, not optimistic displayTime
+        const currentMinutes = Math.floor(currentTime / 60);
+        const currentSeconds = Math.floor(currentTime % 60);
         label = `${currentMinutes}:${String(currentSeconds).padStart(2,'0')}`;
       } else {
         label = baseLabel;
@@ -294,7 +301,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
           rangeStart={null}
           rangeEnd={null}
           state={state}
-          onSeek={commit}
+          onSeek={handleThumbnailSeek}
           onZoom={setZoomRange}
           globalStart={rangeStart}
           globalEnd={rangeEnd}
