@@ -18,6 +18,70 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     return Array.isArray(col) ? col : [];
   }, [fitnessConfig]);
 
+  // Scroll helpers: find nearest scrollable container and ensure element is fully visible
+  const getScrollParent = (el, axis = 'y') => {
+    if (!el) return null;
+    let parent = el.parentElement;
+    while (parent) {
+      if (axis === 'y') {
+        if (parent.scrollHeight > parent.clientHeight) return parent;
+      } else {
+        if (parent.scrollWidth > parent.clientWidth) return parent;
+      }
+      parent = parent.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  };
+
+  const isFullyInView = (el, container, margin = 24, axis = 'y') => {
+    if (!el || !container) return true;
+    const er = el.getBoundingClientRect();
+    const cr = container.getBoundingClientRect();
+    if (axis === 'y') {
+      return er.top >= cr.top + margin && er.bottom <= cr.bottom - margin;
+    }
+    return er.left >= cr.left + margin && er.right <= cr.right - margin;
+  };
+
+  const scrollIntoViewIfNeeded = (
+    el,
+    { axis = 'y', margin = 24, behavior = 'smooth', topAlignRatio = 0.10 } = {}
+  ) => {
+    const container = getScrollParent(el, axis);
+    if (!container) return { didScroll: false };
+    const fully = isFullyInView(el, container, margin, axis);
+    if (fully) return { didScroll: false, container };
+    const er = el.getBoundingClientRect();
+    const cr = container.getBoundingClientRect();
+
+    if (axis === 'y') {
+      // Align element so its top sits below a margin (10% of container height by default)
+      const containerHeight = container.clientHeight || (cr.height);
+      const topMarginPx = Math.max(8, Math.round(containerHeight * topAlignRatio));
+      // Element top position inside scroll context
+      const elementTopInScroll = container.scrollTop + (er.top - cr.top);
+      let targetScrollTop = elementTopInScroll - topMarginPx;
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      if (targetScrollTop < 0) targetScrollTop = 0;
+      if (targetScrollTop > maxScroll) targetScrollTop = maxScroll;
+      if (Math.abs(targetScrollTop - container.scrollTop) > 1) {
+        container.scrollTo({ top: targetScrollTop, behavior });
+        return { didScroll: true, container };
+      }
+    } else {
+      // Horizontal minimal adjustment (no top alignment concept)
+      const leftDelta = er.left - (cr.left + margin);
+      const rightDelta = er.right - (cr.right - margin);
+      let delta = 0;
+      if (leftDelta < 0) delta = leftDelta; else if (rightDelta > 0) delta = rightDelta;
+      if (delta !== 0) {
+        container.scrollTo({ left: container.scrollLeft + delta, behavior });
+        return { didScroll: true, container };
+      }
+    }
+    return { didScroll: false, container };
+  };
+
   useEffect(() => {
     const fetchFitnessData = async () => {
       try {
@@ -95,8 +159,12 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
   const collectionName = selectedCollection?.name || 'Fitness Shows';
 
-  const handleShowClick = (show) => {
+  const handleShowClick = (e, show) => {
   // show selected (debug removed)
+    // If card isn't fully visible, scroll it into view first and require a second tap
+    const card = e.currentTarget;
+    const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
+    if (didScroll) return;
     if (onContentSelect) {
       onContentSelect('show', show);
     }
@@ -105,6 +173,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   const handleAddToQueue = (event, show) => {
     event.stopPropagation(); // Prevent triggering the show click
   // adding to queue (debug removed)
+    // Ensure the whole card is visible before acting
+    const card = event.currentTarget.closest('.show-card') || event.currentTarget;
+    const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
+    if (didScroll) return;
     if (setFitnessPlayQueue) {
       setFitnessPlayQueue(prevQueue => [...prevQueue, {
         id: show.plex || show.id,
@@ -131,7 +203,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
               <div
                 key={show.plex || index}
                 className="show-card"
-                onPointerDown={() => handleShowClick(show)}
+                onPointerDown={(e) => handleShowClick(e, show)}
               >
                 {show.image && (
                   <img

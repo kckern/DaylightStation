@@ -113,8 +113,9 @@
             width: 100%;
             aspect-ratio: 1 / 1.5; /* enforce 1:1.5 ratio */
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
             display: block;
+            background-color: #000;
           }
         }
 
@@ -264,6 +265,8 @@
       img{
         border-radius: 1rem;
         border:rgba(0, 0, 0, 0.5) 3px solid;
+        object-fit: contain;
+        background: #000;
       }
     }
 

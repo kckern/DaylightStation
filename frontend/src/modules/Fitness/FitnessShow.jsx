@@ -253,8 +253,74 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     setSelectedEpisode(episode);
   };
 
-  const handlePlayEpisode = async (episode) => {
+  // Scroll behavior utilities (touch-first): only activate action if element fully visible with margin
+  const getScrollParent = (el, axis = 'y') => {
+    if (!el) return null;
+    let parent = el.parentElement;
+    while (parent) {
+      if (axis === 'y') {
+        if (parent.scrollHeight > parent.clientHeight) return parent;
+      } else if (axis === 'x') {
+        if (parent.scrollWidth > parent.clientWidth) return parent;
+      }
+      parent = parent.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  };
+
+  const isFullyInView = (el, container, margin = 24, axis = 'y') => {
+    if (!el || !container) return true;
+    const er = el.getBoundingClientRect();
+    const cr = container.getBoundingClientRect();
+    if (axis === 'y') {
+      return er.top >= cr.top + margin && er.bottom <= cr.bottom - margin;
+    }
+    return er.left >= cr.left + margin && er.right <= cr.right - margin;
+  };
+
+  const scrollIntoViewIfNeeded = (
+    el,
+    { axis = 'y', margin = 24, behavior = 'smooth', topAlignRatio = 0.10 } = {}
+  ) => {
+    const container = getScrollParent(el, axis);
+    if (!container) return { didScroll: false };
+    if (isFullyInView(el, container, margin, axis)) return { didScroll: false, container };
+    const er = el.getBoundingClientRect();
+    const cr = container.getBoundingClientRect();
+    if (axis === 'y') {
+      const containerHeight = container.clientHeight || cr.height;
+      const topMarginPx = Math.max(8, Math.round(containerHeight * topAlignRatio));
+      // Compute desired absolute scrollTop to place element top at topMarginPx
+      const elementTopInScroll = container.scrollTop + (er.top - cr.top);
+      let targetScrollTop = elementTopInScroll - topMarginPx;
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      if (targetScrollTop < 0) targetScrollTop = 0;
+      if (targetScrollTop > maxScroll) targetScrollTop = maxScroll;
+      if (Math.abs(targetScrollTop - container.scrollTop) > 1) {
+        container.scrollTo({ top: targetScrollTop, behavior });
+        return { didScroll: true, container };
+      }
+    } else {
+      // For horizontal containers (season bar), do minimal adjustment with a small margin
+      const leftDelta = er.left - (cr.left + margin);
+      const rightDelta = er.right - (cr.right - margin);
+      let delta = 0;
+      if (leftDelta < 0) delta = leftDelta; else if (rightDelta > 0) delta = rightDelta;
+      if (delta !== 0) {
+        container.scrollTo({ left: container.scrollLeft + delta, behavior });
+        return { didScroll: true, container };
+      }
+    }
+    return { didScroll: false, container };
+  };
+
+  const handlePlayEpisode = async (episode, sourceEl = null) => {
   // play episode (debug removed)
+    // If source element provided, require full visibility before play
+    if (sourceEl) {
+      const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 24 });
+      if (didScroll) return; // wait for second tap
+    }
     
     try {
       // Get URL for the playable item if not present
@@ -517,8 +583,12 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   }
 
   // Helper function to add an episode to the queue
-  const addToQueue = (episode) => {
+  const addToQueue = (episode, sourceEl = null) => {
     try {
+      if (sourceEl) {
+        const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 24 });
+        if (didScroll) return;
+      }
       // Get URL for the playable item if not present
       let episodeUrl = episode.url;
       if (!episodeUrl && episode.plex) {
@@ -632,7 +702,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                             {episode.image && (
                               <div 
                                 className="episode-thumbnail"
-                                onPointerDown={() => handlePlayEpisode(episode)}
+                                onPointerDown={(e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'))}
                               >
                                 <img
                                   src={episode.image}
@@ -658,7 +728,10 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                             <div 
                               className="episode-title" 
                               aria-label={episode.label}
-                              onPointerDown={() => {
+                              onPointerDown={(e) => {
+                                const card = e.currentTarget.closest('.episode-card');
+                                const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
+                                if (didScroll) return; // require second tap when visible
                                 setSelectedInfo({ ...episode, title: episode.label });
                                 setInfoType('episode');
                                 handleEpisodeSelect(episode);
@@ -696,11 +769,15 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                 <button
                   key={s.id}
                   className={`season-item ${activeSeasonId === s.id ? 'active' : ''}`}
-                  onPointerDown={() => {
+                  onPointerDown={(e) => {
+                    const btn = e.currentTarget;
+                    // Prefer horizontal visibility for the season bar; fall back to vertical if needed
+                    let { didScroll } = scrollIntoViewIfNeeded(btn, { axis: 'x', margin: 24 });
+                    if (didScroll) return; // wait for second tap
+                    ({ didScroll } = scrollIntoViewIfNeeded(btn, { axis: 'y', margin: 24 }));
+                    if (didScroll) return;
                     setActiveSeasonId(s.id);
-                    // Get the episode count for this season
                     const episodeCount = items.filter(ep => ep.seasonId === s.id).length;
-                    // Only include summary if we have a real description; otherwise let SeasonInfo fall back to show summary
                     const hasRealDescription = !!(s.description && s.description.trim());
                     setSelectedInfo({
                       ...s,
