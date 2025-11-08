@@ -128,8 +128,6 @@
     background: rgba(0, 0, 0, 0.4);
     
     &.connected {
-      border-color: rgba(0, 255, 0, 0.5);
-      box-shadow: 0 0 8px rgba(0, 255, 0, 0.4);
       
       .device-icon {
         filter: drop-shadow(0 0 4px rgba(0, 255, 0, 0.4));

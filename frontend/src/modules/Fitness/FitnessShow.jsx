@@ -284,7 +284,18 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   ) => {
     const container = getScrollParent(el, axis);
     if (!container) return { didScroll: false };
-    if (isFullyInView(el, container, margin, axis)) return { didScroll: false, container };
+    const fully = isFullyInView(el, container, margin, axis);
+    // If fully visible but flush with the bottom and there is more content below, treat as needing scroll
+    let flushBottom = false;
+    if (axis === 'y' && fully) {
+      const er = el.getBoundingClientRect();
+      const cr = container.getBoundingClientRect();
+      const moreBelow = (container.scrollTop + container.clientHeight) < (container.scrollHeight - 1);
+      flushBottom = moreBelow && (er.bottom >= cr.bottom - margin);
+      if (!flushBottom) return { didScroll: false, container };
+    } else if (fully) {
+      return { didScroll: false, container };
+    }
     const er = el.getBoundingClientRect();
     const cr = container.getBoundingClientRect();
     if (axis === 'y') {
@@ -293,6 +304,9 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       // Compute desired absolute scrollTop to place element top at topMarginPx
       const elementTopInScroll = container.scrollTop + (er.top - cr.top);
       let targetScrollTop = elementTopInScroll - topMarginPx;
+      if (flushBottom) {
+        targetScrollTop = Math.min(targetScrollTop + Math.round(containerHeight * 0.33), container.scrollHeight - container.clientHeight);
+      }
       const maxScroll = container.scrollHeight - container.clientHeight;
       if (targetScrollTop < 0) targetScrollTop = 0;
       if (targetScrollTop > maxScroll) targetScrollTop = maxScroll;

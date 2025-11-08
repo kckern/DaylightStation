@@ -50,7 +50,18 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     const container = getScrollParent(el, axis);
     if (!container) return { didScroll: false };
     const fully = isFullyInView(el, container, margin, axis);
-    if (fully) return { didScroll: false, container };
+    // Detect "flush bottom" situation: item fully visible but its bottom is near the container's bottom
+    // and there is still more content below to reveal.
+    let flushBottom = false;
+    if (axis === 'y' && fully) {
+      const er = el.getBoundingClientRect();
+      const cr = container.getBoundingClientRect();
+      const moreBelow = (container.scrollTop + container.clientHeight) < (container.scrollHeight - 1);
+      flushBottom = moreBelow && (er.bottom >= cr.bottom - margin);
+      if (!flushBottom) return { didScroll: false, container }; // normal fully-visible case
+    } else if (fully) {
+      return { didScroll: false, container };
+    }
     const er = el.getBoundingClientRect();
     const cr = container.getBoundingClientRect();
 
@@ -61,6 +72,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
       // Element top position inside scroll context
       const elementTopInScroll = container.scrollTop + (er.top - cr.top);
       let targetScrollTop = elementTopInScroll - topMarginPx;
+      // If flushBottom, nudge downward by one third of container height to reveal more below while keeping element in view
+      if (flushBottom) {
+        targetScrollTop = Math.min(targetScrollTop + Math.round(containerHeight * 0.33), container.scrollHeight - container.clientHeight);
+      }
       const maxScroll = container.scrollHeight - container.clientHeight;
       if (targetScrollTop < 0) targetScrollTop = 0;
       if (targetScrollTop > maxScroll) targetScrollTop = maxScroll;
