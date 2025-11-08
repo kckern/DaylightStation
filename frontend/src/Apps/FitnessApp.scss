@@ -55,4 +55,7 @@
 .fitness-app-container.kiosk-ui,
 .fitness-app-container.kiosk-ui * {
   cursor: none !important;
+  // no right click ever
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
 }

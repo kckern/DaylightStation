@@ -443,6 +443,7 @@
       flex-direction: column;
       gap: 2ex;
       margin-left: 0.3ex;
+      padding-bottom: 10rem;
 
       .season-group {
         padding-top: 1rem;
@@ -486,11 +487,24 @@
         grid-template-columns: repeat(6, 1fr);
         .episode-card.vertical { grid-column: span 2; }
       }
-      &.zoom-200 .episode-card.vertical { grid-column: span 4; } /* 50% width = 200% */
-      /* zoom-300: force 2 tiles per row */
-      &.zoom-300 {
+      &.zoom-300, &.zoom-200 {
         grid-template-columns: repeat(4, 1fr);
-        .episode-card.vertical { grid-column: span 2; }
+        /* Shrink episode tiles so two rows fit comfortably; add larger row gap */
+        .episode-card.vertical { 
+          grid-column: span 2; 
+        }
+        row-gap: 0.5rem; /* central vertical separation */
+        .episode-card.vertical .episode-thumbnail {
+          /* Reduce vertical footprint (approx 60% of original 16:9 height) */
+          aspect-ratio: 16 / 8; /* flatter */
+        }
+        .episode-card.vertical .episode-title {
+          padding: 0.15rem 0.25rem; /* tighten title block */
+          min-height: calc(2 * 1.05em);
+        }
+        .episode-card.vertical .episode-title .episode-title-text {
+          font-size: calc(0.85rem * var(--tile-zoom, 1));
+        }
       }
       &.zoom-400 .episode-card.vertical { grid-column: span 8; } /* 100% width = 400% */
 
