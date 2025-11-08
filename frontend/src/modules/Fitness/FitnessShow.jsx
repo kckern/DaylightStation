@@ -804,9 +804,12 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                     ) : (
                       <div className="season-image placeholder">S</div>
                     )}
+                                  {/* Episode count overlay top-right */}
+                                  <div className="season-episode-count" aria-label={`${s.count || 0} episodes`}>
+                      {s.count || 0}
+                    </div>
                   </div>
                   <div className="season-caption" title={s.rawName || s.name}>
-                    <span className="season-num">{Number.isFinite(s.number) ? s.number : ''}</span>
                     <span className="season-title-text">{s.rawName || s.name || 'Season'}</span>
                   </div>
                 </button>

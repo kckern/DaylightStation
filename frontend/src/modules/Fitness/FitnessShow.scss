@@ -809,6 +809,22 @@
       }
 
       /* overlay removed */
+      /* Episode count badge bottom-right */
+      .season-episode-count {
+        position: absolute;
+        top: -0.1rem;
+        right: -0.1rem;
+        background: rgba(0, 0, 0, 0.75);
+        color: #fff;
+        font-weight: 800;
+        font-size: 0.75rem;
+        padding: 0.18rem 0.42rem;
+        border-radius: 0.35rem;
+        line-height: 1;
+        pointer-events: none; /* do not block taps */
+        box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        backdrop-filter: blur(2px);
+      }
     }
 
     .season-caption {
@@ -825,13 +841,6 @@
       height: var(--caption-rem, 1.5rem); /* fixed caption box height */
       max-height: var(--caption-rem, 1.5rem);
       overflow: hidden;
-
-      .season-num {
-        background: rgba(255, 255, 255, 0.15);
-        padding: 0.05rem 0.45rem;
-        border-radius: 0.4rem;
-        font-size: 0.8rem;
-      }
 
       .season-title-text {
         flex: 1 1 auto;
