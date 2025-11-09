@@ -1,27 +1,11 @@
-import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import '../FitnessUsers.scss';
 
-const FitnessVideo = forwardRef(({ minimal = false }, ref) => {
+const FitnessVideo = ({ minimal = false }) => {
   const videoRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const streamRef = useRef(null);
-
-  // Expose pause/play methods to parent via ref
-  useImperativeHandle(ref, () => ({
-    pause: () => {
-      if (videoRef.current && !videoRef.current.paused) {
-        videoRef.current.pause();
-      }
-    },
-    play: () => {
-      if (videoRef.current && videoRef.current.paused) {
-        videoRef.current.play().catch(err => {
-          console.warn('Video play failed:', err);
-        });
-      }
-    }
-  }));
 
   useEffect(() => {
     let mounted = true;

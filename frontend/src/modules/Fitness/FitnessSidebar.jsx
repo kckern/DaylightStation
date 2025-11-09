@@ -7,7 +7,7 @@ import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
 import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
 import './FitnessUsers.scss';
 
-const FitnessSidebar = () => {
+const FitnessSidebar = ({ playerRef }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [visibility, setVisibility] = useState({
     treasureBox: true,
@@ -49,6 +49,7 @@ const FitnessSidebar = () => {
             minimal 
             menuOpen={menuOpen}
             onToggleMenu={() => setMenuOpen(!menuOpen)}
+            playerRef={playerRef}
           />
         </div>
       )}
