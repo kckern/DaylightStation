@@ -15,7 +15,8 @@ const isDocker = existsSync('/.dockerenv');
 
 const app = express();
 app.use(cors()); // Step 3: Enable CORS for all routes
-app.use(express.json()); // Parse JSON request bodies
+app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies with increased limit for voice memos
+app.use(express.urlencoded({ limit: '50mb', extended: true })); // Parse URL-encoded bodies
 
 // Create HTTP server
 const server = createServer(app);
@@ -170,8 +171,10 @@ async function initializeApiApp() {
   const { default: apiRouter } = await import('./api.mjs');
 
   api_app.use(express.json({
+    limit: '50mb', // Increased limit for voice memo audio uploads
     strict: false // Allows parsing of JSON with single-quoted property names
   }));
+  api_app.use(express.urlencoded({ limit: '50mb', extended: true }));
   api_app.use('', apiRouter);
   
   api_app.listen(3119, () => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
-import FitnessPlayerSidebar from './FitnessPlayerSidebar.jsx';
+import FitnessSidebar from './FitnessSidebar.jsx';
 import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
@@ -565,20 +565,38 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   return (
     <div className={`fitness-player mode-${playerMode}`}>
       {/* Sidebar Component */}
-      <FitnessPlayerSidebar
-        currentItem={currentItem}
-        queue={queue}
-        duration={duration}
-        formatTime={formatTime}
-        sidebarWidth={sidebarRenderWidth}
-        side={sidebarSide}
-        mode={playerMode}
-        onResizeMouseDown={handleResizeMouseDown}
-        onResizeKeyDown={handleResizeKeyDown}
-        onResetWidth={() => setSidebarWidth(DEFAULT_SIDEBAR)}
-        toggleSide={() => setSidebarSide(s => s === 'right' ? 'left' : 'right')}
-        setMode={setPlayerMode}
-      />
+      <div
+        className={`fitness-player-sidebar ${sidebarSide === 'left' ? 'sidebar-left' : 'sidebar-right'}${playerMode === 'fullscreen' ? ' minimized' : ''}`}
+        style={{ width: playerMode === 'fullscreen' ? 0 : sidebarRenderWidth, flex: `0 0 ${playerMode === 'fullscreen' ? 0 : sidebarRenderWidth}px`, order: sidebarSide === 'right' ? 2 : 0 }}
+      >
+        {(playerMode !== 'fullscreen' && playerMode !== 'maximal') && (
+          <div
+            className="fitness-player-sidebar-resizer"
+            onMouseDown={handleResizeMouseDown}
+            onKeyDown={handleResizeKeyDown}
+            role="separator"
+            aria-label="Resize sidebar"
+            aria-orientation="vertical"
+            tabIndex={0}
+            title="Drag (or use arrows) to resize sidebar. Double-click or press Enter to reset."
+            onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR)}
+            data-side={sidebarSide}
+          />
+        )}
+
+        {playerMode !== 'fullscreen' && (
+          <div className="sidebar-content">
+            <FitnessSidebar />
+          </div>
+        )}
+
+        <div className="sidebar-footer-controls" style={{display:"none"}}>
+          <button type="button" onPointerDown={() => setPlayerMode('fullscreen')} className={`sidebar-footer-btn${playerMode==='fullscreen'?' active':''}`} title="Fullscreen">Full</button>
+          <button type="button" onPointerDown={() => setPlayerMode('normal')} className={`sidebar-footer-btn${playerMode==='normal'?' active':''}`} title="Normal">Norm</button>
+          <button type="button" onPointerDown={() => setPlayerMode('maximal')} className={`sidebar-footer-btn${playerMode==='maximal'?' active':''}`} title="Maximal">Max</button>
+          <button type="button" onPointerDown={() => setSidebarSide(s => s === 'right' ? 'left' : 'right')} className="sidebar-footer-btn switch-side" title="Switch sidebar side">{sidebarSide === 'right' ? '◀' : '▶'}</button>
+        </div>
+      </div>
       {/* Main Player Panel */}
       <div className="fitness-player-main" ref={mainPlayerRef} style={{ order: sidebarSide === 'right' ? 1 : 2 }}>
         {/* MainContent - 16:9 aspect ratio container */}
