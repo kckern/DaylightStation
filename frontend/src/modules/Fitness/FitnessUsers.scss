@@ -585,3 +585,889 @@
     filter: drop-shadow(0 0 6px rgba(255, 107, 107, 0.6));
   }
 }
+
+// Sidebar container styles
+.fitness-sidebar-container {
+  width: 100%;
+  height: 100%;
+  background: #00000055;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+
+  .sidebar-menu-toggle-floating {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.2s;
+    z-index: 100;
+    line-height: 1;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.85);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: scale(1.05);
+    }
+
+    &:active {
+      transform: scale(0.95);
+    }
+  }
+
+  .fitness-sidebar-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+
+    .menu-toggle-btn {
+      background: transparent;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: 4px;
+      transition: background 0.2s;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
+  }
+
+  .fitness-sidebar-treasurebox {
+    flex-shrink: 0;
+    container-type: inline-size;
+    container-name: treasurebox;
+
+    .treasure-box-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 1ex;
+      background: linear-gradient(180deg, rgba(40,40,40,0.85), rgba(24,24,24,0.85));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      margin: -1ex 1ex 0;
+      font-family: inherit;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      h3 { 
+        margin: 0!important;
+        padding: 0; 
+        font-weight: 700; 
+        letter-spacing: .6px; 
+        line-height: 1.1; 
+        font-size: 1rem;
+        text-decoration: none;
+        border-bottom: none;
+      }
+      .tb-row { display: flex; align-items: center; width: 100%; }
+      .tb-row-head { 
+        justify-content: space-between; 
+        padding-bottom: 6px;
+        margin-bottom: 6px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }
+      .tb-row-body {
+        justify-content: flex-start;
+        align-items: center;
+        gap: 6px;
+      }
+      .tb-total { 
+        display: flex; 
+        flex-direction: row; 
+        align-items: center; 
+        justify-content: center; 
+        gap: 6px; 
+        background: rgba(255,255,255,0.07); 
+        border: 1px solid rgba(255,255,255,0.09);
+        padding: 6px 10px; 
+        border-radius: 8px; 
+        font-weight: 700; 
+        font-size: 1.1rem;
+        letter-spacing: .5px; 
+        flex-shrink: 0;
+      }
+      .tb-total .tb-icon { 
+        filter: drop-shadow(0 0 4px rgba(255,255,255,0.25)); 
+        font-size: 1.2rem;
+      }
+      .tb-timer { font-variant-numeric: tabular-nums; font-weight:700; font-size:1rem; letter-spacing:.5px; }
+      .tb-color-grid { 
+        display: flex;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-height: 0;
+        overflow: visible;
+      }
+      .tb-color-grid .tb-color-coin { flex: 0 0 auto; }
+      .tb-color-coin { 
+        display:flex; 
+        flex-direction: column; 
+        align-items:center; 
+        justify-content:center; 
+        gap:0; 
+        background: rgba(255,255,255,0.07); 
+        border:1px solid rgba(255,255,255,0.09);
+        padding:3px; 
+        border-radius: 8px; 
+        font-size:0.7rem; 
+        font-weight:600; 
+        letter-spacing:.5px; 
+        position: relative;
+        overflow: hidden;
+      }
+      .tb-color-coin .swatch { 
+        width: clamp(1.8rem, 5vw, 2.2rem);
+        height: clamp(1.8rem, 5vw, 2.2rem);
+        min-width: 1.8rem;
+        min-height: 1.8rem;
+        border-radius: 50%; 
+        box-shadow:0 0 0 2px rgba(0,0,0,0.3), 0 0 8px rgba(0,0,0,0.4); 
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: clamp(0.8rem, 3vw, 1rem);
+        font-weight: 700;
+        color: rgba(0,0,0,0.8);
+        text-shadow: 0 1px 2px rgba(255,255,255,0.3);
+      }
+      
+      /* Responsive adjustments for narrow widths */
+      @container (max-width: 280px) {
+        .tb-color-coin .swatch {
+          width: 1.6rem;
+          height: 1.6rem;
+          font-size: 0.75rem;
+        }
+        
+        .tb-total {
+          padding: 4px 6px;
+          font-size: 0.9rem;
+          gap: 4px;
+        }
+        
+        .tb-total .tb-icon {
+          font-size: 1rem;
+        }
+      }
+      
+      /* Allow circles to become ovals when very narrow */
+      @container (max-width: 240px) {
+        .tb-color-coin .swatch {
+          width: 1.4rem;
+          height: 1.6rem;
+          border-radius: 40%;
+          font-size: 0.7rem;
+        }
+        
+        .tb-color-grid {
+          gap: 4px;
+        }
+        
+        .tb-total {
+          padding: 3px 5px;
+          font-size: 0.85rem;
+          gap: 3px;
+        }
+      }
+      .tb-color-coin .count { 
+        display: none;
+      }
+      .tb-empty { font-size: 0.6rem; opacity: .5; }
+    }
+  }
+
+  .fitness-sidebar-devices {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden; // Changed from overflow-y: auto
+    margin: 6px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    background: transparent;
+
+    .fitness-devices {
+      flex: 1 1 auto;
+      overflow: hidden; // Changed from overflow-y: visible
+      width: 100%;
+      position: relative;
+      padding: 0 4px 4px 4px;
+    }
+
+    .device-grid {
+      display: flex !important;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .fitness-device.card-horizontal {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      margin: 0;
+      padding: 8px 10px;
+      background: #181818;
+      border: 1px solid #262626;
+      border-radius: 6px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+      transition: background .15s ease, border-color .15s ease;
+
+      &:hover {
+        background: #202020;
+        border-color: #2e2e2e;
+      }
+    }
+
+    .user-profile-img-container {
+      flex: 0 0 46px;
+      width: 4rem;
+      height: 3rem;
+      border-radius: 50%;
+      overflow: hidden;
+      background: #222;
+      border: 5px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      img { width: 100%; height: 100%; object-fit: cover; }
+      transition: border-color .25s ease, box-shadow .25s ease;
+      &.zone-cool   { border-color: var(--zone-cool-color, #1e3a8a); box-shadow: 0 0 0 2px rgba(59,130,246,0.35); }
+      &.zone-active { border-color: var(--zone-active-color, #059669); box-shadow: 0 0 0 2px rgba(16,185,129,0.35); }
+      &.zone-warm   { border-color: var(--zone-warm-color, #ca8a04); box-shadow: 0 0 0 2px rgba(234,179,8,0.35); }
+      &.zone-hot    { border-color: var(--zone-hot-color, #ea580c); box-shadow: 0 0 0 2px rgba(234,88,12,0.4); }
+      &.zone-fire   { border-color: var(--zone-fire-color, #dc2626); box-shadow: 0 0 0 2px rgba(220,38,38,0.45); }
+      &.no-zone     { border-color: #333; box-shadow:none; }
+    }
+
+    .device-info {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      
+      .device-name { 
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #fff;
+        text-align: left;
+        margin: 0 0 1px;
+        line-height: 1.1;
+        letter-spacing: .35px;
+      }
+      
+      .device-stats { 
+        display: flex;
+        justify-content: flex-start;
+        align-items: baseline;
+        gap: 6px;
+        
+        .device-icon { font-size: 14px; }
+        
+        .device-value { font-size: 0.95rem; font-weight: 700; color: #fff; line-height:1; margin-bottom:1px; }
+        
+        .device-unit { font-size: 0.55rem; font-weight: 600; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing:.5px; }
+      }
+    }
+
+    .nav-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 150px;
+      opacity: 0.5;
+      padding: 2rem 1rem;
+
+      .empty-icon {
+        font-size: 32px;
+        margin-bottom: 8px;
+        filter: grayscale(1);
+      }
+
+      .live-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        opacity: 0.95;
+        margin-bottom: 6px;
+      }
+
+      .ws-reconnect-btn {
+        background: #222;
+        color: #ffd43b;
+        border: 1px solid #444;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.2s, border-color 0.2s;
+
+        &:hover {
+          background: #333;
+          border-color: #555;
+        }
+      }
+    }
+  }
+
+  .fitness-sidebar-voicememo {
+    flex-shrink: 0;
+  }
+
+  .fitness-sidebar-media {
+    flex-shrink: 0;
+  }
+
+  .fitness-sidebar-video {
+    flex-shrink: 0;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    margin: 0;
+    padding: 0;
+  }
+
+  .sidebar-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+    .menu-toggle-btn {
+      background: transparent;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: 4px;
+      transition: background 0.2s;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
+  }
+
+  .sidebar-placeholder {
+    padding: 1rem;
+    margin: 0.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    text-align: center;
+    opacity: 0.6;
+
+    .placeholder-label {
+      font-size: 0.9rem;
+      color: rgba(255, 255, 255, 0.7);
+    }
+  }
+
+  .sidebar-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+  }
+
+  .fitness-sidebar-menu {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 280px;
+    height: 100%;
+    background: #1a1a1a;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+
+    .sidebar-menu-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+      h3 {
+        margin: 0;
+        font-size: 1.2rem;
+        color: white;
+      }
+
+      .close-btn {
+        background: transparent;
+        border: none;
+        color: white;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        transition: background 0.2s;
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.1);
+        }
+      }
+    }
+
+    .sidebar-menu-content {
+      flex: 1;
+      padding: 1rem;
+      overflow-y: auto;
+
+      .menu-section {
+        margin-bottom: 1.5rem;
+
+        h4 {
+          margin: 0 0 0.5rem 0;
+          font-size: 0.9rem;
+          color: rgba(255, 255, 255, 0.6);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .menu-item {
+          width: 100%;
+          padding: 0.75rem 1rem;
+          margin-bottom: 0.5rem;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 6px;
+          color: white;
+          text-align: left;
+          cursor: pointer;
+          transition: all 0.2s;
+
+          &:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+          }
+
+          &.toggle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: default;
+            
+            &:hover {
+              background: rgba(255, 255, 255, 0.05);
+              border-color: rgba(255, 255, 255, 0.1);
+            }
+          }
+        }
+
+        .toggle-switch {
+          position: relative;
+          display: inline-block;
+          width: 44px;
+          height: 24px;
+          cursor: pointer;
+
+          input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+
+            &:checked + .toggle-slider {
+              background-color: #51cf66;
+
+              &:before {
+                transform: translateX(20px);
+              }
+            }
+
+            &:focus + .toggle-slider {
+              box-shadow: 0 0 1px #51cf66;
+            }
+          }
+
+          .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: 0.3s;
+            border-radius: 24px;
+
+            &:before {
+              position: absolute;
+              content: "";
+              height: 18px;
+              width: 18px;
+              left: 3px;
+              bottom: 3px;
+              background-color: white;
+              transition: 0.3s;
+              border-radius: 50%;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// Fitness Video Component
+.fitness-video-container {
+  margin: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+
+  .fitness-video-header {
+    padding: 0.5rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+    h4 {
+      margin: 0;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: white;
+    }
+  }
+
+  .fitness-video-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    overflow: hidden;
+
+    .video-status {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+
+      &.error {
+        .status-icon {
+          color: #ff6b6b;
+        }
+        .status-text {
+          color: #ff6b6b;
+        }
+      }
+
+      .status-icon {
+        font-size: 2rem;
+      }
+
+      .status-text {
+        font-size: 0.85rem;
+        text-align: center;
+        padding: 0 1rem;
+        opacity: 0.9;
+      }
+    }
+
+    .fitness-video-feed {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transform: scaleX(-1);
+      //increase saturation
+      filter: saturate(2)
+      
+    }
+  }
+}
+
+// Media Controls Container (Video + Buttons)
+.media-controls-container {
+  display: flex;
+  /* Let children manage their own ratios to avoid awkward cropping when panel has min-width */
+  /* aspect-ratio: 16 / 9; */
+  --panel-percent: 10%;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 4px;
+  overflow: hidden;
+  box-sizing: border-box;
+  
+  .media-video-section {
+    /* Take the remaining width next to the fixed-width button panel */
+    flex: 1 1 0%;
+    min-width: 0; // critical for flex children with width:100%
+    position: relative;
+    overflow: hidden;
+    
+    .fitness-video-container {
+      /* Remove internal margins so button panel isn't clipped off to the right */
+      width: 100%;
+      height: 100%;
+      margin: 0 !important;
+      border-radius: 0; /* flush with unified container */
+      
+      .fitness-video-feed {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+    }
+  }
+  
+  .media-button-panel {
+    /* Exact percentage width; no min-width so 10% is honored precisely */
+    flex: 0 0 auto;
+    width: var(--panel-percent);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    background: rgba(0, 0, 0, 0.85);
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(4px);
+    
+    button {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+      transition: background 0.2s;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;               /* center the icon/label */
+      align-items: center;
+      justify-content: center;
+      line-height: 1;              /* avoid vertical optical offset */
+      
+      &:last-child {
+        border-bottom: none;
+      }
+      
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+    
+    .media-config-btn {
+      font-size: 20px;
+      background: linear-gradient(180deg, rgba(60,60,60,0.8), rgba(30,30,30,0.8));
+      letter-spacing: .5px;
+      font-weight: 600;
+    }
+    
+    .media-record-btn {
+      color: #d9534f;
+      font-size: 20px;
+      font-weight: 700;
+      filter: drop-shadow(0 0 4px rgba(217,83,79,0.6));
+    }
+    
+    .media-stop-btn {
+      color: #fff;
+      background: rgba(51, 51, 51, 0.8);
+      font-weight: 700;
+    }
+    
+    .media-saving-btn {
+      color: #ffd43b;
+      font-weight: 700;
+    }
+    
+    .media-counter-btn {
+      background: rgba(255, 255, 255, 0.1);
+      font-weight: 700;
+      font-size: 20px;
+    }
+  }
+}
+
+// Voice Memo styles
+.voice-memo-container {
+  margin: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+
+  .voice-memo-header {
+    padding: 0.5rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+    h4 { margin: 0; font-size: 0.9rem; font-weight: 600; color: #fff; }
+  }
+
+  .voice-memo-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    width: 100%;
+
+    .voice-memo-label {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.85rem;
+      font-weight: 600;
+      flex-shrink: 0;
+    width: 100%;
+    }
+
+    .voice-memo-record-btn {
+      background: #d9534f;
+      color: #fff;
+      border: 1px solid #b52b27;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.8rem;
+      flex: 1;
+      transition: background 0.2s;
+
+      &:hover {
+        background: #c9302c;
+      }
+    }
+    
+    .voice-memo-stop-btn {
+      background: #333;
+      color: #fff;
+      border: 1px solid #666;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.8rem;
+      flex: 1;
+      transition: background 0.2s;
+
+      &:hover {
+        background: #444;
+      }
+    }
+
+    .voice-memo-saving-btn {
+      background: #555;
+      color: #ffd43b;
+      border: 1px solid #666;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.8rem;
+      flex: 1;
+      cursor: not-allowed;
+      opacity: 0.8;
+    }
+
+    .voice-memo-counter-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 8px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      min-width: 40px;
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.3);
+      }
+    }
+    .voice-memo-status { 
+      color: #ffd43b; 
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+  }
+
+  .voice-memo-error { 
+    color: #ff6b6b; 
+    padding: 0 12px 8px; 
+    font-size: 0.75rem; 
+  }
+
+  .voice-memo-list {
+    list-style: none;
+    margin: 0;
+    padding: 8px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 150px;
+    overflow-y: auto;
+
+    .voice-memo-item {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-size: 0.8rem;
+      color: #fff;
+      line-height: 1.3;
+
+      .memo-text {
+        display: block;
+      }
+    }
+  }
+
+  .voice-memo-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 0.25rem 1rem 0.75rem;
+    display: flex; flex-direction: column; gap: 6px;
+
+    .voice-memo-empty { opacity: 0.7; font-size: 0.85rem; }
+
+    .voice-memo-item {
+      display: flex; gap: 8px; align-items: flex-start;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 6px 8px;
+      .memo-time { font-size: 0.75rem; opacity: 0.7; min-width: 3.5rem; }
+      .memo-text { font-size: 0.9rem; color: #fff; }
+    }
+  }
+}

@@ -415,6 +415,7 @@ export class FitnessSession {
     this.eventLog = []; // lightweight chronological log
     this.treasureBox = null; // Will be instantiated when session starts
     this._saveTriggered = false; // guard against duplicate saves
+    this.voiceMemos = []; // { createdAt, sessionElapsedSeconds, videoTimeSeconds, transcriptRaw, transcriptClean }
   }
 
   // Internal helper to log events (kept small to avoid memory bloat)
@@ -525,6 +526,24 @@ export class FitnessSession {
     return Math.floor((end - this.startTime) / 1000);
   }
 
+  // Add a voice memo into the active session
+  addVoiceMemo({ transcriptRaw, transcriptClean, createdAt, videoTimeSeconds }) {
+    if (!this.sessionId) this.ensureStarted();
+    const ts = createdAt || Date.now();
+    const sessionElapsedSeconds = this.startTime ? Math.max(0, Math.floor((ts - this.startTime) / 1000)) : 0;
+    const memo = {
+      createdAt: ts,
+      sessionElapsedSeconds,
+      videoTimeSeconds: typeof videoTimeSeconds === 'number' ? videoTimeSeconds : null,
+      transcriptRaw: transcriptRaw || '',
+      transcriptClean: transcriptClean || transcriptRaw || ''
+    };
+    this.voiceMemos.push(memo);
+    this._log('voice_memo', { sessionElapsedSeconds });
+    if (this.voiceMemos.length > 200) this.voiceMemos = this.voiceMemos.slice(-200);
+    return memo;
+  }
+
   get summary() {
     if (!this.sessionId) return null;
     return {
@@ -536,6 +555,7 @@ export class FitnessSession {
       activeDeviceCount: this.activeDeviceIds.size,
       lastActivityTime: this.lastActivityTime,
       treasureBox: this.treasureBox ? this.treasureBox.summary : null,
+      voiceMemos: [...this.voiceMemos],
     };
   }
 
@@ -552,6 +572,7 @@ export class FitnessSession {
     }
     this.treasureBox = null; // ensure fresh treasure box for next session
     this._saveTriggered = false; // allow new session save
+    this.voiceMemos = [];
   }
 }
 

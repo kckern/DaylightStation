@@ -503,7 +503,36 @@ const FitnessUsers = () => {
     <div className="fitness-devices-nav">
   <FitnessTreasureBox box={treasureBox} session={fitnessSession} />
       {/* Connection Status Header */}
-      <div className={`connection-indicator ${connected ? 'connected' : 'disconnected'}`}></div>
+      <div className="nav-header">
+        <div className={`connection-indicator ${connected ? 'connected' : 'disconnected'}`}></div>
+        <button
+          type="button"
+          className="refresh-btn"
+          onClick={() => window.location.reload()}
+          title="Refresh page"
+          style={{
+            background: 'rgba(255, 255, 255, 0.1)',
+            color: '#fff',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            padding: '6px 12px',
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: 600,
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+          }}
+        >
+          🔄 Refresh
+        </button>
+      </div>
       
       {/* Fitness Devices as Nav Icons */}
       <div className="fitness-devices">
