@@ -5,7 +5,7 @@ import "./FitnessApp.scss";
 import { DaylightAPI } from '../lib/api.mjs';
 import FitnessUsers from '../modules/Fitness/FitnessUsers.jsx';
 import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
-import FitnessSidebar from '../modules/Fitness/FitnessSidebar.jsx';
+import FitnessNavbar from '../modules/Fitness/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
@@ -193,7 +193,7 @@ const FitnessApp = () => {
               width: '100%',
               visibility: fitnessPlayQueue.length > 0 || loading ? 'hidden' : 'visible'
             }}>
-              <FitnessSidebar 
+              <FitnessNavbar 
                 collections={collections}
                 activeCollection={activeCollection}
                 onContentSelect={handleContentSelect}

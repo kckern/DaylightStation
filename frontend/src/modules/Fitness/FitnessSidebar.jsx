@@ -1,59 +1,69 @@
-import React from 'react';
-import { DaylightImagePath } from '../../lib/api.mjs';
-import SidebarFooter from './SidebarFooter.jsx';
-import './FitnessSidebar.scss';
+import React, { useState } from 'react';
+import { useFitnessContext } from '../../context/FitnessContext.jsx';
+import FitnessTreasureBox from './FitnessSidebar/FitnessTreasureBox.jsx';
+import FitnessUsersList from './FitnessSidebar/FitnessUsers.jsx';
+import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
+import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
+import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
+import './FitnessUsers.scss';
 
-const FitnessSidebar = ({ collections = [], activeCollection, onContentSelect }) => {
+const FitnessSidebar = () => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [visibility, setVisibility] = useState({
+    treasureBox: true,
+    users: true,
+    video: true,
+    voiceMemo: true
+  });
 
-  const getCollectionIcon = (icon) => {
-    if (!icon) return null;
-    const iconUrl = DaylightImagePath(`icons/${icon}.svg`);
-    console.log('Generated icon URL:', iconUrl);
-    return iconUrl;
+  const fitnessContext = useFitnessContext();
+  const { treasureBox, fitnessSession } = fitnessContext;
+
+  const handleToggleVisibility = (component) => {
+    setVisibility(prev => ({
+      ...prev,
+      [component]: !prev[component]
+    }));
   };
 
   return (
-    <div className="fitness-sidebar">
-      <div className="sidebar-header">
-        
-      </div>
-      
-      <nav className="sidebar-nav">
-        {collections.length === 0 ? (
-          <div className="loading-state">
-            <div className="loading-icon">⏳</div>
-          </div>
-        ) : (
-          collections.map((collection, index) => (
-            <button
-              key={collection.id || index}
-              className={`nav-item ${String(activeCollection) === String(collection.id) ? 'active' : ''}`}
-              onPointerDown={() => onContentSelect && onContentSelect('collection', collection)}
-            >
-              <div className="nav-icon">
-                {collection.icon ? (
-                  <img 
-                    src={getCollectionIcon(collection.icon)} 
-                    alt={collection.name}
-                    onError={(e) => {
-                      console.error('Failed to load icon:', collection.icon, e.target.src);
-                      e.target.style.display = 'none';
-                      e.target.nextSibling.style.display = 'inline';
-                    }}
-                  />
-                ) : (
-                  <span>📺</span>
-                )}
-                <span style={{display: 'none'}}>📺</span>
-              </div>
-              <span className="nav-label">{collection.name}</span>
-            </button>
-          ))
-        )}
-      </nav>
+    <div className="fitness-sidebar-container">
+      {/* Treasure Box */}
+      {visibility.treasureBox && (
+        <div className="fitness-sidebar-treasurebox">
+          <FitnessTreasureBox box={treasureBox} session={fitnessSession} />
+        </div>
+      )}
 
-      <SidebarFooter onContentSelect={onContentSelect} />
+      {/* Users List (HR monitors, RPM, etc) - grows to fill space */}
+      {visibility.users && (
+        <div className="fitness-sidebar-devices">
+          <FitnessUsersList />
+        </div>
+      )}
 
+      {/* Combined Video + Voice Memo Controls */}
+      {(visibility.video || visibility.voiceMemo) && (
+        <div className="fitness-sidebar-media">
+          <FitnessVoiceMemo 
+            minimal 
+            menuOpen={menuOpen}
+            onToggleMenu={() => setMenuOpen(!menuOpen)}
+          />
+        </div>
+      )}
+
+      {/* Menu Overlay */}
+      {menuOpen && (
+        <>
+          <div className="sidebar-menu-overlay" onClick={() => setMenuOpen(false)} />
+          <FitnessSidebarMenu 
+            onClose={() => setMenuOpen(false)}
+            visibility={visibility}
+            onToggleVisibility={handleToggleVisibility}
+          />
+        </>
+      )}
     </div>
   );
 };

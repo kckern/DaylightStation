@@ -1,4 +1,4 @@
-.fitness-sidebar {
+.fitness-navbar {
   width: 4rem;
   height: 100%;
   background: #00000055;
@@ -14,7 +14,7 @@
   overflow: hidden;
 
 
-  .sidebar-header {
+  .navbar-header {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -37,7 +37,7 @@
     }
   }
 
-  .sidebar-nav {
+  .navbar-nav {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -124,4 +124,3 @@
   25% { transform: scale(1.1); }
   75% { transform: scale(1.05); }
 }
-

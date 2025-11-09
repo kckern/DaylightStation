@@ -10,7 +10,8 @@ import { broadcastToWebsockets, restartWebsocketServer } from './websocket.js';
 const promiseExec = util.promisify(exec);
 const exeRouter = express.Router();
 
-exeRouter.use(express.json());
+exeRouter.use(express.json({ limit: '50mb' }));
+exeRouter.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Helper class for Home Assistant
 // Expected Home Assistant entities and interfaces:
