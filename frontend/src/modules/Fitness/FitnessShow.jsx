@@ -290,8 +290,25 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     if (axis === 'y' && fully) {
       const er = el.getBoundingClientRect();
       const cr = container.getBoundingClientRect();
-      const moreBelow = (container.scrollTop + container.clientHeight) < (container.scrollHeight - 1);
-      flushBottom = moreBelow && (er.bottom >= cr.bottom - margin);
+      
+      // Check if there are any episode cards below the viewport (not just padding/margin space)
+      // Find all episode cards in the container
+      const episodeCards = container.querySelectorAll('.episode-card');
+      let hasOffscreenCards = false;
+      
+      if (episodeCards.length > 0) {
+        // Check if any episode card is partially or fully below the visible area
+        for (const card of episodeCards) {
+          const cardRect = card.getBoundingClientRect();
+          // Card is offscreen below if its top is below the container's visible bottom
+          if (cardRect.top > cr.bottom - margin) {
+            hasOffscreenCards = true;
+            break;
+          }
+        }
+      }
+      
+      flushBottom = hasOffscreenCards && (er.bottom >= cr.bottom - margin);
       if (!flushBottom) return { didScroll: false, container };
     } else if (fully) {
       return { didScroll: false, container };
