@@ -24,11 +24,12 @@ const blobToBase64 = (blob) => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
-const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu }) => {
+const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, playerRef }) => {
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
   const recordingStartTimeRef = useRef(null);
+  const wasPlayingBeforeRecordingRef = useRef(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [error, setError] = useState(null);
@@ -38,9 +39,50 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu }) =
   const fitnessCtx = useFitnessContext();
   const session = fitnessCtx?.fitnessSession;
 
+  // Pause video following the playPause pattern from FitnessPlayerFooterControls
+  const pauseVideo = () => {
+    const api = playerRef?.current;
+    if (!api) return;
+    
+    // Check if currently playing
+    const media = api.getMediaElement?.();
+    if (media && !media.paused) {
+      wasPlayingBeforeRecordingRef.current = true;
+      if (typeof api.pause === 'function') {
+        api.pause();
+      } else if (media) {
+        media.pause();
+      }
+    } else {
+      wasPlayingBeforeRecordingRef.current = false;
+    }
+  };
+
+  // Resume video if it was playing before
+  const resumeVideo = () => {
+    if (!wasPlayingBeforeRecordingRef.current) return;
+    
+    const api = playerRef?.current;
+    if (!api) return;
+    
+    if (typeof api.play === 'function') {
+      api.play();
+    } else {
+      const media = api.getMediaElement?.();
+      if (media) {
+        media.play();
+      }
+    }
+    wasPlayingBeforeRecordingRef.current = false;
+  };
+
   // Start recording
   const startRecording = async () => {
     setError(null);
+    
+    // Pause video before starting recording
+    pauseVideo();
+    
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -56,6 +98,8 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu }) =
     } catch (e) {
       console.error('Mic access error', e);
       setError(e.message || 'Failed to access microphone');
+      // Resume video if recording failed to start
+      resumeVideo();
     }
   };
 
@@ -70,6 +114,8 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu }) =
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     }
+    // Resume video after stopping recording
+    resumeVideo();
   };
 
   // After MediaRecorder stops

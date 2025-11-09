@@ -586,7 +586,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
         {playerMode !== 'fullscreen' && (
           <div className="sidebar-content">
-            <FitnessSidebar />
+            <FitnessSidebar playerRef={playerRef} />
           </div>
         )}
 
