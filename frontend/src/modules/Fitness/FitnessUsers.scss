@@ -1167,6 +1167,7 @@
     flex: 0 0 40px;
     width: 40px;
     height: 40px;
+    position: relative;
     
     .artwork-image {
       width: 100%;
@@ -1181,6 +1182,31 @@
       justify-content: center;
       background-color: #222;
       .artwork-icon { font-size: 1.5rem; }
+    }
+    
+    .playback-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+      
+      .playback-icon {
+        font-size: 1.2rem;
+        color: white;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+      }
+    }
+    
+    &.paused .playback-overlay {
+      opacity: 1;
     }
   }
 

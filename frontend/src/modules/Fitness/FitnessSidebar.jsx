@@ -18,10 +18,15 @@ const FitnessSidebar = ({ playerRef }) => {
     video: true,
     voiceMemo: true
   });
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
-
   const fitnessContext = useFitnessContext();
-  const { treasureBox, fitnessSession } = fitnessContext;
+  const { treasureBox, fitnessSession, selectedPlaylistId, setSelectedPlaylistId } = fitnessContext;
+
+  // Automatically show playlist when selectedPlaylistId is set
+  React.useEffect(() => {
+    if (selectedPlaylistId && !visibility.playlist) {
+      setVisibility(prev => ({ ...prev, playlist: true }));
+    }
+  }, [selectedPlaylistId, visibility.playlist]);
 
   const handleToggleVisibility = (component) => {
     setVisibility(prev => ({

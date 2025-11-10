@@ -13,12 +13,23 @@ export const useFitnessContext = () => {
   return context;
 };
 
+// Custom hook for fitness playlist management
+export const useFitnessPlaylist = () => {
+  const context = useFitnessContext();
+  return {
+    selectedPlaylistId: context.selectedPlaylistId,
+    setSelectedPlaylistId: context.setSelectedPlaylistId,
+    playlists: context.plexConfig?.music_playlists || []
+  };
+};
+
 // Alias for compatibility
 export const useFitness = useFitnessContext;
 
 // Provider component
 export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue }) => {
   const FITNESS_DEBUG = false; // set false to silence diagnostic logs
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   // Accept either shape: { fitness: {...} } or flattened keys directly
   const fitnessRoot = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
   if (FITNESS_DEBUG) {
@@ -553,6 +564,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       String(user.hrDeviceId) === String(deviceId) || 
       String(user.cadenceDeviceId) === String(deviceId)
     ),
+    
+    // Playlist state
+    selectedPlaylistId,
+    setSelectedPlaylistId,
     
     // Reset all user sessions
     resetAllUserSessions: () => {
