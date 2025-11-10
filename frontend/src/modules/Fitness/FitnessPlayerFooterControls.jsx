@@ -6,6 +6,7 @@ import React, { useRef, useCallback } from 'react';
  * Props:
  *  - section: 'left' | 'right'
  *  - isPaused, playerRef (imperative Player ref), onPrev, onNext, hasPrev, hasNext, onClose
+ *  - isStalled (bool) when playback stall detected (treats as paused for UI)
  *  - currentTime, duration, TimeDisplay, renderCount (only used on left)
  */
 export default function FitnessPlayerFooterControls({
@@ -21,6 +22,7 @@ export default function FitnessPlayerFooterControls({
   duration,
   TimeDisplay,
   renderCount,
+  isStalled = false,
   isZoomed = false,
   onBack
 }) {
@@ -83,7 +85,7 @@ export default function FitnessPlayerFooterControls({
 
   if (isLeft) {
     return (
-      <div className="footer-controls-left">
+  <div className="footer-controls-left" data-stalled={isStalled ? '1' : '0'}>
         <div className="control-buttons-container">
           <div
             role="button"
@@ -115,7 +117,7 @@ export default function FitnessPlayerFooterControls({
   }
 
   return (
-  <div className="footer-controls-right">
+  <div className="footer-controls-right" data-stalled={isStalled ? '1' : '0'}>
       {showNav && (
         <div
           role="button"

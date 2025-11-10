@@ -11,6 +11,8 @@ import React, { useRef } from 'react';
  *  - onZoom([start,end])
  *  - children (thumbnail content)
  *  - enableZoom (boolean) whether zoom gestures are enabled
+  *  - seekTime (number) overrides the seek target (defaults to rangeStart/pos)
+  *  - labelTime (number) anchor used when tapping the time label to zoom
  */
 export default function SingleThumbnailButton({
   pos,
@@ -23,11 +25,20 @@ export default function SingleThumbnailButton({
   children,
   globalStart = 0,
   globalEnd = null,
-  fallbackZoomWindow = 120 // seconds
+  fallbackZoomWindow = 120, // seconds
+  seekTime,
+  labelTime
 }) {
   const longPressTimeout = useRef();
   const hasRange = enableZoom && Number.isFinite(rangeStart) && Number.isFinite(rangeEnd) && rangeEnd > rangeStart;
   const btnRange = hasRange ? [rangeStart, rangeEnd] : null;
+
+  const resolveSeekTime = () => {
+    if (Number.isFinite(seekTime)) return seekTime;
+    if (btnRange) return btnRange[0];
+    if (Number.isFinite(rangeStart)) return rangeStart;
+    return pos;
+  };
 
   const clearLong = () => { if (longPressTimeout.current) clearTimeout(longPressTimeout.current); };
   const startLong = () => {
@@ -52,7 +63,8 @@ export default function SingleThumbnailButton({
   const handlePointerDown = (e) => {
     const timeElt = isTimeElement(e);
     const reason = timeElt ? 'time-label' : (e.button === 2 ? 'right-button' : 'seek-default');
-    console.log('[SingleThumbnailButton] pointerDown:', { pos, reason, timeElt, rightButton: e.button === 2 });
+    const targetSeek = resolveSeekTime();
+    console.log('[SingleThumbnailButton] pointerDown:', { pos, reason, timeElt, rightButton: e.button === 2, targetSeek });
     if ((e.button === 2 || timeElt) && enableZoom) {
       e.preventDefault();
       e.stopPropagation();
@@ -62,13 +74,14 @@ export default function SingleThumbnailButton({
       } else if (timeElt) {
   // zoom (anchor only signal)
         // Send anchor-only signal (start=end) so parent can expand to next 9 thumbnails
-        onZoom?.([pos, pos]);
+        const anchor = Number.isFinite(labelTime) ? labelTime : pos;
+        onZoom?.([anchor, anchor]);
       }
       return;
     }
   // seek action
-    console.log('[SingleThumbnailButton] Seeking to:', pos);
-    onSeek?.(pos);
+    console.log('[SingleThumbnailButton] Seeking to:', targetSeek);
+    onSeek?.(targetSeek);
   };
   const handleContext = (e) => {
     if (!btnRange) return; e.preventDefault(); e.stopPropagation(); onZoom?.(btnRange);
