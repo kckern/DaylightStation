@@ -747,7 +747,8 @@ dash-video {
             position: absolute;
             width: 10px;
             height: 10px;
-            margin: -5px 0 0 -5px; /* center over path */
+            margin: 0; /* removed centering margin - positioning handled in JS */
+            transform: translate(-50%, -50%); /* center the spark on the position */
             display: flex;
             align-items: center;
             justify-content: center;
