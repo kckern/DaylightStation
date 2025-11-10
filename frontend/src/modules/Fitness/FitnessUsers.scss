@@ -35,59 +35,67 @@
       margin-left: 10px; 
       opacity: .5; 
     }
-  .tb-row { display: flex; align-items: center; width: 100%; }
-  .tb-row-head { justify-content: space-between; padding-bottom: 2px; }
-  .tb-total { display: flex; align-items: center; gap: 6px; font-weight:700; font-size:1.28rem; letter-spacing:.5px; }
-  .tb-timer { font-variant-numeric: tabular-nums; font-weight:700; font-size:1.28rem; letter-spacing:.5px; }
-    .tb-icon { filter: drop-shadow(0 0 4px rgba(255,255,255,0.25)); }
-    .tb-color-grid { 
-      /* Flex container that never overflows its parent */
-      display: flex;
-      flex-wrap: nowrap; /* keep a single row */
-      width: 100%;
-      min-width: 0; /* allow children to shrink */
-      overflow: hidden; /* guard against any residual overflow */
-      justify-content: space-around; /* even spacing with gaps at edges */
-      align-items: stretch;
-      gap: 8px; /* still apply for visual separation */
-      min-height: 54px; /* preserve previous row height */
-    }
-    /* Let coins flex-shrink within the row instead of pushing overflow */
-    .tb-color-grid .tb-color-coin { flex: 1 1 52px; min-width: 36px; }
-    .tb-color-coin { 
-      display:flex; 
-      flex-direction: column; 
-      align-items:center; 
-      justify-content:center; 
-      gap:6px; 
-      background: rgba(255,255,255,0.07); 
-      border:1px solid rgba(255,255,255,0.09);
-      padding:6px 4px; 
-      border-radius: 10px; 
-      font-size:0.7rem; 
-      font-weight:600; 
-      letter-spacing:.5px; 
-      position: relative;
-      overflow: hidden;
-    }
-    .tb-color-coin .swatch { 
-      width:1rem; 
-      border-radius:50%; 
-      box-shadow:0 0 0 1px rgba(255,255,255,0.25), 0 0 6px rgba(0,0,0,0.6); 
-      aspect-ratio: 1 / 1; 
-      margin-bottom: -1ex;
-    }
-    .tb-color-coin .count { 
-      font-size:1rem; 
-      min-width: 24px; 
-      text-align: center; 
-      font-variant-numeric: tabular-nums; 
-      font-weight: 600; 
-    }
-    .tb-empty { font-size: 0.6rem; opacity: .5; }
+  .tb-row { 
+    display: flex; 
+    align-items: center; 
+    width: 100%; 
+    min-width: 0;
+    gap: 6px;
+    overflow: hidden;
   }
+  .tb-row-head { 
+    justify-content: flex-start;
+    padding-bottom: 2px; 
+  }
+  /* Icon - fixed, never shrinks */
+  .tb-icon { 
+    filter: drop-shadow(0 0 4px rgba(255,255,255,0.25));
+    flex: 0 0 auto;
+    font-size: 1.2rem;
+  }
+  /* Total value - fixed, never shrinks */
+  .tb-total { 
+    font-weight: 700; 
+    font-size: 1.28rem; 
+    letter-spacing: .5px; 
+    flex: 0 0 auto;
+    white-space: nowrap;
+    background: rgba(255,255,255,0.07); 
+    border: 1px solid rgba(255,255,255,0.09);
+    padding: 6px 12px; 
+    border-radius: 10px;
+  }
+  /* Color swatches - shrink equally */
+  .tb-swatch { 
+    flex: 0 1 auto;
+    width: 2rem; 
+    height: 2rem;
+    border-radius: 50%; 
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.25), 0 0 6px rgba(0,0,0,0.6); 
+    min-width: 1rem;
+  }
+  /* Color counts - shrink equally */
+  .tb-count { 
+    flex: 0 1 auto;
+    font-size: 1rem; 
+    font-weight: 600;
+    font-variant-numeric: tabular-nums; 
+    min-width: 0;
+  }
+  /* Timer - fixed, pushed to right edge */
+  .tb-timer { 
+    font-variant-numeric: tabular-nums; 
+    font-weight: 700; 
+    font-size: 1.28rem; 
+    letter-spacing: .5px; 
+    flex: 0 0 auto;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+  .tb-empty { font-size: 0.6rem; opacity: .5; }
+}
 
-  .nav-header {
+.nav-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -129,6 +137,53 @@
         position: relative;
       }
 
+      /* Horizontal density scale variants (mirrors sidebar variant) */
+      & > .device-grid.horiz-scale-150 { gap: 14px; }
+      & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal {
+        padding: 12px 14px;
+      }
+      & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal .user-profile-img-container {
+        width: 86px;
+        height: 86px;
+        min-width: 86px;
+        min-height: 86px;
+        flex: 0 0 86px;
+        margin-right: 14px;
+      }
+      & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-name {
+        font-size: 1.6rem;
+        line-height: 1.05;
+      }
+      & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-value {
+        font-size: 1.35rem;
+      }
+      & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
+        font-size: 0.7rem;
+      }
+
+      & > .device-grid.horiz-scale-130 { gap: 12px; }
+      & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal {
+        padding: 10px 12px;
+      }
+      & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal .user-profile-img-container {
+        width: 72px;
+        height: 72px;
+        min-width: 72px;
+        min-height: 72px;
+        flex: 0 0 72px;
+        margin-right: 12px;
+      }
+      & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-name {
+        font-size: 1.42rem;
+        line-height: 1.04;
+      }
+      & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-stats .device-value {
+        font-size: 1.18rem;
+      }
+      & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
+        font-size: 0.62rem;
+      }
+
 
     .fitness-device {
       display: flex;
@@ -144,47 +199,6 @@
       overflow: hidden;
   padding: 4px 14px; /* tighter vertical & horizontal to let avatar expand */
       max-width: 100%;
-
-      /* Zone tinted backgrounds (improved visibility) */
-      &.zone-cool,
-      &.zone-active,
-      &.zone-warm,
-      &.zone-hot,
-      &.zone-fire { position: relative; }
-
-      &.zone-cool::before { background: linear-gradient(90deg, rgba(70,120,255,0.22), rgba(30,40,70,0.10)); }
-      &.zone-active::before { background: linear-gradient(90deg, rgba(60,200,120,0.22), rgba(30,60,40,0.10)); }
-      &.zone-warm::before { background: linear-gradient(90deg, rgba(255,210,70,0.25), rgba(70,55,10,0.10)); }
-      &.zone-hot::before { background: linear-gradient(90deg, rgba(255,150,60,0.25), rgba(70,35,5,0.10)); }
-      &.zone-fire::before { background: linear-gradient(90deg, rgba(255,90,90,0.30), rgba(70,15,15,0.12)); }
-
-      &.zone-cool::before,
-      &.zone-active::before,
-      &.zone-warm::before,
-      &.zone-hot::before,
-      &.zone-fire::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        border-radius: 8px;
-        opacity: 1;
-        mix-blend-mode: normal;
-      }
-
-      /* Left accent bar for zone identity */
-      &.zone-cool { border-left: 4px solid rgba(106,184,255,0.9); }
-      &.zone-active { border-left: 4px solid rgba(81,207,102,0.9); }
-      &.zone-warm { border-left: 4px solid rgba(255,212,59,0.9); }
-      &.zone-hot { border-left: 4px solid rgba(255,146,43,0.9); }
-      &.zone-fire { border-left: 4px solid rgba(255,107,107,0.9); }
-
-      /* Ensure active state doesn't erase tints */
-      &.active.zone-cool { background: rgba(34,34,60,0.55); }
-      &.active.zone-active { background: rgba(20,60,40,0.55); }
-      &.active.zone-warm { background: rgba(80,60,10,0.55); }
-      &.active.zone-hot { background: rgba(90,40,5,0.55); }
-      &.active.zone-fire { background: rgba(90,10,10,0.55); }
 
       /* Slight lift for active */
       &.active { box-shadow: 0 2px 6px rgba(0,0,0,0.6); }
@@ -207,6 +221,7 @@
           margin: 0 12px 0 0; /* reduce right gap, remove extra left inset */
           flex-shrink: 0;
           position: relative;
+          z-index: 1; /* above zone overlay */
           flex: 0 0 58px; /* lock size in flex row */
           min-width: 58px;
           min-height: 58px;
@@ -231,6 +246,8 @@
           display: flex;
           flex-direction: column;
           justify-content: center;
+          position: relative;
+          z-index: 1; /* above zone overlay */
           
           .device-name {
             font-size: 1.34rem; /* slight bump to balance larger avatar */
@@ -256,6 +273,8 @@
           }
         }
       }
+
+
 
       &:hover { background: rgba(255,255,255,0.12); }
 
@@ -575,6 +594,7 @@
     .rpm-avatar-content {
       width: 32px;
       height: 32px;
+      font-style: 1ex;
     }
 
     .rpm-spinning-border {
@@ -583,7 +603,7 @@
     }
 
     .rpm-value-overlay {
-      font-size: 0.8rem;
+      font-size: 0.8rem!important;
     }
   }
 }
@@ -1000,12 +1020,6 @@
       justify-content: center;
       img { width: 100%; height: 100%; object-fit: cover; }
       transition: border-color .25s ease, box-shadow .25s ease;
-      &.zone-cool   { border-color: var(--zone-cool-color, #1e3a8a); box-shadow: 0 0 0 2px rgba(59,130,246,0.35); }
-      &.zone-active { border-color: var(--zone-active-color, #059669); box-shadow: 0 0 0 2px rgba(16,185,129,0.35); }
-      &.zone-warm   { border-color: var(--zone-warm-color, #ca8a04); box-shadow: 0 0 0 2px rgba(234,179,8,0.35); }
-      &.zone-hot    { border-color: var(--zone-hot-color, #ea580c); box-shadow: 0 0 0 2px rgba(234,88,12,0.4); }
-      &.zone-fire   { border-color: var(--zone-fire-color, #dc2626); box-shadow: 0 0 0 2px rgba(220,38,38,0.45); }
-      &.no-zone     { border-color: #333; box-shadow:none; }
     }
 
     .device-info {
@@ -1283,6 +1297,81 @@
       }
     }
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Global fallbacks: ensure zone rings and background tints always apply,     */
+/* regardless of container ancestry (.fitness-devices, .fitness-sidebar-*)    */
+/* -------------------------------------------------------------------------- */
+
+/* Card-level zone tints */
+.fitness-device {
+  position: relative;
+}
+
+.fitness-device.zone-cool::before,
+.fitness-device.zone-active::before,
+.fitness-device.zone-warm::before,
+.fitness-device.zone-hot::before,
+.fitness-device.zone-fire::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 8px;
+  opacity: 1;
+  mix-blend-mode: normal;
+  z-index: 0; /* behind all content */
+}
+
+.fitness-device.zone-cool::before { background: linear-gradient(90deg, rgba(70,120,255,0.22), rgba(30,40,70,0.10)); }
+.fitness-device.zone-active::before { background: linear-gradient(90deg, rgba(60,200,120,0.22), rgba(30,60,40,0.10)); }
+.fitness-device.zone-warm::before { background: linear-gradient(90deg, rgba(255,210,70,0.25), rgba(70,55,10,0.10)); }
+.fitness-device.zone-hot::before { background: linear-gradient(90deg, rgba(255,150,60,0.25), rgba(70,35,5,0.10)); }
+.fitness-device.zone-fire::before { background: linear-gradient(90deg, rgba(255,90,90,0.30), rgba(70,15,15,0.12)); }
+
+/* Left accent */
+.fitness-device.zone-cool  { border-left: 4px solid rgba(106,184,255,0.9); }
+.fitness-device.zone-active{ border-left: 4px solid rgba(81,207,102,0.9); }
+.fitness-device.zone-warm  { border-left: 4px solid rgba(255,212,59,0.9); }
+.fitness-device.zone-hot   { border-left: 4px solid rgba(255,146,43,0.9); }
+.fitness-device.zone-fire  { border-left: 4px solid rgba(255,107,107,0.9); }
+
+/* Vertical card base (fallback) */
+.fitness-device.card-vertical {
+  background: linear-gradient(180deg, #181818, #121212);
+  border: 1px solid #262626;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+}
+
+/* Zone-colored avatar rings (place AFTER any generic border rules so it wins) */
+.fitness-device .user-profile-img-container.zone-cool   { border-color: var(--zone-cool-color, #1e3a8a) !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.35) !important; }
+.fitness-device .user-profile-img-container.zone-active { border-color: var(--zone-active-color, #059669) !important; box-shadow: 0 0 0 2px rgba(16,185,129,0.35) !important; }
+.fitness-device .user-profile-img-container.zone-warm   { border-color: var(--zone-warm-color, #ca8a04) !important; box-shadow: 0 0 0 2px rgba(234,179,8,0.35) !important; }
+.fitness-device .user-profile-img-container.zone-hot    { border-color: var(--zone-hot-color, #ea580c) !important; box-shadow: 0 0 0 2px rgba(234,88,12,0.4) !important; }
+.fitness-device .user-profile-img-container.zone-fire   { border-color: var(--zone-fire-color, #dc2626) !important; box-shadow: 0 0 0 2px rgba(220,38,38,0.45) !important; }
+.fitness-device .user-profile-img-container.no-zone     { border-color: #333 !important; box-shadow: none !important; }
+
+/* Vertical avatar sizing (fallback) */
+.fitness-device.card-vertical .user-profile-img-container {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #222;
+  border: 6px solid #333;
+  margin: 6px 0 14px 0;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.6);
+}
+
+/* Vertical zone pill alignment (fallback) */
+.device-zone-info.for-vert {
+  margin: 0 0 6px 0;
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 // Fitness Video Component
