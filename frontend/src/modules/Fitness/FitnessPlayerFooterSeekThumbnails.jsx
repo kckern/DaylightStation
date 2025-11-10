@@ -254,22 +254,13 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     return `rgb(${greyValue}, ${greyValue}, ${greyValue})`;
   }, []);
 
-  const handleThumbnailSeek = useCallback((t, thumbnailIndex) => {
-    // Calculate the midpoint of the thumbnail segment
-    let seekTime = t;
-    if (thumbnailIndex !== undefined && rangePositions.length > 0) {
-      const nextPos = thumbnailIndex < rangePositions.length - 1 
-        ? rangePositions[thumbnailIndex + 1] 
-        : rangeEnd;
-      // Use midpoint between start and end of this thumbnail's time segment
-      seekTime = (t + nextPos) / 5;
-    }
-    commit(seekTime);
+  const handleThumbnailSeek = useCallback((t) => {
+    commit(t);
     // When zoomed, mark for delayed zoom reset (will happen on 'playing' event)
     if (zoomRange) {
       resetZoomOnPlayingRef.current = true;
     }
-  }, [commit, zoomRange, rangePositions, rangeEnd]);
+  }, [commit, zoomRange]);
 
   const renderedSeekButtons = useMemo(() => {
     if (!currentItem) return null;
@@ -288,30 +279,10 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       const seconds = Math.floor(pos % 60);
       const baseLabel = `${minutes}:${String(seconds).padStart(2,'0')}`;
       
-      // Calculate progress first to determine if player is actively playing in this thumbnail
-      let thumbnailProgress = 0;
-      let isActivelyPlaying = false;
-      if (isActive) {
-        // Determine the end time for this thumbnail
-        const endTime = idx < rangePositions.length - 1 ? rangePositions[idx + 1] : rangeEnd;
-        const segmentDuration = endTime - pos;
-        
-        // Add tolerance to prevent showing 100% on previous thumbnail at boundary
-        const BOUNDARY_TOLERANCE = 0.1; // 100ms buffer (actual seconds)
-        const effectiveEnd = endTime - BOUNDARY_TOLERANCE;
-        
-        // Only calculate progress if currentTime is actually in this segment
-        if (segmentDuration > 0 && currentTime >= pos && currentTime < effectiveEnd) {
-          const progressInSegment = currentTime - pos;
-          thumbnailProgress = clamp01(progressInSegment / segmentDuration) * 100;
-          isActivelyPlaying = true; // Player is actively playing in this thumbnail's time range
-        }
-      }
-      
-      // For active thumbnail, show current playback time only when actively playing
+      // For active thumbnail, show current playback time instead of thumbnail position
       let label;
-      if (isActive && isActivelyPlaying) {
-        // Show real-time player clock only when actually playing in this segment
+      if (isActive) {
+        // Show real-time player clock, not optimistic displayTime
         const currentMinutes = Math.floor(currentTime / 60);
         const currentSeconds = Math.floor(currentTime % 60);
         label = `${currentMinutes}:${String(currentSeconds).padStart(2,'0')}`;
@@ -330,7 +301,24 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       const classNames = `seek-button-container ${state}${isOrigin ? ' origin' : ''}`;
       const greyBg = getGreyShade(pos);
       
-      // Progress and playing status already calculated above
+      // Calculate progress within this thumbnail's time range (for border animation)
+      // Progress is based on real playback (currentTime) not intent; hide during sticky pin if not in segment
+      let thumbnailProgress = 0;
+      if (isActive) {
+        // Determine the end time for this thumbnail
+        const endTime = idx < rangePositions.length - 1 ? rangePositions[idx + 1] : rangeEnd;
+        const segmentDuration = endTime - pos;
+        
+        // Add tolerance to prevent showing 100% on previous thumbnail at boundary
+        const BOUNDARY_TOLERANCE = 0.1; // 100ms buffer (actual seconds)
+        const effectiveEnd = endTime - BOUNDARY_TOLERANCE;
+        
+        // Only calculate progress if currentTime is actually in this segment
+        if (segmentDuration > 0 && currentTime >= pos && currentTime < effectiveEnd) {
+          const progressInSegment = currentTime - pos;
+          thumbnailProgress = clamp01(progressInSegment / segmentDuration) * 100;
+        }
+      }
       
       return (
         <SingleThumbnailButton
@@ -339,7 +327,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
           rangeStart={null}
           rangeEnd={null}
           state={state}
-          onSeek={(t) => handleThumbnailSeek(t, idx)}
+          onSeek={handleThumbnailSeek}
           onZoom={setZoomRange}
           globalStart={rangeStart}
           globalEnd={rangeEnd}
