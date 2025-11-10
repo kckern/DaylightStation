@@ -98,6 +98,8 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   const awaitingSettleRef = useRef(false);                // guard to hold highlight until playback resumes
   const [previewTime, setPreviewTime] = useState(null);   // hover / drag preview (only while seeking)
   const rafRef = useRef(); // for throttling preview updates
+  // Sticky highlight after seek settle to avoid boundary flicker
+  const lastSeekRef = useRef({ time: null, expireAt: 0 });
 
   // ---------- Seek Positions & Total Duration ----------
   // Each button can have its own range: data-range-start, data-range-end
@@ -119,8 +121,22 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   }, [pendingTime, previewTime, currentTime, isSeeking]);
 
   // ---------- Active Thumbnail (binary search) ----------
+  // Use displayTime for highlighting (intent-based) with a short sticky window after seek settles
   const activePos = useMemo(() => {
     if (!rangePositions.length) return null;
+
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    // If within stickiness window, pin highlight to last seek target's segment
+    if (lastSeekRef.current.time != null && now < lastSeekRef.current.expireAt) {
+      const t = lastSeekRef.current.time;
+      let lo = 0, hi = rangePositions.length - 1, ans = null;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (rangePositions[mid] <= t) { ans = rangePositions[mid]; lo = mid + 1; } else hi = mid - 1; }
+      return ans;
+    }
+
+    // Default: intent-based highlight
     let lo = 0, hi = rangePositions.length - 1, ans = null;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
@@ -131,10 +147,12 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   // ---------- Effects ----------
   useEffect(() => {
     if (pendingTime == null) return;
-    // Only clear when we're close AND not explicitly waiting for settle
+    // Clear if we're close to the pending time AND not waiting for settle
     if (!awaitingSettleRef.current && Math.abs(currentTime - pendingTime) <= CLEAR_PENDING_TOLERANCE) {
       setPendingTime(null);
+      return;
     }
+    // Don't auto-clear based on position difference - let the settle events handle it
   }, [currentTime, pendingTime]);
 
   // ---------- Core Utilities ----------
@@ -148,6 +166,8 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   const commit = useCallback((t) => {
     setPendingTime(t);
     awaitingSettleRef.current = true;
+    // remember intent so we can keep highlight sticky after settle
+    lastSeekRef.current.time = t;
     seek(t);
     onSeek?.(t);
   }, [seek, onSeek]);
@@ -160,6 +180,9 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       if (awaitingSettleRef.current) {
         awaitingSettleRef.current = false;
         setPendingTime(null);
+        // keep highlight pinned briefly to target to avoid N-1 flash
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        lastSeekRef.current.expireAt = now + 700; // ~0.7s stickiness
       }
     };
     // Also clear on 'loadedmetadata' which fires during stall recovery reloads
@@ -168,6 +191,8 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       if (awaitingSettleRef.current || pendingTime != null) {
         awaitingSettleRef.current = false;
         setPendingTime(null);
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        lastSeekRef.current.expireAt = now + 700;
       }
     };
     el.addEventListener('seeked', handleSettled);
@@ -294,6 +319,25 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       const classNames = `seek-button-container ${state}${isOrigin ? ' origin' : ''}`;
       const greyBg = getGreyShade(pos);
       
+      // Calculate progress within this thumbnail's time range (for border animation)
+      // Progress is based on real playback (currentTime) not intent; hide during sticky pin if not in segment
+      let thumbnailProgress = 0;
+      if (isActive) {
+        // Determine the end time for this thumbnail
+        const endTime = idx < rangePositions.length - 1 ? rangePositions[idx + 1] : rangeEnd;
+        const segmentDuration = endTime - pos;
+        
+        // Add tolerance to prevent showing 100% on previous thumbnail at boundary
+        const BOUNDARY_TOLERANCE = 0.1; // 100ms buffer (actual seconds)
+        const effectiveEnd = endTime - BOUNDARY_TOLERANCE;
+        
+        // Only calculate progress if currentTime is actually in this segment
+        if (segmentDuration > 0 && currentTime >= pos && currentTime < effectiveEnd) {
+          const progressInSegment = currentTime - pos;
+          thumbnailProgress = clamp01(progressInSegment / segmentDuration) * 100;
+        }
+      }
+      
       return (
         <SingleThumbnailButton
           key={'rng-'+idx+'-'+Math.round(pos)}
@@ -333,13 +377,21 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
                   zIndex: 0
                 }}
               />
+              {isActive && (
+                <div className="progress-border-overlay">
+                  <div className="progress-segment progress-top" style={{ width: `${Math.min(thumbnailProgress * 4, 100)}%` }} />
+                  <div className="progress-segment progress-right" style={{ height: `${Math.max(0, Math.min((thumbnailProgress - 25) * 4, 100))}%` }} />
+                  <div className="progress-segment progress-bottom" style={{ width: `${Math.max(0, Math.min((thumbnailProgress - 50) * 4, 100))}%` }} />
+                  <div className="progress-segment progress-left" style={{ height: `${Math.max(0, Math.min((thumbnailProgress - 75) * 4, 100))}%` }} />
+                </div>
+              )}
               <span className="thumbnail-time">{label}</span>
             </div>
           </div>
         </SingleThumbnailButton>
       );
     });
-  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, commit, rangeStart, rangeEnd, getGreyShade, displayTime]);
+  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, commit, rangeStart, rangeEnd, getGreyShade, displayTime, currentTime]);
 
   // Progress bar should always represent entire video duration, independent of zoomed thumbnail range
   const fullDuration = baseDurationProp || 0;
