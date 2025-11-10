@@ -28,10 +28,7 @@
     border: 3px solid rgba(255, 255, 255, 0.2);
     background: rgba(0, 0, 0, 0.4);
     
-    &:hover {
-      transform: scale(1.05);
-      box-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
-    }
+    /* Hover removed for TV */
     
     &.inactive {
       opacity: 0.5;

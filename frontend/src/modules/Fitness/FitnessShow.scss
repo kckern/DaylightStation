@@ -192,7 +192,7 @@
           gap: 0.35rem;
           box-shadow: 0 4px 10px -2px rgba(0,0,0,0.6);
           transition: transform 0.15s ease, box-shadow 0.15s ease;
-          &:hover { transform: translateY(-2px); box-shadow: 0 6px 14px -3px rgba(0,0,0,0.65); }
+          /* Hover removed */
           &:active { transform: translateY(0); box-shadow: 0 3px 6px -2px rgba(0,0,0,0.55); }
         }
       }
@@ -547,11 +547,7 @@
         flex-direction: column;
         align-items: stretch;
 
-        &:hover {
-          background: rgba(0, 0, 0, 0.7);
-          border-color: rgba(255, 255, 255, 0.3);
-          transform: translateY(-2px);
-        }
+        /* Hover removed */
 
         &.selected {
           background: rgba(255, 255, 255, 0.1);
@@ -568,25 +564,7 @@
           cursor: pointer;
           transition: transform 0.2s ease;
           
-          &:hover {
-            transform: scale(1.02);
-            
-            &::after {
-              content: '▶️';
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
-              font-size: 2rem;
-              opacity: 0.9;
-              filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.7));
-              z-index: 5;
-            }
-            
-            img {
-              filter: brightness(0.7);
-            }
-          }
+          /* Hover removed */
 
           img {
             width: 100%;
@@ -631,9 +609,6 @@
               font-size: 0.8rem;
               transition: transform 0.2s ease;
 
-              &:hover {
-                transform: scale(1.1);
-              }
             }
             
             .episode-queue-btn {
@@ -644,9 +619,7 @@
             }
           }
 
-          &:hover .thumbnail-overlay {
-            opacity: 1;
-          }
+          /* Hover removed */
         }
 
         .episode-title {
@@ -660,10 +633,7 @@
           border-radius: 0.25rem;
           transition: background-color 0.2s ease;
           
-          &:hover {
-            background-color: rgba(255, 255, 255, 0.15);
-            text-decoration: underline;
-          }
+          /* Hover removed */
 
           .episode-title-text {
             width: 100%;
@@ -750,10 +720,6 @@
     transition: transform 0.15s ease, background 0.15s ease;
       background: rgba(255, 255, 255, 0.06);
 
-    &:hover {
-      background: rgba(255, 255, 255, 0.06);
-      transform: translateY(-2px);
-    }
 
     &.active {
       background: rgba(255, 255, 255, 0.12);

@@ -52,11 +52,7 @@
     position: relative;
     aspect-ratio: 1 / 1.5;
 
-    &:hover {
-        background-color: rgba(0, 0, 0, 0.9);
-        transform: scale(1.05);
-        border-color: rgba(255, 255, 255, 0.3);
-    }
+  /* Hover removed for TV */
 
     .show-image {
         width: 100%;
@@ -68,9 +64,7 @@
     filter: brightness(0.6);
     transition: opacity 400ms ease, transform 600ms ease, filter 600ms ease;
 
-        &:hover {
-            filter: brightness(1.1);
-        }
+    /* Hover removed */
     &.loaded {
       opacity: 1;
       transform: scale(1);
@@ -96,10 +90,7 @@
         z-index: 10;
         transition: all 0.2s ease;
         
-        &:hover {
-            transform: scale(1.2);
-            background-color: rgba(255, 255, 255, 0.2);
-        }
+    /* Hover removed */
     }
 
     .show-title {
