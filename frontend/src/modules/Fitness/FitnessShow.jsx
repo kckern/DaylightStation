@@ -168,7 +168,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   const [loadedSeasonImages, setLoadedSeasonImages] = useState({});
   
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
-  const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue } = useFitness() || {};
+  const fitnessContext = useFitness() || {};
+  const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue, plexConfig, setSelectedPlaylistId } = fitnessContext;
   
 
   useEffect(() => {
@@ -180,10 +181,22 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
 
       try {
         setLoading(true);
-  // fetching show data (debug removed)
         const response = await DaylightAPI(`/media/plex/list/${showId}/playable`);
-  // show response (debug removed)
         setShowData(response);
+        
+        // Check for NoMusic label and enable music player if needed
+        if (response?.info?.labels?.includes('NoMusic')) {
+          const playlists = plexConfig?.music_playlists || [];
+          
+          // Get the first available playlist (or previously used one)
+          const defaultPlaylist = playlists[0]?.id;
+          
+          if (defaultPlaylist && setSelectedPlaylistId) {
+            console.log('🎵 NoMusic label detected, enabling music player with playlist:', defaultPlaylist);
+            // Set the playlist which will automatically show the player
+            setSelectedPlaylistId(defaultPlaylist);
+          }
+        }
         
         // Auto-select first episode if available
         if (response.items && response.items.length > 0) {

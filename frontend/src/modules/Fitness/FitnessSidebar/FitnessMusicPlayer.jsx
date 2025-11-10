@@ -10,8 +10,9 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
   const [playQueueData, setPlayQueueData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(true);
 
-  const playConfig = useMemo(() => ({ volume: 0.15 }), []);
+  const playConfig = useMemo(() => ({ volume: 0.1, paused: !isPlaying }), [isPlaying]);
 
   // Load playlist when selectedPlaylistId changes
   useEffect(() => {
@@ -103,6 +104,10 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
     });
   };
 
+  const handleTogglePlayPause = () => {
+    setIsPlaying(prev => !prev);
+  };
+
   const formatTime = (seconds) => {
     if (!seconds || !isFinite(seconds)) return '0:00';
     const hours = Math.floor(seconds / 3600);
@@ -154,7 +159,11 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
     <div className="fitness-music-player-container">
       <div className="music-player-content">
         {/* Album Art */}
-        <div className="music-player-artwork">
+        <div 
+          className={`music-player-artwork ${!isPlaying ? 'paused' : ''}`}
+          onClick={handleTogglePlayPause} 
+          style={{ cursor: 'pointer' }}
+        >
           {currentTrack?.key || currentTrack?.plex || currentTrack?.media_key ? (
             <img 
               key={currentTrack.key || currentTrack.plex || currentTrack.media_key}
@@ -167,6 +176,10 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
               <span className="artwork-icon">🎵</span>
             </div>
           )}
+          {/* Play/Pause Overlay - only shows play icon when paused */}
+          <div className="playback-overlay">
+            <span className="playback-icon">▶</span>
+          </div>
         </div>
 
         {/* Track Info & Progress */}
