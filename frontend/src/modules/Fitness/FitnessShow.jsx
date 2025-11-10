@@ -196,6 +196,12 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
             // Set the playlist which will automatically show the player
             setSelectedPlaylistId(defaultPlaylist);
           }
+        } else {
+          // Clear the music player if the show doesn't have NoMusic label
+          if (setSelectedPlaylistId) {
+            console.log('🎵 No NoMusic label, clearing music player');
+            setSelectedPlaylistId(null);
+          }
         }
         
         // Auto-select first episode if available

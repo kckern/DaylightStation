@@ -30,6 +30,7 @@ export const useFitness = useFitnessContext;
 export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue }) => {
   const FITNESS_DEBUG = false; // set false to silence diagnostic logs
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
+  const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
   // Accept either shape: { fitness: {...} } or flattened keys directly
   const fitnessRoot = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
   if (FITNESS_DEBUG) {
@@ -568,6 +569,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Playlist state
     selectedPlaylistId,
     setSelectedPlaylistId,
+    
+    // Video player pause state
+    videoPlayerPaused,
+    setVideoPlayerPaused,
     
     // Reset all user sessions
     resetAllUserSessions: () => {

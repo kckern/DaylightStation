@@ -141,9 +141,10 @@ export class Plex {
       parentThumb,
       grandparentThumb,
       userRating,
+      originalTitle,
       Media
     })=>{
-      return {
+      const item = {
         plex: plex || ratingKey,
         title,
         parent: parentRatingKey,
@@ -160,7 +161,16 @@ export class Plex {
         grandparentThumb,
         userRating,
         thumb_id: Media?.[0]?.Part?.[0]?.id
+      };
+      
+      // Add music-specific metadata for tracks
+      if (type === 'track') {
+        item.artist = grandparentTitle;
+        item.albumArtist = originalTitle;
+        item.album = parentTitle;
       }
+      
+      return item;
     }) || [];
     return items.length ? items : [];
   }
@@ -207,8 +217,42 @@ export class Plex {
   }
   async loadListFromPlaylist(plex) {
     const playlist = await this.fetch(`playlists/${plex}/items`);
-    const items = playlist.MediaContainer.Metadata.map(({ ratingKey, title, thumb }) => {
-      return { plex:ratingKey, title, art: this.thumbUrl(thumb) };
+    const items = playlist.MediaContainer.Metadata.map(({ 
+      ratingKey, 
+      title, 
+      thumb, 
+      type,
+      grandparentTitle,
+      parentTitle,
+      originalTitle,
+      duration,
+      index,
+      parentIndex,
+      summary
+    }) => {
+      const item = { 
+        plex: ratingKey, 
+        title, 
+        type,
+        image: this.thumbUrl(thumb),
+        duration,
+        index,
+        parentIndex,
+        summary
+      };
+      
+      // Add music-specific metadata for tracks
+      if (type === 'track') {
+        if (grandparentTitle) item.artist = grandparentTitle;
+        if (originalTitle) item.albumArtist = originalTitle;
+        if (parentTitle) {
+          item.album = parentTitle;
+          item.parentTitle = parentTitle;
+        }
+        if (grandparentTitle) item.grandparentTitle = grandparentTitle;
+      }
+      
+      return item;
     });
     return items;
   }
