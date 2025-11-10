@@ -237,8 +237,34 @@ const FitnessApp = () => {
         <div className={`fitness-app-container ${kioskUI ? 'kiosk-ui' : ''}`}>
           <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
             {loading && (
-              <div style={{display:'flex',alignItems:'center',justifyContent:'center',position:'absolute',inset:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',position:'absolute',inset:0}}>
                 <Text size="lg">Loading fitness configuration…</Text>
+                <button 
+                  style={{
+                    marginTop: '1rem',
+                    padding: '0.75rem 1.5rem',
+                    fontSize: '1rem',
+                    backgroundColor: '#228be6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.5rem',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    window.location.reload();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      window.location.reload();
+                    }
+                  }}
+                  tabIndex={0}
+                >
+                  Reload Page
+                </button>
               </div>
             )}
             {fetchError && !loading && (
