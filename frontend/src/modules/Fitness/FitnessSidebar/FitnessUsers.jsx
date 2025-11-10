@@ -473,7 +473,7 @@ const FitnessUsersList = () => {
         >
         {sortedDevices.length > 0 ? (
           <FlipMove 
-            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'} ${layoutMode === 'horiz' && hrCounts.candidate === 3 ? 'horiz-scale-150' : ''}`}
+            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'} ${layoutMode === 'horiz' && hrCounts.candidate === 3 ? 'horiz-scale-150' : ''} ${layoutMode === 'horiz' && hrCounts.candidate === 4 ? 'horiz-scale-130' : ''}`}
             duration={300}
             easing="ease-out"
             staggerDelayBy={20}
