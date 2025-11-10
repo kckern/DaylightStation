@@ -80,86 +80,56 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       // Fallback: create a small window (1/10th of duration) forward
       const segment = baseDurationProp / 10;
       const end = Math.min(zs + segment, baseRange[1]);
-      if (end > zs) return [zs, end];
+      return [zs, end];
     }
     return baseRange;
-  }, [zoomRange, range, baseDurationProp]);
+  }, [range, zoomRange, baseDurationProp]);
+
+  // ---------- Derived Range & Positions ----------
   const [rangeStart, rangeEnd] = effectiveRange;
   const rangeSpan = Math.max(0, rangeEnd - rangeStart);
-  const isZoomed = !!zoomRange;
 
-  // Expose isZoomed and resetZoom to parent if needed
-  useEffect(() => { onZoomChange?.(isZoomed); }, [isZoomed, onZoomChange]);
-  useEffect(() => { if (onZoomReset) onZoomReset.current = () => setZoomRange(null); }, [onZoomReset]);
-  const { seek } = usePlayerController(playerRef);
+  const rangePositions = useMemo(() => {
+    const arr = buildRangePositions(rangeStart, rangeEnd);
+    // Keep snapshot of unzoomed positions for anchor-expansion logic
+    if (!zoomRange) {
+      unzoomedPositionsRef.current = arr;
+    }
+    return arr;
+  }, [rangeStart, rangeEnd, buildRangePositions, zoomRange]);
 
-  // ---------- Intent State ----------
-  const [pendingTime, setPendingTime] = useState(null);   // committed seek awaiting media time
-  const awaitingSettleRef = useRef(false);                // guard to hold highlight until playback resumes
-  const [previewTime, setPreviewTime] = useState(null);   // hover / drag preview (only while seeking)
-  const rafRef = useRef(); // for throttling preview updates
-  // Sticky highlight after seek settle to avoid boundary flicker
+  // ---------- Playback Intent State ----------
+  const [pendingTime, setPendingTime] = useState(null); // optimistic seek time
+  const [previewTime, setPreviewTime] = useState(null); // hover / drag preview
   const lastSeekRef = useRef({ time: null, expireAt: 0 });
-  // Flag to reset zoom after playback starts (delayed zoom reset on thumbnail click)
+  const awaitingSettleRef = useRef(false);
   const resetZoomOnPlayingRef = useRef(false);
 
-  // ---------- Seek Positions & Total Duration ----------
-  // Each button can have its own range: data-range-start, data-range-end
-  // Build the 10 evenly spaced positions for current effective range
-  const rangePositions = useMemo(() => buildRangePositions(rangeStart, rangeEnd), [rangeStart, rangeEnd, buildRangePositions]);
-  // Capture unzoomed positions for future anchor zoom expansion
-  // Always remember the positions from the last rendered level so an anchor ([p,p]) can
-  // expand against the immediate prior level, enabling multi-level drill-down.
-  useEffect(() => {
-    unzoomedPositionsRef.current = rangePositions;
-  }, [rangePositions]);
+  const { seek } = usePlayerController(playerRef);
 
-  // ---------- Display Time Resolution ----------
+  // Display time prefers preview, then pending, then actual
   const displayTime = useMemo(() => {
-    // Optimistic: while a seek is pending, keep highlighting the intended target
+    if (previewTime != null) return previewTime;
     if (pendingTime != null) return pendingTime;
-    if (isSeeking && previewTime != null) return previewTime;
     return currentTime;
-  }, [pendingTime, previewTime, currentTime, isSeeking]);
+  }, [previewTime, pendingTime, currentTime]);
 
-  // ---------- Active Thumbnail (binary search) ----------
-  // Use displayTime for highlighting (intent-based) with a short sticky window after seek settles
+  // Active thumbnail position based on display time
   const activePos = useMemo(() => {
     if (!rangePositions.length) return null;
-
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    // If within stickiness window, pin highlight to last seek target's segment
-    if (lastSeekRef.current.time != null && now < lastSeekRef.current.expireAt) {
-      const t = lastSeekRef.current.time;
-      let lo = 0, hi = rangePositions.length - 1, ans = null;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (rangePositions[mid] <= t) { ans = rangePositions[mid]; lo = mid + 1; } else hi = mid - 1; }
-      return ans;
+    let pos = rangePositions[0];
+    for (let i = 0; i < rangePositions.length; i++) {
+      const p = rangePositions[i];
+      if (displayTime >= p) pos = p; else break;
     }
-
-    // Default: intent-based highlight
-    let lo = 0, hi = rangePositions.length - 1, ans = null;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (rangePositions[mid] <= displayTime) { ans = rangePositions[mid]; lo = mid + 1; } else hi = mid - 1; }
-    return ans;
+    return pos;
   }, [rangePositions, displayTime]);
 
-  // ---------- Effects ----------
-  useEffect(() => {
-    if (pendingTime == null) return;
-    // Clear if we're close to the pending time AND not waiting for settle
-    if (!awaitingSettleRef.current && Math.abs(currentTime - pendingTime) <= CLEAR_PENDING_TOLERANCE) {
-      setPendingTime(null);
-      return;
-    }
-    // Don't auto-clear based on position difference - let the settle events handle it
-  }, [currentTime, pendingTime]);
+  const isZoomed = !!zoomRange;
 
-  // ---------- Core Utilities ----------
+  // Map x coordinate to seconds within effective range
   const positionToSeconds = useCallback((clientX, rect) => {
-    if (!rect.width) return rangeStart;
+    if (!rect) return rangeStart;
     const clickX = clientX - rect.left;
     const pct = clamp01(clickX / rect.width);
     return rangeStart + pct * rangeSpan;
@@ -392,62 +362,56 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
               {isActive && (
                 <div className="progress-border-overlay">
                   {(() => {
-                    // Calculate fill percentages ensuring corners connect without gaps or overlaps
-                    // Each edge gets 25% of the total progress (100% / 4 edges)
+                    // Calculate per-edge fill percentages and derive spark position within each edge wrapper
                     const p = thumbnailProgress;
-                    
-                    // Top edge: 0-25% progress, fills left-to-right (starts at left corner, ends at right corner)
                     const topFill = Math.min(p / 25 * 100, 100);
-                    
-                    // Right edge: 25-50% progress, fills top-to-bottom (starts just below top corner)
                     const rightFill = Math.min(Math.max(p - 25, 0) / 25 * 100, 100);
-                    
-                    // Bottom edge: 50-75% progress, fills right-to-left (starts at right corner, ends at left corner)
                     const bottomFill = Math.min(Math.max(p - 50, 0) / 25 * 100, 100);
-                    
-                    // Left edge: 75-100% progress, fills bottom-to-top (starts just above bottom corner)
                     const leftFill = Math.min(Math.max(p - 75, 0) / 25 * 100, 100);
-                    
+                    const edgeIndex = Math.min(Math.floor(p / 25), 3);
+
                     return (
                       <>
-                        {/* Top edge spans full width, anchored at top-left */}
-                        <div className="edge edge-top"><div className="edge-fill" style={{ width: `${topFill}%` }} /></div>
-                        {/* Right edge height excludes top corner (top edge owns it) */}
-                        <div className="edge edge-right"><div className="edge-fill" style={{ height: `${rightFill}%` }} /></div>
-                        {/* Bottom edge spans full width, anchored at bottom-right, fills leftward */}
-                        <div className="edge edge-bottom"><div className="edge-fill" style={{ width: `${bottomFill}%` }} /></div>
-                        {/* Left edge height excludes bottom corner (bottom edge owns it) */}
-                        <div className="edge edge-left"><div className="edge-fill" style={{ height: `${leftFill}%` }} /></div>
+                        {/* Top edge: left-to-right */}
+                        <div className="edge edge-top">
+                          <div className="edge-fill" style={{ width: `${topFill}%` }} />
+                          {edgeIndex === 0 && p > 0 && (
+                            <div className="progress-spark" style={{ left: `${topFill}%`, top: '50%' }}>
+                              <div className="spark-core" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right edge: top-to-bottom */}
+                        <div className="edge edge-right">
+                          <div className="edge-fill" style={{ height: `${rightFill}%` }} />
+                          {edgeIndex === 1 && p > 25 && (
+                            <div className="progress-spark" style={{ top: `${rightFill}%`, left: '50%' }}>
+                              <div className="spark-core" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bottom edge: right-to-left */}
+                        <div className="edge edge-bottom">
+                          <div className="edge-fill" style={{ width: `${bottomFill}%` }} />
+                          {edgeIndex === 2 && p > 50 && (
+                            <div className="progress-spark" style={{ left: `${Math.max(0, 100 - bottomFill)}%`, top: '50%' }}>
+                              <div className="spark-core" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Left edge: bottom-to-top */}
+                        <div className="edge edge-left">
+                          <div className="edge-fill" style={{ height: `${leftFill}%` }} />
+                          {edgeIndex === 3 && p > 75 && (
+                            <div className="progress-spark" style={{ top: `${Math.max(0, 100 - leftFill)}%`, left: '50%' }}>
+                              <div className="spark-core" />
+                            </div>
+                          )}
+                        </div>
                       </>
-                    );
-                  })()}
-                  {/* Welding spark at the leading edge */}
-                  {thumbnailProgress > 0 && (() => {
-                    const t = 3; // segment thickness (px)
-                    const half = t / 2;
-                    let style = {};
-                    const p = thumbnailProgress;
-                    if (p <= 25) {
-                      // Top edge: spark at end of left-to-right fill
-                      const pct = Math.min(p / 25 * 100, 100);
-                      style = { top: `${half}px`, left: `${pct}%` };
-                    } else if (p <= 50) {
-                      // Right edge: spark at end of top-to-bottom fill
-                      const pct = Math.min((p - 25) / 25 * 100, 100);
-                      style = { right: `${half}px`, top: `calc(${pct}% + ${t}px)` };
-                    } else if (p <= 75) {
-                      // Bottom edge: spark at end of right-to-left fill (which means moving from 100% to 0%)
-                      const pct = Math.min((p - 50) / 25 * 100, 100);
-                      style = { bottom: `${half}px`, right: `${pct}%` };
-                    } else {
-                      // Left edge: spark at end of bottom-to-top fill (which means moving from 100% to 0%)
-                      const pct = Math.min((p - 75) / 25 * 100, 100);
-                      style = { left: `${half}px`, bottom: `calc(${pct}% + ${t}px)` };
-                    }
-                    return (
-                      <div className="progress-spark" style={style}>
-                        <div className="spark-core" />
-                      </div>
                     );
                   })()}
                 </div>
