@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useFitness } from '../../../context/FitnessContext.jsx';
 import '../FitnessUsers.scss';
 
 const FitnessVideo = ({ minimal = false }) => {
@@ -6,6 +7,7 @@ const FitnessVideo = ({ minimal = false }) => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const streamRef = useRef(null);
+  const { toggleSidebarSizeMode } = useFitness() || {};
 
   useEffect(() => {
     let mounted = true;
@@ -85,6 +87,7 @@ const FitnessVideo = ({ minimal = false }) => {
           margin: 0,
           padding: 0
         } : {}}
+        onClick={() => { if (toggleSidebarSizeMode) toggleSidebarSizeMode(); }}
       >
         {loading && (
           <div className="video-status">

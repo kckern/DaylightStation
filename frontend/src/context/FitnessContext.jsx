@@ -45,6 +45,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [, forceVersion] = useState(0); // used to force re-render on treasure box coin mutation
   const scheduledUpdateRef = useRef(false); // debounce for mutation callback
 
+  // Sidebar size mode: 'regular' | 'large'
+  const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
+  const toggleSidebarSizeMode = React.useCallback(() => {
+    setSidebarSizeMode((m) => (m === 'regular' ? 'large' : 'regular'));
+  }, []);
+
   // Lightweight heartbeat to refresh UI (zones, elapsed) without per-sample churn
   useEffect(() => {
     const interval = setInterval(() => {
@@ -473,6 +479,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Play queue state
     fitnessPlayQueue,
     setFitnessPlayQueue,
+
+  // Sidebar size mode controls
+  sidebarSizeMode,
+  setSidebarSizeMode,
+  toggleSidebarSizeMode,
     
     // User-related data
     users: allUsers,

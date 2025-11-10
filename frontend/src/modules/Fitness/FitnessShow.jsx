@@ -303,36 +303,17 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         const episodeCards = episodesContainer.querySelectorAll('.episode-card');
         let hasOffscreenCards = false;
         
-        console.log('🔍 Checking scroll:', {
-          totalCards: episodeCards.length,
-          containerBottom: cr.bottom,
-          margin,
-          elementBottom: er.bottom,
-          isAtBottom: er.bottom >= cr.bottom - margin
-        });
-        
         if (episodeCards.length > 0) {
           // Check if any episode card is partially or fully below the visible area
           for (const card of episodeCards) {
             const cardRect = card.getBoundingClientRect();
-            const isOffscreen = cardRect.top > cr.bottom - margin;
-            if (isOffscreen) {
-              console.log('📍 Found offscreen card:', {
-                cardTop: cardRect.top,
-                containerBottom: cr.bottom,
-                threshold: cr.bottom - margin
-              });
+            // Card is offscreen below if its top is below the container's visible bottom
+            if (cardRect.top > cr.bottom - margin) {
               hasOffscreenCards = true;
               break;
             }
           }
         }
-        
-        console.log('🎯 Scroll decision:', {
-          hasOffscreenCards,
-          isAtBottom: er.bottom >= cr.bottom - margin,
-          needsScroll: hasOffscreenCards && (er.bottom >= cr.bottom - margin)
-        });
         
         // Only scroll if the element is at the bottom AND there are more cards to reveal
         const needsScroll = hasOffscreenCards && (er.bottom >= cr.bottom - margin);

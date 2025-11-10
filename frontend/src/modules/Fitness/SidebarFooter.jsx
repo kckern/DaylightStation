@@ -144,7 +144,7 @@ const SidebarFooter = ({ onContentSelect }) => {
   // Sort devices whenever allDevices changes
   useEffect(() => {
     const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
-    const otherDevices = allDevices.filter(d => d.type !== 'heart_rate');
+    const otherDevices = [];//allDevices.filter(d => d.type !== 'heart_rate');
 
     // Sort heart rate devices: zone rank DESC (fire top, cool bottom), then HR DESC, then active status as tertiary
     hrDevices.sort((a, b) => {
