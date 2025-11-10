@@ -512,6 +512,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return map;
     })(),
     
+    // Plex configuration (for playlists, collections, etc.)
+    plexConfig: fitnessRoot?.plex || {},
+    
     // Categorized device arrays
     heartRateDevices,
     speedDevices,
