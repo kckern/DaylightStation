@@ -5,6 +5,7 @@ import FitnessUsersList from './FitnessSidebar/FitnessUsers.jsx';
 import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
 import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
 import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
+import FitnessMusicPlayer from './FitnessSidebar/FitnessMusicPlayer.jsx';
 import './FitnessUsers.scss';
 
 const FitnessSidebar = ({ playerRef }) => {
@@ -12,9 +13,12 @@ const FitnessSidebar = ({ playerRef }) => {
   const [visibility, setVisibility] = useState({
     treasureBox: true,
     users: true,
+    raceChart: false,
+    playlist: false,
     video: true,
     voiceMemo: true
   });
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
 
   const fitnessContext = useFitnessContext();
   const { treasureBox, fitnessSession } = fitnessContext;
@@ -42,6 +46,13 @@ const FitnessSidebar = ({ playerRef }) => {
         </div>
       )}
 
+      {/* Music Player */}
+      {visibility.playlist && (
+        <div className="fitness-sidebar-music">
+          <FitnessMusicPlayer selectedPlaylistId={selectedPlaylistId} />
+        </div>
+      )}
+
       {/* Combined Video + Voice Memo Controls */}
       {(visibility.video || visibility.voiceMemo) && (
         <div className="fitness-sidebar-media">
@@ -62,6 +73,8 @@ const FitnessSidebar = ({ playerRef }) => {
             onClose={() => setMenuOpen(false)}
             visibility={visibility}
             onToggleVisibility={handleToggleVisibility}
+            selectedPlaylistId={selectedPlaylistId}
+            onPlaylistChange={setSelectedPlaylistId}
           />
         </>
       )}
