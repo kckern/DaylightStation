@@ -100,6 +100,8 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   const rafRef = useRef(); // for throttling preview updates
   // Sticky highlight after seek settle to avoid boundary flicker
   const lastSeekRef = useRef({ time: null, expireAt: 0 });
+  // Flag to reset zoom after playback starts (delayed zoom reset on thumbnail click)
+  const resetZoomOnPlayingRef = useRef(false);
 
   // ---------- Seek Positions & Total Duration ----------
   // Each button can have its own range: data-range-start, data-range-end
@@ -185,6 +187,14 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         lastSeekRef.current.expireAt = now + 700; // ~0.7s stickiness
       }
     };
+    const handlePlaying = () => {
+      handleSettled();
+      // Reset zoom if a thumbnail seek requested it
+      if (resetZoomOnPlayingRef.current) {
+        resetZoomOnPlayingRef.current = false;
+        setZoomRange(null);
+      }
+    };
     // Also clear on 'loadedmetadata' which fires during stall recovery reloads
     const handleRecovery = () => {
       // If we get a fresh loadedmetadata while waiting for settle, clear the pending state
@@ -196,11 +206,11 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       }
     };
     el.addEventListener('seeked', handleSettled);
-    el.addEventListener('playing', handleSettled);
+    el.addEventListener('playing', handlePlaying);
     el.addEventListener('loadedmetadata', handleRecovery);
     return () => {
       el.removeEventListener('seeked', handleSettled);
-      el.removeEventListener('playing', handleSettled);
+      el.removeEventListener('playing', handlePlaying);
       el.removeEventListener('loadedmetadata', handleRecovery);
     };
   }, [playerRef, pendingTime]);
@@ -276,8 +286,10 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   const handleThumbnailSeek = useCallback((t) => {
     commit(t);
-    // When zoomed, reset zoom after a thumbnail-initiated seek
-    if (zoomRange) setZoomRange(null);
+    // When zoomed, mark for delayed zoom reset (will happen on 'playing' event)
+    if (zoomRange) {
+      resetZoomOnPlayingRef.current = true;
+    }
   }, [commit, zoomRange]);
 
   const renderedSeekButtons = useMemo(() => {
@@ -380,16 +392,31 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
               {isActive && (
                 <div className="progress-border-overlay">
                   {(() => {
-                    // Derive clean per-edge fill percentages (0-100) without corner math side-effects.
-                    const topFill = Math.min(thumbnailProgress / 25 * 100, 100);
-                    const rightFill = Math.min(Math.max(thumbnailProgress - 25, 0) / 25 * 100, 100);
-                    const bottomFill = Math.min(Math.max(thumbnailProgress - 50, 0) / 25 * 100, 100);
-                    const leftFill = Math.min(Math.max(thumbnailProgress - 75, 0) / 25 * 100, 100);
+                    // Calculate fill percentages ensuring corners connect without gaps or overlaps
+                    // Each edge gets 25% of the total progress (100% / 4 edges)
+                    const p = thumbnailProgress;
+                    
+                    // Top edge: 0-25% progress, fills left-to-right (starts at left corner, ends at right corner)
+                    const topFill = Math.min(p / 25 * 100, 100);
+                    
+                    // Right edge: 25-50% progress, fills top-to-bottom (starts just below top corner)
+                    const rightFill = Math.min(Math.max(p - 25, 0) / 25 * 100, 100);
+                    
+                    // Bottom edge: 50-75% progress, fills right-to-left (starts at right corner, ends at left corner)
+                    const bottomFill = Math.min(Math.max(p - 50, 0) / 25 * 100, 100);
+                    
+                    // Left edge: 75-100% progress, fills bottom-to-top (starts just above bottom corner)
+                    const leftFill = Math.min(Math.max(p - 75, 0) / 25 * 100, 100);
+                    
                     return (
                       <>
+                        {/* Top edge spans full width, anchored at top-left */}
                         <div className="edge edge-top"><div className="edge-fill" style={{ width: `${topFill}%` }} /></div>
+                        {/* Right edge height excludes top corner (top edge owns it) */}
                         <div className="edge edge-right"><div className="edge-fill" style={{ height: `${rightFill}%` }} /></div>
+                        {/* Bottom edge spans full width, anchored at bottom-right, fills leftward */}
                         <div className="edge edge-bottom"><div className="edge-fill" style={{ width: `${bottomFill}%` }} /></div>
+                        {/* Left edge height excludes bottom corner (bottom edge owns it) */}
                         <div className="edge edge-left"><div className="edge-fill" style={{ height: `${leftFill}%` }} /></div>
                       </>
                     );
@@ -401,17 +428,21 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
                     let style = {};
                     const p = thumbnailProgress;
                     if (p <= 25) {
+                      // Top edge: spark at end of left-to-right fill
                       const pct = Math.min(p / 25 * 100, 100);
-                      style = { top: `${half}px`, left: `calc(${pct}% )` };
+                      style = { top: `${half}px`, left: `${pct}%` };
                     } else if (p <= 50) {
+                      // Right edge: spark at end of top-to-bottom fill
                       const pct = Math.min((p - 25) / 25 * 100, 100);
-                      style = { left: `calc(100% - ${half}px)`, top: `calc(${pct}% + ${t}px)` };
+                      style = { right: `${half}px`, top: `calc(${pct}% + ${t}px)` };
                     } else if (p <= 75) {
+                      // Bottom edge: spark at end of right-to-left fill (which means moving from 100% to 0%)
                       const pct = Math.min((p - 50) / 25 * 100, 100);
-                      style = { top: `calc(100% - ${half}px)`, left: `calc(${100 - pct}% )` };
+                      style = { bottom: `${half}px`, right: `${pct}%` };
                     } else {
+                      // Left edge: spark at end of bottom-to-top fill (which means moving from 100% to 0%)
                       const pct = Math.min((p - 75) / 25 * 100, 100);
-                      style = { left: `${half}px`, top: `calc(${100 - pct}% - 0px)` };
+                      style = { left: `${half}px`, bottom: `calc(${pct}% + ${t}px)` };
                     }
                     return (
                       <div className="progress-spark" style={style}>
