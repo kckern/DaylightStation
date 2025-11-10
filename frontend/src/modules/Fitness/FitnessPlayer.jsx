@@ -98,8 +98,6 @@ const formatTime = (seconds) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const MIN_SIDEBAR = 160;
-const MAX_SIDEBAR = 600;
 const DEFAULT_SIDEBAR = 250;
 
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
@@ -107,12 +105,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const contentRef = useRef(null);
   const footerRef = useRef(null);
   const [videoDims, setVideoDims] = useState({ width: 0, height: 0, hideFooter: false, footerHeight: 0 });
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
+  // Sidebar is no longer resizable; width is driven by context size mode
   const [sidebarSide, setSidebarSide] = useState('right'); // 'left' | 'right'
-  // Mode: fullscreen (no sidebar/ no footer), normal (standard layout), maximal (sidebar 50%, stacked footer)
-  const [playerMode, setPlayerMode] = useState('normal'); // 'fullscreen' | 'normal' | 'maximal'
+  // Mode: fullscreen (no sidebar/ no footer) or normal (standard layout)
+  const [playerMode, setPlayerMode] = useState('normal'); // 'fullscreen' | 'normal'
   const lastNonFullscreenRef = useRef('normal');
-  const resizingRef = useRef(false);
+  // Resizing removed per spec
   // Declare hooks
   const [currentItem, setCurrentItem] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -128,7 +126,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const stackEvalRef = useRef({ lastFooterAspect: null, lastComputeTs: 0, pending: false });
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
-  const { fitnessPlayQueue, setFitnessPlayQueue } = useFitness() || {};
+  const { fitnessPlayQueue, setFitnessPlayQueue, sidebarSizeMode } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
@@ -214,14 +212,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
         const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
 
-        // Effective sidebar width per mode
+        // Effective sidebar width based on sidebar size mode
         let effectiveSidebar = 0;
         if (playerMode === 'fullscreen') {
           effectiveSidebar = 0;
-        } else if (playerMode === 'maximal') {
-          effectiveSidebar = Math.round(totalW * 0.5);
         } else {
-          effectiveSidebar = sidebarWidth;
+          effectiveSidebar = sidebarSizeMode === 'large' ? Math.round(totalW * 0.45) : DEFAULT_SIDEBAR;
         }
 
         const availableW = Math.max(0, totalW - effectiveSidebar);
@@ -276,12 +272,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const ro = new ResizeObserver(() => compute('viewport'));
     ro.observe(viewportRef.current);
     if (mainPlayerRef.current) ro.observe(mainPlayerRef.current);
-    // Sidebar width changes already cause re-run via dep array
+    // Sidebar size mode changes already cause re-run via dep array
     compute('initial');
     return () => {
       ro.disconnect();
     };
-  }, [viewportRef, sidebarWidth, playerMode]);
+  }, [viewportRef, sidebarSizeMode, playerMode]);
 
   // Recompute when stackMode flips (its className may change per-thumb width) to allow exiting when space increases
   useEffect(() => {
@@ -290,62 +286,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     return () => cancelAnimationFrame(id);
   }, [stackMode]);
 
-  // Mouse drag handlers for sidebar resize
-  useEffect(() => {
-    let rafId = null;
-    let pendingWidth = null;
-    const commit = () => {
-      if (pendingWidth != null) {
-        setSidebarWidth(pendingWidth);
-        pendingWidth = null;
-      }
-      rafId = null;
-    };
-    const handleMove = (e) => {
-      if (!resizingRef.current || !viewportRef?.current) return;
-      const rect = viewportRef.current.getBoundingClientRect();
-      let newWidth;
-      if (sidebarSide === 'right') {
-        const distanceFromRight = rect.right - e.clientX;
-        newWidth = distanceFromRight;
-      } else {
-        const distanceFromLeft = e.clientX - rect.left;
-        newWidth = distanceFromLeft;
-      }
-      newWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, newWidth));
-      pendingWidth = newWidth;
-      if (!rafId) rafId = requestAnimationFrame(commit);
-    };
-    const stop = () => { resizingRef.current = false; if (rafId) { cancelAnimationFrame(rafId); rafId = null; commit(); } };
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', stop);
-    return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', stop);
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [viewportRef, sidebarSide]);
-
-  const handleResizeMouseDown = (e) => {
-    e.preventDefault();
-    resizingRef.current = true;
-  };
-
-  const handleResizeKeyDown = (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setSidebarWidth(DEFAULT_SIDEBAR);
-      return;
-    }
-    const step = (e.shiftKey ? 40 : 10);
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      setSidebarWidth(w => Math.max(MIN_SIDEBAR, w - step));
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      setSidebarWidth(w => Math.min(MAX_SIDEBAR, w + step));
-    }
-  };
+  // Resizer removed: no mouse/keyboard resize handlers
   
   // Handle image loading errors for thumbnails
   const handleThumbnailError = (e, label) => {
@@ -556,7 +497,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Sidebar width for render (mirrors compute logic; may lag first frame until measure)
   const viewportW = viewportRef?.current?.clientWidth || 0;
   let sidebarRenderWidth;
-  if (playerMode === 'fullscreen') sidebarRenderWidth = 0; else if (playerMode === 'maximal') sidebarRenderWidth = Math.round(viewportW * 0.5) || Math.round((sidebarWidth || 250) * 1.6); else sidebarRenderWidth = sidebarWidth;
+  if (playerMode === 'fullscreen') sidebarRenderWidth = 0; else sidebarRenderWidth = (sidebarSizeMode === 'large' ? Math.round(viewportW * 0.45) : DEFAULT_SIDEBAR);
 
   const toggleFullscreen = () => {
     setPlayerMode(m => m === 'fullscreen' ? (lastNonFullscreenRef.current || 'normal') : 'fullscreen');
@@ -569,33 +510,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         className={`fitness-player-sidebar ${sidebarSide === 'left' ? 'sidebar-left' : 'sidebar-right'}${playerMode === 'fullscreen' ? ' minimized' : ''}`}
         style={{ width: playerMode === 'fullscreen' ? 0 : sidebarRenderWidth, flex: `0 0 ${playerMode === 'fullscreen' ? 0 : sidebarRenderWidth}px`, order: sidebarSide === 'right' ? 2 : 0 }}
       >
-        {(playerMode !== 'fullscreen' && playerMode !== 'maximal') && (
-          <div
-            className="fitness-player-sidebar-resizer"
-            onMouseDown={handleResizeMouseDown}
-            onKeyDown={handleResizeKeyDown}
-            role="separator"
-            aria-label="Resize sidebar"
-            aria-orientation="vertical"
-            tabIndex={0}
-            title="Drag (or use arrows) to resize sidebar. Double-click or press Enter to reset."
-            onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR)}
-            data-side={sidebarSide}
-          />
-        )}
-
         {playerMode !== 'fullscreen' && (
           <div className="sidebar-content">
             <FitnessSidebar playerRef={playerRef} />
           </div>
         )}
-
-        <div className="sidebar-footer-controls" style={{display:"none"}}>
-          <button type="button" onPointerDown={() => setPlayerMode('fullscreen')} className={`sidebar-footer-btn${playerMode==='fullscreen'?' active':''}`} title="Fullscreen">Full</button>
-          <button type="button" onPointerDown={() => setPlayerMode('normal')} className={`sidebar-footer-btn${playerMode==='normal'?' active':''}`} title="Normal">Norm</button>
-          <button type="button" onPointerDown={() => setPlayerMode('maximal')} className={`sidebar-footer-btn${playerMode==='maximal'?' active':''}`} title="Maximal">Max</button>
-          <button type="button" onPointerDown={() => setSidebarSide(s => s === 'right' ? 'left' : 'right')} className="sidebar-footer-btn switch-side" title="Switch sidebar side">{sidebarSide === 'right' ? '◀' : '▶'}</button>
-        </div>
+        {/* Footer controls removed (maximal/resizer deprecated) */}
       </div>
       {/* Main Player Panel */}
       <div className="fitness-player-main" ref={mainPlayerRef} style={{ order: sidebarSide === 'right' ? 1 : 2 }}>
