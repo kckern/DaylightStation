@@ -14,7 +14,7 @@
     background: linear-gradient(180deg, rgba(40,40,40,0.85), rgba(24,24,24,0.85));
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 10px;
-    margin: -1ex 1ex 0;
+    margin: 1ex 1ex 0;
     font-family: inherit;
     backdrop-filter: blur(4px);
     box-shadow: 0 2px 6px rgba(0,0,0,0.4);
@@ -113,7 +113,8 @@
     display: flex;
     flex-direction: column;
     align-items: stretch; /* allow cards to span full width */
-    padding: 0 1ex 0 0 ;
+    /* Match Treasure Box side gutters */
+    padding: 0 1ex 1ex 1ex;
     overflow-y: auto;
 
       .device-grid {
@@ -456,6 +457,12 @@
     justify-content: space-between;
     flex: 1;
   }
+  .rpm_devices.devicecount_4 {
+    .rpm-device-avatar {
+      width: 32px;
+      height: 32px;
+    }
+  }
   
   .rpm-device-avatar {
     display: flex;
@@ -546,6 +553,34 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       padding: 0 1px;
+    }
+  }
+}
+
+/* Global: when there are exactly 4 RPM devices, shrink avatars to 32px everywhere.
+   Support both hyphen and underscore variants to be robust to class naming. */
+.rpm-devices.devicecount-4,
+.rpm-devices.devicecount_4,
+.rpm_devices.devicecount-4,
+.rpm_devices.devicecount_4 {
+  .rpm-device-avatar {
+    width: 32px;
+    height: 32px;
+
+    /* Ensure inner avatar elements also shrink from default 58px */
+    .rpm-avatar-wrapper,
+    .rpm-avatar-content {
+      width: 32px;
+      height: 32px;
+    }
+
+    .rpm-spinning-border {
+      inset: -3px;
+      border-width: 3px;
+    }
+
+    .rpm-value-overlay {
+      font-size: 0.8rem;
     }
   }
 }
@@ -659,7 +694,7 @@
       background: linear-gradient(180deg, rgba(40,40,40,0.85), rgba(24,24,24,0.85));
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 10px;
-      margin: -1ex 1ex 0;
+      margin: 0.5ex 1ex 0;
       font-family: inherit;
       backdrop-filter: blur(4px);
       box-shadow: 0 2px 6px rgba(0,0,0,0.4);
@@ -808,7 +843,8 @@
       overflow: hidden; // Changed from overflow-y: visible
       width: 100%;
       position: relative;
-      padding: 0 4px 4px 4px;
+      /* Align with treasure box horizontal margins */
+      padding: 0 1ex 1ex 1ex;
     }
 
     .device-grid {
@@ -816,6 +852,32 @@
       flex-direction: column;
       gap: 10px;
       width: 100%;
+    }
+
+    /* Increase inter-card spacing slightly in vertical layout */
+    .device-grid.layout-vert { gap: 14px; }
+    /* When exactly 3 HR users in horiz mode, increase vertical presence without changing width */
+    .device-grid.horiz-scale-150 { gap: 14px; }
+    .device-grid.horiz-scale-150 .fitness-device.card-horizontal {
+      padding: 12px 14px;
+    }
+    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .user-profile-img-container {
+      width: 86px;
+      height: 86px;
+      min-width: 86px;
+      min-height: 86px;
+      flex: 0 0 86px;
+      margin-right: 14px;
+    }
+    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-name {
+      font-size: 1.6rem;
+      line-height: 1.05;
+    }
+    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-value {
+      font-size: 1.35rem;
+    }
+    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
+      font-size: 0.7rem;
     }
 
     .fitness-device.card-horizontal {
@@ -836,6 +898,65 @@
         background: #202020;
         border-color: #2e2e2e;
       }
+    }
+
+    /* Vertical user card layout (applies to heart_rate cards when enabled) */
+    .fitness-device.card-vertical {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      /* Mirror treasure box outer margins: treasure box uses margin: 1ex 1ex 0 */
+      width: calc(100% - 2ex); /* account for horizontal panel gutters */
+      margin: 0 1ex; /* align with treasure box horizontal spacing */
+      padding: 14px 16px 18px;
+      background: linear-gradient(180deg, #181818, #121212);
+      border: 1px solid #262626;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+    }
+
+    .fitness-device.card-vertical .user-profile-img-container {
+      width: 128px;
+      height: 128px;
+      border-radius: 50%;
+      overflow: hidden;
+      background: #222;
+      border: 6px solid #333; /* explicit border style */
+      margin: 6px 0 14px 0;
+      flex: 0 0 auto;
+      box-shadow: 0 0 0 3px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.6);
+    }
+
+    .fitness-device.card-vertical .device-info {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .fitness-device.card-vertical .device-info .device-name {
+      font-size: 1.25rem;
+      font-weight: 700;
+      text-align: center;
+      margin: 0;
+      line-height: 1.1;
+      letter-spacing: .35px;
+    }
+
+    .fitness-device.card-vertical .device-info .device-stats {
+      display: flex;
+      justify-content: center;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    /* Zone badge alignment for vertical cards */
+    .device-zone-info.for-vert {
+      margin: 0 0 6px 0;
+      display: flex;
+      justify-content: center;
+      width: 100%;
     }
 
     .user-profile-img-container {

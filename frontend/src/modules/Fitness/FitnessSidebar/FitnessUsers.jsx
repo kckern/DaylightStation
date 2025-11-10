@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Badge } from '@mantine/core';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import FlipMove from 'react-flip-move';
@@ -44,6 +44,13 @@ const FitnessUsersList = () => {
   const [sortedDevices, setSortedDevices] = useState([]);
   const [scale, setScale] = useState(1);
   const [rpmScale, setRpmScale] = useState(1);
+  const [layoutMode, setLayoutMode] = useState('horiz'); // 'horiz' | 'vert' for heart-rate user cards
+  const hrCounts = React.useMemo(() => {
+    const hrAll = allDevices.filter(d => d.type === 'heart_rate');
+    const hrActive = hrAll.filter(d => d.isActive);
+    const candidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
+    return { all: hrAll.length, active: hrActive.length, candidate };
+  }, [allDevices]);
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const measureRef = React.useRef(null); // Hidden ref for measurement
@@ -366,6 +373,49 @@ const FitnessUsersList = () => {
     setSortedDevices(combined);
   }, [allDevices]);
 
+  // Decide vertical vs horizontal layout for user (heart_rate) cards
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+    // Count heart_rate users that are active; fallback to all heart_rate when none marked active
+    const hrAll = allDevices.filter(d => d.type === 'heart_rate');
+    const hrActive = hrAll.filter(d => d.isActive);
+    const hrCountCandidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
+
+    // Heuristic gate: only consider vertical when fewer than 3 users
+    const allowVerticalByCount = hrCountCandidate > 0 && hrCountCandidate < 3;
+    if (!allowVerticalByCount) {
+      setLayoutMode('horiz');
+      return;
+    }
+
+    // Estimate total height without scaling if we render HR cards vertically
+    const containerHeight = containerRef.current.clientHeight || 0;
+
+    // Empirical per-card heights (sidebar styles):
+    const HORIZ_CARD_H = 78; // px, horizontal card including gaps
+    const VERT_CARD_H = 176; // px, vertical card (2x avatar + text + padding)
+    const GRID_GAP = 10; // matches .device-grid gap in sidebar
+
+    let count = 0;
+    let total = 0;
+    sortedDevices.forEach(d => {
+      const isHR = d.type === 'heart_rate';
+      const h = (isHR ? VERT_CARD_H : HORIZ_CARD_H);
+      total += h;
+      count += 1;
+    });
+    // add gaps between cards
+    if (count > 1) total += (count - 1) * GRID_GAP;
+    // small safety margin
+    total += 8;
+
+    if (total <= containerHeight) {
+      setLayoutMode('vert');
+    } else {
+      setLayoutMode('horiz');
+    }
+  }, [sortedDevices, allDevices]);
+
   // Auto-scale content to fit container
   useEffect(() => {
     if (!containerRef.current || !contentRef.current) return;
@@ -382,8 +432,9 @@ const FitnessUsersList = () => {
     // Calculate ideal scale to fill container
     const idealScale = containerHeight / naturalContentHeight;
     
-    // Clamp between 0.4 and 2.0 with safety margin
-    const newScale = Math.max(0.4, Math.min(2.0, idealScale * 0.98));
+    // Clamp between 0.4 and 1.0 with safety margin
+    // Important: do not upscale above 1.0 so a single user matches the size of doubles
+    const newScale = Math.max(0.4, Math.min(1.0, idealScale * 0.98));
     
     setScale(newScale);
   }, [sortedDevices]); // Only recalculate when devices change, not on scale changes
@@ -415,12 +466,14 @@ const FitnessUsersList = () => {
           ref={contentRef}
           style={{
             transform: `scale(${scale})`,
-            transformOrigin: 'top left'
+            transformOrigin: 'top center',
+            margin: '0 auto',
+            width: '100%'
           }}
         >
         {sortedDevices.length > 0 ? (
           <FlipMove 
-            className="device-grid"
+            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'} ${layoutMode === 'horiz' && hrCounts.candidate === 3 ? 'horiz-scale-150' : ''}`}
             duration={300}
             easing="ease-out"
             staggerDelayBy={20}
@@ -447,7 +500,7 @@ const FitnessUsersList = () => {
                     }}
                   >
                     <div className="rpm-group-title">{UI_LABELS.RPM_GROUP_TITLE}</div>
-                    <div className="rpm-devices">
+                    <div className={`rpm-devices devicecount_${rpmDevices.length}`}>
                       {rpmDevices.map(rpmDevice => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
                         const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
@@ -527,7 +580,7 @@ const FitnessUsersList = () => {
 
               return (
                 <div className="device-wrapper" key={`device-${device.deviceId}`}>
-                  <div className={`device-zone-info ${getZoneClass(device)}`}>
+                  <div className={`device-zone-info ${getZoneClass(device)} ${device.type === 'heart_rate' && layoutMode === 'vert' ? 'for-vert' : ''}`}>
                     {showZoneBadge && (
                       (() => {
                         const zid = zoneIdForGrouping;
@@ -555,7 +608,7 @@ const FitnessUsersList = () => {
                     )}
                   </div>
                   <div 
-                    className={`fitness-device card-horizontal ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${getZoneClass(device)}`}
+                    className={`fitness-device ${device.type === 'heart_rate' && layoutMode === 'vert' ? 'card-vertical' : 'card-horizontal'} ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${getZoneClass(device)}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                   >
                     <div className={`user-profile-img-container ${getZoneClass(device)}`}>
