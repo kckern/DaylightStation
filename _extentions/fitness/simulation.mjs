@@ -64,10 +64,45 @@ function baselineForDevice(deviceId) {
   return { baseHeartRate: base, variability };
 }
 
+// Parse optional counts
+// Arg 1 (index 2): HR users count  e.g. `node simulation.mjs 2`
+// Arg 2 (index 3): RPM devices count e.g. `node simulation.mjs 2 3`
+function parseCountArg(idx) {
+  const arg = process.argv[idx];
+  if (!arg) return null; // null means "all"
+  const n = parseInt(arg, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+const requestedHrCount = parseCountArg(2);
+const requestedRpmCount = parseCountArg(3);
+
 // Create device list dynamically (heart rate + cadence only)
 const devices = [];
 
-Object.keys(hrDevicesConfig).forEach(id => {
+// Build ordered list of HR device IDs (prioritize ones mapped to users)
+const hrDeviceIdsAll = Object.keys(hrDevicesConfig);
+const hrOwnedIds = hrDeviceIdsAll.filter(id => hrUserMap[String(id)] !== undefined);
+const hrUnownedIds = hrDeviceIdsAll.filter(id => hrUserMap[String(id)] === undefined);
+let hrDeviceIds = [...hrOwnedIds, ...hrUnownedIds];
+if (requestedHrCount !== null) {
+  if (requestedHrCount < hrDeviceIds.length) {
+    console.log(`🔧 Limiting heart rate users to ${requestedHrCount} of ${hrDeviceIds.length} (argument provided).`);
+  }
+  hrDeviceIds = hrDeviceIds.slice(0, requestedHrCount);
+}
+
+// Build cadence (RPM) device id list and optionally limit
+const cadenceDeviceIdsAll = Object.keys(cadenceDevicesConfig);
+let cadenceDeviceIds = [...cadenceDeviceIdsAll];
+if (requestedRpmCount !== null) {
+  if (requestedRpmCount < cadenceDeviceIds.length) {
+    console.log(`🔧 Limiting RPM devices to ${requestedRpmCount} of ${cadenceDeviceIds.length} (argument provided).`);
+  }
+  cadenceDeviceIds = cadenceDeviceIds.slice(0, requestedRpmCount);
+}
+
+hrDeviceIds.forEach(id => {
   const { baseHeartRate, variability } = baselineForDevice(id);
   devices.push({
     deviceId: Number(id),
@@ -83,7 +118,8 @@ Object.keys(hrDevicesConfig).forEach(id => {
   });
 });
 
-Object.keys(cadenceDevicesConfig).forEach(id => {
+// Cadence (RPM) devices
+cadenceDeviceIds.forEach(id => {
   devices.push({
     deviceId: Number(id),
     profile: 'CAD',
@@ -96,6 +132,14 @@ Object.keys(cadenceDevicesConfig).forEach(id => {
   });
 });
 console.log('🧪 Loaded config devices:', devices.map(d => ({ id: d.deviceId, type: d.type, owner: d.owner || null })));
+if (requestedHrCount !== null) {
+  const hrSimCount = devices.filter(d => d.type === 'heart_rate').length;
+  console.log(`👥 Heart rate user simulation count: ${hrSimCount}`);
+}
+if (requestedRpmCount !== null) {
+  const rpmSimCount = devices.filter(d => d.type === 'cadence').length;
+  console.log(`⚙️  RPM device simulation count: ${rpmSimCount}`);
+}
 
 class FitnessSimulator {
   constructor() {
