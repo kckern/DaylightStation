@@ -369,6 +369,8 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                     year: showMeta.year,
                     studio: showMeta.studio,
                     tagline: showMeta.tagline,
+                    labels: showMeta.Label ? showMeta.Label.map(l => l.tag) : [],
+                    collections: showMeta.Collection ? showMeta.Collection.map(c => c.tag) : [],
                     image: handleDevImage(req, plexInstance.thumbUrl(showMeta.thumb) || `${process.env.host}/media/plex/img/notfound.png`)
                 };
                 
