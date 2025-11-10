@@ -254,13 +254,22 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     return `rgb(${greyValue}, ${greyValue}, ${greyValue})`;
   }, []);
 
-  const handleThumbnailSeek = useCallback((t) => {
-    commit(t);
+  const handleThumbnailSeek = useCallback((t, thumbnailIndex) => {
+    // Calculate the midpoint of the thumbnail segment
+    let seekTime = t;
+    if (thumbnailIndex !== undefined && rangePositions.length > 0) {
+      const nextPos = thumbnailIndex < rangePositions.length - 1 
+        ? rangePositions[thumbnailIndex + 1] 
+        : rangeEnd;
+      // Use midpoint between start and end of this thumbnail's time segment
+      seekTime = (t + nextPos) / 2;
+    }
+    commit(seekTime);
     // When zoomed, mark for delayed zoom reset (will happen on 'playing' event)
     if (zoomRange) {
       resetZoomOnPlayingRef.current = true;
     }
-  }, [commit, zoomRange]);
+  }, [commit, zoomRange, rangePositions, rangeEnd]);
 
   const renderedSeekButtons = useMemo(() => {
     if (!currentItem) return null;
@@ -279,17 +288,6 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       const seconds = Math.floor(pos % 60);
       const baseLabel = `${minutes}:${String(seconds).padStart(2,'0')}`;
       
-      // For active thumbnail, show current playback time instead of thumbnail position
-      let label;
-      if (isActive) {
-        // Show real-time player clock, not optimistic displayTime
-        const currentMinutes = Math.floor(currentTime / 60);
-        const currentSeconds = Math.floor(currentTime % 60);
-        label = `${currentMinutes}:${String(currentSeconds).padStart(2,'0')}`;
-      } else {
-        label = baseLabel;
-      }
-      
       const isOrigin = pos === 0; // ensure the very first (0:00) uses season / show artwork
       let imgSrc;
       if (isOrigin) {
@@ -304,6 +302,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       // Calculate progress within this thumbnail's time range (for border animation)
       // Progress is based on real playback (currentTime) not intent; hide during sticky pin if not in segment
       let thumbnailProgress = 0;
+      let isActivelyPlaying = false;
       if (isActive) {
         // Determine the end time for this thumbnail
         const endTime = idx < rangePositions.length - 1 ? rangePositions[idx + 1] : rangeEnd;
@@ -317,7 +316,19 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         if (segmentDuration > 0 && currentTime >= pos && currentTime < effectiveEnd) {
           const progressInSegment = currentTime - pos;
           thumbnailProgress = clamp01(progressInSegment / segmentDuration) * 100;
+          isActivelyPlaying = true;
         }
+      }
+      
+      // For active thumbnail, show current playback time only when actively playing
+      let label;
+      if (isActive && isActivelyPlaying) {
+        // Show real-time player clock only when player is actually playing in this segment
+        const currentMinutes = Math.floor(currentTime / 60);
+        const currentSeconds = Math.floor(currentTime % 60);
+        label = `${currentMinutes}:${String(currentSeconds).padStart(2,'0')}`;
+      } else {
+        label = baseLabel;
       }
       
       return (
@@ -327,7 +338,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
           rangeStart={null}
           rangeEnd={null}
           state={state}
-          onSeek={handleThumbnailSeek}
+          onSeek={(t) => handleThumbnailSeek(t, idx)}
           onZoom={setZoomRange}
           globalStart={rangeStart}
           globalEnd={rangeEnd}
