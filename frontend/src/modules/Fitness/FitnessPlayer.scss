@@ -730,16 +730,16 @@ dash-video {
             background: linear-gradient(90deg, #FFD400, #FFA500);
             box-shadow: 0 0 8px rgba(255, 212, 0, 0.8);
           }
-          /* Top edge wrapper and fill */
+          /* Top edge wrapper and fill - spans full width, owns both top corners */
           .edge-top { top: 0; left: 0; right: 0; height: 3px; }
           .edge-top .edge-fill { top: 0; left: 0; height: 3px; width: 0; }
-          /* Right edge */
-          .edge-right { top: 3px; bottom: 3px; right: 0; width: 3px; }
+          /* Right edge - excludes top corner (owned by top edge), includes bottom-right corner */
+          .edge-right { top: 3px; bottom: 0; right: 0; width: 3px; }
           .edge-right .edge-fill { top: 0; right: 0; width: 3px; height: 0; }
-          /* Bottom edge */
-          .edge-bottom { left: 3px; right: 3px; bottom: 0; height: 3px; }
+          /* Bottom edge - spans full width, anchored at bottom-right, fills leftward */
+          .edge-bottom { left: 0; right: 0; bottom: 0; height: 3px; }
           .edge-bottom .edge-fill { bottom: 0; right: 0; height: 3px; width: 0; }
-          /* Left edge */
+          /* Left edge - excludes both top (owned by top) and bottom (owned by bottom) corners */
           .edge-left { top: 3px; bottom: 3px; left: 0; width: 3px; }
           .edge-left .edge-fill { bottom: 0; left: 0; width: 3px; height: 0; }
 
