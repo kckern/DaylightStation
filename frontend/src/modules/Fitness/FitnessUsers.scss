@@ -1120,6 +1120,154 @@
     padding: 0;
   }
 
+  .fitness-sidebar-music {
+    flex-shrink: 0;
+    width: 100%;
+    padding: 0;
+  }
+}
+
+// Music Player Styles (root level)
+.fitness-music-player-container {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  height: 40px;
+  background: rgba(24, 24, 24, 0.85);
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  overflow: hidden;
+  padding: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+
+  .music-player-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: rgba(255, 255, 255, 0.6);
+    .empty-icon { font-size: 1.2rem; }
+    .empty-text { font-size: 0.8rem; }
+  }
+
+  .music-player-content {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+  }
+
+  .music-player-artwork {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    
+    .artwork-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .artwork-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #222;
+      .artwork-icon { font-size: 1.5rem; }
+    }
+  }
+
+  .music-player-info {
+    flex: 1;
+    min-width: 0;
+    padding: 0 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+
+    .track-details {
+      display: flex;
+      flex-direction: column;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+
+      .track-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .track-artist {
+        font-size: 0.7rem;
+        color: rgba(255, 255, 255, 0.6);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    .track-progress {
+      margin-top: 2px;
+      .progress-bar {
+        width: 100%;
+        height: 3px;
+        background-color: rgba(255, 255, 255, 0.2);
+        border-radius: 2px;
+        overflow: hidden;
+        .progress-fill {
+          height: 100%;
+          background-color: #fff;
+          border-radius: 2px;
+          transition: width 0.2s linear;
+        }
+      }
+      .progress-time {
+        display: none;
+      }
+    }
+  }
+
+  .music-player-controls {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+
+    .control-button {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .control-icon {
+        font-size: 1.2rem;
+      }
+    }
+  }
+}
+
+.fitness-sidebar-container {
   .sidebar-header {
     display: flex;
     justify-content: flex-end;
@@ -1169,7 +1317,8 @@
     position: absolute;
     top: 0;
     right: 0;
-    width: 280px;
+    width: 100%;
+    max-width: 100%;
     height: 100%;
     background: #1a1a1a;
     border-left: 1px solid rgba(255, 255, 255, 0.2);
@@ -1177,6 +1326,7 @@
     display: flex;
     flex-direction: column;
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
 
     .sidebar-menu-header {
       display: flex;
@@ -1184,11 +1334,16 @@
       align-items: center;
       padding: 1rem;
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      flex-shrink: 0;
 
       h3 {
-        margin: 0;
+        margin: 0!important;
+        padding: 0!important;
         font-size: 1.2rem;
         color: white;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .close-btn {
@@ -1200,6 +1355,7 @@
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
         transition: background 0.2s;
+        flex-shrink: 0;
 
       }
     }
@@ -1208,6 +1364,7 @@
       flex: 1;
       padding: 1rem;
       overflow-y: auto;
+      overflow-x: hidden;
 
       .menu-section {
         margin-bottom: 1.5rem;
@@ -1231,6 +1388,7 @@
           text-align: left;
           cursor: pointer;
           transition: all 0.2s;
+          box-sizing: border-box;
 
 
           &.toggle-item {
@@ -1238,7 +1396,47 @@
             justify-content: space-between;
             align-items: center;
             cursor: default;
+            gap: 0.5rem;
             
+            span {
+              flex: 1;
+              min-width: 0;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+          }
+
+          &.playlist-dropdown {
+            padding: 0.5rem;
+            cursor: default;
+
+            .playlist-select {
+              width: 100%;
+              padding: 0.5rem;
+              background: rgba(255, 255, 255, 0.1);
+              border: 1px solid rgba(255, 255, 255, 0.2);
+              border-radius: 4px;
+              color: white;
+              font-size: 0.9rem;
+              cursor: pointer;
+              transition: all 0.2s;
+
+              &:hover {
+                background: rgba(255, 255, 255, 0.15);
+              }
+
+              &:focus {
+                outline: none;
+                border-color: #51cf66;
+                box-shadow: 0 0 0 2px rgba(81, 207, 102, 0.2);
+              }
+
+              option {
+                background: #1a1a1a;
+                color: white;
+              }
+            }
           }
         }
 
@@ -1248,6 +1446,7 @@
           width: 44px;
           height: 24px;
           cursor: pointer;
+          flex-shrink: 0;
 
           input {
             opacity: 0;
@@ -1647,6 +1846,149 @@
       font-size: 0.75rem;
       flex-shrink: 0;
     }
+  }
+
+  /* Music Player Styles */
+  .fitness-music-player-container {
+    display: flex;
+    align-items: center;
+    width: calc(100% - 2ex);
+    margin: 1ex;
+    height: 40px;
+    background: rgba(24, 24, 24, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    overflow: hidden;
+    padding: 0;
+    box-sizing: border-box;
+    flex-shrink: 0;
+
+    .music-player-empty {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: rgba(255, 255, 255, 0.6);
+      .empty-icon { font-size: 1.2rem; }
+      .empty-text { font-size: 0.8rem; }
+    }
+
+    .music-player-content {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+    }
+
+    .music-player-artwork {
+      flex: 0 0 40px;
+      width: 40px;
+      height: 40px;
+      
+      .artwork-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .artwork-placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #222;
+        .artwork-icon { font-size: 1.5rem; }
+      }
+    }
+
+    .music-player-info {
+      flex: 1;
+      min-width: 0;
+      padding: 0 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+
+      .track-details {
+        display: flex;
+        flex-direction: column;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+
+        .track-title {
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #fff;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .track-artist {
+          font-size: 0.7rem;
+          color: rgba(255, 255, 255, 0.6);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+
+      .track-progress {
+        margin-top: 2px;
+        .progress-bar {
+          width: 100%;
+          height: 3px;
+          background-color: rgba(255, 255, 255, 0.2);
+          border-radius: 2px;
+          overflow: hidden;
+          .progress-fill {
+            height: 100%;
+            background-color: #fff;
+            border-radius: 2px;
+            transition: width 0.2s linear;
+          }
+        }
+        .progress-time {
+          display: none;
+        }
+      }
+    }
+
+    .music-player-controls {
+      flex: 0 0 40px;
+      width: 40px;
+      height: 40px;
+
+      .control-button {
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        border: none;
+        color: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        .control-icon {
+          font-size: 1.2rem;
+        }
+      }
+    }
+  }
+
+  .fitness-sidebar-music {
+    flex-shrink: 0;
   }
 
   .voice-memo-error { 
