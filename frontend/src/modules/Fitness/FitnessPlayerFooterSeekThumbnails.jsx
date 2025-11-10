@@ -2,6 +2,14 @@ import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react'
 import SingleThumbnailButton from './SingleThumbnailButton.jsx';
 import usePlayerController from '../Player/usePlayerController.js';
 
+const CONFIG = Object.freeze({
+  thumbnail: {
+    sampleFraction: 0.2,
+    labelFraction: 0.5,
+    seekFraction: 0.05
+  }
+});
+
 /**
  * FitnessPlayerFooterSeekThumbnails
  * Props:
@@ -126,6 +134,20 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   }, [rangePositions, displayTime]);
 
   const isZoomed = !!zoomRange;
+
+  // Notify parent when zoom state changes
+  useEffect(() => {
+    onZoomChange?.(isZoomed);
+  }, [isZoomed, onZoomChange]);
+
+  // Expose zoom reset function to parent via ref
+  useEffect(() => {
+    if (onZoomReset && typeof onZoomReset === 'object' && onZoomReset.current !== undefined) {
+      onZoomReset.current = () => {
+        setZoomRange(null);
+      };
+    }
+  }, [onZoomReset]);
 
   // Map x coordinate to seconds within effective range
   const positionToSeconds = useCallback((clientX, rect) => {
@@ -254,22 +276,14 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     return `rgb(${greyValue}, ${greyValue}, ${greyValue})`;
   }, []);
 
-  const handleThumbnailSeek = useCallback((t, thumbnailIndex) => {
-    // Calculate the midpoint of the thumbnail segment
-    let seekTime = t;
-    if (thumbnailIndex !== undefined && rangePositions.length > 0) {
-      const nextPos = thumbnailIndex < rangePositions.length - 1 
-        ? rangePositions[thumbnailIndex + 1] 
-        : rangeEnd;
-      // Use midpoint between start and end of this thumbnail's time segment
-      seekTime = (t + nextPos) / 2;
-    }
-    commit(seekTime);
+  const handleThumbnailSeek = useCallback((seekTarget) => {
+    const resolvedTarget = Number.isFinite(seekTarget) ? seekTarget : rangeStart;
+    commit(resolvedTarget);
     // When zoomed, mark for delayed zoom reset (will happen on 'playing' event)
     if (zoomRange) {
       resetZoomOnPlayingRef.current = true;
     }
-  }, [commit, zoomRange, rangePositions, rangeEnd]);
+  }, [commit, zoomRange, rangeStart]);
 
   const renderedSeekButtons = useMemo(() => {
     if (!currentItem) return null;
@@ -282,68 +296,88 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       ratingKey: currentItem.ratingKey,
       metadata: currentItem.metadata
     };
-    return rangePositions.map((pos, idx) => {
-      const isActive = activePos != null && Math.abs(activePos - pos) < 0.001;
-      const minutes = Math.floor(pos / 60);
-      const seconds = Math.floor(pos % 60);
-      const baseLabel = `${minutes}:${String(seconds).padStart(2,'0')}`;
-      
-      const isOrigin = pos === 0; // ensure the very first (0:00) uses season / show artwork
+  const sampleFraction = clamp01(CONFIG.thumbnail.sampleFraction);
+  const labelFraction = clamp01(CONFIG.thumbnail.labelFraction);
+  const seekFraction = clamp01(CONFIG.thumbnail.seekFraction);
+
+  return rangePositions.map((pos, idx) => {
+      const segmentStart = pos;
+      const nextBoundary = idx < rangePositions.length - 1 ? rangePositions[idx + 1] : rangeEnd;
+      const segmentEnd = Number.isFinite(nextBoundary) ? nextBoundary : segmentStart;
+      const segmentDuration = Math.max(segmentEnd - segmentStart, 0);
+
+      const sampleTime = segmentDuration > 0
+        ? segmentStart + segmentDuration * sampleFraction
+        : segmentStart;
+      const labelTime = segmentDuration > 0
+        ? segmentStart + segmentDuration * labelFraction
+        : segmentStart;
+      const seekTime = segmentDuration > 0
+        ? segmentStart + segmentDuration * seekFraction
+        : segmentStart;
+
+      const isActive = activePos != null && Math.abs(activePos - segmentStart) < 0.001;
+      const baseLabel = formatTime(labelTime);
+
+      const isOrigin = Math.abs(segmentStart - rangeStart) < 0.001; // ensure the very first window uses season / show artwork
       let imgSrc;
       if (isOrigin) {
-        imgSrc = currentItem?.seasonImage || currentItem?.image || (generateThumbnailUrl ? generateThumbnailUrl(plexObj, pos) : undefined);
+        imgSrc = currentItem?.seasonImage || currentItem?.image || (generateThumbnailUrl ? generateThumbnailUrl(plexObj, sampleTime) : undefined);
       } else {
-        imgSrc = generateThumbnailUrl ? generateThumbnailUrl(plexObj, pos) : undefined;
+        imgSrc = generateThumbnailUrl ? generateThumbnailUrl(plexObj, sampleTime) : undefined;
       }
-      const state = isActive ? 'active' : (activePos != null && pos < activePos ? 'past' : 'future');
+      const state = isActive ? 'active' : (activePos != null && segmentStart < activePos ? 'past' : 'future');
       const classNames = `seek-button-container ${state}${isOrigin ? ' origin' : ''}`;
-      const greyBg = getGreyShade(pos);
-      
+      const greyBg = getGreyShade(segmentStart);
+
       // Calculate progress within this thumbnail's time range (for border animation)
       // Progress is based on real playback (currentTime) not intent; hide during sticky pin if not in segment
       let thumbnailProgress = 0;
       let isActivelyPlaying = false;
       if (isActive) {
-        // Determine the end time for this thumbnail
-        const endTime = idx < rangePositions.length - 1 ? rangePositions[idx + 1] : rangeEnd;
-        const segmentDuration = endTime - pos;
-        
+        const endTime = segmentEnd;
+        const duration = endTime - segmentStart;
+
         // Add tolerance to prevent showing 100% on previous thumbnail at boundary
         const BOUNDARY_TOLERANCE = 0.1; // 100ms buffer (actual seconds)
         const effectiveEnd = endTime - BOUNDARY_TOLERANCE;
-        
+
         // Only calculate progress if currentTime is actually in this segment
-        if (segmentDuration > 0 && currentTime >= pos && currentTime < effectiveEnd) {
-          const progressInSegment = currentTime - pos;
-          thumbnailProgress = clamp01(progressInSegment / segmentDuration) * 100;
+        if (duration > 0 && currentTime >= segmentStart && currentTime < effectiveEnd) {
+          const progressInSegment = currentTime - segmentStart;
+          thumbnailProgress = clamp01(progressInSegment / duration) * 100;
           isActivelyPlaying = true;
         }
       }
-      
+
       // For active thumbnail, show current playback time only when actively playing
       let label;
       if (isActive && isActivelyPlaying) {
-        // Show real-time player clock only when player is actually playing in this segment
-        const currentMinutes = Math.floor(currentTime / 60);
-        const currentSeconds = Math.floor(currentTime % 60);
-        label = `${currentMinutes}:${String(currentSeconds).padStart(2,'0')}`;
+        label = formatTime(currentTime);
       } else {
         label = baseLabel;
       }
-      
+
       return (
         <SingleThumbnailButton
-          key={'rng-'+idx+'-'+Math.round(pos)}
-          pos={pos}
-          rangeStart={null}
-          rangeEnd={null}
+          key={'rng-'+idx+'-'+Math.round(segmentStart)}
+          pos={sampleTime}
+          rangeStart={segmentStart}
+          rangeEnd={segmentEnd}
           state={state}
-          onSeek={(t) => handleThumbnailSeek(t, idx)}
+          onSeek={handleThumbnailSeek}
           onZoom={setZoomRange}
           globalStart={rangeStart}
           globalEnd={rangeEnd}
+          seekTime={seekTime}
+          labelTime={labelTime}
         >
-          <div className={classNames} data-pos={pos}>
+          <div
+            className={classNames}
+            data-pos={segmentStart}
+            data-sample-time={sampleTime}
+            data-label-time={labelTime}
+          >
             <div className="thumbnail-wrapper">
               {imgSrc ? (
                 <img 
@@ -433,7 +467,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         </SingleThumbnailButton>
       );
     });
-  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, commit, rangeStart, rangeEnd, getGreyShade, displayTime, currentTime]);
+  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, rangeStart, rangeEnd, getGreyShade, currentTime, handleThumbnailSeek]);
 
   // Progress bar should always represent entire video duration, independent of zoomed thumbnail range
   const fullDuration = baseDurationProp || 0;

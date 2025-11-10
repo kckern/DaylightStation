@@ -32,7 +32,8 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
     hasPrev,
     hasNext,
     isPaused,
-  playerRef,
+    stallInfo,
+    playerRef,
     TimeDisplay,
     renderCount
   } = props;
@@ -40,6 +41,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
   if (hidden) return null;
 
   const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem?.duration || 600));
+  const isStalled = !!(stallInfo?.isStalled);
 
   // Zoom wiring (thumbnails expose onZoomChange + reset ref)
   const [isZoomed, setIsZoomed] = useState(false);
@@ -56,6 +58,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
       ref={ref}
       className={`fitness-player-footer${stackMode ? ' stack-mode' : ''}`}
       style={{ height: height + 'px', flex: `0 0 ${height}px`, transition: 'height .25s ease' }}
+      data-stalled={isStalled ? '1' : '0'}
     >
       <FitnessPlayerFooterControls
         section="left"
@@ -63,8 +66,9 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         duration={baseDuration}
         TimeDisplay={TimeDisplay}
         renderCount={renderCount}
-        isPaused={isPaused}
-  playerRef={playerRef}
+        isPaused={isPaused || isStalled}
+    isStalled={isStalled}
+    playerRef={playerRef}
         onPrev={onPrev}
         onNext={onNext}
         hasPrev={hasPrev}
@@ -88,13 +92,14 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
 
       <FitnessPlayerFooterControls
         section="right"
-        isPaused={isPaused}
+        isPaused={isPaused || isStalled}
+        isStalled={isStalled}
         playerRef={playerRef}
         onPrev={onPrev}
         onNext={onNext}
         hasPrev={hasPrev}
         hasNext={hasNext}
-        onClose={isZoomed ? handleBack : onClose}
+        onClose={onClose}
         isZoomed={isZoomed}
         onBack={handleBack}
       />
