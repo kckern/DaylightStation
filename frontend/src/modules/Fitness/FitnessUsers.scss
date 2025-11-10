@@ -41,16 +41,19 @@
   .tb-timer { font-variant-numeric: tabular-nums; font-weight:700; font-size:1.28rem; letter-spacing:.5px; }
     .tb-icon { filter: drop-shadow(0 0 4px rgba(255,255,255,0.25)); }
     .tb-color-grid { 
-      /* Convert to flex so only existing color coins show, centered */
+      /* Flex container that never overflows its parent */
       display: flex;
-      flex-wrap: nowrap; /* Typically 5 or fewer colors */
+      flex-wrap: nowrap; /* keep a single row */
       width: 100%;
+      min-width: 0; /* allow children to shrink */
+      overflow: hidden; /* guard against any residual overflow */
       justify-content: space-around; /* even spacing with gaps at edges */
       align-items: stretch;
       gap: 8px; /* still apply for visual separation */
       min-height: 54px; /* preserve previous row height */
     }
-    .tb-color-grid .tb-color-coin { flex: 0 1 52px; }
+    /* Let coins flex-shrink within the row instead of pushing overflow */
+    .tb-color-grid .tb-color-coin { flex: 1 1 52px; min-width: 36px; }
     .tb-color-coin { 
       display:flex; 
       flex-direction: column; 
@@ -742,15 +745,16 @@
       .tb-timer { font-variant-numeric: tabular-nums; font-weight:700; font-size:1rem; letter-spacing:.5px; }
       .tb-color-grid { 
         display: flex;
-        flex-wrap: nowrap;
+        flex-wrap: nowrap; /* stay on one line */
         justify-content: flex-end;
         align-items: center;
         gap: 6px;
-        flex: 1;
+        flex: 1 1 auto;
+        min-width: 0; /* allow shrink */
         min-height: 0;
-        overflow: visible;
+        overflow: hidden; /* never exceed parent */
       }
-      .tb-color-grid .tb-color-coin { flex: 0 0 auto; }
+      .tb-color-grid .tb-color-coin { flex: 1 1 48px; min-width: 32px; }
       .tb-color-coin { 
         display:flex; 
         flex-direction: column; 
@@ -768,16 +772,16 @@
         overflow: hidden;
       }
       .tb-color-coin .swatch { 
-        width: clamp(1.8rem, 5vw, 2.2rem);
-        height: clamp(1.8rem, 5vw, 2.2rem);
-        min-width: 1.8rem;
-        min-height: 1.8rem;
+        width: clamp(1.2rem, 4vw, 2.2rem);
+        height: clamp(1.2rem, 4vw, 2.2rem);
+        min-width: 1.2rem;
+        min-height: 1.2rem;
         border-radius: 50%; 
         box-shadow:0 0 0 2px rgba(0,0,0,0.3), 0 0 8px rgba(0,0,0,0.4); 
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: clamp(0.8rem, 3vw, 1rem);
+        font-size: clamp(0.7rem, 3vw, 1rem);
         font-weight: 700;
         color: rgba(0,0,0,0.8);
         text-shadow: 0 1px 2px rgba(255,255,255,0.3);
