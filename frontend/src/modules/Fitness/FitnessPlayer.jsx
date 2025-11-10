@@ -126,7 +126,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const stackEvalRef = useRef({ lastFooterAspect: null, lastComputeTs: 0, pending: false });
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
-  const { fitnessPlayQueue, setFitnessPlayQueue, sidebarSizeMode } = useFitness() || {};
+  const { fitnessPlayQueue, setFitnessPlayQueue, sidebarSizeMode, setVideoPlayerPaused } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
@@ -466,7 +466,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setDuration(d);
     }
     setIsPaused(paused);
-  }, []);
+    
+    // Update context so music player can sync
+    if (setVideoPlayerPaused) {
+      setVideoPlayerPaused(paused);
+    }
+  }, [setVideoPlayerPaused]);
 
   const handlePlayerReady = useCallback(({ duration: d }) => {
     if (d && !duration) setDuration(d);

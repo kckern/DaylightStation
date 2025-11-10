@@ -400,8 +400,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             
             // Debug: log the first item to see available fields
             if (items && items.length > 0) {
-                console.log('🎬 DEBUG: Available fields in Plex item:', Object.keys(items[0]));
-                console.log('🎬 DEBUG: First item data:', JSON.stringify(items[0], null, 2));
+                console.log('🎬 DEBUG: First item from plex.loadChildrenFromKey:', JSON.stringify(items[0], null, 2));
             }
             
             // Only process if we have valid items
@@ -444,15 +443,27 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const unwatchedList = list; //list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
     // Prepare Plex instance for building thumb URLs (season thumbnails)
     const plexThumb = new Plex();
-    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex,userRating,thumb_id}) => {
+    list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex,userRating,thumb_id,artist,albumArtist,album,grandparentTitle,originalTitle}) => {
         const item = {
             label: title,
+            title: title,
             type: type,
             plex: key || plex,
             image: handleDevImage(req, image),
-            thumb_id,
-            ...req.query
+            thumb_id
         };
+        
+        // Add music-specific metadata for tracks
+        if (type === 'track') {
+            if (artist || grandparentTitle) item.artist = artist || grandparentTitle;
+            if (albumArtist || originalTitle) item.albumArtist = albumArtist || originalTitle;
+            if (album || parentTitle) item.album = album || parentTitle;
+            if (parentTitle) item.parentTitle = parentTitle;
+            if (grandparentTitle) item.grandparentTitle = grandparentTitle;
+        }
+        
+        // Add query params at the end so they don't override metadata
+        Object.assign(item, req.query);
         
         // Add duration for all items (in seconds)
         if (duration) {
