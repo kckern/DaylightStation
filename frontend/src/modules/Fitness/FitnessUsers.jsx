@@ -56,22 +56,20 @@ const FitnessTreasureBox = ({ box, session }) => {
     <div className="treasure-box-panel">
         <h3>Treasure Box</h3>
       <div className="tb-row tb-row-head">
-        <div className="tb-total"><span className="tb-icon" role="img" aria-label="coins">💰</span>{totalCoins}</div>
-  <div className="tb-timer" title={`Started: ${startTime ? new Date(startTime).toLocaleTimeString() : 'N/A'}`}>{mm}:{ss}</div>
+        {/* Completely flattened - icon, total, coins, timer all as direct siblings */}
+        <span className="tb-icon" role="img" aria-label="coins">💰</span>
+        <span className="tb-total">{totalCoins}</span>
+        {hasCoins && colors.map(c => {
+          const hex = colorHexMap[c] || c;
+          return (
+            <React.Fragment key={c}>
+              <span className="tb-swatch" style={{ background: hex }} title={`${c}: ${colorCoins[c]} coins`} />
+              <span className="tb-count">{colorCoins[c]}</span>
+            </React.Fragment>
+          );
+        })}
+        <span className="tb-timer" title={`Started: ${startTime ? new Date(startTime).toLocaleTimeString() : 'N/A'}`}>{mm}:{ss}</span>
       </div>
-      {hasCoins && (
-        <div className="tb-row tb-color-grid">
-          {colors.map(c => {
-            const hex = colorHexMap[c] || c; // fallback to original if unexpected key
-            return (
-              <div key={c} className="tb-color-coin" title={`${c}: ${colorCoins[c]} coins`}>
-                <span className="swatch" style={{ background: hex }} />
-                <span className="count">{colorCoins[c]}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 };

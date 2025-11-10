@@ -5,23 +5,105 @@ import FlipMove from 'react-flip-move';
 import '../FitnessUsers.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 
-// UI Label Constants
-const UI_LABELS = {
-  RPM_GROUP_TITLE: 'RPM Devices',
-  NO_ZONE_BADGE: 'No Zone',
-  ZONE_BADGE_TOOLTIP_PREFIX: 'Zone group:',
-  NO_ZONE_TOOLTIP: 'No Zone',
-  EMPTY_DEVICES_ICON: '📶',
-  CONNECTED_STATUS: 'Ready for Users',
-  DISCONNECTED_STATUS: 'Disconnected',
-  RECONNECT_BUTTON: 'Reconnect',
-  DEVICE_TOOLTIP_PREFIX: 'Device:',
-  TIME_JUST_NOW: 'Just now',
-  TIME_NEVER: 'Never',
-  TIME_SECONDS_SUFFIX: 's ago',
-  TIME_MINUTES_SUFFIX: 'm ago',
-  TIME_HOURS_SUFFIX: 'h ago'
+// Config-driven constants (single source of truth for UI & heuristics)
+const CONFIG = {
+  uiLabels: {
+    RPM_GROUP_TITLE: 'RPM Devices',
+    NO_ZONE_BADGE: 'No Zone',
+    ZONE_BADGE_TOOLTIP_PREFIX: 'Zone group:',
+    NO_ZONE_TOOLTIP: 'No Zone',
+    EMPTY_DEVICES_ICON: '📶',
+    CONNECTED_STATUS: 'Ready for Users',
+    DISCONNECTED_STATUS: 'Disconnected',
+    RECONNECT_BUTTON: 'Reconnect',
+    DEVICE_TOOLTIP_PREFIX: 'Device:',
+    TIME_JUST_NOW: 'Just now',
+    TIME_NEVER: 'Never',
+    TIME_SECONDS_SUFFIX: 's ago',
+    TIME_MINUTES_SUFFIX: 'm ago',
+    TIME_HOURS_SUFFIX: 'h ago'
+  },
+  devices: {
+    heart_rate: { unit: 'BPM', colorClass: 'heart-rate', icon: '❤️' }, // HR icon overridden per-device color
+    power: { unit: 'W', colorClass: 'power', icon: '⚡' },
+    cadence: { unit: 'RPM', colorClass: 'cadence', icon: '⚙️' },
+    speed: { unit: 'km/h', colorClass: 'speed', icon: '🚴' },
+    default: { unit: '', colorClass: 'unknown', icon: '📡' }
+  },
+  sorting: {
+    otherTypeOrder: { power: 1, speed: 2, unknown: 3 }
+  },
+  zone: {
+    canonical: ['cool','active','warm','hot','fire'],
+    rankMap: { cool:0, active:1, warm:2, hot:3, fire:4 }
+  },
+  layout: {
+    // Layout decision logic (when vertical is allowed)
+    decision: {
+      verticalUserMax: 2 // consider vertical if 0 < users <= 2 (same as threshold < 3)
+    },
+    // Card dimensions and classes per layout mode
+    cards: {
+      horizontal: { height: 78, cardClass: 'card-horizontal' },
+      vertical: { height: 176, cardClass: 'card-vertical' }
+    },
+    // Grid and spacing
+    grid: { gap: 10 },
+    margin: { safety: 8 },
+    // Auto scaling limits
+    scale: { min: 0.4, max: 1.0, safetyFactor: 0.98 },
+    // Horizontal density scaling rules
+    horizontalScaleRules: [
+      { exactUsers: 3, className: 'horiz-scale-150' },
+      { exactUsers: 4, className: 'horiz-scale-130' }
+      // Threshold examples supported: { maxUsers: 4, className: 'horiz-scale-130' }
+    ]
+  },
+  rpm: {
+    animationBase: 270, // used to compute spin speed
+    scale: { min: 0.4, overflowFactor: 0.8 },
+    colorMap: {
+      red: '#ff6b6b',
+      orange: '#ff922b',
+      yellow: '#f0c836ff',
+      green: '#51cf66',
+      blue: '#6ab8ff'
+    },
+    overlayBg: '#00000088'
+  },
+  heartRate: {
+    colorIcons: {
+      red: '❤️',
+      yellow: '💛',
+      green: '💚',
+      blue: '💙',
+      watch: '🤍',
+      orange: '🧡'
+    },
+    fallbackIcon: '🧡'
+  },
+  color: {
+    luminanceThreshold: 0.6,
+    fallbackTextDark: '#222',
+    fallbackTextLight: '#fff',
+    zoneBadgeDefaultBg: '#555'
+  },
+  statusColors: {
+    connected: '#51cf66',
+    disconnected: '#ff6b6b',
+    connectedGlow: '#51cf66aa',
+    disconnectedGlow: '#ff6b6baa'
+  },
+  animation: {
+    flipMove: { duration: 300, easing: 'ease-out', staggerDelayBy: 20, enter: 'fade', leave: 'fade' }
+  },
+  time: {
+    justNowThresholdSec: 10
+  }
 };
+
+// Backward-compat constant for existing references
+const UI_LABELS = CONFIG.uiLabels;
 
 const FitnessUsersList = () => {
   // Use the fitness context
@@ -207,28 +289,14 @@ const FitnessUsersList = () => {
   const heartColorIcon = (deviceId) => {
     const deviceIdStr = String(deviceId);
     const colorKey = hrColorMap[deviceIdStr];
-    
-    if (!colorKey) {
-      return '🧡';
-    }
-    
-    const colorIcons = {
-      red: '❤️',
-      yellow: '💛',
-      green: '💚',
-      blue: '💙',
-      watch: '🤍',
-      orange: '🧡'
-    };
-    
-    const icon = colorIcons[colorKey] || '🧡';
-    return icon;
+    if (!colorKey) return CONFIG.heartRate.fallbackIcon;
+    return CONFIG.heartRate.colorIcons[colorKey] || CONFIG.heartRate.fallbackIcon;
   };
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return UI_LABELS.TIME_NEVER;
     const seconds = Math.floor((new Date() - timestamp) / 1000);
-    if (seconds < 10) return UI_LABELS.TIME_JUST_NOW;
+    if (seconds < CONFIG.time.justNowThresholdSec) return UI_LABELS.TIME_JUST_NOW;
     if (seconds < 60) return `${seconds}${UI_LABELS.TIME_SECONDS_SUFFIX}`;
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}${UI_LABELS.TIME_MINUTES_SUFFIX}`;
@@ -237,13 +305,8 @@ const FitnessUsersList = () => {
   };
 
   const getDeviceIcon = (device) => {
-    if (device.type === 'heart_rate') {
-      return heartColorIcon(device.deviceId);
-    }
-    if (device.type === 'power') return '⚡';
-    if (device.type === 'cadence') return '⚙️';
-    if (device.type === 'speed') return '🚴';
-    return '📡';
+    if (device.type === 'heart_rate') return heartColorIcon(device.deviceId);
+    return (CONFIG.devices[device.type] || CONFIG.devices.default).icon;
   };
 
   const getDeviceValue = (device) => {
@@ -254,24 +317,11 @@ const FitnessUsersList = () => {
     return '--';
   };
 
-  const getDeviceUnit = (device) => {
-    if (device.type === 'heart_rate') return 'BPM';
-    if (device.type === 'power') return 'W';
-    if (device.type === 'cadence') return 'RPM';
-    if (device.type === 'speed') return 'km/h';
-    return '';
-  };
+  const getDeviceUnit = (device) => (CONFIG.devices[device.type] || CONFIG.devices.default).unit;
+  const getDeviceColor = (device) => (CONFIG.devices[device.type] || CONFIG.devices.default).colorClass;
 
-  const getDeviceColor = (device) => {
-    if (device.type === 'heart_rate') return 'heart-rate';
-    if (device.type === 'power') return 'power';
-    if (device.type === 'cadence') return 'cadence';
-    if (device.type === 'speed') return 'speed';
-    return 'unknown';
-  };
-
-  const canonicalZones = ['cool','active','warm','hot','fire'];
-  const zoneRankMap = { cool:0, active:1, warm:2, hot:3, fire:4 };
+  const canonicalZones = CONFIG.zone.canonical;
+  const zoneRankMap = CONFIG.zone.rankMap;
   const getDeviceZoneId = (device) => {
     if (device.type !== 'heart_rate') return null;
     const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
@@ -296,7 +346,7 @@ const FitnessUsersList = () => {
   };
 
   const pickTextColor = (bg) => {
-    if (!bg) return '#222';
+    if (!bg) return CONFIG.color.fallbackTextDark;
     const ctx = document.createElement ? document.createElement('canvas') : null;
     let hex = bg;
     if (/^[a-zA-Z]+$/.test(bg) && ctx) {
@@ -324,15 +374,15 @@ const FitnessUsersList = () => {
         b = parseInt(clean.slice(4,6),16);
       }
     }
-    if ([r,g,b].some(v => v === undefined)) return '#222';
+    if ([r,g,b].some(v => v === undefined)) return CONFIG.color.fallbackTextDark;
     const luminance = (0.299*r + 0.587*g + 0.114*b)/255;
-    return luminance > 0.6 ? '#222' : '#fff';
+    return luminance > CONFIG.color.luminanceThreshold ? CONFIG.color.fallbackTextDark : CONFIG.color.fallbackTextLight;
   };
   
   useEffect(() => {
-    const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
-    const cadenceDevicesOnly = allDevices.filter(d => d.type === 'cadence');
-    const otherDevices = allDevices.filter(d => d.type !== 'heart_rate' && d.type !== 'cadence');
+  const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
+  const cadenceDevicesOnly = allDevices.filter(d => d.type === 'cadence');
+  const otherDevices = allDevices.filter(d => d.type !== 'heart_rate' && d.type !== 'cadence');
     
     hrDevices.sort((a, b) => {
       const aZone = getDeviceZoneId(a);
@@ -354,9 +404,10 @@ const FitnessUsersList = () => {
     });
     
     otherDevices.sort((a, b) => {
-      const typeOrder = { power: 1, speed: 2, unknown: 3 };
-      const typeA = typeOrder[a.type] || 3;
-      const typeB = typeOrder[b.type] || 3;
+      const typeOrder = CONFIG.sorting.otherTypeOrder;
+      const fallback = typeOrder.unknown || 3;
+      const typeA = typeOrder[a.type] || fallback;
+      const typeB = typeOrder[b.type] || fallback;
       if (typeA !== typeB) return typeA - typeB;
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
@@ -382,7 +433,7 @@ const FitnessUsersList = () => {
     const hrCountCandidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
 
     // Heuristic gate: only consider vertical when fewer than 3 users
-    const allowVerticalByCount = hrCountCandidate > 0 && hrCountCandidate < 3;
+  const allowVerticalByCount = hrCountCandidate > 0 && hrCountCandidate <= CONFIG.layout.decision.verticalUserMax;
     if (!allowVerticalByCount) {
       setLayoutMode('horiz');
       return;
@@ -391,10 +442,10 @@ const FitnessUsersList = () => {
     // Estimate total height without scaling if we render HR cards vertically
     const containerHeight = containerRef.current.clientHeight || 0;
 
-    // Empirical per-card heights (sidebar styles):
-    const HORIZ_CARD_H = 78; // px, horizontal card including gaps
-    const VERT_CARD_H = 176; // px, vertical card (2x avatar + text + padding)
-    const GRID_GAP = 10; // matches .device-grid gap in sidebar
+  // Empirical per-card heights (sidebar styles) from CONFIG:
+  const HORIZ_CARD_H = CONFIG.layout.cards.horizontal.height;
+  const VERT_CARD_H = CONFIG.layout.cards.vertical.height;
+  const GRID_GAP = CONFIG.layout.grid.gap;
 
     let count = 0;
     let total = 0;
@@ -406,8 +457,8 @@ const FitnessUsersList = () => {
     });
     // add gaps between cards
     if (count > 1) total += (count - 1) * GRID_GAP;
-    // small safety margin
-    total += 8;
+  // small safety margin
+  total += CONFIG.layout.margin.safety;
 
     if (total <= containerHeight) {
       setLayoutMode('vert');
@@ -430,11 +481,10 @@ const FitnessUsersList = () => {
     const naturalContentHeight = contentRef.current.scrollHeight;
     
     // Calculate ideal scale to fill container
-    const idealScale = containerHeight / naturalContentHeight;
-    
-    // Clamp between 0.4 and 1.0 with safety margin
-    // Important: do not upscale above 1.0 so a single user matches the size of doubles
-    const newScale = Math.max(0.4, Math.min(1.0, idealScale * 0.98));
+  const idealScale = containerHeight / naturalContentHeight;
+  const { min, max, safetyFactor } = CONFIG.layout.scale;
+  // Do not upscale above max so a single user matches multi-user sizing
+  const newScale = Math.max(min, Math.min(max, idealScale * safetyFactor));
     
     setScale(newScale);
   }, [sortedDevices]); // Only recalculate when devices change, not on scale changes
@@ -450,7 +500,8 @@ const FitnessUsersList = () => {
     if (scrollWidth > containerWidth) {
       // Content overflows, scale down
       const idealRpmScale = containerWidth / scrollWidth;
-      setRpmScale(Math.max(0.4, idealRpmScale * 0.8));
+      const { min, overflowFactor } = CONFIG.rpm.scale;
+      setRpmScale(Math.max(min, idealRpmScale * overflowFactor));
     } else {
       // Content fits, use normal scale
       setRpmScale(1);
@@ -473,12 +524,12 @@ const FitnessUsersList = () => {
         >
         {sortedDevices.length > 0 ? (
           <FlipMove 
-            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'} ${layoutMode === 'horiz' && hrCounts.candidate === 3 ? 'horiz-scale-150' : ''} ${layoutMode === 'horiz' && hrCounts.candidate === 4 ? 'horiz-scale-130' : ''}`}
-            duration={300}
-            easing="ease-out"
-            staggerDelayBy={20}
-            enterAnimation="fade"
-            leaveAnimation="fade"
+            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'} ${layoutMode === 'horiz' ? (CONFIG.layout.horizontalScaleRules.find(r => (r.exactUsers && r.exactUsers === hrCounts.candidate) || (r.maxUsers && hrCounts.candidate <= r.maxUsers))?.className || '') : ''}`}
+            duration={CONFIG.animation.flipMove.duration}
+            easing={CONFIG.animation.flipMove.easing}
+            staggerDelayBy={CONFIG.animation.flipMove.staggerDelayBy}
+            enterAnimation={CONFIG.animation.flipMove.enter}
+            leaveAnimation={CONFIG.animation.flipMove.leave}
             maintainContainerHeight={true}
           >
             {(() => {
@@ -507,16 +558,10 @@ const FitnessUsersList = () => {
                         const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
                         const rpm = rpmDevice.cadence || 0;
                         const isZero = rpm === 0;
-                        const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
+                        const animationDuration = rpm > 0 ? `${CONFIG.rpm.animationBase / rpm}s` : '0s';
                         const deviceColor = cadenceColorMap[String(rpmDevice.deviceId)];
-                        const colorMap = {
-                          red: '#ff6b6b',
-                          orange: '#ff922b',
-                          yellow: '#f0c836ff',
-                          green: '#51cf66',
-                          blue: '#6ab8ff'
-                        };
-                        const borderColor = deviceColor ? colorMap[deviceColor] || deviceColor : '#51cf66';
+                        const colorMap = CONFIG.rpm.colorMap;
+                        const borderColor = deviceColor ? (colorMap[deviceColor] || deviceColor) : colorMap.green;
                         
                         return (
                           <div key={`rpm-${rpmDevice.deviceId}`} className="rpm-device-avatar">
@@ -547,7 +592,7 @@ const FitnessUsersList = () => {
                                 <div 
                                   className={`rpm-value-overlay ${isZero ? 'rpm-zero' : ''}`}
                                   style={{
-                                    background: "#00000088"
+                                    background: CONFIG.rpm.overlayBg
                                   }}
                                 >
                                   {rpm}
@@ -585,7 +630,7 @@ const FitnessUsersList = () => {
                       (() => {
                         const zid = zoneIdForGrouping;
                         const zoneColor = zid ? zoneColorMap[zid] : null;
-                        const bg = zoneColor || '#555';
+                        const bg = zoneColor || CONFIG.color.zoneBadgeDefaultBg;
                         const text = pickTextColor(bg);
                         const style = { 
                           backgroundColor: bg,
@@ -608,7 +653,7 @@ const FitnessUsersList = () => {
                     )}
                   </div>
                   <div 
-                    className={`fitness-device ${device.type === 'heart_rate' && layoutMode === 'vert' ? 'card-vertical' : 'card-horizontal'} ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${getZoneClass(device)}`}
+                    className={`fitness-device ${device.type === 'heart_rate' && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${getZoneClass(device)}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                   >
                     <div className={`user-profile-img-container ${getZoneClass(device)}`}>
