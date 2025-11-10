@@ -379,10 +379,46 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
               />
               {isActive && (
                 <div className="progress-border-overlay">
-                  <div className="progress-segment progress-top" style={{ width: `${Math.min(thumbnailProgress * 4, 100)}%` }} />
-                  <div className="progress-segment progress-right" style={{ height: `${Math.max(0, Math.min((thumbnailProgress - 25) * 4, 100))}%` }} />
-                  <div className="progress-segment progress-bottom" style={{ width: `${Math.max(0, Math.min((thumbnailProgress - 50) * 4, 100))}%` }} />
-                  <div className="progress-segment progress-left" style={{ height: `${Math.max(0, Math.min((thumbnailProgress - 75) * 4, 100))}%` }} />
+                  {(() => {
+                    // Derive clean per-edge fill percentages (0-100) without corner math side-effects.
+                    const topFill = Math.min(thumbnailProgress / 25 * 100, 100);
+                    const rightFill = Math.min(Math.max(thumbnailProgress - 25, 0) / 25 * 100, 100);
+                    const bottomFill = Math.min(Math.max(thumbnailProgress - 50, 0) / 25 * 100, 100);
+                    const leftFill = Math.min(Math.max(thumbnailProgress - 75, 0) / 25 * 100, 100);
+                    return (
+                      <>
+                        <div className="edge edge-top"><div className="edge-fill" style={{ width: `${topFill}%` }} /></div>
+                        <div className="edge edge-right"><div className="edge-fill" style={{ height: `${rightFill}%` }} /></div>
+                        <div className="edge edge-bottom"><div className="edge-fill" style={{ width: `${bottomFill}%` }} /></div>
+                        <div className="edge edge-left"><div className="edge-fill" style={{ height: `${leftFill}%` }} /></div>
+                      </>
+                    );
+                  })()}
+                  {/* Welding spark at the leading edge */}
+                  {thumbnailProgress > 0 && (() => {
+                    const t = 3; // segment thickness (px)
+                    const half = t / 2;
+                    let style = {};
+                    const p = thumbnailProgress;
+                    if (p <= 25) {
+                      const pct = Math.min(p / 25 * 100, 100);
+                      style = { top: `${half}px`, left: `calc(${pct}% )` };
+                    } else if (p <= 50) {
+                      const pct = Math.min((p - 25) / 25 * 100, 100);
+                      style = { left: `calc(100% - ${half}px)`, top: `calc(${pct}% + ${t}px)` };
+                    } else if (p <= 75) {
+                      const pct = Math.min((p - 50) / 25 * 100, 100);
+                      style = { top: `calc(100% - ${half}px)`, left: `calc(${100 - pct}% )` };
+                    } else {
+                      const pct = Math.min((p - 75) / 25 * 100, 100);
+                      style = { left: `${half}px`, top: `calc(${100 - pct}% - 0px)` };
+                    }
+                    return (
+                      <div className="progress-spark" style={style}>
+                        <div className="spark-core" />
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
               <span className="thumbnail-time">{label}</span>
