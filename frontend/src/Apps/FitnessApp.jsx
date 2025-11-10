@@ -46,6 +46,65 @@ const FitnessApp = () => {
         return false;
       }
     };
+    
+    // Disable tooltips and alt text popups in kiosk mode
+    const disableTooltips = () => {
+      // Add CSS to hide all tooltips and alt text
+      const style = document.createElement('style');
+      style.textContent = `
+        /* Hide all tooltips and title attributes */
+        *[title] { 
+          --tooltip-display: none !important; 
+        }
+        *[title]:hover::after,
+        *[title]:focus::after { 
+          display: none !important; 
+        }
+        /* Hide video controls tooltips */
+        video::-webkit-media-controls,
+        video::-webkit-media-controls-enclosure,
+        video::-webkit-media-controls-panel,
+        video::-webkit-media-controls-play-button,
+        video::-webkit-media-controls-timeline,
+        video::-webkit-media-controls-current-time-display,
+        video::-webkit-media-controls-time-remaining-display,
+        video::-webkit-media-controls-mute-button,
+        video::-webkit-media-controls-volume-slider,
+        video::-webkit-media-controls-fullscreen-button {
+          -webkit-appearance: none !important;
+        }
+        /* Hide Firefox video tooltips */
+        video::-moz-media-controls {
+          display: none !important;
+        }
+      `;
+      document.head.appendChild(style);
+      
+      // Remove title attributes from all elements to prevent alt text popups
+      const removeTooltips = () => {
+        document.querySelectorAll('*[title]').forEach(el => {
+          el.removeAttribute('title');
+        });
+        document.querySelectorAll('*[alt]').forEach(el => {
+          el.setAttribute('alt', '');
+        });
+      };
+      
+      // Run immediately and on DOM changes
+      removeTooltips();
+      const observer = new MutationObserver(removeTooltips);
+      observer.observe(document.body, { 
+        childList: true, 
+        subtree: true, 
+        attributes: true, 
+        attributeFilter: ['title', 'alt'] 
+      });
+      
+      return () => observer.disconnect();
+    };
+    
+    const cleanupTooltips = disableTooltips();
+    
     window.addEventListener('contextmenu', preventContext, { capture: true });
     window.addEventListener('mousedown', preventSecondary, { capture: true });
     window.addEventListener('pointerdown', preventSecondary, { capture: true });
@@ -53,6 +112,7 @@ const FitnessApp = () => {
       window.removeEventListener('contextmenu', preventContext, { capture: true });
       window.removeEventListener('mousedown', preventSecondary, { capture: true });
       window.removeEventListener('pointerdown', preventSecondary, { capture: true });
+      if (cleanupTooltips) cleanupTooltips();
     };
   }, [kioskUI]);
   
