@@ -1104,6 +1104,24 @@
 
   .fitness-sidebar-media {
     flex-shrink: 0;
+    width: 100%;
+    aspect-ratio: 16 / 9; // Container is always 16:9
+    overflow: hidden;
+    position: relative;
+    
+    // Ensure child fills the container completely
+    .media-controls-container {
+      width: 100%;
+      height: 100%;
+    }
+    
+    // Video inside will be scaled up to crop sides and approach 4:3 visible ratio
+    video {
+      width: 133.33%; // Scale up: 16/9 ÷ 4/3 = 1.3333 (crops ~16.67% from each side)
+      height: 100%;
+      object-fit: cover;
+      transform: translateX(-16.665%); // Center the cropped video
+    }
   }
 
   .fitness-sidebar-video {
@@ -1463,19 +1481,19 @@
 // Media Controls Container (Video + Buttons)
 .media-controls-container {
   display: flex;
-  /* Let children manage their own ratios to avoid awkward cropping when panel has min-width */
-  /* aspect-ratio: 16 / 9; */
-  --panel-percent: 10%;
   width: 100%;
+  height: 100%; // Fill parent height
   background: rgba(0, 0, 0, 0.7);
   border-radius: 4px;
   overflow: hidden;
   box-sizing: border-box;
+  --panel-percent: 10%;
   
   .media-video-section {
     /* Take the remaining width next to the fixed-width button panel */
     flex: 1 1 0%;
     min-width: 0; // critical for flex children with width:100%
+    height: 100%; // Fill parent height
     position: relative;
     overflow: hidden;
     
