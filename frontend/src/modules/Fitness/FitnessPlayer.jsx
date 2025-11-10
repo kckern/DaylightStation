@@ -116,6 +116,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [stallStatus, setStallStatus] = useState({ isStalled: false, since: null, attempts: 0, lastStrategy: null });
   // Layout adaptation state
   const [stackMode, setStackMode] = useState(false); // layout adaptation flag
   // Footer aspect (width/height) hysteresis thresholds
@@ -131,6 +132,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
   const { seek: seekTo, toggle: togglePlay, getCurrentTime: getPlayerTime, getDuration: getPlayerDuration } = usePlayerController(playerRef);
+  const lastKnownTimeRef = useRef(0);
+
+  useEffect(() => {
+    lastKnownTimeRef.current = 0;
+  }, [currentItem ? currentItem.id : null]);
   
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
@@ -384,7 +390,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       volume: currentItem?.volume || 1.0,
       playbackRate: currentItem?.playbackRate || 1.0,
       type: 'video',
-      continuous: false,
+      continuous: false
     };
   }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate]);
 
@@ -452,7 +458,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
 
-  const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused }) => {
+  const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused, stalled = false, recoveryAttempt = 0, lastStrategy = null }) => {
     // Throttle currentTime updates to ~4Hz
     const now = performance.now();
     const last = progressMetaRef.current.lastSetTime;
@@ -461,17 +467,46 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       // console.log('[FitnessPlayer] currentTime updated:', ct);
       setCurrentTime(ct);
     }
+    lastKnownTimeRef.current = ct;
     if (d && d !== progressMetaRef.current.lastDuration) {
       progressMetaRef.current.lastDuration = d;
       setDuration(d);
     }
-    setIsPaused(paused);
-    
+    setIsPaused(paused || stalled);
+    setStallStatus((prev) => {
+      if (stalled) {
+        const since = prev.isStalled ? prev.since : Date.now();
+        const attempts = Number.isFinite(recoveryAttempt) ? recoveryAttempt : prev.attempts;
+        const strategy = lastStrategy ?? prev.lastStrategy;
+        if (prev.isStalled && prev.since === since && prev.attempts === attempts && prev.lastStrategy === strategy) {
+          return prev;
+        }
+        return { isStalled: true, since, attempts, lastStrategy: strategy };
+      }
+
+      if (!prev.isStalled) {
+        return prev;
+      }
+
+      return { isStalled: false, since: null, attempts: 0, lastStrategy: null };
+    });
+
     // Update context so music player can sync
     if (setVideoPlayerPaused) {
-      setVideoPlayerPaused(paused);
+      setVideoPlayerPaused(paused || stalled);
     }
   }, [setVideoPlayerPaused]);
+
+  const handleReloadEpisode = useCallback(() => {
+    if (!currentItem) return;
+    const restartSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
+    setCurrentItem((prev) => {
+      if (!prev) return prev;
+      return { ...prev, seconds: restartSeconds };
+    });
+    setStallStatus({ isStalled: false, since: null, attempts: 0, lastStrategy: null });
+    setIsPaused(false);
+  }, [currentItem, currentTime]);
 
   const handlePlayerReady = useCallback(({ duration: d }) => {
     if (d && !duration) setDuration(d);
@@ -532,13 +567,50 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           style={{
             width: videoDims.width ? videoDims.width + 'px' : '100%',
             height: videoDims.height ? videoDims.height + 'px' : 'auto',
-            margin: videoDims.width && videoDims.width < (mainPlayerRef.current?.clientWidth || 0) ? '0 auto' : '0'
+            margin: videoDims.width && videoDims.width < (mainPlayerRef.current?.clientWidth || 0) ? '0 auto' : '0',
+            position: 'relative'
           }}
         >
           {/* Add an overlay just to block the top-right close button */}
           <div className="player-controls-blocker"></div>
+          {stallStatus.isStalled && (
+            <div
+              className="stall-reload-overlay"
+              data-stalled="1"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 99999,
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                paddingBottom: '12%',
+                background: 'rgba(0, 0, 0, 0.35)'
+              }}
+            >
+              <button
+                type="button"
+                className="stall-reload-button"
+                onClick={ e => { e.stopPropagation(); handleReloadEpisode(e)} }
+                onPointerDown={ e => { e.stopPropagation(); handleReloadEpisode(e)} }
+                style={{
+                  padding: '0.9rem 1.4rem',
+                  fontSize: '1rem',
+                  borderRadius: '999px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: '#FFD400',
+                  color: '#111',
+                  zIndex: 99999,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.35)'
+                }}
+              >
+                Reload at {formatTime(Math.max(0, lastKnownTimeRef.current || currentTime || 0))}
+              </button>
+            </div>
+          )}
           <Player 
-            key={enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}
+            key={`${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`}
             play={playObject}
             keyboardOverrides={keyboardOverrides}
             clear={handleClose}
@@ -566,6 +638,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           hasPrev={hasPrev}
           hasNext={hasNext}
           isPaused={isPaused}
+          stallInfo={stallStatus}
           playerRef={playerRef}
           TimeDisplay={TimeDisplay}
           renderCount={renderCountRef.current}
