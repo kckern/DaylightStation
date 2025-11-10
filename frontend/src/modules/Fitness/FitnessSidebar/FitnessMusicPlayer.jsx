@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
+import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import '../FitnessUsers.scss';
 
 const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
@@ -11,8 +12,23 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
+  const playerRef = useRef(null);
+  
+  const fitnessContext = useFitnessContext();
+  const { videoPlayerPaused } = fitnessContext || {};
 
-  const playConfig = useMemo(() => ({ volume: 0.1, paused: !isPlaying }), [isPlaying]);
+  // Sync music player with video player pause state
+  useEffect(() => {
+    if (videoPlayerPaused !== undefined && playerRef.current) {
+      if (videoPlayerPaused) {
+        playerRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        playerRef.current.play();
+        setIsPlaying(true);
+      }
+    }
+  }, [videoPlayerPaused]);
 
   // Load playlist when selectedPlaylistId changes
   useEffect(() => {
@@ -31,14 +47,18 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
         // Use path-based shuffle instead of query param to avoid polluting item data
         const response = await DaylightAPI(`/media/plex/list/${selectedPlaylistId}/playable,shuffle`);
         
+        console.log('[Playlist] Raw API response:', response);
+        
         if (response && response.items) {
           console.log('[Playlist] Loaded new playlist:', {
             itemCount: response.items.length,
-            firstTrack: response.items[0]?.title
+            firstTrack: response.items[0]?.title,
+            firstTrackData: response.items[0]
           });
           setPlayQueueData(response.items);
           // Set first track as current
           if (response.items.length > 0) {
+            console.log('[Playlist] Setting initial track:', response.items[0]);
             setCurrentTrack(response.items[0]);
           }
         }
@@ -54,23 +74,31 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
   }, [selectedPlaylistId]);
 
   const handleProgress = (progressData) => {
-
-    // Update current track from the media metadata first
+    // Update current track key if changed, but keep original track data from queue
     if (progressData?.media) {
       const mediaData = progressData.media;
       const newKey = mediaData.key || mediaData.plex || mediaData.media_key;
       
       setCurrentTrack(prev => {
         const prevKey = prev?.key || prev?.plex || prev?.media_key;
-        // Only update if actually changed
-        if (newKey !== prevKey) {
-          console.log('[Track Change] Detected:', {
-            prevKey,
-            newKey,
-            prevTitle: prev?.title,
-            newTitle: mediaData?.title
+        // Only update if track actually changed
+        if (newKey && newKey !== prevKey) {
+          // Find the full track data from playQueueData instead of using minimal progressData.media
+          const fullTrackData = playQueueData?.find(track => {
+            const trackKey = track.key || track.plex || track.media_key;
+            return trackKey === newKey;
           });
-          return mediaData;
+          
+          if (fullTrackData) {
+            console.log('[Track Change] Detected:', {
+              prevKey,
+              newKey,
+              prevTitle: prev?.title,
+              newTitle: fullTrackData?.title,
+              artist: fullTrackData?.artist
+            });
+            return fullTrackData;
+          }
         }
         return prev;
       });
@@ -105,7 +133,11 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
   };
 
   const handleTogglePlayPause = () => {
-    setIsPlaying(prev => !prev);
+    if (playerRef.current) {
+      playerRef.current.toggle();
+      // Update local state to reflect the toggle
+      setIsPlaying(prev => !prev);
+    }
   };
 
   const formatTime = (seconds) => {
@@ -189,7 +221,11 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
               {currentTrack?.title || currentTrack?.label || 'No track playing'}
             </div>
             <div className="track-artist">
-              {currentTrack?.artist || currentTrack?.albumArtist || currentTrack?.grandparentTitle || currentTrack?.parentTitle || ''}
+              {(() => {
+                const artist = currentTrack?.artist || currentTrack?.albumArtist || currentTrack?.grandparentTitle || currentTrack?.parentTitle || '';
+                console.log('[Artist Debug]', { currentTrack, artist });
+                return artist;
+              })()}
             </div>
           </div>
           
@@ -224,9 +260,10 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
       {playQueueData && playQueueData.length > 0 ? (
         <div style={{ position: 'absolute', left: '-9999px' }}>
           <Player
+            ref={playerRef}
             key={selectedPlaylistId} // Remount only when playlist ID changes
             queue={playQueueData}
-            play={playConfig}
+            play={{ volume: 0.1 }}
             onProgress={handleProgress}
             playerType="audio"
           />
