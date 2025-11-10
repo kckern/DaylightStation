@@ -276,7 +276,7 @@
 
 
 
-      &:hover { background: rgba(255,255,255,0.12); }
+  /* Hover removed for TV touch */
 
       &.active {
         background: rgba(255, 255, 255, 0.15);
@@ -670,11 +670,7 @@
     z-index: 100;
     line-height: 1;
 
-    &:hover {
-      background: rgba(0, 0, 0, 0.85);
-      border-color: rgba(255, 255, 255, 0.3);
-      transform: scale(1.05);
-    }
+    /* Hover removed */
 
     &:active {
       transform: scale(0.95);
@@ -698,9 +694,7 @@
       border-radius: 4px;
       transition: background 0.2s;
 
-      &:hover {
-        background: rgba(255, 255, 255, 0.1);
-      }
+      /* Hover removed */
     }
   }
 
@@ -942,10 +936,7 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.4);
       transition: background .15s ease, border-color .15s ease;
 
-      &:hover {
-        background: #202020;
-        border-color: #2e2e2e;
-      }
+      /* Hover removed */
     }
 
     /* Vertical user card layout (applies to heart_rate cards when enabled) */
@@ -1090,10 +1081,7 @@
         font-size: 11px;
         transition: background 0.2s, border-color 0.2s;
 
-        &:hover {
-          background: #333;
-          border-color: #555;
-        }
+        /* Hover removed */
       }
     }
   }
@@ -1148,9 +1136,7 @@
       border-radius: 4px;
       transition: background 0.2s;
 
-      &:hover {
-        background: rgba(255, 255, 255, 0.1);
-      }
+      /* Hover removed */
     }
   }
 
@@ -1215,9 +1201,6 @@
         border-radius: 4px;
         transition: background 0.2s;
 
-        &:hover {
-          background: rgba(255, 255, 255, 0.1);
-        }
       }
     }
 
@@ -1249,10 +1232,6 @@
           cursor: pointer;
           transition: all 0.2s;
 
-          &:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.2);
-          }
 
           &.toggle-item {
             display: flex;
@@ -1260,10 +1239,6 @@
             align-items: center;
             cursor: default;
             
-            &:hover {
-              background: rgba(255, 255, 255, 0.05);
-              border-color: rgba(255, 255, 255, 0.1);
-            }
           }
         }
 
@@ -1541,9 +1516,6 @@
         border-bottom: none;
       }
       
-      &:hover {
-        background: rgba(255, 255, 255, 0.1);
-      }
       
       &:disabled {
         opacity: 0.5;
@@ -1627,9 +1599,6 @@
       flex: 1;
       transition: background 0.2s;
 
-      &:hover {
-        background: #c9302c;
-      }
     }
     
     .voice-memo-stop-btn {
@@ -1644,9 +1613,6 @@
       flex: 1;
       transition: background 0.2s;
 
-      &:hover {
-        background: #444;
-      }
     }
 
     .voice-memo-saving-btn {
@@ -1675,10 +1641,6 @@
       min-width: 40px;
       transition: all 0.2s;
 
-      &:hover {
-        background: rgba(255, 255, 255, 0.15);
-        border-color: rgba(255, 255, 255, 0.3);
-      }
     }
     .voice-memo-status { 
       color: #ffd43b; 

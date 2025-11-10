@@ -128,11 +128,7 @@ dash-video {
         border-radius: 6px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.4);
         transition: background .15s ease, border-color .15s ease;
-
-        &:hover {
-          background: #202020;
-          border-color: #2e2e2e;
-        }
+        /* Hover removed for TV touch environment */
       }
 
       .user-profile-img-container {
@@ -178,7 +174,7 @@ dash-video {
       transition: background 0.15s ease;
       z-index: 10;
     }
-    .fitness-player-sidebar-resizer:hover,
+    /* Hover removed */
     .fitness-player-sidebar-resizer:active {
       background: linear-gradient(to left, #0af, #08f, #0af);
     }
@@ -322,7 +318,7 @@ dash-video {
         text-transform: uppercase;
         font-weight: 600;
         transition: background .15s, border-color .15s, color .15s;
-        &:hover { background:#2e2e2e; border-color:#3a3a3a; color:#fff; }
+        /* Hover removed */
         &:active { background:#1f1f1f; }
         &.active { background:#0a5fa5; border-color:#1281da; color:#fff; }
       }
@@ -349,7 +345,7 @@ dash-video {
       box-shadow: 0 4px 10px rgba(0,0,0,.5);
       backdrop-filter: blur(4px);
       transition: background .2s, transform .2s, color .2s;
-      &:hover { background: rgba(0,0,0,0.75); transform: scale(1.05); }
+  /* Hover removed */
       &:active { transform: scale(.95); }
     }
 
@@ -504,7 +500,7 @@ dash-video {
       user-select: none;
       -webkit-user-select: none;
       
-      &:hover { background: radial-gradient(circle at 30% 30%, #5a5a5a, #3b3b3b); }
+  /* Hover removed for TV */
       &:active { transform: scale(.94); }
       &:focus-visible { outline: 2px solid #0a84ff; outline-offset: 2px; }
       &[aria-disabled='true'] { opacity: .45; cursor: not-allowed; }
@@ -515,7 +511,7 @@ dash-video {
         background: linear-gradient(145deg, #0a84ff, #006ad1);
         border-color: #0a76e6;
         box-shadow: 0 3px 6px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.08);
-        &:hover { background: linear-gradient(145deg, #1d8eff, #0b72d4); }
+  /* Hover removed for TV */
       }
 
       .icon { font-size: 20px; line-height: 1; display:flex; align-items:center; justify-content:center; font-weight:600; }
@@ -579,9 +575,7 @@ dash-video {
           transition: width 0.1s linear;
         }
         
-        &:hover .progress {
-          background-color: #1e90ff;
-        }
+        /* Hover effect removed: keep progress color static */
       }
       
       .seek-thumbnails {
@@ -777,14 +771,10 @@ dash-video {
           }
         }
         
-        &:hover .seek-thumbnail {
-          transform: scale(1.05);
-        }
+        /* Hover removed for thumbnails */
       }
       
-      &:hover .thumbnail-wrapper {
-        border-color: #0084ff;
-      }
+      /* Hover removed for thumbnail wrapper */
       
       @media (max-width: 768px) {
         .thumbnail-wrapper {

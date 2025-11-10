@@ -285,45 +285,71 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     const container = getScrollParent(el, axis);
     if (!container) return { didScroll: false };
     const fully = isFullyInView(el, container, margin, axis);
-    // If fully visible but flush with the bottom and there is more content below, treat as needing scroll
-    let flushBottom = false;
-    if (axis === 'y' && fully) {
-      const er = el.getBoundingClientRect();
-      const cr = container.getBoundingClientRect();
-      
-      // Check if there are any episode cards below the viewport (not just padding/margin space)
-      // Find all episode cards in the container
-      const episodeCards = container.querySelectorAll('.episode-card');
-      let hasOffscreenCards = false;
-      
-      if (episodeCards.length > 0) {
-        // Check if any episode card is partially or fully below the visible area
-        for (const card of episodeCards) {
-          const cardRect = card.getBoundingClientRect();
-          // Card is offscreen below if its top is below the container's visible bottom
-          if (cardRect.top > cr.bottom - margin) {
-            hasOffscreenCards = true;
-            break;
-          }
-        }
-      }
-      
-      flushBottom = hasOffscreenCards && (er.bottom >= cr.bottom - margin);
-      if (!flushBottom) return { didScroll: false, container };
-    } else if (fully) {
+    
+    // If fully visible and no axis-specific override needed, don't scroll
+    if (fully && axis !== 'y') {
       return { didScroll: false, container };
     }
+    
     const er = el.getBoundingClientRect();
     const cr = container.getBoundingClientRect();
+    
+    // Check if we should scroll for y-axis when element is already fully visible
+    if (fully && axis === 'y') {
+      // Find the episodes container to limit search scope to current show only
+      const episodesContainer = el.closest('.episodes-container');
+      if (episodesContainer) {
+        // Only check episode cards within the same episodes container (current show)
+        const episodeCards = episodesContainer.querySelectorAll('.episode-card');
+        let hasOffscreenCards = false;
+        
+        console.log('🔍 Checking scroll:', {
+          totalCards: episodeCards.length,
+          containerBottom: cr.bottom,
+          margin,
+          elementBottom: er.bottom,
+          isAtBottom: er.bottom >= cr.bottom - margin
+        });
+        
+        if (episodeCards.length > 0) {
+          // Check if any episode card is partially or fully below the visible area
+          for (const card of episodeCards) {
+            const cardRect = card.getBoundingClientRect();
+            const isOffscreen = cardRect.top > cr.bottom - margin;
+            if (isOffscreen) {
+              console.log('📍 Found offscreen card:', {
+                cardTop: cardRect.top,
+                containerBottom: cr.bottom,
+                threshold: cr.bottom - margin
+              });
+              hasOffscreenCards = true;
+              break;
+            }
+          }
+        }
+        
+        console.log('🎯 Scroll decision:', {
+          hasOffscreenCards,
+          isAtBottom: er.bottom >= cr.bottom - margin,
+          needsScroll: hasOffscreenCards && (er.bottom >= cr.bottom - margin)
+        });
+        
+        // Only scroll if the element is at the bottom AND there are more cards to reveal
+        const needsScroll = hasOffscreenCards && (er.bottom >= cr.bottom - margin);
+        if (!needsScroll) return { didScroll: false, container };
+      } else {
+        // No episodes container found, element is fully visible, don't scroll
+        return { didScroll: false, container };
+      }
+    }
+    
+    // Element is not fully visible or needs scrolling - proceed with scroll
     if (axis === 'y') {
       const containerHeight = container.clientHeight || cr.height;
       const topMarginPx = Math.max(8, Math.round(containerHeight * topAlignRatio));
       // Compute desired absolute scrollTop to place element top at topMarginPx
       const elementTopInScroll = container.scrollTop + (er.top - cr.top);
       let targetScrollTop = elementTopInScroll - topMarginPx;
-      if (flushBottom) {
-        targetScrollTop = Math.min(targetScrollTop + Math.round(containerHeight * 0.33), container.scrollHeight - container.clientHeight);
-      }
       const maxScroll = container.scrollHeight - container.clientHeight;
       if (targetScrollTop < 0) targetScrollTop = 0;
       if (targetScrollTop > maxScroll) targetScrollTop = maxScroll;
@@ -349,7 +375,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   // play episode (debug removed)
     // If source element provided, require full visibility before play
     if (sourceEl) {
-      const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 24 });
+      const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 8 });
       if (didScroll) return; // wait for second tap
     }
     
