@@ -48,6 +48,9 @@ export const useFitness = useFitnessContext;
 export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue }) => {
   const FITNESS_DEBUG = false; // set false to silence diagnostic logs
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
+  const [musicAutoEnabledState, setMusicAutoEnabledState] = useState(false);
+  const [musicOverride, setMusicOverride] = useState(null);
+  const [lastPlaylistId, setLastPlaylistId] = useState(null);
   const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
   // Accept either shape: { fitness: {...} } or flattened keys directly
   const fitnessRoot = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
@@ -57,6 +60,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       console.log('[FitnessContext][PROP] resolved fitnessRoot keys:', Object.keys(fitnessRoot||{}));
     } catch(_) {}
   }
+  const plexConfig = fitnessRoot?.plex || {};
+  const musicPlaylists = Array.isArray(plexConfig.music_playlists) ? plexConfig.music_playlists : [];
+  const nomusicLabelsRaw = Array.isArray(plexConfig.nomusic_labels) ? plexConfig.nomusic_labels : [];
+  const normalizedNomusicLabels = React.useMemo(() => normalizeLabelList(nomusicLabelsRaw), [nomusicLabelsRaw]);
   const ant_devices = fitnessRoot?.ant_devices || {};
   let usersConfig = fitnessRoot?.users || {};
   if (FITNESS_DEBUG && (!usersConfig.primary || usersConfig.primary.length === 0)) {
@@ -68,7 +75,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const governanceConfig = fitnessRoot?.governance || {};
   console.log('[FitnessContext] governanceConfig loaded:', governanceConfig);
   console.log('[FitnessContext] governanceConfig.user_counts:', governanceConfig?.user_counts);
-  const rawGovernedLabels = fitnessRoot?.plex?.governed_labels;
+  const rawGovernedLabels = plexConfig?.governed_labels;
   const governedLabels = Array.isArray(rawGovernedLabels)
     ? rawGovernedLabels.filter(label => typeof label === 'string')
     : [];
@@ -126,6 +133,51 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (deviceId == null) return;
     assignGuestToDevice(deviceId, null);
   }, [assignGuestToDevice]);
+
+  React.useEffect(() => {
+    if (selectedPlaylistId != null) {
+      setLastPlaylistId(selectedPlaylistId);
+    }
+  }, [selectedPlaylistId]);
+
+  const resolveDefaultPlaylistId = React.useCallback(() => {
+    if (lastPlaylistId != null) {
+      const existing = musicPlaylists.find((playlist) => String(playlist?.id) === String(lastPlaylistId));
+      if (existing && existing.id != null) {
+        return existing.id;
+      }
+    }
+    return musicPlaylists[0]?.id ?? null;
+  }, [lastPlaylistId, musicPlaylists]);
+
+  const musicAutoEnabled = musicAutoEnabledState;
+  const musicEnabled = musicOverride !== null ? musicOverride : musicAutoEnabled;
+
+  React.useEffect(() => {
+    if (musicEnabled) {
+      if (selectedPlaylistId == null) {
+        const targetId = resolveDefaultPlaylistId();
+        if (targetId != null) {
+          setSelectedPlaylistId(targetId);
+        }
+      }
+    } else if (selectedPlaylistId != null) {
+      setSelectedPlaylistId(null);
+    }
+  }, [musicEnabled, resolveDefaultPlaylistId, selectedPlaylistId]);
+
+  const setMusicAutoEnabled = React.useCallback((nextEnabled) => {
+    setMusicAutoEnabledState(Boolean(nextEnabled));
+  }, []);
+
+  const setMusicOverrideState = React.useCallback((nextEnabled) => {
+    if (nextEnabled === null || nextEnabled === undefined) {
+      setMusicOverride(null);
+      return;
+    }
+    const normalized = Boolean(nextEnabled);
+    setMusicOverride((prev) => (musicAutoEnabled === normalized ? null : normalized));
+  }, [musicAutoEnabled]);
 
   // Lightweight heartbeat to refresh UI (zones, elapsed) without per-sample churn
   useEffect(() => {
@@ -1011,7 +1063,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     })(),
     
     // Plex configuration (for playlists, collections, etc.)
-    plexConfig: fitnessRoot?.plex || {},
+    plexConfig,
+    nomusicLabels: normalizedNomusicLabels,
+    musicEnabled,
+    musicAutoEnabled,
+    setMusicAutoEnabled,
+    setMusicOverride: setMusicOverrideState,
     governanceConfig,
     governedLabels,
     governance: governancePhase,

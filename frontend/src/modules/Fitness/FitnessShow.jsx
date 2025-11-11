@@ -169,13 +169,22 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
   const fitnessContext = useFitness() || {};
-  const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue, plexConfig, setSelectedPlaylistId, governedLabels } = fitnessContext;
+  const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue, setMusicAutoEnabled, nomusicLabels = [], governedLabels } = fitnessContext;
+  const nomusicLabelSet = useMemo(() => {
+    const normalized = Array.isArray(nomusicLabels)
+      ? nomusicLabels.filter((label) => typeof label === 'string').map((label) => label.trim().toLowerCase())
+      : [];
+    return new Set(normalized);
+  }, [nomusicLabels]);
   
 
   useEffect(() => {
     const fetchShowData = async () => {
       if (!showId) {
         setLoading(false);
+        if (typeof setMusicAutoEnabled === 'function') {
+          setMusicAutoEnabled(false);
+        }
         return;
       }
 
@@ -184,24 +193,25 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         const response = await DaylightAPI(`/media/plex/list/${showId}/playable`);
         setShowData(response);
         
-        // Check for NoMusic label and enable music player if needed
-        if (response?.info?.labels?.includes('NoMusic')) {
-          const playlists = plexConfig?.music_playlists || [];
-          
-          // Get the first available playlist (or previously used one)
-          const defaultPlaylist = playlists[0]?.id;
-          
-          if (defaultPlaylist && setSelectedPlaylistId) {
-            console.log('🎵 NoMusic label detected, enabling music player with playlist:', defaultPlaylist);
-            // Set the playlist which will automatically show the player
-            setSelectedPlaylistId(defaultPlaylist);
-          }
-        } else {
-          // Clear the music player if the show doesn't have NoMusic label
-          if (setSelectedPlaylistId) {
-            console.log('🎵 No NoMusic label, clearing music player');
-            setSelectedPlaylistId(null);
-          }
+        const rawLabels = [];
+        if (Array.isArray(response?.info?.labels)) {
+          rawLabels.push(...response.info.labels);
+        }
+        if (Array.isArray(response?.info?.Label)) {
+          response.info.Label.forEach((entry) => {
+            if (typeof entry === 'string') {
+              rawLabels.push(entry);
+            } else if (entry && typeof entry === 'object' && entry.tag) {
+              rawLabels.push(entry.tag);
+            }
+          });
+        }
+        const normalizedLabels = rawLabels
+          .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
+          .filter(Boolean);
+        const hasNoMusicLabel = normalizedLabels.some((label) => nomusicLabelSet.has(label));
+        if (typeof setMusicAutoEnabled === 'function') {
+          setMusicAutoEnabled(hasNoMusicLabel);
         }
         
         // Auto-select first episode if available
@@ -211,13 +221,16 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       } catch (err) {
         console.error('🎬 ERROR: Error fetching show data:', err);
         setError(err.message);
+        if (typeof setMusicAutoEnabled === 'function') {
+          setMusicAutoEnabled(false);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchShowData();
-  }, [showId]);
+  }, [showId, nomusicLabelSet, setMusicAutoEnabled]);
 
   // Handle poster aspect ratio with JavaScript
   // Poster size effect: run on mount and when showId changes; guard against state churn
