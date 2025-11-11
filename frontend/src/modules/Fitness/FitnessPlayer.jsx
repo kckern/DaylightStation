@@ -7,6 +7,7 @@ import usePlayerController from '../Player/usePlayerController.js';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import FitnessUsers from './FitnessUsers.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
+import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -134,7 +135,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     setVideoPlayerPaused,
     governance,
     setGovernanceMedia,
-    governedLabels
+    governedLabels,
+    governanceState
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
@@ -150,6 +152,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const lastKnownTimeRef = useRef(0);
   const governancePausedRef = useRef(false);
   const [playIsGoverned, setPlayIsGoverned] = useState(false);
+
+  const governanceOverlay = useGovernanceOverlay(governanceState);
+
+  const playerContentClassName = useMemo(() => {
+    const classes = ['fitness-player-content'];
+    if (governanceOverlay.filterClass) {
+      classes.push(governanceOverlay.filterClass);
+    }
+    if (governanceOverlay.status) {
+      classes.push(`governance-status-${governanceOverlay.status}`);
+    }
+    return classes.join(' ');
+  }, [governanceOverlay.filterClass, governanceOverlay.status]);
 
   const governedLabelSet = useMemo(() => {
     if (!Array.isArray(governedLabels) || !governedLabels.length) return new Set();
@@ -671,7 +686,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       <div className="fitness-player-main" ref={mainPlayerRef} style={{ order: sidebarSide === 'right' ? 1 : 2 }}>
         {/* MainContent - 16:9 aspect ratio container */}
         <div
-          className="fitness-player-content"
+          className={playerContentClassName}
           ref={contentRef}
           onPointerDown={toggleFullscreen}
           style={{
@@ -683,6 +698,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         >
           {/* Add an overlay just to block the top-right close button */}
           <div className="player-controls-blocker"></div>
+          <FitnessPlayerOverlay overlay={governanceOverlay} />
           {stallStatus.isStalled && (
             <div
               className="stall-reload-overlay"

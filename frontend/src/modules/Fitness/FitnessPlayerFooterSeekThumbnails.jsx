@@ -112,6 +112,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   const lastSeekRef = useRef({ time: null, expireAt: 0 });
   const awaitingSettleRef = useRef(false);
   const resetZoomOnPlayingRef = useRef(false);
+  const rafRef = useRef(null);
 
   const { seek } = usePlayerController(playerRef);
 
@@ -232,6 +233,10 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => updatePreview(clientX, rect));
   }, [updatePreview]);
+
+  useEffect(() => () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  }, []);
 
   // ---------- Event Handlers ----------
   const handleClick = useCallback((e) => {
