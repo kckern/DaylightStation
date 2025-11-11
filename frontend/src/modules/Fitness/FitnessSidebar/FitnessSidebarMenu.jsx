@@ -36,6 +36,8 @@ const FitnessSidebarMenu = ({
   const fitnessContext = useFitnessContext();
   const [selectedTab, setSelectedTab] = React.useState('friends');
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
+  const isMediaSwapped = Boolean(fitnessContext?.mediaSwapActive);
+  const toggleMediaSwap = fitnessContext?.toggleMediaSwap;
   const hasMusicPlaylists = playlists.length > 0;
   const deviceIdStr = targetDeviceId ? String(targetDeviceId) : null;
   const activeAssignment = deviceIdStr ? guestAssignments[deviceIdStr] : null;
@@ -449,10 +451,10 @@ const FitnessSidebarMenu = ({
         <button
           type="button"
           className="menu-item action-item"
-          onClick={/*handleSwapCameraAndVideo*/() => {}}
-          disabled={!onReloadVideo || !videoMediaAvailable}
+          onClick={() => toggleMediaSwap?.()}
+          disabled={!toggleMediaSwap}
         >
-          <span>🔀 Swap Camera & Video</span>
+          <span>{isMediaSwapped ? '↺ Restore Video Layout' : '🔀 Swap Camera & Video'}</span>
         </button>
       </div>
 

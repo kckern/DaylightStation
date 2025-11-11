@@ -907,9 +907,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                   onPointerDown={(e) => {
                     const btn = e.currentTarget;
                     // Prefer horizontal visibility for the season bar; fall back to vertical if needed
-                    let { didScroll } = scrollIntoViewIfNeeded(btn, { axis: 'x', margin: 24 });
-                    if (didScroll) return; // wait for second tap
-                    ({ didScroll } = scrollIntoViewIfNeeded(btn, { axis: 'y', margin: 24 }));
+                    scrollIntoViewIfNeeded(btn, { axis: 'x', margin: 24 });
+                    const { didScroll } = scrollIntoViewIfNeeded(btn, { axis: 'y', margin: 24 });
                     if (didScroll) return;
                     setActiveSeasonId(s.id);
                     const episodeCount = items.filter(ep => ep.seasonId === s.id).length;

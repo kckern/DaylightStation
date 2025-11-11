@@ -38,6 +38,7 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
   const [isExpanded, setIsExpanded] = useState(false);
   const fitnessCtx = useFitnessContext();
   const session = fitnessCtx?.fitnessSession;
+  const mediaSwapActive = fitnessCtx?.mediaSwapActive;
 
   // Pause video following the playPause pattern from FitnessPlayerFooterControls
   const pauseVideo = () => {
@@ -213,7 +214,7 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
       <div className="media-controls-container">
         {/* Video Section */}
         <div className="media-video-section">
-          <FitnessVideo minimal />
+          {!mediaSwapActive && <FitnessVideo minimal />}
         </div>
         
         {/* Button Panel Section */}

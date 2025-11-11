@@ -1,5 +1,17 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { useFitnessContext } from '../../context/FitnessContext.jsx';
+import { DaylightMediaPath } from '../../lib/api.mjs';
+
+const slugifyId = (value, fallback = 'user') => {
+  if (!value) return fallback;
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || fallback;
+};
 
 export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   if (!governanceState?.isGoverned) {
@@ -12,7 +24,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       descriptions: [],
       requirements: [],
       highlightUsers: [],
-      countdown: null
+      countdown: null,
+      countdownTotal: null
     };
   }
 
@@ -44,7 +57,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       descriptions: [],
       requirements: [],
       highlightUsers: [],
-      countdown: null
+      countdown: null,
+      countdownTotal: null
     };
   }
 
@@ -52,26 +66,22 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     const countdown = Number.isFinite(governanceState.countdownSecondsRemaining)
       ? governanceState.countdownSecondsRemaining
       : null;
-    const allRuleMissing = Array.from(new Set(
-      requirements
-        .filter((rule) => String(rule?.rule).toLowerCase() === 'all' && !rule?.satisfied)
-        .flatMap((rule) => Array.isArray(rule?.missingUsers) ? rule.missingUsers : [])
-        .filter(Boolean)
-    ));
+    const countdownTotal = Number.isFinite(governanceState.gracePeriodTotal)
+      ? Math.max(1, governanceState.gracePeriodTotal)
+      : Number.isFinite(governanceState.countdownSecondsTotal)
+        ? Math.max(1, governanceState.countdownSecondsTotal)
+        : 30;
     return {
-      category: 'governance',
+      category: 'governance-warning-progress',
       status: 'yellow',
       show: true,
       filterClass: 'governance-filter-warning',
-      title: 'Governance grace period',
-      descriptions: [
-        countdown != null ? `Grace period ends in ${countdown}s` : 'Grace period active.',
-        unsatisfied.length ? 'Maintain the highlighted zones to stay in green.' : null,
-        allRuleMissing.length ? 'Needs movement from highlighted participants.' : null
-      ].filter(Boolean),
-      requirements: sortedRequirements,
-      highlightUsers: allRuleMissing,
-      countdown
+      title: '',
+      descriptions: [],
+      requirements: [],
+      highlightUsers: [],
+      countdown,
+      countdownTotal
     };
   }
 
@@ -81,9 +91,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       status: 'red',
       show: true,
       filterClass: 'governance-filter-critical',
-      title: 'Governance lockout',
+      title: 'Video Locked',
       descriptions: [
-        'Playback paused by governance.',
         'Increase fitness effort to continue the video.',
         missingUsers.length ? 'Needs movement from highlighted participants.' : null
       ].filter(Boolean),
@@ -93,7 +102,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
         satisfied: false
       })),
       highlightUsers: missingUsers,
-      countdown: null
+      countdown: null,
+      countdownTotal: null
     };
   }
 
@@ -109,14 +119,79 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     ].filter(Boolean),
     requirements: sortedRequirements,
     highlightUsers: [],
-    countdown: null
+    countdown: null,
+    countdownTotal: null
   };
 }, [governanceState]);
 
 const FitnessPlayerOverlay = ({ overlay }) => {
+  const fitnessCtx = useFitnessContext();
+
+  const highlightEntries = useMemo(() => {
+    if (!overlay || !Array.isArray(overlay.highlightUsers) || overlay.highlightUsers.length === 0) {
+      return [];
+    }
+    const normalize = (name) => (typeof name === 'string' ? name.trim().toLowerCase() : '');
+    const lookup = new Map();
+    const users = Array.isArray(fitnessCtx?.users) ? fitnessCtx.users : [];
+    users.forEach((user) => {
+      if (!user?.name) return;
+      const key = normalize(user.name);
+      if (!key) return;
+      const profileSlug = user.id || slugifyId(user.name);
+      lookup.set(key, {
+        displayName: user.name,
+        profileSlug
+      });
+    });
+    const guestAssignments = fitnessCtx?.guestAssignments || {};
+    Object.values(guestAssignments).forEach((assignment) => {
+      if (!assignment?.name) return;
+      const key = normalize(assignment.name);
+      if (!key) return;
+      const profileSlug = assignment.profileId || slugifyId(assignment.name);
+      lookup.set(key, {
+        displayName: assignment.name,
+        profileSlug
+      });
+    });
+
+    return overlay.highlightUsers
+      .map((rawName, index) => {
+        const key = normalize(rawName);
+        if (!key) return null;
+        const record = lookup.get(key);
+        const displayName = record?.displayName || rawName;
+        const profileSlug = record?.profileSlug || slugifyId(displayName);
+        const avatarSrc = DaylightMediaPath(`/media/img/users/${profileSlug}`);
+        return {
+          name: displayName,
+          avatarSrc,
+          key: `${profileSlug || key}-${index}`
+        };
+      })
+      .filter(Boolean);
+  }, [fitnessCtx?.guestAssignments, fitnessCtx?.users, overlay]);
+
   if (!overlay || !overlay.show) return null;
 
   const { category } = overlay;
+
+  if (category === 'governance-warning-progress') {
+    const remaining = Number.isFinite(overlay.countdown) ? Math.max(overlay.countdown, 0) : 0;
+    const total = Number.isFinite(overlay.countdownTotal) ? Math.max(overlay.countdownTotal, 1) : 1;
+    const progress = Math.max(0, Math.min(1, remaining / total));
+    return (
+      <div className="governance-progress-overlay" aria-hidden="true">
+        <div className="governance-progress-overlay__track">
+          <div
+            className="governance-progress-overlay__fill"
+            style={{ width: `${progress * 100}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (category === 'governance') {
     return (
@@ -133,10 +208,26 @@ const FitnessPlayerOverlay = ({ overlay }) => {
               <p className="governance-overlay__line" key={`gov-desc-${idx}`}>{line}</p>
             ))
             : null}
-          {Array.isArray(overlay.highlightUsers) && overlay.highlightUsers.length > 0 ? (
+          {highlightEntries.length > 0 ? (
             <div className="governance-overlay__people">
-              {overlay.highlightUsers.map((name) => (
-                <span className="governance-overlay__chip" key={`gov-user-${name}`}>{name}</span>
+              {highlightEntries.map(({ name, avatarSrc, key: entryKey }) => (
+                <span className="governance-overlay__chip" key={`gov-user-${entryKey}`}>
+                  <img
+                    src={avatarSrc}
+                    alt=""
+                    className="governance-overlay__avatar"
+                    onError={(event) => {
+                      const img = event.currentTarget;
+                      if (img.dataset.fallback) {
+                        img.style.display = 'none';
+                        return;
+                      }
+                      img.dataset.fallback = '1';
+                      img.src = DaylightMediaPath('/media/img/users/user');
+                    }}
+                  />
+                  <span className="governance-overlay__chip-label">{name}</span>
+                </span>
               ))}
             </div>
           ) : null}
@@ -189,7 +280,8 @@ FitnessPlayerOverlay.propTypes = {
       satisfied: PropTypes.bool
     })),
     highlightUsers: PropTypes.arrayOf(PropTypes.string),
-    countdown: PropTypes.number
+    countdown: PropTypes.number,
+    countdownTotal: PropTypes.number
   })
 };
 

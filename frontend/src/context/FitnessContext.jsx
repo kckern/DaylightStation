@@ -102,6 +102,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const toggleSidebarSizeMode = React.useCallback(() => {
     setSidebarSizeMode((m) => (m === 'regular' ? 'large' : 'regular'));
   }, []);
+  const [mediaSwapActive, setMediaSwapActive] = useState(false);
+  const toggleMediaSwap = React.useCallback(() => {
+    setMediaSwapActive((prev) => !prev);
+  }, []);
 
   const assignGuestToDevice = React.useCallback((deviceId, assignment) => {
     if (deviceId == null) return;
@@ -1031,6 +1035,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   sidebarSizeMode,
   setSidebarSizeMode,
   toggleSidebarSizeMode,
+  mediaSwapActive,
+  setMediaSwapActive,
+  toggleMediaSwap,
     
     // User-related data
     users: allUsers,

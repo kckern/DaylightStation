@@ -555,7 +555,6 @@ const FitnessUsers = () => {
                 
                 return (
                   <div key="rpm-group" className={`rpm-group-container ${isMultiDevice ? 'multi-device' : 'single-device'}`}>
-                    <div className="rpm-group-title">RPM Devices</div>
                     <div className="rpm-devices">
                       {rpmDevices.map(rpmDevice => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];

@@ -468,6 +468,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const hrActive = hrAll.filter(d => d.isActive);
     const hrCountCandidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
 
+    if (hrCountCandidate > 0 && hrCountCandidate <= 2) {
+      setLayoutMode('vert');
+      return;
+    }
+
     // Heuristic gate: only consider vertical when fewer than 3 users
   const allowVerticalByCount = hrCountCandidate > 0 && hrCountCandidate <= CONFIG.layout.decision.verticalUserMax;
     if (!allowVerticalByCount) {
@@ -586,7 +591,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       transformOrigin: 'left center'
                     }}
                   >
-                    <div className="rpm-group-title">{UI_LABELS.RPM_GROUP_TITLE}</div>
                     <div className={`rpm-devices devicecount_${rpmDevices.length}`}>
                       {rpmDevices.map(rpmDevice => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
