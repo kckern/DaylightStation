@@ -268,7 +268,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
       <div className="fitness-music-player-container">
         <div className="music-player-empty">
           <div className="empty-icon">🎵</div>
-          <div className="empty-text">Select a playlist from the menu</div>
+          <div className="empty-text">Choose a playlist to get started</div>
         </div>
       </div>
     );

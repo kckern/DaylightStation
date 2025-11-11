@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import './FitnessGovernance.scss';
@@ -43,6 +43,7 @@ const STRIPE_CONFIG = {
 
 const FitnessGovernance = () => {
   const { governanceState } = useFitnessContext();
+  const [isExpanded, setIsExpanded] = useState(false);
 
   if (!governanceState?.isGoverned) {
     return null;
@@ -52,6 +53,7 @@ const FitnessGovernance = () => {
     const state = governanceState || {};
     const status = STATUS_PRIORITY.includes(state.status) ? state.status : 'idle';
     const watchers = Array.isArray(state.watchers) ? state.watchers : [];
+    const requirements = Array.isArray(state.requirements) ? state.requirements : [];
     
     // Calculate grace period progress (0-100%)
     let graceProgress = 0;
@@ -64,7 +66,11 @@ const FitnessGovernance = () => {
     return {
       status,
       watcherCount: watchers.length,
-      graceProgress
+      graceProgress,
+      watchers,
+      requirements,
+      activeUserCount: Number.isFinite(state.activeUserCount) ? state.activeUserCount : null,
+      targetUserCount: Number.isFinite(state.targetUserCount) ? state.targetUserCount : null
     };
   }, [governanceState]);
 
@@ -83,9 +89,27 @@ const FitnessGovernance = () => {
   const statusColor = statusColors[summary.status] || 'grey';
   const stripeConfig = STRIPE_CONFIG[statusColor] || STRIPE_CONFIG.grey;
 
+  const toggleExpanded = useCallback(() => {
+    setIsExpanded((prev) => !prev);
+  }, []);
+
+  const handleRowKeyDown = useCallback((event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleExpanded();
+    }
+  }, [toggleExpanded]);
+
   return (
-    <div className={`fitness-governance ${statusClass}`}>
-      <div className="fg-row">
+    <div className={`fitness-governance ${statusClass}${isExpanded ? ' expanded' : ''}`}>
+      <div
+        className="fg-row"
+        role="button"
+        tabIndex={0}
+        onClick={toggleExpanded}
+        onKeyDown={handleRowKeyDown}
+        aria-expanded={isExpanded ? 'true' : 'false'}
+      >
         <div className="fg-lock-icon">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2C9.243 2 7 4.243 7 7v3H6c-1.103 0-2 .897-2 2v8c0 1.103.897 2 2 2h12c1.103 0 2-.897 2-2v-8c0-1.103-.897-2-2-2h-1V7c0-2.757-2.243-5-5-5zM9 7c0-1.654 1.346-3 3-3s3 1.346 3 3v3H9V7zm9 13H6v-8h12v8z"/>
@@ -118,8 +142,58 @@ const FitnessGovernance = () => {
             <div className="fg-grace-progress" style={{ width: `${summary.graceProgress}%` }}></div>
           )}
         </div>
-        
+        <div className="fg-user-count" aria-label={`Active HR users: ${summary.watcherCount}`}>
+          {summary.watcherCount}
+        </div>
       </div>
+
+      {isExpanded && (
+        <div className="fg-debug-panel">
+          <div className="fg-debug-summary">
+            <div className="fg-debug-label">Active HR Users</div>
+            <div className="fg-debug-value">{summary.activeUserCount ?? summary.watcherCount}</div>
+            {summary.targetUserCount != null && (
+              <div className="fg-debug-meta">Target: {summary.targetUserCount}</div>
+            )}
+          </div>
+
+          {summary.watchers.length > 0 && (
+            <div className="fg-debug-section">
+              <div className="fg-debug-label">Participants</div>
+              <div className="fg-chip-row">
+                {summary.watchers.map((name) => (
+                  <span className="fg-chip" key={name}>{name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="fg-debug-section">
+            <div className="fg-debug-label">Rules</div>
+            {summary.requirements.length > 0 ? (
+              <div className="fg-rule-list">
+                {summary.requirements.map((rule, index) => (
+                  <div
+                    key={`${rule.zone || 'unknown'}-${index}`}
+                    className={`fg-rule ${rule.satisfied ? 'fg-rule--ok' : 'fg-rule--pending'}`}
+                  >
+                    <div className="fg-rule-header">
+                      <span className="fg-rule-zone">{rule.zoneLabel || rule.zone || 'Unknown zone'}</span>
+                      <span className="fg-rule-status">{rule.satisfied ? 'Satisfied' : 'Needs attention'}</span>
+                    </div>
+                    <div className="fg-rule-body">
+                      <span className="fg-rule-desc">{rule.ruleLabel || String(rule.rule)}</span>
+                      <span className="fg-rule-count">{rule.actualCount}/{rule.requiredCount}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="fg-debug-empty">No governance rules active.</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

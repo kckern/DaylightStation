@@ -1642,6 +1642,102 @@
 
         .menu-item {
           width: 100%;
+          &.slider-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            cursor: default;
+
+            .slider-label {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              font-size: 0.85rem;
+              color: rgba(255, 255, 255, 0.75);
+
+              .slider-value {
+                font-variant-numeric: tabular-nums;
+                color: rgba(255, 255, 255, 0.6);
+              }
+            }
+
+            input[type="range"] {
+              width: 100%;
+              appearance: none;
+              height: 4px;
+              border-radius: 999px;
+              background: rgba(255, 255, 255, 0.2);
+              cursor: pointer;
+              transition: background 0.2s ease;
+
+              &:focus {
+                outline: none;
+                background: rgba(81, 207, 102, 0.45);
+              }
+
+              &::-webkit-slider-thumb {
+                appearance: none;
+                width: 14px;
+                height: 14px;
+                border-radius: 50%;
+                background: #51cf66;
+                box-shadow: 0 0 0 3px rgba(81, 207, 102, 0.25);
+                transition: transform 0.1s ease, box-shadow 0.2s ease;
+
+                &:hover {
+                  transform: scale(1.1);
+                }
+              }
+
+              &::-moz-range-thumb {
+                width: 14px;
+                height: 14px;
+                border: none;
+                border-radius: 50%;
+                background: #51cf66;
+                box-shadow: 0 0 0 3px rgba(81, 207, 102, 0.25);
+                transition: transform 0.1s ease, box-shadow 0.2s ease;
+              }
+
+              &::-moz-range-track {
+                height: 4px;
+                border-radius: 999px;
+                background: transparent;
+              }
+
+              &:disabled {
+                cursor: not-allowed;
+                background: rgba(255, 255, 255, 0.12);
+
+                &::-webkit-slider-thumb {
+                  background: rgba(255, 255, 255, 0.4);
+                  box-shadow: none;
+                }
+
+                &::-moz-range-thumb {
+                  background: rgba(255, 255, 255, 0.4);
+                  box-shadow: none;
+                }
+              }
+            }
+
+            .menu-item-subtext {
+              margin-top: -0.25rem;
+            }
+          }
+
+          &.slider-item--wide {
+            padding-left: 1.25rem;
+            padding-right: 1.25rem;
+          }
+
+          &.action-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+          }
+
           padding: 0.75rem 1rem;
           margin-bottom: 0.5rem;
           background: rgba(255, 255, 255, 0.05);
@@ -1652,6 +1748,189 @@
           cursor: pointer;
           transition: all 0.2s;
           box-sizing: border-box;
+
+
+          &.mic-select {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            cursor: default;
+
+            label {
+              font-size: 0.85rem;
+              color: rgba(255, 255, 255, 0.75);
+            }
+
+            .mic-select-row {
+              display: flex;
+              align-items: center;
+              gap: 0.5rem;
+
+              select,
+              .mic-dropdown-button {
+                flex: 1;
+                min-width: 0;
+              }
+
+              select {
+                padding: 0.5rem 0.65rem;
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                color: white;
+                font-size: 0.9rem;
+                transition: border 0.2s ease, background 0.2s ease;
+                cursor: pointer;
+
+                &:focus {
+                  outline: none;
+                  border-color: #51cf66;
+                  box-shadow: 0 0 0 2px rgba(81, 207, 102, 0.2);
+                }
+
+                option {
+                  background: #1a1a1a;
+                  color: white;
+                }
+              }
+
+              .mic-refresh-btn {
+                flex: 0 0 auto;
+                width: 2.25rem;
+                height: 2.25rem;
+                border-radius: 6px;
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: white;
+                font-size: 1rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: background 0.2s ease, border 0.2s ease;
+
+                &:hover {
+                  background: rgba(255, 255, 255, 0.18);
+                }
+
+                &:focus {
+                  outline: none;
+                  border-color: #51cf66;
+                  box-shadow: 0 0 0 2px rgba(81, 207, 102, 0.2);
+                }
+              }
+            }
+
+            .menu-item-subtext {
+              font-size: 0.75rem;
+              color: rgba(255, 255, 255, 0.65);
+
+              &.loading {
+                color: rgba(255, 255, 255, 0.5);
+              }
+
+              &.error {
+                color: #ff6b6b;
+              }
+            }
+
+            &.mic-select--compact {
+              .mic-select-row {
+                align-items: stretch;
+
+                .mic-dropdown {
+                  position: relative;
+                  flex: 1;
+
+                  .mic-dropdown-button {
+                    width: 100%;
+                    background: rgba(255, 255, 255, 0.1);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 4px;
+                    padding: 0.5rem 0.65rem;
+                    color: white;
+                    font-size: 0.9rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 0.5rem;
+                    transition: border 0.2s ease, background 0.2s ease;
+
+                    &:hover:not(:disabled) {
+                      background: rgba(255, 255, 255, 0.15);
+                    }
+
+                    &:disabled {
+                      opacity: 0.55;
+                      cursor: not-allowed;
+                    }
+
+                    &:focus {
+                      outline: none;
+                      border-color: #51cf66;
+                      box-shadow: 0 0 0 2px rgba(81, 207, 102, 0.2);
+                    }
+
+                    .mic-dropdown-label {
+                      flex: 1;
+                      text-align: left;
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                    }
+
+                    .mic-dropdown-caret {
+                      flex: 0 0 auto;
+                      opacity: 0.65;
+                    }
+                  }
+
+                  &.open .mic-dropdown-button {
+                    border-color: #51cf66;
+                    box-shadow: 0 0 0 2px rgba(81, 207, 102, 0.2);
+                  }
+
+                  .mic-dropdown-menu {
+                    position: absolute;
+                    top: calc(100% + 0.3rem);
+                    left: 0;
+                    right: 0;
+                    background: rgba(17, 17, 17, 0.95);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 6px;
+                    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+                    max-height: 12.5rem;
+                    overflow-y: auto;
+                    z-index: 10;
+                    padding: 0.25rem;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.25rem;
+
+                    li {
+                      list-style: none;
+                      padding: 0.45rem 0.5rem;
+                      border-radius: 4px;
+                      cursor: pointer;
+                      background: transparent;
+                      color: rgba(255, 255, 255, 0.85);
+                      transition: background 0.15s ease, color 0.15s ease;
+
+                      &:hover {
+                        background: rgba(255, 255, 255, 0.12);
+                      }
+
+                      &.active {
+                        background: rgba(81, 207, 102, 0.18);
+                        color: #51cf66;
+                        font-weight: 600;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
 
 
           &.toggle-item {

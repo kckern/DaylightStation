@@ -17,8 +17,8 @@ const FitnessSidebarMenu = ({
   onClose,
   visibility,
   onToggleVisibility,
-  selectedPlaylistId,
-  onPlaylistChange,
+  musicEnabled,
+  onToggleMusic,
   mode = 'settings',
   targetDeviceId,
   targetDefaultName,
@@ -30,11 +30,13 @@ const FitnessSidebarMenu = ({
   onReloadVideo,
   reloadTargetSeconds = 0,
   preferredMicrophoneId = '',
-  onSelectMicrophone
+  onSelectMicrophone,
+  sidebarSizeMode = 'regular'
 }) => {
   const fitnessContext = useFitnessContext();
   const [selectedTab, setSelectedTab] = React.useState('friends');
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
+  const hasMusicPlaylists = playlists.length > 0;
   const deviceIdStr = targetDeviceId ? String(targetDeviceId) : null;
   const activeAssignment = deviceIdStr ? guestAssignments[deviceIdStr] : null;
   const baseUser = deviceIdStr ? fitnessContext?.getUserByDevice?.(deviceIdStr) : null;
@@ -52,6 +54,10 @@ const FitnessSidebarMenu = ({
   const [microphones, setMicrophones] = React.useState([]);
   const [microphonesLoading, setMicrophonesLoading] = React.useState(false);
   const [microphoneError, setMicrophoneError] = React.useState(null);
+  const [micDropdownOpen, setMicDropdownOpen] = React.useState(false);
+  const micDropdownRef = React.useRef(null);
+
+  const isWideSidebar = sidebarSizeMode === 'large';
 
   const clampVolume = React.useCallback((value) => {
     if (!Number.isFinite(value)) return 0;
@@ -157,13 +163,6 @@ const FitnessSidebarMenu = ({
     return deduped;
   }, [microphones, preferredMicrophoneId]);
 
-  const handleMicrophoneChange = (event) => {
-    const next = event.target.value;
-    if (onSelectMicrophone) {
-      onSelectMicrophone(next);
-    }
-  };
-
   const handleRefreshMicrophones = () => {
     enumerateMicrophones();
   };
@@ -194,6 +193,44 @@ const FitnessSidebarMenu = ({
 
   const reloadLabel = formatSeconds(reloadTargetSeconds);
   const volumePercent = Math.round(clampVolume(videoVolume) * 100);
+  const microphoneOptions = React.useMemo(() => [{ id: '', label: 'Use browser default' }, ...effectiveMicrophones], [effectiveMicrophones]);
+  const selectedMicrophoneLabel = React.useMemo(() => {
+    const normalizedId = preferredMicrophoneId || '';
+    const match = microphoneOptions.find((mic) => (mic.id || '') === normalizedId);
+    return match ? match.label : 'Use browser default';
+  }, [microphoneOptions, preferredMicrophoneId]);
+
+  const handleSelectMicrophone = React.useCallback((nextId) => {
+    if (onSelectMicrophone) {
+      onSelectMicrophone(nextId);
+    }
+    setMicDropdownOpen(false);
+  }, [onSelectMicrophone]);
+
+  const handleMicrophoneChange = (event) => {
+    handleSelectMicrophone(event.target.value);
+  };
+
+  React.useEffect(() => {
+    if (!micDropdownOpen) return undefined;
+    const handleOutside = (event) => {
+      if (micDropdownRef.current && !micDropdownRef.current.contains(event.target)) {
+        setMicDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside, { passive: true });
+    };
+  }, [micDropdownOpen]);
+
+  React.useEffect(() => {
+    if (isWideSidebar && micDropdownOpen) {
+      setMicDropdownOpen(false);
+    }
+  }, [isWideSidebar, micDropdownOpen]);
 
   const guestOptions = React.useMemo(() => {
     const seen = new Set();
@@ -294,13 +331,6 @@ const FitnessSidebarMenu = ({
     onToggleVisibility(component);
   };
 
-  const handlePlaylistChange = (e) => {
-    const playlistId = e.target.value;
-    if (onPlaylistChange) {
-      onPlaylistChange(playlistId || null);
-    }
-  };
-
   const handleAssignGuest = (option) => {
     if (!assignGuestToDevice || !deviceIdStr) return;
     assignGuestToDevice(deviceIdStr, {
@@ -321,7 +351,114 @@ const FitnessSidebarMenu = ({
 
   const renderSettings = () => (
     <>
+
       <div className="menu-section">
+        <h4>Microphone</h4>
+        <div className={`menu-item mic-select${isWideSidebar ? ' mic-select--wide' : ' mic-select--compact'}`} role="group" aria-label="Microphone selection">
+          <div className={`mic-select-row${isWideSidebar ? '' : ' mic-select-row--compact'}`}>
+            {isWideSidebar ? (
+              <>
+                <select
+                  id="microphone-select"
+                  value={preferredMicrophoneId}
+                  onChange={handleMicrophoneChange}
+                  disabled={microphonesLoading && effectiveMicrophones.length === 0}
+                >
+                  {microphoneOptions.map((mic) => (
+                    <option key={`${mic.id || 'default'}-${mic.label}`} value={mic.id}>
+                      {mic.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="mic-refresh-btn"
+                  onClick={handleRefreshMicrophones}
+                  title="Refresh device list"
+                >
+                  ↻
+                </button>
+              </>
+            ) : (
+              <>
+                <div className={`mic-dropdown${micDropdownOpen ? ' open' : ''}`} ref={micDropdownRef}>
+                  <button
+                    type="button"
+                    className="mic-dropdown-button"
+                    onClick={() => setMicDropdownOpen((prev) => !prev)}
+                    disabled={microphonesLoading && microphoneOptions.length <= 1}
+                    aria-haspopup="listbox"
+                    aria-expanded={micDropdownOpen}
+                  >
+                    <span className="mic-dropdown-label">{selectedMicrophoneLabel}</span>
+                    <span className="mic-dropdown-caret">▾</span>
+                  </button>
+                  {micDropdownOpen && (
+                    <ul className="mic-dropdown-menu" role="listbox">
+                      {microphoneOptions.map((mic) => (
+                        <li
+                          key={`${mic.id || 'default'}-${mic.label}`}
+                          role="option"
+                          aria-selected={(mic.id || '') === (preferredMicrophoneId || '')}
+                          className={(mic.id || '') === (preferredMicrophoneId || '') ? 'active' : ''}
+                          onClick={() => handleSelectMicrophone(mic.id)}
+                        >
+                          {mic.label}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="mic-refresh-btn"
+                  onClick={() => {
+                    setMicDropdownOpen(false);
+                    handleRefreshMicrophones();
+                  }}
+                  title="Refresh device list"
+                >
+                  ↻
+                </button>
+              </>
+            )}
+          </div>
+          {microphonesLoading && (
+            <div className="menu-item-subtext loading">Scanning for microphones…</div>
+          )}
+          {microphoneError && (
+            <div className="menu-item-subtext error">{microphoneError}</div>
+          )}
+        </div>
+      </div>
+
+
+      <div className="menu-section">
+        <h4>Quick Actions</h4>
+        <button type="button" className="menu-item action-item" onClick={handleReloadPage}>
+          <span>🔄 Reload App</span>
+        </button>
+        <button
+          type="button"
+          className="menu-item action-item"
+          onClick={handleReloadVideo}
+          disabled={!onReloadVideo || !videoMediaAvailable}
+        >
+          <span>↺ Reload Video ({reloadLabel})</span>
+        </button>
+        <button
+          type="button"
+          className="menu-item action-item"
+          onClick={/*handleSwapCameraAndVideo*/() => {}}
+          disabled={!onReloadVideo || !videoMediaAvailable}
+        >
+          <span>🔀 Swap Camera & Video</span>
+        </button>
+      </div>
+
+      <div className="menu-section">
+
+        <h4>Media Visibility</h4>
         <div className="menu-item toggle-item">
           <span>💰 Treasure Box</span>
           <label className="toggle-switch">
@@ -335,50 +472,25 @@ const FitnessSidebarMenu = ({
         </div>
 
         <div className="menu-item toggle-item">
-          <span>🏁 Race Chart</span>
+          <span>🎵 Music</span>
           <label className="toggle-switch">
             <input
               type="checkbox"
-              checked={visibility.raceChart}
-              onChange={() => handleToggle('raceChart')}
+              checked={musicEnabled}
+              onChange={() => onToggleMusic?.()}
+              disabled={!hasMusicPlaylists && !musicEnabled}
             />
             <span className="toggle-slider"></span>
           </label>
         </div>
-
-        <div className="menu-item toggle-item">
-          <span>🎵 Playlist</span>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={visibility.playlist}
-              onChange={() => handleToggle('playlist')}
-            />
-            <span className="toggle-slider"></span>
-          </label>
-        </div>
-
-        {visibility.playlist && playlists.length > 0 && (
-          <div className="menu-item playlist-dropdown">
-            <select 
-              value={selectedPlaylistId || ''} 
-              onChange={handlePlaylistChange}
-              className="playlist-select"
-            >
-              <option value="">Select a playlist...</option>
-              {playlists.map((playlist) => (
-                <option key={playlist.id} value={playlist.id}>
-                  {playlist.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        {!hasMusicPlaylists && (
+          <div className="menu-item-subtext">Add a fitness playlist to enable music.</div>
         )}
       </div>
 
       <div className="menu-section">
         <h4>Video Controls</h4>
-        <div className="menu-item slider-item" role="group" aria-label="Video volume">
+        <div className={`menu-item slider-item${isWideSidebar ? ' slider-item--wide' : ''}`} role="group" aria-label="Video volume">
           <div className="slider-label">
             <span>Video Volume</span>
             <span className="slider-value">{`${volumePercent}%`}</span>
@@ -398,56 +510,6 @@ const FitnessSidebarMenu = ({
         </div>
       </div>
 
-      <div className="menu-section">
-        <h4>Quick Actions</h4>
-        <button type="button" className="menu-item action-item" onClick={handleReloadPage}>
-          <span>🔄 Reload Page</span>
-        </button>
-        <button
-          type="button"
-          className="menu-item action-item"
-          onClick={handleReloadVideo}
-          disabled={!onReloadVideo || !videoMediaAvailable}
-        >
-          <span>↺ Reload Video ({reloadLabel})</span>
-        </button>
-      </div>
-
-      <div className="menu-section">
-        <h4>Microphone</h4>
-        <div className="menu-item mic-select" role="group" aria-label="Microphone selection">
-          <label htmlFor="microphone-select">Input Source</label>
-          <div className="mic-select-row">
-            <select
-              id="microphone-select"
-              value={preferredMicrophoneId}
-              onChange={handleMicrophoneChange}
-              disabled={microphonesLoading && effectiveMicrophones.length === 0}
-            >
-              <option value="">Use browser default</option>
-              {effectiveMicrophones.map((mic) => (
-                <option key={`${mic.id}-${mic.label}`} value={mic.id}>
-                  {mic.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="mic-refresh-btn"
-              onClick={handleRefreshMicrophones}
-              title="Refresh device list"
-            >
-              ↻
-            </button>
-          </div>
-          {microphonesLoading && (
-            <div className="menu-item-subtext loading">Scanning for microphones…</div>
-          )}
-          {microphoneError && (
-            <div className="menu-item-subtext error">{microphoneError}</div>
-          )}
-        </div>
-      </div>
     </>
   );
 

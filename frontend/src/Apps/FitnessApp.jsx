@@ -403,7 +403,7 @@ const FitnessApp = () => {
                   }}
                   tabIndex={0}
                 >
-                  Reload Page
+                  Reload App
                 </button>
               </div>
             )}
