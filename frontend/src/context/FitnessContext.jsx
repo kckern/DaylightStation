@@ -12,6 +12,16 @@ const normalizeLabelList = (raw) => {
   return Array.from(new Set(normalized));
 };
 
+const slugifyId = (value, fallback = 'user') => {
+  if (!value) return fallback;
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || fallback;
+};
+
 // Custom hook for using the context
 export const useFitnessContext = () => {
   const context = useContext(FitnessContext);
@@ -72,6 +82,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [governancePhase, setGovernancePhase] = useState(null); // null | 'init' | 'green' | 'yellow' | 'red'
   const [governanceMedia, setGovernanceMediaState] = useState(null);
   const [governancePulse, setGovernancePulse] = useState(0);
+  const [guestAssignments, setGuestAssignments] = useState({});
+  const guestAssignmentsRef = useRef(guestAssignments);
   const governanceMetaRef = useRef({ mediaId: null, satisfiedOnce: false, deadline: null });
   const governanceTimerRef = useRef(null);
   const governanceRequirementSummaryRef = useRef({ targetUserCount: null, requirements: [], activeCount: 0 });
@@ -83,6 +95,37 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const toggleSidebarSizeMode = React.useCallback(() => {
     setSidebarSizeMode((m) => (m === 'regular' ? 'large' : 'regular'));
   }, []);
+
+  const assignGuestToDevice = React.useCallback((deviceId, assignment) => {
+    if (deviceId == null) return;
+    const key = String(deviceId);
+    setGuestAssignments(prev => {
+      if (!assignment) {
+        if (!prev[key]) return prev;
+        const { [key]: _removed, ...rest } = prev;
+        return rest;
+      }
+      const normalizedName = assignment.name || 'Guest';
+      const profileId = assignment.profileId || assignment.candidateId || slugifyId(normalizedName);
+      return {
+        ...prev,
+        [key]: {
+          ...assignment,
+          name: normalizedName,
+          profileId,
+          candidateId: assignment.candidateId || assignment.id || profileId,
+          source: assignment.source || assignment.category || null,
+          baseUserName: assignment.baseUserName ?? prev[key]?.baseUserName ?? null,
+          assignedAt: Date.now()
+        }
+      };
+    });
+  }, []);
+
+  const clearGuestAssignment = React.useCallback((deviceId) => {
+    if (deviceId == null) return;
+    assignGuestToDevice(deviceId, null);
+  }, [assignGuestToDevice]);
 
   // Lightweight heartbeat to refresh UI (zones, elapsed) without per-sample churn
   useEffect(() => {
@@ -150,6 +193,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Keep a ref mirror of users map to avoid stale closures inside ws handlers
   const usersRef = useRef(users);
   useEffect(() => { usersRef.current = users; }, [users]);
+  useEffect(() => { guestAssignmentsRef.current = guestAssignments; }, [guestAssignments]);
   useEffect(() => {
     if (FITNESS_DEBUG) {
       console.log('[FitnessContext][USERS_REF] Updated usersRef size=', usersRef.current.size);
@@ -329,15 +373,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               // If this is a heart rate device, attempt to map to user and record heart rate for treasure box
               try {
                 if (device.type === 'heart_rate' && fitnessSessionRef.current.treasureBox) {
-                  const matches = [];
-                  usersRef.current.forEach((userObj) => {
-                    if (String(userObj.hrDeviceId) === String(device.deviceId)) {
-                      matches.push(userObj.name);
-                      fitnessSessionRef.current.treasureBox.recordUserHeartRate(userObj.name, device.heartRate);
+                  const deviceIdStr = String(device.deviceId);
+                  const guestBinding = guestAssignmentsRef.current?.[deviceIdStr];
+                  if (guestBinding && guestBinding.name) {
+                    fitnessSessionRef.current.treasureBox.recordUserHeartRate(guestBinding.name, device.heartRate);
+                    if (FITNESS_DEBUG) {
+                      console.log('[FitnessContext][WS] HR scan mapping (guest)', { deviceId: deviceIdStr, guest: guestBinding.name, hr: device.heartRate });
                     }
-                  });
-                  if (FITNESS_DEBUG) {
-                    console.log('[FitnessContext][WS] HR scan mapping', { deviceId, matches, hr: device.heartRate });
+                  } else {
+                    const matches = [];
+                    usersRef.current.forEach((userObj) => {
+                      if (String(userObj.hrDeviceId) === deviceIdStr) {
+                        matches.push(userObj.name);
+                        fitnessSessionRef.current.treasureBox.recordUserHeartRate(userObj.name, device.heartRate);
+                      }
+                    });
+                    if (FITNESS_DEBUG) {
+                      console.log('[FitnessContext][WS] HR scan mapping', { deviceId: deviceIdStr, matches, hr: device.heartRate });
+                    }
                   }
                 }
               } catch (e) {
@@ -370,14 +423,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             }
             // Attempt heart rate -> user treasure coin mapping via quick lookup ref (redundant safeguard)
             if (device.type === 'heart_rate' && fitnessSessionRef.current.treasureBox) {
-              const matchedUser = hrDeviceUserMapRef.current.get(deviceId);
-              if (FITNESS_DEBUG) {
-                console.log('[FitnessContext][WS] HR quick lookup', { deviceId, found: !!matchedUser, user: matchedUser?.name, hr: device.heartRate });
-              }
-              if (matchedUser) {
+              const guestBinding = guestAssignmentsRef.current?.[deviceId];
+              if (guestBinding && guestBinding.name) {
+                if (FITNESS_DEBUG) {
+                  console.log('[FitnessContext][WS] HR quick lookup (guest)', { deviceId, guest: guestBinding.name, hr: device.heartRate });
+                }
                 try {
-                  fitnessSessionRef.current.treasureBox.recordUserHeartRate(matchedUser.name, device.heartRate);
+                  fitnessSessionRef.current.treasureBox.recordUserHeartRate(guestBinding.name, device.heartRate);
                 } catch (e) { /* ignore */ }
+              } else {
+                const matchedUser = hrDeviceUserMapRef.current.get(deviceId);
+                if (FITNESS_DEBUG) {
+                  console.log('[FitnessContext][WS] HR quick lookup', { deviceId, found: !!matchedUser, user: matchedUser?.name, hr: device.heartRate });
+                }
+                if (matchedUser) {
+                  try {
+                    fitnessSessionRef.current.treasureBox.recordUserHeartRate(matchedUser.name, device.heartRate);
+                  } catch (e) { /* ignore */ }
+                }
               }
             }
           }
@@ -590,6 +653,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         deviceToUser.set(String(user.hrDeviceId), user.name);
       }
     });
+    Object.entries(guestAssignments || {}).forEach(([deviceId, binding]) => {
+      if (binding && binding.name) {
+        deviceToUser.set(String(deviceId), binding.name);
+      }
+    });
     const names = heartRateDevices
       .reduce((acc, device) => {
         if (!device) return acc;
@@ -602,7 +670,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         return acc;
       }, []);
     return Array.from(new Set(names));
-  }, [heartRateDevices, users]);
+  }, [heartRateDevices, users, guestAssignments]);
 
   useEffect(() => {
     if (governanceTimerRef.current) {
@@ -915,7 +983,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // User-related data
     users: allUsers,
     userCount: users.size,
-  usersConfigRaw: usersConfig,
+    usersConfigRaw: usersConfig,
+    guestAssignments,
+    assignGuestToDevice,
+    clearGuestAssignment,
     // Fallback logic: if config primary list is missing/empty but we DO have users, treat all as primary.
     // This ensures device->name mapping works even when upstream config shape failed to populate.
     primaryUsers: (usersConfig.primary && usersConfig.primary.length > 0)

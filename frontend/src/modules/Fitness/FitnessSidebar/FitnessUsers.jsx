@@ -5,6 +5,16 @@ import FlipMove from 'react-flip-move';
 import '../FitnessUsers.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 
+const slugifyId = (value, fallback = 'user') => {
+  if (!value) return fallback;
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || fallback;
+};
+
 // Config-driven constants (single source of truth for UI & heuristics)
 const CONFIG = {
   uiLabels: {
@@ -105,7 +115,7 @@ const CONFIG = {
 // Backward-compat constant for existing references
 const UI_LABELS = CONFIG.uiLabels;
 
-const FitnessUsersList = () => {
+const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   // Use the fitness context
   const fitnessContext = useFitnessContext();
   
@@ -119,8 +129,11 @@ const FitnessUsersList = () => {
     hrColorMap: contextHrColorMap,
     usersConfigRaw,
     userCurrentZones,
-    zones
+    zones,
+    guestAssignments: guestAssignmentsFromContext
   } = fitnessContext;
+
+  const guestAssignments = guestAssignmentsFromContext || {};
   
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
@@ -157,7 +170,7 @@ const FitnessUsersList = () => {
   }, [deviceConfiguration]);
 
   // Map of deviceId -> user name (first match wins from primary then secondary)
-  const hrOwnerMap = React.useMemo(() => {
+  const hrOwnerBaseMap = React.useMemo(() => {
     const map = {};
     const populated = [...primaryUsers, ...secondaryUsers];
     populated.forEach(u => {
@@ -176,6 +189,16 @@ const FitnessUsersList = () => {
     }
     return map;
   }, [primaryUsers, secondaryUsers, usersConfigRaw]);
+
+  const hrOwnerMap = React.useMemo(() => {
+    const map = { ...hrOwnerBaseMap };
+    Object.entries(guestAssignments).forEach(([deviceId, assignment]) => {
+      if (assignment?.name) {
+        map[String(deviceId)] = assignment.name;
+      }
+    });
+    return map;
+  }, [hrOwnerBaseMap, guestAssignments]);
 
   // Build a map of deviceId -> displayName applying group_label rule
   const hrDisplayNameMap = React.useMemo(() => {
@@ -196,12 +219,13 @@ const FitnessUsersList = () => {
     if (Object.keys(labelLookup).length === 0) return hrOwnerMap;
     const out = { ...hrOwnerMap };
     Object.keys(labelLookup).forEach(deviceId => {
+      if (guestAssignments[String(deviceId)]) return;
       if (out[deviceId]) {
         out[deviceId] = labelLookup[deviceId];
       }
     });
     return out;
-  }, [hrOwnerMap, allDevices, usersConfigRaw]);
+  }, [hrOwnerMap, allDevices, usersConfigRaw, guestAssignments]);
 
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
@@ -267,8 +291,13 @@ const FitnessUsersList = () => {
         map[String(u.hrDeviceId)] = u.id || u.name.toLowerCase();
       }
     });
+    Object.entries(guestAssignments).forEach(([deviceId, assignment]) => {
+      if (!assignment) return;
+      const profileId = assignment.profileId || assignment.id || slugifyId(assignment.name);
+      map[String(deviceId)] = profileId;
+    });
     return map;
-  }, [primaryUsers, secondaryUsers]);
+  }, [primaryUsers, secondaryUsers, guestAssignments]);
   
   // Map of deviceId -> equipment name and ID
   const equipmentMap = React.useMemo(() => {
@@ -319,6 +348,13 @@ const FitnessUsersList = () => {
 
   const getDeviceUnit = (device) => (CONFIG.devices[device.type] || CONFIG.devices.default).unit;
   const getDeviceColor = (device) => (CONFIG.devices[device.type] || CONFIG.devices.default).colorClass;
+
+  const handleAvatarClick = React.useCallback((device) => {
+    if (!device || device.type !== 'heart_rate') return;
+    const deviceId = String(device.deviceId);
+    const defaultName = hrOwnerBaseMap[deviceId] || null;
+    onRequestGuestAssignment?.({ deviceId, defaultName });
+  }, [onRequestGuestAssignment, hrOwnerBaseMap]);
 
   const canonicalZones = CONFIG.zone.canonical;
   const zoneRankMap = CONFIG.zone.rankMap;
@@ -607,12 +643,15 @@ const FitnessUsersList = () => {
                 );
               }
               
-              const ownerName = device.type === 'heart_rate' ? hrDisplayNameMap[String(device.deviceId)] : null;
+              const deviceIdStr = String(device.deviceId);
+              const isHeartRate = device.type === 'heart_rate';
+              const guestAssignment = isHeartRate ? guestAssignments[deviceIdStr] : null;
+              const ownerName = isHeartRate ? hrDisplayNameMap[deviceIdStr] : null;
               const equipmentInfo = equipmentMap[String(device.deviceId)];
-              const deviceName = device.type === 'heart_rate' ? 
-                (ownerName || String(device.deviceId)) : String(device.deviceId);
-              const profileId = device.type === 'heart_rate' ?
-                (userIdMap[String(device.deviceId)] || 'user') :
+              const deviceName = isHeartRate ? 
+                (guestAssignment?.name || ownerName || deviceIdStr) : String(device.deviceId);
+              const profileId = isHeartRate ?
+                (guestAssignment?.profileId || userIdMap[deviceIdStr] || 'user') :
                 (equipmentInfo?.id || 'equipment');
               
               const zoneIdForGrouping = getDeviceZoneId(device) || (device.type === 'heart_rate' ? null : null);
@@ -653,10 +692,22 @@ const FitnessUsersList = () => {
                     )}
                   </div>
                   <div 
-                    className={`fitness-device ${device.type === 'heart_rate' && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${getZoneClass(device)}`}
+                    className={`fitness-device ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${getZoneClass(device)}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                   >
-                    <div className={`user-profile-img-container ${getZoneClass(device)}`}>
+                    <div
+                      className={`user-profile-img-container ${getZoneClass(device)} ${isHeartRate ? 'clickable' : ''}`}
+                      role={isHeartRate ? 'button' : undefined}
+                      tabIndex={isHeartRate ? 0 : undefined}
+                      onClick={isHeartRate ? () => handleAvatarClick(device) : undefined}
+                      onKeyDown={isHeartRate ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+                          event.preventDefault();
+                          handleAvatarClick(device);
+                        }
+                      } : undefined}
+                      aria-label={isHeartRate ? `Reassign ${deviceName}` : undefined}
+                    >
                       <img
                         src={DaylightMediaPath(device.type === 'heart_rate'
                           ? `/media/img/users/${profileId}`
