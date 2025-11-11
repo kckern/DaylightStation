@@ -451,7 +451,7 @@ dash-video {
       .video-player,
       video,
       dash-video {
-        filter: grayscale(0.85);
+        filter: grayscale(0.85) brightness(0.2);
         transition: filter 0.3s ease;
       }
     }
@@ -1147,8 +1147,34 @@ dash-video {
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   z-index: var(--fitness-fullscreen-vitals-z, 80);
+}
+
+.fullscreen-vitals-overlay.anchor-left {
+  right: auto;
+  left: clamp(14px, 4vw, 32px);
+  align-items: flex-start;
+}
+
+.fullscreen-vitals-overlay.anchor-left .fullscreen-vitals-group {
+  justify-content: flex-start;
+}
+
+.fullscreen-vitals-overlay.anchor-left .fullscreen-vitals-group.hr-group {
+  align-items: flex-start;
+}
+
+.fullscreen-vitals-overlay.anchor-left .fullscreen-vitals-group.hr-group.count-3,
+.fullscreen-vitals-overlay.anchor-left .fullscreen-vitals-group.hr-group.count-4,
+.fullscreen-vitals-overlay.anchor-left .fullscreen-vitals-group.hr-group.count-5,
+.fullscreen-vitals-overlay.anchor-left .fullscreen-vitals-group.hr-group.count-6 {
+  justify-content: flex-start;
+}
+
+.fullscreen-vitals-overlay.anchor-right {
+  align-items: flex-end;
 }
 
 .fullscreen-vitals-overlay .fullscreen-vitals-group {
