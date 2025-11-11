@@ -174,7 +174,8 @@ export function SinglePlayer(play) {
             onMediaRef,
             showQuality,
             stallConfig: play?.stallConfig,
-            keyboardOverrides: play?.keyboardOverrides
+            keyboardOverrides: play?.keyboardOverrides,
+            onController: play?.onController
           }
         )
       )}
@@ -215,5 +216,6 @@ SinglePlayer.propTypes = {
   onMediaRef: PropTypes.func,
   showQuality: PropTypes.bool,
   stallConfig: PropTypes.object,
-  keyboardOverrides: PropTypes.objectOf(PropTypes.func)
+  keyboardOverrides: PropTypes.objectOf(PropTypes.func),
+  onController: PropTypes.func
 };
