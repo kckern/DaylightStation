@@ -10,7 +10,7 @@ import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
 import './FitnessUsers.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
-const FitnessSidebar = ({ playerRef }) => {
+const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) => {
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
   const [visibility, setVisibility] = useState({
     governance: false,
@@ -21,6 +21,7 @@ const FitnessSidebar = ({ playerRef }) => {
     video: true,
     voiceMemo: true
   });
+  const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
   const fitnessContext = useFitnessContext();
   const { 
     treasureBox, 
@@ -124,6 +125,7 @@ const FitnessSidebar = ({ playerRef }) => {
               }
             }}
             playerRef={playerRef}
+            preferredMicrophoneId={preferredMicrophoneId}
           />
         </div>
       )}
@@ -146,6 +148,11 @@ const FitnessSidebar = ({ playerRef }) => {
             assignGuestToDevice={assignGuestToDevice}
             clearGuestAssignment={clearGuestAssignment}
             guestCandidates={guestCandidates}
+            playerRef={playerRef}
+            onReloadVideo={onReloadVideo}
+            reloadTargetSeconds={reloadTargetSeconds}
+            preferredMicrophoneId={preferredMicrophoneId}
+            onSelectMicrophone={setPreferredMicrophoneId}
           />
         </>
       )}
