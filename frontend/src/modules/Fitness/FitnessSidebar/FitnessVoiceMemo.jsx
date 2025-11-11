@@ -24,7 +24,7 @@ const blobToBase64 = (blob) => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
-const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, playerRef }) => {
+const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, playerRef, preferredMicrophoneId = '' }) => {
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
@@ -84,7 +84,28 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
     pauseVideo();
     
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioConstraints = (() => {
+        if (!preferredMicrophoneId || preferredMicrophoneId === 'default') {
+          return true;
+        }
+        return { deviceId: { exact: preferredMicrophoneId } };
+      })();
+
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      } catch (primaryError) {
+        if (audioConstraints !== true) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.warn('Falling back to default microphone', primaryError);
+          } catch (fallbackError) {
+            throw fallbackError;
+          }
+        } else {
+          throw primaryError;
+        }
+      }
       streamRef.current = stream;
       const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       chunksRef.current = [];

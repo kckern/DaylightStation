@@ -1244,7 +1244,117 @@
       text-overflow: ellipsis;
       line-height: 1.2;
 
+
+          &.slider-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            cursor: default;
+
+            .slider-label {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              font-size: 0.85rem;
+              font-weight: 600;
+              color: rgba(255, 255, 255, 0.85);
+
+              .slider-value {
+                font-variant-numeric: tabular-nums;
+              }
+            }
+
+            input[type='range'] {
+              width: 100%;
+              accent-color: #51cf66;
+              cursor: pointer;
+            }
+          }
+
+          &.action-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            gap: 0.5rem;
+
+            &:hover {
+              background: rgba(81, 207, 102, 0.18);
+              border-color: rgba(81, 207, 102, 0.35);
+            }
+
+            &:disabled {
+              opacity: 0.6;
+              cursor: not-allowed;
+            }
+          }
+
+          &.mic-select {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            cursor: default;
+
+            label {
+              font-size: 0.8rem;
+              text-transform: uppercase;
+              letter-spacing: 0.6px;
+              color: rgba(255, 255, 255, 0.6);
+            }
+
+            .mic-select-row {
+              display: flex;
+              gap: 0.5rem;
+
+              select {
+                flex: 1;
+                padding: 0.45rem 0.5rem;
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                color: white;
+                font-size: 0.9rem;
+
+                &:focus {
+                  outline: none;
+                  border-color: #51cf66;
+                  box-shadow: 0 0 0 2px rgba(81, 207, 102, 0.2);
+                }
+              }
+
+              .mic-refresh-btn {
+                flex: 0 0 auto;
+                padding: 0.45rem 0.7rem;
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                color: white;
+                font-weight: 600;
+                cursor: pointer;
+                transition: background 0.2s, border 0.2s;
+
+                &:hover {
+                  background: rgba(255, 255, 255, 0.18);
+                  border-color: rgba(255, 255, 255, 0.35);
+                }
+              }
+            }
+          }
       .track-title {
+
+        .menu-item-subtext {
+          font-size: 0.75rem;
+          color: rgba(255, 255, 255, 0.6);
+          margin-top: 0.25rem;
+
+          &.error {
+            color: #ff6b6b;
+          }
+
+          &.loading {
+            color: #ffd43b;
+          }
+        }
         font-size: 0.8rem;
         font-weight: 600;
         color: #fff;
