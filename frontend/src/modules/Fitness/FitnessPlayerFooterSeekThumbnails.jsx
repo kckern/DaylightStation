@@ -292,6 +292,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   const renderedSeekButtons = useMemo(() => {
     if (!currentItem) return null;
+    const posterSrc = currentItem?.seasonImage || currentItem?.image;
     const plexObj = {
       plex: currentItem.plex || currentItem.id,
       id: currentItem.id,
@@ -327,9 +328,12 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       const isOrigin = Math.abs(segmentStart - rangeStart) < 0.001; // ensure the very first window uses season / show artwork
       let imgSrc;
       if (isOrigin) {
-        imgSrc = currentItem?.seasonImage || currentItem?.image || (generateThumbnailUrl ? generateThumbnailUrl(plexObj, sampleTime) : undefined);
+        imgSrc = posterSrc || (generateThumbnailUrl ? generateThumbnailUrl(plexObj, sampleTime) : undefined);
       } else {
         imgSrc = generateThumbnailUrl ? generateThumbnailUrl(plexObj, sampleTime) : undefined;
+        if (!imgSrc && posterSrc) {
+          imgSrc = posterSrc;
+        }
       }
       const state = isActive ? 'active' : (activePos != null && segmentStart < activePos ? 'past' : 'future');
       const classNames = `seek-button-container ${state}${isOrigin ? ' origin' : ''}`;
@@ -386,14 +390,25 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
           >
             <div className="thumbnail-wrapper">
               {imgSrc ? (
-                <img 
-                  src={imgSrc} 
-                  alt="" 
-                  className="seek-thumbnail" 
+                <img
+                  key={`${imgSrc}-${segmentStart}`}
+                  src={imgSrc}
+                  alt=""
+                  className="seek-thumbnail"
                   loading="lazy"
+                  onLoad={(e) => {
+                    // Ensure image is visible on successful load
+                    e.target.style.display = '';
+                  }}
                   onError={(e) => {
-                    // Hide image and show grey fallback on error
-                    e.target.style.display = 'none';
+                    // Only try poster fallback once if it's different from current src
+                    if (posterSrc && e.target.src !== posterSrc && !e.target.hasAttribute('data-poster-tried')) {
+                      e.target.setAttribute('data-poster-tried', 'true');
+                      e.target.src = posterSrc;
+                    } else {
+                      // Hide image and show grey fallback
+                      e.target.style.display = 'none';
+                    }
                   }}
                 />
               ) : null}

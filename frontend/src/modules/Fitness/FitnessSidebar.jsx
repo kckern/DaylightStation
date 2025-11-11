@@ -16,8 +16,6 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
     governance: false,
     treasureBox: true,
     users: true,
-    raceChart: false,
-    playlist: false,
     video: true,
     voiceMemo: true
   });
@@ -27,12 +25,14 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
     treasureBox, 
     fitnessSession, 
     selectedPlaylistId, 
-    setSelectedPlaylistId, 
     governanceState,
     usersConfigRaw,
     guestAssignments,
     assignGuestToDevice,
-    clearGuestAssignment
+    clearGuestAssignment,
+    sidebarSizeMode,
+    musicEnabled,
+    setMusicOverride
   } = fitnessContext;
   const menuOpen = menuState.open;
   const guestCandidates = React.useMemo(() => {
@@ -53,6 +53,11 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
   const isGoverned = Boolean(governanceState?.isGoverned);
   const showGovernancePanel = isGoverned || visibility.governance;
 
+  const handleToggleMusic = React.useCallback(() => {
+    if (!setMusicOverride) return;
+    setMusicOverride(!musicEnabled);
+  }, [musicEnabled, setMusicOverride]);
+
   React.useEffect(() => {
     setVisibility(prev => {
       if (isGoverned) {
@@ -63,13 +68,6 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
       return { ...prev, governance: false };
     });
   }, [isGoverned]);
-
-  // Automatically show playlist when selectedPlaylistId is set
-  React.useEffect(() => {
-    if (selectedPlaylistId && !visibility.playlist) {
-      setVisibility(prev => ({ ...prev, playlist: true }));
-    }
-  }, [selectedPlaylistId, visibility.playlist]);
 
   const handleToggleVisibility = (component) => {
     setVisibility(prev => ({
@@ -102,7 +100,7 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
       )}
 
       {/* Music Player */}
-      {visibility.playlist && (
+      {musicEnabled && (
         <div className="fitness-sidebar-music">
           <FitnessMusicPlayer 
             selectedPlaylistId={selectedPlaylistId} 
@@ -138,8 +136,8 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
             onClose={() => setMenuState({ open: false, mode: 'settings', target: null })}
             visibility={visibility}
             onToggleVisibility={handleToggleVisibility}
-            selectedPlaylistId={selectedPlaylistId}
-            onPlaylistChange={setSelectedPlaylistId}
+            musicEnabled={musicEnabled}
+            onToggleMusic={handleToggleMusic}
             isGoverned={isGoverned}
             mode={menuState.mode}
             targetDeviceId={menuState.target?.deviceId || null}
@@ -153,6 +151,7 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
             reloadTargetSeconds={reloadTargetSeconds}
             preferredMicrophoneId={preferredMicrophoneId}
             onSelectMicrophone={setPreferredMicrophoneId}
+            sidebarSizeMode={sidebarSizeMode}
           />
         </>
       )}
