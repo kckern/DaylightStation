@@ -376,7 +376,45 @@ dash-video {
     overflow: hidden;
     z-index: 1;
     display: block;
-    
+
+    .fitness-player-video-host {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .fitness-video-shell {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      pointer-events: auto;
+    }
+
+    .fitness-video-shell.is-secondary {
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .fitness-camera-primary {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .fitness-camera-primary .fitness-video-container,
+    .fitness-camera-primary .fitness-video-wrapper {
+      width: 100%;
+      height: 100%;
+    }
     /* Content positioned absolute within the ratio container */
     .player, .video-player, video, dash-video {
       position: absolute;
@@ -393,7 +431,7 @@ dash-video {
       right: 0;
       width: 80px;
       height: 80px;
-      z-index: 1000;
+      z-index: var(--fitness-player-controls-z, 30);
       background-color: transparent;
       pointer-events: none; /* Allow clicks to pass through except for the close button */
     }
@@ -426,7 +464,7 @@ dash-video {
       justify-content: center;
       pointer-events: none;
       padding: clamp(16px, 4vw, 48px);
-      z-index: 1200;
+      z-index: var(--fitness-parent-overlay-z, 60);
       text-align: center;
 
       &__panel {
@@ -439,6 +477,7 @@ dash-video {
         box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
         backdrop-filter: blur(12px);
         color: #f5f5f5;
+        pointer-events: none;
       }
 
       &__title {
@@ -472,7 +511,8 @@ dash-video {
       &__chip {
         display: inline-flex;
         align-items: center;
-        padding: 4px 12px;
+        gap: 8px;
+        padding: 4px 12px 4px 6px;
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.18);
         color: #111;
@@ -481,6 +521,22 @@ dash-video {
         letter-spacing: 0.01em;
         text-transform: capitalize;
         background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.68));
+        pointer-events: none;
+
+        .governance-overlay__avatar {
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          object-fit: cover;
+          border: 1px solid rgba(255, 255, 255, 0.7);
+          box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+          background: rgba(255, 255, 255, 0.85);
+          flex-shrink: 0;
+        }
+
+        .governance-overlay__chip-label {
+          white-space: nowrap;
+        }
       }
 
       &__rules {
@@ -559,6 +615,60 @@ dash-video {
           color: #7f1d1d;
         }
       }
+    }
+
+    .governance-progress-overlay {
+      position: absolute;
+      left: clamp(18px, 4vw, 48px);
+      bottom: clamp(18px, 4vw, 48px);
+      z-index: var(--fitness-parent-overlay-z, 60);
+      pointer-events: none;
+      transform-origin: bottom left;
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-start;
+
+      &__track {
+        width: clamp(140px, 18vw, 260px);
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.24);
+        overflow: hidden;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+        pointer-events: none;
+      }
+
+      &__fill {
+        height: 100%;
+        background: linear-gradient(90deg, rgba(249, 115, 22, 0.9), rgba(234, 179, 8, 0.9));
+        border-radius: inherit;
+        transition: width 0.25s ease;
+        will-change: width;
+        pointer-events: none;
+      }
+    }
+
+    .stall-reload-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 12%;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: var(--fitness-stall-overlay-z, 70);
+    }
+
+    .stall-reload-overlay .stall-reload-button {
+      padding: 0.9rem 1.4rem;
+      font-size: 1rem;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      background: #ffd400;
+      color: #111;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+      z-index: calc(var(--fitness-stall-overlay-z, 70) + 1);
     }
     
     @media (max-width: 768px) {
@@ -1004,6 +1114,101 @@ dash-video {
       }
     }
   }
+}
+
+.fitness-sidebar-video-host {
+  display: none;
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+  margin-top: 12px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.fitness-sidebar-video-host[data-has-video="1"] {
+  display: block;
+}
+
+.fitness-sidebar-video-host > .fitness-video-shell {
+  position: absolute;
+  inset: 0;
+}
+
+.fullscreen-vitals-overlay {
+  position: absolute;
+  bottom: clamp(14px, 4vw, 32px);
+  right: clamp(14px, 4vw, 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+  z-index: var(--fitness-fullscreen-vitals-z, 80);
+}
+
+.fullscreen-vitals-overlay .fullscreen-vitals-group {
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.fullscreen-vitals-overlay .fullscreen-vitals-group.hr-group {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.fullscreen-vitals-overlay .fullscreen-vitals-group.hr-group.count-3,
+.fullscreen-vitals-overlay .fullscreen-vitals-group.hr-group.count-4,
+.fullscreen-vitals-overlay .fullscreen-vitals-group.hr-group.count-5,
+.fullscreen-vitals-overlay .fullscreen-vitals-group.hr-group.count-6 {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.fullscreen-vitals-overlay .vital-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 3px solid var(--vital-ring-color, rgba(255, 255, 255, 0.8));
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.fullscreen-vitals-overlay .vital-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fullscreen-vitals-overlay .vital-rpm {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.72);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  min-width: 64px;
+}
+
+.fullscreen-vitals-overlay .vital-rpm-value {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.fullscreen-vitals-overlay .vital-rpm-label {
+  font-size: 0.7rem;
+  opacity: 0.75;
 }
 
 /* Mode modifiers */

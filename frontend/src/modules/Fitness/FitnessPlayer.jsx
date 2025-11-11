@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import FitnessSidebar from './FitnessSidebar.jsx';
 import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
@@ -8,6 +9,8 @@ import { DaylightMediaPath } from '../../lib/api.mjs';
 import FitnessUsers from './FitnessUsers.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
+import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
+import FitnessFullscreenVitals from './FitnessFullscreenVitals.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -136,11 +139,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     governance,
     setGovernanceMedia,
     governedLabels,
-    governanceState
+    governanceState,
+    mediaSwapActive
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
+  const mainVideoHostRef = useRef(null);
+  const sidebarVideoHostRef = useRef(null);
   const {
     seek: seekTo,
     toggle: togglePlay,
@@ -151,6 +157,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   } = usePlayerController(playerRef);
   const lastKnownTimeRef = useRef(0);
   const governancePausedRef = useRef(false);
+  const governanceInitialPauseRef = useRef({ handled: false, timer: null });
   const [playIsGoverned, setPlayIsGoverned] = useState(false);
 
   const governanceOverlay = useGovernanceOverlay(governanceState);
@@ -177,6 +184,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   useEffect(() => {
     lastKnownTimeRef.current = 0;
+    const state = governanceInitialPauseRef.current;
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    state.handled = false;
   }, [currentItem ? currentItem.id : null]);
 
   useEffect(() => {
@@ -214,18 +227,62 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   useEffect(() => {
     if (!pausePlayback || !playPlayback) return;
+    const state = governanceInitialPauseRef.current;
+
     if (playIsGoverned) {
+      if (!state.handled) {
+        state.handled = true;
+        if (state.timer) {
+          clearTimeout(state.timer);
+          state.timer = null;
+        }
+        try {
+          playPlayback();
+        } catch (_) {
+          // ignored
+        }
+        state.timer = setTimeout(() => {
+          state.timer = null;
+          pausePlayback();
+          setVideoPlayerPaused?.(true);
+          governancePausedRef.current = true;
+        }, 1000);
+        return;
+      }
+
+      if (state.timer) {
+        return;
+      }
+
       pausePlayback();
       setVideoPlayerPaused?.(true);
       governancePausedRef.current = true;
       return;
     }
+
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    state.handled = false;
+
     if (governancePausedRef.current) {
       playPlayback();
       setVideoPlayerPaused?.(false);
       governancePausedRef.current = false;
     }
   }, [playIsGoverned, pausePlayback, playPlayback, setVideoPlayerPaused]);
+
+  useEffect(() => {
+    return () => {
+      const state = governanceInitialPauseRef.current;
+      if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+      }
+      state.handled = false;
+    };
+  }, []);
   
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
@@ -640,15 +697,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
   }, [playerMode]);
 
-  // If we have no current item yet, render nothing (after stabilizing hook order)
-  if (!currentItem) {
-    return null;
-  }
-
   // Check if there are previous/next items in the queue
-  const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
+  const currentIndex = currentItem ? queue.findIndex(item => item.id === currentItem?.id) : -1;
   const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex < queue.length - 1;
+  const hasNext = currentIndex >= 0 && currentIndex < queue.length - 1;
 
   // Prepare additional metadata that might be useful for the Player
   // const enhancedCurrentItem = { ... old implementation removed };
@@ -663,15 +715,74 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   };
 
   const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
+  const playerRootClasses = useMemo(() => {
+    const classes = [`fitness-player`, `mode-${playerMode}`];
+    if (mediaSwapActive) classes.push('media-swapped');
+    return classes.join(' ');
+  }, [mediaSwapActive, playerMode]);
+
+  const hasActiveItem = Boolean(currentItem && enhancedCurrentItem && playObject);
+  const playerKey = hasActiveItem
+    ? `${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
+    : 'fitness-player-empty';
+
+  const handleVideoPointerDown = useCallback((event) => {
+    if (!mediaSwapActive) return;
+    event.stopPropagation();
+    toggleFullscreen();
+  }, [mediaSwapActive, toggleFullscreen]);
+
+  const videoShell = (
+    <div
+      className={`fitness-video-shell ${mediaSwapActive ? 'is-secondary' : 'is-primary'}`}
+      onPointerDown={handleVideoPointerDown}
+    >
+      <div className="player-controls-blocker"></div>
+      <FitnessPlayerOverlay overlay={governanceOverlay} />
+      {stallStatus.isStalled && (
+        <div
+          className="stall-reload-overlay"
+          data-stalled="1"
+        >
+          <button
+            type="button"
+            className="stall-reload-button"
+            onClick={ e => { e.stopPropagation(); handleReloadEpisode(e);} }
+            onPointerDown={ e => { e.stopPropagation(); handleReloadEpisode(e);} }
+          >
+            Reload at {formatTime(Math.max(0, lastKnownTimeRef.current || currentTime || 0))}
+          </button>
+        </div>
+      )}
+      <FitnessFullscreenVitals visible={playerMode === 'fullscreen'} />
+      {hasActiveItem ? (
+        <Player
+          key={playerKey}
+          play={playObject}
+          keyboardOverrides={keyboardOverrides}
+          clear={handleClose}
+          advance={handleNext}
+          playerType="fitness-video"
+          onProgress={handlePlayerProgress}
+          onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
+          ref={playerRef}
+        />
+      ) : null}
+    </div>
+  );
+
+  const videoPortalTarget = mediaSwapActive ? sidebarVideoHostRef.current : mainVideoHostRef.current;
+  const videoPortal = hasActiveItem && videoPortalTarget ? createPortal(videoShell, videoPortalTarget) : null;
 
   return (
-    <div className={`fitness-player mode-${playerMode}`}>
+    <div className={playerRootClasses}>
+      {videoPortal}
       {/* Sidebar Component */}
       <div
         className={`fitness-player-sidebar ${sidebarSide === 'left' ? 'sidebar-left' : 'sidebar-right'}${playerMode === 'fullscreen' ? ' minimized' : ''}`}
         style={{ width: playerMode === 'fullscreen' ? 0 : sidebarRenderWidth, flex: `0 0 ${playerMode === 'fullscreen' ? 0 : sidebarRenderWidth}px`, order: sidebarSide === 'right' ? 2 : 0 }}
       >
-        {playerMode !== 'fullscreen' && (
+        {playerMode !== 'fullscreen' && hasActiveItem && (
           <div className="sidebar-content">
             <FitnessSidebar
               playerRef={playerRef}
@@ -680,6 +791,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             />
           </div>
         )}
+        <div
+          className="fitness-sidebar-video-host"
+          ref={sidebarVideoHostRef}
+          data-has-video={mediaSwapActive ? '1' : '0'}
+        />
         {/* Footer controls removed (maximal/resizer deprecated) */}
       </div>
       {/* Main Player Panel */}
@@ -688,7 +804,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         <div
           className={playerContentClassName}
           ref={contentRef}
-          onPointerDown={toggleFullscreen}
+          onPointerDown={!mediaSwapActive ? toggleFullscreen : undefined}
           style={{
             width: videoDims.width ? videoDims.width + 'px' : '100%',
             height: videoDims.height ? videoDims.height + 'px' : 'auto',
@@ -696,56 +812,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             position: 'relative'
           }}
         >
-          {/* Add an overlay just to block the top-right close button */}
-          <div className="player-controls-blocker"></div>
-          <FitnessPlayerOverlay overlay={governanceOverlay} />
-          {stallStatus.isStalled && (
-            <div
-              className="stall-reload-overlay"
-              data-stalled="1"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 99999,
-                display: 'flex',
-                alignItems: 'flex-end',
-                justifyContent: 'center',
-                paddingBottom: '12%',
-                background: 'rgba(0, 0, 0, 0.35)'
-              }}
-            >
-              <button
-                type="button"
-                className="stall-reload-button"
-                onClick={ e => { e.stopPropagation(); handleReloadEpisode(e)} }
-                onPointerDown={ e => { e.stopPropagation(); handleReloadEpisode(e)} }
-                style={{
-                  padding: '0.9rem 1.4rem',
-                  fontSize: '1rem',
-                  borderRadius: '999px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: '#FFD400',
-                  color: '#111',
-                  zIndex: 99999,
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.35)'
-                }}
-              >
-                Reload at {formatTime(Math.max(0, lastKnownTimeRef.current || currentTime || 0))}
-              </button>
+          <div className="fitness-player-video-host" ref={mainVideoHostRef} />
+          {mediaSwapActive && hasActiveItem && (
+            <div className="fitness-camera-primary">
+              <FitnessVideo minimal />
             </div>
           )}
-          <Player 
-            key={`${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`}
-            play={playObject}
-            keyboardOverrides={keyboardOverrides}
-            clear={handleClose}
-            advance={handleNext}
-            playerType="fitness-video"
-            onProgress={handlePlayerProgress}
-            onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
-            ref={playerRef}
-          />
         </div>
         
         <FitnessPlayerFooter

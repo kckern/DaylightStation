@@ -67,7 +67,7 @@
     padding: 4px 8px;
     border-radius: 4px;
     pointer-events: none;
-    z-index: 100; /* Above headings/progress if needed */
+    z-index: var(--player-layer-quality, 30); /* Above headings/progress if needed */
 }
 
 .video-player > h2{
@@ -75,7 +75,7 @@
     bottom: 0;
     left: 0;
     height: 4rem;
-    z-index: 99;
+    z-index: var(--player-layer-heading, 25);
     width: 100%;
     text-align: center;
     background-color: #000000AA;
@@ -92,14 +92,14 @@
     top: 0;
     left: 0;
     height: 1ex;
-    z-index: 99;
+    z-index: var(--player-layer-progress, 20);
     width: 100%;
     background-color: #00000044;
 }
 .player .progress-bar > .progress{
     height: 100%;
     width: 100%;
-    z-index: 100;
+    z-index: var(--player-layer-progress-fill, 21);
     background-color: #2a9d8f99;
 }
 
@@ -267,7 +267,7 @@
     justify-content: center;
     flex-direction: column;
     align-items: center;
-    z-index: 8888;
+    z-index: var(--player-layer-loading, 40);
 }
 .loading-overlay img{
   width: 10rem;
@@ -296,7 +296,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    z-index: 9999;
+        z-index: var(--player-layer-shader, 45);
     pointer-events: none;
     background-color: black;
     transition: opacity 1s ease-in-out;
@@ -317,7 +317,7 @@
     width: 100%;
     height: 33%;
     background: linear-gradient(to top, #00000066 0, transparent 66%);
-    z-index: 9999;
+    z-index: var(--player-layer-composite, calc(var(--player-layer-shader, 45) + 1));
     opacity: 1;
     padding: 0rem;
 
