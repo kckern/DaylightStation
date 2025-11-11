@@ -107,18 +107,23 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     };
   }
 
+  const greyDescriptions = [
+    watchers.length ? null : 'Waiting for heart-rate participants to connect.',
+    formattedRequirements.length ? 'Meet these conditions to unlock playback.' : 'Loading unlock rules...'
+  ].filter(Boolean);
+
+  const greyRequirements = sortedRequirements;
+  const greyHighlightUsers = missingUsers;
+
   return {
     category: 'governance',
     status: 'grey',
     show: true,
     filterClass: '',
     title: 'Video Locked',
-    descriptions: [
-      watchers.length ? null : 'Waiting for heart-rate participants to connect.',
-      formattedRequirements.length ? 'Meet these conditions to unlock playback.' : 'Loading unlock rules...'
-    ].filter(Boolean),
-    requirements: sortedRequirements,
-    highlightUsers: [],
+    descriptions: greyDescriptions,
+    requirements: greyRequirements,
+    highlightUsers: greyHighlightUsers,
     countdown: null,
     countdownTotal: null
   };

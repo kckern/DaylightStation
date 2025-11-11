@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
@@ -91,6 +91,7 @@ const getProfileSlug = (user) => {
 
 const FitnessFullscreenVitals = ({ visible = false }) => {
   const fitnessCtx = useFitnessContext();
+  const [anchor, setAnchor] = useState('right');
   const {
     heartRateDevices = [],
     cadenceDevices = [],
@@ -181,12 +182,33 @@ const FitnessFullscreenVitals = ({ visible = false }) => {
       });
   }, [cadenceDevices, equipmentMap, fitnessCtx?.guestAssignments, deviceConfiguration?.cadence, getUserByDevice, allUsers]);
 
+  const handleToggleAnchor = useCallback((event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    setAnchor((prev) => (prev === 'right' ? 'left' : 'right'));
+  }, []);
+
   if (!visible || (!hrItems.length && !rpmItems.length)) {
     return null;
   }
 
+  const overlayClassName = `fullscreen-vitals-overlay anchor-${anchor}`;
+
   return (
-    <div className="fullscreen-vitals-overlay" aria-hidden={!visible}>
+    <div
+      className={overlayClassName}
+      aria-hidden={!visible}
+      onClick={handleToggleAnchor}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          handleToggleAnchor(event);
+        }
+      }}
+    >
       {hrItems.length > 0 && (
         <div className={`fullscreen-vitals-group hr-group count-${hrItems.length}`}>
           {hrItems.map((item) => (
