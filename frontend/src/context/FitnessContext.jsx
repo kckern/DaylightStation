@@ -840,18 +840,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
     if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
       governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
       updateGovernancePhase('red');
       return;
     }
 
     if (!governanceMetaRef.current.deadline) {
       governanceMetaRef.current.deadline = Date.now() + graceSeconds * 1000;
+      governanceMetaRef.current.gracePeriodTotal = graceSeconds;
     }
 
     const remainingMs = governanceMetaRef.current.deadline - Date.now();
 
     if (remainingMs <= 0) {
-      governanceMetaRef.current.deadline = null;
+      // Grace period expired - stay in red, don't restart the timer
+      governanceMetaRef.current.gracePeriodTotal = null;
       updateGovernancePhase('red');
       return;
     }
@@ -884,7 +887,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     targetUserCount: governanceRequirementSummaryRef.current.targetUserCount,
     activeUserCount: governanceRequirementSummaryRef.current.activeCount,
     watchers: activeParticipantNames,
-    countdownSecondsRemaining: governanceCountdownSeconds
+    countdownSecondsRemaining: governanceCountdownSeconds,
+    gracePeriodTotal: governanceMetaRef.current?.gracePeriodTotal || 30
   }), [isGovernedMedia, governancePhase, governanceMedia?.labels, activeParticipantNames, governanceCountdownSeconds, governancePulse]);
   
   // Context value
