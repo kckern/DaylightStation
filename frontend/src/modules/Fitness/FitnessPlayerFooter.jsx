@@ -35,7 +35,8 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
     stallInfo,
     playerRef,
     TimeDisplay,
-    renderCount
+    renderCount,
+    playIsGoverned
   } = props;
 
   if (hidden) return null;
@@ -67,13 +68,14 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         TimeDisplay={TimeDisplay}
         renderCount={renderCount}
         isPaused={isPaused || isStalled}
-    isStalled={isStalled}
-    playerRef={playerRef}
+        isStalled={isStalled}
+        playerRef={playerRef}
         onPrev={onPrev}
         onNext={onNext}
         hasPrev={hasPrev}
         hasNext={hasNext}
         onClose={onClose}
+        playIsGoverned={playIsGoverned}
       />
 
       <FitnessPlayerFooterSeekThumbnails
@@ -88,6 +90,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         onZoomReset={zoomResetRef}
         commitRef={props.thumbnailsCommitRef}
         getTimeRef={props.thumbnailsGetTimeRef}
+        disabled={playIsGoverned}
       />
 
       <FitnessPlayerFooterControls
@@ -102,6 +105,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         onClose={onClose}
         isZoomed={isZoomed}
         onBack={handleBack}
+        playIsGoverned={playIsGoverned}
       />
     </div>
   );

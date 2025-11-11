@@ -287,6 +287,21 @@
         margin-bottom: 0;;
       }
 
+      .show-title-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .governed-lock-icon {
+        font-size: 1.1rem;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(255, 255, 255, 0.85);
+      }
+
       .show-tagline {
         font-size: 1.1rem;
         color: rgba(255, 255, 255, 0.8);

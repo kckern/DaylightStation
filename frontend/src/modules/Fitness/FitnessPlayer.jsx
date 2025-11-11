@@ -127,21 +127,100 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const stackEvalRef = useRef({ lastFooterAspect: null, lastComputeTs: 0, pending: false });
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
-  const { fitnessPlayQueue, setFitnessPlayQueue, sidebarSizeMode, setVideoPlayerPaused } = useFitness() || {};
+  const {
+    fitnessPlayQueue,
+    setFitnessPlayQueue,
+    sidebarSizeMode,
+    setVideoPlayerPaused,
+    governance,
+    setGovernanceMedia,
+    governedLabels
+  } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
-  const { seek: seekTo, toggle: togglePlay, getCurrentTime: getPlayerTime, getDuration: getPlayerDuration } = usePlayerController(playerRef);
+  const {
+    seek: seekTo,
+    toggle: togglePlay,
+    getCurrentTime: getPlayerTime,
+    getDuration: getPlayerDuration,
+    pause: pausePlayback,
+    play: playPlayback
+  } = usePlayerController(playerRef);
   const lastKnownTimeRef = useRef(0);
+  const governancePausedRef = useRef(false);
+  const [playIsGoverned, setPlayIsGoverned] = useState(false);
+
+  const governedLabelSet = useMemo(() => {
+    if (!Array.isArray(governedLabels) || !governedLabels.length) return new Set();
+    return new Set(
+      governedLabels
+        .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
+        .filter(Boolean)
+    );
+  }, [governedLabels]);
 
   useEffect(() => {
     lastKnownTimeRef.current = 0;
   }, [currentItem ? currentItem.id : null]);
+
+  useEffect(() => {
+    if (!setGovernanceMedia) return;
+    if (!currentItem) {
+      setGovernanceMedia(null);
+      return;
+    }
+    const mediaId = currentItem.media_key || currentItem.id || currentItem.plex || currentItem.videoUrl || currentItem.media_url || currentItem.guid;
+    setGovernanceMedia({
+      id: mediaId || `unknown-${currentItem.title || 'fitness'}`,
+      labels: Array.isArray(currentItem.labels) ? currentItem.labels : []
+    });
+  }, [currentItem, setGovernanceMedia]);
+
+  useEffect(() => {
+    if (!currentItem || !governedLabelSet.size) {
+      setPlayIsGoverned(false);
+      return;
+    }
+    const rawLabels = Array.isArray(currentItem.labels) ? currentItem.labels : [];
+    const normalizedLabels = rawLabels
+      .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
+      .filter(Boolean);
+    const mediaGoverned = normalizedLabels.some((label) => governedLabelSet.has(label));
+    if (!mediaGoverned) {
+      setPlayIsGoverned(false);
+      return;
+    }
+    // Only allow playback when governance is green or yellow
+    // Grey (init) and red (paused) should lock playback
+    const locked = governance !== 'green' && governance !== 'yellow';
+    setPlayIsGoverned(locked);
+  }, [currentItem, governedLabelSet, governance]);
+
+  useEffect(() => {
+    if (!pausePlayback || !playPlayback) return;
+    if (playIsGoverned) {
+      pausePlayback();
+      setVideoPlayerPaused?.(true);
+      governancePausedRef.current = true;
+      return;
+    }
+    if (governancePausedRef.current) {
+      playPlayback();
+      setVideoPlayerPaused?.(false);
+      governancePausedRef.current = false;
+    }
+  }, [playIsGoverned, pausePlayback, playPlayback, setVideoPlayerPaused]);
   
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
     'Escape': () => handleClose(),
     'ArrowLeft': (event) => {
+      if (playIsGoverned) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       // Use display time from thumbnails if available (includes pendingTime), otherwise fall back to player time
@@ -157,6 +236,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       }
     },
     'ArrowRight': (event) => {
+      if (playIsGoverned) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       // Use display time from thumbnails if available (includes pendingTime), otherwise fall back to player time
@@ -171,7 +255,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         seekTo(newTime);
       }
     }
-  }), [getPlayerTime, getPlayerDuration, seekTo]);
+  }), [getPlayerTime, getPlayerDuration, seekTo, playIsGoverned]);
   
   const renderCountRef = useRef(0);
   // Simple render counter (environment gating removed per instruction)
@@ -305,8 +389,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   
   // Function to handle seeking to a specific point in the video
   const handleSeek = useCallback((seconds) => {
+    if (playIsGoverned) return;
     if (Number.isFinite(seconds)) seekTo(seconds);
-  }, [seekTo]);
+  }, [seekTo, playIsGoverned]);
 
   const handleClose = () => {
     if (setQueue) {
@@ -379,6 +464,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const playObject = useMemo(() => {
     if (!enhancedCurrentItem) return null;
+    
+    // Check if this media is governed
+    const rawLabels = Array.isArray(currentItem?.labels) ? currentItem.labels : [];
+    const normalizedLabels = rawLabels
+      .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
+      .filter(Boolean);
+    const mediaGoverned = governedLabelSet.size > 0 && normalizedLabels.some((label) => governedLabelSet.has(label));
+    
+    // Only autoplay if:
+    // 1. Media is not governed, OR
+    // 2. Media is governed AND governance is green or yellow
+    const canAutoplay = !mediaGoverned || (governance === 'green' || governance === 'yellow');
+    
     return {
       plex: enhancedCurrentItem.plex,
       media_url: enhancedCurrentItem.media_url,
@@ -390,9 +488,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       volume: currentItem?.volume || 1.0,
       playbackRate: currentItem?.playbackRate || 1.0,
       type: 'video',
-      continuous: false
+      continuous: false,
+      autoplay: canAutoplay
     };
-  }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate]);
+  }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate, currentItem?.labels, governedLabelSet, governance]);
 
   const seekPositions = useMemo(() => {
     if (!currentItem) return [];
@@ -491,11 +590,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       return { isStalled: false, since: null, attempts: 0, lastStrategy: null };
     });
 
+    // Immediately pause if governed and locked
+    if (playIsGoverned && !paused && pausePlayback) {
+      pausePlayback();
+    }
+
     // Update context so music player can sync
     if (setVideoPlayerPaused) {
       setVideoPlayerPaused(paused || stalled);
     }
-  }, [setVideoPlayerPaused]);
+  }, [setVideoPlayerPaused, playIsGoverned, pausePlayback]);
 
   const handleReloadEpisode = useCallback(() => {
     if (!currentItem) return;
@@ -645,6 +749,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           generateThumbnailUrl={generateThumbnailUrl}
           thumbnailsCommitRef={thumbnailsCommitRef}
           thumbnailsGetTimeRef={thumbnailsGetTimeRef}
+          playIsGoverned={playIsGoverned}
         />
       </div>
     </div>

@@ -169,7 +169,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
   const fitnessContext = useFitness() || {};
-  const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue, plexConfig, setSelectedPlaylistId } = fitnessContext;
+  const { fitnessPlayQueue, setFitnessPlayQueue: contextSetPlayQueue, plexConfig, setSelectedPlaylistId, governedLabels } = fitnessContext;
   
 
   useEffect(() => {
@@ -371,6 +371,20 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     return { didScroll: false, container };
   };
 
+  const deriveEpisodeLabels = (episode) => {
+    const fromEpisode = Array.isArray(episode?.labels)
+      ? episode.labels
+      : Array.isArray(episode?.Label)
+        ? episode.Label.map((entry) => {
+            if (typeof entry === 'string') return entry;
+            if (entry && typeof entry === 'object' && entry.tag) return entry.tag;
+            return null;
+          }).filter(Boolean)
+        : [];
+    const fromShow = Array.isArray(showData?.info?.labels) ? showData.info.labels : [];
+    return Array.from(new Set([...(fromEpisode || []), ...(fromShow || [])]));
+  };
+
   const handlePlayEpisode = async (episode, sourceEl = null) => {
   // play episode (debug removed)
     // If source element provided, require full visibility before play
@@ -397,7 +411,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
         image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,
         seasonId: episode.seasonId,
-        seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined))
+        seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined)),
+        labels: deriveEpisodeLabels(episode)
       };
       
   // created queue item (debug removed)
@@ -441,6 +456,43 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   };
 
   const { info, items = [], seasons: seasonsMap = null } = showData || {};
+
+  const governedLabelSet = useMemo(() => {
+    if (!Array.isArray(governedLabels) || !governedLabels.length) return new Set();
+    return new Set(
+      governedLabels
+        .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
+        .filter(Boolean)
+    );
+  }, [governedLabels]);
+
+  const showLabelSet = useMemo(() => {
+    const collected = [];
+    const labelSources = [info?.labels, info?.Label];
+    labelSources.forEach((source) => {
+      if (!Array.isArray(source)) return;
+      source.forEach((entry) => {
+        if (typeof entry === 'string') {
+          collected.push(entry);
+        } else if (entry && typeof entry === 'object' && entry.tag) {
+          collected.push(entry.tag);
+        }
+      });
+    });
+    return new Set(
+      collected
+        .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
+        .filter(Boolean)
+    );
+  }, [info]);
+
+  const isGovernedShow = useMemo(() => {
+    if (!governedLabelSet.size || !showLabelSet.size) return false;
+    for (const label of showLabelSet) {
+      if (governedLabelSet.has(label)) return true;
+    }
+    return false;
+  }, [governedLabelSet, showLabelSet]);
 
   // Derive seasons from new seasonsMap (backend seasons object) with fallback to legacy per-episode fields
   const seasons = useMemo(() => {
@@ -663,7 +715,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
             thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
           image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,
           seasonId: episode.seasonId,
-          seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined))
+          seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined)),
+          labels: deriveEpisodeLabels(episode)
         };
         
         // Use the appropriate setter
@@ -716,7 +769,19 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
               
               {/* Show Description - Bottom 50% */}
               <div className="show-description">
-                <h1 className="show-title">{info.title}</h1>
+                <div className="show-title-row">
+                  <h1 className="show-title">{info.title}</h1>
+                  {isGovernedShow && (
+                    <span
+                      className="governed-lock-icon"
+                      title="Governed content"
+                      aria-label="Governed content"
+                      role="img"
+                    >
+                      🔒
+                    </span>
+                  )}
+                </div>
                 {info.tagline && <div className="show-tagline">{info.tagline}</div>}
                 {info.summary && (
                   <p className="show-summary">{info.summary}</p>

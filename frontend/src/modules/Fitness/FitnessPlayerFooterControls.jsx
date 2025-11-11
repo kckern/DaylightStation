@@ -24,7 +24,8 @@ export default function FitnessPlayerFooterControls({
   renderCount,
   isStalled = false,
   isZoomed = false,
-  onBack
+  onBack,
+  playIsGoverned = false
 }) {
   const isLeft = section === 'left';
   
@@ -33,6 +34,7 @@ export default function FitnessPlayerFooterControls({
    * Falls back to legacy direct media element access only if playerRef not provided.
    */
   const playPause = () => {
+    if (playIsGoverned) return;
     const api = playerRef?.current; if (!api) return;
     if (typeof api.toggle === 'function') { api.toggle(); return; }
     const media = api.getMediaElement?.(); if (media) { media.paused ? api.play?.() : api.pause?.(); }
@@ -54,6 +56,11 @@ export default function FitnessPlayerFooterControls({
     Pause: () => (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M7 5h4v14H7zm6 0h4v14h-4z" />
+      </svg>
+    ),
+    Lock: () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2a5 5 0 0 0-5 5v3H5v14h14V10h-2V7a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9V7zm3 6a2 2 0 1 1-0.001 3.999A2 2 0 0 1 12 13z" />
       </svg>
     ),
     Prev: () => (
@@ -91,12 +98,25 @@ export default function FitnessPlayerFooterControls({
             role="button"
             tabIndex={0}
             // Use pointerDown for faster activation on large touch display
-            onPointerDown={playPause}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playPause(); } }}
-            className="control-button play-pause-button"
-            aria-label={isPaused ? 'Play' : 'Pause'}
+            onPointerDown={(event) => {
+              if (playIsGoverned) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+              }
+              playPause();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (!playIsGoverned) playPause();
+              }
+            }}
+            className={`control-button play-pause-button${playIsGoverned ? ' governed' : ''}`}
+            aria-label={playIsGoverned ? 'Playback locked' : (isPaused ? 'Play' : 'Pause')}
+            aria-disabled={playIsGoverned ? 'true' : undefined}
           >
-            <span className="icon">{isPaused ? <Icon.Play /> : <Icon.Pause />}</span>
+            <span className="icon">{playIsGoverned ? <Icon.Lock /> : (isPaused ? <Icon.Play /> : <Icon.Pause />)}</span>
           </div>
           {showNav && (
             <div

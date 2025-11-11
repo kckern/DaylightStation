@@ -22,7 +22,7 @@ const CONFIG = Object.freeze({
  *           Defaults to [0, duration] (or fallback) when omitted/invalid. All thumbnail positions are clamped to this window.
  *  - commitRef: optional ref to expose commit function for external use
  */
-const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl, commitRef, getTimeRef }) => {
+const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl, commitRef, getTimeRef, disabled = false }) => {
   // ---------- Helpers ----------
   const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   const percentOf = (t, total) => total > 0 ? clamp01(t / total) : 0;
@@ -158,13 +158,14 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   }, [rangeStart, rangeSpan]);
 
   const commit = useCallback((t) => {
+    if (disabled) return;
     setPendingTime(t);
     awaitingSettleRef.current = true;
     // remember intent so we can keep highlight sticky after settle
     lastSeekRef.current.time = t;
     seek(t);
     onSeek?.(t);
-  }, [seek, onSeek]);
+  }, [seek, onSeek, disabled]);
 
   // Clear pendingTime on playback resume/seek settled
   useEffect(() => {
@@ -222,10 +223,10 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   }, [getTimeRef, displayTime]);
 
   const updatePreview = useCallback((clientX, rect) => {
-    if (!isSeeking) return; // only show preview while in seeking phase
+    if (!isSeeking || disabled) return; // only show preview while in seeking phase
     const t = positionToSeconds(clientX, rect);
     setPreviewTime(t);
-  }, [isSeeking, positionToSeconds]);
+  }, [isSeeking, positionToSeconds, disabled]);
 
   const updatePreviewThrottled = useCallback((clientX, rect) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -234,25 +235,28 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   // ---------- Event Handlers ----------
   const handleClick = useCallback((e) => {
+    if (disabled) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const seekTime = positionToSeconds(clientX, rect);
     console.log('[FitnessPlayerFooterSeekThumbnails] Progress bar clicked:', { seekTime, clientX });
     commit(seekTime);
-  }, [positionToSeconds, commit]);
+  }, [positionToSeconds, commit, disabled]);
 
   const handlePointerMove = useCallback((e) => {
+    if (disabled) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     updatePreviewThrottled(clientX, rect);
-  }, [updatePreviewThrottled]);
+  }, [updatePreviewThrottled, disabled]);
 
   const handleLeave = useCallback(() => { setPreviewTime(null); }, []);
 
   const handleTouchEnd = useCallback(() => {
+    if (disabled) return;
     if (previewTime != null) commit(previewTime);
     setPreviewTime(null);
-  }, [previewTime, commit]);
+  }, [previewTime, commit, disabled]);
 
   // ---------- Render Thumbnails ----------
   // Long press detection
@@ -277,13 +281,14 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   }, []);
 
   const handleThumbnailSeek = useCallback((seekTarget) => {
+    if (disabled) return;
     const resolvedTarget = Number.isFinite(seekTarget) ? seekTarget : rangeStart;
     commit(resolvedTarget);
     // When zoomed, mark for delayed zoom reset (will happen on 'playing' event)
     if (zoomRange) {
       resetZoomOnPlayingRef.current = true;
     }
-  }, [commit, zoomRange, rangeStart]);
+  }, [commit, zoomRange, rangeStart, disabled]);
 
   const renderedSeekButtons = useMemo(() => {
     if (!currentItem) return null;
@@ -366,14 +371,15 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
           rangeEnd={segmentEnd}
           state={state}
           onSeek={handleThumbnailSeek}
-          onZoom={setZoomRange}
+          onZoom={disabled ? undefined : setZoomRange}
           globalStart={rangeStart}
           globalEnd={rangeEnd}
           seekTime={seekTime}
           labelTime={labelTime}
+          enableZoom={!disabled}
         >
           <div
-            className={classNames}
+            className={`${classNames}${disabled ? ' disabled' : ''}`}
             data-pos={segmentStart}
             data-sample-time={sampleTime}
             data-label-time={labelTime}
@@ -467,7 +473,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         </SingleThumbnailButton>
       );
     });
-  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, rangeStart, rangeEnd, getGreyShade, currentTime, handleThumbnailSeek]);
+  }, [rangePositions, activePos, currentItem, generateThumbnailUrl, rangeStart, rangeEnd, getGreyShade, currentTime, handleThumbnailSeek, disabled]);
 
   // Progress bar should always represent entire video duration, independent of zoomed thumbnail range
   const fullDuration = baseDurationProp || 0;
@@ -498,17 +504,24 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   // Removed global capture listeners; rely on per-thumbnail handlers for zoom.
 
   return (
-    <div className="footer-seek-thumbnails">
+    <div className={`footer-seek-thumbnails${disabled ? ' disabled' : ''}`}>
       <div
-        className="progress-bar"
+        className={`progress-bar${disabled ? ' disabled' : ''}`}
         data-intent={showingIntent ? '1' : '0'}
+        aria-disabled={disabled ? 'true' : undefined}
         onPointerDown={handleClick}
         onMouseMove={handlePointerMove}
         onMouseLeave={handleLeave}
         onTouchStart={handlePointerMove}
         onTouchMove={handlePointerMove}
         onTouchEnd={handleTouchEnd}
-        style={{ position: 'relative', overflow: 'hidden' }}
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          pointerEvents: disabled ? 'none' : undefined,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.45 : 1
+        }}
       >
         <div className="progress" style={{ width: `${progressPct}%` }} />
         {zoomOverlay && (
@@ -528,7 +541,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
           />
         )}
       </div>
-      <div className="seek-thumbnails">
+      <div className={`seek-thumbnails${disabled ? ' disabled' : ''}`}>
         {renderedSeekButtons}
       </div>
     </div>
