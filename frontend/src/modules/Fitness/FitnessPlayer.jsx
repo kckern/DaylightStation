@@ -647,6 +647,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     setPlayerMode(m => m === 'fullscreen' ? (lastNonFullscreenRef.current || 'normal') : 'fullscreen');
   };
 
+  const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
+
   return (
     <div className={`fitness-player mode-${playerMode}`}>
       {/* Sidebar Component */}
@@ -656,7 +658,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       >
         {playerMode !== 'fullscreen' && (
           <div className="sidebar-content">
-            <FitnessSidebar playerRef={playerRef} />
+            <FitnessSidebar
+              playerRef={playerRef}
+              onReloadVideo={handleReloadEpisode}
+              reloadTargetSeconds={reloadTargetSeconds}
+            />
           </div>
         )}
         {/* Footer controls removed (maximal/resizer deprecated) */}
