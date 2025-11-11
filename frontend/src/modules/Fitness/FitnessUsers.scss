@@ -239,6 +239,10 @@
             aspect-ratio: 1 / 1;
           }
 
+          &.clickable {
+            cursor: pointer;
+          }
+
         }
         
         .device-info {
@@ -347,6 +351,10 @@
       .device-value { font-size: 0.95rem; font-weight: 700; color: #fff; line-height:1; margin-bottom:1px; }
 
       .device-unit { font-size: 0.5rem; }
+
+      .user-profile-img-container.clickable {
+        cursor: pointer;
+      }
 
       // Device type specific styling
       &.heart-rate {
@@ -1130,10 +1138,12 @@
 // Music Player Styles (root level)
 .fitness-music-player-container {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   width: 100%;
   margin: 0;
-  height: 40px;
+  min-height: 40px;
+  height: auto;
   background: rgba(24, 24, 24, 0.85);
   border: none;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -1142,6 +1152,11 @@
   padding: 0;
   box-sizing: border-box;
   flex-shrink: 0;
+  transition: box-shadow 0.2s ease;
+
+  &.controls-open {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
 
   .music-player-empty {
     width: 100%;
@@ -1160,7 +1175,7 @@
     flex-direction: row;
     align-items: center;
     width: 100%;
-    height: 100%;
+    height: 40px;
   }
 
   .music-player-artwork {
@@ -1218,6 +1233,8 @@
     flex-direction: column;
     justify-content: center;
     height: 100%;
+    cursor: pointer;
+    user-select: none;
 
     .track-details {
       display: flex;
@@ -1288,6 +1305,81 @@
 
       .control-icon {
         font-size: 1.2rem;
+      }
+    }
+  }
+
+  .music-player-expanded {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 14px 14px;
+    background: rgba(12, 12, 12, 0.9);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+    .expanded-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.65);
+      letter-spacing: 0.04em;
+    }
+
+    .playlist-select {
+      width: 100%;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(30, 30, 30, 0.95);
+      color: #fff;
+      font-size: 0.78rem;
+      outline: none;
+
+      &:focus {
+        border-color: rgba(255, 212, 59, 0.6);
+        box-shadow: 0 0 0 2px rgba(255, 212, 59, 0.2);
+      }
+    }
+
+    .empty-state {
+      font-size: 0.72rem;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .mix-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.72rem;
+      color: rgba(255, 255, 255, 0.85);
+
+      label {
+        flex: 0 0 110px;
+      }
+
+      .mix-slider {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 100%;
+        accent-color: #ffd43b;
+      }
+
+      .mix-value {
+        width: 40px;
+        text-align: right;
+        font-size: 0.7rem;
+        color: rgba(255, 255, 255, 0.7);
+      }
+
+      input:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
       }
     }
   }
@@ -1392,6 +1484,41 @@
       overflow-y: auto;
       overflow-x: hidden;
 
+      .guest-mode-content {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .guest-tabs {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.5rem 0;
+        margin: 0.5rem 0;
+
+        .guest-tab {
+          flex: 1;
+          padding: 0.5rem 1rem;
+          background: transparent;
+          border: none;
+          border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+          border-radius: 0;
+          color: rgba(255, 255, 255, 0.5);
+          font-size: 0.8rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.8px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+
+          &.active {
+            color: #51cf66;
+            border-bottom-color: #51cf66;
+            font-weight: 700;
+          }
+        }
+      }
+
       .menu-section {
         margin-bottom: 1.5rem;
 
@@ -1463,6 +1590,111 @@
                 color: white;
               }
             }
+          }
+        }
+
+        .guest-option {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+          background: rgba(20, 20, 20, 0.85);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 8px;
+          padding: 0.5rem 0.65rem;
+          transition: border 0.2s ease, transform 0.15s ease, box-shadow 0.15s ease;
+          width: 100%;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+          cursor: pointer;
+
+          &.selected {
+            border-color: rgba(94, 213, 112, 0.9);
+            background: linear-gradient(135deg, rgba(94, 213, 112, 0.18) 0%, rgba(55, 55, 55, 0.7) 100%);
+          }
+
+          &.generic {
+            background: rgba(40, 40, 40, 0.75);
+            border-style: dashed;
+          }
+
+          &:disabled {
+            opacity: 0.85;
+            cursor: default;
+          }
+
+          .guest-option-avatar {
+            width: 38px;
+            height: 38px;
+            border-radius: 8px;
+            overflow: hidden;
+            flex: 0 0 auto;
+            position: relative;
+            background: linear-gradient(145deg, rgba(90, 90, 90, 0.35), rgba(20, 20, 20, 0.6));
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 4px 8px rgba(0,0,0,0.45);
+
+            img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+              border-radius: 8px;
+              display: block;
+            }
+
+            &::after {
+              content: '👤';
+              position: absolute;
+              inset: 0;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 1.2rem;
+              color: rgba(255, 255, 255, 0.65);
+              pointer-events: none;
+              opacity: 0;
+              transition: opacity 0.2s ease;
+            }
+
+            &.placeholder::after {
+              opacity: 1;
+            }
+          }
+
+          .guest-option-details {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.2rem;
+            flex: 1;
+
+            .guest-option-name {
+              font-weight: 600;
+              font-size: 0.9rem;
+              color: rgba(255, 255, 255, 0.95);
+              letter-spacing: 0.2px;
+              line-height: 1.1;
+              display: block;
+            }
+
+            .guest-option-source {
+              font-size: 0.6rem;
+              text-transform: uppercase;
+              letter-spacing: 0.55px;
+              color: rgba(255, 255, 255, 0.7);
+              background: rgba(255, 255, 255, 0.1);
+              border-radius: 999px;
+              padding: 0.15rem 0.45rem;
+            }
+          }
+
+          .guest-option-status {
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: #51cf66;
+            background: rgba(81, 207, 102, 0.15);
+            border-radius: 999px;
+            padding: 0.15rem 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
           }
         }
 
@@ -1877,10 +2109,12 @@
   /* Music Player Styles */
   .fitness-music-player-container {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     width: calc(100% - 2ex);
     margin: 1ex;
-    height: 40px;
+    min-height: 40px;
+    height: auto;
     background: rgba(24, 24, 24, 0.85);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 10px;
@@ -1888,6 +2122,11 @@
     padding: 0;
     box-sizing: border-box;
     flex-shrink: 0;
+    transition: box-shadow 0.2s ease;
+
+    &.controls-open {
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+    }
 
     .music-player-empty {
       width: 100%;
@@ -1906,7 +2145,7 @@
       flex-direction: row;
       align-items: center;
       width: 100%;
-      height: 100%;
+      height: 40px;
     }
 
     .music-player-artwork {
@@ -1938,6 +2177,8 @@
       flex-direction: column;
       justify-content: center;
       height: 100%;
+      cursor: pointer;
+      user-select: none;
 
       .track-details {
         display: flex;
@@ -2008,6 +2249,81 @@
 
         .control-icon {
           font-size: 1.2rem;
+        }
+      }
+    }
+
+    .music-player-expanded {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 10px 14px 14px;
+      background: rgba(12, 12, 12, 0.9);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+      .expanded-section {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .section-title {
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.65);
+        letter-spacing: 0.04em;
+      }
+
+      .playlist-select {
+        width: 100%;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(30, 30, 30, 0.95);
+        color: #fff;
+        font-size: 0.78rem;
+        outline: none;
+
+        &:focus {
+          border-color: rgba(255, 212, 59, 0.6);
+          box-shadow: 0 0 0 2px rgba(255, 212, 59, 0.2);
+        }
+      }
+
+      .empty-state {
+        font-size: 0.72rem;
+        color: rgba(255, 255, 255, 0.5);
+      }
+
+      .mix-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.72rem;
+        color: rgba(255, 255, 255, 0.85);
+
+        label {
+          flex: 0 0 110px;
+        }
+
+        .mix-slider {
+          flex: 1 1 auto;
+          min-width: 0;
+          max-width: 100%;
+          accent-color: #ffd43b;
+        }
+
+        .mix-value {
+          width: 40px;
+          text-align: right;
+          font-size: 0.7rem;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        input:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
         }
       }
     }
