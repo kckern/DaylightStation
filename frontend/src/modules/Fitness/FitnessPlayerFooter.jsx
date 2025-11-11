@@ -90,7 +90,6 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         onZoomReset={zoomResetRef}
         commitRef={props.thumbnailsCommitRef}
         getTimeRef={props.thumbnailsGetTimeRef}
-        disabled={playIsGoverned}
       />
 
       <FitnessPlayerFooterControls
