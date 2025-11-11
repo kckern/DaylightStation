@@ -2,6 +2,35 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
+import { slugifyId } from '../../context/FitnessContext.jsx';
+
+const RPM_COLOR_MAP = {
+  red: '#ff6b6b',
+  orange: '#ff922b',
+  yellow: '#f0c836',
+  green: '#51cf66',
+  blue: '#6ab8ff'
+};
+
+const withAlpha = (hexColor, alpha = 0.9) => {
+  if (!hexColor || typeof hexColor !== 'string') {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  const normalized = hexColor.trim();
+  if (!normalized.startsWith('#') || (normalized.length !== 7 && normalized.length !== 4)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  const expand = normalized.length === 4
+    ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+    : normalized;
+  const r = parseInt(expand.slice(1, 3), 16);
+  const g = parseInt(expand.slice(3, 5), 16);
+  const b = parseInt(expand.slice(5, 7), 16);
+  if ([r, g, b].some(Number.isNaN)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 const canonicalZones = ['cool', 'active', 'warm', 'hot', 'fire'];
 
@@ -69,8 +98,34 @@ const FitnessFullscreenVitals = ({ visible = false }) => {
     userCurrentZones,
     zones,
     users: allUsers = [],
-    usersConfigRaw = {}
+    usersConfigRaw = {},
+    equipment = [],
+    deviceConfiguration
   } = fitnessCtx || {};
+
+  const equipmentMap = useMemo(() => {
+    const map = {};
+    if (Array.isArray(equipment)) {
+      equipment.forEach((item) => {
+        if (!item) return;
+        const slugSource = item.id || item.name || null;
+        const equipmentSlug = slugSource ? slugifyId(slugSource, 'equipment') : null;
+        if (item.cadence != null) {
+          map[String(item.cadence)] = {
+            name: item.name || String(item.cadence),
+            slug: equipmentSlug || String(item.cadence)
+          };
+        }
+        if (item.speed != null) {
+          map[String(item.speed)] = {
+            name: item.name || String(item.speed),
+            slug: equipmentSlug || String(item.speed)
+          };
+        }
+      });
+    }
+    return map;
+  }, [equipment]);
 
   const hrItems = useMemo(() => {
     if (!Array.isArray(heartRateDevices)) return [];
@@ -95,13 +150,36 @@ const FitnessFullscreenVitals = ({ visible = false }) => {
 
   const rpmItems = useMemo(() => {
     if (!Array.isArray(cadenceDevices)) return [];
+    const cadenceConfig = deviceConfiguration?.cadence || {};
     return cadenceDevices
       .filter((device) => device && device.deviceId != null)
-      .map((device) => ({
-        deviceId: device.deviceId,
-        rpm: Math.max(0, Math.round(device.cadence || 0))
-      }));
-  }, [cadenceDevices]);
+      .map((device) => {
+        const assignment = fitnessCtx?.guestAssignments?.[String(device.deviceId)] || null;
+        const baseUser = typeof getUserByDevice === 'function'
+          ? getUserByDevice(device.deviceId)
+          : allUsers.find((u) => String(u.cadenceDeviceId) === String(device.deviceId));
+        const equipmentInfo = equipmentMap[String(device.deviceId)] || {};
+        const equipmentSlug = equipmentInfo.slug
+          || (assignment?.equipmentId ? slugifyId(assignment.equipmentId, 'equipment') : null)
+          || slugifyId(assignment?.name || baseUser?.name || device.deviceId, 'equipment');
+        const avatarSrc = DaylightMediaPath(`/media/img/equipment/${equipmentSlug}`);
+        const rpm = Math.max(0, Math.round(device.cadence || 0));
+        const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
+        const colorKey = cadenceConfig[String(device.deviceId)];
+        const resolvedRingColor = colorKey
+          ? (RPM_COLOR_MAP[colorKey] || colorKey)
+          : RPM_COLOR_MAP.orange;
+        const overlayBg = withAlpha(resolvedRingColor, 0.9);
+        return {
+          deviceId: device.deviceId,
+          rpm,
+          avatarSrc,
+          animationDuration,
+          ringColor: resolvedRingColor,
+          overlayBg
+        };
+      });
+  }, [cadenceDevices, equipmentMap, fitnessCtx?.guestAssignments, deviceConfiguration?.cadence, getUserByDevice, allUsers]);
 
   if (!visible || (!hrItems.length && !rpmItems.length)) {
     return null;
@@ -137,9 +215,38 @@ const FitnessFullscreenVitals = ({ visible = false }) => {
       {rpmItems.length > 0 && (
         <div className={`fullscreen-vitals-group rpm-group count-${rpmItems.length}`}>
           {rpmItems.map((item) => (
-            <div key={`rpm-${item.deviceId}`} className="vital-rpm">
-              <span className="vital-rpm-value">{item.rpm}</span>
-              <span className="vital-rpm-label">RPM</span>
+            <div
+              key={`rpm-${item.deviceId}`}
+              className="vital-rpm"
+              style={{
+                '--rpm-ring-color': item.ringColor,
+                '--rpm-overlay-bg': item.overlayBg
+              }}
+            >
+              {!Number.isFinite(item.rpm) || item.rpm <= 0 ? null : (
+                <div
+                  className="rpm-spinning-border"
+                  style={{ '--spin-duration': item.animationDuration }}
+                />
+              )}
+              <div className="rpm-avatar-content">
+                <img
+                  src={item.avatarSrc}
+                  alt=""
+                  onError={(event) => {
+                    const img = event.currentTarget;
+                    if (img.dataset.fallback) {
+                      img.style.display = 'none';
+                      return;
+                    }
+                    img.dataset.fallback = '1';
+                    img.src = DaylightMediaPath('/media/img/equipment/equipment');
+                  }}
+                />
+                <div className="rpm-value-overlay">
+                  <span className="rpm-value">{item.rpm}</span>
+                </div>
+              </div>
             </div>
           ))}
         </div>

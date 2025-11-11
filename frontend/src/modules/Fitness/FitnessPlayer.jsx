@@ -710,9 +710,57 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   let sidebarRenderWidth;
   if (playerMode === 'fullscreen') sidebarRenderWidth = 0; else sidebarRenderWidth = (sidebarSizeMode === 'large' ? Math.round(viewportW * 0.45) : DEFAULT_SIDEBAR);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = useCallback(() => {
     setPlayerMode(m => m === 'fullscreen' ? (lastNonFullscreenRef.current || 'normal') : 'fullscreen');
-  };
+  }, []);
+
+  const handleVideoContainerPointerDown = useCallback((event) => {
+    console.debug('[FitnessPlayer] pointerdown capture', {
+      swapActive: mediaSwapActive,
+      button: event.button,
+      pointerType: event.pointerType,
+      targetTag: event.target?.tagName,
+      composedPath: typeof event.composedPath === 'function' ? event.composedPath().map((node) => node?.tagName || node?.className || node?.id).slice(0, 6) : null
+    });
+    if (mediaSwapActive) return;
+    if (typeof event.button === 'number' && event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target && target.closest('button, a, input, textarea, [role="button"], [data-no-fullscreen]')) {
+      return;
+    }
+    console.debug('[FitnessPlayer] toggling fullscreen via capture handler');
+    toggleFullscreen();
+  }, [mediaSwapActive, toggleFullscreen]);
+
+  const handleVideoContainerClickCapture = useCallback((event) => {
+    console.debug('[FitnessPlayer] click capture', {
+      swapActive: mediaSwapActive,
+      button: event.button,
+      targetTag: event.target?.tagName
+    });
+  }, [mediaSwapActive]);
+
+  const handleRootPointerDownCapture = useCallback((event) => {
+    console.debug('[FitnessPlayer] root pointerdown capture', {
+      targetTag: event.target?.tagName,
+      button: event.button,
+      pointerType: event.pointerType
+    });
+
+    if (mediaSwapActive) return;
+    if (typeof event.button === 'number' && event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+
+    const contentEl = contentRef.current;
+    if (!contentEl || !contentEl.contains(target)) return;
+    if (target.closest('button, a, input, textarea, [role="button"], [data-no-fullscreen]')) {
+      return;
+    }
+
+    console.debug('[FitnessPlayer] toggling fullscreen via root capture');
+    toggleFullscreen();
+  }, [mediaSwapActive, toggleFullscreen]);
 
   const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
   const playerRootClasses = useMemo(() => {
@@ -775,7 +823,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const videoPortal = hasActiveItem && videoPortalTarget ? createPortal(videoShell, videoPortalTarget) : null;
 
   return (
-    <div className={playerRootClasses}>
+    <div className={playerRootClasses} onPointerDownCapture={handleRootPointerDownCapture}>
       {videoPortal}
       {/* Sidebar Component */}
       <div
@@ -804,7 +852,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         <div
           className={playerContentClassName}
           ref={contentRef}
-          onPointerDown={!mediaSwapActive ? toggleFullscreen : undefined}
+          onPointerDownCapture={handleVideoContainerPointerDown}
+          onMouseDownCapture={handleVideoContainerPointerDown}
+          onClickCapture={handleVideoContainerClickCapture}
           style={{
             width: videoDims.width ? videoDims.width + 'px' : '100%',
             height: videoDims.height ? videoDims.height + 'px' : 'auto',

@@ -12,7 +12,7 @@ const normalizeLabelList = (raw) => {
   return Array.from(new Set(normalized));
 };
 
-const slugifyId = (value, fallback = 'user') => {
+export const slugifyId = (value, fallback = 'user') => {
   if (!value) return fallback;
   const slug = String(value)
     .trim()
@@ -73,8 +73,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const coinTimeUnitMs = fitnessRoot?.coin_time_unit_ms;
   const zoneConfig = fitnessRoot?.zones;
   const governanceConfig = fitnessRoot?.governance || {};
-  console.log('[FitnessContext] governanceConfig loaded:', governanceConfig);
-  console.log('[FitnessContext] governanceConfig.user_counts:', governanceConfig?.user_counts);
   const rawGovernedLabels = plexConfig?.governed_labels;
   const governedLabels = Array.isArray(rawGovernedLabels)
     ? rawGovernedLabels.filter(label => typeof label === 'string')
