@@ -11,7 +11,7 @@ import './FitnessUsers.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
 const FitnessSidebar = ({ playerRef }) => {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
   const [visibility, setVisibility] = useState({
     governance: false,
     treasureBox: true,
@@ -22,7 +22,33 @@ const FitnessSidebar = ({ playerRef }) => {
     voiceMemo: true
   });
   const fitnessContext = useFitnessContext();
-  const { treasureBox, fitnessSession, selectedPlaylistId, setSelectedPlaylistId, governanceState } = fitnessContext;
+  const { 
+    treasureBox, 
+    fitnessSession, 
+    selectedPlaylistId, 
+    setSelectedPlaylistId, 
+    governanceState,
+    usersConfigRaw,
+    guestAssignments,
+    assignGuestToDevice,
+    clearGuestAssignment
+  } = fitnessContext;
+  const menuOpen = menuState.open;
+  const guestCandidates = React.useMemo(() => {
+    const tag = (list, category) => (Array.isArray(list) ? list.map(item => ({ ...item, category })) : []);
+    const family = tag(usersConfigRaw?.family, 'Family');
+    const friends = tag(usersConfigRaw?.friends, 'Friend');
+    return [...family, ...friends];
+  }, [usersConfigRaw?.family, usersConfigRaw?.friends]);
+
+  const openSettingsMenu = React.useCallback(() => {
+    setMenuState({ open: true, mode: 'settings', target: null });
+  }, []);
+
+  const handleGuestAssignmentRequest = React.useCallback(({ deviceId, defaultName }) => {
+    if (!deviceId) return;
+    setMenuState({ open: true, mode: 'guest', target: { deviceId, defaultName: defaultName || null } });
+  }, []);
   const isGoverned = Boolean(governanceState?.isGoverned);
   const showGovernancePanel = isGoverned || visibility.governance;
 
@@ -70,14 +96,17 @@ const FitnessSidebar = ({ playerRef }) => {
       {/* Users List (HR monitors, RPM, etc) - grows to fill space */}
       {visibility.users && (
         <div className="fitness-sidebar-devices">
-          <FitnessUsersList />
+          <FitnessUsersList onRequestGuestAssignment={handleGuestAssignmentRequest} />
         </div>
       )}
 
       {/* Music Player */}
       {visibility.playlist && (
         <div className="fitness-sidebar-music">
-          <FitnessMusicPlayer selectedPlaylistId={selectedPlaylistId} />
+          <FitnessMusicPlayer 
+            selectedPlaylistId={selectedPlaylistId} 
+            videoPlayerRef={playerRef}
+          />
         </div>
       )}
 
@@ -87,7 +116,13 @@ const FitnessSidebar = ({ playerRef }) => {
           <FitnessVoiceMemo 
             minimal 
             menuOpen={menuOpen}
-            onToggleMenu={() => setMenuOpen(!menuOpen)}
+            onToggleMenu={() => {
+              if (menuOpen && menuState.mode === 'settings') {
+                setMenuState({ open: false, mode: 'settings', target: null });
+              } else {
+                openSettingsMenu();
+              }
+            }}
             playerRef={playerRef}
           />
         </div>
@@ -96,14 +131,21 @@ const FitnessSidebar = ({ playerRef }) => {
       {/* Menu Overlay */}
       {menuOpen && (
         <>
-          <div className="sidebar-menu-overlay" onClick={() => setMenuOpen(false)} />
+          <div className="sidebar-menu-overlay" onClick={() => setMenuState({ open: false, mode: 'settings', target: null })} />
           <FitnessSidebarMenu 
-            onClose={() => setMenuOpen(false)}
+            onClose={() => setMenuState({ open: false, mode: 'settings', target: null })}
             visibility={visibility}
             onToggleVisibility={handleToggleVisibility}
             selectedPlaylistId={selectedPlaylistId}
             onPlaylistChange={setSelectedPlaylistId}
             isGoverned={isGoverned}
+            mode={menuState.mode}
+            targetDeviceId={menuState.target?.deviceId || null}
+            targetDefaultName={menuState.target?.defaultName || null}
+            guestAssignments={guestAssignments}
+            assignGuestToDevice={assignGuestToDevice}
+            clearGuestAssignment={clearGuestAssignment}
+            guestCandidates={guestCandidates}
           />
         </>
       )}

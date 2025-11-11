@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import '../FitnessUsers.scss';
 
-const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
+const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -12,23 +12,84 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
-  const playerRef = useRef(null);
+  const audioPlayerRef = useRef(null);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(0.1);
+  const [videoVolume, setVideoVolume] = useState(1);
+  const touchHandledRef = useRef(false);
   
   const fitnessContext = useFitnessContext();
   const { videoPlayerPaused } = fitnessContext || {};
+  const playlists = fitnessContext?.plexConfig?.music_playlists || [];
+  const setGlobalPlaylistId = fitnessContext?.setSelectedPlaylistId;
 
   // Sync music player with video player pause state
   useEffect(() => {
-    if (videoPlayerPaused !== undefined && playerRef.current) {
+    if (videoPlayerPaused !== undefined && audioPlayerRef.current) {
       if (videoPlayerPaused) {
-        playerRef.current.pause();
+        audioPlayerRef.current.pause();
         setIsPlaying(false);
       } else {
-        playerRef.current.play();
+        audioPlayerRef.current.play();
         setIsPlaying(true);
       }
     }
   }, [videoPlayerPaused]);
+
+  useEffect(() => {
+    if (!selectedPlaylistId) {
+      setControlsOpen(false);
+    }
+  }, [selectedPlaylistId]);
+
+  const applyMusicVolume = useCallback((volume) => {
+    const media = audioPlayerRef.current?.getMediaElement?.();
+    if (media && typeof media.volume === 'number') {
+      media.volume = volume;
+    }
+  }, []);
+
+  const applyVideoVolume = useCallback((volume) => {
+    if (!videoPlayerRef?.current) return;
+    const media = videoPlayerRef.current.getMediaElement?.();
+    if (media && typeof media.volume === 'number') {
+      media.volume = volume;
+    }
+  }, [videoPlayerRef]);
+
+  useEffect(() => {
+    applyMusicVolume(musicVolume);
+  }, [musicVolume, applyMusicVolume]);
+
+  useEffect(() => {
+    applyMusicVolume(musicVolume);
+  }, [playQueueData, applyMusicVolume, musicVolume]);
+
+  useEffect(() => {
+    applyVideoVolume(videoVolume);
+  }, [videoVolume, applyVideoVolume]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    let frameId = null;
+    // Poll until the fitness video exposes its media element so the slider can mirror the live volume.
+    const probeVideoElement = () => {
+      if (!videoPlayerRef?.current) return;
+      const media = videoPlayerRef.current.getMediaElement?.();
+      if (!media) {
+        frameId = window.requestAnimationFrame(probeVideoElement);
+        return;
+      }
+      if (typeof media.volume === 'number') {
+        setVideoVolume(media.volume);
+      }
+    };
+    probeVideoElement();
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
+    };
+  }, [videoPlayerRef]);
 
   // Load playlist when selectedPlaylistId changes
   useEffect(() => {
@@ -133,12 +194,62 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
   };
 
   const handleTogglePlayPause = () => {
-    if (playerRef.current) {
-      playerRef.current.toggle();
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.toggle();
       // Update local state to reflect the toggle
       setIsPlaying(prev => !prev);
     }
   };
+
+  const clampVolume = (value) => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(1, Math.max(0, value));
+  };
+
+  const handleMusicVolumeChange = (event) => {
+    const next = clampVolume(parseFloat(event.target.value));
+    setMusicVolume(next);
+  };
+
+  const handleVideoVolumeChange = (event) => {
+    const next = clampVolume(parseFloat(event.target.value));
+    setVideoVolume(next);
+  };
+
+  const handlePlaylistChange = (event) => {
+    const nextId = event.target.value || null;
+    if (setGlobalPlaylistId) {
+      setGlobalPlaylistId(nextId);
+    }
+  };
+
+  const toggleControls = () => {
+    setControlsOpen(prev => !prev);
+  };
+
+  const handleInfoTouchStart = () => {
+    // Touch events trigger an extra click; mark so we skip the follow-up click handler.
+    touchHandledRef.current = true;
+    toggleControls();
+  };
+
+  const handleInfoClick = () => {
+    if (touchHandledRef.current) {
+      touchHandledRef.current = false;
+      return;
+    }
+    toggleControls();
+  };
+
+  const handleInfoKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleControls();
+    }
+  };
+
+  const videoMediaAvailable = Boolean(videoPlayerRef?.current?.getMediaElement?.());
+  const musicMediaAvailable = Boolean(audioPlayerRef.current?.getMediaElement?.());
 
   const formatTime = (seconds) => {
     if (!seconds || !isFinite(seconds)) return '0:00';
@@ -188,7 +299,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
   }
 
   return (
-    <div className="fitness-music-player-container">
+    <div className={`fitness-music-player-container${controlsOpen ? ' controls-open' : ''}`}>
       <div className="music-player-content">
         {/* Album Art */}
         <div 
@@ -215,7 +326,15 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
         </div>
 
         {/* Track Info & Progress */}
-        <div className="music-player-info">
+        <div 
+          className="music-player-info"
+          onClick={handleInfoClick}
+          onTouchStart={handleInfoTouchStart}
+          onKeyDown={handleInfoKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-expanded={controlsOpen}
+        >
           <div className="track-details">
             <div className="track-title">
               {currentTrack?.title || currentTrack?.label || 'No track playing'}
@@ -256,14 +375,69 @@ const FitnessMusicPlayer = ({ selectedPlaylistId }) => {
         </div>
       </div>
 
+      {controlsOpen && (
+        <div className="music-player-expanded">
+          <div className="expanded-section">
+            {playlists.length > 0 ? (
+              <select
+                className="playlist-select"
+                value={selectedPlaylistId || ''}
+                onChange={handlePlaylistChange}
+              >
+                {playlists.map((playlist) => (
+                  <option key={playlist.id} value={playlist.id}>
+                   🎵 {playlist.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="empty-state">No playlists configured.</div>
+            )}
+          </div>
+
+          <div className="expanded-section">
+            <div className="mix-row">
+              <label htmlFor="video-volume">Video Volume</label>
+              <input
+                id="video-volume"
+                className="mix-slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={videoVolume}
+                onChange={handleVideoVolumeChange}
+                disabled={!videoMediaAvailable}
+              />
+              <span className="mix-value">{Math.round(videoVolume * 100)}%</span>
+            </div>
+            <div className="mix-row">
+              <label htmlFor="music-volume">Music Volume</label>
+              <input
+                id="music-volume"
+                className="mix-slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={musicVolume}
+                onChange={handleMusicVolumeChange}
+                disabled={!musicMediaAvailable}
+              />
+              <span className="mix-value">{Math.round(musicVolume * 100)}%</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hidden Player Component */}
       {playQueueData && playQueueData.length > 0 ? (
         <div style={{ position: 'absolute', left: '-9999px' }}>
           <Player
-            ref={playerRef}
+            ref={audioPlayerRef}
             key={selectedPlaylistId} // Remount only when playlist ID changes
             queue={playQueueData}
-            play={{ volume: 0.1 }}
+            play={{ volume: musicVolume }}
             onProgress={handleProgress}
             playerType="audio"
           />
