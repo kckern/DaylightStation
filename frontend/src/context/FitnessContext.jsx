@@ -863,10 +863,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       switch (rule) {
         case 'all':
           return totalCount;
-        case 'majority':
-          return Math.max(1, Math.ceil(totalCount * 0.6));
-        case 'some':
+        case 'most':
           return Math.max(1, Math.ceil(totalCount * 0.5));
+        case 'some':
+          return Math.max(1, Math.ceil(totalCount * 0.3));
         case 'any':
           return 1;
         default:
@@ -883,6 +883,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           return 'All participants';
         case 'majority':
           return `Majority (${requiredCount})`;
+        case 'most':
+          return `Most (${requiredCount})`;
         case 'some':
           return `Some (${requiredCount})`;
         case 'any':
