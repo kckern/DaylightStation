@@ -786,22 +786,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       onPointerDown={handleVideoPointerDown}
     >
       <div className="player-controls-blocker"></div>
-      <FitnessPlayerOverlay overlay={governanceOverlay} />
-      {stallStatus.isStalled && (
-        <div
-          className="stall-reload-overlay"
-          data-stalled="1"
-        >
-          <button
-            type="button"
-            className="stall-reload-button"
-            onClick={ e => { e.stopPropagation(); handleReloadEpisode(e);} }
-            onPointerDown={ e => { e.stopPropagation(); handleReloadEpisode(e);} }
-          >
-            Reload at {formatTime(Math.max(0, lastKnownTimeRef.current || currentTime || 0))}
-          </button>
-        </div>
-      )}
+      <FitnessPlayerOverlay 
+        overlay={governanceOverlay} 
+        stallStatus={stallStatus}
+        onReload={handleReloadEpisode}
+        currentTime={currentTime}
+        lastKnownTimeRef={lastKnownTimeRef}
+      />
       <FitnessFullscreenVitals visible={playerMode === 'fullscreen'} />
       {hasActiveItem ? (
         <Player

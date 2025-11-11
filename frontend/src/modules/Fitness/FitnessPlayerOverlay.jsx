@@ -3,6 +3,21 @@ import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 
+// Helper function to format time in MM:SS or HH:MM:SS format
+const formatTime = (seconds) => {
+  if (!seconds || isNaN(seconds)) return '00:00';
+  
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hrs > 0) {
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
 const slugifyId = (value, fallback = 'user') => {
   if (!value) return fallback;
   const slug = String(value)
@@ -129,7 +144,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   };
 }, [governanceState]);
 
-const FitnessPlayerOverlay = ({ overlay }) => {
+const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, lastKnownTimeRef }) => {
   const fitnessCtx = useFitnessContext();
 
   const highlightEntries = useMemo(() => {
@@ -177,6 +192,32 @@ const FitnessPlayerOverlay = ({ overlay }) => {
       })
       .filter(Boolean);
   }, [fitnessCtx?.guestAssignments, fitnessCtx?.users, overlay]);
+
+  // Handle stall reload overlay as priority overlay
+  if (stallStatus?.isStalled && onReload) {
+    const reloadTime = Math.max(0, lastKnownTimeRef?.current || currentTime || 0);
+    return (
+      <div
+        className="stall-reload-overlay"
+        data-stalled="1"
+      >
+        <button
+          type="button"
+          className="stall-reload-button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReload(e);
+          }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onReload(e);
+          }}
+        >
+          Reload at {formatTime(reloadTime)}
+        </button>
+      </div>
+    );
+  }
 
   if (!overlay || !overlay.show) return null;
 
@@ -287,6 +328,17 @@ FitnessPlayerOverlay.propTypes = {
     highlightUsers: PropTypes.arrayOf(PropTypes.string),
     countdown: PropTypes.number,
     countdownTotal: PropTypes.number
+  }),
+  stallStatus: PropTypes.shape({
+    isStalled: PropTypes.bool,
+    since: PropTypes.number,
+    attempts: PropTypes.number,
+    lastStrategy: PropTypes.string
+  }),
+  onReload: PropTypes.func,
+  currentTime: PropTypes.number,
+  lastKnownTimeRef: PropTypes.shape({
+    current: PropTypes.number
   })
 };
 
