@@ -26,7 +26,8 @@ export function VideoPlayer({
   onMediaRef, 
   showQuality,
   stallConfig,
-  keyboardOverrides
+  keyboardOverrides,
+  onController
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -45,7 +46,9 @@ export function VideoPlayer({
     handleProgressClick,
     quality,
     droppedFramePct,
-    currentMaxKbps
+    currentMaxKbps,
+    stallState,
+    elementKey
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -68,6 +71,7 @@ export function VideoPlayer({
     showQuality,
     stallConfig,
     keyboardOverrides,
+  onController,
     onRequestBitrateChange: useCallback(async (newCapKbps, { reason }) => {
       // Trigger a refetch with bitrate override and show overlay message
       try {
@@ -129,7 +133,8 @@ export function VideoPlayer({
             url: media_url,
             media_key: media?.media_key || media?.key || media?.plex,
             isDash,
-            shader
+            shader,
+            stallState
           }}
           getMediaEl={() => {
             const el = (containerRef.current?.shadowRoot?.querySelector('video')) || containerRef.current;
@@ -139,7 +144,7 @@ export function VideoPlayer({
       )}
       {isDash ? (
         <dash-video
-          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`}
+          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
           ref={containerRef}
           class={`video-element ${displayReady ? 'show' : ''}`}
           src={media_url}
@@ -148,7 +153,7 @@ export function VideoPlayer({
         />
       ) : (
         <video
-          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`}
+          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
           autoPlay
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''}`}
@@ -205,5 +210,6 @@ VideoPlayer.propTypes = {
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   showQuality: PropTypes.bool,
-  stallConfig: PropTypes.object
+  stallConfig: PropTypes.object,
+  onController: PropTypes.func
 };

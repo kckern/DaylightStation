@@ -22,7 +22,7 @@ const CONFIG = Object.freeze({
  *           Defaults to [0, duration] (or fallback) when omitted/invalid. All thumbnail positions are clamped to this window.
  *  - commitRef: optional ref to expose commit function for external use
  */
-const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl, commitRef, getTimeRef, disabled = false }) => {
+const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl, commitRef, getTimeRef, disabled = false, mediaElementKey = 0 }) => {
   // ---------- Helpers ----------
   const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   const percentOf = (t, total) => total > 0 ? clamp01(t / total) : 0;
@@ -207,7 +207,7 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       el.removeEventListener('playing', handlePlaying);
       el.removeEventListener('loadedmetadata', handleRecovery);
     };
-  }, [playerRef, pendingTime]);
+  }, [playerRef, pendingTime, mediaElementKey]);
 
   // Expose commit function to parent via ref
   useEffect(() => {

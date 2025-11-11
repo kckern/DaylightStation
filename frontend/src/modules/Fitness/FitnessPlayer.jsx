@@ -120,7 +120,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [stallStatus, setStallStatus] = useState({ isStalled: false, since: null, attempts: 0, lastStrategy: null });
+  const [stallStatus, setStallStatus] = useState({ isStalled: false, since: null, attempts: 0, lastStrategy: null, stallState: null });
+  const [playerElementKey, setPlayerElementKey] = useState(0);
   // Layout adaptation state
   const [stackMode, setStackMode] = useState(false); // layout adaptation flag
   // Footer aspect (width/height) hysteresis thresholds
@@ -153,7 +154,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     getCurrentTime: getPlayerTime,
     getDuration: getPlayerDuration,
     pause: pausePlayback,
-    play: playPlayback
+    play: playPlayback,
+    softReinit: softReinitPlayback,
+    resetRecovery: resetRecoveryState,
+    getStallState: getPlayerStallState
   } = usePlayerController(playerRef);
   const lastKnownTimeRef = useRef(0);
   const governancePausedRef = useRef(false);
@@ -629,7 +633,47 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
 
-  const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused, stalled = false, recoveryAttempt = 0, lastStrategy = null }) => {
+  const applyStallSnapshot = useCallback((stallSnapshot, fallbackStalled = false) => {
+    const status = stallSnapshot?.status;
+    const isControllerStalled = status === 'stalled' || status === 'recovering' || status === 'failed';
+    const effectiveStalled = Boolean(fallbackStalled || isControllerStalled);
+
+    setStallStatus((prev) => {
+      if (effectiveStalled) {
+        const since = stallSnapshot?.since || prev.since || Date.now();
+        const attempts = Number.isFinite(stallSnapshot?.attemptIndex) ? stallSnapshot.attemptIndex : prev.attempts;
+        const strategy = stallSnapshot?.strategy ?? prev.lastStrategy;
+
+        if (
+          prev.isStalled &&
+          prev.since === since &&
+          prev.attempts === attempts &&
+          prev.lastStrategy === strategy &&
+          prev.stallState === stallSnapshot
+        ) {
+          return prev;
+        }
+
+        return {
+          isStalled: true,
+          since,
+          attempts,
+          lastStrategy: strategy,
+          stallState: stallSnapshot || prev.stallState
+        };
+      }
+
+      if (!prev.isStalled && !prev.stallState) {
+        return prev;
+      }
+
+      return { isStalled: false, since: null, attempts: 0, lastStrategy: null, stallState: stallSnapshot || null };
+    });
+
+    return effectiveStalled;
+  }, []);
+
+  const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused, stalled = false, stallState: stallSnapshot }) => {
     // Throttle currentTime updates to ~4Hz
     const now = performance.now();
     const last = progressMetaRef.current.lastSetTime;
@@ -643,24 +687,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       progressMetaRef.current.lastDuration = d;
       setDuration(d);
     }
-    setIsPaused(paused || stalled);
-    setStallStatus((prev) => {
-      if (stalled) {
-        const since = prev.isStalled ? prev.since : Date.now();
-        const attempts = Number.isFinite(recoveryAttempt) ? recoveryAttempt : prev.attempts;
-        const strategy = lastStrategy ?? prev.lastStrategy;
-        if (prev.isStalled && prev.since === since && prev.attempts === attempts && prev.lastStrategy === strategy) {
-          return prev;
-        }
-        return { isStalled: true, since, attempts, lastStrategy: strategy };
-      }
-
-      if (!prev.isStalled) {
-        return prev;
-      }
-
-      return { isStalled: false, since: null, attempts: 0, lastStrategy: null };
-    });
+    const effectiveStalled = applyStallSnapshot(stallSnapshot, stalled);
+    setIsPaused(paused || effectiveStalled);
 
     // Immediately pause if governed and locked
     if (playIsGoverned && !paused && pausePlayback) {
@@ -669,20 +697,32 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
     // Update context so music player can sync
     if (setVideoPlayerPaused) {
-      setVideoPlayerPaused(paused || stalled);
+      setVideoPlayerPaused(paused || effectiveStalled);
     }
-  }, [setVideoPlayerPaused, playIsGoverned, pausePlayback]);
+  }, [applyStallSnapshot, setVideoPlayerPaused, playIsGoverned, pausePlayback]);
 
   const handleReloadEpisode = useCallback(() => {
-    if (!currentItem) return;
-    const restartSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
-    setCurrentItem((prev) => {
-      if (!prev) return prev;
-      return { ...prev, seconds: restartSeconds };
-    });
-    setStallStatus({ isStalled: false, since: null, attempts: 0, lastStrategy: null });
+    softReinitPlayback?.();
+    resetRecoveryState?.();
+    setStallStatus({ isStalled: false, since: null, attempts: 0, lastStrategy: null, stallState: null });
     setIsPaused(false);
-  }, [currentItem, currentTime]);
+    if (setVideoPlayerPaused) {
+      setVideoPlayerPaused(false);
+    }
+  }, [softReinitPlayback, resetRecoveryState, setVideoPlayerPaused]);
+
+  const handlePlayerControllerUpdate = useCallback((controller) => {
+    if (!controller) return;
+    if (typeof controller.elementKey === 'number') {
+      setPlayerElementKey((prev) => (prev === controller.elementKey ? prev : controller.elementKey));
+    }
+    const snapshot = controller.stallState || controller.readStallState?.() || getPlayerStallState?.();
+    const effectiveStalled = applyStallSnapshot(snapshot, false);
+    if (effectiveStalled) {
+      setIsPaused((prev) => prev || true);
+      setVideoPlayerPaused?.(true);
+    }
+  }, [applyStallSnapshot, getPlayerStallState, setVideoPlayerPaused, setPlayerElementKey]);
 
   const handlePlayerReady = useCallback(({ duration: d }) => {
     if (d && !duration) setDuration(d);
@@ -803,6 +843,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           advance={handleNext}
           playerType="fitness-video"
           onProgress={handlePlayerProgress}
+          onController={handlePlayerControllerUpdate}
           onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
           ref={playerRef}
         />
@@ -885,6 +926,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           thumbnailsCommitRef={thumbnailsCommitRef}
           thumbnailsGetTimeRef={thumbnailsGetTimeRef}
           playIsGoverned={playIsGoverned}
+          mediaElementKey={playerElementKey}
         />
       </div>
     </div>
