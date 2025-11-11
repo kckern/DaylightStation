@@ -6,11 +6,14 @@ import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
 import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
 import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
 import FitnessMusicPlayer from './FitnessSidebar/FitnessMusicPlayer.jsx';
+import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
 import './FitnessUsers.scss';
+import './FitnessSidebar/FitnessGovernance.scss';
 
 const FitnessSidebar = ({ playerRef }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [visibility, setVisibility] = useState({
+    governance: false,
     treasureBox: true,
     users: true,
     raceChart: false,
@@ -19,7 +22,20 @@ const FitnessSidebar = ({ playerRef }) => {
     voiceMemo: true
   });
   const fitnessContext = useFitnessContext();
-  const { treasureBox, fitnessSession, selectedPlaylistId, setSelectedPlaylistId } = fitnessContext;
+  const { treasureBox, fitnessSession, selectedPlaylistId, setSelectedPlaylistId, governanceState } = fitnessContext;
+  const isGoverned = Boolean(governanceState?.isGoverned);
+  const showGovernancePanel = isGoverned || visibility.governance;
+
+  React.useEffect(() => {
+    setVisibility(prev => {
+      if (isGoverned) {
+        if (prev.governance) return prev;
+        return { ...prev, governance: true };
+      }
+      if (!prev.governance) return prev;
+      return { ...prev, governance: false };
+    });
+  }, [isGoverned]);
 
   // Automatically show playlist when selectedPlaylistId is set
   React.useEffect(() => {
@@ -41,6 +57,13 @@ const FitnessSidebar = ({ playerRef }) => {
       {visibility.treasureBox && (
         <div className="fitness-sidebar-treasurebox">
           <FitnessTreasureBox box={treasureBox} session={fitnessSession} />
+        </div>
+      )}
+
+      {/* Governance Monitor */}
+      {showGovernancePanel && (
+        <div className="fitness-sidebar-governance">
+          <FitnessGovernance />
         </div>
       )}
 
@@ -80,6 +103,7 @@ const FitnessSidebar = ({ playerRef }) => {
             onToggleVisibility={handleToggleVisibility}
             selectedPlaylistId={selectedPlaylistId}
             onPlaylistChange={setSelectedPlaylistId}
+            isGoverned={isGoverned}
           />
         </>
       )}

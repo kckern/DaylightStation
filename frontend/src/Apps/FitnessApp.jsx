@@ -297,7 +297,7 @@ const FitnessApp = () => {
         if (!response.fitness) response.fitness = {};
 
         // Normalize: move top-level domain keys into response.fitness if not already nested
-        const unifyKeys = ['ant_devices','equipment','users','coin_time_unit_ms','zones','plex'];
+        const unifyKeys = ['ant_devices','equipment','users','coin_time_unit_ms','zones','plex','governance'];
         unifyKeys.forEach(k => {
           if (response[k] !== undefined && response.fitness[k] === undefined) {
             response.fitness[k] = response[k];
