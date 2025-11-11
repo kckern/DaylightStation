@@ -11,16 +11,18 @@ import './FitnessUsers.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
 const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) => {
+  const fitnessContext = useFitnessContext();
+  const isGovernedInitial = Boolean(fitnessContext?.governanceState?.isGoverned);
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
-  const [visibility, setVisibility] = useState({
-    governance: false,
-    treasureBox: true,
+  const [visibility, setVisibility] = useState(() => ({
+    governance: isGovernedInitial,
+    treasureBox: !isGovernedInitial,
     users: true,
     video: true,
     voiceMemo: true
-  });
+  }));
+  const [treasureBoxOverridden, setTreasureBoxOverridden] = useState(false);
   const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
-  const fitnessContext = useFitnessContext();
   const { 
     treasureBox, 
     fitnessSession, 
@@ -59,21 +61,37 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
   }, [musicEnabled, setMusicOverride]);
 
   React.useEffect(() => {
-    setVisibility(prev => {
-      if (isGoverned) {
-        if (prev.governance) return prev;
-        return { ...prev, governance: true };
+    setVisibility((prev) => {
+      let next = prev;
+
+      if (isGoverned && !prev.governance) {
+        next = next === prev ? { ...prev } : next;
+        next.governance = true;
+      } else if (!isGoverned && prev.governance) {
+        next = next === prev ? { ...prev } : next;
+        next.governance = false;
       }
-      if (!prev.governance) return prev;
-      return { ...prev, governance: false };
+
+      if (!treasureBoxOverridden) {
+        const desiredTreasureVisibility = !isGoverned;
+        if (prev.treasureBox !== desiredTreasureVisibility) {
+          next = next === prev ? { ...prev } : next;
+          next.treasureBox = desiredTreasureVisibility;
+        }
+      }
+
+      return next === prev ? prev : next;
     });
-  }, [isGoverned]);
+  }, [isGoverned, treasureBoxOverridden]);
 
   const handleToggleVisibility = (component) => {
     setVisibility(prev => ({
       ...prev,
       [component]: !prev[component]
     }));
+    if (component === 'treasureBox') {
+      setTreasureBoxOverridden(true);
+    }
   };
 
   return (
