@@ -1,7 +1,14 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
+
+const DEFAULT_STRATEGY_PIPELINE = [
+  { name: 'nudge', maxAttempts: 2 },
+  { name: 'seekback', maxAttempts: 1, options: { seconds: 5 } },
+  { name: 'reload', maxAttempts: 2 },
+  { name: 'softReinit', maxAttempts: 1 }
+];
 
 /**
  * Common media controller hook for both audio and video players
@@ -25,6 +32,7 @@ export function useCommonMediaController({
   ignoreKeys,
   onProgress,
   onMediaRef,
+  onController,
   stallConfig = {},
   showQuality = false,
   onRequestBitrateChange,
@@ -62,9 +70,30 @@ export function useCommonMediaController({
     hardTimer: null,
     recoveryAttempt: 0,
     isStalled: false,
-    lastStrategy: 'none',
-    hasEnded: false  // Flag to prevent recovery after media ends
+    lastStrategy: null,
+    hasEnded: false,
+    status: 'idle',
+    sinceTs: null,
+    activeStrategy: null,
+    activeStrategyAttempt: 0,
+    attemptIndex: 0,
+    terminal: false,
+    lastSuccessTs: null,
+    strategyCounts: Object.create(null),
+    strategySteps: [],
+    pendingSoftReinit: false,
+    lastError: null
   });
+  const [stallState, setStallState] = useState(() => ({
+    status: 'idle',
+    since: null,
+    strategy: null,
+    strategyAttempt: 0,
+    attemptIndex: 0,
+    lastSuccessTs: null,
+    terminal: false,
+    lastError: null
+  }));
   const [isStalled, setIsStalled] = useState(false);
   // Quality sampling state
   const [quality, setQuality] = useState({ droppedVideoFrames: 0, totalVideoFrames: 0, droppedPct: 0, supported: true });
@@ -77,6 +106,8 @@ export function useCommonMediaController({
   const stableBelowMsRef = useRef(0);
   const lastAdaptTsRef = useRef(0);
   const pendingAdaptRef = useRef(false);
+  const recoverySnapshotRef = useRef(null);
+  const [elementKey, setElementKey] = useState(0);
   // Initialize with meta.maxVideoBitrate if available, to avoid initial "unlimited" flash
   const [currentMaxKbps, setCurrentMaxKbps] = useState(() => {
     const initial = Number.isFinite(meta?.maxVideoBitrate) ? Number(meta.maxVideoBitrate) : null;
@@ -95,6 +126,9 @@ export function useCommonMediaController({
     hardMs = 8000,
     recoveryStrategies = ['nudge', 'reload'],
     seekBackOnReload = 2,
+    strategies: strategyOverrides = null,
+    terminalAction = 'emitFailure',
+    softReinitSeekBackSeconds = 2,
     mode = 'auto',
     // Adaptation config defaults
     droppedFrameAllowance = 0.5, // fraction 0-1
@@ -112,6 +146,130 @@ export function useCommonMediaController({
     // Optional manual reset key (disabled by default)
     manualResetKey = null
   } = stallConfig || {};
+
+  const strategySteps = useMemo(() => {
+    const rawConfig = Array.isArray(strategyOverrides) && strategyOverrides.length
+      ? strategyOverrides
+      : (Array.isArray(recoveryStrategies) && recoveryStrategies.length ? recoveryStrategies : DEFAULT_STRATEGY_PIPELINE);
+
+    const normalizeEntry = (entry) => {
+      if (!entry) return null;
+      if (typeof entry === 'string') {
+        return { name: entry, maxAttempts: 1, options: {} };
+      }
+      if (typeof entry === 'object') {
+        const { name, maxAttempts, options } = entry;
+        if (!name) return null;
+        return {
+          name,
+          maxAttempts: Math.max(1, Number.isFinite(maxAttempts) ? maxAttempts : 1),
+          options: options || {}
+        };
+      }
+      return null;
+    };
+
+    const normalized = rawConfig
+      .map(normalizeEntry)
+      .filter((entry) => entry && entry.name);
+
+    if (!normalized.length) {
+      return DEFAULT_STRATEGY_PIPELINE.flatMap((strategy) =>
+        Array.from({ length: Math.max(1, strategy.maxAttempts || 1) }, (_, idx) => ({
+          name: strategy.name,
+          options: { ...strategy.options },
+          attempt: idx + 1,
+          maxAttempts: Math.max(1, strategy.maxAttempts || 1),
+          index: idx
+        }))
+      );
+    }
+
+    return normalized.flatMap((strategy) => {
+      const maxAttempts = Math.max(1, strategy.maxAttempts || 1);
+      return Array.from({ length: maxAttempts }, (_, idx) => {
+        const defaultOptions = strategy.name === 'reload'
+          ? { seekBackSeconds: seekBackOnReload }
+          : strategy.name === 'softReinit'
+            ? { seekBackSeconds: softReinitSeekBackSeconds }
+            : strategy.name === 'seekback'
+              ? { seconds: 5 }
+              : {};
+        return {
+          name: strategy.name,
+          options: { ...defaultOptions, ...(strategy.options || {}) },
+          attempt: idx + 1,
+          maxAttempts,
+          index: idx
+        };
+      });
+    });
+  }, [strategyOverrides, recoveryStrategies, seekBackOnReload, softReinitSeekBackSeconds]);
+
+  useEffect(() => {
+    stallStateRef.current.strategySteps = strategySteps;
+    stallStateRef.current.recoveryAttempt = 0;
+    stallStateRef.current.strategyCounts = Object.create(null);
+    stallStateRef.current.attemptIndex = 0;
+  }, [strategySteps]);
+
+  useEffect(() => {
+    const nextStatus = enabled ? 'monitoring' : 'idle';
+    if (stallStateRef.current.status !== nextStatus) {
+      stallStateRef.current.status = nextStatus;
+    }
+    setStallState((prev) => {
+      if (prev.status === nextStatus) return prev;
+      return { ...prev, status: nextStatus };
+    });
+  }, [enabled]);
+
+  const publishStallSnapshot = useCallback((overrides = {}) => {
+    const ref = stallStateRef.current;
+    const snapshot = {
+      status: ref.status,
+      since: ref.sinceTs,
+      strategy: ref.activeStrategy,
+      strategyAttempt: ref.activeStrategyAttempt,
+      attemptIndex: ref.attemptIndex,
+      lastSuccessTs: ref.lastSuccessTs,
+      terminal: ref.terminal,
+      lastError: ref.lastError,
+      ...overrides
+    };
+    setStallState((prev) => {
+      if (
+        prev.status === snapshot.status &&
+        prev.since === snapshot.since &&
+        prev.strategy === snapshot.strategy &&
+        prev.strategyAttempt === snapshot.strategyAttempt &&
+        prev.attemptIndex === snapshot.attemptIndex &&
+        prev.lastSuccessTs === snapshot.lastSuccessTs &&
+        prev.terminal === snapshot.terminal &&
+        prev.lastError === snapshot.lastError
+      ) {
+        return prev;
+      }
+      return snapshot;
+    });
+    return snapshot;
+  }, []);
+
+  const readStallState = useCallback(() => {
+    const ref = stallStateRef.current;
+    return {
+      status: ref.status,
+      since: ref.sinceTs,
+      strategy: ref.activeStrategy,
+      strategyAttempt: ref.activeStrategyAttempt,
+      attemptIndex: ref.attemptIndex,
+      lastSuccessTs: ref.lastSuccessTs,
+      terminal: ref.terminal,
+      lastError: ref.lastError
+    };
+  }, []);
+
+  const getStrategyStep = useCallback((index) => strategySteps[index] || null, [strategySteps]);
 
   const getMediaEl = useCallback(() => {
     const mediaEl = containerRef.current?.shadowRoot?.querySelector('video') || containerRef.current;
@@ -150,6 +308,10 @@ export function useCommonMediaController({
     // Do not reset currentMaxKbps here; it seeds from meta.maxVideoBitrate effect above
   }, [media_key]);
 
+  useEffect(() => {
+    setElementKey(0);
+  }, [media_key]);
+
   const handleProgressClick = useCallback((event) => {
     if (!duration || !containerRef.current) return;
     const mediaEl = getMediaEl();
@@ -186,126 +348,241 @@ export function useCommonMediaController({
   }, []);
 
   // Recovery strategies
-  const recoveryMethods = {
-    // Nudge: Tiny time adjustment to trigger buffer reload
-    nudge: useCallback(() => {
-      const mediaEl = getMediaEl();
-      if (!mediaEl) return false;
-      
-      try {
-        const t = mediaEl.currentTime;
-        mediaEl.pause();
-        mediaEl.currentTime = Math.max(0, t - 0.001);
-        mediaEl.play().catch(() => {});
-        return true;
-      } catch (_) {
-        return false;
-      }
-    }, [getMediaEl]),
+  // Nudge: Tiny time adjustment to trigger buffer reload
+  const nudgeRecovery = useCallback((_options = {}) => {
+    const mediaEl = getMediaEl();
+    if (!mediaEl) return false;
 
-    // Reload: Full media element reset
-    reload: useCallback(() => {
-      const mediaEl = getMediaEl();
-      if (!mediaEl) {
-        return false;
-      }
-      
-      // Use lastSeekIntentRef if available (user tried to seek), otherwise use current time
-      const priorTime = lastSeekIntentRef.current !== null ? lastSeekIntentRef.current : (mediaEl.currentTime || 0);
-      const src = mediaEl.getAttribute('src');
-      
-      // Set recovery flag to prevent applying initial start time
-      isRecoveringRef.current = true;
-  if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: begin', { priorTime, intent: lastSeekIntentRef.current, seekBackOnReload, hasSrc: !!src });
-      
-      try {
-        mediaEl.pause();
-        mediaEl.removeAttribute('src');
-        mediaEl.load();
-        
-        setTimeout(() => {
-          try {
-            if (src) mediaEl.setAttribute('src', src);
-            mediaEl.load();
-            mediaEl.addEventListener('loadedmetadata', function handleOnce() {
-              mediaEl.removeEventListener('loadedmetadata', handleOnce);
-              const target = Math.max(0, priorTime - seekBackOnReload);
-              if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: loadedmetadata; seeking to target', { target, priorTime, seekBackOnReload });
-              if (Number.isFinite(target)) {
-                try { mediaEl.currentTime = target; } catch (_) {}
-              }
-              mediaEl.play().catch(() => {});
-              // Clear recovery flag and seek intent after recovery is complete
-              isRecoveringRef.current = false;
-              lastSeekIntentRef.current = null;
-              if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: complete');
-            }, { once: true });
-          } catch (_) {
+    try {
+      const t = mediaEl.currentTime;
+      mediaEl.pause();
+      mediaEl.currentTime = Math.max(0, t - 0.001);
+      mediaEl.play().catch(() => {});
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }, [getMediaEl]);
+
+  // Reload: Full media element reset
+  const reloadRecovery = useCallback((options = {}) => {
+    const mediaEl = getMediaEl();
+    if (!mediaEl) {
+      return false;
+    }
+
+    const seekBackSeconds = Number.isFinite(options.seekBackSeconds) ? options.seekBackSeconds : seekBackOnReload;
+    const priorTime = lastSeekIntentRef.current !== null ? lastSeekIntentRef.current : (mediaEl.currentTime || 0);
+    const src = mediaEl.getAttribute('src');
+
+    isRecoveringRef.current = true;
+    if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: begin', { priorTime, intent: lastSeekIntentRef.current, seekBackSeconds, hasSrc: !!src });
+
+    try {
+      mediaEl.pause();
+      mediaEl.removeAttribute('src');
+      mediaEl.load();
+
+      setTimeout(() => {
+        try {
+          if (src) mediaEl.setAttribute('src', src);
+          mediaEl.load();
+          mediaEl.addEventListener('loadedmetadata', function handleOnce() {
+            mediaEl.removeEventListener('loadedmetadata', handleOnce);
+            const target = Math.max(0, priorTime - (Number.isFinite(seekBackSeconds) ? seekBackSeconds : 0));
+            if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: loadedmetadata; seeking to target', { target, priorTime, seekBackSeconds });
+            if (Number.isFinite(target)) {
+              try { mediaEl.currentTime = target; } catch (_) {}
+            }
+            mediaEl.play().catch(() => {});
             isRecoveringRef.current = false;
             lastSeekIntentRef.current = null;
-            console.warn('[Stall Recovery] reload: error after reattaching src');
+            if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: complete');
+          }, { once: true });
+        } catch (_) {
+          isRecoveringRef.current = false;
+          lastSeekIntentRef.current = null;
+          console.warn('[Stall Recovery] reload: error after reattaching src');
+        }
+      }, 50);
+      return true;
+    } catch (_) {
+      isRecoveringRef.current = false;
+      lastSeekIntentRef.current = null;
+      console.warn('[Stall Recovery] reload: error during element reset');
+      return false;
+    }
+  }, [getMediaEl, seekBackOnReload]);
+
+  // Seek back: Jump back a few seconds
+  const seekbackRecovery = useCallback((options = {}) => {
+    const mediaEl = getMediaEl();
+    if (!mediaEl) return false;
+    const seconds = Number.isFinite(options.seconds) ? options.seconds : 5;
+
+    try {
+      mediaEl.currentTime = Math.max(0, mediaEl.currentTime - seconds);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }, [getMediaEl]);
+
+  // Soft reinitialisation: rebuild dash element without tearing down React tree
+  const softReinitRecovery = useCallback((options = {}) => {
+    const hostEl = containerRef.current;
+    const mediaEl = getMediaEl();
+    if (!mediaEl && !hostEl) return false;
+
+    const seekBackSeconds = Number.isFinite(options.seekBackSeconds) ? options.seekBackSeconds : softReinitSeekBackSeconds;
+    const currentTime = mediaEl?.currentTime ?? lastPlaybackPosRef.current ?? 0;
+    const targetTime = Math.max(0, currentTime - (seekBackSeconds || 0));
+
+    recoverySnapshotRef.current = {
+      targetTime,
+      playbackRate: mediaEl?.playbackRate ?? playbackRate,
+      volume: mediaEl?.volume,
+      wasPaused: mediaEl?.paused ?? false,
+      seekBackSeconds
+    };
+
+    isRecoveringRef.current = true;
+    stallStateRef.current.pendingSoftReinit = true;
+    stallStateRef.current.lastError = null;
+
+    try {
+      mediaEl?.pause?.();
+    } catch (_) {}
+
+    const destroyCandidates = ['destroy', 'reset', 'destroyPlayer', 'resetPlayer'];
+    const attemptDestroy = (node) => {
+      if (!node) return false;
+      let performed = false;
+      destroyCandidates.forEach((method) => {
+        if (typeof node[method] === 'function') {
+          try {
+            node[method]();
+            performed = true;
+          } catch (err) {
+            console.warn('[Stall Recovery] softReinit: error invoking', method, err);
           }
-        }, 50);
-        return true;
-      } catch (_) {
-        isRecoveringRef.current = false;
-        lastSeekIntentRef.current = null;
-        console.warn('[Stall Recovery] reload: error during element reset');
-        return false;
+        }
+      });
+      if (node && node.dashjsPlayer && typeof node.dashjsPlayer.reset === 'function') {
+        try {
+          node.dashjsPlayer.reset();
+          performed = true;
+        } catch (err) {
+          console.warn('[Stall Recovery] softReinit: error invoking dashjsPlayer.reset', err);
+        }
       }
-    }, [getMediaEl, seekBackOnReload]),
+      return performed;
+    };
 
-    // Seek back: Jump back a few seconds
-    seekback: useCallback((seconds = 5) => {
-      const mediaEl = getMediaEl();
-      if (!mediaEl) return false;
-      
-      try {
-        mediaEl.currentTime = Math.max(0, mediaEl.currentTime - seconds);
-        return true;
-      } catch (_) {
-        return false;
-      }
-    }, [getMediaEl])
-  };
+    const hostDestroyed = attemptDestroy(hostEl);
+    const mediaDestroyed = mediaEl && mediaEl !== hostEl ? attemptDestroy(mediaEl) : false;
 
-  // Execute next recovery strategy
-  const attemptRecovery = useCallback(() => {
+    setElementKey((prev) => prev + 1);
+
+    lastSeekIntentRef.current = targetTime;
+    try { useCommonMediaController.__lastSeekByKey[media_key] = targetTime; } catch {}
+
+    if (DEBUG_MEDIA) console.log('[Stall Recovery] softReinit: triggered', { targetTime, seekBackSeconds, hostDestroyed, mediaDestroyed });
+
+    return true;
+  }, [getMediaEl, playbackRate, setElementKey, softReinitSeekBackSeconds, media_key]);
+
+  const recoveryMethods = useMemo(() => ({
+    nudge: nudgeRecovery,
+    reload: reloadRecovery,
+    seekback: seekbackRecovery,
+    softReinit: softReinitRecovery
+  }), [nudgeRecovery, reloadRecovery, seekbackRecovery, softReinitRecovery]);
+
+  const handleTerminalFailure = useCallback(() => {
     const s = stallStateRef.current;
-    const strategy = recoveryStrategies[s.recoveryAttempt];
-    
-    if (DEBUG_MEDIA) console.log('[Stall Recovery] Attempting recovery:', {
-      attempt: s.recoveryAttempt,
-      strategy,
-      totalStrategies: recoveryStrategies.length,
+    if (!s.terminal) {
+      s.terminal = true;
+      s.status = 'failed';
+      s.lastError = s.lastError || 'terminal_exhausted';
+      publishStallSnapshot();
+      if (terminalAction === 'autoClear') {
+        try { onClear?.(); } catch (err) { console.warn('[Stall Recovery] autoClear failed', err); }
+      }
+    }
+  }, [onClear, publishStallSnapshot, terminalAction]);
+
+  // Execute next recovery strategy (auto or manual override)
+  const attemptRecovery = useCallback(({ strategyName, manual = false, options: overrideOptions } = {}) => {
+    const s = stallStateRef.current;
+    let step;
+
+    if (strategyName) {
+      const template = strategySteps.find((entry) => entry.name === strategyName) || { name: strategyName, options: {}, maxAttempts: 1 };
+      step = {
+        ...template,
+        options: { ...template.options, ...(overrideOptions || {}) },
+        attempt: (s.strategyCounts[strategyName] || 0) + 1,
+        manual: true
+      };
+    } else {
+      step = getStrategyStep(s.recoveryAttempt);
+    }
+
+    if (DEBUG_MEDIA) console.log('[Stall Recovery] Attempting recovery', {
+      attemptIndex: s.recoveryAttempt,
+      strategyName: step?.name,
+      manual,
       lastStrategy: s.lastStrategy,
       lastSeekIntent: lastSeekIntentRef.current
     });
-    
-    if (!strategy) {
-      if (DEBUG_MEDIA) console.log('[Stall Recovery] No more strategies available');
+
+    if (!step) {
+      if (DEBUG_MEDIA) console.log('[Stall Recovery] No strategies remaining');
+      handleTerminalFailure();
       return false;
     }
-    
-    const method = recoveryMethods[strategy];
+
+    const method = recoveryMethods[step.name];
     if (!method) {
-      console.warn('[Stall Recovery] Strategy method not found:', strategy);
-      s.recoveryAttempt++;
-      return attemptRecovery();
+      console.warn('[Stall Recovery] Strategy method not found:', step.name);
+      s.lastError = `strategy_missing:${step.name}`;
+      if (!manual) {
+        s.recoveryAttempt = Math.min(s.recoveryAttempt + 1, strategySteps.length);
+        s.attemptIndex = s.recoveryAttempt;
+      }
+      publishStallSnapshot();
+      if (!manual && s.recoveryAttempt >= strategySteps.length) {
+        handleTerminalFailure();
+      }
+      return false;
     }
-    
-    s.lastStrategy = strategy;
-    const success = method();
-    s.recoveryAttempt++;
-    
-    if (DEBUG_MEDIA) console.log('[Stall Recovery] Recovery method executed:', {
-      strategy,
-      success,
-      nextAttempt: s.recoveryAttempt
-    });
-    
+
+    s.lastStrategy = step.name;
+    s.activeStrategy = step.name;
+    s.activeStrategyAttempt = step.attempt || (s.strategyCounts[step.name] || 0) + 1;
+    s.status = 'recovering';
+    s.lastError = null;
+    publishStallSnapshot();
+
+    const success = method(step.options || {});
+
+    s.strategyCounts[step.name] = (s.strategyCounts[step.name] || 0) + 1;
+
+    if (!manual) {
+      s.recoveryAttempt = Math.min(s.recoveryAttempt + 1, strategySteps.length);
+      s.attemptIndex = s.recoveryAttempt;
+      if (s.recoveryAttempt >= strategySteps.length) {
+        handleTerminalFailure();
+      } else {
+        publishStallSnapshot();
+      }
+    } else {
+      publishStallSnapshot();
+    }
+
     return success;
-  }, [recoveryStrategies, recoveryMethods]);
+  }, [getStrategyStep, handleTerminalFailure, publishStallSnapshot, recoveryMethods, strategySteps]);
 
   const scheduleStallDetection = useCallback(() => {
     if (!enabled) return;
@@ -367,6 +644,9 @@ export function useCommonMediaController({
       if (diff >= softMs) {
   if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff, softMs, hardMs, mode, currentTime: mediaEl.currentTime, duration: mediaEl.duration, droppedFramePct, quality });
         s.isStalled = true;
+        if (!s.sinceTs) s.sinceTs = Date.now();
+        s.status = 'stalled';
+        publishStallSnapshot();
         setIsStalled(true);
         
         if (mode === 'auto') {
@@ -387,13 +667,14 @@ export function useCommonMediaController({
               return;
             }
             
-            if (s.recoveryAttempt < recoveryStrategies.length) {
-              if (DEBUG_MEDIA) console.log('[Stall] hardTimer: attempting recovery', { attempt: s.recoveryAttempt, strategy: recoveryStrategies[s.recoveryAttempt], lastSeekIntent: lastSeekIntentRef.current });
+            if (s.recoveryAttempt < strategySteps.length) {
+              if (DEBUG_MEDIA) console.log('[Stall] hardTimer: attempting recovery', { attempt: s.recoveryAttempt, strategy: getStrategyStep(s.recoveryAttempt)?.name, lastSeekIntent: lastSeekIntentRef.current });
               clearTimers();
               attemptRecovery();
               scheduleStallDetection();
             } else {
               if (DEBUG_MEDIA) console.log('[Stall] hardTimer: no strategies left');
+              handleTerminalFailure();
             }
           }, recoveryDelay);
         }
@@ -404,7 +685,7 @@ export function useCommonMediaController({
         scheduleStallDetection();
       }
     }, checkInterval);
-  }, [enabled, softMs, hardMs, recoveryStrategies, checkInterval, getMediaEl, clearTimers, attemptRecovery]);
+  }, [enabled, softMs, hardMs, checkInterval, getMediaEl, clearTimers, attemptRecovery, strategySteps, mode, publishStallSnapshot, handleTerminalFailure, getStrategyStep]);
 
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
@@ -420,12 +701,22 @@ export function useCommonMediaController({
   if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, recoveryAttempt: s.recoveryAttempt, lastStrategy: s.lastStrategy });
       s.isStalled = false;
       s.recoveryAttempt = 0;
+      s.strategyCounts = Object.create(null);
+      s.activeStrategy = null;
+      s.activeStrategyAttempt = 0;
+      s.sinceTs = null;
+      s.status = enabled ? 'monitoring' : 'idle';
+      s.attemptIndex = 0;
+      s.terminal = false;
+      s.pendingSoftReinit = false;
+      s.lastSuccessTs = Date.now();
+      publishStallSnapshot();
       clearTimers();
       setIsStalled(false);
       scheduleStallDetection();
     }
     // Continuous polling in scheduleStallDetection handles rescheduling
-  }, [clearTimers, scheduleStallDetection, getMediaEl]);
+  }, [clearTimers, scheduleStallDetection, getMediaEl, enabled, publishStallSnapshot]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -455,6 +746,7 @@ export function useCommonMediaController({
       logProgress();
       markProgress();
       if (onProgress) {
+        const stallSnapshot = readStallState();
         onProgress({
           currentTime: mediaEl.currentTime || 0,
           duration: mediaEl.duration || 0,
@@ -462,8 +754,9 @@ export function useCommonMediaController({
           media: meta,
           percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
-          recoveryAttempt: stallStateRef.current.recoveryAttempt,
-          lastStrategy: stallStateRef.current.lastStrategy,
+          recoveryAttempt: stallSnapshot.attemptIndex,
+          lastStrategy: stallSnapshot.strategy,
+          stallState: stallSnapshot,
           quality,
           droppedFramePct
         });
@@ -498,6 +791,8 @@ export function useCommonMediaController({
 
     const onLoadedMetadata = () => {
       const duration = mediaEl.duration || 0;
+      const snapshot = recoverySnapshotRef.current;
+      const snapshotTarget = snapshot && Number.isFinite(snapshot.targetTime) ? snapshot.targetTime : null;
       
       let processedVolume = parseFloat(volume || 100);
       if (processedVolume > 1) {
@@ -559,14 +854,17 @@ export function useCommonMediaController({
         } else if (startTime === 0) {
           if (DEBUG_MEDIA) console.log('[StartTime] sticky resume skipped', { sticky, nearStart, nearEnd, recent, duration });
         }
+      } else if (snapshotTarget != null) {
+        startTime = snapshotTarget;
       }
       
       mediaEl.dataset.key = media_key;
       
-      // Don't set currentTime during recovery - let the recovery handler do it
-      if (!isRecoveringRef.current && Number.isFinite(startTime)) {
-        mediaEl.currentTime = startTime;
-        if (DEBUG_MEDIA) console.log('[StartTime] set currentTime on load', { startTime });
+      if (Number.isFinite(startTime)) {
+        try {
+          mediaEl.currentTime = startTime;
+          if (DEBUG_MEDIA) console.log('[StartTime] set currentTime on load', { startTime, recovering: isRecoveringRef.current });
+        } catch (_) {}
       }
       
       mediaEl.autoplay = true;
@@ -599,12 +897,33 @@ export function useCommonMediaController({
       } else {
         mediaEl.playbackRate = playbackRate;
       }
+
+      if (snapshot) {
+        if (Number.isFinite(snapshot.playbackRate)) {
+          mediaEl.playbackRate = snapshot.playbackRate;
+        }
+        if (typeof snapshot.volume === 'number') {
+          mediaEl.volume = Math.min(1, Math.max(0, snapshot.volume));
+        }
+        if (snapshot.wasPaused) {
+          setTimeout(() => {
+            try { mediaEl.pause?.(); } catch (_) {}
+          }, 0);
+        }
+      }
       
       // Reset ended flag for new media
       stallStateRef.current.hasEnded = false;
       stallStateRef.current.recoveryAttempt = 0;
       stallStateRef.current.lastProgressTs = Date.now();
       scheduleStallDetection();
+
+      if (snapshot) {
+        recoverySnapshotRef.current = null;
+        stallStateRef.current.pendingSoftReinit = false;
+        isRecoveringRef.current = false;
+        lastSeekIntentRef.current = null;
+      }
     };
 
     const handleSeeking = () => {
@@ -671,12 +990,12 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', clearSeeking);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta, type, media_key, onProgress, enabled, softMs, hardMs, recoveryStrategies, mode, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers]);
+  }, [onEnd, playbackRate, start, isVideo, meta, type, media_key, onProgress, enabled, softMs, hardMs, mode, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, strategySteps, readStallState, elementKey]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
     if (mediaEl && onMediaRef) onMediaRef(mediaEl);
-  }, [meta.media_key, onMediaRef, getMediaEl]);
+  }, [meta.media_key, onMediaRef, getMediaEl, elementKey]);
 
   // Sample video playback quality metrics (dropped/decoded frames)
   useEffect(() => {
@@ -734,7 +1053,7 @@ export function useCommonMediaController({
     timerId = setInterval(sample, sampleIntervalMs);
     sample();
     return () => { if (timerId) clearInterval(timerId); };
-  }, [showQuality, isVideo, getMediaEl, avgWindowSecs, rampUpLowPct, rampUpStableSecs, sampleIntervalMs]);
+  }, [showQuality, isVideo, getMediaEl, avgWindowSecs, rampUpLowPct, rampUpStableSecs, sampleIntervalMs, elementKey]);
 
   // Bitrate adaptation engine (dash-only)
   useEffect(() => {
@@ -815,7 +1134,7 @@ export function useCommonMediaController({
         }
       }
     }
-  }, [isDash, quality?.supported, showQuality, droppedFramePct, droppedFrameAllowance, minAdaptIntervalMs, onRequestBitrateChange, initialCapKbps, minCapKbps, rampUpLowPct, rampUpStableSecs, getMediaEl, media_key, maxCapKbps, resetToUnlimitedAtKbps, resetStableSecs, currentMaxKbps]);
+  }, [isDash, quality?.supported, showQuality, droppedFramePct, droppedFrameAllowance, minAdaptIntervalMs, onRequestBitrateChange, initialCapKbps, minCapKbps, rampUpLowPct, rampUpStableSecs, getMediaEl, media_key, maxCapKbps, resetToUnlimitedAtKbps, resetStableSecs, currentMaxKbps, elementKey]);
 
   // Manual reset keyboard handler (optional)
   useEffect(() => {
@@ -832,6 +1151,48 @@ export function useCommonMediaController({
     return () => window.removeEventListener('keydown', handler);
   }, [manualResetKey, isDash, onRequestBitrateChange, media_key, droppedFramePct, currentMaxKbps]);
 
+  const manualRecover = useCallback((strategyName, options) => attemptRecovery({ strategyName, manual: true, options }), [attemptRecovery]);
+  const manualSoftReinit = useCallback((options) => attemptRecovery({ strategyName: 'softReinit', manual: true, options }), [attemptRecovery]);
+  const attemptNext = useCallback(() => attemptRecovery(), [attemptRecovery]);
+
+  const resetRecovery = useCallback(() => {
+    const s = stallStateRef.current;
+    clearTimers();
+    s.isStalled = false;
+    s.recoveryAttempt = 0;
+    s.strategyCounts = Object.create(null);
+    s.activeStrategy = null;
+    s.activeStrategyAttempt = 0;
+    s.sinceTs = null;
+    s.status = enabled ? 'monitoring' : 'idle';
+    s.attemptIndex = 0;
+    s.terminal = false;
+    s.lastError = null;
+    s.pendingSoftReinit = false;
+    s.lastSuccessTs = Date.now();
+    publishStallSnapshot();
+    setIsStalled(false);
+  }, [clearTimers, enabled, publishStallSnapshot]);
+
+  const recoveryApi = useMemo(() => ({
+    trigger: manualRecover,
+    softReinit: manualSoftReinit,
+    reset: resetRecovery,
+    attemptNext
+  }), [manualRecover, manualSoftReinit, resetRecovery, attemptNext]);
+
+  useEffect(() => {
+    if (typeof onController === 'function') {
+      onController({
+        recovery: recoveryApi,
+        stallState,
+        readStallState,
+        getMediaEl,
+        elementKey
+      });
+    }
+  }, [onController, recoveryApi, stallState, readStallState, getMediaEl, elementKey]);
+
   return {
     containerRef,
     seconds,
@@ -845,6 +1206,9 @@ export function useCommonMediaController({
     handleProgressClick,
     quality,
     droppedFramePct,
-    currentMaxKbps
+    currentMaxKbps,
+    stallState,
+    recovery: recoveryApi,
+    elementKey
   };
 }

@@ -77,12 +77,18 @@ const Player = forwardRef(function Player(props, ref) {
   }, [singlePlayerProps?.continuous, singlePlayerProps?.media_key, singlePlayerProps?.plex, clear]);
 
   const exposedMediaRef = useRef(null);
+  const controllerRef = useRef(null);
 
   // Compose onMediaRef so we keep existing external callback semantics
   const handleMediaRef = useCallback((el) => {
     exposedMediaRef.current = el;
     if (props.onMediaRef) props.onMediaRef(el);
   }, [props.onMediaRef]);
+
+  const handleController = useCallback((controller) => {
+    controllerRef.current = controller;
+    if (props.onController) props.onController(controller);
+  }, [props.onController]);
 
   useImperativeHandle(ref, () => ({
     seek: (t) => { 
@@ -106,6 +112,12 @@ const Player = forwardRef(function Player(props, ref) {
     getCurrentTime: () => exposedMediaRef.current?.currentTime || 0,
     getDuration: () => exposedMediaRef.current?.duration || 0,
     getMediaElement: () => exposedMediaRef.current,
+    recover: (strategyName, options) => controllerRef.current?.recovery?.trigger?.(strategyName, options),
+    softReinit: (options) => controllerRef.current?.recovery?.softReinit?.(options),
+    resetRecovery: () => controllerRef.current?.recovery?.reset?.(),
+    attemptNextRecovery: () => controllerRef.current?.recovery?.attemptNext?.(),
+    getMediaController: () => controllerRef.current,
+    getStallState: () => controllerRef.current?.readStallState?.() || controllerRef.current?.stallState || null
   }), []);
 
   const playerProps = {
@@ -125,7 +137,8 @@ const Player = forwardRef(function Player(props, ref) {
     keyboardOverrides,
     onProgress: props.onProgress,
     onMediaRef: handleMediaRef,
-    stallConfig: props.stallConfig
+    stallConfig: props.stallConfig,
+    onController: handleController
   };
   
   if (singlePlayerProps?.key) delete singlePlayerProps.key;
@@ -154,6 +167,7 @@ Player.propTypes = {
   keyboardOverrides: PropTypes.object,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
+  onController: PropTypes.func,
   stallConfig: PropTypes.shape({
     enabled: PropTypes.bool,
     softMs: PropTypes.number,

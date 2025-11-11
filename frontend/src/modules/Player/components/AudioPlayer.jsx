@@ -24,7 +24,8 @@ export function AudioPlayer({
   ignoreKeys, 
   onProgress, 
   onMediaRef, 
-  stallConfig 
+  stallConfig,
+  onController
 }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const {
@@ -54,6 +55,7 @@ export function AudioPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
+    onController,
     stallConfig
   });
 
@@ -128,5 +130,6 @@ AudioPlayer.propTypes = {
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
-  stallConfig: PropTypes.object
+  stallConfig: PropTypes.object,
+  onController: PropTypes.func
 };

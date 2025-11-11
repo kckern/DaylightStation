@@ -36,7 +36,8 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
     playerRef,
     TimeDisplay,
     renderCount,
-    playIsGoverned
+    playIsGoverned,
+    mediaElementKey
   } = props;
 
   if (hidden) return null;
@@ -90,6 +91,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         onZoomReset={zoomResetRef}
         commitRef={props.thumbnailsCommitRef}
         getTimeRef={props.thumbnailsGetTimeRef}
+        mediaElementKey={mediaElementKey}
       />
 
       <FitnessPlayerFooterControls
