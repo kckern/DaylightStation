@@ -1,6 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
 import { DaylightAPI } from '../lib/api.mjs';
 
+const slugifyId = (value, fallback = 'user') => {
+  if (!value) return fallback;
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || fallback;
+};
+
+const deepClone = (value) => {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_) {
+    return null;
+  }
+};
+
+const ensureSeriesCapacity = (arr, index) => {
+  if (!Array.isArray(arr)) return;
+  while (arr.length <= index) {
+    arr.push(null);
+  }
+};
+
 /**
  * Base Device class for all ANT+ fitness devices
  */
@@ -418,6 +443,29 @@ export class FitnessSession {
     this.voiceMemos = []; // { createdAt, sessionElapsedSeconds, videoTimeSeconds, transcriptRaw, transcriptClean }
     this.participantRoster = [];
     this.currentGuestAssignments = {};
+  this._autosaveIntervalMs = 15000;
+    this._lastAutosaveAt = 0;
+    this._autosaveTimer = null;
+    this.snapshot = {
+      participantRoster: [],
+      playQueue: [],
+      usersMeta: new Map(),
+      participantSeries: new Map(),
+      deviceSeries: new Map(),
+      mediaPlaylists: { video: [], music: [] },
+      zoneConfig: null
+    };
+    this.timebase = {
+      startAbsMs: null,
+      intervalMs: 5000,
+      intervalCount: 0
+    };
+    this._lastSampleIndex = -1;
+    this.screenshots = {
+      captures: [],
+      intervalMs: null,
+      filenamePattern: null
+    };
   }
 
   // Internal helper to log events (kept small to avoid memory bloat)
@@ -455,6 +503,199 @@ export class FitnessSession {
     }
   }
 
+  _getOrCreateDeviceRecord(deviceId, device = {}) {
+    const idStr = String(deviceId);
+    const existing = this.snapshot.deviceSeries.get(idStr);
+    if (existing) {
+      if (!existing.label) {
+        existing.label = device.label || device.rawData?.label || null;
+      }
+      existing.type = device.type || existing.type || device.profile || 'unknown';
+      return existing;
+    }
+    const record = {
+      id: idStr,
+      type: device.type || device.profile || 'unknown',
+      label: device.label || device.rawData?.label || null,
+      rpmSeries: [],
+      powerSeries: [],
+      speedSeries: [],
+      heartRateSeries: []
+    };
+    this.snapshot.deviceSeries.set(idStr, record);
+    return record;
+  }
+
+  updateSnapshot({
+    users,
+    devices,
+    playQueue,
+    participantRoster,
+    zoneConfig,
+    mediaPlaylists,
+    screenshotPlan
+  } = {}) {
+    if (!this.sessionId) return;
+
+    if (!this.timebase.startAbsMs) {
+      this.timebase.startAbsMs = this.startTime || Date.now();
+    }
+
+    const intervalMs = this.treasureBox?.coinTimeUnitMs || this.timebase.intervalMs || 5000;
+    this.timebase.intervalMs = intervalMs;
+    const now = Date.now();
+    const elapsed = this.timebase.startAbsMs ? Math.max(0, now - this.timebase.startAbsMs) : 0;
+    const intervalIndex = intervalMs > 0 ? Math.floor(elapsed / intervalMs) : 0;
+    this._lastSampleIndex = Math.max(this._lastSampleIndex, intervalIndex);
+    if (intervalIndex + 1 > this.timebase.intervalCount) {
+      this.timebase.intervalCount = intervalIndex + 1;
+    }
+
+    if (Array.isArray(participantRoster)) {
+      this.snapshot.participantRoster = participantRoster.map((entry) => ({ ...entry }));
+    }
+
+    if (users instanceof Map) {
+      users.forEach((userObj, key) => {
+        if (!userObj) return;
+        const slug = slugifyId(key);
+        const displayName = userObj.name || userObj.displayName || key;
+        this.snapshot.usersMeta.set(slug, {
+          name: key,
+          displayName,
+          age: Number.isFinite(userObj.age) ? userObj.age : null,
+          hrDeviceId: userObj.hrDeviceId ?? null,
+          cadenceDeviceId: userObj.cadenceDeviceId ?? null
+        });
+        const readings = Array.isArray(userObj._cumulativeData?.heartRate?.readings)
+          ? userObj._cumulativeData.heartRate.readings
+          : [];
+        let hrValue = null;
+        if (readings.length > 0) {
+          const latest = readings[readings.length - 1]?.value;
+          if (Number.isFinite(latest)) {
+            hrValue = Math.round(latest);
+          }
+        } else if (Number.isFinite(userObj.currentHeartRate)) {
+          hrValue = Math.round(userObj.currentHeartRate);
+        }
+        const series = this.snapshot.participantSeries.get(slug) || [];
+        ensureSeriesCapacity(series, intervalIndex);
+        series[intervalIndex] = hrValue != null ? hrValue : null;
+        this.snapshot.participantSeries.set(slug, series);
+      });
+    }
+
+    if (devices instanceof Map) {
+      devices.forEach((device, rawId) => {
+        if (!device) return;
+        const idStr = String(rawId ?? device.deviceId ?? slugifyId(rawId));
+        const record = this._getOrCreateDeviceRecord(idStr, device);
+        if (device.type === 'cadence') {
+          const cadence = Number.isFinite(device.cadence) ? Math.round(device.cadence) : null;
+          ensureSeriesCapacity(record.rpmSeries, intervalIndex);
+          record.rpmSeries[intervalIndex] = cadence != null ? cadence : null;
+        } else if (device.type === 'power') {
+          const power = Number.isFinite(device.power) ? Math.round(device.power) : null;
+          ensureSeriesCapacity(record.powerSeries, intervalIndex);
+          record.powerSeries[intervalIndex] = power != null ? power : null;
+          if (Number.isFinite(device.cadence)) {
+            const cadence = Math.round(device.cadence);
+            ensureSeriesCapacity(record.rpmSeries, intervalIndex);
+            record.rpmSeries[intervalIndex] = cadence;
+          }
+        } else if (device.type === 'speed') {
+          const speed = Number.isFinite(device.speedKmh)
+            ? Math.round(device.speedKmh * 10) / 10
+            : (Number.isFinite(device.speed) ? Math.round(device.speed * 100) / 100 : null);
+          ensureSeriesCapacity(record.speedSeries, intervalIndex);
+          record.speedSeries[intervalIndex] = speed != null ? speed : null;
+        } else if (device.type === 'heart_rate') {
+          const hr = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
+          ensureSeriesCapacity(record.heartRateSeries, intervalIndex);
+          record.heartRateSeries[intervalIndex] = hr != null ? hr : null;
+        }
+        this.snapshot.deviceSeries.set(idStr, record);
+      });
+    }
+
+    if (Array.isArray(playQueue)) {
+      const clonedQueue = deepClone(playQueue) || [];
+      this.snapshot.playQueue = clonedQueue;
+      const video = [];
+      const music = [];
+      clonedQueue.forEach((item) => {
+        if (!item) return;
+        const base = {
+          plexId: item.plex ?? item.id ?? null,
+          title: item.title || item.name || null,
+          sinceStartMs: Number.isFinite(item.sinceStartMs) ? item.sinceStartMs : null,
+          videoOffsetMs: Number.isFinite(item.videoOffsetMs) ? item.videoOffsetMs : null,
+          durationMs: Number.isFinite(item.duration) ? Math.round(item.duration) : null
+        };
+        if (item.audioUrl || item.type === 'audio' || item.mediaType === 'music') {
+          base.artist = item.artist || item.albumArtist || item.show || null;
+          music.push(base);
+        } else {
+          base.show = item.show
+            || item.seriesTitle
+            || item.series
+            || item.parentTitle
+            || item.collectionTitle
+            || null;
+          video.push(base);
+        }
+      });
+      this.snapshot.mediaPlaylists = { video, music };
+    }
+
+    if (zoneConfig !== undefined) {
+      const clone = deepClone(zoneConfig);
+      this.snapshot.zoneConfig = clone !== null ? clone : zoneConfig;
+    }
+
+    if (mediaPlaylists && typeof mediaPlaylists === 'object') {
+      const override = deepClone(mediaPlaylists);
+      if (override) {
+        this.snapshot.mediaPlaylists = {
+          video: Array.isArray(override.videoPlaylist) ? override.videoPlaylist : [],
+          music: Array.isArray(override.musicPlaylist) ? override.musicPlaylist : []
+        };
+      }
+    }
+
+    if (screenshotPlan && typeof screenshotPlan === 'object') {
+      if (typeof screenshotPlan.intervalMs === 'number' && !Number.isNaN(screenshotPlan.intervalMs)) {
+        this.screenshots.intervalMs = screenshotPlan.intervalMs;
+      }
+      if (screenshotPlan.filenamePattern) {
+        this.screenshots.filenamePattern = String(screenshotPlan.filenamePattern);
+      }
+    }
+
+    this._maybeAutosave();
+  }
+
+  setScreenshotPlan({ intervalMs, filenamePattern } = {}) {
+    if (typeof intervalMs === 'number' && !Number.isNaN(intervalMs)) {
+      this.screenshots.intervalMs = intervalMs;
+    }
+    if (filenamePattern) {
+      this.screenshots.filenamePattern = String(filenamePattern);
+    }
+  }
+
+  recordScreenshotCapture({ index, timestamp, filename, url } = {}) {
+    if (!this.sessionId) return;
+    const capture = {
+      index: Number.isFinite(index) ? index : this.screenshots.captures.length,
+      timestamp: timestamp || Date.now(),
+      filename: filename || null,
+      url: url || null
+    };
+    this.screenshots.captures.push(capture);
+  }
+
   // Ensure we have a session started; returns true if newly started
   ensureStarted() {
     if (this.sessionId) return false;
@@ -463,11 +704,24 @@ export class FitnessSession {
     this.startTime = now;
     this.lastActivityTime = now;
     this.endTime = null;
+    this.timebase.startAbsMs = now;
+    this.timebase.intervalCount = 0;
+    this.timebase.intervalMs = this.timebase.intervalMs || 5000;
+    this._lastSampleIndex = -1;
+    this.snapshot.participantSeries = new Map();
+    this.snapshot.deviceSeries = new Map();
+    this.snapshot.usersMeta = new Map();
+    this.snapshot.playQueue = [];
+    this.snapshot.mediaPlaylists = { video: [], music: [] };
+    this.snapshot.zoneConfig = null;
+    this.screenshots.captures = [];
     this._log('start', { sessionId: this.sessionId });
     // Lazy create treasure box when session begins
     if (!this.treasureBox) {
       this.treasureBox = new FitnessTreasureBox(this);
     }
+    this._lastAutosaveAt = 0;
+    this._startAutosaveTimer();
     return true;
   }
 
@@ -512,15 +766,17 @@ export class FitnessSession {
       sessionData = this.summary;
     } catch(_){}
     // Kick off async save (non-blocking)
-    if (sessionData) this._persistSession(sessionData);
+    if (sessionData) this._persistSession(sessionData, { force: true });
     // Immediately reset so a new session can start on next device activity
     this.reset();
     return true;
   }
 
   // Persist session to backend using DaylightAPI
-  _persistSession(sessionData) {
-    if (this._saveTriggered) return; // already saving
+  _persistSession(sessionData, { force = false } = {}) {
+    if (!sessionData) return;
+    if (this._saveTriggered && !force) return; // already saving
+    this._lastAutosaveAt = Date.now();
     this._saveTriggered = true;
     DaylightAPI('api/fitness/save_session', { sessionData }, 'POST')
     .then(resp => {
@@ -535,6 +791,39 @@ export class FitnessSession {
     return true;
   }
 
+  _startAutosaveTimer() {
+    if (this._autosaveTimer) clearInterval(this._autosaveTimer);
+    if (!(this._autosaveIntervalMs > 0)) return;
+    this._autosaveTimer = setInterval(() => {
+      try {
+        this._maybeAutosave();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Autosave failed', err);
+      }
+    }, this._autosaveIntervalMs);
+  }
+
+  _stopAutosaveTimer() {
+    if (this._autosaveTimer) {
+      clearInterval(this._autosaveTimer);
+      this._autosaveTimer = null;
+    }
+  }
+
+  _maybeAutosave(force = false) {
+    if (!this.sessionId) return;
+    if (!force) {
+      if (this._autosaveIntervalMs <= 0) return;
+      if (this._saveTriggered) return;
+      const now = Date.now();
+      if (this._lastAutosaveAt && (now - this._lastAutosaveAt) < this._autosaveIntervalMs) return;
+    }
+    const snapshot = this.summary;
+    if (!snapshot) return;
+    this._persistSession(snapshot, { force });
+  }
+
   get isActive() {
     return !!this.sessionId && !this.endTime;
   }
@@ -546,11 +835,13 @@ export class FitnessSession {
   }
 
   // Add a voice memo into the active session
-  addVoiceMemo({ transcriptRaw, transcriptClean, createdAt, videoTimeSeconds }) {
+  addVoiceMemo({ memoId: incomingMemoId, transcriptRaw, transcriptClean, createdAt, videoTimeSeconds }) {
     if (!this.sessionId) this.ensureStarted();
     const ts = createdAt || Date.now();
     const sessionElapsedSeconds = this.startTime ? Math.max(0, Math.floor((ts - this.startTime) / 1000)) : 0;
+    const memoId = incomingMemoId || `vm_${this.sessionId || 'pending'}_${this.voiceMemos.length + 1}`;
     const memo = {
+      memoId,
       createdAt: ts,
       sessionElapsedSeconds,
       videoTimeSeconds: typeof videoTimeSeconds === 'number' ? videoTimeSeconds : null,
@@ -560,31 +851,167 @@ export class FitnessSession {
     this.voiceMemos.push(memo);
     this._log('voice_memo', { sessionElapsedSeconds });
     if (this.voiceMemos.length > 200) this.voiceMemos = this.voiceMemos.slice(-200);
+    this._maybeAutosave(true);
     return memo;
   }
 
   get summary() {
     if (!this.sessionId) return null;
+    const startAbsMs = this.timebase.startAbsMs || this.startTime || null;
+    const endTs = this.endTime || null;
+    const intervalMs = this.timebase.intervalMs || this.treasureBox?.coinTimeUnitMs || 5000;
+    const effectiveEnd = endTs || Date.now();
+    const durationMs = startAbsMs ? Math.max(0, effectiveEnd - startAbsMs) : 0;
+    const computedIntervalCount = intervalMs > 0 ? Math.max(1, Math.ceil(durationMs / intervalMs)) : 0;
+    const intervalCount = Math.max(this.timebase.intervalCount, computedIntervalCount);
+    const cloneSeries = (arr = [], { allowZero = true } = {}) => {
+      const series = Array.isArray(arr) ? arr.slice(0, intervalCount) : [];
+      if (intervalCount > 0 && series.length < intervalCount) {
+        ensureSeriesCapacity(series, intervalCount - 1);
+      }
+      return series.map((value) => {
+        if (Number.isFinite(value)) {
+          if (!allowZero && value <= 0) return null;
+          return value;
+        }
+        return null;
+      });
+    };
+
+    const rosterLookup = new Map();
+    const ingestRoster = (roster = []) => {
+      roster.forEach((entry) => {
+        if (!entry?.name) return;
+        rosterLookup.set(slugifyId(entry.name), entry.name);
+      });
+    };
+    if (Array.isArray(this.snapshot.participantRoster)) ingestRoster(this.snapshot.participantRoster);
+    if (Array.isArray(this.participantRoster)) ingestRoster(this.participantRoster);
+
+    const participants = {};
+    this.snapshot.participantSeries.forEach((series, slug) => {
+      const normalized = cloneSeries(series, { allowZero: false });
+      const hasData = normalized.some((value) => Number.isFinite(value) && value > 0);
+      if (!hasData) return;
+      const meta = this.snapshot.usersMeta.get(slug);
+      const displayName = meta?.displayName || meta?.name || rosterLookup.get(slug) || slug;
+      participants[slug] = {
+        displayName,
+        heartRate: normalized
+      };
+    });
+
+    const devices = {};
+    this.snapshot.deviceSeries.forEach((record, id) => {
+      const type = (record.type || 'unknown').toLowerCase();
+      if (type === 'heart_rate') return;
+      const entry = {
+        type: record.type || 'unknown',
+        label: record.label || null
+      };
+      if (record.rpmSeries?.length) {
+        entry.rpmSeries = cloneSeries(record.rpmSeries, { allowZero: true });
+      }
+      devices[id] = entry;
+    });
+
+    const mapVideoItem = (item) => {
+      if (!item) return null;
+      const sinceStartMs = Number.isFinite(item.sinceStartMs) ? item.sinceStartMs : null;
+      const videoOffsetMs = Number.isFinite(item.videoOffsetMs) ? item.videoOffsetMs : null;
+      const show = item.show
+        || item.seriesTitle
+        || item.series
+        || item.parentTitle
+        || item.collectionTitle
+        || null;
+      return {
+        plexId: item.plexId ?? item.plex ?? item.id ?? null,
+        title: item.title ?? item.name ?? null,
+        show,
+        sinceStartMs,
+        videoOffsetMs
+      };
+    };
+
+    const mapMusicItem = (item) => {
+      if (!item) return null;
+      const sinceStartMs = Number.isFinite(item.sinceStartMs) ? item.sinceStartMs : null;
+      const videoOffsetMs = Number.isFinite(item.videoOffsetMs) ? item.videoOffsetMs : null;
+      return {
+        plexId: item.plexId ?? item.plex ?? item.id ?? null,
+        title: item.title ?? item.name ?? null,
+        artist: item.artist ?? item.albumArtist ?? null,
+        sinceStartMs,
+        videoOffsetMs
+      };
+    };
+
+    const media = {
+      videoPlaylist: Array.isArray(this.snapshot.mediaPlaylists?.video)
+        ? this.snapshot.mediaPlaylists.video
+            .map(mapVideoItem)
+            .filter((item) => item && (item.plexId || item.title || item.show))
+        : [],
+      musicPlaylist: Array.isArray(this.snapshot.mediaPlaylists?.music)
+        ? this.snapshot.mediaPlaylists.music
+            .map(mapMusicItem)
+            .filter((item) => item && (item.plexId || item.title))
+        : []
+    };
+
+    const voiceMemos = this.voiceMemos.map((memo, idx) => {
+      const sinceStartMs = memo.sessionElapsedSeconds != null ? memo.sessionElapsedSeconds * 1000 : null;
+      const videoOffsetMs = memo.videoTimeSeconds != null ? Math.round(memo.videoTimeSeconds * 1000) : null;
+      return {
+        memoId: memo.memoId || `vm_${idx + 1}`,
+        sinceStartMs,
+        videoTitle: memo.videoTitle ?? null,
+        videoOffsetMs,
+        videoPlexId: memo.videoPlexId ?? null,
+        transcript: memo.transcriptClean || memo.transcriptRaw || ''
+      };
+    });
+
+    const screenshots = {
+      intervalMs: typeof this.screenshots.intervalMs === 'number' && !Number.isNaN(this.screenshots.intervalMs)
+        ? this.screenshots.intervalMs
+        : null,
+      count: this.screenshots.captures.length,
+      filenamePattern: this.screenshots.filenamePattern || null
+    };
+
+    const treasureBox = (() => {
+      if (!this.treasureBox) return null;
+      const summary = this.treasureBox.summary;
+      if (!summary) return null;
+      const perColorTimeline = {};
+      if (summary.perColorTimeline && typeof summary.perColorTimeline === 'object') {
+        Object.entries(summary.perColorTimeline).forEach(([color, series]) => {
+          perColorTimeline[color] = cloneSeries(series, { allowZero: true });
+        });
+      }
+      return {
+        coinTimeUnitMs: summary.coinTimeUnitMs ?? this.treasureBox.coinTimeUnitMs ?? intervalMs,
+        totalCoins: summary.totalCoins ?? 0,
+        perColorTimeline,
+        cumulativeCoins: cloneSeries(summary.cumulativeCoins || [], { allowZero: true })
+      };
+    })();
+
     return {
       sessionId: this.sessionId,
-      startedAt: this.startTime,
-      endedAt: this.endTime,
-      active: this.isActive,
-      durationSeconds: this.durationSeconds,
-      activeDeviceCount: this.activeDeviceIds.size,
-      lastActivityTime: this.lastActivityTime,
-      treasureBox: this.treasureBox ? this.treasureBox.summary : null,
-      voiceMemos: [...this.voiceMemos],
-      participantRoster: Array.isArray(this.participantRoster)
-        ? this.participantRoster.map((entry) => ({ ...entry }))
-        : [],
-      guestAssignments: (() => {
-        try {
-          return JSON.parse(JSON.stringify(this.currentGuestAssignments || {}));
-        } catch (_) {
-          return {};
-        }
-      })()
+      timebase: {
+        startAbsMs,
+        intervalMs,
+        intervalCount
+      },
+      media,
+      participants,
+      devices,
+      treasureBox,
+      voiceMemos,
+      screenshots
     };
   }
 
@@ -604,6 +1031,8 @@ export class FitnessSession {
     this.voiceMemos = [];
     this.participantRoster = [];
     this.currentGuestAssignments = {};
+    this._stopAutosaveTimer();
+    this._lastAutosaveAt = 0;
   }
 }
 
@@ -629,6 +1058,11 @@ export class FitnessTreasureBox {
     this.totalCoins = 0;
     this.perUser = new Map(); // userName -> accumulator
     this.lastTick = Date.now(); // for elapsed computation if needed
+    this._timeline = {
+      perColor: new Map(),
+      cumulative: [],
+      lastIndex: -1
+    };
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
     this._autoInterval = null; // timer id
@@ -640,6 +1074,9 @@ export class FitnessTreasureBox {
   configure({ coinTimeUnitMs, zones, users }) {
     if (typeof coinTimeUnitMs === 'number' && coinTimeUnitMs > 0) {
       this.coinTimeUnitMs = coinTimeUnitMs;
+    }
+    if (this.sessionRef?.timebase) {
+      this.sessionRef.timebase.intervalMs = this.coinTimeUnitMs;
     }
     if (Array.isArray(zones)) {
       // Normalize zones sorted by min ascending for evaluation (we'll iterate descending)
@@ -653,6 +1090,9 @@ export class FitnessTreasureBox {
       // Initialize bucket colors
       for (const z of this.globalZones) {
         if (!(z.color in this.buckets)) this.buckets[z.color] = 0;
+        if (!this._timeline.perColor.has(z.color)) {
+          this._timeline.perColor.set(z.color, []);
+        }
       }
     }
     // Extract user overrides (provided as part of users.primary/secondary config shape)
@@ -717,6 +1157,25 @@ export class FitnessTreasureBox {
         acc.highestZone = null;
         acc.currentColor = null;
       }
+    }
+  }
+
+  _ensureTimelineIndex(index, color) {
+    if (index < 0) return;
+    if (color) {
+      if (!this._timeline.perColor.has(color)) {
+        this._timeline.perColor.set(color, []);
+      }
+      const colorSeries = this._timeline.perColor.get(color);
+      while (colorSeries.length <= index) {
+        const prev = colorSeries.length > 0 ? (colorSeries[colorSeries.length - 1] ?? 0) : 0;
+        colorSeries.push(prev);
+      }
+    }
+    const cumulative = this._timeline.cumulative;
+    while (cumulative.length <= index) {
+      const prev = cumulative.length > 0 ? (cumulative[cumulative.length - 1] ?? 0) : 0;
+      cumulative.push(prev);
     }
   }
 
@@ -793,6 +1252,22 @@ export class FitnessTreasureBox {
     if (!(zone.color in this.buckets)) this.buckets[zone.color] = 0;
     this.buckets[zone.color] += zone.coins;
     this.totalCoins += zone.coins;
+    const start = this.sessionRef?.startTime || this.sessionRef?.timebase?.startAbsMs || Date.now();
+    const intervalMs = this.coinTimeUnitMs > 0 ? this.coinTimeUnitMs : 5000;
+    const now = Date.now();
+    const intervalIndex = Math.floor(Math.max(0, now - start) / intervalMs);
+    this._ensureTimelineIndex(intervalIndex, zone.color);
+    const colorSeries = this._timeline.perColor.get(zone.color);
+    if (colorSeries) {
+      colorSeries[intervalIndex] += zone.coins;
+    }
+    if (this._timeline.cumulative.length > intervalIndex) {
+      this._timeline.cumulative[intervalIndex] += zone.coins;
+    }
+    this._timeline.lastIndex = Math.max(this._timeline.lastIndex, intervalIndex);
+    if (this.sessionRef?.timebase && intervalIndex + 1 > this.sessionRef.timebase.intervalCount) {
+      this.sessionRef.timebase.intervalCount = intervalIndex + 1;
+    }
     // Log event in session if available
     try {
       this.sessionRef._log('coin_award', { user: userName, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
@@ -806,6 +1281,22 @@ export class FitnessTreasureBox {
     const sessionEnded = this.sessionRef?.endTime || null;
     const now = Date.now();
     const elapsedSeconds = sessionStarted ? Math.floor(((sessionEnded || now) - sessionStarted) / 1000) : 0;
+    const intervalCount = Math.max(
+      this._timeline.lastIndex + 1,
+      this.sessionRef?.timebase?.intervalCount || 0
+    );
+    const normalizeTimeline = (arr = []) => {
+      const series = Array.isArray(arr) ? arr.slice(0, intervalCount) : [];
+      if (intervalCount > 0 && series.length < intervalCount) {
+        ensureSeriesCapacity(series, intervalCount - 1);
+      }
+      return series.map((value) => (Number.isFinite(value) ? value : 0));
+    };
+    const perColorTimeline = {};
+    this._timeline.perColor.forEach((series, color) => {
+      perColorTimeline[color] = normalizeTimeline(series);
+    });
+    const cumulativeCoins = normalizeTimeline(this._timeline.cumulative);
 
     // Backward compatible fields retained: coinTimeUnitMs, totalCoins, buckets, perUser
     // New self-contained fields: sessionStartTime, sessionElapsedSeconds, colorCoins (alias of buckets), totalCoinsAllColors (alias totalCoins)
@@ -823,6 +1314,9 @@ export class FitnessTreasureBox {
       sessionElapsedSeconds: elapsedSeconds,
       colorCoins: { ...this.buckets },
       totalCoinsAllColors: this.totalCoins,
+      perColorTimeline,
+      cumulativeCoins,
+      intervalCount
     };
   }
 }
