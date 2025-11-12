@@ -8,6 +8,7 @@ import React, { useRef, useCallback } from 'react';
  *  - isPaused, playerRef (imperative Player ref), onPrev, onNext, hasPrev, hasNext, onClose
  *  - isStalled (bool) when playback stall detected (treats as paused for UI)
  *  - currentTime, duration, TimeDisplay, renderCount (only used on left)
+ *  - zoomNavState: helpers for navigating zoomed thumbnails (left section only)
  */
 export default function FitnessPlayerFooterControls({
   section,
@@ -25,7 +26,8 @@ export default function FitnessPlayerFooterControls({
   isStalled = false,
   isZoomed = false,
   onBack,
-  playIsGoverned = false
+  playIsGoverned = false,
+  zoomNavState = null
 }) {
   const isLeft = section === 'left';
   
@@ -91,33 +93,79 @@ export default function FitnessPlayerFooterControls({
   }, [onClose]);
 
   if (isLeft) {
+    const zoomPrevDisabled = !(zoomNavState?.canStepBackward);
+    const zoomNextDisabled = !(zoomNavState?.canStepForward);
+
     return (
   <div className="footer-controls-left" data-stalled={isStalled ? '1' : '0'}>
         <div className="control-buttons-container">
-          <div
-            role="button"
-            tabIndex={0}
-            // Use pointerDown for faster activation on large touch display
-            onPointerDown={(event) => {
-              if (playIsGoverned) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-              }
-              playPause();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                if (!playIsGoverned) playPause();
-              }
-            }}
-            className={`control-button play-pause-button${playIsGoverned ? ' governed' : ''}`}
-            aria-label={playIsGoverned ? 'Playback locked' : (isPaused ? 'Play' : 'Pause')}
-            aria-disabled={playIsGoverned ? 'true' : undefined}
-          >
-            <span className="icon">{playIsGoverned ? <Icon.Lock /> : (isPaused ? <Icon.Play /> : <Icon.Pause />)}</span>
-          </div>
+          {isZoomed ? (
+            <>
+              <div
+                role="button"
+                tabIndex={zoomPrevDisabled ? -1 : 0}
+                aria-disabled={zoomPrevDisabled ? 'true' : undefined}
+                onPointerDown={(event) => {
+                  if (zoomPrevDisabled) return;
+                  zoomNavState?.stepBackward?.();
+                }}
+                onKeyDown={(e) => {
+                  if (!zoomPrevDisabled && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    zoomNavState?.stepBackward?.();
+                  }
+                }}
+                className={`control-button zoom-prev-button${zoomPrevDisabled ? ' disabled' : ''}`}
+                aria-label="Zoom to previous segment"
+              >
+                <span className="icon" aria-hidden="true">⏪</span>
+              </div>
+              <div
+                role="button"
+                tabIndex={zoomNextDisabled ? -1 : 0}
+                aria-disabled={zoomNextDisabled ? 'true' : undefined}
+                onPointerDown={() => {
+                  if (zoomNextDisabled) return;
+                  zoomNavState?.stepForward?.();
+                }}
+                onKeyDown={(e) => {
+                  if (!zoomNextDisabled && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    zoomNavState?.stepForward?.();
+                  }
+                }}
+                className={`control-button zoom-next-button${zoomNextDisabled ? ' disabled' : ''}`}
+                aria-label="Zoom to next segment"
+              >
+                <span className="icon" aria-hidden="true">⏩</span>
+              </div>
+            </>
+          ) : (
+            <div
+              role="button"
+              tabIndex={0}
+              // Use pointerDown for faster activation on large touch display
+              onPointerDown={(event) => {
+                if (playIsGoverned) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+                playPause();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  if (!playIsGoverned) playPause();
+                }
+              }}
+              className={`control-button play-pause-button${playIsGoverned ? ' governed' : ''}`}
+              aria-label={playIsGoverned ? 'Playback locked' : (isPaused ? 'Play' : 'Pause')}
+              aria-disabled={playIsGoverned ? 'true' : undefined}
+            >
+              <span className="icon">{playIsGoverned ? <Icon.Lock /> : (isPaused ? <Icon.Play /> : <Icon.Pause />)}</span>
+            </div>
+          )}
           {showNav && (
             <div
               role="button"

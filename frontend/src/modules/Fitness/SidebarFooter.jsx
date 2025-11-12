@@ -15,8 +15,7 @@ const SidebarFooter = ({ onContentSelect }) => {
     powerDevices,
     deviceCount,
     deviceConfiguration,
-    primaryUsers,
-    secondaryUsers,
+    participantRoster,
     hrColorMap: contextHrColorMap,
     usersConfigRaw,
     userCurrentZones,
@@ -39,10 +38,9 @@ const SidebarFooter = ({ onContentSelect }) => {
   // Map deviceId -> user name
   const hrOwnerMap = React.useMemo(() => {
     const map = {};
-    const populated = [...primaryUsers, ...secondaryUsers];
-    populated.forEach(u => {
-      if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
-        map[String(u.hrDeviceId)] = u.name;
+    participantRoster.forEach((participant) => {
+      if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
+        map[String(participant.hrDeviceId)] = participant.name;
       }
     });
     if (Object.keys(map).length === 0 && usersConfigRaw) {
@@ -55,18 +53,20 @@ const SidebarFooter = ({ onContentSelect }) => {
       addFrom(usersConfigRaw.secondary);
     }
     return map;
-  }, [primaryUsers, secondaryUsers, usersConfigRaw]);
+  }, [participantRoster, usersConfigRaw]);
 
   // Map deviceId -> user ID for avatars
   const userIdMap = React.useMemo(() => {
     const map = {};
-    [...primaryUsers, ...secondaryUsers].forEach(u => {
-      if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
-        map[String(u.hrDeviceId)] = u.id || u.name.toLowerCase();
+    participantRoster.forEach((participant) => {
+      if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
+        const key = String(participant.hrDeviceId);
+        const profileId = participant.profileId || participant.userId || participant.name?.toLowerCase();
+        map[key] = profileId || 'user';
       }
     });
     return map;
-  }, [primaryUsers, secondaryUsers]);
+  }, [participantRoster]);
 
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
@@ -96,7 +96,7 @@ const SidebarFooter = ({ onContentSelect }) => {
 
   const getZoneClass = (device) => {
     if (device.type !== 'heart_rate') return 'no-zone';
-    const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
+  const userObj = participantRoster.find((participant) => String(participant.hrDeviceId) === String(device.deviceId));
     if (!userObj) return 'no-zone';
     const zoneEntry = userCurrentZones?.[userObj.name];
     let color = zoneEntry && typeof zoneEntry === 'object' ? zoneEntry.color : zoneEntry;
@@ -120,7 +120,7 @@ const SidebarFooter = ({ onContentSelect }) => {
   const zoneRankMap = { cool:0, active:1, warm:2, hot:3, fire:4 };
   const getDeviceZoneId = (device) => {
     if (device.type !== 'heart_rate') return null;
-    const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
+  const userObj = participantRoster.find((participant) => String(participant.hrDeviceId) === String(device.deviceId));
     if (!userObj) return null;
     const entry = userCurrentZones?.[userObj.name];
     let zoneId = null;
@@ -180,7 +180,7 @@ const SidebarFooter = ({ onContentSelect }) => {
     
     // Update the sorted devices
     setSortedDevices([...hrDevices, ...otherDevices]);
-  }, [allDevices]);
+  }, [allDevices, participantRoster, userCurrentZones, zones]);
 
   return (
     <div className="sidebar-footer">

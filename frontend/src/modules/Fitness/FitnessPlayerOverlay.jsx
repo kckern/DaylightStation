@@ -153,25 +153,14 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
     }
     const normalize = (name) => (typeof name === 'string' ? name.trim().toLowerCase() : '');
     const lookup = new Map();
-    const users = Array.isArray(fitnessCtx?.users) ? fitnessCtx.users : [];
-    users.forEach((user) => {
-      if (!user?.name) return;
-      const key = normalize(user.name);
+    const participants = Array.isArray(fitnessCtx?.participantRoster) ? fitnessCtx.participantRoster : [];
+    participants.forEach((participant) => {
+      if (!participant?.name) return;
+      const key = normalize(participant.name);
       if (!key) return;
-      const profileSlug = user.id || slugifyId(user.name);
+      const profileSlug = participant.profileId || slugifyId(participant.name);
       lookup.set(key, {
-        displayName: user.name,
-        profileSlug
-      });
-    });
-    const guestAssignments = fitnessCtx?.guestAssignments || {};
-    Object.values(guestAssignments).forEach((assignment) => {
-      if (!assignment?.name) return;
-      const key = normalize(assignment.name);
-      if (!key) return;
-      const profileSlug = assignment.profileId || slugifyId(assignment.name);
-      lookup.set(key, {
-        displayName: assignment.name,
+        displayName: participant.name,
         profileSlug
       });
     });
@@ -190,8 +179,8 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
           key: `${profileSlug || key}-${index}`
         };
       })
-      .filter(Boolean);
-  }, [fitnessCtx?.guestAssignments, fitnessCtx?.users, overlay]);
+    .filter(Boolean);
+  }, [fitnessCtx?.participantRoster, overlay]);
 
   // Handle stall reload overlay as priority overlay
   if (stallStatus?.isStalled && onReload) {
