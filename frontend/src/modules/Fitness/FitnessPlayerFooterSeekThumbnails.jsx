@@ -26,7 +26,6 @@ const CONFIG = Object.freeze({
 const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl, commitRef, getTimeRef, onZoomNavStateChange, disabled = false, mediaElementKey = 0 }) => {
   // ---------- Helpers ----------
   const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
-  const percentOf = (t, total) => total > 0 ? clamp01(t / total) : 0;
   const BASE_PENDING_TOLERANCE = 0.05;  // keeps optimistic bar until near actual
   const CLEAR_PENDING_TOLERANCE = 0.25; // when to clear internal pending state
   const STICKY_INTENT_MS = 700;
