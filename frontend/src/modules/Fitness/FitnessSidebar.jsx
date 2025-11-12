@@ -34,15 +34,36 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
     clearGuestAssignment,
     sidebarSizeMode,
     musicEnabled,
-    setMusicOverride
+    setMusicOverride,
+    replacedPrimaryPool
   } = fitnessContext;
   const menuOpen = menuState.open;
   const guestCandidates = React.useMemo(() => {
     const tag = (list, category) => (Array.isArray(list) ? list.map(item => ({ ...item, category })) : []);
     const family = tag(usersConfigRaw?.family, 'Family');
     const friends = tag(usersConfigRaw?.friends, 'Friend');
-    return [...family, ...friends];
-  }, [usersConfigRaw?.family, usersConfigRaw?.friends]);
+    const primaryReturnees = Array.isArray(replacedPrimaryPool)
+      ? replacedPrimaryPool.map((candidate) => ({
+          ...candidate,
+          category: candidate.category || 'Family',
+          source: candidate.source || 'Family'
+        }))
+      : [];
+    const combined = [...primaryReturnees, ...family, ...friends];
+    const seenIds = new Set();
+    return combined.reduce((acc, candidate) => {
+      if (!candidate || !candidate.name) return acc;
+      const id = candidate.id || slugifyId(candidate.name);
+      if (seenIds.has(id)) return acc;
+      seenIds.add(id);
+      acc.push({
+        ...candidate,
+        id,
+        profileId: candidate.profileId || id
+      });
+      return acc;
+    }, []);
+  }, [replacedPrimaryPool, usersConfigRaw?.family, usersConfigRaw?.friends]);
 
   const openSettingsMenu = React.useCallback(() => {
     setMenuState({ open: true, mode: 'settings', target: null });
