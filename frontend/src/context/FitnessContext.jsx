@@ -878,6 +878,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [participantRoster, guestAssignments]);
 
   useEffect(() => {
+    const session = fitnessSessionRef.current;
+    if (!session || typeof session.updateSnapshot !== 'function') return;
+    try {
+      session.updateSnapshot({
+        users,
+        devices: fitnessDevices,
+        playQueue: fitnessPlayQueue,
+        participantRoster,
+        zoneConfig
+      });
+    } catch (error) {
+      if (FITNESS_DEBUG) {
+        console.warn('[FitnessContext] session updateSnapshot failed', error);
+      }
+    }
+  }, [users, fitnessDevices, fitnessPlayQueue, participantRoster, zoneConfig]);
+
+  useEffect(() => {
     if (governanceTimerRef.current) {
       clearTimeout(governanceTimerRef.current);
       governanceTimerRef.current = null;
@@ -1181,6 +1199,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Play queue state
     fitnessPlayQueue,
     setFitnessPlayQueue,
+    registerSessionScreenshot: (capture) => {
+      try {
+        fitnessSessionRef.current?.recordScreenshotCapture?.(capture);
+      } catch (_) {}
+    },
+    configureSessionScreenshotPlan: (plan) => {
+      try {
+        fitnessSessionRef.current?.setScreenshotPlan?.(plan);
+      } catch (_) {}
+    },
 
   // Sidebar size mode controls
   sidebarSizeMode,

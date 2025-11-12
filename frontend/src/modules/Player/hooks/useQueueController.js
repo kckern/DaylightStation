@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { flattenQueueItems } from '../lib/api.js';
 import { guid } from '../lib/helpers.js';
@@ -15,6 +15,7 @@ export function useQueueController({ play, queue, clear }) {
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
   const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || false);
+  const sourceSignatureRef = useRef(null);
 
   const cycleThroughClasses = useCallback((upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
@@ -26,8 +27,38 @@ export function useQueueController({ play, queue, clear }) {
   }, []);
 
   const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
+  const playlistKey = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
+  const plexKey = queue?.plex || play?.plex;
 
   useEffect(() => {
+    const signatureParts = [];
+
+    if (playlistKey) signatureParts.push(`playlist:${playlistKey}`);
+    if (plexKey) signatureParts.push(`plex:${plexKey}`);
+    signatureParts.push(`shuffle:${isShuffle ? '1' : '0'}`);
+
+    if (Array.isArray(play)) {
+      const playArraySignature = play
+        .map((item) => item?.guid || item?.media || item?.media_key || item?.id || '')
+        .join('|');
+      signatureParts.push(`play:${play.length}:${playArraySignature}`);
+    } else if (Array.isArray(queue)) {
+      const queueArraySignature = queue
+        .map((item) => item?.guid || item?.media || item?.media_key || item?.id || '')
+        .join('|');
+      signatureParts.push(`queue:${queue.length}:${queueArraySignature}`);
+    }
+
+    const nextSignature = signatureParts.join(';');
+    const previousSignature = sourceSignatureRef.current;
+
+    if (previousSignature === nextSignature) {
+      return;
+    }
+
+    let isCancelled = false;
+    sourceSignatureRef.current = nextSignature;
+
     async function initQueue() {
       let newQueue = [];
       if (Array.isArray(play)) {
@@ -47,11 +78,21 @@ export function useQueueController({ play, queue, clear }) {
           newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
         }
       }
-      setQueue(newQueue);
-      setOriginalQueue(newQueue);
+      if (!isCancelled) {
+        setQueue(newQueue);
+        setOriginalQueue(newQueue);
+      }
     }
-    initQueue();
-  }, [play, queue, isShuffle]);
+    initQueue().catch(() => {
+      if (!isCancelled) {
+        sourceSignatureRef.current = previousSignature;
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [play, queue, isShuffle, playlistKey, plexKey]);
 
   const advance = useCallback((step = 1) => {
     setQueue((prevQueue) => {
