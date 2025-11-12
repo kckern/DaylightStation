@@ -416,6 +416,8 @@ export class FitnessSession {
     this.treasureBox = null; // Will be instantiated when session starts
     this._saveTriggered = false; // guard against duplicate saves
     this.voiceMemos = []; // { createdAt, sessionElapsedSeconds, videoTimeSeconds, transcriptRaw, transcriptClean }
+    this.participantRoster = [];
+    this.currentGuestAssignments = {};
   }
 
   // Internal helper to log events (kept small to avoid memory bloat)
@@ -434,6 +436,23 @@ export class FitnessSession {
     this.activeDeviceIds.add(String(device.deviceId));
     this._log('device_activity', { deviceId: device.deviceId, profile: device.profile });
     if (started) this._log('session_started', { sessionId: this.sessionId });
+  }
+
+  setParticipantRoster(roster = [], guestAssignments = {}) {
+    if (Array.isArray(roster)) {
+      this.participantRoster = roster.map((entry) => ({ ...entry }));
+    } else {
+      this.participantRoster = [];
+    }
+    if (guestAssignments && typeof guestAssignments === 'object') {
+      try {
+        this.currentGuestAssignments = JSON.parse(JSON.stringify(guestAssignments));
+      } catch (_) {
+        this.currentGuestAssignments = {};
+      }
+    } else {
+      this.currentGuestAssignments = {};
+    }
   }
 
   // Ensure we have a session started; returns true if newly started
@@ -556,6 +575,16 @@ export class FitnessSession {
       lastActivityTime: this.lastActivityTime,
       treasureBox: this.treasureBox ? this.treasureBox.summary : null,
       voiceMemos: [...this.voiceMemos],
+      participantRoster: Array.isArray(this.participantRoster)
+        ? this.participantRoster.map((entry) => ({ ...entry }))
+        : [],
+      guestAssignments: (() => {
+        try {
+          return JSON.parse(JSON.stringify(this.currentGuestAssignments || {}));
+        } catch (_) {
+          return {};
+        }
+      })()
     };
   }
 
@@ -573,6 +602,8 @@ export class FitnessSession {
     this.treasureBox = null; // ensure fresh treasure box for next session
     this._saveTriggered = false; // allow new session save
     this.voiceMemos = [];
+    this.participantRoster = [];
+    this.currentGuestAssignments = {};
   }
 }
 

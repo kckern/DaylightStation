@@ -47,7 +47,11 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
 
   // Zoom wiring (thumbnails expose onZoomChange + reset ref)
   const [isZoomed, setIsZoomed] = useState(false);
+  const [zoomNavState, setZoomNavState] = useState(null);
   const zoomResetRef = useRef(null);
+  const handleZoomNavStateChange = useCallback((nextState) => {
+    setZoomNavState(nextState);
+  }, []);
   const handleBack = useCallback(() => {
     if (zoomResetRef.current) {
       zoomResetRef.current();
@@ -77,6 +81,8 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         hasNext={hasNext}
         onClose={onClose}
         playIsGoverned={playIsGoverned}
+        isZoomed={isZoomed}
+        zoomNavState={zoomNavState}
       />
 
       <FitnessPlayerFooterSeekThumbnails
@@ -89,6 +95,7 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         playerRef={playerRef}
         onZoomChange={setIsZoomed}
         onZoomReset={zoomResetRef}
+        onZoomNavStateChange={handleZoomNavStateChange}
         commitRef={props.thumbnailsCommitRef}
         getTimeRef={props.thumbnailsGetTimeRef}
         mediaElementKey={mediaElementKey}

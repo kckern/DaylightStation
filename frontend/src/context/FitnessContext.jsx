@@ -77,11 +77,22 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const governedLabels = Array.isArray(rawGovernedLabels)
     ? rawGovernedLabels.filter(label => typeof label === 'string')
     : [];
+  const primaryConfigByName = React.useMemo(() => {
+    const map = new Map();
+    const source = Array.isArray(usersConfig?.primary) ? usersConfig.primary : [];
+    source.forEach((cfg) => {
+      if (cfg?.name) {
+        map.set(cfg.name, cfg);
+      }
+    });
+    return map;
+  }, [usersConfig?.primary]);
 
   const [connected, setConnected] = useState(false);
   const [latestData, setLatestData] = useState(null);
   const [fitnessDevices, setFitnessDevices] = useState(new Map());
   const [users, setUsers] = useState(new Map());
+  const usersRef = useRef(users);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
   const [governancePhase, setGovernancePhase] = useState(null); // null | 'init' | 'green' | 'yellow' | 'red'
@@ -89,6 +100,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [governancePulse, setGovernancePulse] = useState(0);
   const [guestAssignments, setGuestAssignments] = useState({});
   const guestAssignmentsRef = useRef(guestAssignments);
+  const hrDeviceUserMapRef = useRef(new Map());
   const governanceMetaRef = useRef({ mediaId: null, satisfiedOnce: false, deadline: null });
   const governanceTimerRef = useRef(null);
   const governanceRequirementSummaryRef = useRef({ targetUserCount: null, requirements: [], activeCount: 0 });
@@ -116,6 +128,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       }
       const normalizedName = assignment.name || 'Guest';
       const profileId = assignment.profileId || assignment.candidateId || slugifyId(normalizedName);
+      let baseUserName = assignment.baseUserName ?? prev[key]?.baseUserName ?? null;
+      if (!baseUserName) {
+        const knownUser = hrDeviceUserMapRef.current.get(key);
+        if (knownUser?.name) {
+          baseUserName = knownUser.name;
+        } else {
+          usersRef.current.forEach((user) => {
+            if (!baseUserName && String(user?.hrDeviceId) === key) {
+              baseUserName = user.name;
+            }
+          });
+        }
+      }
       return {
         ...prev,
         [key]: {
@@ -124,7 +149,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           profileId,
           candidateId: assignment.candidateId || assignment.id || profileId,
           source: assignment.source || assignment.category || null,
-          baseUserName: assignment.baseUserName ?? prev[key]?.baseUserName ?? null,
+          baseUserName: baseUserName || null,
           assignedAt: Date.now()
         }
       };
@@ -245,7 +270,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Session ref
   const fitnessSessionRef = useRef(new FitnessSession());
   // Keep a ref mirror of users map to avoid stale closures inside ws handlers
-  const usersRef = useRef(users);
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { guestAssignmentsRef.current = guestAssignments; }, [guestAssignments]);
   useEffect(() => {
@@ -255,7 +279,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     }
   }, [users]);
   // Fast lookup map (hr device id -> user object)
-  const hrDeviceUserMapRef = useRef(new Map());
   useEffect(() => {
     const map = new Map();
     users.forEach(u => {
@@ -726,6 +749,134 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return Array.from(new Set(names));
   }, [heartRateDevices, users, guestAssignments]);
 
+  const replacedPrimaryPool = React.useMemo(() => {
+    if (!guestAssignments || primaryConfigByName.size === 0) return [];
+    const seen = new Set();
+    const pool = [];
+    Object.values(guestAssignments).forEach((assignment) => {
+      if (!assignment?.baseUserName) return;
+      const config = primaryConfigByName.get(assignment.baseUserName);
+      if (!config) return;
+      const id = config.id || slugifyId(config.name);
+      if (seen.has(id)) return;
+      seen.add(id);
+      pool.push({
+        id,
+        name: config.name,
+        profileId: config.id || slugifyId(config.name),
+        category: 'Family',
+        source: 'Family',
+        isPrimary: true
+      });
+    });
+    return pool;
+  }, [guestAssignments, primaryConfigByName]);
+
+  const participantRoster = React.useMemo(() => {
+    const roster = [];
+    const normalize = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+    const treasureSummary = fitnessSessionRef.current?.treasureBox
+      ? fitnessSessionRef.current.treasureBox.summary
+      : null;
+    const zoneLookup = new Map();
+    if (treasureSummary?.perUser) {
+      treasureSummary.perUser.forEach((entry) => {
+        if (!entry || !entry.user) return;
+        const key = normalize(entry.user);
+        if (!key) return;
+        zoneLookup.set(key, {
+          zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
+          color: entry.currentColor || null
+        });
+      });
+    }
+
+    heartRateDevices.forEach((device) => {
+      if (!device || device.deviceId == null) return;
+      const deviceId = String(device.deviceId);
+      const heartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
+      const guestBinding = guestAssignments?.[deviceId];
+      if (guestBinding?.name) {
+        const name = guestBinding.name;
+        const key = normalize(name);
+        const zoneInfo = zoneLookup.get(key) || null;
+        roster.push({
+          name,
+          profileId: guestBinding.profileId || slugifyId(name),
+          baseUserName: guestBinding.baseUserName || null,
+          isGuest: true,
+          deviceId,
+          hrDeviceId: deviceId,
+          heartRate,
+          zoneId: zoneInfo?.zoneId || null,
+          zoneColor: zoneInfo?.color || null,
+          source: guestBinding.source || 'Guest',
+          userId: guestBinding.profileId || null
+        });
+        return;
+      }
+
+      const mappedUser = hrDeviceUserMapRef.current.get(deviceId);
+      if (mappedUser) {
+        const name = mappedUser.name;
+        const key = normalize(name);
+        const zoneInfo = zoneLookup.get(key) || null;
+        let resolvedHeartRate = heartRate;
+        try {
+          const hrValue = mappedUser.currentHeartRate;
+          if (Number.isFinite(hrValue)) {
+            resolvedHeartRate = Math.round(hrValue);
+          }
+        } catch (_) {
+          // ignore getter issues
+        }
+        roster.push({
+          name,
+          profileId: mappedUser.id || slugifyId(name),
+          baseUserName: name,
+          isGuest: false,
+          deviceId,
+          hrDeviceId: deviceId,
+          heartRate: resolvedHeartRate,
+          zoneId: zoneInfo?.zoneId || null,
+          zoneColor: zoneInfo?.color || null,
+          source: 'Primary',
+          userId: mappedUser.id || null
+        });
+      }
+    });
+
+    return roster;
+  }, [heartRateDevices, guestAssignments, users, lastUpdate, governancePulse]);
+
+  const participantLookupByDevice = React.useMemo(() => {
+    const map = new Map();
+    participantRoster.forEach((entry) => {
+      if (!entry || entry.hrDeviceId == null) return;
+      map.set(String(entry.hrDeviceId), entry);
+    });
+    return map;
+  }, [participantRoster]);
+
+  const participantLookupByName = React.useMemo(() => {
+    const map = new Map();
+    participantRoster.forEach((entry) => {
+      if (!entry?.name) return;
+      const key = String(entry.name).trim().toLowerCase();
+      if (!key) return;
+      if (!map.has(key)) {
+        map.set(key, entry);
+      }
+    });
+    return map;
+  }, [participantRoster]);
+
+  useEffect(() => {
+    if (fitnessSessionRef.current && typeof fitnessSessionRef.current.setParticipantRoster === 'function') {
+      fitnessSessionRef.current.setParticipantRoster(participantRoster, guestAssignments);
+    }
+  }, [participantRoster, guestAssignments]);
+
   useEffect(() => {
     if (governanceTimerRef.current) {
       clearTimeout(governanceTimerRef.current);
@@ -1046,6 +1197,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     guestAssignments,
     assignGuestToDevice,
     clearGuestAssignment,
+  participantRoster,
+  participantsByDevice: participantLookupByDevice,
+  participantsByName: participantLookupByName,
+    replacedPrimaryPool,
     // Fallback logic: if config primary list is missing/empty but we DO have users, treat all as primary.
     // This ensures device->name mapping works even when upstream config shape failed to populate.
     primaryUsers: (usersConfig.primary && usersConfig.primary.length > 0)
@@ -1116,10 +1271,47 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     
     // Helper functions for user lookups
     getUserByName: (name) => users.get(name),
-    getUserByDevice: (deviceId) => allUsers.find(user => 
-      String(user.hrDeviceId) === String(deviceId) || 
-      String(user.cadenceDeviceId) === String(deviceId)
-    ),
+    getUserByDevice: (deviceId) => {
+      if (deviceId == null) return undefined;
+      const key = String(deviceId);
+      const participant = participantLookupByDevice.get(key);
+      if (participant) {
+        if (!participant.isGuest) {
+          const knownUser = users.get(participant.name);
+          if (knownUser) {
+            return knownUser;
+          }
+          return {
+            name: participant.name,
+            id: participant.profileId || participant.userId || slugifyId(participant.name),
+            hrDeviceId: participant.hrDeviceId,
+            profileId: participant.profileId || null,
+            isGuest: false,
+            baseUserName: participant.baseUserName || null,
+            source: participant.source || 'Primary',
+            zoneId: participant.zoneId || null,
+            zoneColor: participant.zoneColor || null,
+            heartRate: participant.heartRate ?? null
+          };
+        }
+        return {
+          name: participant.name,
+          id: participant.profileId || participant.userId || slugifyId(participant.name),
+          hrDeviceId: participant.hrDeviceId,
+          profileId: participant.profileId || null,
+          isGuest: true,
+          baseUserName: participant.baseUserName || null,
+          source: participant.source || 'Guest',
+          zoneId: participant.zoneId || null,
+          zoneColor: participant.zoneColor || null,
+          heartRate: participant.heartRate ?? null
+        };
+      }
+      return allUsers.find(user =>
+        String(user.hrDeviceId) === key ||
+        String(user.cadenceDeviceId) === key
+      );
+    },
     
     // Playlist state
     selectedPlaylistId,

@@ -5,6 +5,16 @@ import FlipMove from 'react-flip-move';
 import './FitnessUsers.scss';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 
+const slugifyId = (value, fallback = 'user') => {
+  if (!value) return fallback;
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || fallback;
+};
+
 // Lightweight treasure box summary component
 const FitnessTreasureBox = ({ box, session }) => {
   const [tick, setTick] = useState(Date.now());
@@ -92,8 +102,8 @@ const FitnessUsers = () => {
     lastUpdate,
     deviceConfiguration,
     equipment,
-    primaryUsers,
-    secondaryUsers,
+    participantRoster,
+    participantsByDevice,
     hrColorMap: contextHrColorMap,
     usersConfigRaw,
     userCurrentZones,
@@ -101,11 +111,6 @@ const FitnessUsers = () => {
     treasureBox,
     fitnessSession
   } = fitnessContext;
-
-  // Diagnostic: log user arrays when they change
-  React.useEffect(() => {
-  }, [primaryUsers, secondaryUsers]);
-  
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
 
@@ -131,16 +136,34 @@ const FitnessUsers = () => {
     return map;
   }, [deviceConfiguration]);
 
+  const participantByDevice = React.useMemo(() => {
+    const map = new Map();
+    (participantRoster || []).forEach((participant) => {
+      if (participant?.hrDeviceId === undefined || participant.hrDeviceId === null) return;
+      map.set(String(participant.hrDeviceId), participant);
+    });
+    if (participantsByDevice && typeof participantsByDevice.forEach === 'function') {
+      participantsByDevice.forEach((participant, key) => {
+        if (!participant) return;
+        const deviceId = participant.hrDeviceId != null ? participant.hrDeviceId : key;
+        if (deviceId == null) return;
+        const normalizedKey = String(deviceId);
+        if (!map.has(normalizedKey)) {
+          map.set(normalizedKey, participant);
+        }
+      });
+    }
+    return map;
+  }, [participantRoster, participantsByDevice]);
+
   // Users are already available from the context
 
   // Map of deviceId -> user name (first match wins from primary then secondary)
   const hrOwnerMap = React.useMemo(() => {
     const map = {};
-    const populated = [...primaryUsers, ...secondaryUsers];
-    populated.forEach(u => {
-      if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
-        map[String(u.hrDeviceId)] = u.name; // preliminary; name may be replaced later by group_label rule
-      }
+    participantByDevice.forEach((participant, key) => {
+      if (!participant) return;
+      map[String(key)] = participant.name;
     });
     if (Object.keys(map).length === 0 && usersConfigRaw) {
       // Fallback: build from raw config (pre-User objects) using hr field
@@ -156,19 +179,18 @@ const FitnessUsers = () => {
       }
     }
     return map;
-  }, [primaryUsers, secondaryUsers, usersConfigRaw]);
+  }, [participantByDevice, usersConfigRaw]);
 
   // Build a map of deviceId -> displayName applying group_label rule
   const hrDisplayNameMap = React.useMemo(() => {
-    // Count total active HR devices that are actually present in allDevices
+    const baseMap = { ...hrOwnerMap };
     const activeHrDeviceIds = allDevices
       .filter(d => d.type === 'heart_rate')
-      .map(d => String(d.deviceId));
-    
-    // Only apply group_label if more than 1 HR device is currently active
-    if (activeHrDeviceIds.length <= 1) return hrOwnerMap;
-    
-    // We need group_label info; get from raw config
+      .map(d => String(d.deviceId))
+      .filter((id) => baseMap[id]);
+
+    if (activeHrDeviceIds.length <= 1) return baseMap;
+
     const labelLookup = {};
     const gather = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
       if (cfg?.hr !== undefined && cfg?.hr !== null && cfg.group_label) {
@@ -177,15 +199,18 @@ const FitnessUsers = () => {
     });
     gather(usersConfigRaw?.primary);
     gather(usersConfigRaw?.secondary);
-    if (Object.keys(labelLookup).length === 0) return hrOwnerMap; // nothing to substitute
-    const out = { ...hrOwnerMap };
-    Object.keys(labelLookup).forEach(deviceId => {
+    if (Object.keys(labelLookup).length === 0) return baseMap;
+
+    const out = { ...baseMap };
+    Object.keys(labelLookup).forEach((deviceId) => {
+      const participant = participantByDevice.get(String(deviceId));
+      if (participant?.isGuest) return;
       if (out[deviceId]) {
         out[deviceId] = labelLookup[deviceId];
       }
     });
     return out;
-  }, [hrOwnerMap, allDevices, usersConfigRaw]);
+  }, [hrOwnerMap, allDevices, usersConfigRaw, participantByDevice]);
 
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
@@ -208,10 +233,15 @@ const FitnessUsers = () => {
   }, [zones]);
 
   // Fallback zone derivation using configured zones + per-user overrides
-  const deriveZoneFromHR = React.useCallback((hr, userName) => {
+  const deriveZoneFromHR = React.useCallback((hr, userName, fallbackName = null) => {
     if (!hr || hr <= 0 || !Array.isArray(zones) || zones.length === 0) return null;
-    const cfg = usersConfigRaw?.primary?.find(u => u.name === userName) 
-      || usersConfigRaw?.secondary?.find(u => u.name === userName);
+    const resolveConfig = (name) => {
+      if (!name) return null;
+      return usersConfigRaw?.primary?.find(u => u.name === name)
+        || usersConfigRaw?.secondary?.find(u => u.name === name)
+        || null;
+    };
+    const cfg = resolveConfig(userName) || resolveConfig(fallbackName);
     const overrides = cfg?.zones || {};
     const sorted = [...zones].sort((a,b) => b.min - a.min); // highest min first
     for (const z of sorted) {
@@ -224,13 +254,13 @@ const FitnessUsers = () => {
 
   const getZoneClass = (device) => {
     if (device.type !== 'heart_rate') return 'no-zone';
-    const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
-    if (!userObj) return 'no-zone';
-    const zoneEntry = userCurrentZones?.[userObj.name];
+    const participant = participantByDevice.get(String(device.deviceId));
+    if (!participant) return 'no-zone';
+    const zoneEntry = userCurrentZones?.[participant.name];
     let color = zoneEntry && typeof zoneEntry === 'object' ? zoneEntry.color : zoneEntry;
     let zoneIdRaw = (zoneEntry && typeof zoneEntry === 'object' && zoneEntry.id) ? zoneEntry.id : null;
     if ((!color || !zoneIdRaw) && device.heartRate) {
-      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
+      const derived = deriveZoneFromHR(device.heartRate, participant.name, participant.baseUserName);
       if (derived) {
         if (!zoneIdRaw) zoneIdRaw = derived.id;
         if (!color) color = derived.color;
@@ -251,10 +281,9 @@ const FitnessUsers = () => {
   const getCurrentZone = (device) => {
     try {
       if (!device || device.type !== 'heart_rate') return '';
-      const userObj = [...primaryUsers, ...secondaryUsers]
-        .find(u => String(u.hrDeviceId) === String(device.deviceId));
-      if (!userObj) return '';
-      const entry = userCurrentZones?.[userObj.name];
+      const participant = participantByDevice.get(String(device.deviceId));
+      if (!participant) return '';
+      const entry = userCurrentZones?.[participant.name];
       let zoneId = null;
       let color = null;
       if (entry) {
@@ -266,7 +295,7 @@ const FitnessUsers = () => {
       }
       const canonical = ['cool','active','warm','hot','fire'];
       if ((!zoneId || !canonical.includes(zoneId)) && device.heartRate) {
-        const derived = deriveZoneFromHR(device.heartRate, userObj.name);
+        const derived = deriveZoneFromHR(device.heartRate, participant.name, participant.baseUserName);
         if (derived) zoneId = derived.id;
       }
       if (!zoneId || !canonical.includes(zoneId)) return '';
@@ -280,13 +309,24 @@ const FitnessUsers = () => {
   // Map of deviceId -> user ID (for profile images)
   const userIdMap = React.useMemo(() => {
     const map = {};
-    [...primaryUsers, ...secondaryUsers].forEach(u => {
-      if (u?.hrDeviceId !== undefined && u?.hrDeviceId !== null) {
-        map[String(u.hrDeviceId)] = u.id || u.name.toLowerCase();
-      }
+    (participantRoster || []).forEach((participant) => {
+      if (participant?.hrDeviceId === undefined || participant.hrDeviceId === null) return;
+      const normalizedKey = String(participant.hrDeviceId);
+      const resolvedId = participant.profileId || participant.userId || slugifyId(participant.name, 'user');
+      map[normalizedKey] = resolvedId;
     });
+    if (Object.keys(map).length === 0 && usersConfigRaw) {
+      const gather = (arr) => Array.isArray(arr) && arr.forEach((cfg) => {
+        if (cfg?.hr === undefined || cfg.hr === null) return;
+        const normalizedKey = String(cfg.hr);
+        const resolvedId = cfg.id || slugifyId(cfg.name, 'user');
+        map[normalizedKey] = resolvedId;
+      });
+      gather(usersConfigRaw.primary);
+      gather(usersConfigRaw.secondary);
+    }
     return map;
-  }, [primaryUsers, secondaryUsers]);
+  }, [participantRoster, usersConfigRaw]);
   
   // Map of deviceId -> equipment name and ID
   const equipmentMap = React.useMemo(() => {
@@ -380,9 +420,9 @@ const FitnessUsers = () => {
   const zoneRankMap = { cool:0, active:1, warm:2, hot:3, fire:4 };
   const getDeviceZoneId = (device) => {
     if (device.type !== 'heart_rate') return null;
-    const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
-    if (!userObj) return null;
-    const entry = userCurrentZones?.[userObj.name];
+    const participant = participantByDevice.get(String(device.deviceId));
+    if (!participant) return null;
+    const entry = userCurrentZones?.[participant.name];
     let zoneId = null;
     let color = null;
     if (entry) {
@@ -393,7 +433,7 @@ const FitnessUsers = () => {
       }
     }
     if ((!zoneId || !canonicalZones.includes(zoneId)) && device.heartRate) {
-      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
+      const derived = deriveZoneFromHR(device.heartRate, participant.name, participant.baseUserName);
       if (derived) zoneId = derived.id;
     }
     if (!zoneId) return null;
@@ -495,7 +535,7 @@ const FitnessUsers = () => {
     }
     combined.push(...otherDevices);
     setSortedDevices(combined);
-  }, [allDevices]);
+  }, [allDevices, participantRoster, userCurrentZones, zones]);
 
   return (
     <div className="fitness-devices-nav">
