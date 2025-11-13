@@ -1,6 +1,5 @@
 import express from 'express';
 import { loadFile, saveFile } from './lib/io.mjs';
-import moment from 'moment-timezone';
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -21,9 +20,16 @@ fitnessRouter.get('/', (req, res) => {
 fitnessRouter.post('/save_session', (req, res) => {
     const { sessionData } = req.body;
     if(!sessionData) return res.status(400).json({ error: 'Session data is required' });
-    const sessionDate = sessionData.date || moment().tz("America/Los_Angeles").format('YYYY-MM-DD');
-    const sessionDateTime = sessionData.time || moment().tz("America/Los_Angeles").format('YYYY-MM-DD HH.mm.ss');
-    const filename = `fitness/sessions/${sessionDate}/${sessionDateTime}`;
+    const sanitizedSessionId = sanitizeSessionId(sessionData.sessionId);
+    if (!sanitizedSessionId || sanitizedSessionId.length !== 14) {
+        return res.status(400).json({ error: 'Valid sessionId is required' });
+    }
+
+    // Ensure the session data reflects the sanitized identifier
+    sessionData.sessionId = sanitizedSessionId;
+
+    const sessionDate = `${sanitizedSessionId.slice(0, 4)}-${sanitizedSessionId.slice(4, 6)}-${sanitizedSessionId.slice(6, 8)}`;
+    const filename = `fitness/sessions/${sessionDate}/${sessionData.sessionId}`;
     saveFile(filename, sessionData);
     //trigger printer (TODO)
 
@@ -37,11 +43,11 @@ const resolveDataRoot = () => {
     return path.join(process.cwd(), 'data');
 };
 
-const sanitizeSessionId = (value) => {
+function sanitizeSessionId(value) {
     if (!value) return null;
-    const sanitized = String(value).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
-    return sanitized || null;
-};
+    const digits = String(value).replace(/\D/g, '');
+    return digits || null;
+}
 
 fitnessRouter.post('/save_screenshot', (req, res) => {
     try {

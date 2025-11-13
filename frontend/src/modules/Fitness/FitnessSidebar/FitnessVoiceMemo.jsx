@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import '../FitnessUsers.scss';
-import { DaylightAPI } from '../../../lib/api.mjs';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import FitnessVideo from './FitnessVideo.jsx';
+import useVoiceMemoRecorder from './useVoiceMemoRecorder.js';
 
 // UI Label Constants
 const UI_LABELS = {
@@ -13,200 +13,69 @@ const UI_LABELS = {
   EMPTY_LIST: 'No memos yet.',
   ERROR_PREFIX: '⚠️',
   RECORD_TOOLTIP: 'Start recording',
-  STOP_TOOLTIP: 'Stop and transcribe'
+  STOP_TOOLTIP: 'Stop and transcribe',
+  SHOW_MEMOS_TOOLTIP: 'Review voice memos'
 };
 
-// Helper: convert recorded Blob to base64 data URL
-const blobToBase64 = (blob) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onloadend = () => resolve(reader.result);
-  reader.onerror = reject;
-  reader.readAsDataURL(blob);
-});
-
 const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, playerRef, preferredMicrophoneId = '' }) => {
-  const mediaRecorderRef = useRef(null);
-  const chunksRef = useRef([]);
-  const streamRef = useRef(null);
-  const recordingStartTimeRef = useRef(null);
-  const wasPlayingBeforeRecordingRef = useRef(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const [error, setError] = useState(null);
-  const [memos, setMemos] = useState([]); // local displayed memos (subset of session)
-  const [uploading, setUploading] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const fitnessCtx = useFitnessContext();
   const session = fitnessCtx?.fitnessSession;
   const mediaSwapActive = fitnessCtx?.mediaSwapActive;
+  const voiceMemos = fitnessCtx?.voiceMemos || [];
+  const memoCount = voiceMemos.length;
+  const memoCountLabel = useMemo(() => {
+    if (memoCount > 99) return '99+';
+    if (memoCount > 9) return '9+';
+    return String(memoCount);
+  }, [memoCount]);
 
-  // Pause video following the playPause pattern from FitnessPlayerFooterControls
-  const pauseVideo = () => {
-    const api = playerRef?.current;
-    if (!api) return;
-    
-    // Check if currently playing
-    const media = api.getMediaElement?.();
-    if (media && !media.paused) {
-      wasPlayingBeforeRecordingRef.current = true;
-      if (typeof api.pause === 'function') {
-        api.pause();
-      } else if (media) {
-        media.pause();
-      }
-    } else {
-      wasPlayingBeforeRecordingRef.current = false;
+  const handleMemoCaptured = useCallback((memo) => {
+    if (!memo) return;
+    const stored = fitnessCtx?.addVoiceMemoToSession?.(memo) || memo;
+    const target = stored || memo;
+    if (target && fitnessCtx?.openVoiceMemoReview) {
+      fitnessCtx.openVoiceMemoReview(target, { autoAccept: true });
     }
-  };
+  }, [fitnessCtx]);
 
-  // Resume video if it was playing before
-  const resumeVideo = () => {
-    if (!wasPlayingBeforeRecordingRef.current) return;
-    
-    const api = playerRef?.current;
-    if (!api) return;
-    
-    if (typeof api.play === 'function') {
-      api.play();
-    } else {
-      const media = api.getMediaElement?.();
-      if (media) {
-        media.play();
-      }
-    }
-    wasPlayingBeforeRecordingRef.current = false;
-  };
+  const {
+    isRecording,
+    recordingDuration,
+    uploading,
+    error: recorderError,
+    setError: setRecorderError,
+    startRecording,
+    stopRecording
+  } = useVoiceMemoRecorder({
+    sessionId: session?.sessionId,
+    playerRef,
+    preferredMicrophoneId,
+    onMemoCaptured: handleMemoCaptured
+  });
 
-  // Start recording
-  const startRecording = async () => {
-    setError(null);
-    
-    // Pause video before starting recording
-    pauseVideo();
-    
-    try {
-      const audioConstraints = (() => {
-        if (!preferredMicrophoneId || preferredMicrophoneId === 'default') {
-          return true;
-        }
-        return { deviceId: { exact: preferredMicrophoneId } };
-      })();
+  const handleStartRecording = useCallback(() => {
+    setRecorderError(null);
+    startRecording();
+  }, [setRecorderError, startRecording]);
 
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-      } catch (primaryError) {
-        if (audioConstraints !== true) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            console.warn('Falling back to default microphone', primaryError);
-          } catch (fallbackError) {
-            throw fallbackError;
-          }
-        } else {
-          throw primaryError;
-        }
-      }
-      streamRef.current = stream;
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      chunksRef.current = [];
-      mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
-      mr.onstop = handleRecordingStop;
-      mr.start();
-      mediaRecorderRef.current = mr;
-      recordingStartTimeRef.current = Date.now();
-      setRecordingDuration(0);
-      setIsRecording(true);
-    } catch (e) {
-      console.error('Mic access error', e);
-      setError(e.message || 'Failed to access microphone');
-      // Resume video if recording failed to start
-      resumeVideo();
-    }
-  };
-
-  // Stop recording
-  const stopRecording = () => {
-    try {
-      mediaRecorderRef.current?.stop();
-    } catch(e) {}
-    setIsRecording(false);
-    // Stop tracks
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    // Resume video after stopping recording
-    resumeVideo();
-  };
-
-  // After MediaRecorder stops
-  const handleRecordingStop = async () => {
-    if (!chunksRef.current.length) return;
-    const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-    chunksRef.current = [];
-    try {
-      setUploading(true);
-      const base64 = await blobToBase64(blob); // data URL
-      const createdAt = Date.now();
-      const payload = {
-        audioBase64: base64,
-        mimeType: blob.type,
-        sessionId: session?.sessionId || null,
-        startedAt: createdAt,
-        endedAt: Date.now()
-      };
-      const resp = await DaylightAPI('api/fitness/voice_memo', payload, 'POST');
-      if (!resp?.ok) {
-        setError(resp?.error || 'Transcription failed');
-      } else {
-        const memo = resp.memo;
-        // Push into session model
-        try { session?.addVoiceMemo?.(memo); } catch(e) { console.warn('addVoiceMemo failed', e); }
-        setMemos(prev => [...prev, memo]);
-      }
-    } catch(e) {
-      console.error('Upload voice memo error', e);
-      setError(e.message || 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  useEffect(() => {
-    // Update recording duration every 100ms while recording
-    let interval;
-    if (isRecording && recordingStartTimeRef.current) {
-      interval = setInterval(() => {
-        const elapsed = Date.now() - recordingStartTimeRef.current;
-        setRecordingDuration(elapsed);
-      }, 100);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRecording]);
-
-  useEffect(() => {
-    return () => {
-      // cleanup on unmount
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try { mediaRecorderRef.current.stop(); } catch(_){ }
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
-        streamRef.current = null;
-      }
-    };
-  }, []);
+  const handleOpenList = useCallback(() => {
+    fitnessCtx?.openVoiceMemoList?.();
+  }, [fitnessCtx]);
 
   // Format milliseconds to MM:SS
-  const formatDuration = (ms) => {
+  const formatDuration = useCallback((ms) => {
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
+  }, []);
+
+  const stopAriaLabel = useMemo(() => {
+    if (!isRecording) return UI_LABELS.STOP_TOOLTIP;
+    return `${UI_LABELS.STOP_BUTTON_PREFIX} ${formatDuration(recordingDuration)}`;
+  }, [isRecording, recordingDuration, formatDuration]);
+
+  const error = recorderError;
 
   return (
     <>
@@ -232,7 +101,7 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
           {!isRecording && !uploading && (
             <button
               className="media-record-btn"
-              onClick={startRecording}
+              onClick={handleStartRecording}
               disabled={uploading}
               title={UI_LABELS.RECORD_TOOLTIP}
             >
@@ -243,7 +112,7 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
             <button
               className="media-stop-btn"
               onClick={stopRecording}
-              title={UI_LABELS.STOP_TOOLTIP}
+              title={stopAriaLabel}
             >
               ■
             </button>
@@ -259,13 +128,13 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
           )}
           
           {/* Counter Button - Bottom (when memos exist) */}
-          {memos.length > 0 && !isRecording && !uploading && (
+          {memoCount > 0 && !isRecording && !uploading && (
             <button
               className="media-counter-btn"
-              onClick={() => setIsExpanded(!isExpanded)}
-              title={isExpanded ? 'Hide memos' : 'Show memos'}
+              onClick={handleOpenList}
+              title={UI_LABELS.SHOW_MEMOS_TOOLTIP}
             >
-              {memos.length}
+              {memoCountLabel}
             </button>
           )}
         </div>
@@ -273,17 +142,6 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
 
       {/* Error Display */}
       {error && <div className="voice-memo-error">{UI_LABELS.ERROR_PREFIX} {error}</div>}
-
-      {/* Collapsible Memo List - Below the media container */}
-      {memos.length > 0 && isExpanded && (
-        <ul className="voice-memo-list">
-          {memos.slice().reverse().map(m => (
-            <li key={m.createdAt} className="voice-memo-item" title={new Date(m.createdAt).toLocaleTimeString()}>
-              <span className="memo-text">{m.transcriptClean || m.transcriptRaw || 'Processing...'}</span>
-            </li>
-          ))}
-        </ul>
-      )}
     </>
   );
 };

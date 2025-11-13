@@ -22,7 +22,6 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
     voiceMemo: true
   }));
   const [treasureBoxOverridden, setTreasureBoxOverridden] = useState(false);
-  const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
   const { 
     treasureBox, 
     fitnessSession, 
@@ -35,7 +34,9 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
     sidebarSizeMode,
     musicEnabled,
     setMusicOverride,
-    replacedPrimaryPool
+    replacedPrimaryPool,
+    preferredMicrophoneId,
+    setPreferredMicrophoneId
   } = fitnessContext;
   const menuOpen = menuState.open;
   const guestCandidates = React.useMemo(() => {
