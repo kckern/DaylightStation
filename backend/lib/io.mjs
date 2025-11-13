@@ -4,6 +4,40 @@ import {decode} from 'html-entities';
 import smartquotes from 'smartquotes';
 import axios from './http.mjs';
 
+class FlowSequence extends Array {}
+
+const FlowSequenceType = new yaml.Type('tag:yaml.org,2002:seq', {
+    kind: 'sequence',
+    instanceOf: FlowSequence,
+    represent: (sequence) => sequence,
+    defaultStyle: 'flow'
+});
+
+const CUSTOM_YAML_SCHEMA = yaml.DEFAULT_SCHEMA.extend([FlowSequenceType]);
+
+const isNullOrInteger = (value) => value === null || (typeof value === 'number' && Number.isInteger(value));
+
+const markFlowSequences = (value) => {
+    if (Array.isArray(value)) {
+        const processed = value.map((item) => markFlowSequences(item));
+        const shouldFlow = processed.length > 0 && processed.every(isNullOrInteger);
+        if (shouldFlow) {
+            const flowSequence = new FlowSequence();
+            processed.forEach((item) => flowSequence.push(item));
+            return flowSequence;
+        }
+        return processed;
+    }
+
+    if (value && typeof value === 'object') {
+        Object.keys(value).forEach((key) => {
+            value[key] = markFlowSequences(value[key]);
+        });
+    }
+
+    return value;
+};
+
 
 export const saveImage = async (url, folder, uid) => {
     if (!url) return false;
@@ -151,8 +185,13 @@ const saveFile = (path, data) => {
     //add yaml if it doesnt end with .yaml
     const yamlFile = path.endsWith('.yaml') ? path : `${path}.yaml`;
     data = JSON.parse(JSON.stringify(removeCircularReferences(data)));
+    data = markFlowSequences(data);
     const dst = `${process.env.path.data}/${yamlFile}`;
-    fs.writeFileSync(`${dst}`, yaml.dump(data), 'utf8');
+    const yamlString = yaml.dump(data, {
+        schema: CUSTOM_YAML_SCHEMA,
+        lineWidth: -1
+    });
+    fs.writeFileSync(`${dst}`, yamlString, 'utf8');
 
     //console.log(`Saved file to ${dst}`);
 

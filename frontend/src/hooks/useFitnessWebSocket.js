@@ -26,6 +26,38 @@ const ensureSeriesCapacity = (arr, index) => {
   }
 };
 
+const trimTrailingNulls = (series = []) => {
+  let end = series.length;
+  while (end > 0 && series[end - 1] == null) {
+    end -= 1;
+  }
+  return series.slice(0, end);
+};
+
+const serializeSeries = (series = []) => {
+  if (!Array.isArray(series) || series.length === 0) {
+    return null;
+  }
+  return series
+    .map((value) => {
+      if (value == null) return '';
+      return String(value);
+    })
+    .join('|');
+};
+
+const formatSessionId = (date = new Date()) => {
+  const pad = (value) => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds())
+  ].join('');
+};
+
 /**
  * Base Device class for all ANT+ fitness devices
  */
@@ -699,8 +731,10 @@ export class FitnessSession {
   // Ensure we have a session started; returns true if newly started
   ensureStarted() {
     if (this.sessionId) return false;
-    const now = Date.now();
-    this.sessionId = `fs_${now}`;
+  const nowDate = new Date();
+  const now = nowDate.getTime();
+  this.sessionTimestamp = formatSessionId(nowDate);
+  this.sessionId = `fs_${this.sessionTimestamp}`;
     this.startTime = now;
     this.lastActivityTime = now;
     this.endTime = null;
@@ -855,6 +889,35 @@ export class FitnessSession {
     return memo;
   }
 
+  removeVoiceMemo(memoId) {
+    if (!memoId) return null;
+    const id = String(memoId);
+    const index = this.voiceMemos.findIndex((memo) => memo && String(memo.memoId) === id);
+    if (index === -1) return null;
+    const [removed] = this.voiceMemos.splice(index, 1);
+    this._log('voice_memo_removed', { memoId: id });
+    this._maybeAutosave(true);
+    return removed || null;
+  }
+
+  replaceVoiceMemo(memoId, newMemo = {}) {
+    if (!memoId || !newMemo) return null;
+    const id = String(memoId);
+    const existingIndex = this.voiceMemos.findIndex((memo) => memo && String(memo.memoId) === id);
+    const memo = {
+      ...newMemo,
+      memoId: newMemo.memoId || id
+    };
+    if (existingIndex === -1) {
+      this.voiceMemos.push(memo);
+    } else {
+      this.voiceMemos.splice(existingIndex, 1, memo);
+    }
+    this._log('voice_memo_replaced', { memoId: id });
+    this._maybeAutosave(true);
+    return memo;
+  }
+
   get summary() {
     if (!this.sessionId) return null;
     const startAbsMs = this.timebase.startAbsMs || this.startTime || null;
@@ -869,13 +932,14 @@ export class FitnessSession {
       if (intervalCount > 0 && series.length < intervalCount) {
         ensureSeriesCapacity(series, intervalCount - 1);
       }
-      return series.map((value) => {
+      const normalized = series.map((value) => {
         if (Number.isFinite(value)) {
           if (!allowZero && value <= 0) return null;
           return value;
         }
         return null;
       });
+      return trimTrailingNulls(normalized);
     };
 
     const rosterLookup = new Map();
@@ -891,13 +955,16 @@ export class FitnessSession {
     const participants = {};
     this.snapshot.participantSeries.forEach((series, slug) => {
       const normalized = cloneSeries(series, { allowZero: false });
+      if (!normalized.length) return;
       const hasData = normalized.some((value) => Number.isFinite(value) && value > 0);
       if (!hasData) return;
       const meta = this.snapshot.usersMeta.get(slug);
       const displayName = meta?.displayName || meta?.name || rosterLookup.get(slug) || slug;
+      const heartRate = serializeSeries(normalized);
+      if (heartRate === null) return;
       participants[slug] = {
         displayName,
-        heartRate: normalized
+        heartRate
       };
     });
 
@@ -910,9 +977,32 @@ export class FitnessSession {
         label: record.label || null
       };
       if (record.rpmSeries?.length) {
-        entry.rpmSeries = cloneSeries(record.rpmSeries, { allowZero: true });
+        const rpmSeries = serializeSeries(cloneSeries(record.rpmSeries, { allowZero: true }));
+        if (rpmSeries !== null) {
+          entry.rpmSeries = rpmSeries;
+        }
       }
-      devices[id] = entry;
+      if (record.powerSeries?.length) {
+        const powerSeries = serializeSeries(cloneSeries(record.powerSeries, { allowZero: true }));
+        if (powerSeries !== null) {
+          entry.powerSeries = powerSeries;
+        }
+      }
+      if (record.speedSeries?.length) {
+        const speedSeries = serializeSeries(cloneSeries(record.speedSeries, { allowZero: true }));
+        if (speedSeries !== null) {
+          entry.speedSeries = speedSeries;
+        }
+      }
+      if (record.heartRateSeries?.length) {
+        const heartRateSeries = serializeSeries(cloneSeries(record.heartRateSeries, { allowZero: true }));
+        if (heartRateSeries !== null) {
+          entry.heartRateSeries = heartRateSeries;
+        }
+      }
+      if (entry.rpmSeries || entry.powerSeries || entry.speedSeries || entry.heartRateSeries) {
+        devices[id] = entry;
+      }
     });
 
     const mapVideoItem = (item) => {
@@ -964,7 +1054,7 @@ export class FitnessSession {
       const sinceStartMs = memo.sessionElapsedSeconds != null ? memo.sessionElapsedSeconds * 1000 : null;
       const videoOffsetMs = memo.videoTimeSeconds != null ? Math.round(memo.videoTimeSeconds * 1000) : null;
       return {
-        memoId: memo.memoId || `vm_${idx + 1}`,
+        memoId: memo.memoId || (this.sessionTimestamp ? `vm_${this.sessionTimestamp}_${idx + 1}` : `vm_${idx + 1}`),
         sinceStartMs,
         videoTitle: memo.videoTitle ?? null,
         videoOffsetMs,
@@ -988,14 +1078,18 @@ export class FitnessSession {
       const perColorTimeline = {};
       if (summary.perColorTimeline && typeof summary.perColorTimeline === 'object') {
         Object.entries(summary.perColorTimeline).forEach(([color, series]) => {
-          perColorTimeline[color] = cloneSeries(series, { allowZero: true });
+          const serializedTimeline = serializeSeries(cloneSeries(series, { allowZero: true }));
+          if (serializedTimeline !== null) {
+            perColorTimeline[color] = serializedTimeline;
+          }
         });
       }
+      const cumulativeCoins = serializeSeries(cloneSeries(summary.cumulativeCoins || [], { allowZero: true }));
       return {
         coinTimeUnitMs: summary.coinTimeUnitMs ?? this.treasureBox.coinTimeUnitMs ?? intervalMs,
         totalCoins: summary.totalCoins ?? 0,
         perColorTimeline,
-        cumulativeCoins: cloneSeries(summary.cumulativeCoins || [], { allowZero: true })
+        cumulativeCoins
       };
     })();
 

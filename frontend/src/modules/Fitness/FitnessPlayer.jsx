@@ -832,6 +832,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         onReload={handleReloadEpisode}
         currentTime={currentTime}
         lastKnownTimeRef={lastKnownTimeRef}
+        playerRef={playerRef}
       />
       <FitnessFullscreenVitals visible={playerMode === 'fullscreen'} />
       {hasActiveItem ? (

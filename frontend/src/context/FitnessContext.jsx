@@ -12,6 +12,14 @@ const normalizeLabelList = (raw) => {
   return Array.from(new Set(normalized));
 };
 
+const VOICE_MEMO_OVERLAY_INITIAL = {
+  open: false,
+  mode: null,
+  memoId: null,
+  autoAccept: false,
+  startedAt: null
+};
+
 export const slugifyId = (value, fallback = 'user') => {
   if (!value) return fallback;
   const slug = String(value)
@@ -99,6 +107,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [governanceMedia, setGovernanceMediaState] = useState(null);
   const [governancePulse, setGovernancePulse] = useState(0);
   const [guestAssignments, setGuestAssignments] = useState({});
+  const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
+  const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
+  const [voiceMemoVersion, setVoiceMemoVersion] = useState(0);
   const guestAssignmentsRef = useRef(guestAssignments);
   const hrDeviceUserMapRef = useRef(new Map());
   const governanceMetaRef = useRef({ mediaId: null, satisfiedOnce: false, deadline: null });
@@ -106,6 +117,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const governanceRequirementSummaryRef = useRef({ targetUserCount: null, requirements: [], activeCount: 0 });
   const [, forceVersion] = useState(0); // used to force re-render on treasure box coin mutation
   const scheduledUpdateRef = useRef(false); // debounce for mutation callback
+  const fitnessSessionRef = useRef(new FitnessSession());
 
   // Sidebar size mode: 'regular' | 'large'
   const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
@@ -160,6 +172,90 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (deviceId == null) return;
     assignGuestToDevice(deviceId, null);
   }, [assignGuestToDevice]);
+
+  const voiceMemos = React.useMemo(() => {
+    const raw = fitnessSessionRef.current?.voiceMemos;
+    if (!Array.isArray(raw)) return [];
+    return raw.map((memo) => ({ ...memo }));
+  }, [voiceMemoVersion, lastUpdate]);
+
+  const addVoiceMemoToSession = React.useCallback((memo) => {
+    if (!memo) return null;
+    let stored = memo;
+    try {
+      stored = fitnessSessionRef.current?.addVoiceMemo?.(memo) || memo;
+    } catch (error) {
+      console.warn('[FitnessContext] addVoiceMemoToSession failed', error);
+    }
+    setVoiceMemoVersion((version) => version + 1);
+    return stored;
+  }, []);
+
+  const removeVoiceMemoFromSession = React.useCallback((memoId) => {
+    if (!memoId) return null;
+    let removed = null;
+    try {
+      removed = fitnessSessionRef.current?.removeVoiceMemo?.(memoId) || null;
+    } catch (error) {
+      console.warn('[FitnessContext] removeVoiceMemoFromSession failed', error);
+    }
+    if (removed) {
+      setVoiceMemoVersion((version) => version + 1);
+    }
+    return removed;
+  }, []);
+
+  const replaceVoiceMemoInSession = React.useCallback((memoId, memo) => {
+    if (!memoId || !memo) return null;
+    let stored = null;
+    try {
+      stored = fitnessSessionRef.current?.replaceVoiceMemo?.(memoId, memo) || null;
+    } catch (error) {
+      console.warn('[FitnessContext] replaceVoiceMemoInSession failed', error);
+    }
+    if (stored) {
+      setVoiceMemoVersion((version) => version + 1);
+    }
+    return stored;
+  }, []);
+
+  const closeVoiceMemoOverlay = React.useCallback(() => {
+    setVoiceMemoOverlayState(VOICE_MEMO_OVERLAY_INITIAL);
+  }, []);
+
+  const openVoiceMemoReview = React.useCallback((memoOrId, { autoAccept = false } = {}) => {
+    const id = typeof memoOrId === 'string' ? memoOrId : memoOrId?.memoId;
+    if (!id) return;
+    setVoiceMemoOverlayState({
+      open: true,
+      mode: 'review',
+      memoId: id,
+      autoAccept,
+      startedAt: Date.now()
+    });
+  }, []);
+
+  const openVoiceMemoList = React.useCallback(() => {
+    setVoiceMemoOverlayState({
+      open: true,
+      mode: 'list',
+      memoId: null,
+      autoAccept: false,
+      startedAt: Date.now()
+    });
+  }, []);
+
+  const openVoiceMemoRedo = React.useCallback((memoOrId) => {
+    const id = typeof memoOrId === 'string' ? memoOrId : memoOrId?.memoId;
+    if (!id) return;
+    setVoiceMemoOverlayState({
+      open: true,
+      mode: 'redo',
+      memoId: id,
+      autoAccept: false,
+      startedAt: Date.now()
+    });
+  }, []);
 
   React.useEffect(() => {
     if (selectedPlaylistId != null) {
@@ -267,8 +363,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   
   // Use ref for device updates to prevent state management issues
   const deviceUpdateRef = useRef(null);
-  // Session ref
-  const fitnessSessionRef = useRef(new FitnessSession());
   // Keep a ref mirror of users map to avoid stale closures inside ws handlers
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { guestAssignmentsRef.current = guestAssignments; }, [guestAssignments]);
@@ -878,6 +972,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [participantRoster, guestAssignments]);
 
   useEffect(() => {
+    if (!voiceMemoOverlayState.open) return;
+    if (voiceMemoOverlayState.mode === 'list' && voiceMemos.length === 0) {
+      setVoiceMemoOverlayState(VOICE_MEMO_OVERLAY_INITIAL);
+      return;
+    }
+    if (voiceMemoOverlayState.memoId) {
+      const exists = voiceMemos.some((memo) => memo && String(memo.memoId) === String(voiceMemoOverlayState.memoId));
+      if (!exists && voiceMemoOverlayState.mode !== 'redo') {
+        setVoiceMemoOverlayState((prev) => ({ ...prev, memoId: null }));
+      }
+    }
+  }, [voiceMemoOverlayState, voiceMemos, setVoiceMemoOverlayState]);
+
+  useEffect(() => {
     const session = fitnessSessionRef.current;
     if (!session || typeof session.updateSnapshot !== 'function') return;
     try {
@@ -1192,7 +1300,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     allDevices,
     deviceCount: fitnessDevices.size,
     lastUpdate,
-    fitnessSession: fitnessSessionRef.current.summary,
+  fitnessSession: fitnessSessionRef.current.summary,
+  fitnessSessionInstance: fitnessSessionRef.current,
+  voiceMemos,
+  addVoiceMemoToSession,
+  removeVoiceMemoFromSession,
+  replaceVoiceMemoInSession,
+    voiceMemoOverlay: voiceMemoOverlayState,
+    openVoiceMemoReview,
+    openVoiceMemoList,
+    openVoiceMemoRedo,
+    closeVoiceMemoOverlay,
     isSessionActive: fitnessSessionRef.current.isActive,
     treasureBox: fitnessSessionRef.current.treasureBox ? fitnessSessionRef.current.treasureBox.summary : null,
     
@@ -1210,14 +1328,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       } catch (_) {}
     },
 
-  // Sidebar size mode controls
-  sidebarSizeMode,
-  setSidebarSizeMode,
-  toggleSidebarSizeMode,
-  mediaSwapActive,
-  setMediaSwapActive,
-  toggleMediaSwap,
-    
+    // Sidebar size mode controls
+    sidebarSizeMode,
+    setSidebarSizeMode,
+    toggleSidebarSizeMode,
+    mediaSwapActive,
+    setMediaSwapActive,
+    toggleMediaSwap,
+    preferredMicrophoneId,
+    setPreferredMicrophoneId,
+
     // User-related data
     users: allUsers,
     userCount: users.size,
@@ -1225,9 +1345,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     guestAssignments,
     assignGuestToDevice,
     clearGuestAssignment,
-  participantRoster,
-  participantsByDevice: participantLookupByDevice,
-  participantsByName: participantLookupByName,
+    participantRoster,
+    participantsByDevice: participantLookupByDevice,
+    participantsByName: participantLookupByName,
     replacedPrimaryPool,
     // Fallback logic: if config primary list is missing/empty but we DO have users, treat all as primary.
     // This ensures device->name mapping works even when upstream config shape failed to populate.
@@ -1262,7 +1382,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governanceConfig,
     governedLabels,
     governance: governancePhase,
-  governanceState,
+    governanceState,
     setGovernanceMedia,
     
     // Categorized device arrays
