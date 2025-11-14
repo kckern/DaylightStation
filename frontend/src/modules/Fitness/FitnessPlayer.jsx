@@ -225,9 +225,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
     // Only allow playback when governance is green or yellow
     // Grey (init) and red (paused) should lock playback
-    const locked = governance !== 'green' && governance !== 'yellow';
+    const governanceVideoLocked = Boolean(governanceState?.videoLocked);
+    const locked = governanceVideoLocked || (governance !== 'green' && governance !== 'yellow');
     setPlayIsGoverned(locked);
-  }, [currentItem, governedLabelSet, governance]);
+  }, [currentItem, governedLabelSet, governance, governanceState?.videoLocked]);
 
   useEffect(() => {
     if (!pausePlayback || !playPlayback) return;

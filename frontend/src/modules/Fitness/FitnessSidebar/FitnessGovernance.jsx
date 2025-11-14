@@ -42,7 +42,7 @@ const STRIPE_CONFIG = {
 };
 
 const FitnessGovernance = () => {
-  const { governanceState } = useFitnessContext();
+  const { governanceState, triggerChallengeNow } = useFitnessContext();
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!governanceState?.isGoverned) {
@@ -54,6 +54,31 @@ const FitnessGovernance = () => {
     const status = STATUS_PRIORITY.includes(state.status) ? state.status : 'idle';
     const watchers = Array.isArray(state.watchers) ? state.watchers : [];
     const requirements = Array.isArray(state.requirements) ? state.requirements : [];
+    const challenge = state.challenge || null;
+    const challengeHistory = Array.isArray(state.challengeHistory) ? state.challengeHistory : [];
+    const nextChallenge = state.nextChallenge || null;
+    const policyName = state.policyName || state.policyId || 'Default';
+    const challengeRemaining = Number.isFinite(state.challengeCountdownSeconds)
+      ? Math.max(0, state.challengeCountdownSeconds)
+      : null;
+    const challengeTotal = Number.isFinite(state.challengeCountdownTotal)
+      ? Math.max(1, state.challengeCountdownTotal)
+      : null;
+    const challengeProgress = challengeTotal
+      ? Math.max(0, Math.min(1, (challengeTotal - Math.min(challengeRemaining ?? challengeTotal, challengeTotal)) / challengeTotal))
+      : 0;
+    const nextChallengeRemaining = Number.isFinite(nextChallenge?.remainingSeconds)
+      ? Math.max(0, nextChallenge.remainingSeconds)
+      : null;
+    const nextChallengeDuration = Number.isFinite(nextChallenge?.timeLimitSeconds)
+      ? Math.max(1, nextChallenge.timeLimitSeconds)
+      : null;
+    const formatZoneLabel = (zoneValue) => {
+      if (typeof zoneValue !== 'string' || !zoneValue) return null;
+      const friendly = zoneValue.replace(/[_-]+/g, ' ');
+      return friendly.charAt(0).toUpperCase() + friendly.slice(1);
+    };
+    const nextChallengeZoneLabel = nextChallenge?.zone ? formatZoneLabel(nextChallenge.zone) : null;
     
     // Calculate grace period progress (0-100%)
     let graceProgress = 0;
@@ -70,7 +95,19 @@ const FitnessGovernance = () => {
       watchers,
       requirements,
       activeUserCount: Number.isFinite(state.activeUserCount) ? state.activeUserCount : null,
-      targetUserCount: Number.isFinite(state.targetUserCount) ? state.targetUserCount : null
+      targetUserCount: Number.isFinite(state.targetUserCount) ? state.targetUserCount : null,
+      policyName,
+      policyId: state.policyId || null,
+      videoLocked: Boolean(state.videoLocked),
+      challenge,
+      challengeHistory,
+      challengeRemaining,
+      challengeTotal,
+      challengeProgress,
+      nextChallenge,
+      nextChallengeZoneLabel,
+      nextChallengeRemaining,
+      nextChallengeDuration
     };
   }, [governanceState]);
 
@@ -99,6 +136,12 @@ const FitnessGovernance = () => {
       toggleExpanded();
     }
   }, [toggleExpanded]);
+
+  const handleTriggerChallenge = useCallback(() => {
+    if (typeof triggerChallengeNow === 'function') {
+      triggerChallengeNow();
+    }
+  }, [triggerChallengeNow]);
 
   return (
     <div className={`fitness-governance ${statusClass}${isExpanded ? ' expanded' : ''}`}>
@@ -142,20 +185,136 @@ const FitnessGovernance = () => {
             <div className="fg-grace-progress" style={{ width: `${summary.graceProgress}%` }}></div>
           )}
         </div>
-        <div className="fg-user-count" aria-label={`Active HR users: ${summary.watcherCount}`}>
-          {summary.watcherCount}
-        </div>
       </div>
 
       {isExpanded && (
         <div className="fg-debug-panel">
+          <div className="fg-debug-actions">
+            <button
+              type="button"
+              className="fg-debug-button"
+              onClick={handleTriggerChallenge}
+              disabled={typeof triggerChallengeNow !== 'function'}
+            >
+              Force Challenge
+            </button>
+          </div>
           <div className="fg-debug-summary">
             <div className="fg-debug-label">Active HR Users</div>
             <div className="fg-debug-value">{summary.activeUserCount ?? summary.watcherCount}</div>
             {summary.targetUserCount != null && (
               <div className="fg-debug-meta">Target: {summary.targetUserCount}</div>
             )}
+            <div className="fg-debug-meta">Policy: {summary.policyName || 'Default'}</div>
+            {summary.videoLocked ? (
+              <div className="fg-debug-meta fg-debug-meta--alert">Video locked by challenge</div>
+            ) : null}
           </div>
+
+          {summary.challenge ? (
+            <div className={`fg-debug-section fg-challenge fg-challenge--${summary.challenge.status || 'pending'}`}>
+              <div className="fg-challenge__header">
+                <div className="fg-challenge__title">Current Challenge</div>
+                {summary.challenge.selectionLabel ? (
+                  <span className="fg-challenge__tag">{summary.challenge.selectionLabel}</span>
+                ) : null}
+                <span className={`fg-challenge__status fg-challenge__status--${summary.challenge.status || 'pending'}`}>
+                  {summary.challenge.status === 'pending'
+                    ? 'In progress'
+                    : summary.challenge.status === 'success'
+                      ? 'Completed'
+                      : 'Failed'}
+                </span>
+              </div>
+              <div className="fg-challenge__zone">{summary.challenge.zoneLabel || summary.challenge.zone || 'Target zone'}</div>
+              <div className="fg-challenge__counts">
+                <span className="fg-challenge__count">{summary.challenge.actualCount ?? 0}</span>
+                <span className="fg-challenge__count-divider">/</span>
+                <span className="fg-challenge__count fg-challenge__count--target">{summary.challenge.requiredCount ?? 0}</span>
+                <span className="fg-challenge__count-label">participants</span>
+              </div>
+              <div className="fg-challenge__progress">
+                <div className="fg-challenge__progress-fill" style={{ width: `${Math.round(summary.challengeProgress * 100)}%` }} />
+              </div>
+              <div className="fg-challenge__meta-row">
+                <span className="fg-challenge__time">
+                  {summary.challengeRemaining != null && summary.challengeTotal
+                    ? `${summary.challengeRemaining}s of ${summary.challengeTotal}s remaining`
+                    : summary.challengeRemaining != null
+                      ? `${summary.challengeRemaining}s remaining`
+                      : 'Waiting for next start'}
+                </span>
+                {summary.challenge.missingUsers?.length ? (
+                  <span className="fg-challenge__missing">Need: {summary.challenge.missingUsers.join(', ')}</span>
+                ) : summary.challenge.metUsers?.length ? (
+                  <span className="fg-challenge__met">Met: {summary.challenge.metUsers.join(', ')}</span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {summary.nextChallenge ? (
+            <div className="fg-debug-section fg-next-challenge">
+              <div className="fg-debug-label">Next Challenge</div>
+              <div className="fg-next-challenge__card">
+                <div className="fg-next-challenge__header">
+                  <div className="fg-next-challenge__title">
+                    {summary.nextChallenge.selectionLabel || summary.nextChallengeZoneLabel || (summary.nextChallenge.zone || 'Upcoming challenge')}
+                  </div>
+                  {summary.nextChallengeRemaining != null ? (
+                    <div className="fg-next-challenge__countdown" aria-label="Seconds until next challenge">
+                      {summary.nextChallengeRemaining}s
+                    </div>
+                  ) : null}
+                </div>
+                <div className="fg-next-challenge__meta">
+                  {summary.nextChallengeZoneLabel ? (
+                    <span className="fg-next-challenge__zone">{summary.nextChallengeZoneLabel}</span>
+                  ) : summary.nextChallenge.zone ? (
+                    <span className="fg-next-challenge__zone">{summary.nextChallenge.zone}</span>
+                  ) : null}
+                  {(summary.nextChallengeZoneLabel || summary.nextChallenge.zone) && summary.nextChallenge.requiredCount != null ? (
+                    <span className="fg-next-challenge__divider">•</span>
+                  ) : null}
+                  {summary.nextChallenge.requiredCount != null ? (
+                    <span className="fg-next-challenge__requirement">{summary.nextChallenge.requiredCount} required</span>
+                  ) : null}
+                  {summary.nextChallengeDuration != null ? (
+                    <>
+                      <span className="fg-next-challenge__divider">•</span>
+                      <span className="fg-next-challenge__duration">{summary.nextChallengeDuration}s limit</span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {summary.challengeHistory.length > 0 ? (
+            <div className="fg-debug-section fg-challenge-history">
+              <div className="fg-debug-label">Recent Challenges</div>
+              <ul className="fg-challenge-history__list">
+                {summary.challengeHistory.slice(-4).reverse().map((entry) => {
+                  const timestamp = entry?.completedAt || entry?.startedAt;
+                  const timeLabel = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                  return (
+                    <li
+                      key={entry?.id || `${entry?.zone || 'zone'}-${timestamp || Math.random()}`}
+                      className={`fg-challenge-history__item fg-challenge-history__item--${entry?.status || 'unknown'}`}
+                    >
+                      <span className="fg-challenge-history__dot" />
+                      <span className="fg-challenge-history__zone">{entry?.zoneLabel || entry?.zone || 'zone'}</span>
+                      {entry?.selectionLabel ? (
+                        <span className="fg-challenge-history__label">{entry.selectionLabel}</span>
+                      ) : null}
+                      <span className="fg-challenge-history__status">{entry?.status || ''}</span>
+                      <span className="fg-challenge-history__time">{timeLabel}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
 
           {summary.watchers.length > 0 && (
             <div className="fg-debug-section">
