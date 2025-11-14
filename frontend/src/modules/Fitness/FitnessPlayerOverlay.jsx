@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import useVoiceMemoRecorder from './FitnessSidebar/useVoiceMemoRecorder.js';
+import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlayChallenge.jsx';
 
 // Helper function to format time in MM:SS or HH:MM:SS format
 const formatTime = (seconds) => {
@@ -29,6 +30,7 @@ const slugifyId = (value, fallback = 'user') => {
   return slug || fallback;
 };
 
+
 export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   if (!governanceState?.isGoverned) {
     return {
@@ -49,6 +51,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   const normalizedStatus = rawStatus === 'green' ? 'green' : rawStatus === 'yellow' ? 'yellow' : rawStatus === 'red' ? 'red' : 'grey';
   const requirements = Array.isArray(governanceState.requirements) ? governanceState.requirements : [];
   const watchers = Array.isArray(governanceState.watchers) ? governanceState.watchers : [];
+  const challengeLocked = Boolean(governanceState.videoLocked);
+  const challenge = governanceState.challenge;
 
   const formattedRequirements = requirements.map((rule) => ({
     zone: rule?.zoneLabel || rule?.zone || 'Zone',
@@ -62,6 +66,48 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       .flatMap((rule) => Array.isArray(rule?.missingUsers) ? rule.missingUsers : [])
       .filter(Boolean)
   ));
+
+  if (challengeLocked) {
+    const zoneLabel = challenge?.zoneLabel || challenge?.zone || 'Target zone';
+    const requiredCount = typeof challenge?.requiredCount === 'number' ? challenge.requiredCount : null;
+    const actualCount = typeof challenge?.actualCount === 'number' ? challenge.actualCount : null;
+    const requirementLabel = requiredCount != null ? `${requiredCount} participant${requiredCount === 1 ? '' : 's'}` : 'Challenge requirement';
+    const missingChallengeUsers = Array.isArray(challenge?.missingUsers) ? challenge.missingUsers : missingUsers;
+    const baseRequirementItems = unsatisfied.map((rule) => ({
+      zone: rule?.zoneLabel || rule?.zone || 'Zone',
+      rule: rule?.ruleLabel || String(rule?.rule ?? ''),
+      satisfied: false
+    }));
+    const challengeRequirementItem = zoneLabel
+      ? {
+        zone: zoneLabel,
+        rule: requirementLabel,
+        satisfied: false
+      }
+      : null;
+    const combinedRequirements = [
+      ...(challengeRequirementItem ? [challengeRequirementItem] : []),
+      ...baseRequirementItems
+    ];
+    const combinedMissingUsers = Array.from(new Set([...(missingChallengeUsers || []), ...missingUsers]));
+
+    return {
+      category: 'governance',
+      status: 'red',
+      show: true,
+      filterClass: 'governance-filter-critical',
+      title: 'Challenge Failed',
+      descriptions: [
+        'The last challenge was not completed in time.',
+        zoneLabel ? `Goal: ${zoneLabel}${requiredCount != null ? ` (${requirementLabel})` : ''}` : null,
+        actualCount != null && requiredCount != null ? `Achieved ${actualCount}/${requiredCount}` : null
+      ].filter(Boolean),
+      requirements: combinedRequirements,
+      highlightUsers: combinedMissingUsers,
+      countdown: null,
+      countdownTotal: null
+    };
+  }
 
   if (normalizedStatus === 'green') {
     return {
@@ -479,6 +525,16 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
   const sessionId = fitnessCtx?.fitnessSession?.sessionId
     || fitnessCtx?.fitnessSessionInstance?.sessionId
     || null;
+  const governanceState = fitnessCtx?.governanceState || null;
+  const { current: currentChallengeOverlay, upcoming: upcomingChallengeOverlay } = useChallengeOverlays(governanceState);
+  const governanceChallenge = governanceState?.challenge || null;
+  const governanceChallengeStatus = currentChallengeOverlay?.status;
+  const challengeRemaining = currentChallengeOverlay?.remainingSeconds ?? null;
+  const challengeTotal = currentChallengeOverlay?.totalSeconds ?? null;
+  const challengeProgress = currentChallengeOverlay?.progress ?? 0;
+  const challengeZoneLabel = currentChallengeOverlay?.title || currentChallengeOverlay?.zoneLabel || 'Target zone';
+  const challengeMissingUsers = currentChallengeOverlay?.missingUsers || [];
+  const challengeMetUsers = currentChallengeOverlay?.metUsers || [];
 
   const highlightEntries = useMemo(() => {
     if (!overlay || !Array.isArray(overlay.highlightUsers) || overlay.highlightUsers.length === 0) {
@@ -515,6 +571,14 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
     .filter(Boolean);
   }, [fitnessCtx?.participantRoster, overlay]);
 
+  const challengeStatusLabel = governanceChallengeStatus === 'success'
+    ? 'Completed'
+    : governanceChallengeStatus === 'failed'
+      ? 'Failed'
+      : 'Active';
+  const challengeOverlay = currentChallengeOverlay?.show ? <ChallengeOverlay overlay={currentChallengeOverlay} /> : null;
+  const nextChallengeOverlay = upcomingChallengeOverlay?.show ? <ChallengeOverlay overlay={upcomingChallengeOverlay} /> : null;
+
   // Handle stall reload overlay as priority overlay
   if (stallStatus?.isStalled && onReload) {
     const reloadTime = Math.max(0, lastKnownTimeRef?.current || currentTime || 0);
@@ -539,6 +603,7 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
             Reload at {formatTime(reloadTime)}
           </button>
         </div>
+        {challengeOverlay}
         {voiceMemoOverlayOpen ? (
           <VoiceMemoOverlay
             overlayState={voiceMemoOverlayState}
@@ -591,6 +656,43 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
                 <p className="governance-overlay__line" key={`gov-desc-${idx}`}>{line}</p>
               ))
               : null}
+            {governanceChallenge ? (
+              <div className={`governance-overlay__challenge governance-overlay__challenge--${governanceChallengeStatus || 'pending'}`}>
+                <div className="governance-overlay__challenge-header">
+                  <div className="governance-overlay__challenge-title">{challengeZoneLabel}</div>
+                  <div className="governance-overlay__challenge-meta" aria-label="Challenge status">
+                    <span className={`governance-overlay__challenge-status governance-overlay__challenge-status--${governanceChallengeStatus || 'pending'}`}>
+                      {challengeStatusLabel}
+                    </span>
+                    {challengeRemaining != null && challengeTotal ? (
+                      <span className="governance-overlay__challenge-time">
+                        {`${challengeRemaining}s / ${challengeTotal}s`}
+                      </span>
+                    ) : null}
+                    {governanceChallenge?.selectionLabel ? (
+                      <span className="governance-overlay__challenge-tag">{governanceChallenge.selectionLabel}</span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="governance-overlay__challenge-counts" aria-label="Challenge participant counts">
+                  <span className="governance-overlay__challenge-count">{governanceChallenge?.actualCount ?? 0}</span>
+                  <span className="governance-overlay__challenge-divider">/</span>
+                  <span className="governance-overlay__challenge-count governance-overlay__challenge-count--target">{governanceChallenge?.requiredCount ?? 0}</span>
+                </div>
+                <div className="governance-overlay__challenge-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(challengeProgress * 100)}>
+                  <div className="governance-overlay__challenge-progress-fill" style={{ width: `${Math.round(challengeProgress * 100)}%` }} />
+                </div>
+                {challengeMissingUsers.length ? (
+                  <div className="governance-overlay__challenge-hint">
+                    Need: {challengeMissingUsers.join(', ')}
+                  </div>
+                ) : challengeMetUsers.length ? (
+                  <div className="governance-overlay__challenge-hint governance-overlay__challenge-hint--met">
+                    Met: {challengeMetUsers.join(', ')}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {highlightEntries.length > 0 ? (
               <div className="governance-overlay__people">
                 {highlightEntries.map(({ name, avatarSrc, key: entryKey }) => (
@@ -648,12 +750,14 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
     }
   }
 
-  if (!primaryOverlay && !voiceMemoOverlayOpen) {
+  if (!primaryOverlay && !voiceMemoOverlayOpen && !challengeOverlay) {
     return null;
   }
 
   return (
     <>
+      {challengeOverlay}
+      {!challengeOverlay && nextChallengeOverlay}
       {primaryOverlay}
       {voiceMemoOverlayOpen ? (
         <VoiceMemoOverlay

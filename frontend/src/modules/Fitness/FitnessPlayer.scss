@@ -437,11 +437,14 @@ dash-video {
     }
 
     &.governance-filter-warning {
+
+        //transform: scaleY(-1);
       .player,
       .video-player,
       video,
       dash-video {
-        filter: sepia(0.65);
+        //sepia + dim + blur
+        filter: sepia(0.65)  brightness(0.8)  contrast(1.2) blur(2px) ;
         transition: filter 0.3s ease;
       }
     }
@@ -696,6 +699,17 @@ dash-video {
         
         h2 {
           position: absolute;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          background-color: rgba(0, 0, 0, 0.5);
+          margin: 0;
+          padding: 8px;
+          z-index: 5;
+          text-align: center;
+        }
+      }
+
     .voice-memo-overlay {
       position: absolute;
       top: clamp(18px, 5vw, 52px);
@@ -877,7 +891,6 @@ dash-video {
         font-size: 0.9rem;
         cursor: pointer;
         transition: background 0.2s ease, transform 0.15s ease;
-
         &:hover {
           background: rgba(255, 255, 255, 0.2);
           transform: translateY(-1px);
@@ -978,31 +991,22 @@ dash-video {
         }
       }
     }
-          bottom: 0;
-          left: 0;
-          width: 100%;
-          background-color: rgba(0, 0, 0, 0.5);
-          margin: 0;
-          padding: 8px;
-          z-index: 5;
-          text-align: center;
-        }
-        
-        .video-element {
-          position: absolute;
-          top: 0;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 100%;
-          height: auto;
-          max-width: 100%;
-          max-height: 100%;
-          object-fit: contain; /* Ensure no cropping */
-          object-position: top; /* Align video to the top */
-          display: block !important;
-          visibility: visible !important;
-        }
-      }
+
+    .video-element {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain; /* Ensure no cropping */
+      object-position: top; /* Align video to the top */
+      display: block !important;
+      visibility: visible !important;
+    }
+  }
       
       video, dash-video {
         position: absolute;
@@ -1289,22 +1293,19 @@ dash-video {
           z-index: 20;
           
           /* New edge wrappers to perfectly puzzle-fit corners without overlaps */
-          .edge {
+          h2 {
             position: absolute;
-            overflow: hidden; /* ensures the fill doesn't overlap corners */
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            margin: 0;
+            padding: 8px;
+            z-index: 5;
+            text-align: center;
           }
-          .edge .edge-fill {
-            position: absolute;
-            background: linear-gradient(90deg, #FFD400, #FFA500);
-            box-shadow: 0 0 8px rgba(255, 212, 0, 0.8);
-          }
-          /* Top edge wrapper and fill - spans full width, owns both top corners */
-          .edge-top { top: 0; left: 0; right: 0; height: 3px; }
-          .edge-top .edge-fill { top: 0; left: 0; height: 3px; width: 0; }
-          /* Right edge - excludes top corner (owned by top edge), includes bottom-right corner */
-          .edge-right { top: 3px; bottom: 0; right: 0; width: 3px; }
-          .edge-right .edge-fill { top: 0; right: 0; width: 3px; height: 0; }
-          /* Bottom edge - spans full width, anchored at bottom-right, fills leftward */
+
+          .video-element {
           .edge-bottom { left: 0; right: 0; bottom: 0; height: 3px; }
           .edge-bottom .edge-fill { bottom: 0; right: 0; height: 3px; width: 0; }
           /* Left edge - excludes both top (owned by top) and bottom (owned by bottom) corners */

@@ -114,7 +114,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const hrDeviceUserMapRef = useRef(new Map());
   const governanceMetaRef = useRef({ mediaId: null, satisfiedOnce: false, deadline: null });
   const governanceTimerRef = useRef(null);
-  const governanceRequirementSummaryRef = useRef({ targetUserCount: null, requirements: [], activeCount: 0 });
+  const governanceRequirementSummaryRef = useRef({ policyId: null, targetUserCount: null, requirements: [], activeCount: 0 });
+  const governanceChallengeRef = useRef({
+    activePolicyId: null,
+    activePolicyName: null,
+    videoLocked: false,
+    nextChallengeAt: null,
+    nextChallengeRemainingMs: null,
+    nextChallenge: null,
+    activeChallenge: null,
+    challengeHistory: [],
+    forceStartRequest: null,
+    selectionCursor: {}
+  });
+  const governanceChallengeTimerRef = useRef(null);
   const [, forceVersion] = useState(0); // used to force re-render on treasure box coin mutation
   const scheduledUpdateRef = useRef(false); // debounce for mutation callback
   const fitnessSessionRef = useRef(new FitnessSession());
@@ -342,6 +355,22 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         clearTimeout(governanceTimerRef.current);
         governanceTimerRef.current = null;
       }
+      if (governanceChallengeTimerRef.current) {
+        clearTimeout(governanceChallengeTimerRef.current);
+        governanceChallengeTimerRef.current = null;
+      }
+      governanceChallengeRef.current = {
+        activePolicyId: null,
+        activePolicyName: null,
+        videoLocked: false,
+        nextChallengeAt: null,
+        nextChallengeRemainingMs: null,
+        nextChallenge: null,
+        activeChallenge: null,
+        challengeHistory: [],
+        forceStartRequest: null,
+        selectionCursor: {}
+      };
       governanceMetaRef.current = { mediaId, satisfiedOnce: false, deadline: null };
       updateGovernancePhase(null);
     }
@@ -351,6 +380,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (governanceTimerRef.current) {
       clearTimeout(governanceTimerRef.current);
       governanceTimerRef.current = null;
+    }
+    if (governanceChallengeTimerRef.current) {
+      clearTimeout(governanceChallengeTimerRef.current);
+      governanceChallengeTimerRef.current = null;
     }
   }, []);
   
@@ -816,6 +849,114 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const governedLabelSet = React.useMemo(() => new Set(normalizeLabelList(governedLabels)), [governedLabels]);
 
+  const governancePolicies = React.useMemo(() => {
+    const policiesRaw = governanceConfig?.policies;
+    if (!policiesRaw || typeof policiesRaw !== 'object') return [];
+
+    const normalized = [];
+    Object.entries(policiesRaw).forEach(([policyId, policyValue]) => {
+      if (!policyValue || typeof policyValue !== 'object') return;
+
+      const baseRequirementArray = Array.isArray(policyValue.base_requirement)
+        ? policyValue.base_requirement
+        : [];
+      const baseRequirement = baseRequirementArray.reduce((acc, entry) => {
+        if (entry && typeof entry === 'object') {
+          Object.entries(entry).forEach(([key, value]) => {
+            acc[key] = value;
+          });
+        }
+        return acc;
+      }, {});
+
+      const minParticipants = Number.isFinite(policyValue.min_participants)
+        ? Number(policyValue.min_participants)
+        : Number.isFinite(policyValue.minParticipants)
+          ? Number(policyValue.minParticipants)
+          : null;
+
+      const challengesRaw = Array.isArray(policyValue.challenges) ? policyValue.challenges : [];
+      const challenges = challengesRaw
+        .map((challengeValue, index) => {
+          if (!challengeValue || typeof challengeValue !== 'object') return null;
+
+          const intervalRaw = challengeValue.interval;
+          let minIntervalSeconds;
+          let maxIntervalSeconds;
+          if (Array.isArray(intervalRaw) && intervalRaw.length >= 2) {
+            minIntervalSeconds = Number(intervalRaw[0]);
+            maxIntervalSeconds = Number(intervalRaw[1]);
+          } else if (Number.isFinite(intervalRaw)) {
+            minIntervalSeconds = Number(intervalRaw);
+            maxIntervalSeconds = Number(intervalRaw);
+          }
+
+          if (!Number.isFinite(minIntervalSeconds) || minIntervalSeconds <= 0) {
+            minIntervalSeconds = 180;
+          }
+          if (!Number.isFinite(maxIntervalSeconds) || maxIntervalSeconds <= 0) {
+            maxIntervalSeconds = minIntervalSeconds;
+          }
+          if (maxIntervalSeconds < minIntervalSeconds) {
+            const temp = maxIntervalSeconds;
+            maxIntervalSeconds = minIntervalSeconds;
+            minIntervalSeconds = temp;
+          }
+
+          const selectionList = Array.isArray(challengeValue.selections) ? challengeValue.selections : [];
+          const selections = selectionList
+            .map((selectionValue, selectionIndex) => {
+              if (!selectionValue || typeof selectionValue !== 'object') return null;
+              const zone = selectionValue.zone || selectionValue.zoneId || selectionValue.zone_id;
+              if (!zone) return null;
+
+              const rule = selectionValue.min_participants ?? selectionValue.minParticipants ?? selectionValue.rule ?? 'all';
+              const timeAllowed = Number(selectionValue.time_allowed ?? selectionValue.timeAllowed);
+              if (!Number.isFinite(timeAllowed) || timeAllowed <= 0) return null;
+
+              const weight = Number(selectionValue.weight ?? 1);
+
+              return {
+                id: `${policyId}_${index}_${selectionIndex}`,
+                zone: String(zone),
+                rule,
+                timeAllowedSeconds: Math.max(1, Math.round(timeAllowed)),
+                weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
+                label: selectionValue.label || selectionValue.name || null
+              };
+            })
+            .filter(Boolean);
+
+          if (!selections.length) return null;
+
+          const challengeMinParticipants = Number(challengeValue.minParticipants ?? challengeValue.min_participants);
+
+          return {
+            id: `${policyId}_challenge_${index}`,
+            intervalRangeSeconds: [Math.round(minIntervalSeconds), Math.round(maxIntervalSeconds)],
+            minParticipants: Number.isFinite(challengeMinParticipants) && challengeMinParticipants >= 0
+              ? challengeMinParticipants
+              : null,
+            selectionType: typeof challengeValue.selection_type === 'string'
+              ? challengeValue.selection_type.toLowerCase()
+              : 'random',
+            selections
+          };
+        })
+        .filter(Boolean);
+
+      normalized.push({
+        id: policyId,
+        name: policyValue.name || policyId,
+        minParticipants,
+        baseRequirement,
+        challenges
+      });
+    });
+
+    return normalized;
+  }, [governanceConfig?.policies]);
+
   const activeParticipantNames = React.useMemo(() => {
     if (!heartRateDevices.length) return [];
     const deviceToUser = new Map();
@@ -1009,64 +1150,78 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       governanceTimerRef.current = null;
     }
 
+    const clearChallengeState = ({ preserveHistory = false } = {}) => {
+      if (governanceChallengeTimerRef.current) {
+        clearTimeout(governanceChallengeTimerRef.current);
+        governanceChallengeTimerRef.current = null;
+      }
+      const challengeState = governanceChallengeRef.current;
+      challengeState.nextChallengeAt = null;
+      challengeState.nextChallengeRemainingMs = null;
+      challengeState.nextChallenge = null;
+      challengeState.activeChallenge = null;
+      challengeState.videoLocked = false;
+      challengeState.forceStartRequest = null;
+      if (!preserveHistory) {
+        challengeState.activePolicyId = null;
+        challengeState.activePolicyName = null;
+        challengeState.selectionCursor = {};
+        challengeState.challengeHistory = [];
+      }
+    };
+
     const media = governanceMedia;
-    const setRequirementSummary = (targetCount, requirements) => {
+    const setRequirementSummary = (policy, requirements) => {
       governanceRequirementSummaryRef.current = {
-        targetUserCount: targetCount != null ? targetCount : null,
+        policyId: policy?.id ?? null,
+        targetUserCount: Number.isFinite(policy?.minParticipants) ? policy.minParticipants : null,
         requirements: Array.isArray(requirements) ? requirements : [],
         activeCount: activeParticipantNames.length
       };
     };
 
     if (!media || !media.id) {
+      governanceMetaRef.current.satisfiedOnce = false;
+      governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
       updateGovernancePhase(null);
       setRequirementSummary(null, []);
+      clearChallengeState();
       return;
     }
 
     if (!governedLabelSet.size) {
+      governanceMetaRef.current.satisfiedOnce = false;
+      governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
       updateGovernancePhase(null);
       setRequirementSummary(null, []);
+      clearChallengeState();
       return;
     }
 
     const hasGovernedLabel = media.labels.some((label) => governedLabelSet.has(label));
     if (!hasGovernedLabel) {
+      governanceMetaRef.current.satisfiedOnce = false;
+      governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
       updateGovernancePhase(null);
       setRequirementSummary(null, []);
+      clearChallengeState({ preserveHistory: true });
       return;
     }
 
     if (activeParticipantNames.length === 0) {
       governanceMetaRef.current.satisfiedOnce = false;
       governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
       updateGovernancePhase('init');
       setRequirementSummary(null, []);
+      clearChallengeState({ preserveHistory: true });
       return;
     }
 
-    const requirementSource = governanceConfig?.user_counts || {};
-    const activeUserCount = activeParticipantNames.length;
-    console.log('[Governance] Requirement source:', requirementSource);
-    console.log('[Governance] Active user count:', activeUserCount);
-    const sortedCounts = Object.keys(requirementSource)
-      .map((key) => Number(key))
-      .filter((num) => Number.isFinite(num))
-      .sort((a, b) => a - b);
-    console.log('[Governance] Sorted counts:', sortedCounts);
-    let matchedCount = null;
-    for (const count of sortedCounts) {
-      if (activeUserCount >= count) {
-        matchedCount = count;
-      }
-    }
-    if (matchedCount == null && sortedCounts.length > 0) {
-      matchedCount = sortedCounts[0];
-    }
-    console.log('[Governance] Final matched count:', matchedCount);
-    const requirementDefinition = matchedCount != null ? requirementSource[String(matchedCount)] : null;
-    console.log('[Governance] Looking up requirementSource[' + String(matchedCount) + ']:', requirementDefinition);
-
+    const totalCount = activeParticipantNames.length;
     const defaultGrace = Number.isFinite(governanceConfig?.grace_period_seconds)
       ? governanceConfig.grace_period_seconds
       : 0;
@@ -1102,89 +1257,66 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const userZoneMap = computeUserZones();
     const deriveZoneId = (name) => userZoneMap[name] || null;
 
-    console.log('[Governance] User zones:', userZoneMap);
-    console.log('[Governance] Active participants:', activeParticipantNames);
-    console.log('[Governance] Zone rank map:', zoneRankMap);
-    console.log('[Governance] Requirement definition:', requirementDefinition);
-    console.log('[Governance] Matched count:', matchedCount);
-
-    if (!requirementDefinition || typeof requirementDefinition !== 'object') {
-      console.error('[Governance] ERROR: No requirement definition found! Config may not be loaded.');
-      // Set to init (grey) with error - NEVER default to green
-      governanceMetaRef.current.satisfiedOnce = false;
-      governanceMetaRef.current.deadline = null;
-      updateGovernancePhase('init');
-      setRequirementSummary(matchedCount, []);
-      return;
-    }
-
-    const requirementEntries = Object.entries(requirementDefinition).filter(([key]) => key !== 'grace_period_seconds');
-
-    if (!requirementEntries.length) {
-      console.error('[Governance] ERROR: No requirement entries found!');
-      // Set to init (grey) - NEVER default to green without requirements
-      governanceMetaRef.current.satisfiedOnce = false;
-      governanceMetaRef.current.deadline = null;
-      updateGovernancePhase('init');
-      setRequirementSummary(matchedCount, []);
-      return;
-    }
-
-    const totalCount = activeParticipantNames.length;
-    const requirementSummaries = [];
-
     const normalizeRequiredCount = (rule) => {
-      if (typeof rule === 'number') {
-        return Math.min(Math.max(0, rule), totalCount);
+      if (typeof rule === 'number' && Number.isFinite(rule)) {
+        return Math.min(Math.max(0, Math.round(rule)), totalCount);
       }
-      switch (rule) {
-        case 'all':
-          return totalCount;
-        case 'most':
+      if (typeof rule === 'string') {
+        const normalized = rule.toLowerCase().trim();
+        if (normalized === 'all') return totalCount;
+        if (normalized === 'majority' || normalized === 'most') {
           return Math.max(1, Math.ceil(totalCount * 0.5));
-        case 'some':
+        }
+        if (normalized === 'some') {
           return Math.max(1, Math.ceil(totalCount * 0.3));
-        case 'any':
+        }
+        if (normalized === 'any') {
           return 1;
-        default:
-          return totalCount;
+        }
+        const numeric = Number(rule);
+        if (Number.isFinite(numeric)) {
+          return Math.min(Math.max(0, Math.round(numeric)), totalCount);
+        }
       }
+      return totalCount;
     };
 
     const describeRule = (rule, requiredCount) => {
-      if (typeof rule === 'number') {
+      if (typeof rule === 'number' && Number.isFinite(rule)) {
         return `${requiredCount} participant${requiredCount === 1 ? '' : 's'}`;
       }
-      switch (rule) {
-        case 'all':
-          return 'All participants';
-        case 'majority':
-          return `Majority (${requiredCount})`;
-        case 'most':
-          return `Most (${requiredCount})`;
-        case 'some':
-          return `Some (${requiredCount})`;
-        case 'any':
-          return 'Any participant';
-        default:
-          return String(rule);
+      if (typeof rule === 'string') {
+        const normalized = rule.toLowerCase().trim();
+        switch (normalized) {
+          case 'all':
+            return 'All participants';
+          case 'majority':
+            return `Majority (${requiredCount})`;
+          case 'most':
+            return `Most (${requiredCount})`;
+          case 'some':
+            return `Some (${requiredCount})`;
+          case 'any':
+            return 'Any participant';
+          default:
+            break;
+        }
       }
+      return `${requiredCount} participant${requiredCount === 1 ? '' : 's'}`;
     };
 
-    const evaluateRequirement = (zoneKey, rule) => {
+    const evaluateZoneRequirement = (zoneKey, rule) => {
       const zoneId = zoneKey ? String(zoneKey).toLowerCase() : null;
-      if (!zoneId) return false;
+      if (!zoneId) return null;
       const requiredRank = zoneRankMap[zoneId];
-      if (!Number.isFinite(requiredRank)) return false;
+      if (!Number.isFinite(requiredRank)) return null;
 
       const metUsers = [];
       activeParticipantNames.forEach((name) => {
         const participantZoneId = deriveZoneId(name);
-        // If no zone, treat as rank 0 (cool zone)
-        const participantRank = participantZoneId && Number.isFinite(zoneRankMap[participantZoneId]) 
-          ? zoneRankMap[participantZoneId] 
+        const participantRank = participantZoneId && Number.isFinite(zoneRankMap[participantZoneId])
+          ? zoneRankMap[participantZoneId]
           : 0;
-        
         if (participantRank >= requiredRank) {
           metUsers.push(name);
         }
@@ -1195,7 +1327,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       const missingUsers = activeParticipantNames.filter((name) => !metUsers.includes(name));
       const zoneInfo = zoneInfoMap[zoneId];
 
-      requirementSummaries.push({
+      return {
         zone: zoneId,
         zoneLabel: zoneInfo?.name || zoneId,
         rule,
@@ -1205,67 +1337,659 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         metUsers,
         missingUsers,
         satisfied
-      });
-
-      return satisfied;
+      };
     };
 
-    const allSatisfied = requirementEntries.every(([zoneKey, rule]) => evaluateRequirement(zoneKey, rule));
+    const evaluateRequirementSet = (requirementMap) => {
+      if (!requirementMap || typeof requirementMap !== 'object') {
+        return { summaries: [], allSatisfied: true };
+      }
+      const entries = Object.entries(requirementMap).filter(([key]) => key !== 'grace_period_seconds');
+      if (!entries.length) {
+        return { summaries: [], allSatisfied: true };
+      }
+      const summaries = [];
+      let allSatisfied = true;
+      entries.forEach(([zoneKey, rule]) => {
+        const summary = evaluateZoneRequirement(zoneKey, rule);
+        if (summary) {
+          summaries.push(summary);
+          if (!summary.satisfied) {
+            allSatisfied = false;
+          }
+        }
+      });
+      return { summaries, allSatisfied };
+    };
 
-    setRequirementSummary(matchedCount, requirementSummaries);
+    const chooseActivePolicy = () => {
+      if (!governancePolicies.length) return null;
+      let fallback = governancePolicies[0];
+      let chosen = null;
+      governancePolicies.forEach((policy) => {
+        const threshold = Number.isFinite(policy.minParticipants) ? policy.minParticipants : 0;
+        if (threshold <= totalCount) {
+          if (!chosen || threshold > (Number.isFinite(chosen.minParticipants) ? chosen.minParticipants : -1)) {
+            chosen = policy;
+          }
+        }
+        if (!fallback) {
+          fallback = policy;
+        } else {
+          const fallbackThreshold = Number.isFinite(fallback.minParticipants) ? fallback.minParticipants : Infinity;
+          if (Number.isFinite(policy.minParticipants) && policy.minParticipants < fallbackThreshold) {
+            fallback = policy;
+          }
+        }
+      });
+      return chosen || fallback;
+    };
 
-    console.log('[Governance] Evaluation result:', {
-      requirementEntries,
-      requirementSummaries,
-      allSatisfied,
-      satisfiedOnce: governanceMetaRef.current.satisfiedOnce
-    });
+    const activePolicy = chooseActivePolicy();
+    if (!activePolicy) {
+      governanceMetaRef.current.satisfiedOnce = false;
+      governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
+      updateGovernancePhase('init');
+      setRequirementSummary(null, []);
+      clearChallengeState({ preserveHistory: true });
+      return;
+    }
 
-    if (allSatisfied) {
+  const challengeState = governanceChallengeRef.current;
+  const forceStartRequest = challengeState.forceStartRequest || null;
+  const challengeForcesRed = Boolean(
+    challengeState.activeChallenge && challengeState.activeChallenge.status === 'failed'
+  );
+    const activePolicyId = activePolicy.id || null;
+    if (challengeState.activePolicyId !== activePolicyId) {
+      if (governanceChallengeTimerRef.current) {
+        clearTimeout(governanceChallengeTimerRef.current);
+        governanceChallengeTimerRef.current = null;
+      }
+      challengeState.activePolicyId = activePolicyId;
+      challengeState.activePolicyName = activePolicy.name || activePolicy.id || null;
+      challengeState.selectionCursor = {};
+      challengeState.activeChallenge = null;
+      challengeState.nextChallengeAt = null;
+      challengeState.nextChallengeRemainingMs = null;
+      challengeState.nextChallenge = null;
+      challengeState.videoLocked = false;
+    }
+
+    const baseRequirement = activePolicy.baseRequirement || {};
+    const { summaries: requirementSummaries, allSatisfied } = evaluateRequirementSet(baseRequirement);
+    setRequirementSummary(activePolicy, requirementSummaries);
+
+    const baseGraceSeconds = Number.isFinite(baseRequirement.grace_period_seconds)
+      ? baseRequirement.grace_period_seconds
+      : defaultGrace;
+
+    if (challengeForcesRed) {
+      if (governanceTimerRef.current) {
+        clearTimeout(governanceTimerRef.current);
+        governanceTimerRef.current = null;
+      }
+      governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
+      updateGovernancePhase('red');
+    } else if (allSatisfied) {
       governanceMetaRef.current.satisfiedOnce = true;
       governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
       updateGovernancePhase('green');
-      return;
-    }
-
-    if (!governanceMetaRef.current.satisfiedOnce) {
+    } else if (!governanceMetaRef.current.satisfiedOnce) {
       governanceMetaRef.current.deadline = null;
+      governanceMetaRef.current.gracePeriodTotal = null;
       updateGovernancePhase('init');
+    } else {
+      let graceSeconds = baseGraceSeconds;
+      if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
+        if (governanceTimerRef.current) {
+          clearTimeout(governanceTimerRef.current);
+          governanceTimerRef.current = null;
+        }
+        governanceMetaRef.current.deadline = null;
+        governanceMetaRef.current.gracePeriodTotal = null;
+        updateGovernancePhase('red');
+      } else {
+        const now = Date.now();
+        const existingDeadline = governanceMetaRef.current.deadline;
+        if (!Number.isFinite(existingDeadline) && governancePhase !== 'red') {
+          governanceMetaRef.current.deadline = now + graceSeconds * 1000;
+          governanceMetaRef.current.gracePeriodTotal = graceSeconds;
+        }
+        const activeDeadline = governanceMetaRef.current.deadline;
+        if (!Number.isFinite(activeDeadline)) {
+          if (governanceTimerRef.current) {
+            clearTimeout(governanceTimerRef.current);
+            governanceTimerRef.current = null;
+          }
+          governanceMetaRef.current.gracePeriodTotal = null;
+          updateGovernancePhase('red');
+        } else {
+          const remainingMs = activeDeadline - now;
+          if (remainingMs <= 0) {
+            if (governanceTimerRef.current) {
+              clearTimeout(governanceTimerRef.current);
+              governanceTimerRef.current = null;
+            }
+            governanceMetaRef.current.deadline = null;
+            governanceMetaRef.current.gracePeriodTotal = null;
+            updateGovernancePhase('red');
+          } else {
+            if (governanceTimerRef.current) {
+              clearTimeout(governanceTimerRef.current);
+            }
+            governanceTimerRef.current = setTimeout(() => {
+              setGovernancePulse((pulse) => pulse + 1);
+            }, remainingMs);
+            updateGovernancePhase('yellow');
+          }
+        }
+      }
+    }
+
+    const scheduleChallengePulse = (delayMs) => {
+      if (governanceChallengeTimerRef.current) {
+        clearTimeout(governanceChallengeTimerRef.current);
+        governanceChallengeTimerRef.current = null;
+      }
+      if (Number.isFinite(delayMs) && delayMs > 0) {
+        governanceChallengeTimerRef.current = setTimeout(() => {
+          setGovernancePulse((pulse) => pulse + 1);
+        }, delayMs);
+      }
+    };
+
+    const pickIntervalMs = (intervalRangeSeconds) => {
+      if (!Array.isArray(intervalRangeSeconds) || intervalRangeSeconds.length < 2) {
+        const single = Array.isArray(intervalRangeSeconds) ? intervalRangeSeconds[0] : intervalRangeSeconds;
+        const seconds = Number.isFinite(single) && single > 0 ? Number(single) : 180;
+        return Math.max(1, Math.round(seconds * 1000));
+      }
+      const rawMin = Number(intervalRangeSeconds[0]);
+      const rawMax = Number(intervalRangeSeconds[1]);
+      const minSec = Number.isFinite(rawMin) && rawMin > 0 ? rawMin : 180;
+      const maxSec = Number.isFinite(rawMax) && rawMax > minSec ? rawMax : minSec;
+      const chosenSec = minSec + Math.random() * (maxSec - minSec);
+      return Math.max(1, Math.round(chosenSec * 1000));
+    };
+
+    const challengeConfig = Array.isArray(activePolicy.challenges) && activePolicy.challenges.length
+      ? activePolicy.challenges[0]
+      : null;
+
+    if (!challengeConfig) {
+      challengeState.activeChallenge = null;
+      challengeState.nextChallengeAt = null;
+      challengeState.nextChallenge = null;
+      challengeState.videoLocked = false;
+      scheduleChallengePulse(null);
       return;
     }
 
-    let graceSeconds = defaultGrace;
-    if (Number.isFinite(requirementDefinition.grace_period_seconds)) {
-      graceSeconds = requirementDefinition.grace_period_seconds;
-    }
+    const challengeMinParticipants = Number.isFinite(challengeConfig.minParticipants) ? challengeConfig.minParticipants : null;
+    const eligibleForChallenge = challengeMinParticipants == null || totalCount >= challengeMinParticipants;
 
-    if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
-      governanceMetaRef.current.deadline = null;
-      governanceMetaRef.current.gracePeriodTotal = null;
-      updateGovernancePhase('red');
+    if (!eligibleForChallenge && !forceStartRequest) {
+      challengeState.nextChallengeAt = null;
+      challengeState.nextChallenge = null;
+      challengeState.activeChallenge = null;
+      challengeState.videoLocked = false;
+      scheduleChallengePulse(null);
       return;
     }
 
-    if (!governanceMetaRef.current.deadline) {
-      governanceMetaRef.current.deadline = Date.now() + graceSeconds * 1000;
-      governanceMetaRef.current.gracePeriodTotal = graceSeconds;
+  const nowTs = Date.now();
+  const isGreenPhase = governancePhase === 'green';
+
+    const buildChallengeSummary = (challenge) => {
+      if (!challenge) return null;
+      const summary = evaluateZoneRequirement(challenge.zone, challenge.rule);
+      if (!summary) return null;
+
+      const status = challenge.status;
+      const isPending = status === 'pending';
+      const isPaused = isPending && (!isGreenPhase || Boolean(challenge.pausedAt));
+      let remainingMs;
+      if (status === 'success') {
+        remainingMs = 0;
+      } else if (status === 'failed') {
+        remainingMs = 0;
+      } else if (isPaused) {
+        if (Number.isFinite(challenge.pausedRemainingMs)) {
+          remainingMs = Math.max(0, challenge.pausedRemainingMs);
+        } else if (Number.isFinite(challenge.pausedAt) && Number.isFinite(challenge.expiresAt)) {
+          remainingMs = Math.max(0, challenge.expiresAt - challenge.pausedAt);
+        } else if (Number.isFinite(challenge.expiresAt)) {
+          remainingMs = Math.max(0, challenge.expiresAt - nowTs);
+        } else {
+          remainingMs = 0;
+        }
+      } else {
+        remainingMs = Math.max(0, challenge.expiresAt - nowTs);
+      }
+
+      if (isPaused && (!Number.isFinite(challenge.pausedRemainingMs) || challenge.pausedRemainingMs < 0)) {
+        challenge.pausedRemainingMs = remainingMs;
+      }
+
+      return {
+        ...summary,
+        remainingSeconds: Math.max(0, Math.ceil(remainingMs / 1000)),
+        totalSeconds: challenge.timeLimitSeconds,
+        status,
+        startedAt: challenge.startedAt,
+        completedAt: challenge.completedAt || null,
+        expiresAt: challenge.expiresAt,
+        selectionLabel: challenge.selectionLabel || null,
+        paused: isPaused
+      };
+    };
+
+    const getSelectionPool = () => {
+      const selectionList = Array.isArray(challengeConfig.selections) ? challengeConfig.selections : [];
+      if (!selectionList.length) return [];
+      let candidates = selectionList.filter((selection) => {
+        const requiredCount = normalizeRequiredCount(selection.rule);
+        return Number.isFinite(requiredCount) && requiredCount > 0 && requiredCount <= totalCount;
+      });
+      if (!candidates.length) {
+        candidates = selectionList;
+      }
+      return candidates;
+    };
+
+    const chooseSelectionPayload = () => {
+      const pool = getSelectionPool();
+      if (!pool.length) return null;
+
+      let chosenSelection = null;
+      let cursorIndex = null;
+
+      if (challengeConfig.selectionType === 'cyclic') {
+        const cursorKey = challengeConfig.id;
+        const previous = Number.isFinite(challengeState.selectionCursor[cursorKey])
+          ? challengeState.selectionCursor[cursorKey]
+          : -1;
+        const nextIndex = (previous + 1) % pool.length;
+        chosenSelection = pool[nextIndex];
+        cursorIndex = nextIndex;
+      } else {
+        const totalWeight = pool.reduce((sum, selection) => sum + (selection.weight || 1), 0);
+        let pick = Math.random() * (totalWeight || 1);
+        for (const selection of pool) {
+          pick -= selection.weight || 1;
+          if (pick <= 0) {
+            chosenSelection = selection;
+            break;
+          }
+        }
+        if (!chosenSelection) {
+          chosenSelection = pool[pool.length - 1];
+        }
+      }
+
+      if (!chosenSelection) return null;
+
+      const requiredCount = normalizeRequiredCount(chosenSelection.rule);
+      if (!Number.isFinite(requiredCount) || requiredCount <= 0) {
+        return null;
+      }
+
+      return {
+        selection: chosenSelection,
+        cursorIndex,
+        requiredCount
+      };
+    };
+
+    const assignNextChallengePreview = (scheduledForTs, payload) => {
+      if (!payload || !payload.selection) {
+        challengeState.nextChallenge = null;
+        return null;
+      }
+      const challengeZone = payload.selection.zone ? String(payload.selection.zone).toLowerCase() : null;
+      const timeLimitSeconds = Number.isFinite(payload.selection.timeAllowedSeconds) && payload.selection.timeAllowedSeconds > 0
+        ? Math.round(payload.selection.timeAllowedSeconds)
+        : 60;
+
+      challengeState.nextChallenge = {
+        configId: challengeConfig.id,
+        selectionId: payload.selection.id,
+        selectionLabel: payload.selection.label || null,
+        zone: challengeZone,
+        rule: payload.selection.rule,
+        requiredCount: payload.requiredCount,
+        timeLimitSeconds,
+        cursorIndex: payload.cursorIndex ?? null,
+        scheduledFor: scheduledForTs
+      };
+      return challengeState.nextChallenge;
+    };
+
+    const ensureNextChallengePreview = ({ scheduledFor } = {}) => {
+      const baseTarget = Number.isFinite(scheduledFor)
+        ? scheduledFor
+        : Number.isFinite(challengeState.nextChallengeAt)
+          ? challengeState.nextChallengeAt
+          : Number.isFinite(challengeState.nextChallengeRemainingMs)
+            ? nowTs + challengeState.nextChallengeRemainingMs
+            : null;
+      const targetTs = Number.isFinite(baseTarget) ? baseTarget : null;
+      const isGreenPhase = governancePhase === 'green';
+      if (!Number.isFinite(targetTs)) {
+        challengeState.nextChallenge = null;
+        return false;
+      }
+
+      if (targetTs <= nowTs && !isGreenPhase) {
+        challengeState.nextChallenge = null;
+        return false;
+      }
+
+      const existing = challengeState.nextChallenge;
+      if (
+        existing &&
+        existing.configId === challengeConfig.id &&
+        Math.abs((existing.scheduledFor ?? targetTs) - targetTs) < 5 &&
+        Number.isFinite(existing.requiredCount) &&
+        existing.requiredCount > 0 &&
+        existing.requiredCount <= totalCount
+      ) {
+        return true;
+      }
+
+      const payload = chooseSelectionPayload();
+      if (!payload) {
+        challengeState.nextChallenge = null;
+        return false;
+      }
+
+      assignNextChallengePreview(targetTs, payload);
+      return true;
+    };
+
+    const queueNextChallenge = (delayMs) => {
+      const normalizedDelay = Number.isFinite(delayMs) && delayMs > 0 ? Math.max(50, Math.round(delayMs)) : 1000;
+      const scheduledFor = nowTs + normalizedDelay;
+      challengeState.nextChallengeAt = scheduledFor;
+      challengeState.nextChallengeRemainingMs = normalizedDelay;
+      if (!ensureNextChallengePreview({ scheduledFor })) {
+        challengeState.nextChallengeAt = null;
+        challengeState.nextChallengeRemainingMs = null;
+        scheduleChallengePulse(null);
+        return false;
+      }
+      scheduleChallengePulse(Math.max(50, scheduledFor - nowTs));
+      return true;
+    };
+
+    const startChallenge = (options = {}) => {
+      const { previewOverride = null, forced = false } = options;
+
+      let preview = null;
+      if (previewOverride) {
+        preview = assignNextChallengePreview(nowTs, previewOverride);
+      } else if (challengeState.nextChallenge && challengeState.nextChallenge.configId === challengeConfig.id) {
+        preview = challengeState.nextChallenge;
+      } else {
+        const payload = chooseSelectionPayload();
+        preview = assignNextChallengePreview(nowTs, payload);
+      }
+
+      if (!preview) {
+        challengeState.forceStartRequest = null;
+        scheduleChallengePulse(null);
+        return false;
+      }
+
+      const timeLimitSeconds = Number.isFinite(preview.timeLimitSeconds) && preview.timeLimitSeconds > 0
+        ? Math.round(preview.timeLimitSeconds)
+        : 60;
+      const startedAt = nowTs;
+      const expiresAt = startedAt + timeLimitSeconds * 1000;
+      const requiredCount = Number.isFinite(preview.requiredCount) && preview.requiredCount > 0
+        ? preview.requiredCount
+        : normalizeRequiredCount(preview.rule);
+
+      challengeState.activeChallenge = {
+        id: `${challengeConfig.id}_${startedAt}`,
+        policyId: activePolicyId,
+        policyName: challengeState.activePolicyName,
+        configId: challengeConfig.id,
+        selectionId: preview.selectionId,
+        selectionLabel: preview.selectionLabel || null,
+        zone: preview.zone,
+        rule: preview.rule,
+        requiredCount,
+        timeLimitSeconds,
+        startedAt,
+        expiresAt,
+        status: 'pending',
+        historyRecorded: false,
+        summary: null,
+        pausedAt: null,
+        pausedRemainingMs: null
+      };
+      challengeState.nextChallenge = null;
+      challengeState.nextChallengeAt = null;
+      challengeState.nextChallengeRemainingMs = null;
+      challengeState.videoLocked = false;
+
+      if (challengeConfig.selectionType === 'cyclic' && Number.isInteger(preview.cursorIndex)) {
+        challengeState.selectionCursor[challengeConfig.id] = preview.cursorIndex;
+      }
+
+      challengeState.forceStartRequest = null;
+      scheduleChallengePulse(Math.max(50, expiresAt - startedAt));
+      return true;
+    };
+
+    if (challengeState.activeChallenge) {
+      if (forceStartRequest) {
+        challengeState.activeChallenge = null;
+        challengeState.videoLocked = false;
+      } else {
+        const challenge = challengeState.activeChallenge;
+        if (challenge.status === 'pending') {
+          if (!isGreenPhase) {
+            if (!challenge.pausedAt) {
+              challenge.pausedAt = nowTs;
+              challenge.pausedRemainingMs = Math.max(0, challenge.expiresAt - nowTs);
+            }
+            challenge.summary = buildChallengeSummary(challenge);
+            scheduleChallengePulse(500);
+            return;
+          }
+
+          if (challenge.pausedAt) {
+            const resumeRemainingMs = Number.isFinite(challenge.pausedRemainingMs)
+              ? Math.max(0, challenge.pausedRemainingMs)
+              : Math.max(0, challenge.expiresAt - challenge.pausedAt);
+            challenge.expiresAt = nowTs + resumeRemainingMs;
+            challenge.pausedAt = null;
+            challenge.pausedRemainingMs = null;
+          }
+
+          challenge.summary = buildChallengeSummary(challenge);
+
+          if (challenge.summary?.satisfied) {
+            challenge.status = 'success';
+            challenge.completedAt = nowTs;
+            challenge.pausedAt = null;
+            challenge.pausedRemainingMs = null;
+            challenge.summary = buildChallengeSummary(challenge);
+            if (!challenge.historyRecorded) {
+              challengeState.challengeHistory.push({
+                id: challenge.id,
+                status: 'success',
+                zone: challenge.zone,
+                zoneLabel: challenge.summary?.zoneLabel || null,
+                rule: challenge.rule,
+                requiredCount: challenge.requiredCount,
+                startedAt: challenge.startedAt,
+                completedAt: challenge.completedAt,
+                selectionLabel: challenge.selectionLabel || null
+              });
+              if (challengeState.challengeHistory.length > 20) {
+                challengeState.challengeHistory.splice(0, challengeState.challengeHistory.length - 20);
+              }
+              challenge.historyRecorded = true;
+            }
+            challengeState.videoLocked = false;
+            const nextDelay = pickIntervalMs(challengeConfig.intervalRangeSeconds);
+            queueNextChallenge(nextDelay);
+            scheduleChallengePulse(50);
+            return;
+          } else if (nowTs >= challenge.expiresAt) {
+            challenge.status = 'failed';
+            challenge.completedAt = null;
+            challenge.pausedAt = null;
+            challenge.pausedRemainingMs = null;
+            challenge.summary = buildChallengeSummary(challenge);
+            challengeState.videoLocked = true;
+            challengeState.nextChallenge = null;
+            challengeState.nextChallengeAt = null;
+            challengeState.nextChallengeRemainingMs = null;
+            if (governanceTimerRef.current) {
+              clearTimeout(governanceTimerRef.current);
+              governanceTimerRef.current = null;
+            }
+            governanceMetaRef.current.deadline = null;
+            governanceMetaRef.current.gracePeriodTotal = null;
+            updateGovernancePhase('red');
+            scheduleChallengePulse(500);
+            return;
+          } else {
+            scheduleChallengePulse(Math.max(50, challenge.expiresAt - nowTs));
+            return;
+          }
+        } else {
+          challenge.pausedAt = null;
+          challenge.pausedRemainingMs = null;
+          challenge.summary = buildChallengeSummary(challenge);
+
+          if (challenge.status === 'success') {
+            const completedAt = challenge.completedAt || nowTs;
+            const remainingFlash = Math.max(0, 2000 - (nowTs - completedAt));
+            if (remainingFlash > 0) {
+              scheduleChallengePulse(Math.max(50, remainingFlash));
+            } else {
+              challengeState.activeChallenge = null;
+              scheduleChallengePulse(50);
+            }
+            return;
+          }
+
+          if (challenge.status === 'failed') {
+            if (challenge.summary?.satisfied) {
+              challenge.status = 'success';
+              challenge.completedAt = nowTs;
+              challenge.summary = buildChallengeSummary(challenge);
+              challengeState.videoLocked = false;
+              if (!challenge.historyRecorded) {
+                challengeState.challengeHistory.push({
+                  id: challenge.id,
+                  status: 'success',
+                  zone: challenge.zone,
+                  zoneLabel: challenge.summary?.zoneLabel || null,
+                  rule: challenge.rule,
+                  requiredCount: challenge.requiredCount,
+                  startedAt: challenge.startedAt,
+                  completedAt: challenge.completedAt,
+                  selectionLabel: challenge.selectionLabel || null
+                });
+                if (challengeState.challengeHistory.length > 20) {
+                  challengeState.challengeHistory.splice(0, challengeState.challengeHistory.length - 20);
+                }
+                challenge.historyRecorded = true;
+              }
+              const nextDelay = pickIntervalMs(challengeConfig.intervalRangeSeconds);
+              queueNextChallenge(nextDelay);
+              scheduleChallengePulse(50);
+            } else {
+              challengeState.videoLocked = true;
+              scheduleChallengePulse(500);
+            }
+            return;
+          }
+
+          if (challengeState.nextChallengeAt != null) {
+            ensureNextChallengePreview({});
+            if (nowTs >= challengeState.nextChallengeAt) {
+              challengeState.activeChallenge = null;
+              challengeState.nextChallengeAt = null;
+              if (!startChallenge()) {
+                const fallbackDelay = pickIntervalMs(challengeConfig.intervalRangeSeconds);
+                queueNextChallenge(fallbackDelay);
+              }
+            } else {
+              scheduleChallengePulse(Math.max(50, challengeState.nextChallengeAt - nowTs));
+            }
+          } else {
+            challengeState.activeChallenge = null;
+            scheduleChallengePulse(null);
+          }
+        }
+        return;
+      }
     }
 
-    const remainingMs = governanceMetaRef.current.deadline - Date.now();
+    const shouldForceStart = Boolean(forceStartRequest);
+    const forcePreviewPayload = shouldForceStart && forceStartRequest?.payload && typeof forceStartRequest.payload === 'object'
+      ? { ...forceStartRequest.payload }
+      : null;
 
-    if (remainingMs <= 0) {
-      // Grace period expired - stay in red, don't restart the timer
-      governanceMetaRef.current.gracePeriodTotal = null;
-      updateGovernancePhase('red');
+    if (!isGreenPhase && !shouldForceStart) {
+      if (Number.isFinite(challengeState.nextChallengeAt)) {
+        challengeState.nextChallengeRemainingMs = Math.max(0, challengeState.nextChallengeAt - nowTs);
+        challengeState.nextChallengeAt = null;
+      }
+      scheduleChallengePulse(null);
       return;
     }
 
-    governanceTimerRef.current = setTimeout(() => {
-      setGovernancePulse((pulse) => pulse + 1);
-    }, remainingMs);
+    if (shouldForceStart) {
+      const started = startChallenge({ previewOverride: forcePreviewPayload, forced: true });
+      if (!started && !isGreenPhase) {
+        scheduleChallengePulse(1000);
+      }
+      return;
+    }
 
-    updateGovernancePhase('yellow');
-  }, [governanceMedia, governedLabelSet, governanceConfig, activeParticipantNames, zoneRankMap, colorToZoneId, governancePulse, updateGovernancePhase]);
+    if (challengeState.nextChallengeAt == null && Number.isFinite(challengeState.nextChallengeRemainingMs) && challengeState.nextChallengeRemainingMs > 0) {
+      challengeState.nextChallengeAt = nowTs + challengeState.nextChallengeRemainingMs;
+      challengeState.nextChallengeRemainingMs = null;
+    }
+
+    if (challengeState.nextChallengeAt == null) {
+      const delayMs = pickIntervalMs(challengeConfig.intervalRangeSeconds);
+      if (!queueNextChallenge(delayMs)) {
+        return;
+      }
+    } else if (!ensureNextChallengePreview({})) {
+      const delayMs = pickIntervalMs(challengeConfig.intervalRangeSeconds);
+      if (!queueNextChallenge(delayMs)) {
+        return;
+      }
+    }
+
+    if (challengeState.nextChallengeAt != null) {
+      if (nowTs >= challengeState.nextChallengeAt) {
+        if (!startChallenge()) {
+          const retryDelay = pickIntervalMs(challengeConfig.intervalRangeSeconds);
+          queueNextChallenge(retryDelay);
+        }
+      } else {
+        ensureNextChallengePreview({});
+        scheduleChallengePulse(Math.max(50, challengeState.nextChallengeAt - nowTs));
+      }
+    } else {
+      scheduleChallengePulse(null);
+    }
+  }, [governanceMedia, governedLabelSet, governanceConfig, activeParticipantNames, zoneRankMap, colorToZoneId, governancePulse, governancePhase, updateGovernancePhase, governancePolicies]);
 
   const isGovernedMedia = React.useMemo(() => {
     if (!governanceMedia || !governanceMedia.labels || !governanceMedia.labels.length) return false;
@@ -1280,17 +2004,127 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return Math.max(0, Math.round(msRemaining / 1000));
   })();
 
-  const governanceState = React.useMemo(() => ({
-    isGoverned: isGovernedMedia,
-    status: governancePhase || 'idle',
-    labels: Array.isArray(governanceMedia?.labels) ? governanceMedia.labels : [],
-    requirements: governanceRequirementSummaryRef.current.requirements || [],
-    targetUserCount: governanceRequirementSummaryRef.current.targetUserCount,
-    activeUserCount: governanceRequirementSummaryRef.current.activeCount,
-    watchers: activeParticipantNames,
-    countdownSecondsRemaining: governanceCountdownSeconds,
-    gracePeriodTotal: governanceMetaRef.current?.gracePeriodTotal || 30
-  }), [isGovernedMedia, governancePhase, governanceMedia?.labels, activeParticipantNames, governanceCountdownSeconds, governancePulse]);
+  const governanceState = React.useMemo(() => {
+    const summaryRef = governanceRequirementSummaryRef.current || {};
+    const challengeState = governanceChallengeRef.current || {};
+    const activeChallenge = challengeState.activeChallenge || null;
+    const challengeSummary = activeChallenge?.summary || null;
+    const statusIsGreen = governancePhase === 'green';
+    const challengePaused = Boolean(
+      (challengeSummary && challengeSummary.paused) ||
+      (activeChallenge && activeChallenge.status === 'pending' && (!statusIsGreen || activeChallenge.pausedAt))
+    );
+    const challengeHistory = Array.isArray(challengeState.challengeHistory)
+      ? challengeState.challengeHistory.slice(-10)
+      : [];
+    const nextChallengePreview = challengeState.nextChallenge || null;
+
+    const pausedRemainingMs = challengePaused && Number.isFinite(activeChallenge?.pausedRemainingMs)
+      ? Math.max(0, activeChallenge.pausedRemainingMs)
+      : null;
+
+    const challengeRemainingSeconds = (() => {
+      if (challengePaused && pausedRemainingMs != null) {
+        return Math.max(0, Math.ceil(pausedRemainingMs / 1000));
+      }
+      if (challengePaused && Number.isFinite(activeChallenge?.pausedAt) && Number.isFinite(activeChallenge?.expiresAt)) {
+        return Math.max(0, Math.ceil((activeChallenge.expiresAt - activeChallenge.pausedAt) / 1000));
+      }
+      if (challengeSummary?.remainingSeconds != null) {
+        return Math.max(0, challengeSummary.remainingSeconds);
+      }
+      if (activeChallenge?.status === 'pending' && Number.isFinite(activeChallenge?.expiresAt)) {
+        return Math.max(0, Math.ceil((activeChallenge.expiresAt - Date.now()) / 1000));
+      }
+      return null;
+    })();
+
+    const challengeTotalSeconds = challengeSummary?.totalSeconds ?? (activeChallenge?.timeLimitSeconds ?? null);
+
+    let nextChallengeSummary = null;
+    if (nextChallengePreview) {
+      const scheduledFor = Number.isFinite(challengeState.nextChallengeAt)
+        ? challengeState.nextChallengeAt
+        : Number.isFinite(challengeState.nextChallengeRemainingMs)
+          ? Date.now() + challengeState.nextChallengeRemainingMs
+          : nextChallengePreview.scheduledFor;
+      if (Number.isFinite(scheduledFor)) {
+        let remainingSeconds = null;
+        if (statusIsGreen) {
+          const remainingSecondsRaw = Math.ceil((scheduledFor - Date.now()) / 1000);
+          remainingSeconds = Number.isFinite(remainingSecondsRaw)
+            ? Math.max(0, remainingSecondsRaw)
+            : null;
+        } else if (Number.isFinite(challengeState.nextChallengeRemainingMs)) {
+          remainingSeconds = Math.max(0, Math.ceil(challengeState.nextChallengeRemainingMs / 1000));
+        }
+        nextChallengeSummary = {
+          selectionLabel: nextChallengePreview.selectionLabel || null,
+          zone: nextChallengePreview.zone,
+          rule: nextChallengePreview.rule,
+          requiredCount: nextChallengePreview.requiredCount,
+          timeLimitSeconds: nextChallengePreview.timeLimitSeconds ?? null,
+          remainingSeconds,
+          scheduledFor
+        };
+      }
+    }
+
+    const gracePeriodTotal = Number.isFinite(governanceMetaRef.current?.gracePeriodTotal)
+      ? governanceMetaRef.current?.gracePeriodTotal
+      : (Number.isFinite(governanceConfig?.grace_period_seconds) ? governanceConfig.grace_period_seconds : 30);
+
+    return {
+      isGoverned: isGovernedMedia,
+      status: governancePhase || 'idle',
+      labels: Array.isArray(governanceMedia?.labels) ? governanceMedia.labels : [],
+      requirements: summaryRef.requirements || [],
+      targetUserCount: summaryRef.targetUserCount,
+      policyId: summaryRef.policyId || null,
+      policyName: challengeState.activePolicyName || summaryRef.policyId || null,
+      activeUserCount: summaryRef.activeCount,
+      watchers: activeParticipantNames,
+      countdownSecondsRemaining: governanceCountdownSeconds,
+      gracePeriodTotal,
+      videoLocked: Boolean(challengeState.videoLocked),
+      challengePaused,
+      challenge: activeChallenge
+        ? {
+            id: activeChallenge.id,
+            status: activeChallenge.status,
+            zone: challengeSummary?.zone || activeChallenge.zone,
+            zoneLabel: challengeSummary?.zoneLabel || activeChallenge.zone,
+            requiredCount: activeChallenge.requiredCount,
+            actualCount: challengeSummary?.actualCount ?? null,
+            metUsers: challengeSummary?.metUsers ?? [],
+            missingUsers: challengeSummary?.missingUsers ?? [],
+            remainingSeconds: challengeRemainingSeconds,
+            totalSeconds: challengeTotalSeconds,
+            startedAt: activeChallenge.startedAt,
+            expiresAt: activeChallenge.expiresAt,
+            selectionLabel: activeChallenge.selectionLabel || null,
+            paused: challengePaused
+          }
+        : null,
+      challengeHistory,
+      challengeCountdownSeconds: challengeRemainingSeconds,
+      challengeCountdownTotal: challengeTotalSeconds,
+      nextChallenge: nextChallengeSummary
+    };
+  }, [isGovernedMedia, governancePhase, governanceMedia?.labels, activeParticipantNames, governanceCountdownSeconds, governancePulse, governanceConfig?.grace_period_seconds]);
+
+  const triggerChallengeNow = React.useCallback((overridePayload = null) => {
+    if (!governanceMedia?.id || !governanceState?.isGoverned) {
+      return false;
+    }
+    const challengeState = governanceChallengeRef.current;
+    challengeState.forceStartRequest = {
+      requestedAt: Date.now(),
+      payload: overridePayload && typeof overridePayload === 'object' ? { ...overridePayload } : null
+    };
+    setGovernancePulse((pulse) => pulse + 1);
+    return true;
+  }, [governanceMedia?.id, governanceState?.isGoverned]);
   
   // Context value
   const value = {
@@ -1384,6 +2218,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governance: governancePhase,
     governanceState,
     setGovernanceMedia,
+  triggerChallengeNow,
     
     // Categorized device arrays
     heartRateDevices,
