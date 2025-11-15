@@ -138,17 +138,16 @@ dash-video {
         border-radius: 50%;
         overflow: hidden;
         background: #222;
-        border: 5px solid #333; /* default fallback */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        img { width: 100%; height: 100%; object-fit: cover; }
-        /* Transition so zone changes animate subtly */
-        transition: border-color .25s ease, box-shadow .25s ease;
-        &.zone-cool   { border-color: var(--zone-cool-color, #1e3a8a); box-shadow: 0 0 0 2px rgba(59,130,246,0.35); }
-        &.zone-active { border-color: var(--zone-active-color, #059669); box-shadow: 0 0 0 2px rgba(16,185,129,0.35); }
-        &.zone-warm   { border-color: var(--zone-warm-color, #ca8a04); box-shadow: 0 0 0 2px rgba(234,179,8,0.35); }
-        &.zone-hot    { border-color: var(--zone-hot-color, #ea580c); box-shadow: 0 0 0 2px rgba(234,88,12,0.4); }
+          flex: 1 0 calc(20% - 4px); /* 5 per row typical */
+          max-width: none;
+          height: 100%;
+          .thumbnail-wrapper {
+            height: 100%;
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            overflow: hidden;
+          }
         &.zone-fire   { border-color: var(--zone-fire-color, #dc2626); box-shadow: 0 0 0 2px rgba(220,38,38,0.45); }
         &.no-zone     { border-color: #333; box-shadow:none; }
       }
@@ -1230,10 +1229,11 @@ dash-video {
         width: 100%;
         height: 100%; /* 16:9 aspect ratio */
         border-radius: 3px;
-  overflow: hidden;
-  z-index: 1;
-        background-color: #222;
-        border: 1px solid #333;
+          overflow: hidden;
+          display: flex;
+          align-items: stretch;
+          justify-content: center;
+        }
         
         .seek-thumbnail {
           width: 100%;
@@ -1291,66 +1291,66 @@ dash-video {
           height: calc(100% + 6px);
           pointer-events: none;
           z-index: 20;
-          
-          /* New edge wrappers to perfectly puzzle-fit corners without overlaps */
-          h2 {
-            position: absolute;
-            bottom: 0;
-            left: 0;
+  
+          &__svg {
+            display: block;
             width: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            margin: 0;
-            padding: 8px;
-            z-index: 5;
-            text-align: center;
+            height: 100%;
           }
-
-          .edge-top { top: 0; left: 0; right: 0; height: 3px; }
-          .edge-top .edge-fill { top: 0; left: 0; height: 3px; width: 0; }
-
-          .edge-right { top: 3px; bottom: 0; right: 0; width: 3px; }
-          .edge-right .edge-fill { top: 0; right: 0; width: 3px; height: 0; }
-
-          .edge-bottom { left: 0; right: 0; bottom: 0; height: 3px; }
-          .edge-bottom .edge-fill { bottom: 0; right: 0; height: 3px; width: 0; }
-          /* Left edge - excludes both top (owned by top) and bottom (owned by bottom) corners */
-          .edge-left { top: 3px; bottom: 3px; left: 0; width: 3px; }
-          .edge-left .edge-fill { bottom: 0; left: 0; width: 3px; height: 0; }
-
-          .progress-spark {
+  
+          &__track {
+            fill: none;
+            stroke: rgba(255, 212, 0, 0.28);
+            stroke-width: 3;
+            vector-effect: non-scaling-stroke;
+          }
+  
+          &__fill {
+            fill: none;
+            stroke: #ffd400;
+            stroke-width: 3;
+            vector-effect: non-scaling-stroke;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.18s linear;
+            filter: drop-shadow(0 0 6px rgba(255, 212, 0, 0.45));
+          }
+  
+          &__spark {
             position: absolute;
-            width: 10px;
-            height: 10px;
-            margin: 0; /* removed centering margin - positioning handled in JS */
-            transform: translate(-50%, -50%); /* center the spark on the position */
+            width: 14px;
+            height: 14px;
+            transform: translate(-50%, -50%);
             display: flex;
             align-items: center;
             justify-content: center;
             pointer-events: none;
-            z-index: 30;
             animation: spark-glow 0.9s ease-in-out infinite;
+            filter: drop-shadow(0 0 12px rgba(255, 212, 0, 0.6));
           }
-          .progress-spark .spark-core {
-            width: 4px;
-            height: 4px;
+  
+          &__spark .spark-core {
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
-            background: radial-gradient(circle at 40% 40%, #fff, #ffe89a 55%, rgba(255,212,0,0.1) 75%, transparent 100%);
+            background: radial-gradient(circle at 40% 40%, #fff, #ffe89a 55%, rgba(255,212,0,0.18) 75%, transparent 100%);
             box-shadow:
-              0 0 4px 2px rgba(255,255,255,0.9),
-              0 0 10px 3px rgba(255,212,0,0.8),
-              0 0 18px 6px rgba(255,165,0,0.45);
+              0 0 6px 2px rgba(255, 255, 255, 0.88),
+              0 0 14px 4px rgba(255, 212, 0, 0.85),
+              0 0 22px 8px rgba(255, 165, 0, 0.5);
             animation: spark-pulse 0.6s ease-in-out infinite;
           }
+  
           @keyframes spark-pulse {
             0%, 100% { transform: scale(0.85); opacity: 0.95; }
-            50% { transform: scale(1.1); opacity: 1; }
+            50% { transform: scale(1.12); opacity: 1; }
           }
+  
           @keyframes spark-glow {
-            0%,100% { filter: brightness(1); }
-            50% { filter: brightness(1.25); }
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.3); }
           }
         }
-
+        
         /* Hover removed for thumbnails */
       }
       
@@ -1363,9 +1363,7 @@ dash-video {
         }
       }
     }
-    
-    /* Removed mobile-specific styling since this is a TV app */
-  }
+
 
   /* Stack mode: when thumbnails too skinny, reflow footer */
   .fitness-player-footer.stack-mode {
@@ -1386,21 +1384,26 @@ dash-video {
       .seek-thumbnails {
         display: flex;
         flex-wrap: wrap;
-        row-gap: 6px;
-
+        row-gap: 1ex;
         column-gap: 4px;
         justify-content: flex-start;
-        align-content: flex-start;
+        align-content: space-between;
+        align-items: stretch;
         height: 100%;
         max-height: none;
+        padding-bottom: 1ex;
       }
       .seek-button-container {
         flex: 1 0 calc(20% - 4px); /* 5 per row typical */
         max-width: none;
-        aspect-ratio: 16 / 9;
+        aspect-ratio: 9 / 12;
         height: auto;
         .thumbnail-wrapper {
           height: 100%;
+          display: flex;
+          align-items: stretch;
+          justify-content: center;
+          overflow: hidden;
         }
       }
     }
