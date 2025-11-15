@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
@@ -35,7 +35,8 @@ export function AudioPlayer({
     containerRef,
     isPaused,
     isSeeking,
-    handleProgressClick
+    handleProgressClick,
+    setControllerExtras
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -70,7 +71,7 @@ export function AudioPlayer({
     [resilienceConfig, media?.mediaResilienceConfig]
   );
 
-  const { overlayProps } = useMediaResilience({
+  const { overlayProps, controller: resilienceController } = useMediaResilience({
     getMediaEl: () => containerRef.current,
     meta: media,
     seconds,
@@ -99,6 +100,15 @@ export function AudioPlayer({
       shader
     }
   });
+
+  useEffect(() => {
+    if (!setControllerExtras) return;
+    if (resilienceController) {
+      setControllerExtras({ resilience: resilienceController });
+    } else {
+      setControllerExtras(null);
+    }
+  }, [resilienceController, setControllerExtras]);
 
   return (
     <div className={`audio-player ${shader}`}>

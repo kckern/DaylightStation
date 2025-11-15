@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
@@ -39,7 +39,8 @@ export function VideoPlayer({
     isPaused,
     duration,
     isSeeking,
-    handleProgressClick
+    handleProgressClick,
+    setControllerExtras
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -121,7 +122,7 @@ export function VideoPlayer({
     [resilienceConfig, media?.mediaResilienceConfig]
   );
 
-  const { overlayProps } = useMediaResilience({
+  const { overlayProps, controller: resilienceController } = useMediaResilience({
     getMediaEl: getCurrentMediaElement,
     meta: media,
     seconds,
@@ -150,6 +151,15 @@ export function VideoPlayer({
       shader
     }
   });
+
+  useEffect(() => {
+    if (!setControllerExtras) return;
+    if (resilienceController) {
+      setControllerExtras({ resilience: resilienceController });
+    } else {
+      setControllerExtras(null);
+    }
+  }, [resilienceController, setControllerExtras]);
 
   return (
     <div className={`video-player ${shader}`}>
