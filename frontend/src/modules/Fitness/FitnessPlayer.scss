@@ -1305,7 +1305,12 @@ dash-video {
             text-align: center;
           }
 
-          .video-element {
+          .edge-top { top: 0; left: 0; right: 0; height: 3px; }
+          .edge-top .edge-fill { top: 0; left: 0; height: 3px; width: 0; }
+
+          .edge-right { top: 3px; bottom: 0; right: 0; width: 3px; }
+          .edge-right .edge-fill { top: 0; right: 0; width: 3px; height: 0; }
+
           .edge-bottom { left: 0; right: 0; bottom: 0; height: 3px; }
           .edge-bottom .edge-fill { bottom: 0; right: 0; height: 3px; width: 0; }
           /* Left edge - excludes both top (owned by top) and bottom (owned by bottom) corners */
@@ -1345,7 +1350,7 @@ dash-video {
             50% { filter: brightness(1.25); }
           }
         }
-        
+
         /* Hover removed for thumbnails */
       }
       
@@ -1392,15 +1397,13 @@ dash-video {
       .seek-button-container {
         flex: 1 0 calc(20% - 4px); /* 5 per row typical */
         max-width: none;
-        height: 50%; /* enforce shorter height to move toward 16:9 */
+        aspect-ratio: 16 / 9;
+        height: auto;
         .thumbnail-wrapper {
           height: 100%;
         }
       }
     }
-  }
-}
-
 .fitness-sidebar-video-host {
   display: none;
   position: relative;
@@ -1615,4 +1618,6 @@ dash-video {
 
 .fitness-player.mode-normal {
   .fitness-player-footer { display:flex; }
+}
+
 }

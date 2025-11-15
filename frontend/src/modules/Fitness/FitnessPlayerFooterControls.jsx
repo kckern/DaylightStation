@@ -1,4 +1,5 @@
-import React, { useRef, useCallback } from 'react';
+import { useRef, useCallback } from 'react';
+import PropTypes from 'prop-types';
 
 /*
  * FitnessPlayerFooterControls
@@ -19,10 +20,6 @@ export default function FitnessPlayerFooterControls({
   hasPrev,
   hasNext,
   onClose,
-  currentTime,
-  duration,
-  TimeDisplay,
-  renderCount,
   isStalled = false,
   isZoomed = false,
   onBack,
@@ -83,12 +80,10 @@ export default function FitnessPlayerFooterControls({
     )
   };
 
-  const DEBUG = false; // toggle to true for instrumentation
   const closeInvokedRef = useRef(false);
   const handleClosePointerDown = useCallback((e) => {
     if (closeInvokedRef.current) return;
     closeInvokedRef.current = true;
-    if (DEBUG) { /* eslint-disable no-console */ console.info('[FitnessPlayerFooterControls] close pointerDown', { t: Date.now() }); /* eslint-enable no-console */ }
     onClose?.(e);
   }, [onClose]);
 
@@ -105,7 +100,7 @@ export default function FitnessPlayerFooterControls({
                 role="button"
                 tabIndex={zoomPrevDisabled ? -1 : 0}
                 aria-disabled={zoomPrevDisabled ? 'true' : undefined}
-                onPointerDown={(event) => {
+                onPointerDown={() => {
                   if (zoomPrevDisabled) return;
                   zoomNavState?.stepBackward?.();
                 }}
@@ -145,10 +140,8 @@ export default function FitnessPlayerFooterControls({
               role="button"
               tabIndex={0}
               // Use pointerDown for faster activation on large touch display
-              onPointerDown={(event) => {
+              onPointerDown={() => {
                 if (playIsGoverned) {
-                  event.preventDefault();
-                  event.stopPropagation();
                   return;
                 }
                 playPause();
@@ -223,3 +216,24 @@ export default function FitnessPlayerFooterControls({
     </div>
   );
 }
+
+FitnessPlayerFooterControls.propTypes = {
+  section: PropTypes.oneOf(['left', 'right']).isRequired,
+  isPaused: PropTypes.bool,
+  playerRef: PropTypes.shape({ current: PropTypes.object }),
+  onPrev: PropTypes.func,
+  onNext: PropTypes.func,
+  hasPrev: PropTypes.bool,
+  hasNext: PropTypes.bool,
+  onClose: PropTypes.func,
+  isStalled: PropTypes.bool,
+  isZoomed: PropTypes.bool,
+  onBack: PropTypes.func,
+  playIsGoverned: PropTypes.bool,
+  zoomNavState: PropTypes.shape({
+    canStepBackward: PropTypes.bool,
+    canStepForward: PropTypes.bool,
+    stepBackward: PropTypes.func,
+    stepForward: PropTypes.func
+  })
+};
