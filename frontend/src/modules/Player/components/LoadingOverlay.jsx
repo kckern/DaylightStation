@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import pause from '../../../assets/icons/pause.svg';
@@ -22,12 +22,22 @@ export function LoadingOverlay({
   debugContext, 
   getMediaEl,
   plexId,
-  message
+  message,
+  show = true,
+  waitForPlaybackStart = false,
+  waitForPlaybackKey,
+  gracePeriodMs = 500,
+  reloadOnStallMs
 }) {
   const [visible, setVisible] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
   const [showPauseOverlay, setShowPauseOverlay] = useState(pauseOverlayVisible);
   const [showDebug, setShowDebug] = useState(false);
+  const [waitingForPlayback, setWaitingForPlayback] = useState(false);
+  const [graceElapsed, setGraceElapsed] = useState(!waitForPlaybackStart);
+  const listenerCleanupRef = useRef(() => {});
+  const attachIntervalRef = useRef(null);
+  const reloadTimeoutRef = useRef(null);
 
   useEffect(() => {
     const timeout = setTimeout(() => setVisible(true), 300);
@@ -88,20 +98,104 @@ export function LoadingOverlay({
     return () => { if (to) clearTimeout(to); };
   }, [visible, seconds, isPaused]);
 
+  useEffect(() => {
+    if (!waitForPlaybackStart) {
+      setWaitingForPlayback(false);
+      setGraceElapsed(true);
+      return () => {};
+    }
+
+    setWaitingForPlayback(true);
+    setGraceElapsed(false);
+
+    const graceTimer = setTimeout(() => setGraceElapsed(true), gracePeriodMs);
+
+    const attachListeners = () => {
+      const element = typeof getMediaEl === 'function' ? getMediaEl() : null;
+      if (!element) return false;
+
+      const markStarted = () => setWaitingForPlayback(false);
+      const markFailed = () => setGraceElapsed(true);
+
+      element.addEventListener('canplay', markStarted);
+      element.addEventListener('play', markStarted);
+      element.addEventListener('playing', markStarted);
+      element.addEventListener('error', markFailed);
+
+      listenerCleanupRef.current = () => {
+        element.removeEventListener('canplay', markStarted);
+        element.removeEventListener('play', markStarted);
+        element.removeEventListener('playing', markStarted);
+        element.removeEventListener('error', markFailed);
+      };
+
+      return true;
+    };
+
+    const attached = attachListeners();
+    if (!attached) {
+      attachIntervalRef.current = setInterval(() => {
+        if (attachListeners()) {
+          clearInterval(attachIntervalRef.current);
+          attachIntervalRef.current = null;
+        }
+      }, 100);
+    }
+
+    return () => {
+      clearTimeout(graceTimer);
+      listenerCleanupRef.current?.();
+      if (attachIntervalRef.current) {
+        clearInterval(attachIntervalRef.current);
+        attachIntervalRef.current = null;
+      }
+    };
+  }, [waitForPlaybackStart, waitForPlaybackKey, getMediaEl, gracePeriodMs]);
+
+  const waitingToPlay = waitForPlaybackStart && waitingForPlayback && graceElapsed;
+
+  useEffect(() => {
+    if (!reloadOnStallMs) {
+      return () => {};
+    }
+
+    if (waitingToPlay && seconds === 0 && !isPaused) {
+      if (reloadTimeoutRef.current) {
+        clearTimeout(reloadTimeoutRef.current);
+      }
+      reloadTimeoutRef.current = setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+      }, reloadOnStallMs);
+    } else if (reloadTimeoutRef.current) {
+      clearTimeout(reloadTimeoutRef.current);
+      reloadTimeoutRef.current = null;
+    }
+
+    return () => {
+      if (reloadTimeoutRef.current) {
+        clearTimeout(reloadTimeoutRef.current);
+        reloadTimeoutRef.current = null;
+      }
+    };
+  }, [waitingToPlay, seconds, isPaused, reloadOnStallMs]);
+
   const isInitialPlayback = seconds === 0 && !stalled; // Media is still starting up, not user-paused
+  const explicitShow = show ?? true;
+  const shouldRender = waitingToPlay || explicitShow || (isPaused && showPauseOverlay);
+
+  if (!shouldRender) {
+    return null;
+  }
+
   const shouldShowPauseIcon = isPaused && !isInitialPlayback;
   const imgSrc = shouldShowPauseIcon ? pause : spinner;
   const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled;
 
-  // Always show loading overlay when not paused (loading state)
-  // For paused state, respect the user's toggle setting
-  if (isPaused && !showPauseOverlay) {
-    return null;
-  }
-
   return (
     <div
-      className={`loading-overlay ${isPaused ? 'paused' : 'loading'}`}
+      className={`loading-overlay ${(shouldShowPauseIcon && !waitingToPlay) ? 'paused' : 'loading'}`}
       style={{
         opacity: visible ? 1 : 0,
         transition: 'opacity 0.3s ease-in-out',
@@ -139,5 +233,10 @@ LoadingOverlay.propTypes = {
   debugContext: PropTypes.object,
   getMediaEl: PropTypes.func,
   plexId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  message: PropTypes.string
+  message: PropTypes.string,
+  show: PropTypes.bool,
+  waitForPlaybackStart: PropTypes.bool,
+  waitForPlaybackKey: PropTypes.any,
+  gracePeriodMs: PropTypes.number,
+  reloadOnStallMs: PropTypes.number
 };
