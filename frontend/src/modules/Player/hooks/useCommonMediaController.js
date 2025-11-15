@@ -27,7 +27,8 @@ export function useCommonMediaController({
   onProgress,
   onMediaRef,
   onController,
-  keyboardOverrides
+  keyboardOverrides,
+  controllerExtras
 }) {
   const DEBUG_MEDIA = false;
 
@@ -276,6 +277,10 @@ export function useCommonMediaController({
     }
   }, [getMediaEl, onMediaRef, media_key]);
 
+  const [controllerExtrasState, setControllerExtrasState] = useState(null);
+
+  const mergedControllerExtras = controllerExtras ?? controllerExtrasState;
+
   useEffect(() => {
     if (typeof onController !== 'function') return;
     const play = () => { const el = getMediaEl(); if (el) { try { el.play?.(); } catch (_) {} } };
@@ -287,14 +292,22 @@ export function useCommonMediaController({
       try { el.currentTime = Math.max(0, time); } catch (_) {}
     };
 
-    onController({
+    const transport = {
       getMediaEl,
       play,
       pause,
       seek,
       isDash
-    });
-  }, [getMediaEl, isDash, onController]);
+    };
+
+    const controllerPayload = {
+      ...transport,
+      transport,
+      ...(mergedControllerExtras || {})
+    };
+
+    onController(controllerPayload);
+  }, [getMediaEl, isDash, onController, mergedControllerExtras]);
 
   return {
     containerRef,
@@ -305,6 +318,7 @@ export function useCommonMediaController({
     isDash,
     shader,
     isSeeking,
-    handleProgressClick
+    handleProgressClick,
+    setControllerExtras: setControllerExtrasState
   };
 }
