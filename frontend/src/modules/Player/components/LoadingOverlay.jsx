@@ -88,7 +88,9 @@ export function LoadingOverlay({
     return () => { if (to) clearTimeout(to); };
   }, [visible, seconds, isPaused]);
 
-  const imgSrc = isPaused ? pause : spinner;
+  const isInitialPlayback = seconds === 0 && !stalled; // Media is still starting up, not user-paused
+  const shouldShowPauseIcon = isPaused && !isInitialPlayback;
+  const imgSrc = shouldShowPauseIcon ? pause : spinner;
   const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled;
 
   // Always show loading overlay when not paused (loading state)
