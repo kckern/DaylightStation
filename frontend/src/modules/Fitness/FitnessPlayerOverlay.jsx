@@ -53,6 +53,37 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   const watchers = Array.isArray(governanceState.watchers) ? governanceState.watchers : [];
   const challengeLocked = Boolean(governanceState.videoLocked);
   const challenge = governanceState.challenge;
+  const challengeZoneLabel = challenge?.zoneLabel || challenge?.zone || 'Target zone';
+  const challengeSelectionLabel = challenge?.selectionLabel || '';
+  const challengeRequiredCount = Number.isFinite(challenge?.requiredCount) ? Math.max(0, challenge.requiredCount) : null;
+  const challengeActualCount = Number.isFinite(challenge?.actualCount) ? Math.max(0, challenge.actualCount) : null;
+  const challengeMissingUsers = Array.isArray(challenge?.missingUsers)
+    ? challenge.missingUsers.filter(Boolean)
+    : [];
+  const challengeRequirement = (() => {
+    if (!challenge || challenge.status === 'success' || challenge.status === 'failed') return null;
+    const baseZone = challengeZoneLabel || 'Target zone';
+    let requirementText = '';
+    if (challengeRequiredCount != null) {
+      const noun = challengeRequiredCount === 1 ? 'person' : 'people';
+      requirementText = `Need ${challengeRequiredCount} ${noun} ${baseZone.toLowerCase()}`;
+    } else {
+      requirementText = `Reach ${baseZone}`;
+    }
+    if (challengeSelectionLabel) {
+      requirementText += ` • ${challengeSelectionLabel}`;
+    }
+    if (challengeRequiredCount != null && challengeActualCount != null) {
+      requirementText += ` (${Math.min(challengeActualCount, challengeRequiredCount)}/${challengeRequiredCount})`;
+    }
+    return {
+      zone: baseZone,
+      rule: requirementText,
+      satisfied: challengeActualCount != null && challengeRequiredCount != null
+        ? challengeActualCount >= challengeRequiredCount
+        : false
+    };
+  })();
 
   const formattedRequirements = requirements.map((rule) => ({
     zone: rule?.zoneLabel || rule?.zone || 'Zone',
@@ -68,11 +99,11 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   ));
 
   if (challengeLocked) {
-    const zoneLabel = challenge?.zoneLabel || challenge?.zone || 'Target zone';
-    const requiredCount = typeof challenge?.requiredCount === 'number' ? challenge.requiredCount : null;
-    const actualCount = typeof challenge?.actualCount === 'number' ? challenge.actualCount : null;
+    const zoneLabel = challengeZoneLabel;
+    const requiredCount = challengeRequiredCount;
+    const actualCount = challengeActualCount;
     const requirementLabel = requiredCount != null ? `${requiredCount} participant${requiredCount === 1 ? '' : 's'}` : 'Challenge requirement';
-    const missingChallengeUsers = Array.isArray(challenge?.missingUsers) ? challenge.missingUsers : missingUsers;
+    const missingChallengeUsers = challengeMissingUsers.length ? challengeMissingUsers : missingUsers;
     const baseRequirementItems = unsatisfied.map((rule) => ({
       zone: rule?.zoneLabel || rule?.zone || 'Zone',
       rule: rule?.ruleLabel || String(rule?.rule ?? ''),
@@ -156,14 +187,23 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       title: 'Video Locked',
       descriptions: [
         'Increase fitness effort to continue the video.',
-        missingUsers.length ? 'Needs movement from highlighted participants.' : null
+        missingUsers.length || challengeMissingUsers.length ? 'Needs movement from highlighted participants.' : null,
+        challengeRequirement
+          ? `Goal: ${challengeRequirement.zone}${challengeRequiredCount != null ? ` (${challengeRequiredCount} ${challengeRequiredCount === 1 ? 'person' : 'people'})` : ''}`
+          : null
       ].filter(Boolean),
-      requirements: unsatisfied.map((rule) => ({
-        zone: rule?.zoneLabel || rule?.zone || 'Zone',
-        rule: rule?.ruleLabel || String(rule?.rule ?? ''),
-        satisfied: false
-      })),
-      highlightUsers: missingUsers,
+      requirements: [
+        ...(challengeRequirement ? [challengeRequirement] : []),
+        ...unsatisfied.map((rule) => ({
+          zone: rule?.zoneLabel || rule?.zone || 'Zone',
+          rule: rule?.ruleLabel || String(rule?.rule ?? ''),
+          satisfied: false
+        }))
+      ],
+      highlightUsers: Array.from(new Set([
+        ...challengeMissingUsers,
+        ...missingUsers
+      ])),
       countdown: null,
       countdownTotal: null
     };
@@ -526,7 +566,10 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
     || fitnessCtx?.fitnessSessionInstance?.sessionId
     || null;
   const governanceState = fitnessCtx?.governanceState || null;
-  const { current: currentChallengeOverlay, upcoming: upcomingChallengeOverlay } = useChallengeOverlays(governanceState);
+  const { current: currentChallengeOverlay, upcoming: upcomingChallengeOverlay } = useChallengeOverlays(
+    governanceState,
+    fitnessCtx?.zones
+  );
   const governanceChallenge = governanceState?.challenge || null;
   const governanceChallengeStatus = currentChallengeOverlay?.status;
   const challengeRemaining = currentChallengeOverlay?.remainingSeconds ?? null;
@@ -535,6 +578,7 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
   const challengeZoneLabel = currentChallengeOverlay?.title || currentChallengeOverlay?.zoneLabel || 'Target zone';
   const challengeMissingUsers = currentChallengeOverlay?.missingUsers || [];
   const challengeMetUsers = currentChallengeOverlay?.metUsers || [];
+  const isGovernanceRed = overlay?.category === 'governance' && overlay.status === 'red';
 
   const highlightEntries = useMemo(() => {
     if (!overlay || !Array.isArray(overlay.highlightUsers) || overlay.highlightUsers.length === 0) {
@@ -576,8 +620,12 @@ const FitnessPlayerOverlay = ({ overlay, stallStatus, onReload, currentTime, las
     : governanceChallengeStatus === 'failed'
       ? 'Failed'
       : 'Active';
-  const challengeOverlay = currentChallengeOverlay?.show ? <ChallengeOverlay overlay={currentChallengeOverlay} /> : null;
-  const nextChallengeOverlay = upcomingChallengeOverlay?.show ? <ChallengeOverlay overlay={upcomingChallengeOverlay} /> : null;
+  const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceRed
+    ? <ChallengeOverlay overlay={currentChallengeOverlay} />
+    : null;
+  const nextChallengeOverlay = upcomingChallengeOverlay?.show && !isGovernanceRed
+    ? <ChallengeOverlay overlay={upcomingChallengeOverlay} />
+    : null;
 
   // Handle stall reload overlay as priority overlay
   if (stallStatus?.isStalled && onReload) {
