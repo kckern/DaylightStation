@@ -238,7 +238,7 @@ export function useMediaResilience({
       setLoadingSeconds(0);
       return () => {};
     }
-    if (isPaused) {
+    if (isPaused || seconds > 0 || !waitingToPlay) {
       setLoadingSeconds(0);
       return () => {};
     }
