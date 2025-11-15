@@ -11,6 +11,130 @@ const CONFIG = Object.freeze({
   }
 });
 
+const BORDER_VIEWBOX = 100;
+const BORDER_STROKE = 3;
+const BORDER_CORNER_RADIUS = 4;
+const BORDER_OFFSET = BORDER_STROKE / 2;
+const BORDER_MARGIN = BORDER_OFFSET;
+const BORDER_RECT_SIZE = BORDER_VIEWBOX - BORDER_STROKE;
+const BORDER_STRAIGHT_LENGTH = BORDER_RECT_SIZE - (BORDER_CORNER_RADIUS * 2);
+const BORDER_CORNER_LENGTH = (Math.PI * BORDER_CORNER_RADIUS) / 2;
+const BORDER_PERIMETER = (BORDER_STRAIGHT_LENGTH * 4) + (BORDER_CORNER_LENGTH * 4);
+
+const BORDER_POINTS = Object.freeze({
+  topY: BORDER_OFFSET,
+  bottomY: BORDER_VIEWBOX - BORDER_OFFSET,
+  leftX: BORDER_OFFSET,
+  rightX: BORDER_VIEWBOX - BORDER_OFFSET,
+  topStraightStartX: BORDER_OFFSET + BORDER_CORNER_RADIUS,
+  topStraightEndX: BORDER_VIEWBOX - BORDER_OFFSET - BORDER_CORNER_RADIUS,
+  sideStraightStartY: BORDER_OFFSET + BORDER_CORNER_RADIUS,
+  sideStraightEndY: BORDER_VIEWBOX - BORDER_OFFSET - BORDER_CORNER_RADIUS
+});
+
+const BORDER_CENTERS = Object.freeze({
+  topRight: {
+    x: BORDER_POINTS.rightX - BORDER_CORNER_RADIUS,
+    y: BORDER_POINTS.topY + BORDER_CORNER_RADIUS
+  },
+  bottomRight: {
+    x: BORDER_POINTS.rightX - BORDER_CORNER_RADIUS,
+    y: BORDER_POINTS.bottomY - BORDER_CORNER_RADIUS
+  },
+  bottomLeft: {
+    x: BORDER_POINTS.leftX + BORDER_CORNER_RADIUS,
+    y: BORDER_POINTS.bottomY - BORDER_CORNER_RADIUS
+  },
+  topLeft: {
+    x: BORDER_POINTS.leftX + BORDER_CORNER_RADIUS,
+    y: BORDER_POINTS.topY + BORDER_CORNER_RADIUS
+  }
+});
+
+const toPercent = (value) => (value / BORDER_VIEWBOX) * 100;
+
+const clampRatio = (value) => (value < 0 ? 0 : value > 1 ? 1 : value);
+
+const getSparkPoint = (ratioInput) => {
+  const ratio = clampRatio(ratioInput >= 1 ? 0.9999 : ratioInput);
+  let remaining = ratio * BORDER_PERIMETER;
+
+  const consume = (length) => {
+    const amount = Math.min(length, remaining);
+    remaining -= amount;
+    return amount / length;
+  };
+
+  // Top straight (left -> right)
+  if (remaining <= BORDER_STRAIGHT_LENGTH) {
+    const t = consume(BORDER_STRAIGHT_LENGTH);
+    const x = BORDER_POINTS.topStraightStartX + (t * BORDER_STRAIGHT_LENGTH);
+    return { left: toPercent(x), top: toPercent(BORDER_POINTS.topY) };
+  }
+  remaining -= BORDER_STRAIGHT_LENGTH;
+
+  // Top-right corner arc (-90° -> 0°)
+  if (remaining <= BORDER_CORNER_LENGTH) {
+    const t = remaining / BORDER_CORNER_LENGTH;
+    const angle = (-Math.PI / 2) + (t * (Math.PI / 2));
+    const x = BORDER_CENTERS.topRight.x + (BORDER_CORNER_RADIUS * Math.cos(angle));
+    const y = BORDER_CENTERS.topRight.y + (BORDER_CORNER_RADIUS * Math.sin(angle));
+    return { left: toPercent(x), top: toPercent(y) };
+  }
+  remaining -= BORDER_CORNER_LENGTH;
+
+  // Right straight (top -> bottom)
+  if (remaining <= BORDER_STRAIGHT_LENGTH) {
+    const t = remaining / BORDER_STRAIGHT_LENGTH;
+    const y = BORDER_POINTS.sideStraightStartY + (t * BORDER_STRAIGHT_LENGTH);
+    return { left: toPercent(BORDER_POINTS.rightX), top: toPercent(y) };
+  }
+  remaining -= BORDER_STRAIGHT_LENGTH;
+
+  // Bottom-right corner arc (0° -> 90°)
+  if (remaining <= BORDER_CORNER_LENGTH) {
+    const t = remaining / BORDER_CORNER_LENGTH;
+    const angle = 0 + (t * (Math.PI / 2));
+    const x = BORDER_CENTERS.bottomRight.x + (BORDER_CORNER_RADIUS * Math.cos(angle));
+    const y = BORDER_CENTERS.bottomRight.y + (BORDER_CORNER_RADIUS * Math.sin(angle));
+    return { left: toPercent(x), top: toPercent(y) };
+  }
+  remaining -= BORDER_CORNER_LENGTH;
+
+  // Bottom straight (right -> left)
+  if (remaining <= BORDER_STRAIGHT_LENGTH) {
+    const t = remaining / BORDER_STRAIGHT_LENGTH;
+    const x = BORDER_POINTS.topStraightEndX - (t * BORDER_STRAIGHT_LENGTH);
+    return { left: toPercent(x), top: toPercent(BORDER_POINTS.bottomY) };
+  }
+  remaining -= BORDER_STRAIGHT_LENGTH;
+
+  // Bottom-left corner arc (90° -> 180°)
+  if (remaining <= BORDER_CORNER_LENGTH) {
+    const t = remaining / BORDER_CORNER_LENGTH;
+    const angle = (Math.PI / 2) + (t * (Math.PI / 2));
+    const x = BORDER_CENTERS.bottomLeft.x + (BORDER_CORNER_RADIUS * Math.cos(angle));
+    const y = BORDER_CENTERS.bottomLeft.y + (BORDER_CORNER_RADIUS * Math.sin(angle));
+    return { left: toPercent(x), top: toPercent(y) };
+  }
+  remaining -= BORDER_CORNER_LENGTH;
+
+  // Left straight (bottom -> top)
+  if (remaining <= BORDER_STRAIGHT_LENGTH) {
+    const t = remaining / BORDER_STRAIGHT_LENGTH;
+    const y = BORDER_POINTS.sideStraightEndY - (t * BORDER_STRAIGHT_LENGTH);
+    return { left: toPercent(BORDER_POINTS.leftX), top: toPercent(y) };
+  }
+  remaining -= BORDER_STRAIGHT_LENGTH;
+
+  // Top-left corner arc (180° -> 270°)
+  const t = (remaining / BORDER_CORNER_LENGTH);
+  const angle = Math.PI + (t * (Math.PI / 2));
+  const x = BORDER_CENTERS.topLeft.x + (BORDER_CORNER_RADIUS * Math.cos(angle));
+  const y = BORDER_CENTERS.topLeft.y + (BORDER_CORNER_RADIUS * Math.sin(angle));
+  return { left: toPercent(x), top: toPercent(y) };
+};
+
 /**
  * FitnessPlayerFooterSeekThumbnails
  * Props:
@@ -515,6 +639,17 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
         label = baseLabel;
       }
 
+      const progressRatio = clamp01(thumbnailProgress / 100);
+      const strokeDashoffset = (1 - progressRatio) * BORDER_PERIMETER;
+      const showSpark = progressRatio > 0 && progressRatio < 1;
+      const sparkPoint = showSpark ? getSparkPoint(progressRatio) : null;
+      const sparkStyle = sparkPoint
+        ? {
+            left: `${sparkPoint.left}%`,
+            top: `${sparkPoint.top}%`
+          }
+        : null;
+
       return (
         <SingleThumbnailButton
           key={'rng-'+idx+'-'+Math.round(segmentStart)}
@@ -575,59 +710,45 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
               />
               {isActive && (
                 <div className="progress-border-overlay">
-                  {(() => {
-                    // Calculate per-edge fill percentages and derive spark position within each edge wrapper
-                    const p = thumbnailProgress;
-                    const topFill = Math.min(p / 25 * 100, 100);
-                    const rightFill = Math.min(Math.max(p - 25, 0) / 25 * 100, 100);
-                    const bottomFill = Math.min(Math.max(p - 50, 0) / 25 * 100, 100);
-                    const leftFill = Math.min(Math.max(p - 75, 0) / 25 * 100, 100);
-                    const edgeIndex = Math.min(Math.floor(p / 25), 3);
-
-                    return (
-                      <>
-                        {/* Top edge: left-to-right */}
-                        <div className="edge edge-top">
-                          <div className="edge-fill" style={{ width: `${topFill}%` }} />
-                          {edgeIndex === 0 && p > 0 && (
-                            <div className="progress-spark" style={{ left: `${topFill}%`, top: '50%' }}>
-                              <div className="spark-core" />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Right edge: top-to-bottom */}
-                        <div className="edge edge-right">
-                          <div className="edge-fill" style={{ height: `${rightFill}%` }} />
-                          {edgeIndex === 1 && p > 25 && (
-                            <div className="progress-spark" style={{ top: `${rightFill}%`, left: '50%' }}>
-                              <div className="spark-core" />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Bottom edge: right-to-left */}
-                        <div className="edge edge-bottom">
-                          <div className="edge-fill" style={{ width: `${bottomFill}%` }} />
-                          {edgeIndex === 2 && p > 50 && (
-                            <div className="progress-spark" style={{ left: `${Math.max(0, 100 - bottomFill)}%`, top: '50%' }}>
-                              <div className="spark-core" />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Left edge: bottom-to-top */}
-                        <div className="edge edge-left">
-                          <div className="edge-fill" style={{ height: `${leftFill}%` }} />
-                          {edgeIndex === 3 && p > 75 && (
-                            <div className="progress-spark" style={{ top: `${Math.max(0, 100 - leftFill)}%`, left: '50%' }}>
-                              <div className="spark-core" />
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    );
-                  })()}
+                  <svg
+                    className="progress-border-overlay__svg"
+                    viewBox={`0 0 ${BORDER_VIEWBOX} ${BORDER_VIEWBOX}`}
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      className="progress-border-overlay__track"
+                      x={BORDER_MARGIN}
+                      y={BORDER_MARGIN}
+                      width={BORDER_RECT_SIZE}
+                      height={BORDER_RECT_SIZE}
+                      rx={BORDER_CORNER_RADIUS}
+                      ry={BORDER_CORNER_RADIUS}
+                      strokeWidth={BORDER_STROKE}
+                      fill="none"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <rect
+                      className="progress-border-overlay__fill"
+                      x={BORDER_MARGIN}
+                      y={BORDER_MARGIN}
+                      width={BORDER_RECT_SIZE}
+                      height={BORDER_RECT_SIZE}
+                      rx={BORDER_CORNER_RADIUS}
+                      ry={BORDER_CORNER_RADIUS}
+                      strokeWidth={BORDER_STROKE}
+                      strokeDasharray={BORDER_PERIMETER}
+                      strokeDashoffset={strokeDashoffset}
+                      fill="none"
+                      vectorEffect="non-scaling-stroke"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  {showSpark && sparkStyle && (
+                    <div className="progress-border-overlay__spark" style={sparkStyle}>
+                      <div className="spark-core" />
+                    </div>
+                  )}
                 </div>
               )}
               <span className="thumbnail-time">{label}</span>
