@@ -124,6 +124,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const stallStatus = null;
   // Layout adaptation state
   const [stackMode, setStackMode] = useState(false); // layout adaptation flag
+  const [playerReloadToken, setPlayerReloadToken] = useState(0);
   // Footer aspect (width/height) hysteresis thresholds
   // When the footer becomes "too tall" relative to width (low aspect ratio) we enter stack mode.
   // Using width/height so a wider, shorter footer has a HIGHER aspect value.
@@ -630,6 +631,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [queue, currentItem]);
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
+  const stallReloadTimerRef = useRef(null);
 
   const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused }) => {
     // Throttle currentTime updates to ~4Hz
@@ -657,6 +659,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setVideoPlayerPaused(paused);
     }
   }, [setVideoPlayerPaused, playIsGoverned, pausePlayback]);
+
+  const stallReloadClear = useCallback(() => {
+    if (stallReloadTimerRef.current) {
+      clearTimeout(stallReloadTimerRef.current);
+      stallReloadTimerRef.current = null;
+    }
+  }, []);
 
   const handleReloadEpisode = useCallback(() => {
     const api = playerRef.current;
@@ -758,8 +767,24 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const hasActiveItem = Boolean(currentItem && enhancedCurrentItem && playObject);
   const playerKey = hasActiveItem
-    ? `${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
+    ? `${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}:r${playerReloadToken}`
     : 'fitness-player-empty';
+
+  useEffect(() => {
+    const waitingForStart = hasActiveItem && !isPaused && (currentTime === undefined || currentTime <= 0.1);
+    if (waitingForStart) {
+      if (!stallReloadTimerRef.current) {
+        stallReloadTimerRef.current = setTimeout(() => {
+          setPlayerReloadToken((token) => token + 1);
+          stallReloadClear();
+        }, 3000);
+      }
+    } else {
+      stallReloadClear();
+    }
+
+    return stallReloadClear;
+  }, [hasActiveItem, isPaused, currentTime, playerKey, stallReloadClear]);
 
   const handleVideoPointerDown = useCallback((event) => {
     if (!mediaSwapActive) return;

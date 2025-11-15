@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
@@ -86,12 +86,12 @@ export function VideoPlayer({
     return null;
   }, [containerRef]);
 
-  const videoKey = React.useMemo(
+  const videoKey = useMemo(
     () => `${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`,
     [media_url, media?.maxVideoBitrate]
   );
 
-  const dashSource = React.useMemo(() => {
+  const dashSource = useMemo(() => {
     if (!media_url) return null;
     const startPosition = Number.isFinite(media?.seconds) ? media.seconds : undefined;
     return startPosition != null
@@ -111,33 +111,38 @@ export function VideoPlayer({
     ? show
     : title;
 
+  const shouldShowLoadingOverlay = seconds === 0 || isSeeking;
+
   return (
     <div className={`video-player ${shader}`}>
       <h2>
         {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {(seconds === 0 || isSeeking) && (
-        <LoadingOverlay
-          seconds={seconds}
-          isPaused={isPaused}
-          fetchVideoInfo={fetchVideoInfo}
-          initialStart={media.seconds || 0}
-          plexId={plexIdValue}
-          debugContext={{
-            scope: 'video',
-            mediaType: media?.media_type,
-            title,
-            show,
-            season,
-            url: media_url,
-            media_key: media?.media_key || media?.key || media?.plex,
-            isDash,
-            shader
-          }}
-          getMediaEl={getCurrentMediaElement}
-        />
-      )}
+      <LoadingOverlay
+        show={shouldShowLoadingOverlay}
+        waitForPlaybackStart
+        waitForPlaybackKey={videoKey}
+        gracePeriodMs={500}
+        reloadOnStallMs={5000}
+        seconds={seconds}
+        isPaused={isPaused}
+        fetchVideoInfo={fetchVideoInfo}
+        initialStart={media.seconds || 0}
+        plexId={plexIdValue}
+        debugContext={{
+          scope: 'video',
+          mediaType: media?.media_type,
+          title,
+          show,
+          season,
+          url: media_url,
+          media_key: media?.media_key || media?.key || media?.plex,
+          isDash,
+          shader
+        }}
+        getMediaEl={getCurrentMediaElement}
+      />
       {isDash ? (
         <div ref={containerRef} className="video-element-host">
           <ShakaVideoStreamer
