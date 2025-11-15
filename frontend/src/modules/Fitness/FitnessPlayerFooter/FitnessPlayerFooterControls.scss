@@ -1,0 +1,16 @@
+.footer-controls-left,
+.footer-controls-right {
+  display: flex;
+  align-items: center;
+}
+
+.footer-controls-left[data-stalled='1'] .play-pause-button.stalled {
+  color: #FFD400;
+}
+
+.control-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}

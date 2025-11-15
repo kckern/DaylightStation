@@ -1,16 +1,7 @@
 import { useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import './FitnessPlayerFooterControls.scss';
 
-/*
- * FitnessPlayerFooterControls
- * Reusable control clusters (left/right) so future footer variants can opt in/out.
- * Props:
- *  - section: 'left' | 'right'
- *  - isPaused, playerRef (imperative Player ref), onPrev, onNext, hasPrev, hasNext, onClose
- *  - isStalled (bool) when playback stall detected (treats as paused for UI)
- *  - currentTime, duration, TimeDisplay, renderCount (only used on left)
- *  - zoomNavState: helpers for navigating zoomed thumbnails (left section only)
- */
 export default function FitnessPlayerFooterControls({
   section,
   isPaused,
@@ -27,18 +18,14 @@ export default function FitnessPlayerFooterControls({
   zoomNavState = null
 }) {
   const isLeft = section === 'left';
-  
-  /*
-   * Toggle playback using the Player imperative interface when available.
-   * Falls back to legacy direct media element access only if playerRef not provided.
-   */
+
   const playPause = () => {
     if (playIsGoverned) return;
     const api = playerRef?.current; if (!api) return;
     if (typeof api.toggle === 'function') { api.toggle(); return; }
     const media = api.getMediaElement?.(); if (media) { media.paused ? api.play?.() : api.pause?.(); }
   };
-  // Determine if navigation controls should be shown (only when queue has >1 items)
+
   const showNav = (hasPrev || hasNext);
 
   const Icon = {
@@ -107,7 +94,7 @@ export default function FitnessPlayerFooterControls({
     const zoomNextDisabled = !(zoomNavState?.canStepForward);
 
     return (
-  <div className="footer-controls-left" data-stalled={isStalled ? '1' : '0'}>
+      <div className="footer-controls-left" data-stalled={isStalled ? '1' : '0'}>
         <div className="control-buttons-container">
           {isZoomed ? (
             <>
@@ -170,7 +157,6 @@ export default function FitnessPlayerFooterControls({
             <div
               role="button"
               tabIndex={0}
-              // Use pointerDown for faster activation on large touch display
               onPointerDown={() => {
                 if (playIsGoverned) {
                   return;
@@ -209,7 +195,7 @@ export default function FitnessPlayerFooterControls({
   }
 
   return (
-  <div className="footer-controls-right" data-stalled={isStalled ? '1' : '0'}>
+    <div className="footer-controls-right" data-stalled={isStalled ? '1' : '0'}>
       {showNav && (
         <div
           role="button"

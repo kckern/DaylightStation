@@ -1,0 +1,9 @@
+.progress-zoom-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  border: 1px solid #ffd400;
+  background: rgba(255, 212, 0, 0.12);
+  pointer-events: none;
+}
