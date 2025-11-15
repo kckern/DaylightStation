@@ -38,6 +38,7 @@ export function SinglePlayer(play) {
     playbackRate,
     onProgress,
     onMediaRef,
+    resilience
   } = play || {};
   
   // Prepare common props for content scroller components
@@ -145,7 +146,18 @@ export function SinglePlayer(play) {
     <div className={`player ${playerType || ''}`}>
       {!isReady && (
         <div className={`shader on notReady ${shader}`}>
-          <LoadingOverlay plexId={initialPlexId} />
+          <LoadingOverlay
+            shouldRender
+            isVisible
+            isPaused={false}
+            seconds={0}
+            stalled={false}
+            waitingToPlay
+            showPauseOverlay={false}
+            showDebug={false}
+            plexId={initialPlexId}
+            debugContext={{ scope: 'media-info' }}
+          />
         </div>
       )}
       {isReady && ['dash_video', 'video', 'audio'].includes(mediaInfo.media_type) && (
@@ -172,7 +184,8 @@ export function SinglePlayer(play) {
             onProgress,
             onMediaRef,
             keyboardOverrides: play?.keyboardOverrides,
-            onController: play?.onController
+            onController: play?.onController,
+            resilience
           }
         )
       )}
@@ -212,5 +225,10 @@ SinglePlayer.propTypes = {
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   keyboardOverrides: PropTypes.objectOf(PropTypes.func),
-  onController: PropTypes.func
+  onController: PropTypes.func,
+  resilience: PropTypes.shape({
+    config: PropTypes.object,
+    onStateChange: PropTypes.func,
+    controllerRef: PropTypes.shape({ current: PropTypes.any })
+  })
 };

@@ -16,7 +16,20 @@ const Player = forwardRef(function Player(props, ref) {
     return <CompositePlayer {...props} Player={Player} />;
   }
   
-  let { play, queue, clear, playbackrate, playbackKeys, playerType, ignoreKeys, keyboardOverrides } = props || {};
+  let {
+    play,
+    queue,
+    clear,
+    playbackrate,
+    playbackKeys,
+    playerType,
+    ignoreKeys,
+    keyboardOverrides,
+    resilience,
+    mediaResilienceConfig,
+    onResilienceState,
+    mediaResilienceRef
+  } = props || {};
   
   // console.log('[Player] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   
@@ -78,6 +91,7 @@ const Player = forwardRef(function Player(props, ref) {
 
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
+  const fallbackResilienceRef = useRef(null);
 
   // Compose onMediaRef so we keep existing external callback semantics
   const handleMediaRef = useCallback((el) => {
@@ -89,6 +103,41 @@ const Player = forwardRef(function Player(props, ref) {
     controllerRef.current = controller;
     if (props.onController) props.onController(controller);
   }, [props.onController]);
+
+  const baseResilience = {
+    config: resilience?.config ?? mediaResilienceConfig,
+    onStateChange: resilience?.onStateChange ?? onResilienceState,
+    controllerRef: resilience?.controllerRef ?? mediaResilienceRef
+  };
+
+  const sanitizedSinglePlayerProps = singlePlayerProps ? { ...singlePlayerProps } : null;
+
+  const legacyItemResilience = sanitizedSinglePlayerProps
+    ? {
+        config: sanitizedSinglePlayerProps.mediaResilienceConfig,
+        onStateChange: sanitizedSinglePlayerProps.onResilienceState,
+        controllerRef: sanitizedSinglePlayerProps.mediaResilienceRef
+      }
+    : {};
+
+  const itemResilience = sanitizedSinglePlayerProps?.resilience || legacyItemResilience;
+
+  const resolvedResilience = {
+    config: itemResilience?.config ?? baseResilience.config,
+    onStateChange: itemResilience?.onStateChange ?? baseResilience.onStateChange,
+    controllerRef: itemResilience?.controllerRef ?? baseResilience.controllerRef
+  };
+
+  const resilienceControllerRef = resolvedResilience.controllerRef || fallbackResilienceRef;
+  resolvedResilience.controllerRef = resilienceControllerRef;
+
+  if (sanitizedSinglePlayerProps) {
+    delete sanitizedSinglePlayerProps.key;
+    delete sanitizedSinglePlayerProps.resilience;
+    delete sanitizedSinglePlayerProps.mediaResilienceConfig;
+    delete sanitizedSinglePlayerProps.onResilienceState;
+    delete sanitizedSinglePlayerProps.mediaResilienceRef;
+  }
 
   useImperativeHandle(ref, () => ({
     seek: (t) => { 
@@ -112,7 +161,12 @@ const Player = forwardRef(function Player(props, ref) {
     getCurrentTime: () => exposedMediaRef.current?.currentTime || 0,
     getDuration: () => exposedMediaRef.current?.duration || 0,
     getMediaElement: () => exposedMediaRef.current,
-    getMediaController: () => controllerRef.current
+    getMediaController: () => controllerRef.current,
+    getMediaResilienceController: () => resilienceControllerRef.current,
+    getMediaResilienceState: () => resilienceControllerRef.current?.getState?.() || null,
+    resetMediaResilience: () => resilienceControllerRef.current?.reset?.(),
+    forceMediaReload: (opts) => resilienceControllerRef.current?.forceReload?.(opts),
+    forceMediaInfoFetch: (opts) => resilienceControllerRef.current?.forceFetchInfo?.(opts)
   }), []);
 
   const playerProps = {
@@ -131,19 +185,33 @@ const Player = forwardRef(function Player(props, ref) {
     keyboardOverrides,
     onProgress: props.onProgress,
     onMediaRef: handleMediaRef,
-    onController: handleController
+    onController: handleController,
+    resilience: resolvedResilience
   };
-  
-  if (singlePlayerProps?.key) delete singlePlayerProps.key;
 
   // Extract plexId for health checks (from queue or play object)
   const plexId = queue?.plex || play?.plex || singlePlayerProps?.plex || singlePlayerProps?.media_key || null;
 
-  return singlePlayerProps ? (
-    <SinglePlayer {...singlePlayerProps} {...playerProps} />
+  return sanitizedSinglePlayerProps ? (
+    <SinglePlayer
+      {...sanitizedSinglePlayerProps}
+      {...playerProps}
+    />
   ) : (
     <div className={`player ${effectiveShader} ${props.playerType || ''}`}>
-      <LoadingOverlay plexId={plexId} />
+      <LoadingOverlay
+        shouldRender
+        isVisible
+        isPaused={false}
+        seconds={0}
+        stalled={false}
+        waitingToPlay
+        showPauseOverlay={false}
+        showDebug={false}
+        togglePauseOverlay={() => {}}
+        plexId={plexId}
+        debugContext={{ scope: 'idle' }}
+      />
     </div>
   );
 });
@@ -157,6 +225,14 @@ Player.propTypes = {
   playerType: PropTypes.string,
   ignoreKeys: PropTypes.bool,
   keyboardOverrides: PropTypes.object,
+  resilience: PropTypes.shape({
+    config: PropTypes.object,
+    onStateChange: PropTypes.func,
+    controllerRef: PropTypes.shape({ current: PropTypes.any })
+  }),
+  mediaResilienceConfig: PropTypes.object,
+  onResilienceState: PropTypes.func,
+  mediaResilienceRef: PropTypes.shape({ current: PropTypes.any }),
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   onController: PropTypes.func

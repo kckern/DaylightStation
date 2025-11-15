@@ -2,6 +2,7 @@ import React, { useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
+import { useMediaResilience, mergeMediaResilienceConfig } from '../hooks/useMediaResilience.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
 
@@ -25,7 +26,8 @@ export function VideoPlayer({
   onProgress, 
   onMediaRef, 
   keyboardOverrides,
-  onController
+  onController,
+  resilience
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -112,6 +114,42 @@ export function VideoPlayer({
     : title;
 
   const shouldShowLoadingOverlay = seconds === 0 || isSeeking;
+  const { config: resilienceConfig, onStateChange: resilienceStateHandler, controllerRef: resilienceControllerRef } = resilience || {};
+
+  const combinedResilienceConfig = useMemo(
+    () => mergeMediaResilienceConfig(resilienceConfig, media?.mediaResilienceConfig),
+    [resilienceConfig, media?.mediaResilienceConfig]
+  );
+
+  const { overlayProps } = useMediaResilience({
+    getMediaEl: getCurrentMediaElement,
+    meta: media,
+    seconds,
+    isPaused,
+    isSeeking,
+    initialStart: media.seconds || 0,
+    waitForPlaybackStart: true,
+    waitKey: videoKey,
+    fetchVideoInfo,
+    onStateChange: resilienceStateHandler
+      ? (nextState) => resilienceStateHandler(nextState, media)
+      : undefined,
+    configOverrides: combinedResilienceConfig,
+    controllerRef: resilienceControllerRef,
+    explicitShow: shouldShowLoadingOverlay,
+    plexId: plexIdValue,
+    debugContext: {
+      scope: 'video',
+      mediaType: media?.media_type,
+      title,
+      show,
+      season,
+      url: media_url,
+      media_key: media?.media_key || media?.key || media?.plex,
+      isDash,
+      shader
+    }
+  });
 
   return (
     <div className={`video-player ${shader}`}>
@@ -119,30 +157,7 @@ export function VideoPlayer({
         {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      <LoadingOverlay
-        show={shouldShowLoadingOverlay}
-        waitForPlaybackStart
-        waitForPlaybackKey={videoKey}
-        gracePeriodMs={500}
-        reloadOnStallMs={5000}
-        seconds={seconds}
-        isPaused={isPaused}
-        fetchVideoInfo={fetchVideoInfo}
-        initialStart={media.seconds || 0}
-        plexId={plexIdValue}
-        debugContext={{
-          scope: 'video',
-          mediaType: media?.media_type,
-          title,
-          show,
-          season,
-          url: media_url,
-          media_key: media?.media_key || media?.key || media?.plex,
-          isDash,
-          shader
-        }}
-        getMediaEl={getCurrentMediaElement}
-      />
+      <LoadingOverlay {...overlayProps} />
       {isDash ? (
         <div ref={containerRef} className="video-element-host">
           <ShakaVideoStreamer
@@ -182,5 +197,10 @@ VideoPlayer.propTypes = {
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   keyboardOverrides: PropTypes.object,
-  onController: PropTypes.func
+  onController: PropTypes.func,
+  resilience: PropTypes.shape({
+    config: PropTypes.object,
+    onStateChange: PropTypes.func,
+    controllerRef: PropTypes.shape({ current: PropTypes.any })
+  })
 };
