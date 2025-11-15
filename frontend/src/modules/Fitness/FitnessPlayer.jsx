@@ -864,8 +864,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         className={`fitness-player-sidebar ${sidebarSide === 'left' ? 'sidebar-left' : 'sidebar-right'}${playerMode === 'fullscreen' ? ' minimized' : ''}`}
         style={{ width: playerMode === 'fullscreen' ? 0 : sidebarRenderWidth, flex: `0 0 ${playerMode === 'fullscreen' ? 0 : sidebarRenderWidth}px`, order: sidebarSide === 'right' ? 2 : 0 }}
       >
-        {playerMode !== 'fullscreen' && hasActiveItem && (
-          <div className="sidebar-content">
+        {hasActiveItem && (
+          <div
+            className={`sidebar-content${playerMode === 'fullscreen' ? ' sidebar-content-hidden' : ''}`}
+            aria-hidden={playerMode === 'fullscreen'}
+            style={{
+              pointerEvents: playerMode === 'fullscreen' ? 'none' : 'auto',
+              opacity: playerMode === 'fullscreen' ? 0 : 1,
+              visibility: playerMode === 'fullscreen' ? 'hidden' : 'visible'
+            }}
+          >
+            {/* Keep sidebar mounted in fullscreen so auxiliary players (music) continue running */}
             <FitnessSidebar
               playerRef={playerRef}
               onReloadVideo={handleReloadEpisode}
