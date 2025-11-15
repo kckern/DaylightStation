@@ -103,6 +103,18 @@ const formatTime = (seconds) => {
 
 const DEFAULT_SIDEBAR = 250;
 
+const resolveMediaIdentity = (meta) => {
+  if (!meta) return null;
+  const candidate = meta.media_key
+    ?? meta.key
+    ?? meta.plex
+    ?? meta.id
+    ?? meta.guid
+    ?? meta.media_url
+    ?? null;
+  return candidate != null ? String(candidate) : null;
+};
+
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const mainPlayerRef = useRef(null);
   const contentRef = useRef(null);
@@ -119,8 +131,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [resilienceState, setResilienceState] = useState(null);
   const [playerElementKey] = useState(0);
-  const stallStatus = null;
   // Layout adaptation state
   const [stackMode, setStackMode] = useState(false); // layout adaptation flag
   const [playerReloadToken, setPlayerReloadToken] = useState(0);
@@ -567,6 +579,31 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     };
   }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate, currentItem?.labels, governedLabelSet, governance]);
 
+  const currentMediaIdentity = useMemo(
+    () => resolveMediaIdentity(enhancedCurrentItem || currentItem),
+    [enhancedCurrentItem, currentItem]
+  );
+
+  const resilienceMediaIdentity = useMemo(
+    () => resolveMediaIdentity(resilienceState?.meta),
+    [resilienceState]
+  );
+
+  const stallStatus = useMemo(() => {
+    if (!resilienceState) return null;
+    if (currentMediaIdentity && resilienceMediaIdentity && currentMediaIdentity !== resilienceMediaIdentity) {
+      return null;
+    }
+
+    const isResilienceStalled = Boolean(resilienceState.stalled || resilienceState.waitingToPlay);
+    if (!isResilienceStalled) return null;
+
+    return {
+      isStalled: true,
+      state: resilienceState
+    };
+  }, [resilienceState, currentMediaIdentity, resilienceMediaIdentity]);
+
   const seekPositions = useMemo(() => {
     if (!currentItem) return [];
     const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 600;
@@ -631,6 +668,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
   const stallReloadTimerRef = useRef(null);
+
+  const handleResilienceState = useCallback((nextState, media) => {
+    if (!nextState) {
+      setResilienceState(null);
+      return;
+    }
+    if (nextState.meta || !media) {
+      setResilienceState(nextState);
+    } else {
+      setResilienceState({ ...nextState, meta: media });
+    }
+  }, []);
 
   const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused }) => {
     // Throttle currentTime updates to ~4Hz
@@ -806,6 +855,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         <Player
           key={playerKey}
           play={playObject}
+          onResilienceState={handleResilienceState}
           keyboardOverrides={keyboardOverrides}
           clear={handleClose}
           advance={handleNext}

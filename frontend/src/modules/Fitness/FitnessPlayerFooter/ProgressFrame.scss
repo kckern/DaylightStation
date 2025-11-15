@@ -7,3 +7,38 @@
   background: rgba(255, 212, 0, 0.12);
   pointer-events: none;
 }
+
+.progress-frame-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.progress-frame-overlay__svg {
+  width: 100%;
+  height: 100%;
+}
+
+.progress-frame-overlay__track {
+  stroke: rgba(255, 255, 255, 0.25);
+}
+
+.progress-frame-overlay__fill {
+  stroke: #ffd400;
+  filter: drop-shadow(0 0 6px rgba(255, 212, 0, 0.7));
+}
+
+.progress-frame-overlay__spark {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+}
+
+.progress-frame-overlay__spark .spark-core {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #ffd400;
+  box-shadow: 0 0 8px rgba(255, 212, 0, 0.8);
+}
