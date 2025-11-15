@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import SingleThumbnailButton from './SingleThumbnailButton.jsx';
 import usePlayerController from '../Player/usePlayerController.js';
 
@@ -17,13 +18,12 @@ const CONFIG = Object.freeze({
  *  - currentTime (seconds)
  *  - fallbackDuration (seconds) optional default if duration invalid
  *  - onSeek(seconds) (optional external handler)
- *  - seekButtons (React nodes)
  *  - range: [startSeconds, endSeconds] optional; defines the time window represented by the thumbnails & progress bar
  *           Defaults to [0, duration] (or fallback) when omitted/invalid. All thumbnail positions are clamped to this window.
  *  - commitRef: optional ref to expose commit function for external use
  *  - onZoomNavStateChange: optional callback receiving zoom navigation helpers (prev/next)
  */
-const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, seekButtons, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl, commitRef, getTimeRef, onZoomNavStateChange, disabled = false, mediaElementKey = 0 }) => {
+const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = false, fallbackDuration = 600, onSeek, playerRef, range, onZoomChange, onZoomReset, currentItem, generateThumbnailUrl, commitRef, getTimeRef, onZoomNavStateChange, disabled = false, mediaElementKey = 0 }) => {
   // ---------- Helpers ----------
   const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   const BASE_PENDING_TOLERANCE = 0.05;  // keeps optimistic bar until near actual
@@ -143,32 +143,37 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 
   const isZoomed = !!zoomRange;
 
-  const baseSnapshot = baseRangeSnapshotRef.current || {};
-  const basePositions = Array.isArray(baseSnapshot.positions) ? baseSnapshot.positions : [];
-  const baseRangeEnd = Array.isArray(baseSnapshot.range) && baseSnapshot.range.length === 2 ? baseSnapshot.range[1] : baseDurationProp;
+  const getBaseSnapshot = useCallback(() => {
+    return baseRangeSnapshotRef.current || null;
+  }, []);
 
   const resolveZoomIndex = useCallback(() => {
-    if (!basePositions.length) return -1;
-    let foundIndex = basePositions.findIndex((pos) => Math.abs(pos - rangeStart) < 0.51);
+    const snapshot = getBaseSnapshot();
+    const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
+    if (!positions.length) return -1;
+    let foundIndex = positions.findIndex((pos) => Math.abs(pos - rangeStart) < 0.51);
     if (foundIndex >= 0) return foundIndex;
     let nearestIndex = 0;
     let nearestDelta = Infinity;
-    for (let i = 0; i < basePositions.length; i++) {
-      const delta = Math.abs(basePositions[i] - rangeStart);
+    for (let i = 0; i < positions.length; i++) {
+      const delta = Math.abs(positions[i] - rangeStart);
       if (delta < nearestDelta) {
         nearestDelta = delta;
         nearestIndex = i;
       }
     }
     return nearestIndex;
-  }, [basePositions, rangeStart]);
+  }, [getBaseSnapshot, rangeStart]);
 
   const setZoomRangeFromIndex = useCallback((targetIndex) => {
-    if (!basePositions.length) return;
-    const maxIndex = basePositions.length - 1;
+    const snapshot = getBaseSnapshot();
+    const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
+    if (!positions.length) return;
+    const maxIndex = positions.length - 1;
     const clampedIndex = Math.min(Math.max(targetIndex, 0), maxIndex);
-    const start = basePositions[clampedIndex];
-    const nextBoundary = clampedIndex < maxIndex ? basePositions[clampedIndex + 1] : baseRangeEnd;
+    const start = positions[clampedIndex];
+    const baseRangeEnd = Array.isArray(snapshot?.range) && snapshot.range.length === 2 ? snapshot.range[1] : baseDurationProp;
+    const nextBoundary = clampedIndex < maxIndex ? positions[clampedIndex + 1] : baseRangeEnd;
     if (!Number.isFinite(start) || !Number.isFinite(nextBoundary) || nextBoundary <= start) return;
     setZoomRange((prev) => {
       if (prev && Math.abs(prev[0] - start) < 0.001 && Math.abs(prev[1] - nextBoundary) < 0.001) {
@@ -176,29 +181,42 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
       }
       return [start, nextBoundary];
     });
-  }, [basePositions, baseRangeEnd, setZoomRange]);
+  }, [getBaseSnapshot, baseDurationProp]);
 
   const stepZoomBackward = useCallback(() => {
-    if (disabled || !isZoomed || !basePositions.length) return;
+    if (disabled || !isZoomed) return;
+    const snapshot = getBaseSnapshot();
+    const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
+    if (!positions.length) return;
     const idx = resolveZoomIndex();
     if (idx <= 0) return;
     setZoomRangeFromIndex(idx - 1);
-  }, [disabled, isZoomed, basePositions, resolveZoomIndex, setZoomRangeFromIndex]);
+  }, [disabled, isZoomed, getBaseSnapshot, resolveZoomIndex, setZoomRangeFromIndex]);
 
   const stepZoomForward = useCallback(() => {
-    if (disabled || !isZoomed || !basePositions.length) return;
+    if (disabled || !isZoomed) return;
+    const snapshot = getBaseSnapshot();
+    const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
+    if (!positions.length) return;
     const idx = resolveZoomIndex();
-    if (idx < 0 || idx >= basePositions.length - 1) return;
+    if (idx < 0 || idx >= positions.length - 1) return;
     setZoomRangeFromIndex(idx + 1);
-  }, [disabled, isZoomed, basePositions, resolveZoomIndex, setZoomRangeFromIndex]);
+  }, [disabled, isZoomed, getBaseSnapshot, resolveZoomIndex, setZoomRangeFromIndex]);
 
-  const zoomIndex = useMemo(() => {
-    if (!isZoomed || !basePositions.length) return -1;
-    return resolveZoomIndex();
-  }, [isZoomed, basePositions, resolveZoomIndex]);
-
-  const canStepBackward = !disabled && zoomIndex > 0;
-  const canStepForward = !disabled && basePositions.length > 0 && zoomIndex >= 0 && zoomIndex < basePositions.length - 1;
+  const { canStepBackward, canStepForward } = useMemo(() => {
+    if (!isZoomed || disabled) {
+      return { canStepBackward: false, canStepForward: false };
+    }
+    const snapshot = getBaseSnapshot();
+    const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
+    if (!positions.length) {
+      return { canStepBackward: false, canStepForward: false };
+    }
+    const idx = resolveZoomIndex();
+    const hasPrev = idx > 0;
+    const hasNext = idx >= 0 && idx < positions.length - 1;
+    return { canStepBackward: hasPrev, canStepForward: hasNext };
+  }, [isZoomed, disabled, getBaseSnapshot, resolveZoomIndex]);
 
   // Notify parent when zoom state changes
   useEffect(() => {
@@ -368,7 +386,6 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
     const rect = e.currentTarget.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const seekTime = positionToSeconds(clientX, rect);
-    console.log('[FitnessPlayerFooterSeekThumbnails] Progress bar clicked:', { seekTime, clientX });
     commit(seekTime);
   }, [positionToSeconds, commit, disabled]);
 
@@ -388,16 +405,6 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
   }, [previewTime, commit, disabled]);
 
   // ---------- Render Thumbnails ----------
-  // Long press detection
-  const longPressTimeout = useRef();
-  const handleLongPressStart = (rangeVal) => {
-    if (!rangeVal) return;
-    longPressTimeout.current = setTimeout(() => setZoomRange(rangeVal), 400);
-  };
-  const handleLongPressEnd = () => {
-    if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
-  };
-
   // Generate a consistent random dark grey color based on position
   const getGreyShade = useCallback((pos) => {
     // Use position as seed for consistent color per thumbnail
@@ -705,3 +712,31 @@ const FitnessPlayerFooterSeekThumbnails = ({ duration, currentTime, isSeeking = 
 }
 
 export default FitnessPlayerFooterSeekThumbnails;
+
+FitnessPlayerFooterSeekThumbnails.propTypes = {
+  duration: PropTypes.number,
+  currentTime: PropTypes.number,
+  isSeeking: PropTypes.bool,
+  fallbackDuration: PropTypes.number,
+  onSeek: PropTypes.func,
+  playerRef: PropTypes.shape({ current: PropTypes.object }),
+  range: PropTypes.arrayOf(PropTypes.number),
+  onZoomChange: PropTypes.func,
+  onZoomReset: PropTypes.shape({ current: PropTypes.func }),
+  currentItem: PropTypes.shape({
+    seasonImage: PropTypes.string,
+    image: PropTypes.string,
+    plex: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    thumb_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    media_key: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    ratingKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    metadata: PropTypes.object
+  }),
+  generateThumbnailUrl: PropTypes.func,
+  commitRef: PropTypes.shape({ current: PropTypes.func }),
+  getTimeRef: PropTypes.shape({ current: PropTypes.func }),
+  onZoomNavStateChange: PropTypes.func,
+  disabled: PropTypes.bool,
+  mediaElementKey: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
+};

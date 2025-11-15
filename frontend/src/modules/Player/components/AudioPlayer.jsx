@@ -24,7 +24,6 @@ export function AudioPlayer({
   ignoreKeys, 
   onProgress, 
   onMediaRef, 
-  stallConfig,
   onController
 }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
@@ -33,7 +32,6 @@ export function AudioPlayer({
     duration,
     containerRef,
     isPaused,
-    isStalled,
     isSeeking,
     handleProgressClick
   } = useCommonMediaController({
@@ -55,8 +53,7 @@ export function AudioPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
-    onController,
-    stallConfig
+    onController
   });
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
@@ -67,11 +64,10 @@ export function AudioPlayer({
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-      {(seconds === 0 || isStalled || isSeeking) && (
+      {(seconds === 0 || isSeeking) && (
         <LoadingOverlay
           isPaused={isPaused}
           fetchVideoInfo={fetchVideoInfo}
-          stalled={isStalled}
           initialStart={media.seconds || 0}
           seconds={seconds}
           plexId={media?.media_key || media?.key || media?.plex || null}
@@ -130,6 +126,5 @@ AudioPlayer.propTypes = {
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
-  stallConfig: PropTypes.object,
   onController: PropTypes.func
 };

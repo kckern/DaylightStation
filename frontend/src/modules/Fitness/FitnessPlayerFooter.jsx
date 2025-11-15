@@ -1,4 +1,5 @@
-import React, { forwardRef, useCallback, useState, useRef } from 'react';
+import { forwardRef, useCallback, useState, useRef } from 'react';
+import PropTypes from 'prop-types';
 import FitnessPlayerFooterControls from './FitnessPlayerFooterControls.jsx';
 import FitnessPlayerFooterSeekThumbnails from './FitnessPlayerFooterSeekThumbnails.jsx';
 
@@ -24,7 +25,6 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
     currentTime,
     duration,
     currentItem,
-    seekButtons,
     onSeek,
     onPrev,
     onNext,
@@ -37,12 +37,13 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
     TimeDisplay,
     renderCount,
     playIsGoverned,
-    mediaElementKey
+    mediaElementKey,
+    generateThumbnailUrl,
+    thumbnailsCommitRef,
+    thumbnailsGetTimeRef
   } = props;
 
-  if (hidden) return null;
-
-  const baseDuration = (duration && !isNaN(duration) ? duration : (currentItem?.duration || 600));
+  const baseDuration = (duration && !Number.isNaN(duration) ? duration : (currentItem?.duration || 600));
   const isStalled = !!(stallInfo?.isStalled);
 
   // Zoom wiring (thumbnails expose onZoomChange + reset ref)
@@ -58,6 +59,8 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
       setIsZoomed(false);
     }
   }, []);
+
+  if (hidden) return null;
 
   return (
     <div
@@ -89,15 +92,14 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
         duration={baseDuration}
         currentTime={currentTime}
         currentItem={currentItem}
-        generateThumbnailUrl={props.generateThumbnailUrl || undefined}
+        generateThumbnailUrl={generateThumbnailUrl}
         onSeek={onSeek}
-        seekButtons={seekButtons}
         playerRef={playerRef}
         onZoomChange={setIsZoomed}
         onZoomReset={zoomResetRef}
         onZoomNavStateChange={handleZoomNavStateChange}
-        commitRef={props.thumbnailsCommitRef}
-        getTimeRef={props.thumbnailsGetTimeRef}
+        commitRef={thumbnailsCommitRef}
+        getTimeRef={thumbnailsGetTimeRef}
         mediaElementKey={mediaElementKey}
       />
 
@@ -120,3 +122,28 @@ const FitnessPlayerFooter = forwardRef(function FitnessPlayerFooter(props, ref) 
 });
 
 export default FitnessPlayerFooter;
+
+FitnessPlayerFooter.propTypes = {
+  hidden: PropTypes.bool,
+  height: PropTypes.number,
+  stackMode: PropTypes.bool,
+  currentTime: PropTypes.number,
+  duration: PropTypes.number,
+  currentItem: PropTypes.object,
+  onSeek: PropTypes.func,
+  onPrev: PropTypes.func,
+  onNext: PropTypes.func,
+  onClose: PropTypes.func,
+  hasPrev: PropTypes.bool,
+  hasNext: PropTypes.bool,
+  isPaused: PropTypes.bool,
+  stallInfo: PropTypes.shape({ isStalled: PropTypes.bool }),
+  playerRef: PropTypes.shape({ current: PropTypes.object }),
+  TimeDisplay: PropTypes.elementType,
+  renderCount: PropTypes.number,
+  playIsGoverned: PropTypes.bool,
+  mediaElementKey: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  generateThumbnailUrl: PropTypes.func,
+  thumbnailsCommitRef: PropTypes.shape({ current: PropTypes.func }),
+  thumbnailsGetTimeRef: PropTypes.shape({ current: PropTypes.func })
+};
