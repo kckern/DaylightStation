@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { useFitnessContext } from '../../context/FitnessContext.jsx';
-import { DaylightMediaPath } from '../../lib/api.mjs';
-import { slugifyId } from '../../context/FitnessContext.jsx';
+import { useFitnessContext } from '../../../context/FitnessContext.jsx';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
+import { slugifyId } from '../../../context/FitnessContext.jsx';
+import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {
   red: '#ff6b6b',
@@ -89,7 +90,7 @@ const getProfileSlug = (user) => {
   return 'user';
 };
 
-const FitnessFullscreenVitals = ({ visible = false }) => {
+const FullscreenVitalsOverlay = ({ visible = false }) => {
   const fitnessCtx = useFitnessContext();
   const [anchor, setAnchor] = useState('right');
   const {
@@ -277,8 +278,8 @@ const FitnessFullscreenVitals = ({ visible = false }) => {
   );
 };
 
-FitnessFullscreenVitals.propTypes = {
+FullscreenVitalsOverlay.propTypes = {
   visible: PropTypes.bool
 };
 
-export default FitnessFullscreenVitals;
+export default FullscreenVitalsOverlay;
