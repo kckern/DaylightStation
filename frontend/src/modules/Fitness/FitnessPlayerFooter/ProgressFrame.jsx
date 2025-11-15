@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import './ProgressFrame.scss';
 
@@ -7,6 +8,20 @@ const BORDER_CORNER_RADIUS = 4;
 const BORDER_MARGIN = BORDER_STROKE / 2;
 const BORDER_RECT_SIZE = BORDER_VIEWBOX - BORDER_STROKE;
 const clamp01 = (value) => (value < 0 ? 0 : value > 1 ? 1 : value);
+const LOG_INTERVAL_MS = 3000;
+
+const rectToObject = (rect) => (
+  rect
+    ? {
+        x: rect.x,
+        y: rect.y,
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height
+      }
+    : null
+);
 
 const buildPathDefinition = () => {
   const inset = BORDER_MARGIN;
@@ -54,6 +69,12 @@ const SEGMENTS = (() => {
 })();
 
 const PATH_PERIMETER = SEGMENTS.reduce((sum, seg) => sum + seg.length, 0);
+const TOP_EDGE_RATIO = SEGMENTS.length ? SEGMENTS[0].length / PATH_PERIMETER : 0;
+const SPARK_ANCHOR_RATIO = Math.min(0.01, TOP_EDGE_RATIO * 0.25);
+const ORIGIN_POINT = {
+  x: (BORDER_MARGIN / BORDER_VIEWBOX) * 100,
+  y: (BORDER_MARGIN / BORDER_VIEWBOX) * 100
+};
 const getPointAt = (ratioInput) => {
   const target = clamp01(ratioInput);
   const distance = target * PATH_PERIMETER;
@@ -85,22 +106,49 @@ const ProgressFrame = ({
   showSpark = false,
   className = ''
 }) => {
+  const overlayRef = useRef(null);
+  const sparkRef = useRef(null);
+  const trackPathRef = useRef(null);
+  const fillPathRef = useRef(null);
   const hasThumbnailOverlay = typeof perc === 'number' && !Number.isNaN(perc);
+  const safePerc = clamp01(hasThumbnailOverlay ? perc : 0);
+  const safeVisibleRatio = clamp01(visibleRatio);
+  const cappedPerc = hasThumbnailOverlay ? Math.min(safePerc, safeVisibleRatio || 0) : 0;
+  const hasProgress = cappedPerc > 0;
+  const sparkRatio = showSpark ? Math.min(cappedPerc, 0.999) : null;
+  const sparkPoint = showSpark && sparkRatio != null
+    ? (sparkRatio <= SPARK_ANCHOR_RATIO ? ORIGIN_POINT : getPointAt(sparkRatio))
+    : null;
+
+  useEffect(() => {
+    if (!hasThumbnailOverlay || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const logMetrics = () => {
+      const overlayEl = overlayRef.current;
+      if (!overlayEl) {
+        return;
+      }
+
+    };
+
+    logMetrics();
+    const intervalId = window.setInterval(logMetrics, LOG_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [hasThumbnailOverlay, perc, safePerc, safeVisibleRatio, cappedPerc, showSpark, sparkPoint]);
 
   if (hasThumbnailOverlay) {
-    const safePerc = clamp01(perc);
-    const safeVisibleRatio = clamp01(visibleRatio);
-    const cappedPerc = Math.min(safePerc, safeVisibleRatio || 0);
-    const hasProgress = cappedPerc > 0;
-    const sparkRatio = showSpark ? Math.min(cappedPerc, 0.999) : null;
-    const sparkPoint = showSpark && sparkRatio != null ? getPointAt(sparkRatio) : null;
     const dashLength = cappedPerc * PATH_PERIMETER;
     const dashArray = cappedPerc >= 1
       ? `${PATH_PERIMETER} ${PATH_PERIMETER}`
       : `${dashLength} ${PATH_PERIMETER}`;
 
     return (
-      <div className={`progress-frame-overlay${className ? ` ${className}` : ''}`}>
+      <div
+        ref={overlayRef}
+        className={`progress-frame-overlay${className ? ` ${className}` : ''}`}
+      >
         <svg
           className="progress-frame-overlay__svg"
           viewBox={`0 0 ${BORDER_VIEWBOX} ${BORDER_VIEWBOX}`}
@@ -108,6 +156,7 @@ const ProgressFrame = ({
           aria-hidden="true"
         >
           <path
+            ref={trackPathRef}
             className="progress-frame-overlay__track"
             d={BORDER_PATH_D}
             strokeWidth={BORDER_STROKE}
@@ -116,6 +165,7 @@ const ProgressFrame = ({
           />
           {hasProgress && (
             <path
+              ref={fillPathRef}
               className="progress-frame-overlay__fill"
               d={BORDER_PATH_D}
               strokeWidth={BORDER_STROKE}
@@ -130,6 +180,7 @@ const ProgressFrame = ({
         {showSpark && sparkPoint && (
           <div
             className="progress-frame-overlay__spark"
+            ref={sparkRef}
             style={{ left: `${sparkPoint.x}%`, top: `${sparkPoint.y}%` }}
           >
             <div className="spark-core" />
