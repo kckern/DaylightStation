@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import usePlayerController from '../../Player/usePlayerController.js';
-import SeekThumbnail from './SeekThumbnail.jsx';
+import FitnessPlayerFooterSeekThumbnail from './FitnessPlayerFooterSeekThumbnail.jsx';
 import ProgressFrame from './ProgressFrame.jsx';
 import './FitnessPlayerFooterSeekThumbnails.scss';
 
@@ -421,6 +421,12 @@ const FitnessPlayerFooterSeekThumbnails = ({
       const nextBoundary = idx < rangePositions.length - 1 ? rangePositions[idx + 1] : rangeEnd;
       const segmentEnd = Number.isFinite(nextBoundary) ? nextBoundary : segmentStart;
       const segmentDuration = Math.max(segmentEnd - segmentStart, 0);
+      const nominalSegmentDuration = rangeSpan > 0 && rangePositions.length > 0
+        ? rangeSpan / rangePositions.length
+        : null;
+      const visibleRatio = nominalSegmentDuration
+        ? clamp01(segmentDuration / nominalSegmentDuration)
+        : 1;
 
       const TIME_TOLERANCE = 0.001;
       const dynamicTolerance = segmentDuration > 0
@@ -480,7 +486,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
       const showSpark = progressRatio > 0 && progressRatio < 1;
 
       return (
-        <SeekThumbnail
+        <FitnessPlayerFooterSeekThumbnail
           key={`rng-${idx}-${Math.round(segmentStart)}`}
           state={state}
           isOrigin={isOrigin}
@@ -503,10 +509,11 @@ const FitnessPlayerFooterSeekThumbnails = ({
           onSeek={handleThumbnailSeek}
           onZoom={disabled ? undefined : setZoomRange}
           enableZoom={!disabled}
+          visibleRatio={visibleRatio}
         />
       );
     });
-  }, [currentItem, rangePositions, rangeEnd, displayTime, formatTime, isZoomed, rangeStart, generateThumbnailUrl, getGreyShade, currentTime, disabled, handleThumbnailSeek, setZoomRange]);
+  }, [currentItem, rangePositions, rangeEnd, displayTime, formatTime, isZoomed, rangeStart, generateThumbnailUrl, getGreyShade, currentTime, disabled, handleThumbnailSeek, setZoomRange, rangeSpan]);
 
   const fullDuration = baseDurationProp || 0;
   const progressPct = useMemo(() => {
