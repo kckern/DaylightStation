@@ -257,7 +257,8 @@ const FitnessApp = () => {
     switch (category) {
       case 'collection': {
         const id = typeof value === 'object' && value !== null ? value.id : value;
-        setActiveCollection(id);
+        const normalizedId = Array.isArray(id) ? [...id] : id;
+        setActiveCollection(normalizedId);
         setCurrentView('menu');
         setSelectedShow(null);
         break;
@@ -337,8 +338,9 @@ const FitnessApp = () => {
 
   // Initialize the active collection once collections arrive
   useEffect(() => {
-    if (!activeCollection && collections.length > 0) {
-      setActiveCollection(collections[0].id);
+    if (activeCollection == null && collections.length > 0) {
+      const initialId = collections[0].id;
+      setActiveCollection(Array.isArray(initialId) ? [...initialId] : initialId);
     }
   }, [collections, activeCollection]);
 

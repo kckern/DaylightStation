@@ -124,23 +124,59 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
       try {
         if (!collectionsFromConfig.length) return;
 
-        const collectionToUse = activeCollection
-          ? collectionsFromConfig.find(c => String(c.id) === String(activeCollection)) || collectionsFromConfig[0]
-          : collectionsFromConfig[0];
+        let normalizedSelection = collectionsFromConfig[0];
+        if (activeCollection != null) {
+          normalizedSelection = collectionsFromConfig.find(c => {
+            const cid = c.id;
+            if (Array.isArray(activeCollection)) {
+              if (Array.isArray(cid)) {
+                return cid.some(colId => activeCollection.some(selId => String(selId) === String(colId)));
+              }
+              return activeCollection.some(selId => String(selId) === String(cid));
+            }
+            if (Array.isArray(cid)) {
+              return cid.some(colId => String(colId) === String(activeCollection));
+            }
+            return String(cid) === String(activeCollection);
+          }) || collectionsFromConfig[0];
+        }
 
-        if (!collectionToUse) return;
-        setSelectedCollection(collectionToUse);
+        if (!normalizedSelection) return;
+        setSelectedCollection(normalizedSelection);
 
-        const collectionId = collectionToUse.id;
-  // API call (debug removed)
+        const idsToFetch = Array.isArray(normalizedSelection.id)
+          ? normalizedSelection.id
+          : Array.isArray(activeCollection)
+            ? activeCollection
+            : [normalizedSelection.id];
+
         setShowsLoading(true);
-        const showsResponse = await DaylightAPI(`/media/plex/list/${collectionId}`);
-  // shows response (debug removed)
-        const newItems = showsResponse.items || [];
-        setShows(newItems);
-        // reset loaded images tracking for new set
+
+        const listResponses = await Promise.all(idsToFetch.map(async (collectionId) => {
+          try {
+            const response = await DaylightAPI(`/media/plex/list/${collectionId}`);
+            return Array.isArray(response?.items) ? response.items : [];
+          } catch (apiErr) {
+            console.error(`🎬 ERROR: Error loading shows for collection ${collectionId}:`, apiErr);
+            return [];
+          }
+        }));
+
+        const mergedItemsMap = new Map();
+        listResponses.flat().forEach((item) => {
+          if (!item) return;
+          const key = item.plex || item.id;
+          if (key == null) return;
+          if (!mergedItemsMap.has(key)) {
+            mergedItemsMap.set(key, item);
+          }
+        });
+
+        const mergedItems = Array.from(mergedItemsMap.values());
+
+        setShows(mergedItems);
         const reset = {};
-        newItems.forEach(item => {
+        mergedItems.forEach(item => {
           const id = item.plex || item.id;
           if (id !== undefined) reset[id] = false;
         });
