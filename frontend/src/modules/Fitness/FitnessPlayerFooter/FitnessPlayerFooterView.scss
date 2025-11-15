@@ -1,0 +1,8 @@
+.fitness-player-footer {
+  display: flex;
+  width: 100%;
+}
+
+.fitness-player-footer[data-stalled='1'] {
+  opacity: 0.98;
+}

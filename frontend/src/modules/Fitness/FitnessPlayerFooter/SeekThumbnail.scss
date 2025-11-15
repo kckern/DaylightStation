@@ -1,0 +1,46 @@
+.seek-button-container {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  cursor: pointer;
+}
+
+.seek-button-container .thumbnail-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.thumbnail-fallback {
+  position: absolute;
+  inset: 0;
+}
+
+.progress-border-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.progress-border-overlay__spark {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+}
+
+.progress-border-overlay__spark .spark-core {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #ffd400;
+}
+
+.thumbnail-time {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  color: #fff;
+  font-size: 11px;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.65);
+}

@@ -1,0 +1,21 @@
+.footer-seek-thumbnails {
+  display: flex;
+  flex-direction: column;
+}
+
+.footer-seek-thumbnails .progress-bar {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.footer-seek-thumbnails .progress {
+  height: 3px;
+  background: #fff;
+}
+
+.seek-thumbnails {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
