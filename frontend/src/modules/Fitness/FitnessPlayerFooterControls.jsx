@@ -72,6 +72,11 @@ export default function FitnessPlayerFooterControls({
         <path d="M16 5h2v14h-2zM4 12l12 7V5L4 12z" />
       </svg>
     ),
+    Refresh: () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a6 6 0 1 1-5.65 8H4.26A8 8 0 1 0 17.65 6.35z" />
+      </svg>
+    ),
     Close: () => (
       <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" aria-hidden="true">
         <line x1="5" y1="5" x2="19" y2="19" />
@@ -86,6 +91,16 @@ export default function FitnessPlayerFooterControls({
     closeInvokedRef.current = true;
     onClose?.(e);
   }, [onClose]);
+
+  const handleManualReload = useCallback(() => {
+    const api = playerRef?.current;
+    const controller = api?.getMediaResilienceController?.();
+    if (controller?.forceReload) {
+      controller.forceReload({ reason: 'fitness-manual' });
+    } else if (api?.forceMediaReload) {
+      api.forceMediaReload({ reason: 'fitness-manual' });
+    }
+  }, [playerRef]);
 
   if (isLeft) {
     const zoomPrevDisabled = !(zoomNavState?.canStepBackward);
@@ -135,6 +150,22 @@ export default function FitnessPlayerFooterControls({
                 <span className="icon" aria-hidden="true">⏩</span>
               </div>
             </>
+          ) : isStalled ? (
+            <div
+              role="button"
+              tabIndex={0}
+              onPointerDown={handleManualReload}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleManualReload();
+                }
+              }}
+              className="control-button play-pause-button stalled"
+              aria-label="Reload stalled video"
+            >
+              <span className="icon"><Icon.Refresh /></span>
+            </div>
           ) : (
             <div
               role="button"
