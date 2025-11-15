@@ -7,6 +7,10 @@ services:
     restart: unless-stopped
     privileged: true  # Required for USB device access
     
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    
     # Environment variables
     environment:
       - PORT=3000

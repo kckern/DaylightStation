@@ -342,7 +342,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
             <div className="track-artist">
               {(() => {
                 const artist = currentTrack?.artist || currentTrack?.albumArtist || currentTrack?.grandparentTitle || currentTrack?.parentTitle || '';
-                console.log('[Artist Debug]', { currentTrack, artist });
+               // console.log('[Artist Debug]', { currentTrack, artist });
                 return artist;
               })()}
             </div>
