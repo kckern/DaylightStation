@@ -10,7 +10,6 @@ import FitnessUsers from './FitnessUsers.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
 import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
-import FitnessFullscreenVitals from './FitnessFullscreenVitals.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -800,13 +799,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       <div className="player-controls-blocker"></div>
       <FitnessPlayerOverlay 
         overlay={governanceOverlay} 
-        stallStatus={stallStatus}
-        onReload={handleReloadEpisode}
-        currentTime={currentTime}
-        lastKnownTimeRef={lastKnownTimeRef}
         playerRef={playerRef}
+        showFullscreenVitals={playerMode === 'fullscreen'}
       />
-      <FitnessFullscreenVitals visible={playerMode === 'fullscreen'} />
       {hasActiveItem ? (
         <Player
           key={playerKey}

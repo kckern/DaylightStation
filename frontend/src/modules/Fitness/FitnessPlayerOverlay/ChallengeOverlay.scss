@@ -1,13 +1,14 @@
 .challenge-overlay {
-  --challenge-overlay-edge: clamp(14px, 4vw, 52px);
-  --challenge-overlay-size: clamp(200px, 28vw, 320px);
-  --challenge-ring-width: clamp(12px, calc(var(--challenge-overlay-size) * 0.08), 26px);
+  --challenge-overlay-edge: clamp(12px, min(4vw, 4%), 40px);
+  --challenge-overlay-size: clamp(180px, min(32%, 30vmin), 320px);
+  --challenge-overlay-dimension: min(var(--challenge-overlay-size), calc(100% - (var(--challenge-overlay-edge) * 2)));
+  --challenge-ring-width: clamp(10px, calc(var(--challenge-overlay-dimension) * 0.08), 22px);
   position: absolute;
   top: var(--challenge-overlay-edge);
   left: var(--challenge-overlay-edge);
   z-index: calc(var(--fitness-parent-overlay-z, 60));
-  width: var(--challenge-overlay-size);
-  height: var(--challenge-overlay-size);
+  width: var(--challenge-overlay-dimension);
+  height: var(--challenge-overlay-dimension);
   border-radius: 50%;
   background: rgba(11, 18, 28, 0.82);
   color: #f8fafc;

@@ -1,6 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
-import './FitnessPlayerOverlayChallenge.scss';
+import './ChallengeOverlay.scss';
 
 const CHALLENGE_VIEWBOX_SIZE = 220;
 const CHALLENGE_RING_RADIUS = 95;
