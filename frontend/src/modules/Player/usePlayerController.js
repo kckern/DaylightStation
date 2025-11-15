@@ -26,18 +26,6 @@ export default function usePlayerController(playerRef) {
   const getDuration = useCallback(() => {
     const api = playerRef?.current; return api?.getDuration?.() || 0;
   }, [playerRef]);
-  const recover = useCallback((strategy, options) => {
-    const api = playerRef?.current; if (!api) return; api.recover?.(strategy, options);
-  }, [playerRef]);
-  const softReinit = useCallback((options) => {
-    const api = playerRef?.current; if (!api) return; api.softReinit?.(options);
-  }, [playerRef]);
-  const resetRecovery = useCallback(() => {
-    const api = playerRef?.current; if (!api) return; api.resetRecovery?.();
-  }, [playerRef]);
-  const getStallState = useCallback(() => {
-    const api = playerRef?.current; if (!api) return null; return api.getStallState?.() || null;
-  }, [playerRef]);
 
-  return { play, pause, toggle, seek, getCurrentTime, getDuration, getMediaEl, recover, softReinit, resetRecovery, getStallState };
+  return { play, pause, toggle, seek, getCurrentTime, getDuration, getMediaEl };
 }

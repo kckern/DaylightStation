@@ -16,7 +16,7 @@ const Player = forwardRef(function Player(props, ref) {
     return <CompositePlayer {...props} Player={Player} />;
   }
   
-  let { play, queue, clear, playbackrate, playbackKeys, playerType, ignoreKeys, showQuality, keyboardOverrides } = props || {};
+  let { play, queue, clear, playbackrate, playbackKeys, playerType, ignoreKeys, keyboardOverrides } = props || {};
   
   // console.log('[Player] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   
@@ -112,12 +112,7 @@ const Player = forwardRef(function Player(props, ref) {
     getCurrentTime: () => exposedMediaRef.current?.currentTime || 0,
     getDuration: () => exposedMediaRef.current?.duration || 0,
     getMediaElement: () => exposedMediaRef.current,
-    recover: (strategyName, options) => controllerRef.current?.recovery?.trigger?.(strategyName, options),
-    softReinit: (options) => controllerRef.current?.recovery?.softReinit?.(options),
-    resetRecovery: () => controllerRef.current?.recovery?.reset?.(),
-    attemptNextRecovery: () => controllerRef.current?.recovery?.attemptNext?.(),
-    getMediaController: () => controllerRef.current,
-    getStallState: () => controllerRef.current?.readStallState?.() || controllerRef.current?.stallState || null
+    getMediaController: () => controllerRef.current
   }), []);
 
   const playerProps = {
@@ -133,11 +128,9 @@ const Player = forwardRef(function Player(props, ref) {
     playerType,
     queuePosition,
     ignoreKeys,
-    showQuality,
     keyboardOverrides,
     onProgress: props.onProgress,
     onMediaRef: handleMediaRef,
-    stallConfig: props.stallConfig,
     onController: handleController
   };
   
@@ -163,21 +156,10 @@ Player.propTypes = {
   playbackKeys: PropTypes.arrayOf(PropTypes.string),
   playerType: PropTypes.string,
   ignoreKeys: PropTypes.bool,
-  showQuality: PropTypes.bool,
   keyboardOverrides: PropTypes.object,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
-  onController: PropTypes.func,
-  stallConfig: PropTypes.shape({
-    enabled: PropTypes.bool,
-    softMs: PropTypes.number,
-    hardMs: PropTypes.number,
-    maxRetries: PropTypes.number,
-    mode: PropTypes.oneOf(['auto', 'observe']),
-    debug: PropTypes.bool,
-    enablePhase2: PropTypes.bool,
-    phase2SeekBackSeconds: PropTypes.number
-  })
+  onController: PropTypes.func
 };
 
 export default Player;
