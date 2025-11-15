@@ -231,6 +231,7 @@ export function useMediaResilience({
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
+  const waitingToPlay = waitForPlaybackStart && waitingForPlayback && graceElapsed;
 
   useEffect(() => {
     if (!fetchVideoInfoRef.current) {
@@ -270,7 +271,6 @@ export function useMediaResilience({
     return () => clearTimeout(timeout);
   }, [explicitShow, waitForPlaybackStart, waitingForPlayback, seconds, isPaused, mergedConfig.debug?.revealDelayMs]);
 
-  const waitingToPlay = waitForPlaybackStart && waitingForPlayback && graceElapsed;
   const shouldRenderOverlay = waitingToPlay || explicitShow || (isPaused && mergedConfig.overlay?.showPausedOverlay && showPauseOverlay);
 
   useEffect(() => {
