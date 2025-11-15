@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
+import { useMediaResilience, mergeMediaResilienceConfig } from '../hooks/useMediaResilience.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
 
@@ -24,7 +25,8 @@ export function AudioPlayer({
   ignoreKeys, 
   onProgress, 
   onMediaRef, 
-  onController
+  onController,
+  resilience
 }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const {
@@ -60,35 +62,48 @@ export function AudioPlayer({
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
   const footer = `${title}${albumArtist && albumArtist !== artist ? ` (${albumArtist})` : ''}`;
+  const shouldShowLoadingOverlay = seconds === 0 || isSeeking;
+  const { config: resilienceConfig, onStateChange: resilienceStateHandler, controllerRef: resilienceControllerRef } = resilience || {};
+
+  const combinedResilienceConfig = useMemo(
+    () => mergeMediaResilienceConfig(resilienceConfig, media?.mediaResilienceConfig),
+    [resilienceConfig, media?.mediaResilienceConfig]
+  );
+
+  const { overlayProps } = useMediaResilience({
+    getMediaEl: () => containerRef.current,
+    meta: media,
+    seconds,
+    isPaused,
+    isSeeking,
+    initialStart: media.seconds || 0,
+    waitForPlaybackStart: false,
+    fetchVideoInfo,
+    onStateChange: resilienceStateHandler
+      ? (nextState) => resilienceStateHandler(nextState, media)
+      : undefined,
+    configOverrides: combinedResilienceConfig,
+    controllerRef: resilienceControllerRef,
+    explicitShow: shouldShowLoadingOverlay,
+    plexId: media?.media_key || media?.key || media?.plex || null,
+    debugContext: {
+      scope: 'audio',
+      mediaType: media?.media_type,
+      type,
+      title,
+      artist,
+      album,
+      albumArtist,
+      url: media_url,
+      media_key: media?.media_key || media?.key || media?.plex,
+      shader
+    }
+  });
 
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-      {(seconds === 0 || isSeeking) && (
-        <LoadingOverlay
-          isPaused={isPaused}
-          fetchVideoInfo={fetchVideoInfo}
-          initialStart={media.seconds || 0}
-          seconds={seconds}
-          plexId={media?.media_key || media?.key || media?.plex || null}
-          debugContext={{
-            scope: 'audio',
-            mediaType: media?.media_type,
-            type,
-            title,
-            artist,
-            album,
-            albumArtist,
-            url: media_url,
-            media_key: media?.media_key || media?.key || media?.plex,
-            shader
-          }}
-          getMediaEl={() => {
-            const el = containerRef.current;
-            return el || null;
-          }}
-        />
-      )}
+      {shouldShowLoadingOverlay && <LoadingOverlay {...overlayProps} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -126,5 +141,10 @@ AudioPlayer.propTypes = {
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
-  onController: PropTypes.func
+  onController: PropTypes.func,
+  resilience: PropTypes.shape({
+    config: PropTypes.object,
+    onStateChange: PropTypes.func,
+    controllerRef: PropTypes.shape({ current: PropTypes.any })
+  })
 };
