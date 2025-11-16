@@ -28,7 +28,8 @@ export function useCommonMediaController({
   onMediaRef,
   onController,
   keyboardOverrides,
-  controllerExtras
+  controllerExtras,
+  instanceKey = null
 }) {
   const DEBUG_MEDIA = false;
 
@@ -88,7 +89,7 @@ export function useCommonMediaController({
     lastSeekIntentRef.current = null;
     lastPlaybackPosRef.current = 0;
     isInitialLoadRef.current = true;
-  }, [media_key]);
+  }, [media_key, instanceKey]);
 
   const handleProgressClick = useCallback((event) => {
     if (!duration || !containerRef.current) return;
@@ -268,14 +269,14 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeked', clearSeeking);
       mediaEl.removeEventListener('playing', clearSeeking);
     };
-  }, [getMediaEl, media_key, meta, onEnd, onProgress, playbackRate, start, type, volume, isDash]);
+  }, [getMediaEl, media_key, meta, onEnd, onProgress, playbackRate, start, type, volume, isDash, instanceKey]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
     if (mediaEl && onMediaRef) {
       onMediaRef(mediaEl);
     }
-  }, [getMediaEl, onMediaRef, media_key]);
+  }, [getMediaEl, onMediaRef, media_key, instanceKey]);
 
   const [controllerExtrasState, setControllerExtrasState] = useState(null);
 
@@ -307,7 +308,7 @@ export function useCommonMediaController({
     };
 
     onController(controllerPayload);
-  }, [getMediaEl, isDash, onController, mergedControllerExtras]);
+  }, [getMediaEl, isDash, onController, mergedControllerExtras, instanceKey]);
 
   return {
     containerRef,
