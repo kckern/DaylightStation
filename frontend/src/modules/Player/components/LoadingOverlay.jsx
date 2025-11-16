@@ -15,6 +15,7 @@ export function LoadingOverlay({
   isPaused,
   seconds = 0,
   stalled = false,
+  midPlayStalled = false,
   waitingToPlay = false,
   showPauseOverlay = false,
   showDebug = false,
@@ -24,7 +25,9 @@ export function LoadingOverlay({
   getMediaEl,
   plexId,
   togglePauseOverlay,
-  explicitShow = false
+  explicitShow = false,
+  countUpDisplay,
+  playerPositionDisplay
 }) {
   if (!shouldRender) {
     return null;
@@ -34,7 +37,14 @@ export function LoadingOverlay({
   const shouldShowPauseIcon = isPaused && !isInitialPlayback && !waitingToPlay;
   const imgSrc = shouldShowPauseIcon ? pause : spinner;
   const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled && explicitShow;
-  const overlayStateClass = (shouldShowPauseIcon && !waitingToPlay) ? 'paused' : 'loading';
+  const overlayStateClass = midPlayStalled
+    ? 'stalled'
+    : (shouldShowPauseIcon && !waitingToPlay ? 'paused' : 'loading');
+  const activeMessage = midPlayStalled && !message
+    ? 'Attempting to resume playback…'
+    : message;
+  const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : '00';
+  const positionDisplay = playerPositionDisplay || '0:00';
 
   return (
     <div
@@ -45,10 +55,22 @@ export function LoadingOverlay({
       }}
       onDoubleClick={togglePauseOverlay}
     >
-      <img src={imgSrc} alt="" />
-      {message && (
+      <div className="loading-timing">
+        <div className="loading-spinner">
+          <img src={imgSrc} alt="" />
+          <div className="loading-metrics">
+            <div className="loading-position">
+              {positionDisplay}
+            </div>
+            <div className="loading-timer">
+              {countUpDisplay > 1 ? elapsedDisplay : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+      {activeMessage && (
         <div className="loading-message" style={{ marginTop: 8 }}>
-          {message}
+          {activeMessage}
         </div>
       )}
       {(showSeekInfo || showDebug) && (
@@ -78,6 +100,7 @@ LoadingOverlay.propTypes = {
   isPaused: PropTypes.bool,
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
+  midPlayStalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
   showPauseOverlay: PropTypes.bool,
   showDebug: PropTypes.bool,
@@ -87,5 +110,7 @@ LoadingOverlay.propTypes = {
   getMediaEl: PropTypes.func,
   plexId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   togglePauseOverlay: PropTypes.func,
-  explicitShow: PropTypes.bool
+  explicitShow: PropTypes.bool,
+  countUpDisplay: PropTypes.string,
+  playerPositionDisplay: PropTypes.string
 };

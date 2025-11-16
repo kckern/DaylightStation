@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
@@ -29,6 +29,24 @@ export function AudioPlayer({
   resilience
 }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
+  const baseMediaKey = useMemo(
+    () => `${media_url || ''}:${media?.media_key || media?.key || media?.id || ''}`,
+    [media_url, media?.media_key, media?.key, media?.id]
+  );
+  const [resilienceReloadToken, setResilienceReloadToken] = useState(0);
+
+  useEffect(() => {
+    setResilienceReloadToken(0);
+  }, [baseMediaKey]);
+
+  const playerInstanceKey = useMemo(
+    () => `${baseMediaKey}:reload-${resilienceReloadToken}`,
+    [baseMediaKey, resilienceReloadToken]
+  );
+
+  const handleResilienceReload = useCallback(() => {
+    setResilienceReloadToken((token) => token + 1);
+  }, []);
   const {
     seconds,
     duration,
@@ -56,7 +74,8 @@ export function AudioPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
-    onController
+    onController,
+    instanceKey: playerInstanceKey
   });
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
@@ -78,11 +97,12 @@ export function AudioPlayer({
     isPaused,
     isSeeking,
     initialStart: media.seconds || 0,
-    waitForPlaybackStart: false,
+    waitKey: playerInstanceKey,
     fetchVideoInfo,
     onStateChange: resilienceStateHandler
       ? (nextState) => resilienceStateHandler(nextState, media)
       : undefined,
+    onReload: handleResilienceReload,
     configOverrides: combinedResilienceConfig,
     controllerRef: resilienceControllerRef,
     explicitShow: shouldShowLoadingOverlay,
@@ -97,7 +117,8 @@ export function AudioPlayer({
       albumArtist,
       url: media_url,
       media_key: media?.media_key || media?.key || media?.plex,
-      shader
+      shader,
+      reloadToken: resilienceReloadToken
     }
   });
 
@@ -130,7 +151,13 @@ export function AudioPlayer({
           <p className="audio-footer">{footer}</p>
         </div>
       </div>
-      <audio ref={containerRef} src={media_url} autoPlay style={{ display: 'none' }} />
+      <audio
+        key={playerInstanceKey}
+        ref={containerRef}
+        src={media_url}
+        autoPlay
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }

@@ -45,7 +45,7 @@ export function DebugInfo({
   plexId 
 }) {
 
-
+  return false;
    const [connectionInternet, setConnectionInternet] = useState(null);
    const [connectionDaylightServer, setConnectionDaylightServer] = useState(null);
    const [connectionDaylightAPI, setConnectionDaylightAPI] = useState(null);

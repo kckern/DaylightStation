@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
@@ -32,6 +32,27 @@ export function VideoPlayer({
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
   
+  const [resilienceReloadToken, setResilienceReloadToken] = useState(0);
+  const { show, season, title, media_url } = media;
+
+  const videoKey = useMemo(
+    () => `${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`,
+    [media_url, media?.maxVideoBitrate]
+  );
+
+  useEffect(() => {
+    setResilienceReloadToken(0);
+  }, [videoKey]);
+
+  const playerInstanceKey = useMemo(
+    () => `${videoKey}:reload-${resilienceReloadToken}`,
+    [videoKey, resilienceReloadToken]
+  );
+
+  const handleResilienceReload = useCallback(() => {
+    setResilienceReloadToken((token) => token + 1);
+  }, []);
+
   const {
     isDash,
     containerRef,
@@ -61,10 +82,9 @@ export function VideoPlayer({
     onProgress,
     onMediaRef,
     keyboardOverrides,
-    onController
+    onController,
+    instanceKey: playerInstanceKey
   });
-
-  const { show, season, title, media_url } = media;
 
   const getCurrentMediaElement = useCallback(() => {
     const host = containerRef.current;
@@ -89,10 +109,6 @@ export function VideoPlayer({
     return null;
   }, [containerRef]);
 
-  const videoKey = useMemo(
-    () => `${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`,
-    [media_url, media?.maxVideoBitrate]
-  );
 
   const dashSource = useMemo(() => {
     if (!media_url) return null;
@@ -129,12 +145,12 @@ export function VideoPlayer({
     isPaused,
     isSeeking,
     initialStart: media.seconds || 0,
-    waitForPlaybackStart: true,
-    waitKey: videoKey,
+    waitKey: playerInstanceKey,
     fetchVideoInfo,
     onStateChange: resilienceStateHandler
       ? (nextState) => resilienceStateHandler(nextState, media)
       : undefined,
+    onReload: handleResilienceReload,
     configOverrides: combinedResilienceConfig,
     controllerRef: resilienceControllerRef,
     explicitShow: shouldShowLoadingOverlay,
@@ -148,7 +164,8 @@ export function VideoPlayer({
       url: media_url,
       media_key: media?.media_key || media?.key || media?.plex,
       isDash,
-      shader
+      shader,
+      reloadToken: resilienceReloadToken
     }
   });
 
@@ -160,7 +177,7 @@ export function VideoPlayer({
     mediaEl.style.maxHeight = '100%';
     mediaEl.style.width = '100%';
     mediaEl.style.height = '100%';
-  }, [getCurrentMediaElement, videoKey]);
+  }, [getCurrentMediaElement, playerInstanceKey]);
 
   useEffect(() => {
     if (!setControllerExtras) return;
@@ -181,7 +198,7 @@ export function VideoPlayer({
       {isDash ? (
         <div ref={containerRef} className="video-element-host">
           <ShakaVideoStreamer
-            key={videoKey}
+            key={playerInstanceKey}
             className="video-element"
             source={dashSource}
             configuration={{ playsInline: true }}
@@ -189,7 +206,7 @@ export function VideoPlayer({
         </div>
       ) : (
         <video
-          key={videoKey}
+          key={playerInstanceKey}
           autoPlay
           ref={containerRef}
           className="video-element"
