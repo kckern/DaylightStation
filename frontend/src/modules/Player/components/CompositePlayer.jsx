@@ -16,7 +16,12 @@ export function CompositePlayer(props) {
     const baseProps = { ...props };
     const overlayKey = isQueue ? 'queue' : 'play';
     if (baseProps[overlayKey]) {
-      baseProps[overlayKey] = { ...baseProps[overlayKey], overlay: undefined };
+      const stripped = { ...baseProps[overlayKey], overlay: undefined };
+      if (!stripped.shader) {
+        stripped.shader = 'minimal';
+      }
+      stripped.seconds = 0;
+      baseProps[overlayKey] = stripped;
     }
     return baseProps;
   }, [props, isQueue]);

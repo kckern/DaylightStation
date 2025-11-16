@@ -153,6 +153,16 @@ export function VideoPlayer({
   });
 
   useEffect(() => {
+    const mediaEl = getCurrentMediaElement();
+    if (!mediaEl) return;
+    mediaEl.style.objectFit = 'contain';
+    mediaEl.style.maxWidth = '100%';
+    mediaEl.style.maxHeight = '100%';
+    mediaEl.style.width = '100%';
+    mediaEl.style.height = '100%';
+  }, [getCurrentMediaElement, videoKey]);
+
+  useEffect(() => {
     if (!setControllerExtras) return;
     if (resilienceController) {
       setControllerExtras({ resilience: resilienceController });
