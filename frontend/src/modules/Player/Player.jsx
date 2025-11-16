@@ -139,7 +139,8 @@ const Player = forwardRef(function Player(props, ref) {
     delete sanitizedSinglePlayerProps.mediaResilienceRef;
   }
 
-  useImperativeHandle(ref, () => ({
+  const isValidImperativeRef = typeof ref === 'function' || (ref && typeof ref === 'object' && 'current' in ref);
+  useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
     seek: (t) => { 
       const el = exposedMediaRef.current; 
       if (el && Number.isFinite(t)) { 

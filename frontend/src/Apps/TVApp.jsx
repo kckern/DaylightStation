@@ -10,7 +10,9 @@ export function TVAppWrapper({ content }) {
   return (
     <div className="tv-app-container">
       <div className="tv-app">
-        {content}
+        <div className="tv-app__content">
+          {content}
+        </div>
       </div>
     </div>
   );
@@ -113,8 +115,11 @@ export default function TVApp({ appParam }) {
   })();
 
   function mapSelectionToContent(selection) {
+    const safeSelection = { ...(selection || {}) };
+    delete safeSelection.ref;
+    delete safeSelection.key;
     const clear = () => setCurrentContent(null);
-    const props = { ...selection, clear, onSelect: handleSelection, onEscape: handleEscape };
+    const props = { ...safeSelection, clear, onSelect: handleSelection, onEscape: handleEscape };
     console.log('[TVApp] mapSelectionToContent - selection:', selection);
     console.log('[TVApp] props being passed to Player/Menu:', props);
     const options = {

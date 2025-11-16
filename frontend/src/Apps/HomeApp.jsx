@@ -170,13 +170,16 @@ function HomeApp() {
       // Handle new format from menuHandler
       if (currentContent.type && currentContent.props) {
         const uuid = CryptoJS.lib.WordArray.random(16).toString();
+        const safeProps = { ...(currentContent.props || {}) };
+        delete safeProps.ref;
+        delete safeProps.key;
         const componentMap = {
-          play: <Player {...currentContent.props} />,
-          queue: <Player {...currentContent.props} />,
-          playlist: <Player {...currentContent.props} />,
-          list: <KeypadMenu {...currentContent.props} key={uuid} />,
-          menu: <KeypadMenu {...currentContent.props} key={uuid} />,
-          open: <AppContainer {...currentContent.props} />,
+          play: <Player {...safeProps} />,
+          queue: <Player {...safeProps} />,
+          playlist: <Player {...safeProps} />,
+          list: <KeypadMenu {...safeProps} key={uuid} />,
+          menu: <KeypadMenu {...safeProps} key={uuid} />,
+          open: <AppContainer {...safeProps} />,
         };
         
         const component = componentMap[currentContent.type];
