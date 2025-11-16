@@ -318,6 +318,7 @@ export const detectFoodFromImage = async (imgUrl, extras, attempt = 1) => {
         const description = response.choices?.[0]?.message?.content;
         const json = extractJSON(description);
         json.uuid = uuidv4();
+        json.usage = response.usage;
         return json;
     } catch (error) {
         console.error('Error describing image:', error);
@@ -331,6 +332,7 @@ export const detectFoodFromTextDescription = async (text, extras, attempt = 1) =
     attempt = attempt || 1;
     extras = extras || {};
     const {food_data, text:original_text} = extras;
+    const { today } = getCurrentTimeDetails();
 
     // Circuit breaker - prevent infinite loops
     if(attempt > 3) {
@@ -372,6 +374,7 @@ export const detectFoodFromTextDescription = async (text, extras, attempt = 1) =
         json.date = json.date || today;
         json.time = json.time || "midday";
         json.food = json.food || null;
+        json.usage = response.usage;
         return json;
     } catch (error) {
         console.error('Error describing text:', error);

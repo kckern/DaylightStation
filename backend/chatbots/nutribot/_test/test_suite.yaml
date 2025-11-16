@@ -1,0 +1,56 @@
+version: 1
+scenarios:
+  - name: toast_basic
+    description: Logs a single toast entry and accepts it.
+    context:
+      actor: kirk
+      bot: nutribot
+      tenant: daylight
+    steps:
+      - action: invoke
+        target: service.handle
+        value:
+          type: MealTextLogged
+          payload:
+            text: "1 piece of toast"
+      - action: wait
+        target: responses
+        value:
+          at: 0
+          expect:
+            kind: SendCard
+            cardKind: mealSummary
+            model:
+              items:
+                - id: "{{itemId}}"
+      - action: invoke
+        target: service.handle
+        value:
+          type: UserChoiceCommitted
+          payload:
+            action: acceptLog
+            logId: "{{logId}}"
+      - action: wait
+        target: responses
+        value:
+          at: 0
+          expect:
+            kind: Acknowledge
+            message: Meal saved
+      - action: wait
+        target: nutrilog
+        value:
+          expect:
+            - status: accepted
+              items:
+                - id: "{{itemId}}"
+      - action: wait
+        target: nutrilist
+        value:
+          expect:
+            - logId: "{{logId}}"
+              itemId: "{{itemId}}"
+              status: accepted
+    exitCriteria:
+      nutrilogContainsLogId:
+        path: lifelog/nutribot/nutrilog
