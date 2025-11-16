@@ -12,7 +12,7 @@ scenarios:
         value:
           type: MealTextLogged
           payload:
-            text: "1 piece of toast"
+            text: "thansgiving dinner"
       - action: wait
         target: responses
         value:
@@ -23,6 +23,12 @@ scenarios:
             model:
               items:
                 - id: "{{itemId}}"
+      - action: wait
+        target: nutrilog
+        value:
+          expect:
+            - status: draft
+              #text: "1 piece of toast"
       - action: invoke
         target: service.handle
         value:
@@ -48,8 +54,10 @@ scenarios:
         target: nutrilist
         value:
           expect:
-            - logId: "{{logId}}"
-              itemId: "{{itemId}}"
+            - log_uuid: "{{logId}}"
+              uuid: "{{itemId}}"
+              chat_id: "{{chatId}}"
+              date: "{{logDate}}"
               status: accepted
     exitCriteria:
       nutrilogContainsLogId:

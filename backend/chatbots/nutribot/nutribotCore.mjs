@@ -14,10 +14,11 @@ function response(kind, extra = {}) {
 	};
 }
 
-export function createNutribotService({ repos, ai, clock, observer }) {
+export function createNutribotService({ repos, ai, clock, observer, chatId }) {
 	const currentTime = () => now(clock);
 	const instrumentation = observer ?? {};
-	const draftItems = new Map();
+	const draftLogs = new Map();
+ 	const resolvedChatId = chatId ?? process.env.nutribot_chat_id ?? null;
 
 	const emit = (event, payload) => {
 		if (typeof instrumentation.step === 'function') {
@@ -44,39 +45,44 @@ export function createNutribotService({ repos, ai, clock, observer }) {
 		}
 		emit('input.received', { text, actor: event.actor, tenant: event.tenant });
 		const parsed = await ai.foodText.analyze(text);
+		const normalizedItems = (parsed.items ?? []).map((item) => ({
+			id: item.id ?? crypto.randomUUID(),
+			label: item.label ?? 'Unknown item',
+			grams: typeof item.grams === 'number' ? item.grams : 0,
+			color: item.color ?? 'yellow'
+		}));
 		const usage = parsed.usage ?? {};
 		const aiInputTokens = usage.inputTokens ?? null;
 		const aiOutputTokens = usage.outputTokens ?? null;
 		const aiMetadata = parsed.metadata ?? {};
 		const aiRequestId = aiMetadata.requestId ?? null;
 		const createdAt = currentTime();
+		const logDate = aiMetadata.date ?? createdAt.slice(0, 10);
+		const timeOfDay = aiMetadata.time ?? null;
 		const logId = crypto.randomUUID();
 		await repos.logs.createDraft({
 			id: logId,
 			user: event.actor,
 			bot: event.bot,
 			tenant: event.tenant,
-			text,
-			items: parsed.items,
+			text: text.trim(),
+			items: normalizedItems,
 			createdAt,
 			status: 'draft',
 			aiInputTokens,
 			aiOutputTokens,
 			aiRequestId
 		});
-		await repos.list.saveItems({
-			logId,
-			items: parsed.items,
-			status: 'pending',
+		draftLogs.set(logId, {
+			items: normalizedItems,
 			createdAt,
-			aiInputTokens,
-			aiOutputTokens,
-			aiRequestId
+			date: logDate,
+			timeOfDay,
+			chatId: resolvedChatId
 		});
-		draftItems.set(logId, parsed.items);
-		emit('nutrilist.saved', { logId, items: parsed.items });
+		emit('nutrilog.saved', { logId, items: normalizedItems, status: 'draft' });
 		const cardRef = `meal:${logId}`;
-		emit('card.rendered', { logId, items: parsed.items });
+		emit('card.rendered', { logId, items: normalizedItems });
 		return {
 			responses: [
 				response('SendCard', {
@@ -86,7 +92,9 @@ export function createNutribotService({ repos, ai, clock, observer }) {
 					model: {
 						logId,
 						title: 'Review meal',
-						items: parsed.items.map((item) => ({
+						mealDate: logDate,
+						timeOfDay,
+						items: normalizedItems.map((item) => ({
 							id: item.id,
 							label: item.label,
 							grams: item.grams,
@@ -122,12 +130,37 @@ export function createNutribotService({ repos, ai, clock, observer }) {
 		}
 		emit('choice.received', { action, logId });
 		const acceptedAt = currentTime();
-		const items = draftItems.get(logId) ?? [];
-		emit('itemizing.start', { logId, items });
+		const draft = draftLogs.get(logId);
+		if (!draft) {
+			throw new Error(`No draft items found for log ${logId}`);
+		}
+		emit('itemizing.start', { logId, items: draft.items });
+		const itemizerPayload = buildItemizerSeed(draft.items);
+		let itemizerResult;
+		try {
+			itemizerResult = await ai.itemizer.enrich(itemizerPayload);
+		} catch (error) {
+			console.error('Error enriching items for nutrilist:', error?.message || error);
+		}
+		const enrichedItems = mergeItemizerItems(draft.items, itemizerResult?.items ?? []);
+		const listUsage = itemizerResult?.usage ?? {};
+		await repos.list.saveItems({
+			logId,
+			items: enrichedItems,
+			status: 'accepted',
+			createdAt: draft.createdAt,
+			date: draft.date,
+			timeOfDay: draft.timeOfDay,
+			chatId: draft.chatId,
+			acceptedAt,
+			aiInputTokens: listUsage.inputTokens ?? null,
+			aiOutputTokens: listUsage.outputTokens ?? null,
+			aiRequestId: itemizerResult?.requestId ?? null
+		});
+		emit('nutrilist.saved', { logId, items: enrichedItems });
 		await repos.logs.markAccepted(logId, acceptedAt);
-		await repos.list.markAccepted(logId, acceptedAt);
-		emit('nutrilog.saved', { logId, items });
-		draftItems.delete(logId);
+		emit('nutrilog.saved', { logId, items: draft.items, status: 'accepted' });
+		draftLogs.delete(logId);
 		return {
 			responses: [
 				response('Acknowledge', {
@@ -138,4 +171,43 @@ export function createNutribotService({ repos, ai, clock, observer }) {
 			jobs: []
 		};
 	}
+}
+
+function buildItemizerSeed(items = []) {
+	return items.map((item) => {
+		const rawAmount = typeof item.grams === 'number' ? item.grams : Number(item.amount ?? 0);
+		const amount = Number.isNaN(rawAmount) ? 0 : rawAmount;
+		return {
+			item: item.label ?? item.item ?? 'Unknown item',
+			unit: item.unit ?? 'g',
+			amount,
+			noom_color: (item.color ?? item.noom_color ?? 'yellow').toLowerCase()
+		};
+	});
+}
+
+function mergeItemizerItems(draftItems = [], enrichedItems = []) {
+	if (!Array.isArray(enrichedItems) || !enrichedItems.length) {
+		return draftItems;
+	}
+	return enrichedItems.map((item, index) => {
+		const source = draftItems[index] ?? draftItems[0] ?? {};
+		const mergedId = source.id ?? item.id ?? item.uuid ?? crypto.randomUUID();
+		const mergedLabel = item.label ?? item.item ?? source.label ?? 'Unknown item';
+		const mergedColor = item.color ?? item.noom_color ?? source.color ?? 'yellow';
+		const gramsCandidate =
+			typeof item.grams === 'number'
+				? item.grams
+				: typeof source.grams === 'number'
+					? source.grams
+					: null;
+		return {
+			...item,
+			id: mergedId,
+			uuid: mergedId,
+			label: mergedLabel,
+			color: mergedColor,
+			grams: gramsCandidate
+		};
+	});
 }

@@ -15,6 +15,7 @@ const config = parse(readFileSync(configPath, 'utf8'));
 const secrets = parse(readFileSync(secretsPath, 'utf8'));
 const nutribotConfig = config.nutribot;
 const suite = parse(readFileSync(suitePath, 'utf8'));
+const configuredChatId = config.nutribot_chat_id ?? 'nutribot-test-chat';
 
 const openaiKey = secrets.OPENAI_API_KEY?.trim();
 if (openaiKey) {
@@ -24,6 +25,10 @@ if (openaiKey) {
 	if (!process.env.OPEN_AI_API_KEY) {
 		process.env.OPEN_AI_API_KEY = openaiKey;
 	}
+}
+
+if (configuredChatId && !process.env.nutribot_chat_id) {
+	process.env.nutribot_chat_id = configuredChatId;
 }
 
 const { createNutribotService } = await import('../nutribotCore.mjs');
@@ -87,13 +92,13 @@ async function executeStep(step, context) {
 function createScenarioContext(scenario) {
 	const repos = createRepos(storageConfig);
 	const ai = createAIServices();
-	const service = createNutribotService({ repos, ai, clock: fixedClock });
+	const service = createNutribotService({ repos, ai, clock: fixedClock, chatId: configuredChatId });
 	return {
 		scenario,
 		service,
 		clock: fixedClock,
 		storageConfig,
-		vars: {},
+		vars: configuredChatId ? { chatId: configuredChatId } : {},
 		lastResult: null,
 		stepCounter: 0
 	};
@@ -203,6 +208,14 @@ function captureResultVariables(result, vars) {
 	const firstItemId = Array.isArray(firstItems) && firstItems[0]?.id ? firstItems[0].id : null;
 	if (firstItemId) {
 		vars.itemId = firstItemId;
+	}
+	const mealDate = firstResponse?.model?.mealDate;
+	if (mealDate) {
+		vars.logDate = mealDate;
+	}
+	const timeOfDay = firstResponse?.model?.timeOfDay;
+	if (timeOfDay) {
+		vars.timeOfDay = timeOfDay;
 	}
 }
 

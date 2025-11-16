@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import dotenv from 'dotenv';
-import axios from '../../lib/http.mjs';
+import axios from 'axios';
 import moment from 'moment-timezone';
 import { v4 as uuidv4 } from 'uuid';
 import { saveFile } from '../../lib/io.mjs';
