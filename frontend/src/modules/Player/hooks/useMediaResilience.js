@@ -232,13 +232,16 @@ export function useMediaResilience({
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
   const waitingToPlay = waitForPlaybackStart && waitingForPlayback && graceElapsed;
+  const startupSeconds = waitForPlaybackStart
+    ? Math.max(0, seconds - (initialStart || 0))
+    : seconds;
 
   useEffect(() => {
     if (!fetchVideoInfoRef.current) {
       setLoadingSeconds(0);
       return () => {};
     }
-    if (isPaused || seconds > 0 || !waitingToPlay) {
+    if (isPaused || startupSeconds > 0 || !waitingToPlay) {
       setLoadingSeconds(0);
       return () => {};
     }
@@ -256,7 +259,7 @@ export function useMediaResilience({
       }
     }, intervalMs);
     return () => clearInterval(interval);
-  }, [isPaused, waitKey, mergedConfig.fetchInfo?.intervalMs, mergedConfig.fetchInfo?.thresholdSeconds, fetchVideoInfoRef, meta]);
+  }, [isPaused, waitKey, mergedConfig.fetchInfo?.intervalMs, mergedConfig.fetchInfo?.thresholdSeconds, fetchVideoInfoRef, meta, startupSeconds, waitingToPlay]);
 
   useEffect(() => {
     if (isPaused) {
@@ -275,7 +278,7 @@ export function useMediaResilience({
 
   useEffect(() => {
     if (!mergedConfig.reload?.enabled) return () => {};
-    const shouldSchedule = waitingToPlay && (!mergedConfig.reload?.onlyDuringStartup || seconds === 0) && !isPaused;
+    const shouldSchedule = waitingToPlay && (!mergedConfig.reload?.onlyDuringStartup || startupSeconds === 0) && !isPaused;
     if (!shouldSchedule) {
       if (reloadTimeoutRef.current) {
         clearTimeout(reloadTimeoutRef.current);
@@ -292,11 +295,11 @@ export function useMediaResilience({
         reloadTimeoutRef.current = null;
       }
     };
-  }, [waitingToPlay, seconds, isPaused, mergedConfig.reload, waitKey, meta, onReloadRef]);
+  }, [waitingToPlay, startupSeconds, isPaused, mergedConfig.reload, waitKey, meta, onReloadRef]);
 
   const stalled = typeof stalledOverride === 'boolean'
     ? stalledOverride
-    : (waitingToPlay && (!mergedConfig.reload?.onlyDuringStartup || seconds === 0) && !isPaused);
+    : (waitingToPlay && (!mergedConfig.reload?.onlyDuringStartup || startupSeconds === 0) && !isPaused);
 
   const togglePauseOverlay = useCallback(() => {
     setShowPauseOverlay((prev) => {
