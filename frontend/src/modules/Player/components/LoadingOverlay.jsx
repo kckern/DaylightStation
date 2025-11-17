@@ -13,6 +13,7 @@ export function LoadingOverlay({
   shouldRender,
   isVisible,
   isPaused,
+  pauseOverlayActive = false,
   seconds = 0,
   stalled = false,
   waitingToPlay = false,
@@ -34,7 +35,7 @@ export function LoadingOverlay({
   }
 
   const isInitialPlayback = seconds === 0 && !stalled;
-  const shouldShowPauseIcon = isPaused && !isInitialPlayback && !waitingToPlay;
+  const shouldShowPauseIcon = pauseOverlayActive && !isInitialPlayback && !waitingToPlay && !stalled;
   const imgSrc = shouldShowPauseIcon ? pause : spinner;
   const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled && explicitShow;
   const overlayStateClass = shouldShowPauseIcon ? 'paused' : 'loading';
@@ -71,6 +72,7 @@ LoadingOverlay.propTypes = {
   shouldRender: PropTypes.bool,
   isVisible: PropTypes.bool,
   isPaused: PropTypes.bool,
+  pauseOverlayActive: PropTypes.bool,
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
