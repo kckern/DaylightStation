@@ -33,6 +33,7 @@ export function VideoPlayer({
   const isPlex = ['dash_video'].includes(media.media_type);
   
   const [resilienceReloadToken, setResilienceReloadToken] = useState(0);
+  const [pendingSeekIntentMs, setPendingSeekIntentMs] = useState(null);
   const { show, season, title, media_url } = media;
 
   const videoKey = useMemo(
@@ -42,6 +43,7 @@ export function VideoPlayer({
 
   useEffect(() => {
     setResilienceReloadToken(0);
+    setPendingSeekIntentMs(null);
   }, [videoKey]);
 
   const playerInstanceKey = useMemo(
@@ -49,9 +51,16 @@ export function VideoPlayer({
     [videoKey, resilienceReloadToken]
   );
 
-  const handleResilienceReload = useCallback(() => {
+  const handleResilienceReload = useCallback((options = {}) => {
+    if (Number.isFinite(options.seekToIntentMs)) {
+      setPendingSeekIntentMs(Math.max(0, options.seekToIntentMs));
+    }
     setResilienceReloadToken((token) => token + 1);
   }, []);
+
+  const pendingSeekIntentSeconds = useMemo(() => (
+    Number.isFinite(pendingSeekIntentMs) ? pendingSeekIntentMs / 1000 : null
+  ), [pendingSeekIntentMs]);
 
   const {
     isDash,
@@ -83,8 +92,18 @@ export function VideoPlayer({
     onMediaRef,
     keyboardOverrides,
     onController,
-    instanceKey: playerInstanceKey
+    instanceKey: playerInstanceKey,
+    seekToIntentSeconds: pendingSeekIntentSeconds
   });
+
+  useEffect(() => {
+    if (!Number.isFinite(pendingSeekIntentMs)) return;
+    if (!Number.isFinite(seconds)) return;
+    const targetSeconds = pendingSeekIntentMs / 1000;
+    if (Math.abs(seconds - targetSeconds) <= 1) {
+      setPendingSeekIntentMs(null);
+    }
+  }, [pendingSeekIntentMs, seconds]);
 
   const getCurrentMediaElement = useCallback(() => {
     const host = containerRef.current;

@@ -34,9 +34,11 @@ export function AudioPlayer({
     [media_url, media?.media_key, media?.key, media?.id]
   );
   const [resilienceReloadToken, setResilienceReloadToken] = useState(0);
+  const [pendingSeekIntentMs, setPendingSeekIntentMs] = useState(null);
 
   useEffect(() => {
     setResilienceReloadToken(0);
+    setPendingSeekIntentMs(null);
   }, [baseMediaKey]);
 
   const playerInstanceKey = useMemo(
@@ -44,9 +46,16 @@ export function AudioPlayer({
     [baseMediaKey, resilienceReloadToken]
   );
 
-  const handleResilienceReload = useCallback(() => {
+  const handleResilienceReload = useCallback((options = {}) => {
+    if (Number.isFinite(options.seekToIntentMs)) {
+      setPendingSeekIntentMs(Math.max(0, options.seekToIntentMs));
+    }
     setResilienceReloadToken((token) => token + 1);
   }, []);
+
+  const pendingSeekIntentSeconds = useMemo(() => (
+    Number.isFinite(pendingSeekIntentMs) ? pendingSeekIntentMs / 1000 : null
+  ), [pendingSeekIntentMs]);
   const {
     seconds,
     duration,
@@ -75,8 +84,18 @@ export function AudioPlayer({
     onProgress,
     onMediaRef,
     onController,
-    instanceKey: playerInstanceKey
+    instanceKey: playerInstanceKey,
+    seekToIntentSeconds: pendingSeekIntentSeconds
   });
+
+  useEffect(() => {
+    if (!Number.isFinite(pendingSeekIntentMs)) return;
+    if (!Number.isFinite(seconds)) return;
+    const targetSeconds = pendingSeekIntentMs / 1000;
+    if (Math.abs(seconds - targetSeconds) <= 1) {
+      setPendingSeekIntentMs(null);
+    }
+  }, [pendingSeekIntentMs, seconds]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;

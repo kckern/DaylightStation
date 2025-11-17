@@ -15,7 +15,8 @@ export default function FitnessPlayerFooterControls({
   isZoomed = false,
   onBack,
   playIsGoverned = false,
-  zoomNavState = null
+  zoomNavState = null,
+  intentTimeRef
 }) {
   const isLeft = section === 'left';
 
@@ -79,15 +80,37 @@ export default function FitnessPlayerFooterControls({
     onClose?.(e);
   }, [onClose]);
 
+  const resolveSeekIntentSeconds = useCallback(() => {
+    if (typeof intentTimeRef?.current === 'function') {
+      const candidate = intentTimeRef.current();
+      if (Number.isFinite(candidate)) {
+        return candidate;
+      }
+    }
+    const api = playerRef?.current;
+    const resilienceController = api?.getMediaResilienceController?.();
+    const pendingMs = resilienceController?.getSeekIntentMs?.();
+    if (Number.isFinite(pendingMs)) {
+      return pendingMs / 1000;
+    }
+    const fallbackSeconds = api?.getCurrentTime?.();
+    return Number.isFinite(fallbackSeconds) ? fallbackSeconds : null;
+  }, [intentTimeRef, playerRef]);
+
   const handleManualReload = useCallback(() => {
     const api = playerRef?.current;
     const controller = api?.getMediaResilienceController?.();
-    if (controller?.forceReload) {
-      controller.forceReload({ reason: 'fitness-manual' });
-    } else if (api?.forceMediaReload) {
-      api.forceMediaReload({ reason: 'fitness-manual' });
+    const intentSeconds = resolveSeekIntentSeconds();
+    const seekToIntentMs = Number.isFinite(intentSeconds) ? Math.max(0, intentSeconds * 1000) : undefined;
+    if (seekToIntentMs != null) {
+      controller?.recordSeekIntentMs?.(seekToIntentMs);
     }
-  }, [playerRef]);
+    if (controller?.forceReload) {
+      controller.forceReload({ reason: 'fitness-manual', seekToIntentMs });
+    } else if (api?.forceMediaReload) {
+      api.forceMediaReload({ reason: 'fitness-manual', seekToIntentMs });
+    }
+  }, [playerRef, resolveSeekIntentSeconds]);
 
   if (isLeft) {
     const zoomPrevDisabled = !(zoomNavState?.canStepBackward);
@@ -252,5 +275,6 @@ FitnessPlayerFooterControls.propTypes = {
     canStepForward: PropTypes.bool,
     stepBackward: PropTypes.func,
     stepForward: PropTypes.func
-  })
+  }),
+  intentTimeRef: PropTypes.shape({ current: PropTypes.func })
 };

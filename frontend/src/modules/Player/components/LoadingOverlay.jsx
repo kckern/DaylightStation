@@ -15,19 +15,19 @@ export function LoadingOverlay({
   isPaused,
   seconds = 0,
   stalled = false,
-  midPlayStalled = false,
   waitingToPlay = false,
   showPauseOverlay = false,
   showDebug = false,
   initialStart = 0,
-  message,
+  message: _message,
   debugContext,
   getMediaEl,
   plexId,
   togglePauseOverlay,
   explicitShow = false,
   countUpDisplay,
-  playerPositionDisplay
+  playerPositionDisplay,
+  intentPositionDisplay
 }) {
   if (!shouldRender) {
     return null;
@@ -37,14 +37,9 @@ export function LoadingOverlay({
   const shouldShowPauseIcon = isPaused && !isInitialPlayback && !waitingToPlay;
   const imgSrc = shouldShowPauseIcon ? pause : spinner;
   const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled && explicitShow;
-  const overlayStateClass = midPlayStalled
-    ? 'stalled'
-    : (shouldShowPauseIcon && !waitingToPlay ? 'paused' : 'loading');
-  const activeMessage = midPlayStalled && !message
-    ? 'Attempting to resume playback…'
-    : message;
+  const overlayStateClass = shouldShowPauseIcon ? 'paused' : 'loading';
   const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : '00';
-  const positionDisplay = playerPositionDisplay || '0:00';
+  const positionDisplay = intentPositionDisplay || playerPositionDisplay || '0:00';
 
   return (
     <div
@@ -58,21 +53,16 @@ export function LoadingOverlay({
       <div className="loading-timing">
         <div className="loading-spinner">
           <img src={imgSrc} alt="" />
-          <div className="loading-metrics">
+          {!shouldShowPauseIcon &&<div className="loading-metrics">
             <div className="loading-position">
-              {positionDisplay}
+              {positionDisplay !== '0:00' ? positionDisplay : ''}
             </div>
             <div className="loading-timer">
-              {countUpDisplay > 1 ? elapsedDisplay : ''}
+              {countUpDisplay > 6 ? elapsedDisplay : ''}
             </div>
-          </div>
+          </div>}
         </div>
       </div>
-      {activeMessage && (
-        <div className="loading-message" style={{ marginTop: 8 }}>
-          {activeMessage}
-        </div>
-      )}
       {(showSeekInfo || showDebug) && (
         <div className="loading-info">
           {showSeekInfo && <div>Loading at {formatSeekTime(initialStart)}</div>}
@@ -100,7 +90,6 @@ LoadingOverlay.propTypes = {
   isPaused: PropTypes.bool,
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
-  midPlayStalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
   showPauseOverlay: PropTypes.bool,
   showDebug: PropTypes.bool,
@@ -112,5 +101,6 @@ LoadingOverlay.propTypes = {
   togglePauseOverlay: PropTypes.func,
   explicitShow: PropTypes.bool,
   countUpDisplay: PropTypes.string,
-  playerPositionDisplay: PropTypes.string
+  playerPositionDisplay: PropTypes.string,
+  intentPositionDisplay: PropTypes.string
 };
