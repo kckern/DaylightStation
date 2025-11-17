@@ -29,6 +29,7 @@ export function useCommonMediaController({
   onController,
   keyboardOverrides,
   controllerExtras,
+  seekToIntentSeconds = null,
   instanceKey = null
 }) {
   const DEBUG_MEDIA = false;
@@ -90,6 +91,13 @@ export function useCommonMediaController({
     lastPlaybackPosRef.current = 0;
     isInitialLoadRef.current = true;
   }, [media_key, instanceKey]);
+
+  useEffect(() => {
+    if (!Number.isFinite(seekToIntentSeconds)) return;
+    const normalized = Math.max(0, seekToIntentSeconds);
+    lastSeekIntentRef.current = normalized;
+    try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; } catch (_) {}
+  }, [seekToIntentSeconds, media_key]);
 
   const handleProgressClick = useCallback((event) => {
     if (!duration || !containerRef.current) return;

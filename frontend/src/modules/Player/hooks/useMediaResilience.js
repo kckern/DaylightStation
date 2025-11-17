@@ -25,8 +25,7 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
   overlay: {
     revealDelayMs: 300, // fade-in delay before showing the overlay
     pauseToggleKeys: ['ArrowUp', 'ArrowDown'], // remote keys that toggle pause overlay
-    showPausedOverlay: true, // whether to show overlay while paused
-    showMidPlayStall: true // allow overlay during mid-play stalls
+    showPausedOverlay: true // whether to show overlay while paused
   },
   monitor: {
     progressEpsilonSeconds: 0.25, // how many seconds of advancement count as progress
@@ -72,6 +71,87 @@ const mergeConfigs = (...configs) => configs
 
 export const mergeMediaResilienceConfig = (...configs) => mergeConfigs(...configs);
 
+const coerceNumber = (value, fallback) => (Number.isFinite(value) ? value : fallback);
+
+const useResolvedMediaResilienceConfig = (contextConfig, configOverrides, runtimeOverrides) => useMemo(() => {
+  const mergedConfig = mergeConfigs(
+    DEFAULT_MEDIA_RESILIENCE_CONFIG,
+    contextConfig,
+    configOverrides,
+    runtimeOverrides
+  );
+
+  const overlayConfig = mergedConfig.overlay || {};
+  const debugConfig = mergedConfig.debug || {};
+  const monitorConfig = mergedConfig.monitor || {};
+
+  const legacyReload = mergedConfig.reload || {};
+  const recoveryConfig = mergedConfig.recovery || {};
+
+  return {
+    overlayConfig,
+    debugConfig,
+    monitorSettings: {
+      epsilonSeconds: coerceNumber(monitorConfig.progressEpsilonSeconds, 0.25),
+      stallDetectionThresholdMs: coerceNumber(monitorConfig.stallDetectionThresholdMs, 500),
+      hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 6000)
+    },
+    recoveryConfig: {
+      enabled: recoveryConfig.enabled ?? legacyReload.enabled ?? true,
+      reloadDelayMs: coerceNumber(recoveryConfig.reloadDelayMs ?? legacyReload.stallMs, 0),
+      cooldownMs: coerceNumber(recoveryConfig.cooldownMs ?? legacyReload.cooldownMs, 4000),
+      maxAttempts: coerceNumber(recoveryConfig.maxAttempts ?? legacyReload.maxAttempts, 2)
+    }
+  };
+}, [contextConfig, configOverrides, runtimeOverrides]);
+
+const useOverlayTimer = (overlayActive, stallDeadlineMs, triggerRecovery) => {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const overlayTimerRef = useRef(null);
+  const overlayAlertedRef = useRef(false);
+
+  useEffect(() => {
+    if (!overlayActive) {
+      setElapsedMs(0);
+      overlayAlertedRef.current = false;
+      if (overlayTimerRef.current) {
+        clearInterval(overlayTimerRef.current);
+        overlayTimerRef.current = null;
+      }
+      return () => {};
+    }
+
+    setElapsedMs(0);
+    const startTs = Date.now();
+    overlayTimerRef.current = setInterval(() => {
+      setElapsedMs(Date.now() - startTs);
+    }, 1000);
+
+    return () => {
+      if (overlayTimerRef.current) {
+        clearInterval(overlayTimerRef.current);
+        overlayTimerRef.current = null;
+      }
+    };
+  }, [overlayActive]);
+
+  useEffect(() => {
+    if (!overlayActive || overlayAlertedRef.current) return;
+    if (elapsedMs >= stallDeadlineMs) {
+      overlayAlertedRef.current = true;
+      triggerRecovery('overlay-hard-recovery', { ignorePaused: true });
+    }
+  }, [elapsedMs, overlayActive, stallDeadlineMs, triggerRecovery]);
+
+  useEffect(() => () => {
+    if (overlayTimerRef.current) {
+      clearInterval(overlayTimerRef.current);
+    }
+  }, []);
+
+  return Math.max(0, Math.floor(elapsedMs / 1000));
+};
+
 const useLatest = (value) => {
   const ref = useRef(value);
   useEffect(() => {
@@ -79,8 +159,6 @@ const useLatest = (value) => {
   }, [value]);
   return ref;
 };
-
-const coerceNumber = (value, fallback) => (Number.isFinite(value) ? value : fallback);
 
 export function useMediaResilience({
   getMediaEl,
@@ -103,33 +181,20 @@ export function useMediaResilience({
 }) {
   const contextConfig = useContext(MediaResilienceConfigContext);
   const [runtimeOverrides, setRuntimeOverrides] = useState(null);
-  const mergedConfig = useMemo(
-    () => mergeConfigs(DEFAULT_MEDIA_RESILIENCE_CONFIG, contextConfig, configOverrides, runtimeOverrides),
-    [contextConfig, configOverrides, runtimeOverrides]
-  );
+  const {
+    overlayConfig,
+    debugConfig,
+    monitorSettings,
+    recoveryConfig
+  } = useResolvedMediaResilienceConfig(contextConfig, configOverrides, runtimeOverrides);
 
-  const monitorConfig = mergedConfig.monitor || {};
-  const epsilonSeconds = coerceNumber(monitorConfig.progressEpsilonSeconds, 0.25);
-  const stallDetectionThresholdMs = coerceNumber(monitorConfig.stallDetectionThresholdMs, 500);
-  const hardRecoverAfterStalledForMs = coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 6000);
+  const { epsilonSeconds, stallDetectionThresholdMs, hardRecoverAfterStalledForMs } = monitorSettings;
 
-  const recoveryConfig = useMemo(() => {
-    const legacyReload = mergedConfig.reload || {};
-    const cfg = mergedConfig.recovery || {};
-    return {
-      enabled: cfg.enabled ?? legacyReload.enabled ?? true,
-      reloadDelayMs: coerceNumber(cfg.reloadDelayMs ?? legacyReload.stallMs, 0),
-      cooldownMs: coerceNumber(cfg.cooldownMs ?? legacyReload.cooldownMs, 4000),
-      maxAttempts: coerceNumber(cfg.maxAttempts ?? legacyReload.maxAttempts, 2)
-    };
-  }, [mergedConfig.recovery, mergedConfig.reload]);
-
-  const [isOverlayVisible, setOverlayVisible] = useState(!mergedConfig.overlay?.revealDelayMs);
+  const [isOverlayVisible, setOverlayVisible] = useState(() => !overlayConfig.revealDelayMs);
   const [showPauseOverlay, setShowPauseOverlay] = useState(pauseOverlayPreference);
   const [showDebug, setShowDebug] = useState(false);
   const [status, setStatus] = useState(STATUS.pending);
   const [lastFetchAt, setLastFetchAt] = useState(null);
-  const [overlayElapsedMs, setOverlayElapsedMs] = useState(0);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
@@ -139,26 +204,41 @@ export function useMediaResilience({
   const lastProgressSecondsRef = useRef(null);
   const stallTimerRef = useRef(null);
   const reloadTimerRef = useRef(null);
-  const overlayTimerRef = useRef(null);
   const hardRecoveryTimerRef = useRef(null);
   const lastReloadAtRef = useRef(0);
   const recoveryAttemptsRef = useRef(0);
-  const overlayAlertedRef = useRef(false);
+  const mediaIdentity = meta?.media_key || meta?.key || meta?.plex || meta?.id || meta?.guid || meta?.media_url || null;
+  const mediaIdentityRef = useRef(mediaIdentity);
+  const seekIntentMsRef = useRef(null);
+  const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : 0);
 
   useEffect(() => {
     isPausedRef.current = isPaused;
   }, [isPaused]);
 
   useEffect(() => {
-    setOverlayVisible(!mergedConfig.overlay?.revealDelayMs);
-    if (!mergedConfig.overlay?.revealDelayMs) return;
-    const timeout = setTimeout(() => setOverlayVisible(true), mergedConfig.overlay.revealDelayMs);
-    return () => clearTimeout(timeout);
-  }, [waitKey, mergedConfig.overlay?.revealDelayMs]);
+    if (Number.isFinite(seconds)) {
+      lastSecondsRef.current = seconds;
+      const intentMs = seekIntentMsRef.current;
+      if (Number.isFinite(intentMs)) {
+        const targetSeconds = intentMs / 1000;
+        if (Math.abs(seconds - targetSeconds) <= 1) {
+          seekIntentMsRef.current = null;
+        }
+      }
+    }
+  }, [seconds]);
 
   useEffect(() => {
     setShowPauseOverlay(pauseOverlayPreference);
   }, [waitKey]);
+
+  useEffect(() => {
+    if (mediaIdentityRef.current !== mediaIdentity) {
+      mediaIdentityRef.current = mediaIdentity;
+      seekIntentMsRef.current = null;
+    }
+  }, [mediaIdentity]);
 
   const clearTimer = useCallback((ref) => {
     if (ref.current) {
@@ -166,6 +246,21 @@ export function useMediaResilience({
       ref.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof getMediaEl !== 'function') return () => {};
+    const mediaEl = getMediaEl();
+    if (!mediaEl) return () => {};
+    const handleSeeking = () => {
+      if (Number.isFinite(mediaEl.currentTime)) {
+        seekIntentMsRef.current = Math.max(0, mediaEl.currentTime * 1000);
+      }
+    };
+    mediaEl.addEventListener('seeking', handleSeeking);
+    return () => {
+      mediaEl.removeEventListener('seeking', handleSeeking);
+    };
+  }, [getMediaEl, waitKey]);
 
   const resetDetectionState = useCallback(() => {
     clearTimer(stallTimerRef);
@@ -182,18 +277,46 @@ export function useMediaResilience({
     setShowDebug(false);
   }, [waitKey, resetDetectionState]);
 
-  const triggerRecovery = useCallback((reason, { ignorePaused = false } = {}) => {
+  const recordSeekIntentMs = useCallback((valueMs) => {
+    if (!Number.isFinite(valueMs) || valueMs < 0) return;
+    seekIntentMsRef.current = valueMs;
+  }, []);
+
+  const recordSeekIntentSeconds = useCallback((valueSeconds) => {
+    if (!Number.isFinite(valueSeconds)) return;
+    recordSeekIntentMs(Math.max(0, valueSeconds * 1000));
+  }, [recordSeekIntentMs]);
+
+  const resolveSeekIntentMs = useCallback((overrideMs = null) => {
+    if (Number.isFinite(overrideMs)) {
+      return Math.max(0, overrideMs);
+    }
+    if (Number.isFinite(seekIntentMsRef.current)) {
+      return Math.max(0, seekIntentMsRef.current);
+    }
+    if (Number.isFinite(lastProgressSecondsRef.current)) {
+      return Math.max(0, lastProgressSecondsRef.current * 1000);
+    }
+    if (Number.isFinite(lastSecondsRef.current)) {
+      return Math.max(0, lastSecondsRef.current * 1000);
+    }
+    return null;
+  }, []);
+
+  const triggerRecovery = useCallback((reason, { ignorePaused = false, seekToIntentMs: overrideIntentMs = null } = {}) => {
     if (!recoveryConfig.enabled) return;
     if (!ignorePaused && isPausedRef.current && statusRef.current === STATUS.paused) return;
     if (recoveryConfig.maxAttempts && recoveryAttemptsRef.current >= recoveryConfig.maxAttempts) return;
     const now = Date.now();
     if (recoveryConfig.cooldownMs && now - (lastReloadAtRef.current || 0) < recoveryConfig.cooldownMs) return;
 
+    const resolvedIntentMs = resolveSeekIntentMs(overrideIntentMs);
+
     const performReload = () => {
       lastReloadAtRef.current = Date.now();
       recoveryAttemptsRef.current += 1;
       setStatus(STATUS.recovering);
-      onReloadRef.current?.({ reason, meta, waitKey });
+      onReloadRef.current?.({ reason, meta, waitKey, seekToIntentMs: resolvedIntentMs });
     };
 
     if (recoveryConfig.reloadDelayMs > 0) {
@@ -202,7 +325,7 @@ export function useMediaResilience({
     } else {
       performReload();
     }
-  }, [meta, onReloadRef, recoveryConfig, waitKey, clearTimer]);
+  }, [meta, onReloadRef, recoveryConfig, waitKey, clearTimer, resolveSeekIntentMs, statusRef]);
 
   const scheduleHardRecovery = useCallback(() => {
     if (hardRecoverAfterStalledForMs <= 0) {
@@ -318,60 +441,38 @@ export function useMediaResilience({
       setShowDebug(false);
       return () => {};
     }
-    const timeout = setTimeout(() => setShowDebug(true), mergedConfig.debug?.revealDelayMs ?? 3000);
+    const timeout = setTimeout(() => setShowDebug(true), debugConfig.revealDelayMs ?? 3000);
     return () => clearTimeout(timeout);
-  }, [explicitShow, isPaused, mergedConfig.debug?.revealDelayMs, status]);
+  }, [explicitShow, isPaused, status, debugConfig.revealDelayMs]);
 
   const waitingToPlay = status === STATUS.pending || status === STATUS.recovering;
-  const hasStartedPlayback = (lastProgressSecondsRef.current ?? 0) > epsilonSeconds;
   const computedStalled = typeof stalledOverride === 'boolean'
     ? stalledOverride
     : (status === STATUS.stalling || status === STATUS.recovering);
-  const midPlayStalled = computedStalled && hasStartedPlayback;
-  const allowMidPlayOverlay = mergedConfig.overlay?.showMidPlayStall !== false;
-  const stallOverlayActive = computedStalled && (!midPlayStalled || allowMidPlayOverlay);
+  const stallOverlayActive = computedStalled;
 
   const shouldRenderOverlay = waitingToPlay
     || stallOverlayActive
     || explicitShow
-    || (isPaused && mergedConfig.overlay?.showPausedOverlay && showPauseOverlay);
-
-  const overlayActive = shouldRenderOverlay && isOverlayVisible;
+    || (isPaused && overlayConfig.showPausedOverlay && showPauseOverlay);
 
   useEffect(() => {
-    if (!overlayActive) {
-      setOverlayElapsedMs(0);
-      overlayAlertedRef.current = false;
-      if (overlayTimerRef.current) {
-        clearInterval(overlayTimerRef.current);
-        overlayTimerRef.current = null;
-      }
+    if (!shouldRenderOverlay) {
+      setOverlayVisible(false);
       return () => {};
     }
-
-    setOverlayElapsedMs(0);
-    const startTs = Date.now();
-    overlayTimerRef.current = setInterval(() => {
-      setOverlayElapsedMs(Date.now() - startTs);
-    }, 1000);
-
-    return () => {
-      if (overlayTimerRef.current) {
-        clearInterval(overlayTimerRef.current);
-        overlayTimerRef.current = null;
-      }
-    };
-  }, [overlayActive]);
-
-  const overlayStallDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
-
-  useEffect(() => {
-    if (!overlayActive) return;
-    if (overlayElapsedMs >= overlayStallDeadlineMs && !overlayAlertedRef.current) {
-      overlayAlertedRef.current = true;
-      triggerRecovery('overlay-hard-recovery', { ignorePaused: true });
+    if (!overlayConfig.revealDelayMs) {
+      setOverlayVisible(true);
+      return () => {};
     }
-  }, [overlayActive, overlayElapsedMs, overlayStallDeadlineMs, triggerRecovery]);
+    setOverlayVisible(false);
+    const timeout = setTimeout(() => setOverlayVisible(true), overlayConfig.revealDelayMs);
+    return () => clearTimeout(timeout);
+  }, [shouldRenderOverlay, overlayConfig.revealDelayMs]);
+
+  const overlayActive = shouldRenderOverlay && isOverlayVisible;
+  const overlayStallDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
+  const overlayElapsedSeconds = useOverlayTimer(overlayActive, overlayStallDeadlineMs, triggerRecovery);
 
   const togglePauseOverlay = useCallback(() => {
     setShowPauseOverlay((prev) => {
@@ -399,7 +500,6 @@ export function useMediaResilience({
     showPauseOverlay,
     showDebug,
     stalled: computedStalled,
-    midPlayStalled,
     seconds,
     isPaused,
     isSeeking,
@@ -407,7 +507,7 @@ export function useMediaResilience({
     waitKey,
     lastFetchAt,
     shouldRenderOverlay
-  }), [status, waitingToPlay, isOverlayVisible, showPauseOverlay, showDebug, computedStalled, midPlayStalled, seconds, isPaused, isSeeking, meta, waitKey, lastFetchAt, shouldRenderOverlay]);
+  }), [status, waitingToPlay, isOverlayVisible, showPauseOverlay, showDebug, computedStalled, seconds, isPaused, isSeeking, meta, waitKey, lastFetchAt, shouldRenderOverlay]);
   const stateRef = useLatest(state);
 
   useEffect(() => {
@@ -420,12 +520,21 @@ export function useMediaResilience({
     reset: () => {
       resetDetectionState();
       setStatus(STATUS.pending);
-      setOverlayVisible(!mergedConfig.overlay?.revealDelayMs);
+      setOverlayVisible(!overlayConfig.revealDelayMs);
       setShowDebug(false);
     },
     forceReload: (options = {}) => {
-      triggerRecovery('manual');
-      onReloadRef.current?.({ reason: 'manual', meta, waitKey, ...options });
+      const overrideMs = Number.isFinite(options.seekToIntentMs)
+        ? Math.max(0, options.seekToIntentMs)
+        : Number.isFinite(options.seekSeconds)
+          ? Math.max(0, options.seekSeconds * 1000)
+          : null;
+      if (overrideMs != null) {
+        recordSeekIntentMs(overrideMs);
+      }
+      triggerRecovery('manual', { ignorePaused: true, seekToIntentMs: overrideMs });
+      const fallbackIntentMs = resolveSeekIntentMs(overrideMs);
+      onReloadRef.current?.({ reason: 'manual', meta, waitKey, ...options, seekToIntentMs: fallbackIntentMs });
     },
     forceFetchInfo: (options = {}) => {
       fetchVideoInfoRef.current?.({ reason: 'manual', meta, waitKey, ...options });
@@ -441,8 +550,11 @@ export function useMediaResilience({
       setShowPauseOverlay(next);
     },
     markHealthy,
-    togglePauseOverlay
-  }), [fetchVideoInfoRef, markHealthy, meta, mergedConfig.overlay?.revealDelayMs, onReloadRef, resetDetectionState, togglePauseOverlay, triggerRecovery, waitKey]);
+    togglePauseOverlay,
+    recordSeekIntentSeconds,
+    recordSeekIntentMs,
+    getSeekIntentMs: () => resolveSeekIntentMs()
+  }), [fetchVideoInfoRef, markHealthy, meta, overlayConfig.revealDelayMs, onReloadRef, recordSeekIntentMs, recordSeekIntentSeconds, resetDetectionState, togglePauseOverlay, triggerRecovery, resolveSeekIntentMs, waitKey, stateRef]);
 
   useEffect(() => {
     if (!controllerRef) return () => {};
@@ -455,9 +567,13 @@ export function useMediaResilience({
   }, [controller, controllerRef]);
 
   const resolvedPlexId = plexId || meta?.media_key || meta?.key || meta?.plex || null;
-  const overlayElapsedSeconds = Math.max(0, Math.floor(overlayElapsedMs / 1000));
   const countUpDisplay = String(overlayElapsedSeconds).padStart(2, '0');
+  const intentMsForDisplay = resolveSeekIntentMs();
+  const intentSecondsForDisplay = Number.isFinite(intentMsForDisplay) ? intentMsForDisplay / 1000 : null;
   const playerPositionDisplay = formatTime(Math.max(0, seconds));
+  const intentPositionDisplay = Number.isFinite(intentSecondsForDisplay)
+    ? formatTime(Math.max(0, intentSecondsForDisplay))
+    : null;
   const overlayProps = {
     status,
     isVisible: isOverlayVisible && shouldRenderOverlay,
@@ -466,7 +582,6 @@ export function useMediaResilience({
     isPaused,
     seconds,
     stalled: computedStalled,
-    midPlayStalled,
     showPauseOverlay,
     showDebug,
     initialStart,
@@ -480,7 +595,8 @@ export function useMediaResilience({
     isSeeking,
     countUpSeconds: overlayElapsedSeconds,
     countUpDisplay,
-    playerPositionDisplay
+    playerPositionDisplay,
+    intentPositionDisplay
   };
 
   return { overlayProps, controller, state };
