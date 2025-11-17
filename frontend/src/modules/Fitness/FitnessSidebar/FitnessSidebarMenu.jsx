@@ -494,14 +494,6 @@ const FitnessSidebarMenu = ({
         <button
           type="button"
           className="menu-item action-item"
-          onClick={handleReloadVideo}
-          disabled={!onReloadVideo || !videoMediaAvailable}
-        >
-          <span>↺ Reload Video ({reloadLabel})</span>
-        </button>
-        <button
-          type="button"
-          className="menu-item action-item"
           onClick={() => toggleMediaSwap?.()}
           disabled={!toggleMediaSwap}
         >
@@ -512,25 +504,27 @@ const FitnessSidebarMenu = ({
       <div className="menu-section">
 
         <h4>Media Visibility</h4>
-        <div className="menu-item toggle-item">
+        <div className="menu-item toggle-item"
+         onPointerDown={() => handleToggle('treasureBox')}
+         >
           <span>💰 Treasure Box</span>
           <label className="toggle-switch">
             <input
               type="checkbox"
               checked={visibility.treasureBox}
-              onChange={() => handleToggle('treasureBox')}
             />
             <span className="toggle-slider"></span>
           </label>
         </div>
 
-        <div className="menu-item toggle-item">
+        <div className="menu-item toggle-item" 
+          onPointerDown={() => onToggleMusic?.()}
+        >
           <span>🎵 Music</span>
           <label className="toggle-switch">
             <input
               type="checkbox"
               checked={musicEnabled}
-              onChange={() => onToggleMusic?.()}
               disabled={!hasMusicPlaylists && !musicEnabled}
             />
             <span className="toggle-slider"></span>
