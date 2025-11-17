@@ -582,6 +582,7 @@ export function useMediaResilience({
     shouldRender: shouldRenderOverlay,
     waitingToPlay,
     isPaused,
+    pauseOverlayActive,
     seconds,
     stalled: computedStalled,
     showPauseOverlay,
