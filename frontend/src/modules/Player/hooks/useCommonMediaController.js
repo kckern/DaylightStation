@@ -3,6 +3,43 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 
+const DEBUG_MEDIA = false;
+
+export const shouldRestartFromBeginning = (durationSeconds, candidateSeconds) => {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return { restart: false, reason: 'invalid-duration' };
+  }
+  if (!Number.isFinite(candidateSeconds) || candidateSeconds <= 0) {
+    return { restart: false, reason: 'invalid-candidate' };
+  }
+  const secondsRemaining = durationSeconds - candidateSeconds;
+  if (secondsRemaining < 30) {
+    return { restart: true, reason: 'less-than-30s' };
+  }
+  const progressPercent = (candidateSeconds / durationSeconds) * 100;
+  if (progressPercent > 95) {
+    return { restart: true, reason: 'over-95-percent' };
+  }
+  return { restart: false, reason: 'resume-ok' };
+};
+
+const clearResumeHistoryForKey = (mediaKey) => {
+  if (!mediaKey) return;
+  try {
+    if (useCommonMediaController.__lastPosByKey) {
+      delete useCommonMediaController.__lastPosByKey[mediaKey];
+    }
+    if (useCommonMediaController.__lastSeekByKey) {
+      delete useCommonMediaController.__lastSeekByKey[mediaKey];
+    }
+    if (useCommonMediaController.__appliedStartByKey) {
+      delete useCommonMediaController.__appliedStartByKey[mediaKey];
+    }
+  } catch (_) {
+    // swallowing cache reset issues keeps playback uninterrupted
+  }
+};
+
 /**
  * Common media controller hook for both audio and video players.
  * Handles playback state, progress tracking, and essential media events.
@@ -32,8 +69,6 @@ export function useCommonMediaController({
   seekToIntentSeconds = null,
   instanceKey = null
 }) {
-  const DEBUG_MEDIA = false;
-
   // Persist global state across remounts so resume/start logic stays sticky per media item.
   if (!useCommonMediaController.__appliedStartByKey) useCommonMediaController.__appliedStartByKey = Object.create(null);
   if (!useCommonMediaController.__lastPosByKey) useCommonMediaController.__lastPosByKey = Object.create(null);
@@ -173,6 +208,7 @@ export function useCommonMediaController({
       const durationValue = mediaEl.duration || 0;
       let desiredStart = 0;
       const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[media_key];
+      const phaseLabel = isInitialLoadRef.current && !hasAppliedForKey ? 'initial-start' : 'sticky-resume';
       const processedVolumeRaw = Number(volume ?? 100);
       const processedVolume = Number.isFinite(processedVolumeRaw) ? processedVolumeRaw : 100;
       const normalizedVolume = processedVolume > 1 ? processedVolume / 100 : processedVolume;
@@ -183,28 +219,37 @@ export function useCommonMediaController({
         const shouldApplyStart = (durationValue > 12 * 60) || isVideoEl;
         desiredStart = shouldApplyStart ? start : 0;
 
-        if (durationValue > 0 && desiredStart > 0) {
-          const progressPercent = (desiredStart / durationValue) * 100;
-          const secondsRemaining = durationValue - desiredStart;
-          if (progressPercent > 95 || secondsRemaining < 30) {
-            desiredStart = 0;
-          }
+        const initialDecision = shouldRestartFromBeginning(durationValue, desiredStart);
+
+        if (initialDecision.restart) {
+          desiredStart = 0;
+          clearResumeHistoryForKey(media_key);
+          lastSeekIntentRef.current = null;
+          lastPlaybackPosRef.current = 0;
         }
 
         isInitialLoadRef.current = false;
         try { useCommonMediaController.__appliedStartByKey[media_key] = true; } catch (_) {}
       } else {
-        const candidates = [
-          lastSeekIntentRef.current,
-          useCommonMediaController.__lastSeekByKey[media_key],
-          lastPlaybackPosRef.current,
-          useCommonMediaController.__lastPosByKey[media_key]
+        const candidateSources = [
+          { label: 'lastSeekIntent', value: lastSeekIntentRef.current },
+          { label: 'persistedSeek', value: useCommonMediaController.__lastSeekByKey[media_key] },
+          { label: 'sessionPlayback', value: lastPlaybackPosRef.current },
+          { label: 'persistedPlayback', value: useCommonMediaController.__lastPosByKey[media_key] }
         ];
-        const sticky = candidates.find((value) => value != null && Number.isFinite(value)) || 0;
+        const foundCandidate = candidateSources.find((entry) => entry.value != null && Number.isFinite(entry.value));
+        const sticky = foundCandidate?.value ?? 0;
         const nearStart = sticky <= 1;
         const nearEnd = durationValue > 0 ? sticky >= durationValue - 1 : false;
-        if (!nearStart && !nearEnd && sticky > 5) {
+        const stickyDecision = shouldRestartFromBeginning(durationValue, sticky);
+
+        if (!nearStart && !nearEnd && !stickyDecision.restart && sticky > 5) {
           desiredStart = Math.max(0, sticky - 1);
+        } else if (stickyDecision.restart && sticky > 0) {
+          desiredStart = 0;
+          clearResumeHistoryForKey(media_key);
+          lastSeekIntentRef.current = null;
+          lastPlaybackPosRef.current = 0;
         }
       }
 
@@ -213,8 +258,8 @@ export function useCommonMediaController({
       if (Number.isFinite(desiredStart) && desiredStart > 0) {
         try {
           mediaEl.currentTime = desiredStart;
-        } catch (_) {
-          if (DEBUG_MEDIA) console.warn('[Media] failed to set start time', desiredStart);
+        } catch (error) {
+          if (DEBUG_MEDIA) console.warn('[Media] failed to set start time', desiredStart, error);
         }
       }
 

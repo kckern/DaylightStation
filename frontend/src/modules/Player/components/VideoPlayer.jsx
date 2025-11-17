@@ -1,10 +1,42 @@
 import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
-import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
+import { useCommonMediaController, shouldRestartFromBeginning } from '../hooks/useCommonMediaController.js';
 import { useMediaResilience, mergeMediaResilienceConfig } from '../hooks/useMediaResilience.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
+
+const deriveApproxDurationSeconds = (media = {}) => {
+  const numericFields = [
+    media?.duration,
+    media?.duration_seconds,
+    media?.runtime,
+    media?.runtimeSeconds,
+    media?.media_duration
+  ];
+  const explicitDuration = numericFields.map((value) => Number(value)).find((value) => Number.isFinite(value) && value > 0);
+  if (Number.isFinite(explicitDuration)) {
+    return explicitDuration;
+  }
+  const seconds = Number(media?.seconds);
+  const percent = Number(media?.percent);
+  if (Number.isFinite(seconds) && Number.isFinite(percent) && percent > 0) {
+    return seconds / (percent / 100);
+  }
+  return null;
+};
+
+const resolveInitialStartSeconds = (media) => {
+  const rawStart = Number(media?.seconds);
+  const normalizedStart = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : 0;
+  const approxDuration = deriveApproxDurationSeconds(media);
+  const decision = shouldRestartFromBeginning(approxDuration, normalizedStart);
+  return {
+    startSeconds: decision.restart ? 0 : normalizedStart,
+    decision,
+    approxDuration
+  };
+};
 
 /**
  * Video player component for playing video content (including DASH video)
@@ -35,6 +67,19 @@ export function VideoPlayer({
   const [resilienceReloadToken, setResilienceReloadToken] = useState(0);
   const [pendingSeekIntentMs, setPendingSeekIntentMs] = useState(null);
   const { show, season, title, media_url } = media;
+
+  const { startSeconds: initialStartSeconds } = useMemo(
+    () => resolveInitialStartSeconds(media),
+    [
+      media?.seconds,
+      media?.percent,
+      media?.duration,
+      media?.duration_seconds,
+      media?.runtime,
+      media?.runtimeSeconds,
+      media?.media_duration
+    ]
+  );
 
   const videoKey = useMemo(
     () => `${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`,
@@ -72,7 +117,7 @@ export function VideoPlayer({
     handleProgressClick,
     setControllerExtras
   } = useCommonMediaController({
-    start: media.seconds,
+    start: initialStartSeconds,
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
@@ -131,11 +176,11 @@ export function VideoPlayer({
 
   const dashSource = useMemo(() => {
     if (!media_url) return null;
-    const startPosition = Number.isFinite(media?.seconds) ? media.seconds : undefined;
+    const startPosition = Number.isFinite(initialStartSeconds) && initialStartSeconds > 0 ? initialStartSeconds : undefined;
     return startPosition != null
       ? { streamUrl: media_url, contentType: 'application/dash+xml', startPosition }
       : { streamUrl: media_url, contentType: 'application/dash+xml' };
-  }, [media_url, media?.seconds]);
+  }, [media_url, initialStartSeconds]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.media_key || media?.key || media?.plex || null;
@@ -163,7 +208,7 @@ export function VideoPlayer({
     seconds,
     isPaused,
     isSeeking,
-    initialStart: media.seconds || 0,
+    initialStart: initialStartSeconds || 0,
     waitKey: playerInstanceKey,
     fetchVideoInfo,
     onStateChange: resilienceStateHandler

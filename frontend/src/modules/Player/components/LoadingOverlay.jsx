@@ -63,23 +63,6 @@ export function LoadingOverlay({
           </div>}
         </div>
       </div>
-      {(showSeekInfo || showDebug) && (
-        <div className="loading-info">
-          {showSeekInfo && <div>Loading at {formatSeekTime(initialStart)}</div>}
-          <DebugInfo
-            show={showDebug}
-            debugContext={debugContext}
-            getMediaEl={getMediaEl}
-            stalled={stalled}
-            plexId={plexId}
-          />
-        </div>
-      )}
-      {shouldShowPauseIcon && !waitingToPlay && !showPauseOverlay && (
-        <div className="loading-hint">
-          Double-click to show pause overlay
-        </div>
-      )}
     </div>
   );
 }
