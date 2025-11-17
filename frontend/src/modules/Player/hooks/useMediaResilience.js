@@ -451,10 +451,11 @@ export function useMediaResilience({
     : (status === STATUS.stalling || status === STATUS.recovering);
   const stallOverlayActive = computedStalled;
 
+  const pauseOverlayActive = isPaused && overlayConfig.showPausedOverlay && showPauseOverlay;
   const shouldRenderOverlay = waitingToPlay
     || stallOverlayActive
     || explicitShow
-    || (isPaused && overlayConfig.showPausedOverlay && showPauseOverlay);
+    || pauseOverlayActive;
 
   useEffect(() => {
     if (!shouldRenderOverlay) {
@@ -471,8 +472,9 @@ export function useMediaResilience({
   }, [shouldRenderOverlay, overlayConfig.revealDelayMs]);
 
   const overlayActive = shouldRenderOverlay && isOverlayVisible;
+  const overlayTimerActive = isOverlayVisible && (waitingToPlay || stallOverlayActive || explicitShow);
   const overlayStallDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
-  const overlayElapsedSeconds = useOverlayTimer(overlayActive, overlayStallDeadlineMs, triggerRecovery);
+  const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayStallDeadlineMs, triggerRecovery);
 
   const togglePauseOverlay = useCallback(() => {
     setShowPauseOverlay((prev) => {
