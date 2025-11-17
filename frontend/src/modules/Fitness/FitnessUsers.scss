@@ -1498,7 +1498,7 @@
         padding: 0;
         cursor: pointer;
         transition: background 0.2s ease, border 0.2s ease;
-        height: 2ex;
+        height: 3ex!important;
       }
 
       .touch-volume-button:first-child.off {
@@ -1723,11 +1723,10 @@
               background: rgba(255, 255, 255, 0.08);
               color: transparent;
               border-radius: 2px;
-              font-size: 0.6rem;
               padding: 0;
               cursor: pointer;
               transition: background 0.2s ease, border 0.2s ease;
-              height: 2ex;
+              height: 2ex !important;
             }
 
             .touch-volume-button:first-child.off {
