@@ -243,9 +243,11 @@ const SidebarFooter = ({ onContentSelect }) => {
       {sortedDevices.length === 0 && (
         <div
           className={`device-card fitness-monitor ${connected ? 'connected' : 'disconnected'}`}
-          onPointerDown={() => onContentSelect && onContentSelect('users')}
+          onPointerDown={() => window.location.reload()}
+          style={{ cursor: 'pointer' }}
+          title="Refresh page"
         >
-          <div className="device-icon">📶</div>
+          <div className="device-icon">🔄</div>
           <div className="connection-status">
             <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
           </div>
