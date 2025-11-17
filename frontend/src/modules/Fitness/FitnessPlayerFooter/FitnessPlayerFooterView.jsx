@@ -72,6 +72,7 @@ const FitnessPlayerFooterView = forwardRef(function FitnessPlayerFooterView(prop
         playIsGoverned={playIsGoverned}
         isZoomed={isZoomed}
         zoomNavState={zoomNavState}
+        intentTimeRef={thumbnailsGetTimeRef}
       />
 
       <FitnessPlayerFooterSeekThumbnails
@@ -102,6 +103,7 @@ const FitnessPlayerFooterView = forwardRef(function FitnessPlayerFooterView(prop
         isZoomed={isZoomed}
         onBack={handleBack}
         playIsGoverned={playIsGoverned}
+        intentTimeRef={thumbnailsGetTimeRef}
       />
     </div>
   );

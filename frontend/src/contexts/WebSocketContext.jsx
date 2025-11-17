@@ -38,7 +38,6 @@ export const WebSocketProvider = ({ children }) => {
       const isLocalhost = /localhost/.test(window.location.href);
       const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
       
-      console.log('Attempting to restart WebSocket server...');
       const response = await fetch(`${baseUrl}/exe/ws/restart`, {
         method: 'POST',
         headers: {
