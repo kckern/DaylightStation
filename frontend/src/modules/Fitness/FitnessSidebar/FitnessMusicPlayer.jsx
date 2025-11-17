@@ -55,6 +55,7 @@ const TouchVolumeButtons = ({ controlId, currentLevel, disabled, onSelect }) => 
           key={level}
           type="button"
           className={className}
+          onTouchStart={() => !disabled && onSelect(level)}
           onClick={() => !disabled && onSelect(level)}
           disabled={disabled}
           aria-pressed={isActive}
