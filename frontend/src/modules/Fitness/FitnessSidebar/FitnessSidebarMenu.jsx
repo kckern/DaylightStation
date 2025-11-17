@@ -13,6 +13,55 @@ const slugifyId = (value, fallback = 'user') => {
   return slug || fallback;
 };
 
+const TOUCH_VOLUME_LEVELS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+const snapToTouchLevel = (percent) => {
+  if (!Number.isFinite(percent)) return 0;
+  return TOUCH_VOLUME_LEVELS.reduce((closest, level) => (
+    Math.abs(level - percent) < Math.abs(closest - percent) ? level : closest
+  ), TOUCH_VOLUME_LEVELS[0]);
+};
+
+const linearVolumeFromLevel = (level) => {
+  if (!Number.isFinite(level)) return 0;
+  return Math.min(1, Math.max(0, level / 100));
+};
+
+const linearLevelFromVolume = (volume) => {
+  if (!Number.isFinite(volume)) return 0;
+  return Math.min(100, Math.max(0, Math.round(volume * 100)));
+};
+
+const TouchVolumeButtons = ({ controlId, currentLevel, disabled, onSelect }) => (
+  <div
+    className={`touch-volume ${disabled ? 'disabled' : ''}`}
+    role="group"
+    aria-disabled={disabled}
+    aria-labelledby={`${controlId}-label`}
+  >
+    {TOUCH_VOLUME_LEVELS.map((level) => {
+      const isActive = level === currentLevel;
+      const isOn = currentLevel > 0 && level > 0 && level <= currentLevel;
+      const className = [
+        'touch-volume-button',
+        isOn ? 'on' : 'off',
+        isActive ? 'active' : ''
+      ].filter(Boolean).join(' ');
+      return (
+        <button
+          key={level}
+          type="button"
+          className={className}
+          onClick={() => !disabled && onSelect(level)}
+          disabled={disabled}
+          aria-pressed={isActive}
+          aria-label={level === 0 ? 'Mute / Off' : `${level}% volume`}
+        />
+      );
+    })}
+  </div>
+);
+
 const FitnessSidebarMenu = ({
   onClose,
   visibility,
@@ -83,14 +132,16 @@ const FitnessSidebarMenu = ({
     };
   }, [playerRef]);
 
-  const handleVideoVolumeChange = (event) => {
-    const next = clampVolume(parseFloat(event.target.value));
+  const videoDisplayLevel = React.useMemo(() => snapToTouchLevel(linearLevelFromVolume(videoVolume)), [videoVolume]);
+
+  const handleVideoLevelSelect = React.useCallback((level) => {
+    const next = linearVolumeFromLevel(level);
     setVideoVolume(next);
     const media = playerRef?.current?.getMediaElement?.();
     if (media && typeof media.volume === 'number') {
       media.volume = next;
     }
-  };
+  }, []);
 
   const enumerateMicrophones = React.useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
@@ -492,19 +543,15 @@ const FitnessSidebarMenu = ({
 
       <div className="menu-section">
         <h4>Video Controls</h4>
-        <div className={`menu-item slider-item${isWideSidebar ? ' slider-item--wide' : ''}`} role="group" aria-label="Video volume">
-          <div className="slider-label">
-            <span>Video Volume</span>
-            <span className="slider-value">{`${volumePercent}%`}</span>
+        <div className="menu-item touch-volume-item" role="group" aria-label="Video volume">
+          <div className="mix-label" id="video-volume-label">
+            Video Volume
           </div>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={videoVolume}
-            onChange={handleVideoVolumeChange}
+          <TouchVolumeButtons
+            controlId="video-volume"
+            currentLevel={videoDisplayLevel}
             disabled={!videoMediaAvailable}
+            onSelect={handleVideoLevelSelect}
           />
           {!videoMediaAvailable && (
             <div className="menu-item-subtext">Video player inactive.</div>
