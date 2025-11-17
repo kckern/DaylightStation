@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import './ChallengeOverlay.scss';
 
@@ -6,6 +6,7 @@ const CHALLENGE_VIEWBOX_SIZE = 220;
 const CHALLENGE_RING_RADIUS = 95;
 const CHALLENGE_RING_CIRCUMFERENCE = 2 * Math.PI * CHALLENGE_RING_RADIUS;
 const CHALLENGE_RING_CENTER = CHALLENGE_VIEWBOX_SIZE / 2;
+const CHALLENGE_SUCCESS_HOLD_MS = 2000;
 const DEFAULT_RING_COLOR = '#38bdf8';
 const SUCCESS_RING_COLOR = '#22c55e';
 const FAILURE_RING_COLOR = '#ef4444';
@@ -17,10 +18,28 @@ const DEFAULT_ZONE_COLORS = {
   fire: '#ef4444'
 };
 
+const clearTimerRef = (timerRef) => {
+	if (timerRef.current?.timeoutId) {
+		clearTimeout(timerRef.current.timeoutId);
+	}
+	timerRef.current = null;
+};
+
 const normalizeChallengeStatus = (status) => {
 	if (status === 'success') return 'success';
 	if (status === 'failed') return 'failed';
 	return 'pending';
+};
+
+const getChallengeKey = (challenge) => {
+	if (!challenge) return null;
+	return (
+		challenge.id ||
+		challenge.selectionLabel ||
+		challenge.zone ||
+		challenge.zoneLabel ||
+		'__challenge__'
+	);
 };
 
 const normalizeZoneKey = (value) => {
@@ -58,6 +77,40 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		remainingSeconds: null,
 		progress: 0
 	});
+		const successHideTimerRef = useRef(null);
+		const [dismissedChallengeId, setDismissedChallengeId] = useState(null);
+
+		useEffect(() => {
+			const challenge = governanceState?.challenge;
+			const status = normalizeChallengeStatus(challenge?.status);
+			const challengeKey = getChallengeKey(challenge);
+
+			if (!challenge || status !== 'success') {
+				if (dismissedChallengeId !== null) {
+					setDismissedChallengeId(null);
+				}
+				clearTimerRef(successHideTimerRef);
+				return;
+			}
+
+			if (dismissedChallengeId && dismissedChallengeId === challengeKey) {
+				return;
+			}
+
+			const existingTimer = successHideTimerRef.current;
+			if (!existingTimer || existingTimer.key !== challengeKey) {
+				clearTimerRef(successHideTimerRef);
+				const timeoutId = setTimeout(() => {
+					setDismissedChallengeId(challengeKey);
+					successHideTimerRef.current = null;
+				}, CHALLENGE_SUCCESS_HOLD_MS);
+				successHideTimerRef.current = { key: challengeKey, timeoutId };
+			}
+		}, [governanceState?.challenge, dismissedChallengeId]);
+
+		useEffect(() => () => {
+			clearTimerRef(successHideTimerRef);
+		}, []);
 
 	return useMemo(() => {
 	const resolveZoneDetails = (value) => {
@@ -119,6 +172,8 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		governanceState?.challengePaused ||
 		challenge?.paused
 	);
+	const challengeKey = getChallengeKey(challenge);
+	const challengeDismissed = challengeKey && dismissedChallengeId === challengeKey;
 
 	const resetPauseSnapshot = () => {
 		pauseSnapshotRef.current = {
@@ -199,7 +254,7 @@ export const useChallengeOverlays = (governanceState, zones) => {
 
 		Object.assign(current, {
 			status,
-			show: status === 'pending' || status === 'success',
+			show: status === 'pending' || (status === 'success' && !challengeDismissed),
 			title: zoneLabel,
 			zoneLabel,
 			zoneId: zoneInfo.id,
@@ -254,7 +309,7 @@ export const useChallengeOverlays = (governanceState, zones) => {
 	}
 
 	return { current, upcoming };
-	}, [governanceState, zoneColorLookup]);
+	}, [governanceState, zoneColorLookup, dismissedChallengeId]);
 };
 
 export const ChallengeOverlay = ({ overlay }) => {
