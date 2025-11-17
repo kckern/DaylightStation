@@ -1,8 +1,69 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import '../FitnessUsers.scss';
+
+const TOUCH_VOLUME_LEVELS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+const snapToTouchLevel = (percent) => {
+  if (!Number.isFinite(percent)) return 0;
+  return TOUCH_VOLUME_LEVELS.reduce((closest, level) => (
+    Math.abs(level - percent) < Math.abs(closest - percent) ? level : closest
+  ), TOUCH_VOLUME_LEVELS[0]);
+};
+
+const linearVolumeFromLevel = (level) => {
+  if (!Number.isFinite(level)) return 0;
+  return Math.min(1, Math.max(0, level / 100));
+};
+
+const linearLevelFromVolume = (volume) => {
+  if (!Number.isFinite(volume)) return 0;
+  return Math.min(100, Math.max(0, Math.round(volume * 100)));
+};
+
+const logVolumeFromLevel = (level) => {
+  if (!Number.isFinite(level) || level <= 0) return 0;
+  const exponent = (level - 100) / 50;
+  return Math.min(1, Math.max(0, Math.pow(10, exponent)));
+};
+
+const logLevelFromVolume = (volume) => {
+  if (!Number.isFinite(volume) || volume <= 0) return 0;
+  const percent = 100 + 50 * Math.log10(volume);
+  return Math.min(100, Math.max(0, Math.round(percent)));
+};
+
+const TouchVolumeButtons = ({ controlId, currentLevel, disabled, onSelect }) => (
+  <div
+    className={`touch-volume ${disabled ? 'disabled' : ''}`}
+    role="group"
+    aria-disabled={disabled}
+    aria-labelledby={`${controlId}-label`}
+  >
+    {TOUCH_VOLUME_LEVELS.map((level) => {
+      const isActive = level === currentLevel;
+      const isOn = currentLevel > 0 && level > 0 && level <= currentLevel;
+      const className = [
+        'touch-volume-button',
+        isOn ? 'on' : 'off',
+        isActive ? 'active' : ''
+      ].filter(Boolean).join(' ');
+      return (
+        <button
+          key={level}
+          type="button"
+          className={className}
+          onClick={() => !disabled && onSelect(level)}
+          disabled={disabled}
+          aria-pressed={isActive}
+          aria-label={level === 0 ? 'Mute / Off' : `${level}% volume`}
+        />
+      );
+    })}
+  </div>
+);
 
 const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -201,19 +262,15 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
     }
   };
 
-  const clampVolume = (value) => {
-    if (!Number.isFinite(value)) return 0;
-    return Math.min(1, Math.max(0, value));
+  const videoDisplayLevel = useMemo(() => snapToTouchLevel(linearLevelFromVolume(videoVolume)), [videoVolume]);
+  const musicDisplayLevel = useMemo(() => snapToTouchLevel(logLevelFromVolume(musicVolume)), [musicVolume]);
+
+  const handleVideoLevelSelect = (level) => {
+    setVideoVolume(linearVolumeFromLevel(level));
   };
 
-  const handleMusicVolumeChange = (event) => {
-    const next = clampVolume(parseFloat(event.target.value));
-    setMusicVolume(next);
-  };
-
-  const handleVideoVolumeChange = (event) => {
-    const next = clampVolume(parseFloat(event.target.value));
-    setVideoVolume(next);
+  const handleMusicLevelSelect = (level) => {
+    setMusicVolume(logVolumeFromLevel(level));
   };
 
   const handlePlaylistChange = (event) => {
@@ -379,17 +436,21 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
         <div className="music-player-expanded">
           <div className="expanded-section">
             {playlists.length > 0 ? (
-              <select
-                className="playlist-select"
-                value={selectedPlaylistId || ''}
-                onChange={handlePlaylistChange}
-              >
-                {playlists.map((playlist) => (
-                  <option key={playlist.id} value={playlist.id}>
-                   🎵 {playlist.name}
-                  </option>
-                ))}
-              </select>
+              <>
+                <label htmlFor="fitness-playlist-select" className="mix-label mix-label--top">Playlist</label>
+                <select
+                  id="fitness-playlist-select"
+                  className="playlist-select"
+                  value={selectedPlaylistId || ''}
+                  onChange={handlePlaylistChange}
+                >
+                  {playlists.map((playlist) => (
+                    <option key={playlist.id} value={playlist.id}>
+                     🎵 {playlist.name}
+                    </option>
+                  ))}
+                </select>
+              </>
             ) : (
               <div className="empty-state">No playlists configured.</div>
             )}
@@ -397,34 +458,28 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
 
           <div className="expanded-section">
             <div className="mix-row">
-              <label htmlFor="video-volume">Video Volume</label>
-              <input
-                id="video-volume"
-                className="mix-slider"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={videoVolume}
-                onChange={handleVideoVolumeChange}
-                disabled={!videoMediaAvailable}
-              />
-              <span className="mix-value">{Math.round(videoVolume * 100)}%</span>
+              <label id="video-volume-label" className="mix-label">Video Volume</label>
+              <div className="mix-controls">
+                <TouchVolumeButtons
+                  controlId="video-volume"
+                  currentLevel={videoDisplayLevel}
+                  disabled={!videoMediaAvailable}
+                  onSelect={handleVideoLevelSelect}
+                />
+                <span className="mix-value">{Math.round(videoVolume * 100)}%</span>
+              </div>
             </div>
             <div className="mix-row">
-              <label htmlFor="music-volume">Music Volume</label>
-              <input
-                id="music-volume"
-                className="mix-slider"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={musicVolume}
-                onChange={handleMusicVolumeChange}
-                disabled={!musicMediaAvailable}
-              />
-              <span className="mix-value">{Math.round(musicVolume * 100)}%</span>
+              <label id="music-volume-label" className="mix-label">Music Volume</label>
+              <div className="mix-controls">
+                <TouchVolumeButtons
+                  controlId="music-volume"
+                  currentLevel={musicDisplayLevel}
+                  disabled={!musicMediaAvailable}
+                  onSelect={handleMusicLevelSelect}
+                />
+                <span className="mix-value">{Math.round(musicVolume * 100)}%</span>
+              </div>
             </div>
           </div>
         </div>
