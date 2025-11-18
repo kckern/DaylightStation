@@ -237,6 +237,8 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   };
 
   const handlePlaylistChange = (event) => {
+    const isNoMusic = event.target.value === '';
+    if(isNoMusic) return handleMusicToggle();
     const nextId = event.target.value || null;
     if (setGlobalPlaylistId) {
       setGlobalPlaylistId(nextId);
