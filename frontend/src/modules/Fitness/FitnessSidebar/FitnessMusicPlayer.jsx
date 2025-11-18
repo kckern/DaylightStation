@@ -2,8 +2,29 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
-import { TouchVolumeButtons, snapToTouchLevelLinear, snapToTouchLevelLog, linearVolumeFromLevel, linearLevelFromVolume, logVolumeFromLevel, logLevelFromVolume } from './TouchVolumeButtons.jsx';
+import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import '../FitnessUsers.scss';
+
+const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
+const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
+const LOG_CURVE_EXPONENT_PER_LEVEL = (() => {
+  const denominator = LOG_CURVE_TARGET_LEVEL - 100; // negative value
+  const numerator = Math.log10(Math.max(0.0001, LOG_CURVE_TARGET_VOLUME)); // avoid log10(0)
+  if (denominator === 0) return -0.01; // fallback to gentle slope
+  return numerator / denominator;
+})();
+
+const logVolumeFromLevel = (level) => {
+  if (!Number.isFinite(level) || level <= 0) return 0;
+  const exponent = (level - 100) * LOG_CURVE_EXPONENT_PER_LEVEL;
+  return Math.min(1, Math.max(0, Math.pow(10, exponent)));
+};
+
+const logLevelFromVolume = (volume) => {
+  if (!Number.isFinite(volume) || volume <= 0) return 0;
+  const percent = 100 + (Math.log10(volume) / (LOG_CURVE_EXPONENT_PER_LEVEL || -0.01));
+  return Math.min(100, Math.max(0, Math.round(percent)));
+};
 
 const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -23,6 +44,8 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const { videoPlayerPaused } = fitnessContext || {};
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
   const setGlobalPlaylistId = fitnessContext?.setSelectedPlaylistId;
+  const setMusicOverride = fitnessContext?.setMusicOverride;
+  const musicEnabled = fitnessContext?.musicEnabled ?? true;
 
   // Sync music player with video player pause state
   useEffect(() => {
@@ -202,8 +225,8 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
     }
   };
 
-  const videoDisplayLevel = useMemo(() => snapToTouchLevelLinear(linearLevelFromVolume(videoVolume)), [videoVolume]);
-  const musicDisplayLevel = useMemo(() => snapToTouchLevelLog(logLevelFromVolume(musicVolume)), [musicVolume]);
+  const videoDisplayLevel = useMemo(() => snapToTouchLevel(linearLevelFromVolume(videoVolume)), [videoVolume]);
+  const musicDisplayLevel = useMemo(() => snapToTouchLevel(logLevelFromVolume(musicVolume)), [musicVolume]);
 
   const handleVideoLevelSelect = (level) => {
     setVideoVolume(linearVolumeFromLevel(level));
@@ -223,6 +246,16 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const toggleControls = () => {
     setControlsOpen(prev => !prev);
   };
+
+  const handleMusicToggle = useCallback(() => {
+    if (setMusicOverride) {
+      setMusicOverride(!musicEnabled);
+      return;
+    }
+    if (setGlobalPlaylistId) {
+      setGlobalPlaylistId(null);
+    }
+  }, [setMusicOverride, musicEnabled, setGlobalPlaylistId]);
 
   const handleInfoTouchStart = () => {
     // Touch events trigger an extra click; mark so we skip the follow-up click handler.
@@ -360,74 +393,74 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
           </div>
         </div>
 
-        {/* Next Button */}
-        <div className="music-player-controls">
-          <button 
-            className="control-button next-button"
-            onClick={handleNext}
-            title="Next track"
-          >
-            <span className="control-icon">⏭</span>
-          </button>
-        </div>
-      </div>
-
-      {controlsOpen && (
-        <div className="music-player-expanded">
-          <div className="expanded-section">
-            {playlists.length > 0 ? (
-              <>
-                <label htmlFor="fitness-playlist-select" className="mix-label mix-label--top">Playlist</label>
-                <select
-                  id="fitness-playlist-select"
-                  className="playlist-select"
-                  value={selectedPlaylistId || ''}
-                  onChange={handlePlaylistChange}
-                >
-                  {playlists.map((playlist) => (
-                    <option key={playlist.id} value={playlist.id}>
-                     🎵 {playlist.name}
-                    </option>
-                  ))}
-                </select>
-              </>
-            ) : (
-              <div className="empty-state">No playlists configured.</div>
-            )}
+          <div className="music-player-controls">
+            <button 
+              className="control-button next-button"
+              onClick={handleNext}
+              title="Next track"
+            >
+              <span className="control-icon">⏭</span>
+            </button>
           </div>
+              </div>
 
-          <div className="expanded-section">
-            <div className="mix-row">
-              <label id="video-volume-label" className="mix-label">Video Volume</label>
-              <div className="mix-controls">
-                <TouchVolumeButtons
-                  controlId="video-volume"
-                  currentLevel={videoDisplayLevel}
-                  disabled={!videoMediaAvailable}
-                  onSelect={handleVideoLevelSelect}
-                  volumeScale="linear"
-                />
-                <span className="mix-value">{Math.round(videoVolume * 100)}%</span>
+              {controlsOpen && (
+          <div className="music-player-expanded">
+
+            <div className="expanded-section">
+              <div className="mix-row">
+                <label id="video-volume-label" className="mix-label">Video Volume: {Math.round(videoVolume * 100)}%
+
+                </label>
+                <div className="mix-controls">
+            <TouchVolumeButtons
+              controlId="video-volume"
+              currentLevel={videoDisplayLevel}
+              disabled={!videoMediaAvailable}
+              onSelect={handleVideoLevelSelect}
+            />
+                </div>
+              </div>
+              <div className="mix-row">
+                <label id="music-volume-label" className="mix-label">Music Volume: {Math.round(musicVolume * 100)}%
+
+                </label>
+                <div className="mix-controls">
+            <TouchVolumeButtons
+              controlId="music-volume"
+              currentLevel={musicDisplayLevel}
+              disabled={!musicMediaAvailable}
+              onSelect={handleMusicLevelSelect}
+            />
+                </div>
               </div>
             </div>
-            <div className="mix-row">
-              <label id="music-volume-label" className="mix-label">Music Volume</label>
-              <div className="mix-controls">
-                <TouchVolumeButtons
-                  controlId="music-volume"
-                  currentLevel={musicDisplayLevel}
-                  disabled={!musicMediaAvailable}
-                  onSelect={handleMusicLevelSelect}
-                  volumeScale="logarithmic"
-                />
-                <span className="mix-value">{Math.round(musicVolume * 100)}%</span>
-              </div>
+            <div className="expanded-section">
+              {playlists.length > 0 ? (
+                <>
+            <select
+              id="fitness-playlist-select"
+              style={{marginTop:"1ex"}}
+              className="playlist-select"
+              value={selectedPlaylistId || ''}
+              onChange={handlePlaylistChange}
+            >
+              <option value="">🔇 No Music</option>
+              {playlists.map((playlist) => (
+                <option key={playlist.id} value={playlist.id}>
+                 🎵 {playlist.name}
+                </option>
+              ))}
+            </select>
+                </>
+              ) : (
+                <div className="empty-state">No playlists configured.</div>
+              )}
             </div>
           </div>
-        </div>
-      )}
+              )}
 
-      {/* Hidden Player Component */}
+              {/* Hidden Player Component */}
       {playQueueData && playQueueData.length > 0 ? (
         <div style={{ position: 'absolute', left: '-9999px' }}>
           <Player
