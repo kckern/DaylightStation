@@ -2,20 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
-import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
+import { TouchVolumeButtons, snapToTouchLevelLinear, snapToTouchLevelLog, linearVolumeFromLevel, linearLevelFromVolume, logVolumeFromLevel, logLevelFromVolume } from './TouchVolumeButtons.jsx';
 import '../FitnessUsers.scss';
-
-const logVolumeFromLevel = (level) => {
-  if (!Number.isFinite(level) || level <= 0) return 0;
-  const exponent = (level - 100) / 50;
-  return Math.min(1, Math.max(0, Math.pow(10, exponent)));
-};
-
-const logLevelFromVolume = (volume) => {
-  if (!Number.isFinite(volume) || volume <= 0) return 0;
-  const percent = 100 + 50 * Math.log10(volume);
-  return Math.min(100, Math.max(0, Math.round(percent)));
-};
 
 const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -214,8 +202,8 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
     }
   };
 
-  const videoDisplayLevel = useMemo(() => snapToTouchLevel(linearLevelFromVolume(videoVolume)), [videoVolume]);
-  const musicDisplayLevel = useMemo(() => snapToTouchLevel(logLevelFromVolume(musicVolume)), [musicVolume]);
+  const videoDisplayLevel = useMemo(() => snapToTouchLevelLinear(linearLevelFromVolume(videoVolume)), [videoVolume]);
+  const musicDisplayLevel = useMemo(() => snapToTouchLevelLog(logLevelFromVolume(musicVolume)), [musicVolume]);
 
   const handleVideoLevelSelect = (level) => {
     setVideoVolume(linearVolumeFromLevel(level));
@@ -417,6 +405,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
                   currentLevel={videoDisplayLevel}
                   disabled={!videoMediaAvailable}
                   onSelect={handleVideoLevelSelect}
+                  volumeScale="linear"
                 />
                 <span className="mix-value">{Math.round(videoVolume * 100)}%</span>
               </div>
@@ -429,6 +418,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
                   currentLevel={musicDisplayLevel}
                   disabled={!musicMediaAvailable}
                   onSelect={handleMusicLevelSelect}
+                  volumeScale="logarithmic"
                 />
                 <span className="mix-value">{Math.round(musicVolume * 100)}%</span>
               </div>
