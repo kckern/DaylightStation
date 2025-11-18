@@ -1,7 +1,7 @@
 import React from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
+import { TouchVolumeButtons, snapToTouchLevelLinear, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import '../FitnessUsers.scss';
 
 const slugifyId = (value, fallback = 'user') => {
@@ -84,7 +84,7 @@ const FitnessSidebarMenu = ({
     };
   }, [playerRef]);
 
-  const videoDisplayLevel = React.useMemo(() => snapToTouchLevel(linearLevelFromVolume(videoVolume)), [videoVolume]);
+  const videoDisplayLevel = React.useMemo(() => snapToTouchLevelLinear(linearLevelFromVolume(videoVolume)), [videoVolume]);
 
   const handleVideoLevelSelect = React.useCallback((level) => {
     const next = linearVolumeFromLevel(level);
