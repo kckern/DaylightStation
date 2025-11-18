@@ -1578,7 +1578,7 @@
       }
 
       .mix-value {
-        width: 1rem;
+        width: 3rem;
         text-align: right;
         font-size: 0.7rem;
         color: rgba(255, 255, 255, 0.7);
@@ -1769,6 +1769,7 @@
               padding: 0;
               cursor: pointer;
               transition: background 0.2s ease, border 0.2s ease;
+              height: 5ex!important;
             }
 
             .touch-volume-button:first-child.off {
