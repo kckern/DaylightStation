@@ -15,20 +15,24 @@ const resolveAudioConstraints = (preferredMicrophoneId) => {
   return { deviceId: { exact: preferredMicrophoneId } };
 };
 
+const resolvePlaybackState = (api) => {
+  if (!api) return null;
+  const direct = api.getPlaybackState?.();
+  if (direct) return direct;
+  const controller = api.getMediaController?.();
+  return controller?.getPlaybackState?.() || controller?.transport?.getPlaybackState?.() || null;
+};
+
 const pauseMediaIfNeeded = (playerRef, wasPlayingRef) => {
   const api = playerRef?.current;
   if (!api) {
     wasPlayingRef.current = false;
     return;
   }
-  const media = api.getMediaElement?.();
-  if (media && !media.paused) {
+  const playbackState = resolvePlaybackState(api);
+  if (playbackState && playbackState.isPaused === false) {
     wasPlayingRef.current = true;
-    if (typeof api.pause === 'function') {
-      api.pause();
-    } else {
-      media.pause();
-    }
+    api.pause?.();
     return;
   }
   wasPlayingRef.current = false;
@@ -41,14 +45,7 @@ const resumeMediaIfNeeded = (playerRef, wasPlayingRef) => {
     wasPlayingRef.current = false;
     return;
   }
-  if (typeof api.play === 'function') {
-    api.play();
-  } else {
-    const media = api.getMediaElement?.();
-    if (media) {
-      media.play();
-    }
-  }
+  api.play?.();
   wasPlayingRef.current = false;
 };
 

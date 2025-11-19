@@ -1,8 +1,7 @@
-import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
-import { useMediaResilience, mergeMediaResilienceConfig } from '../hooks/useMediaResilience.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
 
@@ -33,37 +32,13 @@ export function AudioPlayer({
     () => `${media_url || ''}:${media?.media_key || media?.key || media?.id || ''}`,
     [media_url, media?.media_key, media?.key, media?.id]
   );
-  const [resilienceReloadToken, setResilienceReloadToken] = useState(0);
-  const [pendingSeekIntentMs, setPendingSeekIntentMs] = useState(null);
-
-  useEffect(() => {
-    setResilienceReloadToken(0);
-    setPendingSeekIntentMs(null);
-  }, [baseMediaKey]);
-
-  const playerInstanceKey = useMemo(
-    () => `${baseMediaKey}:reload-${resilienceReloadToken}`,
-    [baseMediaKey, resilienceReloadToken]
-  );
-
-  const handleResilienceReload = useCallback((options = {}) => {
-    if (Number.isFinite(options.seekToIntentMs)) {
-      setPendingSeekIntentMs(Math.max(0, options.seekToIntentMs));
-    }
-    setResilienceReloadToken((token) => token + 1);
-  }, []);
-
-  const pendingSeekIntentSeconds = useMemo(() => (
-    Number.isFinite(pendingSeekIntentMs) ? pendingSeekIntentMs / 1000 : null
-  ), [pendingSeekIntentMs]);
   const {
     seconds,
     duration,
     containerRef,
-    isPaused,
-    isSeeking,
     handleProgressClick,
-    setControllerExtras
+    overlayProps,
+    mediaInstanceKey
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -84,76 +59,20 @@ export function AudioPlayer({
     onProgress,
     onMediaRef,
     onController,
-    instanceKey: playerInstanceKey,
-    seekToIntentSeconds: pendingSeekIntentSeconds
+    instanceKey: baseMediaKey,
+    fetchVideoInfo,
+    resilience
   });
-
-  useEffect(() => {
-    if (!Number.isFinite(pendingSeekIntentMs)) return;
-    if (!Number.isFinite(seconds)) return;
-    const targetSeconds = pendingSeekIntentMs / 1000;
-    if (Math.abs(seconds - targetSeconds) <= 1) {
-      setPendingSeekIntentMs(null);
-    }
-  }, [pendingSeekIntentMs, seconds]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
   const footer = `${title}${albumArtist && albumArtist !== artist ? ` (${albumArtist})` : ''}`;
-  const shouldShowLoadingOverlay = seconds === 0 || isSeeking;
-  const { config: resilienceConfig, onStateChange: resilienceStateHandler, controllerRef: resilienceControllerRef } = resilience || {};
-
-  const combinedResilienceConfig = useMemo(
-    () => mergeMediaResilienceConfig(resilienceConfig, media?.mediaResilienceConfig),
-    [resilienceConfig, media?.mediaResilienceConfig]
-  );
-
-  const { overlayProps, controller: resilienceController } = useMediaResilience({
-    getMediaEl: () => containerRef.current,
-    meta: media,
-    seconds,
-    isPaused,
-    isSeeking,
-    initialStart: media.seconds || 0,
-    waitKey: playerInstanceKey,
-    fetchVideoInfo,
-    onStateChange: resilienceStateHandler
-      ? (nextState) => resilienceStateHandler(nextState, media)
-      : undefined,
-    onReload: handleResilienceReload,
-    configOverrides: combinedResilienceConfig,
-    controllerRef: resilienceControllerRef,
-    explicitShow: shouldShowLoadingOverlay,
-    plexId: media?.media_key || media?.key || media?.plex || null,
-    debugContext: {
-      scope: 'audio',
-      mediaType: media?.media_type,
-      type,
-      title,
-      artist,
-      album,
-      albumArtist,
-      url: media_url,
-      media_key: media?.media_key || media?.key || media?.plex,
-      shader,
-      reloadToken: resilienceReloadToken
-    }
-  });
-
-  useEffect(() => {
-    if (!setControllerExtras) return;
-    if (resilienceController) {
-      setControllerExtras({ resilience: resilienceController });
-    } else {
-      setControllerExtras(null);
-    }
-  }, [resilienceController, setControllerExtras]);
 
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-      {shouldShowLoadingOverlay && <LoadingOverlay {...overlayProps} />}
+      {overlayProps && <LoadingOverlay {...overlayProps} />}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -171,7 +90,7 @@ export function AudioPlayer({
         </div>
       </div>
       <audio
-        key={playerInstanceKey}
+        key={mediaInstanceKey}
         ref={containerRef}
         src={media_url}
         autoPlay

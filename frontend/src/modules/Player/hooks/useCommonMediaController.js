@@ -1,7 +1,8 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
+import { useMediaResilience, mergeMediaResilienceConfig } from './useMediaResilience.js';
 
 const DEBUG_MEDIA = false;
 
@@ -53,7 +54,7 @@ export function useCommonMediaController({
   onClear = () => {},
   isAudio = false,
   isVideo = false,
-  meta,
+  meta = {},
   type,
   shader,
   volume,
@@ -67,7 +68,9 @@ export function useCommonMediaController({
   keyboardOverrides,
   controllerExtras,
   seekToIntentSeconds = null,
-  instanceKey = null
+  instanceKey = null,
+  fetchVideoInfo,
+  resilience: resilienceOptions = null
 }) {
   // Persist global state across remounts so resume/start logic stays sticky per media item.
   if (!useCommonMediaController.__appliedStartByKey) useCommonMediaController.__appliedStartByKey = Object.create(null);
@@ -109,6 +112,28 @@ export function useCommonMediaController({
   }, [isAudio]);
 
   const isDash = meta.media_type === 'dash_video';
+  const baseInstanceKey = String(instanceKey ?? media_key ?? meta.media_url ?? meta.id ?? 'media');
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [internalSeekIntentSeconds, setInternalSeekIntentSeconds] = useState(null);
+  useEffect(() => {
+    setReloadNonce(0);
+    setInternalSeekIntentSeconds(null);
+  }, [baseInstanceKey]);
+  const resolvedInstanceKey = `${baseInstanceKey}:mc-${reloadNonce}`;
+
+  const hardReset = useCallback(({ seekToSeconds = null } = {}) => {
+    if (Number.isFinite(seekToSeconds)) {
+      setInternalSeekIntentSeconds(Math.max(0, seekToSeconds));
+    }
+    setReloadNonce((nonce) => nonce + 1);
+  }, []);
+
+  const handleResilienceReload = useCallback((options = {}) => {
+    const seekSeconds = Number.isFinite(options.seekToIntentMs)
+      ? options.seekToIntentMs / 1000
+      : null;
+    hardReset({ seekToSeconds: seekSeconds });
+  }, [hardReset]);
 
   useEffect(() => {
     try {
@@ -125,7 +150,7 @@ export function useCommonMediaController({
     lastSeekIntentRef.current = null;
     lastPlaybackPosRef.current = 0;
     isInitialLoadRef.current = true;
-  }, [media_key, instanceKey]);
+  }, [media_key, resolvedInstanceKey]);
 
   useEffect(() => {
     if (!Number.isFinite(seekToIntentSeconds)) return;
@@ -133,6 +158,14 @@ export function useCommonMediaController({
     lastSeekIntentRef.current = normalized;
     try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; } catch (_) {}
   }, [seekToIntentSeconds, media_key]);
+
+  useEffect(() => {
+    if (!Number.isFinite(internalSeekIntentSeconds)) return;
+    const normalized = Math.max(0, internalSeekIntentSeconds);
+    lastSeekIntentRef.current = normalized;
+    try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; } catch (_) {}
+    setInternalSeekIntentSeconds(null);
+  }, [internalSeekIntentSeconds, media_key]);
 
   const handleProgressClick = useCallback((event) => {
     if (!duration || !containerRef.current) return;
@@ -142,21 +175,6 @@ export function useCommonMediaController({
     const clickX = event.clientX - rect.left;
     mediaEl.currentTime = (clickX / rect.width) * duration;
   }, [duration, getMediaEl]);
-
-  useMediaKeyboardHandler({
-    getMediaEl,
-    onEnd,
-    onClear,
-    cycleThroughClasses,
-    playbackKeys,
-    queuePosition,
-    ignoreKeys,
-    meta,
-    type,
-    media_key,
-    setCurrentTime: setSeconds,
-    keyboardOverrides
-  });
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -322,57 +340,192 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeked', clearSeeking);
       mediaEl.removeEventListener('playing', clearSeeking);
     };
-  }, [getMediaEl, media_key, meta, onEnd, onProgress, playbackRate, start, type, volume, isDash, instanceKey]);
+  }, [getMediaEl, media_key, meta, onEnd, onProgress, playbackRate, start, type, volume, isDash, resolvedInstanceKey]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
     if (mediaEl && onMediaRef) {
       onMediaRef(mediaEl);
     }
-  }, [getMediaEl, onMediaRef, media_key, instanceKey]);
+  }, [getMediaEl, onMediaRef, media_key, resolvedInstanceKey]);
+
+  const mediaElementSnapshot = getMediaEl();
+  const isPausedValue = mediaElementSnapshot ? Boolean(mediaElementSnapshot.paused) : false;
+
+  const operateOnMediaEl = useCallback((fn) => {
+    const mediaEl = getMediaEl();
+    if (!mediaEl) return null;
+    try {
+      return fn(mediaEl);
+    } catch (_) {
+      return null;
+    }
+  }, [getMediaEl]);
+
+  const play = useCallback(() => operateOnMediaEl((el) => {
+    try { return el.play?.(); } catch (_) { return null; }
+  }), [operateOnMediaEl]);
+
+  const pause = useCallback(() => operateOnMediaEl((el) => {
+    try { return el.pause?.(); } catch (_) { return null; }
+  }), [operateOnMediaEl]);
+
+  const toggle = useCallback(() => operateOnMediaEl((el) => {
+    if (el.paused) {
+      try { return el.play?.(); } catch (_) { return null; }
+    }
+    try { return el.pause?.(); } catch (_) { return null; }
+  }), [operateOnMediaEl]);
+
+  const seek = useCallback((time) => {
+    if (!Number.isFinite(time)) return null;
+    return operateOnMediaEl((el) => {
+      const next = Math.max(0, time);
+      el.currentTime = next;
+      return next;
+    });
+  }, [operateOnMediaEl]);
+
+  const seekRelative = useCallback((deltaSeconds) => {
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds === 0) return null;
+    return operateOnMediaEl((el) => {
+      const current = Number.isFinite(el.currentTime) ? el.currentTime : 0;
+      const durationValue = Number.isFinite(el.duration) ? el.duration : null;
+      const unclamped = current + deltaSeconds;
+      const next = Math.max(0, durationValue ? Math.min(unclamped, durationValue) : unclamped);
+      el.currentTime = next;
+      return next;
+    });
+  }, [operateOnMediaEl]);
+
+  const getCurrentTime = useCallback(() => operateOnMediaEl((el) => Number.isFinite(el.currentTime) ? el.currentTime : 0) ?? 0, [operateOnMediaEl]);
+
+  const getDurationValue = useCallback(() => operateOnMediaEl((el) => Number.isFinite(el.duration) ? el.duration : 0) ?? 0, [operateOnMediaEl]);
+
+
+  const resilienceSettings = (resilienceOptions && typeof resilienceOptions === 'object') ? resilienceOptions : {};
+  const resilienceDisabled = resilienceOptions === false;
+  const mergedResilienceConfig = mergeMediaResilienceConfig(resilienceSettings.config, meta?.mediaResilienceConfig);
+  const stalledOverride = typeof resilienceSettings.stalled === 'boolean'
+    ? resilienceSettings.stalled
+    : resilienceSettings.stalledOverride;
+  const defaultDebugContext = {
+    scope: isVideo ? 'video' : (isAudio ? 'audio' : 'media'),
+    mediaType: meta?.media_type,
+    title: meta?.title,
+    show: meta?.show,
+    season: meta?.season,
+    episode: meta?.episode,
+    url: meta?.media_url,
+    media_key,
+    isDash,
+    shader,
+    queuePosition,
+    reloadNonce
+  };
+
+  const {
+    overlayProps: computedOverlayProps,
+    controller: resilienceController,
+    state: resilienceState
+  } = useMediaResilience({
+    getMediaEl,
+    meta,
+    seconds,
+    isPaused: isPausedValue,
+    isSeeking,
+    initialStart: start || 0,
+    waitKey: resolvedInstanceKey,
+    fetchVideoInfo,
+    onStateChange: typeof resilienceSettings.onStateChange === 'function'
+      ? (nextState) => resilienceSettings.onStateChange(nextState, meta)
+      : undefined,
+    onReload: handleResilienceReload,
+    configOverrides: mergedResilienceConfig,
+    controllerRef: resilienceDisabled ? undefined : resilienceSettings.controllerRef,
+    explicitShow: resilienceSettings.explicitShow,
+    plexId: meta?.media_key || meta?.key || meta?.plex || null,
+    debugContext: resilienceSettings.debugContext ?? defaultDebugContext,
+    message: resilienceSettings.message,
+    stalled: stalledOverride
+  });
+
+  const overlayProps = resilienceDisabled ? null : computedOverlayProps;
+
+  const getPlaybackState = useCallback(() => ({
+    isPaused: isPausedValue,
+    isSeeking,
+    seconds,
+    duration,
+    resilienceStatus: resilienceState?.status ?? null,
+    resilienceState
+  }), [duration, isPausedValue, isSeeking, resilienceState, seconds]);
 
   const [controllerExtrasState, setControllerExtrasState] = useState(null);
 
   const mergedControllerExtras = controllerExtras ?? controllerExtrasState;
 
+  const transport = useMemo(() => ({
+    getMediaEl,
+    play,
+    pause,
+    toggle,
+    seek,
+    seekRelative,
+    getCurrentTime,
+    getDuration: getDurationValue,
+    getPlaybackState,
+    isDash,
+    hardReset
+  }), [getMediaEl, getCurrentTime, getDurationValue, getPlaybackState, hardReset, isDash, pause, play, resolvedInstanceKey, seek, seekRelative, toggle]);
+
+  useMediaKeyboardHandler({
+    getMediaEl,
+    onEnd,
+    onClear,
+    cycleThroughClasses,
+    playbackKeys,
+    queuePosition,
+    ignoreKeys,
+    meta,
+    type,
+    media_key,
+    setCurrentTime: setSeconds,
+    keyboardOverrides,
+    controller: transport,
+    isPaused: isPausedValue
+  });
+
   useEffect(() => {
     if (typeof onController !== 'function') return;
-    const play = () => { const el = getMediaEl(); if (el) { try { el.play?.(); } catch (_) {} } };
-    const pause = () => { const el = getMediaEl(); if (el) { try { el.pause?.(); } catch (_) {} } };
-    const seek = (time) => {
-      if (!Number.isFinite(time)) return;
-      const el = getMediaEl();
-      if (!el) return;
-      try { el.currentTime = Math.max(0, time); } catch (_) {}
-    };
-
-    const transport = {
-      getMediaEl,
-      play,
-      pause,
-      seek,
-      isDash
-    };
 
     const controllerPayload = {
       ...transport,
+      getPlaybackState,
       transport,
-      ...(mergedControllerExtras || {})
+      ...(mergedControllerExtras || {}),
+      ...(resilienceController && !resilienceDisabled ? { resilience: resilienceController } : {})
     };
 
     onController(controllerPayload);
-  }, [getMediaEl, isDash, onController, mergedControllerExtras, instanceKey]);
+  }, [getPlaybackState, mergedControllerExtras, onController, resilienceController, resilienceDisabled, resolvedInstanceKey, transport]);
 
   return {
     containerRef,
     seconds,
     percent: getProgressPercent(seconds, duration),
     duration,
-    isPaused: getMediaEl()?.paused || false,
+    isPaused: isPausedValue,
     isDash,
     shader,
-    isSeeking,
     handleProgressClick,
+    overlayProps,
+    resilienceState: resilienceDisabled ? null : resilienceState,
+    resilienceController: resilienceDisabled ? null : resilienceController,
+    mediaInstanceKey: resolvedInstanceKey,
+    hardReset,
+    transport,
+    getPlaybackState,
     setControllerExtras: setControllerExtrasState
   };
 }
