@@ -28,111 +28,120 @@ const DEFAULT_KEY_MAPPINGS = {
 };
 
 // Default action handlers - can be overridden per component
-const createDefaultActions = (config) => ({
-  seekBackward: () => {
-    const media = config.getMediaEl?.() || config.mediaRef?.current;
-    if (media) {
-      const increment = config.seekIncrement || Math.max(5, (media.duration || 60) / 30);
-      const newTime = Math.max(media.currentTime - increment, 0);
-      media.currentTime = newTime;
-      config.onTimeUpdate?.(newTime);
-    }
-  },
-  
-  seekForward: () => {
-    const media = config.getMediaEl?.() || config.mediaRef?.current;
-    if (media) {
-      const increment = config.seekIncrement || Math.max(5, (media.duration || 60) / 30);
-      const newTime = Math.min(media.currentTime + increment, media.duration || 0);
-      media.currentTime = newTime;
-      config.onTimeUpdate?.(newTime);
-    }
-  },
-  
-  togglePlayPause: () => {
-    const media = config.getMediaEl?.() || config.mediaRef?.current;
-    if (media) {
-      media.paused ? media.play() : media.pause();
-    }
-  },
-  
-  // Hardware keypad actions (from keyboard.yaml)
-  play: () => {
-    const media = config.getMediaEl?.() || config.mediaRef?.current;
-    if (media) {
-      if (media.paused) {
-        media.play();
-      } else {
-        // If already playing, advance to next track
-        config.onNext?.();
+const createDefaultActions = (config) => {
+  const {
+    transport = {},
+    seekIncrement,
+    queuePosition = 0,
+    onTimeUpdate,
+    onNext,
+    onPrevious,
+    onEscape,
+    onCycleShaders,
+    getPlaybackState
+  } = config;
+
+  const getCurrentTime = () => {
+    const current = transport.getCurrentTime?.();
+    return Number.isFinite(current) ? current : 0;
+  };
+
+  const getDuration = () => {
+    const duration = transport.getDuration?.();
+    return Number.isFinite(duration) ? duration : 0;
+  };
+
+  const resolveIncrement = () => seekIncrement || Math.max(5, (getDuration() || 60) / 30);
+
+  const applySeekDelta = (deltaSeconds) => {
+    if (!Number.isFinite(deltaSeconds)) return;
+    if (typeof transport.seekRelative === 'function') {
+      const next = transport.seekRelative(deltaSeconds);
+      if (Number.isFinite(next)) {
+        onTimeUpdate?.(next);
       }
+      return;
     }
-  },
-  
-  pause: () => {
-    const media = config.getMediaEl?.() || config.mediaRef?.current;
-    if (media) {
-      media.paused ? media.play() : media.pause();
+    const current = getCurrentTime();
+    const duration = getDuration();
+    const unclamped = current + deltaSeconds;
+    const capped = duration > 0 ? Math.min(unclamped, duration) : unclamped;
+    const next = Math.max(0, capped);
+    transport.seek?.(next);
+    onTimeUpdate?.(next);
+  };
+
+  const togglePlayPause = () => {
+    if (typeof transport.toggle === 'function') {
+      transport.toggle();
+      return;
     }
-  },
-  
-  rew: () => {
-    const media = config.getMediaEl?.() || config.mediaRef?.current;
-    if (media) {
-      const increment = config.seekIncrement || Math.max(5, (media.duration || 60) / 30);
-      const newTime = Math.max(media.currentTime - increment, 0);
-      media.currentTime = newTime;
-      config.onTimeUpdate?.(newTime);
-    }
-  },
-  
-  fwd: () => {
-    const media = config.getMediaEl?.() || config.mediaRef?.current;
-    if (media) {
-      const increment = config.seekIncrement || Math.max(5, (media.duration || 60) / 30);
-      const newTime = Math.min(media.currentTime + increment, media.duration || 0);
-      media.currentTime = newTime;
-      config.onTimeUpdate?.(newTime);
-    }
-  },
-  
-  prev: () => {
-    const media = config.getMediaEl?.() || config.mediaRef?.current;
-    const queuePos = config.queuePosition ?? 0;
-    
-    if (media && media.currentTime > 5) {
-      // If more than 5 seconds in, restart current item
-      media.currentTime = 0;
-      config.onTimeUpdate?.(0);
-    } else if (queuePos > 0) {
-      // Only go to previous item if not at the first position (position > 0)
-      config.onPrevious?.();
+    const state = getPlaybackState?.();
+    if (state?.isPaused) {
+      transport.play?.();
     } else {
-      // If at first position (position 0) and less than 5 seconds, restart current item
-      if (media) {
-        media.currentTime = 0;
-        config.onTimeUpdate?.(0);
-      }
+      transport.pause?.();
     }
-  },
-  next: () => config.onNext?.(),
-  
-  nextTrack: () => config.onNext?.(),
-  previousTrack: () => config.onPrevious?.(),
-  escape: () => config.onEscape?.(),
-  
-  cycleShadersUp: () => config.onCycleShaders?.(1),
-  cycleShadersDown: () => config.onCycleShaders?.(-1)
-});
+  };
+
+  const ensurePlayingElseAdvance = () => {
+    const state = getPlaybackState?.();
+    if (!state || state.isPaused) {
+      transport.play?.();
+    } else {
+      onNext?.();
+    }
+  };
+
+  const pauseOrToggle = () => {
+    const state = getPlaybackState?.();
+    if (state && !state.isPaused) {
+      transport.pause?.();
+    } else {
+      transport.play?.();
+    }
+  };
+
+  const restartOrPrevious = () => {
+    const current = getCurrentTime();
+    if (current > 5) {
+      transport.seek?.(0);
+      onTimeUpdate?.(0);
+      return;
+    }
+    if (queuePosition > 0) {
+      onPrevious?.();
+      return;
+    }
+    transport.seek?.(0);
+    onTimeUpdate?.(0);
+  };
+
+  return {
+    seekBackward: () => applySeekDelta(-resolveIncrement()),
+    seekForward: () => applySeekDelta(resolveIncrement()),
+    togglePlayPause,
+    play: ensurePlayingElseAdvance,
+    pause: pauseOrToggle,
+    rew: () => applySeekDelta(-resolveIncrement()),
+    fwd: () => applySeekDelta(resolveIncrement()),
+    prev: restartOrPrevious,
+    next: () => onNext?.(),
+    nextTrack: () => onNext?.(),
+    previousTrack: () => onPrevious?.(),
+    escape: () => onEscape?.(),
+    cycleShadersUp: () => onCycleShaders?.(1),
+    cycleShadersDown: () => onCycleShaders?.(-1)
+  };
+};
 
 /**
  * Advanced keyboard handler with double-click detection and customizable actions
  */
 export function useAdvancedKeyboardHandler(config = {}) {
   const {
-    // Media reference
-    mediaRef,
-    getMediaEl,
+    transport,
+    getPlaybackState,
     
     // Custom key mappings (overrides defaults)
     keyMappings = {},
@@ -173,15 +182,15 @@ export function useAdvancedKeyboardHandler(config = {}) {
     
     // Create action handlers with config
     const defaultActions = createDefaultActions({
-      mediaRef,
-      getMediaEl,
+      transport,
       onTimeUpdate,
       onNext,
       onPrevious,
       onEscape,
       onCycleShaders,
       seekIncrement,
-      queuePosition
+      queuePosition,
+      getPlaybackState
     });
     
     // Merge default and custom action handlers
@@ -250,11 +259,22 @@ export function useAdvancedKeyboardHandler(config = {}) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
-    ignoreKeys,
-    enableDoubleClick,
+    actionHandlers,
+    componentOverrides,
     doubleClickDelay,
+    enableDoubleClick,
+    getPlaybackState,
+    ignoreKeys,
+    keyMappings,
+    onCycleShaders,
+    onEscape,
+    onNext,
+    onPrevious,
+    onTimeUpdate,
+    playbackKeys,
+    queuePosition,
     seekIncrement,
-    queuePosition
+    transport
   ]);
 }
 
@@ -288,6 +308,8 @@ export function usePlayerKeyboard(config) {
   const {
     mediaRef,
     getMediaEl,
+    transport,
+    getPlaybackState,
     onEnd,
     onClear,
     cycleThroughClasses,
@@ -305,9 +327,11 @@ export function usePlayerKeyboard(config) {
   // Default action handlers for Player-specific logic
   const defaultPlayerActions = {
     previousTrack: () => {
-      const mediaEl = getMediaEl ? getMediaEl() : mediaRef?.current;
-      if (mediaEl && mediaEl.currentTime > 5) {
-        mediaEl.currentTime = 0;
+      const current = Number.isFinite(transport?.getCurrentTime?.())
+        ? transport.getCurrentTime()
+        : 0;
+      if (current > 5) {
+        transport?.seek?.(0);
         setCurrentTime?.(0);
       } else {
         onEnd?.(-1);
@@ -318,6 +342,8 @@ export function usePlayerKeyboard(config) {
   return useAdvancedKeyboardHandler({
     mediaRef,
     getMediaEl,
+    transport,
+    getPlaybackState,
     playbackKeys,
     queuePosition,
     ignoreKeys,

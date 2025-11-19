@@ -104,6 +104,22 @@ const Player = forwardRef(function Player(props, ref) {
     if (props.onController) props.onController(controller);
   }, [props.onController]);
 
+  const withTransport = useCallback((handler, fallback) => {
+    const controller = controllerRef.current;
+    if (!controller) {
+      return typeof fallback === 'function' ? fallback() : null;
+    }
+    const api = controller.transport || controller;
+    if (!api) {
+      return typeof fallback === 'function' ? fallback() : null;
+    }
+    try {
+      return handler(api);
+    } catch (_) {
+      return null;
+    }
+  }, []);
+
   const baseResilience = {
     config: resilience?.config ?? mediaResilienceConfig,
     onStateChange: resilience?.onStateChange ?? onResilienceState,
@@ -141,33 +157,23 @@ const Player = forwardRef(function Player(props, ref) {
 
   const isValidImperativeRef = typeof ref === 'function' || (ref && typeof ref === 'object' && 'current' in ref);
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
-    seek: (t) => { 
-      const el = exposedMediaRef.current; 
-      if (el && Number.isFinite(t)) { 
-        try { el.currentTime = t; } catch(_){} 
-      } 
+    seek: (t) => {
+      if (!Number.isFinite(t)) return;
+      withTransport((api) => api.seek?.(t));
     },
-    play: () => { 
-      const el = exposedMediaRef.current; 
-      try { el?.play(); } catch(_){} 
-    },
-    pause: () => { 
-      const el = exposedMediaRef.current; 
-      try { el?.pause(); } catch(_){} 
-    },
-    toggle: () => { 
-      const el = exposedMediaRef.current; 
-      if (el) { el.paused ? el.play() : el.pause(); } 
-    },
-    getCurrentTime: () => exposedMediaRef.current?.currentTime || 0,
-    getDuration: () => exposedMediaRef.current?.duration || 0,
-    getMediaElement: () => exposedMediaRef.current,
+    play: () => { withTransport((api) => api.play?.()); },
+    pause: () => { withTransport((api) => api.pause?.()); },
+    toggle: () => { withTransport((api) => api.toggle?.()); },
+    getCurrentTime: () => withTransport((api) => api.getCurrentTime?.()) || 0,
+    getDuration: () => withTransport((api) => api.getDuration?.()) || 0,
+    getMediaElement: () => controllerRef.current?.transport?.getMediaEl?.() || exposedMediaRef.current,
     getMediaController: () => controllerRef.current,
     getMediaResilienceController: () => resilienceControllerRef.current,
     getMediaResilienceState: () => resilienceControllerRef.current?.getState?.() || null,
     resetMediaResilience: () => resilienceControllerRef.current?.reset?.(),
     forceMediaReload: (opts) => resilienceControllerRef.current?.forceReload?.(opts),
-    forceMediaInfoFetch: (opts) => resilienceControllerRef.current?.forceFetchInfo?.(opts)
+    forceMediaInfoFetch: (opts) => resilienceControllerRef.current?.forceFetchInfo?.(opts),
+    getPlaybackState: () => controllerRef.current?.getPlaybackState?.() || controllerRef.current?.transport?.getPlaybackState?.() || null
   }), []);
 
   const playerProps = {
