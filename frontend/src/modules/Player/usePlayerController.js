@@ -15,7 +15,7 @@ export default function usePlayerController(playerRef) {
     const api = playerRef?.current; if (!api) return; api.pause?.();
   }, [playerRef]);
   const toggle = useCallback(() => {
-    const api = playerRef?.current; if (!api) return; if (api.toggle) api.toggle(); else { const el = getMediaEl(); if (el) { el.paused ? el.play() : el.pause(); } }
+    const api = playerRef?.current; if (!api) return; api.toggle?.();
   }, [playerRef]);
   const seek = useCallback((t) => {
     const api = playerRef?.current; if (!api || !Number.isFinite(t)) return; api.seek?.(t);
