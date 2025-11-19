@@ -25,122 +25,74 @@ GovernanceWarningOverlay.propTypes = {
   countdownTotal: PropTypes.number
 };
 
-const GovernancePanelOverlay = ({ overlay, challengeMeta, highlightEntries }) => {
-  const {
-    challenge,
-    statusLabel,
-    status,
-    remaining,
-    total,
-    progress,
-    zoneLabel,
-    selectionLabel,
-    actualCount,
-    requiredCount,
-    missingUsers,
-    metUsers
-  } = challengeMeta || {};
-
-  const hasChallenge = Boolean(challenge);
+const GovernancePanelOverlay = ({ overlay, lockRows }) => {
+  const title = overlay.title || 'Video Locked';
+  const primaryMessage = Array.isArray(overlay.descriptions) && overlay.descriptions.length > 0
+    ? overlay.descriptions[0]
+    : 'Meet these conditions to unlock playback.';
+  const rows = Array.isArray(lockRows) ? lockRows : [];
+  const hasRows = rows.length > 0;
 
   return (
     <div className={`governance-overlay governance-overlay--${overlay.status || 'unknown'}`}>
-      <div className="governance-overlay__panel">
-        {overlay.title ? (
-          <div className="governance-overlay__title">{overlay.title}</div>
+      <div className="governance-overlay__panel governance-lock">
+        <div className="governance-lock__title">{title}</div>
+        {primaryMessage ? (
+          <p className="governance-lock__message">{primaryMessage}</p>
         ) : null}
-        {overlay.countdown != null ? (
-          <div className="governance-overlay__countdown">{overlay.countdown}s</div>
-        ) : null}
-        {Array.isArray(overlay.descriptions) && overlay.descriptions.length > 0
-          ? overlay.descriptions.map((line, idx) => (
-              <p className="governance-overlay__line" key={`gov-desc-${idx}`}>
-                {line}
-              </p>
-            ))
-          : null}
-        {hasChallenge ? (
-          <div className={`governance-overlay__challenge governance-overlay__challenge--${status || 'pending'}`}>
-            <div className="governance-overlay__challenge-header">
-              <div className="governance-overlay__challenge-title">{zoneLabel}</div>
-              <div className="governance-overlay__challenge-meta" aria-label="Challenge status">
-                <span className={`governance-overlay__challenge-status governance-overlay__challenge-status--${status || 'pending'}`}>
-                  {statusLabel || 'Active'}
-                </span>
-                {Number.isFinite(remaining) && Number.isFinite(total) ? (
-                  <span className="governance-overlay__challenge-time">
-                    {`${remaining}s / ${total}s`}
+        <div className="governance-lock__table" role="table" aria-label="Unlock requirements">
+          <div className="governance-lock__row governance-lock__row--header" role="row">
+            <div className="governance-lock__cell governance-lock__cell--head" role="columnheader">Participant</div>
+            <div className="governance-lock__cell governance-lock__cell--head" role="columnheader">Current</div>
+            <div className="governance-lock__cell governance-lock__cell--head" role="columnheader">Target</div>
+          </div>
+          {hasRows ? rows.map((row) => {
+            const currentClass = row.currentZone?.id ? `zone-${row.currentZone.id}` : 'zone-none';
+            const targetClass = row.targetZone?.id ? `zone-${row.targetZone.id}` : 'zone-none';
+            return (
+              <div className="governance-lock__row" role="row" key={row.key}>
+                <div className="governance-lock__cell governance-lock__cell--chip" role="cell">
+                  <div className="governance-lock__chip">
+                    <div className={`governance-lock__avatar ${currentClass}`}>
+                      <img
+                        src={row.avatarSrc}
+                        alt=""
+                        onError={(event) => {
+                          const img = event.currentTarget;
+                          if (img.dataset.fallback) return;
+                          img.dataset.fallback = '1';
+                          img.src = DaylightMediaPath('/media/img/users/user');
+                        }}
+                      />
+                    </div>
+                    <div className="governance-lock__chip-text">
+                      <span className="governance-lock__chip-name">{row.name}</span>
+                      {row.groupLabel && row.groupLabel.toLowerCase() !== 'primary' ? (
+                        <span className="governance-lock__chip-group">{row.groupLabel}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+                <div className="governance-lock__cell" role="cell">
+                  <span className={`governance-lock__pill ${currentClass}`}>
+                    {row.currentLabel || 'No signal'}
                   </span>
-                ) : null}
-                {selectionLabel ? (
-                  <span className="governance-overlay__challenge-tag">{selectionLabel}</span>
-                ) : null}
+                </div>
+                <div className="governance-lock__cell" role="cell">
+                  <span className={`governance-lock__pill governance-lock__pill--target ${targetClass}`}>
+                    {row.targetLabel || 'Target'}
+                  </span>
+                </div>
+              </div>
+            );
+          }) : (
+            <div className="governance-lock__row governance-lock__row--empty" role="row">
+              <div className="governance-lock__cell governance-lock__cell--empty" role="cell">
+                Waiting for participant data...
               </div>
             </div>
-            <div className="governance-overlay__challenge-counts" aria-label="Challenge participant counts">
-              <span className="governance-overlay__challenge-count">{actualCount ?? 0}</span>
-              <span className="governance-overlay__challenge-divider">/</span>
-              <span className="governance-overlay__challenge-count governance-overlay__challenge-count--target">{requiredCount ?? 0}</span>
-            </div>
-            <div
-              className="governance-overlay__challenge-progress"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round((progress ?? 0) * 100)}
-            >
-              <div
-                className="governance-overlay__challenge-progress-fill"
-                style={{ width: `${Math.round((progress ?? 0) * 100)}%` }}
-              />
-            </div>
-            {Array.isArray(missingUsers) && missingUsers.length ? (
-              <div className="governance-overlay__challenge-hint">
-                Need: {missingUsers.join(', ')}
-              </div>
-            ) : Array.isArray(metUsers) && metUsers.length ? (
-              <div className="governance-overlay__challenge-hint governance-overlay__challenge-hint--met">
-                Met: {metUsers.join(', ')}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {highlightEntries.length > 0 ? (
-          <div className="governance-overlay__people">
-            {highlightEntries.map(({ name, avatarSrc, key }) => (
-              <span className="governance-overlay__chip" key={`gov-user-${key}`}>
-                <img
-                  src={avatarSrc}
-                  alt=""
-                  className="governance-overlay__avatar"
-                  onError={(event) => {
-                    const img = event.currentTarget;
-                    if (img.dataset.fallback) {
-                      img.style.display = 'none';
-                      return;
-                    }
-                    img.dataset.fallback = '1';
-                    img.src = DaylightMediaPath('/media/img/users/user');
-                  }}
-                />
-                <span className="governance-overlay__chip-label">{name}</span>
-              </span>
-            ))}
-          </div>
-        ) : null}
-        {Array.isArray(overlay.requirements) && overlay.requirements.length > 0 ? (
-          <ul className="governance-overlay__rules">
-            {overlay.requirements.map((rule, idx) => (
-              <li
-                className={`governance-overlay__rule ${rule.satisfied ? 'is-met' : 'is-pending'}`}
-                key={`gov-rule-${idx}-${rule.zone}`}
-              >
-                <span className="governance-overlay__rule-zone">{rule.zone}</span>
-                <span className="governance-overlay__rule-desc">{rule.rule}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -150,38 +102,28 @@ GovernancePanelOverlay.propTypes = {
   overlay: PropTypes.shape({
     status: PropTypes.string,
     title: PropTypes.string,
-    countdown: PropTypes.number,
-    descriptions: PropTypes.arrayOf(PropTypes.string),
-    requirements: PropTypes.arrayOf(PropTypes.shape({
-      zone: PropTypes.string,
-      rule: PropTypes.string,
-      satisfied: PropTypes.bool
-    }))
+    descriptions: PropTypes.arrayOf(PropTypes.string)
   }).isRequired,
-  challengeMeta: PropTypes.shape({
-    challenge: PropTypes.object,
-    status: PropTypes.string,
-    statusLabel: PropTypes.string,
-    remaining: PropTypes.number,
-    total: PropTypes.number,
-    progress: PropTypes.number,
-    zoneLabel: PropTypes.string,
-    selectionLabel: PropTypes.string,
-    actualCount: PropTypes.number,
-    requiredCount: PropTypes.number,
-    missingUsers: PropTypes.arrayOf(PropTypes.string),
-    metUsers: PropTypes.arrayOf(PropTypes.string)
-  }),
-  highlightEntries: PropTypes.arrayOf(PropTypes.shape({
-    name: PropTypes.string,
-    avatarSrc: PropTypes.string,
-    key: PropTypes.string
+  lockRows: PropTypes.arrayOf(PropTypes.shape({
+    key: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    groupLabel: PropTypes.string,
+    avatarSrc: PropTypes.string.isRequired,
+    currentZone: PropTypes.shape({
+      id: PropTypes.string,
+      name: PropTypes.string
+    }),
+    targetZone: PropTypes.shape({
+      id: PropTypes.string,
+      name: PropTypes.string
+    }),
+    currentLabel: PropTypes.string,
+    targetLabel: PropTypes.string
   }))
 };
 
 GovernancePanelOverlay.defaultProps = {
-  challengeMeta: null,
-  highlightEntries: []
+  lockRows: []
 };
 
 const GenericOverlay = ({ overlay }) => (
@@ -208,7 +150,7 @@ GenericOverlay.propTypes = {
   }).isRequired
 };
 
-const GovernanceStateOverlay = ({ overlay, challengeMeta, highlightEntries }) => {
+const GovernanceStateOverlay = ({ overlay, lockRows }) => {
   if (!overlay?.show) {
     return null;
   }
@@ -226,8 +168,7 @@ const GovernanceStateOverlay = ({ overlay, challengeMeta, highlightEntries }) =>
     return (
       <GovernancePanelOverlay
         overlay={overlay}
-        challengeMeta={challengeMeta}
-        highlightEntries={highlightEntries}
+        lockRows={lockRows}
       />
     );
   }
@@ -244,37 +185,16 @@ GovernanceStateOverlay.propTypes = {
     status: PropTypes.string,
     title: PropTypes.string,
     descriptions: PropTypes.arrayOf(PropTypes.string),
-    requirements: PropTypes.arrayOf(PropTypes.shape({
-      zone: PropTypes.string,
-      rule: PropTypes.string,
-      satisfied: PropTypes.bool
-    }))
+    requirements: PropTypes.array
   }),
-  challengeMeta: PropTypes.shape({
-    challenge: PropTypes.object,
-    status: PropTypes.string,
-    statusLabel: PropTypes.string,
-    remaining: PropTypes.number,
-    total: PropTypes.number,
-    progress: PropTypes.number,
-    zoneLabel: PropTypes.string,
-    selectionLabel: PropTypes.string,
-    actualCount: PropTypes.number,
-    requiredCount: PropTypes.number,
-    missingUsers: PropTypes.arrayOf(PropTypes.string),
-    metUsers: PropTypes.arrayOf(PropTypes.string)
-  }),
-  highlightEntries: PropTypes.arrayOf(PropTypes.shape({
-    name: PropTypes.string,
-    avatarSrc: PropTypes.string,
-    key: PropTypes.string
+  lockRows: PropTypes.arrayOf(PropTypes.shape({
+    key: PropTypes.string.isRequired
   }))
 };
 
 GovernanceStateOverlay.defaultProps = {
   overlay: null,
-  challengeMeta: null,
-  highlightEntries: []
+  lockRows: []
 };
 
 export default GovernanceStateOverlay;

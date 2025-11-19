@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import './ChallengeOverlay.scss';
 
@@ -7,9 +7,16 @@ const CHALLENGE_RING_RADIUS = 95;
 const CHALLENGE_RING_CIRCUMFERENCE = 2 * Math.PI * CHALLENGE_RING_RADIUS;
 const CHALLENGE_RING_CENTER = CHALLENGE_VIEWBOX_SIZE / 2;
 const CHALLENGE_SUCCESS_HOLD_MS = 2000;
+const CHALLENGE_POSITION_KEY = 'fitness.challengeOverlay.position';
+const CHALLENGE_POSITION_ORDER = ['top', 'middle', 'bottom'];
 const DEFAULT_RING_COLOR = '#38bdf8';
 const SUCCESS_RING_COLOR = '#22c55e';
 const FAILURE_RING_COLOR = '#ef4444';
+export const CHALLENGE_PHASES = Object.freeze({
+	off: 'off',
+	on: 'on',
+	done: 'done'
+});
 const DEFAULT_ZONE_COLORS = {
   cool: '#38bdf8',
   active: '#22c55e',
@@ -28,6 +35,7 @@ const clearTimerRef = (timerRef) => {
 const normalizeChallengeStatus = (status) => {
 	if (status === 'success') return 'success';
 	if (status === 'failed') return 'failed';
+	if (status === 'pending') return 'pending';
 	return 'pending';
 };
 
@@ -54,7 +62,78 @@ const normalizeZoneKey = (value) => {
 	return normalized.replace(/zone$/g, '').replace(/[^a-z0-9]+/g, '').trim();
 };
 
-const toSecondsLabel = (value) => (Number.isFinite(value) ? `${Math.max(0, Math.round(value))}s` : '—');
+const toSecondsLabel = (value) => (Number.isFinite(value) ? `${Math.max(0, Math.round(value))}` : '—');
+
+const readStoredOverlayPosition = () => {
+	if (typeof window === 'undefined' || !window?.localStorage) {
+		return CHALLENGE_POSITION_ORDER[0];
+	}
+	try {
+		const stored = window.localStorage.getItem(CHALLENGE_POSITION_KEY);
+		return CHALLENGE_POSITION_ORDER.includes(stored) ? stored : CHALLENGE_POSITION_ORDER[0];
+	} catch (_) {
+		return CHALLENGE_POSITION_ORDER[0];
+	}
+};
+
+export const useChallengeMachine = (challenge) => {
+	const [dismissedChallengeId, setDismissedChallengeId] = useState(null);
+	const successHideTimerRef = useRef(null);
+
+	useEffect(() => {
+		const hasChallenge = Boolean(challenge);
+		const status = hasChallenge ? normalizeChallengeStatus(challenge.status) : 'off';
+		const challengeKey = getChallengeKey(challenge);
+
+		if (!hasChallenge || status === 'pending' || status === 'failed') {
+			if (dismissedChallengeId !== null) {
+				setDismissedChallengeId(null);
+			}
+		}
+
+		if (!hasChallenge || status !== 'success') {
+			clearTimerRef(successHideTimerRef);
+			return;
+		}
+
+		if (!challengeKey || (dismissedChallengeId && dismissedChallengeId === challengeKey)) {
+			return;
+		}
+
+		const timerMeta = successHideTimerRef.current;
+		if (!timerMeta || timerMeta.key !== challengeKey) {
+			clearTimerRef(successHideTimerRef);
+			const timeoutId = setTimeout(() => {
+				setDismissedChallengeId(challengeKey);
+				successHideTimerRef.current = null;
+			}, CHALLENGE_SUCCESS_HOLD_MS);
+			successHideTimerRef.current = { key: challengeKey, timeoutId };
+		}
+	}, [challenge, dismissedChallengeId]);
+
+	useEffect(() => () => {
+		clearTimerRef(successHideTimerRef);
+	}, []);
+
+	return useMemo(() => {
+		const hasChallenge = Boolean(challenge);
+		const status = hasChallenge ? normalizeChallengeStatus(challenge.status) : 'off';
+		const challengeKey = getChallengeKey(challenge);
+		const challengeDismissed = challengeKey && dismissedChallengeId === challengeKey;
+		let phase = CHALLENGE_PHASES.off;
+		if (hasChallenge && status === 'pending') {
+			phase = CHALLENGE_PHASES.on;
+		} else if (hasChallenge && status === 'success' && !challengeDismissed) {
+			phase = CHALLENGE_PHASES.done;
+		}
+		return {
+			phase,
+			show: phase !== CHALLENGE_PHASES.off,
+			status,
+			challengeDismissed
+		};
+	}, [challenge, dismissedChallengeId]);
+};
 
 export const useChallengeOverlays = (governanceState, zones) => {
 	const zoneColorLookup = useMemo(() => {
@@ -77,40 +156,7 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		remainingSeconds: null,
 		progress: 0
 	});
-		const successHideTimerRef = useRef(null);
-		const [dismissedChallengeId, setDismissedChallengeId] = useState(null);
-
-		useEffect(() => {
-			const challenge = governanceState?.challenge;
-			const status = normalizeChallengeStatus(challenge?.status);
-			const challengeKey = getChallengeKey(challenge);
-
-			if (!challenge || status !== 'success') {
-				if (dismissedChallengeId !== null) {
-					setDismissedChallengeId(null);
-				}
-				clearTimerRef(successHideTimerRef);
-				return;
-			}
-
-			if (dismissedChallengeId && dismissedChallengeId === challengeKey) {
-				return;
-			}
-
-			const existingTimer = successHideTimerRef.current;
-			if (!existingTimer || existingTimer.key !== challengeKey) {
-				clearTimerRef(successHideTimerRef);
-				const timeoutId = setTimeout(() => {
-					setDismissedChallengeId(challengeKey);
-					successHideTimerRef.current = null;
-				}, CHALLENGE_SUCCESS_HOLD_MS);
-				successHideTimerRef.current = { key: challengeKey, timeoutId };
-			}
-		}, [governanceState?.challenge, dismissedChallengeId]);
-
-		useEffect(() => () => {
-			clearTimerRef(successHideTimerRef);
-		}, []);
+	const challengeMachine = useChallengeMachine(governanceState?.challenge);
 
 	return useMemo(() => {
 	const resolveZoneDetails = (value) => {
@@ -128,6 +174,7 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		category: 'challenge',
 		variant: 'current',
 		status: null,
+		phase: CHALLENGE_PHASES.off,
 		show: false,
 		title: '',
 		zoneLabel: '',
@@ -143,7 +190,10 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		statusLabel: '',
 		timeLabel: '—',
 		countdownPaused: false,
-		ringColor: null
+		ringColor: null,
+		satisfied: false,
+		done: false,
+		timeLeftSeconds: null
 	};
 
 	const upcoming = {
@@ -163,7 +213,11 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		statusLabel: 'Next',
 		timeLabel: '—',
 		countdownPaused: false,
-		ringColor: null
+		ringColor: null,
+		phase: CHALLENGE_PHASES.off,
+		satisfied: false,
+		done: false,
+		timeLeftSeconds: null
 	};
 
 	const challenge = governanceState?.challenge;
@@ -172,8 +226,9 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		governanceState?.challengePaused ||
 		challenge?.paused
 	);
-	const challengeKey = getChallengeKey(challenge);
-	const challengeDismissed = challengeKey && dismissedChallengeId === challengeKey;
+	const pausedByGovernance = governanceState?.status === 'yellow';
+	const challengePhase = challengeMachine.phase;
+	const isChallengeVisible = challengeMachine.show;
 
 	const resetPauseSnapshot = () => {
 		pauseSnapshotRef.current = {
@@ -245,16 +300,34 @@ export const useChallengeOverlays = (governanceState, zones) => {
 
 		const finalRemainingSeconds = shouldFreeze ? effectiveRemainingSeconds : remainingSeconds;
 		const timeLabel = Number.isFinite(finalRemainingSeconds) ? toSecondsLabel(finalRemainingSeconds) : '—';
+		const satisfied = Number.isFinite(requiredCount) && Number.isFinite(actualCount)
+			? actualCount >= requiredCount
+			: Array.isArray(missingUsers)
+				? missingUsers.length === 0
+				: false;
+		const isDonePhase = challengePhase === CHALLENGE_PHASES.done;
 		let statusLabel = '';
-		if (status === 'success') {
+		if (isDonePhase) {
 			statusLabel = 'Done';
 		} else if (countdownPaused) {
 			statusLabel = 'Paused';
+		} else {
+			statusLabel = 'Active';
 		}
 
+		const shouldRenderOverlay = Boolean(
+			isChallengeVisible &&
+			(status === 'pending' || isDonePhase) &&
+			!pausedByGovernance
+		);
+
 		Object.assign(current, {
-			status,
-			show: status === 'pending' || (status === 'success' && !challengeDismissed),
+			status: isDonePhase ? 'success' : 'pending',
+			phase: challengePhase,
+			show: shouldRenderOverlay,
+			satisfied,
+			done: isDonePhase,
+			timeLeftSeconds: finalRemainingSeconds,
 			title: zoneLabel,
 			zoneLabel,
 			zoneId: zoneInfo.id,
@@ -269,47 +342,17 @@ export const useChallengeOverlays = (governanceState, zones) => {
 			statusLabel,
 			timeLabel,
 			countdownPaused,
-			ringColor: status === 'success' ? SUCCESS_RING_COLOR : zoneInfo.color
+			ringColor: isDonePhase ? SUCCESS_RING_COLOR : zoneInfo.color
 		});
 	} else {
 		resetPauseSnapshot();
 	}
 
-	const nextChallenge = governanceState?.nextChallenge;
-	if (nextChallenge) {
-		const remainingSeconds = Number.isFinite(nextChallenge.remainingSeconds)
-			? Math.max(0, Math.round(nextChallenge.remainingSeconds))
-			: null;
-		const timeLimit = Number.isFinite(nextChallenge.timeLimitSeconds)
-			? Math.max(1, nextChallenge.timeLimitSeconds)
-			: null;
-		const requiredCount = Number.isFinite(nextChallenge.requiredCount)
-			? Math.max(0, nextChallenge.requiredCount)
-			: 0;
-		const zoneLabel = nextChallenge.selectionLabel || nextChallenge.zoneLabel || nextChallenge.zone || 'Next challenge';
-		const targetZone = nextChallenge.zone || nextChallenge.zoneLabel || '';
-		const zoneInfo = resolveZoneDetails(targetZone);
-		const timeLabel = toSecondsLabel(remainingSeconds);
-
-		Object.assign(upcoming, {
-			show: true,
-			title: zoneLabel,
-			zoneLabel,
-			zoneId: zoneInfo.id,
-			selectionLabel: nextChallenge.selectionLabel || '',
-			remainingSeconds,
-			totalSeconds: timeLimit,
-			requiredCount,
-			actualCount: 0,
-			statusLabel: 'Next',
-			timeLabel,
-			countdownPaused: false,
-			ringColor: zoneInfo.color
-		});
-	}
+	// Next challenge countdown remains invisible per governance spec.
+	upcoming.show = false;
 
 	return { current, upcoming };
-	}, [governanceState, zoneColorLookup, dismissedChallengeId]);
+	}, [challengeMachine, governanceState, zoneColorLookup]);
 };
 
 export const ChallengeOverlay = ({ overlay }) => {
@@ -318,6 +361,7 @@ export const ChallengeOverlay = ({ overlay }) => {
 	}
 
 	const {
+		phase,
 		variant,
 		status,
 		title,
@@ -326,8 +370,45 @@ export const ChallengeOverlay = ({ overlay }) => {
 		statusLabel,
 		timeLabel,
 		countdownPaused,
-		ringColor
+		ringColor,
+		timeLeftSeconds
 	} = overlay;
+	const [position, setPosition] = useState(() => readStoredOverlayPosition());
+
+	useEffect(() => {
+		setPosition(readStoredOverlayPosition());
+	}, []);
+
+	const cyclePosition = useCallback(() => {
+		setPosition((current) => {
+			const currentIndex = CHALLENGE_POSITION_ORDER.indexOf(current);
+			const nextIndex = (currentIndex + 1) % CHALLENGE_POSITION_ORDER.length;
+			const nextPosition = CHALLENGE_POSITION_ORDER[nextIndex];
+			if (typeof window !== 'undefined' && window?.localStorage) {
+				try {
+					window.localStorage.setItem(CHALLENGE_POSITION_KEY, nextPosition);
+				} catch (_) {}
+			}
+			return nextPosition;
+		});
+	}, []);
+
+	const handleClick = useCallback((event) => {
+		event.stopPropagation();
+		cyclePosition();
+	}, [cyclePosition]);
+
+	const handlePointerDown = useCallback((event) => {
+		event.stopPropagation();
+	}, []);
+
+	const handleKeyDown = useCallback((event) => {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			event.stopPropagation();
+			cyclePosition();
+		}
+	}, [cyclePosition]);
 	const clampedProgress = Math.max(0, Math.min(1, overlay.progress ?? 0));
 	const isSuccess = status === 'success';
 	const strokeOffset = variant === 'upcoming'
@@ -343,8 +424,17 @@ export const ChallengeOverlay = ({ overlay }) => {
 				? SUCCESS_RING_COLOR
 				: DEFAULT_RING_COLOR;
 	const resolvedRingColor = ringColor || fallbackRingColor;
+	const ringStyle = useMemo(() => ({
+		strokeDasharray: `${CHALLENGE_RING_CIRCUMFERENCE}px`,
+		strokeDashoffset: `${strokeOffset}px`,
+		stroke: resolvedRingColor,
+		'--challenge-ring-circumference': `${CHALLENGE_RING_CIRCUMFERENCE}px`
+	}), [strokeOffset, resolvedRingColor]);
 
 	const classNames = ['challenge-overlay'];
+	if (phase) {
+		classNames.push(`challenge-overlay--phase-${phase}`);
+	}
 	if (variant === 'upcoming') {
 		classNames.push('challenge-overlay--upcoming');
 	} else if (status) {
@@ -353,15 +443,45 @@ export const ChallengeOverlay = ({ overlay }) => {
 	if (countdownPaused) {
 		classNames.push('challenge-overlay--paused');
 	}
+	if (position && CHALLENGE_POSITION_ORDER.includes(position)) {
+		classNames.push(`challenge-overlay--pos-${position}`);
+	}
 
-	const normalizedTime = timeLabel || '—';
+	const hideTime = Number.isFinite(timeLeftSeconds) && timeLeftSeconds <= 0;
+	const normalizedTime = hideTime ? '' : (timeLabel || '—');
 	const normalizedTitle = title || 'Challenge';
-	const normalizedActual = Number.isFinite(actualCount) ? actualCount : 0;
-	const normalizedTarget = Number.isFinite(requiredCount) ? requiredCount : 0;
-	const showSplitCounts = variant !== 'upcoming';
+	const normalizedTarget = Number.isFinite(requiredCount) ? Math.max(0, requiredCount) : 0;
+	const normalizedActual = Number.isFinite(actualCount) ? Math.max(0, actualCount) : 0;
+	const clampedActual = normalizedTarget > 0 ? Math.min(normalizedTarget, normalizedActual) : normalizedActual;
+	const countBlocks = normalizedTarget > 0
+		? Array.from({ length: normalizedTarget }, (_, index) => ({
+			id: index + 1,
+			complete: index < clampedActual
+		}))
+		: [];
+	const showCountBlocks = variant !== 'upcoming' && countBlocks.length > 0;
+	const countAriaLabel = showCountBlocks
+		? `Challenge completion ${clampedActual} of ${normalizedTarget}`
+		: undefined;
+	const timeAriaLabel = hideTime
+		? statusLabel ? `${statusLabel}: timer complete` : 'Timer complete'
+		: statusLabel ? `${statusLabel}: ${normalizedTime} seconds` : `Time remaining ${normalizedTime} seconds`;
+	const positionLabel = position === 'middle'
+		? 'middle'
+		: position === 'bottom'
+			? 'bottom'
+			: 'top';
 
 	return (
-		<div className={classNames.join(' ')}>
+		<div
+			className={classNames.join(' ')}
+			onClick={handleClick}
+			onPointerDown={handlePointerDown}
+			onKeyDown={handleKeyDown}
+			role="button"
+			tabIndex={0}
+			aria-label={`${normalizedTitle} challenge overlay, positioned ${positionLabel}. Tap to move.`}
+		>
 			<svg
 				className="challenge-overlay__ring"
 				viewBox={`0 0 ${CHALLENGE_VIEWBOX_SIZE} ${CHALLENGE_VIEWBOX_SIZE}`}
@@ -378,33 +498,36 @@ export const ChallengeOverlay = ({ overlay }) => {
 					cx={CHALLENGE_RING_CENTER}
 					cy={CHALLENGE_RING_CENTER}
 					r={CHALLENGE_RING_RADIUS}
-					style={{
-						strokeDasharray: `${CHALLENGE_RING_CIRCUMFERENCE}px`,
-						strokeDashoffset: `${strokeOffset}px`,
-						stroke: resolvedRingColor
-					}}
+					style={ringStyle}
 				/>
 			</svg>
 			<div className="challenge-overlay__content">
-				<div className="challenge-overlay__top">
+				<div className="challenge-overlay__meta">
 					<div className="challenge-overlay__title">{normalizedTitle}</div>
-					<div className="challenge-overlay__counts" aria-label="Challenge progress">
-						{showSplitCounts ? (
-							<>
-								<span className="challenge-overlay__count">{normalizedActual}</span>
-								<span className="challenge-overlay__divider">/</span>
-								<span className="challenge-overlay__count challenge-overlay__count--target">{normalizedTarget}</span>
-							</>
-						) : (
-							<span className="challenge-overlay__count challenge-overlay__count--target">{normalizedTarget}</span>
-						)}
-					</div>
-					{statusLabel ? (
-						<div className="challenge-overlay__status">{statusLabel}</div>
-					) : null}
+					{showCountBlocks && (
+						<div
+							className="challenge-overlay__count-blocks"
+							role="meter"
+							aria-label={countAriaLabel}
+							aria-valuemin={0}
+							aria-valuemax={normalizedTarget}
+							aria-valuenow={clampedActual}
+						>
+							{countBlocks.map((block) => (
+								<span
+									key={block.id}
+									className={[
+										'challenge-overlay__count-block',
+										block.complete ? 'challenge-overlay__count-block--complete' : null
+									].filter(Boolean).join(' ')}
+									aria-hidden="true"
+								/>
+							))}
+						</div>
+					)}
 				</div>
-				<div className="challenge-overlay__bottom">
-					<div className="challenge-overlay__time" aria-label="Time remaining">{normalizedTime}</div>
+				<div className="challenge-overlay__time-block" aria-label={timeAriaLabel} role="timer">
+					<div className="challenge-overlay__time">{normalizedTime}</div>
 				</div>
 			</div>
 		</div>
@@ -425,7 +548,11 @@ ChallengeOverlay.propTypes = {
 		countdownPaused: PropTypes.bool,
 		ringColor: PropTypes.string,
 		zoneLabel: PropTypes.string,
-		zoneId: PropTypes.string
+		zoneId: PropTypes.string,
+		phase: PropTypes.string,
+		satisfied: PropTypes.bool,
+		done: PropTypes.bool,
+		timeLeftSeconds: PropTypes.number
 	})
 };
 
