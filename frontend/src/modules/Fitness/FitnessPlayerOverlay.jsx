@@ -36,7 +36,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
 
   const rawStatus = typeof governanceState.status === 'string' ? governanceState.status.toLowerCase() : '';
   const normalizedStatus = rawStatus === 'green' ? 'green' : rawStatus === 'yellow' ? 'yellow' : rawStatus === 'red' ? 'red' : 'grey';
-  const requirements = Array.isArray(governanceState.requirements) ? governanceState.requirements : [];
+  const requirementSummaries = Array.isArray(governanceState.requirements) ? governanceState.requirements : [];
   const watchers = Array.isArray(governanceState.watchers) ? governanceState.watchers : [];
   const challengeLocked = Boolean(governanceState.videoLocked);
   const challenge = governanceState.challenge;
@@ -46,6 +46,9 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   const challengeActualCount = Number.isFinite(challenge?.actualCount) ? Math.max(0, challenge.actualCount) : null;
   const challengeMissingUsers = Array.isArray(challenge?.missingUsers)
     ? challenge.missingUsers.filter(Boolean)
+    : [];
+  const challengeMetUsers = Array.isArray(challenge?.metUsers)
+    ? challenge.metUsers.filter(Boolean)
     : [];
   const challengeRequirement = (() => {
     if (!challenge || challenge.status === 'success' || challenge.status === 'failed') return null;
@@ -65,23 +68,37 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     }
     return {
       zone: baseZone,
+      zoneLabel: baseZone,
       rule: requirementText,
+      ruleLabel: requirementText,
       satisfied: challengeActualCount != null && challengeRequiredCount != null
         ? challengeActualCount >= challengeRequiredCount
-        : false
+        : false,
+      missingUsers: challengeMissingUsers,
+      metUsers: challengeMetUsers,
+      requiredCount: challengeRequiredCount,
+      actualCount: challengeActualCount,
+      selectionLabel: challengeSelectionLabel || ''
     };
   })();
 
-  const formattedRequirements = requirements.map((rule) => ({
-    zone: rule?.zoneLabel || rule?.zone || 'Zone',
-    rule: rule?.ruleLabel || String(rule?.rule ?? ''),
-    satisfied: Boolean(rule?.satisfied)
-  }));
-  const sortedRequirements = formattedRequirements.slice().sort((a, b) => Number(a.satisfied) - Number(b.satisfied));
-  const unsatisfied = requirements.filter((rule) => rule && !rule.satisfied);
+  const cloneRequirement = (summary) => ({
+    zone: summary?.zone || null,
+    zoneLabel: summary?.zoneLabel || summary?.zone || 'Zone',
+    rule: summary?.rule ?? null,
+    ruleLabel: summary?.ruleLabel || String(summary?.rule ?? ''),
+    satisfied: Boolean(summary?.satisfied),
+    missingUsers: Array.isArray(summary?.missingUsers) ? summary.missingUsers.filter(Boolean) : [],
+    metUsers: Array.isArray(summary?.metUsers) ? summary.metUsers.filter(Boolean) : [],
+    requiredCount: Number.isFinite(summary?.requiredCount) ? summary.requiredCount : null,
+    actualCount: Number.isFinite(summary?.actualCount) ? summary.actualCount : null
+  });
+
+  const unsatisfiedRaw = requirementSummaries.filter((rule) => rule && !rule.satisfied);
+  const unsatisfied = unsatisfiedRaw.map(cloneRequirement);
   const missingUsers = Array.from(new Set(
     unsatisfied
-      .flatMap((rule) => Array.isArray(rule?.missingUsers) ? rule.missingUsers : [])
+      .flatMap((rule) => rule.missingUsers)
       .filter(Boolean)
   ));
 
@@ -91,16 +108,19 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     const actualCount = challengeActualCount;
     const requirementLabel = requiredCount != null ? `${requiredCount} participant${requiredCount === 1 ? '' : 's'}` : 'Challenge requirement';
     const missingChallengeUsers = challengeMissingUsers.length ? challengeMissingUsers : missingUsers;
-    const baseRequirementItems = unsatisfied.map((rule) => ({
-      zone: rule?.zoneLabel || rule?.zone || 'Zone',
-      rule: rule?.ruleLabel || String(rule?.rule ?? ''),
-      satisfied: false
-    }));
+    const baseRequirementItems = unsatisfied;
     const challengeRequirementItem = zoneLabel
       ? {
-        zone: zoneLabel,
-        rule: requirementLabel,
-        satisfied: false
+        zone: challenge?.zone ? String(challenge.zone).toLowerCase() : zoneLabel,
+        zoneLabel,
+        rule: challenge?.rule ?? null,
+        ruleLabel: requirementLabel,
+        satisfied: false,
+        missingUsers: missingChallengeUsers,
+        metUsers: [],
+        requiredCount,
+        actualCount,
+        selectionLabel: challengeSelectionLabel || ''
       }
       : null;
     const combinedRequirements = [
@@ -180,12 +200,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
           : null
       ].filter(Boolean),
       requirements: [
-        ...(challengeRequirement ? [challengeRequirement] : []),
-        ...unsatisfied.map((rule) => ({
-          zone: rule?.zoneLabel || rule?.zone || 'Zone',
-          rule: rule?.ruleLabel || String(rule?.rule ?? ''),
-          satisfied: false
-        }))
+        ...(challengeRequirement ? [cloneRequirement(challengeRequirement)] : []),
+        ...unsatisfied
       ],
       highlightUsers: Array.from(new Set([
         ...challengeMissingUsers,
@@ -198,10 +214,9 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
 
   const greyDescriptions = [
     watchers.length ? null : 'Waiting for heart-rate participants to connect.',
-    formattedRequirements.length ? 'Meet these conditions to unlock playback.' : 'Loading unlock rules...'
+    requirementSummaries.length ? 'Meet these conditions to unlock playback.' : 'Loading unlock rules...'
   ].filter(Boolean);
 
-  const greyRequirements = sortedRequirements;
   const greyHighlightUsers = missingUsers;
 
   return {
@@ -211,7 +226,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     filterClass: '',
     title: 'Video Locked',
     descriptions: greyDescriptions,
-    requirements: greyRequirements,
+    requirements: unsatisfied,
     highlightUsers: greyHighlightUsers,
     countdown: null,
     countdownTotal: null
@@ -239,69 +254,207 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     governanceState,
     fitnessCtx?.zones
   );
-  const governanceChallenge = governanceState?.challenge || null;
-  const governanceChallengeStatus = currentChallengeOverlay?.status;
-  const challengeRemaining = currentChallengeOverlay?.remainingSeconds ?? null;
-  const challengeTotal = currentChallengeOverlay?.totalSeconds ?? null;
-  const challengeProgress = currentChallengeOverlay?.progress ?? 0;
-  const challengeZoneLabel = currentChallengeOverlay?.title || currentChallengeOverlay?.zoneLabel || 'Target zone';
-  const challengeMissingUsers = currentChallengeOverlay?.missingUsers || [];
-  const challengeMetUsers = currentChallengeOverlay?.metUsers || [];
   const isGovernanceRed = overlay?.category === 'governance' && overlay.status === 'red';
 
-  const challengeMeta = governanceChallenge ? {
-    challenge: governanceChallenge,
-    status: governanceChallengeStatus,
-    statusLabel: governanceChallengeStatus === 'success'
-      ? 'Completed'
-      : governanceChallengeStatus === 'failed'
-        ? 'Failed'
-        : 'Active',
-    remaining: challengeRemaining,
-    total: challengeTotal,
-    progress: challengeProgress,
-    zoneLabel: challengeZoneLabel,
-    selectionLabel: governanceChallenge?.selectionLabel || '',
-    actualCount: governanceChallenge?.actualCount ?? 0,
-    requiredCount: governanceChallenge?.requiredCount ?? 0,
-    missingUsers: challengeMissingUsers,
-    metUsers: challengeMetUsers
-  } : null;
+  const zoneMetadata = useMemo(() => {
+    const zoneList = Array.isArray(fitnessCtx?.zones) ? fitnessCtx.zones.filter(Boolean) : [];
+    const ordered = zoneList.slice().sort((a, b) => (a?.min ?? 0) - (b?.min ?? 0));
+    const map = {};
+    const rank = {};
+    ordered.forEach((zone, index) => {
+      const id = zone?.id
+        ? String(zone.id)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+        : null;
+      if (!id) return;
+      map[id] = {
+        id,
+        name: zone.name || zone.id || `Zone ${index + 1}`,
+        color: zone.color || null
+      };
+      rank[id] = index;
+    });
+    return { map, rank };
+  }, [fitnessCtx?.zones]);
 
-  const highlightEntries = useMemo(() => {
-    if (!overlay || !Array.isArray(overlay.highlightUsers) || overlay.highlightUsers.length === 0) {
+  const lockRows = useMemo(() => {
+    if (!overlay || overlay.category !== 'governance' || !overlay.show) {
       return [];
     }
-    const normalize = (name) => (typeof name === 'string' ? name.trim().toLowerCase() : '');
-    const lookup = new Map();
+    const requirementList = Array.isArray(overlay.requirements) ? overlay.requirements.filter(Boolean) : [];
+    if (requirementList.length === 0) {
+      return [];
+    }
+    const normalize = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
     const participants = Array.isArray(fitnessCtx?.participantRoster) ? fitnessCtx.participantRoster : [];
+    const participantMap = new Map();
     participants.forEach((participant) => {
-      if (!participant?.name) return;
-      const key = normalize(participant.name);
+      const key = normalize(participant?.name);
       if (!key) return;
-      const profileSlug = participant.profileId || slugifyId(participant.name);
-      lookup.set(key, {
-        displayName: participant.name,
-        profileSlug
+      participantMap.set(key, participant);
+    });
+
+    const groupLabelMap = new Map();
+    const collectGroupLabels = (list, fallbackLabel) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((entry) => {
+        if (!entry?.name) return;
+        const key = normalize(entry.name);
+        if (!key || groupLabelMap.has(key)) return;
+        const label = entry.group_label || fallbackLabel || entry.source || entry.category || null;
+        if (label) {
+          groupLabelMap.set(key, label);
+        }
+      });
+    };
+    const usersConfigRaw = fitnessCtx?.usersConfigRaw || {};
+    collectGroupLabels(usersConfigRaw?.primary, 'Primary');
+    collectGroupLabels(usersConfigRaw?.secondary, 'Secondary');
+    collectGroupLabels(usersConfigRaw?.family, 'Family');
+    collectGroupLabels(usersConfigRaw?.friends, 'Friend');
+    collectGroupLabels(usersConfigRaw?.guests, 'Guest');
+
+    const topZoneId = participants.reduce((top, participant) => {
+      const zoneId = participant?.zoneId
+        ? String(participant.zoneId)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+        : null;
+      if (!zoneId || !(zoneId in zoneMetadata.rank)) return top;
+      if (!top || zoneMetadata.rank[zoneId] > zoneMetadata.rank[top]) {
+        return zoneId;
+      }
+      return top;
+    }, null);
+    const aggregateZone = topZoneId ? zoneMetadata.map[topZoneId] : null;
+
+    const rows = [];
+    const seen = new Set();
+    let autoIndex = 0;
+
+    const findZoneByLabel = (label) => {
+      if (!label) return null;
+      const normalized = label.trim().toLowerCase();
+      const match = Object.values(zoneMetadata.map).find((entry) =>
+        entry?.name?.trim().toLowerCase() === normalized
+      );
+      return match || null;
+    };
+
+    const buildTargetInfo = (requirement) => {
+      const zoneIdRaw = requirement?.zone ? String(requirement.zone) : null;
+      const zoneId = zoneIdRaw
+        ? zoneIdRaw
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+        : null;
+      let zoneInfo = zoneId && zoneMetadata.map[zoneId]
+        ? zoneMetadata.map[zoneId]
+        : null;
+      if (!zoneInfo && requirement?.zoneLabel) {
+        zoneInfo = findZoneByLabel(requirement.zoneLabel)
+          || {
+            id: zoneId || slugifyId(requirement.zoneLabel),
+            name: requirement.zoneLabel,
+            color: null
+          };
+      }
+      const label = requirement?.zoneLabel
+        || zoneInfo?.name
+        || requirement?.ruleLabel
+        || 'Target';
+      return {
+        zoneInfo,
+        label
+      };
+    };
+
+    const getCurrentZone = (participant) => {
+      const zoneIdRaw = participant?.zoneId ? String(participant.zoneId) : null;
+      const zoneId = zoneIdRaw
+        ? zoneIdRaw
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+        : null;
+      if (zoneId && zoneMetadata.map[zoneId]) {
+        return zoneMetadata.map[zoneId];
+      }
+      if (participant?.zoneLabel) {
+        return findZoneByLabel(participant.zoneLabel)
+          || {
+            id: zoneId || slugifyId(participant.zoneLabel),
+            name: participant.zoneLabel,
+            color: null
+          };
+      }
+      return null;
+    };
+
+    const ensureAvatarSrc = (name, participant) => {
+      if (participant?.avatarUrl) return participant.avatarUrl;
+      if (participant?.profileId) {
+        return DaylightMediaPath(`/media/img/users/${participant.profileId}`);
+      }
+      const slug = slugifyId(name);
+      return DaylightMediaPath(`/media/img/users/${slug}`);
+    };
+
+    const addRow = ({ name, groupLabel, participant, target, isGeneric = false }) => {
+      if (!target) return;
+      const keyBase = isGeneric ? `anyone-${target.label}` : normalize(name);
+      const cacheKey = `${keyBase || 'unknown'}-${target.label}`;
+      if (seen.has(cacheKey)) return;
+      seen.add(cacheKey);
+      autoIndex += 1;
+      const displayName = isGeneric ? (name || 'Anyone') : (name || 'Unknown');
+      const resolvedParticipant = participant || (participantMap.get(normalize(name)) || null);
+      const resolvedGroup = isGeneric
+        ? (groupLabel || 'Any participant')
+        : (groupLabel
+          || groupLabelMap.get(normalize(name))
+          || resolvedParticipant?.source
+          || null);
+      const currentZone = isGeneric ? (aggregateZone || null) : getCurrentZone(resolvedParticipant);
+      rows.push({
+        key: `${cacheKey}-${autoIndex}`,
+        name: displayName,
+        groupLabel: resolvedGroup,
+        avatarSrc: isGeneric ? DaylightMediaPath('/media/img/users/user') : ensureAvatarSrc(displayName, resolvedParticipant),
+        isGeneric,
+        currentZone,
+        targetZone: target.zoneInfo || null,
+        targetLabel: target.label || 'Target',
+        currentLabel: currentZone?.name || 'No signal'
+      });
+    };
+
+    requirementList.forEach((requirement) => {
+      const target = buildTargetInfo(requirement);
+      if (!target) return;
+      const missing = Array.isArray(requirement?.missingUsers)
+        ? requirement.missingUsers.filter(Boolean)
+        : [];
+      const requiresAny = Number.isFinite(requirement?.requiredCount) && Number(requirement.requiredCount) === 1;
+      if (requiresAny) {
+        addRow({ name: 'Anyone', target, isGeneric: true });
+        return;
+      }
+      if (!missing.length) {
+        return;
+      }
+      missing.forEach((userName) => {
+        const participant = participantMap.get(normalize(userName));
+        addRow({
+          name: userName,
+          participant,
+          target
+        });
       });
     });
 
-    return overlay.highlightUsers
-      .map((rawName, index) => {
-        const key = normalize(rawName);
-        if (!key) return null;
-        const record = lookup.get(key);
-        const displayName = record?.displayName || rawName;
-        const profileSlug = record?.profileSlug || slugifyId(displayName);
-        const avatarSrc = DaylightMediaPath(`/media/img/users/${profileSlug}`);
-        return {
-          name: displayName,
-          avatarSrc,
-          key: `${profileSlug || key}-${index}`
-        };
-      })
-    .filter(Boolean);
-  }, [fitnessCtx?.participantRoster, overlay]);
+    return rows;
+  }, [overlay, fitnessCtx?.participantRoster, fitnessCtx?.usersConfigRaw, zoneMetadata]);
 
   const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceRed
     ? <ChallengeOverlay overlay={currentChallengeOverlay} />
@@ -312,8 +465,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
   const primaryOverlay = overlay?.show ? (
     <GovernanceStateOverlay
       overlay={overlay}
-      challengeMeta={challengeMeta}
-      highlightEntries={highlightEntries}
+      lockRows={lockRows}
     />
   ) : null;
 
@@ -366,8 +518,14 @@ FitnessPlayerOverlay.propTypes = {
     descriptions: PropTypes.arrayOf(PropTypes.string),
     requirements: PropTypes.arrayOf(PropTypes.shape({
       zone: PropTypes.string,
+      zoneLabel: PropTypes.string,
       rule: PropTypes.string,
-      satisfied: PropTypes.bool
+      ruleLabel: PropTypes.string,
+      satisfied: PropTypes.bool,
+      missingUsers: PropTypes.arrayOf(PropTypes.string),
+      metUsers: PropTypes.arrayOf(PropTypes.string),
+      requiredCount: PropTypes.number,
+      actualCount: PropTypes.number
     })),
     highlightUsers: PropTypes.arrayOf(PropTypes.string),
     countdown: PropTypes.number,

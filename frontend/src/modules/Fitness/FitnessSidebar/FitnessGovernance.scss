@@ -34,13 +34,27 @@
 
   .fg-lock-icon {
     flex-shrink: 0;
-    width: 24px;
-    height: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 32px;
     color: rgba(255, 255, 255, 0.6);
-    
+    text-align: center;
+
     svg {
-      width: 100%;
-      height: 100%;
+      width: 24px;
+      height: 24px;
+    }
+
+    .fg-lock-icon__countdown {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(239, 239, 239, 0.9);
+      min-width: 28px;
     }
   }
 

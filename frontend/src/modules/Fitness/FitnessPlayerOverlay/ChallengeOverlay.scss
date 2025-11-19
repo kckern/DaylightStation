@@ -1,27 +1,34 @@
 .challenge-overlay {
   --challenge-overlay-edge: clamp(12px, min(4vw, 4%), 40px);
-  --challenge-overlay-size: clamp(180px, min(32%, 30vmin), 320px);
-  --challenge-overlay-dimension: min(var(--challenge-overlay-size), calc(100% - (var(--challenge-overlay-edge) * 2)));
-  --challenge-ring-width: clamp(10px, calc(var(--challenge-overlay-dimension) * 0.08), 22px);
+  --challenge-overlay-size: clamp(140px, min(22vw, 15vh), 240px);
+  --challenge-overlay-available: calc(100% - (var(--challenge-overlay-edge) * 2));
+  --challenge-overlay-diameter: min(var(--challenge-overlay-size), var(--challenge-overlay-available));
+  --challenge-ring-width: clamp(8px, calc(var(--challenge-overlay-diameter) * 0.08), 18px);
+  --challenge-overlay-translate: 0;
   position: absolute;
   top: var(--challenge-overlay-edge);
   left: var(--challenge-overlay-edge);
   z-index: calc(var(--fitness-parent-overlay-z, 60));
-  width: var(--challenge-overlay-dimension);
-  height: var(--challenge-overlay-dimension);
+  width: var(--challenge-overlay-diameter);
+  aspect-ratio: 1 / 1;
   border-radius: 50%;
   background: rgba(11, 18, 28, 0.82);
   color: #f8fafc;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(16px);
-  pointer-events: none;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   justify-content: center;
   transform-origin: top left;
-  transform: scale(var(--fitness-overlay-scale, 1));
+  transform: translateY(var(--challenge-overlay-translate)) scale(var(--fitness-overlay-scale, 1));
   transition: transform 0.25s ease, opacity 0.2s ease;
-  font-size: clamp(0.9rem, var(--challenge-overlay-size) * 0.04, 1.2rem);
+  font-size: clamp(0.9rem, var(--challenge-overlay-diameter) * 0.04, 1.2rem);
+  padding: clamp(4px, var(--challenge-overlay-diameter) * 0.03, 10px);
+  box-sizing: border-box;
+  user-select: none;
+  cursor: pointer;
+  outline: none;
 
   &__ring {
     position: absolute;
@@ -29,6 +36,10 @@
     width: 100%;
     height: 100%;
     transform: rotate(-90deg);
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35), 0 24px 48px rgba(0, 0, 0, 0.45);
   }
 
   &__ring-track {
@@ -47,73 +58,78 @@
 
   &__content {
     position: relative;
-    width: 68%;
-    height: 68%;
+    width: 90%;
+    height: 90%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
-    gap: clamp(12px, var(--challenge-overlay-size) * 0.05, 18px);
+    gap: clamp(8px, var(--challenge-overlay-diameter) * 0.06, 24px);
     text-align: center;
+    padding-top: clamp(8px, var(--challenge-overlay-diameter) * 0.04, 24px);
   }
 
-  &__top {
+  &__meta {
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: clamp(6px, var(--challenge-overlay-size) * 0.04, 12px);
+    gap: clamp(10px, var(--challenge-overlay-diameter) * 0.045, 18px);
   }
 
   &__title {
-    font-size: clamp(1rem, var(--challenge-overlay-size) * 0.12, 1.7rem);
+    font-size: clamp(1rem, var(--challenge-overlay-diameter) * 0.12, 1.6rem);
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     line-height: 1.1;
+    margin-top: clamp(6px, var(--challenge-overlay-diameter) * 0.04, 20px);
   }
 
-  &__counts {
+  &__count-blocks {
     display: flex;
-    align-items: baseline;
     justify-content: center;
-    gap: clamp(6px, var(--challenge-overlay-size) * 0.045, 14px);
-    font-weight: 600;
+    align-items: center;
+    gap: clamp(6px, var(--challenge-overlay-diameter) * 0.05, 20px);
+    width: 100%;
+      margin-top: 1.5ex;
   }
 
-  &__count {
-    font-size: clamp(1.2rem, var(--challenge-overlay-size) * 0.18, 2.1rem);
-    color: #38bdf8;
+  &__count-block {
+    width: clamp(22px, var(--challenge-overlay-diameter) * 0.2, 46px);
+    height: clamp(22px, var(--challenge-overlay-diameter) * 0.2, 46px);
+    border-radius: clamp(6px, var(--challenge-overlay-diameter) * 0.06, 14px);
+    background: rgba(248, 250, 252, 0.2);
+    border: 1px solid rgba(248, 250, 252, 0.35);
+    box-shadow: inset 0 0 10px rgba(15, 23, 42, 0.4);
+    transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  
 
-    &--target {
-      color: #f97316;
+    &--complete {
+      background: #22c55e;
+      border-color: rgba(34, 197, 94, 0.7);
+      box-shadow: 0 6px 18px rgba(34, 197, 94, 0.35), inset 0 0 12px rgba(6, 78, 59, 0.4);
     }
   }
 
-  &__divider {
-    color: rgba(255, 255, 255, 0.68);
-    font-size: clamp(1rem, var(--challenge-overlay-size) * 0.12, 1.4rem);
-  }
-
-  &__status {
-    font-size: clamp(0.75rem, var(--challenge-overlay-size) * 0.08, 0.95rem);
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.74);
-  }
-
-  &__bottom {
+  &__time-block {
     width: 100%;
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: transparent;
+    border: none;
+    margin-bottom: clamp(4px, var(--challenge-overlay-diameter) * 0.04, 14px);
   }
 
   &__time {
-    font-size: clamp(1.6rem, var(--challenge-overlay-size) * 0.26, 2.8rem);
+    font-size: clamp(1.6rem, var(--challenge-overlay-diameter) * 0.28, 3.2rem);
     font-weight: 600;
     letter-spacing: 0.06em;
     color: #f8fafc;
+    line-height: 1;
+    text-shadow: 0 6px 22px rgba(15, 23, 42, 0.65);
   }
 
   &--success {
@@ -121,7 +137,6 @@
       stroke: #22c55e;
     }
 
-    .challenge-overlay__status,
     .challenge-overlay__time {
       color: #bbf7d0;
     }
@@ -132,9 +147,19 @@
       stroke: #facc15;
     }
 
-    .challenge-overlay__status,
     .challenge-overlay__time {
       color: #fde047;
+    }
+  }
+
+  &--phase-done {
+    .challenge-overlay__ring-progress {
+      animation: challenge-overlay-done-ring 0.8s ease-out forwards;
+      filter: drop-shadow(0 0 12px rgba(34, 197, 94, 0.45));
+    }
+
+    .challenge-overlay__content {
+      animation: challenge-overlay-done-pulse 0.8s ease-out;
     }
   }
 
@@ -149,9 +174,51 @@
       color: #93c5fd;
     }
 
-    .challenge-overlay__status,
     .challenge-overlay__time {
       color: rgba(226, 232, 240, 0.92);
     }
+  }
+
+  &--pos-top {
+    top: var(--challenge-overlay-edge);
+    bottom: auto;
+    --challenge-overlay-translate: 0;
+  }
+
+  &--pos-middle {
+    top: 50%;
+    bottom: auto;
+    --challenge-overlay-translate: -50%;
+  }
+
+  &--pos-bottom {
+    top: auto;
+    bottom: var(--challenge-overlay-edge);
+    --challenge-overlay-translate: 0;
+  }
+}
+
+@keyframes challenge-overlay-done-ring {
+  0% {
+    stroke-dashoffset: var(--challenge-ring-circumference, 0px);
+    stroke-width: calc(var(--challenge-ring-width) * 0.9);
+  }
+  50% {
+    stroke-width: calc(var(--challenge-ring-width) * 1.15);
+  }
+  100% {
+    stroke-dashoffset: 0;
+    stroke-width: var(--challenge-ring-width);
+  }
+}
+
+@keyframes challenge-overlay-done-pulse {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
   }
 }

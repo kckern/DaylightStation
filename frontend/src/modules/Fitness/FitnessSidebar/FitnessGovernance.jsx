@@ -143,6 +143,14 @@ const FitnessGovernance = () => {
     }
   }, [triggerChallengeNow]);
 
+  const nextChallengeCountdownLabel = useMemo(() => {
+    if (summary.nextChallengeRemaining == null) {
+      return null;
+    }
+    const seconds = Math.max(0, Math.round(summary.nextChallengeRemaining));
+    return `${seconds}s`;
+  }, [summary.nextChallengeRemaining]);
+
   return (
     <div className={`fitness-governance ${statusClass}${isExpanded ? ' expanded' : ''}`}>
       <div
@@ -158,6 +166,11 @@ const FitnessGovernance = () => {
             <path d="M12 2C9.243 2 7 4.243 7 7v3H6c-1.103 0-2 .897-2 2v8c0 1.103.897 2 2 2h12c1.103 0 2-.897 2-2v-8c0-1.103-.897-2-2-2h-1V7c0-2.757-2.243-5-5-5zM9 7c0-1.654 1.346-3 3-3s3 1.346 3 3v3H9V7zm9 13H6v-8h12v8z"/>
             <circle cx="12" cy="16" r="1.5"/>
           </svg>
+          {nextChallengeCountdownLabel ? (
+            <span className="fg-lock-icon__countdown" aria-label="Seconds until next challenge">
+              {nextChallengeCountdownLabel}
+            </span>
+          ) : null}
         </div>
         
         <div className={`fg-status-pill fg-${statusColor}`}>
