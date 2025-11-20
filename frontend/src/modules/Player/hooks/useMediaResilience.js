@@ -323,9 +323,13 @@ export function useMediaResilience({
 
   useEffect(() => {
     resetDetectionState();
-    setStatus(STATUS.pending);
     setShowDebug(false);
   }, [waitKey, resetDetectionState]);
+
+  useEffect(() => {
+    setStatus(STATUS.pending);
+    setShowDebug(false);
+  }, [mediaIdentity]);
 
   const recordSeekIntentMs = useCallback((valueMs) => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
@@ -503,7 +507,11 @@ export function useMediaResilience({
     : (status === STATUS.stalling || status === STATUS.recovering || playbackHealth.isStalledEvent);
   const stallOverlayActive = computedStalled;
 
-  const pauseOverlayActive = (isPaused || playbackHealth.elementSignals.paused) && overlayConfig.showPausedOverlay && showPauseOverlay;
+  const pauseOverlayEligible = overlayConfig.showPausedOverlay && showPauseOverlay;
+  const pauseOverlayActive = pauseOverlayEligible
+    && !waitingToPlay
+    && !computedStalled
+    && (isPaused || playbackHealth.elementSignals.paused);
   const shouldRenderOverlay = waitingToPlay
     || stallOverlayActive
     || explicitShow
