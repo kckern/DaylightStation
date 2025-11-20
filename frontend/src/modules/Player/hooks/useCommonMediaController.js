@@ -156,14 +156,16 @@ export function useCommonMediaController({
     if (!Number.isFinite(seekToIntentSeconds)) return;
     const normalized = Math.max(0, seekToIntentSeconds);
     lastSeekIntentRef.current = normalized;
-    try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; } catch (_) {}
+    try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; }
+    catch (_) { /* ignore cache write failures */ }
   }, [seekToIntentSeconds, media_key]);
 
   useEffect(() => {
     if (!Number.isFinite(internalSeekIntentSeconds)) return;
     const normalized = Math.max(0, internalSeekIntentSeconds);
     lastSeekIntentRef.current = normalized;
-    try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; } catch (_) {}
+    try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; }
+    catch (_) { /* ignore cache write failures */ }
     setInternalSeekIntentSeconds(null);
   }, [internalSeekIntentSeconds, media_key]);
 
@@ -198,7 +200,8 @@ export function useCommonMediaController({
       const current = mediaEl.currentTime || 0;
       setSeconds(current);
       lastPlaybackPosRef.current = current;
-      try { useCommonMediaController.__lastPosByKey[media_key] = current; } catch (_) {}
+      try { useCommonMediaController.__lastPosByKey[media_key] = current; }
+      catch (_) { /* ignore cache write failures */ }
       logProgress();
 
       if (onProgress) {
@@ -226,7 +229,6 @@ export function useCommonMediaController({
       const durationValue = mediaEl.duration || 0;
       let desiredStart = 0;
       const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[media_key];
-      const phaseLabel = isInitialLoadRef.current && !hasAppliedForKey ? 'initial-start' : 'sticky-resume';
       const processedVolumeRaw = Number(volume ?? 100);
       const processedVolume = Number.isFinite(processedVolumeRaw) ? processedVolumeRaw : 100;
       const normalizedVolume = processedVolume > 1 ? processedVolume / 100 : processedVolume;
@@ -247,7 +249,8 @@ export function useCommonMediaController({
         }
 
         isInitialLoadRef.current = false;
-        try { useCommonMediaController.__appliedStartByKey[media_key] = true; } catch (_) {}
+        try { useCommonMediaController.__appliedStartByKey[media_key] = true; }
+        catch (_) { /* ignore cache write failures */ }
       } else {
         const candidateSources = [
           { label: 'lastSeekIntent', value: lastSeekIntentRef.current },
@@ -314,7 +317,8 @@ export function useCommonMediaController({
       const mediaElInstance = getMediaEl();
       if (mediaElInstance && Number.isFinite(mediaElInstance.currentTime)) {
         lastSeekIntentRef.current = mediaElInstance.currentTime;
-        try { useCommonMediaController.__lastSeekByKey[media_key] = mediaElInstance.currentTime; } catch (_) {}
+        try { useCommonMediaController.__lastSeekByKey[media_key] = mediaElInstance.currentTime; }
+        catch (_) { /* ignore cache write failures */ }
       }
       setIsSeeking(true);
     };
@@ -447,7 +451,9 @@ export function useCommonMediaController({
     plexId: meta?.media_key || meta?.key || meta?.plex || null,
     debugContext: resilienceSettings.debugContext ?? defaultDebugContext,
     message: resilienceSettings.message,
-    stalled: stalledOverride
+    stalled: stalledOverride,
+    mediaTypeHint: isVideo ? 'video' : (isAudio ? 'audio' : 'unknown'),
+    playerFlavorHint: isVideo ? (isDash ? 'shaka' : 'html5-video') : 'html5-audio'
   });
 
   const overlayProps = resilienceDisabled ? null : computedOverlayProps;
@@ -477,7 +483,7 @@ export function useCommonMediaController({
     getPlaybackState,
     isDash,
     hardReset
-  }), [getMediaEl, getCurrentTime, getDurationValue, getPlaybackState, hardReset, isDash, pause, play, resolvedInstanceKey, seek, seekRelative, toggle]);
+  }), [getMediaEl, getCurrentTime, getDurationValue, getPlaybackState, hardReset, isDash, pause, play, seek, seekRelative, toggle]);
 
   useMediaKeyboardHandler({
     getMediaEl,
