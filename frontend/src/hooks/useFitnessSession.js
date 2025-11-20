@@ -58,6 +58,22 @@ const formatSessionId = (date = new Date()) => {
   ].join('');
 };
 
+const MIN_COOL_BASELINE = 60;
+
+const DEFAULT_ZONE_CONFIG = [
+  { id: 'cool', name: 'Cool', min: MIN_COOL_BASELINE, color: 'blue' },
+  { id: 'active', name: 'Active', min: 100, color: 'green' },
+  { id: 'warm', name: 'Warm', min: 120, color: 'yellow' },
+  { id: 'hot', name: 'Hot', min: 140, color: 'orange' },
+  { id: 'fire', name: 'On Fire', min: 160, color: 'red' }
+];
+
+const DEFAULT_ZONE_LOOKUP = DEFAULT_ZONE_CONFIG.reduce((acc, zone) => {
+  const key = String(zone.id || zone.name).toLowerCase();
+  acc[key] = zone;
+  return acc;
+}, {});
+
 /**
  * Base Device class for all ANT+ fitness devices
  */
@@ -262,14 +278,16 @@ export class DeviceFactory {
 }
 // -------------------- User Class --------------------
 export class User {
-  constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null) {
+  constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
     this.name = name;
     this.birthyear = birthyear;
     this.hrDeviceId = hrDeviceId;
     this.cadenceDeviceId = cadenceDeviceId;
     this.age = new Date().getFullYear() - birthyear;
+    this.zoneConfig = this.#buildZoneConfig(options.globalZones, options.zoneOverrides);
+    this.currentData = this.#createDefaultCurrentData();
     this._cumulativeData = {
-      heartRate: { readings: [], avgHR: 0, maxHR: 0, minHR: 0, zones: { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 } },
+      heartRate: { readings: [], avgHR: 0, maxHR: 0, minHR: 0, zones: this.#createZoneBuckets() },
       cadence: { readings: [], avgRPM: 0, maxRPM: 0, totalRevolutions: 0 },
       power: { readings: [], avgPower: 0, maxPower: 0, totalWork: 0 },
       distance: { total: 0, sessions: [] },
@@ -278,31 +296,12 @@ export class User {
     };
   }
 
-  // Private method to calculate heart rate zones based on age
-  #calculateHRZones() {
-    const maxHR = 220 - this.age;
-    return {
-      zone1: { min: Math.round(maxHR * 0.5), max: Math.round(maxHR * 0.6) }, // Recovery
-      zone2: { min: Math.round(maxHR * 0.6), max: Math.round(maxHR * 0.7) }, // Aerobic
-      zone3: { min: Math.round(maxHR * 0.7), max: Math.round(maxHR * 0.8) }, // Threshold
-      zone4: { min: Math.round(maxHR * 0.8), max: Math.round(maxHR * 0.9) }, // VO2 Max
-      zone5: { min: Math.round(maxHR * 0.9), max: maxHR } // Anaerobic
-    };
-  }
-
-  // Private method to determine which HR zone a reading falls into
-  #getHRZone(heartRate) {
-    const zones = this.#calculateHRZones();
-    if (heartRate >= zones.zone5.min) return 'zone5';
-    if (heartRate >= zones.zone4.min) return 'zone4';
-    if (heartRate >= zones.zone3.min) return 'zone3';
-    if (heartRate >= zones.zone2.min) return 'zone2';
-    return 'zone1';
-  }
-
   // Private method to update cumulative heart rate data
   #updateHeartRateData(heartRate) {
-    if (!heartRate || heartRate <= 0) return;
+    if (!heartRate || heartRate <= 0) {
+      this.#updateCurrentData(0);
+      return;
+    }
 
     const hrData = this._cumulativeData.heartRate;
     hrData.readings.push({ value: heartRate, timestamp: new Date() });
@@ -319,8 +318,12 @@ export class User {
     hrData.minHR = hrData.minHR === 0 ? Math.min(...validReadings) : Math.min(...validReadings, hrData.minHR);
 
     // Update zone tracking
-    const zone = this.#getHRZone(heartRate);
-    hrData.zones[zone]++;
+    const { zone } = this.#resolveZoneForHeartRate(heartRate);
+    if (zone?.id) {
+      hrData.zones[zone.id] = (hrData.zones[zone.id] || 0) + 1;
+    }
+
+    this.#updateCurrentData(heartRate, zone);
   }
 
   // Private method to update cumulative cadence data
@@ -341,6 +344,120 @@ export class User {
     if (revolutionCount > cadData.totalRevolutions) {
       cadData.totalRevolutions = revolutionCount;
     }
+  }
+
+  #createZoneBuckets() {
+    if (!Array.isArray(this.zoneConfig) || this.zoneConfig.length === 0) {
+      return {};
+    }
+    return this.zoneConfig.reduce((acc, zone) => {
+      acc[zone.id] = 0;
+      return acc;
+    }, {});
+  }
+
+  #buildZoneConfig(globalZones, overrides) {
+    const source = Array.isArray(globalZones) && globalZones.length > 0
+      ? globalZones
+      : DEFAULT_ZONE_CONFIG;
+
+    const normalizedOverrides = overrides && typeof overrides === 'object'
+      ? Object.entries(overrides).reduce((acc, [key, value]) => {
+        acc[String(key).toLowerCase()] = Number(value);
+        return acc;
+      }, {})
+      : {};
+
+    const normalized = source.map((zone, index) => {
+      const rawId = zone.id || zone.name || `zone-${index}`;
+      const zoneId = String(rawId).trim() || `zone-${index}`;
+      const lookupId = zoneId.toLowerCase();
+      const defaultZone = DEFAULT_ZONE_LOOKUP[lookupId] || DEFAULT_ZONE_CONFIG[index] || {};
+      const fallbackColor = defaultZone?.color || null;
+      const fallbackMin = Number.isFinite(defaultZone?.min) ? defaultZone.min : 0;
+      const overrideMin = normalizedOverrides[lookupId];
+      return {
+        id: zoneId,
+        name: zone.name || defaultZone?.name || zoneId,
+        color: zone.color || fallbackColor,
+        min: Number.isFinite(overrideMin)
+          ? overrideMin
+          : (Number.isFinite(zone.min) ? zone.min : fallbackMin)
+      };
+    }).sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+
+    if (normalized.length === 0) {
+      return DEFAULT_ZONE_CONFIG.map((zone) => ({ ...zone }));
+    }
+
+    normalized[0] = { ...normalized[0], min: MIN_COOL_BASELINE };
+    return normalized;
+  }
+
+  #createDefaultCurrentData() {
+    const firstZone = Array.isArray(this.zoneConfig) && this.zoneConfig.length > 0 ? this.zoneConfig[0] : null;
+    return {
+      heartRate: 0,
+      zone: firstZone?.id || null,
+      zoneName: firstZone?.name || null,
+      color: firstZone?.color || null,
+      progressToNextZone: 0
+    };
+  }
+
+  #resolveZoneForHeartRate(heartRate) {
+    if (!Array.isArray(this.zoneConfig) || this.zoneConfig.length === 0) {
+      return { zone: null, index: -1 };
+    }
+    const hrValue = Number.isFinite(heartRate) ? heartRate : 0;
+    let resolvedIndex = 0;
+    for (let i = 0; i < this.zoneConfig.length; i += 1) {
+      const zone = this.zoneConfig[i];
+      const threshold = i === 0 ? MIN_COOL_BASELINE : zone.min;
+      if (hrValue >= threshold) {
+        resolvedIndex = i;
+      } else {
+        break;
+      }
+    }
+    return { zone: this.zoneConfig[resolvedIndex] || null, index: resolvedIndex };
+  }
+
+  #computeProgressToNextZone(heartRate, zoneIndex) {
+    if (!Number.isFinite(heartRate) || heartRate <= 0) {
+      return 0;
+    }
+    if (!Array.isArray(this.zoneConfig) || zoneIndex < 0) {
+      return 0;
+    }
+    const nextZone = this.zoneConfig[zoneIndex + 1];
+    if (!nextZone) {
+      return 0;
+    }
+    const currentZone = this.zoneConfig[zoneIndex];
+    const lowerBound = zoneIndex === 0 ? MIN_COOL_BASELINE : currentZone.min;
+    const upperBound = nextZone.min;
+    if (!Number.isFinite(upperBound) || upperBound <= lowerBound) {
+      return 0;
+    }
+    const progress = (heartRate - lowerBound) / (upperBound - lowerBound);
+    return Math.max(0, Math.min(1, progress));
+  }
+
+  #updateCurrentData(heartRate, resolvedZone = null) {
+    const hrValue = Number.isFinite(heartRate) ? Math.max(0, heartRate) : 0;
+    const zoneResolution = resolvedZone
+      ? { zone: resolvedZone, index: this.zoneConfig.findIndex((entry) => entry.id === resolvedZone.id) }
+      : this.#resolveZoneForHeartRate(hrValue);
+    const { zone, index } = zoneResolution;
+    const progress = this.#computeProgressToNextZone(hrValue, index ?? -1);
+    this.currentData = {
+      heartRate: hrValue,
+      zone: zone?.id || null,
+      zoneName: zone?.name || null,
+      color: zone?.color || null,
+      progressToNextZone: progress
+    };
   }
 
   // Private method to update cumulative power data
@@ -395,6 +512,9 @@ export class User {
 
   // Public getters for accessing cumulative data
   get currentHeartRate() {
+    if (this.currentData && Number.isFinite(this.currentData.heartRate)) {
+      return this.currentData.heartRate;
+    }
     const readings = this._cumulativeData.heartRate.readings;
     return readings.length > 0 ? readings[readings.length - 1].value : 0;
   }
@@ -434,6 +554,10 @@ export class User {
       name: this.name,
       age: this.age,
       currentHR: this.currentHeartRate,
+      currentZone: this.currentData.zone,
+      currentZoneName: this.currentData.zoneName,
+      currentZoneColor: this.currentData.color,
+      progressToNextZone: this.currentData.progressToNextZone,
       avgHR: this.averageHeartRate,
       maxHR: this.maxHeartRate,
       currentRPM: this.currentCadence,
@@ -454,6 +578,7 @@ export class User {
       distance: this._cumulativeData.distance.total,
       timestamp: new Date()
     });
+    this.currentData = this.#createDefaultCurrentData();
   }
 }
 
