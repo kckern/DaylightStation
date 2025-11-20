@@ -2,8 +2,6 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import pause from '../../../assets/icons/pause.svg';
-import { formatSeekTime } from '../lib/helpers.js';
-import { DebugInfo } from './DebugInfo.jsx';
 
 /**
  * Pure presentation component for media loading / pause overlay.
@@ -12,21 +10,13 @@ import { DebugInfo } from './DebugInfo.jsx';
 export function LoadingOverlay({
   shouldRender,
   isVisible,
-  isPaused,
   pauseOverlayActive = false,
   seconds = 0,
   stalled = false,
   waitingToPlay = false,
-  showPauseOverlay = false,
-  showDebug = false,
-  initialStart = 0,
-  message: _message,
-  debugContext,
-  getMediaEl,
-  plexId,
   togglePauseOverlay,
-  explicitShow = false,
   countUpDisplay,
+  countUpSeconds = 0,
   playerPositionDisplay,
   intentPositionDisplay
 }) {
@@ -37,10 +27,10 @@ export function LoadingOverlay({
   const isInitialPlayback = seconds === 0 && !stalled;
   const shouldShowPauseIcon = pauseOverlayActive && !isInitialPlayback && !waitingToPlay && !stalled;
   const imgSrc = shouldShowPauseIcon ? pause : spinner;
-  const showSeekInfo = initialStart > 0 && seconds === 0 && !stalled && explicitShow;
   const overlayStateClass = shouldShowPauseIcon ? 'paused' : 'loading';
   const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : '00';
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || '0:00';
+  const showTimer = !shouldShowPauseIcon && isVisible && countUpSeconds >= 0;
 
   return (
     <div
@@ -54,12 +44,12 @@ export function LoadingOverlay({
       <div className="loading-timing">
         <div className="loading-spinner">
           <img src={imgSrc} alt="" />
-          {!shouldShowPauseIcon &&<div className="loading-metrics">
+          {!shouldShowPauseIcon && <div className="loading-metrics">
             <div className="loading-position">
               {positionDisplay !== '0:00' ? positionDisplay : ''}
             </div>
             <div className="loading-timer">
-              {countUpDisplay > 6 ? elapsedDisplay : ''}
+              {showTimer ? elapsedDisplay : ''}
             </div>
           </div>}
         </div>
@@ -85,6 +75,7 @@ LoadingOverlay.propTypes = {
   plexId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   togglePauseOverlay: PropTypes.func,
   explicitShow: PropTypes.bool,
+  countUpSeconds: PropTypes.number,
   countUpDisplay: PropTypes.string,
   playerPositionDisplay: PropTypes.string,
   intentPositionDisplay: PropTypes.string
