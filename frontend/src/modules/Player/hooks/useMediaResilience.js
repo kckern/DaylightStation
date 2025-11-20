@@ -105,59 +105,77 @@ const useResolvedMediaResilienceConfig = (contextConfig, configOverrides, runtim
   };
 }, [contextConfig, configOverrides, runtimeOverrides]);
 
-const useOverlayTimer = (overlayActive, stallDeadlineMs, triggerRecovery) => {
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const overlayTimerRef = useRef(null);
-  const overlayAlertedRef = useRef(false);
-
-  useEffect(() => {
-    if (!overlayActive) {
-      setElapsedMs(0);
-      overlayAlertedRef.current = false;
-      if (overlayTimerRef.current) {
-        clearInterval(overlayTimerRef.current);
-        overlayTimerRef.current = null;
-      }
-      return () => {};
-    }
-
-    setElapsedMs(0);
-    const startTs = Date.now();
-    overlayTimerRef.current = setInterval(() => {
-      setElapsedMs(Date.now() - startTs);
-    }, 1000);
-
-    return () => {
-      if (overlayTimerRef.current) {
-        clearInterval(overlayTimerRef.current);
-        overlayTimerRef.current = null;
-      }
-    };
-  }, [overlayActive]);
-
-  useEffect(() => {
-    if (!overlayActive || overlayAlertedRef.current) return;
-    if (elapsedMs >= stallDeadlineMs) {
-      overlayAlertedRef.current = true;
-      triggerRecovery('overlay-hard-recovery', { ignorePaused: true });
-    }
-  }, [elapsedMs, overlayActive, stallDeadlineMs, triggerRecovery]);
-
-  useEffect(() => () => {
-    if (overlayTimerRef.current) {
-      clearInterval(overlayTimerRef.current);
-    }
-  }, []);
-
-  return Math.max(0, Math.floor(elapsedMs / 1000));
-};
-
 const useLatest = (value) => {
   const ref = useRef(value);
   useEffect(() => {
     ref.current = value;
   }, [value]);
   return ref;
+};
+
+const useOverlayTimer = (overlayActive, stallDeadlineMs, triggerRecovery) => {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const rafRef = useRef(null);
+  const intervalRef = useRef(null);
+  const startTimeRef = useRef(0);
+  const overlayAlertedRef = useRef(false);
+  const triggerRecoveryRef = useLatest(triggerRecovery);
+
+  const clearTicker = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!overlayActive) {
+      setElapsedMs(0);
+      overlayAlertedRef.current = false;
+      clearTicker();
+      return () => {};
+    }
+
+    startTimeRef.current = Date.now();
+    setElapsedMs(0);
+
+    const hasRAF = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function';
+    if (hasRAF) {
+      const tick = () => {
+        setElapsedMs(Date.now() - startTimeRef.current);
+        rafRef.current = window.requestAnimationFrame(tick);
+      };
+      rafRef.current = window.requestAnimationFrame(tick);
+    } else {
+      intervalRef.current = setInterval(() => {
+        setElapsedMs(Date.now() - startTimeRef.current);
+      }, 500);
+    }
+
+    return () => {
+      clearTicker();
+    };
+  }, [overlayActive, clearTicker]);
+
+  useEffect(() => {
+    if (!overlayActive || overlayAlertedRef.current) return;
+    if (stallDeadlineMs > 0 && elapsedMs >= stallDeadlineMs) {
+      overlayAlertedRef.current = true;
+      triggerRecoveryRef.current?.('overlay-hard-recovery', { ignorePaused: true, force: true });
+    }
+  }, [elapsedMs, overlayActive, stallDeadlineMs, triggerRecoveryRef]);
+
+  useEffect(() => () => {
+    clearTicker();
+  }, [clearTicker]);
+
+  const effectiveDeadline = Math.max(stallDeadlineMs, 0) || elapsedMs;
+  const cappedMs = Math.min(elapsedMs, effectiveDeadline);
+  return Math.max(0, Math.floor(cappedMs / 1000));
 };
 
 export function useMediaResilience({
@@ -303,12 +321,16 @@ export function useMediaResilience({
     return null;
   }, []);
 
-  const triggerRecovery = useCallback((reason, { ignorePaused = false, seekToIntentMs: overrideIntentMs = null } = {}) => {
-    if (!recoveryConfig.enabled) return;
-    if (!ignorePaused && isPausedRef.current && statusRef.current === STATUS.paused) return;
-    if (recoveryConfig.maxAttempts && recoveryAttemptsRef.current >= recoveryConfig.maxAttempts) return;
+  const triggerRecovery = useCallback((reason, {
+    ignorePaused = false,
+    seekToIntentMs: overrideIntentMs = null,
+    force = false
+  } = {}) => {
+    if (!force && !recoveryConfig.enabled) return;
+    if (!force && !ignorePaused && isPausedRef.current && statusRef.current === STATUS.paused) return;
+    if (!force && recoveryConfig.maxAttempts && recoveryAttemptsRef.current >= recoveryConfig.maxAttempts) return;
     const now = Date.now();
-    if (recoveryConfig.cooldownMs && now - (lastReloadAtRef.current || 0) < recoveryConfig.cooldownMs) return;
+    if (!force && recoveryConfig.cooldownMs && now - (lastReloadAtRef.current || 0) < recoveryConfig.cooldownMs) return;
 
     const resolvedIntentMs = resolveSeekIntentMs(overrideIntentMs);
 
@@ -472,7 +494,7 @@ export function useMediaResilience({
   }, [shouldRenderOverlay, overlayConfig.revealDelayMs]);
 
   const overlayActive = shouldRenderOverlay && isOverlayVisible;
-  const overlayTimerActive = isOverlayVisible && (waitingToPlay || stallOverlayActive || explicitShow);
+  const overlayTimerActive = overlayActive && !pauseOverlayActive;
   const overlayStallDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
   const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayStallDeadlineMs, triggerRecovery);
 
