@@ -440,14 +440,26 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const userMap = new Map();
     if (usersConfig.primary) {
       usersConfig.primary.forEach(userConfig => {
-        const user = new User(userConfig.name, userConfig.birthyear, userConfig.hr, userConfig.cadence);
+        const user = new User(
+          userConfig.name,
+          userConfig.birthyear,
+          userConfig.hr,
+          userConfig.cadence,
+          { globalZones: zoneConfig, zoneOverrides: userConfig.zones }
+        );
         if (userConfig.id) user.id = userConfig.id;
         userMap.set(userConfig.name, user);
       });
     }
     if (usersConfig.secondary) {
       usersConfig.secondary.forEach(userConfig => {
-        const user = new User(userConfig.name, userConfig.birthyear, userConfig.hr, userConfig.cadence);
+        const user = new User(
+          userConfig.name,
+          userConfig.birthyear,
+          userConfig.hr,
+          userConfig.cadence,
+          { globalZones: zoneConfig, zoneOverrides: userConfig.zones }
+        );
         if (userConfig.id) user.id = userConfig.id;
         userMap.set(userConfig.name, user);
       });
@@ -457,7 +469,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       console.table(Array.from(userMap.values()).map(u => ({ name: u.name, hr: u.hrDeviceId, cadence: u.cadenceDeviceId, id: u.id })));
     }
     setUsers(userMap);
-  }, [usersConfig]);
+  }, [usersConfig, zoneConfig]);
 
   // Function to create WebSocket connection
   const connectWebSocket = () => {
