@@ -28,8 +28,8 @@ export function LoadingOverlay({
   const shouldShowPauseIcon = pauseOverlayActive && !isInitialPlayback && !waitingToPlay && !stalled;
   const imgSrc = shouldShowPauseIcon ? pause : spinner;
   const overlayStateClass = shouldShowPauseIcon ? 'paused' : 'loading';
-  const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : '00';
-  const positionDisplay = intentPositionDisplay || playerPositionDisplay || '0:00';
+  const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : null;
+  const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
   const showTimer = !shouldShowPauseIcon && isVisible && countUpSeconds >= 0;
 
   return (
