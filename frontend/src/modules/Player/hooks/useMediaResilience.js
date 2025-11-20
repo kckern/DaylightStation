@@ -622,7 +622,7 @@ export function useMediaResilience({
   }, [controller, controllerRef]);
 
   const resolvedPlexId = plexId || meta?.media_key || meta?.key || meta?.plex || null;
-  const countUpDisplay = String(overlayElapsedSeconds).padStart(2, '0');
+  const countUpDisplay = overlayElapsedSeconds > 1 ? String(overlayElapsedSeconds).padStart(2, '0') : null;
   const intentMsForDisplay = resolveSeekIntentMs();
   const intentSecondsForDisplay = Number.isFinite(intentMsForDisplay) ? intentMsForDisplay / 1000 : null;
   const playerPositionDisplay = formatTime(Math.max(0, seconds));
