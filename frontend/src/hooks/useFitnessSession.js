@@ -1421,7 +1421,7 @@ export class FitnessTreasureBox {
  */
 import { useFitnessContext } from '../context/FitnessContext.jsx';
 
-export const useFitnessWebSocket = (fitnessConfiguration) => {
+export const useFitnessSession = () => {
   // Just return the context - the parameter is ignored as the context provider handles it
   // All implementation details have been moved to the FitnessContext
   return useFitnessContext();

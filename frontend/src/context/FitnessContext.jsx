@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { User, DeviceFactory, setFitnessTimeouts, getFitnessTimeouts, FitnessSession } from '../hooks/useFitnessWebSocket.js';
+import { User, DeviceFactory, setFitnessTimeouts, getFitnessTimeouts, FitnessSession } from '../hooks/useFitnessSession.js';
 
 // Create context
 const FitnessContext = createContext(null);
