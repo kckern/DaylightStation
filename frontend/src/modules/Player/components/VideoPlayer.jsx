@@ -149,6 +149,31 @@ export function VideoPlayer({
       : { streamUrl: media_url, contentType: 'application/dash+xml' };
   }, [media_url, initialStartSeconds]);
 
+  const shakaConfiguration = useMemo(() => ({
+    playsInline: true,
+    streaming: {
+      bufferingGoal: 60,
+      rebufferingGoal: 15,
+      stallEnabled: true,
+      stallThreshold: 1,
+      stallCheckInterval: 0.5,
+      restartOnError: true,
+      retryParameters: {
+        maxAttempts: 5,
+        baseDelay: 500,
+        backoffFactor: 2,
+        fuzzFactor: 0.5,
+        timeout: 0
+      }
+    },
+    abr: {
+      enabled: true,
+      switchInterval: 2,
+      bandwidthUpgradeTarget: 0.85,
+      bandwidthDowngradeTarget: 0.95
+    }
+  }), []);
+
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   
   
@@ -184,7 +209,7 @@ export function VideoPlayer({
             key={mediaInstanceKey}
             className="video-element"
             source={dashSource}
-            configuration={{ playsInline: true }}
+            configuration={shakaConfiguration}
           />
         </div>
       ) : (
