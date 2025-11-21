@@ -455,14 +455,16 @@ export function useMediaResilience({
 
     const hasStarted = (lastProgressSecondsRef.current ?? 0) > 0;
 
-    if (!hasStarted) {
-      setStatus(STATUS.pending);
-      scheduleStallCheck(detectionDelay, { restart: !stallTimerRef.current });
+    if (status === STATUS.recovering) {
+      scheduleStallCheck(detectionDelay, { restart: false });
       return;
     }
 
-    if (status === STATUS.recovering) {
-      scheduleStallCheck(detectionDelay, { restart: false });
+    if (!hasStarted) {
+      if (status !== STATUS.stalling) {
+        setStatus(STATUS.pending);
+      }
+      scheduleStallCheck(detectionDelay, { restart: !stallTimerRef.current });
       return;
     }
 
@@ -630,7 +632,10 @@ export function useMediaResilience({
   }, [controller, controllerRef]);
 
   const resolvedPlexId = plexId || meta?.media_key || meta?.key || meta?.plex || null;
-  const countUpDisplay = overlayElapsedSeconds > 1 ? String(overlayElapsedSeconds).padStart(2, '0') : null;
+  const minDisplaySeconds = Math.max(1, Math.floor(hardRecoverAfterStalledForMs / 1000));
+  const countUpDisplay = overlayElapsedSeconds > minDisplaySeconds
+    ? String(overlayElapsedSeconds).padStart(2, '0')
+    : null;
   const intentMsForDisplay = resolveSeekIntentMs();
   const intentSecondsForDisplay = Number.isFinite(intentMsForDisplay) ? intentMsForDisplay / 1000 : null;
   const playerPositionDisplay = formatTime(Math.max(0, seconds));
