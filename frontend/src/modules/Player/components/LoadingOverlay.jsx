@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import pause from '../../../assets/icons/pause.svg';
@@ -16,21 +16,154 @@ export function LoadingOverlay({
   waitingToPlay = false,
   togglePauseOverlay,
   countUpDisplay,
-  countUpSeconds = 0,
+  countUpSeconds = null,
   playerPositionDisplay,
-  intentPositionDisplay
+  intentPositionDisplay,
+  overlayTimerActive = false,
+  hardResetDeadlineMs = 0,
+  onRequestHardReset,
+  getMediaEl
 }) {
   if (!shouldRender) {
     return null;
   }
 
+  const [localTimerSeconds, setLocalTimerSeconds] = useState(0);
+  const localTimerRef = useRef(null);
+  const hardResetTriggeredRef = useRef(false);
+  const [mediaElementDetails, setMediaElementDetails] = useState({
+    hasElement: false,
+    currentTime: null,
+    readyState: null,
+    networkState: null,
+    paused: null
+  });
+
+  const clearLocalTimer = useCallback(() => {
+    if (localTimerRef.current) {
+      clearInterval(localTimerRef.current);
+      localTimerRef.current = null;
+    }
+    setLocalTimerSeconds(0);
+  }, []);
+
+  useEffect(() => () => {
+    clearLocalTimer();
+  }, [clearLocalTimer]);
+
   const isInitialPlayback = seconds === 0 && !stalled;
   const shouldShowPauseIcon = pauseOverlayActive && !isInitialPlayback && !waitingToPlay && !stalled;
   const imgSrc = shouldShowPauseIcon ? pause : spinner;
   const overlayStateClass = shouldShowPauseIcon ? 'paused' : 'loading';
-  const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : null;
+  const fallbackTimerActive = isVisible && !shouldShowPauseIcon;
+  const timerActive = overlayTimerActive || fallbackTimerActive;
+
+  useEffect(() => {
+    if (!timerActive) {
+      clearLocalTimer();
+      return;
+    }
+    if (localTimerRef.current) {
+      return;
+    }
+    localTimerRef.current = setInterval(() => {
+      setLocalTimerSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => {
+      clearLocalTimer();
+    };
+  }, [timerActive, clearLocalTimer]);
+
+  useEffect(() => {
+    if (!timerActive || !hardResetDeadlineMs || hardResetDeadlineMs <= 0) {
+      return;
+    }
+    if (hardResetTriggeredRef.current) {
+      return;
+    }
+    const elapsedMs = (Number.isFinite(countUpSeconds) ? countUpSeconds : localTimerSeconds) * 1000;
+    if (elapsedMs >= hardResetDeadlineMs) {
+      hardResetTriggeredRef.current = true;
+      onRequestHardReset?.({ reason: 'overlay-failsafe-timer', elapsedSeconds: elapsedMs / 1000 });
+    }
+  }, [timerActive, hardResetDeadlineMs, localTimerSeconds, countUpSeconds, onRequestHardReset]);
+
+  useEffect(() => {
+    if (typeof getMediaEl !== 'function' || !isVisible) {
+      setMediaElementDetails((prev) => (prev.hasElement ? {
+        hasElement: false,
+        currentTime: null,
+        readyState: null,
+        networkState: null,
+        paused: null
+      } : prev));
+      return () => {};
+    }
+
+    const readElementState = () => {
+      try {
+        const el = getMediaEl();
+        if (!el) {
+          setMediaElementDetails((prev) => (prev.hasElement ? {
+            hasElement: false,
+            currentTime: null,
+            readyState: null,
+            networkState: null,
+            paused: null
+          } : prev));
+          return;
+        }
+        setMediaElementDetails({
+          hasElement: true,
+          currentTime: Number.isFinite(el.currentTime) ? Number(el.currentTime).toFixed(1) : null,
+          readyState: typeof el.readyState === 'number' ? el.readyState : null,
+          networkState: typeof el.networkState === 'number' ? el.networkState : null,
+          paused: typeof el.paused === 'boolean' ? el.paused : null
+        });
+      } catch (error) {
+        console.warn('[LoadingOverlay] failed to inspect media element', error);
+      }
+    };
+
+    readElementState();
+    const intervalId = setInterval(readElementState, 1000);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [getMediaEl, isVisible]);
+
+  const derivedTimerSeconds = Number.isFinite(countUpSeconds) ? countUpSeconds : localTimerSeconds;
+  const fallbackDisplay = derivedTimerSeconds > 0 ? String(derivedTimerSeconds).padStart(2, '0') : null;
+  const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : fallbackDisplay;
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
-  const showTimer = !shouldShowPauseIcon && isVisible && countUpSeconds >= 0;
+  const showTimer = !shouldShowPauseIcon && isVisible && (Number.isFinite(derivedTimerSeconds) ? derivedTimerSeconds >= 0 : false);
+
+  const handleSpinnerInteraction = useCallback((event) => {
+    if (shouldShowPauseIcon) {
+      return;
+    }
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.nativeEvent?.stopImmediatePropagation?.();
+    alert('Manual hard reset requested due to unresponsive media playback.');
+    onRequestHardReset?.({ reason: 'overlay-spinner-manual', eventType: event?.type });
+  }, [onRequestHardReset, shouldShowPauseIcon]);
+
+  const spinnerInteractionProps = shouldShowPauseIcon ? {} : {
+    onClick: handleSpinnerInteraction,
+    onTouchStart: handleSpinnerInteraction,
+    onDoubleClick: handleSpinnerInteraction,
+    onMouseDown: handleSpinnerInteraction
+  };
+
+  const mainTimerLabel = Number.isFinite(countUpSeconds)
+    ? `${countUpSeconds}s`
+    : `${localTimerSeconds}s`;
+  const timerSummary = `main:${mainTimerLabel} local:${localTimerSeconds}s`;
+  const seekSummary = `seek:${intentPositionDisplay || 'n/a'}`;
+  const mediaSummary = mediaElementDetails.hasElement
+    ? `el:t=${mediaElementDetails.currentTime ?? 'n/a'} r=${mediaElementDetails.readyState ?? 'n/a'} n=${mediaElementDetails.networkState ?? 'n/a'} p=${mediaElementDetails.paused ?? 'n/a'}`
+    : 'el:none';
 
   return (
     <div
@@ -41,17 +174,31 @@ export function LoadingOverlay({
       }}
       onDoubleClick={togglePauseOverlay}
     >
-      <div className="loading-timing">
-        <div className="loading-spinner">
-          <img src={imgSrc} alt="" />
-          {!shouldShowPauseIcon && <div className="loading-metrics">
-            <div className="loading-position">
-              {positionDisplay !== '0:00' ? positionDisplay : ''}
-            </div>
-            <div className="loading-timer">
-              {showTimer ? elapsedDisplay : ''}
-            </div>
-          </div>}
+      <div className="loading-overlay__inner">
+        <div className="loading-timing">
+          <div
+            className="loading-spinner"
+            data-no-fullscreen="true"
+            {...spinnerInteractionProps}
+          >
+            <img
+              src={imgSrc}
+              alt=""
+              draggable={false}
+              data-no-fullscreen="true"
+            />
+            {!shouldShowPauseIcon && <div className="loading-metrics">
+              <div className="loading-position">
+                {positionDisplay !== '0:00' ? positionDisplay : ''}
+              </div>
+              <div className="loading-timer">
+                {showTimer ? elapsedDisplay : ''}
+              </div>
+            </div>}
+          </div>
+        </div>
+        <div className="loading-debug-strip">
+          {timerSummary} | {seekSummary} | {mediaSummary}
         </div>
       </div>
     </div>
@@ -78,5 +225,9 @@ LoadingOverlay.propTypes = {
   countUpSeconds: PropTypes.number,
   countUpDisplay: PropTypes.string,
   playerPositionDisplay: PropTypes.string,
-  intentPositionDisplay: PropTypes.string
+  intentPositionDisplay: PropTypes.string,
+  overlayTimerActive: PropTypes.bool,
+  hardResetDeadlineMs: PropTypes.number,
+  onRequestHardReset: PropTypes.func,
+  getMediaEl: PropTypes.func
 };
