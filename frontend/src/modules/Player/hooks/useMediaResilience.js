@@ -636,9 +636,61 @@ export function useMediaResilience({
   const overlayBaseDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
   const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayBaseDeadlineMs, triggerRecovery);
   const overlayHardResetDeadlineMs = overlayBaseDeadlineMs + 2000;
-  const requestOverlayHardReset = useCallback((reason = 'overlay-failsafe') => {
-    triggerRecovery(reason, { ignorePaused: true, force: true });
-  }, [triggerRecovery]);
+
+  const forcePlayerRemount = useCallback((reason = 'overlay-hard-reset', options = {}) => {
+    const {
+      seekToIntentMs: explicitSeekMs = null,
+      forceDocumentReload = false
+    } = options || {};
+    const normalizedIntentMs = resolveSeekIntentMs(explicitSeekMs);
+    if (forceDocumentReload || !onReloadRef.current) {
+      defaultReload();
+      return;
+    }
+    lastReloadAtRef.current = Date.now();
+    setStatus(STATUS.recovering);
+    onReloadRef.current({
+      reason,
+      meta,
+      waitKey,
+      forceFullReload: true,
+      ...options,
+      seekToIntentMs: normalizedIntentMs
+    });
+  }, [meta, onReloadRef, resolveSeekIntentMs, waitKey, setStatus]);
+
+  const requestOverlayHardReset = useCallback((input, overrides = {}) => {
+    const payload = typeof input === 'string'
+      ? { reason: input }
+      : (input && typeof input === 'object' ? input : {});
+    const merged = { ...payload, ...overrides };
+    const {
+      reason = 'overlay-failsafe',
+      ignorePaused = true,
+      force = true,
+      seekToIntentMs: overrideIntentMs = null,
+      seekSeconds = null,
+      forceDocumentReload = false
+    } = merged;
+
+    const normalizedSeekMs = (() => {
+      if (Number.isFinite(overrideIntentMs)) return Math.max(0, overrideIntentMs);
+      if (Number.isFinite(seekSeconds)) return Math.max(0, seekSeconds * 1000);
+      return null;
+    })();
+
+    forcePlayerRemount(reason, {
+      ...merged,
+      seekToIntentMs: normalizedSeekMs,
+      forceDocumentReload
+    });
+
+    triggerRecovery(reason, {
+      ignorePaused,
+      force,
+      seekToIntentMs: normalizedSeekMs
+    });
+  }, [forcePlayerRemount, triggerRecovery]);
 
   const togglePauseOverlay = useCallback(() => {
     setShowPauseOverlay((prev) => {
@@ -673,8 +725,9 @@ export function useMediaResilience({
     waitKey,
     lastFetchAt,
     shouldRenderOverlay,
-    playbackHealth
-  }), [status, waitingToPlay, isOverlayVisible, showPauseOverlay, showDebug, computedStalled, seconds, isPaused, isSeeking, meta, waitKey, lastFetchAt, shouldRenderOverlay, playbackHealth]);
+    playbackHealth,
+    hardRecoverAfterStalledForMs
+  }), [status, waitingToPlay, isOverlayVisible, showPauseOverlay, showDebug, computedStalled, seconds, isPaused, isSeeking, meta, waitKey, lastFetchAt, shouldRenderOverlay, playbackHealth, hardRecoverAfterStalledForMs]);
   const stateRef = useLatest(state);
 
   useEffect(() => {

@@ -58,6 +58,27 @@ export function LoadingOverlay({
   const fallbackTimerActive = isVisible && !shouldShowPauseIcon;
   const timerActive = overlayTimerActive || fallbackTimerActive;
 
+  const emitHardReset = useCallback((reasonOrPayload, extra = {}) => {
+    const basePayload = typeof reasonOrPayload === 'string'
+      ? { reason: reasonOrPayload }
+      : (reasonOrPayload && typeof reasonOrPayload === 'object' ? reasonOrPayload : {});
+    const finalPayload = {
+      source: 'loading-overlay',
+      requestedAt: Date.now(),
+      ...basePayload,
+      ...extra
+    };
+    if (!onRequestHardReset) {
+      console.warn('[LoadingOverlay] Hard reset requested but no handler configured', finalPayload);
+      return;
+    }
+    try {
+      onRequestHardReset(finalPayload);
+    } catch (error) {
+      console.error('[LoadingOverlay] hard reset handler failed', error, finalPayload);
+    }
+  }, [onRequestHardReset]);
+
   useEffect(() => {
     if (!timerActive) {
       clearLocalTimer();
@@ -84,9 +105,9 @@ export function LoadingOverlay({
     const elapsedMs = (Number.isFinite(countUpSeconds) ? countUpSeconds : localTimerSeconds) * 1000;
     if (elapsedMs >= hardResetDeadlineMs) {
       hardResetTriggeredRef.current = true;
-      onRequestHardReset?.({ reason: 'overlay-failsafe-timer', elapsedSeconds: elapsedMs / 1000 });
+      emitHardReset('overlay-failsafe-timer', { elapsedSeconds: elapsedMs / 1000 });
     }
-  }, [timerActive, hardResetDeadlineMs, localTimerSeconds, countUpSeconds, onRequestHardReset]);
+  }, [timerActive, hardResetDeadlineMs, localTimerSeconds, countUpSeconds, emitHardReset]);
 
   useEffect(() => {
     if (typeof getMediaEl !== 'function' || !isVisible) {
@@ -138,6 +159,12 @@ export function LoadingOverlay({
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
   const showTimer = !shouldShowPauseIcon && isVisible && (Number.isFinite(derivedTimerSeconds) ? derivedTimerSeconds >= 0 : false);
 
+  const blockFullscreenToggle = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.nativeEvent?.stopImmediatePropagation?.();
+  }, []);
+
   const handleSpinnerInteraction = useCallback((event) => {
     if (shouldShowPauseIcon) {
       return;
@@ -145,15 +172,15 @@ export function LoadingOverlay({
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.nativeEvent?.stopImmediatePropagation?.();
-    alert('Manual hard reset requested due to unresponsive media playback.');
-    onRequestHardReset?.({ reason: 'overlay-spinner-manual', eventType: event?.type });
-  }, [onRequestHardReset, shouldShowPauseIcon]);
+    emitHardReset('overlay-spinner-manual', { eventType: event?.type });
+  }, [emitHardReset, shouldShowPauseIcon]);
 
   const spinnerInteractionProps = shouldShowPauseIcon ? {} : {
     onClick: handleSpinnerInteraction,
     onTouchStart: handleSpinnerInteraction,
     onDoubleClick: handleSpinnerInteraction,
-    onMouseDown: handleSpinnerInteraction
+    onMouseDown: handleSpinnerInteraction,
+    onPointerDown: handleSpinnerInteraction
   };
 
   const mainTimerLabel = Number.isFinite(countUpSeconds)
@@ -168,11 +195,14 @@ export function LoadingOverlay({
   return (
     <div
       className={`loading-overlay ${overlayStateClass}`}
+      data-no-fullscreen="true"
       style={{
         opacity: isVisible ? 1 : 0,
         transition: 'opacity 0.3s ease-in-out'
       }}
       onDoubleClick={togglePauseOverlay}
+      onPointerDownCapture={blockFullscreenToggle}
+      onMouseDownCapture={blockFullscreenToggle}
     >
       <div className="loading-overlay__inner">
         <div className="loading-timing">
