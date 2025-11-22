@@ -31,7 +31,10 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
   monitor: {
     progressEpsilonSeconds: 0.25, // how many seconds of advancement count as progress
     stallDetectionThresholdMs: 500, // delay before marking stalled once progress stops
-    hardRecoverAfterStalledForMs: 3000 // force reload if stall persists this long
+    hardRecoverAfterStalledForMs: 8000, // force reload if stall persists this long
+    mountTimeoutMs: 6000, // give the DOM this long to mount a media element after recovery
+    mountPollIntervalMs: 750, // how frequently to poll for media mount
+    mountMaxAttempts: 3 // after this many mount failures, force a full reload
   },
   recovery: {
     enabled: true, // master switch for recovery logic
@@ -95,7 +98,10 @@ const useResolvedMediaResilienceConfig = (contextConfig, configOverrides, runtim
     monitorSettings: {
       epsilonSeconds: coerceNumber(monitorConfig.progressEpsilonSeconds, 0.25),
       stallDetectionThresholdMs: coerceNumber(monitorConfig.stallDetectionThresholdMs, 500),
-      hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 6000)
+      hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 6000),
+      mountTimeoutMs: coerceNumber(monitorConfig.mountTimeoutMs, 6000),
+      mountPollIntervalMs: coerceNumber(monitorConfig.mountPollIntervalMs, 750),
+      mountMaxAttempts: coerceNumber(monitorConfig.mountMaxAttempts, 3)
     },
     recoveryConfig: {
       enabled: recoveryConfig.enabled ?? legacyReload.enabled ?? true,
@@ -209,7 +215,14 @@ export function useMediaResilience({
     recoveryConfig
   } = useResolvedMediaResilienceConfig(contextConfig, configOverrides, runtimeOverrides);
 
-  const { epsilonSeconds, stallDetectionThresholdMs, hardRecoverAfterStalledForMs } = monitorSettings;
+  const {
+    epsilonSeconds,
+    stallDetectionThresholdMs,
+    hardRecoverAfterStalledForMs,
+    mountTimeoutMs,
+    mountPollIntervalMs,
+    mountMaxAttempts
+  } = monitorSettings;
 
   const [isOverlayVisible, setOverlayVisible] = useState(() => !overlayConfig.revealDelayMs);
   const [showPauseOverlay, setShowPauseOverlay] = useState(pauseOverlayPreference);
@@ -233,6 +246,10 @@ export function useMediaResilience({
   const seekIntentMsRef = useRef(null);
   const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : 0);
   const progressTokenRef = useRef(0);
+  const mountWatchdogTimerRef = useRef(null);
+  const mountWatchdogStartRef = useRef(null);
+  const mountWatchdogReasonRef = useRef(null);
+  const mountWatchdogAttemptsRef = useRef(0);
 
   const resolvedMediaType = useMemo(() => {
     if (mediaTypeHint) return mediaTypeHint;
@@ -295,6 +312,15 @@ export function useMediaResilience({
       clearTimeout(ref.current);
       ref.current = null;
     }
+  }, []);
+
+  const clearMountWatchdog = useCallback(() => {
+    if (mountWatchdogTimerRef.current) {
+      clearTimeout(mountWatchdogTimerRef.current);
+      mountWatchdogTimerRef.current = null;
+    }
+    mountWatchdogStartRef.current = null;
+    mountWatchdogReasonRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -384,6 +410,55 @@ export function useMediaResilience({
       performReload();
     }
   }, [meta, onReloadRef, recoveryConfig, waitKey, clearTimer, resolveSeekIntentMs, statusRef]);
+
+  const startMountWatchdog = useCallback((reason = 'pending') => {
+    if (!mountTimeoutMs || mountTimeoutMs <= 0) return;
+    if (typeof getMediaEl !== 'function') return;
+
+    const pollDelay = Math.max(250, Number.isFinite(mountPollIntervalMs)
+      ? mountPollIntervalMs
+      : 750);
+
+    clearMountWatchdog();
+    mountWatchdogReasonRef.current = reason;
+    mountWatchdogStartRef.current = Date.now();
+
+    const poll = () => {
+      if (!mountWatchdogReasonRef.current) return;
+
+      let mediaEl = null;
+      try {
+        mediaEl = getMediaEl();
+      } catch (error) {
+        console.warn('[useMediaResilience] failed to read media element during mount watchdog', error);
+      }
+
+      if (mediaEl) {
+        mountWatchdogAttemptsRef.current = 0;
+        clearMountWatchdog();
+        return;
+      }
+
+      const elapsed = Date.now() - (mountWatchdogStartRef.current || 0);
+      if (elapsed >= mountTimeoutMs) {
+        clearMountWatchdog();
+        const attempts = ++mountWatchdogAttemptsRef.current;
+        console.warn(`[useMediaResilience] mount watchdog fired (${reason})`, { attempts });
+        if (mountMaxAttempts && attempts > mountMaxAttempts) {
+          console.error('[useMediaResilience] mount watchdog exceeded max attempts; forcing hard reload');
+          onReloadRef.current?.({ reason: 'mount-watchdog-max', meta, waitKey, forceFullReload: true });
+          defaultReload();
+          return;
+        }
+        triggerRecovery('mount-watchdog', { ignorePaused: true, force: true });
+        return;
+      }
+
+      mountWatchdogTimerRef.current = setTimeout(poll, pollDelay);
+    };
+
+    poll();
+  }, [mountTimeoutMs, mountPollIntervalMs, mountMaxAttempts, getMediaEl, clearMountWatchdog, triggerRecovery, onReloadRef, meta, waitKey, defaultReload]);
 
   const scheduleHardRecovery = useCallback(() => {
     if (hardRecoverAfterStalledForMs <= 0) {
@@ -486,7 +561,8 @@ export function useMediaResilience({
     clearTimer(stallTimerRef);
     clearTimer(reloadTimerRef);
     clearTimer(hardRecoveryTimerRef);
-  }, [clearTimer]);
+    clearMountWatchdog();
+  }, [clearTimer, clearMountWatchdog]);
 
 
   useEffect(() => {
@@ -518,6 +594,28 @@ export function useMediaResilience({
     || stallOverlayActive
     || explicitShow
     || pauseOverlayActive;
+
+  useEffect(() => {
+    if (!mountTimeoutMs || mountTimeoutMs <= 0) {
+      clearMountWatchdog();
+      return;
+    }
+    if (status === STATUS.pending || status === STATUS.recovering) {
+      startMountWatchdog(status);
+    } else {
+      clearMountWatchdog();
+    }
+  }, [status, mountTimeoutMs, startMountWatchdog, clearMountWatchdog]);
+
+  useEffect(() => {
+    mountWatchdogAttemptsRef.current = 0;
+  }, [waitKey]);
+
+  useEffect(() => {
+    if (status === STATUS.playing) {
+      mountWatchdogAttemptsRef.current = 0;
+    }
+  }, [status]);
 
   useEffect(() => {
     if (!shouldRenderOverlay) {
