@@ -633,8 +633,12 @@ export function useMediaResilience({
 
   const overlayActive = shouldRenderOverlay && isOverlayVisible;
   const overlayTimerActive = overlayActive && !pauseOverlayActive;
-  const overlayStallDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
-  const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayStallDeadlineMs, triggerRecovery);
+  const overlayBaseDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
+  const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayBaseDeadlineMs, triggerRecovery);
+  const overlayHardResetDeadlineMs = overlayBaseDeadlineMs + 2000;
+  const requestOverlayHardReset = useCallback((reason = 'overlay-failsafe') => {
+    triggerRecovery(reason, { ignorePaused: true, force: true });
+  }, [triggerRecovery]);
 
   const togglePauseOverlay = useCallback(() => {
     setShowPauseOverlay((prev) => {
@@ -760,6 +764,9 @@ export function useMediaResilience({
     togglePauseOverlay,
     explicitShow,
     isSeeking,
+    overlayTimerActive,
+    onRequestHardReset: requestOverlayHardReset,
+    hardResetDeadlineMs: overlayHardResetDeadlineMs,
     countUpSeconds: overlayElapsedSeconds,
     countUpDisplay,
     playerPositionDisplay,
