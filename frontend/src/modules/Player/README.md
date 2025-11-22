@@ -16,12 +16,13 @@ Player/
 │   ├── useCommonMediaController.js  # Media playback controller
 │   └── useQueueController.js        # Queue/playlist management
 └── components/                    # React components
-    ├── ProgressBar.jsx            # Progress bar display
-    ├── LoadingOverlay.jsx         # Loading/paused state overlay
-    ├── AudioPlayer.jsx            # Audio player component
-    ├── VideoPlayer.jsx            # Video player component
-    ├── SinglePlayer.jsx           # Single media player router
-    └── CompositePlayer.jsx        # Composite player (video + audio overlay)
+  ├── ProgressBar.jsx            # Progress bar display
+  ├── PlayerOverlayLoading.jsx   # Loading / resilience overlay
+  ├── PlayerOverlayPaused.jsx    # Dedicated pause overlay
+  ├── AudioPlayer.jsx            # Audio player component
+  ├── VideoPlayer.jsx            # Video player component
+  ├── SinglePlayer.jsx           # Single media player router
+  └── CompositePlayer.jsx        # Composite player (video + audio overlay)
 ```
 
 ## Module Descriptions
@@ -59,7 +60,8 @@ Player/
 
 ### Components
 - **components/ProgressBar.jsx**: Simple progress bar with click-to-seek
-- **components/LoadingOverlay.jsx**: Loading spinner and debug information overlay
+- **components/PlayerOverlayLoading.jsx**: Loading / resilience overlay with debug details
+- **components/PlayerOverlayPaused.jsx**: Pause overlay that displays playback status while paused
 - **components/AudioPlayer.jsx**: Audio playback with album art and metadata
 - **components/VideoPlayer.jsx**: Video playback with DASH support
 - **components/SinglePlayer.jsx**: Routes to appropriate player based on media type
@@ -102,7 +104,8 @@ import Player from './modules/Player/Player.jsx';
 
 The main Player.jsx exports:
 - `default`: The main Player component
-- `LoadingOverlay`: For external use
+- `PlayerOverlayLoading`: For external use
+- `PlayerOverlayPaused`: For external use
 - `SinglePlayer`: For external use
 - `AudioPlayer`: For external use
 - `VideoPlayer`: For external use

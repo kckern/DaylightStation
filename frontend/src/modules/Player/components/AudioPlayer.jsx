@@ -3,7 +3,8 @@ import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
-import { LoadingOverlay } from './LoadingOverlay.jsx';
+import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
+import { PlayerOverlayPaused } from './PlayerOverlayPaused.jsx';
 
 /**
  * Audio player component for playing audio tracks
@@ -72,7 +73,12 @@ export function AudioPlayer({
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-      {overlayProps && <LoadingOverlay {...overlayProps} />}
+      {overlayProps && (
+        <>
+          <PlayerOverlayLoading {...overlayProps} />
+          <PlayerOverlayPaused {...overlayProps} />
+        </>
+      )}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">

@@ -4,7 +4,7 @@ import { DaylightAPI } from "../lib/api.mjs";
 import { TVMenu } from "../modules/Menu/Menu";
 import Player from "../modules/Player/Player";
 import AppContainer from "../modules/AppContainer/AppContainer";
-import { LoadingOverlay } from "../modules/Player/Player";
+import { PlayerOverlayLoading } from "../modules/Player/Player";
 
 export function TVAppWrapper({ content }) {
   return (
@@ -199,7 +199,7 @@ export default function TVApp({ appParam }) {
   }, [appParam]);
 
   if (list.length === 0 && (isQueueOrPlay && !autoplayed)) {
-    return <TVAppWrapper content={<LoadingOverlay />} />;
+    return <TVAppWrapper content={<PlayerOverlayLoading shouldRender isVisible />} />;
   }
 
   if (currentContent) {

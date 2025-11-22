@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
-import pause from '../../../assets/icons/pause.svg';
 
 /**
- * Pure presentation component for media loading / pause overlay.
- * All timing and state decisions are handled upstream by useMediaResilience.
+ * Loading / resilience overlay shown while media is buffering, stalling, or waiting to start.
  */
-export function LoadingOverlay({
+export function PlayerOverlayLoading({
   shouldRender,
   isVisible,
   pauseOverlayActive = false,
@@ -24,13 +22,14 @@ export function LoadingOverlay({
   onRequestHardReset,
   getMediaEl
 }) {
-  if (!shouldRender) {
+  if (!shouldRender || !isVisible || pauseOverlayActive) {
     return null;
   }
 
   const [localTimerSeconds, setLocalTimerSeconds] = useState(0);
   const localTimerRef = useRef(null);
   const hardResetTriggeredRef = useRef(false);
+  const logIntervalRef = useRef(null);
   const [mediaElementDetails, setMediaElementDetails] = useState({
     hasElement: false,
     currentTime: null,
@@ -51,11 +50,7 @@ export function LoadingOverlay({
     clearLocalTimer();
   }, [clearLocalTimer]);
 
-  const isInitialPlayback = seconds === 0 && !stalled;
-  const shouldShowPauseIcon = pauseOverlayActive && !isInitialPlayback && !waitingToPlay && !stalled;
-  const imgSrc = shouldShowPauseIcon ? pause : spinner;
-  const overlayStateClass = shouldShowPauseIcon ? 'paused' : 'loading';
-  const fallbackTimerActive = isVisible && !shouldShowPauseIcon;
+  const fallbackTimerActive = isVisible;
   const timerActive = overlayTimerActive || fallbackTimerActive;
 
   const emitHardReset = useCallback((reasonOrPayload, extra = {}) => {
@@ -65,19 +60,22 @@ export function LoadingOverlay({
     const finalPayload = {
       source: 'loading-overlay',
       requestedAt: Date.now(),
+      seconds,
+      stalled,
+      waitingToPlay,
       ...basePayload,
       ...extra
     };
     if (!onRequestHardReset) {
-      console.warn('[LoadingOverlay] Hard reset requested but no handler configured', finalPayload);
+      console.warn('[PlayerOverlayLoading] Hard reset requested but no handler configured', finalPayload);
       return;
     }
     try {
       onRequestHardReset(finalPayload);
     } catch (error) {
-      console.error('[LoadingOverlay] hard reset handler failed', error, finalPayload);
+      console.error('[PlayerOverlayLoading] hard reset handler failed', error, finalPayload);
     }
-  }, [onRequestHardReset]);
+  }, [onRequestHardReset, seconds, stalled, waitingToPlay]);
 
   useEffect(() => {
     if (!timerActive) {
@@ -142,7 +140,7 @@ export function LoadingOverlay({
           paused: typeof el.paused === 'boolean' ? el.paused : null
         });
       } catch (error) {
-        console.warn('[LoadingOverlay] failed to inspect media element', error);
+        console.warn('[PlayerOverlayLoading] failed to inspect media element', error);
       }
     };
 
@@ -157,7 +155,7 @@ export function LoadingOverlay({
   const fallbackDisplay = derivedTimerSeconds > 0 ? String(derivedTimerSeconds).padStart(2, '0') : null;
   const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : fallbackDisplay;
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
-  const showTimer = !shouldShowPauseIcon && isVisible && (Number.isFinite(derivedTimerSeconds) ? derivedTimerSeconds >= 0 : false);
+  const showTimer = isVisible && (Number.isFinite(derivedTimerSeconds) ? derivedTimerSeconds >= 0 : false);
 
   const blockFullscreenToggle = useCallback((event) => {
     event?.preventDefault?.();
@@ -166,16 +164,13 @@ export function LoadingOverlay({
   }, []);
 
   const handleSpinnerInteraction = useCallback((event) => {
-    if (shouldShowPauseIcon) {
-      return;
-    }
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.nativeEvent?.stopImmediatePropagation?.();
     emitHardReset('overlay-spinner-manual', { eventType: event?.type });
-  }, [emitHardReset, shouldShowPauseIcon]);
+  }, [emitHardReset]);
 
-  const spinnerInteractionProps = shouldShowPauseIcon ? {} : {
+  const spinnerInteractionProps = {
     onClick: handleSpinnerInteraction,
     onTouchStart: handleSpinnerInteraction,
     onDoubleClick: handleSpinnerInteraction,
@@ -192,9 +187,28 @@ export function LoadingOverlay({
     ? `el:t=${mediaElementDetails.currentTime ?? 'n/a'} r=${mediaElementDetails.readyState ?? 'n/a'} n=${mediaElementDetails.networkState ?? 'n/a'} p=${mediaElementDetails.paused ?? 'n/a'}`
     : 'el:none';
 
+  const logOverlaySummary = useCallback(() => {
+    try {
+      console.log('[PlayerOverlayLoading]', `${timerSummary} | ${seekSummary} | ${mediaSummary}`);
+    } catch (_) {
+      /* no-op */
+    }
+  }, [timerSummary, seekSummary, mediaSummary]);
+
+  useEffect(() => {
+    logOverlaySummary();
+    logIntervalRef.current = setInterval(logOverlaySummary, 1000);
+    return () => {
+      if (logIntervalRef.current) {
+        clearInterval(logIntervalRef.current);
+        logIntervalRef.current = null;
+      }
+    };
+  }, [logOverlaySummary]);
+
   return (
     <div
-      className={`loading-overlay ${overlayStateClass}`}
+      className="loading-overlay loading"
       data-no-fullscreen="true"
       style={{
         opacity: isVisible ? 1 : 0,
@@ -212,19 +226,19 @@ export function LoadingOverlay({
             {...spinnerInteractionProps}
           >
             <img
-              src={imgSrc}
+              src={spinner}
               alt=""
               draggable={false}
               data-no-fullscreen="true"
             />
-            {!shouldShowPauseIcon && <div className="loading-metrics">
+            <div className="loading-metrics">
               <div className="loading-position">
                 {positionDisplay !== '0:00' ? positionDisplay : ''}
               </div>
               <div className="loading-timer">
                 {showTimer ? elapsedDisplay : ''}
               </div>
-            </div>}
+            </div>
           </div>
         </div>
         <div className="loading-debug-strip">
@@ -235,25 +249,16 @@ export function LoadingOverlay({
   );
 }
 
-LoadingOverlay.propTypes = {
+PlayerOverlayLoading.propTypes = {
   shouldRender: PropTypes.bool,
   isVisible: PropTypes.bool,
-  isPaused: PropTypes.bool,
   pauseOverlayActive: PropTypes.bool,
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
-  showPauseOverlay: PropTypes.bool,
-  showDebug: PropTypes.bool,
-  initialStart: PropTypes.number,
-  message: PropTypes.string,
-  debugContext: PropTypes.object,
-  getMediaEl: PropTypes.func,
-  plexId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   togglePauseOverlay: PropTypes.func,
-  explicitShow: PropTypes.bool,
-  countUpSeconds: PropTypes.number,
   countUpDisplay: PropTypes.string,
+  countUpSeconds: PropTypes.number,
   playerPositionDisplay: PropTypes.string,
   intentPositionDisplay: PropTypes.string,
   overlayTimerActive: PropTypes.bool,
@@ -261,3 +266,5 @@ LoadingOverlay.propTypes = {
   onRequestHardReset: PropTypes.func,
   getMediaEl: PropTypes.func
 };
+
+export default PlayerOverlayLoading;

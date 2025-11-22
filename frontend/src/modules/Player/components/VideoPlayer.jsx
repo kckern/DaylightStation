@@ -3,7 +3,8 @@ import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
 import { useCommonMediaController, shouldRestartFromBeginning } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
-import { LoadingOverlay } from './LoadingOverlay.jsx';
+import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
+import { PlayerOverlayPaused } from './PlayerOverlayPaused.jsx';
 
 const deriveApproxDurationSeconds = (media = {}) => {
   const numericFields = [
@@ -202,7 +203,12 @@ export function VideoPlayer({
         {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {overlayProps && <LoadingOverlay {...overlayProps} />}
+      {overlayProps && (
+        <>
+          <PlayerOverlayLoading {...overlayProps} />
+          <PlayerOverlayPaused {...overlayProps} />
+        </>
+      )}
       {isDash ? (
         <div ref={containerRef} className="video-element-host">
           <ShakaVideoStreamer

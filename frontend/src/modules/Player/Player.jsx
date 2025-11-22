@@ -4,7 +4,8 @@ import './Player.scss';
 import { useQueueController } from './hooks/useQueueController.js';
 import { CompositePlayer } from './components/CompositePlayer.jsx';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
-import { LoadingOverlay } from './components/LoadingOverlay.jsx';
+import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
+import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 
 /**
  * Main Player component
@@ -206,7 +207,8 @@ const Player = forwardRef(function Player(props, ref) {
     />
   ) : (
     <div className={`player ${effectiveShader} ${props.playerType || ''}`}>
-      <LoadingOverlay
+      <>
+        <PlayerOverlayLoading
         shouldRender
         isVisible
         isPaused={false}
@@ -218,7 +220,17 @@ const Player = forwardRef(function Player(props, ref) {
         togglePauseOverlay={() => {}}
         plexId={plexId}
         debugContext={{ scope: 'idle' }}
-      />
+        />
+        <PlayerOverlayPaused
+          shouldRender
+          isVisible
+          pauseOverlayActive
+          seconds={0}
+          stalled={false}
+          waitingToPlay
+          togglePauseOverlay={() => {}}
+        />
+      </>
     </div>
   );
 });
@@ -248,7 +260,8 @@ Player.propTypes = {
 export default Player;
 
 // Export components for external use
-export { LoadingOverlay } from './components/LoadingOverlay.jsx';
+export { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
+export { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 export { SinglePlayer } from './components/SinglePlayer.jsx';
 export { AudioPlayer } from './components/AudioPlayer.jsx';
 export { VideoPlayer } from './components/VideoPlayer.jsx';
