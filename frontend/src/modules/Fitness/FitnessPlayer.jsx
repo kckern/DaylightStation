@@ -817,6 +817,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const playerKey = hasActiveItem
     ? `${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}:r${playerReloadToken}`
     : 'fitness-player-empty';
+  const stallRecoveryDeadlineMs = Math.max(0, resilienceState?.hardRecoverAfterStalledForMs ?? 8000);
 
   useEffect(() => {
     const waitingForStart = hasActiveItem && !isPaused && (currentTime === undefined || currentTime <= 0.1);
@@ -825,14 +826,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         stallReloadTimerRef.current = setTimeout(() => {
           setPlayerReloadToken((token) => token + 1);
           stallReloadClear();
-        }, 3000);
+        }, stallRecoveryDeadlineMs || 8000);
       }
     } else {
       stallReloadClear();
     }
 
     return stallReloadClear;
-  }, [hasActiveItem, isPaused, currentTime, playerKey, stallReloadClear]);
+  }, [hasActiveItem, isPaused, currentTime, playerKey, stallReloadClear, stallRecoveryDeadlineMs]);
 
   const handleVideoPointerDown = useCallback((event) => {
     if (!mediaSwapActive) return;

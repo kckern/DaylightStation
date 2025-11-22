@@ -22,6 +22,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
   fallbackDuration = 600,
   onSeek,
   playerRef,
+  isStalled = false,
   range,
   onZoomChange,
   onZoomReset,
@@ -128,6 +129,41 @@ const FitnessPlayerFooterSeekThumbnails = ({
     : Date.now();
 
   const { seek } = usePlayerController(playerRef);
+
+  const recordSeekIntent = useCallback((targetSeconds) => {
+    const api = playerRef?.current || null;
+    const controller = api?.getMediaResilienceController?.() || null;
+    const normalizedSeconds = Number.isFinite(targetSeconds) ? Math.max(0, targetSeconds) : null;
+    const seekToIntentMs = normalizedSeconds != null ? normalizedSeconds * 1000 : null;
+
+    if (controller && normalizedSeconds != null) {
+      if (typeof controller.recordSeekIntentSeconds === 'function') {
+        controller.recordSeekIntentSeconds(normalizedSeconds);
+      } else if (typeof controller.recordSeekIntentMs === 'function') {
+        controller.recordSeekIntentMs(seekToIntentMs);
+      }
+    }
+
+    return { api, controller, seekToIntentMs };
+  }, [playerRef]);
+
+  const requestHardResetAt = useCallback((targetSeconds, intentMeta = null) => {
+    const meta = intentMeta || recordSeekIntent(targetSeconds);
+    const api = meta?.api || playerRef?.current;
+    if (!api) return false;
+    const controller = meta?.controller || api.getMediaResilienceController?.();
+    const seekToIntentMs = meta?.seekToIntentMs ?? (Number.isFinite(targetSeconds) ? Math.max(0, targetSeconds * 1000) : null);
+
+    if (controller?.forceReload) {
+      controller.forceReload({ reason: 'fitness-stalled-seek', seekToIntentMs });
+      return true;
+    }
+    if (api?.forceMediaReload) {
+      api.forceMediaReload({ reason: 'fitness-stalled-seek', seekToIntentMs });
+      return true;
+    }
+    return false;
+  }, [playerRef, recordSeekIntent]);
 
   const displayTime = useMemo(() => {
     if (previewTime != null) return previewTime;
@@ -249,13 +285,18 @@ const FitnessPlayerFooterSeekThumbnails = ({
 
   const commit = useCallback((t) => {
     if (disabled) return;
-    setPendingTime(t);
+    const normalizedTarget = Number.isFinite(t) ? Math.max(0, t) : 0;
+    const intentMeta = recordSeekIntent(normalizedTarget);
+    setPendingTime(normalizedTarget);
     awaitingSettleRef.current = true;
-    pendingMetaRef.current = { target: t, startedAt: nowTs(), settledAt: 0 };
-    lastSeekRef.current.time = t;
-    seek(t);
-    onSeek?.(t);
-  }, [seek, onSeek, disabled]);
+    pendingMetaRef.current = { target: normalizedTarget, startedAt: nowTs(), settledAt: 0 };
+    lastSeekRef.current.time = normalizedTarget;
+    const performedReset = isStalled ? requestHardResetAt(normalizedTarget, intentMeta) : false;
+    if (!performedReset) {
+      seek(normalizedTarget);
+    }
+    onSeek?.(normalizedTarget);
+  }, [seek, onSeek, disabled, isStalled, requestHardResetAt, recordSeekIntent]);
 
   useEffect(() => {
     const el = playerRef?.current?.getMediaElement?.();
@@ -586,7 +627,8 @@ FitnessPlayerFooterSeekThumbnails.propTypes = {
   getTimeRef: PropTypes.shape({ current: PropTypes.func }),
   onZoomNavStateChange: PropTypes.func,
   disabled: PropTypes.bool,
-  mediaElementKey: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
+  mediaElementKey: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  isStalled: PropTypes.bool
 };
 
 export default FitnessPlayerFooterSeekThumbnails;
