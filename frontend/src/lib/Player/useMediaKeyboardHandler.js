@@ -122,8 +122,8 @@ export function useMediaKeyboardHandler(config) {
     : Boolean(derivedState?.isPaused ?? derivedState?.paused);
   
   if (isPaused) {
-    conditionalOverrides['ArrowUp'] = () => {}; // Let LoadingOverlay handle
-    conditionalOverrides['ArrowDown'] = () => {}; // Let LoadingOverlay handle
+    conditionalOverrides['ArrowUp'] = () => {}; // Let pause overlay handle
+    conditionalOverrides['ArrowDown'] = () => {}; // Let pause overlay handle
   }
 
   return usePlayerKeyboard({

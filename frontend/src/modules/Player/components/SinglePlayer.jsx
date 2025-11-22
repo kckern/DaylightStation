@@ -5,7 +5,7 @@ import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { fetchMediaInfo } from '../lib/api.js';
 import { AudioPlayer } from './AudioPlayer.jsx';
 import { VideoPlayer } from './VideoPlayer.jsx';
-import { LoadingOverlay } from './LoadingOverlay.jsx';
+import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 
 /**
  * Single player component that handles different media types
@@ -146,7 +146,7 @@ export function SinglePlayer(play) {
     <div className={`player ${playerType || ''}`}>
       {!isReady && (
         <div className={`shader on notReady ${shader}`}>
-          <LoadingOverlay
+          <PlayerOverlayLoading
             shouldRender
             isVisible
             isPaused={false}
