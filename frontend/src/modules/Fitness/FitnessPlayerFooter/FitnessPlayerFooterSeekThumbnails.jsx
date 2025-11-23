@@ -1,19 +1,17 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import usePlayerController from '../../Player/usePlayerController.js';
+import playbackLog from '../../Player/lib/playbackLogger.js';
 import FitnessPlayerFooterSeekThumbnail from './FitnessPlayerFooterSeekThumbnail.jsx';
 import ProgressFrame from './ProgressFrame.jsx';
 import './FitnessPlayerFooterSeekThumbnails.scss';
 
-const CONFIG = Object.freeze({
-  thumbnail: {
-    sampleFraction: 0.2,
-    labelFraction: 0.5,
-    seekFraction: 0.05
-  }
-});
-
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const FOOTER_LOG_EVENT = 'fitness-footer';
+
+const logFooterEvent = (phase, payload = {}) => {
+  playbackLog(FOOTER_LOG_EVENT, { phase, ...payload });
+};
 
 const FitnessPlayerFooterSeekThumbnails = ({
   duration,
@@ -51,8 +49,16 @@ const FitnessPlayerFooterSeekThumbnails = ({
 
   const [zoomRange, setZoomRange] = useState(null);
   const unzoomedPositionsRef = useRef([]);
-  const baseRangeSnapshotRef = useRef({ positions: [], range: [0, baseDurationProp] });
+  const zoomStackRef = useRef([]);
+  const lastViewSnapshotRef = useRef({ positions: [], range: [0, baseDurationProp] });
   const navStateRef = useRef(null);
+  const lastSeekIntentRef = useRef(null);
+  const lastInteractionRef = useRef(null);
+  const lastCommitRef = useRef(null);
+  const currentMediaIdentity = useMemo(() => {
+    if (!currentItem) return null;
+    return currentItem.media_key || currentItem.id || currentItem.plex || currentItem.ratingKey || null;
+  }, [currentItem]);
 
   const buildRangePositions = useCallback((start, end) => {
     if (!(Number.isFinite(start) && Number.isFinite(end) && end > start)) return [];
@@ -108,13 +114,17 @@ const FitnessPlayerFooterSeekThumbnails = ({
   }, [rangeStart, rangeEnd, buildRangePositions, zoomRange]);
 
   useEffect(() => {
+    lastViewSnapshotRef.current = {
+      positions: Array.isArray(rangePositions) ? rangePositions.slice() : [],
+      range: [rangeStart, rangeEnd]
+    };
+  }, [rangePositions, rangeStart, rangeEnd]);
+
+  useEffect(() => {
     if (!zoomRange) {
-      baseRangeSnapshotRef.current = {
-        positions: Array.isArray(rangePositions) ? rangePositions.slice() : [],
-        range: [rangeStart, rangeEnd]
-      };
+      zoomStackRef.current = [];
     }
-  }, [zoomRange, rangePositions, rangeStart, rangeEnd]);
+  }, [zoomRange]);
 
   const [pendingTime, setPendingTime] = useState(null);
   const [previewTime, setPreviewTime] = useState(null);
@@ -128,7 +138,29 @@ const FitnessPlayerFooterSeekThumbnails = ({
     ? performance.now()
     : Date.now();
 
-  const { seek } = usePlayerController(playerRef);
+  const { seek, getCurrentTime: getPlayerCurrentTime } = usePlayerController(playerRef);
+
+  const resolveActualPlaybackTime = useCallback(() => {
+    if (typeof getPlayerCurrentTime !== 'function') return null;
+    const value = getPlayerCurrentTime();
+    return Number.isFinite(value) ? value : null;
+  }, [getPlayerCurrentTime]);
+
+  const syncSeekIntentToResilience = useCallback((seconds) => {
+    if (!Number.isFinite(seconds)) return false;
+    const api = playerRef?.current || null;
+    const controller = api?.getMediaResilienceController?.();
+    if (!controller) return false;
+    if (typeof controller.recordSeekIntentSeconds === 'function') {
+      controller.recordSeekIntentSeconds(seconds);
+      return true;
+    }
+    if (typeof controller.recordSeekIntentMs === 'function') {
+      controller.recordSeekIntentMs(Math.max(0, seconds * 1000));
+      return true;
+    }
+    return false;
+  }, [playerRef]);
 
   const recordSeekIntent = useCallback((targetSeconds) => {
     const api = playerRef?.current || null;
@@ -136,16 +168,40 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const normalizedSeconds = Number.isFinite(targetSeconds) ? Math.max(0, targetSeconds) : null;
     const seekToIntentMs = normalizedSeconds != null ? normalizedSeconds * 1000 : null;
 
-    if (controller && normalizedSeconds != null) {
-      if (typeof controller.recordSeekIntentSeconds === 'function') {
-        controller.recordSeekIntentSeconds(normalizedSeconds);
-      } else if (typeof controller.recordSeekIntentMs === 'function') {
-        controller.recordSeekIntentMs(seekToIntentMs);
-      }
+    if (normalizedSeconds != null) {
+      const snapshot = {
+        seconds: normalizedSeconds,
+        identity: currentMediaIdentity || null
+      };
+      lastSeekIntentRef.current = snapshot;
+      const synced = syncSeekIntentToResilience(normalizedSeconds);
+      logFooterEvent('seek-intent-recorded', {
+        targetSeconds: normalizedSeconds,
+        mediaIdentity: snapshot.identity,
+        synced,
+        interaction: lastInteractionRef.current
+      });
     }
 
     return { api, controller, seekToIntentMs };
-  }, [playerRef]);
+  }, [playerRef, currentMediaIdentity, syncSeekIntentToResilience]);
+
+  useEffect(() => {
+    const payload = lastSeekIntentRef.current;
+    if (!payload || !Number.isFinite(payload.seconds)) return;
+    if (payload.identity && currentMediaIdentity && payload.identity !== currentMediaIdentity) {
+      lastSeekIntentRef.current = null;
+      return;
+    }
+    const synced = syncSeekIntentToResilience(payload.seconds);
+    logFooterEvent('seek-intent-restored', {
+      targetSeconds: payload.seconds,
+      mediaIdentity: payload.identity,
+      synced,
+      mediaElementKey,
+      interaction: lastInteractionRef.current
+    });
+  }, [syncSeekIntentToResilience, mediaElementKey, currentMediaIdentity]);
 
   const requestHardResetAt = useCallback((targetSeconds, intentMeta = null) => {
     const meta = intentMeta || recordSeekIntent(targetSeconds);
@@ -171,37 +227,76 @@ const FitnessPlayerFooterSeekThumbnails = ({
     return currentTime;
   }, [previewTime, pendingTime, currentTime]);
 
+  const handleThumbnailInteraction = useCallback((phase, detail = {}) => {
+    const snapshot = {
+      phase,
+      ...detail,
+      currentTimeSnapshot: currentTime,
+      displayTimeSnapshot: displayTime,
+      pendingTime,
+      previewTime,
+      mediaIdentity: currentMediaIdentity,
+      timestamp: Date.now()
+    };
+    lastInteractionRef.current = snapshot;
+    logFooterEvent(phase, snapshot);
+  }, [currentTime, displayTime, pendingTime, previewTime, currentMediaIdentity]);
+
   const isZoomed = !!zoomRange;
 
-  const getBaseSnapshot = useCallback(() => baseRangeSnapshotRef.current || null, []);
+  const getActiveZoomSnapshot = useCallback(() => {
+    const stack = zoomStackRef.current;
+    if (!Array.isArray(stack) || !stack.length) return null;
+    return stack[stack.length - 1];
+  }, []);
+
+  const handleZoomRequest = useCallback((bounds) => {
+    if (disabled) return;
+    if (!Array.isArray(bounds) || bounds.length !== 2) return;
+    const [start, end] = bounds;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+    if (zoomRange && Math.abs((zoomRange[0] ?? 0) - start) < 0.0001 && Math.abs((zoomRange[1] ?? 0) - end) < 0.0001) {
+      return;
+    }
+    const snapshot = lastViewSnapshotRef.current;
+    if (snapshot) {
+      const positionsClone = Array.isArray(snapshot.positions) ? snapshot.positions.slice() : [];
+      const rangeClone = Array.isArray(snapshot.range) ? snapshot.range.slice() : [rangeStart, rangeEnd];
+      zoomStackRef.current = [...zoomStackRef.current, { positions: positionsClone, range: rangeClone }];
+    }
+    setZoomRange(bounds);
+  }, [disabled, rangeStart, rangeEnd, zoomRange]);
 
   const resolveZoomIndex = useCallback(() => {
-    const snapshot = getBaseSnapshot();
+    const snapshot = getActiveZoomSnapshot();
     const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
     if (!positions.length) return -1;
-    let foundIndex = positions.findIndex((pos) => Math.abs(pos - rangeStart) < 0.51);
+    const target = Number.isFinite(rangeStart) ? rangeStart : positions[0];
+    if (!Number.isFinite(target)) return -1;
+    let foundIndex = positions.findIndex((pos) => Math.abs(pos - target) < 0.001);
     if (foundIndex >= 0) return foundIndex;
     let nearestIndex = 0;
     let nearestDelta = Infinity;
     for (let i = 0; i < positions.length; i++) {
-      const delta = Math.abs(positions[i] - rangeStart);
+      const delta = Math.abs(positions[i] - target);
       if (delta < nearestDelta) {
         nearestDelta = delta;
         nearestIndex = i;
       }
     }
     return nearestIndex;
-  }, [getBaseSnapshot, rangeStart]);
+  }, [getActiveZoomSnapshot, rangeStart]);
 
   const setZoomRangeFromIndex = useCallback((targetIndex) => {
-    const snapshot = getBaseSnapshot();
+    const snapshot = getActiveZoomSnapshot();
     const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
     if (!positions.length) return;
+    const [, parentEnd] = Array.isArray(snapshot?.range) ? snapshot.range : [];
+    const parentRangeEnd = Number.isFinite(parentEnd) ? parentEnd : baseDurationProp;
     const maxIndex = positions.length - 1;
     const clampedIndex = Math.min(Math.max(targetIndex, 0), maxIndex);
     const start = positions[clampedIndex];
-    const baseRangeEnd = Array.isArray(snapshot?.range) && snapshot.range.length === 2 ? snapshot.range[1] : baseDurationProp;
-    const nextBoundary = clampedIndex < maxIndex ? positions[clampedIndex + 1] : baseRangeEnd;
+    const nextBoundary = clampedIndex < maxIndex ? positions[clampedIndex + 1] : parentRangeEnd;
     if (!Number.isFinite(start) || !Number.isFinite(nextBoundary) || nextBoundary <= start) return;
     setZoomRange((prev) => {
       if (prev && Math.abs(prev[0] - start) < 0.001 && Math.abs(prev[1] - nextBoundary) < 0.001) {
@@ -209,33 +304,33 @@ const FitnessPlayerFooterSeekThumbnails = ({
       }
       return [start, nextBoundary];
     });
-  }, [getBaseSnapshot, baseDurationProp]);
+  }, [getActiveZoomSnapshot, baseDurationProp]);
 
   const stepZoomBackward = useCallback(() => {
     if (disabled || !isZoomed) return;
-    const snapshot = getBaseSnapshot();
+    const snapshot = getActiveZoomSnapshot();
     const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
     if (!positions.length) return;
     const idx = resolveZoomIndex();
     if (idx <= 0) return;
     setZoomRangeFromIndex(idx - 1);
-  }, [disabled, isZoomed, getBaseSnapshot, resolveZoomIndex, setZoomRangeFromIndex]);
+  }, [disabled, isZoomed, getActiveZoomSnapshot, resolveZoomIndex, setZoomRangeFromIndex]);
 
   const stepZoomForward = useCallback(() => {
     if (disabled || !isZoomed) return;
-    const snapshot = getBaseSnapshot();
+    const snapshot = getActiveZoomSnapshot();
     const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
     if (!positions.length) return;
     const idx = resolveZoomIndex();
     if (idx < 0 || idx >= positions.length - 1) return;
     setZoomRangeFromIndex(idx + 1);
-  }, [disabled, isZoomed, getBaseSnapshot, resolveZoomIndex, setZoomRangeFromIndex]);
+  }, [disabled, isZoomed, getActiveZoomSnapshot, resolveZoomIndex, setZoomRangeFromIndex]);
 
   const { canStepBackward, canStepForward } = useMemo(() => {
     if (!isZoomed || disabled) {
       return { canStepBackward: false, canStepForward: false };
     }
-    const snapshot = getBaseSnapshot();
+    const snapshot = getActiveZoomSnapshot();
     const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
     if (!positions.length) {
       return { canStepBackward: false, canStepForward: false };
@@ -244,7 +339,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const hasPrev = idx > 0;
     const hasNext = idx >= 0 && idx < positions.length - 1;
     return { canStepBackward: hasPrev, canStepForward: hasNext };
-  }, [isZoomed, disabled, getBaseSnapshot, resolveZoomIndex]);
+  }, [isZoomed, disabled, getActiveZoomSnapshot, resolveZoomIndex]);
 
   useEffect(() => {
     onZoomChange?.(isZoomed);
@@ -272,7 +367,10 @@ const FitnessPlayerFooterSeekThumbnails = ({
 
   useEffect(() => {
     if (onZoomReset && typeof onZoomReset === 'object') {
-      onZoomReset.current = () => setZoomRange(null);
+      onZoomReset.current = () => {
+        zoomStackRef.current = [];
+        setZoomRange(null);
+      };
     }
   }, [onZoomReset]);
 
@@ -292,11 +390,25 @@ const FitnessPlayerFooterSeekThumbnails = ({
     pendingMetaRef.current = { target: normalizedTarget, startedAt: nowTs(), settledAt: 0 };
     lastSeekRef.current.time = normalizedTarget;
     const performedReset = isStalled ? requestHardResetAt(normalizedTarget, intentMeta) : false;
+    const commitSnapshot = {
+      target: normalizedTarget,
+      performedReset,
+      isStalled,
+      intentMeta,
+      pendingMeta: pendingMetaRef.current,
+      interaction: lastInteractionRef.current,
+      previousPreviewTime: previewTime,
+      previousPendingTime: pendingTime,
+      currentTimeSnapshot: currentTime,
+      mediaIdentity: currentMediaIdentity
+    };
+    lastCommitRef.current = commitSnapshot;
+    logFooterEvent('seek-commit', commitSnapshot);
     if (!performedReset) {
       seek(normalizedTarget);
     }
     onSeek?.(normalizedTarget);
-  }, [seek, onSeek, disabled, isStalled, requestHardResetAt, recordSeekIntent]);
+  }, [seek, onSeek, disabled, isStalled, requestHardResetAt, recordSeekIntent, previewTime, pendingTime, currentTime, currentMediaIdentity]);
 
   useEffect(() => {
     const el = playerRef?.current?.getMediaElement?.();
@@ -308,6 +420,12 @@ const FitnessPlayerFooterSeekThumbnails = ({
           ...pendingMetaRef.current,
           settledAt: nowTs()
         };
+        logFooterEvent('media-seeked', {
+          pendingMeta: pendingMetaRef.current,
+          lastCommit: lastCommitRef.current,
+          interaction: lastInteractionRef.current,
+          actualTime: resolveActualPlaybackTime()
+        });
       }
     };
     const handlePlaying = () => {
@@ -316,6 +434,12 @@ const FitnessPlayerFooterSeekThumbnails = ({
         resetZoomOnPlayingRef.current = false;
         setZoomRange(null);
       }
+      logFooterEvent('media-playing', {
+        pendingMeta: pendingMetaRef.current,
+        lastCommit: lastCommitRef.current,
+        interaction: lastInteractionRef.current,
+        actualTime: resolveActualPlaybackTime()
+      });
     };
     const handleRecovery = () => {
       if (awaitingSettleRef.current || pendingTime != null) {
@@ -323,6 +447,10 @@ const FitnessPlayerFooterSeekThumbnails = ({
         pendingMetaRef.current = { target: null, startedAt: 0, settledAt: 0 };
         setPendingTime(null);
         lastSeekRef.current.expireAt = nowTs() + STICKY_INTENT_MS;
+        logFooterEvent('media-recovery', {
+          interaction: lastInteractionRef.current,
+          actualTime: resolveActualPlaybackTime()
+        });
       }
     };
     el.addEventListener('seeked', handleSettled);
@@ -333,7 +461,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
       el.removeEventListener('playing', handlePlaying);
       el.removeEventListener('loadedmetadata', handleRecovery);
     };
-  }, [playerRef, pendingTime, mediaElementKey]);
+  }, [playerRef, pendingTime, mediaElementKey, resolveActualPlaybackTime]);
 
   useEffect(() => {
     if (pendingTime == null) return;
@@ -432,14 +560,25 @@ const FitnessPlayerFooterSeekThumbnails = ({
     return `rgb(${greyValue}, ${greyValue}, ${greyValue})`;
   }, []);
 
-  const handleThumbnailSeek = useCallback((seekTarget) => {
+  const handleThumbnailSeek = useCallback((seekTarget, rangeAnchor, meta = null) => {
     if (disabled) return;
-    const resolvedTarget = Number.isFinite(seekTarget) ? seekTarget : rangeStart;
+    const resolvedTarget = Number.isFinite(rangeAnchor)
+      ? rangeAnchor
+      : (Number.isFinite(seekTarget) ? seekTarget : rangeStart);
+    logFooterEvent('thumbnail-seek-intent', {
+      seekTarget,
+      rangeAnchor,
+      resolvedTarget,
+      thumbnailMeta: meta,
+      interaction: lastInteractionRef.current,
+      currentTimeSnapshot: currentTime,
+      displayTimeSnapshot: displayTime
+    });
     commit(resolvedTarget);
     if (zoomRange) {
       resetZoomOnPlayingRef.current = true;
     }
-  }, [commit, zoomRange, rangeStart, disabled]);
+  }, [commit, zoomRange, rangeStart, disabled, currentTime, displayTime]);
 
   const renderedSeekButtons = useMemo(() => {
     if (!currentItem) return null;
@@ -453,10 +592,6 @@ const FitnessPlayerFooterSeekThumbnails = ({
       ratingKey: currentItem.ratingKey,
       metadata: currentItem.metadata
     };
-    const sampleFraction = clamp01(CONFIG.thumbnail.sampleFraction);
-    const labelFraction = clamp01(CONFIG.thumbnail.labelFraction);
-    const seekFraction = clamp01(CONFIG.thumbnail.seekFraction);
-
     return rangePositions.map((pos, idx) => {
       const segmentStart = pos;
       const nextBoundary = idx < rangePositions.length - 1 ? rangePositions[idx + 1] : rangeEnd;
@@ -483,17 +618,9 @@ const FitnessPlayerFooterSeekThumbnails = ({
       const isPast = displayTime >= pastThreshold;
       const state = isActive ? 'active' : (isPast ? 'past' : 'future');
 
-      const sampleTime = segmentDuration > 0
-        ? segmentStart + segmentDuration * sampleFraction
-        : segmentStart;
-      const labelTime = segmentDuration > 0
-        ? segmentStart + segmentDuration * labelFraction
-        : segmentStart;
-      const seekTime = segmentDuration > 0
-        ? segmentStart + segmentDuration * seekFraction
-        : segmentStart;
-
-      const baseLabel = formatTime(labelTime);
+      const sampleTime = segmentStart;
+      const labelTime = segmentStart;
+      const seekTime = segmentStart;
 
       const isOrigin = !isZoomed && Math.abs(segmentStart - rangeStart) < 0.001;
       let imgSrc;
@@ -522,7 +649,24 @@ const FitnessPlayerFooterSeekThumbnails = ({
         }
       }
 
-      const label = (isActive && isActivelyPlaying) ? formatTime(currentTime) : baseLabel;
+      const label = formatTime(Math.max(labelTime, 0));
+      const telemetryMeta = {
+        thumbnailIndex: idx,
+        label,
+        labelTime,
+        segmentStart,
+        segmentEnd,
+        seekTime,
+        sampleTime,
+        state,
+        isActive,
+        isPast,
+        isOrigin,
+        visibleRatio,
+        greyBg,
+        currentTimeSnapshot: currentTime,
+        displayTimeSnapshot: displayTime
+      };
       const progressRatio = clamp01(thumbnailProgress);
       const showSpark = progressRatio > 0 && progressRatio < 1;
 
@@ -547,14 +691,16 @@ const FitnessPlayerFooterSeekThumbnails = ({
           isActive={isActive}
           progressRatio={progressRatio}
           showSpark={showSpark}
-          onSeek={handleThumbnailSeek}
-          onZoom={disabled ? undefined : setZoomRange}
+          onSeek={(target, anchor) => handleThumbnailSeek(target, anchor, telemetryMeta)}
+          onZoom={disabled ? undefined : handleZoomRequest}
           enableZoom={!disabled}
           visibleRatio={visibleRatio}
+          telemetryMeta={telemetryMeta}
+          onTelemetry={handleThumbnailInteraction}
         />
       );
     });
-  }, [currentItem, rangePositions, rangeEnd, displayTime, formatTime, isZoomed, rangeStart, generateThumbnailUrl, getGreyShade, currentTime, disabled, handleThumbnailSeek, setZoomRange, rangeSpan]);
+  }, [currentItem, rangePositions, rangeEnd, displayTime, formatTime, isZoomed, rangeStart, generateThumbnailUrl, getGreyShade, currentTime, disabled, handleThumbnailSeek, handleZoomRequest, handleThumbnailInteraction, rangeSpan]);
 
   const fullDuration = baseDurationProp || 0;
   const progressPct = useMemo(() => {

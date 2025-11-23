@@ -27,7 +27,9 @@ export default function SingleThumbnailButton({
   globalEnd = null,
   fallbackZoomWindow = 120, // seconds
   seekTime,
-  labelTime
+  labelTime,
+  telemetryMeta = null,
+  onTelemetry
 }) {
   const longPressTimeout = useRef();
   const hasRange = enableZoom && Number.isFinite(rangeStart) && Number.isFinite(rangeEnd) && rangeEnd > rangeStart;
@@ -37,6 +39,13 @@ export default function SingleThumbnailButton({
     if (Number.isFinite(seekTime)) return seekTime;
     if (btnRange) return btnRange[0];
     if (Number.isFinite(rangeStart)) return rangeStart;
+    return pos;
+  };
+
+  const resolveRangeAnchor = () => {
+    if (btnRange) return btnRange[0];
+    if (Number.isFinite(rangeStart)) return rangeStart;
+    if (Number.isFinite(seekTime)) return seekTime;
     return pos;
   };
 
@@ -60,35 +69,71 @@ export default function SingleThumbnailButton({
     return false;
   };
 
+  const emitTelemetry = (phase, extra = {}) => {
+    if (typeof onTelemetry !== 'function') return;
+    onTelemetry(phase, {
+      ...extra,
+      telemetryMeta,
+      timestamp: Date.now()
+    });
+  };
+
   const handlePointerDown = (e) => {
     const timeElt = isTimeElement(e);
     const reason = timeElt ? 'time-label' : (e.button === 2 ? 'right-button' : 'seek-default');
     const targetSeek = resolveSeekTime();
-    console.log('[SingleThumbnailButton] pointerDown:', { pos, reason, timeElt, rightButton: e.button === 2, targetSeek });
+    const anchor = resolveRangeAnchor();
+    emitTelemetry('pointer-down', {
+      pointerType: e.pointerType || (e.touches ? 'touch' : 'mouse'),
+      button: typeof e.button === 'number' ? e.button : null,
+      reason,
+      timeElement: timeElt,
+      targetSeek,
+      anchor,
+      pos,
+      rangeStart,
+      rangeEnd,
+      labelTime
+    });
     if ((e.button === 2 || timeElt) && enableZoom) {
       e.preventDefault();
       e.stopPropagation();
       if (btnRange) {
-  // zoom (explicit range)
         onZoom?.(btnRange);
+        emitTelemetry('zoom-trigger', { source: reason, zoomBounds: btnRange });
       } else if (timeElt) {
-  // zoom (anchor only signal)
-        // Send anchor-only signal (start=end) so parent can expand to next 9 thumbnails
         const anchor = Number.isFinite(labelTime) ? labelTime : pos;
-        onZoom?.([anchor, anchor]);
+        const zoomSignal = [anchor, anchor];
+        onZoom?.(zoomSignal);
+        emitTelemetry('zoom-trigger', { source: reason, zoomBounds: zoomSignal });
       }
       return;
     }
-  // seek action
-    console.log('[SingleThumbnailButton] Seeking to:', targetSeek);
-    onSeek?.(targetSeek);
+    onSeek?.(targetSeek, anchor);
+    emitTelemetry('seek-requested', {
+      targetSeek,
+      anchor
+    });
   };
   const handleContext = (e) => {
-    if (!btnRange) return; e.preventDefault(); e.stopPropagation(); onZoom?.(btnRange);
+    if (!btnRange) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onZoom?.(btnRange);
+    emitTelemetry('context-zoom', { zoomBounds: btnRange });
   };
-  const handleTouchStart = () => startLong();
-  const handleTouchEnd = () => clearLong();
-  const handleTouchCancel = () => clearLong();
+  const handleTouchStart = () => {
+    startLong();
+    emitTelemetry('touch-start', { rangeStart, rangeEnd });
+  };
+  const handleTouchEnd = () => {
+    clearLong();
+    emitTelemetry('touch-end', { rangeStart, rangeEnd });
+  };
+  const handleTouchCancel = () => {
+    clearLong();
+    emitTelemetry('touch-cancel', { rangeStart, rangeEnd });
+  };
 
   return React.cloneElement(React.Children.only(children), {
     // Immediate pointerDown activation; if on the time label we zoom & stop propagation

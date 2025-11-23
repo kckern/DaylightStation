@@ -379,14 +379,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
     const compute = (reason = 'resize') => {
       if (!viewportRef.current) return;
-      const now = performance.now();
       if (stackEvalRef.current.pending) return;
       stackEvalRef.current.pending = true;
       if (measureRafRef.current) cancelAnimationFrame(measureRafRef.current);
       measureRafRef.current = requestAnimationFrame(() => {
-    stackEvalRef.current.pending = false;
+        stackEvalRef.current.pending = false;
 
-        const { width: totalW, height: totalH } = viewportRef.current.getBoundingClientRect();
+        const viewportEl = viewportRef.current;
+        if (!viewportEl) return;
+        const { width: totalW, height: totalH } = viewportEl.getBoundingClientRect();
 
         // Effective sidebar width based on sidebar size mode
         let effectiveSidebar = 0;
@@ -425,19 +426,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
         // STACK MODE: evaluate based on thumbnail squish heuristic using footer *width/height* aspect
         if (!hideFooter && footerRef.current) {
-          const fr = footerRef.current.getBoundingClientRect();
-          if (fr.width > 0) {
-            const aspect = fr.width / Math.max(1, footerHeight || fr.height || 1);
-            stackEvalRef.current.lastFooterAspect = aspect;
-            setStackMode(prev => {
-              if (prev) {
-                if (aspect > FOOTER_ASPECT_EXIT) return false;
-                return prev;
-              } else {
-                if (aspect < FOOTER_ASPECT_ENTER) return true;
-                return prev;
-              }
-            });
+          const footerEl = footerRef.current;
+          if (footerEl && typeof footerEl.getBoundingClientRect === 'function') {
+            const fr = footerEl.getBoundingClientRect();
+            if (fr.width > 0) {
+              const aspect = fr.width / Math.max(1, footerHeight || fr.height || 1);
+              stackEvalRef.current.lastFooterAspect = aspect;
+              setStackMode(prev => {
+                if (prev) {
+                  if (aspect > FOOTER_ASPECT_EXIT) return false;
+                  return prev;
+                } else {
+                  if (aspect < FOOTER_ASPECT_ENTER) return true;
+                  return prev;
+                }
+              });
+            }
           }
         }
       });
@@ -531,6 +535,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     
     const enhanced = {
       ...currentItem,
+      guid: currentItem.guid
+        || currentItem.media_key
+        || currentItem.id
+        || currentItem.plex
+        || currentItem.media_url
+        || `fitness-${currentItem.id || ''}`,
       plex: currentItem.id || currentItem.plex,
       media_url: currentItem.media_url || currentItem.videoUrl,
       title: currentItem.title || currentItem.label,
@@ -562,8 +572,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     // 1. Media is not governed, OR
     // 2. Media is governed AND governance is green or yellow
     const canAutoplay = !mediaGoverned || (governance === 'green' || governance === 'yellow');
+    const stableGuid = String(
+      enhancedCurrentItem.guid
+        || enhancedCurrentItem.media_key
+        || enhancedCurrentItem.plex
+        || enhancedCurrentItem.id
+        || enhancedCurrentItem.media_url
+        || `fitness-${enhancedCurrentItem.id || enhancedCurrentItem.media_key || 'entry'}`
+    );
     
     return {
+      guid: stableGuid,
       plex: enhancedCurrentItem.plex,
       media_url: enhancedCurrentItem.media_url,
       media_type: 'video',
@@ -668,6 +687,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
   const stallReloadTimerRef = useRef(null);
+  const failoverTriggeredRef = useRef(false);
 
   const handleResilienceState = useCallback((nextState, media) => {
     if (!nextState) {
@@ -820,20 +840,39 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const stallRecoveryDeadlineMs = Math.max(0, resilienceState?.hardRecoverAfterStalledForMs ?? 8000);
 
   useEffect(() => {
-    const waitingForStart = hasActiveItem && !isPaused && (currentTime === undefined || currentTime <= 0.1);
-    if (waitingForStart) {
-      if (!stallReloadTimerRef.current) {
-        stallReloadTimerRef.current = setTimeout(() => {
-          setPlayerReloadToken((token) => token + 1);
-          stallReloadClear();
-        }, stallRecoveryDeadlineMs || 8000);
-      }
-    } else {
+    failoverTriggeredRef.current = false;
+  }, [playerKey]);
+
+  useEffect(() => {
+    const awaitingStart = hasActiveItem && !isPaused && ((currentTime ?? 0) <= 0.1);
+    const sameMediaStalled = Boolean(stallStatus?.isStalled);
+    const resilienceStatus = resilienceState?.status || null;
+    const resilienceInFailure = resilienceStatus === 'stalling' || resilienceStatus === 'recovering';
+    const shouldFallback = awaitingStart && sameMediaStalled && resilienceInFailure && !failoverTriggeredRef.current;
+
+    if (!shouldFallback) {
       stallReloadClear();
+      return;
+    }
+
+    if (!stallReloadTimerRef.current) {
+      stallReloadTimerRef.current = setTimeout(() => {
+        stallReloadTimerRef.current = null;
+        failoverTriggeredRef.current = true;
+        setPlayerReloadToken((token) => token + 1);
+      }, stallRecoveryDeadlineMs || 8000);
     }
 
     return stallReloadClear;
-  }, [hasActiveItem, isPaused, currentTime, playerKey, stallReloadClear, stallRecoveryDeadlineMs]);
+  }, [
+    hasActiveItem,
+    isPaused,
+    currentTime,
+    stallStatus?.isStalled,
+    resilienceState?.status,
+    stallReloadClear,
+    stallRecoveryDeadlineMs
+  ]);
 
   const handleVideoPointerDown = useCallback((event) => {
     if (!mediaSwapActive) return;
