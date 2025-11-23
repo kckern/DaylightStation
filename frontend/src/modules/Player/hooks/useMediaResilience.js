@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { formatTime } from '../lib/helpers.js';
+import { playbackLog } from '../lib/playbackLogger.js';
+import { getLogWaitKey } from '../lib/waitKeyLabel.js';
 import { usePlaybackHealth } from './usePlaybackHealth.js';
 
 const defaultReload = () => {
@@ -204,7 +206,8 @@ export function useMediaResilience({
   message,
   stalled: stalledOverride,
   mediaTypeHint,
-  playerFlavorHint
+  playerFlavorHint,
+  threadId = null
 }) {
   const contextConfig = useContext(MediaResilienceConfigContext);
   const [runtimeOverrides, setRuntimeOverrides] = useState(null);
@@ -243,6 +246,13 @@ export function useMediaResilience({
   const recoveryAttemptsRef = useRef(0);
   const mediaIdentity = meta?.media_key || meta?.key || meta?.plex || meta?.id || meta?.guid || meta?.media_url || null;
   const mediaIdentityRef = useRef(mediaIdentity);
+  const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
+  const logContextRef = useLatest({
+    waitKey: logWaitKey,
+    mediaIdentity,
+    metaTitle: meta?.title || meta?.name || meta?.grandparentTitle || null,
+    threadId
+  });
   const seekIntentMsRef = useRef(null);
   const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : 0);
   const progressTokenRef = useRef(0);
@@ -250,6 +260,17 @@ export function useMediaResilience({
   const mountWatchdogStartRef = useRef(null);
   const mountWatchdogReasonRef = useRef(null);
   const mountWatchdogAttemptsRef = useRef(0);
+  const statusTransitionRef = useRef(status);
+  const lastStallTokenRef = useRef(null);
+
+  const logResilienceEvent = useCallback((event, details = {}) => {
+    const context = logContextRef.current || {};
+    playbackLog('media-resilience', {
+      event,
+      ...context,
+      ...details
+    });
+  }, [logContextRef]);
 
   const resolvedMediaType = useMemo(() => {
     if (mediaTypeHint) return mediaTypeHint;
@@ -278,6 +299,15 @@ export function useMediaResilience({
     playerFlavor: resolvedPlayerFlavor,
     epsilonSeconds
   });
+
+  useEffect(() => {
+    progressTokenRef.current = 0;
+    lastProgressSecondsRef.current = null;
+    lastProgressTsRef.current = null;
+    lastStallTokenRef.current = null;
+    statusTransitionRef.current = STATUS.pending;
+    lastSecondsRef.current = 0;
+  }, [waitKey]);
 
   useEffect(() => {
     isPausedRef.current = isPaused;
@@ -345,6 +375,7 @@ export function useMediaResilience({
     lastProgressTsRef.current = null;
     lastProgressSecondsRef.current = null;
     recoveryAttemptsRef.current = 0;
+    lastStallTokenRef.current = null;
   }, [clearTimer]);
 
   useEffect(() => {
@@ -396,7 +427,20 @@ export function useMediaResilience({
 
     const resolvedIntentMs = resolveSeekIntentMs(overrideIntentMs);
 
+    logResilienceEvent('recovery-armed', {
+      reason,
+      ignorePaused,
+      force,
+      attempts: recoveryAttemptsRef.current,
+      seekToIntentMs: resolvedIntentMs
+    });
+
     const performReload = () => {
+      logResilienceEvent('recovery-triggered', {
+        reason,
+        force,
+        seekToIntentMs: resolvedIntentMs
+      });
       lastReloadAtRef.current = Date.now();
       recoveryAttemptsRef.current += 1;
       setStatus(STATUS.recovering);
@@ -409,7 +453,7 @@ export function useMediaResilience({
     } else {
       performReload();
     }
-  }, [meta, onReloadRef, recoveryConfig, waitKey, clearTimer, resolveSeekIntentMs, statusRef]);
+  }, [meta, onReloadRef, recoveryConfig, waitKey, clearTimer, resolveSeekIntentMs, statusRef, logResilienceEvent]);
 
   const startMountWatchdog = useCallback((reason = 'pending') => {
     if (!mountTimeoutMs || mountTimeoutMs <= 0) return;
@@ -472,6 +516,14 @@ export function useMediaResilience({
     }, hardRecoverAfterStalledForMs);
   }, [hardRecoverAfterStalledForMs, triggerRecovery]);
 
+  const enterStallingState = useCallback(() => {
+    if (lastStallTokenRef.current === playbackHealth.progressToken && statusRef.current === STATUS.stalling) {
+      return;
+    }
+    lastStallTokenRef.current = playbackHealth.progressToken;
+    setStatus((prev) => (prev === STATUS.recovering ? prev : STATUS.stalling));
+  }, [playbackHealth.progressToken, statusRef]);
+
   const scheduleStallCheck = useCallback((timeoutMs, { restart = true } = {}) => {
     if (!timeoutMs || timeoutMs <= 0) {
       clearTimer(stallTimerRef);
@@ -483,10 +535,10 @@ export function useMediaResilience({
     clearTimer(stallTimerRef);
     stallTimerRef.current = setTimeout(() => {
       if (isPausedRef.current) return;
-      setStatus((prev) => (prev === STATUS.recovering ? prev : STATUS.stalling));
+      enterStallingState();
       scheduleHardRecovery();
     }, timeoutMs);
-  }, [clearTimer, scheduleHardRecovery]);
+  }, [clearTimer, scheduleHardRecovery, enterStallingState]);
 
   useEffect(() => {
     if (status === STATUS.stalling) {
@@ -497,13 +549,43 @@ export function useMediaResilience({
   const normalizedSeconds = Number.isFinite(seconds) ? seconds : null;
 
   useEffect(() => {
+    const previous = statusTransitionRef.current;
+    if (previous === status) {
+      return;
+    }
+
+    if (status === STATUS.stalling && previous !== STATUS.recovering) {
+      logResilienceEvent('stall-detected', {
+        seconds: normalizedSeconds,
+        lastProgressSeconds: lastProgressSecondsRef.current,
+        progressToken: playbackHealth.progressToken
+      });
+    } else if (status === STATUS.playing && previous === STATUS.stalling) {
+      logResilienceEvent('stall-recovered', {
+        seconds: normalizedSeconds,
+        lastProgressSeconds: lastProgressSecondsRef.current,
+        progressToken: playbackHealth.progressToken
+      });
+    } else if (status === STATUS.recovering && previous !== STATUS.recovering) {
+      logResilienceEvent('stall-recovering', {
+        seconds: normalizedSeconds,
+        attempts: recoveryAttemptsRef.current,
+        reason: mountWatchdogReasonRef.current || 'auto'
+      });
+    }
+
+    statusTransitionRef.current = status;
+  }, [status, logResilienceEvent, normalizedSeconds, playbackHealth.progressToken]);
+
+  useEffect(() => {
     const detectionDelay = stallDetectionThresholdMs;
 
     if (typeof stalledOverride === 'boolean') {
       if (stalledOverride) {
-        setStatus(STATUS.stalling);
+        enterStallingState();
         scheduleHardRecovery();
       } else if (status === STATUS.stalling) {
+        lastStallTokenRef.current = null;
         setStatus(STATUS.playing);
       }
       return;
@@ -523,6 +605,7 @@ export function useMediaResilience({
       lastProgressTsRef.current = playbackHealth.lastProgressAt ?? Date.now();
       recoveryAttemptsRef.current = 0;
       clearTimer(hardRecoveryTimerRef);
+      lastStallTokenRef.current = null;
       setStatus(STATUS.playing);
       scheduleStallCheck(detectionDelay, { restart: true });
       return;
@@ -544,7 +627,7 @@ export function useMediaResilience({
     }
 
     if (playbackHealth.isWaiting || playbackHealth.isStalledEvent) {
-      setStatus(STATUS.stalling);
+      enterStallingState();
       scheduleHardRecovery();
       return;
     }
@@ -555,7 +638,7 @@ export function useMediaResilience({
     }
 
     scheduleStallCheck(detectionDelay, { restart: false });
-  }, [clearTimer, isPaused, normalizedSeconds, playbackHealth, scheduleHardRecovery, scheduleStallCheck, stalledOverride, stallDetectionThresholdMs, status]);
+  }, [clearTimer, isPaused, normalizedSeconds, playbackHealth, scheduleHardRecovery, scheduleStallCheck, stalledOverride, stallDetectionThresholdMs, status, enterStallingState]);
 
   useEffect(() => () => {
     clearTimer(stallTimerRef);
@@ -636,6 +719,14 @@ export function useMediaResilience({
   const overlayBaseDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
   const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayBaseDeadlineMs, triggerRecovery);
   const overlayHardResetDeadlineMs = overlayBaseDeadlineMs + 2000;
+  const overlayRevealDelayMs = Number.isFinite(overlayConfig.revealDelayMs)
+    ? Math.max(0, overlayConfig.revealDelayMs)
+    : 0;
+  const playbackHealthy = Boolean(
+    playbackHealth?.elementSignals?.playing && !playbackHealth?.isWaiting && !playbackHealth?.isStalledEvent
+  );
+  const overlayLoggingActive = overlayTimerActive && (!playbackHealthy || explicitShow);
+  const overlayLogLabel = logWaitKey || waitKey || meta?.title || meta?.media_url || 'player-overlay';
 
   const forcePlayerRemount = useCallback((reason = 'overlay-hard-reset', options = {}) => {
     const {
@@ -643,10 +734,17 @@ export function useMediaResilience({
       forceDocumentReload = false
     } = options || {};
     const normalizedIntentMs = resolveSeekIntentMs(explicitSeekMs);
+    const logPayload = {
+      reason,
+      seekToIntentMs: normalizedIntentMs,
+      forceDocumentReload
+    };
     if (forceDocumentReload || !onReloadRef.current) {
+      logResilienceEvent('hard-reset-document-reload', logPayload);
       defaultReload();
       return;
     }
+    logResilienceEvent('hard-reset-force-remount', logPayload);
     lastReloadAtRef.current = Date.now();
     setStatus(STATUS.recovering);
     onReloadRef.current({
@@ -657,7 +755,7 @@ export function useMediaResilience({
       ...options,
       seekToIntentMs: normalizedIntentMs
     });
-  }, [meta, onReloadRef, resolveSeekIntentMs, waitKey, setStatus]);
+  }, [meta, onReloadRef, resolveSeekIntentMs, waitKey, setStatus, logResilienceEvent]);
 
   const requestOverlayHardReset = useCallback((input, overrides = {}) => {
     const payload = typeof input === 'string'
@@ -679,6 +777,12 @@ export function useMediaResilience({
       return null;
     })();
 
+    logResilienceEvent('overlay-hard-reset-request', {
+      reason,
+      forceDocumentReload,
+      seekToIntentMs: normalizedSeekMs
+    });
+
     forcePlayerRemount(reason, {
       ...merged,
       seekToIntentMs: normalizedSeekMs,
@@ -690,7 +794,7 @@ export function useMediaResilience({
       force,
       seekToIntentMs: normalizedSeekMs
     });
-  }, [forcePlayerRemount, triggerRecovery]);
+  }, [forcePlayerRemount, triggerRecovery, logResilienceEvent]);
 
   const togglePauseOverlay = useCallback(() => {
     setShowPauseOverlay((prev) => {
@@ -706,6 +810,7 @@ export function useMediaResilience({
     if (status !== STATUS.playing) {
       setStatus(STATUS.playing);
     }
+    lastStallTokenRef.current = null;
     recoveryAttemptsRef.current = 0;
   }, [clearTimer, status]);
 
@@ -818,6 +923,10 @@ export function useMediaResilience({
     explicitShow,
     isSeeking,
     overlayTimerActive,
+    overlayLoggingActive,
+    overlayLogLabel,
+    overlayRevealDelayMs,
+    waitKey,
     onRequestHardReset: requestOverlayHardReset,
     hardResetDeadlineMs: overlayHardResetDeadlineMs,
     countUpSeconds: overlayElapsedSeconds,

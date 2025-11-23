@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { playbackLog } from '../lib/playbackLogger.js';
+import { getLogWaitKey } from '../lib/waitKeyLabel.js';
 
 const DEFAULT_SIGNALS = Object.freeze({
   waiting: false,
@@ -96,6 +98,32 @@ export function usePlaybackHealth({
   );
 
   const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : null);
+  const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
+  const logContextRef = useRef({
+    waitKey: logWaitKey,
+    mediaType,
+    playerFlavor
+  });
+
+  useEffect(() => {
+    logContextRef.current = {
+      waitKey: logWaitKey,
+      mediaType,
+      playerFlavor
+    };
+  }, [logWaitKey, mediaType, playerFlavor]);
+
+  const logHealthEvent = useCallback((event, details = {}) => {
+    const ctx = logContextRef.current;
+    const currentSeconds = Number.isFinite(lastSecondsRef.current) ? lastSecondsRef.current : null;
+
+    playbackLog('playback-health', {
+      event,
+      ...ctx,
+      seconds: currentSeconds,
+      ...details
+    });
+  }, []);
 
   const recordProgress = useCallback((source, payload = {}) => {
     setProgressSignal((prev) => ({
@@ -144,19 +172,32 @@ export function usePlaybackHealth({
       }
     };
 
+    const sampleCurrentTime = () => {
+      if (!mediaEl || !Number.isFinite(mediaEl.currentTime)) {
+        return null;
+      }
+      return Number(mediaEl.currentTime);
+    };
+
     const handleWaiting = () => safeUpdate({ waiting: true, buffering: true });
     const handlePlaying = () => {
       safeUpdate({ playing: true, waiting: false, stalled: false, buffering: false, paused: false });
       recordProgress('event', { details: 'playing' });
+      logHealthEvent('media-playing', { currentTime: sampleCurrentTime() });
     };
     const handleStalled = () => safeUpdate({ stalled: true, waiting: false });
     const handlePause = () => safeUpdate({ paused: true, playing: false });
     const handleEnded = () => safeUpdate({ ended: true, playing: false, waiting: false });
 
+    const handleStalledWithLog = () => {
+      handleStalled();
+      logHealthEvent('media-stalled', { currentTime: sampleCurrentTime() });
+    };
+
     mediaEl.addEventListener('waiting', handleWaiting);
     mediaEl.addEventListener('playing', handlePlaying);
     mediaEl.addEventListener('pause', handlePause);
-    mediaEl.addEventListener('stalled', handleStalled);
+    mediaEl.addEventListener('stalled', handleStalledWithLog);
     mediaEl.addEventListener('ended', handleEnded);
 
     const haveFutureData = typeof HTMLMediaElement !== 'undefined'
@@ -178,10 +219,10 @@ export function usePlaybackHealth({
       mediaEl.removeEventListener('waiting', handleWaiting);
       mediaEl.removeEventListener('playing', handlePlaying);
       mediaEl.removeEventListener('pause', handlePause);
-      mediaEl.removeEventListener('stalled', handleStalled);
+      mediaEl.removeEventListener('stalled', handleStalledWithLog);
       mediaEl.removeEventListener('ended', handleEnded);
     };
-  }, [getMediaEl, waitKey, recordProgress, updateElementSignals]);
+  }, [getMediaEl, waitKey, recordProgress, updateElementSignals, logHealthEvent]);
 
   useEffect(() => {
     if (mediaType !== 'video') {
