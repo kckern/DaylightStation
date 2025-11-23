@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
+import { playbackLog } from '../lib/playbackLogger.js';
 
 /**
  * Loading / resilience overlay shown while media is buffering, stalling, or waiting to start.
@@ -13,14 +14,17 @@ export function PlayerOverlayLoading({
   stalled = false,
   waitingToPlay = false,
   togglePauseOverlay,
-  countUpDisplay,
   countUpSeconds = null,
   playerPositionDisplay,
   intentPositionDisplay,
   overlayTimerActive = false,
   hardResetDeadlineMs = 0,
   onRequestHardReset,
-  getMediaEl
+  getMediaEl,
+  overlayLoggingActive = true,
+  overlayLogLabel = null,
+  waitKey,
+  overlayRevealDelayMs = 0
 }) {
   if (!shouldRender || !isVisible || pauseOverlayActive) {
     return null;
@@ -30,6 +34,7 @@ export function PlayerOverlayLoading({
   const localTimerRef = useRef(null);
   const hardResetTriggeredRef = useRef(false);
   const logIntervalRef = useRef(null);
+  const visibleSinceRef = useRef(null);
   const [mediaElementDetails, setMediaElementDetails] = useState({
     hasElement: false,
     currentTime: null,
@@ -49,6 +54,16 @@ export function PlayerOverlayLoading({
   useEffect(() => () => {
     clearLocalTimer();
   }, [clearLocalTimer]);
+
+  useEffect(() => {
+    if (shouldRender && isVisible) {
+      if (!visibleSinceRef.current) {
+        visibleSinceRef.current = Date.now();
+      }
+    } else {
+      visibleSinceRef.current = null;
+    }
+  }, [isVisible, shouldRender]);
 
   const fallbackTimerActive = isVisible;
   const timerActive = overlayTimerActive || fallbackTimerActive;
@@ -151,11 +166,7 @@ export function PlayerOverlayLoading({
     };
   }, [getMediaEl, isVisible]);
 
-  const derivedTimerSeconds = Number.isFinite(countUpSeconds) ? countUpSeconds : localTimerSeconds;
-  const fallbackDisplay = derivedTimerSeconds > 0 ? String(derivedTimerSeconds).padStart(2, '0') : null;
-  const elapsedDisplay = typeof countUpDisplay === 'string' ? countUpDisplay : fallbackDisplay;
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
-  const showTimer = isVisible && (Number.isFinite(derivedTimerSeconds) ? derivedTimerSeconds >= 0 : false);
 
   const blockFullscreenToggle = useCallback((event) => {
     event?.preventDefault?.();
@@ -187,15 +198,25 @@ export function PlayerOverlayLoading({
     ? `el:t=${mediaElementDetails.currentTime ?? 'n/a'} r=${mediaElementDetails.readyState ?? 'n/a'} n=${mediaElementDetails.networkState ?? 'n/a'} p=${mediaElementDetails.paused ?? 'n/a'}`
     : 'el:none';
 
+  const logLabel = overlayLogLabel || waitKey || '';
   const logOverlaySummary = useCallback(() => {
-    try {
-      console.log('[PlayerOverlayLoading]', `${timerSummary} | ${seekSummary} | ${mediaSummary}`);
-    } catch (_) {
-      /* no-op */
-    }
-  }, [timerSummary, seekSummary, mediaSummary]);
+    const now = Date.now();
+    const timestampLabel = new Date(now).toISOString();
+    const visibleDurationMs = visibleSinceRef.current ? now - visibleSinceRef.current : null;
+    const revealLabel = Number.isFinite(overlayRevealDelayMs) ? `${overlayRevealDelayMs}ms` : 'n/a';
+    const visibilitySummary = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'}/${revealLabel}`;
+    const summary = `${visibilitySummary} | ${timerSummary} | ${seekSummary} | ${mediaSummary}`;
+    playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary);
+  }, [overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, logLabel]);
 
   useEffect(() => {
+    if (!overlayLoggingActive) {
+      if (logIntervalRef.current) {
+        clearInterval(logIntervalRef.current);
+        logIntervalRef.current = null;
+      }
+      return () => {};
+    }
     logOverlaySummary();
     logIntervalRef.current = setInterval(logOverlaySummary, 1000);
     return () => {
@@ -204,7 +225,7 @@ export function PlayerOverlayLoading({
         logIntervalRef.current = null;
       }
     };
-  }, [logOverlaySummary]);
+  }, [logOverlaySummary, overlayLoggingActive]);
 
   return (
     <div
@@ -235,9 +256,6 @@ export function PlayerOverlayLoading({
               <div className="loading-position">
                 {positionDisplay !== '0:00' ? positionDisplay : ''}
               </div>
-              <div className="loading-timer">
-                {showTimer ? elapsedDisplay : ''}
-              </div>
             </div>
           </div>
         </div>
@@ -257,14 +275,17 @@ PlayerOverlayLoading.propTypes = {
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
   togglePauseOverlay: PropTypes.func,
-  countUpDisplay: PropTypes.string,
   countUpSeconds: PropTypes.number,
   playerPositionDisplay: PropTypes.string,
   intentPositionDisplay: PropTypes.string,
   overlayTimerActive: PropTypes.bool,
   hardResetDeadlineMs: PropTypes.number,
   onRequestHardReset: PropTypes.func,
-  getMediaEl: PropTypes.func
+  getMediaEl: PropTypes.func,
+  overlayLoggingActive: PropTypes.bool,
+  overlayLogLabel: PropTypes.string,
+  waitKey: PropTypes.any,
+  overlayRevealDelayMs: PropTypes.number
 };
 
 export default PlayerOverlayLoading;

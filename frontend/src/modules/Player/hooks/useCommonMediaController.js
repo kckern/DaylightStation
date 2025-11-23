@@ -1,8 +1,10 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { getProgressPercent } from '../lib/helpers.js';
+import { getProgressPercent, guid } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useMediaResilience, mergeMediaResilienceConfig } from './useMediaResilience.js';
+import { playbackLog } from '../lib/playbackLogger.js';
+import { getLogWaitKey } from '../lib/waitKeyLabel.js';
 
 const DEBUG_MEDIA = false;
 
@@ -78,6 +80,11 @@ export function useCommonMediaController({
   if (!useCommonMediaController.__lastSeekByKey) useCommonMediaController.__lastSeekByKey = Object.create(null);
 
   const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.plex || meta.media_url;
+  const threadIdRef = useRef(null);
+  if (!threadIdRef.current) {
+    threadIdRef.current = guid();
+  }
+  const threadId = threadIdRef.current;
   const containerRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -112,7 +119,10 @@ export function useCommonMediaController({
   }, [isAudio]);
 
   const isDash = meta.media_type === 'dash_video';
-  const baseInstanceKey = String(instanceKey ?? media_key ?? meta.media_url ?? meta.id ?? 'media');
+  const baseInstanceKey = useMemo(() => {
+    const baseKey = String(instanceKey ?? media_key ?? meta.media_url ?? meta.id ?? 'media');
+    return `${baseKey}:${threadId}`;
+  }, [instanceKey, media_key, meta.media_url, meta.id, threadId]);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [internalSeekIntentSeconds, setInternalSeekIntentSeconds] = useState(null);
   useEffect(() => {
@@ -120,20 +130,37 @@ export function useCommonMediaController({
     setInternalSeekIntentSeconds(null);
   }, [baseInstanceKey]);
   const resolvedInstanceKey = `${baseInstanceKey}:mc-${reloadNonce}`;
+  const formatWaitKeyForLogs = useCallback((value) => getLogWaitKey(value || resolvedInstanceKey), [resolvedInstanceKey]);
+
+  const logControllerEvent = useCallback((event, details = {}, overrideWaitKey = null) => {
+    const waitKeyLabel = formatWaitKeyForLogs(overrideWaitKey || resolvedInstanceKey);
+    playbackLog('controller', {
+      event,
+      threadId,
+      waitKey: waitKeyLabel,
+      media_key,
+      ...details
+    });
+  }, [formatWaitKeyForLogs, media_key, resolvedInstanceKey, threadId]);
 
   const hardReset = useCallback(({ seekToSeconds = null } = {}) => {
     if (Number.isFinite(seekToSeconds)) {
       setInternalSeekIntentSeconds(Math.max(0, seekToSeconds));
     }
-    setReloadNonce((nonce) => nonce + 1);
-  }, []);
+    setReloadNonce((nonce) => {
+      const next = nonce + 1;
+      logControllerEvent('hard-reset', { seekToSeconds }, `${baseInstanceKey}:mc-${next}`);
+      return next;
+    });
+  }, [baseInstanceKey, logControllerEvent, setReloadNonce]);
 
   const handleResilienceReload = useCallback((options = {}) => {
     const seekSeconds = Number.isFinite(options.seekToIntentMs)
       ? options.seekToIntentMs / 1000
       : null;
     hardReset({ seekToSeconds: seekSeconds });
-  }, [hardReset]);
+    logControllerEvent('resilience-reload', { seekSeconds });
+  }, [hardReset, logControllerEvent]);
 
   useEffect(() => {
     try {
@@ -147,10 +174,11 @@ export function useCommonMediaController({
     } catch (_) {
       // no-op logging guard
     }
+    logControllerEvent('mount', { media_key });
     lastSeekIntentRef.current = null;
     lastPlaybackPosRef.current = 0;
     isInitialLoadRef.current = true;
-  }, [media_key, resolvedInstanceKey]);
+  }, [logControllerEvent, media_key]);
 
   useEffect(() => {
     if (!Number.isFinite(seekToIntentSeconds)) return;
@@ -425,7 +453,8 @@ export function useCommonMediaController({
     isDash,
     shader,
     queuePosition,
-    reloadNonce
+    reloadNonce,
+    threadId
   };
 
   const {
@@ -453,7 +482,8 @@ export function useCommonMediaController({
     message: resilienceSettings.message,
     stalled: stalledOverride,
     mediaTypeHint: isVideo ? 'video' : (isAudio ? 'audio' : 'unknown'),
-    playerFlavorHint: isVideo ? (isDash ? 'shaka' : 'html5-video') : 'html5-audio'
+    playerFlavorHint: isVideo ? (isDash ? 'shaka' : 'html5-video') : 'html5-audio',
+    threadId
   });
 
   const overlayProps = resilienceDisabled ? null : computedOverlayProps;
