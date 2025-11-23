@@ -8,7 +8,7 @@ const FitnessNavbar = ({ collections = [], activeCollection, onContentSelect }) 
   const getCollectionIcon = (icon) => {
     if (!icon) return null;
     const iconUrl = DaylightImagePath(`icons/${icon}.svg`);
-    console.log('Generated icon URL:', iconUrl);
+    //console.log('Generated icon URL:', iconUrl);
     return iconUrl;
   };
 
