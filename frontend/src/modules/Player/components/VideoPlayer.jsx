@@ -3,8 +3,6 @@ import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
 import { useCommonMediaController, shouldRestartFromBeginning } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
-import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
-import { PlayerOverlayPaused } from './PlayerOverlayPaused.jsx';
 
 const deriveApproxDurationSeconds = (media = {}) => {
   const numericFields = [
@@ -59,7 +57,7 @@ export function VideoPlayer({
   onMediaRef, 
   keyboardOverrides,
   onController,
-  resilience
+  resilienceBridge
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -90,8 +88,11 @@ export function VideoPlayer({
     seconds,
     duration,
     handleProgressClick,
-    overlayProps,
-    mediaInstanceKey
+    mediaInstanceKey,
+    getMediaEl,
+    isPaused,
+    isSeeking,
+    hardReset
   } = useCommonMediaController({
     start: initialStartSeconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -115,9 +116,9 @@ export function VideoPlayer({
     onController,
     instanceKey: videoKey,
     fetchVideoInfo,
-    resilience
+    seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
+    resilienceBridge
   });
-
   const getCurrentMediaElement = useCallback(() => {
     const host = containerRef.current;
     if (!host) return null;
@@ -203,12 +204,6 @@ export function VideoPlayer({
         {heading} {`(${playbackRate}×)`}
       </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {overlayProps && (
-        <>
-          <PlayerOverlayLoading {...overlayProps} />
-          <PlayerOverlayPaused {...overlayProps} />
-        </>
-      )}
       {isDash ? (
         <div ref={containerRef} className="video-element-host">
           <ShakaVideoStreamer
@@ -249,9 +244,10 @@ VideoPlayer.propTypes = {
   onMediaRef: PropTypes.func,
   keyboardOverrides: PropTypes.object,
   onController: PropTypes.func,
-  resilience: PropTypes.shape({
-    config: PropTypes.object,
-    onStateChange: PropTypes.func,
-    controllerRef: PropTypes.shape({ current: PropTypes.any })
+  resilienceBridge: PropTypes.shape({
+    onPlaybackMetrics: PropTypes.func,
+    onRegisterMediaAccess: PropTypes.func,
+    seekToIntentSeconds: PropTypes.number,
+    onSeekRequestConsumed: PropTypes.func
   })
 };
