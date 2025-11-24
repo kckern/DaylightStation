@@ -262,6 +262,8 @@ export function useMediaResilience({
   const overlayVisibilityRef = useRef(null);
   const overlayHoldLogRef = useRef(false);
   const playbackHeartbeatRef = useRef(null);
+  const recoveryGuardTokenRef = useRef(null);
+  const recoveryInProgressRef = useRef(false);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
@@ -423,6 +425,17 @@ export function useMediaResilience({
   }, [clearTimer]);
 
   useEffect(() => {
+    if (recoveryInProgressRef.current) {
+      recoveryInProgressRef.current = false;
+      resetDetectionState();
+      // If we are recovering, we want to keep the overlay visible and not reset the grace period
+      // We also want to ensure the status reflects the recovery if it was pending
+      if (status === STATUS.pending) {
+        setStatus(STATUS.recovering);
+      }
+      return;
+    }
+
     resetDetectionState();
     setShowDebug(false);
     setStatus(STATUS.pending);
@@ -530,6 +543,14 @@ export function useMediaResilience({
       lastReloadAtRef.current = Date.now();
       recoveryAttemptsRef.current += 1;
       setStatus(STATUS.recovering);
+      recoveryGuardTokenRef.current = progressTokenRef.current;
+      lastProgressSecondsRef.current = null;
+      recoveryInProgressRef.current = true;
+
+      if (Number.isFinite(resolvedIntentMs)) {
+        seekIntentMsRef.current = resolvedIntentMs;
+      }
+
       onReloadRef.current?.({ reason, meta, waitKey, seekToIntentMs: resolvedIntentMs });
     };
 
@@ -687,12 +708,25 @@ export function useMediaResilience({
     if (isPaused) {
       clearTimer(stallTimerRef);
       clearTimer(hardRecoveryTimerRef);
-      setStatus((prev) => (prev === STATUS.recovering ? prev : STATUS.paused));
+      setStatus((prev) => {
+        // If we are in a resilience state (pending, recovering, stalling),
+        // treat the pause signal as a symptom of the stall (e.g. autoplay rejection)
+        // rather than a user intent to pause, so we maintain the resilience state.
+        if (prev === STATUS.pending || prev === STATUS.recovering || prev === STATUS.stalling) {
+          return prev;
+        }
+        return STATUS.paused;
+      });
       return;
     }
 
     const progressTokenChanged = playbackHealth.progressToken !== progressTokenRef.current;
     if (progressTokenChanged) {
+      const guardToken = recoveryGuardTokenRef.current;
+      if (guardToken != null && playbackHealth.progressToken <= guardToken) {
+        return;
+      }
+
       progressTokenRef.current = playbackHealth.progressToken;
 
       const progressSource = playbackHealth.lastProgressSource;
@@ -703,11 +737,15 @@ export function useMediaResilience({
       const eventProgress = progressSource === 'event'
         && playbackHealth.progressDetails === 'playing'
         && exceedsEpsilon;
+      
+      // Be strict about what constitutes meaningful progress to avoid false positives
+      // during recovery or initial load.
       const hasMeaningfulProgress = eventProgress
-        || ['clock', 'frame'].includes(progressSource)
+        || (['clock', 'frame'].includes(progressSource) && (exceedsEpsilon || playbackHealth.elementSignals?.playing))
         || exceedsEpsilon;
 
       if (hasMeaningfulProgress) {
+        recoveryGuardTokenRef.current = null;
         lastProgressSecondsRef.current = progressSecondsValue ?? lastProgressSecondsRef.current;
         lastProgressTsRef.current = playbackHealth.lastProgressAt ?? Date.now();
         recoveryAttemptsRef.current = 0;
@@ -801,9 +839,16 @@ export function useMediaResilience({
     : (status === STATUS.stalling || status === STATUS.recovering || playbackHealth.isStalledEvent);
   const stallOverlayActive = computedStalled;
 
-  const playbackHasProgress = Number.isFinite(lastProgressSecondsRef.current)
-    ? lastProgressSecondsRef.current > epsilonSeconds
-    : Number.isFinite(seconds) && seconds > epsilonSeconds;
+  const telemetryHasProgress = playbackHealth.progressToken > 0
+    && Number.isFinite(playbackHealth?.lastProgressSeconds);
+  const observedProgressSeconds = Number.isFinite(lastProgressSecondsRef.current)
+    ? lastProgressSecondsRef.current
+    : (telemetryHasProgress
+      ? playbackHealth.lastProgressSeconds
+      : null);
+  const playbackHasProgress = status === STATUS.recovering
+    ? false
+    : (Number.isFinite(observedProgressSeconds) && observedProgressSeconds > epsilonSeconds);
   const implicitPauseState = waitingToPlay
     || computedStalled
     || playbackHealth.isWaiting
@@ -1033,6 +1078,11 @@ export function useMediaResilience({
     logResilienceEvent('hard-reset-force-remount', logPayload);
     lastReloadAtRef.current = Date.now();
     setStatus(STATUS.recovering);
+
+    if (Number.isFinite(normalizedIntentMs)) {
+      seekIntentMsRef.current = normalizedIntentMs;
+    }
+
     onReloadRef.current({
       reason,
       meta,
