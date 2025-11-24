@@ -113,6 +113,13 @@ export function usePlaybackHealth({
     };
   }, [logWaitKey, mediaType, playerFlavor]);
 
+  useEffect(() => {
+    setElementSignals(DEFAULT_SIGNALS);
+    setFrameInfo(NO_FRAME_INFO);
+    setProgressSignal(DEFAULT_PROGRESS_STATE);
+    lastSecondsRef.current = Number.isFinite(seconds) ? seconds : null;
+  }, [waitKey]);
+
   const logHealthEvent = useCallback((event, details = {}) => {
     const ctx = logContextRef.current;
     const currentSeconds = Number.isFinite(lastSecondsRef.current) ? lastSecondsRef.current : null;

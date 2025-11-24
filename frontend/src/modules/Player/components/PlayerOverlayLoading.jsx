@@ -172,13 +172,14 @@ export function PlayerOverlayLoading({
   }, [getMediaEl, isVisible]);
 
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
+  const hasValidPosition = positionDisplay && positionDisplay !== '0:00';
   const statusLabel = (() => {
     if (status === 'seeking') return 'Seeking…';
     if (stalled) return 'Recovering…';
     if (waitingToPlay) return 'Loading…';
     if (status === 'pending') return 'Loading…';
     if (status === 'recovering') return 'Recovering…';
-    return '';
+    return status;
   })();
 
   const blockFullscreenToggle = useCallback((event) => {
@@ -293,6 +294,9 @@ export function PlayerOverlayLoading({
       onMouseDownCapture={blockFullscreenToggle}
     >
       <div className="loading-overlay__inner">
+        <div className="loading-debug-strip">
+          {statusLabel} | {timerSummary} | {seekSummary} | {mediaSummary}
+        </div>
         <div className="loading-timing">
           <div
             className="loading-spinner"
@@ -307,13 +311,10 @@ export function PlayerOverlayLoading({
             />
             <div className="loading-metrics">
               <div className="loading-position">
-                {positionDisplay !== '0:00' ? positionDisplay : ''}
+                {hasValidPosition ? positionDisplay : ''}
               </div>
             </div>
           </div>
-        </div>
-        <div className="loading-debug-strip">
-          {statusLabel} | {timerSummary} | {seekSummary} | {mediaSummary}
         </div>
       </div>
     </div>
