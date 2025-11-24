@@ -13,6 +13,7 @@ export function PlayerOverlayLoading({
   seconds = 0,
   stalled = false,
   waitingToPlay = false,
+  status = 'pending',
   togglePauseOverlay,
   countUpSeconds = null,
   playerPositionDisplay,
@@ -26,9 +27,7 @@ export function PlayerOverlayLoading({
   waitKey,
   overlayRevealDelayMs = 0
 }) {
-  if (!shouldRender || !isVisible || pauseOverlayActive) {
-    return null;
-  }
+  const overlayDisplayActive = shouldRender && isVisible && !pauseOverlayActive;
 
   const [localTimerSeconds, setLocalTimerSeconds] = useState(0);
   const localTimerRef = useRef(null);
@@ -41,6 +40,12 @@ export function PlayerOverlayLoading({
     readyState: null,
     networkState: null,
     paused: null
+  });
+  const overlayVisibilityRef = useRef({
+    overlayDisplayActive,
+    shouldRender,
+    isVisible,
+    pauseOverlayActive
   });
 
   const clearLocalTimer = useCallback(() => {
@@ -167,6 +172,14 @@ export function PlayerOverlayLoading({
   }, [getMediaEl, isVisible]);
 
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
+  const statusLabel = (() => {
+    if (status === 'seeking') return 'Seeking…';
+    if (stalled) return 'Recovering…';
+    if (waitingToPlay) return 'Loading…';
+    if (status === 'pending') return 'Loading…';
+    if (status === 'recovering') return 'Recovering…';
+    return '';
+  })();
 
   const blockFullscreenToggle = useCallback((event) => {
     event?.preventDefault?.();
@@ -227,6 +240,46 @@ export function PlayerOverlayLoading({
     };
   }, [logOverlaySummary, overlayLoggingActive]);
 
+  useEffect(() => {
+    const prev = overlayVisibilityRef.current;
+    if (
+      prev.overlayDisplayActive === overlayDisplayActive
+      && prev.shouldRender === shouldRender
+      && prev.isVisible === isVisible
+      && prev.pauseOverlayActive === pauseOverlayActive
+    ) {
+      return;
+    }
+    overlayVisibilityRef.current = {
+      overlayDisplayActive,
+      shouldRender,
+      isVisible,
+      pauseOverlayActive
+    };
+    const reason = overlayDisplayActive
+      ? 'visible'
+      : (!shouldRender
+        ? 'should-render=false'
+        : (!isVisible
+          ? 'is-visible=false'
+          : 'pause-overlay-active'));
+    playbackLog('overlay-visibility', {
+      label: overlayLogLabel || waitKey || 'loading-overlay',
+      waitKey,
+      visible: overlayDisplayActive,
+      reason,
+      shouldRender,
+      isVisible,
+      pauseOverlayActive,
+      overlayTimerActive,
+      overlayRevealDelayMs
+    });
+  }, [overlayDisplayActive, shouldRender, isVisible, pauseOverlayActive, overlayLogLabel, waitKey, overlayTimerActive, overlayRevealDelayMs]);
+
+  if (!overlayDisplayActive) {
+    return null;
+  }
+
   return (
     <div
       className="loading-overlay loading"
@@ -260,7 +313,7 @@ export function PlayerOverlayLoading({
           </div>
         </div>
         <div className="loading-debug-strip">
-          {timerSummary} | {seekSummary} | {mediaSummary}
+          {statusLabel} | {timerSummary} | {seekSummary} | {mediaSummary}
         </div>
       </div>
     </div>
@@ -275,6 +328,7 @@ PlayerOverlayLoading.propTypes = {
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
   togglePauseOverlay: PropTypes.func,
+  status: PropTypes.string,
   countUpSeconds: PropTypes.number,
   playerPositionDisplay: PropTypes.string,
   intentPositionDisplay: PropTypes.string,
