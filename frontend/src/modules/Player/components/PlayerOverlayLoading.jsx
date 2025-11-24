@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
@@ -15,50 +15,26 @@ export function PlayerOverlayLoading({
   waitingToPlay = false,
   status = 'pending',
   togglePauseOverlay,
-  countUpSeconds = null,
   playerPositionDisplay,
   intentPositionDisplay,
-  overlayTimerActive = false,
-  hardResetDeadlineMs = 0,
+  countdownSeconds = null,
   onRequestHardReset,
-  getMediaEl,
   overlayLoggingActive = true,
   overlayLogLabel = null,
   waitKey,
-  overlayRevealDelayMs = 0
+  overlayRevealDelayMs = 0,
+  mediaDetails: mediaDetailsProp = null
 }) {
   const overlayDisplayActive = shouldRender && isVisible && !pauseOverlayActive;
 
-  const [localTimerSeconds, setLocalTimerSeconds] = useState(0);
-  const localTimerRef = useRef(null);
-  const hardResetTriggeredRef = useRef(false);
   const logIntervalRef = useRef(null);
   const visibleSinceRef = useRef(null);
-  const [mediaElementDetails, setMediaElementDetails] = useState({
-    hasElement: false,
-    currentTime: null,
-    readyState: null,
-    networkState: null,
-    paused: null
-  });
   const overlayVisibilityRef = useRef({
     overlayDisplayActive,
     shouldRender,
     isVisible,
     pauseOverlayActive
   });
-
-  const clearLocalTimer = useCallback(() => {
-    if (localTimerRef.current) {
-      clearInterval(localTimerRef.current);
-      localTimerRef.current = null;
-    }
-    setLocalTimerSeconds(0);
-  }, []);
-
-  useEffect(() => () => {
-    clearLocalTimer();
-  }, [clearLocalTimer]);
 
   useEffect(() => {
     if (shouldRender && isVisible) {
@@ -70,10 +46,7 @@ export function PlayerOverlayLoading({
     }
   }, [isVisible, shouldRender]);
 
-  const fallbackTimerActive = isVisible;
-  const timerActive = overlayTimerActive || fallbackTimerActive;
-
-  const emitHardReset = useCallback((reasonOrPayload, extra = {}) => {
+  const emitManualReset = useCallback((reasonOrPayload, extra = {}) => {
     const basePayload = typeof reasonOrPayload === 'string'
       ? { reason: reasonOrPayload }
       : (reasonOrPayload && typeof reasonOrPayload === 'object' ? reasonOrPayload : {});
@@ -97,79 +70,24 @@ export function PlayerOverlayLoading({
     }
   }, [onRequestHardReset, seconds, stalled, waitingToPlay]);
 
-  useEffect(() => {
-    if (!timerActive) {
-      clearLocalTimer();
-      return;
+  const normalizedMediaDetails = useMemo(() => {
+    if (mediaDetailsProp && typeof mediaDetailsProp === 'object') {
+      return {
+        hasElement: Boolean(mediaDetailsProp.hasElement),
+        currentTime: mediaDetailsProp.currentTime ?? null,
+        readyState: mediaDetailsProp.readyState ?? null,
+        networkState: mediaDetailsProp.networkState ?? null,
+        paused: mediaDetailsProp.paused ?? null
+      };
     }
-    if (localTimerRef.current) {
-      return;
-    }
-    localTimerRef.current = setInterval(() => {
-      setLocalTimerSeconds((prev) => prev + 1);
-    }, 1000);
-    return () => {
-      clearLocalTimer();
+    return {
+      hasElement: false,
+      currentTime: null,
+      readyState: null,
+      networkState: null,
+      paused: null
     };
-  }, [timerActive, clearLocalTimer]);
-
-  useEffect(() => {
-    if (!timerActive || !hardResetDeadlineMs || hardResetDeadlineMs <= 0) {
-      return;
-    }
-    if (hardResetTriggeredRef.current) {
-      return;
-    }
-    const elapsedMs = (Number.isFinite(countUpSeconds) ? countUpSeconds : localTimerSeconds) * 1000;
-    if (elapsedMs >= hardResetDeadlineMs) {
-      hardResetTriggeredRef.current = true;
-      emitHardReset('overlay-failsafe-timer', { elapsedSeconds: elapsedMs / 1000 });
-    }
-  }, [timerActive, hardResetDeadlineMs, localTimerSeconds, countUpSeconds, emitHardReset]);
-
-  useEffect(() => {
-    if (typeof getMediaEl !== 'function' || !isVisible) {
-      setMediaElementDetails((prev) => (prev.hasElement ? {
-        hasElement: false,
-        currentTime: null,
-        readyState: null,
-        networkState: null,
-        paused: null
-      } : prev));
-      return () => {};
-    }
-
-    const readElementState = () => {
-      try {
-        const el = getMediaEl();
-        if (!el) {
-          setMediaElementDetails((prev) => (prev.hasElement ? {
-            hasElement: false,
-            currentTime: null,
-            readyState: null,
-            networkState: null,
-            paused: null
-          } : prev));
-          return;
-        }
-        setMediaElementDetails({
-          hasElement: true,
-          currentTime: Number.isFinite(el.currentTime) ? Number(el.currentTime).toFixed(1) : null,
-          readyState: typeof el.readyState === 'number' ? el.readyState : null,
-          networkState: typeof el.networkState === 'number' ? el.networkState : null,
-          paused: typeof el.paused === 'boolean' ? el.paused : null
-        });
-      } catch (error) {
-        console.warn('[PlayerOverlayLoading] failed to inspect media element', error);
-      }
-    };
-
-    readElementState();
-    const intervalId = setInterval(readElementState, 1000);
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [getMediaEl, isVisible]);
+  }, [mediaDetailsProp]);
 
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
   const hasValidPosition = positionDisplay && positionDisplay !== '0:00';
@@ -192,8 +110,8 @@ export function PlayerOverlayLoading({
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.nativeEvent?.stopImmediatePropagation?.();
-    emitHardReset('overlay-spinner-manual', { eventType: event?.type });
-  }, [emitHardReset]);
+    emitManualReset('overlay-spinner-manual', { eventType: event?.type });
+  }, [emitManualReset]);
 
   const spinnerInteractionProps = {
     onClick: handleSpinnerInteraction,
@@ -203,13 +121,13 @@ export function PlayerOverlayLoading({
     onPointerDown: handleSpinnerInteraction
   };
 
-  const mainTimerLabel = Number.isFinite(countUpSeconds)
-    ? `${countUpSeconds}s`
-    : `${localTimerSeconds}s`;
-  const timerSummary = `main:${mainTimerLabel} local:${localTimerSeconds}s`;
+  const countdownLabel = Number.isFinite(countdownSeconds)
+    ? `${Math.max(0, Math.floor(countdownSeconds))}s`
+    : 'n/a';
+  const timerSummary = `countdown:${countdownLabel}`;
   const seekSummary = `seek:${intentPositionDisplay || 'n/a'}`;
-  const mediaSummary = mediaElementDetails.hasElement
-    ? `el:t=${mediaElementDetails.currentTime ?? 'n/a'} r=${mediaElementDetails.readyState ?? 'n/a'} n=${mediaElementDetails.networkState ?? 'n/a'} p=${mediaElementDetails.paused ?? 'n/a'}`
+  const mediaSummary = normalizedMediaDetails.hasElement
+    ? `el:t=${normalizedMediaDetails.currentTime ?? 'n/a'} r=${normalizedMediaDetails.readyState ?? 'n/a'} n=${normalizedMediaDetails.networkState ?? 'n/a'} p=${normalizedMediaDetails.paused ?? 'n/a'}`
     : 'el:none';
 
   const logLabel = overlayLogLabel || waitKey || '';
@@ -272,10 +190,9 @@ export function PlayerOverlayLoading({
       shouldRender,
       isVisible,
       pauseOverlayActive,
-      overlayTimerActive,
       overlayRevealDelayMs
     });
-  }, [overlayDisplayActive, shouldRender, isVisible, pauseOverlayActive, overlayLogLabel, waitKey, overlayTimerActive, overlayRevealDelayMs]);
+  }, [overlayDisplayActive, shouldRender, isVisible, pauseOverlayActive, overlayLogLabel, waitKey, overlayRevealDelayMs]);
 
   if (!overlayDisplayActive) {
     return null;
@@ -330,17 +247,21 @@ PlayerOverlayLoading.propTypes = {
   waitingToPlay: PropTypes.bool,
   togglePauseOverlay: PropTypes.func,
   status: PropTypes.string,
-  countUpSeconds: PropTypes.number,
   playerPositionDisplay: PropTypes.string,
   intentPositionDisplay: PropTypes.string,
-  overlayTimerActive: PropTypes.bool,
-  hardResetDeadlineMs: PropTypes.number,
+  countdownSeconds: PropTypes.number,
   onRequestHardReset: PropTypes.func,
-  getMediaEl: PropTypes.func,
   overlayLoggingActive: PropTypes.bool,
   overlayLogLabel: PropTypes.string,
   waitKey: PropTypes.any,
-  overlayRevealDelayMs: PropTypes.number
+  overlayRevealDelayMs: PropTypes.number,
+  mediaDetails: PropTypes.shape({
+    hasElement: PropTypes.bool,
+    currentTime: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    readyState: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    networkState: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    paused: PropTypes.bool
+  })
 };
 
 export default PlayerOverlayLoading;
