@@ -6,6 +6,7 @@ import { usePlaybackHealth } from './usePlaybackHealth.js';
 import { useResilienceConfig } from './useResilienceConfig.js';
 import { useResilienceState, RESILIENCE_STATUS } from './useResilienceState.js';
 import { useResilienceRecovery } from './useResilienceRecovery.js';
+import { usePlaybackSession } from './usePlaybackSession.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -87,35 +88,6 @@ const useOverlayTimer = (overlayActive, stallDeadlineMs, triggerRecovery) => {
   const startTimeRef = useRef(0);
   const overlayAlertedRef = useRef(false);
   const triggerRecoveryRef = useLatest(triggerRecovery);
-
-
-function useUserIntentControls({ isPaused, isSeeking }) {
-  const computeInitialIntent = () => {
-    if (isSeeking) return USER_INTENT.seeking;
-    if (isPaused) return USER_INTENT.paused;
-    return USER_INTENT.playing;
-  };
-
-  const [userIntent, setUserIntent] = useState(computeInitialIntent);
-  const userIntentRef = useLatest(userIntent);
-  const explicitPauseRef = useRef(false);
-  const [explicitPauseActive, setExplicitPauseActive] = useState(false);
-
-  const updateExplicitPauseState = useCallback((value) => {
-    const next = Boolean(value);
-    if (explicitPauseRef.current === next) return;
-    explicitPauseRef.current = next;
-    setExplicitPauseActive(next);
-  }, []);
-
-  return {
-    userIntent,
-    userIntentRef,
-    explicitPauseActive,
-    explicitPauseRef,
-    updateExplicitPauseState
-  };
-}
   const clearTicker = useCallback(() => {
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
@@ -173,6 +145,35 @@ function useUserIntentControls({ isPaused, isSeeking }) {
   return Math.max(0, Math.floor(cappedMs / 1000));
 };
 
+function useUserIntentControls({ isPaused, isSeeking }) {
+  const computeInitialIntent = () => {
+    if (isSeeking) return USER_INTENT.seeking;
+    if (isPaused) return USER_INTENT.paused;
+    return USER_INTENT.playing;
+  };
+
+  const [userIntent, setUserIntent] = useState(computeInitialIntent);
+  const userIntentRef = useLatest(userIntent);
+  const explicitPauseRef = useRef(false);
+  const [explicitPauseActive, setExplicitPauseActive] = useState(false);
+
+  const updateExplicitPauseState = useCallback((value) => {
+    const next = Boolean(value);
+    if (explicitPauseRef.current === next) return;
+    explicitPauseRef.current = next;
+    setExplicitPauseActive(next);
+  }, []);
+
+  return {
+    userIntent,
+    userIntentRef,
+    explicitPauseActive,
+    explicitPauseRef,
+    updateExplicitPauseState,
+    setUserIntent
+  };
+}
+
 export function useMediaResilience({
   getMediaEl,
   meta = {},
@@ -188,6 +189,7 @@ export function useMediaResilience({
   controllerRef,
   explicitShow = false,
   plexId,
+  playbackSessionKey,
   debugContext,
   message,
   stalled: stalledOverride,
@@ -220,7 +222,8 @@ export function useMediaResilience({
     userIntentRef,
     explicitPauseActive,
     explicitPauseRef,
-    updateExplicitPauseState
+    updateExplicitPauseState,
+    setUserIntent
   } = useUserIntentControls({ isPaused, isSeeking });
   const {
     state: resilienceState,
@@ -254,7 +257,11 @@ export function useMediaResilience({
     metaTitle: meta?.title || meta?.name || meta?.grandparentTitle || null,
     threadId
   });
-  const seekIntentMsRef = useRef(null);
+  const {
+    targetTimeSeconds: sessionTargetTimeSeconds,
+    setTargetTimeSeconds: updateSessionTargetTimeSeconds,
+    consumeTargetTimeSeconds
+  } = usePlaybackSession({ sessionKey: playbackSessionKey });
   const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : 0);
   const progressTokenRef = useRef(0);
   const mountWatchdogTimerRef = useRef(null);
@@ -327,17 +334,15 @@ export function useMediaResilience({
   }, [isPaused, isSeeking]);
 
   useEffect(() => {
-    if (Number.isFinite(seconds)) {
-      lastSecondsRef.current = seconds;
-      const intentMs = seekIntentMsRef.current;
-      if (Number.isFinite(intentMs)) {
-        const targetSeconds = intentMs / 1000;
-        if (Math.abs(seconds - targetSeconds) <= 1) {
-          seekIntentMsRef.current = null;
-        }
+    if (!Number.isFinite(seconds)) return;
+    lastSecondsRef.current = seconds;
+    if (Number.isFinite(sessionTargetTimeSeconds)) {
+      const delta = Math.abs(seconds - sessionTargetTimeSeconds);
+      if (delta <= 1) {
+        consumeTargetTimeSeconds();
       }
     }
-  }, [seconds]);
+  }, [seconds, sessionTargetTimeSeconds, consumeTargetTimeSeconds]);
 
   useEffect(() => {
     setShowPauseOverlay(pauseOverlayPreference);
@@ -346,9 +351,9 @@ export function useMediaResilience({
   useEffect(() => {
     if (mediaIdentityRef.current !== mediaIdentity) {
       mediaIdentityRef.current = mediaIdentity;
-      seekIntentMsRef.current = null;
+      consumeTargetTimeSeconds();
     }
-  }, [mediaIdentity]);
+  }, [mediaIdentity, consumeTargetTimeSeconds]);
 
   const clearTimer = useCallback((ref) => {
     if (ref.current) {
@@ -414,11 +419,17 @@ export function useMediaResilience({
     setShowDebug(false);
   }, [mediaIdentity, resilienceActions]);
 
+  const persistSeekIntentMs = useCallback((valueMs) => {
+    if (!Number.isFinite(valueMs) || valueMs < 0) return;
+    const normalizedSeconds = Math.max(0, valueMs / 1000);
+    updateSessionTargetTimeSeconds(normalizedSeconds);
+  }, [updateSessionTargetTimeSeconds]);
+
   const recordSeekIntentMs = useCallback((valueMs, reason = 'seek-intent') => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
-    seekIntentMsRef.current = valueMs;
+    persistSeekIntentMs(valueMs);
     invalidatePendingStallDetection(reason);
-  }, [invalidatePendingStallDetection]);
+  }, [persistSeekIntentMs, invalidatePendingStallDetection]);
 
   const recordSeekIntentSeconds = useCallback((valueSeconds, reason = 'seek-intent') => {
     if (!Number.isFinite(valueSeconds)) return;
@@ -448,8 +459,8 @@ export function useMediaResilience({
     if (Number.isFinite(overrideMs)) {
       return Math.max(0, overrideMs);
     }
-    if (Number.isFinite(seekIntentMsRef.current)) {
-      return Math.max(0, seekIntentMsRef.current);
+    if (Number.isFinite(sessionTargetTimeSeconds)) {
+      return Math.max(0, sessionTargetTimeSeconds * 1000);
     }
     if (Number.isFinite(lastProgressSecondsRef.current)) {
       return Math.max(0, lastProgressSecondsRef.current * 1000);
@@ -458,7 +469,7 @@ export function useMediaResilience({
       return Math.max(0, lastSecondsRef.current * 1000);
     }
     return null;
-  }, []);
+  }, [sessionTargetTimeSeconds]);
 
   const {
     triggerRecovery,
@@ -475,7 +486,7 @@ export function useMediaResilience({
     logResilienceEvent,
     defaultReload,
     onReloadRef,
-    seekIntentMsRef,
+    persistSeekIntentMs,
     lastReloadAtRef,
     lastProgressSecondsRef,
     lastSecondsRef,
@@ -698,7 +709,7 @@ export function useMediaResilience({
     }
 
     if (!hasStarted) {
-      if (status !== STATUS.stalling) {
+      if (statusRef.current !== STATUS.stalling && statusRef.current !== STATUS.pending) {
         resilienceActions.setStatus(STATUS.pending);
       }
       clearTimer(stallTimerRef);
@@ -707,7 +718,7 @@ export function useMediaResilience({
     }
 
     if (!hasObservedProgress) {
-      if (status !== STATUS.stalling) {
+      if (statusRef.current !== STATUS.stalling && statusRef.current !== STATUS.pending) {
         resilienceActions.setStatus(STATUS.pending);
       }
       clearTimer(stallTimerRef);

@@ -7,6 +7,7 @@ import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMediaResilience.js';
+import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
 
@@ -120,7 +121,6 @@ const Player = forwardRef(function Player(props, ref) {
   const [resolvedMeta, setResolvedMeta] = useState(null);
   const [mediaAccess, setMediaAccess] = useState(() => createDefaultMediaAccess());
   const [playbackMetrics, setPlaybackMetrics] = useState(() => createDefaultPlaybackMetrics());
-  const [pendingSeekSeconds, setPendingSeekSeconds] = useState(null);
   const [remountState, setRemountState] = useState(() => ({ guid: activeEntryGuid || null, nonce: 0, context: null }));
   const remountInfoRef = useRef(remountState);
 
@@ -132,12 +132,48 @@ const Player = forwardRef(function Player(props, ref) {
     setResolvedMeta(null);
     setMediaAccess(createDefaultMediaAccess());
     setPlaybackMetrics(createDefaultPlaybackMetrics());
-    setPendingSeekSeconds(null);
     setRemountState((prev) => (prev.guid === activeEntryGuid ? prev : { guid: activeEntryGuid || null, nonce: 0, context: null }));
   }, [activeEntryGuid]);
 
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
   const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.media_key || null;
+
+  const playbackSessionKey = useMemo(() => {
+    const candidates = [
+      activeEntryGuid,
+      resolvedMeta?.guid,
+      resolvedMeta?.media_key,
+      resolvedMeta?.plex,
+      singlePlayerProps?.guid,
+      singlePlayerProps?.media_key,
+      singlePlayerProps?.plex,
+      queue?.plex,
+      play?.plex
+    ];
+    const identifier = candidates.find((value) => typeof value === 'string' && value.length)
+      ?? candidates.find((value) => Number.isFinite(value));
+    return identifier ? `player-session:${identifier}` : 'player-session:idle';
+  }, [
+    activeEntryGuid,
+    resolvedMeta?.guid,
+    resolvedMeta?.media_key,
+    resolvedMeta?.plex,
+    singlePlayerProps?.guid,
+    singlePlayerProps?.media_key,
+    singlePlayerProps?.plex,
+    queue?.plex,
+    play?.plex
+  ]);
+
+  const {
+    targetTimeSeconds,
+    setTargetTimeSeconds,
+    consumeTargetTimeSeconds,
+    volume: sessionVolume,
+    playbackRate: sessionPlaybackRate,
+    setVolume: setSessionVolume,
+    setPlaybackRate: setSessionPlaybackRate
+  } = usePlaybackSession({ sessionKey: playbackSessionKey });
 
   const handleResolvedMeta = useCallback((meta) => {
     if (!meta) {
@@ -169,8 +205,8 @@ const Player = forwardRef(function Player(props, ref) {
   }, []);
 
   const handleSeekRequestConsumed = useCallback(() => {
-    setPendingSeekSeconds((prev) => (prev == null ? prev : null));
-  }, []);
+    consumeTargetTimeSeconds();
+  }, [consumeTargetTimeSeconds]);
 
   const resolvedWaitKey = useMemo(() => {
     if (!effectiveMeta) return 'player-idle';
@@ -232,7 +268,7 @@ const Player = forwardRef(function Player(props, ref) {
       conditions
     });
 
-    setPendingSeekSeconds(normalized);
+    setTargetTimeSeconds(normalized);
     setMediaAccess(createDefaultMediaAccess());
     setPlaybackMetrics(createDefaultPlaybackMetrics());
     setRemountState((prev) => {
@@ -241,7 +277,7 @@ const Player = forwardRef(function Player(props, ref) {
       }
       return { guid: prev.guid, nonce: prev.nonce + 1, context: diagnostics };
     });
-  }, [activeEntryGuid, effectiveMeta, isQueue, playerType, playbackMetrics, resolvedWaitKey]);
+  }, [activeEntryGuid, effectiveMeta, isQueue, playerType, playbackMetrics, resolvedWaitKey, setTargetTimeSeconds]);
 
   const singlePlayerKey = useMemo(() => {
     if (!singlePlayerProps) return 'player-idle';
@@ -386,16 +422,36 @@ const Player = forwardRef(function Player(props, ref) {
     configOverrides: resolvedResilience.config,
     controllerRef: resilienceControllerRef,
     plexId,
+    playbackSessionKey,
     debugContext: { scope: 'player', entryGuid: activeEntryGuid || null }
   });
 
   // Get playback rate from the current item, falling back to queue/play level, then default
   const currentItemPlaybackRate = effectiveMeta?.playbackRate || effectiveMeta?.playbackrate;
-  const effectivePlaybackRate = currentItemPlaybackRate || queuePlaybackRate;
+  const effectivePlaybackRate = (
+    currentItemPlaybackRate
+    ?? queuePlaybackRate
+    ?? sessionPlaybackRate
+    ?? 1
+  );
 
   // Get volume from the current item, falling back to queue/play level, then default
   const currentItemVolume = effectiveMeta?.volume;
-  const effectiveVolume = currentItemVolume !== undefined ? currentItemVolume : queueVolume;
+  const effectiveVolume = (
+    currentItemVolume ?? queueVolume ?? sessionVolume ?? 1
+  );
+
+  useEffect(() => {
+    if (Number.isFinite(effectiveVolume)) {
+      setSessionVolume(effectiveVolume);
+    }
+  }, [effectiveVolume, setSessionVolume]);
+
+  useEffect(() => {
+    if (Number.isFinite(effectivePlaybackRate)) {
+      setSessionPlaybackRate(effectivePlaybackRate);
+    }
+  }, [effectivePlaybackRate, setSessionPlaybackRate]);
 
   // Get shader from the current item, falling back to queue/play level, then default
   const currentItemShader = effectiveMeta?.shader;
@@ -492,7 +548,7 @@ const Player = forwardRef(function Player(props, ref) {
     onResolvedMeta: handleResolvedMeta,
     onPlaybackMetrics: handlePlaybackMetrics,
     onRegisterMediaAccess: handleRegisterMediaAccess,
-    seekToIntentSeconds: pendingSeekSeconds,
+    seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,
     wrapWithContainer: false,
