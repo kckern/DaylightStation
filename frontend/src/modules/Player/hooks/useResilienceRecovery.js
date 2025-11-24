@@ -1,0 +1,216 @@
+import { useCallback } from 'react';
+
+export function useResilienceRecovery({
+  recoveryConfig,
+  hardRecoverAfterStalledForMs,
+  meta,
+  waitKey,
+  resolveSeekIntentMs,
+  epsilonSeconds,
+  logResilienceEvent,
+  defaultReload,
+  onReloadRef,
+  seekIntentMsRef,
+  lastReloadAtRef,
+  lastProgressSecondsRef,
+  lastSecondsRef,
+  clearTimer,
+  reloadTimerRef,
+  hardRecoveryTimerRef,
+  progressTokenRef,
+  resilienceActions,
+  statusRef,
+  pendingStatusValue,
+  recoveringStatusValue,
+  userIntentRef,
+  pausedIntentValue,
+  recoveryAttempts
+}) {
+  const triggerRecovery = useCallback((reason, {
+    ignorePaused = false,
+    seekToIntentMs: overrideIntentMs = null,
+    force = false
+  } = {}) => {
+    if (!force && !recoveryConfig.enabled) return;
+    if (!force && !ignorePaused && userIntentRef.current === pausedIntentValue) return;
+    if (!force && recoveryConfig.maxAttempts && recoveryAttempts >= recoveryConfig.maxAttempts) return;
+    const now = Date.now();
+    if (!force && recoveryConfig.cooldownMs && now - (lastReloadAtRef.current || 0) < recoveryConfig.cooldownMs) return;
+
+    if (!force && statusRef.current === pendingStatusValue) {
+      const progressedSeconds = Number.isFinite(lastProgressSecondsRef.current)
+        ? lastProgressSecondsRef.current
+        : (Number.isFinite(lastSecondsRef.current) ? lastSecondsRef.current : 0);
+      if (!Number.isFinite(progressedSeconds) || progressedSeconds < epsilonSeconds) {
+        logResilienceEvent('recovery-suppressed-no-progress', {
+          reason,
+          progressedSeconds,
+          epsilonSeconds
+        });
+        return;
+      }
+    }
+
+    const resolvedIntentMs = resolveSeekIntentMs(overrideIntentMs);
+
+    logResilienceEvent('recovery-armed', {
+      reason,
+      ignorePaused,
+      force,
+      attempts: recoveryAttempts,
+      seekToIntentMs: resolvedIntentMs
+    });
+
+    const performReload = () => {
+      logResilienceEvent('recovery-triggered', {
+        reason,
+        force,
+        seekToIntentMs: resolvedIntentMs
+      });
+      lastReloadAtRef.current = Date.now();
+      resilienceActions.recoveryTriggered({ guardToken: progressTokenRef.current });
+      lastProgressSecondsRef.current = null;
+
+      if (Number.isFinite(resolvedIntentMs)) {
+        seekIntentMsRef.current = resolvedIntentMs;
+      }
+
+      onReloadRef.current?.({ reason, meta, waitKey, seekToIntentMs: resolvedIntentMs });
+    };
+
+    if (recoveryConfig.reloadDelayMs > 0) {
+      clearTimer(reloadTimerRef);
+      reloadTimerRef.current = setTimeout(performReload, recoveryConfig.reloadDelayMs);
+    } else {
+      performReload();
+    }
+  }, [
+    recoveryConfig,
+    userIntentRef,
+    recoveryAttempts,
+    lastReloadAtRef,
+    lastProgressSecondsRef,
+    lastSecondsRef,
+    epsilonSeconds,
+    resolveSeekIntentMs,
+    logResilienceEvent,
+    resilienceActions,
+    progressTokenRef,
+    seekIntentMsRef,
+    onReloadRef,
+    meta,
+    waitKey,
+    clearTimer,
+    reloadTimerRef,
+    pendingStatusValue,
+    statusRef,
+    pausedIntentValue
+  ]);
+
+  const scheduleHardRecovery = useCallback(() => {
+    if (hardRecoverAfterStalledForMs <= 0) {
+      triggerRecovery('stall-hard-recovery');
+      return;
+    }
+    if (hardRecoveryTimerRef.current) return;
+    hardRecoveryTimerRef.current = setTimeout(() => {
+      hardRecoveryTimerRef.current = null;
+      triggerRecovery('stall-hard-recovery');
+    }, hardRecoverAfterStalledForMs);
+  }, [hardRecoverAfterStalledForMs, triggerRecovery, hardRecoveryTimerRef]);
+
+  const forcePlayerRemount = useCallback((reason = 'overlay-hard-reset', options = {}) => {
+    const {
+      seekToIntentMs: explicitSeekMs = null,
+      forceDocumentReload = false
+    } = options || {};
+    const normalizedIntentMs = resolveSeekIntentMs(explicitSeekMs);
+    const logPayload = {
+      reason,
+      seekToIntentMs: normalizedIntentMs,
+      forceDocumentReload
+    };
+    if (forceDocumentReload || !onReloadRef.current) {
+      logResilienceEvent('hard-reset-document-reload', logPayload);
+      defaultReload();
+      return;
+    }
+    logResilienceEvent('hard-reset-force-remount', logPayload);
+    lastReloadAtRef.current = Date.now();
+    resilienceActions.setStatus(recoveringStatusValue, {
+      carryRecovery: true,
+      clearStallToken: true,
+      clearRecoveryGuard: true
+    });
+
+    if (Number.isFinite(normalizedIntentMs)) {
+      seekIntentMsRef.current = normalizedIntentMs;
+    }
+
+    onReloadRef.current({
+      reason,
+      meta,
+      waitKey,
+      forceFullReload: true,
+      ...options,
+      seekToIntentMs: normalizedIntentMs
+    });
+  }, [
+    resolveSeekIntentMs,
+    onReloadRef,
+    logResilienceEvent,
+    defaultReload,
+    lastReloadAtRef,
+    resilienceActions,
+    seekIntentMsRef,
+    meta,
+    waitKey,
+    recoveringStatusValue
+  ]);
+
+  const requestOverlayHardReset = useCallback((input, overrides = {}) => {
+    const payload = typeof input === 'string'
+      ? { reason: input }
+      : (input && typeof input === 'object' ? input : {});
+    const merged = { ...payload, ...overrides };
+    const {
+      reason = 'overlay-failsafe',
+      ignorePaused = true,
+      force = true,
+      seekToIntentMs: overrideIntentMs = null,
+      seekSeconds = null,
+      forceDocumentReload = false
+    } = merged;
+
+    const normalizedSeekMs = (() => {
+      if (Number.isFinite(overrideIntentMs)) return Math.max(0, overrideIntentMs);
+      if (Number.isFinite(seekSeconds)) return Math.max(0, seekSeconds * 1000);
+      return null;
+    })();
+
+    logResilienceEvent('overlay-hard-reset-request', {
+      reason,
+      forceDocumentReload,
+      seekToIntentMs: normalizedSeekMs
+    });
+
+    forcePlayerRemount(reason, {
+      ...merged,
+      seekToIntentMs: normalizedSeekMs,
+      forceDocumentReload
+    });
+
+    triggerRecovery(reason, {
+      ignorePaused,
+      force,
+      seekToIntentMs: normalizedSeekMs
+    });
+  }, [forcePlayerRemount, triggerRecovery, logResilienceEvent]);
+
+  return {
+    triggerRecovery,
+    scheduleHardRecovery,
+    forcePlayerRemount,
+    requestOverlayHardReset
+  };
+}
