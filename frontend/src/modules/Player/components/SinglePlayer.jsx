@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { Scriptures, Hymns, Talk, Poetry } from '../../ContentScroller/ContentScroller.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
@@ -11,7 +11,17 @@ import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
  * Single player component that handles different media types
  * Routes to appropriate player based on media type
  */
-export function SinglePlayer(play) {
+export function SinglePlayer(props = {}) {
+  const {
+    onResolvedMeta,
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds = null,
+    onSeekRequestConsumed,
+    remountDiagnostics,
+    wrapWithContainer = true,
+    ...play
+  } = props;
   const {
     plex,
     media,
@@ -37,8 +47,7 @@ export function SinglePlayer(play) {
     volume,
     playbackRate,
     onProgress,
-    onMediaRef,
-    resilience
+    onMediaRef
   } = play || {};
   
   // Prepare common props for content scroller components
@@ -49,11 +58,20 @@ export function SinglePlayer(play) {
     queuePosition
   };
 
-  if (!!scripture) return <Scriptures {...contentProps} />;
-  if (!!hymn) return <Hymns {...contentProps} />;
-  if (!!primary) return <Hymns {...{ ...contentProps, hymn: primary, subfolder: "primary" }} />;
-  if (!!talk) return <Talk {...contentProps} />;
-  if (!!poem) return <Poetry {...contentProps} />;
+  const contentScrollerBridge = {
+    onResolvedMeta,
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds,
+    onSeekRequestConsumed,
+    remountDiagnostics
+  };
+
+  if (!!scripture) return <Scriptures {...contentProps} {...contentScrollerBridge} />;
+  if (!!hymn) return <Hymns {...contentProps} {...contentScrollerBridge} />;
+  if (!!primary) return <Hymns {...contentProps} {...contentScrollerBridge} hymn={primary} subfolder="primary" />;
+  if (!!talk) return <Talk {...contentProps} {...contentScrollerBridge} />;
+  if (!!poem) return <Poetry {...contentProps} {...contentScrollerBridge} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
@@ -137,13 +155,27 @@ export function SinglePlayer(play) {
     fetchVideoInfoCallback();
   }, [fetchVideoInfoCallback]);
 
+  useEffect(() => {
+    if (!isReady || !mediaInfo?.media_type) {
+      return;
+    }
+    onResolvedMeta?.(mediaInfo);
+  }, [isReady, mediaInfo, onResolvedMeta]);
+
   if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
   
   // Calculate plexId from available sources - plex prop is passed directly from Player
   const initialPlexId = plex || media || mediaInfo?.media_key || mediaInfo?.key || mediaInfo?.plex || null;
+  const resilienceBridge = useMemo(() => ({
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds,
+    onSeekRequestConsumed,
+    remountDiagnostics
+  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics]);
   
-  return (
-    <div className={`player ${playerType || ''}`}>
+  const playerBody = (
+    <>
       {!isReady && (
         <div className={`shader on notReady ${shader}`}>
           <PlayerOverlayLoading
@@ -185,7 +217,7 @@ export function SinglePlayer(play) {
             onMediaRef,
             keyboardOverrides: play?.keyboardOverrides,
             onController: play?.onController,
-            resilience
+            resilienceBridge
           }
         )
       )}
@@ -194,6 +226,16 @@ export function SinglePlayer(play) {
           {JSON.stringify(mediaInfo, null, 2)}
         </pre>
       )}
+    </>
+  );
+
+  if (!wrapWithContainer) {
+    return playerBody;
+  }
+
+  return (
+    <div className={`player ${playerType || ''}`}>
+      {playerBody}
     </div>
   );
 }
@@ -226,9 +268,20 @@ SinglePlayer.propTypes = {
   onMediaRef: PropTypes.func,
   keyboardOverrides: PropTypes.objectOf(PropTypes.func),
   onController: PropTypes.func,
-  resilience: PropTypes.shape({
-    config: PropTypes.object,
-    onStateChange: PropTypes.func,
-    controllerRef: PropTypes.shape({ current: PropTypes.any })
+  wrapWithContainer: PropTypes.bool,
+  onResolvedMeta: PropTypes.func,
+  onPlaybackMetrics: PropTypes.func,
+  onRegisterMediaAccess: PropTypes.func,
+  seekToIntentSeconds: PropTypes.number,
+  onSeekRequestConsumed: PropTypes.func,
+  remountDiagnostics: PropTypes.shape({
+    reason: PropTypes.string,
+    source: PropTypes.string,
+    seekSeconds: PropTypes.number,
+    remountNonce: PropTypes.number,
+    waitKey: PropTypes.string,
+    trigger: PropTypes.object,
+    conditions: PropTypes.object,
+    timestamp: PropTypes.number
   })
 };
