@@ -3,8 +3,6 @@ import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
-import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
-import { PlayerOverlayPaused } from './PlayerOverlayPaused.jsx';
 
 /**
  * Audio player component for playing audio tracks
@@ -26,7 +24,7 @@ export function AudioPlayer({
   onProgress, 
   onMediaRef, 
   onController,
-  resilience
+  resilienceBridge
 }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const baseMediaKey = useMemo(
@@ -38,8 +36,11 @@ export function AudioPlayer({
     duration,
     containerRef,
     handleProgressClick,
-    overlayProps,
-    mediaInstanceKey
+    mediaInstanceKey,
+    getMediaEl,
+    isPaused,
+    isSeeking,
+    hardReset
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -62,9 +63,9 @@ export function AudioPlayer({
     onController,
     instanceKey: baseMediaKey,
     fetchVideoInfo,
-    resilience
+    seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
+    resilienceBridge
   });
-
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
@@ -73,12 +74,6 @@ export function AudioPlayer({
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
-      {overlayProps && (
-        <>
-          <PlayerOverlayLoading {...overlayProps} />
-          <PlayerOverlayPaused {...overlayProps} />
-        </>
-      )}
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
@@ -123,9 +118,10 @@ AudioPlayer.propTypes = {
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   onController: PropTypes.func,
-  resilience: PropTypes.shape({
-    config: PropTypes.object,
-    onStateChange: PropTypes.func,
-    controllerRef: PropTypes.shape({ current: PropTypes.any })
+  resilienceBridge: PropTypes.shape({
+    onPlaybackMetrics: PropTypes.func,
+    onRegisterMediaAccess: PropTypes.func,
+    seekToIntentSeconds: PropTypes.number,
+    onSeekRequestConsumed: PropTypes.func
   })
 };

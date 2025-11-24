@@ -2,11 +2,14 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent, guid } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
-import { useMediaResilience, mergeMediaResilienceConfig } from './useMediaResilience.js';
+// useMediaResilience now lives at the Player level; this hook no longer imports it directly.
 import { playbackLog } from '../lib/playbackLogger.js';
 import { getLogWaitKey } from '../lib/waitKeyLabel.js';
 
 const DEBUG_MEDIA = false;
+const roundSeconds = (value, precision = 3) => (Number.isFinite(value)
+  ? Number(value.toFixed(precision))
+  : null);
 
 export const shouldRestartFromBeginning = (durationSeconds, candidateSeconds) => {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
@@ -72,7 +75,7 @@ export function useCommonMediaController({
   seekToIntentSeconds = null,
   instanceKey = null,
   fetchVideoInfo,
-  resilience: resilienceOptions = null
+  resilienceBridge = null
 }) {
   // Persist global state across remounts so resume/start logic stays sticky per media item.
   if (!useCommonMediaController.__appliedStartByKey) useCommonMediaController.__appliedStartByKey = Object.create(null);
@@ -85,6 +88,13 @@ export function useCommonMediaController({
     threadIdRef.current = guid();
   }
   const threadId = threadIdRef.current;
+  const {
+    onPlaybackMetrics: bridgePlaybackMetrics,
+    onRegisterMediaAccess: bridgeRegisterAccess,
+    onSeekRequestConsumed: bridgeSeekConsumed,
+    remountDiagnostics: bridgeRemountDiagnostics
+  } = resilienceBridge || {};
+  const mountDiagnostics = bridgeRemountDiagnostics || null;
   const containerRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -93,6 +103,7 @@ export function useCommonMediaController({
   const lastPlaybackPosRef = useRef(0);
   const isInitialLoadRef = useRef(true);
   const lastSeekIntentRef = useRef(null);
+  const pendingAutoSeekRef = useRef(null);
 
   const getMediaEl = useCallback(() => {
     const host = containerRef.current;
@@ -117,6 +128,40 @@ export function useCommonMediaController({
 
     return null;
   }, [isAudio]);
+
+  const applySeekToMediaEl = useCallback((targetSeconds, source = 'seek-intent') => {
+    if (!Number.isFinite(targetSeconds)) return false;
+    if (typeof getMediaEl !== 'function') {
+      pendingAutoSeekRef.current = targetSeconds;
+      return false;
+    }
+
+    const mediaEl = getMediaEl();
+    if (!mediaEl) {
+      pendingAutoSeekRef.current = targetSeconds;
+      return false;
+    }
+
+    try {
+      const currentTime = Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : 0;
+      if (Math.abs(currentTime - targetSeconds) < 0.05) {
+        pendingAutoSeekRef.current = null;
+        return true;
+      }
+      mediaEl.currentTime = targetSeconds;
+      pendingAutoSeekRef.current = null;
+      if (DEBUG_MEDIA) {
+        console.log('[Media] applySeekToMediaEl', { source, targetSeconds });
+      }
+      return true;
+    } catch (error) {
+      pendingAutoSeekRef.current = targetSeconds;
+      if (DEBUG_MEDIA) {
+        console.warn('[Media] failed to apply seek intent', { source, targetSeconds, error });
+      }
+      return false;
+    }
+  }, [getMediaEl]);
 
   const isDash = meta.media_type === 'dash_video';
   const baseInstanceKey = useMemo(() => {
@@ -154,14 +199,6 @@ export function useCommonMediaController({
     });
   }, [baseInstanceKey, logControllerEvent, setReloadNonce]);
 
-  const handleResilienceReload = useCallback((options = {}) => {
-    const seekSeconds = Number.isFinite(options.seekToIntentMs)
-      ? options.seekToIntentMs / 1000
-      : null;
-    hardReset({ seekToSeconds: seekSeconds });
-    logControllerEvent('resilience-reload', { seekSeconds });
-  }, [hardReset, logControllerEvent]);
-
   useEffect(() => {
     try {
       if (media_key) {
@@ -174,11 +211,22 @@ export function useCommonMediaController({
     } catch (_) {
       // no-op logging guard
     }
-    logControllerEvent('mount', { media_key });
+    const mountDetails = {
+      media_key,
+      mountReason: mountDiagnostics?.reason || 'initial-render',
+      mountSource: mountDiagnostics?.source || null,
+      mountSeekSeconds: typeof mountDiagnostics?.seekSeconds === 'number' ? mountDiagnostics.seekSeconds : null,
+      remountNonce: mountDiagnostics?.remountNonce ?? null,
+      mountWaitKey: mountDiagnostics?.waitKey || null,
+      mountTrigger: mountDiagnostics?.trigger || null,
+      mountConditions: mountDiagnostics?.conditions || null,
+      mountTimestamp: mountDiagnostics?.timestamp || null
+    };
+    logControllerEvent('mount', mountDetails);
     lastSeekIntentRef.current = null;
     lastPlaybackPosRef.current = 0;
     isInitialLoadRef.current = true;
-  }, [logControllerEvent, media_key]);
+  }, [logControllerEvent, media_key, mountDiagnostics]);
 
   useEffect(() => {
     if (!Number.isFinite(seekToIntentSeconds)) return;
@@ -186,7 +234,9 @@ export function useCommonMediaController({
     lastSeekIntentRef.current = normalized;
     try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; }
     catch (_) { /* ignore cache write failures */ }
-  }, [seekToIntentSeconds, media_key]);
+    applySeekToMediaEl(normalized, 'prop-seek-intent');
+    bridgeSeekConsumed?.();
+  }, [seekToIntentSeconds, media_key, bridgeSeekConsumed, applySeekToMediaEl]);
 
   useEffect(() => {
     if (!Number.isFinite(internalSeekIntentSeconds)) return;
@@ -194,8 +244,9 @@ export function useCommonMediaController({
     lastSeekIntentRef.current = normalized;
     try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; }
     catch (_) { /* ignore cache write failures */ }
+    applySeekToMediaEl(normalized, 'internal-seek-intent');
     setInternalSeekIntentSeconds(null);
-  }, [internalSeekIntentSeconds, media_key]);
+  }, [internalSeekIntentSeconds, media_key, applySeekToMediaEl]);
 
   const handleProgressClick = useCallback((event) => {
     if (!duration || !containerRef.current) return;
@@ -209,6 +260,15 @@ export function useCommonMediaController({
   useEffect(() => {
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
+
+    if (Number.isFinite(pendingAutoSeekRef.current)) {
+      try {
+        mediaEl.currentTime = pendingAutoSeekRef.current;
+      } catch (_) {
+        // rely on future metadata event to reapply
+      }
+      pendingAutoSeekRef.current = null;
+    }
 
     const logProgress = async () => {
       const now = Date.now();
@@ -256,6 +316,9 @@ export function useCommonMediaController({
     const onLoadedMetadata = () => {
       const durationValue = mediaEl.duration || 0;
       let desiredStart = 0;
+      const pendingSeekValue = Number.isFinite(pendingAutoSeekRef.current)
+        ? pendingAutoSeekRef.current
+        : null;
       const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[media_key];
       const processedVolumeRaw = Number(volume ?? 100);
       const processedVolume = Number.isFinite(processedVolumeRaw) ? processedVolumeRaw : 100;
@@ -302,6 +365,11 @@ export function useCommonMediaController({
         }
       }
 
+      if (pendingSeekValue != null) {
+        desiredStart = pendingSeekValue;
+        pendingAutoSeekRef.current = null;
+      }
+
       mediaEl.dataset.key = media_key;
 
       if (Number.isFinite(desiredStart) && desiredStart > 0) {
@@ -314,6 +382,56 @@ export function useCommonMediaController({
 
       mediaEl.autoplay = true;
       mediaEl.volume = adjustedVolume;
+
+      const autoplayLogContext = {
+        waitKey: formatWaitKeyForLogs(resolvedInstanceKey),
+        media_key,
+        type,
+        isVideo: isVideoEl,
+        desiredStart: roundSeconds(desiredStart),
+        pendingSeekSeconds: roundSeconds(pendingSeekValue),
+        autoplay: true
+      };
+      playbackLog('transport-autoplay-primed', autoplayLogContext);
+
+      try {
+        const playPromise = mediaEl.play?.();
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise
+            .then(() => {
+              playbackLog('transport-autoplay-result', {
+                ...autoplayLogContext,
+                result: 'fulfilled',
+                paused: Boolean(mediaEl.paused),
+                readyState: mediaEl.readyState
+              });
+            })
+            .catch((error) => {
+              playbackLog('transport-autoplay-result', {
+                ...autoplayLogContext,
+                result: 'rejected',
+                paused: Boolean(mediaEl.paused),
+                readyState: mediaEl.readyState,
+                error: error?.message || 'unknown-error'
+              });
+            });
+        } else {
+          playbackLog('transport-autoplay-result', {
+            ...autoplayLogContext,
+            result: 'no-promise',
+            paused: Boolean(mediaEl.paused),
+            readyState: mediaEl.readyState
+          });
+        }
+      } catch (error) {
+        playbackLog('transport-autoplay-result', {
+          ...autoplayLogContext,
+          result: 'threw',
+          paused: Boolean(mediaEl.paused),
+          readyState: mediaEl.readyState,
+          error: error?.message || 'play-threw'
+        });
+      }
 
       const queueLength = meta.queueLength || 0;
       const shouldLoop = queueLength === 1
@@ -384,6 +502,16 @@ export function useCommonMediaController({
   const mediaElementSnapshot = getMediaEl();
   const isPausedValue = mediaElementSnapshot ? Boolean(mediaElementSnapshot.paused) : false;
 
+  useEffect(() => {
+    if (!bridgePlaybackMetrics) return;
+    bridgePlaybackMetrics({ seconds, isPaused: isPausedValue, isSeeking });
+  }, [bridgePlaybackMetrics, seconds, isPausedValue, isSeeking]);
+
+  useEffect(() => {
+    if (!bridgeRegisterAccess) return;
+    bridgeRegisterAccess({ getMediaEl, hardReset, fetchVideoInfo });
+  }, [bridgeRegisterAccess, getMediaEl, hardReset, fetchVideoInfo]);
+
   const operateOnMediaEl = useCallback((fn) => {
     const mediaEl = getMediaEl();
     if (!mediaEl) return null;
@@ -435,67 +563,13 @@ export function useCommonMediaController({
   const getDurationValue = useCallback(() => operateOnMediaEl((el) => Number.isFinite(el.duration) ? el.duration : 0) ?? 0, [operateOnMediaEl]);
 
 
-  const resilienceSettings = (resilienceOptions && typeof resilienceOptions === 'object') ? resilienceOptions : {};
-  const resilienceDisabled = resilienceOptions === false;
-  const mergedResilienceConfig = mergeMediaResilienceConfig(resilienceSettings.config, meta?.mediaResilienceConfig);
-  const stalledOverride = typeof resilienceSettings.stalled === 'boolean'
-    ? resilienceSettings.stalled
-    : resilienceSettings.stalledOverride;
-  const defaultDebugContext = {
-    scope: isVideo ? 'video' : (isAudio ? 'audio' : 'media'),
-    mediaType: meta?.media_type,
-    title: meta?.title,
-    show: meta?.show,
-    season: meta?.season,
-    episode: meta?.episode,
-    url: meta?.media_url,
-    media_key,
-    isDash,
-    shader,
-    queuePosition,
-    reloadNonce,
-    threadId
-  };
-
-  const {
-    overlayProps: computedOverlayProps,
-    controller: resilienceController,
-    state: resilienceState
-  } = useMediaResilience({
-    getMediaEl,
-    meta,
-    seconds,
-    isPaused: isPausedValue,
-    isSeeking,
-    initialStart: start || 0,
-    waitKey: resolvedInstanceKey,
-    fetchVideoInfo,
-    onStateChange: typeof resilienceSettings.onStateChange === 'function'
-      ? (nextState) => resilienceSettings.onStateChange(nextState, meta)
-      : undefined,
-    onReload: handleResilienceReload,
-    configOverrides: mergedResilienceConfig,
-    controllerRef: resilienceDisabled ? undefined : resilienceSettings.controllerRef,
-    explicitShow: resilienceSettings.explicitShow,
-    plexId: meta?.media_key || meta?.key || meta?.plex || null,
-    debugContext: resilienceSettings.debugContext ?? defaultDebugContext,
-    message: resilienceSettings.message,
-    stalled: stalledOverride,
-    mediaTypeHint: isVideo ? 'video' : (isAudio ? 'audio' : 'unknown'),
-    playerFlavorHint: isVideo ? (isDash ? 'shaka' : 'html5-video') : 'html5-audio',
-    threadId
-  });
-
-  const overlayProps = resilienceDisabled ? null : computedOverlayProps;
 
   const getPlaybackState = useCallback(() => ({
     isPaused: isPausedValue,
     isSeeking,
     seconds,
-    duration,
-    resilienceStatus: resilienceState?.status ?? null,
-    resilienceState
-  }), [duration, isPausedValue, isSeeking, resilienceState, seconds]);
+    duration
+  }), [duration, isPausedValue, isSeeking, seconds]);
 
   const [controllerExtrasState, setControllerExtrasState] = useState(null);
 
@@ -539,25 +613,23 @@ export function useCommonMediaController({
       ...transport,
       getPlaybackState,
       transport,
-      ...(mergedControllerExtras || {}),
-      ...(resilienceController && !resilienceDisabled ? { resilience: resilienceController } : {})
+      ...(mergedControllerExtras || {})
     };
 
     onController(controllerPayload);
-  }, [getPlaybackState, mergedControllerExtras, onController, resilienceController, resilienceDisabled, resolvedInstanceKey, transport]);
+  }, [getPlaybackState, mergedControllerExtras, onController, resolvedInstanceKey, transport]);
 
   return {
     containerRef,
+    getMediaEl,
     seconds,
     percent: getProgressPercent(seconds, duration),
     duration,
     isPaused: isPausedValue,
+    isSeeking,
     isDash,
     shader,
     handleProgressClick,
-    overlayProps,
-    resilienceState: resilienceDisabled ? null : resilienceState,
-    resilienceController: resilienceDisabled ? null : resilienceController,
     mediaInstanceKey: resolvedInstanceKey,
     hardReset,
     transport,

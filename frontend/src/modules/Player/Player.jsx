@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useRef, useCallback, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import PropTypes from 'prop-types';
 import './Player.scss';
 import { useQueueController } from './hooks/useQueueController.js';
@@ -6,6 +6,44 @@ import { CompositePlayer } from './components/CompositePlayer.jsx';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
+import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMediaResilience.js';
+import { guid } from './lib/helpers.js';
+import { playbackLog } from './lib/playbackLogger.js';
+
+const reloadDocument = () => {
+  try {
+    if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+      window.location.reload();
+    }
+  } catch (_) {
+    // ignore reload issues to keep recovery flow going
+  }
+};
+
+const entryGuidCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+const ensureEntryGuid = (source) => {
+  if (!source) return null;
+  if (source.guid) return source.guid;
+  if (!entryGuidCache) return guid();
+  if (entryGuidCache.has(source)) {
+    return entryGuidCache.get(source);
+  }
+  const value = guid();
+  entryGuidCache.set(source, value);
+  return value;
+};
+
+const createDefaultMediaAccess = () => ({
+  getMediaEl: null,
+  hardReset: null,
+  fetchVideoInfo: null
+});
+
+const createDefaultPlaybackMetrics = () => ({
+  seconds: 0,
+  isPaused: false,
+  isSeeking: false
+});
 
 /**
  * Main Player component
@@ -17,10 +55,12 @@ const Player = forwardRef(function Player(props, ref) {
     return <CompositePlayer {...props} Player={Player} />;
   }
   
+  const noop = useMemo(() => () => {}, []);
+
   let {
     play,
     queue,
-    clear,
+    clear = noop,
     playbackrate,
     playbackKeys,
     playerType,
@@ -52,26 +92,311 @@ const Player = forwardRef(function Player(props, ref) {
     advance
   } = useQueueController({ play, queue, clear });
 
-  const singlePlayerProps = (() => {
+  const activeSource = useMemo(() => {
     if (isQueue && playQueue?.length > 0) {
-      return { key: playQueue[0].guid, ...playQueue[0] };
+      return playQueue[0];
     }
     if (play && !Array.isArray(play)) {
-      return { ...play };
+      return play;
     }
     return null;
-  })();
+  }, [isQueue, playQueue, play]);
+
+  const activeEntryGuid = useMemo(() => {
+    if (!activeSource) return null;
+    if (activeSource.guid) return activeSource.guid;
+    return ensureEntryGuid(activeSource);
+  }, [activeSource]);
+
+  const singlePlayerProps = useMemo(() => {
+    if (!activeSource) return null;
+    const cloned = { ...activeSource };
+    if (!cloned.guid && activeEntryGuid) {
+      cloned.guid = activeEntryGuid;
+    }
+    return cloned;
+  }, [activeSource, activeEntryGuid]);
+
+  const [resolvedMeta, setResolvedMeta] = useState(null);
+  const [mediaAccess, setMediaAccess] = useState(() => createDefaultMediaAccess());
+  const [playbackMetrics, setPlaybackMetrics] = useState(() => createDefaultPlaybackMetrics());
+  const [pendingSeekSeconds, setPendingSeekSeconds] = useState(null);
+  const [remountState, setRemountState] = useState(() => ({ guid: activeEntryGuid || null, nonce: 0, context: null }));
+  const remountInfoRef = useRef(remountState);
+
+  useEffect(() => {
+    remountInfoRef.current = remountState;
+  }, [remountState]);
+
+  useEffect(() => {
+    setResolvedMeta(null);
+    setMediaAccess(createDefaultMediaAccess());
+    setPlaybackMetrics(createDefaultPlaybackMetrics());
+    setPendingSeekSeconds(null);
+    setRemountState((prev) => (prev.guid === activeEntryGuid ? prev : { guid: activeEntryGuid || null, nonce: 0, context: null }));
+  }, [activeEntryGuid]);
+
+  const effectiveMeta = resolvedMeta || singlePlayerProps || null;
+  const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.media_key || null;
+
+  const handleResolvedMeta = useCallback((meta) => {
+    if (!meta) {
+      return;
+    }
+    setResolvedMeta(meta);
+  }, []);
+
+  const handlePlaybackMetrics = useCallback((metrics = {}) => {
+    setPlaybackMetrics((prev) => {
+      const next = {
+        seconds: Number.isFinite(metrics.seconds) ? metrics.seconds : prev.seconds,
+        isPaused: typeof metrics.isPaused === 'boolean' ? metrics.isPaused : prev.isPaused,
+        isSeeking: typeof metrics.isSeeking === 'boolean' ? metrics.isSeeking : prev.isSeeking
+      };
+      if (prev.seconds === next.seconds && prev.isPaused === next.isPaused && prev.isSeeking === next.isSeeking) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const handleRegisterMediaAccess = useCallback((access = {}) => {
+    setMediaAccess({
+      getMediaEl: typeof access.getMediaEl === 'function' ? access.getMediaEl : null,
+      hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
+      fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null
+    });
+  }, []);
+
+  const handleSeekRequestConsumed = useCallback(() => {
+    setPendingSeekSeconds((prev) => (prev == null ? prev : null));
+  }, []);
+
+  const resolvedWaitKey = useMemo(() => {
+    if (!effectiveMeta) return 'player-idle';
+    const fallback = effectiveMeta.guid
+      || effectiveMeta.waitKey
+      || effectiveMeta.media_key
+      || effectiveMeta.plex
+      || effectiveMeta.media
+      || effectiveMeta.media_url
+      || 'player-entry';
+    return `${fallback}:${remountState.nonce}`;
+  }, [effectiveMeta, remountState.nonce]);
+
+  const forceSinglePlayerRemount = useCallback((input = null) => {
+    const options = (input && typeof input === 'object' && !Array.isArray(input))
+      ? input
+      : { seekSeconds: input };
+    const {
+      seekSeconds = null,
+      reason = 'unspecified',
+      source = 'player',
+      trigger = undefined,
+      conditions = undefined
+    } = options || {};
+
+    const normalized = Number.isFinite(seekSeconds) ? Math.max(0, seekSeconds) : null;
+    const metaKey = effectiveMeta?.media_key
+      || effectiveMeta?.plex
+      || effectiveMeta?.media
+      || effectiveMeta?.id
+      || effectiveMeta?.guid
+      || null;
+    const currentRemountNonce = remountInfoRef.current?.nonce ?? 0;
+    const diagnostics = {
+      reason,
+      source,
+      seekSeconds: normalized,
+      trigger,
+      conditions,
+      waitKey: resolvedWaitKey,
+      remountNonce: currentRemountNonce + 1,
+      timestamp: Date.now()
+    };
+
+    playbackLog('player-remount', {
+      waitKey: resolvedWaitKey,
+      reason,
+      source,
+      seekSeconds: normalized,
+      guid: activeEntryGuid,
+      remountNonce: currentRemountNonce,
+      playerType: playerType || null,
+      isQueue,
+      metaKey,
+      playbackSeconds: playbackMetrics?.seconds ?? null,
+      isPaused: playbackMetrics?.isPaused ?? null,
+      isSeeking: playbackMetrics?.isSeeking ?? null,
+      trigger,
+      conditions
+    });
+
+    setPendingSeekSeconds(normalized);
+    setRemountState((prev) => {
+      if (prev.guid !== activeEntryGuid) {
+        return { guid: activeEntryGuid || null, nonce: 0, context: diagnostics };
+      }
+      return { guid: prev.guid, nonce: prev.nonce + 1, context: diagnostics };
+    });
+  }, [activeEntryGuid, effectiveMeta, isQueue, playerType, playbackMetrics, resolvedWaitKey]);
+
+  const singlePlayerKey = useMemo(() => {
+    if (!singlePlayerProps) return 'player-idle';
+    return `${activeEntryGuid || 'entry'}:${remountState.nonce}`;
+  }, [singlePlayerProps, activeEntryGuid, remountState.nonce]);
+
+  const getResilienceMediaEl = useCallback(() => {
+    if (typeof mediaAccess.getMediaEl === 'function') {
+      try {
+        return mediaAccess.getMediaEl();
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }, [mediaAccess]);
+
+  const exposedMediaRef = useRef(null);
+  const controllerRef = useRef(null);
+  const fallbackResilienceRef = useRef(null);
+
+  const {
+    sanitizedSinglePlayerProps,
+    inlineItemResilience,
+    deprecatedItemConfig,
+    deprecatedItemOnState,
+    deprecatedItemControllerRef
+  } = useMemo(() => {
+    if (!singlePlayerProps) {
+      return {
+        sanitizedSinglePlayerProps: null,
+        inlineItemResilience: null,
+        deprecatedItemConfig: null,
+        deprecatedItemOnState: null,
+        deprecatedItemControllerRef: null
+      };
+    }
+    const {
+      resilience: inlineResilience,
+      mediaResilienceConfig: legacyConfig,
+      onResilienceState: legacyOnState,
+      mediaResilienceRef: legacyControllerRef,
+      key: _unusedKey,
+      ...rest
+    } = singlePlayerProps;
+    return {
+      sanitizedSinglePlayerProps: rest,
+      inlineItemResilience: inlineResilience,
+      deprecatedItemConfig: legacyConfig,
+      deprecatedItemOnState: legacyOnState,
+      deprecatedItemControllerRef: legacyControllerRef
+    };
+  }, [singlePlayerProps]);
+
+  const legacyItemResilience = singlePlayerProps
+    ? {
+        config: deprecatedItemConfig,
+        onStateChange: deprecatedItemOnState,
+        controllerRef: deprecatedItemControllerRef
+      }
+    : null;
+
+  const itemResilience = inlineItemResilience || legacyItemResilience || null;
+
+  const baseResilienceConfig = resilience?.config ?? mediaResilienceConfig;
+  const baseResilienceOnState = resilience?.onStateChange ?? onResilienceState;
+  const baseResilienceControllerRef = resilience?.controllerRef ?? mediaResilienceRef ?? null;
+
+  const resolvedResilience = {
+    config: mergeMediaResilienceConfig(baseResilienceConfig, itemResilience?.config),
+    onStateChange: itemResilience?.onStateChange ?? baseResilienceOnState,
+    controllerRef: itemResilience?.controllerRef ?? baseResilienceControllerRef ?? fallbackResilienceRef
+  };
+
+  const resilienceControllerRef = resolvedResilience.controllerRef;
+
+  const handleResilienceReload = useCallback((options = {}) => {
+    const {
+      forceDocumentReload: forceDocReload,
+      forceFullReload,
+      seekToIntentMs,
+      meta: _ignoredMeta,
+      ...rest
+    } = options || {};
+
+    if (forceDocReload || forceFullReload) {
+      reloadDocument();
+      return;
+    }
+
+    const seekSeconds = Number.isFinite(seekToIntentMs) ? Math.max(0, seekToIntentMs / 1000) : null;
+
+    let hardResetInvoked = false;
+    let hardResetErrored = false;
+    if (typeof mediaAccess.hardReset === 'function') {
+      hardResetInvoked = true;
+      try {
+        mediaAccess.hardReset({ seekToSeconds: seekSeconds });
+      } catch (error) {
+        hardResetErrored = true;
+      }
+    }
+
+    const rawTrigger = {
+      ...rest,
+      seekToIntentMs,
+      forceDocumentReload: forceDocReload,
+      forceFullReload
+    };
+    const triggerDetails = Object.fromEntries(
+      Object.entries(rawTrigger)
+        .filter(([, value]) => typeof value !== 'function' && value !== undefined)
+    );
+
+    const conditions = {
+      hardResetInvoked,
+      hardResetErrored,
+      mediaElementPresent: Boolean(getResilienceMediaEl()),
+      pendingSeekSeconds: seekSeconds
+    };
+
+    forceSinglePlayerRemount({
+      seekSeconds,
+      reason: rest?.reason || 'resilience',
+      source: rest?.source || 'resilience',
+      trigger: triggerDetails,
+      conditions
+    });
+  }, [forceSinglePlayerRemount, mediaAccess, getResilienceMediaEl]);
+
+  const { overlayProps } = useMediaResilience({
+    getMediaEl: getResilienceMediaEl,
+    meta: effectiveMeta,
+    seconds: effectiveMeta ? playbackMetrics.seconds : 0,
+    isPaused: effectiveMeta ? playbackMetrics.isPaused : false,
+    isSeeking: effectiveMeta ? playbackMetrics.isSeeking : false,
+    initialStart: Number(effectiveMeta?.seconds) || 0,
+    waitKey: resolvedWaitKey,
+    fetchVideoInfo: mediaAccess.fetchVideoInfo,
+    onStateChange: resolvedResilience.onStateChange,
+    onReload: handleResilienceReload,
+    configOverrides: resolvedResilience.config,
+    controllerRef: resilienceControllerRef,
+    plexId,
+    debugContext: { scope: 'player', entryGuid: activeEntryGuid || null }
+  });
 
   // Get playback rate from the current item, falling back to queue/play level, then default
-  const currentItemPlaybackRate = singlePlayerProps?.playbackRate || singlePlayerProps?.playbackrate;
+  const currentItemPlaybackRate = effectiveMeta?.playbackRate || effectiveMeta?.playbackrate;
   const effectivePlaybackRate = currentItemPlaybackRate || queuePlaybackRate;
 
   // Get volume from the current item, falling back to queue/play level, then default
-  const currentItemVolume = singlePlayerProps?.volume;
+  const currentItemVolume = effectiveMeta?.volume;
   const effectiveVolume = currentItemVolume !== undefined ? currentItemVolume : queueVolume;
 
   // Get shader from the current item, falling back to queue/play level, then default
-  const currentItemShader = singlePlayerProps?.shader;
+  const currentItemShader = effectiveMeta?.shader;
   const effectiveShader = currentItemShader || queueShader;
 
   // Create appropriate advance function for single continuous items
@@ -89,10 +414,6 @@ const Player = forwardRef(function Player(props, ref) {
       clear();
     }
   }, [singlePlayerProps?.continuous, singlePlayerProps?.media_key, singlePlayerProps?.plex, clear]);
-
-  const exposedMediaRef = useRef(null);
-  const controllerRef = useRef(null);
-  const fallbackResilienceRef = useRef(null);
 
   // Compose onMediaRef so we keep existing external callback semantics
   const handleMediaRef = useCallback((el) => {
@@ -120,41 +441,6 @@ const Player = forwardRef(function Player(props, ref) {
       return null;
     }
   }, []);
-
-  const baseResilience = {
-    config: resilience?.config ?? mediaResilienceConfig,
-    onStateChange: resilience?.onStateChange ?? onResilienceState,
-    controllerRef: resilience?.controllerRef ?? mediaResilienceRef
-  };
-
-  const sanitizedSinglePlayerProps = singlePlayerProps ? { ...singlePlayerProps } : null;
-
-  const legacyItemResilience = sanitizedSinglePlayerProps
-    ? {
-        config: sanitizedSinglePlayerProps.mediaResilienceConfig,
-        onStateChange: sanitizedSinglePlayerProps.onResilienceState,
-        controllerRef: sanitizedSinglePlayerProps.mediaResilienceRef
-      }
-    : {};
-
-  const itemResilience = sanitizedSinglePlayerProps?.resilience || legacyItemResilience;
-
-  const resolvedResilience = {
-    config: itemResilience?.config ?? baseResilience.config,
-    onStateChange: itemResilience?.onStateChange ?? baseResilience.onStateChange,
-    controllerRef: itemResilience?.controllerRef ?? baseResilience.controllerRef
-  };
-
-  const resilienceControllerRef = resolvedResilience.controllerRef || fallbackResilienceRef;
-  resolvedResilience.controllerRef = resilienceControllerRef;
-
-  if (sanitizedSinglePlayerProps) {
-    delete sanitizedSinglePlayerProps.key;
-    delete sanitizedSinglePlayerProps.resilience;
-    delete sanitizedSinglePlayerProps.mediaResilienceConfig;
-    delete sanitizedSinglePlayerProps.onResilienceState;
-    delete sanitizedSinglePlayerProps.mediaResilienceRef;
-  }
 
   const isValidImperativeRef = typeof ref === 'function' || (ref && typeof ref === 'object' && 'current' in ref);
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
@@ -194,21 +480,31 @@ const Player = forwardRef(function Player(props, ref) {
     onProgress: props.onProgress,
     onMediaRef: handleMediaRef,
     onController: handleController,
-    resilience: resolvedResilience
+    onResolvedMeta: handleResolvedMeta,
+    onPlaybackMetrics: handlePlaybackMetrics,
+    onRegisterMediaAccess: handleRegisterMediaAccess,
+    seekToIntentSeconds: pendingSeekSeconds,
+    onSeekRequestConsumed: handleSeekRequestConsumed,
+    remountDiagnostics: remountState.context,
+    wrapWithContainer: false
   };
 
-  // Extract plexId for health checks (from queue or play object)
-  const plexId = queue?.plex || play?.plex || singlePlayerProps?.plex || singlePlayerProps?.media_key || null;
+  const overlayElements = overlayProps ? (
+    <>
+      <PlayerOverlayLoading {...overlayProps} />
+      <PlayerOverlayPaused {...overlayProps} />
+    </>
+  ) : null;
 
-  return sanitizedSinglePlayerProps ? (
-    <SinglePlayer
-      {...sanitizedSinglePlayerProps}
-      {...playerProps}
-    />
+  const playerShellClass = ['player', effectiveShader, props.playerType || '']
+    .filter(Boolean)
+    .join(' ');
+
+  const fallbackContent = overlayElements ? (
+    <div className="player-idle-state" />
   ) : (
-    <div className={`player ${effectiveShader} ${props.playerType || ''}`}>
-      <>
-        <PlayerOverlayLoading
+    <div className="player-idle-state">
+      <PlayerOverlayLoading
         shouldRender
         isVisible
         isPaused={false}
@@ -220,17 +516,31 @@ const Player = forwardRef(function Player(props, ref) {
         togglePauseOverlay={() => {}}
         plexId={plexId}
         debugContext={{ scope: 'idle' }}
-        />
-        <PlayerOverlayPaused
-          shouldRender
-          isVisible
-          pauseOverlayActive
-          seconds={0}
-          stalled={false}
-          waitingToPlay
-          togglePauseOverlay={() => {}}
-        />
-      </>
+      />
+      <PlayerOverlayPaused
+        shouldRender
+        isVisible
+        pauseOverlayActive
+        seconds={0}
+        stalled={false}
+        waitingToPlay
+        togglePauseOverlay={() => {}}
+      />
+    </div>
+  );
+
+  const mainContent = sanitizedSinglePlayerProps ? (
+    <SinglePlayer
+      key={singlePlayerKey}
+      {...sanitizedSinglePlayerProps}
+      {...playerProps}
+    />
+  ) : fallbackContent;
+
+  return (
+    <div className={playerShellClass}>
+      {overlayElements}
+      {mainContent}
     </div>
   );
 });
