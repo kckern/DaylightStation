@@ -60,11 +60,18 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     yStartTime = 15,
     playbackKeys = {},
     ignoreKeys = false,
-    queuePosition = 0  // Accept queuePosition from parent (Player)
+    queuePosition = 0,  // Accept queuePosition from parent (Player)
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds = null,
+    onSeekRequestConsumed,
+    remountDiagnostics
   }) {
     // Refs for media elements
     const mainRef = useRef(null);
     const ambientRef = useRef(null);
+    const seekingRef = useRef(false);
+    const pendingSeekSecondsRef = useRef(null);
   
     // Playback state
     const [duration, setDuration] = useState(0);
@@ -78,6 +85,57 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       panelHeight,
       contentHeight
     } = useDynamicDimensions([contentData, duration]);
+
+  const reportPlaybackMetrics = useCallback(() => {
+    if (!onPlaybackMetrics) return;
+    const mainEl = mainRef.current;
+    if (!mainEl) {
+      onPlaybackMetrics({ seconds: 0, isPaused: true, isSeeking: seekingRef.current });
+      return;
+    }
+    onPlaybackMetrics({
+      seconds: Number.isFinite(mainEl.currentTime) ? mainEl.currentTime : 0,
+      isPaused: Boolean(mainEl.paused),
+      isSeeking: seekingRef.current
+    });
+  }, [onPlaybackMetrics]);
+
+  const applyPendingSeek = useCallback(() => {
+    if (!Number.isFinite(pendingSeekSecondsRef.current)) {
+      return true;
+    }
+    const mainEl = mainRef.current;
+    if (!mainEl) {
+      return false;
+    }
+    const target = Math.max(0, pendingSeekSecondsRef.current);
+    try {
+      mainEl.currentTime = target;
+      pendingSeekSecondsRef.current = null;
+      onSeekRequestConsumed?.();
+      reportPlaybackMetrics();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }, [onSeekRequestConsumed, reportPlaybackMetrics]);
+
+  const hardResetMedia = useCallback(({ seekToSeconds } = {}) => {
+    const mainEl = mainRef.current;
+    if (!mainEl) return;
+    const target = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
+    pendingSeekSecondsRef.current = target;
+    try {
+      mainEl.pause?.();
+    } catch (_) {}
+    try {
+      mainEl.currentTime = target;
+    } catch (_) {
+      // fall back to applying after reload
+    }
+    mainEl.load?.();
+    reportPlaybackMetrics();
+  }, [reportPlaybackMetrics]);
 
 
   const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
@@ -115,6 +173,39 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       setInit(false);
     }, []);
 
+    useEffect(() => {
+      if (!onRegisterMediaAccess) return () => {};
+      onRegisterMediaAccess({
+        getMediaEl: () => mainRef.current,
+        hardReset: hardResetMedia,
+        fetchVideoInfo: null
+      });
+      return () => {
+        onRegisterMediaAccess({});
+      };
+    }, [onRegisterMediaAccess, hardResetMedia, mainMediaUrl]);
+
+    useEffect(() => {
+      if (!Number.isFinite(seekToIntentSeconds)) {
+        if (seekToIntentSeconds == null) {
+          pendingSeekSecondsRef.current = null;
+        }
+        return;
+      }
+      pendingSeekSecondsRef.current = seekToIntentSeconds;
+      applyPendingSeek();
+    }, [seekToIntentSeconds, applyPendingSeek]);
+
+    useEffect(() => {
+      if (pendingSeekSecondsRef.current != null) {
+        applyPendingSeek();
+      }
+    }, [mainMediaUrl, applyPendingSeek]);
+
+    useEffect(() => {
+      reportPlaybackMetrics();
+    }, [reportPlaybackMetrics, mainMediaUrl]);
+
     // Logger for media progress
     const lastLoggedTimeRef = useRef(Date.now());
 
@@ -142,23 +233,62 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       mainEl.addEventListener('timeupdate', onTimeUpdate);
       return () => mainEl.removeEventListener('timeupdate', onTimeUpdate);
     }, [mainMediaUrl, duration, title]);
+
+    useEffect(() => {
+      const mainEl = mainRef.current;
+      if (!mainEl) return () => {};
+
+      const handlePlay = () => {
+        seekingRef.current = false;
+        reportPlaybackMetrics();
+      };
+      const handlePause = () => {
+        reportPlaybackMetrics();
+      };
+      const handleTimeUpdateMetrics = () => {
+        reportPlaybackMetrics();
+      };
+      const handleSeeking = () => {
+        seekingRef.current = true;
+        reportPlaybackMetrics();
+      };
+      const handleSeeked = () => {
+        seekingRef.current = false;
+        reportPlaybackMetrics();
+      };
+
+      mainEl.addEventListener('play', handlePlay);
+      mainEl.addEventListener('pause', handlePause);
+      mainEl.addEventListener('timeupdate', handleTimeUpdateMetrics);
+      mainEl.addEventListener('seeking', handleSeeking);
+      mainEl.addEventListener('seeked', handleSeeked);
+
+      return () => {
+        mainEl.removeEventListener('play', handlePlay);
+        mainEl.removeEventListener('pause', handlePause);
+        mainEl.removeEventListener('timeupdate', handleTimeUpdateMetrics);
+        mainEl.removeEventListener('seeking', handleSeeking);
+        mainEl.removeEventListener('seeked', handleSeeked);
+      };
+    }, [mainMediaUrl, reportPlaybackMetrics]);
   
     // Keep time and progress in sync while playing
     useEffect(() => {
       const mainEl = mainRef.current;
-      if (!mainEl) return;
-  
+      if (!mainEl) return () => {};
+
       const syncInterval = setInterval(() => {
         if (!mainEl.paused && !mainEl.ended) {
           setCurrentTime(mainEl.currentTime);
           if (mainEl.duration) {
             setProgress(mainEl.currentTime / mainEl.duration);
           }
+          reportPlaybackMetrics();
         }
       }, 100);
-  
+
       return () => clearInterval(syncInterval);
-    }, []);
+    }, [reportPlaybackMetrics]);
   
     const handleLoadedMetadata = useCallback(() => {
       const mainEl = mainRef.current;
@@ -176,8 +306,11 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
           const finalVolume = Math.min(1, Math.max(0, processedVolume));
           mainEl.volume = finalVolume;
         }
+
+        applyPendingSeek();
+        reportPlaybackMetrics();
       }
-    }, [mainVolume]);
+    }, [mainVolume, applyPendingSeek, reportPlaybackMetrics]);
   
     // Seek bar click => set new currentTime
     const handleSeekBarClick = (e) => {
@@ -189,6 +322,9 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       if (mainRef.current) {
         mainRef.current.currentTime = newTime;
         setCurrentTime(newTime);
+        pendingSeekSecondsRef.current = null;
+        onSeekRequestConsumed?.();
+        reportPlaybackMetrics();
       }
     };
   
@@ -461,7 +597,22 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
    * No ambient track, just a single audio. 
    */
   export function Hymns(play) {
-    const { hymn, advance, clear, subfolder, volume, playbackKeys, ignoreKeys, queuePosition } = play;
+    const {
+      hymn,
+      advance,
+      clear,
+      subfolder,
+      volume,
+      playbackKeys,
+      ignoreKeys,
+      queuePosition,
+      onResolvedMeta,
+      onPlaybackMetrics,
+      onRegisterMediaAccess,
+      seekToIntentSeconds,
+      onSeekRequestConsumed,
+      remountDiagnostics
+    } = play;
     const [title, setTitle] = useState("");
     const [subtitle, setSubtitle] = useState("");
     const [verses, setHymnVerses] = useState([]);
@@ -498,6 +649,22 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
           setDuration(duration);
         });
     }, [hymn, normalizedHymn, folder]);
+
+    useEffect(() => {
+      if (!onResolvedMeta) return;
+      if (!media_key || !mediaUrl || !title) return;
+      onResolvedMeta({
+        media_key,
+        media_type: 'audio',
+        title,
+        subtitle,
+        plex: media_key,
+        duration,
+        hymn_num: hymnNum,
+        type: folder,
+        seconds: 0
+      });
+    }, [onResolvedMeta, media_key, mediaUrl, title, subtitle, hymnNum, duration, folder]);
 
     // Apply centering behavior once verses/hymnNum change
     useCenterByWidest(hymnTextRef, [verses, hymnNum]);
@@ -547,6 +714,11 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
         ignoreKeys={ignoreKeys}
         queuePosition={queuePosition}
         yStartTime={yStartTime}
+        onPlaybackMetrics={onPlaybackMetrics}
+        onRegisterMediaAccess={onRegisterMediaAccess}
+        seekToIntentSeconds={seekToIntentSeconds}
+        onSeekRequestConsumed={onSeekRequestConsumed}
+        remountDiagnostics={remountDiagnostics}
       />
     );
   }
