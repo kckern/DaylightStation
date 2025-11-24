@@ -181,9 +181,10 @@ export function usePlaybackHealth({
 
     const handleWaiting = () => safeUpdate({ waiting: true, buffering: true });
     const handlePlaying = () => {
+      const sampledSeconds = sampleCurrentTime();
       safeUpdate({ playing: true, waiting: false, stalled: false, buffering: false, paused: false });
-      recordProgress('event', { details: 'playing' });
-      logHealthEvent('media-playing', { currentTime: sampleCurrentTime() });
+      recordProgress('event', { details: 'playing', seconds: sampledSeconds });
+      logHealthEvent('media-playing', { currentTime: sampledSeconds });
     };
     const handleStalled = () => safeUpdate({ stalled: true, waiting: false });
     const handlePause = () => safeUpdate({ paused: true, playing: false });
@@ -278,6 +279,7 @@ export function usePlaybackHealth({
     lastProgressSource: progressSignal.lastProgressSource,
     lastProgressAt: progressSignal.lastProgressAt,
     lastProgressSeconds: progressSignal.lastProgressSeconds,
+    progressDetails: progressSignal.details,
     elementSignals,
     frameInfo,
     isWaiting: Boolean(elementSignals.waiting || elementSignals.buffering),
