@@ -10,7 +10,7 @@ export function useResilienceRecovery({
   logResilienceEvent,
   defaultReload,
   onReloadRef,
-  seekIntentMsRef,
+  persistSeekIntentMs,
   lastReloadAtRef,
   lastProgressSecondsRef,
   lastSecondsRef,
@@ -72,7 +72,7 @@ export function useResilienceRecovery({
       lastProgressSecondsRef.current = null;
 
       if (Number.isFinite(resolvedIntentMs)) {
-        seekIntentMsRef.current = resolvedIntentMs;
+        persistSeekIntentMs(resolvedIntentMs);
       }
 
       onReloadRef.current?.({ reason, meta, waitKey, seekToIntentMs: resolvedIntentMs });
@@ -96,7 +96,7 @@ export function useResilienceRecovery({
     logResilienceEvent,
     resilienceActions,
     progressTokenRef,
-    seekIntentMsRef,
+    persistSeekIntentMs,
     onReloadRef,
     meta,
     waitKey,
@@ -144,7 +144,7 @@ export function useResilienceRecovery({
     });
 
     if (Number.isFinite(normalizedIntentMs)) {
-      seekIntentMsRef.current = normalizedIntentMs;
+      persistSeekIntentMs(normalizedIntentMs);
     }
 
     onReloadRef.current({
@@ -162,7 +162,7 @@ export function useResilienceRecovery({
     defaultReload,
     lastReloadAtRef,
     resilienceActions,
-    seekIntentMsRef,
+    persistSeekIntentMs,
     meta,
     waitKey,
     recoveringStatusValue

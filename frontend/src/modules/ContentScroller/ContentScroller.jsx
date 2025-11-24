@@ -14,6 +14,7 @@ import paperBackground from "../../assets/backgrounds/paper.jpg";
 import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scripture-guide.jsx";
 import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandler.js';
 import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
+import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
   
   /**
    * ContentScroller (superclass)
@@ -70,8 +71,19 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     // Refs for media elements
     const mainRef = useRef(null);
     const ambientRef = useRef(null);
-    const seekingRef = useRef(false);
-    const pendingSeekSecondsRef = useRef(null);
+    const {
+      reportPlaybackMetrics,
+      applyPendingSeek,
+      clearPendingSeek
+    } = useMediaReporter({
+      mediaRef: mainRef,
+      onPlaybackMetrics,
+      onRegisterMediaAccess,
+      seekToIntentSeconds,
+      onSeekRequestConsumed,
+      remountDiagnostics,
+      mediaIdentityKey: mainMediaUrl
+    });
   
     // Playback state
     const [duration, setDuration] = useState(0);
@@ -86,56 +98,6 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       contentHeight
     } = useDynamicDimensions([contentData, duration]);
 
-  const reportPlaybackMetrics = useCallback(() => {
-    if (!onPlaybackMetrics) return;
-    const mainEl = mainRef.current;
-    if (!mainEl) {
-      onPlaybackMetrics({ seconds: 0, isPaused: true, isSeeking: seekingRef.current });
-      return;
-    }
-    onPlaybackMetrics({
-      seconds: Number.isFinite(mainEl.currentTime) ? mainEl.currentTime : 0,
-      isPaused: Boolean(mainEl.paused),
-      isSeeking: seekingRef.current
-    });
-  }, [onPlaybackMetrics]);
-
-  const applyPendingSeek = useCallback(() => {
-    if (!Number.isFinite(pendingSeekSecondsRef.current)) {
-      return true;
-    }
-    const mainEl = mainRef.current;
-    if (!mainEl) {
-      return false;
-    }
-    const target = Math.max(0, pendingSeekSecondsRef.current);
-    try {
-      mainEl.currentTime = target;
-      pendingSeekSecondsRef.current = null;
-      onSeekRequestConsumed?.();
-      reportPlaybackMetrics();
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }, [onSeekRequestConsumed, reportPlaybackMetrics]);
-
-  const hardResetMedia = useCallback(({ seekToSeconds } = {}) => {
-    const mainEl = mainRef.current;
-    if (!mainEl) return;
-    const target = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
-    pendingSeekSecondsRef.current = target;
-    try {
-      mainEl.pause?.();
-    } catch (_) {}
-    try {
-      mainEl.currentTime = target;
-    } catch (_) {
-      // fall back to applying after reload
-    }
-    mainEl.load?.();
-    reportPlaybackMetrics();
-  }, [reportPlaybackMetrics]);
 
 
   const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
@@ -174,37 +136,8 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
     }, []);
 
     useEffect(() => {
-      if (!onRegisterMediaAccess) return () => {};
-      onRegisterMediaAccess({
-        getMediaEl: () => mainRef.current,
-        hardReset: hardResetMedia,
-        fetchVideoInfo: null
-      });
-      return () => {
-        onRegisterMediaAccess({});
-      };
-    }, [onRegisterMediaAccess, hardResetMedia, mainMediaUrl]);
-
-    useEffect(() => {
-      if (!Number.isFinite(seekToIntentSeconds)) {
-        if (seekToIntentSeconds == null) {
-          pendingSeekSecondsRef.current = null;
-        }
-        return;
-      }
-      pendingSeekSecondsRef.current = seekToIntentSeconds;
-      applyPendingSeek();
-    }, [seekToIntentSeconds, applyPendingSeek]);
-
-    useEffect(() => {
-      if (pendingSeekSecondsRef.current != null) {
-        applyPendingSeek();
-      }
-    }, [mainMediaUrl, applyPendingSeek]);
-
-    useEffect(() => {
       reportPlaybackMetrics();
-    }, [reportPlaybackMetrics, mainMediaUrl]);
+    }, [reportPlaybackMetrics]);
 
     // Logger for media progress
     const lastLoggedTimeRef = useRef(Date.now());
@@ -234,43 +167,6 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       return () => mainEl.removeEventListener('timeupdate', onTimeUpdate);
     }, [mainMediaUrl, duration, title]);
 
-    useEffect(() => {
-      const mainEl = mainRef.current;
-      if (!mainEl) return () => {};
-
-      const handlePlay = () => {
-        seekingRef.current = false;
-        reportPlaybackMetrics();
-      };
-      const handlePause = () => {
-        reportPlaybackMetrics();
-      };
-      const handleTimeUpdateMetrics = () => {
-        reportPlaybackMetrics();
-      };
-      const handleSeeking = () => {
-        seekingRef.current = true;
-        reportPlaybackMetrics();
-      };
-      const handleSeeked = () => {
-        seekingRef.current = false;
-        reportPlaybackMetrics();
-      };
-
-      mainEl.addEventListener('play', handlePlay);
-      mainEl.addEventListener('pause', handlePause);
-      mainEl.addEventListener('timeupdate', handleTimeUpdateMetrics);
-      mainEl.addEventListener('seeking', handleSeeking);
-      mainEl.addEventListener('seeked', handleSeeked);
-
-      return () => {
-        mainEl.removeEventListener('play', handlePlay);
-        mainEl.removeEventListener('pause', handlePause);
-        mainEl.removeEventListener('timeupdate', handleTimeUpdateMetrics);
-        mainEl.removeEventListener('seeking', handleSeeking);
-        mainEl.removeEventListener('seeked', handleSeeked);
-      };
-    }, [mainMediaUrl, reportPlaybackMetrics]);
   
     // Keep time and progress in sync while playing
     useEffect(() => {
@@ -322,7 +218,7 @@ import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
       if (mainRef.current) {
         mainRef.current.currentTime = newTime;
         setCurrentTime(newTime);
-        pendingSeekSecondsRef.current = null;
+        clearPendingSeek();
         onSeekRequestConsumed?.();
         reportPlaybackMetrics();
       }
