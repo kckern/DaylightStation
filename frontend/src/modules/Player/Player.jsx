@@ -10,6 +10,7 @@ import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMedia
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
+import { useCompositeControllerChannel } from './components/CompositeControllerContext.jsx';
 
 const reloadDocument = () => {
   try {
@@ -72,6 +73,7 @@ const Player = forwardRef(function Player(props, ref) {
     onResilienceState,
     mediaResilienceRef
   } = props || {};
+  const compositeChannel = useCompositeControllerChannel(playerType);
   
   // console.log('[Player] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   
@@ -354,6 +356,15 @@ const Player = forwardRef(function Player(props, ref) {
 
   const resilienceControllerRef = resolvedResilience.controllerRef;
 
+  const resolvedResilienceOnState = resolvedResilience.onStateChange;
+
+  const compositeAwareOnState = useCallback((state) => {
+    if (typeof resolvedResilienceOnState === 'function') {
+      resolvedResilienceOnState(state);
+    }
+    compositeChannel?.reportResilienceState(state);
+  }, [resolvedResilienceOnState, compositeChannel]);
+
   const handleResilienceReload = useCallback((options = {}) => {
     const {
       forceDocumentReload: forceDocReload,
@@ -417,7 +428,7 @@ const Player = forwardRef(function Player(props, ref) {
     initialStart: Number(effectiveMeta?.seconds) || 0,
     waitKey: resolvedWaitKey,
     fetchVideoInfo: mediaAccess.fetchVideoInfo,
-    onStateChange: resolvedResilience.onStateChange,
+    onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
     configOverrides: resolvedResilience.config,
     controllerRef: resilienceControllerRef,
@@ -481,8 +492,9 @@ const Player = forwardRef(function Player(props, ref) {
 
   const handleController = useCallback((controller) => {
     controllerRef.current = controller;
+    compositeChannel?.registerController(controller);
     if (props.onController) props.onController(controller);
-  }, [props.onController]);
+  }, [props.onController, compositeChannel]);
 
   const withTransport = useCallback((handler, fallback) => {
     const controller = controllerRef.current;

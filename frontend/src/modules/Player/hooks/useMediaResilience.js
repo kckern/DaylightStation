@@ -7,6 +7,7 @@ import { useResilienceConfig } from './useResilienceConfig.js';
 import { useResilienceState, RESILIENCE_STATUS } from './useResilienceState.js';
 import { useResilienceRecovery } from './useResilienceRecovery.js';
 import { usePlaybackSession } from './usePlaybackSession.js';
+import { useOverlayPresentation } from './useOverlayPresentation.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -41,37 +42,6 @@ const SYSTEM_HEALTH = Object.freeze({
   stalled: 'stalled'
 });
 
-const formatSecondsForLog = (value, precision = 3) => (Number.isFinite(value)
-  ? Number(value.toFixed(precision))
-  : null);
-
-const deriveOverlayDrivers = ({
-  waitingToPlay,
-  stallOverlayActive,
-  explicitShow,
-  pauseOverlayActive,
-  holdOverlayActive
-}) => ({
-  waiting: Boolean(waitingToPlay),
-  stalled: Boolean(stallOverlayActive),
-  explicit: Boolean(explicitShow),
-  pause: Boolean(pauseOverlayActive),
-  hold: Boolean(holdOverlayActive)
-});
-
-const summarizeActiveDrivers = (drivers) => Object.entries(drivers)
-  .filter(([, active]) => Boolean(active))
-  .map(([key]) => key);
-
-const DEFAULT_MEDIA_DETAILS = Object.freeze({
-  hasElement: false,
-  currentTime: null,
-  readyState: null,
-  networkState: null,
-  paused: null
-});
-
-let pauseOverlayPreference = true;
 
 const useLatest = (value) => {
   const ref = useRef(value);
@@ -81,69 +51,6 @@ const useLatest = (value) => {
   return ref;
 };
 
-const useOverlayTimer = (overlayActive, stallDeadlineMs, triggerRecovery) => {
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const rafRef = useRef(null);
-  const intervalRef = useRef(null);
-  const startTimeRef = useRef(0);
-  const overlayAlertedRef = useRef(false);
-  const triggerRecoveryRef = useLatest(triggerRecovery);
-  const clearTicker = useCallback(() => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!overlayActive) {
-      setElapsedMs(0);
-      overlayAlertedRef.current = false;
-      clearTicker();
-      return () => {};
-    }
-
-    startTimeRef.current = Date.now();
-    setElapsedMs(0);
-
-    const hasRAF = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function';
-    if (hasRAF) {
-      const tick = () => {
-        setElapsedMs(Date.now() - startTimeRef.current);
-        rafRef.current = window.requestAnimationFrame(tick);
-      };
-      rafRef.current = window.requestAnimationFrame(tick);
-    } else {
-      intervalRef.current = setInterval(() => {
-        setElapsedMs(Date.now() - startTimeRef.current);
-      }, 500);
-    }
-
-    return () => {
-      clearTicker();
-    };
-  }, [overlayActive, clearTicker]);
-
-  useEffect(() => {
-    if (!overlayActive || overlayAlertedRef.current) return;
-    if (stallDeadlineMs > 0 && elapsedMs >= stallDeadlineMs) {
-      overlayAlertedRef.current = true;
-      triggerRecoveryRef.current?.('overlay-hard-recovery', { ignorePaused: true, force: true });
-    }
-  }, [elapsedMs, overlayActive, stallDeadlineMs, triggerRecoveryRef]);
-
-  useEffect(() => () => {
-    clearTicker();
-  }, [clearTicker]);
-
-  const effectiveDeadline = Math.max(stallDeadlineMs, 0) || elapsedMs;
-  const cappedMs = Math.min(elapsedMs, effectiveDeadline);
-  return Math.max(0, Math.floor(cappedMs / 1000));
-};
 
 function useUserIntentControls({ isPaused, isSeeking }) {
   const computeInitialIntent = () => {
@@ -214,9 +121,7 @@ export function useMediaResilience({
     mountMaxAttempts
   } = monitorSettings;
 
-  const [isOverlayVisible, setOverlayVisible] = useState(() => !overlayConfig.revealDelayMs);
   const [showDebug, setShowDebug] = useState(false);
-  const [showPauseOverlay, setShowPauseOverlay] = useState(pauseOverlayPreference);
   const {
     userIntent,
     userIntentRef,
@@ -232,13 +137,6 @@ export function useMediaResilience({
     actions: resilienceActions
   } = useResilienceState(STATUS.pending);
   const [lastFetchAt, setLastFetchAt] = useState(null);
-  const [overlayHoldActive, setOverlayHoldActive] = useState(false);
-  const [initialOverlayGraceActive, setInitialOverlayGraceActive] = useState(Boolean(overlayConfig.revealDelayMs));
-  const [mediaDetails, setMediaDetails] = useState(DEFAULT_MEDIA_DETAILS);
-  const overlayDecisionRef = useRef(null);
-  const overlayVisibilityRef = useRef(null);
-  const overlayHoldLogRef = useRef(false);
-  const playbackHeartbeatRef = useRef(null);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
@@ -269,6 +167,21 @@ export function useMediaResilience({
   const mountWatchdogReasonRef = useRef(null);
   const mountWatchdogAttemptsRef = useRef(0);
   const statusTransitionRef = useRef(status);
+  const seekIntentNoiseThresholdSeconds = useMemo(
+    () => Math.max(0.5, epsilonSeconds * 2),
+    [epsilonSeconds]
+  );
+
+  const hasMeaningfulSeekIntent = useCallback((targetSeconds) => {
+    if (!Number.isFinite(targetSeconds)) return false;
+    const baseline = Number.isFinite(lastProgressSecondsRef.current)
+      ? lastProgressSecondsRef.current
+      : (Number.isFinite(lastSecondsRef.current) ? lastSecondsRef.current : null);
+    if (!Number.isFinite(baseline)) {
+      return true;
+    }
+    return Math.abs(targetSeconds - baseline) >= seekIntentNoiseThresholdSeconds;
+  }, [lastProgressSecondsRef, lastSecondsRef, seekIntentNoiseThresholdSeconds]);
 
 
   const logResilienceEvent = useCallback((event, details = {}) => {
@@ -314,12 +227,7 @@ export function useMediaResilience({
     lastProgressTsRef.current = null;
     statusTransitionRef.current = STATUS.pending;
     lastSecondsRef.current = 0;
-    playbackLog('resilience-wait-key', {
-      waitKey: logWaitKey,
-      status: STATUS.pending,
-      overlayHoldPrimed: true
-    });
-  }, [waitKey, logWaitKey]);
+  }, [waitKey]);
 
   useEffect(() => {
     if (isSeeking) {
@@ -343,10 +251,6 @@ export function useMediaResilience({
       }
     }
   }, [seconds, sessionTargetTimeSeconds, consumeTargetTimeSeconds]);
-
-  useEffect(() => {
-    setShowPauseOverlay(pauseOverlayPreference);
-  }, [waitKey]);
 
   useEffect(() => {
     if (mediaIdentityRef.current !== mediaIdentity) {
@@ -402,13 +306,10 @@ export function useMediaResilience({
   useEffect(() => {
     resetDetectionState();
     setShowDebug(false);
-    setOverlayVisible(!overlayConfig.revealDelayMs);
-    setOverlayHoldActive(true);
-    setInitialOverlayGraceActive(Boolean(overlayConfig.revealDelayMs));
     resilienceActions.reset({
       nextStatus: resilienceState.carryRecovery ? STATUS.recovering : STATUS.pending
     });
-  }, [waitKey, resetDetectionState, overlayConfig.revealDelayMs, resilienceActions, resilienceState.carryRecovery]);
+  }, [waitKey, resetDetectionState, resilienceActions, resilienceState.carryRecovery]);
 
   useEffect(() => {
     updateExplicitPauseState(false);
@@ -443,7 +344,11 @@ export function useMediaResilience({
 
     const handleSeeking = () => {
       if (Number.isFinite(mediaEl.currentTime)) {
-        recordSeekIntentSeconds(mediaEl.currentTime, 'media-element-seeking');
+        const targetSeconds = mediaEl.currentTime;
+        if (!hasMeaningfulSeekIntent(targetSeconds)) {
+          return;
+        }
+        recordSeekIntentSeconds(targetSeconds, 'media-element-seeking');
       } else {
         invalidatePendingStallDetection('media-element-seeking');
       }
@@ -453,7 +358,13 @@ export function useMediaResilience({
     return () => {
       mediaEl.removeEventListener('seeking', handleSeeking);
     };
-  }, [getMediaEl, recordSeekIntentSeconds, invalidatePendingStallDetection, waitKey]);
+  }, [
+    getMediaEl,
+    recordSeekIntentSeconds,
+    invalidatePendingStallDetection,
+    waitKey,
+    hasMeaningfulSeekIntent
+  ]);
 
   const resolveSeekIntentMs = useCallback((overrideMs = null) => {
     if (Number.isFinite(overrideMs)) {
@@ -826,192 +737,40 @@ export function useMediaResilience({
     updateExplicitPauseState
   ]);
 
-  const pauseOverlayEligible = overlayConfig.showPausedOverlay && showPauseOverlay;
-  const pauseOverlayActive = pauseOverlayEligible
-    && explicitPauseActive
-    && userIntent === USER_INTENT.paused
-    && isPaused
-    && !waitingToPlay
-    && !computedStalled;
-
-  useEffect(() => {
-    if (status === STATUS.recovering) {
-      setOverlayHoldActive(true);
-      return;
-    }
-    if (playbackHasProgress) {
-      setOverlayHoldActive(false);
-    }
-  }, [status, playbackHasProgress]);
-
-  useEffect(() => {
-    if (!initialOverlayGraceActive) return;
-    if (!playbackHasProgress) return;
-    setInitialOverlayGraceActive(false);
-  }, [initialOverlayGraceActive, playbackHasProgress]);
-
-  const holdOverlayActive = overlayHoldActive && !playbackHasProgress;
-  const overlayDrivers = useMemo(() => deriveOverlayDrivers({
-    waitingToPlay,
-    stallOverlayActive,
-    explicitShow,
-    pauseOverlayActive,
-    holdOverlayActive
-  }), [waitingToPlay, stallOverlayActive, explicitShow, pauseOverlayActive, holdOverlayActive]);
-  const overlayActiveReasons = useMemo(() => summarizeActiveDrivers(overlayDrivers), [overlayDrivers]);
-
-  useEffect(() => {
-    if (overlayHoldLogRef.current === overlayHoldActive) return;
-    overlayHoldLogRef.current = overlayHoldActive;
-    playbackLog('overlay-hold', {
-      waitKey: logWaitKey,
-      active: overlayHoldActive,
-      holdOverlayActive,
-      playbackHasProgress,
-      status,
-      reasons: overlayActiveReasons.join(',') || 'none'
-    });
-  }, [overlayHoldActive, holdOverlayActive, playbackHasProgress, logWaitKey, status, overlayActiveReasons]);
-  const shouldRenderOverlay = waitingToPlay
-    || stallOverlayActive
-    || explicitShow
-    || pauseOverlayActive
-    || holdOverlayActive;
-  const overlayActive = shouldRenderOverlay && isOverlayVisible;
-  const overlayTimerActive = overlayActive && !pauseOverlayActive;
-  const overlayRevealDelayMs = Number.isFinite(overlayConfig.revealDelayMs)
-    ? Math.max(0, overlayConfig.revealDelayMs)
-    : 0;
-  const overlayGraceReason = (() => {
-    if (!overlayRevealDelayMs) return null;
-    if (initialOverlayGraceActive) return 'initial-load';
-    if (isSeeking) return 'seeking';
-    return null;
-  })();
-  const overlayGraceActive = Boolean(overlayGraceReason);
-
-  useEffect(() => {
-    if (typeof getMediaEl !== 'function' || !overlayActive) {
-      setMediaDetails(DEFAULT_MEDIA_DETAILS);
-      return () => {};
-    }
-
-    let cancelled = false;
-    const readDetails = () => {
-      if (cancelled) return;
-      let nextDetails = DEFAULT_MEDIA_DETAILS;
-      try {
-        const el = getMediaEl();
-        if (el) {
-          nextDetails = {
-            hasElement: true,
-            currentTime: Number.isFinite(el.currentTime) ? Number(el.currentTime).toFixed(1) : null,
-            readyState: typeof el.readyState === 'number' ? el.readyState : null,
-            networkState: typeof el.networkState === 'number' ? el.networkState : null,
-            paused: typeof el.paused === 'boolean' ? el.paused : null
-          };
-        }
-      } catch (_) {
-        nextDetails = DEFAULT_MEDIA_DETAILS;
-      }
-
-      setMediaDetails((prev) => (
-        prev.hasElement === nextDetails.hasElement
-        && prev.currentTime === nextDetails.currentTime
-        && prev.readyState === nextDetails.readyState
-        && prev.networkState === nextDetails.networkState
-        && prev.paused === nextDetails.paused
-      ) ? prev : nextDetails);
-    };
-
-    readDetails();
-    const intervalId = setInterval(readDetails, 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [getMediaEl, overlayActive, waitKey]);
-
-  useEffect(() => {
-    const decisionSnapshot = {
-      waitKey: logWaitKey,
-      status,
-      shouldRender: shouldRenderOverlay,
-      isVisible: isOverlayVisible,
-      revealDelayMs: overlayRevealDelayMs,
-      overlayHoldActive,
-      holdOverlayActive,
-      playbackHasProgress,
-      waitingToPlay,
-      stalled: stallOverlayActive,
-      pauseOverlayActive,
-      explicitShow,
-      overlayTimerActive,
-      overlayGraceReason,
-      activeReasons: overlayActiveReasons,
-      seconds: formatSecondsForLog(seconds)
-    };
-    const serialized = JSON.stringify({
-      shouldRender: decisionSnapshot.shouldRender,
-      isVisible: decisionSnapshot.isVisible,
-      overlayHoldActive: decisionSnapshot.overlayHoldActive,
-      holdOverlayActive: decisionSnapshot.holdOverlayActive,
-      reasons: decisionSnapshot.activeReasons
-    });
-    if (overlayDecisionRef.current === serialized) return;
-    overlayDecisionRef.current = serialized;
-    playbackLog('overlay-decision', decisionSnapshot);
-  }, [
-    overlayActiveReasons,
-    overlayGraceReason,
-    overlayHoldActive,
-    holdOverlayActive,
-    overlayTimerActive,
-    overlayRevealDelayMs,
+  const {
     isOverlayVisible,
+    showPauseOverlay,
+    pauseOverlayActive,
     shouldRenderOverlay,
+    overlayRevealDelayMs,
+    overlayCountdownSeconds,
+    overlayLoggingActive,
+    overlayLogLabel,
+    mediaDetails,
+    togglePauseOverlay,
+    setPauseOverlayVisible: setOverlayPausePreference,
+    resetOverlayState
+  } = useOverlayPresentation({
+    overlayConfig,
+    waitKey,
     logWaitKey,
     status,
-    playbackHasProgress,
-    waitingToPlay,
-    stallOverlayActive,
-    pauseOverlayActive,
     explicitShow,
-    seconds,
-    overlayGraceReason
-  ]);
-
-  useEffect(() => {
-    const visibilitySnapshot = {
-      waitKey: logWaitKey,
-      shouldRender: shouldRenderOverlay,
-      isVisible: isOverlayVisible,
-      revealDelayMs: overlayRevealDelayMs,
-      overlayHoldActive,
-      holdOverlayActive,
-      reasons: overlayActiveReasons,
-      waitingToPlay,
-      paused: isPaused,
-      stalled: stallOverlayActive,
-      overlayGraceReason
-    };
-    const serialized = JSON.stringify(visibilitySnapshot);
-    if (overlayVisibilityRef.current === serialized) return;
-    overlayVisibilityRef.current = serialized;
-    playbackLog('overlay-visibility-gate', visibilitySnapshot);
-  }, [
-    isOverlayVisible,
-    shouldRenderOverlay,
-    overlayRevealDelayMs,
-    overlayHoldActive,
-    holdOverlayActive,
-    overlayActiveReasons,
-    waitingToPlay,
-    isPaused,
+    isSeeking,
+    getMediaEl,
+    meta,
+    hardRecoverAfterStalledForMs,
+    triggerRecovery,
     stallOverlayActive,
-    logWaitKey,
-    overlayGraceReason
-  ]);
+    waitingToPlay,
+    playbackHasProgress,
+    userIntentIsPaused: userIntent === USER_INTENT.paused,
+    explicitPauseActive,
+    isPaused,
+    computedStalled,
+    playbackHealth,
+    seconds
+  });
 
   useEffect(() => {
     if (!mountTimeoutMs || mountTimeoutMs <= 0) {
@@ -1034,39 +793,6 @@ export function useMediaResilience({
       mountWatchdogAttemptsRef.current = 0;
     }
   }, [status]);
-
-  useEffect(() => {
-    if (!shouldRenderOverlay) {
-      setOverlayVisible(false);
-      return () => {};
-    }
-    if (!overlayGraceActive) {
-      setOverlayVisible(true);
-      return () => {};
-    }
-    setOverlayVisible(false);
-    const timeout = setTimeout(() => setOverlayVisible(true), overlayRevealDelayMs);
-    return () => clearTimeout(timeout);
-  }, [shouldRenderOverlay, overlayGraceActive, overlayRevealDelayMs]);
-
-  const overlayBaseDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
-  const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayBaseDeadlineMs, triggerRecovery);
-  const overlayCountdownSeconds = overlayTimerActive
-    ? Math.max(0, Math.ceil((overlayBaseDeadlineMs - overlayElapsedSeconds * 1000) / 1000))
-    : null;
-  const playbackHealthy = Boolean(
-    playbackHealth?.elementSignals?.playing && !playbackHealth?.isWaiting && !playbackHealth?.isStalledEvent
-  );
-  const overlayLoggingActive = overlayTimerActive && (!playbackHealthy || explicitShow);
-  const overlayLogLabel = logWaitKey || waitKey || meta?.title || meta?.media_url || 'player-overlay';
-
-  const togglePauseOverlay = useCallback(() => {
-    setShowPauseOverlay((prev) => {
-      const next = !prev;
-      pauseOverlayPreference = next;
-      return next;
-    });
-  }, []);
 
   const markHealthy = useCallback(() => {
     clearTimer(stallTimerRef);
@@ -1129,8 +855,8 @@ export function useMediaResilience({
     reset: () => {
       resetDetectionState();
       resilienceActions.reset({ nextStatus: STATUS.pending, clearCarry: true });
-      setOverlayVisible(!overlayConfig.revealDelayMs);
       setShowDebug(false);
+      resetOverlayState();
     },
     forceReload: (options = {}) => {
       const overrideMs = Number.isFinite(options.seekToIntentMs)
@@ -1154,9 +880,7 @@ export function useMediaResilience({
     },
     getState: () => stateRef.current,
     setPauseOverlayVisible: (value) => {
-      const next = value ?? true;
-      pauseOverlayPreference = next;
-      setShowPauseOverlay(next);
+      setOverlayPausePreference(value);
     },
     markHealthy,
     togglePauseOverlay,
@@ -1167,17 +891,18 @@ export function useMediaResilience({
     fetchVideoInfoRef,
     markHealthy,
     meta,
-    overlayConfig.revealDelayMs,
     onReloadRef,
     recordSeekIntentMs,
     recordSeekIntentSeconds,
     resetDetectionState,
+    resetOverlayState,
     togglePauseOverlay,
     triggerRecovery,
     resolveSeekIntentMs,
     waitKey,
     stateRef,
-    resilienceActions
+    resilienceActions,
+    setOverlayPausePreference
   ]);
 
   useEffect(() => {
@@ -1229,46 +954,6 @@ export function useMediaResilience({
     playbackHealth,
     mediaDetails
   });
-
-  const heartbeatProgressToken = playbackHealth?.progressToken ?? null;
-  const heartbeatProgressSource = playbackHealth?.lastProgressSource ?? null;
-  const heartbeatProgressDetails = playbackHealth?.progressDetails ?? null;
-  const heartbeatProgressSeconds = playbackHealth?.lastProgressSeconds ?? null;
-  const heartbeatIsWaiting = playbackHealth?.isWaiting ?? false;
-  const heartbeatIsStalled = playbackHealth?.isStalledEvent ?? false;
-  const heartbeatElementPlaying = Boolean(playbackHealth?.elementSignals?.playing);
-
-  useEffect(() => {
-    if (!playbackHealth) return;
-    const snapshot = {
-      waitKey: logWaitKey,
-      status,
-      progressToken: heartbeatProgressToken,
-      lastProgressSource: heartbeatProgressSource,
-      lastProgressDetails: heartbeatProgressDetails,
-      lastProgressSeconds: formatSecondsForLog(heartbeatProgressSeconds),
-      seconds: formatSecondsForLog(seconds),
-      isWaiting: heartbeatIsWaiting,
-      isStalledEvent: heartbeatIsStalled,
-      elementPlayingSignal: heartbeatElementPlaying
-    };
-    const serialized = JSON.stringify(snapshot);
-    if (playbackHeartbeatRef.current === serialized) return;
-    playbackHeartbeatRef.current = serialized;
-    playbackLog('playback-heartbeat', snapshot);
-  }, [
-    playbackHealth,
-    heartbeatProgressToken,
-    heartbeatProgressSource,
-    heartbeatProgressDetails,
-    heartbeatProgressSeconds,
-    heartbeatIsWaiting,
-    heartbeatIsStalled,
-    heartbeatElementPlaying,
-    seconds,
-    logWaitKey,
-    status
-  ]);
 
   return { overlayProps, controller, state };
 }
