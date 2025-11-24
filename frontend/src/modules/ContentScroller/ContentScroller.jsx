@@ -383,7 +383,20 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
   
   // This is the default export for Scriptures:
   export function Scriptures(play) {
-    const { scripture, advance, clear, volume, playbackKeys, ignoreKeys, queuePosition } = play;
+      const {
+        scripture,
+        advance,
+        clear,
+        volume,
+        playbackKeys,
+        ignoreKeys,
+        queuePosition,
+        onPlaybackMetrics,
+        onRegisterMediaAccess,
+        seekToIntentSeconds,
+        onSeekRequestConsumed,
+        remountDiagnostics
+      } = play;
     const [titleHeader, setTitleHeader] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
     const [mainMediaUrl, setMainMediaUrl] = useState(null);
@@ -483,6 +496,11 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         queuePosition={queuePosition}
         /* Start scrolling after 15 seconds, same as original code */
         yStartTime={15}
+        onPlaybackMetrics={onPlaybackMetrics}
+        onRegisterMediaAccess={onRegisterMediaAccess}
+        seekToIntentSeconds={seekToIntentSeconds}
+        onSeekRequestConsumed={onSeekRequestConsumed}
+        remountDiagnostics={remountDiagnostics}
       />
     );
   }
@@ -625,7 +643,19 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
    * Another single audio, no ambient. Karaoke or standard track.
    */
   export function Song(play) {
-    const { title, subtitle, lyricsData, mediaUrl, advance, clear } = play;
+    const {
+      title,
+      subtitle,
+      lyricsData,
+      mediaUrl,
+      advance,
+      clear,
+      onPlaybackMetrics,
+      onRegisterMediaAccess,
+      seekToIntentSeconds,
+      onSeekRequestConsumed,
+      remountDiagnostics
+    } = play;
   
     const parseSongContent = useCallback((lyrics) => {
       if (!lyrics) return null;
@@ -649,6 +679,11 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         onAdvance={advance}
         onClear={clear}
         yStartTime={10}
+        onPlaybackMetrics={onPlaybackMetrics}
+        onRegisterMediaAccess={onRegisterMediaAccess}
+        seekToIntentSeconds={seekToIntentSeconds}
+        onSeekRequestConsumed={onSeekRequestConsumed}
+        remountDiagnostics={remountDiagnostics}
       />
     );
   }
@@ -659,7 +694,19 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
    * Single audio; text could be large paragraphs, entire chapter contents, etc.
    */
   export function Audiobook(play) {
-    const { title, subtitle, textData, mediaUrl, advance, clear } = play;
+    const {
+      title,
+      subtitle,
+      textData,
+      mediaUrl,
+      advance,
+      clear,
+      onPlaybackMetrics,
+      onRegisterMediaAccess,
+      seekToIntentSeconds,
+      onSeekRequestConsumed,
+      remountDiagnostics
+    } = play;
   
     const parseBookContent = useCallback((paras) => {
       if (!paras) return null;
@@ -683,6 +730,11 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         onAdvance={advance}
         onClear={clear}
         yStartTime={20}
+        onPlaybackMetrics={onPlaybackMetrics}
+        onRegisterMediaAccess={onRegisterMediaAccess}
+        seekToIntentSeconds={seekToIntentSeconds}
+        onSeekRequestConsumed={onSeekRequestConsumed}
+        remountDiagnostics={remountDiagnostics}
       />
     );
   }
@@ -700,7 +752,12 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
       volume,
       playbackKeys,
       ignoreKeys,
-      queuePosition
+      queuePosition,
+      onPlaybackMetrics,
+      onRegisterMediaAccess,
+      seekToIntentSeconds,
+      onSeekRequestConsumed,
+      remountDiagnostics
     } = play;
 
     // Fetch the talk data
@@ -787,6 +844,11 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         ignoreKeys={ignoreKeys}
         queuePosition={queuePosition}
         yStartTime={30}
+        onPlaybackMetrics={onPlaybackMetrics}
+        onRegisterMediaAccess={onRegisterMediaAccess}
+        seekToIntentSeconds={seekToIntentSeconds}
+        onSeekRequestConsumed={onSeekRequestConsumed}
+        remountDiagnostics={remountDiagnostics}
       />
     );
   }
@@ -798,7 +860,20 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
    */
   export function Poetry(play) {
     console.log('Poetry component called with play:', play);
-    const { poem, advance, clear, volume, playbackKeys, ignoreKeys, queuePosition } = play;
+    const {
+      poem,
+      advance,
+      clear,
+      volume,
+      playbackKeys,
+      ignoreKeys,
+      queuePosition,
+      onPlaybackMetrics,
+      onRegisterMediaAccess,
+      seekToIntentSeconds,
+      onSeekRequestConsumed,
+      remountDiagnostics
+    } = play;
     console.log('Poetry destructured values:', { poem, volume, playbackKeys, ignoreKeys, queuePosition });
     
     const [title, setTitle] = useState("");
@@ -926,6 +1001,11 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         ignoreKeys={ignoreKeys}
         queuePosition={queuePosition}
         yStartTime={15}
+        onPlaybackMetrics={onPlaybackMetrics}
+        onRegisterMediaAccess={onRegisterMediaAccess}
+        seekToIntentSeconds={seekToIntentSeconds}
+        onSeekRequestConsumed={onSeekRequestConsumed}
+        remountDiagnostics={remountDiagnostics}
       />
     );
   }
