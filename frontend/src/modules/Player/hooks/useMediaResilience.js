@@ -44,6 +44,14 @@ const summarizeActiveDrivers = (drivers) => Object.entries(drivers)
   .filter(([, active]) => Boolean(active))
   .map(([key]) => key);
 
+const DEFAULT_MEDIA_DETAILS = Object.freeze({
+  hasElement: false,
+  currentTime: null,
+  readyState: null,
+  networkState: null,
+  paused: null
+});
+
 let pauseOverlayPreference = true;
 
 export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
@@ -257,6 +265,7 @@ export function useMediaResilience({
   const [lastFetchAt, setLastFetchAt] = useState(null);
   const [overlayHoldActive, setOverlayHoldActive] = useState(false);
   const [initialOverlayGraceActive, setInitialOverlayGraceActive] = useState(Boolean(overlayConfig.revealDelayMs));
+  const [mediaDetails, setMediaDetails] = useState(DEFAULT_MEDIA_DETAILS);
   const explicitPauseRef = useRef(false);
   const overlayDecisionRef = useRef(null);
   const overlayVisibilityRef = useRef(null);
@@ -934,6 +943,48 @@ export function useMediaResilience({
   const overlayGraceActive = Boolean(overlayGraceReason);
 
   useEffect(() => {
+    if (typeof getMediaEl !== 'function' || !overlayActive) {
+      setMediaDetails(DEFAULT_MEDIA_DETAILS);
+      return () => {};
+    }
+
+    let cancelled = false;
+    const readDetails = () => {
+      if (cancelled) return;
+      let nextDetails = DEFAULT_MEDIA_DETAILS;
+      try {
+        const el = getMediaEl();
+        if (el) {
+          nextDetails = {
+            hasElement: true,
+            currentTime: Number.isFinite(el.currentTime) ? Number(el.currentTime).toFixed(1) : null,
+            readyState: typeof el.readyState === 'number' ? el.readyState : null,
+            networkState: typeof el.networkState === 'number' ? el.networkState : null,
+            paused: typeof el.paused === 'boolean' ? el.paused : null
+          };
+        }
+      } catch (_) {
+        nextDetails = DEFAULT_MEDIA_DETAILS;
+      }
+
+      setMediaDetails((prev) => (
+        prev.hasElement === nextDetails.hasElement
+        && prev.currentTime === nextDetails.currentTime
+        && prev.readyState === nextDetails.readyState
+        && prev.networkState === nextDetails.networkState
+        && prev.paused === nextDetails.paused
+      ) ? prev : nextDetails);
+    };
+
+    readDetails();
+    const intervalId = setInterval(readDetails, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [getMediaEl, overlayActive, waitKey]);
+
+  useEffect(() => {
     const decisionSnapshot = {
       waitKey: logWaitKey,
       status,
@@ -1052,7 +1103,9 @@ export function useMediaResilience({
 
   const overlayBaseDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
   const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayBaseDeadlineMs, triggerRecovery);
-  const overlayHardResetDeadlineMs = overlayBaseDeadlineMs + 2000;
+  const overlayCountdownSeconds = overlayTimerActive
+    ? Math.max(0, Math.ceil((overlayBaseDeadlineMs - overlayElapsedSeconds * 1000) / 1000))
+    : null;
   const playbackHealthy = Boolean(
     playbackHealth?.elementSignals?.playing && !playbackHealth?.isWaiting && !playbackHealth?.isStalledEvent
   );
@@ -1228,10 +1281,6 @@ export function useMediaResilience({
   }, [controller, controllerRef]);
 
   const resolvedPlexId = plexId || meta?.media_key || meta?.key || meta?.plex || null;
-  const minDisplaySeconds = Math.max(1, Math.floor(hardRecoverAfterStalledForMs / 1000));
-  const countUpDisplay = overlayElapsedSeconds > minDisplaySeconds
-    ? String(overlayElapsedSeconds).padStart(2, '0')
-    : null;
   const intentMsForDisplay = resolveSeekIntentMs();
   const intentSecondsForDisplay = Number.isFinite(intentMsForDisplay) ? intentMsForDisplay / 1000 : null;
   const playerPositionDisplay = formatTime(Math.max(0, seconds));
@@ -1251,25 +1300,22 @@ export function useMediaResilience({
     showDebug,
     initialStart,
     message,
-    getMediaEl,
     plexId: resolvedPlexId,
     debugContext,
     lastProgressTs: lastProgressTsRef.current,
     togglePauseOverlay,
     explicitShow,
     isSeeking,
-    overlayTimerActive,
     overlayLoggingActive,
     overlayLogLabel,
     overlayRevealDelayMs,
     waitKey,
     onRequestHardReset: requestOverlayHardReset,
-    hardResetDeadlineMs: overlayHardResetDeadlineMs,
-    countUpSeconds: overlayElapsedSeconds,
-    countUpDisplay,
+    countdownSeconds: overlayCountdownSeconds,
     playerPositionDisplay,
     intentPositionDisplay,
-    playbackHealth
+    playbackHealth,
+    mediaDetails
   };
 
   const heartbeatProgressToken = playbackHealth?.progressToken ?? null;
