@@ -233,6 +233,8 @@ const Player = forwardRef(function Player(props, ref) {
     });
 
     setPendingSeekSeconds(normalized);
+    setMediaAccess(createDefaultMediaAccess());
+    setPlaybackMetrics(createDefaultPlaybackMetrics());
     setRemountState((prev) => {
       if (prev.guid !== activeEntryGuid) {
         return { guid: activeEntryGuid || null, nonce: 0, context: diagnostics };
@@ -463,6 +465,13 @@ const Player = forwardRef(function Player(props, ref) {
     getPlaybackState: () => controllerRef.current?.getPlaybackState?.() || controllerRef.current?.transport?.getPlaybackState?.() || null
   }), []);
 
+  const overlayElements = overlayProps ? (
+    <>
+      <PlayerOverlayLoading {...overlayProps} />
+      <PlayerOverlayPaused {...overlayProps} />
+    </>
+  ) : null;
+
   const playerProps = {
     advance: isQueue ? advance : singleAdvance,
     clear,
@@ -486,15 +495,9 @@ const Player = forwardRef(function Player(props, ref) {
     seekToIntentSeconds: pendingSeekSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,
-    wrapWithContainer: false
+    wrapWithContainer: false,
+    suppressLocalOverlay: !!overlayElements
   };
-
-  const overlayElements = overlayProps ? (
-    <>
-      <PlayerOverlayLoading {...overlayProps} />
-      <PlayerOverlayPaused {...overlayProps} />
-    </>
-  ) : null;
 
   const playerShellClass = ['player', effectiveShader, props.playerType || '']
     .filter(Boolean)

@@ -20,6 +20,7 @@ export function SinglePlayer(props = {}) {
     onSeekRequestConsumed,
     remountDiagnostics,
     wrapWithContainer = true,
+    suppressLocalOverlay = false,
     ...play
   } = props;
   const {
@@ -176,7 +177,7 @@ export function SinglePlayer(props = {}) {
   
   const playerBody = (
     <>
-      {!isReady && (
+      {!isReady && !suppressLocalOverlay && (
         <div className={`shader on notReady ${shader}`}>
           <PlayerOverlayLoading
             shouldRender
@@ -283,5 +284,6 @@ SinglePlayer.propTypes = {
     trigger: PropTypes.object,
     conditions: PropTypes.object,
     timestamp: PropTypes.number
-  })
+  }),
+  suppressLocalOverlay: PropTypes.bool
 };

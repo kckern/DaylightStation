@@ -54,12 +54,6 @@ export function PlayerOverlayPaused({
               draggable={false}
               data-no-fullscreen="true"
             />
-            <div className="loading-metrics">
-              <div className="loading-position">
-                {playerPositionDisplay !== '0:00' ? playerPositionDisplay : ''}
-              </div>
-              <div className="loading-timer">Paused</div>
-            </div>
           </div>
         </div>
       </div>
