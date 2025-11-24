@@ -5,6 +5,7 @@ import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHan
 // useMediaResilience now lives at the Player level; this hook no longer imports it directly.
 import { playbackLog } from '../lib/playbackLogger.js';
 import { getLogWaitKey } from '../lib/waitKeyLabel.js';
+import { useMediaReporter } from './useMediaReporter.js';
 
 const DEBUG_MEDIA = false;
 const roundSeconds = (value, precision = 3) => (Number.isFinite(value)
@@ -96,6 +97,7 @@ export function useCommonMediaController({
   } = resilienceBridge || {};
   const mountDiagnostics = bridgeRemountDiagnostics || null;
   const containerRef = useRef(null);
+  const mediaElementRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
@@ -105,28 +107,33 @@ export function useCommonMediaController({
   const lastSeekIntentRef = useRef(null);
   const pendingAutoSeekRef = useRef(null);
 
+  const assignMediaElementRef = (candidate) => {
+    mediaElementRef.current = candidate || null;
+    return mediaElementRef.current;
+  };
+
   const getMediaEl = useCallback(() => {
     const host = containerRef.current;
-    if (!host) return null;
+    if (!host) return assignMediaElementRef(null);
 
     const selector = isAudio ? 'audio,video' : 'video,audio';
     const shadowRoot = host.shadowRoot;
     if (shadowRoot && typeof shadowRoot.querySelector === 'function') {
       const shadowMedia = shadowRoot.querySelector(selector);
-      if (shadowMedia) return shadowMedia;
+      if (shadowMedia) return assignMediaElementRef(shadowMedia);
     }
 
     const tagName = typeof host.tagName === 'string' ? host.tagName.toUpperCase() : '';
     if (tagName === 'VIDEO' || tagName === 'AUDIO') {
-      return host;
+      return assignMediaElementRef(host);
     }
 
     if (typeof host.querySelector === 'function') {
       const nestedMedia = host.querySelector(selector);
-      if (nestedMedia) return nestedMedia;
+      if (nestedMedia) return assignMediaElementRef(nestedMedia);
     }
 
-    return null;
+    return assignMediaElementRef(null);
   }, [isAudio]);
 
   const applySeekToMediaEl = useCallback((targetSeconds, source = 'seek-intent') => {
@@ -199,6 +206,30 @@ export function useCommonMediaController({
     });
   }, [baseInstanceKey, logControllerEvent, setReloadNonce]);
 
+  const handleRegisterMediaAccess = useCallback((payload = {}) => {
+    if (!bridgeRegisterAccess) return;
+    const hasPayload = payload && Object.keys(payload).length > 0;
+    if (!hasPayload) {
+      bridgeRegisterAccess({});
+      return;
+    }
+    bridgeRegisterAccess({
+      ...payload,
+      hardReset,
+      fetchVideoInfo
+    });
+  }, [bridgeRegisterAccess, fetchVideoInfo, hardReset]);
+
+  useMediaReporter({
+    mediaRef: mediaElementRef,
+    onPlaybackMetrics: bridgePlaybackMetrics,
+    onRegisterMediaAccess: handleRegisterMediaAccess,
+    seekToIntentSeconds,
+    onSeekRequestConsumed: bridgeSeekConsumed,
+    remountDiagnostics: mountDiagnostics,
+    mediaIdentityKey: resolvedInstanceKey
+  });
+
   useEffect(() => {
     try {
       if (media_key) {
@@ -234,9 +265,7 @@ export function useCommonMediaController({
     lastSeekIntentRef.current = normalized;
     try { useCommonMediaController.__lastSeekByKey[media_key] = normalized; }
     catch (_) { /* ignore cache write failures */ }
-    applySeekToMediaEl(normalized, 'prop-seek-intent');
-    bridgeSeekConsumed?.();
-  }, [seekToIntentSeconds, media_key, bridgeSeekConsumed, applySeekToMediaEl]);
+  }, [seekToIntentSeconds, media_key]);
 
   useEffect(() => {
     if (!Number.isFinite(internalSeekIntentSeconds)) return;
@@ -501,16 +530,6 @@ export function useCommonMediaController({
 
   const mediaElementSnapshot = getMediaEl();
   const isPausedValue = mediaElementSnapshot ? Boolean(mediaElementSnapshot.paused) : false;
-
-  useEffect(() => {
-    if (!bridgePlaybackMetrics) return;
-    bridgePlaybackMetrics({ seconds, isPaused: isPausedValue, isSeeking });
-  }, [bridgePlaybackMetrics, seconds, isPausedValue, isSeeking]);
-
-  useEffect(() => {
-    if (!bridgeRegisterAccess) return;
-    bridgeRegisterAccess({ getMediaEl, hardReset, fetchVideoInfo });
-  }, [bridgeRegisterAccess, getMediaEl, hardReset, fetchVideoInfo]);
 
   const operateOnMediaEl = useCallback((fn) => {
     const mediaEl = getMediaEl();
