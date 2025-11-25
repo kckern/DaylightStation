@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { flattenQueueItems } from '../lib/api.js';
 import { guid } from '../lib/helpers.js';
+import { playbackLog } from '../lib/playbackLogger.js';
 
 /**
  * Queue controller hook for managing playlist/queue playback
@@ -83,7 +84,12 @@ export function useQueueController({ play, queue, clear }) {
         setOriginalQueue(newQueue);
       }
     }
-    initQueue().catch(() => {
+    initQueue().catch((error) => {
+      playbackLog('queue-init-failed', {
+        playlistKey,
+        plexKey,
+        error: error?.message
+      }, { level: 'error' });
       if (!isCancelled) {
         sourceSignatureRef.current = previousSignature;
       }
@@ -136,6 +142,22 @@ export function useQueueController({ play, queue, clear }) {
 
   const queuePosition = originalQueue.findIndex(item => item.guid === playQueue[0]?.guid);
   
+  const lastLoggedGuidRef = useRef(null);
+
+  useEffect(() => {
+    const currentItem = playQueue[0];
+    if (!currentItem) return;
+    if (currentItem.guid === lastLoggedGuidRef.current) return;
+
+    lastLoggedGuidRef.current = currentItem.guid;
+    playbackLog('queue-track-changed', {
+      title: currentItem.title,
+      guid: currentItem.guid,
+      queueLength: playQueue.length,
+      queuePosition: originalQueue.findIndex(item => item.guid === currentItem.guid)
+    }, { level: 'info' });
+  }, [playQueue, originalQueue]);
+
   return {
     classes,
     cycleThroughClasses,

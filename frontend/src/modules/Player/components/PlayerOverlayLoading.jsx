@@ -131,6 +131,10 @@ export function PlayerOverlayLoading({
     : 'el:none';
 
   const logLabel = overlayLogLabel || waitKey || '';
+  const overlayLogContext = useMemo(() => ({
+    waitKey: waitKey || overlayLogLabel || 'loading-overlay',
+    source: 'PlayerOverlayLoading'
+  }), [overlayLogLabel, waitKey]);
   const logOverlaySummary = useCallback(() => {
     const now = Date.now();
     const timestampLabel = new Date(now).toISOString();
@@ -138,8 +142,12 @@ export function PlayerOverlayLoading({
     const revealLabel = Number.isFinite(overlayRevealDelayMs) ? `${overlayRevealDelayMs}ms` : 'n/a';
     const visibilitySummary = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'}/${revealLabel}`;
     const summary = `${visibilitySummary} | ${timerSummary} | ${seekSummary} | ${mediaSummary}`;
-    playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary);
-  }, [overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, logLabel]);
+    playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary, {
+      level: 'debug',
+      sampleRate: 0.25,
+      context: overlayLogContext
+    });
+  }, [overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, logLabel, overlayLogContext]);
 
   useEffect(() => {
     if (!overlayLoggingActive) {
@@ -191,8 +199,11 @@ export function PlayerOverlayLoading({
       isVisible,
       pauseOverlayActive,
       overlayRevealDelayMs
+    }, {
+      level: 'debug',
+      context: overlayLogContext
     });
-  }, [overlayDisplayActive, shouldRender, isVisible, pauseOverlayActive, overlayLogLabel, waitKey, overlayRevealDelayMs]);
+  }, [overlayDisplayActive, shouldRender, isVisible, pauseOverlayActive, overlayLogLabel, waitKey, overlayRevealDelayMs, overlayLogContext]);
 
   if (!overlayDisplayActive) {
     return null;
