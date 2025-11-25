@@ -140,6 +140,16 @@ export function useMediaResilience({
     actions: resilienceActions
   } = useResilienceState(STATUS.pending);
   const [lastFetchAt, setLastFetchAt] = useState(null);
+  const effectiveHardRecoverAfterStalledForMs = useMemo(() => {
+    if (!Number.isFinite(hardRecoverAfterStalledForMs)) {
+      return hardRecoverAfterStalledForMs;
+    }
+    if (hardRecoverAfterStalledForMs <= 0) {
+      return hardRecoverAfterStalledForMs;
+    }
+    const attemptBackoffMs = Math.max(0, resilienceState.recoveryAttempts) * 1000;
+    return hardRecoverAfterStalledForMs + attemptBackoffMs;
+  }, [hardRecoverAfterStalledForMs, resilienceState.recoveryAttempts]);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
@@ -524,7 +534,7 @@ export function useMediaResilience({
     requestOverlayHardReset
   } = useResilienceRecovery({
     recoveryConfig,
-    hardRecoverAfterStalledForMs,
+    hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs,
     meta,
     waitKey,
     resolveSeekIntentMs,
@@ -1025,7 +1035,7 @@ export function useMediaResilience({
     isSeeking,
     getMediaEl,
     meta,
-    hardRecoverAfterStalledForMs,
+    hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs,
     triggerRecovery,
     stallOverlayActive,
     waitingToPlay,
@@ -1089,7 +1099,7 @@ export function useMediaResilience({
     lastFetchAt,
     shouldRenderOverlay,
     playbackHealth,
-    hardRecoverAfterStalledForMs
+    hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs
   }), [
     status,
     waitingToPlay,
@@ -1107,7 +1117,7 @@ export function useMediaResilience({
     lastFetchAt,
     shouldRenderOverlay,
     playbackHealth,
-    hardRecoverAfterStalledForMs
+    effectiveHardRecoverAfterStalledForMs
   ]);
   const stateRef = useLatest(state);
 

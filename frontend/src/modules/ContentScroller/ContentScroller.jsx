@@ -202,11 +202,13 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
           const finalVolume = Math.min(1, Math.max(0, processedVolume));
           mainEl.volume = finalVolume;
         }
-
+        if (isVideo || !ambientMediaUrl) {
+          mainEl.play().catch(() => {});
+        }
         applyPendingSeek();
         reportPlaybackMetrics();
       }
-    }, [mainVolume, applyPendingSeek, reportPlaybackMetrics]);
+    }, [mainVolume, applyPendingSeek, reportPlaybackMetrics, isVideo, ambientMediaUrl]);
   
     // Seek bar click => set new currentTime
     const handleSeekBarClick = (e) => {
@@ -431,6 +433,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
       
       return finalVolume;
     })();
+    const ambientFadeInDelayMs = 750;
   
     // Fetch the scripture text data
     useEffect(() => {
@@ -484,7 +487,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         ambientConfig={{
           fadeOutStep: 0.01,
           fadeOutInterval: 400,
-          fadeInDelay: 5000,
+          fadeInDelay: ambientFadeInDelayMs,
           ambientVolume: ambientVolume,
         }}
         contentData={scriptureTextData}
@@ -817,6 +820,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
       const proportionalAmbient = mainVolume * 0.1; // Always 10% of main volume
       return Math.max(0.001, proportionalAmbient); // Ensure minimum audible volume
     })();
+    const ambientFadeInDelayMs = 750;
     
     return (
       <ContentScroller
@@ -833,7 +837,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         ambientConfig={{
           fadeOutStep: 0.01,
           fadeOutInterval: 400,
-          fadeInDelay: 3000,
+          fadeInDelay: ambientFadeInDelayMs,
           ambientVolume: ambientVolume
         }}
         contentData={transcriptData}
