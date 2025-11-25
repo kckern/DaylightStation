@@ -83,7 +83,7 @@ const hasOverlayVisibilityChanged = (previous, next) => {
   );
 };
 
-const useOverlayTimer = (overlayActive, stallDeadlineMs, triggerRecovery) => {
+const useOverlayTimer = (overlayActive, overlayDeadlineMs, triggerRecovery) => {
   const [elapsedMs, setElapsedMs] = useState(0);
   const rafRef = useRef(null);
   const intervalRef = useRef(null);
@@ -137,17 +137,17 @@ const useOverlayTimer = (overlayActive, stallDeadlineMs, triggerRecovery) => {
 
   useEffect(() => {
     if (!overlayActive || overlayAlertedRef.current) return;
-    if (stallDeadlineMs > 0 && elapsedMs >= stallDeadlineMs) {
+    if (overlayDeadlineMs > 0 && elapsedMs >= overlayDeadlineMs) {
       overlayAlertedRef.current = true;
       triggerRecoveryRef.current?.('overlay-hard-recovery', { ignorePaused: true, force: true });
     }
-  }, [elapsedMs, overlayActive, stallDeadlineMs]);
+  }, [elapsedMs, overlayActive, overlayDeadlineMs]);
 
   useEffect(() => () => {
     clearTicker();
   }, [clearTicker]);
 
-  const effectiveDeadline = Math.max(stallDeadlineMs, 0) || elapsedMs;
+  const effectiveDeadline = Math.max(overlayDeadlineMs, 0) || elapsedMs;
   const cappedMs = Math.min(elapsedMs, effectiveDeadline);
   return Math.max(0, Math.floor(cappedMs / 1000));
 };
@@ -164,6 +164,7 @@ export function useOverlayPresentation({
   getMediaEl,
   meta,
   hardRecoverAfterStalledForMs,
+  loadingGraceDeadlineMs,
   triggerRecovery,
   stallOverlayActive,
   waitingToPlay,
@@ -173,6 +174,7 @@ export function useOverlayPresentation({
   isPaused,
   computedStalled,
   playbackHealth,
+  loadingIntentActive,
   seconds
 }) {
   const [isOverlayVisible, setOverlayVisible] = useState(() => !overlayConfig.revealDelayMs);
@@ -206,6 +208,12 @@ export function useOverlayPresentation({
       setOverlayHoldActive(false);
     }
   }, [status, playbackHasProgress, playbackElementPlaying]);
+
+  const pauseToggleKeys = useMemo(() => {
+    const keys = overlayConfig?.pauseToggleKeys;
+    if (!Array.isArray(keys)) return [];
+    return keys.filter((key) => typeof key === 'string' && key.length);
+  }, [overlayConfig?.pauseToggleKeys]);
 
   const overlayRevealDelayMs = Number.isFinite(overlayConfig.revealDelayMs)
     ? Math.max(0, overlayConfig.revealDelayMs)
@@ -411,10 +419,16 @@ export function useOverlayPresentation({
     };
   }, [getMediaEl, overlayActive, waitKey]);
 
-  const overlayBaseDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
-  const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayBaseDeadlineMs, triggerRecovery);
-  const overlayCountdownSeconds = overlayTimerActive
-    ? Math.max(0, Math.ceil((overlayBaseDeadlineMs - overlayElapsedSeconds * 1000) / 1000))
+  const resolvedStallDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
+  const resolvedLoadingDeadlineMs = Number.isFinite(loadingGraceDeadlineMs) && loadingGraceDeadlineMs > 0
+    ? loadingGraceDeadlineMs
+    : resolvedStallDeadlineMs;
+  const overlayDeadlineMs = stallOverlayActive
+    ? resolvedStallDeadlineMs
+    : ((waitingToPlay || loadingIntentActive) ? resolvedLoadingDeadlineMs : resolvedStallDeadlineMs);
+  const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayDeadlineMs, triggerRecovery);
+  const overlayCountdownSeconds = overlayTimerActive && overlayDeadlineMs > 0
+    ? Math.max(0, Math.ceil((overlayDeadlineMs - overlayElapsedSeconds * 1000) / 1000))
     : null;
   const playbackHealthy = Boolean(
     playbackHealth?.elementSignals?.playing && !playbackHealth?.isWaiting && !playbackHealth?.isStalledEvent
@@ -435,6 +449,20 @@ export function useOverlayPresentation({
     pauseOverlayPreference = next;
     setShowPauseOverlay(next);
   }, []);
+
+  useEffect(() => {
+    if (!pauseToggleKeys.length) return () => {};
+    if (!(userIntentIsPaused || isPaused)) return () => {};
+    const handleKeyDown = (event) => {
+      if (!pauseToggleKeys.includes(event.key)) return;
+      event.preventDefault();
+      togglePauseOverlay();
+    };
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, { passive: false });
+    };
+  }, [pauseToggleKeys, userIntentIsPaused, isPaused, togglePauseOverlay]);
 
   return {
     isOverlayVisible,

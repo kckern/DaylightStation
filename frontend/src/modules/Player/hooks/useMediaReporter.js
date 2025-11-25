@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { playbackLog } from '../lib/playbackLogger.js';
 
 const DEFAULT_POLL_INTERVAL_MS = 100;
 
@@ -114,6 +115,18 @@ export function useMediaReporter({
     }
   }, [mediaRef, onSeekRequestConsumed, reportPlaybackMetrics]);
 
+  const logExplicitPlaybackToggle = useCallback((action) => {
+    const mediaEl = mediaRef?.current;
+    const seconds = mediaEl && Number.isFinite(mediaEl.currentTime)
+      ? mediaEl.currentTime
+      : null;
+    playbackLog('media-reporter', {
+      event: action === 'play' ? 'explicit-play' : 'explicit-pause',
+      mediaIdentityKey,
+      seconds
+    }, { level: 'debug' });
+  }, [mediaRef, mediaIdentityKey]);
+
   const hardResetMedia = useCallback(({ seekToSeconds } = {}) => {
     const mediaEl = mediaRef?.current;
     if (!mediaEl) return;
@@ -190,9 +203,11 @@ export function useMediaReporter({
 
     const handlePlay = () => {
       seekingRef.current = false;
+      logExplicitPlaybackToggle('play');
       reportPlaybackMetrics({ isPaused: false, isSeeking: false });
     };
     const handlePause = () => {
+      logExplicitPlaybackToggle('pause');
       reportPlaybackMetrics({ isPaused: true });
     };
     const handleTimeUpdate = () => {
