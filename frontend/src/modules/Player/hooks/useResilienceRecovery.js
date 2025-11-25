@@ -46,7 +46,7 @@ export function useResilienceRecovery({
           reason,
           progressedSeconds,
           epsilonSeconds
-        });
+        }, { level: 'info' });
         return;
       }
     }
@@ -59,14 +59,14 @@ export function useResilienceRecovery({
       force,
       attempts: recoveryAttempts,
       seekToIntentMs: resolvedIntentMs
-    });
+    }, { level: 'info' });
 
     const performReload = () => {
       logResilienceEvent('recovery-triggered', {
         reason,
         force,
         seekToIntentMs: resolvedIntentMs
-      });
+      }, { level: 'warn' });
       lastReloadAtRef.current = Date.now();
       resilienceActions.recoveryTriggered({ guardToken: progressTokenRef.current });
       lastProgressSecondsRef.current = null;
@@ -131,11 +131,11 @@ export function useResilienceRecovery({
       forceDocumentReload
     };
     if (forceDocumentReload || !onReloadRef.current) {
-      logResilienceEvent('hard-reset-document-reload', logPayload);
+      logResilienceEvent('hard-reset-document-reload', logPayload, { level: 'warn' });
       defaultReload();
       return;
     }
-    logResilienceEvent('hard-reset-force-remount', logPayload);
+    logResilienceEvent('hard-reset-force-remount', logPayload, { level: 'warn' });
     lastReloadAtRef.current = Date.now();
     resilienceActions.setStatus(recoveringStatusValue, {
       carryRecovery: true,
@@ -192,7 +192,7 @@ export function useResilienceRecovery({
       reason,
       forceDocumentReload,
       seekToIntentMs: normalizedSeekMs
-    });
+    }, { level: 'warn' });
 
     forcePlayerRemount(reason, {
       ...merged,
