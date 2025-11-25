@@ -27,6 +27,7 @@ const STATUS = {
   startup: RESILIENCE_STATUS.startup,
   pending: RESILIENCE_STATUS.startup,
   playing: RESILIENCE_STATUS.playing,
+  paused: RESILIENCE_STATUS.paused,
   stalling: RESILIENCE_STATUS.stalling,
   recovering: RESILIENCE_STATUS.recovering
 };
@@ -117,7 +118,7 @@ export function useMediaResilience({
     epsilonSeconds,
     stallDetectionThresholdMs,
     hardRecoverAfterStalledForMs,
-    hardRecoverStartupGraceMs,
+    hardRecoverLoadingGraceMs,
     hardRecoverAttemptBackoffMs,
     mountTimeoutMs,
     mountPollIntervalMs,
@@ -143,31 +144,42 @@ export function useMediaResilience({
   } = useResilienceState(STATUS.pending);
   const [lastFetchAt, setLastFetchAt] = useState(null);
   const [hardResetLoopCount, setHardResetLoopCount] = useState(0);
+  const [loadingIntentState, setLoadingIntentState] = useState(() => ({ active: true, token: 0 }));
+  const loadingIntentActive = loadingIntentState.active;
+  const loadingIntentToken = loadingIntentState.token;
+  const markLoadingIntentActive = useCallback(() => {
+    setLoadingIntentState((prev) => ({
+      active: true,
+      token: prev.token + 1
+    }));
+  }, []);
+  const resolveLoadingIntent = useCallback(() => {
+    setLoadingIntentState((prev) => {
+      if (!prev.active) return prev;
+      return { ...prev, active: false };
+    });
+  }, []);
   const effectiveHardRecoverAfterStalledForMs = useMemo(() => {
     if (!Number.isFinite(hardRecoverAfterStalledForMs)) {
       return hardRecoverAfterStalledForMs;
     }
     const recoveryBaseMs = Math.max(0, hardRecoverAfterStalledForMs);
-    const startupGraceMs = Number.isFinite(hardRecoverStartupGraceMs)
-      ? Math.max(0, hardRecoverStartupGraceMs)
-      : 0;
     const perLoopBackoffMs = Number.isFinite(hardRecoverAttemptBackoffMs)
       ? Math.max(0, hardRecoverAttemptBackoffMs)
       : 0;
-    if (hardResetLoopCount === 0) {
-      if (recoveryBaseMs === 0 && startupGraceMs === 0) {
-        return 0;
-      }
-      return Math.max(recoveryBaseMs, startupGraceMs);
-    }
     const loopsBeyondFirst = Math.max(0, hardResetLoopCount - 1);
     return recoveryBaseMs + (loopsBeyondFirst * perLoopBackoffMs);
   }, [
     hardRecoverAfterStalledForMs,
-    hardRecoverStartupGraceMs,
     hardRecoverAttemptBackoffMs,
     hardResetLoopCount
   ]);
+  const effectiveLoadingGraceMs = useMemo(() => {
+    if (!Number.isFinite(hardRecoverLoadingGraceMs)) {
+      return hardRecoverLoadingGraceMs;
+    }
+    return Math.max(0, hardRecoverLoadingGraceMs);
+  }, [hardRecoverLoadingGraceMs]);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
@@ -179,6 +191,7 @@ export function useMediaResilience({
   const stallTimerRef = useRef(null);
   const reloadTimerRef = useRef(null);
   const hardRecoveryTimerRef = useRef(null);
+  const loadingRecoveryTimerRef = useRef(null);
   const startupTimeoutRef = useRef(null);
   const startupAttemptsRef = useRef(0);
   const startupSignalsRef = useRef({
@@ -289,6 +302,8 @@ export function useMediaResilience({
     epsilonSeconds
   });
 
+  const resolvedIsPaused = Boolean(isPaused || playbackHealth?.elementSignals?.paused);
+
   useEffect(() => {
     progressTokenRef.current = 0;
     lastProgressSecondsRef.current = null;
@@ -298,7 +313,8 @@ export function useMediaResilience({
     lastKnownSeekIntentMsRef.current = Number.isFinite(initialStart) && initialStart > 0
       ? Math.max(0, initialStart * 1000)
       : null;
-  }, [waitKey]);
+    markLoadingIntentActive();
+  }, [waitKey, markLoadingIntentActive]);
 
   useEffect(() => {
     if (!Number.isFinite(initialStart) || initialStart <= 0) return;
@@ -310,12 +326,12 @@ export function useMediaResilience({
       setUserIntent(USER_INTENT.seeking);
       return;
     }
-    if (isPaused) {
+    if (resolvedIsPaused) {
       setUserIntent(USER_INTENT.paused);
       return;
     }
     setUserIntent(USER_INTENT.playing);
-  }, [isPaused, isSeeking]);
+  }, [resolvedIsPaused, isSeeking]);
 
   useEffect(() => {
     if (!Number.isFinite(seconds)) return;
@@ -435,6 +451,7 @@ export function useMediaResilience({
 
     clearTimer(stallTimerRef);
     clearTimer(hardRecoveryTimerRef);
+    clearTimer(loadingRecoveryTimerRef);
 
     if (resilienceState.lastStallToken != null) {
       resilienceActions.setStatus(statusRef.current, { clearStallToken: true });
@@ -453,6 +470,7 @@ export function useMediaResilience({
     clearTimer(stallTimerRef);
     clearTimer(reloadTimerRef);
     clearTimer(hardRecoveryTimerRef);
+    clearTimer(loadingRecoveryTimerRef);
     lastProgressTsRef.current = null;
     lastProgressSecondsRef.current = null;
   }, [clearTimer]);
@@ -476,7 +494,7 @@ export function useMediaResilience({
 
   useEffect(() => {
     setHardResetLoopCount(0);
-  }, [mediaIdentity, setHardResetLoopCount]);
+  }, [mediaIdentity, playbackSessionKey, setHardResetLoopCount]);
 
   const persistSeekIntentMs = useCallback((valueMs) => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
@@ -491,8 +509,9 @@ export function useMediaResilience({
   const recordSeekIntentMs = useCallback((valueMs, reason = 'seek-intent') => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
     persistSeekIntentMs(valueMs);
+    markLoadingIntentActive();
     invalidatePendingStallDetection(reason);
-  }, [persistSeekIntentMs, invalidatePendingStallDetection]);
+  }, [persistSeekIntentMs, invalidatePendingStallDetection, markLoadingIntentActive]);
 
   const recordSeekIntentSeconds = useCallback((valueSeconds, reason = 'seek-intent') => {
     if (!Number.isFinite(valueSeconds)) return;
@@ -711,6 +730,25 @@ export function useMediaResilience({
   const monitorSuspended = userIntent === USER_INTENT.paused;
 
   useEffect(() => {
+    if (userIntent === USER_INTENT.paused) {
+      if (status !== STATUS.paused) {
+        resilienceActions.setStatus(STATUS.paused, {
+          clearStallToken: true,
+          clearRecoveryGuard: true
+        });
+      }
+      return;
+    }
+
+    if (status === STATUS.paused) {
+      resilienceActions.setStatus(STATUS.pending, {
+        clearStallToken: true,
+        clearRecoveryGuard: true
+      });
+    }
+  }, [userIntent, status, resilienceActions]);
+
+  useEffect(() => {
     const detectionDelay = stallDetectionThresholdMs;
 
     if (typeof stalledOverride === 'boolean') {
@@ -730,6 +768,7 @@ export function useMediaResilience({
     if (monitorSuspended) {
       clearTimer(stallTimerRef);
       clearTimer(hardRecoveryTimerRef);
+      clearTimer(loadingRecoveryTimerRef);
       return;
     }
 
@@ -761,6 +800,7 @@ export function useMediaResilience({
         lastProgressSecondsRef.current = progressSecondsValue ?? lastProgressSecondsRef.current;
         lastProgressTsRef.current = playbackHealth.lastProgressAt ?? Date.now();
         clearTimer(hardRecoveryTimerRef);
+        resolveLoadingIntent();
         resilienceActions.progressTick({ nextStatus: STATUS.playing });
         scheduleStallCheck(detectionDelay, { restart: true });
       } else {
@@ -834,7 +874,8 @@ export function useMediaResilience({
     enterStallingState,
     epsilonSeconds,
     resilienceActions,
-    resilienceState.recoveryGuardToken
+    resilienceState.recoveryGuardToken,
+    resolveLoadingIntent
   ]);
 
   useEffect(() => {
@@ -965,10 +1006,44 @@ export function useMediaResilience({
     startupSignalVersion
   ]);
 
+  useEffect(() => {
+    if (!loadingIntentActive || monitorSuspended || status === STATUS.recovering) {
+      clearTimer(loadingRecoveryTimerRef);
+      return;
+    }
+    if (!Number.isFinite(effectiveLoadingGraceMs)) {
+      return;
+    }
+    if (effectiveLoadingGraceMs <= 0) {
+      resolveLoadingIntent();
+      triggerRecovery('loading-hard-recovery', { ignorePaused: true, force: true });
+      return;
+    }
+    clearTimer(loadingRecoveryTimerRef);
+    loadingRecoveryTimerRef.current = setTimeout(() => {
+      loadingRecoveryTimerRef.current = null;
+      resolveLoadingIntent();
+      triggerRecovery('loading-hard-recovery', { ignorePaused: true, force: true });
+    }, effectiveLoadingGraceMs);
+    return () => {
+      clearTimer(loadingRecoveryTimerRef);
+    };
+  }, [
+    loadingIntentActive,
+    loadingIntentToken,
+    monitorSuspended,
+    status,
+    effectiveLoadingGraceMs,
+    triggerRecovery,
+    resolveLoadingIntent,
+    clearTimer
+  ]);
+
   useEffect(() => () => {
     clearTimer(stallTimerRef);
     clearTimer(reloadTimerRef);
     clearTimer(hardRecoveryTimerRef);
+    clearTimer(loadingRecoveryTimerRef);
     clearMountWatchdog();
     clearStartupTimeout();
   }, [clearTimer, clearMountWatchdog, clearStartupTimeout]);
@@ -992,6 +1067,9 @@ export function useMediaResilience({
   const isStartupPhase = status === RESILIENCE_STATUS.startup;
   const waitingToPlay = isStartupPhase || status === STATUS.recovering;
   const baseSystemHealth = (() => {
+    if (userIntent === USER_INTENT.paused) {
+      return SYSTEM_HEALTH.ok;
+    }
     if (status === STATUS.stalling || playbackHealth.isStalledEvent) {
       return SYSTEM_HEALTH.stalled;
     }
@@ -1006,7 +1084,8 @@ export function useMediaResilience({
     }
     return baseSystemHealth;
   })();
-  const computedStalled = systemHealth === SYSTEM_HEALTH.stalled || status === STATUS.recovering;
+  const computedStalled = userIntent !== USER_INTENT.paused
+    && (systemHealth === SYSTEM_HEALTH.stalled || status === STATUS.recovering);
   const stallOverlayActive = computedStalled;
 
   const telemetryHasProgress = playbackHealth.progressToken > 0
@@ -1019,14 +1098,8 @@ export function useMediaResilience({
   const playbackHasProgress = status === STATUS.recovering
     ? false
     : (Number.isFinite(observedProgressSeconds) && observedProgressSeconds > epsilonSeconds);
-  const implicitPauseState = waitingToPlay
-    || computedStalled
-    || playbackHealth.isWaiting
-    || playbackHealth.isStalledEvent
-    || isSeeking;
-
   useEffect(() => {
-    if (userIntent !== USER_INTENT.paused || !playbackHasProgress || implicitPauseState) {
+    if (userIntent !== USER_INTENT.paused || !playbackHasProgress) {
       if (explicitPauseRef.current) {
         updateExplicitPauseState(false);
       }
@@ -1036,7 +1109,6 @@ export function useMediaResilience({
   }, [
     userIntent,
     playbackHasProgress,
-    implicitPauseState,
     updateExplicitPauseState
   ]);
 
@@ -1063,15 +1135,17 @@ export function useMediaResilience({
     getMediaEl,
     meta,
     hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs,
+    loadingGraceDeadlineMs: effectiveLoadingGraceMs,
     triggerRecovery,
     stallOverlayActive,
     waitingToPlay,
     playbackHasProgress,
     userIntentIsPaused: userIntent === USER_INTENT.paused,
     explicitPauseActive,
-    isPaused,
+    isPaused: resolvedIsPaused,
     computedStalled,
     playbackHealth,
+    loadingIntentActive,
     seconds
   });
 
@@ -1109,19 +1183,21 @@ export function useMediaResilience({
       resetAttempts: true
     });
     setHardResetLoopCount(0);
-  }, [clearTimer, resilienceActions, setHardResetLoopCount]);
+    resolveLoadingIntent();
+  }, [clearTimer, resilienceActions, setHardResetLoopCount, resolveLoadingIntent]);
 
   const state = useMemo(() => ({
     status,
     waitingToPlay,
     waitingForPlayback: waitingToPlay,
     graceElapsed: !waitingToPlay,
+    loadingIntentActive,
     isOverlayVisible,
     showPauseOverlay,
     showDebug,
     stalled: computedStalled,
     seconds,
-    isPaused,
+    isPaused: resolvedIsPaused,
     isSeeking,
     userIntent,
     systemHealth,
@@ -1130,17 +1206,19 @@ export function useMediaResilience({
     lastFetchAt,
     shouldRenderOverlay,
     playbackHealth,
-    hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs
+    hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs,
+    hardRecoverLoadingGraceMs: effectiveLoadingGraceMs
   }), [
     status,
     waitingToPlay,
+    loadingIntentActive,
     isOverlayVisible,
     showPauseOverlay,
     showDebug,
     computedStalled,
     systemHealth,
     seconds,
-    isPaused,
+    resolvedIsPaused,
     isSeeking,
     userIntent,
     meta,
@@ -1148,7 +1226,8 @@ export function useMediaResilience({
     lastFetchAt,
     shouldRenderOverlay,
     playbackHealth,
-    effectiveHardRecoverAfterStalledForMs
+    effectiveHardRecoverAfterStalledForMs,
+    effectiveLoadingGraceMs
   ]);
   const stateRef = useLatest(state);
 
@@ -1165,6 +1244,7 @@ export function useMediaResilience({
       setShowDebug(false);
       resetOverlayState();
       setHardResetLoopCount(0);
+      markLoadingIntentActive();
     },
     forceReload: (options = {}) => {
       const overrideMs = Number.isFinite(options.seekToIntentMs)
@@ -1211,7 +1291,8 @@ export function useMediaResilience({
     stateRef,
     resilienceActions,
     setOverlayPausePreference,
-    setHardResetLoopCount
+    setHardResetLoopCount,
+    markLoadingIntentActive
   ]);
 
   useEffect(() => {
@@ -1236,7 +1317,7 @@ export function useMediaResilience({
     isOverlayVisible,
     shouldRenderOverlay,
     waitingToPlay,
-    isPaused,
+    isPaused: resolvedIsPaused,
     userIntent,
     systemHealth,
     pauseOverlayActive,
