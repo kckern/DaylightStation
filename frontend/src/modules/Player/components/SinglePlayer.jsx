@@ -259,7 +259,10 @@ SinglePlayer.propTypes = {
   setShader: PropTypes.func,
   cycleThroughClasses: PropTypes.func,
   classes: PropTypes.arrayOf(PropTypes.string),
-  playbackKeys: PropTypes.arrayOf(PropTypes.string),
+  playbackKeys: PropTypes.oneOfType([
+    PropTypes.arrayOf(PropTypes.string),
+    PropTypes.objectOf(PropTypes.arrayOf(PropTypes.string))
+  ]),
   queuePosition: PropTypes.number,
   playerType: PropTypes.string,
   ignoreKeys: PropTypes.bool,
