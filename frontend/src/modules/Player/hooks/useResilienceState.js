@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef } from 'react';
 
 export const RESILIENCE_STATUS = Object.freeze({
+  startup: 'startup',
   idle: 'idle',
   playing: 'playing',
   paused: 'paused',
@@ -16,7 +17,7 @@ export const RESILIENCE_ACTIONS = Object.freeze({
   SET_STATUS: 'SET_STATUS'
 });
 
-const createInitialState = (initialStatus = RESILIENCE_STATUS.idle) => ({
+const createInitialState = (initialStatus = RESILIENCE_STATUS.startup) => ({
   status: initialStatus,
   lastStallToken: null,
   recoveryGuardToken: null,
@@ -34,7 +35,7 @@ function reducer(state, action) {
       } = action.payload || {};
       const carryRecovery = clearCarry ? false : state.carryRecovery;
       const resolvedStatus = nextStatus
-        ?? (carryRecovery ? RESILIENCE_STATUS.recovering : RESILIENCE_STATUS.idle);
+        ?? (carryRecovery ? RESILIENCE_STATUS.recovering : RESILIENCE_STATUS.startup);
       return {
         ...state,
         status: resolvedStatus,
@@ -104,7 +105,7 @@ function reducer(state, action) {
   }
 }
 
-export function useResilienceState(initialStatus = RESILIENCE_STATUS.idle) {
+export function useResilienceState(initialStatus = RESILIENCE_STATUS.startup) {
   const [state, dispatch] = useReducer(reducer, createInitialState(initialStatus));
   const statusRef = useRef(state.status);
 

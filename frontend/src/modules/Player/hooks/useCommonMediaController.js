@@ -94,7 +94,7 @@ export function useCommonMediaController({
     onRegisterMediaAccess: bridgeRegisterAccess,
     onSeekRequestConsumed: bridgeSeekConsumed,
     remountDiagnostics: bridgeRemountDiagnostics,
-    onStartupWatchdogEvent: bridgeStartupWatchdog
+    onStartupSignal: bridgeStartupSignal
   } = resilienceBridge || {};
   const mountDiagnostics = bridgeRemountDiagnostics || null;
   const containerRef = useRef(null);
@@ -172,7 +172,6 @@ export function useCommonMediaController({
   }, [getMediaEl]);
 
   const isDash = meta.media_type === 'dash_video';
-  const shouldWatchStartup = Boolean(isDash || isVideo);
   const baseInstanceKey = useMemo(() => {
     const baseKey = String(instanceKey ?? media_key ?? meta.media_url ?? meta.id ?? 'media');
     return `${baseKey}:${threadId}`;
@@ -215,134 +214,6 @@ export function useCommonMediaController({
     });
   }, [baseInstanceKey, logControllerEvent, setReloadNonce]);
 
-  const STARTUP_TIMEOUT_MS = 3000;
-  const MAX_STARTUP_RECOVERY_ATTEMPTS = 5;
-  const startupWatchdogRef = useRef({ timer: null, attempts: 0, resolved: false, active: false });
-
-  const clearStartupWatchdog = useCallback(() => {
-    const watchdog = startupWatchdogRef.current;
-    if (watchdog.timer) {
-      clearTimeout(watchdog.timer);
-      watchdog.timer = null;
-    }
-  }, []);
-
-  const logStartupEvent = useCallback((event, payload = {}, level = 'debug') => {
-    playbackLog(event, {
-      ...payload,
-      waitKey: formatWaitKeyForLogs(resolvedInstanceKey),
-      media_key
-    }, { level });
-  }, [formatWaitKeyForLogs, media_key, resolvedInstanceKey]);
-
-  const reportStartupWatchdog = useCallback((payload = {}) => {
-    if (!bridgeStartupWatchdog) return;
-    try {
-      bridgeStartupWatchdog({
-        waitKey: resolvedInstanceKey,
-        mediaKey: media_key || null,
-        timestamp: payload.timestamp || Date.now(),
-        ...payload
-      });
-    } catch (error) {
-      if (DEBUG_MEDIA) {
-        console.warn('[Media] failed to report startup watchdog state', error);
-      }
-    }
-  }, [bridgeStartupWatchdog, media_key, resolvedInstanceKey]);
-
-  const deactivateStartupWatchdog = useCallback((state = 'cleared', reason = 'unspecified') => {
-    const watchdog = startupWatchdogRef.current;
-    if (!watchdog.active) return;
-    watchdog.active = false;
-    reportStartupWatchdog({
-      active: false,
-      state,
-      reason,
-      attempts: watchdog.attempts,
-      timeoutMs: STARTUP_TIMEOUT_MS
-    });
-  }, [reportStartupWatchdog]);
-
-  const resolveStartupWatchdog = useCallback((reason = 'unknown') => {
-    if (!shouldWatchStartup) return;
-    const watchdog = startupWatchdogRef.current;
-    if (watchdog.resolved) return;
-    watchdog.resolved = true;
-    clearStartupWatchdog();
-    deactivateStartupWatchdog('resolved', reason);
-    logStartupEvent('media-startup-resolved', {
-      reason,
-      attempts: watchdog.attempts
-    });
-  }, [clearStartupWatchdog, deactivateStartupWatchdog, logStartupEvent, shouldWatchStartup]);
-
-  const armStartupWatchdog = useCallback((reason = 'media-el-attached') => {
-    if (!shouldWatchStartup) return;
-    const watchdog = startupWatchdogRef.current;
-    watchdog.resolved = false;
-    clearStartupWatchdog();
-    if (!watchdog.active) {
-      watchdog.active = true;
-      reportStartupWatchdog({
-        active: true,
-        state: 'armed',
-        reason,
-        attempts: watchdog.attempts,
-        timeoutMs: STARTUP_TIMEOUT_MS
-      });
-    } else {
-      reportStartupWatchdog({
-        active: true,
-        state: 'rearmed',
-        reason,
-        attempts: watchdog.attempts,
-        timeoutMs: STARTUP_TIMEOUT_MS
-      });
-    }
-    watchdog.timer = setTimeout(() => {
-      if (watchdog.resolved) return;
-      logStartupEvent('media-startup-timeout', {
-        reason,
-        attempts: watchdog.attempts
-      }, 'warn');
-      reportStartupWatchdog({
-        active: true,
-        state: 'timeout',
-        reason,
-        attempts: watchdog.attempts,
-        timeoutMs: STARTUP_TIMEOUT_MS
-      });
-      if (watchdog.attempts >= MAX_STARTUP_RECOVERY_ATTEMPTS) {
-        logStartupEvent('media-startup-abort', {
-          reason: 'max-attempts',
-          attempts: watchdog.attempts
-        }, 'error');
-        deactivateStartupWatchdog('aborted', 'max-attempts');
-        return;
-      }
-      watchdog.attempts += 1;
-      logStartupEvent('media-startup-retry', {
-        attempt: watchdog.attempts,
-        timeoutMs: STARTUP_TIMEOUT_MS
-      }, 'warn');
-      hardReset();
-    }, STARTUP_TIMEOUT_MS);
-    logStartupEvent('media-startup-watchdog', {
-      reason,
-      timeoutMs: STARTUP_TIMEOUT_MS,
-      attempts: watchdog.attempts
-    });
-  }, [clearStartupWatchdog, deactivateStartupWatchdog, hardReset, logStartupEvent, reportStartupWatchdog, shouldWatchStartup]);
-
-  useEffect(() => {
-    startupWatchdogRef.current = { timer: null, attempts: 0, resolved: false, active: false };
-    return () => {
-      deactivateStartupWatchdog('reset', 'instance-dispose');
-      clearStartupWatchdog();
-    };
-  }, [clearStartupWatchdog, deactivateStartupWatchdog, resolvedInstanceKey]);
-
   const handleRegisterMediaAccess = useCallback((payload = {}) => {
     if (!bridgeRegisterAccess) return;
     const hasPayload = payload && Object.keys(payload).length > 0;
@@ -364,7 +235,8 @@ export function useCommonMediaController({
     seekToIntentSeconds,
     onSeekRequestConsumed: bridgeSeekConsumed,
     remountDiagnostics: mountDiagnostics,
-    mediaIdentityKey: resolvedInstanceKey
+    mediaIdentityKey: resolvedInstanceKey,
+    onStartupSignal: bridgeStartupSignal
   });
 
   useEffect(() => {
@@ -488,7 +360,6 @@ export function useCommonMediaController({
       }
       teardownObserver();
       logWaitingStatus('resolved');
-      armStartupWatchdog('media-element-attached');
 
       if (Number.isFinite(pendingAutoSeekRef.current)) {
         try {
@@ -556,7 +427,6 @@ export function useCommonMediaController({
       };
 
       const onLoadedMetadata = () => {
-        resolveStartupWatchdog('loadedmetadata');
         const durationValue = mediaEl.duration || 0;
         let desiredStart = 0;
         const pendingSeekValue = Number.isFinite(pendingAutoSeekRef.current)
@@ -737,7 +607,6 @@ export function useCommonMediaController({
 
       const onPlayingEvent = () => {
         clearSeeking();
-        resolveStartupWatchdog('playing');
       };
 
       mediaEl.addEventListener('timeupdate', onTimeUpdate);

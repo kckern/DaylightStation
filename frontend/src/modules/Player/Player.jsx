@@ -222,79 +222,6 @@ const Player = forwardRef(function Player(props, ref) {
     return `${fallback}:${remountState.nonce}`;
   }, [effectiveMeta, remountState.nonce]);
 
-  const [startupWatchdogState, setStartupWatchdogState] = useState(() => ({
-    active: false,
-    state: 'idle',
-    reason: null,
-    attempts: 0,
-    timeoutMs: null,
-    timestamp: null,
-    waitKey: resolvedWaitKey,
-    mediaKey: effectiveMeta?.media_key || null
-  }));
-
-  useEffect(() => {
-    setStartupWatchdogState((prev) => {
-      if (!prev.active && prev.state === 'idle' && prev.waitKey === resolvedWaitKey) {
-        if (prev.mediaKey === (effectiveMeta?.media_key || null)) {
-          return prev;
-        }
-      }
-      return {
-        active: false,
-        state: 'idle',
-        reason: null,
-        attempts: 0,
-        timeoutMs: null,
-        timestamp: Date.now(),
-        waitKey: resolvedWaitKey,
-        mediaKey: effectiveMeta?.media_key || null
-      };
-    });
-  }, [resolvedWaitKey, effectiveMeta?.media_key]);
-
-  const handleStartupWatchdogEvent = useCallback((snapshot = null) => {
-    setStartupWatchdogState((prev) => {
-      if (!snapshot) {
-        if (!prev.active && prev.state === 'idle') {
-          return prev;
-        }
-        return {
-          active: false,
-          state: 'idle',
-          reason: null,
-          attempts: 0,
-          timeoutMs: null,
-          timestamp: Date.now(),
-          waitKey: resolvedWaitKey,
-          mediaKey: effectiveMeta?.media_key || null
-        };
-      }
-      const normalized = {
-        active: Boolean(snapshot.active),
-        state: snapshot.state || (snapshot.active ? 'armed' : 'idle'),
-        reason: snapshot.reason || null,
-        attempts: Number.isFinite(snapshot.attempts) ? snapshot.attempts : 0,
-        timeoutMs: Number.isFinite(snapshot.timeoutMs) ? snapshot.timeoutMs : null,
-        timestamp: snapshot.timestamp || Date.now(),
-        waitKey: snapshot.waitKey || resolvedWaitKey,
-        mediaKey: snapshot.mediaKey || effectiveMeta?.media_key || null
-      };
-      if (
-        prev.active === normalized.active
-        && prev.state === normalized.state
-        && prev.reason === normalized.reason
-        && prev.attempts === normalized.attempts
-        && prev.timeoutMs === normalized.timeoutMs
-        && prev.waitKey === normalized.waitKey
-        && prev.mediaKey === normalized.mediaKey
-      ) {
-        return prev;
-      }
-      return normalized;
-    });
-  }, [resolvedWaitKey, effectiveMeta?.media_key]);
-
   const forceSinglePlayerRemount = useCallback((input = null) => {
     const options = (input && typeof input === 'object' && !Array.isArray(input))
       ? input
@@ -492,7 +419,7 @@ const Player = forwardRef(function Player(props, ref) {
     });
   }, [forceSinglePlayerRemount, mediaAccess, getResilienceMediaEl]);
 
-  const { overlayProps } = useMediaResilience({
+  const { overlayProps, onStartupSignal } = useMediaResilience({
     getMediaEl: getResilienceMediaEl,
     meta: effectiveMeta,
     seconds: effectiveMeta ? playbackMetrics.seconds : 0,
@@ -507,8 +434,7 @@ const Player = forwardRef(function Player(props, ref) {
     controllerRef: resilienceControllerRef,
     plexId,
     playbackSessionKey,
-    debugContext: { scope: 'player', entryGuid: activeEntryGuid || null },
-    startupWatchdogState
+    debugContext: { scope: 'player', entryGuid: activeEntryGuid || null }
   });
 
   // Get playback rate from the current item, falling back to queue/play level, then default
@@ -634,7 +560,7 @@ const Player = forwardRef(function Player(props, ref) {
     onResolvedMeta: handleResolvedMeta,
     onPlaybackMetrics: handlePlaybackMetrics,
     onRegisterMediaAccess: handleRegisterMediaAccess,
-    onStartupWatchdogEvent: handleStartupWatchdogEvent,
+    onStartupSignal,
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,
