@@ -140,6 +140,7 @@ export function useMediaResilience({
     actions: resilienceActions
   } = useResilienceState(STATUS.pending);
   const [lastFetchAt, setLastFetchAt] = useState(null);
+  const [hardResetLoopCount, setHardResetLoopCount] = useState(0);
   const effectiveHardRecoverAfterStalledForMs = useMemo(() => {
     if (!Number.isFinite(hardRecoverAfterStalledForMs)) {
       return hardRecoverAfterStalledForMs;
@@ -147,9 +148,9 @@ export function useMediaResilience({
     if (hardRecoverAfterStalledForMs <= 0) {
       return hardRecoverAfterStalledForMs;
     }
-    const attemptBackoffMs = Math.max(0, resilienceState.recoveryAttempts) * 1000;
+    const attemptBackoffMs = Math.max(0, hardResetLoopCount) * 1000;
     return hardRecoverAfterStalledForMs + attemptBackoffMs;
-  }, [hardRecoverAfterStalledForMs, resilienceState.recoveryAttempts]);
+  }, [hardRecoverAfterStalledForMs, hardResetLoopCount]);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
@@ -456,11 +457,19 @@ export function useMediaResilience({
     setShowDebug(false);
   }, [mediaIdentity, resilienceActions]);
 
+  useEffect(() => {
+    setHardResetLoopCount(0);
+  }, [mediaIdentity, setHardResetLoopCount]);
+
   const persistSeekIntentMs = useCallback((valueMs) => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
     const normalizedSeconds = Math.max(0, valueMs / 1000);
     updateSessionTargetTimeSeconds(normalizedSeconds);
   }, [updateSessionTargetTimeSeconds]);
+
+  const handleHardResetCycle = useCallback(() => {
+    setHardResetLoopCount((count) => count + 1);
+  }, [setHardResetLoopCount]);
 
   const recordSeekIntentMs = useCallback((valueMs, reason = 'seek-intent') => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
@@ -556,7 +565,8 @@ export function useMediaResilience({
     recoveringStatusValue: STATUS.recovering,
     userIntentRef,
     pausedIntentValue: USER_INTENT.paused,
-    recoveryAttempts: resilienceState.recoveryAttempts
+    recoveryAttempts: resilienceState.recoveryAttempts,
+    onHardResetCycle: handleHardResetCycle
   });
 
   const startMountWatchdog = useCallback((reason = 'pending') => {
@@ -1067,8 +1077,11 @@ export function useMediaResilience({
   useEffect(() => {
     if (status === STATUS.playing) {
       mountWatchdogAttemptsRef.current = 0;
+      if (hardResetLoopCount !== 0) {
+        setHardResetLoopCount(0);
+      }
     }
-  }, [status]);
+  }, [status, hardResetLoopCount]);
 
   const markHealthy = useCallback(() => {
     clearTimer(stallTimerRef);
@@ -1078,7 +1091,8 @@ export function useMediaResilience({
       clearRecoveryGuard: true,
       resetAttempts: true
     });
-  }, [clearTimer, resilienceActions]);
+    setHardResetLoopCount(0);
+  }, [clearTimer, resilienceActions, setHardResetLoopCount]);
 
   const state = useMemo(() => ({
     status,
@@ -1178,7 +1192,8 @@ export function useMediaResilience({
     waitKey,
     stateRef,
     resilienceActions,
-    setOverlayPausePreference
+    setOverlayPausePreference,
+    setHardResetLoopCount
   ]);
 
   useEffect(() => {
