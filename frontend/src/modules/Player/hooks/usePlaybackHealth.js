@@ -120,15 +120,26 @@ export function usePlaybackHealth({
     lastSecondsRef.current = Number.isFinite(seconds) ? seconds : null;
   }, [waitKey]);
 
-  const logHealthEvent = useCallback((event, details = {}) => {
+  const logHealthEvent = useCallback((event, details = {}, options = {}) => {
     const ctx = logContextRef.current;
     const currentSeconds = Number.isFinite(lastSecondsRef.current) ? lastSecondsRef.current : null;
+    const { level: detailLevel, tags: detailTags, ...restDetails } = details || {};
+    const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
+    const resolvedLevel = resolvedOptions.level || detailLevel || 'debug';
 
     playbackLog('playback-health', {
       event,
       ...ctx,
       seconds: currentSeconds,
-      ...details
+      ...restDetails
+    }, {
+      ...resolvedOptions,
+      level: resolvedLevel,
+      tags: detailTags || resolvedOptions.tags,
+      context: {
+        ...ctx,
+        ...(resolvedOptions.context || {})
+      }
     });
   }, []);
 
@@ -191,7 +202,7 @@ export function usePlaybackHealth({
       const sampledSeconds = sampleCurrentTime();
       safeUpdate({ playing: true, waiting: false, stalled: false, buffering: false, paused: false });
       recordProgress('event', { details: 'playing', seconds: sampledSeconds });
-      logHealthEvent('media-playing', { currentTime: sampledSeconds });
+      logHealthEvent('media-playing', { currentTime: sampledSeconds }, { level: 'debug' });
     };
     const handleStalled = () => safeUpdate({ stalled: true, waiting: false });
     const handlePause = () => safeUpdate({ paused: true, playing: false });
@@ -199,7 +210,7 @@ export function usePlaybackHealth({
 
     const handleStalledWithLog = () => {
       handleStalled();
-      logHealthEvent('media-stalled', { currentTime: sampleCurrentTime() });
+      logHealthEvent('media-stalled', { currentTime: sampleCurrentTime() }, { level: 'warn' });
     };
 
     mediaEl.addEventListener('waiting', handleWaiting);

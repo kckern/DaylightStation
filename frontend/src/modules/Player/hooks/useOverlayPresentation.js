@@ -32,6 +32,57 @@ const summarizeActiveDrivers = (drivers) => Object.entries(drivers)
   .filter(([, active]) => Boolean(active))
   .map(([key]) => key);
 
+const areStringArraysEqual = (a, b) => {
+  if (a === b) return true;
+  const left = Array.isArray(a) ? a : [];
+  const right = Array.isArray(b) ? b : [];
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const hasOverlayDecisionChanged = (previous, next) => {
+  if (!previous) return true;
+  return (
+    previous.waitKey !== next.waitKey
+    || previous.status !== next.status
+    || previous.shouldRender !== next.shouldRender
+    || previous.isVisible !== next.isVisible
+    || previous.revealDelayMs !== next.revealDelayMs
+    || previous.overlayHoldActive !== next.overlayHoldActive
+    || previous.holdOverlayActive !== next.holdOverlayActive
+    || previous.playbackHasProgress !== next.playbackHasProgress
+    || previous.waitingToPlay !== next.waitingToPlay
+    || previous.stalled !== next.stalled
+    || previous.pauseOverlayActive !== next.pauseOverlayActive
+    || previous.explicitShow !== next.explicitShow
+    || previous.overlayTimerActive !== next.overlayTimerActive
+    || previous.overlayGraceReason !== next.overlayGraceReason
+    || !areStringArraysEqual(previous.activeReasons, next.activeReasons)
+  );
+};
+
+const hasOverlayVisibilityChanged = (previous, next) => {
+  if (!previous) return true;
+  return (
+    previous.waitKey !== next.waitKey
+    || previous.shouldRender !== next.shouldRender
+    || previous.isVisible !== next.isVisible
+    || previous.revealDelayMs !== next.revealDelayMs
+    || previous.overlayHoldActive !== next.overlayHoldActive
+    || previous.holdOverlayActive !== next.holdOverlayActive
+    || previous.waitingToPlay !== next.waitingToPlay
+    || previous.paused !== next.paused
+    || previous.stalled !== next.stalled
+    || previous.overlayGraceReason !== next.overlayGraceReason
+    || !areStringArraysEqual(previous.reasons, next.reasons)
+  );
+};
+
 const useOverlayTimer = (overlayActive, stallDeadlineMs, triggerRecovery) => {
   const [elapsedMs, setElapsedMs] = useState(0);
   const rafRef = useRef(null);
@@ -189,7 +240,7 @@ export function useOverlayPresentation({
       playbackHasProgress,
       status,
       reasons: overlayActiveReasons.join(',') || 'none'
-    });
+    }, { level: 'debug' });
   }, [overlayHoldActive, holdOverlayActive, playbackHasProgress, logWaitKey, status, overlayActiveReasons]);
 
   const shouldRenderOverlay = overlayDrivers.waiting
@@ -229,16 +280,11 @@ export function useOverlayPresentation({
       activeReasons: overlayActiveReasons,
       seconds: formatSecondsForLog(seconds)
     };
-    const serialized = JSON.stringify({
-      shouldRender: decisionSnapshot.shouldRender,
-      isVisible: decisionSnapshot.isVisible,
-      overlayHoldActive: decisionSnapshot.overlayHoldActive,
-      holdOverlayActive: decisionSnapshot.holdOverlayActive,
-      reasons: decisionSnapshot.activeReasons
-    });
-    if (overlayDecisionRef.current === serialized) return;
-    overlayDecisionRef.current = serialized;
-    playbackLog('overlay-decision', decisionSnapshot);
+    if (!hasOverlayDecisionChanged(overlayDecisionRef.current, decisionSnapshot)) {
+      return;
+    }
+    overlayDecisionRef.current = decisionSnapshot;
+    playbackLog('overlay-decision', decisionSnapshot, { level: 'debug' });
   }, [
     overlayActiveReasons,
     overlayHoldActive,
@@ -272,10 +318,11 @@ export function useOverlayPresentation({
       stalled: stallOverlayActive,
       overlayGraceReason
     };
-    const serialized = JSON.stringify(visibilitySnapshot);
-    if (overlayVisibilityRef.current === serialized) return;
-    overlayVisibilityRef.current = serialized;
-    playbackLog('overlay-visibility-gate', visibilitySnapshot);
+    if (!hasOverlayVisibilityChanged(overlayVisibilityRef.current, visibilitySnapshot)) {
+      return;
+    }
+    overlayVisibilityRef.current = visibilitySnapshot;
+    playbackLog('overlay-visibility-gate', visibilitySnapshot, { level: 'debug' });
   }, [
     isOverlayVisible,
     shouldRenderOverlay,

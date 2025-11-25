@@ -10,6 +10,7 @@ import FitnessUsers from './FitnessUsers.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
 import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
+import { playbackLog } from '../Player/lib/playbackLogger.js';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -51,7 +52,11 @@ const generateThumbnailUrl = (plexObj, timeInSeconds) => {
     // Option 4: Last resort fallback
     return generateFallbackThumbnail(timeInSeconds);
   } catch (error) {
-    console.error('Error generating thumbnail URL:', error);
+    playbackLog('fitness-thumbnail-error', {
+      message: error?.message || 'thumbnail-generation-error',
+      timeInSeconds,
+      plexId: typeof plexObj === 'object' ? (plexObj?.id || plexObj?.plex || null) : plexObj || null
+    }, { level: 'error' });
     return generateFallbackThumbnail(timeInSeconds);
   }
 };
@@ -313,7 +318,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       const actualDuration = getPlayerDuration();
       const increment = actualDuration ? Math.max(5, Math.floor(actualDuration / 50)) : 10;
       const newTime = Math.max(actualCurrentTime - increment, 0);
-      console.log('[FitnessPlayer] ArrowLeft pressed:', { currentTime: actualCurrentTime, newTime, increment, hasCommitRef: !!thumbnailsCommitRef.current });
+      logFitnessEvent('keyboard-seek', {
+        direction: 'left',
+        currentTime: actualCurrentTime,
+        newTime,
+        increment,
+        hasCommitRef: !!thumbnailsCommitRef.current
+      });
       if (thumbnailsCommitRef.current) {
         thumbnailsCommitRef.current(newTime);
       } else {
@@ -333,14 +344,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       const actualDuration = getPlayerDuration();
       const increment = actualDuration ? Math.max(5, Math.floor(actualDuration / 50)) : 10;
       const newTime = Math.min(actualCurrentTime + increment, actualDuration || 0);
-      console.log('[FitnessPlayer] ArrowRight pressed:', { currentTime: actualCurrentTime, newTime, increment, hasCommitRef: !!thumbnailsCommitRef.current });
+      logFitnessEvent('keyboard-seek', {
+        direction: 'right',
+        currentTime: actualCurrentTime,
+        newTime,
+        increment,
+        hasCommitRef: !!thumbnailsCommitRef.current
+      });
       if (thumbnailsCommitRef.current) {
         thumbnailsCommitRef.current(newTime);
       } else {
         seekTo(newTime);
       }
     }
-  }), [getPlayerTime, getPlayerDuration, seekTo, playIsGoverned]);
+  }), [getPlayerTime, getPlayerDuration, seekTo, playIsGoverned, logFitnessEvent]);
   
   const renderCountRef = useRef(0);
   // Simple render counter (environment gating removed per instruction)
@@ -354,6 +371,35 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const queue = playQueue || fitnessPlayQueue || [];
   const setQueue = setPlayQueue || setFitnessPlayQueue;
   
+  const currentItemMediaKey = useMemo(() => resolveMediaIdentity(currentItem), [currentItem]);
+  const currentItemId = currentItem?.id ?? null;
+  const currentItemTitle = currentItem?.title ?? null;
+  const currentItemThreadId = currentItem?.thread_id ?? currentItem?.threadId ?? null;
+
+  const fitnessLogContext = useMemo(() => ({
+    scope: 'FitnessPlayer',
+    mediaKey: currentItemMediaKey,
+    workoutId: currentItemId,
+    threadId: currentItemThreadId,
+    title: currentItemTitle
+  }), [currentItemMediaKey, currentItemId, currentItemThreadId, currentItemTitle]);
+
+  const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
+    const { level: detailLevel, ...restDetails } = details || {};
+    const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
+    playbackLog('fitness-player', {
+      event,
+      ...restDetails
+    }, {
+      ...resolvedOptions,
+      level: resolvedOptions.level || detailLevel || 'debug',
+      context: {
+        ...fitnessLogContext,
+        ...(resolvedOptions.context || {})
+      }
+    });
+  }, [fitnessLogContext]);
+
   
 
   // Helper function to check if a plex object is valid for thumbnail generation
@@ -781,12 +827,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, []);
 
   const handleVideoContainerPointerDown = useCallback((event) => {
-    console.debug('[FitnessPlayer] pointerdown capture', {
+    logFitnessEvent('fullscreen-pointerdown', {
       swapActive: mediaSwapActive,
       button: event.button,
       pointerType: event.pointerType,
-      targetTag: event.target?.tagName,
-      composedPath: typeof event.composedPath === 'function' ? event.composedPath().map((node) => node?.tagName || node?.className || node?.id).slice(0, 6) : null
+      targetTag: event.target?.tagName || null,
+      composedPath: typeof event.composedPath === 'function'
+        ? event.composedPath().map((node) => node?.tagName || node?.className || node?.id).slice(0, 6)
+        : null
     });
     if (mediaSwapActive) return;
     if (typeof event.button === 'number' && event.button !== 0) return;
@@ -794,21 +842,25 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (target && target.closest('button, a, input, textarea, [role="button"], [data-no-fullscreen]')) {
       return;
     }
-    console.debug('[FitnessPlayer] toggling fullscreen via capture handler');
+    logFitnessEvent('fullscreen-toggle-request', {
+      source: 'video-container',
+      pointerType: event.pointerType,
+      button: event.button
+    });
     toggleFullscreen();
-  }, [mediaSwapActive, toggleFullscreen]);
+  }, [mediaSwapActive, toggleFullscreen, logFitnessEvent]);
 
   const handleVideoContainerClickCapture = useCallback((event) => {
-    console.debug('[FitnessPlayer] click capture', {
+    logFitnessEvent('fullscreen-click-capture', {
       swapActive: mediaSwapActive,
       button: event.button,
-      targetTag: event.target?.tagName
+      targetTag: event.target?.tagName || null
     });
-  }, [mediaSwapActive]);
+  }, [mediaSwapActive, logFitnessEvent]);
 
   const handleRootPointerDownCapture = useCallback((event) => {
-    console.debug('[FitnessPlayer] root pointerdown capture', {
-      targetTag: event.target?.tagName,
+    logFitnessEvent('root-pointerdown', {
+      targetTag: event.target?.tagName || null,
       button: event.button,
       pointerType: event.pointerType
     });
@@ -824,9 +876,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       return;
     }
 
-    console.debug('[FitnessPlayer] toggling fullscreen via root capture');
+    logFitnessEvent('fullscreen-toggle-request', {
+      source: 'root-capture',
+      pointerType: event.pointerType,
+      button: event.button
+    });
     toggleFullscreen();
-  }, [mediaSwapActive, toggleFullscreen]);
+  }, [mediaSwapActive, toggleFullscreen, logFitnessEvent]);
 
   const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
   const playerRootClasses = useMemo(() => {

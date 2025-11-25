@@ -186,12 +186,19 @@ export function useCommonMediaController({
 
   const logControllerEvent = useCallback((event, details = {}, overrideWaitKey = null) => {
     const waitKeyLabel = formatWaitKeyForLogs(overrideWaitKey || resolvedInstanceKey);
+    const { level: detailLevel, context: detailContext, ...restDetails } = details || {};
     playbackLog('controller', {
       event,
-      threadId,
-      waitKey: waitKeyLabel,
-      media_key,
-      ...details
+      ...restDetails
+    }, {
+      level: detailLevel || 'info',
+      context: {
+        threadId,
+        mediaKey: media_key || null,
+        instanceKey: resolvedInstanceKey,
+        waitKey: waitKeyLabel,
+        ...detailContext
+      }
     });
   }, [formatWaitKeyForLogs, media_key, resolvedInstanceKey, threadId]);
 
@@ -201,7 +208,7 @@ export function useCommonMediaController({
     }
     setReloadNonce((nonce) => {
       const next = nonce + 1;
-      logControllerEvent('hard-reset', { seekToSeconds }, `${baseInstanceKey}:mc-${next}`);
+      logControllerEvent('hard-reset', { seekToSeconds, level: 'warn' }, `${baseInstanceKey}:mc-${next}`);
       return next;
     });
   }, [baseInstanceKey, logControllerEvent, setReloadNonce]);
@@ -336,6 +343,17 @@ export function useCommonMediaController({
       setDuration(mediaEl.duration || 0);
     };
 
+    const onError = (event) => {
+      const error = mediaEl.error;
+      playbackLog('media-error', {
+        code: error?.code,
+        message: error?.message,
+        networkState: mediaEl.networkState,
+        readyState: mediaEl.readyState,
+        src: mediaEl.currentSrc || mediaEl.src
+      }, { level: 'error' });
+    };
+
     const onEnded = () => {
       lastLoggedTimeRef.current = 0;
       logProgress();
@@ -361,6 +379,14 @@ export function useCommonMediaController({
 
         const initialDecision = shouldRestartFromBeginning(durationValue, desiredStart);
 
+        playbackLog('media-resume-decision-initial', {
+          media_key,
+          desiredStart,
+          duration: durationValue,
+          restart: initialDecision.restart,
+          reason: initialDecision.reason
+        }, { level: 'debug' });
+
         if (initialDecision.restart) {
           desiredStart = 0;
           clearResumeHistoryForKey(media_key);
@@ -384,6 +410,14 @@ export function useCommonMediaController({
         const nearEnd = durationValue > 0 ? sticky >= durationValue - 1 : false;
         const stickyDecision = shouldRestartFromBeginning(durationValue, sticky);
 
+        playbackLog('media-resume-decision-sticky', {
+          media_key,
+          candidate: sticky,
+          source: foundCandidate?.label || 'none',
+          restart: stickyDecision.restart,
+          reason: stickyDecision.reason
+        }, { level: 'debug' });
+
         if (!nearStart && !nearEnd && !stickyDecision.restart && sticky > 5) {
           desiredStart = Math.max(0, sticky - 1);
         } else if (stickyDecision.restart && sticky > 0) {
@@ -405,7 +439,7 @@ export function useCommonMediaController({
         try {
           mediaEl.currentTime = desiredStart;
         } catch (error) {
-          if (DEBUG_MEDIA) console.warn('[Media] failed to set start time', desiredStart, error);
+          playbackLog('media-start-time-failed', { desiredStart, error }, { level: 'warn' });
         }
       }
 
@@ -421,7 +455,7 @@ export function useCommonMediaController({
         pendingSeekSeconds: roundSeconds(pendingSeekValue),
         autoplay: true
       };
-      playbackLog('transport-autoplay-primed', autoplayLogContext);
+      playbackLog('transport-autoplay-primed', autoplayLogContext, { level: 'debug' });
 
       try {
         const playPromise = mediaEl.play?.();
@@ -433,7 +467,7 @@ export function useCommonMediaController({
                 result: 'fulfilled',
                 paused: Boolean(mediaEl.paused),
                 readyState: mediaEl.readyState
-              });
+              }, { level: 'info' });
             })
             .catch((error) => {
               playbackLog('transport-autoplay-result', {
@@ -442,7 +476,7 @@ export function useCommonMediaController({
                 paused: Boolean(mediaEl.paused),
                 readyState: mediaEl.readyState,
                 error: error?.message || 'unknown-error'
-              });
+              }, { level: 'warn' });
             });
         } else {
           playbackLog('transport-autoplay-result', {
@@ -450,7 +484,7 @@ export function useCommonMediaController({
             result: 'no-promise',
             paused: Boolean(mediaEl.paused),
             readyState: mediaEl.readyState
-          });
+          }, { level: 'info' });
         }
       } catch (error) {
         playbackLog('transport-autoplay-result', {
@@ -459,7 +493,7 @@ export function useCommonMediaController({
           paused: Boolean(mediaEl.paused),
           readyState: mediaEl.readyState,
           error: error?.message || 'play-threw'
-        });
+        }, { level: 'warn' });
       }
 
       const queueLength = meta.queueLength || 0;
@@ -477,15 +511,13 @@ export function useCommonMediaController({
         mediaEl.playbackRate = playbackRate;
       }
 
-      if (DEBUG_MEDIA) {
-        console.log('[Media] loadedmetadata', {
-          media_key,
-          desiredStart,
-          duration: durationValue,
-          volume: adjustedVolume,
-          loop: mediaEl.loop
-        });
-      }
+      playbackLog('media-loadedmetadata', {
+        media_key,
+        desiredStart,
+        duration: durationValue,
+        volume: adjustedVolume,
+        loop: mediaEl.loop
+      }, { level: 'debug' });
     };
 
     const handleSeeking = () => {
@@ -504,6 +536,7 @@ export function useCommonMediaController({
 
     mediaEl.addEventListener('timeupdate', onTimeUpdate);
     mediaEl.addEventListener('durationchange', onDurationChange);
+    mediaEl.addEventListener('error', onError);
     mediaEl.addEventListener('ended', onEnded);
     mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
     mediaEl.addEventListener('seeking', handleSeeking);
@@ -513,6 +546,7 @@ export function useCommonMediaController({
     return () => {
       mediaEl.removeEventListener('timeupdate', onTimeUpdate);
       mediaEl.removeEventListener('durationchange', onDurationChange);
+      mediaEl.removeEventListener('error', onError);
       mediaEl.removeEventListener('ended', onEnded);
       mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
       mediaEl.removeEventListener('seeking', handleSeeking);

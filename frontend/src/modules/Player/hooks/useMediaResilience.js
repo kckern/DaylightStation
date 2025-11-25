@@ -153,7 +153,8 @@ export function useMediaResilience({
     waitKey: logWaitKey,
     mediaIdentity,
     metaTitle: meta?.title || meta?.name || meta?.grandparentTitle || null,
-    threadId
+    threadId,
+    sessionId: playbackSessionKey || null
   });
   const {
     targetTimeSeconds: sessionTargetTimeSeconds,
@@ -184,12 +185,24 @@ export function useMediaResilience({
   }, [lastProgressSecondsRef, lastSecondsRef, seekIntentNoiseThresholdSeconds]);
 
 
-  const logResilienceEvent = useCallback((event, details = {}) => {
+  const logResilienceEvent = useCallback((event, details = {}, options = {}) => {
     const context = logContextRef.current || {};
+    const { level: detailLevel, tags: detailTags, ...restDetails } = details || {};
+    const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
+    const resolvedLevel = resolvedOptions.level || detailLevel || 'debug';
+    const combinedTags = detailTags || resolvedOptions.tags;
     playbackLog('media-resilience', {
       event,
       ...context,
-      ...details
+      ...restDetails
+    }, {
+      ...resolvedOptions,
+      level: resolvedLevel,
+      tags: combinedTags,
+      context: {
+        ...context,
+        ...(resolvedOptions.context || {})
+      }
     });
   }, [logContextRef]);
 
@@ -291,7 +304,7 @@ export function useMediaResilience({
     }
 
     if (hadPendingTimers || wasStalling) {
-      logResilienceEvent('stall-invalidated', { reason });
+      logResilienceEvent('stall-invalidated', { reason }, { level: 'debug' });
     }
   }, [clearTimer, logResilienceEvent, resilienceActions, resilienceState.lastStallToken, statusRef]);
 
@@ -511,26 +524,26 @@ export function useMediaResilience({
       to: status,
       seconds: normalizedSeconds,
       waitKey: logWaitKey
-    });
+    }, { level: 'debug' });
 
     if (status === STATUS.stalling && previous !== STATUS.recovering) {
       logResilienceEvent('stall-detected', {
         seconds: normalizedSeconds,
         lastProgressSeconds: lastProgressSecondsRef.current,
         progressToken: playbackHealth.progressToken
-      });
+      }, { level: 'warn' });
     } else if (status === STATUS.playing && previous === STATUS.stalling) {
       logResilienceEvent('stall-recovered', {
         seconds: normalizedSeconds,
         lastProgressSeconds: lastProgressSecondsRef.current,
         progressToken: playbackHealth.progressToken
-      });
+      }, { level: 'info' });
     } else if (status === STATUS.recovering && previous !== STATUS.recovering) {
       logResilienceEvent('stall-recovering', {
         seconds: normalizedSeconds,
         attempts: resilienceState.recoveryAttempts,
         reason: mountWatchdogReasonRef.current || 'auto'
-      });
+      }, { level: 'info' });
     }
 
     statusTransitionRef.current = status;
