@@ -11,6 +11,12 @@ const coerceBoolean = (value, fallback = false) => (
   typeof value === 'boolean' ? value : fallback
 );
 
+const normalizePauseIntent = (value, fallback = null) => {
+  if (value === null) return null;
+  if (value === 'user' || value === 'system') return value;
+  return fallback ?? null;
+};
+
 /**
  * useMediaReporter centralizes how bespoke media renderers (e.g. ContentScroller)
  * report playback state up to the Player resilience bridge. Components hand it a
@@ -30,7 +36,7 @@ export function useMediaReporter({
 }) {
   const seekingRef = useRef(false);
   const pendingSeekSecondsRef = useRef(null);
-  const lastMetricsRef = useRef({ seconds: 0, isPaused: true, isSeeking: false });
+  const lastMetricsRef = useRef({ seconds: 0, isPaused: true, isSeeking: false, pauseIntent: null });
   const startupAttachmentRef = useRef(false);
 
   const emitStartupSignal = useCallback((type, detail = {}) => {
@@ -56,13 +62,15 @@ export function useMediaReporter({
       return {
         seconds: 0,
         isPaused: true,
-        isSeeking: seekingRef.current
+        isSeeking: seekingRef.current,
+        pauseIntent: lastMetricsRef.current.pauseIntent ?? null
       };
     }
     return {
       seconds: Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : 0,
       isPaused: Boolean(mediaEl.paused),
-      isSeeking: seekingRef.current
+      isSeeking: seekingRef.current,
+      pauseIntent: lastMetricsRef.current.pauseIntent ?? null
     };
   }, [mediaRef]);
 
@@ -71,16 +79,22 @@ export function useMediaReporter({
       return lastMetricsRef.current;
     }
     const base = readPlaybackMetrics();
+    const hasPauseIntentOverride = Boolean(override && Object.prototype.hasOwnProperty.call(override, 'pauseIntent'));
+    const resolvedBaseIntent = normalizePauseIntent(base.pauseIntent, lastMetricsRef.current.pauseIntent);
     const merged = {
       seconds: coerceSeconds(override?.seconds, base.seconds),
       isPaused: coerceBoolean(override?.isPaused, base.isPaused),
-      isSeeking: coerceBoolean(override?.isSeeking, base.isSeeking)
+      isSeeking: coerceBoolean(override?.isSeeking, base.isSeeking),
+      pauseIntent: hasPauseIntentOverride
+        ? normalizePauseIntent(override.pauseIntent, resolvedBaseIntent)
+        : resolvedBaseIntent
     };
     const prev = lastMetricsRef.current;
     if (
       prev.seconds === merged.seconds
       && prev.isPaused === merged.isPaused
       && prev.isSeeking === merged.isSeeking
+      && prev.pauseIntent === merged.pauseIntent
     ) {
       return prev;
     }
@@ -201,14 +215,15 @@ export function useMediaReporter({
       });
     }
 
-    const handlePlay = () => {
+    const handlePlay = (event) => {
       seekingRef.current = false;
       logExplicitPlaybackToggle('play');
-      reportPlaybackMetrics({ isPaused: false, isSeeking: false });
+      reportPlaybackMetrics({ isPaused: false, isSeeking: false, pauseIntent: null });
     };
-    const handlePause = () => {
+    const handlePause = (event) => {
       logExplicitPlaybackToggle('pause');
-      reportPlaybackMetrics({ isPaused: true });
+      const intent = event?.isTrusted === false ? 'system' : 'user';
+      reportPlaybackMetrics({ isPaused: true, pauseIntent: intent });
     };
     const handleTimeUpdate = () => {
       reportPlaybackMetrics();

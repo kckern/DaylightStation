@@ -91,6 +91,7 @@ export function usePlaybackHealth({
   const [elementSignals, setElementSignals] = useState(DEFAULT_SIGNALS);
   const [frameInfo, setFrameInfo] = useState(NO_FRAME_INFO);
   const [progressSignal, setProgressSignal] = useState(DEFAULT_PROGRESS_STATE);
+  const [bufferRunwayMs, setBufferRunwayMs] = useState(null);
 
   const deltaThreshold = useMemo(
     () => Math.max(0.01, Math.min(0.05, epsilonSeconds / 2)),
@@ -117,6 +118,7 @@ export function usePlaybackHealth({
     setElementSignals(DEFAULT_SIGNALS);
     setFrameInfo(NO_FRAME_INFO);
     setProgressSignal(DEFAULT_PROGRESS_STATE);
+    setBufferRunwayMs(null);
     lastSecondsRef.current = Number.isFinite(seconds) ? seconds : null;
   }, [waitKey]);
 
@@ -180,6 +182,7 @@ export function usePlaybackHealth({
     const mediaEl = typeof getMediaEl === 'function' ? getMediaEl() : null;
     if (!mediaEl) {
       setElementSignals(DEFAULT_SIGNALS);
+      setBufferRunwayMs(null);
       return () => {};
     }
 
@@ -197,12 +200,48 @@ export function usePlaybackHealth({
       return Number(mediaEl.currentTime);
     };
 
+    const safeSetBufferRunway = (value) => {
+      if (!destroyed) {
+        setBufferRunwayMs(value);
+      }
+    };
+
+    const readBufferRunwayMs = () => {
+      if (!mediaEl || !mediaEl.buffered) return null;
+      const current = Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : null;
+      if (!Number.isFinite(current)) return null;
+      try {
+        const ranges = mediaEl.buffered;
+        const count = Number(ranges?.length) || 0;
+        if (count === 0) return 0;
+        for (let i = 0; i < count; i += 1) {
+          const start = ranges.start(i);
+          const end = ranges.end(i);
+          if (Number.isFinite(start) && Number.isFinite(end) && current >= start && current <= end) {
+            return Math.max(0, (end - current) * 1000);
+          }
+        }
+        const lastEnd = Number.isFinite(ranges.end(count - 1)) ? ranges.end(count - 1) : null;
+        if (Number.isFinite(lastEnd) && lastEnd > current) {
+          return Math.max(0, (lastEnd - current) * 1000);
+        }
+      } catch (_) {
+        return null;
+      }
+      return 0;
+    };
+
+    const updateBufferRunway = () => {
+      safeSetBufferRunway(readBufferRunwayMs());
+    };
+
     const handleWaiting = () => safeUpdate({ waiting: true, buffering: true });
     const handlePlaying = () => {
       const sampledSeconds = sampleCurrentTime();
       safeUpdate({ playing: true, waiting: false, stalled: false, buffering: false, paused: false });
       recordProgress('event', { details: 'playing', seconds: sampledSeconds });
       logHealthEvent('media-playing', { currentTime: sampledSeconds }, { level: 'debug' });
+      updateBufferRunway();
     };
     const handleStalled = () => safeUpdate({ stalled: true, waiting: false });
     const handlePause = () => safeUpdate({ paused: true, playing: false });
@@ -213,11 +252,14 @@ export function usePlaybackHealth({
       logHealthEvent('media-stalled', { currentTime: sampleCurrentTime() }, { level: 'warn' });
     };
 
+    const bufferEvents = ['timeupdate', 'progress', 'waiting', 'playing'];
+
     mediaEl.addEventListener('waiting', handleWaiting);
     mediaEl.addEventListener('playing', handlePlaying);
     mediaEl.addEventListener('pause', handlePause);
     mediaEl.addEventListener('stalled', handleStalledWithLog);
     mediaEl.addEventListener('ended', handleEnded);
+    bufferEvents.forEach((eventName) => mediaEl.addEventListener(eventName, updateBufferRunway));
 
     const haveFutureData = typeof HTMLMediaElement !== 'undefined'
       ? HTMLMediaElement.HAVE_FUTURE_DATA
@@ -232,6 +274,7 @@ export function usePlaybackHealth({
       waiting: initialWaiting,
       stalled: false
     });
+    updateBufferRunway();
 
     return () => {
       destroyed = true;
@@ -240,6 +283,7 @@ export function usePlaybackHealth({
       mediaEl.removeEventListener('pause', handlePause);
       mediaEl.removeEventListener('stalled', handleStalledWithLog);
       mediaEl.removeEventListener('ended', handleEnded);
+      bufferEvents.forEach((eventName) => mediaEl.removeEventListener(eventName, updateBufferRunway));
     };
   }, [getMediaEl, waitKey, recordProgress, updateElementSignals, logHealthEvent]);
 
@@ -300,8 +344,9 @@ export function usePlaybackHealth({
     progressDetails: progressSignal.details,
     elementSignals,
     frameInfo,
+    bufferRunwayMs,
     isWaiting: Boolean(elementSignals.waiting || elementSignals.buffering),
     isStalledEvent: Boolean(elementSignals.stalled),
     isFrameAdvancing: frameInfo.supported ? frameInfo.advancing : null
-  }), [elementSignals, frameInfo, progressSignal]);
+  }), [elementSignals, frameInfo, progressSignal, bufferRunwayMs]);
 }

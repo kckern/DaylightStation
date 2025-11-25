@@ -54,10 +54,10 @@ const useLatest = (value) => {
 };
 
 
-function useUserIntentControls({ isPaused, isSeeking }) {
+function useUserIntentControls({ isPaused, isSeeking, pauseIntent }) {
   const computeInitialIntent = () => {
     if (isSeeking) return USER_INTENT.seeking;
-    if (isPaused) return USER_INTENT.paused;
+    if (isPaused && pauseIntent !== 'system') return USER_INTENT.paused;
     return USER_INTENT.playing;
   };
 
@@ -89,6 +89,7 @@ export function useMediaResilience({
   seconds = 0,
   isPaused = false,
   isSeeking = false,
+  pauseIntent = null,
   initialStart = 0,
   waitKey,
   fetchVideoInfo,
@@ -135,7 +136,7 @@ export function useMediaResilience({
     explicitPauseRef,
     updateExplicitPauseState,
     setUserIntent
-  } = useUserIntentControls({ isPaused, isSeeking });
+  } = useUserIntentControls({ isPaused, isSeeking, pauseIntent });
   const {
     state: resilienceState,
     status,
@@ -321,17 +322,19 @@ export function useMediaResilience({
     lastKnownSeekIntentMsRef.current = Math.max(0, initialStart * 1000);
   }, [initialStart]);
 
+  const shouldApplyPausedIntent = resolvedIsPaused && pauseIntent !== 'system';
+
   useEffect(() => {
     if (isSeeking) {
       setUserIntent(USER_INTENT.seeking);
       return;
     }
-    if (resolvedIsPaused) {
+    if (shouldApplyPausedIntent) {
       setUserIntent(USER_INTENT.paused);
       return;
     }
     setUserIntent(USER_INTENT.playing);
-  }, [resolvedIsPaused, isSeeking]);
+  }, [isSeeking, shouldApplyPausedIntent]);
 
   useEffect(() => {
     if (!Number.isFinite(seconds)) return;
@@ -1231,6 +1234,36 @@ export function useMediaResilience({
   ]);
   const stateRef = useLatest(state);
 
+  const debugStateSnapshotRef = useRef({
+    userIntent,
+    status,
+    systemHealth
+  });
+
+  useEffect(() => {
+    const prev = debugStateSnapshotRef.current;
+    const changes = {};
+    if (!prev || prev.userIntent !== userIntent) {
+      changes.userIntent = { from: prev?.userIntent ?? null, to: userIntent };
+    }
+    if (!prev || prev.status !== status) {
+      changes.status = { from: prev?.status ?? null, to: status };
+    }
+    if (!prev || prev.systemHealth !== systemHealth) {
+      changes.systemHealth = { from: prev?.systemHealth ?? null, to: systemHealth };
+    }
+    const changedKeys = Object.keys(changes);
+    if (changedKeys.length > 0) {
+      logResilienceEvent('debug-state-change', {
+        userIntent,
+        status,
+        systemHealth,
+        changes
+      }, { level: 'debug' });
+      debugStateSnapshotRef.current = { userIntent, status, systemHealth };
+    }
+  }, [userIntent, status, systemHealth, logResilienceEvent]);
+
   useEffect(() => {
     if (typeof onStateChange === 'function') {
       onStateChange(state);
@@ -1383,6 +1416,7 @@ function createOverlayProps({
   startupWatchdogState
 }) {
   return {
+    status,
     isVisible: isOverlayVisible && shouldRenderOverlay,
     shouldRender: shouldRenderOverlay,
     waitingToPlay,
