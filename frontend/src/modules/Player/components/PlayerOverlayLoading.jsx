@@ -13,6 +13,8 @@ export function PlayerOverlayLoading({
   seconds = 0,
   stalled = false,
   waitingToPlay = false,
+  startupPending = false,
+  startupWatchdogState = null,
   status = 'pending',
   togglePauseOverlay,
   playerPositionDisplay,
@@ -56,6 +58,7 @@ export function PlayerOverlayLoading({
       seconds,
       stalled,
       waitingToPlay,
+      startupPending,
       ...basePayload,
       ...extra
     };
@@ -68,7 +71,7 @@ export function PlayerOverlayLoading({
     } catch (error) {
       console.error('[PlayerOverlayLoading] hard reset handler failed', error, finalPayload);
     }
-  }, [onRequestHardReset, seconds, stalled, waitingToPlay]);
+  }, [onRequestHardReset, seconds, stalled, waitingToPlay, startupPending]);
 
   const normalizedMediaDetails = useMemo(() => {
     if (mediaDetailsProp && typeof mediaDetailsProp === 'object') {
@@ -92,6 +95,7 @@ export function PlayerOverlayLoading({
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
   const hasValidPosition = positionDisplay && positionDisplay !== '0:00';
   const statusLabel = (() => {
+    if (startupPending) return 'Starting…';
     if (status === 'seeking') return 'Seeking…';
     if (stalled) return 'Recovering…';
     if (waitingToPlay) return 'Loading…';
@@ -129,6 +133,9 @@ export function PlayerOverlayLoading({
   const mediaSummary = normalizedMediaDetails.hasElement
     ? `el:t=${normalizedMediaDetails.currentTime ?? 'n/a'} r=${normalizedMediaDetails.readyState ?? 'n/a'} n=${normalizedMediaDetails.networkState ?? 'n/a'} p=${normalizedMediaDetails.paused ?? 'n/a'}`
     : 'el:none';
+  const startupSummary = startupPending
+    ? `startup:armed attempts=${startupWatchdogState?.attempts ?? 0} timeout=${startupWatchdogState?.timeoutMs ?? 'n/a'}`
+    : 'startup:idle';
 
   const logLabel = overlayLogLabel || waitKey || '';
   const overlayLogContext = useMemo(() => ({
@@ -141,7 +148,7 @@ export function PlayerOverlayLoading({
     const visibleDurationMs = visibleSinceRef.current ? now - visibleSinceRef.current : null;
     const revealLabel = Number.isFinite(overlayRevealDelayMs) ? `${overlayRevealDelayMs}ms` : 'n/a';
     const visibilitySummary = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'}/${revealLabel}`;
-    const summary = `${visibilitySummary} | ${timerSummary} | ${seekSummary} | ${mediaSummary}`;
+    const summary = `${visibilitySummary} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
     playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary, {
       level: 'debug',
       sampleRate: 0.25,
@@ -256,6 +263,15 @@ PlayerOverlayLoading.propTypes = {
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
+  startupPending: PropTypes.bool,
+  startupWatchdogState: PropTypes.shape({
+    active: PropTypes.bool,
+    state: PropTypes.string,
+    reason: PropTypes.string,
+    attempts: PropTypes.number,
+    timeoutMs: PropTypes.number,
+    timestamp: PropTypes.number
+  }),
   togglePauseOverlay: PropTypes.func,
   status: PropTypes.string,
   playerPositionDisplay: PropTypes.string,
