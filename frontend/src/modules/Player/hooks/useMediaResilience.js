@@ -117,6 +117,8 @@ export function useMediaResilience({
     epsilonSeconds,
     stallDetectionThresholdMs,
     hardRecoverAfterStalledForMs,
+    hardRecoverStartupGraceMs,
+    hardRecoverAttemptBackoffMs,
     mountTimeoutMs,
     mountPollIntervalMs,
     mountMaxAttempts,
@@ -146,15 +148,26 @@ export function useMediaResilience({
       return hardRecoverAfterStalledForMs;
     }
     const recoveryBaseMs = Math.max(0, hardRecoverAfterStalledForMs);
-    if (recoveryBaseMs === 0) {
-      return recoveryBaseMs;
-    }
+    const startupGraceMs = Number.isFinite(hardRecoverStartupGraceMs)
+      ? Math.max(0, hardRecoverStartupGraceMs)
+      : 0;
+    const perLoopBackoffMs = Number.isFinite(hardRecoverAttemptBackoffMs)
+      ? Math.max(0, hardRecoverAttemptBackoffMs)
+      : 0;
     if (hardResetLoopCount === 0) {
-      return Math.max(recoveryBaseMs, 10000);
+      if (recoveryBaseMs === 0 && startupGraceMs === 0) {
+        return 0;
+      }
+      return Math.max(recoveryBaseMs, startupGraceMs);
     }
-    const attemptBackoffMs = Math.max(0, hardResetLoopCount - 1) * 1000;
-    return recoveryBaseMs + attemptBackoffMs;
-  }, [hardRecoverAfterStalledForMs, hardResetLoopCount]);
+    const loopsBeyondFirst = Math.max(0, hardResetLoopCount - 1);
+    return recoveryBaseMs + (loopsBeyondFirst * perLoopBackoffMs);
+  }, [
+    hardRecoverAfterStalledForMs,
+    hardRecoverStartupGraceMs,
+    hardRecoverAttemptBackoffMs,
+    hardResetLoopCount
+  ]);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
