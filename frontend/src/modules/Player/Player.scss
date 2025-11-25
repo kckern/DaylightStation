@@ -430,6 +430,7 @@
         .progress{
         background-color: #FFFFFF22;
         }
+
     }
     .audio-player{
         padding: 0rem;
@@ -456,14 +457,14 @@
                     white-space: nowrap; /* Prevent orphans */
                 }
                 p.audio-footer {
-                    font-weight: left;
-                    overflow-wrap: break-word; /* Prevent widdows */
-                    white-space: nowrap; /* Prevent orphans */
+                    font-weight: 400;
+                    overflow-wrap: break-word;
+                    white-space: nowrap;
                 }
                 p.audio-header {
                     text-align: right;
-                    overflow-wrap: break-word; /* Prevent widdows */
-                    white-space: nowrap; /* Prevent orphans */
+                    overflow-wrap: break-word;
+                    white-space: nowrap;
                 }
             }
             .image-container {
@@ -489,3 +490,45 @@
     }
 
   }
+
+.player-debug-overlay {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: 0.4rem;
+    background-color: rgba(0, 0, 0, 0.65);
+    color: #f3f6ff;
+    font-family: 'SFMono-Regular', Menlo, Consolas, Monaco, monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.02em;
+    z-index: var(--player-layer-debug, 60);
+    pointer-events: none;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+.player-debug-overlay__row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+}
+
+.player-debug-overlay__label {
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    opacity: 0.65;
+    letter-spacing: 0.08em;
+}
+
+.player-debug-overlay__value {
+    font-weight: 600;
+}
+
+.player-debug-overlay__metrics {
+    font-size: 0.65rem;
+    opacity: 0.85;
+}

@@ -16,9 +16,29 @@ export function CompositePlayer(props) {
   const primaryProps = React.useMemo(() => {
     const { coordination: _ignoredCoordination, Player: _ignoredPlayer, ...baseProps } = props;
     const overlayKey = isQueue ? 'queue' : 'play';
+    const normalizePrimaryEntry = (value) => {
+      if (!value) return value;
+      const applyDefaults = (entry) => ({
+        ...entry,
+        seconds: 0,
+        resume: false,
+        shader: 'minimal'
+      });
+      return Array.isArray(value) ? value.map(applyDefaults) : applyDefaults(value);
+    };
+
     if (baseProps[overlayKey]) {
       baseProps[overlayKey] = { ...baseProps[overlayKey], overlay: undefined };
     }
+
+    if (baseProps.play) {
+      baseProps.play = normalizePrimaryEntry(baseProps.play);
+    }
+
+    if (baseProps.queue) {
+      baseProps.queue = normalizePrimaryEntry(baseProps.queue);
+    }
+
     return baseProps;
   }, [props, isQueue]);
 

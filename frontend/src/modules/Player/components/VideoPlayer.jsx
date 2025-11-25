@@ -236,6 +236,41 @@ export function VideoPlayer({
     };
   }, [mediaInstanceKey]);
 
+  const shakaConfiguration = useMemo(() => {
+    const streaming = {
+      bufferingGoal: 90,
+      bufferingGoalScale: 1,
+      rebufferingGoal: 30,
+      stallEnabled: true,
+      stallThreshold: 0.25,
+      stallCheckInterval: 0.25,
+      restartOnError: true,
+      retryParameters: {
+        maxAttempts: 7,
+        baseDelay: 250,
+        backoffFactor: 2,
+        fuzzFactor: 0.5,
+        timeout: 0
+      }
+    };
+    const abr = {
+      enabled: true,
+      switchInterval: 2,
+      bandwidthUpgradeTarget: 0.85,
+      bandwidthDowngradeTarget: 0.95
+    };
+    return {
+      playsInline: true,
+      shakaPlayer: {
+        installPolyfills: true,
+        customConfiguration: {
+          streaming,
+          abr
+        }
+      }
+    };
+  }, []);
+
   const logShakaDiagnostic = useCallback((event, payload = {}, level = 'debug') => {
     playbackLog(event, {
       ...payload,
@@ -345,6 +380,21 @@ export function VideoPlayer({
       });
     };
 
+    const appliedConfig = shakaConfiguration?.shakaPlayer?.customConfiguration || null;
+    if (thirdPartyPlayer && appliedConfig) {
+      try {
+        thirdPartyPlayer.configure(appliedConfig);
+        logShakaDiagnostic('shaka-config-applied', {
+          streaming: appliedConfig.streaming,
+          abr: appliedConfig.abr
+        }, 'info');
+      } catch (error) {
+        logShakaDiagnostic('shaka-config-error', {
+          error: serializePlaybackError(error)
+        }, 'error');
+      }
+    }
+
     logShakaDiagnostic('shaka-ready', {
       hasPlayer: Boolean(thirdPartyPlayer),
       hasPlayMethod: typeof play === 'function',
@@ -355,7 +405,7 @@ export function VideoPlayer({
     if (setProperties) {
       setProperties({ playbackRate: playbackRate || media.playbackRate || 1 });
     }
-  }, [dashSource?.startPosition, dashSource?.streamUrl, logShakaDiagnostic, media.playbackRate, playbackRate]);
+  }, [dashSource?.startPosition, dashSource?.streamUrl, logShakaDiagnostic, media.playbackRate, playbackRate, shakaConfiguration]);
 
   const handleShakaPlaybackError = useCallback((error) => {
     const serializedError = serializePlaybackError(error);
@@ -436,31 +486,6 @@ export function VideoPlayer({
     }, 'error');
     advance?.(1);
   }, [advance, fetchVideoInfo, hardReset, logShakaDiagnostic, resilienceBridge, seconds]);
-
-  const shakaConfiguration = useMemo(() => ({
-    playsInline: true,
-    streaming: {
-      bufferingGoal: 60,
-      rebufferingGoal: 15,
-      stallEnabled: true,
-      stallThreshold: 1,
-      stallCheckInterval: 0.5,
-      restartOnError: true,
-      retryParameters: {
-        maxAttempts: 5,
-        baseDelay: 500,
-        backoffFactor: 2,
-        fuzzFactor: 0.5,
-        timeout: 0
-      }
-    },
-    abr: {
-      enabled: true,
-      switchInterval: 2,
-      bandwidthUpgradeTarget: 0.85,
-      bandwidthDowngradeTarget: 0.95
-    }
-  }), []);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   
