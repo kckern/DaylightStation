@@ -1,8 +1,9 @@
-import React, { useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
 import { useCommonMediaController, shouldRestartFromBeginning } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
+import { playbackLog } from '../lib/playbackLogger.js';
 
 const deriveApproxDurationSeconds = (media = {}) => {
   const numericFields = [
@@ -39,6 +40,73 @@ const resolveInitialStartSeconds = (media) => {
 /**
  * Video player component for playing video content (including DASH video)
  */
+const serializePlaybackError = (error) => {
+  if (!error) return null;
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+  if (typeof error === 'object') {
+    const {
+      code,
+      severity,
+      technology,
+      message,
+      data,
+      category,
+      detail,
+      stack
+    } = error;
+    return {
+      code: code ?? error?.detail?.code ?? null,
+      severity: severity ?? error?.severity ?? null,
+      technology: technology ?? error?.technology ?? null,
+      category: category ?? null,
+      message: message ?? error?.message ?? null,
+      data: data ?? error?.data ?? null,
+      detail: detail ?? null,
+      stack: stack ?? error?.stack ?? null
+    };
+  }
+  return { value: error };
+};
+
+const serializeMediaError = (mediaError) => {
+  if (!mediaError) return null;
+  const { code, message, MEDIA_ERR_NETWORK, MEDIA_ERR_DECODE, MEDIA_ERR_SRC_NOT_SUPPORTED, MEDIA_ERR_ABORTED } = mediaError;
+  return {
+    code: code ?? null,
+    message: message || null,
+    MEDIA_ERR_ABORTED,
+    MEDIA_ERR_NETWORK,
+    MEDIA_ERR_DECODE,
+    MEDIA_ERR_SRC_NOT_SUPPORTED
+  };
+};
+
+const serializeTimeRanges = (ranges) => {
+  if (!ranges || typeof ranges.length !== 'number') {
+    return [];
+  }
+  const entries = [];
+  for (let index = 0; index < ranges.length; index += 1) {
+    try {
+      const start = ranges.start(index);
+      const end = ranges.end(index);
+      entries.push({
+        start: Number.isFinite(start) ? Number(start.toFixed(3)) : start,
+        end: Number.isFinite(end) ? Number(end.toFixed(3)) : end
+      });
+    } catch (_) {
+      // Ignore invalid ranges
+    }
+  }
+  return entries;
+};
+
 export function VideoPlayer({ 
   media, 
   advance, 
@@ -119,6 +187,14 @@ export function VideoPlayer({
     seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
     resilienceBridge
   });
+  const dashSource = useMemo(() => {
+    if (!media_url) return null;
+    const startPosition = Number.isFinite(initialStartSeconds) && initialStartSeconds > 0 ? initialStartSeconds : undefined;
+    return startPosition != null
+      ? { streamUrl: media_url, contentType: 'application/dash+xml', startPosition }
+      : { streamUrl: media_url, contentType: 'application/dash+xml' };
+  }, [media_url, initialStartSeconds]);
+
   const getCurrentMediaElement = useCallback(() => {
     const host = containerRef.current;
     if (!host) return null;
@@ -142,14 +218,135 @@ export function VideoPlayer({
     return null;
   }, [containerRef]);
 
+  const shakaPlayerRef = useRef(null);
+  const shakaNetworkingCleanupRef = useRef(() => {});
 
-  const dashSource = useMemo(() => {
-    if (!media_url) return null;
-    const startPosition = Number.isFinite(initialStartSeconds) && initialStartSeconds > 0 ? initialStartSeconds : undefined;
-    return startPosition != null
-      ? { streamUrl: media_url, contentType: 'application/dash+xml', startPosition }
-      : { streamUrl: media_url, contentType: 'application/dash+xml' };
-  }, [media_url, initialStartSeconds]);
+  const logShakaDiagnostic = useCallback((event, payload = {}, level = 'debug') => {
+    playbackLog(event, {
+      ...payload,
+      mediaType: media?.media_type || null,
+      mediaTitle: media?.title || media?.show || null
+    }, {
+      level,
+      context: {
+        mediaKey: media?.media_key || media?.id || null,
+        instanceKey: mediaInstanceKey
+      }
+    });
+  }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey]);
+
+  const handleShakaReady = useCallback(({ thirdPartyPlayer, play, setProperties }) => {
+    shakaPlayerRef.current = thirdPartyPlayer || null;
+    if (typeof shakaNetworkingCleanupRef.current === 'function') {
+      shakaNetworkingCleanupRef.current();
+      shakaNetworkingCleanupRef.current = () => {};
+    }
+    const cleanupFns = [];
+    if (thirdPartyPlayer && typeof thirdPartyPlayer.addEventListener === 'function') {
+      const shakaEvents = ['error', 'loading', 'streaming', 'buffering'];
+      shakaEvents.forEach((eventName) => {
+        const handler = (event) => {
+          const payload = {
+            eventName,
+            streamUrl: dashSource?.streamUrl || null
+          };
+          if (event && typeof event === 'object') {
+            if ('buffering' in event) payload.buffering = Boolean(event.buffering);
+            if ('detail' in event) payload.detail = serializePlaybackError(event.detail);
+          }
+          logShakaDiagnostic('shaka-player-event', payload, eventName === 'error' ? 'warn' : 'debug');
+        };
+        thirdPartyPlayer.addEventListener(eventName, handler);
+        cleanupFns.push(() => thirdPartyPlayer.removeEventListener(eventName, handler));
+      });
+      logShakaDiagnostic('shaka-event-hooks', {
+        attached: true,
+        eventNames: shakaEvents
+      }, 'debug');
+    } else {
+      logShakaDiagnostic('shaka-event-hooks', {
+        attached: false
+      }, 'warn');
+    }
+
+    let networkingHooksRegistered = false;
+    let networkingEngineReason = null;
+    const hasNetworkingGetter = Boolean(thirdPartyPlayer && typeof thirdPartyPlayer.getNetworkingEngine === 'function');
+    const networkingEngine = hasNetworkingGetter ? thirdPartyPlayer.getNetworkingEngine() : null;
+    if (networkingEngine) {
+      const requestFilter = (requestType, request) => {
+        logShakaDiagnostic('shaka-network-request', {
+          requestType,
+          uri: request?.uris?.[0] || null,
+          method: request?.method || 'GET',
+          headerKeys: request?.headers ? Object.keys(request.headers) : null,
+          allowCrossSiteCredentials: Boolean(request?.allowCrossSiteCredentials)
+        }, 'debug');
+      };
+      const responseFilter = (requestType, response) => {
+        const status = typeof response?.status === 'number' ? response.status : null;
+        logShakaDiagnostic('shaka-network-response', {
+          requestType,
+          uri: response?.uri || null,
+          originalUri: response?.originalUri || null,
+          fromCache: Boolean(response?.fromCache),
+          status
+        }, status && status >= 400 ? 'warn' : 'debug');
+      };
+      networkingEngine.registerRequestFilter?.(requestFilter);
+      networkingEngine.registerResponseFilter?.(responseFilter);
+      cleanupFns.push(() => {
+        networkingEngine.unregisterRequestFilter?.(requestFilter);
+        networkingEngine.unregisterResponseFilter?.(responseFilter);
+      });
+      networkingHooksRegistered = true;
+      logShakaDiagnostic('shaka-network-hooks', {
+        registered: true,
+        hasRequestFilter: typeof networkingEngine.registerRequestFilter === 'function',
+        hasResponseFilter: typeof networkingEngine.registerResponseFilter === 'function'
+      }, 'debug');
+    } else {
+      networkingEngineReason = !thirdPartyPlayer
+        ? 'missing-player'
+        : !hasNetworkingGetter
+        ? 'missing-networking-api'
+        : 'engine-null';
+    }
+
+    if (!networkingHooksRegistered) {
+      logShakaDiagnostic('shaka-network-hooks', {
+        registered: false,
+        reason: networkingEngineReason
+      }, 'warn');
+    }
+
+    shakaNetworkingCleanupRef.current = () => {
+      cleanupFns.forEach((fn) => {
+        try {
+          fn();
+        } catch (error) {
+          console.warn('[VideoPlayer] Failed to cleanup shaka diagnostics', error);
+        }
+      });
+    };
+
+    logShakaDiagnostic('shaka-ready', {
+      hasPlayer: Boolean(thirdPartyPlayer),
+      hasPlayMethod: typeof play === 'function',
+      streamUrl: dashSource?.streamUrl || null,
+      startPosition: dashSource?.startPosition ?? null,
+      playbackRate: playbackRate || media.playbackRate || 1
+    }, 'info');
+    if (setProperties) {
+      setProperties({ playbackRate: playbackRate || media.playbackRate || 1 });
+    }
+  }, [dashSource?.startPosition, dashSource?.streamUrl, logShakaDiagnostic, media.playbackRate, playbackRate]);
+
+  const handleShakaPlaybackError = useCallback((error) => {
+    logShakaDiagnostic('shaka-playback-error', {
+      error: serializePlaybackError(error)
+    }, 'error');
+  }, [logShakaDiagnostic]);
 
   const shakaConfiguration = useMemo(() => ({
     playsInline: true,
@@ -198,6 +395,122 @@ export function VideoPlayer({
     mediaEl.style.height = '100%';
   }, [getCurrentMediaElement, mediaInstanceKey]);
 
+  useEffect(() => {
+    if (!isDash) return () => {};
+    let disposed = false;
+    let detachListeners = () => {};
+    const importantEvents = [
+      'loadedmetadata',
+      'loadeddata',
+      'canplay',
+      'canplaythrough',
+      'waiting',
+      'stalled',
+      'error',
+      'play',
+      'playing',
+      'pause',
+      'seeking',
+      'seeked',
+      'ended',
+      'timeupdate'
+    ];
+
+    const attachListeners = (mediaEl) => {
+      if (!mediaEl) return;
+      let restorePlay = null;
+      if (typeof mediaEl.play === 'function') {
+        const originalPlay = mediaEl.play;
+        mediaEl.play = (...args) => {
+          logShakaDiagnostic('dash-video-play-invoked', {
+            argsLength: args.length
+          }, 'debug');
+          try {
+            const result = originalPlay.apply(mediaEl, args);
+            if (result && typeof result.then === 'function') {
+              return result.then(
+                (value) => {
+                  logShakaDiagnostic('dash-video-play-result', { status: 'fulfilled' }, 'info');
+                  return value;
+                },
+                (error) => {
+                  logShakaDiagnostic('dash-video-play-result', {
+                    status: 'rejected',
+                    error: serializePlaybackError(error)
+                  }, 'warn');
+                  throw error;
+                }
+              );
+            }
+            logShakaDiagnostic('dash-video-play-result', { status: 'sync' }, 'info');
+            return result;
+          } catch (error) {
+            logShakaDiagnostic('dash-video-play-result', {
+              status: 'threw',
+              error: serializePlaybackError(error)
+            }, 'error');
+            throw error;
+          }
+        };
+        restorePlay = () => {
+          mediaEl.play = originalPlay;
+        };
+      }
+      const handler = (event) => {
+        const payload = {
+          eventName: event.type,
+          readyState: mediaEl.readyState,
+          networkState: mediaEl.networkState,
+          paused: mediaEl.paused,
+          ended: mediaEl.ended,
+          currentTime: Number.isFinite(mediaEl.currentTime)
+            ? Number(mediaEl.currentTime.toFixed(3))
+            : null,
+          buffered: serializeTimeRanges(mediaEl.buffered)
+        };
+        if (event.type === 'error') {
+          payload.mediaError = serializeMediaError(mediaEl.error);
+        }
+        logShakaDiagnostic('shaka-video-event', payload, event.type === 'error' ? 'error' : 'debug');
+      };
+      importantEvents.forEach((eventName) => mediaEl.addEventListener(eventName, handler));
+      detachListeners = () => {
+        importantEvents.forEach((eventName) => mediaEl.removeEventListener(eventName, handler));
+        if (restorePlay) {
+          restorePlay();
+        }
+      };
+      logShakaDiagnostic('shaka-video-element-attached', {
+        readyState: mediaEl.readyState,
+        networkState: mediaEl.networkState,
+        paused: mediaEl.paused
+      }, 'debug');
+    };
+
+    const waitForMediaElement = () => {
+      if (disposed) return;
+      const mediaEl = getCurrentMediaElement();
+      if (!mediaEl) {
+        requestAnimationFrame(waitForMediaElement);
+        return;
+      }
+      attachListeners(mediaEl);
+    };
+
+    waitForMediaElement();
+
+    return () => {
+      disposed = true;
+      detachListeners();
+    };
+  }, [getCurrentMediaElement, isDash, logShakaDiagnostic, mediaInstanceKey]);
+
+  useEffect(() => () => {
+    if (typeof shakaNetworkingCleanupRef.current === 'function') {
+      shakaNetworkingCleanupRef.current();
+    }
+  }, []);
+
   return (
     <div className={`video-player ${shader}`}>
       <h2>
@@ -211,6 +524,8 @@ export function VideoPlayer({
             className="video-element"
             source={dashSource}
             configuration={shakaConfiguration}
+            onReady={handleShakaReady}
+            onPlaybackError={handleShakaPlaybackError}
           />
         </div>
       ) : (

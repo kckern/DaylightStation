@@ -1,6 +1,5 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { CompositeControllerProvider } from './CompositeControllerContext.jsx';
 
 /**
  * Composite Player - Video player with audio overlay
@@ -10,39 +9,68 @@ import { CompositeControllerProvider } from './CompositeControllerContext.jsx';
  * - Sermon video with background hymns or talks
  */
 export function CompositePlayer(props) {
-  const { play, queue, Player, coordination } = props;
+  const { play, queue, Player } = props;
   const isQueue = !!queue;
+  const noop = React.useCallback(() => {}, []);
 
   const primaryProps = React.useMemo(() => {
     const { coordination: _ignoredCoordination, Player: _ignoredPlayer, ...baseProps } = props;
     const overlayKey = isQueue ? 'queue' : 'play';
     if (baseProps[overlayKey]) {
-      const stripped = { ...baseProps[overlayKey], overlay: undefined };
-      if (!stripped.shader) {
-        stripped.shader = 'minimal';
-      }
-      stripped.seconds = 0;
-      baseProps[overlayKey] = stripped;
+      baseProps[overlayKey] = { ...baseProps[overlayKey], overlay: undefined };
     }
     return baseProps;
   }, [props, isQueue]);
 
-  const overlayProps = React.useMemo(() => ({ 
-    queue: { 
-      plex: isQueue ? queue.overlay : play.overlay, 
-      shuffle: 1 
-    } 
-  }), [play, queue, isQueue]);
-  
-  const shader = primaryProps.primary?.shader || primaryProps.overlay?.shader || 'regular';
-  
+  const overlayConfig = React.useMemo(() => (isQueue ? queue?.overlay : play?.overlay) || null, [play, queue, isQueue]);
+
+  const overlayProps = React.useMemo(() => {
+    if (!overlayConfig) return null;
+
+    const ensureSecondsReset = (entry = {}) => ({
+      ...entry,
+      seconds: 0,
+      shader: entry.shader || 'minimal'
+    });
+
+    if (Array.isArray(overlayConfig)) {
+      return { queue: overlayConfig.map(ensureSecondsReset) };
+    }
+
+    if (typeof overlayConfig === 'string' || typeof overlayConfig === 'number') {
+      return { queue: { plex: overlayConfig, shuffle: 1 } };
+    }
+
+    if (overlayConfig.play || overlayConfig.queue) {
+      if (overlayConfig.queue) {
+        return { queue: ensureSecondsReset(overlayConfig.queue) };
+      }
+      return { play: ensureSecondsReset(overlayConfig.play) };
+    }
+
+    const normalized = ensureSecondsReset(overlayConfig);
+    const targetKey = normalized.playlist || normalized.queue || normalized.plex || normalized.media
+      ? 'queue'
+      : 'play';
+
+    if (targetKey === 'queue') {
+      return { queue: { ...normalized, shuffle: normalized.shuffle ?? 1 } };
+    }
+
+    return { play: normalized };
+  }, [overlayConfig]);
+
+  const shader = (
+    primaryProps.play?.shader
+    || primaryProps.queue?.shader
+    || 'regular'
+  );
+
   return (
-    <CompositeControllerProvider config={coordination}>
-      <div className={`player composite ${shader}`}>
-        <Player playerType="overlay" {...overlayProps} />
-        <Player playerType="primary" {...primaryProps} ignoreKeys />
-      </div>
-    </CompositeControllerProvider>
+    <div className={`player composite ${shader}`}>
+      {overlayProps && <Player playerType="overlay" ignoreKeys clear={noop} {...overlayProps} />}
+      <Player playerType="primary" {...primaryProps} ignoreKeys />
+    </div>
   );
 }
 

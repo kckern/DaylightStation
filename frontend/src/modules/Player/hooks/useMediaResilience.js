@@ -102,7 +102,8 @@ export function useMediaResilience({
   stalled: stalledOverride,
   mediaTypeHint,
   playerFlavorHint,
-  threadId = null
+  threadId = null,
+  startupWatchdogState = null
 }) {
   const [runtimeOverrides, setRuntimeOverrides] = useState(null);
   const {
@@ -118,7 +119,9 @@ export function useMediaResilience({
     hardRecoverAfterStalledForMs,
     mountTimeoutMs,
     mountPollIntervalMs,
-    mountMaxAttempts
+    mountMaxAttempts,
+    startupTimeoutMs,
+    startupMaxAttempts
   } = monitorSettings;
 
   const [showDebug, setShowDebug] = useState(false);
@@ -145,6 +148,8 @@ export function useMediaResilience({
   const stallTimerRef = useRef(null);
   const reloadTimerRef = useRef(null);
   const hardRecoveryTimerRef = useRef(null);
+  const startupTimeoutRef = useRef(null);
+  const startupAttemptsRef = useRef(0);
   const lastReloadAtRef = useRef(0);
   const mediaIdentity = meta?.media_key || meta?.key || meta?.plex || meta?.id || meta?.guid || meta?.media_url || null;
   const mediaIdentityRef = useRef(mediaIdentity);
@@ -286,6 +291,13 @@ export function useMediaResilience({
     }
     mountWatchdogStartRef.current = null;
     mountWatchdogReasonRef.current = null;
+  }, []);
+
+  const clearStartupTimeout = useCallback(() => {
+    if (startupTimeoutRef.current) {
+      clearTimeout(startupTimeoutRef.current);
+      startupTimeoutRef.current = null;
+    }
   }, []);
 
   const invalidatePendingStallDetection = useCallback((reason = 'seek-intent') => {
@@ -678,12 +690,100 @@ export function useMediaResilience({
     resilienceState.recoveryGuardToken
   ]);
 
+  useEffect(() => {
+    if (!startupTimeoutMs || startupTimeoutMs <= 0) {
+      clearStartupTimeout();
+      startupAttemptsRef.current = 0;
+      return;
+    }
+    const waitingState = status === STATUS.pending || status === STATUS.recovering;
+    const elementPlayingSignal = Boolean(playbackHealth?.elementSignals?.playing);
+    const hasProgressSignal = playbackHealth.progressToken > 0
+      || elementPlayingSignal
+      || Number.isFinite(lastProgressSecondsRef.current);
+
+    if (!waitingState || monitorSuspended) {
+      if (startupTimeoutRef.current) {
+        logResilienceEvent('startup-watchdog-cleared', {
+          reason: monitorSuspended ? 'monitor-suspended' : 'status-changed',
+          attempts: startupAttemptsRef.current
+        }, { level: 'debug' });
+      }
+      clearStartupTimeout();
+      if (!waitingState || hasProgressSignal) {
+        startupAttemptsRef.current = 0;
+      }
+      return;
+    }
+
+    if (hasProgressSignal) {
+      if (startupTimeoutRef.current) {
+        logResilienceEvent('startup-watchdog-cleared', {
+          reason: 'progress-detected',
+          attempts: startupAttemptsRef.current
+        }, { level: 'debug' });
+      }
+      clearStartupTimeout();
+      startupAttemptsRef.current = 0;
+      return;
+    }
+
+    if (startupTimeoutRef.current) {
+      return;
+    }
+
+    logResilienceEvent('startup-watchdog-armed', {
+      timeoutMs: startupTimeoutMs,
+      attempts: startupAttemptsRef.current
+    }, { level: 'debug' });
+
+    startupTimeoutRef.current = setTimeout(() => {
+      startupTimeoutRef.current = null;
+      startupAttemptsRef.current += 1;
+      const attempt = startupAttemptsRef.current;
+      const maxAttempts = Number.isFinite(startupMaxAttempts) ? startupMaxAttempts : null;
+      const reachedMax = maxAttempts != null && attempt >= maxAttempts;
+
+      logResilienceEvent('startup-timeout', {
+        attempt,
+        maxAttempts,
+        timeoutMs: startupTimeoutMs
+      }, { level: reachedMax ? 'error' : 'warn' });
+
+      if (reachedMax) {
+        forcePlayerRemount('startup-timeout-max', {
+          seekToIntentMs: resolveSeekIntentMs()
+        });
+        return;
+      }
+
+      triggerRecovery('startup-timeout', {
+        ignorePaused: true,
+        force: true,
+        seekToIntentMs: resolveSeekIntentMs()
+      });
+    }, startupTimeoutMs);
+  }, [
+    startupTimeoutMs,
+    startupMaxAttempts,
+    status,
+    monitorSuspended,
+    playbackHealth.progressToken,
+    playbackHealth?.elementSignals?.playing,
+    clearStartupTimeout,
+    logResilienceEvent,
+    forcePlayerRemount,
+    triggerRecovery,
+    resolveSeekIntentMs
+  ]);
+
   useEffect(() => () => {
     clearTimer(stallTimerRef);
     clearTimer(reloadTimerRef);
     clearTimer(hardRecoveryTimerRef);
     clearMountWatchdog();
-  }, [clearTimer, clearMountWatchdog]);
+    clearStartupTimeout();
+  }, [clearTimer, clearMountWatchdog, clearStartupTimeout]);
 
 
   useEffect(() => {
@@ -700,7 +800,8 @@ export function useMediaResilience({
     return () => clearTimeout(timeout);
   }, [explicitShow, userIntent, status, debugConfig.revealDelayMs]);
 
-  const waitingToPlay = status === STATUS.pending || status === STATUS.recovering;
+  const startupPending = Boolean(startupWatchdogState?.active);
+  const waitingToPlay = startupPending || status === STATUS.pending || status === STATUS.recovering;
   const baseSystemHealth = (() => {
     if (status === STATUS.stalling || playbackHealth.isStalledEvent) {
       return SYSTEM_HEALTH.stalled;
@@ -822,6 +923,7 @@ export function useMediaResilience({
     waitingToPlay,
     waitingForPlayback: waitingToPlay,
     graceElapsed: !waitingToPlay,
+    startupPending,
     isOverlayVisible,
     showPauseOverlay,
     showDebug,
@@ -965,7 +1067,9 @@ export function useMediaResilience({
     playerPositionDisplay,
     intentPositionDisplay,
     playbackHealth,
-    mediaDetails
+    mediaDetails,
+    startupPending,
+    startupWatchdogState
   });
 
   return { overlayProps, controller, state };
@@ -976,6 +1080,7 @@ function createOverlayProps({
   isOverlayVisible,
   shouldRenderOverlay,
   waitingToPlay,
+  startupPending,
   isPaused,
   userIntent,
   systemHealth,
@@ -1001,13 +1106,15 @@ function createOverlayProps({
   playerPositionDisplay,
   intentPositionDisplay,
   playbackHealth,
-  mediaDetails
+  mediaDetails,
+  startupWatchdogState
 }) {
   return {
     status,
     isVisible: isOverlayVisible && shouldRenderOverlay,
     shouldRender: shouldRenderOverlay,
     waitingToPlay,
+    startupPending,
     isPaused,
     userIntent,
     systemHealth,
@@ -1033,6 +1140,7 @@ function createOverlayProps({
     playerPositionDisplay,
     intentPositionDisplay,
     playbackHealth,
-    mediaDetails
+    mediaDetails,
+    startupWatchdogState
   };
 }
