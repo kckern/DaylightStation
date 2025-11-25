@@ -24,7 +24,8 @@ const defaultReload = () => {
 };
 
 const STATUS = {
-  pending: RESILIENCE_STATUS.idle,
+  startup: RESILIENCE_STATUS.startup,
+  pending: RESILIENCE_STATUS.startup,
   playing: RESILIENCE_STATUS.playing,
   stalling: RESILIENCE_STATUS.stalling,
   recovering: RESILIENCE_STATUS.recovering
@@ -102,8 +103,7 @@ export function useMediaResilience({
   stalled: stalledOverride,
   mediaTypeHint,
   playerFlavorHint,
-  threadId = null,
-  startupWatchdogState = null
+  threadId = null
 }) {
   const [runtimeOverrides, setRuntimeOverrides] = useState(null);
   const {
@@ -150,6 +150,25 @@ export function useMediaResilience({
   const hardRecoveryTimerRef = useRef(null);
   const startupTimeoutRef = useRef(null);
   const startupAttemptsRef = useRef(0);
+  const startupSignalsRef = useRef({
+    lastType: null,
+    lastTimestamp: null,
+    attachedAt: null,
+    detachedAt: null,
+    loadedMetadataAt: null,
+    playingAt: null,
+    progressAt: null,
+    detail: null
+  });
+  const [startupSignalVersion, setStartupSignalVersion] = useState(0);
+  const [internalStartupWatchdogState, setInternalStartupWatchdogState] = useState(() => ({
+    active: false,
+    state: 'idle',
+    reason: null,
+    attempts: 0,
+    timeoutMs: startupTimeoutMs || null,
+    timestamp: null
+  }));
   const lastReloadAtRef = useRef(0);
   const mediaIdentity = meta?.media_key || meta?.key || meta?.plex || meta?.id || meta?.guid || meta?.media_url || null;
   const mediaIdentityRef = useRef(mediaIdentity);
@@ -299,6 +318,77 @@ export function useMediaResilience({
       startupTimeoutRef.current = null;
     }
   }, []);
+
+  const publishStartupWatchdogState = useCallback((patch = {}) => {
+    setInternalStartupWatchdogState((prev) => {
+      const next = {
+        ...prev,
+        ...patch,
+        timeoutMs: patch.timeoutMs ?? prev.timeoutMs ?? (startupTimeoutMs || null)
+      };
+      if (
+        prev.active === next.active
+        && prev.state === next.state
+        && prev.reason === next.reason
+        && prev.attempts === next.attempts
+        && prev.timeoutMs === next.timeoutMs
+        && prev.timestamp === next.timestamp
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [startupTimeoutMs]);
+
+  useEffect(() => {
+    publishStartupWatchdogState({ timeoutMs: startupTimeoutMs || null });
+  }, [startupTimeoutMs, publishStartupWatchdogState]);
+
+  const handleStartupSignal = useCallback((signal) => {
+    if (!signal || typeof signal !== 'object') {
+      return;
+    }
+    const { type } = signal;
+    if (!type) return;
+    const timestamp = Number.isFinite(signal.timestamp) ? signal.timestamp : Date.now();
+    logResilienceEvent('startup-signal', {
+      type,
+      timestamp,
+      detail: signal
+    }, { level: 'debug' });
+    const snapshot = {
+      ...startupSignalsRef.current,
+      lastType: type,
+      lastTimestamp: timestamp,
+      detail: signal
+    };
+    switch (type) {
+      case 'media-el-attached':
+        snapshot.attachedAt = timestamp;
+        snapshot.detachedAt = null;
+        break;
+      case 'media-el-detached':
+        snapshot.detachedAt = timestamp;
+        break;
+      case 'loadedmetadata':
+        snapshot.loadedMetadataAt = timestamp;
+        break;
+      case 'playing':
+        snapshot.playingAt = timestamp;
+        break;
+      case 'progress-tick':
+        snapshot.progressAt = timestamp;
+        if (Number.isFinite(signal.seconds)) {
+          lastProgressSecondsRef.current = signal.seconds;
+        }
+        lastProgressTsRef.current = timestamp;
+        break;
+      default:
+        break;
+    }
+    startupSignalsRef.current = snapshot;
+    setStartupSignalVersion((token) => token + 1);
+  }, [logResilienceEvent]);
 
   const invalidatePendingStallDetection = useCallback((reason = 'seek-intent') => {
     const hadPendingTimers = Boolean(stallTimerRef.current || hardRecoveryTimerRef.current);
@@ -693,13 +783,20 @@ export function useMediaResilience({
   useEffect(() => {
     if (!startupTimeoutMs || startupTimeoutMs <= 0) {
       clearStartupTimeout();
+      publishStartupWatchdogState({ active: false, state: 'idle', reason: 'disabled' });
       startupAttemptsRef.current = 0;
       return;
     }
     const waitingState = status === STATUS.pending || status === STATUS.recovering;
     const elementPlayingSignal = Boolean(playbackHealth?.elementSignals?.playing);
+    const reporterSnapshot = startupSignalsRef.current;
+    const reporterProgressSignal = Boolean(reporterSnapshot.progressAt);
+    const reporterPlayingSignal = Boolean(reporterSnapshot.playingAt);
+    const reporterAttachmentActive = Boolean(reporterSnapshot.attachedAt && !reporterSnapshot.detachedAt);
     const hasProgressSignal = playbackHealth.progressToken > 0
       || elementPlayingSignal
+      || reporterProgressSignal
+      || reporterPlayingSignal
       || Number.isFinite(lastProgressSecondsRef.current);
 
     if (!waitingState || monitorSuspended) {
@@ -709,6 +806,13 @@ export function useMediaResilience({
           attempts: startupAttemptsRef.current
         }, { level: 'debug' });
       }
+      publishStartupWatchdogState({
+        active: false,
+        state: monitorSuspended ? 'suspended' : 'idle',
+        reason: monitorSuspended ? 'monitor-suspended' : 'status-changed',
+        attempts: startupAttemptsRef.current,
+        timestamp: Date.now()
+      });
       clearStartupTimeout();
       if (!waitingState || hasProgressSignal) {
         startupAttemptsRef.current = 0;
@@ -723,6 +827,13 @@ export function useMediaResilience({
           attempts: startupAttemptsRef.current
         }, { level: 'debug' });
       }
+      publishStartupWatchdogState({
+        active: false,
+        state: 'resolved',
+        reason: 'progress-detected',
+        attempts: startupAttemptsRef.current,
+        timestamp: Date.now()
+      });
       clearStartupTimeout();
       startupAttemptsRef.current = 0;
       return;
@@ -734,8 +845,18 @@ export function useMediaResilience({
 
     logResilienceEvent('startup-watchdog-armed', {
       timeoutMs: startupTimeoutMs,
-      attempts: startupAttemptsRef.current
+      attempts: startupAttemptsRef.current,
+      reporterAttachmentActive,
+      reporterProgressSignal,
+      reporterPlayingSignal
     }, { level: 'debug' });
+    publishStartupWatchdogState({
+      active: true,
+      state: 'armed',
+      reason: reporterAttachmentActive ? 'media-el-attached' : 'waiting-for-attachment',
+      attempts: startupAttemptsRef.current,
+      timestamp: Date.now()
+    });
 
     startupTimeoutRef.current = setTimeout(() => {
       startupTimeoutRef.current = null;
@@ -749,6 +870,14 @@ export function useMediaResilience({
         maxAttempts,
         timeoutMs: startupTimeoutMs
       }, { level: reachedMax ? 'error' : 'warn' });
+
+      publishStartupWatchdogState({
+        active: !reachedMax,
+        state: reachedMax ? 'aborted' : 'timeout',
+        reason: 'startup-timeout',
+        attempts: attempt,
+        timestamp: Date.now()
+      });
 
       if (reachedMax) {
         forcePlayerRemount('startup-timeout-max', {
@@ -774,7 +903,9 @@ export function useMediaResilience({
     logResilienceEvent,
     forcePlayerRemount,
     triggerRecovery,
-    resolveSeekIntentMs
+    resolveSeekIntentMs,
+    publishStartupWatchdogState,
+    startupSignalVersion
   ]);
 
   useEffect(() => () => {
@@ -800,8 +931,9 @@ export function useMediaResilience({
     return () => clearTimeout(timeout);
   }, [explicitShow, userIntent, status, debugConfig.revealDelayMs]);
 
-  const startupPending = Boolean(startupWatchdogState?.active);
-  const waitingToPlay = startupPending || status === STATUS.pending || status === STATUS.recovering;
+  const startupWatchdogState = internalStartupWatchdogState;
+  const isStartupPhase = status === RESILIENCE_STATUS.startup;
+  const waitingToPlay = isStartupPhase || status === STATUS.recovering;
   const baseSystemHealth = (() => {
     if (status === STATUS.stalling || playbackHealth.isStalledEvent) {
       return SYSTEM_HEALTH.stalled;
@@ -923,7 +1055,6 @@ export function useMediaResilience({
     waitingToPlay,
     waitingForPlayback: waitingToPlay,
     graceElapsed: !waitingToPlay,
-    startupPending,
     isOverlayVisible,
     showPauseOverlay,
     showDebug,
@@ -1068,11 +1199,10 @@ export function useMediaResilience({
     intentPositionDisplay,
     playbackHealth,
     mediaDetails,
-    startupPending,
     startupWatchdogState
   });
 
-  return { overlayProps, controller, state };
+  return { overlayProps, controller, state, onStartupSignal: handleStartupSignal };
 }
 
 function createOverlayProps({
@@ -1080,7 +1210,6 @@ function createOverlayProps({
   isOverlayVisible,
   shouldRenderOverlay,
   waitingToPlay,
-  startupPending,
   isPaused,
   userIntent,
   systemHealth,
@@ -1110,11 +1239,9 @@ function createOverlayProps({
   startupWatchdogState
 }) {
   return {
-    status,
     isVisible: isOverlayVisible && shouldRenderOverlay,
     shouldRender: shouldRenderOverlay,
     waitingToPlay,
-    startupPending,
     isPaused,
     userIntent,
     systemHealth,

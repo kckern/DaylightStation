@@ -24,11 +24,30 @@ export function useMediaReporter({
   onSeekRequestConsumed,
   remountDiagnostics,
   mediaIdentityKey = null,
-  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+  onStartupSignal = null
 }) {
   const seekingRef = useRef(false);
   const pendingSeekSecondsRef = useRef(null);
   const lastMetricsRef = useRef({ seconds: 0, isPaused: true, isSeeking: false });
+  const startupAttachmentRef = useRef(false);
+
+  const emitStartupSignal = useCallback((type, detail = {}) => {
+    if (typeof onStartupSignal !== 'function') {
+      return;
+    }
+    try {
+      onStartupSignal({
+        type,
+        timestamp: Date.now(),
+        ...detail
+      });
+    } catch (error) {
+      if (process.env?.NODE_ENV !== 'production') {
+        console.warn('[useMediaReporter] failed to emit startup signal', type, error);
+      }
+    }
+  }, [onStartupSignal]);
 
   const readPlaybackMetrics = useCallback(() => {
     const mediaEl = mediaRef?.current;
@@ -66,8 +85,13 @@ export function useMediaReporter({
     }
     lastMetricsRef.current = merged;
     onPlaybackMetrics(merged);
+    emitStartupSignal('progress-tick', {
+      seconds: merged.seconds,
+      isPaused: merged.isPaused,
+      isSeeking: merged.isSeeking
+    });
     return merged;
-  }, [onPlaybackMetrics, readPlaybackMetrics]);
+  }, [onPlaybackMetrics, readPlaybackMetrics, emitStartupSignal]);
 
   const applyPendingSeek = useCallback(() => {
     const target = pendingSeekSecondsRef.current;
@@ -148,7 +172,20 @@ export function useMediaReporter({
   useEffect(() => {
     const mediaEl = mediaRef?.current;
     if (!mediaEl) {
+      if (startupAttachmentRef.current) {
+        startupAttachmentRef.current = false;
+        emitStartupSignal('media-el-detached', { reason: 'media-missing' });
+      }
       return undefined;
+    }
+
+    if (!startupAttachmentRef.current) {
+      startupAttachmentRef.current = true;
+      emitStartupSignal('media-el-attached', {
+        tagName: typeof mediaEl.tagName === 'string' ? mediaEl.tagName.toLowerCase() : null,
+        readyState: mediaEl.readyState,
+        networkState: mediaEl.networkState
+      });
     }
 
     const handlePlay = () => {
@@ -169,12 +206,27 @@ export function useMediaReporter({
       seekingRef.current = false;
       reportPlaybackMetrics({ isSeeking: false });
     };
+    const handleLoadedMetadata = () => {
+      emitStartupSignal('loadedmetadata', {
+        currentTime: Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : null,
+        duration: Number.isFinite(mediaEl.duration) ? mediaEl.duration : null,
+        readyState: mediaEl.readyState
+      });
+    };
+    const handlePlaying = () => {
+      emitStartupSignal('playing', {
+        currentTime: Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : null,
+        readyState: mediaEl.readyState
+      });
+    };
 
     mediaEl.addEventListener('play', handlePlay);
     mediaEl.addEventListener('pause', handlePause);
     mediaEl.addEventListener('timeupdate', handleTimeUpdate);
     mediaEl.addEventListener('seeking', handleSeeking);
     mediaEl.addEventListener('seeked', handleSeeked);
+    mediaEl.addEventListener('loadedmetadata', handleLoadedMetadata);
+    mediaEl.addEventListener('playing', handlePlaying);
 
     reportPlaybackMetrics();
 
@@ -184,8 +236,17 @@ export function useMediaReporter({
       mediaEl.removeEventListener('timeupdate', handleTimeUpdate);
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', handleSeeked);
+      mediaEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      mediaEl.removeEventListener('playing', handlePlaying);
+      if (startupAttachmentRef.current) {
+        startupAttachmentRef.current = false;
+        emitStartupSignal('media-el-detached', {
+          tagName: typeof mediaEl.tagName === 'string' ? mediaEl.tagName.toLowerCase() : null,
+          reason: 'cleanup'
+        });
+      }
     };
-  }, [mediaIdentityKey, mediaRef, reportPlaybackMetrics]);
+  }, [mediaIdentityKey, mediaRef, reportPlaybackMetrics, emitStartupSignal]);
 
   useEffect(() => {
     if (!pollIntervalMs || pollIntervalMs <= 0) {
