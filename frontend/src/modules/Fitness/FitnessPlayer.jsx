@@ -164,6 +164,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
   const mainVideoHostRef = useRef(null);
   const sidebarVideoHostRef = useRef(null);
+  const renderCountRef = useRef(0);
+  const queue = useMemo(() => playQueue || fitnessPlayQueue || [], [playQueue, fitnessPlayQueue]);
+  const setQueue = setPlayQueue || setFitnessPlayQueue;
   const {
     seek: seekTo,
     toggle: togglePlay,
@@ -178,6 +181,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [playIsGoverned, setPlayIsGoverned] = useState(false);
 
   const governanceOverlay = useGovernanceOverlay(governanceState);
+  renderCountRef.current += 1;
 
   const playerContentClassName = useMemo(() => {
     const classes = ['fitness-player-content'];
@@ -302,6 +306,33 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     };
   }, []);
   
+  const TimeDisplay = useMemo(() => React.memo(({ ct, dur }) => (
+    <>{formatTime(ct)} / {formatTime(dur)}</>
+  )), []);
+
+  const fitnessLogContext = useMemo(() => ({
+    mediaId: resolveMediaIdentity(currentItem),
+    title: currentItem?.title,
+    playerMode,
+    isGoverned: playIsGoverned
+  }), [currentItem, playerMode, playIsGoverned]);
+
+  const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
+    const { level: detailLevel, ...restDetails } = details || {};
+    const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
+    playbackLog('fitness-player', {
+      event,
+      ...restDetails
+    }, {
+      ...resolvedOptions,
+      level: resolvedOptions.level || detailLevel || 'debug',
+      context: {
+        ...fitnessLogContext,
+        ...(resolvedOptions.context || {})
+      }
+    });
+  }, [fitnessLogContext]);
+
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
     'Escape': () => handleClose(),
@@ -358,47 +389,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       }
     }
   }), [getPlayerTime, getPlayerDuration, seekTo, playIsGoverned, logFitnessEvent]);
-  
-  const renderCountRef = useRef(0);
-  // Simple render counter (environment gating removed per instruction)
-  renderCountRef.current += 1;
-
-  const TimeDisplay = useMemo(() => React.memo(({ ct, dur }) => (
-    <>{formatTime(ct)} / {formatTime(dur)}</>
-  )), []);
-  
-  // Use props if provided, otherwise fall back to context
-  const queue = playQueue || fitnessPlayQueue || [];
-  const setQueue = setPlayQueue || setFitnessPlayQueue;
-  
-  const currentItemMediaKey = useMemo(() => resolveMediaIdentity(currentItem), [currentItem]);
-  const currentItemId = currentItem?.id ?? null;
-  const currentItemTitle = currentItem?.title ?? null;
-  const currentItemThreadId = currentItem?.thread_id ?? currentItem?.threadId ?? null;
-
-  const fitnessLogContext = useMemo(() => ({
-    scope: 'FitnessPlayer',
-    mediaKey: currentItemMediaKey,
-    workoutId: currentItemId,
-    threadId: currentItemThreadId,
-    title: currentItemTitle
-  }), [currentItemMediaKey, currentItemId, currentItemThreadId, currentItemTitle]);
-
-  const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
-    const { level: detailLevel, ...restDetails } = details || {};
-    const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
-    playbackLog('fitness-player', {
-      event,
-      ...restDetails
-    }, {
-      ...resolvedOptions,
-      level: resolvedOptions.level || detailLevel || 'debug',
-      context: {
-        ...fitnessLogContext,
-        ...(resolvedOptions.context || {})
-      }
-    });
-  }, [fitnessLogContext]);
 
   
 

@@ -14,6 +14,8 @@ export function LoadingOverlay({
   seconds = 0,
   stalled = false,
   waitingToPlay = false,
+  startupPending = false,
+  startupWatchdogState = null,
   togglePauseOverlay,
   countUpDisplay,
   countUpSeconds = null,
@@ -65,6 +67,7 @@ export function LoadingOverlay({
     const finalPayload = {
       source: 'loading-overlay',
       requestedAt: Date.now(),
+      startupPending,
       ...basePayload,
       ...extra
     };
@@ -77,7 +80,7 @@ export function LoadingOverlay({
     } catch (error) {
       console.error('[LoadingOverlay] hard reset handler failed', error, finalPayload);
     }
-  }, [onRequestHardReset]);
+  }, [onRequestHardReset, startupPending]);
 
   useEffect(() => {
     if (!timerActive) {
@@ -187,12 +190,15 @@ export function LoadingOverlay({
   const mediaSummary = mediaElementDetails.hasElement
     ? `el:t=${mediaElementDetails.currentTime ?? 'n/a'} r=${mediaElementDetails.readyState ?? 'n/a'} n=${mediaElementDetails.networkState ?? 'n/a'} p=${mediaElementDetails.paused ?? 'n/a'}`
     : 'el:none';
+  const startupSummary = startupPending
+    ? `startup:armed attempts=${startupWatchdogState?.attempts ?? 0} timeout=${startupWatchdogState?.timeoutMs ?? 'n/a'}`
+    : 'startup:idle';
 
   const logIntervalRef = useRef(null);
   const logOverlaySummary = useCallback(() => {
     if (shouldShowPauseIcon || !isVisible) return;
     try {
-      console.log('[LoadingOverlay]', `${timerSummary} | ${seekSummary} | ${mediaSummary}`);
+      console.log('[LoadingOverlay]', `${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`);
     } catch (_) {
       /* no-op */
     }
@@ -253,7 +259,7 @@ export function LoadingOverlay({
           </div>
         </div>
         <div className="loading-debug-strip">
-          {timerSummary} | {seekSummary} | {mediaSummary}
+          {timerSummary} | {seekSummary} | {mediaSummary} | {startupSummary}
         </div>
       </div>
     </div>
@@ -268,6 +274,15 @@ LoadingOverlay.propTypes = {
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
+  startupPending: PropTypes.bool,
+  startupWatchdogState: PropTypes.shape({
+    active: PropTypes.bool,
+    state: PropTypes.string,
+    reason: PropTypes.string,
+    attempts: PropTypes.number,
+    timeoutMs: PropTypes.number,
+    timestamp: PropTypes.number
+  }),
   showPauseOverlay: PropTypes.bool,
   showDebug: PropTypes.bool,
   initialStart: PropTypes.number,

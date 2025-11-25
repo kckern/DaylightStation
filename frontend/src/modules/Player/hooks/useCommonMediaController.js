@@ -93,7 +93,8 @@ export function useCommonMediaController({
     onPlaybackMetrics: bridgePlaybackMetrics,
     onRegisterMediaAccess: bridgeRegisterAccess,
     onSeekRequestConsumed: bridgeSeekConsumed,
-    remountDiagnostics: bridgeRemountDiagnostics
+    remountDiagnostics: bridgeRemountDiagnostics,
+    onStartupWatchdogEvent: bridgeStartupWatchdog
   } = resilienceBridge || {};
   const mountDiagnostics = bridgeRemountDiagnostics || null;
   const containerRef = useRef(null);
@@ -171,6 +172,7 @@ export function useCommonMediaController({
   }, [getMediaEl]);
 
   const isDash = meta.media_type === 'dash_video';
+  const shouldWatchStartup = Boolean(isDash || isVideo);
   const baseInstanceKey = useMemo(() => {
     const baseKey = String(instanceKey ?? media_key ?? meta.media_url ?? meta.id ?? 'media');
     return `${baseKey}:${threadId}`;
@@ -212,6 +214,134 @@ export function useCommonMediaController({
       return next;
     });
   }, [baseInstanceKey, logControllerEvent, setReloadNonce]);
+
+  const STARTUP_TIMEOUT_MS = 3000;
+  const MAX_STARTUP_RECOVERY_ATTEMPTS = 5;
+  const startupWatchdogRef = useRef({ timer: null, attempts: 0, resolved: false, active: false });
+
+  const clearStartupWatchdog = useCallback(() => {
+    const watchdog = startupWatchdogRef.current;
+    if (watchdog.timer) {
+      clearTimeout(watchdog.timer);
+      watchdog.timer = null;
+    }
+  }, []);
+
+  const logStartupEvent = useCallback((event, payload = {}, level = 'debug') => {
+    playbackLog(event, {
+      ...payload,
+      waitKey: formatWaitKeyForLogs(resolvedInstanceKey),
+      media_key
+    }, { level });
+  }, [formatWaitKeyForLogs, media_key, resolvedInstanceKey]);
+
+  const reportStartupWatchdog = useCallback((payload = {}) => {
+    if (!bridgeStartupWatchdog) return;
+    try {
+      bridgeStartupWatchdog({
+        waitKey: resolvedInstanceKey,
+        mediaKey: media_key || null,
+        timestamp: payload.timestamp || Date.now(),
+        ...payload
+      });
+    } catch (error) {
+      if (DEBUG_MEDIA) {
+        console.warn('[Media] failed to report startup watchdog state', error);
+      }
+    }
+  }, [bridgeStartupWatchdog, media_key, resolvedInstanceKey]);
+
+  const deactivateStartupWatchdog = useCallback((state = 'cleared', reason = 'unspecified') => {
+    const watchdog = startupWatchdogRef.current;
+    if (!watchdog.active) return;
+    watchdog.active = false;
+    reportStartupWatchdog({
+      active: false,
+      state,
+      reason,
+      attempts: watchdog.attempts,
+      timeoutMs: STARTUP_TIMEOUT_MS
+    });
+  }, [reportStartupWatchdog]);
+
+  const resolveStartupWatchdog = useCallback((reason = 'unknown') => {
+    if (!shouldWatchStartup) return;
+    const watchdog = startupWatchdogRef.current;
+    if (watchdog.resolved) return;
+    watchdog.resolved = true;
+    clearStartupWatchdog();
+    deactivateStartupWatchdog('resolved', reason);
+    logStartupEvent('media-startup-resolved', {
+      reason,
+      attempts: watchdog.attempts
+    });
+  }, [clearStartupWatchdog, deactivateStartupWatchdog, logStartupEvent, shouldWatchStartup]);
+
+  const armStartupWatchdog = useCallback((reason = 'media-el-attached') => {
+    if (!shouldWatchStartup) return;
+    const watchdog = startupWatchdogRef.current;
+    watchdog.resolved = false;
+    clearStartupWatchdog();
+    if (!watchdog.active) {
+      watchdog.active = true;
+      reportStartupWatchdog({
+        active: true,
+        state: 'armed',
+        reason,
+        attempts: watchdog.attempts,
+        timeoutMs: STARTUP_TIMEOUT_MS
+      });
+    } else {
+      reportStartupWatchdog({
+        active: true,
+        state: 'rearmed',
+        reason,
+        attempts: watchdog.attempts,
+        timeoutMs: STARTUP_TIMEOUT_MS
+      });
+    }
+    watchdog.timer = setTimeout(() => {
+      if (watchdog.resolved) return;
+      logStartupEvent('media-startup-timeout', {
+        reason,
+        attempts: watchdog.attempts
+      }, 'warn');
+      reportStartupWatchdog({
+        active: true,
+        state: 'timeout',
+        reason,
+        attempts: watchdog.attempts,
+        timeoutMs: STARTUP_TIMEOUT_MS
+      });
+      if (watchdog.attempts >= MAX_STARTUP_RECOVERY_ATTEMPTS) {
+        logStartupEvent('media-startup-abort', {
+          reason: 'max-attempts',
+          attempts: watchdog.attempts
+        }, 'error');
+        deactivateStartupWatchdog('aborted', 'max-attempts');
+        return;
+      }
+      watchdog.attempts += 1;
+      logStartupEvent('media-startup-retry', {
+        attempt: watchdog.attempts,
+        timeoutMs: STARTUP_TIMEOUT_MS
+      }, 'warn');
+      hardReset();
+    }, STARTUP_TIMEOUT_MS);
+    logStartupEvent('media-startup-watchdog', {
+      reason,
+      timeoutMs: STARTUP_TIMEOUT_MS,
+      attempts: watchdog.attempts
+    });
+  }, [clearStartupWatchdog, deactivateStartupWatchdog, hardReset, logStartupEvent, reportStartupWatchdog, shouldWatchStartup]);
+
+  useEffect(() => {
+    startupWatchdogRef.current = { timer: null, attempts: 0, resolved: false, active: false };
+    return () => {
+      deactivateStartupWatchdog('reset', 'instance-dispose');
+      clearStartupWatchdog();
+    };
+  }, [clearStartupWatchdog, deactivateStartupWatchdog, resolvedInstanceKey]);
 
   const handleRegisterMediaAccess = useCallback((payload = {}) => {
     if (!bridgeRegisterAccess) return;
@@ -294,266 +424,362 @@ export function useCommonMediaController({
   }, [duration, getMediaEl]);
 
   useEffect(() => {
-    const mediaEl = getMediaEl();
-    if (!mediaEl) return;
+    const MEDIA_EL_POLL_INTERVAL_MS = 50;
+    let detachListeners = null;
+    let waitTimer = null;
+    let observer = null;
+    let cancelled = false;
+    let waitLogTimestamp = 0;
+    let waitAttempts = 0;
 
-    if (Number.isFinite(pendingAutoSeekRef.current)) {
-      try {
-        mediaEl.currentTime = pendingAutoSeekRef.current;
-      } catch (_) {
-        // rely on future metadata event to reapply
+    const teardownObserver = () => {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
       }
-      pendingAutoSeekRef.current = null;
-    }
+    };
 
-    const logProgress = async () => {
+    const cleanup = () => {
+      if (typeof detachListeners === 'function') {
+        detachListeners();
+      }
+      detachListeners = null;
+      teardownObserver();
+    };
+
+    const logWaitingStatus = (status) => {
       const now = Date.now();
-      const diff = now - lastLoggedTimeRef.current;
-      const pct = getProgressPercent(mediaEl.currentTime || 0, mediaEl.duration || 0);
-      if (diff > 10000 && parseFloat(pct) > 0) {
-        lastLoggedTimeRef.current = now;
-        const secs = mediaEl.currentTime || 0;
-        if (secs > 10) {
-          const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
-          await DaylightAPI('media/log', { title, type, media_key, seconds: secs, percent: pct });
-        }
+      if (status === 'pending') {
+        if (now - waitLogTimestamp < 1000) return;
+        waitLogTimestamp = now;
       }
-    };
-
-    const onTimeUpdate = () => {
-      const current = mediaEl.currentTime || 0;
-      setSeconds(current);
-      lastPlaybackPosRef.current = current;
-      try { useCommonMediaController.__lastPosByKey[media_key] = current; }
-      catch (_) { /* ignore cache write failures */ }
-      logProgress();
-
-      if (onProgress) {
-        onProgress({
-          currentTime: current,
-          duration: mediaEl.duration || 0,
-          paused: mediaEl.paused,
-          media: meta,
-          percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration)
-        });
-      }
-    };
-
-    const onDurationChange = () => {
-      setDuration(mediaEl.duration || 0);
-    };
-
-    const onError = (event) => {
-      const error = mediaEl.error;
-      playbackLog('media-error', {
-        code: error?.code,
-        message: error?.message,
-        networkState: mediaEl.networkState,
-        readyState: mediaEl.readyState,
-        src: mediaEl.currentSrc || mediaEl.src
-      }, { level: 'error' });
-    };
-
-    const onEnded = () => {
-      lastLoggedTimeRef.current = 0;
-      logProgress();
-      onEnd();
-    };
-
-    const onLoadedMetadata = () => {
-      const durationValue = mediaEl.duration || 0;
-      let desiredStart = 0;
-      const pendingSeekValue = Number.isFinite(pendingAutoSeekRef.current)
-        ? pendingAutoSeekRef.current
-        : null;
-      const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[media_key];
-      const processedVolumeRaw = Number(volume ?? 100);
-      const processedVolume = Number.isFinite(processedVolumeRaw) ? processedVolumeRaw : 100;
-      const normalizedVolume = processedVolume > 1 ? processedVolume / 100 : processedVolume;
-      const adjustedVolume = Math.min(1, Math.max(0, normalizedVolume));
-      const isVideoEl = mediaEl.tagName && mediaEl.tagName.toLowerCase() === 'video';
-
-      if (isInitialLoadRef.current && !hasAppliedForKey) {
-        const shouldApplyStart = (durationValue > 12 * 60) || isVideoEl;
-        desiredStart = shouldApplyStart ? start : 0;
-
-        const initialDecision = shouldRestartFromBeginning(durationValue, desiredStart);
-
-        playbackLog('media-resume-decision-initial', {
-          media_key,
-          desiredStart,
-          duration: durationValue,
-          restart: initialDecision.restart,
-          reason: initialDecision.reason
-        }, { level: 'debug' });
-
-        if (initialDecision.restart) {
-          desiredStart = 0;
-          clearResumeHistoryForKey(media_key);
-          lastSeekIntentRef.current = null;
-          lastPlaybackPosRef.current = 0;
-        }
-
-        isInitialLoadRef.current = false;
-        try { useCommonMediaController.__appliedStartByKey[media_key] = true; }
-        catch (_) { /* ignore cache write failures */ }
-      } else {
-        const candidateSources = [
-          { label: 'lastSeekIntent', value: lastSeekIntentRef.current },
-          { label: 'persistedSeek', value: useCommonMediaController.__lastSeekByKey[media_key] },
-          { label: 'sessionPlayback', value: lastPlaybackPosRef.current },
-          { label: 'persistedPlayback', value: useCommonMediaController.__lastPosByKey[media_key] }
-        ];
-        const foundCandidate = candidateSources.find((entry) => entry.value != null && Number.isFinite(entry.value));
-        const sticky = foundCandidate?.value ?? 0;
-        const nearStart = sticky <= 1;
-        const nearEnd = durationValue > 0 ? sticky >= durationValue - 1 : false;
-        const stickyDecision = shouldRestartFromBeginning(durationValue, sticky);
-
-        playbackLog('media-resume-decision-sticky', {
-          media_key,
-          candidate: sticky,
-          source: foundCandidate?.label || 'none',
-          restart: stickyDecision.restart,
-          reason: stickyDecision.reason
-        }, { level: 'debug' });
-
-        if (!nearStart && !nearEnd && !stickyDecision.restart && sticky > 5) {
-          desiredStart = Math.max(0, sticky - 1);
-        } else if (stickyDecision.restart && sticky > 0) {
-          desiredStart = 0;
-          clearResumeHistoryForKey(media_key);
-          lastSeekIntentRef.current = null;
-          lastPlaybackPosRef.current = 0;
-        }
-      }
-
-      if (pendingSeekValue != null) {
-        desiredStart = pendingSeekValue;
-        pendingAutoSeekRef.current = null;
-      }
-
-      mediaEl.dataset.key = media_key;
-
-      if (Number.isFinite(desiredStart) && desiredStart > 0) {
-        try {
-          mediaEl.currentTime = desiredStart;
-        } catch (error) {
-          playbackLog('media-start-time-failed', { desiredStart, error }, { level: 'warn' });
-        }
-      }
-
-      mediaEl.autoplay = true;
-      mediaEl.volume = adjustedVolume;
-
-      const autoplayLogContext = {
+      playbackLog('media-el-wait', {
+        status,
+        attempts: waitAttempts,
         waitKey: formatWaitKeyForLogs(resolvedInstanceKey),
-        media_key,
-        type,
-        isVideo: isVideoEl,
-        desiredStart: roundSeconds(desiredStart),
-        pendingSeekSeconds: roundSeconds(pendingSeekValue),
-        autoplay: true
-      };
-      playbackLog('transport-autoplay-primed', autoplayLogContext, { level: 'debug' });
-
-      try {
-        const playPromise = mediaEl.play?.();
-        if (playPromise && typeof playPromise.then === 'function') {
-          playPromise
-            .then(() => {
-              playbackLog('transport-autoplay-result', {
-                ...autoplayLogContext,
-                result: 'fulfilled',
-                paused: Boolean(mediaEl.paused),
-                readyState: mediaEl.readyState
-              }, { level: 'info' });
-            })
-            .catch((error) => {
-              playbackLog('transport-autoplay-result', {
-                ...autoplayLogContext,
-                result: 'rejected',
-                paused: Boolean(mediaEl.paused),
-                readyState: mediaEl.readyState,
-                error: error?.message || 'unknown-error'
-              }, { level: 'warn' });
-            });
-        } else {
-          playbackLog('transport-autoplay-result', {
-            ...autoplayLogContext,
-            result: 'no-promise',
-            paused: Boolean(mediaEl.paused),
-            readyState: mediaEl.readyState
-          }, { level: 'info' });
-        }
-      } catch (error) {
-        playbackLog('transport-autoplay-result', {
-          ...autoplayLogContext,
-          result: 'threw',
-          paused: Boolean(mediaEl.paused),
-          readyState: mediaEl.readyState,
-          error: error?.message || 'play-threw'
-        }, { level: 'warn' });
-      }
-
-      const queueLength = meta.queueLength || 0;
-      const shouldLoop = queueLength === 1
-        || (queueLength === 0 && meta.continuous)
-        || (queueLength === 0 && isVideoEl && durationValue < 20);
-      mediaEl.loop = shouldLoop;
-
-      if (isVideoEl || isDash) {
-        mediaEl.controls = false;
-        const applyRate = () => { mediaEl.playbackRate = playbackRate; };
-        mediaEl.addEventListener('play', applyRate);
-        mediaEl.addEventListener('seeked', applyRate);
-      } else {
-        mediaEl.playbackRate = playbackRate;
-      }
-
-      playbackLog('media-loadedmetadata', {
-        media_key,
-        desiredStart,
-        duration: durationValue,
-        volume: adjustedVolume,
-        loop: mediaEl.loop
+        media_key
       }, { level: 'debug' });
     };
 
-    const handleSeeking = () => {
-      const mediaElInstance = getMediaEl();
-      if (mediaElInstance && Number.isFinite(mediaElInstance.currentTime)) {
-        lastSeekIntentRef.current = mediaElInstance.currentTime;
-        try { useCommonMediaController.__lastSeekByKey[media_key] = mediaElInstance.currentTime; }
-        catch (_) { /* ignore cache write failures */ }
+    const attachWhenReady = () => {
+      if (cancelled) return;
+      const mediaEl = getMediaEl();
+      if (!mediaEl) {
+        waitAttempts += 1;
+        const host = containerRef.current;
+        if (!observer && host && typeof MutationObserver !== 'undefined') {
+          observer = new MutationObserver(() => {
+            const candidate = getMediaEl();
+            if (candidate) {
+              teardownObserver();
+              attachWhenReady();
+            }
+          });
+          observer.observe(host, { childList: true, subtree: true });
+          logWaitingStatus('observer-attached');
+        }
+        logWaitingStatus('pending');
+        waitTimer = setTimeout(attachWhenReady, MEDIA_EL_POLL_INTERVAL_MS);
+        return;
       }
-      setIsSeeking(true);
+      if (waitTimer) {
+        clearTimeout(waitTimer);
+        waitTimer = null;
+      }
+      teardownObserver();
+      logWaitingStatus('resolved');
+      armStartupWatchdog('media-element-attached');
+
+      if (Number.isFinite(pendingAutoSeekRef.current)) {
+        try {
+          mediaEl.currentTime = pendingAutoSeekRef.current;
+        } catch (_) {
+          // rely on future metadata event to reapply
+        }
+        pendingAutoSeekRef.current = null;
+      }
+
+      let rateCleanup = null;
+
+      const logProgress = async () => {
+        const now = Date.now();
+        const diff = now - lastLoggedTimeRef.current;
+        const pct = getProgressPercent(mediaEl.currentTime || 0, mediaEl.duration || 0);
+        if (diff > 10000 && parseFloat(pct) > 0) {
+          lastLoggedTimeRef.current = now;
+          const secs = mediaEl.currentTime || 0;
+          if (secs > 10) {
+            const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+            await DaylightAPI('media/log', { title, type, media_key, seconds: secs, percent: pct });
+          }
+        }
+      };
+
+      const onTimeUpdate = () => {
+        const current = mediaEl.currentTime || 0;
+        setSeconds(current);
+        lastPlaybackPosRef.current = current;
+        try { useCommonMediaController.__lastPosByKey[media_key] = current; }
+        catch (_) { /* ignore cache write failures */ }
+        logProgress();
+
+        if (onProgress) {
+          onProgress({
+            currentTime: current,
+            duration: mediaEl.duration || 0,
+            paused: mediaEl.paused,
+            media: meta,
+            percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration)
+          });
+        }
+      };
+
+      const onDurationChange = () => {
+        setDuration(mediaEl.duration || 0);
+      };
+
+      const onError = () => {
+        const error = mediaEl.error;
+        playbackLog('media-error', {
+          code: error?.code,
+          message: error?.message,
+          networkState: mediaEl.networkState,
+          readyState: mediaEl.readyState,
+          src: mediaEl.currentSrc || mediaEl.src
+        }, { level: 'error' });
+      };
+
+      const onEnded = () => {
+        lastLoggedTimeRef.current = 0;
+        logProgress();
+        onEnd();
+      };
+
+      const onLoadedMetadata = () => {
+        resolveStartupWatchdog('loadedmetadata');
+        const durationValue = mediaEl.duration || 0;
+        let desiredStart = 0;
+        const pendingSeekValue = Number.isFinite(pendingAutoSeekRef.current)
+          ? pendingAutoSeekRef.current
+          : null;
+        const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[media_key];
+        const processedVolumeRaw = Number(volume ?? 100);
+        const processedVolume = Number.isFinite(processedVolumeRaw) ? processedVolumeRaw : 100;
+        const normalizedVolume = processedVolume > 1 ? processedVolume / 100 : processedVolume;
+        const adjustedVolume = Math.min(1, Math.max(0, normalizedVolume));
+        const isVideoEl = mediaEl.tagName && mediaEl.tagName.toLowerCase() === 'video';
+
+        if (isInitialLoadRef.current && !hasAppliedForKey) {
+          const shouldApplyStart = (durationValue > 12 * 60) || isVideoEl;
+          desiredStart = shouldApplyStart ? start : 0;
+
+          const initialDecision = shouldRestartFromBeginning(durationValue, desiredStart);
+
+          playbackLog('media-resume-decision-initial', {
+            media_key,
+            desiredStart,
+            duration: durationValue,
+            restart: initialDecision.restart,
+            reason: initialDecision.reason
+          }, { level: 'debug' });
+
+          if (initialDecision.restart) {
+            desiredStart = 0;
+            clearResumeHistoryForKey(media_key);
+            lastSeekIntentRef.current = null;
+            lastPlaybackPosRef.current = 0;
+          }
+
+          isInitialLoadRef.current = false;
+          try { useCommonMediaController.__appliedStartByKey[media_key] = true; }
+          catch (_) { /* ignore cache write failures */ }
+        } else {
+          const candidateSources = [
+            { label: 'lastSeekIntent', value: lastSeekIntentRef.current },
+            { label: 'persistedSeek', value: useCommonMediaController.__lastSeekByKey[media_key] },
+            { label: 'sessionPlayback', value: lastPlaybackPosRef.current },
+            { label: 'persistedPlayback', value: useCommonMediaController.__lastPosByKey[media_key] }
+          ];
+          const foundCandidate = candidateSources.find((entry) => entry.value != null && Number.isFinite(entry.value));
+          const sticky = foundCandidate?.value ?? 0;
+          const nearStart = sticky <= 1;
+          const nearEnd = durationValue > 0 ? sticky >= durationValue - 1 : false;
+          const stickyDecision = shouldRestartFromBeginning(durationValue, sticky);
+
+          playbackLog('media-resume-decision-sticky', {
+            media_key,
+            candidate: sticky,
+            source: foundCandidate?.label || 'none',
+            restart: stickyDecision.restart,
+            reason: stickyDecision.reason
+          }, { level: 'debug' });
+
+          if (!nearStart && !nearEnd && !stickyDecision.restart && sticky > 5) {
+            desiredStart = Math.max(0, sticky - 1);
+          } else if (stickyDecision.restart && sticky > 0) {
+            desiredStart = 0;
+            clearResumeHistoryForKey(media_key);
+            lastSeekIntentRef.current = null;
+            lastPlaybackPosRef.current = 0;
+          }
+        }
+
+        if (pendingSeekValue != null) {
+          desiredStart = pendingSeekValue;
+          pendingAutoSeekRef.current = null;
+        }
+
+        mediaEl.dataset.key = media_key;
+
+        if (Number.isFinite(desiredStart) && desiredStart > 0) {
+          try {
+            mediaEl.currentTime = desiredStart;
+          } catch (error) {
+            playbackLog('media-start-time-failed', { desiredStart, error }, { level: 'warn' });
+          }
+        }
+
+        mediaEl.autoplay = true;
+        mediaEl.volume = adjustedVolume;
+
+        const autoplayLogContext = {
+          waitKey: formatWaitKeyForLogs(resolvedInstanceKey),
+          media_key,
+          type,
+          isVideo: isVideoEl,
+          desiredStart: roundSeconds(desiredStart),
+          pendingSeekSeconds: roundSeconds(pendingSeekValue),
+          autoplay: true
+        };
+        playbackLog('transport-autoplay-primed', autoplayLogContext, { level: 'debug' });
+
+        try {
+          const playPromise = mediaEl.play?.();
+          if (playPromise && typeof playPromise.then === 'function') {
+            playPromise
+              .then(() => {
+                playbackLog('transport-autoplay-result', {
+                  ...autoplayLogContext,
+                  result: 'fulfilled',
+                  paused: Boolean(mediaEl.paused),
+                  readyState: mediaEl.readyState
+                }, { level: 'info' });
+              })
+              .catch((error) => {
+                playbackLog('transport-autoplay-result', {
+                  ...autoplayLogContext,
+                  result: 'rejected',
+                  paused: Boolean(mediaEl.paused),
+                  readyState: mediaEl.readyState,
+                  error: error?.message || 'unknown-error'
+                }, { level: 'warn' });
+              });
+          } else {
+            playbackLog('transport-autoplay-result', {
+              ...autoplayLogContext,
+              result: 'no-promise',
+              paused: Boolean(mediaEl.paused),
+              readyState: mediaEl.readyState
+            }, { level: 'info' });
+          }
+        } catch (error) {
+          playbackLog('transport-autoplay-result', {
+            ...autoplayLogContext,
+            result: 'threw',
+            paused: Boolean(mediaEl.paused),
+            readyState: mediaEl.readyState,
+            error: error?.message || 'play-threw'
+          }, { level: 'warn' });
+        }
+
+        const queueLength = meta.queueLength || 0;
+        const shouldLoop = queueLength === 1
+          || (queueLength === 0 && meta.continuous)
+          || (queueLength === 0 && isVideoEl && durationValue < 20);
+        mediaEl.loop = shouldLoop;
+
+        if (isVideoEl || isDash) {
+          mediaEl.controls = false;
+          const applyRate = () => { mediaEl.playbackRate = playbackRate; };
+          mediaEl.addEventListener('play', applyRate);
+          mediaEl.addEventListener('seeked', applyRate);
+          rateCleanup = () => {
+            mediaEl.removeEventListener('play', applyRate);
+            mediaEl.removeEventListener('seeked', applyRate);
+          };
+        } else {
+          mediaEl.playbackRate = playbackRate;
+          rateCleanup = null;
+        }
+
+        playbackLog('media-loadedmetadata', {
+          media_key,
+          desiredStart,
+          duration: durationValue,
+          volume: adjustedVolume,
+          loop: mediaEl.loop
+        }, { level: 'debug' });
+      };
+
+      const handleSeeking = () => {
+        const mediaElInstance = getMediaEl();
+        if (mediaElInstance && Number.isFinite(mediaElInstance.currentTime)) {
+          lastSeekIntentRef.current = mediaElInstance.currentTime;
+          try { useCommonMediaController.__lastSeekByKey[media_key] = mediaElInstance.currentTime; }
+          catch (_) { /* ignore cache write failures */ }
+        }
+        setIsSeeking(true);
+      };
+
+      const clearSeeking = () => {
+        requestAnimationFrame(() => setIsSeeking(false));
+      };
+
+      const onPlayingEvent = () => {
+        clearSeeking();
+        resolveStartupWatchdog('playing');
+      };
+
+      mediaEl.addEventListener('timeupdate', onTimeUpdate);
+      mediaEl.addEventListener('durationchange', onDurationChange);
+      mediaEl.addEventListener('error', onError);
+      mediaEl.addEventListener('ended', onEnded);
+      mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
+      mediaEl.addEventListener('seeking', handleSeeking);
+      mediaEl.addEventListener('seeked', clearSeeking);
+      mediaEl.addEventListener('playing', onPlayingEvent);
+
+      detachListeners = () => {
+        mediaEl.removeEventListener('timeupdate', onTimeUpdate);
+        mediaEl.removeEventListener('durationchange', onDurationChange);
+        mediaEl.removeEventListener('error', onError);
+        mediaEl.removeEventListener('ended', onEnded);
+        mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
+        mediaEl.removeEventListener('seeking', handleSeeking);
+        mediaEl.removeEventListener('seeked', clearSeeking);
+        mediaEl.removeEventListener('playing', onPlayingEvent);
+        rateCleanup?.();
+      };
+
+      if (onMediaRef) {
+        try {
+          onMediaRef(mediaEl);
+        } catch (_) {
+          // ignore consumer errors; diagnostics handled elsewhere
+        }
+      }
     };
 
-    const clearSeeking = () => {
-      requestAnimationFrame(() => setIsSeeking(false));
-    };
-
-    mediaEl.addEventListener('timeupdate', onTimeUpdate);
-    mediaEl.addEventListener('durationchange', onDurationChange);
-    mediaEl.addEventListener('error', onError);
-    mediaEl.addEventListener('ended', onEnded);
-    mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
-    mediaEl.addEventListener('seeking', handleSeeking);
-    mediaEl.addEventListener('seeked', clearSeeking);
-    mediaEl.addEventListener('playing', clearSeeking);
+    attachWhenReady();
 
     return () => {
-      mediaEl.removeEventListener('timeupdate', onTimeUpdate);
-      mediaEl.removeEventListener('durationchange', onDurationChange);
-      mediaEl.removeEventListener('error', onError);
-      mediaEl.removeEventListener('ended', onEnded);
-      mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
-      mediaEl.removeEventListener('seeking', handleSeeking);
-      mediaEl.removeEventListener('seeked', clearSeeking);
-      mediaEl.removeEventListener('playing', clearSeeking);
+      cancelled = true;
+      if (waitTimer) {
+        clearTimeout(waitTimer);
+      }
+      cleanup();
     };
-  }, [getMediaEl, media_key, meta, onEnd, onProgress, playbackRate, start, type, volume, isDash, resolvedInstanceKey]);
+  }, [formatWaitKeyForLogs, getMediaEl, isDash, media_key, meta, onEnd, onMediaRef, onProgress, playbackRate, resolvedInstanceKey, start, type, volume]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();

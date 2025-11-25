@@ -16,6 +16,7 @@ export function SinglePlayer(props = {}) {
     onResolvedMeta,
     onPlaybackMetrics,
     onRegisterMediaAccess,
+    onStartupWatchdogEvent,
     seekToIntentSeconds = null,
     onSeekRequestConsumed,
     remountDiagnostics,
@@ -63,6 +64,7 @@ export function SinglePlayer(props = {}) {
     onResolvedMeta,
     onPlaybackMetrics,
     onRegisterMediaAccess,
+    onStartupWatchdogEvent,
     seekToIntentSeconds,
     onSeekRequestConsumed,
     remountDiagnostics
@@ -172,8 +174,9 @@ export function SinglePlayer(props = {}) {
     onRegisterMediaAccess,
     seekToIntentSeconds,
     onSeekRequestConsumed,
-    remountDiagnostics
-  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics]);
+    remountDiagnostics,
+    onStartupWatchdogEvent
+  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onStartupWatchdogEvent]);
   
   const playerBody = (
     <>
@@ -273,6 +276,7 @@ SinglePlayer.propTypes = {
   onResolvedMeta: PropTypes.func,
   onPlaybackMetrics: PropTypes.func,
   onRegisterMediaAccess: PropTypes.func,
+  onStartupWatchdogEvent: PropTypes.func,
   seekToIntentSeconds: PropTypes.number,
   onSeekRequestConsumed: PropTypes.func,
   remountDiagnostics: PropTypes.shape({

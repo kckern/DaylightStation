@@ -9,10 +9,12 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
   monitor: {
     progressEpsilonSeconds: 0.25,
     stallDetectionThresholdMs: 500,
-    hardRecoverAfterStalledForMs: 8000,
-    mountTimeoutMs: 6000,
+    hardRecoverAfterStalledForMs: 3000,
+    mountTimeoutMs: 5000,
     mountPollIntervalMs: 750,
-    mountMaxAttempts: 3
+    mountMaxAttempts: 3,
+    startupTimeoutMs: 12000,
+    startupMaxAttempts: 2
   },
   recovery: {
     enabled: true,
@@ -79,7 +81,9 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
         hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 6000),
         mountTimeoutMs: coerceNumber(monitorConfig.mountTimeoutMs, 6000),
         mountPollIntervalMs: coerceNumber(monitorConfig.mountPollIntervalMs, 750),
-        mountMaxAttempts: coerceNumber(monitorConfig.mountMaxAttempts, 3)
+        mountMaxAttempts: coerceNumber(monitorConfig.mountMaxAttempts, 3),
+        startupTimeoutMs: coerceNumber(monitorConfig.startupTimeoutMs, 12000),
+        startupMaxAttempts: coerceNumber(monitorConfig.startupMaxAttempts, 2)
       },
       recoveryConfig: {
         enabled: recoveryConfig.enabled ?? legacyReload.enabled ?? true,
