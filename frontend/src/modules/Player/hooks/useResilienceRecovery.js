@@ -24,12 +24,25 @@ export function useResilienceRecovery({
   recoveringStatusValue,
   userIntentRef,
   pausedIntentValue,
-  recoveryAttempts
+  recoveryAttempts,
+  onHardResetCycle
 }) {
+  const notifyHardResetCycle = useCallback((payload = {}) => {
+    if (typeof onHardResetCycle !== 'function') return;
+    try {
+      onHardResetCycle(payload);
+    } catch (error) {
+      if (process.env?.NODE_ENV !== 'production') {
+        console.warn('[useResilienceRecovery] hard reset callback failed', error);
+      }
+    }
+  }, [onHardResetCycle]);
+
   const triggerRecovery = useCallback((reason, {
     ignorePaused = false,
     seekToIntentMs: overrideIntentMs = null,
-    force = false
+    force = false,
+    skipRecoveryNotification = false
   } = {}) => {
     if (!force && !recoveryConfig.enabled) return;
     if (!force && !ignorePaused && userIntentRef.current === pausedIntentValue) return;
@@ -60,6 +73,14 @@ export function useResilienceRecovery({
       attempts: recoveryAttempts,
       seekToIntentMs: resolvedIntentMs
     }, { level: 'info' });
+
+    if (!skipRecoveryNotification) {
+      notifyHardResetCycle({
+        reason,
+        seekToIntentMs: resolvedIntentMs,
+        source: 'trigger-recovery'
+      });
+    }
 
     const performReload = () => {
       logResilienceEvent('recovery-triggered', {
@@ -104,7 +125,8 @@ export function useResilienceRecovery({
     reloadTimerRef,
     pendingStatusValue,
     statusRef,
-    pausedIntentValue
+    pausedIntentValue,
+    notifyHardResetCycle
   ]);
 
   const scheduleHardRecovery = useCallback(() => {
@@ -136,6 +158,11 @@ export function useResilienceRecovery({
       return;
     }
     logResilienceEvent('hard-reset-force-remount', logPayload, { level: 'warn' });
+    notifyHardResetCycle({
+      reason,
+      seekToIntentMs: normalizedIntentMs,
+      source: 'force-player-remount'
+    });
     lastReloadAtRef.current = Date.now();
     resilienceActions.setStatus(recoveringStatusValue, {
       carryRecovery: true,
@@ -203,7 +230,8 @@ export function useResilienceRecovery({
     triggerRecovery(reason, {
       ignorePaused,
       force,
-      seekToIntentMs: normalizedSeekMs
+      seekToIntentMs: normalizedSeekMs,
+      skipRecoveryNotification: true
     });
   }, [forcePlayerRemount, triggerRecovery, logResilienceEvent]);
 
