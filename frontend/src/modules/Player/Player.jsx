@@ -6,6 +6,7 @@ import { CompositePlayer } from './components/CompositePlayer.jsx';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
+import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
 import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMediaResilience.js';
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { guid } from './lib/helpers.js';
@@ -44,7 +45,8 @@ const createDefaultMediaAccess = () => ({
 const createDefaultPlaybackMetrics = () => ({
   seconds: 0,
   isPaused: false,
-  isSeeking: false
+  isSeeking: false,
+  pauseIntent: null
 });
 
 /**
@@ -186,12 +188,23 @@ const Player = forwardRef(function Player(props, ref) {
 
   const handlePlaybackMetrics = useCallback((metrics = {}) => {
     setPlaybackMetrics((prev) => {
+      const nextPauseIntent = Object.prototype.hasOwnProperty.call(metrics, 'pauseIntent')
+        ? (metrics.pauseIntent === 'user' || metrics.pauseIntent === 'system' || metrics.pauseIntent === null
+          ? metrics.pauseIntent
+          : prev.pauseIntent)
+        : prev.pauseIntent;
       const next = {
         seconds: Number.isFinite(metrics.seconds) ? metrics.seconds : prev.seconds,
         isPaused: typeof metrics.isPaused === 'boolean' ? metrics.isPaused : prev.isPaused,
-        isSeeking: typeof metrics.isSeeking === 'boolean' ? metrics.isSeeking : prev.isSeeking
+        isSeeking: typeof metrics.isSeeking === 'boolean' ? metrics.isSeeking : prev.isSeeking,
+        pauseIntent: nextPauseIntent
       };
-      if (prev.seconds === next.seconds && prev.isPaused === next.isPaused && prev.isSeeking === next.isSeeking) {
+      if (
+        prev.seconds === next.seconds
+        && prev.isPaused === next.isPaused
+        && prev.isSeeking === next.isSeeking
+        && prev.pauseIntent === next.pauseIntent
+      ) {
         return prev;
       }
       return next;
@@ -425,6 +438,7 @@ const Player = forwardRef(function Player(props, ref) {
     seconds: effectiveMeta ? playbackMetrics.seconds : 0,
     isPaused: effectiveMeta ? playbackMetrics.isPaused : false,
     isSeeking: effectiveMeta ? playbackMetrics.isSeeking : false,
+    pauseIntent: effectiveMeta ? playbackMetrics.pauseIntent : null,
     initialStart: Number(effectiveMeta?.seconds) || 0,
     waitKey: resolvedWaitKey,
     fetchVideoInfo: mediaAccess.fetchVideoInfo,
@@ -537,6 +551,7 @@ const Player = forwardRef(function Player(props, ref) {
     <>
       <PlayerOverlayLoading {...overlayProps} />
       <PlayerOverlayPaused {...overlayProps} />
+      <PlayerOverlayStateDebug {...overlayProps} />
     </>
   ) : null;
 
