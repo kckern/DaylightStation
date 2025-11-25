@@ -10,7 +10,7 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
     progressEpsilonSeconds: 0.25,
     stallDetectionThresholdMs: 500,
     hardRecoverAfterStalledForMs: 4000,
-    hardRecoverStartupGraceMs: 12000,
+    hardRecoverLoadingGraceMs: 12000,
     hardRecoverAttemptBackoffMs: 1000,
     mountTimeoutMs: 5000,
     mountPollIntervalMs: 750,
@@ -81,7 +81,10 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
         epsilonSeconds: coerceNumber(monitorConfig.progressEpsilonSeconds, 0.25),
         stallDetectionThresholdMs: coerceNumber(monitorConfig.stallDetectionThresholdMs, 500),
         hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 6000),
-        hardRecoverStartupGraceMs: coerceNumber(monitorConfig.hardRecoverStartupGraceMs, 10000),
+        hardRecoverLoadingGraceMs: coerceNumber(
+          monitorConfig.hardRecoverLoadingGraceMs ?? monitorConfig.hardRecoverStartupGraceMs,
+          10000
+        ),
         hardRecoverAttemptBackoffMs: coerceNumber(monitorConfig.hardRecoverAttemptBackoffMs, 1000),
         mountTimeoutMs: coerceNumber(monitorConfig.mountTimeoutMs, 6000),
         mountPollIntervalMs: coerceNumber(monitorConfig.mountPollIntervalMs, 750),
