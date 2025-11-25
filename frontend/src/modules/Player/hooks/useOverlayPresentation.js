@@ -205,11 +205,32 @@ export function useOverlayPresentation({
     }
   }, [status, playbackHasProgress]);
 
+  const overlayRevealDelayMs = Number.isFinite(overlayConfig.revealDelayMs)
+    ? Math.max(0, overlayConfig.revealDelayMs)
+    : 0;
+
+  const holdOverlayActive = overlayHoldActive && !playbackHasProgress;
+
+  const overlayIntentActive = waitingToPlay
+    || stallOverlayActive
+    || explicitShow
+    || holdOverlayActive;
+
   useEffect(() => {
-    if (!initialOverlayGraceActive) return;
-    if (!playbackHasProgress) return;
-    setInitialOverlayGraceActive(false);
-  }, [initialOverlayGraceActive, playbackHasProgress]);
+    if (!initialOverlayGraceActive) return () => {};
+    if (!overlayRevealDelayMs) {
+      setInitialOverlayGraceActive(false);
+      return () => {};
+    }
+    if (!overlayIntentActive) {
+      setInitialOverlayGraceActive(false);
+      return () => {};
+    }
+    const timer = setTimeout(() => {
+      setInitialOverlayGraceActive(false);
+    }, overlayRevealDelayMs);
+    return () => clearTimeout(timer);
+  }, [initialOverlayGraceActive, overlayIntentActive, overlayRevealDelayMs]);
 
   const pauseOverlayEligible = overlayConfig.showPausedOverlay && showPauseOverlay;
   const pauseOverlayActive = pauseOverlayEligible
@@ -218,8 +239,6 @@ export function useOverlayPresentation({
     && isPaused
     && !waitingToPlay
     && !computedStalled;
-
-  const holdOverlayActive = overlayHoldActive && !playbackHasProgress;
 
   const overlayDrivers = useMemo(() => deriveOverlayDrivers({
     waitingToPlay,
@@ -250,9 +269,6 @@ export function useOverlayPresentation({
     || overlayDrivers.hold;
   const overlayActive = shouldRenderOverlay && isOverlayVisible;
   const overlayTimerActive = overlayActive && !pauseOverlayActive;
-  const overlayRevealDelayMs = Number.isFinite(overlayConfig.revealDelayMs)
-    ? Math.max(0, overlayConfig.revealDelayMs)
-    : 0;
   const overlayGraceReason = (() => {
     if (!overlayRevealDelayMs) return null;
     if (initialOverlayGraceActive) return 'initial-load';

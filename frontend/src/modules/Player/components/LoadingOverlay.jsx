@@ -14,7 +14,6 @@ export function LoadingOverlay({
   seconds = 0,
   stalled = false,
   waitingToPlay = false,
-  startupPending = false,
   startupWatchdogState = null,
   togglePauseOverlay,
   countUpDisplay,
@@ -67,7 +66,7 @@ export function LoadingOverlay({
     const finalPayload = {
       source: 'loading-overlay',
       requestedAt: Date.now(),
-      startupPending,
+      status: waitingToPlay ? 'startup' : (stalled ? 'stalling' : 'unknown'),
       ...basePayload,
       ...extra
     };
@@ -80,7 +79,7 @@ export function LoadingOverlay({
     } catch (error) {
       console.error('[LoadingOverlay] hard reset handler failed', error, finalPayload);
     }
-  }, [onRequestHardReset, startupPending]);
+  }, [onRequestHardReset, waitingToPlay, stalled]);
 
   useEffect(() => {
     if (!timerActive) {
@@ -190,8 +189,9 @@ export function LoadingOverlay({
   const mediaSummary = mediaElementDetails.hasElement
     ? `el:t=${mediaElementDetails.currentTime ?? 'n/a'} r=${mediaElementDetails.readyState ?? 'n/a'} n=${mediaElementDetails.networkState ?? 'n/a'} p=${mediaElementDetails.paused ?? 'n/a'}`
     : 'el:none';
-  const startupSummary = startupPending
-    ? `startup:armed attempts=${startupWatchdogState?.attempts ?? 0} timeout=${startupWatchdogState?.timeoutMs ?? 'n/a'}`
+  const isStartupPhase = waitingToPlay;
+  const startupSummary = (isStartupPhase || startupWatchdogState?.active)
+    ? `startup:${startupWatchdogState?.state || 'armed'} attempts=${startupWatchdogState?.attempts ?? 0} timeout=${startupWatchdogState?.timeoutMs ?? 'n/a'}`
     : 'startup:idle';
 
   const logIntervalRef = useRef(null);
@@ -274,7 +274,6 @@ LoadingOverlay.propTypes = {
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
-  startupPending: PropTypes.bool,
   startupWatchdogState: PropTypes.shape({
     active: PropTypes.bool,
     state: PropTypes.string,
