@@ -145,6 +145,9 @@ export function useMediaResilience({
   const onReloadRef = useLatest(onReload);
   const lastProgressTsRef = useRef(null);
   const lastProgressSecondsRef = useRef(null);
+  const lastKnownSeekIntentMsRef = useRef(Number.isFinite(initialStart) && initialStart > 0
+    ? Math.max(0, initialStart * 1000)
+    : null);
   const stallTimerRef = useRef(null);
   const reloadTimerRef = useRef(null);
   const hardRecoveryTimerRef = useRef(null);
@@ -264,7 +267,15 @@ export function useMediaResilience({
     lastProgressTsRef.current = null;
     statusTransitionRef.current = STATUS.pending;
     lastSecondsRef.current = 0;
+    lastKnownSeekIntentMsRef.current = Number.isFinite(initialStart) && initialStart > 0
+      ? Math.max(0, initialStart * 1000)
+      : null;
   }, [waitKey]);
+
+  useEffect(() => {
+    if (!Number.isFinite(initialStart) || initialStart <= 0) return;
+    lastKnownSeekIntentMsRef.current = Math.max(0, initialStart * 1000);
+  }, [initialStart]);
 
   useEffect(() => {
     if (isSeeking) {
@@ -481,12 +492,21 @@ export function useMediaResilience({
     hasMeaningfulSeekIntent
   ]);
 
+  useEffect(() => {
+    if (Number.isFinite(sessionTargetTimeSeconds)) {
+      lastKnownSeekIntentMsRef.current = Math.max(0, sessionTargetTimeSeconds * 1000);
+    }
+  }, [sessionTargetTimeSeconds]);
+
   const resolveSeekIntentMs = useCallback((overrideMs = null) => {
     if (Number.isFinite(overrideMs)) {
       return Math.max(0, overrideMs);
     }
     if (Number.isFinite(sessionTargetTimeSeconds)) {
       return Math.max(0, sessionTargetTimeSeconds * 1000);
+    }
+    if (Number.isFinite(lastKnownSeekIntentMsRef.current)) {
+      return Math.max(0, lastKnownSeekIntentMsRef.current);
     }
     if (Number.isFinite(lastProgressSecondsRef.current)) {
       return Math.max(0, lastProgressSecondsRef.current * 1000);
