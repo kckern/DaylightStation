@@ -145,11 +145,15 @@ export function useMediaResilience({
     if (!Number.isFinite(hardRecoverAfterStalledForMs)) {
       return hardRecoverAfterStalledForMs;
     }
-    if (hardRecoverAfterStalledForMs <= 0) {
-      return hardRecoverAfterStalledForMs;
+    const recoveryBaseMs = Math.max(0, hardRecoverAfterStalledForMs);
+    if (recoveryBaseMs === 0) {
+      return recoveryBaseMs;
     }
-    const attemptBackoffMs = Math.max(0, hardResetLoopCount) * 1000;
-    return hardRecoverAfterStalledForMs + attemptBackoffMs;
+    if (hardResetLoopCount === 0) {
+      return Math.max(recoveryBaseMs, 10000);
+    }
+    const attemptBackoffMs = Math.max(0, hardResetLoopCount - 1) * 1000;
+    return recoveryBaseMs + attemptBackoffMs;
   }, [hardRecoverAfterStalledForMs, hardResetLoopCount]);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
@@ -1147,6 +1151,7 @@ export function useMediaResilience({
       resilienceActions.reset({ nextStatus: STATUS.pending, clearCarry: true });
       setShowDebug(false);
       resetOverlayState();
+      setHardResetLoopCount(0);
     },
     forceReload: (options = {}) => {
       const overrideMs = Number.isFinite(options.seekToIntentMs)

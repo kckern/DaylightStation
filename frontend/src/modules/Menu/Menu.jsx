@@ -26,15 +26,26 @@ const logMenuSelection = async (item) => {
   }
 };
 
+const scheduleDeferredTask = (() => {
+  if (typeof queueMicrotask === "function") {
+    return queueMicrotask;
+  }
+  const resolved = Promise.resolve();
+  return (cb) => resolved.then(cb);
+})();
+
 /**
  * A custom hook to wrap the "onSelect" callback with a logging side-effect.
+ * Calls are deferred to avoid cross-component setState warnings during render.
  */
 function useSelectAndLog(onSelectCallback) {
   return useCallback(
     (item) => {
       if (!item || !onSelectCallback) return;
-      onSelectCallback(item);
-      logMenuSelection(item);
+      scheduleDeferredTask(() => {
+        onSelectCallback(item);
+        logMenuSelection(item);
+      });
     },
     [onSelectCallback]
   );

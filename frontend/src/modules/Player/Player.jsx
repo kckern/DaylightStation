@@ -622,7 +622,10 @@ Player.propTypes = {
   queue: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
   clear: PropTypes.func,
   playbackrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  playbackKeys: PropTypes.arrayOf(PropTypes.string),
+  playbackKeys: PropTypes.oneOfType([
+    PropTypes.arrayOf(PropTypes.string),
+    PropTypes.objectOf(PropTypes.arrayOf(PropTypes.string))
+  ]),
   playerType: PropTypes.string,
   ignoreKeys: PropTypes.bool,
   keyboardOverrides: PropTypes.object,
