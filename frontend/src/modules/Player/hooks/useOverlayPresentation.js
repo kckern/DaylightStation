@@ -195,15 +195,17 @@ export function useOverlayPresentation({
     resetOverlayState();
   }, [resetOverlayState, waitKey]);
 
+  const playbackElementPlaying = Boolean(playbackHealth?.elementSignals?.playing);
+
   useEffect(() => {
     if (status === RESILIENCE_STATUS.recovering) {
       setOverlayHoldActive(true);
       return;
     }
-    if (playbackHasProgress) {
+    if (playbackHasProgress || playbackElementPlaying) {
       setOverlayHoldActive(false);
     }
-  }, [status, playbackHasProgress]);
+  }, [status, playbackHasProgress, playbackElementPlaying]);
 
   const overlayRevealDelayMs = Number.isFinite(overlayConfig.revealDelayMs)
     ? Math.max(0, overlayConfig.revealDelayMs)
