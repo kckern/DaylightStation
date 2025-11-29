@@ -2343,6 +2343,12 @@
 .fitness-device.zone-hot   { border-left: 4px solid rgba(255,146,43,0.9); }
 .fitness-device.zone-fire  { border-left: 4px solid rgba(255,107,107,0.9); }
 
+.fitness-device.zone-cool  .zone-progress-fill { background: #6ab8ff; }
+.fitness-device.zone-active .zone-progress-fill { background: #51cf66; }
+.fitness-device.zone-warm  .zone-progress-fill { background: #ffd43b; }
+.fitness-device.zone-hot   .zone-progress-fill { background: #ff922b; }
+.fitness-device.zone-fire  .zone-progress-fill { background: #ff6b6b; }
+
 /* Vertical card base (fallback) */
 .fitness-device.card-vertical {
   background: linear-gradient(180deg, #181818, #121212);
@@ -2456,9 +2462,30 @@
       display: block;
       transform: scaleX(-1);
       //increase saturation
-      filter: saturate(2) contrast(1.5) brightness(0.8);
+      filter: saturate(2) contrast(1.2) brightness(0.9);
       
     }
+  }
+}
+
+// Attach zone progress styling directly to fitness cards
+.fitness-device {
+  .zone-progress-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    border-bottom-left-radius: inherit;
+    border-bottom-right-radius: inherit;
+  }
+
+  .zone-progress-fill {
+    height: 100%;
+    background: rgba(255, 255, 255, 0.4);
+    transition: width 0.25s ease-out;
   }
 }
 

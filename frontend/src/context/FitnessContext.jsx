@@ -1,5 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { User, DeviceFactory, setFitnessTimeouts, getFitnessTimeouts, FitnessSession } from '../hooks/useFitnessSession.js';
+import {
+  User,
+  DeviceFactory,
+  setFitnessTimeouts,
+  getFitnessTimeouts,
+  FitnessSession,
+  buildZoneConfig,
+  deriveZoneProgressSnapshot,
+  resolveZoneThreshold,
+  resolveDisplayLabel
+} from '../hooks/useFitnessSession.js';
 
 // Create context
 const FitnessContext = createContext(null);
@@ -77,9 +87,59 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   if (FITNESS_DEBUG && (!usersConfig.primary || usersConfig.primary.length === 0)) {
     console.warn('[FitnessContext][WARN] usersConfig.primary empty (resolved).');
   }
+
+  const [guestAssignments, setGuestAssignments] = useState({});
+  const guestAssignmentsRef = useRef(guestAssignments);
+  
+  // Create effective runtime config that includes active guests merged into primary pool
+  const effectiveUsersConfig = React.useMemo(() => {
+    const base = {
+      primary: Array.isArray(usersConfig.primary) ? [...usersConfig.primary] : [],
+      secondary: Array.isArray(usersConfig.secondary) ? [...usersConfig.secondary] : [],
+      family: usersConfig.family || [],
+      friends: usersConfig.friends || []
+    };
+    
+    // Merge active guest configs into primary pool for zone threshold resolution
+    const guestPool = [...(usersConfig.family || []), ...(usersConfig.friends || [])];
+    Object.values(guestAssignments).forEach(assignment => {
+      if (!assignment?.name) return;
+      const guestConfig = guestPool.find(u => 
+        u.name === assignment.name || 
+        u.id === assignment.candidateId || 
+        u.id === assignment.profileId
+      );
+      if (guestConfig && !base.primary.find(u => u.name === guestConfig.name)) {
+        base.primary.push({ ...guestConfig });
+        if (FITNESS_DEBUG) {
+          console.log('[FitnessContext][CONFIG] Merged guest into effectiveUsersConfig:', guestConfig.name);
+        }
+      }
+    });
+    
+    return base;
+  }, [usersConfig, guestAssignments]);
+
+  const userGroupLabelMap = React.useMemo(() => {
+    const map = new Map();
+    const add = (list) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((entry) => {
+        if (!entry?.name || !entry.group_label) return;
+        map.set(slugifyId(entry.name), entry.group_label);
+      });
+    };
+    add(effectiveUsersConfig?.primary);
+    add(effectiveUsersConfig?.secondary);
+    add(effectiveUsersConfig?.family);
+    add(effectiveUsersConfig?.friends);
+    return map;
+  }, [effectiveUsersConfig]);
+  
   const equipmentConfig = fitnessRoot?.equipment || [];
   const coinTimeUnitMs = fitnessRoot?.coin_time_unit_ms;
   const zoneConfig = fitnessRoot?.zones;
+  const normalizedBaseZoneConfig = React.useMemo(() => buildZoneConfig(zoneConfig), [zoneConfig]);
   const governanceConfig = fitnessRoot?.governance || {};
   const rawGovernedLabels = plexConfig?.governed_labels;
   const governedLabels = Array.isArray(rawGovernedLabels)
@@ -106,12 +166,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [governancePhase, setGovernancePhase] = useState(null); // null | 'init' | 'green' | 'yellow' | 'red'
   const [governanceMedia, setGovernanceMediaState] = useState(null);
   const [governancePulse, setGovernancePulse] = useState(0);
-  const [guestAssignments, setGuestAssignments] = useState({});
   const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
   const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
   const [voiceMemoVersion, setVoiceMemoVersion] = useState(0);
-  const guestAssignmentsRef = useRef(guestAssignments);
   const hrDeviceUserMapRef = useRef(new Map());
+  const suppressedDevicesRef = useRef(new Set());
   const governanceMetaRef = useRef({ mediaId: null, satisfiedOnce: false, deadline: null });
   const governanceTimerRef = useRef(null);
   const governanceRequirementSummaryRef = useRef({ policyId: null, targetUserCount: null, requirements: [], activeCount: 0 });
@@ -125,12 +184,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     activeChallenge: null,
     challengeHistory: [],
     forceStartRequest: null,
-    selectionCursor: {}
+    selectionCursor: {},
+    selectionRandomBag: {}
   });
   const governanceChallengeTimerRef = useRef(null);
   const [, forceVersion] = useState(0); // used to force re-render on treasure box coin mutation
   const scheduledUpdateRef = useRef(false); // debounce for mutation callback
   const fitnessSessionRef = useRef(new FitnessSession());
+  const userZoneConfigCacheRef = useRef(new Map());
 
   // Sidebar size mode: 'regular' | 'large'
   const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
@@ -145,38 +206,77 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const assignGuestToDevice = React.useCallback((deviceId, assignment) => {
     if (deviceId == null) return;
     const key = String(deviceId);
+    
+    // Pre-flight: capture current base user name before state update
+    let capturedBaseUserName = null;
+    const prevAssignment = guestAssignmentsRef.current?.[key];
+    if (prevAssignment?.baseUserName) {
+      capturedBaseUserName = prevAssignment.baseUserName;
+    } else {
+      const knownUser = hrDeviceUserMapRef.current.get(key);
+      if (knownUser?.name) {
+        capturedBaseUserName = knownUser.name;
+      } else {
+        usersRef.current.forEach((user) => {
+          if (!capturedBaseUserName && String(user?.hrDeviceId) === key) {
+            capturedBaseUserName = user.name;
+          }
+        });
+      }
+    }
+    
     setGuestAssignments(prev => {
       if (!assignment) {
+        // Clearing assignment: rename guest back to base user in TreasureBox
+        if (prev[key] && capturedBaseUserName && prev[key].name !== capturedBaseUserName) {
+          try {
+            fitnessSessionRef.current?.treasureBox?.renameUser(prev[key].name, capturedBaseUserName);
+            if (FITNESS_DEBUG) {
+              console.log('[FitnessContext][GUEST] Cleared guest assignment, renamed TB user:', prev[key].name, '→', capturedBaseUserName);
+            }
+          } catch (err) {
+            console.warn('[FitnessContext][GUEST] Failed to rename TB user on clear:', err);
+          }
+        }
         if (!prev[key]) return prev;
-        const { [key]: _removed, ...rest } = prev;
+        const { [key]: _removed, ...rest } = rest;
+        // Force re-evaluation after clearing
+        setTimeout(() => forceVersion(v => v + 1), 0);
         return rest;
       }
+      
       const normalizedName = assignment.name || 'Guest';
       const profileId = assignment.profileId || assignment.candidateId || slugifyId(normalizedName);
-      let baseUserName = assignment.baseUserName ?? prev[key]?.baseUserName ?? null;
-      if (!baseUserName) {
-        const knownUser = hrDeviceUserMapRef.current.get(key);
-        if (knownUser?.name) {
-          baseUserName = knownUser.name;
-        } else {
-          usersRef.current.forEach((user) => {
-            if (!baseUserName && String(user?.hrDeviceId) === key) {
-              baseUserName = user.name;
-            }
-          });
+      let baseUserName = assignment.baseUserName ?? capturedBaseUserName ?? null;
+      
+      // Immediately update TreasureBox to use new guest name (atomic swap)
+      if (baseUserName && normalizedName !== baseUserName) {
+        try {
+          const renamed = fitnessSessionRef.current?.treasureBox?.renameUser(baseUserName, normalizedName);
+          if (FITNESS_DEBUG) {
+            console.log('[FitnessContext][GUEST] Assigned guest, renamed TB user:', baseUserName, '→', normalizedName, 'success:', renamed);
+          }
+        } catch (err) {
+          console.warn('[FitnessContext][GUEST] Failed to rename TB user:', err);
         }
       }
+      
+      const newAssignment = {
+        ...assignment,
+        name: normalizedName,
+        profileId,
+        candidateId: assignment.candidateId || assignment.id || profileId,
+        source: assignment.source || assignment.category || null,
+        baseUserName: baseUserName || null,
+        assignedAt: Date.now()
+      };
+      
+      // Force immediate re-evaluation of derived state (roster, zones, governance)
+      setTimeout(() => forceVersion(v => v + 1), 0);
+      
       return {
         ...prev,
-        [key]: {
-          ...assignment,
-          name: normalizedName,
-          profileId,
-          candidateId: assignment.candidateId || assignment.id || profileId,
-          source: assignment.source || assignment.category || null,
-          baseUserName: baseUserName || null,
-          assignedAt: Date.now()
-        }
+        [key]: newAssignment
       };
     });
   }, []);
@@ -185,6 +285,25 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (deviceId == null) return;
     assignGuestToDevice(deviceId, null);
   }, [assignGuestToDevice]);
+
+  const suppressDeviceUntilNextReading = React.useCallback((deviceId) => {
+    if (deviceId == null) return;
+    const key = String(deviceId);
+    suppressedDevicesRef.current.add(key);
+    setFitnessDevices((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Map(prev);
+      next.delete(key);
+      try {
+        fitnessSessionRef.current?.updateActiveDevices?.(next);
+      } catch (error) {
+        if (FITNESS_DEBUG) {
+          console.warn('[FitnessContext] Failed to update active devices after manual removal', error);
+        }
+      }
+      return next;
+    });
+  }, []);
 
   const voiceMemos = React.useMemo(() => {
     const raw = fitnessSessionRef.current?.voiceMemos;
@@ -369,7 +488,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         activeChallenge: null,
         challengeHistory: [],
         forceStartRequest: null,
-        selectionCursor: {}
+        selectionCursor: {},
+        selectionRandomBag: {}
       };
       governanceMetaRef.current = { mediaId, satisfiedOnce: false, deadline: null };
       updateGovernancePhase(null);
@@ -399,6 +519,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Keep a ref mirror of users map to avoid stale closures inside ws handlers
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { guestAssignmentsRef.current = guestAssignments; }, [guestAssignments]);
+  useEffect(() => {
+    userZoneConfigCacheRef.current = new Map();
+  }, [zoneConfig, effectiveUsersConfig]);
   useEffect(() => {
     if (FITNESS_DEBUG) {
       console.log('[FitnessContext][USERS_REF] Updated usersRef size=', usersRef.current.size);
@@ -505,6 +628,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           if (data.type === 'ant' && data.deviceId && data.data) {
             const deviceId = String(data.deviceId);
             const rawProfile = data.profile || '';
+            suppressedDevicesRef.current.delete(deviceId);
             // Normalize profile to match DeviceFactory expectations
             const upper = String(rawProfile).toUpperCase();
             let profile;
@@ -705,8 +829,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       fitnessSessionRef.current.treasureBox.configure({
         coinTimeUnitMs,
         zones: zoneConfig,
-        users: usersConfig
+        users: effectiveUsersConfig
       });
+      if (FITNESS_DEBUG) {
+        console.log('[FitnessContext][TB] Configured with effectiveUsersConfig, primary count:', effectiveUsersConfig.primary.length);
+      }
       // Guarantee callback registered (idempotent)
       try { 
         fitnessSessionRef.current.treasureBox.setMutationCallback(() => {
@@ -736,7 +863,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         }
       } catch(e) { /* ignore seeding errors */ }
     }
-  }, [coinTimeUnitMs, zoneConfig, usersConfig, fitnessDevices, users]);
+  }, [coinTimeUnitMs, zoneConfig, effectiveUsersConfig, fitnessDevices, users]);
 
   // Clean up inactive devices periodically using dynamic timeouts
   useEffect(() => {
@@ -815,6 +942,25 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const cadenceDevices = allDevices.filter(d => d.type === 'cadence');
   const powerDevices = allDevices.filter(d => d.type === 'power');
   const unknownDevices = allDevices.filter(d => d.type === 'unknown');
+
+  const preferGroupLabels = React.useMemo(() => heartRateDevices.length > 1, [heartRateDevices.length]);
+
+  const getDisplayLabel = React.useCallback((name, { groupLabelOverride, preferGroupLabel } = {}) => {
+    if (!name) return null;
+    const slug = slugifyId(name);
+    const baseGroupLabel = groupLabelOverride !== undefined
+      ? groupLabelOverride
+      : (slug ? userGroupLabelMap.get(slug) : null);
+    const shouldPrefer = typeof preferGroupLabel === 'boolean'
+      ? preferGroupLabel
+      : (preferGroupLabels && Boolean(baseGroupLabel));
+    return resolveDisplayLabel({
+      name,
+      groupLabel: baseGroupLabel,
+      preferGroupLabel: shouldPrefer,
+      fallback: 'Participant'
+    });
+  }, [userGroupLabelMap, preferGroupLabels]);
 
   const zoneRankMap = React.useMemo(() => {
     if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return {};
@@ -1047,8 +1193,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         const name = guestBinding.name;
         const key = normalize(name);
         const zoneInfo = zoneLookup.get(key) || null;
+        const displayLabel = getDisplayLabel(name, { groupLabelOverride: null, preferGroupLabel: false });
         roster.push({
           name,
+          displayLabel,
           profileId: guestBinding.profileId || slugifyId(name),
           baseUserName: guestBinding.baseUserName || null,
           isGuest: true,
@@ -1077,8 +1225,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         } catch (_) {
           // ignore getter issues
         }
+        const displayLabel = getDisplayLabel(name);
         roster.push({
           name,
+          displayLabel,
           profileId: mappedUser.id || slugifyId(name),
           baseUserName: name,
           isGuest: false,
@@ -1105,6 +1255,44 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return map;
   }, [participantRoster]);
 
+  const findEffectiveUserConfig = React.useCallback((name) => {
+    if (!name) return null;
+    const normalized = slugifyId(name);
+    if (!normalized) return null;
+    const pools = [
+      effectiveUsersConfig?.primary,
+      effectiveUsersConfig?.secondary,
+      effectiveUsersConfig?.family,
+      effectiveUsersConfig?.friends
+    ];
+    for (const pool of pools) {
+      if (!Array.isArray(pool)) continue;
+      const match = pool.find((entry) => entry?.name && slugifyId(entry.name) === normalized);
+      if (match) return match;
+    }
+    return null;
+  }, [effectiveUsersConfig]);
+
+  const getZoneConfigForUser = React.useCallback((name) => {
+    if (!name) return normalizedBaseZoneConfig;
+    const cacheKey = slugifyId(name);
+    if (cacheKey && userZoneConfigCacheRef.current.has(cacheKey)) {
+      return userZoneConfigCacheRef.current.get(cacheKey);
+    }
+    const configEntry = findEffectiveUserConfig(name);
+    if (!configEntry || !configEntry.zones) {
+      if (cacheKey) {
+        userZoneConfigCacheRef.current.set(cacheKey, normalizedBaseZoneConfig);
+      }
+      return normalizedBaseZoneConfig;
+    }
+    const derived = buildZoneConfig(zoneConfig, configEntry.zones);
+    if (cacheKey) {
+      userZoneConfigCacheRef.current.set(cacheKey, derived);
+    }
+    return derived;
+  }, [findEffectiveUserConfig, normalizedBaseZoneConfig, zoneConfig]);
+
   const participantLookupByName = React.useMemo(() => {
     const map = new Map();
     participantRoster.forEach((entry) => {
@@ -1117,6 +1305,196 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     });
     return map;
   }, [participantRoster]);
+
+  const userVitalsMap = React.useMemo(() => {
+    const map = new Map();
+
+    const assignEntry = (name, data = {}) => {
+      if (!name) return;
+      const key = slugifyId(name);
+      if (!key) return;
+      const existing = map.get(key) || {};
+      map.set(key, {
+        name,
+        heartRate: Number.isFinite(data.heartRate)
+          ? Math.round(data.heartRate)
+          : (Number.isFinite(existing.heartRate) ? existing.heartRate : null),
+        zoneId: data.zoneId ?? existing.zoneId ?? null,
+        zoneName: data.zoneName ?? existing.zoneName ?? null,
+        zoneColor: data.zoneColor ?? existing.zoneColor ?? null,
+        targetHeartRate: Number.isFinite(data.targetHeartRate)
+          ? Math.round(data.targetHeartRate)
+          : (Number.isFinite(existing.targetHeartRate) ? existing.targetHeartRate : null),
+        rangeMin: Number.isFinite(data.rangeMin) ? data.rangeMin : (existing.rangeMin ?? null),
+        rangeMax: Number.isFinite(data.rangeMax) ? data.rangeMax : (existing.rangeMax ?? null),
+        progress: Number.isFinite(data.progress) ? data.progress : (existing.progress ?? null),
+        showBar: typeof data.showBar === 'boolean' ? data.showBar : (existing.showBar ?? false),
+        nextZoneId: data.nextZoneId ?? existing.nextZoneId ?? null,
+        source: data.source ?? existing.source ?? null,
+        profileId: data.profileId ?? existing.profileId ?? slugifyId(name),
+        deviceId: data.deviceId ?? existing.deviceId ?? null,
+        isGuest: typeof data.isGuest === 'boolean' ? data.isGuest : (existing.isGuest ?? false),
+        displayLabel: data.displayLabel
+          || existing.displayLabel
+          || getDisplayLabel(name, { preferGroupLabel: false })
+      });
+    };
+
+    users.forEach((userObj, userName) => {
+      if (!userName || !userObj) return;
+      const zoneProfile = getZoneConfigForUser(userName) || normalizedBaseZoneConfig;
+      const snapshot = userObj.zoneProgress
+        || deriveZoneProgressSnapshot({ zoneConfig: zoneProfile, heartRate: userObj.currentHeartRate });
+      const hrValue = Number.isFinite(snapshot?.currentHR)
+        ? snapshot.currentHR
+        : (Number.isFinite(userObj.currentHeartRate) ? userObj.currentHeartRate : null);
+      assignEntry(userName, {
+        heartRate: hrValue,
+        zoneId: snapshot?.currentZoneId ?? null,
+        zoneName: snapshot?.currentZoneName ?? null,
+        zoneColor: snapshot?.currentZoneColor ?? null,
+        targetHeartRate: snapshot?.targetHeartRate ?? null,
+        rangeMin: snapshot?.rangeMin ?? null,
+        rangeMax: snapshot?.rangeMax ?? null,
+        progress: snapshot?.progress ?? null,
+        showBar: snapshot?.showBar ?? false,
+        nextZoneId: snapshot?.nextZoneId ?? null,
+        source: 'Primary',
+        profileId: userObj.id || slugifyId(userName),
+        displayLabel: getDisplayLabel(userName)
+      });
+    });
+
+    participantRoster.forEach((participant) => {
+      if (!participant?.name) return;
+      const hrValue = Number.isFinite(participant.heartRate) ? participant.heartRate : null;
+      const zoneProfile = getZoneConfigForUser(participant.name) || normalizedBaseZoneConfig;
+      const snapshot = deriveZoneProgressSnapshot({ zoneConfig: zoneProfile, heartRate: hrValue });
+      assignEntry(participant.name, {
+        heartRate: hrValue,
+        zoneId: snapshot?.currentZoneId ?? participant.zoneId ?? null,
+        zoneName: snapshot?.currentZoneName ?? null,
+        zoneColor: snapshot?.currentZoneColor ?? participant.zoneColor ?? null,
+        targetHeartRate: snapshot?.targetHeartRate ?? null,
+        rangeMin: snapshot?.rangeMin ?? null,
+        rangeMax: snapshot?.rangeMax ?? null,
+        progress: snapshot?.progress ?? null,
+        showBar: snapshot?.showBar ?? false,
+        nextZoneId: snapshot?.nextZoneId ?? null,
+        source: participant.source || null,
+        profileId: participant.profileId || participant.userId || slugifyId(participant.name),
+        deviceId: participant.hrDeviceId || participant.deviceId || null,
+        isGuest: Boolean(participant.isGuest),
+        displayLabel: participant.displayLabel || getDisplayLabel(participant.name, { preferGroupLabel: false })
+      });
+    });
+
+    return map;
+  }, [users, participantRoster, getZoneConfigForUser, normalizedBaseZoneConfig]);
+
+  const userHeartRateMap = React.useMemo(() => {
+    const map = new Map();
+    userVitalsMap.forEach((entry, key) => {
+      if (!entry) return;
+      if (!Number.isFinite(entry.heartRate)) return;
+      map.set(key, entry.heartRate);
+    });
+    return map;
+  }, [userVitalsMap]);
+
+  const getUserVitals = React.useCallback((name) => {
+    if (!name) return null;
+    const slug = slugifyId(name);
+    if (!slug) return null;
+    const existing = userVitalsMap.get(slug) || null;
+    const normalized = typeof name === 'string' ? name.trim().toLowerCase() : '';
+    const participant = normalized ? participantLookupByName.get(normalized) : null;
+
+    if (!participant) {
+      return existing;
+    }
+
+    const participantHeartRate = Number.isFinite(participant.heartRate)
+      ? Math.round(participant.heartRate)
+      : null;
+    const mergedHeartRate = Number.isFinite(participantHeartRate)
+      ? participantHeartRate
+      : (Number.isFinite(existing?.heartRate) ? existing.heartRate : null);
+    const mergedZoneId = existing?.zoneId
+      || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
+    const mergedZoneColor = existing?.zoneColor || participant?.zoneColor || null;
+    const mergedProfileId = existing?.profileId || participant?.profileId || participant?.userId || slug;
+    const mergedDeviceId = existing?.deviceId || participant?.hrDeviceId || participant?.deviceId || null;
+    const mergedSource = existing?.source || participant?.source || null;
+    const mergedDisplayLabel = existing?.displayLabel
+      || participant?.displayLabel
+      || getDisplayLabel(participant?.name || name, { preferGroupLabel: false });
+
+    if (!existing) {
+      return {
+        name: participant?.name || name,
+        heartRate: mergedHeartRate,
+        zoneId: mergedZoneId,
+        zoneName: participant?.zoneLabel || null,
+        zoneColor: mergedZoneColor,
+        targetHeartRate: null,
+        rangeMin: null,
+        rangeMax: null,
+        progress: null,
+        showBar: false,
+        nextZoneId: null,
+        source: mergedSource,
+        profileId: mergedProfileId,
+        deviceId: mergedDeviceId,
+        isGuest: Boolean(participant?.isGuest),
+        displayLabel: mergedDisplayLabel
+      };
+    }
+
+    return {
+      ...existing,
+      name: existing.name || participant?.name || name,
+      heartRate: mergedHeartRate,
+      zoneId: mergedZoneId ?? existing.zoneId ?? null,
+      zoneColor: mergedZoneColor ?? existing.zoneColor ?? null,
+      profileId: mergedProfileId,
+      deviceId: mergedDeviceId,
+      source: mergedSource ?? existing.source ?? null,
+      displayLabel: mergedDisplayLabel
+    };
+  }, [userVitalsMap, participantLookupByName, getDisplayLabel]);
+
+  const getUserHeartRate = React.useCallback((name) => {
+    const vitals = getUserVitals(name);
+    if (!vitals) return null;
+    return Number.isFinite(vitals.heartRate) ? vitals.heartRate : null;
+  }, [getUserVitals]);
+
+  const userZoneProgress = React.useMemo(() => {
+    const progressMap = new Map();
+    userVitalsMap.forEach((entry) => {
+      if (!entry?.name) return;
+      progressMap.set(entry.name, {
+        currentZoneId: entry.zoneId ?? null,
+        nextZoneId: entry.nextZoneId ?? null,
+        progress: entry.progress ?? null,
+        rangeMin: entry.rangeMin ?? null,
+        rangeMax: entry.rangeMax ?? null,
+        currentHR: entry.heartRate ?? null,
+        showBar: entry.showBar ?? false,
+        targetHeartRate: entry.targetHeartRate ?? null,
+        zoneName: entry.zoneName ?? null,
+        zoneColor: entry.zoneColor ?? null
+      });
+    });
+    return progressMap;
+  }, [userVitalsMap]);
+
+  const getUserZoneThreshold = React.useCallback((userName, zoneId) => {
+    if (!zoneId) return null;
+    const zoneProfile = getZoneConfigForUser(userName) || normalizedBaseZoneConfig;
+    return resolveZoneThreshold(zoneProfile, zoneId);
+  }, [getZoneConfigForUser, normalizedBaseZoneConfig]);
 
   useEffect(() => {
     if (fitnessSessionRef.current && typeof fitnessSessionRef.current.setParticipantRoster === 'function') {
@@ -1174,6 +1552,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       challengeState.activeChallenge = null;
       challengeState.videoLocked = false;
       challengeState.forceStartRequest = null;
+      challengeState.selectionRandomBag = {};
       if (!preserveHistory) {
         challengeState.activePolicyId = null;
         challengeState.activePolicyName = null;
@@ -1239,35 +1618,59 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       : 0;
 
     const computeUserZones = () => {
-      const tb = fitnessSessionRef.current?.treasureBox;
-      if (!tb || !tb.perUser) return {};
       const result = {};
       try {
-        tb.perUser.forEach((val, key) => {
-          if (!val) {
-            result[key] = null;
-            return;
-          }
-          const color = val.currentColor || val.lastColor || null;
-          let zoneId = val.zoneId || val.lastZoneId || null;
-          if (!zoneId && color && tb.globalZones && tb.globalZones.length) {
-            const match = tb.globalZones.find((zone) => String(zone.color).toLowerCase() === String(color).toLowerCase());
-            if (match) {
-              zoneId = match.id || match.name || null;
-            }
-          }
-          if (!zoneId && color) {
-            const mapped = colorToZoneId[String(color).toLowerCase()];
-            if (mapped) zoneId = mapped;
-          }
-          result[key] = zoneId ? String(zoneId).toLowerCase() : null;
+        userVitalsMap.forEach((entry) => {
+          if (!entry?.name) return;
+          if (result[entry.name]) return;
+          result[entry.name] = entry.zoneId ? String(entry.zoneId).toLowerCase() : null;
         });
       } catch (_) {}
+
+      const tb = fitnessSessionRef.current?.treasureBox;
+      if (tb && tb.perUser) {
+        try {
+          tb.perUser.forEach((val, key) => {
+            if (!key || result[key]) return;
+            if (!val) {
+              result[key] = null;
+              return;
+            }
+            const color = val.currentColor || val.lastColor || null;
+            let zoneId = val.zoneId || val.lastZoneId || null;
+            if (!zoneId && color && tb.globalZones && tb.globalZones.length) {
+              const match = tb.globalZones.find((zone) => String(zone.color).toLowerCase() === String(color).toLowerCase());
+              if (match) {
+                zoneId = match.id || match.name || null;
+              }
+            }
+            if (!zoneId && color) {
+              const mapped = colorToZoneId[String(color).toLowerCase()];
+              if (mapped) zoneId = mapped;
+            }
+            result[key] = zoneId ? String(zoneId).toLowerCase() : null;
+          });
+        } catch (_) {}
+      }
       return result;
     };
 
     const userZoneMap = computeUserZones();
-    const deriveZoneId = (name) => userZoneMap[name] || null;
+    const deriveZoneId = (name) => {
+      let zoneId = userZoneMap[name] || null;
+      // Fallback: if guest name not found in TreasureBox yet, try baseUserName
+      if (!zoneId) {
+        const normalized = String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        const participant = participantLookupByName.get(normalized);
+        if (participant?.baseUserName && participant.baseUserName !== name) {
+          zoneId = userZoneMap[participant.baseUserName] || null;
+          if (FITNESS_DEBUG && zoneId) {
+            console.log('[FitnessContext][GOVERNANCE] Fallback zone for guest:', name, '→ baseUser:', participant.baseUserName, 'zone:', zoneId);
+          }
+        }
+      }
+      return zoneId;
+    };
 
     const normalizeRequiredCount = (rule) => {
       if (typeof rule === 'number' && Number.isFinite(rule)) {
@@ -1329,6 +1732,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         const participantRank = participantZoneId && Number.isFinite(zoneRankMap[participantZoneId])
           ? zoneRankMap[participantZoneId]
           : 0;
+        if (FITNESS_DEBUG) {
+          console.log('[FitnessContext][CHALLENGE] Evaluating:', name, 'zoneId:', participantZoneId, 'rank:', participantRank, 'required:', requiredRank, 'met:', participantRank >= requiredRank);
+        }
         if (participantRank >= requiredRank) {
           metUsers.push(name);
         }
@@ -1613,6 +2019,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return candidates;
     };
 
+    const shuffleArray = (list) => {
+      for (let i = list.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = list[i];
+        list[i] = list[j];
+        list[j] = temp;
+      }
+      return list;
+    };
+
     const chooseSelectionPayload = () => {
       const pool = getSelectionPool();
       if (!pool.length) return null;
@@ -1626,6 +2042,23 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           ? challengeState.selectionCursor[cursorKey]
           : -1;
         const nextIndex = (previous + 1) % pool.length;
+        chosenSelection = pool[nextIndex];
+        cursorIndex = nextIndex;
+      } else if (challengeConfig.selectionType === 'random') {
+        const bagKey = challengeConfig.id;
+        let remaining = governanceChallengeRef.current.selectionRandomBag[bagKey];
+        const needsReset = !Array.isArray(remaining)
+          || remaining.length === 0
+          || remaining.some((index) => !Number.isInteger(index) || index < 0 || index >= pool.length);
+        if (needsReset) {
+          remaining = pool.map((_, idx) => idx);
+        }
+        if (!remaining.length) {
+          return null;
+        }
+        const shuffled = shuffleArray([...remaining]);
+        const [nextIndex, ...rest] = shuffled;
+        governanceChallengeRef.current.selectionRandomBag[bagKey] = rest;
         chosenSelection = pool[nextIndex];
         cursorIndex = nextIndex;
       } else {
@@ -2001,7 +2434,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     } else {
       scheduleChallengePulse(null);
     }
-  }, [governanceMedia, governedLabelSet, governanceConfig, activeParticipantNames, zoneRankMap, colorToZoneId, governancePulse, governancePhase, updateGovernancePhase, governancePolicies]);
+  }, [governanceMedia, governedLabelSet, governanceConfig, activeParticipantNames, zoneRankMap, colorToZoneId, governancePulse, governancePhase, updateGovernancePhase, governancePolicies, userVitalsMap]);
 
   const isGovernedMedia = React.useMemo(() => {
     if (!governanceMedia || !governanceMedia.labels || !governanceMedia.labels.length) return false;
@@ -2187,13 +2620,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // User-related data
     users: allUsers,
     userCount: users.size,
-    usersConfigRaw: usersConfig,
+    usersConfigRaw: effectiveUsersConfig,
     guestAssignments,
     assignGuestToDevice,
     clearGuestAssignment,
+    suppressDeviceUntilNextReading,
     participantRoster,
     participantsByDevice: participantLookupByDevice,
     participantsByName: participantLookupByName,
+    userVitals: userVitalsMap,
+    getUserVitals,
+    userZoneProgress,
+    getUserZoneThreshold,
+    userHeartRates: userHeartRateMap,
+    getUserHeartRate,
+    getDisplayLabel,
     replacedPrimaryPool,
     // Fallback logic: if config primary list is missing/empty but we DO have users, treat all as primary.
     // This ensures device->name mapping works even when upstream config shape failed to populate.
@@ -2286,7 +2727,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             source: participant.source || 'Primary',
             zoneId: participant.zoneId || null,
             zoneColor: participant.zoneColor || null,
-            heartRate: participant.heartRate ?? null
+            heartRate: participant.heartRate ?? null,
+            displayLabel: participant.displayLabel || getDisplayLabel(participant.name)
           };
         }
         return {
@@ -2299,7 +2741,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           source: participant.source || 'Guest',
           zoneId: participant.zoneId || null,
           zoneColor: participant.zoneColor || null,
-          heartRate: participant.heartRate ?? null
+          heartRate: participant.heartRate ?? null,
+          displayLabel: participant.displayLabel || resolveDisplayLabel({ name: participant.name })
         };
       }
       return allUsers.find(user =>

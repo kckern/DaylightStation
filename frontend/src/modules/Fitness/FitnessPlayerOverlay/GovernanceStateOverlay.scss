@@ -69,7 +69,8 @@
     grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.25fr) minmax(0, 1.25fr);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     align-items: center;
-    min-height: 86px;
+    min-height: 72px;
+    row-gap: 6px;
 
     &--header {
       background: rgba(255, 255, 255, 0.04);
@@ -93,7 +94,7 @@
   }
 
   &__cell {
-    padding: clamp(1ex, 2.4vw, 22px);
+    padding: clamp(0.65rem, 1.8vw, 18px);
     display: flex;
     align-items: center;
     gap: 16px;
@@ -120,6 +121,13 @@
     display: flex;
     align-items: center;
     gap: 14px;
+  }
+
+  &__compact-chip {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 0 0 auto;
   }
 
   &__avatar {
@@ -155,11 +163,11 @@
     color: #f8fafc;
   }
 
-  &__chip-group {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: rgba(248, 250, 252, 0.6);
+  &__chip-meta {
+    font-size: 0.8rem;
+    text-transform: none;
+    letter-spacing: 0.04em;
+    color: rgba(248, 250, 252, 0.75);
   }
 
   &__pill {
@@ -189,6 +197,101 @@
 
   &__row--header &__cell {
     justify-content: flex-start;
+  }
+
+  &__progress {
+    grid-column: 1 / 4;
+    padding: 0 clamp(0.8rem, 2vw, 20px) clamp(0.65rem, 1.5vw, 14px);
+  }
+
+  &__progress-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+  }
+
+  &__progress-fill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #38bdf8, #22c55e);
+    transition: width 0.25s ease;
+    width: 0;
+  }
+
+  &__progress-indicator {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 34px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: #f8fafc;
+    text-align: center;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  &__row--compact {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.65rem, 1.4vw, 18px);
+    grid-template-columns: none;
+    padding: clamp(0.45rem, 1.2vw, 14px) clamp(0.8rem, 1.8vw, 18px);
+    min-height: calc(44px + clamp(6px, 1vw, 10px));
+  }
+
+  &__progress--compact {
+    flex: 1;
+    padding: 0;
+  }
+
+  &--compact {
+    gap: clamp(8px, 1.5vw, 14px);
+
+    .governance-lock__row--compact {
+      min-height: calc(44px + clamp(4px, 0.8vw, 8px));
+      row-gap: 0;
+    }
+
+    .governance-lock__compact-chip {
+      gap: 12px;
+    }
+
+    .governance-lock__avatar {
+      width: 44px;
+      height: 44px;
+      border-width: 1.5px;
+    }
+
+    .governance-lock__chip-name {
+      font-size: 0.95rem;
+    }
+
+    .governance-lock__chip-meta {
+      font-size: 0.72rem;
+    }
+
+    .governance-lock__progress-track {
+      height: 8px;
+    }
+
+    .governance-lock__progress-indicator {
+      min-width: 28px;
+      padding: 1px 4px;
+      font-size: 0.58rem;
+    }
+
+    .governance-lock__progress--compact {
+      padding: 0;
+    }
   }
 }
 
@@ -248,9 +351,20 @@ $lock-zone-hues: (
   pointer-events: none;
   transform-origin: bottom left;
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: clamp(10px, 2vw, 18px);
 
+
+.governance-overlay__audio {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
   &__track {
     width: 100%;
     max-width: 100%;
@@ -269,6 +383,89 @@ $lock-zone-hues: (
     transition: width 0.25s ease;
     will-change: width;
     pointer-events: none;
+  }
+
+  &__offenders {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    max-width: min(560px, 100%);
+    justify-content: center;
+    align-items: center;
+    align-self: center;
+    width: 100%;
+  }
+
+  &__chip {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 10px 16px 12px;
+    border-radius: 20px;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(6px);
+    min-width: 180px;
+    max-width: min(260px, 100%);
+  }
+
+  &__chip-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  &__chip-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 10px rgba(15, 23, 42, 0.65);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+  }
+
+  &__chip-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.1;
+  }
+
+  &__chip-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #f8fafc;
+  }
+
+  &__chip-meta {
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    color: rgba(248, 250, 252, 0.85);
+  }
+
+  &__chip-progress {
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(248, 250, 252, 0.18);
+    overflow: hidden;
+  }
+
+  &__chip-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #38bdf8, #22c55e);
+    width: 0;
+    transition: width 0.25s ease;
   }
 }
 

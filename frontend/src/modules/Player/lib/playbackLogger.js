@@ -64,7 +64,7 @@ const defaultSink = (record, formatted) => {
   const target = record.level === 'error'
     ? console.error
     : (record.level === 'warn' ? console.warn : console.log);
-  target(formatted);
+//  target(formatted);
 };
 
 const loggerConfig = {

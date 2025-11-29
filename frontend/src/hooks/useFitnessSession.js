@@ -11,6 +11,26 @@ const slugifyId = (value, fallback = 'user') => {
   return slug || fallback;
 };
 
+export const resolveDisplayLabel = ({
+  name,
+  groupLabel,
+  preferGroupLabel = false,
+  fallback = 'Participant'
+} = {}) => {
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  const normalizedGroup = typeof groupLabel === 'string' ? groupLabel.trim() : '';
+  if (preferGroupLabel && normalizedGroup) {
+    return normalizedGroup;
+  }
+  if (normalizedName) {
+    return normalizedName;
+  }
+  if (normalizedGroup) {
+    return normalizedGroup;
+  }
+  return fallback;
+};
+
 const deepClone = (value) => {
   try {
     return JSON.parse(JSON.stringify(value));
@@ -59,6 +79,7 @@ const formatSessionId = (date = new Date()) => {
 };
 
 const MIN_COOL_BASELINE = 60;
+export const COOL_ZONE_PROGRESS_MARGIN = 20;
 
 const DEFAULT_ZONE_CONFIG = [
   { id: 'cool', name: 'Cool', min: MIN_COOL_BASELINE, color: 'blue' },
@@ -73,6 +94,171 @@ const DEFAULT_ZONE_LOOKUP = DEFAULT_ZONE_CONFIG.reduce((acc, zone) => {
   acc[key] = zone;
   return acc;
 }, {});
+
+const normalizeZoneOverrides = (overrides = {}) => {
+  if (!overrides || typeof overrides !== 'object') return {};
+  return Object.entries(overrides).reduce((acc, [key, value]) => {
+    const normalizedKey = slugifyId(key).toLowerCase();
+    const numeric = Number(value);
+    if (normalizedKey && Number.isFinite(numeric)) {
+      acc[normalizedKey] = numeric;
+    }
+    return acc;
+  }, {});
+};
+
+export const buildZoneConfig = (globalZones, overrides) => {
+  const source = Array.isArray(globalZones) && globalZones.length > 0
+    ? globalZones
+    : DEFAULT_ZONE_CONFIG;
+  const normalizedOverrides = normalizeZoneOverrides(overrides);
+  const normalized = source.map((zone, index) => {
+    const rawId = zone?.id || zone?.name || `zone-${index}`;
+    const zoneId = String(rawId).trim() || `zone-${index}`;
+    const lookupId = zoneId.toLowerCase();
+    const defaultZone = DEFAULT_ZONE_LOOKUP[lookupId] || DEFAULT_ZONE_CONFIG[index] || {};
+    const fallbackColor = defaultZone?.color || null;
+    const fallbackMin = Number.isFinite(defaultZone?.min) ? defaultZone.min : 0;
+    const overrideMin = normalizedOverrides[lookupId];
+    return {
+      id: zoneId,
+      name: zone?.name || defaultZone?.name || zoneId,
+      color: zone?.color || fallbackColor,
+      min: Number.isFinite(overrideMin)
+        ? overrideMin
+        : (Number.isFinite(zone?.min) ? zone.min : fallbackMin)
+    };
+  }).sort((a, b) => (a?.min ?? 0) - (b?.min ?? 0));
+
+  if (normalized.length === 0) {
+    return DEFAULT_ZONE_CONFIG.map((zone) => ({ ...zone }));
+  }
+
+  if (normalized[0]) {
+    const referenceNext = normalized.find((zone, index) => index > 0 && Number.isFinite(zone?.min));
+    const fallbackMin = Number.isFinite(normalized[0].min) ? normalized[0].min : MIN_COOL_BASELINE;
+    const inferredMin = referenceNext && Number.isFinite(referenceNext.min)
+      ? Math.max(0, referenceNext.min - COOL_ZONE_PROGRESS_MARGIN)
+      : Math.max(MIN_COOL_BASELINE, fallbackMin);
+    normalized[0] = { ...normalized[0], min: inferredMin };
+  }
+
+  return normalized;
+};
+
+const ensureZoneList = (zoneConfig) => {
+  if (Array.isArray(zoneConfig) && zoneConfig.length > 0) {
+    return zoneConfig;
+  }
+  return DEFAULT_ZONE_CONFIG.map((zone) => ({ ...zone }));
+};
+
+const clamp01 = (value) => Math.max(0, Math.min(1, value));
+
+const getZoneMin = (zone, { isFirst = false } = {}) => {
+  if (!zone) return null;
+  const rawMin = Number(zone.min);
+  if (!Number.isFinite(rawMin)) {
+    return isFirst ? MIN_COOL_BASELINE : null;
+  }
+  return isFirst ? Math.max(MIN_COOL_BASELINE, rawMin) : rawMin;
+};
+
+export const deriveZoneProgressSnapshot = ({
+  zoneConfig,
+  heartRate,
+  coolZoneMargin = COOL_ZONE_PROGRESS_MARGIN
+} = {}) => {
+  const zones = ensureZoneList(zoneConfig);
+  if (!zones.length) {
+    return null;
+  }
+  const hrValue = Number.isFinite(heartRate) ? Math.max(0, heartRate) : 0;
+  const sortedZones = zones.slice().sort((a, b) => (a?.min ?? 0) - (b?.min ?? 0));
+
+  let currentZoneIndex = -1;
+  for (let i = 0; i < sortedZones.length; i += 1) {
+    const threshold = getZoneMin(sortedZones[i], { isFirst: i === 0 }) ?? MIN_COOL_BASELINE;
+    if (hrValue >= threshold) {
+      currentZoneIndex = i;
+    } else {
+      break;
+    }
+  }
+  if (currentZoneIndex === -1) {
+    currentZoneIndex = 0;
+  }
+
+  const currentZone = sortedZones[currentZoneIndex] || null;
+  const nextZone = sortedZones[currentZoneIndex + 1] || null;
+  const currentZoneId = currentZone?.id || (currentZone?.name ? slugifyId(currentZone.name) : null);
+  const currentZoneName = currentZone?.name || currentZoneId;
+  const currentZoneColor = currentZone?.color || null;
+  const currentThreshold = getZoneMin(currentZone, { isFirst: currentZoneIndex === 0 }) ?? MIN_COOL_BASELINE;
+  const nextThreshold = nextZone ? getZoneMin(nextZone, { isFirst: currentZoneIndex + 1 === 0 }) : null;
+
+  let rangeMin = null;
+  let rangeMax = null;
+  let progress = 0;
+  let showBar = false;
+
+  const margin = Number.isFinite(coolZoneMargin) ? Math.max(5, coolZoneMargin) : COOL_ZONE_PROGRESS_MARGIN;
+  if (nextZone && Number.isFinite(nextThreshold)) {
+    if (currentZoneIndex === 0) {
+      rangeMax = nextThreshold;
+      rangeMin = Math.max(0, nextThreshold - margin);
+    } else if (Number.isFinite(currentThreshold)) {
+      rangeMin = currentThreshold;
+      rangeMax = nextThreshold;
+    }
+    if (rangeMax != null && rangeMin != null && rangeMax > rangeMin) {
+      progress = clamp01((hrValue - rangeMin) / (rangeMax - rangeMin));
+      showBar = true;
+    } else {
+      showBar = false;
+      progress = 0;
+    }
+  } else {
+    // Max zone (e.g., On Fire) or missing next threshold: no progress bar
+    rangeMin = Number.isFinite(currentThreshold) ? currentThreshold : null;
+    rangeMax = null;
+    progress = 0;
+    showBar = false;
+  }
+
+  return {
+    currentHR: hrValue,
+    currentZoneId: currentZoneId || null,
+    currentZoneName: currentZoneName || null,
+    currentZoneColor,
+    nextZoneId: nextZone?.id || null,
+    nextZoneName: nextZone?.name || null,
+    nextZoneColor: nextZone?.color || null,
+    rangeMin: Number.isFinite(rangeMin) ? rangeMin : null,
+    rangeMax: Number.isFinite(rangeMax) ? rangeMax : null,
+    progress,
+    showBar,
+    targetHeartRate: Number.isFinite(nextThreshold)
+      ? nextThreshold
+      : null,
+    isMaxZone: !nextZone,
+    zoneIndex: currentZoneIndex,
+    currentZoneThreshold: currentThreshold,
+    nextZoneThreshold: Number.isFinite(nextThreshold) ? nextThreshold : null
+  };
+};
+
+export const resolveZoneThreshold = (zoneConfig, zoneId) => {
+  if (!zoneId) return null;
+  const zones = ensureZoneList(zoneConfig);
+  if (!zones.length) return null;
+  const normalizedId = slugifyId(zoneId).toLowerCase();
+  const found = zones.find((zone) => slugifyId(zone.id || zone.name).toLowerCase() === normalizedId);
+  if (!found) return null;
+  const index = zones.findIndex((zone) => zone === found);
+  const minValue = getZoneMin(found, { isFirst: index === 0 });
+  return Number.isFinite(minValue) ? minValue : null;
+};
 
 /**
  * Base Device class for all ANT+ fitness devices
@@ -284,8 +470,9 @@ export class User {
     this.hrDeviceId = hrDeviceId;
     this.cadenceDeviceId = cadenceDeviceId;
     this.age = new Date().getFullYear() - birthyear;
-    this.zoneConfig = this.#buildZoneConfig(options.globalZones, options.zoneOverrides);
-    this.currentData = this.#createDefaultCurrentData();
+    this.zoneConfig = buildZoneConfig(options.globalZones, options.zoneOverrides);
+    this.zoneSnapshot = deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate: 0 });
+    this.currentData = this.#createDefaultCurrentData(this.zoneSnapshot);
     this._cumulativeData = {
       heartRate: { readings: [], avgHR: 0, maxHR: 0, minHR: 0, zones: this.#createZoneBuckets() },
       cadence: { readings: [], avgRPM: 0, maxRPM: 0, totalRevolutions: 0 },
@@ -299,7 +486,7 @@ export class User {
   // Private method to update cumulative heart rate data
   #updateHeartRateData(heartRate) {
     if (!heartRate || heartRate <= 0) {
-      this.#updateCurrentData(0);
+      this.#updateCurrentData(deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate: 0 }));
       return;
     }
 
@@ -318,12 +505,13 @@ export class User {
     hrData.minHR = hrData.minHR === 0 ? Math.min(...validReadings) : Math.min(...validReadings, hrData.minHR);
 
     // Update zone tracking
-    const { zone } = this.#resolveZoneForHeartRate(heartRate);
-    if (zone?.id) {
-      hrData.zones[zone.id] = (hrData.zones[zone.id] || 0) + 1;
+    const zoneSnapshot = deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate });
+    if (zoneSnapshot?.currentZoneId) {
+      const zoneId = zoneSnapshot.currentZoneId;
+      hrData.zones[zoneId] = (hrData.zones[zoneId] || 0) + 1;
     }
 
-    this.#updateCurrentData(heartRate, zone);
+    this.#updateCurrentData(zoneSnapshot);
   }
 
   // Private method to update cumulative cadence data
@@ -356,107 +544,43 @@ export class User {
     }, {});
   }
 
-  #buildZoneConfig(globalZones, overrides) {
-    const source = Array.isArray(globalZones) && globalZones.length > 0
-      ? globalZones
-      : DEFAULT_ZONE_CONFIG;
-
-    const normalizedOverrides = overrides && typeof overrides === 'object'
-      ? Object.entries(overrides).reduce((acc, [key, value]) => {
-        acc[String(key).toLowerCase()] = Number(value);
-        return acc;
-      }, {})
-      : {};
-
-    const normalized = source.map((zone, index) => {
-      const rawId = zone.id || zone.name || `zone-${index}`;
-      const zoneId = String(rawId).trim() || `zone-${index}`;
-      const lookupId = zoneId.toLowerCase();
-      const defaultZone = DEFAULT_ZONE_LOOKUP[lookupId] || DEFAULT_ZONE_CONFIG[index] || {};
-      const fallbackColor = defaultZone?.color || null;
-      const fallbackMin = Number.isFinite(defaultZone?.min) ? defaultZone.min : 0;
-      const overrideMin = normalizedOverrides[lookupId];
-      return {
-        id: zoneId,
-        name: zone.name || defaultZone?.name || zoneId,
-        color: zone.color || fallbackColor,
-        min: Number.isFinite(overrideMin)
-          ? overrideMin
-          : (Number.isFinite(zone.min) ? zone.min : fallbackMin)
-      };
-    }).sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
-
-    if (normalized.length === 0) {
-      return DEFAULT_ZONE_CONFIG.map((zone) => ({ ...zone }));
-    }
-
-    normalized[0] = { ...normalized[0], min: MIN_COOL_BASELINE };
-    return normalized;
-  }
-
-  #createDefaultCurrentData() {
+  #createDefaultCurrentData(snapshot = null) {
+    const zoneSnapshot = snapshot
+      || deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate: 0 })
+      || null;
     const firstZone = Array.isArray(this.zoneConfig) && this.zoneConfig.length > 0 ? this.zoneConfig[0] : null;
     return {
-      heartRate: 0,
-      zone: firstZone?.id || null,
-      zoneName: firstZone?.name || null,
-      color: firstZone?.color || null,
-      progressToNextZone: 0
+      heartRate: zoneSnapshot?.currentHR ?? 0,
+      zone: zoneSnapshot?.currentZoneId ?? firstZone?.id ?? null,
+      zoneName: zoneSnapshot?.currentZoneName ?? firstZone?.name ?? null,
+      color: zoneSnapshot?.currentZoneColor ?? firstZone?.color ?? null,
+      progressToNextZone: zoneSnapshot?.progress ?? 0,
+      nextZoneId: zoneSnapshot?.nextZoneId ?? null,
+      rangeMin: zoneSnapshot?.rangeMin ?? null,
+      rangeMax: zoneSnapshot?.rangeMax ?? null,
+      targetHeartRate: zoneSnapshot?.targetHeartRate ?? null,
+      showProgress: zoneSnapshot?.showBar ?? false
     };
   }
 
-  #resolveZoneForHeartRate(heartRate) {
-    if (!Array.isArray(this.zoneConfig) || this.zoneConfig.length === 0) {
-      return { zone: null, index: -1 };
+  #updateCurrentData(zoneSnapshot) {
+    if (!zoneSnapshot) {
+      this.zoneSnapshot = deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate: 0 });
+      this.currentData = this.#createDefaultCurrentData(this.zoneSnapshot);
+      return;
     }
-    const hrValue = Number.isFinite(heartRate) ? heartRate : 0;
-    let resolvedIndex = 0;
-    for (let i = 0; i < this.zoneConfig.length; i += 1) {
-      const zone = this.zoneConfig[i];
-      const threshold = i === 0 ? MIN_COOL_BASELINE : zone.min;
-      if (hrValue >= threshold) {
-        resolvedIndex = i;
-      } else {
-        break;
-      }
-    }
-    return { zone: this.zoneConfig[resolvedIndex] || null, index: resolvedIndex };
-  }
-
-  #computeProgressToNextZone(heartRate, zoneIndex) {
-    if (!Number.isFinite(heartRate) || heartRate <= 0) {
-      return 0;
-    }
-    if (!Array.isArray(this.zoneConfig) || zoneIndex < 0) {
-      return 0;
-    }
-    const nextZone = this.zoneConfig[zoneIndex + 1];
-    if (!nextZone) {
-      return 0;
-    }
-    const currentZone = this.zoneConfig[zoneIndex];
-    const lowerBound = zoneIndex === 0 ? MIN_COOL_BASELINE : currentZone.min;
-    const upperBound = nextZone.min;
-    if (!Number.isFinite(upperBound) || upperBound <= lowerBound) {
-      return 0;
-    }
-    const progress = (heartRate - lowerBound) / (upperBound - lowerBound);
-    return Math.max(0, Math.min(1, progress));
-  }
-
-  #updateCurrentData(heartRate, resolvedZone = null) {
-    const hrValue = Number.isFinite(heartRate) ? Math.max(0, heartRate) : 0;
-    const zoneResolution = resolvedZone
-      ? { zone: resolvedZone, index: this.zoneConfig.findIndex((entry) => entry.id === resolvedZone.id) }
-      : this.#resolveZoneForHeartRate(hrValue);
-    const { zone, index } = zoneResolution;
-    const progress = this.#computeProgressToNextZone(hrValue, index ?? -1);
+    this.zoneSnapshot = zoneSnapshot;
     this.currentData = {
-      heartRate: hrValue,
-      zone: zone?.id || null,
-      zoneName: zone?.name || null,
-      color: zone?.color || null,
-      progressToNextZone: progress
+      heartRate: zoneSnapshot.currentHR ?? 0,
+      zone: zoneSnapshot.currentZoneId ?? null,
+      zoneName: zoneSnapshot.currentZoneName ?? null,
+      color: zoneSnapshot.currentZoneColor ?? null,
+      progressToNextZone: zoneSnapshot.progress ?? 0,
+      nextZoneId: zoneSnapshot.nextZoneId ?? null,
+      rangeMin: zoneSnapshot.rangeMin ?? null,
+      rangeMax: zoneSnapshot.rangeMax ?? null,
+      targetHeartRate: zoneSnapshot.targetHeartRate ?? null,
+      showProgress: zoneSnapshot.showBar ?? false
     };
   }
 
@@ -558,6 +682,8 @@ export class User {
       currentZoneName: this.currentData.zoneName,
       currentZoneColor: this.currentData.color,
       progressToNextZone: this.currentData.progressToNextZone,
+      nextZoneId: this.currentData.nextZoneId ?? null,
+      targetHeartRate: this.currentData.targetHeartRate ?? null,
       avgHR: this.averageHeartRate,
       maxHR: this.maxHeartRate,
       currentRPM: this.currentCadence,
@@ -566,6 +692,10 @@ export class User {
       duration: this.workoutDuration,
       zones: this.heartRateZones
     };
+  }
+
+  get zoneProgress() {
+    return this.zoneSnapshot ? { ...this.zoneSnapshot } : null;
   }
 
   // Method to reset session data
@@ -578,7 +708,8 @@ export class User {
       distance: this._cumulativeData.distance.total,
       timestamp: new Date()
     });
-    this.currentData = this.#createDefaultCurrentData();
+    this.zoneSnapshot = deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate: 0 });
+    this.currentData = this.#createDefaultCurrentData(this.zoneSnapshot);
   }
 }
 
@@ -1342,6 +1473,19 @@ export class FitnessTreasureBox {
   }
 
   stop() { if (this._autoInterval) { clearInterval(this._autoInterval); this._autoInterval = null; } }
+
+  // Rename a user in the perUser map (used when guest assigned to preserve zone state)
+  renameUser(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return false;
+    const acc = this.perUser.get(oldName);
+    if (!acc) return false;
+    // Copy the accumulator to the new name
+    this.perUser.set(newName, { ...acc });
+    // Remove the old entry
+    this.perUser.delete(oldName);
+    this._notifyMutation();
+    return true;
+  }
 
   // Backfill highestZone from lastHR so already-on monitors immediately accrue coins
   _backfillExistingUsers() {
