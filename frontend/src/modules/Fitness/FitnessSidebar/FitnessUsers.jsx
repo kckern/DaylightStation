@@ -128,9 +128,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     secondaryUsers,
     hrColorMap: contextHrColorMap,
     usersConfigRaw,
-    userCurrentZones,
     zones,
-    guestAssignments: guestAssignmentsFromContext
+    guestAssignments: guestAssignmentsFromContext,
+    userZoneProgress,
+    getUserVitals
   } = fitnessContext;
 
   const guestAssignments = guestAssignmentsFromContext || {};
@@ -227,6 +228,15 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return out;
   }, [hrOwnerMap, allDevices, usersConfigRaw, guestAssignments]);
 
+  const resolveCanonicalUserName = React.useCallback((deviceId, fallbackName = null) => {
+    if (deviceId == null) return fallbackName;
+    const key = String(deviceId);
+    if (hrOwnerMap[key]) return hrOwnerMap[key];
+    if (guestAssignments[key]?.name) return guestAssignments[key].name;
+    if (hrOwnerBaseMap[key]) return hrOwnerBaseMap[key];
+    return fallbackName;
+  }, [hrOwnerMap, guestAssignments, hrOwnerBaseMap]);
+
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
     const map = {};
@@ -262,27 +272,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return null;
   }, [zones, usersConfigRaw]);
 
-  const getZoneClass = (device) => {
-    if (device.type !== 'heart_rate') return 'no-zone';
-    const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
-    if (!userObj) return 'no-zone';
-    const zoneEntry = userCurrentZones?.[userObj.name];
-    let color = zoneEntry && typeof zoneEntry === 'object' ? zoneEntry.color : zoneEntry;
-    let zoneIdRaw = (zoneEntry && typeof zoneEntry === 'object' && zoneEntry.id) ? zoneEntry.id : null;
-    if ((!color || !zoneIdRaw) && device.heartRate) {
-      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
-      if (derived) {
-        if (!zoneIdRaw) zoneIdRaw = derived.id;
-        if (!color) color = derived.color;
-      }
-    }
-    if (!color && !zoneIdRaw) return 'no-zone';
-    const zoneId = (zoneIdRaw || (color ? colorToZoneId[String(color).toLowerCase()] : null) || (color ? String(color).toLowerCase() : null));
-    const canonical = ['cool','active','warm','hot','fire'];
-    if (zoneId && canonical.includes(zoneId)) return `zone-${zoneId}`;
-    return 'no-zone';
-  };
-  
   // Map of deviceId -> user ID (for profile images)
   const userIdMap = React.useMemo(() => {
     const map = {};
@@ -338,8 +327,16 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return (CONFIG.devices[device.type] || CONFIG.devices.default).icon;
   };
 
-  const getDeviceValue = (device) => {
-    if (device.type === 'heart_rate' && device.heartRate) return `${device.heartRate}`;
+  const getDeviceValue = (device, { canonicalUserName, vitals } = {}) => {
+    if (device.type === 'heart_rate') {
+      const resolvedName = canonicalUserName || resolveCanonicalUserName(device.deviceId);
+      const resolvedVitals = vitals
+        || (resolvedName && typeof getUserVitals === 'function' ? getUserVitals(resolvedName) : null);
+      const hrValue = Number.isFinite(resolvedVitals?.heartRate)
+        ? resolvedVitals.heartRate
+        : (Number.isFinite(device.heartRate) ? device.heartRate : null);
+      return Number.isFinite(hrValue) && hrValue > 0 ? `${Math.round(hrValue)}` : '--';
+    }
     if (device.type === 'power' && device.power) return `${device.power}`;
     if (device.type === 'cadence' && device.cadence) return `${device.cadence}`;
     if (device.type === 'speed' && device.speedKmh) return `${device.speedKmh.toFixed(1)}`;
@@ -361,23 +358,25 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   const getDeviceZoneId = (device) => {
     if (device.type !== 'heart_rate') return null;
     const userObj = [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === String(device.deviceId));
-    if (!userObj) return null;
-    const entry = userCurrentZones?.[userObj.name];
-    let zoneId = null;
-    let color = null;
-    if (entry) {
-      zoneId = (typeof entry === 'object') ? entry.id : null;
-      color = (typeof entry === 'object') ? entry.color : entry;
-      if (!zoneId && color) {
-        zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
+    const canonicalName = resolveCanonicalUserName(device.deviceId, userObj?.name);
+    const vitals = canonicalName && typeof getUserVitals === 'function' ? getUserVitals(canonicalName) : null;
+    let zoneId = vitals?.zoneId ? String(vitals.zoneId).toLowerCase() : null;
+
+    if (!zoneId && vitals?.zoneColor) {
+      const mapped = colorToZoneId[String(vitals.zoneColor).toLowerCase()] || null;
+      if (mapped) {
+        zoneId = String(mapped).toLowerCase();
       }
     }
+
     if ((!zoneId || !canonicalZones.includes(zoneId)) && device.heartRate) {
-      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
-      if (derived) zoneId = derived.id;
+      const derived = deriveZoneFromHR(device.heartRate, canonicalName || userObj?.name);
+      if (derived?.id) {
+        zoneId = String(derived.id).toLowerCase();
+      }
     }
+
     if (!zoneId) return null;
-    zoneId = zoneId.toLowerCase();
     return canonicalZones.includes(zoneId) ? zoneId : null;
   };
 
@@ -532,19 +531,17 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
   // Auto-scale RPM group to fit width
   useEffect(() => {
-    if (!rpmGroupRef.current) return;
-    
+    if (!rpmGroupRef.current || !containerRef.current) return;
+
     const rpmContainer = rpmGroupRef.current;
-    const containerWidth = /*device grid width*/  containerRef.current ? containerRef.current.clientWidth : 0;
+    const containerWidth = containerRef.current.clientWidth || 0;
     const scrollWidth = rpmContainer.scrollWidth;
-    
-    if (scrollWidth > containerWidth) {
-      // Content overflows, scale down
+
+    if (scrollWidth > containerWidth && containerWidth > 0) {
       const idealRpmScale = containerWidth / scrollWidth;
       const { min, overflowFactor } = CONFIG.rpm.scale;
       setRpmScale(Math.max(min, idealRpmScale * overflowFactor));
     } else {
-      // Content fits, use normal scale
       setRpmScale(1);
     }
   }, [sortedDevices]);
@@ -652,28 +649,43 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               const guestAssignment = isHeartRate ? guestAssignments[deviceIdStr] : null;
               const ownerName = isHeartRate ? hrDisplayNameMap[deviceIdStr] : null;
               const equipmentInfo = equipmentMap[String(device.deviceId)];
-              const deviceName = isHeartRate ? 
-                (guestAssignment?.name || ownerName || deviceIdStr) : String(device.deviceId);
               const profileId = isHeartRate ?
                 (guestAssignment?.profileId || userIdMap[deviceIdStr] || 'user') :
                 (equipmentInfo?.id || 'equipment');
-              
-              const zoneIdForGrouping = getDeviceZoneId(device) || (device.type === 'heart_rate' ? null : null);
-              const readableZone = zoneIdForGrouping ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1) : '';
-              const showZoneBadge = device.type === 'heart_rate' && (
+              const userObj = isHeartRate
+                ? [...primaryUsers, ...secondaryUsers].find(u => String(u.hrDeviceId) === deviceIdStr)
+                : null;
+              const canonicalUserName = isHeartRate
+                ? resolveCanonicalUserName(deviceIdStr, guestAssignment?.name || userObj?.name || null)
+                : null;
+              const userVitalsEntry = isHeartRate && canonicalUserName && typeof getUserVitals === 'function'
+                ? getUserVitals(canonicalUserName)
+                : null;
+              const displayLabel = userVitalsEntry?.displayLabel || null;
+              const deviceName = isHeartRate ? 
+                (guestAssignment?.name || displayLabel || ownerName || deviceIdStr) : String(device.deviceId);
+              const zoneIdForGrouping = isHeartRate ? getDeviceZoneId(device) : null;
+              const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
+              const zoneBadgeColor = zoneIdForGrouping
+                ? (userVitalsEntry?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
+                : null;
+              const readableZone = zoneIdForGrouping
+                ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1)
+                : '';
+              const showZoneBadge = isHeartRate && (
                 (zoneIdForGrouping && !seenZones.has(zoneIdForGrouping)) || (!zoneIdForGrouping && !noZoneShown)
               );
+              const deviceValue = getDeviceValue(device, { canonicalUserName, vitals: userVitalsEntry });
               if (zoneIdForGrouping) seenZones.add(zoneIdForGrouping);
               if (!zoneIdForGrouping && device.type === 'heart_rate' && !noZoneShown) noZoneShown = true;
 
               return (
                 <div className="device-wrapper" key={`device-${device.deviceId}`}>
-                  <div className={`device-zone-info ${getZoneClass(device)} ${device.type === 'heart_rate' && layoutMode === 'vert' ? 'for-vert' : ''}`}>
+                  <div className={`device-zone-info ${zoneClass} ${device.type === 'heart_rate' && layoutMode === 'vert' ? 'for-vert' : ''}`}>
                     {showZoneBadge && (
                       (() => {
                         const zid = zoneIdForGrouping;
-                        const zoneColor = zid ? zoneColorMap[zid] : null;
-                        const bg = zoneColor || CONFIG.color.zoneBadgeDefaultBg;
+                        const bg = (zid ? zoneBadgeColor : null) || CONFIG.color.zoneBadgeDefaultBg;
                         const text = pickTextColor(bg);
                         const style = { 
                           backgroundColor: bg,
@@ -696,21 +708,21 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     )}
                   </div>
                   <div 
-                    className={`fitness-device ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${getZoneClass(device)}`}
+                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${zoneClass}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
+                    role={isHeartRate ? 'button' : undefined}
+                    tabIndex={isHeartRate ? 0 : undefined}
+                    onClick={isHeartRate ? () => handleAvatarClick(device) : undefined}
+                    onKeyDown={isHeartRate ? (event) => {
+                      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+                        event.preventDefault();
+                        handleAvatarClick(device);
+                      }
+                    } : undefined}
+                    aria-label={isHeartRate ? `Reassign ${deviceName}` : undefined}
                   >
                     <div
-                      className={`user-profile-img-container ${getZoneClass(device)} ${isHeartRate ? 'clickable' : ''}`}
-                      role={isHeartRate ? 'button' : undefined}
-                      tabIndex={isHeartRate ? 0 : undefined}
-                      onClick={isHeartRate ? () => handleAvatarClick(device) : undefined}
-                      onKeyDown={isHeartRate ? (event) => {
-                        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
-                          event.preventDefault();
-                          handleAvatarClick(device);
-                        }
-                      } : undefined}
-                      aria-label={isHeartRate ? `Reassign ${deviceName}` : undefined}
+                      className={`user-profile-img-container ${zoneClass}`}
                     >
                       <img
                         src={DaylightMediaPath(device.type === 'heart_rate'
@@ -736,10 +748,23 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       </div>
                       <div className="device-stats">
                         <span className="device-icon">{getDeviceIcon(device)}</span>
-                        <span className="device-value">{getDeviceValue(device)}</span>
+                        <span className="device-value">{deviceValue}</span>
                         <span className="device-unit">{getDeviceUnit(device)}</span>
                       </div>
                     </div>
+                    {isHeartRate && userObj && (() => {
+                      const progressInfo = userZoneProgress?.get(userObj.name);
+                      if (!progressInfo || !progressInfo.showBar) return null;
+                      const progressPercent = Math.round(progressInfo.progress * 100);
+                      return (
+                        <div className="zone-progress-bar" aria-label="Zone progress" role="presentation">
+                          <div
+                            className="zone-progress-fill"
+                            style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
+                          />
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );

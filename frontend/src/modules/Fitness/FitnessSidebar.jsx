@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useFitnessContext } from '../../context/FitnessContext.jsx';
+import { useFitnessContext, slugifyId } from '../../context/FitnessContext.jsx';
 import FitnessTreasureBox from './FitnessSidebar/FitnessTreasureBox.jsx';
 import FitnessUsersList from './FitnessSidebar/FitnessUsers.jsx';
 import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
@@ -50,21 +50,52 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
           source: candidate.source || 'Family'
         }))
       : [];
-    const combined = [...primaryReturnees, ...family, ...friends];
+
+    const primaryByName = new Map();
+    if (Array.isArray(usersConfigRaw?.primary)) {
+      usersConfigRaw.primary.forEach((cfg) => {
+        if (cfg?.name) {
+          primaryByName.set(cfg.name, cfg);
+        }
+      });
+    }
+
+    const primaryGuestPool = [];
+    if (guestAssignments && primaryByName.size) {
+      Object.values(guestAssignments).forEach((assignment) => {
+        if (!assignment?.name) return;
+        const match = primaryByName.get(assignment.name);
+        if (!match) return;
+        const id = match.id || slugifyId(match.name);
+        primaryGuestPool.push({
+          ...match,
+          id,
+          profileId: match.profileId || id,
+          category: 'Family',
+          source: match.source || 'Family',
+          allowWhileAssigned: true
+        });
+      });
+    }
+
+    const combined = [...primaryGuestPool, ...primaryReturnees, ...family, ...friends];
     const seenIds = new Set();
     return combined.reduce((acc, candidate) => {
       if (!candidate || !candidate.name) return acc;
       const id = candidate.id || slugifyId(candidate.name);
-      if (seenIds.has(id)) return acc;
+      if (!id || seenIds.has(id)) return acc;
       seenIds.add(id);
       acc.push({
         ...candidate,
         id,
-        profileId: candidate.profileId || id
+        profileId: candidate.profileId || id,
+        category: candidate.category || 'Family',
+        source: candidate.source || candidate.category || null,
+        allowWhileAssigned: Boolean(candidate.allowWhileAssigned)
       });
       return acc;
     }, []);
-  }, [replacedPrimaryPool, usersConfigRaw?.family, usersConfigRaw?.friends]);
+  }, [guestAssignments, replacedPrimaryPool, usersConfigRaw?.family, usersConfigRaw?.friends, usersConfigRaw?.primary]);
 
   const openSettingsMenu = React.useCallback(() => {
     setMenuState({ open: true, mode: 'settings', target: null });

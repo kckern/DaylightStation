@@ -39,6 +39,7 @@ const FitnessSidebarMenu = ({
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
   const isMediaSwapped = Boolean(fitnessContext?.mediaSwapActive);
   const toggleMediaSwap = fitnessContext?.toggleMediaSwap;
+  const suppressDeviceUntilNextReading = fitnessContext?.suppressDeviceUntilNextReading;
   const hasMusicPlaylists = playlists.length > 0;
   const deviceIdStr = targetDeviceId ? String(targetDeviceId) : null;
   const activeAssignment = deviceIdStr ? guestAssignments[deviceIdStr] : null;
@@ -240,6 +241,13 @@ const FitnessSidebarMenu = ({
   const guestOptions = React.useMemo(() => {
     const seen = new Set();
     const topOptions = [];
+    const multiAssignableKeys = new Set();
+    guestCandidates.forEach((candidate) => {
+      if (!candidate?.allowWhileAssigned) return;
+      if (candidate.id) multiAssignableKeys.add(String(candidate.id));
+      if (candidate.profileId) multiAssignableKeys.add(String(candidate.profileId));
+      if (candidate.name) multiAssignableKeys.add(slugifyId(candidate.name));
+    });
     
     // Track the currently selected user to exclude them from the list
     const currentlySelectedId = activeAssignment?.candidateId || activeAssignment?.profileId;
@@ -251,18 +259,19 @@ const FitnessSidebarMenu = ({
     Object.entries(guestAssignments).forEach(([assignedDeviceId, assignment]) => {
       // Skip the current device we're editing
       if (assignedDeviceId === deviceIdStr) return;
-      
-      // Mark this user as unavailable
+      const blockKeys = [];
       if (assignment?.candidateId) {
-        seen.add(assignment.candidateId);
+        blockKeys.push(String(assignment.candidateId));
       }
       if (assignment?.profileId) {
-        seen.add(assignment.profileId);
+        blockKeys.push(String(assignment.profileId));
       }
-      // Also block by name to catch edge cases
       if (assignment?.name) {
-        seen.add(slugifyId(assignment.name));
+        blockKeys.push(slugifyId(assignment.name));
       }
+      const allowReuse = blockKeys.some((key) => multiAssignableKeys.has(key));
+      if (allowReuse) return;
+      blockKeys.forEach((key) => seen.add(key));
     });
     
     // Add original owner as first option if a guest is currently assigned
@@ -353,6 +362,14 @@ const FitnessSidebarMenu = ({
     clearGuestAssignment(deviceIdStr);
     if (onClose) onClose();
   };
+
+  const handleRemoveUser = React.useCallback(() => {
+    if (!deviceIdStr || !suppressDeviceUntilNextReading) return;
+    suppressDeviceUntilNextReading(deviceIdStr);
+    if (onClose) onClose();
+  }, [deviceIdStr, suppressDeviceUntilNextReading, onClose]);
+
+  const canRemoveUser = Boolean(deviceIdStr && suppressDeviceUntilNextReading);
 
   const renderSettings = () => (
     <>
@@ -592,6 +609,17 @@ const FitnessSidebarMenu = ({
             {guestOptions.filteredOptions.map(renderOption)}
           </div>
         )}
+
+        <div className="menu-section">
+          <button
+            type="button"
+            className="menu-item action-item danger"
+            onClick={handleRemoveUser}
+            disabled={!canRemoveUser}
+          >
+            ⛔ Remove User
+          </button>
+        </div>
       </div>
     );
   };
