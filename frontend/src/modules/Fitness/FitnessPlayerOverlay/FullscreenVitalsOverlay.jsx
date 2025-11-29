@@ -166,7 +166,8 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           zoneColor: effectiveZoneColor,
           heartRate: Number.isFinite(device?.heartRate) ? Math.round(device.heartRate) : null,
           strokeDashoffset: strokeOffset,
-          opacity: zoneInfo.color ? 1 : 0.5
+          opacity: zoneInfo.color ? 1 : 0.5,
+          indicatorAngle: spanDegrees
         };
       });
   }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones]);
@@ -265,6 +266,12 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
                   }}
                 />
               </svg>
+              {Number.isFinite(item.indicatorAngle) ? (
+                <div
+                  className="zone-progress-indicator"
+                  style={{ '--indicator-angle': `${item.indicatorAngle}deg` }}
+                />
+              ) : null}
               <div className="avatar-core">
                 <img
                   src={item.avatarSrc}
