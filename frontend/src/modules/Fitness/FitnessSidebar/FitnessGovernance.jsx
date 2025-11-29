@@ -148,7 +148,7 @@ const FitnessGovernance = () => {
       return null;
     }
     const seconds = Math.max(0, Math.round(summary.nextChallengeRemaining));
-    return `${seconds}s`;
+    return `${seconds}`;
   }, [summary.nextChallengeRemaining]);
 
   return (
