@@ -44,6 +44,9 @@ const SYSTEM_HEALTH = Object.freeze({
   stalled: 'stalled'
 });
 
+const DECODER_NUDGE_MIN_BUFFER_MS = 8000;
+const DECODER_NUDGE_COOLDOWN_MS = 3000;
+const DECODER_NUDGE_GRACE_MS = 2000;
 
 const useLatest = (value) => {
   const ref = useRef(value);
@@ -105,7 +108,8 @@ export function useMediaResilience({
   stalled: stalledOverride,
   mediaTypeHint,
   playerFlavorHint,
-  threadId = null
+  threadId = null,
+  nudgePlayback = null
 }) {
   const [runtimeOverrides, setRuntimeOverrides] = useState(null);
   const {
@@ -184,6 +188,7 @@ export function useMediaResilience({
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
+  const nudgePlaybackRef = useLatest(typeof nudgePlayback === 'function' ? nudgePlayback : null);
   const lastProgressTsRef = useRef(null);
   const lastProgressSecondsRef = useRef(null);
   const lastKnownSeekIntentMsRef = useRef(Number.isFinite(initialStart) && initialStart > 0
@@ -237,6 +242,7 @@ export function useMediaResilience({
   const mountWatchdogReasonRef = useRef(null);
   const mountWatchdogAttemptsRef = useRef(0);
   const statusTransitionRef = useRef(status);
+  const decoderNudgeStateRef = useRef({ lastRequestedAt: 0, inflight: false, graceUntil: 0 });
   const seekIntentNoiseThresholdSeconds = useMemo(
     () => Math.max(0.5, epsilonSeconds * 2),
     [epsilonSeconds]
@@ -274,6 +280,50 @@ export function useMediaResilience({
       }
     });
   }, [logContextRef]);
+
+  const requestDecoderNudge = useCallback((reason = 'decoder-stall', extraDetails = {}) => {
+    const nudgeFn = nudgePlaybackRef.current;
+    if (typeof nudgeFn !== 'function') {
+      return false;
+    }
+    const now = Date.now();
+    const state = decoderNudgeStateRef.current;
+    if (state.inflight) {
+      return false;
+    }
+    if (state.lastRequestedAt && (now - state.lastRequestedAt) < DECODER_NUDGE_COOLDOWN_MS) {
+      return false;
+    }
+    state.inflight = true;
+    state.lastRequestedAt = now;
+    state.graceUntil = now + DECODER_NUDGE_GRACE_MS;
+
+    logResilienceEvent('decoder-nudge-requested', {
+      reason,
+      ...extraDetails
+    }, { level: 'info' });
+
+    Promise.resolve()
+      .then(() => nudgeFn({ reason }))
+      .then((result) => {
+        logResilienceEvent('decoder-nudge-result', {
+          reason,
+          result: result ?? null
+        }, { level: result?.ok ? 'info' : 'warn' });
+      })
+      .catch((error) => {
+        logResilienceEvent('decoder-nudge-error', {
+          reason,
+          error: error?.message || String(error)
+        }, { level: 'error' });
+      })
+      .finally(() => {
+        decoderNudgeStateRef.current.inflight = false;
+        decoderNudgeStateRef.current.lastRequestedAt = Date.now();
+      });
+
+    return true;
+  }, [logResilienceEvent, nudgePlaybackRef]);
 
   const resolvedMediaType = useMemo(() => {
     if (mediaTypeHint) return mediaTypeHint;
@@ -316,6 +366,10 @@ export function useMediaResilience({
       : null;
     markLoadingIntentActive();
   }, [waitKey, markLoadingIntentActive]);
+
+  useEffect(() => {
+    decoderNudgeStateRef.current = { lastRequestedAt: 0, inflight: false, graceUntil: 0 };
+  }, [waitKey]);
 
   useEffect(() => {
     if (!Number.isFinite(initialStart) || initialStart <= 0) return;
@@ -732,6 +786,28 @@ export function useMediaResilience({
 
   const monitorSuspended = userIntent === USER_INTENT.paused;
 
+  const bufferRunwayMs = Number.isFinite(playbackHealth?.bufferRunwayMs)
+    ? playbackHealth.bufferRunwayMs
+    : null;
+  const elementWaiting = Boolean(playbackHealth?.elementSignals?.waiting);
+  const elementBuffering = Boolean(playbackHealth?.elementSignals?.buffering);
+
+  useEffect(() => {
+    if (monitorSuspended) {
+      return;
+    }
+    if (!Number.isFinite(bufferRunwayMs) || bufferRunwayMs < DECODER_NUDGE_MIN_BUFFER_MS) {
+      return;
+    }
+    if (!(elementWaiting || elementBuffering)) {
+      return;
+    }
+    if (status === STATUS.recovering) {
+      return;
+    }
+    requestDecoderNudge('buffering-with-runway', { runwayMs: bufferRunwayMs });
+  }, [bufferRunwayMs, elementBuffering, elementWaiting, monitorSuspended, requestDecoderNudge, status]);
+
   useEffect(() => {
     if (userIntent === USER_INTENT.paused) {
       if (status !== STATUS.paused) {
@@ -853,6 +929,10 @@ export function useMediaResilience({
     }
 
     if (playbackHealth.isWaiting || playbackHealth.isStalledEvent) {
+      const now = Date.now();
+      if (decoderNudgeStateRef.current.graceUntil && now < decoderNudgeStateRef.current.graceUntil) {
+        return;
+      }
       enterStallingState();
       scheduleHardRecovery();
       return;
@@ -1174,6 +1254,8 @@ export function useMediaResilience({
       if (hardResetLoopCount !== 0) {
         setHardResetLoopCount(0);
       }
+      decoderNudgeStateRef.current.graceUntil = 0;
+      decoderNudgeStateRef.current.inflight = false;
     }
   }, [status, hardResetLoopCount]);
 

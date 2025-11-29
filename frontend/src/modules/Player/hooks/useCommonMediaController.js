@@ -73,6 +73,7 @@ export function useCommonMediaController({
   onController,
   keyboardOverrides,
   controllerExtras,
+  mediaAccessExtras = null,
   seekToIntentSeconds = null,
   instanceKey = null,
   fetchVideoInfo,
@@ -236,7 +237,8 @@ export function useCommonMediaController({
     onSeekRequestConsumed: bridgeSeekConsumed,
     remountDiagnostics: mountDiagnostics,
     mediaIdentityKey: resolvedInstanceKey,
-    onStartupSignal: bridgeStartupSignal
+    onStartupSignal: bridgeStartupSignal,
+    mediaAccessExtras
   });
 
   useEffect(() => {

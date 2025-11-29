@@ -2,19 +2,57 @@
 // WebSocket server
 
 import { WebSocketServer } from 'ws';
+import winston from 'winston';
+import { Loggly } from 'winston-loggly-bulk';
+
+const LOGGLY_TOKEN = process.env.LOGGLY_TOKEN || process.env.LOGGLY_INPUT_TOKEN || null;
+const LOGGLY_SUBDOMAIN = process.env.LOGGLY_SUBDOMAIN || null;
+const LOGGLY_TAGS = ['backend', 'websocket'];
+
+const winstonTransportList = [
+  new winston.transports.Console({
+    format: winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.printf(({ level, message, timestamp, ...meta }) => {
+        const serializedMeta = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+        return `${timestamp} [WebSocket] ${level}: ${message}${serializedMeta}`;
+      })
+    )
+  })
+];
+
+if (LOGGLY_TOKEN && LOGGLY_SUBDOMAIN) {
+  winstonTransportList.push(new Loggly({
+    token: LOGGLY_TOKEN,
+    subdomain: LOGGLY_SUBDOMAIN,
+    tags: LOGGLY_TAGS,
+    json: true
+  }));
+}
+
+const backendLogger = winston.createLogger({
+  level: process.env.WEBSOCKET_LOG_LEVEL || 'info',
+  transports: winstonTransportList
+});
+
+const logger = {
+  info: (message, meta = {}) => backendLogger.info(message, meta),
+  warn: (message, meta = {}) => backendLogger.warn(message, meta),
+  error: (message, meta = {}) => backendLogger.error(message, meta)
+};
 
 let wssNav = null;
 let httpServer = null;
 
 export function createWebsocketServer(server) {
-  console.log('Creating WebSocket servers...');
+  logger.info('Creating WebSocket servers...');
   httpServer = server; // Store reference to HTTP server
   
   // /ws: WebSocket messages
   if (!wssNav) {
-    console.log('Creating WebSocket server for /ws...');
+    logger.info('Creating WebSocket server for /ws...');
     wssNav = new WebSocketServer({ server, path: '/ws' });
-    console.log('WebSocket server created, adding listeners...');
+    logger.info('WebSocket server created, adding listeners...');
     wssNav.on('connection', (ws) => {
       
       // Handle incoming messages from fitness controller
@@ -29,6 +67,7 @@ export function createWebsocketServer(server) {
               topic: 'fitness',
               ...data
             });
+            logger.info('Broadcasted fitness payload', { topic: 'fitness', source: data.source });
           }
         } catch (error) {
           // Ignore non-JSON messages or parsing errors
@@ -37,23 +76,24 @@ export function createWebsocketServer(server) {
       
       ws.on('close', () => {
         // Connection closed
+        logger.info('WebSocket connection closed');
       });
     });
     wssNav.on('error', (err) => {
-      console.error('WebSocket server error on /ws:', err);
+      logger.error('WebSocket server error on /ws', err);
     });
-    console.log('WebSocketServer for /ws is online');
+    logger.info('WebSocketServer for /ws is online');
   } else {
-    console.log('WebSocket server for /ws already exists');
+    logger.warn('WebSocket server for /ws already exists');
   }
   return { wssNav };
 }
 
 export function restartWebsocketServer() {
-  console.log('Restarting WebSocket server...');
+  logger.info('Restarting WebSocket server...');
   
   if (wssNav) {
-    console.log('Closing existing WebSocket server...');
+    logger.info('Closing existing WebSocket server...');
     // Close all existing connections
     wssNav.clients.forEach((client) => {
       client.close();
@@ -65,10 +105,10 @@ export function restartWebsocketServer() {
   if (httpServer) {
     // Recreate WebSocket server
     createWebsocketServer(httpServer);
-    console.log('WebSocket server restarted successfully');
+    logger.info('WebSocket server restarted successfully');
     return true;
   } else {
-    console.error('No HTTP server reference available for restart');
+    logger.error('No HTTP server reference available for restart');
     return false;
   }
 }

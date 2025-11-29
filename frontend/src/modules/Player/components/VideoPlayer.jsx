@@ -150,6 +150,11 @@ export function VideoPlayer({
     [media_url, media?.maxVideoBitrate]
   );
 
+  const shakaNudgePlaybackRef = useRef(async () => ({ ok: false, outcome: 'not-ready' }));
+  const mediaAccessExtras = useMemo(() => ({
+    nudgePlayback: (...args) => shakaNudgePlaybackRef.current?.(...args)
+  }), []);
+
   const {
     isDash,
     containerRef,
@@ -185,7 +190,8 @@ export function VideoPlayer({
     instanceKey: videoKey,
     fetchVideoInfo,
     seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
-    resilienceBridge
+    resilienceBridge,
+    mediaAccessExtras
   });
   const dashSource = useMemo(() => {
     if (!media_url) return null;
@@ -226,6 +232,111 @@ export function VideoPlayer({
     skipped: false,
     cooldownUntil: 0
   });
+  const findNextBufferedStart = useCallback((mediaEl, currentSeconds) => {
+    if (!mediaEl?.buffered) return null;
+    try {
+      const ranges = mediaEl.buffered;
+      const length = Number(ranges.length) || 0;
+      let containsCurrent = false;
+      for (let index = 0; index < length; index += 1) {
+        const start = ranges.start(index);
+        const end = ranges.end(index);
+        if (!Number.isFinite(start) || !Number.isFinite(end)) {
+          continue;
+        }
+        if (currentSeconds >= start && currentSeconds <= end) {
+          containsCurrent = true;
+          break;
+        }
+        if (currentSeconds < start) {
+          return start + 0.01;
+        }
+      }
+      return containsCurrent ? null : null;
+    } catch (_) {
+      return null;
+    }
+  }, []);
+
+  const logShakaDiagnostic = useCallback((event, payload = {}, level = 'debug') => {
+    playbackLog(event, {
+      ...payload,
+      mediaType: media?.media_type || null,
+      mediaTitle: media?.title || media?.show || null
+    }, {
+      level,
+      context: {
+        mediaKey: media?.media_key || media?.id || null,
+        instanceKey: mediaInstanceKey
+      }
+    });
+  }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey]);
+
+  const shakaNudgePlayback = useCallback(async ({ reason = 'decoder-stall' } = {}) => {
+    const mediaEl = getCurrentMediaElement();
+    if (!mediaEl) {
+      logShakaDiagnostic('shaka-nudge-skip', { reason, outcome: 'no-media-element' }, 'warn');
+      return { ok: false, outcome: 'no-media-element' };
+    }
+
+    const currentTime = Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : 0;
+    const gapTarget = findNextBufferedStart(mediaEl, currentTime);
+    if (Number.isFinite(gapTarget) && gapTarget - currentTime > 0.05) {
+      try {
+        mediaEl.currentTime = Math.max(0, gapTarget);
+        mediaEl.play?.().catch(() => {});
+        logShakaDiagnostic('shaka-nudge-gap-skip', { reason, targetSeconds: gapTarget }, 'info');
+        return { ok: true, action: 'gap-skip', targetSeconds: gapTarget };
+      } catch (error) {
+        logShakaDiagnostic('shaka-nudge-gap-error', {
+          reason,
+          targetSeconds: gapTarget,
+          error: serializePlaybackError(error)
+        }, 'warn');
+      }
+    }
+
+    const player = shakaPlayerRef.current;
+    if (player && typeof player.retryStreaming === 'function') {
+      try {
+        await player.retryStreaming();
+        logShakaDiagnostic('shaka-nudge-retry-streaming', { reason }, 'info');
+        return { ok: true, action: 'retry-streaming' };
+      } catch (error) {
+        logShakaDiagnostic('shaka-nudge-retry-error', {
+          reason,
+          error: serializePlaybackError(error)
+        }, 'warn');
+      }
+    }
+
+    const duration = Number.isFinite(mediaEl.duration) ? mediaEl.duration : null;
+    const delta = 0.25;
+    const targetSeconds = duration != null
+      ? Math.min(Math.max(0, currentTime + delta), Math.max(0, duration - 0.05))
+      : currentTime + delta;
+    if (Number.isFinite(targetSeconds) && targetSeconds > currentTime) {
+      try {
+        mediaEl.currentTime = targetSeconds;
+        mediaEl.play?.().catch(() => {});
+        logShakaDiagnostic('shaka-nudge-microseek', { reason, targetSeconds }, 'info');
+        return { ok: true, action: 'micro-seek', targetSeconds };
+      } catch (error) {
+        logShakaDiagnostic('shaka-nudge-microseek-error', {
+          reason,
+          targetSeconds,
+          error: serializePlaybackError(error)
+        }, 'warn');
+      }
+    }
+
+    logShakaDiagnostic('shaka-nudge-exhausted', { reason }, 'warn');
+    return { ok: false, outcome: 'exhausted' };
+  }, [findNextBufferedStart, getCurrentMediaElement, logShakaDiagnostic]);
+
+  useEffect(() => {
+    shakaNudgePlaybackRef.current = shakaNudgePlayback;
+  }, [shakaNudgePlayback]);
 
   useEffect(() => {
     shakaRecoveryStateRef.current = {
@@ -245,6 +356,9 @@ export function VideoPlayer({
       stallThreshold: 0.25,
       stallCheckInterval: 0.25,
       restartOnError: true,
+      jumpLargeGaps: true,
+      smallGapLimit: 0.1,
+      bufferBehind: 120,
       retryParameters: {
         maxAttempts: 7,
         baseDelay: 250,
@@ -270,20 +384,6 @@ export function VideoPlayer({
       }
     };
   }, []);
-
-  const logShakaDiagnostic = useCallback((event, payload = {}, level = 'debug') => {
-    playbackLog(event, {
-      ...payload,
-      mediaType: media?.media_type || null,
-      mediaTitle: media?.title || media?.show || null
-    }, {
-      level,
-      context: {
-        mediaKey: media?.media_key || media?.id || null,
-        instanceKey: mediaInstanceKey
-      }
-    });
-  }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey]);
 
   const handleShakaReady = useCallback(({ thirdPartyPlayer, play, setProperties }) => {
     shakaPlayerRef.current = thirdPartyPlayer || null;
