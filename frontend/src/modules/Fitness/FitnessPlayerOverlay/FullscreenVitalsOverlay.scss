@@ -37,7 +37,7 @@
 
   .fullscreen-vitals-group {
     display: flex;
-    gap: 8px;
+    gap: clamp(10px, 1vw, 18px);
     pointer-events: none;
 
     &.hr-group {
@@ -52,6 +52,10 @@
         flex-wrap: wrap;
         justify-content: flex-end;
       }
+
+      .vital-avatar {
+        margin: clamp(4px, 0.4vw, 10px);
+      }
     }
   }
 
@@ -60,7 +64,7 @@
     width: 76px;
     height: 76px;
     border-radius: 50%;
-    overflow: hidden;
+    overflow: visible;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -69,14 +73,84 @@
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
     min-width: 76px;
     pointer-events: none;
-    border: 4px solid var(--vital-ring-color, rgba(255, 255, 255, 0.75));
-    background: rgba(0, 0, 0, 0.72);
+    background: transparent;
+    --vital-ring-width: 6px;
 
-    img {
+    .avatar-core {
+      position: relative;
       width: 100%;
       height: 100%;
-      object-fit: cover;
-      display: block;
+      border-radius: 50%;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.72);
+      z-index: 1;
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+    }
+
+    .hr-value-overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 25%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      font-size: 0.55rem;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #fff;
+      border-bottom-left-radius: 50%;
+      border-bottom-right-radius: 50%;
+      z-index: 2;
+
+      .hr-value {
+        font-size: 3ex;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      .hr-label {
+        opacity: 0.8;
+        font-weight: 600;
+      }
+    }
+
+    .zone-progress-gauge {
+      position: absolute;
+      inset: calc(var(--vital-ring-width) * -0.5);
+      width: calc(100% + var(--vital-ring-width));
+      height: calc(100% + var(--vital-ring-width));
+      pointer-events: none;
+      z-index: 3;
+      // No rotation - start from 3 o'clock (right side)
+
+      .gauge-arc {
+        fill: none;
+        stroke-width: var(--vital-ring-width);
+        stroke-linecap: round;
+      }
+
+      .gauge-arc-track {
+        stroke: rgba(255, 255, 255, 0.15);
+      }
+
+      .gauge-arc-progress {
+        stroke: var(--vital-ring-color, rgba(255, 255, 255, 0.9));
+        transition: stroke-dashoffset 0.25s ease-out;
+      }
     }
   }
 

@@ -350,14 +350,9 @@ export function VideoPlayer({
   const shakaConfiguration = useMemo(() => {
     const streaming = {
       bufferingGoal: 90,
-      bufferingGoalScale: 1,
       rebufferingGoal: 30,
       stallEnabled: true,
       stallThreshold: 0.25,
-      stallCheckInterval: 0.25,
-      restartOnError: true,
-      jumpLargeGaps: true,
-      smallGapLimit: 0.1,
       bufferBehind: 120,
       retryParameters: {
         maxAttempts: 7,

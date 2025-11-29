@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
+import { COOL_ZONE_PROGRESS_MARGIN } from '../../hooks/useFitnessSession.js';
 import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlay/ChallengeOverlay.jsx';
 import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverlay.jsx';
 import VoiceMemoOverlay from './FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
@@ -171,6 +172,10 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       : Number.isFinite(governanceState.countdownSecondsTotal)
         ? Math.max(1, governanceState.countdownSecondsTotal)
         : 30;
+    const warningHighlights = Array.from(new Set([
+      ...challengeMissingUsers,
+      ...missingUsers
+    ]));
     return {
       category: 'governance-warning-progress',
       status: 'yellow',
@@ -179,7 +184,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       title: '',
       descriptions: [],
       requirements: [],
-      highlightUsers: [],
+      highlightUsers: warningHighlights,
       countdown,
       countdownTotal
     };
@@ -271,12 +276,170 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       map[id] = {
         id,
         name: zone.name || zone.id || `Zone ${index + 1}`,
-        color: zone.color || null
+        color: zone.color || null,
+        min: typeof zone.min === 'number' ? zone.min : null
       };
       rank[id] = index;
     });
     return { map, rank };
   }, [fitnessCtx?.zones]);
+
+  const userZoneProgress = fitnessCtx?.userZoneProgress || null;
+  const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+  const participants = Array.isArray(fitnessCtx?.participantRoster) ? fitnessCtx.participantRoster : [];
+  const getUserVitals = fitnessCtx?.getUserVitals;
+  const clamp01 = (value) => Math.max(0, Math.min(1, value));
+  const normalizeZoneId = (value) => {
+    if (!value) return null;
+    return String(value)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-');
+  };
+  const resolveParticipantVitals = React.useCallback((candidateName, participant) => {
+    const preferredName = candidateName || participant?.name || null;
+    let canonicalVitals = null;
+    if (preferredName && typeof getUserVitals === 'function') {
+      canonicalVitals = getUserVitals(preferredName) || null;
+    }
+    const heartRate = Number.isFinite(canonicalVitals?.heartRate)
+      ? Math.round(canonicalVitals.heartRate)
+      : (Number.isFinite(participant?.heartRate) && participant.heartRate > 0
+        ? Math.round(participant.heartRate)
+        : null);
+    const zoneId = normalizeZoneId(canonicalVitals?.zoneId) || normalizeZoneId(participant?.zoneId) || null;
+    const zoneColor = canonicalVitals?.zoneColor || participant?.zoneColor || null;
+    const zoneName = canonicalVitals?.zoneName || participant?.zoneLabel || null;
+    const profileId = canonicalVitals?.profileId || participant?.profileId || (preferredName ? slugifyId(preferredName) : null);
+    const displayLabel = canonicalVitals?.displayLabel
+      || participant?.displayLabel
+      || preferredName
+      || 'Participant';
+    return {
+      name: preferredName,
+      displayLabel,
+      heartRate,
+      zoneId,
+      zoneColor,
+      zoneName,
+      profileId,
+      canonical: canonicalVitals
+    };
+  }, [getUserVitals]);
+  
+  const progressLookup = userZoneProgress instanceof Map ? userZoneProgress : null;
+  const getProgressEntry = (name) => {
+    if (!name) return null;
+    if (progressLookup) {
+      return progressLookup.get(name) || null;
+    }
+    if (userZoneProgress && typeof userZoneProgress === 'object') {
+      return userZoneProgress[name] || null;
+    }
+    return null;
+  };
+
+  const participantMap = useMemo(() => {
+    const map = new Map();
+    participants.forEach((participant) => {
+      const key = normalizeName(participant?.name);
+      if (!key || map.has(key)) return;
+      map.set(key, participant);
+    });
+    return map;
+  }, [participants]);
+
+  const findZoneByLabel = (label) => {
+    if (!label) return null;
+    const normalized = label.trim().toLowerCase();
+    const match = Object.values(zoneMetadata.map || {}).find((entry) =>
+      entry?.name?.trim().toLowerCase() === normalized
+    );
+    return match || null;
+  };
+
+  const getParticipantZone = (participant, resolvedVitals = null) => {
+    if (!participant && !resolvedVitals) return null;
+    const zoneId = normalizeZoneId(resolvedVitals?.zoneId) || normalizeZoneId(participant?.zoneId);
+    if (zoneId && zoneMetadata.map[zoneId]) {
+      const base = zoneMetadata.map[zoneId];
+      if (resolvedVitals?.zoneColor && !base.color) {
+        return { ...base, color: resolvedVitals.zoneColor };
+      }
+      return base;
+    }
+    const zoneLabel = resolvedVitals?.zoneName || participant?.zoneLabel;
+    if (zoneLabel) {
+      const fallback = findZoneByLabel(zoneLabel) || {
+        id: zoneId || slugifyId(zoneLabel),
+        name: zoneLabel,
+        color: resolvedVitals?.zoneColor || null,
+        min: null
+      };
+      if (resolvedVitals?.zoneColor && fallback && !fallback.color) {
+        return { ...fallback, color: resolvedVitals.zoneColor };
+      }
+      return fallback;
+    }
+    if (resolvedVitals?.zoneColor || resolvedVitals?.zoneId) {
+      return {
+        id: zoneId || null,
+        name: zoneId || 'Zone',
+        color: resolvedVitals?.zoneColor || null,
+        min: null
+      };
+    }
+    return null;
+  };
+
+  const warningOffenders = useMemo(() => {
+    if (!overlay || overlay.category !== 'governance-warning-progress') {
+      return [];
+    }
+    const highlightList = Array.isArray(overlay.highlightUsers)
+      ? overlay.highlightUsers.filter(Boolean)
+      : [];
+    if (!highlightList.length) {
+      return [];
+    }
+    const offenders = [];
+    const seen = new Set();
+    highlightList.forEach((rawName, idx) => {
+      const normalized = normalizeName(rawName || String(idx));
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      const participant = participantMap.get(normalized);
+      const canonicalName = participant?.name || rawName || 'Participant';
+      const vitals = resolveParticipantVitals(canonicalName, participant);
+      const avatarSrc = participant?.avatarUrl
+        ? participant.avatarUrl
+        : vitals?.profileId
+          ? DaylightMediaPath(`/media/img/users/${vitals.profileId}`)
+          : participant?.profileId
+            ? DaylightMediaPath(`/media/img/users/${participant.profileId}`)
+            : DaylightMediaPath(`/media/img/users/${slugifyId(canonicalName)}`);
+      const heartRate = vitals?.heartRate ?? null;
+      const zoneInfo = getParticipantZone(participant, vitals);
+      const displayLabel = vitals?.displayLabel || participant?.displayLabel || canonicalName;
+      const progressEntry = (vitals?.name || participant?.name)
+        ? getProgressEntry(vitals?.name || participant?.name)
+        : null;
+      const progressPercent = progressEntry && progressEntry.showBar && Number.isFinite(progressEntry.progress)
+        ? clamp01(progressEntry.progress)
+        : null;
+      offenders.push({
+        key: normalized,
+        name: canonicalName,
+        displayLabel,
+        heartRate,
+        avatarSrc,
+        zoneId: zoneInfo?.id || null,
+        zoneColor: zoneInfo?.color || null,
+        progressPercent
+      });
+    });
+    return offenders;
+  }, [overlay, participantMap, zoneMetadata, userZoneProgress, resolveParticipantVitals]);
 
   const lockRows = useMemo(() => {
     if (!overlay || overlay.category !== 'governance' || !overlay.show) {
@@ -286,34 +449,66 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     if (requirementList.length === 0) {
       return [];
     }
-    const normalize = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
-    const participants = Array.isArray(fitnessCtx?.participantRoster) ? fitnessCtx.participantRoster : [];
-    const participantMap = new Map();
-    participants.forEach((participant) => {
-      const key = normalize(participant?.name);
-      if (!key) return;
-      participantMap.set(key, participant);
-    });
+
+    const buildProgressGradient = (currentZone, targetZone) => {
+      const start = currentZone?.color || 'rgba(148, 163, 184, 0.6)';
+      const end = targetZone?.color || 'rgba(34, 197, 94, 0.85)';
+      return `linear-gradient(90deg, ${start}, ${end})`;
+    };
+
+    const computeProgressPercent = ({ heartRate, targetHeartRate, progressEntry }) => {
+      const clamp = (value) => Math.max(0, Math.min(1, value));
+      if (Number.isFinite(targetHeartRate) && targetHeartRate > 0) {
+        const hrValue = Number.isFinite(heartRate)
+          ? heartRate
+          : Number.isFinite(progressEntry?.currentHR)
+            ? progressEntry.currentHR
+            : null;
+        if (!Number.isFinite(hrValue)) {
+          return null;
+        }
+        if (hrValue >= targetHeartRate) {
+          return 1;
+        }
+        const floor = Math.max(0, targetHeartRate - COOL_ZONE_PROGRESS_MARGIN);
+        const span = targetHeartRate - floor;
+        if (span <= 0) {
+          return hrValue >= targetHeartRate ? 1 : 0;
+        }
+        return clamp((hrValue - floor) / span);
+      }
+      if (progressEntry?.showBar && Number.isFinite(progressEntry?.progress)) {
+        return clamp(progressEntry.progress);
+      }
+      return null;
+    };
 
     const groupLabelMap = new Map();
-    const collectGroupLabels = (list, fallbackLabel) => {
+    const resolveUserTargetThreshold = typeof fitnessCtx?.getUserZoneThreshold === 'function'
+      ? fitnessCtx.getUserZoneThreshold
+      : null;
+    const registerConfigs = (list, fallbackLabel) => {
       if (!Array.isArray(list)) return;
       list.forEach((entry) => {
         if (!entry?.name) return;
-        const key = normalize(entry.name);
-        if (!key || groupLabelMap.has(key)) return;
-        const label = entry.group_label || fallbackLabel || entry.source || entry.category || null;
-        if (label) {
-          groupLabelMap.set(key, label);
+        const key = normalizeName(entry.name);
+        if (!key) return;
+        if (fallbackLabel) {
+          if (!groupLabelMap.has(key)) {
+            const label = entry.group_label || fallbackLabel || entry.source || entry.category || null;
+            if (label) {
+              groupLabelMap.set(key, label);
+            }
+          }
         }
       });
     };
     const usersConfigRaw = fitnessCtx?.usersConfigRaw || {};
-    collectGroupLabels(usersConfigRaw?.primary, 'Primary');
-    collectGroupLabels(usersConfigRaw?.secondary, 'Secondary');
-    collectGroupLabels(usersConfigRaw?.family, 'Family');
-    collectGroupLabels(usersConfigRaw?.friends, 'Friend');
-    collectGroupLabels(usersConfigRaw?.guests, 'Guest');
+    registerConfigs(usersConfigRaw?.primary, 'Primary');
+    registerConfigs(usersConfigRaw?.secondary, 'Secondary');
+    registerConfigs(usersConfigRaw?.family, 'Family');
+    registerConfigs(usersConfigRaw?.friends, 'Friend');
+    registerConfigs(usersConfigRaw?.guests, 'Guest');
 
     const topZoneId = participants.reduce((top, participant) => {
       const zoneId = participant?.zoneId
@@ -333,15 +528,6 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     const seen = new Set();
     let autoIndex = 0;
 
-    const findZoneByLabel = (label) => {
-      if (!label) return null;
-      const normalized = label.trim().toLowerCase();
-      const match = Object.values(zoneMetadata.map).find((entry) =>
-        entry?.name?.trim().toLowerCase() === normalized
-      );
-      return match || null;
-    };
-
     const buildTargetInfo = (requirement) => {
       const zoneIdRaw = requirement?.zone ? String(requirement.zone) : null;
       const zoneId = zoneIdRaw
@@ -357,75 +543,127 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           || {
             id: zoneId || slugifyId(requirement.zoneLabel),
             name: requirement.zoneLabel,
-            color: null
+            color: null,
+            min: null
           };
+      }
+      if (zoneInfo?.id) {
+        const normalizedId = String(zoneInfo.id).toLowerCase();
+        if (zoneInfo.id !== normalizedId) {
+          zoneInfo = { ...zoneInfo, id: normalizedId };
+        }
       }
       const label = requirement?.zoneLabel
         || zoneInfo?.name
         || requirement?.ruleLabel
         || 'Target';
+      const targetBpm = Number.isFinite(requirement?.threshold)
+        ? requirement.threshold
+        : (Number.isFinite(zoneInfo?.min) ? zoneInfo.min : null);
       return {
         zoneInfo,
-        label
+        label,
+        targetBpm
       };
     };
 
-    const getCurrentZone = (participant) => {
-      const zoneIdRaw = participant?.zoneId ? String(participant.zoneId) : null;
-      const zoneId = zoneIdRaw
-        ? zoneIdRaw
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-        : null;
-      if (zoneId && zoneMetadata.map[zoneId]) {
-        return zoneMetadata.map[zoneId];
-      }
-      if (participant?.zoneLabel) {
-        return findZoneByLabel(participant.zoneLabel)
-          || {
-            id: zoneId || slugifyId(participant.zoneLabel),
-            name: participant.zoneLabel,
-            color: null
-          };
-      }
-      return null;
-    };
-
-    const ensureAvatarSrc = (name, participant) => {
+    const ensureAvatarSrc = (name, participant, vitals) => {
       if (participant?.avatarUrl) return participant.avatarUrl;
-      if (participant?.profileId) {
-        return DaylightMediaPath(`/media/img/users/${participant.profileId}`);
-      }
-      const slug = slugifyId(name);
-      return DaylightMediaPath(`/media/img/users/${slug}`);
+      const profileId = vitals?.profileId || participant?.profileId || (name ? slugifyId(name) : 'user');
+      return DaylightMediaPath(`/media/img/users/${profileId}`);
     };
 
-    const addRow = ({ name, groupLabel, participant, target, isGeneric = false }) => {
+    const addRow = ({ name, groupLabel, participant, target, isGeneric = false, overrides = {} }) => {
       if (!target) return;
-      const keyBase = isGeneric ? `anyone-${target.label}` : normalize(name);
+      const keyBase = isGeneric ? `anyone-${target.label}` : normalizeName(name);
       const cacheKey = `${keyBase || 'unknown'}-${target.label}`;
       if (seen.has(cacheKey)) return;
       seen.add(cacheKey);
       autoIndex += 1;
-      const displayName = isGeneric ? (name || 'Anyone') : (name || 'Unknown');
-      const resolvedParticipant = participant || (participantMap.get(normalize(name)) || null);
+      const canonicalName = name || (isGeneric ? 'Anyone' : 'Unknown');
+      const resolvedParticipant = participant || (participantMap.get(normalizeName(name)) || null);
+      const resolvedVitals = (!isGeneric && (canonicalName || resolvedParticipant))
+        ? resolveParticipantVitals(canonicalName, resolvedParticipant)
+        : null;
       const resolvedGroup = isGeneric
         ? (groupLabel || 'Any participant')
         : (groupLabel
-          || groupLabelMap.get(normalize(name))
+          || groupLabelMap.get(normalizeName(name))
           || resolvedParticipant?.source
           || null);
-      const currentZone = isGeneric ? (aggregateZone || null) : getCurrentZone(resolvedParticipant);
+      const currentZone = overrides.currentZone !== undefined
+        ? overrides.currentZone
+        : (isGeneric ? (aggregateZone || null) : getParticipantZone(resolvedParticipant, resolvedVitals));
+      const heartRate = overrides.heartRate !== undefined
+        ? overrides.heartRate
+        : (resolvedVitals?.heartRate ?? null);
+      const progressEntry = overrides.progressEntry !== undefined
+        ? overrides.progressEntry
+        : (!isGeneric
+          ? (() => {
+            const progressLookupName = resolvedVitals?.canonical?.name
+              || resolvedVitals?.name
+              || resolvedParticipant?.name
+              || canonicalName
+              || null;
+            return progressLookupName ? getProgressEntry(progressLookupName) : null;
+          })()
+          : null);
+      const targetZoneId = target?.zoneInfo?.id ? String(target.zoneInfo.id).toLowerCase() : null;
+      const userTargetOverride = (!isGeneric && targetZoneId && resolveUserTargetThreshold)
+        ? resolveUserTargetThreshold(canonicalName, targetZoneId)
+        : null;
+      const targetHeartRate = (() => {
+        if (overrides.targetBpm !== undefined && overrides.targetBpm != null && Number.isFinite(overrides.targetBpm)) {
+          return Math.round(overrides.targetBpm);
+        }
+        if (Number.isFinite(userTargetOverride)) {
+          return Math.round(userTargetOverride);
+        }
+        if (Number.isFinite(target?.targetBpm)) {
+          return Math.round(target.targetBpm);
+        }
+        if (Number.isFinite(target?.zoneInfo?.min)) {
+          return Math.round(target.zoneInfo.min);
+        }
+        if (Number.isFinite(progressEntry?.targetHeartRate)) {
+          return Math.round(progressEntry.targetHeartRate);
+        }
+        if (Number.isFinite(progressEntry?.rangeMax) && progressEntry.rangeMax > 0) {
+          return Math.round(progressEntry.rangeMax);
+        }
+        return null;
+      })();
+      const progressPercent = overrides.progressPercent !== undefined
+        ? overrides.progressPercent
+        : computeProgressPercent({
+          heartRate,
+          targetHeartRate,
+          progressEntry
+        });
+      const rowDisplayLabel = overrides.displayLabel
+        || resolvedVitals?.displayLabel
+        || resolvedParticipant?.displayLabel
+        || canonicalName;
       rows.push({
         key: `${cacheKey}-${autoIndex}`,
-        name: displayName,
+        name: canonicalName,
+        displayLabel: rowDisplayLabel,
         groupLabel: resolvedGroup,
-        avatarSrc: isGeneric ? DaylightMediaPath('/media/img/users/user') : ensureAvatarSrc(displayName, resolvedParticipant),
+        avatarSrc: isGeneric
+          ? DaylightMediaPath('/media/img/users/user')
+          : ensureAvatarSrc(canonicalName, resolvedParticipant, resolvedVitals),
         isGeneric,
         currentZone,
         targetZone: target.zoneInfo || null,
         targetLabel: target.label || 'Target',
-        currentLabel: currentZone?.name || 'No signal'
+        currentLabel: currentZone?.name || 'No signal',
+        heartRate,
+        targetHeartRate,
+        progressPercent,
+        progressGradient: overrides.progressGradient !== undefined
+          ? overrides.progressGradient
+          : (progressPercent != null ? buildProgressGradient(currentZone, target.zoneInfo || null) : null)
       });
     };
 
@@ -437,14 +675,67 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         : [];
       const requiresAny = Number.isFinite(requirement?.requiredCount) && Number(requirement.requiredCount) === 1;
       if (requiresAny) {
-        addRow({ name: 'Anyone', target, isGeneric: true });
+        const namedParticipants = participants.filter((participant) => participant?.name);
+        if (namedParticipants.length === 1) {
+          addRow({ name: namedParticipants[0].name, participant: namedParticipants[0], target });
+          return;
+        }
+
+        const candidateNames = missing.length ? missing : namedParticipants.map((p) => p.name).filter(Boolean);
+        const candidateParticipants = candidateNames
+          .map((name) => participantMap.get(normalizeName(name)))
+          .filter(Boolean);
+        const fallbacks = candidateParticipants.length ? candidateParticipants : namedParticipants;
+
+        let highestHrValue = null;
+        fallbacks.forEach((participant) => {
+          const vitals = resolveParticipantVitals(participant?.name, participant);
+          const hr = vitals?.heartRate ?? null;
+          if (hr == null) return;
+          if (highestHrValue == null || hr > highestHrValue) {
+            highestHrValue = hr;
+          }
+        });
+
+        let bestProgressPercent = null;
+        let bestProgressZone = null;
+        fallbacks.forEach((participant) => {
+          if (!participant?.name) return;
+          const vitals = resolveParticipantVitals(participant.name, participant);
+          const entry = getProgressEntry(participant.name);
+          const percent = computeProgressPercent({
+            heartRate: vitals?.heartRate ?? null,
+            targetHeartRate: Number.isFinite(target?.targetBpm) ? target.targetBpm : null,
+            progressEntry: entry
+          });
+          if (percent == null) return;
+          if (bestProgressPercent == null || percent > bestProgressPercent) {
+            bestProgressPercent = percent;
+            bestProgressZone = getParticipantZone(participant, vitals);
+          }
+        });
+
+        addRow({
+          name: 'Anyone',
+          target,
+          isGeneric: true,
+          overrides: {
+            heartRate: highestHrValue != null ? highestHrValue : undefined,
+            currentZone: bestProgressZone || undefined,
+            progressPercent: bestProgressPercent,
+            progressGradient: bestProgressPercent != null
+              ? buildProgressGradient(bestProgressZone || aggregateZone || null, target.zoneInfo || null)
+              : undefined,
+            targetBpm: Number.isFinite(target?.targetBpm) ? target.targetBpm : undefined
+          }
+        });
         return;
       }
       if (!missing.length) {
         return;
       }
       missing.forEach((userName) => {
-        const participant = participantMap.get(normalize(userName));
+        const participant = participantMap.get(normalizeName(userName));
         addRow({
           name: userName,
           participant,
@@ -454,7 +745,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     });
 
     return rows;
-  }, [overlay, fitnessCtx?.participantRoster, fitnessCtx?.usersConfigRaw, zoneMetadata]);
+  }, [overlay, participants, fitnessCtx?.usersConfigRaw, zoneMetadata, userZoneProgress, participantMap, resolveParticipantVitals, fitnessCtx?.getUserZoneThreshold]);
 
   const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceRed
     ? <ChallengeOverlay overlay={currentChallengeOverlay} />
@@ -466,6 +757,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     <GovernanceStateOverlay
       overlay={overlay}
       lockRows={lockRows}
+      warningOffenders={warningOffenders}
     />
   ) : null;
 
