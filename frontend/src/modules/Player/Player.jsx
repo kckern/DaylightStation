@@ -39,7 +39,8 @@ const ensureEntryGuid = (source) => {
 const createDefaultMediaAccess = () => ({
   getMediaEl: null,
   hardReset: null,
-  fetchVideoInfo: null
+  fetchVideoInfo: null,
+  nudgePlayback: null
 });
 
 const createDefaultPlaybackMetrics = () => ({
@@ -215,7 +216,8 @@ const Player = forwardRef(function Player(props, ref) {
     setMediaAccess({
       getMediaEl: typeof access.getMediaEl === 'function' ? access.getMediaEl : null,
       hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
-      fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null
+      fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null,
+      nudgePlayback: typeof access.nudgePlayback === 'function' ? access.nudgePlayback : null
     });
   }, []);
 
@@ -442,6 +444,7 @@ const Player = forwardRef(function Player(props, ref) {
     initialStart: Number(effectiveMeta?.seconds) || 0,
     waitKey: resolvedWaitKey,
     fetchVideoInfo: mediaAccess.fetchVideoInfo,
+    nudgePlayback: mediaAccess.nudgePlayback,
     onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
     configOverrides: resolvedResilience.config,

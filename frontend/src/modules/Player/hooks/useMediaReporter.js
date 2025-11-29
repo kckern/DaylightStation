@@ -32,7 +32,8 @@ export function useMediaReporter({
   remountDiagnostics,
   mediaIdentityKey = null,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-  onStartupSignal = null
+  onStartupSignal = null,
+  mediaAccessExtras = null
 }) {
   const seekingRef = useRef(false);
   const pendingSeekSecondsRef = useRef(null);
@@ -165,14 +166,18 @@ export function useMediaReporter({
     if (typeof onRegisterMediaAccess !== 'function') {
       return undefined;
     }
-    onRegisterMediaAccess({
+    const baseAccess = {
       getMediaEl: () => mediaRef?.current || null,
       hardReset: hardResetMedia,
       fetchVideoInfo: null,
       remountDiagnostics
-    });
+    };
+    const payload = mediaAccessExtras
+      ? { ...mediaAccessExtras, ...baseAccess }
+      : baseAccess;
+    onRegisterMediaAccess(payload);
     return () => { onRegisterMediaAccess({}); };
-  }, [hardResetMedia, mediaRef, onRegisterMediaAccess, remountDiagnostics]);
+  }, [hardResetMedia, mediaAccessExtras, mediaRef, onRegisterMediaAccess, remountDiagnostics]);
 
   useEffect(() => {
     if (!Number.isFinite(seekToIntentSeconds)) {
