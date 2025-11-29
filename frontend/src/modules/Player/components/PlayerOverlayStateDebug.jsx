@@ -40,6 +40,7 @@ export function PlayerOverlayStateDebug({
   stalled,
   waitingToPlay
 }) {
+    return false; // Disable for now
   const userDisplay = toDisplay(USER_INTENT_LABELS, userIntent, { icon: '❓', label: 'Unknown' });
   const statusDisplay = toDisplay(RESILIENCE_STATUS_LABELS, status, { icon: '❓', label: status || 'Unknown' });
   const healthDisplay = toDisplay(SYSTEM_HEALTH_LABELS, systemHealth, { icon: '❓', label: systemHealth || 'Unknown' });
