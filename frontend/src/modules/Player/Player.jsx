@@ -74,7 +74,9 @@ const Player = forwardRef(function Player(props, ref) {
     resilience,
     mediaResilienceConfig,
     onResilienceState,
-    mediaResilienceRef
+    mediaResilienceRef,
+    maxVideoBitrate,
+    maxResolution
   } = props || {};
   const compositeChannel = useCompositeControllerChannel(playerType);
   
@@ -120,8 +122,30 @@ const Player = forwardRef(function Player(props, ref) {
     if (!cloned.guid && activeEntryGuid) {
       cloned.guid = activeEntryGuid;
     }
+
+    const rootPlay = (play && typeof play === 'object' && !Array.isArray(play)) ? play : null;
+    const rootQueue = (queue && typeof queue === 'object' && !Array.isArray(queue)) ? queue : null;
+    const resolvedMaxVideoBitrate =
+      cloned.maxVideoBitrate
+      ?? maxVideoBitrate
+      ?? rootPlay?.maxVideoBitrate
+      ?? rootQueue?.maxVideoBitrate
+      ?? null;
+    if (resolvedMaxVideoBitrate != null && cloned.maxVideoBitrate == null) {
+      cloned.maxVideoBitrate = resolvedMaxVideoBitrate;
+    }
+
+    const resolvedMaxResolution =
+      cloned.maxResolution
+      ?? maxResolution
+      ?? rootPlay?.maxResolution
+      ?? rootQueue?.maxResolution
+      ?? null;
+    if (resolvedMaxResolution != null && cloned.maxResolution == null) {
+      cloned.maxResolution = resolvedMaxResolution;
+    }
     return cloned;
-  }, [activeSource, activeEntryGuid]);
+  }, [activeSource, activeEntryGuid, play, queue, maxVideoBitrate, maxResolution]);
 
   const [resolvedMeta, setResolvedMeta] = useState(null);
   const [mediaAccess, setMediaAccess] = useState(() => createDefaultMediaAccess());
@@ -657,7 +681,9 @@ Player.propTypes = {
   mediaResilienceRef: PropTypes.shape({ current: PropTypes.any }),
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
-  onController: PropTypes.func
+  onController: PropTypes.func,
+  maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
 };
 
 export default Player;

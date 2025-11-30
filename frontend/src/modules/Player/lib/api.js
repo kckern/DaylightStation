@@ -39,10 +39,11 @@ export async function flattenQueueItems(items, level = 1) {
  * @param {string} params.plex - Plex media key
  * @param {string} params.media - Media key
  * @param {boolean} params.shuffle - Whether to shuffle
- * @param {string} params.maxVideoBitrate - Maximum video bitrate
+ * @param {string|number} params.maxVideoBitrate - Preferred maximum video bitrate param
+ * @param {string|number} params.maxResolution - Preferred maximum resolution param
  * @returns {Promise<Object>} Media information
  */
-export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate }) {
+export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, maxResolution }) {
   // Helper to build a URL with query params safely
   const buildUrl = (base, params = {}) => {
     const searchParams = new URLSearchParams();
@@ -53,11 +54,17 @@ export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate }) 
     return qs ? `${base}?${qs}` : base;
   };
 
+  const queryCommon = {};
+  if (maxVideoBitrate !== undefined) {
+    queryCommon.maxVideoBitrate = maxVideoBitrate;
+  }
+  if (maxResolution !== undefined) {
+    queryCommon.maxResolution = maxResolution;
+  }
+
   if (plex) {
     const base = shuffle ? `media/plex/info/${plex}/shuffle` : `media/plex/info/${plex}`;
-    const url = buildUrl(base, {
-      maxVideoBitrate: maxVideoBitrate,
-    });
+    const url = buildUrl(base, queryCommon);
     const infoResponse = await DaylightAPI(url);
     return { ...infoResponse, media_key: infoResponse.plex };
   } else if (media) {
