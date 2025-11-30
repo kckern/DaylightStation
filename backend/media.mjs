@@ -297,9 +297,17 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
     
     // Check for shuffle - prefer path config, fallback to query parameters
     const shuffle = /shuffle/i.test(config) || Object.keys(req.query).includes('shuffle');
-    // Optional bitrate cap via query
-    const qBitrate = parseInt(req.query.maxVideoBitrate, 10);
-    const opts = Number.isFinite(qBitrate) ? { maxVideoBitrate: qBitrate } : {};
+        // Optional bitrate/resolution caps via query
+        const qBitrate = parseInt(req.query.maxVideoBitrate, 10);
+        const qResolution = req.query.maxResolution ?? req.query.maxVideoResolution;
+        const opts = {};
+        if (Number.isFinite(qBitrate)) {
+            opts.maxVideoBitrate = qBitrate;
+        }
+        if (typeof qResolution === 'string' && qResolution.length) {
+            opts.maxResolution = qResolution;
+            opts.maxVideoResolution = qResolution;
+        }
     
     let infos = [];
     for (const key of plex_keys) {

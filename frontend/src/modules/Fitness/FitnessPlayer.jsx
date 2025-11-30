@@ -118,6 +118,8 @@ const resolveMediaIdentity = (meta) => {
   return candidate != null ? String(candidate) : null;
 };
 
+const FITNESS_MAX_VIDEO_BITRATE = 2500;
+
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const mainPlayerRef = useRef(null);
   const contentRef = useRef(null);
@@ -887,6 +889,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         <Player
           key={playerKey}
           play={playObject}
+          maxVideoBitrate={FITNESS_MAX_VIDEO_BITRATE}
           onResilienceState={handleResilienceState}
           keyboardOverrides={keyboardOverrides}
           clear={handleClose}
