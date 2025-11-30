@@ -80,18 +80,18 @@ export function SinglePlayer(props = {}) {
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
 
-  // Store initial maxVideoBitrate to prevent it being lost on re-renders
-  const initialMaxBitrateRef = useRef(play.maxVideoBitrate);
+  // Store initial max video bitrate to prevent it being lost on re-renders
+  const initialMaxVideoBitrateRef = useRef(play.maxVideoBitrate);
   
   // Update ref if prop changes
   useEffect(() => {
     if (play.maxVideoBitrate !== undefined) {
-      initialMaxBitrateRef.current = play.maxVideoBitrate;
+      initialMaxVideoBitrateRef.current = play.maxVideoBitrate;
     }
   }, [play.maxVideoBitrate]);
 
   // LocalStorage helpers (per-device, per-plexId)
-  const bitrateKey = useCallback((plexId) => `dashMaxBitrate:${plexId}`, []);
+  const bitrateKey = useCallback((plexId) => `dashMaxVideoBitrate:${plexId}`, []);
   const readStoredBitrate = useCallback((plexId) => {
     try {
       const raw = window.localStorage.getItem(bitrateKey(plexId));
@@ -122,20 +122,28 @@ export function SinglePlayer(props = {}) {
     // Determine plexId (prefer explicit plex prop)
     const plexId = plex || mediaInfo?.media_key || play?.media_key || play?.plex;
     // Respect override; else use stored; else use initial maxVideoBitrate from ref
-    const override = opts?.maxVideoBitrateOverride;
+    const bitrateOverride = opts?.maxVideoBitrateOverride;
+    const resolutionOverride = opts?.maxResolutionOverride;
     const stored = plexId ? readStoredBitrate(plexId) : null;
-    const effectiveMax = (override !== undefined) ? override : (stored != null ? stored : initialMaxBitrateRef.current);
+    const effectiveMax = (bitrateOverride !== undefined) ? bitrateOverride : (stored != null ? stored : initialMaxVideoBitrateRef.current);
+    const effectiveResolution = (resolutionOverride !== undefined) ? resolutionOverride : play?.maxResolution;
 
     const info = await fetchMediaInfo({ 
       plex, 
       media, 
       shuffle, 
-      maxVideoBitrate: effectiveMax 
+      maxVideoBitrate: effectiveMax,
+      maxResolution: effectiveResolution
     });
     
     if (info) {
       // Attach current max to mediaInfo so the hook can seed its ref
-      const withCap = { ...info, continuous, maxVideoBitrate: effectiveMax ?? null };
+      const withCap = {
+        ...info,
+        continuous,
+        maxVideoBitrate: effectiveMax ?? null,
+        maxResolution: effectiveResolution ?? null
+      };
       
       // Override seconds if explicitly provided in play object
       if (play?.seconds !== undefined) {
@@ -145,14 +153,14 @@ export function SinglePlayer(props = {}) {
       setMediaInfo(withCap);
       setIsReady(true);
       // Persist override if provided
-      if (override !== undefined && plexId) {
-        writeStoredBitrate(plexId, override);
+      if (bitrateOverride !== undefined && plexId) {
+        writeStoredBitrate(plexId, bitrateOverride);
       }
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, shuffle, continuous, mediaInfo?.media_key, play?.media_key, play?.plex, readStoredBitrate, writeStoredBitrate]);
-  // Note: initialMaxBitrateRef intentionally not in deps - we use the ref to preserve the initial value
+  }, [plex, media, rate, open, shuffle, continuous, mediaInfo?.media_key, play?.media_key, play?.plex, play?.maxResolution, readStoredBitrate, writeStoredBitrate]);
+  // Note: initialMaxVideoBitrateRef intentionally not in deps - we use the ref to preserve the initial value
 
   useEffect(() => {
     fetchVideoInfoCallback();
@@ -221,7 +229,9 @@ export function SinglePlayer(props = {}) {
             onMediaRef,
             keyboardOverrides: play?.keyboardOverrides,
             onController: play?.onController,
-            resilienceBridge
+            resilienceBridge,
+            maxVideoBitrate: mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null,
+            maxResolution: mediaInfo?.maxResolution ?? play?.maxResolution ?? null
           }
         )
       )}
@@ -292,5 +302,7 @@ SinglePlayer.propTypes = {
     conditions: PropTypes.object,
     timestamp: PropTypes.number
   }),
-  suppressLocalOverlay: PropTypes.bool
+  suppressLocalOverlay: PropTypes.bool,
+  maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
 };

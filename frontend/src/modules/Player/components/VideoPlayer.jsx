@@ -125,7 +125,9 @@ export function VideoPlayer({
   onMediaRef, 
   keyboardOverrides,
   onController,
-  resilienceBridge
+  resilienceBridge,
+  maxVideoBitrate,
+  maxResolution
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -145,9 +147,12 @@ export function VideoPlayer({
     ]
   );
 
+  const resolvedMaxVideoBitrate = maxVideoBitrate ?? media?.maxVideoBitrate ?? null;
+  const resolvedMaxResolution = maxResolution ?? media?.maxResolution ?? null;
+
   const videoKey = useMemo(
-    () => `${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}`,
-    [media_url, media?.maxVideoBitrate]
+    () => `${media_url || ''}:${resolvedMaxVideoBitrate ?? 'unlimited'}:${resolvedMaxResolution ?? 'native'}`,
+    [media_url, resolvedMaxVideoBitrate, resolvedMaxResolution]
   );
 
   const shakaNudgePlaybackRef = useRef(async () => ({ ok: false, outcome: 'not-ready' }));
@@ -777,5 +782,7 @@ VideoPlayer.propTypes = {
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
     onStartupSignal: PropTypes.func
-  })
+  }),
+  maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
 };

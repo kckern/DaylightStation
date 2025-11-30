@@ -49,7 +49,12 @@ export class Plex {
       return await this.loadmedia_url(item.key || item);
     }
   const media_type = this.determinemedia_type(type);
-  const { maxVideoBitrate = null } = opts || {};
+  const {
+    maxVideoBitrate = null,
+    maxResolution = null,
+    maxVideoResolution = null
+  } = opts || {};
+  const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
     try {
       if (media_type === 'audio') {
       const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
@@ -58,17 +63,27 @@ export class Plex {
       } else {
         if (!key) throw new Error("Rating key not found for video.");
         // Build base params
+        const mediaBufferSize = 5242880 * 20; //  buffer for better streaming
         const baseParams = [
           `path=%2Flibrary%2Fmetadata%2F${key}`,
           `protocol=${protocol}`,
           `X-Plex-Client-Identifier=${session}`,
-          `X-Plex-Platform=${platform}`
+          `X-Plex-Platform=${platform}`,
+          //Resiliance hard-coded params:
+          `autoAdjustQuality=1`,
+          `fastSeek=1`,
+          `mediaBufferSize=${mediaBufferSize}`,
+          `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`,
         ];
         if (maxVideoBitrate != null) {
-          baseParams.splice(3, 0, `maxVideoBitrate=${maxVideoBitrate}`);
+          baseParams.splice(3, 0, `maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
+        }
+        if (resolvedMaxResolution != null) {
+          baseParams.splice(3, 0, `maxVideoResolution=${encodeURIComponent(resolvedMaxResolution)}`);
         }
         // Note: codec/container forcing removed; rely on server capabilities and bitrate
         const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
+
         const isValid = await axios.get(url).then((response) => {
           return response.status >= 200 && response.status < 300;
         }).catch(() => false);
@@ -303,6 +318,13 @@ export class Plex {
       percent: percent || 0,
       seconds: seconds || 0,
     };
+
+    if (opts?.maxVideoBitrate != null) {
+      result.maxVideoBitrate = opts.maxVideoBitrate;
+    }
+    if (opts?.maxResolution != null || opts?.maxVideoResolution != null) {
+      result.maxResolution = opts.maxResolution ?? opts.maxVideoResolution;
+    }
 
     // Remove any undefined/falsey keys
     Object.keys(result).forEach(key => {
