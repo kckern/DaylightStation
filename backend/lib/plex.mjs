@@ -76,10 +76,10 @@ export class Plex {
           `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`,
         ];
         if (maxVideoBitrate != null) {
-          baseParams.splice(3, 0, `maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
+          baseParams.push(`maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
         }
         if (resolvedMaxResolution != null) {
-          baseParams.splice(3, 0, `maxVideoResolution=${encodeURIComponent(resolvedMaxResolution)}`);
+          baseParams.push(`maxVideoResolution=${encodeURIComponent(resolvedMaxResolution)}`);
         }
         // Note: codec/container forcing removed; rely on server capabilities and bitrate
         const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
