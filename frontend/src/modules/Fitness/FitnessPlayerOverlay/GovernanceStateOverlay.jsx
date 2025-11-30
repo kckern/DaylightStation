@@ -97,7 +97,7 @@ GovernanceWarningOverlay.propTypes = {
   }))
 };
 
-const GovernancePanelOverlay = ({ overlay, lockRows }) => {
+const GovernancePanelOverlay = ({ overlay, lockRows = [] }) => {
   const title = overlay.title || 'Video Locked';
   const primaryMessage = Array.isArray(overlay.descriptions) && overlay.descriptions.length > 0
     ? overlay.descriptions[0]
@@ -261,10 +261,6 @@ GovernancePanelOverlay.propTypes = {
   }))
 };
 
-GovernancePanelOverlay.defaultProps = {
-  lockRows: []
-};
-
 const GenericOverlay = ({ overlay }) => (
   <div className="fitness-player-overlay">
     <div className="fitness-player-overlay__panel">
@@ -289,7 +285,7 @@ GenericOverlay.propTypes = {
   }).isRequired
 };
 
-const GovernanceStateOverlay = ({ overlay, lockRows, warningOffenders }) => {
+const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffenders = [] }) => {
   const overlayShow = Boolean(overlay?.show);
   const overlayCategory = overlay?.category || null;
   const overlayStatus = typeof overlay?.status === 'string' ? overlay.status.toLowerCase() : '';
@@ -391,12 +387,6 @@ GovernanceStateOverlay.propTypes = {
     heartRate: PropTypes.number,
     avatarSrc: PropTypes.string.isRequired
   }))
-};
-
-GovernanceStateOverlay.defaultProps = {
-  overlay: null,
-  lockRows: [],
-  warningOffenders: []
 };
 
 export default GovernanceStateOverlay;
