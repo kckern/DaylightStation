@@ -141,10 +141,9 @@ const SidebarFooter = ({ onContentSelect }) => {
     return canonicalZones.includes(zoneId) ? zoneId : null;
   };
 
-  // Sort devices whenever allDevices changes
+  // Sort devices whenever HR devices or supporting data change
   useEffect(() => {
-    const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
-    const otherDevices = [];//allDevices.filter(d => d.type !== 'heart_rate');
+    const hrDevices = heartRateDevices ? [...heartRateDevices] : [];
 
     // Sort heart rate devices: zone rank DESC (fire top, cool bottom), then HR DESC, then active status as tertiary
     hrDevices.sort((a, b) => {
@@ -163,24 +162,12 @@ const SidebarFooter = ({ onContentSelect }) => {
       return String(a.deviceId).localeCompare(String(b.deviceId));
     });
     
-    // Sort other devices
-    otherDevices.sort((a, b) => {
-      const typeOrder = { power: 1, cadence: 2, speed: 3, unknown: 4 };
-      const typeA = typeOrder[a.type] || 4;
-      const typeB = typeOrder[b.type] || 4;
-      if (typeA !== typeB) return typeA - typeB;
-      
-      if (a.isActive && !b.isActive) return -1;
-      if (!a.isActive && b.isActive) return 1;
-      
-      const valueA = a.power || a.cadence || (a.speedKmh || 0);
-      const valueB = b.power || b.cadence || (b.speedKmh || 0);
-      return valueB - valueA;
-    });
-    
-    // Update the sorted devices
-    setSortedDevices([...hrDevices, ...otherDevices]);
-  }, [allDevices, participantRoster, userCurrentZones, zones]);
+    // Only keep the single top performer to prevent growth
+    const limitedHrDevices = hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
+
+    // Update the sorted devices (no other device types shown)
+    setSortedDevices(limitedHrDevices);
+  }, [heartRateDevices, participantRoster, userCurrentZones, zones]);
 
   return (
     <div className="sidebar-footer">
