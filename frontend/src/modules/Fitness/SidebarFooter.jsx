@@ -1,25 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import FlipMove from 'react-flip-move';
-import MiniMonitor from './MiniMonitor.jsx';
+import CircularUserAvatar from './components/CircularUserAvatar.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import './SidebarFooter.scss';
 
 const SidebarFooter = ({ onContentSelect }) => {
   const { 
     connected, 
-    allDevices,
     heartRateDevices, 
-    speedDevices,
-    cadenceDevices,
-    powerDevices,
-    deviceCount,
     deviceConfiguration,
     participantRoster,
     hrColorMap: contextHrColorMap,
     usersConfigRaw,
     userCurrentZones,
-    zones
+    zones,
+    userZoneProgress
   } = useFitnessContext();
   
   // State for sorted devices
@@ -55,18 +51,27 @@ const SidebarFooter = ({ onContentSelect }) => {
     return map;
   }, [participantRoster, usersConfigRaw]);
 
-  // Map deviceId -> user ID for avatars
-  const userIdMap = React.useMemo(() => {
+  // Map deviceId -> user ID for avatars, plus participant lookup convenience
+  const { userIdMap, participantByHrId } = React.useMemo(() => {
+    const participantMap = new Map();
     const map = {};
     participantRoster.forEach((participant) => {
       if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
         const key = String(participant.hrDeviceId);
         const profileId = participant.profileId || participant.userId || participant.name?.toLowerCase();
         map[key] = profileId || 'user';
+        participantMap.set(key, participant);
       }
     });
-    return map;
+    return { userIdMap: map, participantByHrId: participantMap };
   }, [participantRoster]);
+
+  const zoneProgressMap = React.useMemo(() => {
+    if (!userZoneProgress) return new Map();
+    if (userZoneProgress instanceof Map) return userZoneProgress;
+    const entries = Object.entries(userZoneProgress);
+    return new Map(entries);
+  }, [userZoneProgress]);
 
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
@@ -96,23 +101,8 @@ const SidebarFooter = ({ onContentSelect }) => {
 
   const getZoneClass = (device) => {
     if (device.type !== 'heart_rate') return 'no-zone';
-  const userObj = participantRoster.find((participant) => String(participant.hrDeviceId) === String(device.deviceId));
-    if (!userObj) return 'no-zone';
-    const zoneEntry = userCurrentZones?.[userObj.name];
-    let color = zoneEntry && typeof zoneEntry === 'object' ? zoneEntry.color : zoneEntry;
-    let zoneIdRaw = (zoneEntry && typeof zoneEntry === 'object' && zoneEntry.id) ? zoneEntry.id : null;
-    if ((!color || !zoneIdRaw) && device.heartRate) {
-      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
-      if (derived) {
-        if (!zoneIdRaw) zoneIdRaw = derived.id;
-        if (!color) color = derived.color;
-      }
-    }
-    if (!color && !zoneIdRaw) return 'no-zone';
-    const zoneId = (zoneIdRaw || (color ? colorToZoneId[String(color).toLowerCase()] : null) || (color ? String(color).toLowerCase() : null));
-    const canonical = ['cool','active','warm','hot','fire'];
-    if (zoneId && canonical.includes(zoneId)) return `zone-${zoneId}`;
-    return 'no-zone';
+    const zoneId = getDeviceZoneId(device);
+    return zoneId ? `zone-${zoneId}` : 'no-zone';
   };
 
   // Helper: derive canonical zone id (cool..fire) for a heart rate device or null
@@ -120,7 +110,7 @@ const SidebarFooter = ({ onContentSelect }) => {
   const zoneRankMap = { cool:0, active:1, warm:2, hot:3, fire:4 };
   const getDeviceZoneId = (device) => {
     if (device.type !== 'heart_rate') return null;
-  const userObj = participantRoster.find((participant) => String(participant.hrDeviceId) === String(device.deviceId));
+    const userObj = participantByHrId.get(String(device.deviceId));
     if (!userObj) return null;
     const entry = userCurrentZones?.[userObj.name];
     let zoneId = null;
@@ -139,6 +129,26 @@ const SidebarFooter = ({ onContentSelect }) => {
     if (!zoneId) return null;
     zoneId = zoneId.toLowerCase();
     return canonicalZones.includes(zoneId) ? zoneId : null;
+  };
+
+  const getDeviceZoneColor = (device) => {
+    if (device.type !== 'heart_rate') return null;
+    const userObj = participantByHrId.get(String(device.deviceId));
+    if (!userObj) return null;
+    const entry = userCurrentZones?.[userObj.name];
+    if (entry) {
+      if (typeof entry === 'object' && entry.color) {
+        return entry.color;
+      }
+      if (typeof entry === 'string') {
+        return entry;
+      }
+    }
+    if (device.heartRate) {
+      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
+      if (derived?.color) return derived.color;
+    }
+    return null;
   };
 
   // Sort devices whenever HR devices or supporting data change
@@ -186,42 +196,46 @@ const SidebarFooter = ({ onContentSelect }) => {
           const profileId = device.type === 'heart_rate' ? 
             (userIdMap[deviceId] || 'user') : 'user';
           const heartRate = device.type === 'heart_rate' && device.heartRate ? device.heartRate : null;
+          const zoneId = getDeviceZoneId(device);
+          const zoneColor = getDeviceZoneColor(device) || null;
+          const progressEntry = ownerName ? zoneProgressMap.get(ownerName) : null;
+          const progressValue = typeof progressEntry?.progress === 'number'
+            ? Math.max(0, Math.min(1, progressEntry.progress))
+            : null;
+          const cardZoneClass = getZoneClass(device);
+          const cardClasses = ['device-card', cardZoneClass, device.isActive ? 'active' : 'inactive']
+            .filter(Boolean)
+            .join(' ');
           
           return (
             <div
               key={deviceId}
-              className={`device-card ${getZoneClass(device)} ${device.isActive ? 'active' : 'inactive'}`}
+              className={cardClasses}
               onPointerDown={() => onContentSelect && onContentSelect('users')}
             >
-              <div className="device-avatar-container">
-                {device.type === 'heart_rate' ? (
-                  <>
-                    <img
-                      src={DaylightMediaPath(`/media/img/users/${profileId}`)}
-                      alt={`${ownerName || deviceId} profile`}
-                      className="device-avatar"
-                      onError={(e) => {
-                        if (e.target.dataset.fallback) {
-                          e.target.style.display = 'none';
-                          return;
-                        }
-                        e.target.dataset.fallback = '1';
-                        e.target.src = DaylightMediaPath(`/media/img/users/user.png`);
-                      }}
-                    />
-                    {heartRate && (
-                      <div className="bpm-overlay">{heartRate}</div>
-                    )}
-                  </>
-                ) : (
-                  <div className="device-icon-fallback">
-                    {device.type === 'power' && '⚡'}
-                    {device.type === 'cadence' && '⚙️'}
-                    {device.type === 'speed' && '🚴'}
-                    {!['power', 'cadence', 'speed'].includes(device.type) && '📡'}
-                  </div>
-                )}
-              </div>
+              {device.type === 'heart_rate' ? (
+                <CircularUserAvatar
+                  name={ownerName || deviceId}
+                  avatarSrc={DaylightMediaPath(`/media/img/users/${profileId}`)}
+                  fallbackSrc={DaylightMediaPath('/media/img/users/user.png')}
+                  heartRate={heartRate}
+                  zoneId={zoneId}
+                  zoneColor={zoneColor}
+                  progress={progressValue}
+                  opacity={device.isActive ? 1 : 0.6}
+                  size="100%"
+                  ringWidth={8}
+                  showIndicator={false}
+                  ariaLabel={ownerName ? `${ownerName} heart rate` : undefined}
+                />
+              ) : (
+                <div className="device-icon-fallback">
+                  {device.type === 'power' && '⚡'}
+                  {device.type === 'cadence' && '⚙️'}
+                  {device.type === 'speed' && '🚴'}
+                  {!['power', 'cadence', 'speed'].includes(device.type) && '📡'}
+                </div>
+              )}
             </div>
           );
         })}
