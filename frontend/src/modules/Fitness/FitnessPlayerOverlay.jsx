@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
-import { COOL_ZONE_PROGRESS_MARGIN } from '../../hooks/useFitnessSession.js';
+import { COOL_ZONE_PROGRESS_MARGIN, calculateZoneProgressTowardsTarget } from '../../hooks/useFitnessSession.js';
 import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlay/ChallengeOverlay.jsx';
 import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverlay.jsx';
 import VoiceMemoOverlay from './FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
@@ -456,8 +456,43 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       return `linear-gradient(90deg, ${start}, ${end})`;
     };
 
-    const computeProgressPercent = ({ heartRate, targetHeartRate, progressEntry }) => {
+    const computeProgressPercent = ({ heartRate, targetHeartRate, progressEntry, targetZoneId }) => {
       const clamp = (value) => Math.max(0, Math.min(1, value));
+      if (progressEntry) {
+        const progressSnapshot = {
+          zoneSequence: Array.isArray(progressEntry.zoneSequence)
+            ? progressEntry.zoneSequence
+            : Array.isArray(progressEntry.orderedZones)
+              ? progressEntry.orderedZones
+              : null,
+          currentZoneIndex: Number.isFinite(progressEntry.currentZoneIndex)
+            ? progressEntry.currentZoneIndex
+            : (Number.isFinite(progressEntry.zoneIndex) ? progressEntry.zoneIndex : null),
+          currentHR: Number.isFinite(progressEntry.currentHR)
+            ? progressEntry.currentHR
+            : (Number.isFinite(heartRate) ? heartRate : null),
+          heartRate: Number.isFinite(heartRate)
+            ? heartRate
+            : (Number.isFinite(progressEntry.currentHR) ? progressEntry.currentHR : null),
+          rangeMin: progressEntry.rangeMin ?? null,
+          rangeMax: progressEntry.rangeMax ?? null,
+          progress: Number.isFinite(progressEntry.progress) ? progressEntry.progress : null,
+          showBar: progressEntry.showBar ?? false,
+          targetHeartRate: Number.isFinite(progressEntry.targetHeartRate)
+            ? progressEntry.targetHeartRate
+            : (Number.isFinite(targetHeartRate) ? targetHeartRate : null),
+          currentZoneThreshold: progressEntry.currentZoneThreshold ?? null,
+          nextZoneThreshold: progressEntry.nextZoneThreshold ?? null
+        };
+        const progressResult = calculateZoneProgressTowardsTarget({
+          snapshot: progressSnapshot,
+          targetZoneId,
+          coolZoneMargin: COOL_ZONE_PROGRESS_MARGIN
+        });
+        if (progressResult && progressResult.progress != null) {
+          return clamp(progressResult.progress);
+        }
+      }
       if (Number.isFinite(targetHeartRate) && targetHeartRate > 0) {
         const hrValue = Number.isFinite(heartRate)
           ? heartRate
@@ -639,7 +674,8 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         : computeProgressPercent({
           heartRate,
           targetHeartRate,
-          progressEntry
+          progressEntry,
+          targetZoneId
         });
       const rowDisplayLabel = overrides.displayLabel
         || resolvedVitals?.displayLabel
@@ -706,7 +742,8 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           const percent = computeProgressPercent({
             heartRate: vitals?.heartRate ?? null,
             targetHeartRate: Number.isFinite(target?.targetBpm) ? target.targetBpm : null,
-            progressEntry: entry
+            progressEntry: entry,
+            targetZoneId: target?.zoneInfo?.id || null
           });
           if (percent == null) return;
           if (bestProgressPercent == null || percent > bestProgressPercent) {

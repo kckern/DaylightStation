@@ -1308,12 +1308,22 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const userVitalsMap = React.useMemo(() => {
     const map = new Map();
+    const cloneZoneSequence = (sequence) => (Array.isArray(sequence)
+      ? sequence.map((zone, index) => ({
+          id: zone?.id || null,
+          name: zone?.name || null,
+          color: zone?.color || null,
+          threshold: Number.isFinite(zone?.threshold) ? zone.threshold : null,
+          index: Number.isFinite(zone?.index) ? zone.index : index
+        }))
+      : null);
 
     const assignEntry = (name, data = {}) => {
       if (!name) return;
       const key = slugifyId(name);
       if (!key) return;
       const existing = map.get(key) || {};
+      const normalizedSequence = cloneZoneSequence(data.zoneSequence);
       map.set(key, {
         name,
         heartRate: Number.isFinite(data.heartRate)
@@ -1330,6 +1340,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         progress: Number.isFinite(data.progress) ? data.progress : (existing.progress ?? null),
         showBar: typeof data.showBar === 'boolean' ? data.showBar : (existing.showBar ?? false),
         nextZoneId: data.nextZoneId ?? existing.nextZoneId ?? null,
+        zoneSequence: normalizedSequence ?? existing.zoneSequence ?? null,
+        currentZoneIndex: Number.isFinite(data.currentZoneIndex)
+          ? data.currentZoneIndex
+          : (Number.isFinite(existing.currentZoneIndex) ? existing.currentZoneIndex : null),
+        currentZoneThreshold: Number.isFinite(data.currentZoneThreshold)
+          ? data.currentZoneThreshold
+          : (Number.isFinite(existing.currentZoneThreshold) ? existing.currentZoneThreshold : null),
+        nextZoneThreshold: Number.isFinite(data.nextZoneThreshold)
+          ? data.nextZoneThreshold
+          : (Number.isFinite(existing.nextZoneThreshold) ? existing.nextZoneThreshold : null),
         source: data.source ?? existing.source ?? null,
         profileId: data.profileId ?? existing.profileId ?? slugifyId(name),
         deviceId: data.deviceId ?? existing.deviceId ?? null,
@@ -1359,6 +1379,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         progress: snapshot?.progress ?? null,
         showBar: snapshot?.showBar ?? false,
         nextZoneId: snapshot?.nextZoneId ?? null,
+        zoneSequence: snapshot?.zoneSequence ?? null,
+        currentZoneIndex: Number.isFinite(snapshot?.currentZoneIndex) ? snapshot.currentZoneIndex : null,
+        currentZoneThreshold: snapshot?.currentZoneThreshold ?? null,
+        nextZoneThreshold: snapshot?.nextZoneThreshold ?? null,
         source: 'Primary',
         profileId: userObj.id || slugifyId(userName),
         displayLabel: getDisplayLabel(userName)
@@ -1381,6 +1405,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         progress: snapshot?.progress ?? null,
         showBar: snapshot?.showBar ?? false,
         nextZoneId: snapshot?.nextZoneId ?? null,
+        zoneSequence: snapshot?.zoneSequence ?? null,
+        currentZoneIndex: Number.isFinite(snapshot?.currentZoneIndex) ? snapshot.currentZoneIndex : null,
+        currentZoneThreshold: snapshot?.currentZoneThreshold ?? null,
+        nextZoneThreshold: snapshot?.nextZoneThreshold ?? null,
         source: participant.source || null,
         profileId: participant.profileId || participant.userId || slugifyId(participant.name),
         deviceId: participant.hrDeviceId || participant.deviceId || null,
@@ -1389,8 +1417,61 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       });
     });
 
+    heartRateDevices.forEach((device) => {
+      if (!device || device.deviceId == null) return;
+      const deviceId = String(device.deviceId);
+      const participant = participantLookupByDevice.get(deviceId) || null;
+      const guestBinding = guestAssignments?.[deviceId] || null;
+      let canonicalName = participant?.name || guestBinding?.name || null;
+      let profileId = participant?.profileId || guestBinding?.profileId || null;
+      let zoneId = participant?.zoneId || guestBinding?.zoneId || null;
+      let zoneColor = participant?.zoneColor || guestBinding?.zoneColor || null;
+      let displayLabel = participant?.displayLabel
+        || (canonicalName ? getDisplayLabel(canonicalName, { preferGroupLabel: false }) : null);
+
+      if (!canonicalName) {
+        users.forEach((userObj, userName) => {
+          if (canonicalName) return;
+          if (String(userObj?.hrDeviceId) === deviceId) {
+            canonicalName = userName;
+            profileId = userObj?.id || slugifyId(userName);
+            zoneId = zoneId || (userObj?.zoneId ? String(userObj.zoneId).toLowerCase() : null);
+            zoneColor = zoneColor || userObj?.zoneColor || null;
+            displayLabel = displayLabel || getDisplayLabel(userName);
+          }
+        });
+      }
+
+      if (!canonicalName) return;
+
+      const hrValue = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
+      const zoneProfile = getZoneConfigForUser(canonicalName) || normalizedBaseZoneConfig;
+      const snapshot = deriveZoneProgressSnapshot({ zoneConfig: zoneProfile, heartRate: hrValue });
+      assignEntry(canonicalName, {
+        heartRate: hrValue,
+        zoneId: snapshot?.currentZoneId ?? (zoneId ? String(zoneId).toLowerCase() : null),
+        zoneName: snapshot?.currentZoneName ?? null,
+        zoneColor: snapshot?.currentZoneColor ?? zoneColor ?? null,
+        targetHeartRate: snapshot?.targetHeartRate ?? null,
+        rangeMin: snapshot?.rangeMin ?? null,
+        rangeMax: snapshot?.rangeMax ?? null,
+        progress: snapshot?.progress ?? null,
+        showBar: snapshot?.showBar ?? false,
+        nextZoneId: snapshot?.nextZoneId ?? null,
+        zoneSequence: snapshot?.zoneSequence ?? null,
+        currentZoneIndex: Number.isFinite(snapshot?.currentZoneIndex) ? snapshot.currentZoneIndex : null,
+        currentZoneThreshold: snapshot?.currentZoneThreshold ?? null,
+        nextZoneThreshold: snapshot?.nextZoneThreshold ?? null,
+        source: participant?.source || (guestBinding ? guestBinding.source || 'Guest' : null),
+        profileId: profileId || slugifyId(canonicalName),
+        deviceId: participant?.hrDeviceId || deviceId,
+        isGuest: Boolean(participant?.isGuest || guestBinding),
+        displayLabel: displayLabel || canonicalName
+      });
+    });
+
     return map;
-  }, [users, participantRoster, getZoneConfigForUser, normalizedBaseZoneConfig]);
+  }, [users, participantRoster, heartRateDevices, participantLookupByDevice, guestAssignments, getZoneConfigForUser, normalizedBaseZoneConfig]);
 
   const userHeartRateMap = React.useMemo(() => {
     const map = new Map();
@@ -1472,6 +1553,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const userZoneProgress = React.useMemo(() => {
     const progressMap = new Map();
+    const cloneZoneSequence = (sequence) => (Array.isArray(sequence)
+      ? sequence.map((zone, index) => ({
+          id: zone?.id || null,
+          name: zone?.name || null,
+          color: zone?.color || null,
+          threshold: Number.isFinite(zone?.threshold) ? zone.threshold : null,
+          index: Number.isFinite(zone?.index) ? zone.index : index
+        }))
+      : null);
     userVitalsMap.forEach((entry) => {
       if (!entry?.name) return;
       progressMap.set(entry.name, {
@@ -1484,7 +1574,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         showBar: entry.showBar ?? false,
         targetHeartRate: entry.targetHeartRate ?? null,
         zoneName: entry.zoneName ?? null,
-        zoneColor: entry.zoneColor ?? null
+        zoneColor: entry.zoneColor ?? null,
+        zoneSequence: cloneZoneSequence(entry.zoneSequence),
+        currentZoneIndex: Number.isFinite(entry.currentZoneIndex) ? entry.currentZoneIndex : null,
+        currentZoneThreshold: Number.isFinite(entry.currentZoneThreshold) ? entry.currentZoneThreshold : null,
+        nextZoneThreshold: Number.isFinite(entry.nextZoneThreshold) ? entry.nextZoneThreshold : null
       });
     });
     return progressMap;

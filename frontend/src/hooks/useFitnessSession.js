@@ -79,7 +79,7 @@ const formatSessionId = (date = new Date()) => {
 };
 
 const MIN_COOL_BASELINE = 60;
-export const COOL_ZONE_PROGRESS_MARGIN = 20;
+export const COOL_ZONE_PROGRESS_MARGIN = 40;
 
 const DEFAULT_ZONE_CONFIG = [
   { id: 'cool', name: 'Cool', min: MIN_COOL_BASELINE, color: 'blue' },
@@ -175,6 +175,17 @@ export const deriveZoneProgressSnapshot = ({
   }
   const hrValue = Number.isFinite(heartRate) ? Math.max(0, heartRate) : 0;
   const sortedZones = zones.slice().sort((a, b) => (a?.min ?? 0) - (b?.min ?? 0));
+  const zoneSequence = sortedZones.map((zone, index) => {
+    const zoneId = slugifyId(zone?.id || zone?.name || `zone-${index}`);
+    const threshold = getZoneMin(zone, { isFirst: index === 0 });
+    return {
+      id: zoneId,
+      name: zone?.name || zone?.id || `Zone ${index + 1}`,
+      color: zone?.color || null,
+      threshold: Number.isFinite(threshold) ? threshold : null,
+      index
+    };
+  });
 
   let currentZoneIndex = -1;
   for (let i = 0; i < sortedZones.length; i += 1) {
@@ -191,11 +202,17 @@ export const deriveZoneProgressSnapshot = ({
 
   const currentZone = sortedZones[currentZoneIndex] || null;
   const nextZone = sortedZones[currentZoneIndex + 1] || null;
-  const currentZoneId = currentZone?.id || (currentZone?.name ? slugifyId(currentZone.name) : null);
+  const currentZoneMeta = zoneSequence[currentZoneIndex] || null;
+  const nextZoneMeta = zoneSequence[currentZoneIndex + 1] || null;
+  const currentZoneId = currentZoneMeta?.id || currentZone?.id || (currentZone?.name ? slugifyId(currentZone.name) : null);
   const currentZoneName = currentZone?.name || currentZoneId;
   const currentZoneColor = currentZone?.color || null;
-  const currentThreshold = getZoneMin(currentZone, { isFirst: currentZoneIndex === 0 }) ?? MIN_COOL_BASELINE;
-  const nextThreshold = nextZone ? getZoneMin(nextZone, { isFirst: currentZoneIndex + 1 === 0 }) : null;
+  const currentThreshold = Number.isFinite(currentZoneMeta?.threshold)
+    ? currentZoneMeta.threshold
+    : (getZoneMin(currentZone, { isFirst: currentZoneIndex === 0 }) ?? MIN_COOL_BASELINE);
+  const nextThreshold = Number.isFinite(nextZoneMeta?.threshold)
+    ? nextZoneMeta.threshold
+    : (nextZone ? getZoneMin(nextZone, { isFirst: currentZoneIndex + 1 === 0 }) : null);
 
   let rangeMin = null;
   let rangeMax = null;
@@ -243,8 +260,122 @@ export const deriveZoneProgressSnapshot = ({
       : null,
     isMaxZone: !nextZone,
     zoneIndex: currentZoneIndex,
-    currentZoneThreshold: currentThreshold,
-    nextZoneThreshold: Number.isFinite(nextThreshold) ? nextThreshold : null
+    currentZoneThreshold: Number.isFinite(currentThreshold) ? currentThreshold : null,
+    nextZoneThreshold: Number.isFinite(nextThreshold) ? nextThreshold : null,
+    zoneSequence
+  };
+};
+
+export const calculateZoneProgressTowardsTarget = ({
+  snapshot,
+  targetZoneId,
+  coolZoneMargin = COOL_ZONE_PROGRESS_MARGIN
+} = {}) => {
+  if (!snapshot) {
+    return {
+      progress: null,
+      rangeMin: null,
+      rangeMax: null,
+      targetIndex: null
+    };
+  }
+
+  const zoneSequence = Array.isArray(snapshot.zoneSequence)
+    ? snapshot.zoneSequence
+    : Array.isArray(snapshot.orderedZones)
+      ? snapshot.orderedZones
+      : null;
+  const currentZoneIndex = Number.isFinite(snapshot.currentZoneIndex)
+    ? snapshot.currentZoneIndex
+    : Number.isFinite(snapshot.zoneIndex)
+      ? snapshot.zoneIndex
+      : null;
+  if (!zoneSequence || zoneSequence.length === 0 || currentZoneIndex == null) {
+    return {
+      progress: Number.isFinite(snapshot.progress) ? snapshot.progress : null,
+      rangeMin: snapshot.rangeMin ?? null,
+      rangeMax: snapshot.rangeMax ?? null,
+      targetIndex: null
+    };
+  }
+
+  const normalizedTarget = targetZoneId ? slugifyId(targetZoneId).toLowerCase() : null;
+  let targetIndex = null;
+  if (normalizedTarget) {
+    targetIndex = zoneSequence.findIndex((zone) => slugifyId(zone.id).toLowerCase() === normalizedTarget);
+  }
+  if (targetIndex == null || targetIndex === -1) {
+    targetIndex = Math.min(currentZoneIndex + 1, zoneSequence.length - 1);
+  }
+
+  if (targetIndex <= currentZoneIndex) {
+    return {
+      progress: 1,
+      rangeMin: snapshot.rangeMin ?? zoneSequence[targetIndex]?.threshold ?? null,
+      rangeMax: snapshot.rangeMax ?? zoneSequence[targetIndex]?.threshold ?? null,
+      targetIndex
+    };
+  }
+
+  const margin = Number.isFinite(coolZoneMargin) ? Math.max(5, coolZoneMargin) : COOL_ZONE_PROGRESS_MARGIN;
+  const hrValue = Number.isFinite(snapshot.currentHR)
+    ? snapshot.currentHR
+    : (Number.isFinite(snapshot.heartRate) ? snapshot.heartRate : 0);
+
+  let rangeMin = null;
+  if (currentZoneIndex <= 0) {
+    const anchorZone = zoneSequence[currentZoneIndex + 1] || zoneSequence[targetIndex];
+    const anchorThreshold = anchorZone?.threshold
+      ?? snapshot.nextZoneThreshold
+      ?? snapshot.targetHeartRate
+      ?? snapshot.rangeMax
+      ?? null;
+    if (Number.isFinite(anchorThreshold)) {
+      rangeMin = Math.max(0, anchorThreshold - margin);
+    }
+  } else {
+    rangeMin = Number.isFinite(zoneSequence[currentZoneIndex]?.threshold)
+      ? zoneSequence[currentZoneIndex].threshold
+      : (Number.isFinite(snapshot.currentZoneThreshold)
+        ? snapshot.currentZoneThreshold
+        : snapshot.rangeMin ?? null);
+  }
+
+  if (rangeMin == null && Number.isFinite(snapshot.rangeMin)) {
+    rangeMin = snapshot.rangeMin;
+  }
+
+  let rangeMax = Number.isFinite(zoneSequence[targetIndex]?.threshold)
+    ? zoneSequence[targetIndex].threshold
+    : (Number.isFinite(snapshot.targetHeartRate)
+      ? snapshot.targetHeartRate
+      : snapshot.rangeMax ?? null);
+
+  if (rangeMax == null) {
+    return {
+      progress: null,
+      rangeMin,
+      rangeMax: null,
+      targetIndex
+    };
+  }
+
+  const span = rangeMax - (rangeMin ?? 0);
+  if (!Number.isFinite(rangeMin) || span <= 0) {
+    const progress = hrValue >= rangeMax ? 1 : 0;
+    return {
+      progress,
+      rangeMin,
+      rangeMax,
+      targetIndex
+    };
+  }
+
+  return {
+    progress: clamp01((hrValue - rangeMin) / span),
+    rangeMin,
+    rangeMax,
+    targetIndex
   };
 };
 
