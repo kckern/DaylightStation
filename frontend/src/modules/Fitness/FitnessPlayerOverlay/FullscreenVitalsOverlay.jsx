@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { slugifyId } from '../../../context/FitnessContext.jsx';
+import CircularUserAvatar from '../components/CircularUserAvatar.jsx';
 import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {
@@ -34,10 +35,6 @@ const withAlpha = (hexColor, alpha = 0.9) => {
 };
 
 const canonicalZones = ['cool', 'active', 'warm', 'hot', 'fire'];
-
-const GAUGE_CENTER = 50;
-const GAUGE_RADIUS = 47;
-const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
 
 const resolveUserZone = (userName, device, context) => {
   if (!userName) return { id: null, color: null };
@@ -153,10 +150,6 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
         const progressValue = typeof progressEntry?.progress === 'number'
           ? Math.max(0, Math.min(1, progressEntry.progress))
           : null;
-        const spanDegrees = progressValue !== null ? (180 + (progressValue * 180)) : null;
-        const strokeOffset = spanDegrees !== null
-          ? GAUGE_CIRCUMFERENCE * (1 - spanDegrees / 360)
-          : GAUGE_CIRCUMFERENCE;
         const effectiveZoneColor = zoneInfo.color || 'rgba(128, 128, 128, 0.6)';
         return {
           deviceId: device.deviceId,
@@ -165,9 +158,8 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           zoneId: zoneInfo.id,
           zoneColor: effectiveZoneColor,
           heartRate: Number.isFinite(device?.heartRate) ? Math.round(device.heartRate) : null,
-          strokeDashoffset: strokeOffset,
           opacity: zoneInfo.color ? 1 : 0.5,
-          indicatorAngle: spanDegrees
+          progressValue
         };
       });
   }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones]);
@@ -235,64 +227,18 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
       {hrItems.length > 0 && (
         <div className={`fullscreen-vitals-group hr-group count-${hrItems.length}`}>
           {hrItems.map((item) => (
-            <div
+            <CircularUserAvatar
               key={`hr-${item.deviceId}`}
-              className={`vital-avatar zone-${item.zoneId || 'neutral'}`}
-              style={{
-                '--vital-ring-color': item.zoneColor,
-                opacity: item.opacity
-              }}
-            >
-              <svg
-                className="zone-progress-gauge"
-                viewBox="0 0 100 100"
-                preserveAspectRatio="xMidYMid meet"
-                aria-hidden="true"
-              >
-                <circle
-                  className="gauge-arc gauge-arc-track"
-                  cx={GAUGE_CENTER}
-                  cy={GAUGE_CENTER}
-                  r={GAUGE_RADIUS}
-                />
-                <circle
-                  className="gauge-arc gauge-arc-progress"
-                  cx={GAUGE_CENTER}
-                  cy={GAUGE_CENTER}
-                  r={GAUGE_RADIUS}
-                  style={{
-                    strokeDasharray: GAUGE_CIRCUMFERENCE,
-                    strokeDashoffset: item.strokeDashoffset
-                  }}
-                />
-              </svg>
-              {Number.isFinite(item.indicatorAngle) ? (
-                <div
-                  className="zone-progress-indicator"
-                  style={{ '--indicator-angle': `${item.indicatorAngle}deg` }}
-                />
-              ) : null}
-              <div className="avatar-core">
-                <img
-                  src={item.avatarSrc}
-                  alt=""
-                  onError={(event) => {
-                    const img = event.currentTarget;
-                    if (img.dataset.fallback) {
-                      img.style.display = 'none';
-                      return;
-                    }
-                    img.dataset.fallback = '1';
-                    img.src = DaylightMediaPath('/media/img/users/user');
-                  }}
-                />
-                {Number.isFinite(item.heartRate) && (
-                  <div className="hr-value-overlay" aria-hidden="true">
-                    <span className="hr-value">{item.heartRate}</span>
-                  </div>
-                )}
-              </div>
-            </div>
+              name={item.name}
+              avatarSrc={item.avatarSrc}
+              fallbackSrc={DaylightMediaPath('/media/img/users/user')}
+              heartRate={item.heartRate}
+              zoneId={item.zoneId}
+              zoneColor={item.zoneColor}
+              progress={item.progressValue}
+              opacity={item.opacity}
+              showIndicator={item.progressValue !== null}
+            />
           ))}
         </div>
       )}
