@@ -20,7 +20,6 @@ const UI_LABELS = {
 const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, playerRef, preferredMicrophoneId = '' }) => {
   const fitnessCtx = useFitnessContext();
   const session = fitnessCtx?.fitnessSession;
-  const mediaSwapActive = fitnessCtx?.mediaSwapActive;
   const voiceMemos = fitnessCtx?.voiceMemos || [];
   const memoCount = voiceMemos.length;
   const memoCountLabel = useMemo(() => {
@@ -83,7 +82,7 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
       <div className="media-controls-container">
         {/* Video Section */}
         <div className="media-video-section">
-          {!mediaSwapActive && <FitnessVideo minimal />}
+          <FitnessVideo minimal />
         </div>
         
         {/* Button Panel Section */}

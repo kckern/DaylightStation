@@ -2,7 +2,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import { slugifyId } from '../../../context/FitnessContext.jsx';
+import { slugifyId } from '../../../hooks/useFitnessSession.js';
 import CircularUserAvatar from '../components/CircularUserAvatar.jsx';
 import './FullscreenVitalsOverlay.scss';
 
