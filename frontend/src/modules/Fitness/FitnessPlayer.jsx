@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import FitnessSidebar from './FitnessSidebar.jsx';
 import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
@@ -9,7 +8,6 @@ import { DaylightMediaPath } from '../../lib/api.mjs';
 import FitnessUsers from './FitnessUsers.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
-import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
 import { playbackLog } from '../Player/lib/playbackLogger.js';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
@@ -156,14 +154,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     governance,
     setGovernanceMedia,
     governedLabels,
-    governanceState,
-    mediaSwapActive
+    governanceState
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
-  const mainVideoHostRef = useRef(null);
-  const sidebarVideoHostRef = useRef(null);
   const renderCountRef = useRef(0);
   const queue = useMemo(() => playQueue || fitnessPlayQueue || [], [playQueue, fitnessPlayQueue]);
   const setQueue = setPlayQueue || setFitnessPlayQueue;
@@ -818,7 +813,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const handleVideoContainerPointerDown = useCallback((event) => {
     logFitnessEvent('fullscreen-pointerdown', {
-      swapActive: mediaSwapActive,
       button: event.button,
       pointerType: event.pointerType,
       targetTag: event.target?.tagName || null,
@@ -826,7 +820,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         ? event.composedPath().map((node) => node?.tagName || node?.className || node?.id).slice(0, 6)
         : null
     });
-    if (mediaSwapActive) return;
     if (typeof event.button === 'number' && event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target && target.closest('button, a, input, textarea, [role="button"], [data-no-fullscreen]')) {
@@ -838,15 +831,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       button: event.button
     });
     toggleFullscreen();
-  }, [mediaSwapActive, toggleFullscreen, logFitnessEvent]);
+  }, [toggleFullscreen, logFitnessEvent]);
 
   const handleVideoContainerClickCapture = useCallback((event) => {
     logFitnessEvent('fullscreen-click-capture', {
-      swapActive: mediaSwapActive,
       button: event.button,
       targetTag: event.target?.tagName || null
     });
-  }, [mediaSwapActive, logFitnessEvent]);
+  }, [logFitnessEvent]);
 
   const handleRootPointerDownCapture = useCallback((event) => {
     logFitnessEvent('root-pointerdown', {
@@ -855,7 +847,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       pointerType: event.pointerType
     });
 
-    if (mediaSwapActive) return;
     if (typeof event.button === 'number' && event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
@@ -872,31 +863,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       button: event.button
     });
     toggleFullscreen();
-  }, [mediaSwapActive, toggleFullscreen, logFitnessEvent]);
+  }, [toggleFullscreen, logFitnessEvent]);
 
   const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
   const playerRootClasses = useMemo(() => {
-    const classes = [`fitness-player`, `mode-${playerMode}`];
-    if (mediaSwapActive) classes.push('media-swapped');
-    return classes.join(' ');
-  }, [mediaSwapActive, playerMode]);
+    return [`fitness-player`, `mode-${playerMode}`].join(' ');
+  }, [playerMode]);
 
   const hasActiveItem = Boolean(currentItem && enhancedCurrentItem && playObject);
   const playerKey = hasActiveItem
     ? `${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
     : 'fitness-player-empty';
 
-  const handleVideoPointerDown = useCallback((event) => {
-    if (!mediaSwapActive) return;
-    event.stopPropagation();
-    toggleFullscreen();
-  }, [mediaSwapActive, toggleFullscreen]);
-
   const videoShell = (
-    <div
-      className={`fitness-video-shell ${mediaSwapActive ? 'is-secondary' : 'is-primary'}`}
-      onPointerDown={handleVideoPointerDown}
-    >
+    <div className="fitness-video-shell">
       <div className="player-controls-blocker"></div>
       <FitnessPlayerOverlay 
         overlay={governanceOverlay} 
@@ -921,12 +901,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     </div>
   );
 
-  const videoPortalTarget = mediaSwapActive ? sidebarVideoHostRef.current : mainVideoHostRef.current;
-  const videoPortal = hasActiveItem && videoPortalTarget ? createPortal(videoShell, videoPortalTarget) : null;
-
   return (
     <div className={playerRootClasses} onPointerDownCapture={handleRootPointerDownCapture}>
-      {videoPortal}
       {/* Sidebar Component */}
       <div
         className={`fitness-player-sidebar ${sidebarSide === 'left' ? 'sidebar-left' : 'sidebar-right'}${playerMode === 'fullscreen' ? ' minimized' : ''}`}
@@ -950,11 +926,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             />
           </div>
         )}
-        <div
-          className="fitness-sidebar-video-host"
-          ref={sidebarVideoHostRef}
-          data-has-video={mediaSwapActive ? '1' : '0'}
-        />
         {/* Footer controls removed (maximal/resizer deprecated) */}
       </div>
       {/* Main Player Panel */}
@@ -973,12 +944,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             position: 'relative'
           }}
         >
-          <div className="fitness-player-video-host" ref={mainVideoHostRef} />
-          {mediaSwapActive && hasActiveItem && (
-            <div className="fitness-camera-primary">
-              <FitnessVideo minimal />
-            </div>
-          )}
+          <div className="fitness-player-video-host">
+            {hasActiveItem ? videoShell : null}
+          </div>
         </div>
         
         <FitnessPlayerFooter

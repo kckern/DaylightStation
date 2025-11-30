@@ -216,26 +216,33 @@
         }
         
         .user-profile-img-container {
-          width: 58px; /* enlarged */
-          height: 58px;
-          margin: 0 12px 0 0; /* reduce right gap, remove extra left inset */
+          width: 68px;
+          height: 68px;
+          margin: 0 14px 0 0;
           flex-shrink: 0;
           position: relative;
           z-index: 1; /* above zone overlay */
-          flex: 0 0 58px; /* lock size in flex row */
-          min-width: 58px;
-          min-height: 58px;
+          flex: 0 0 68px;
+          min-width: 68px;
+          min-height: 68px;
           aspect-ratio: 1 / 1;
           border-radius: 50%;
+          border: 3px solid rgba(255,255,255,0.12);
+          background: radial-gradient(circle at 35% 25%, rgba(255,255,255,0.08), rgba(0,0,0,0.7));
+          box-shadow: 0 4px 10px rgba(0,0,0,0.55);
           display: flex;
           align-items: center;
           justify-content: center;
-          
-          img {
+          overflow: hidden;
+          transition: border-color 0.25s ease, box-shadow 0.25s ease;
+
+          img,
+          .user-profile-img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            border-radius: 50%;
+            object-position: 50% 32%;
+            border-radius: inherit;
             aspect-ratio: 1 / 1;
           }
 
@@ -1009,20 +1016,29 @@
     }
 
     .user-profile-img-container {
-      flex: 0 0 46px;
-      width: 4rem;
-      height: 3rem;
+      flex: 0 0 68px;
+      width: 68px;
+      height: 68px;
       border-radius: 50%;
       overflow: hidden;
-      background: #222;
-      border: 5px solid #333;
+      background: radial-gradient(circle at 35% 25%, rgba(255,255,255,0.08), rgba(0,0,0,0.7));
+      border: 3px solid rgba(255,255,255,0.12);
       display: flex;
       align-items: center;
       justify-content: center;
       position: relative;
       z-index: 1; /* above zone overlay */
-      img { width: 100%; height: 100%; object-fit: cover; }
+      box-shadow: 0 4px 10px rgba(0,0,0,0.55);
       transition: border-color .25s ease, box-shadow .25s ease;
+
+      img,
+      .user-profile-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: 50% 32%;
+        border-radius: inherit;
+      }
     }
 
     .device-info {

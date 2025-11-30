@@ -37,8 +37,6 @@ const FitnessSidebarMenu = ({
   const fitnessContext = useFitnessContext();
   const [selectedTab, setSelectedTab] = React.useState('friends');
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
-  const isMediaSwapped = Boolean(fitnessContext?.mediaSwapActive);
-  const toggleMediaSwap = fitnessContext?.toggleMediaSwap;
   const suppressDeviceUntilNextReading = fitnessContext?.suppressDeviceUntilNextReading;
   const hasMusicPlaylists = playlists.length > 0;
   const deviceIdStr = targetDeviceId ? String(targetDeviceId) : null;
@@ -460,14 +458,6 @@ const FitnessSidebarMenu = ({
         <button type="button" className="menu-item action-item" onClick={handleReloadPage}>
           <span>🔄 Reload App</span>
         </button>
-        <button
-          type="button"
-          className="menu-item action-item"
-          onClick={() => toggleMediaSwap?.()}
-          disabled={!toggleMediaSwap}
-        >
-          <span>{isMediaSwapped ? '↺ Restore Video Layout' : '🔀 Swap Camera & Video'}</span>
-        </button>
       </div>
 
       <div className="menu-section">
@@ -481,6 +471,7 @@ const FitnessSidebarMenu = ({
             <input
               type="checkbox"
               checked={visibility.treasureBox}
+              readOnly
             />
             <span className="toggle-slider"></span>
           </label>
@@ -495,6 +486,7 @@ const FitnessSidebarMenu = ({
               type="checkbox"
               checked={musicEnabled}
               disabled={!hasMusicPlaylists && !musicEnabled}
+              readOnly
             />
             <span className="toggle-slider"></span>
           </label>

@@ -399,6 +399,12 @@ const FitnessUsers = () => {
     return '--';
   };
 
+  const buildDeviceKey = React.useCallback((prefix, device, index) => {
+    if (!device) return `${prefix}-missing-${index}`;
+    const raw = device.deviceId ?? device.id ?? device.profileId ?? device.name ?? device.label;
+    return `${prefix}-${raw != null ? raw : index}`;
+  }, []);
+
   const getDeviceUnit = (device) => {
     if (device.type === 'heart_rate') return 'BPM';
     if (device.type === 'power') return 'W';
@@ -587,16 +593,16 @@ const FitnessUsers = () => {
             {(() => {
               const seenZones = new Set();
               let noZoneShown = false;
-              return sortedDevices.map((device) => {
+              return sortedDevices.map((device, deviceIndex) => {
               // Handle RPM group separately
               if (device.type === 'rpm-group') {
                 const rpmDevices = device.devices;
-                const isMultiDevice = true; rpmDevices.length > 1;
+                const isMultiDevice = rpmDevices.length > 1;
                 
                 return (
-                  <div key="rpm-group" className={`rpm-group-container ${isMultiDevice ? 'multi-device' : 'single-device'}`}>
+                  <div key={`rpm-group-${deviceIndex}`} className={`rpm-group-container ${isMultiDevice ? 'multi-device' : 'single-device'}`}>
                     <div className="rpm-devices">
-                      {rpmDevices.map(rpmDevice => {
+                      {rpmDevices.map((rpmDevice, rpmIndex) => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
                         const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
                         const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
@@ -618,7 +624,7 @@ const FitnessUsers = () => {
                         const borderColor = deviceColor ? colorMap[deviceColor] || deviceColor : '#51cf66';
                         
                         return (
-                          <div key={`rpm-${rpmDevice.deviceId}`} className="rpm-device-avatar">
+                          <div key={buildDeviceKey('rpm', rpmDevice, rpmIndex)} className="rpm-device-avatar">
                             <div className="rpm-avatar-wrapper">
                               {!isZero && (
                                 <div 
@@ -685,7 +691,7 @@ const FitnessUsers = () => {
               if (!zoneIdForGrouping && device.type === 'heart_rate' && !noZoneShown) noZoneShown = true;
 
               return (
-                <div className="device-wrapper" key={`device-${device.deviceId}`}>
+                <div className="device-wrapper" key={buildDeviceKey('device', device, deviceIndex)}>
                   <div className={`device-zone-info ${getZoneClass(device)}`}>
                     {showZoneBadge && (
                       (() => {
