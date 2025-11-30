@@ -1,9 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
-import FlipMove from 'react-flip-move';
 import CircularUserAvatar from './components/CircularUserAvatar.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import './SidebarFooter.scss';
+
+const slugifyId = (value, fallback = 'user') => {
+  if (!value) return fallback;
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || fallback;
+};
 
 const SidebarFooter = ({ onContentSelect }) => {
   const { 
@@ -11,16 +20,58 @@ const SidebarFooter = ({ onContentSelect }) => {
     heartRateDevices, 
     deviceConfiguration,
     participantRoster,
+    participantsByDevice,
     hrColorMap: contextHrColorMap,
     usersConfigRaw,
     userCurrentZones,
     zones,
-    userZoneProgress
+    userZoneProgress,
+    getUserByDevice
   } = useFitnessContext();
-  
-  // State for sorted devices
-  const [sortedDevices, setSortedDevices] = useState([]);
+  const inactiveTimeout = deviceConfiguration?.timeout?.inactive ?? 60000;
 
+  const userProfileIdMap = React.useMemo(() => {
+    const map = new Map();
+    const addKey = (label, profileId) => {
+      if (!label || !profileId) return;
+      const key = String(label).trim().toLowerCase();
+      if (!key) return;
+      if (!map.has(key)) {
+        map.set(key, profileId);
+      }
+    };
+    const addFrom = (arr) => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach((cfg) => {
+        if (!cfg?.name) return;
+        const profileId = cfg.id || slugifyId(cfg.name);
+        addKey(cfg.name, profileId);
+        if (cfg.group_label) {
+          addKey(cfg.group_label, profileId);
+        }
+      });
+    };
+    addFrom(usersConfigRaw?.primary);
+    addFrom(usersConfigRaw?.secondary);
+    addFrom(usersConfigRaw?.family);
+    addFrom(usersConfigRaw?.friends);
+    return map;
+  }, [usersConfigRaw]);
+
+  const getConfiguredProfileId = React.useCallback((name) => {
+    if (!name) return null;
+    const key = String(name).trim().toLowerCase();
+    if (!key) return null;
+    return userProfileIdMap.get(key) || null;
+  }, [userProfileIdMap]);
+
+  const computeDeviceActive = React.useCallback((device) => {
+    if (!device) return false;
+    const lastSeen = Number(device.lastSeen ?? device.timestamp);
+    if (!Number.isFinite(lastSeen) || lastSeen <= 0) return true;
+    return (Date.now() - lastSeen) <= inactiveTimeout;
+  }, [inactiveTimeout]);
+  
   // Build color map from context
   const hrColorMap = React.useMemo(() => {
     const direct = contextHrColorMap || {};
@@ -35,10 +86,21 @@ const SidebarFooter = ({ onContentSelect }) => {
   const hrOwnerMap = React.useMemo(() => {
     const map = {};
     participantRoster.forEach((participant) => {
-      if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
-        map[String(participant.hrDeviceId)] = participant.name;
-      }
+      const keys = [participant?.hrDeviceId, participant?.deviceId];
+      keys.forEach((key) => {
+        if (key !== undefined && key !== null) {
+          map[String(key)] = participant.name;
+        }
+      });
     });
+    if (participantsByDevice && typeof participantsByDevice.forEach === 'function') {
+      participantsByDevice.forEach((participant, key) => {
+        if (!participant || key == null) return;
+        if (!map[String(key)] && participant.name) {
+          map[String(key)] = participant.name;
+        }
+      });
+    }
     if (Object.keys(map).length === 0 && usersConfigRaw) {
       const addFrom = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
         if (cfg && (cfg.hr !== undefined && cfg.hr !== null)) {
@@ -56,15 +118,48 @@ const SidebarFooter = ({ onContentSelect }) => {
     const participantMap = new Map();
     const map = {};
     participantRoster.forEach((participant) => {
-      if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
-        const key = String(participant.hrDeviceId);
-        const profileId = participant.profileId || participant.userId || participant.name?.toLowerCase();
-        map[key] = profileId || 'user';
-        participantMap.set(key, participant);
-      }
+      const profileId = participant.profileId
+        || participant.userId
+        || getConfiguredProfileId(participant?.name)
+        || (participant?.name ? slugifyId(participant.name) : null);
+      const keys = [participant?.hrDeviceId, participant?.deviceId];
+      keys.forEach((key) => {
+        if (key === undefined || key === null) return;
+        const normalized = String(key);
+        map[normalized] = profileId || 'user';
+        participantMap.set(normalized, participant);
+      });
     });
+    if (participantsByDevice && typeof participantsByDevice.forEach === 'function') {
+      participantsByDevice.forEach((participant, key) => {
+        if (!participant || key == null) return;
+        const normalized = String(key);
+        if (!participantMap.has(normalized)) {
+          participantMap.set(normalized, participant);
+        }
+        if (!map[normalized]) {
+          const profileId = participant.profileId
+            || participant.userId
+            || getConfiguredProfileId(participant?.name)
+            || (participant?.name ? slugifyId(participant.name) : null);
+          map[normalized] = profileId || 'user';
+        }
+      });
+    }
+    if (usersConfigRaw) {
+      const addFrom = (arr) => Array.isArray(arr) && arr.forEach((cfg) => {
+        if (cfg?.hr === undefined || cfg.hr === null) return;
+        const normalized = String(cfg.hr);
+        if (!map[normalized]) {
+          const profileId = cfg.id || slugifyId(cfg.name);
+          map[normalized] = profileId || 'user';
+        }
+      });
+      addFrom(usersConfigRaw.primary);
+      addFrom(usersConfigRaw.secondary);
+    }
     return { userIdMap: map, participantByHrId: participantMap };
-  }, [participantRoster]);
+  }, [participantRoster, participantsByDevice, usersConfigRaw, getConfiguredProfileId]);
 
   const zoneProgressMap = React.useMemo(() => {
     if (!userZoneProgress) return new Map();
@@ -108,11 +203,37 @@ const SidebarFooter = ({ onContentSelect }) => {
   // Helper: derive canonical zone id (cool..fire) for a heart rate device or null
   const canonicalZones = ['cool','active','warm','hot','fire'];
   const zoneRankMap = { cool:0, active:1, warm:2, hot:3, fire:4 };
-  const getDeviceZoneId = (device) => {
+  const resolveDeviceKey = React.useCallback((device) => {
+    if (!device) return null;
+    const candidates = [device.deviceId, device.id, device.device_id, device.hrDeviceId];
+    for (const candidate of candidates) {
+      if (candidate !== undefined && candidate !== null) {
+        return String(candidate);
+      }
+    }
+    return null;
+  }, []);
+  const resolveDeviceParticipant = React.useCallback((device) => {
+    const key = resolveDeviceKey(device);
+    if (!key) {
+      return { key: null, userName: null };
+    }
+    let participant = participantByHrId.get(key) || null;
+    if (!participant && typeof getUserByDevice === 'function') {
+      const fallback = getUserByDevice(key);
+      if (fallback?.name) {
+        participant = fallback;
+      }
+    }
+    const userName = participant?.name || null;
+    return { key, userName };
+  }, [participantByHrId, getUserByDevice, resolveDeviceKey]);
+
+  const getDeviceZoneId = React.useCallback((device) => {
     if (device.type !== 'heart_rate') return null;
-    const userObj = participantByHrId.get(String(device.deviceId));
-    if (!userObj) return null;
-    const entry = userCurrentZones?.[userObj.name];
+    const { key, userName } = resolveDeviceParticipant(device);
+    if (!key || !userName) return null;
+    const entry = userCurrentZones?.[userName];
     let zoneId = null;
     let color = null;
     if (entry) {
@@ -123,19 +244,23 @@ const SidebarFooter = ({ onContentSelect }) => {
       }
     }
     if ((!zoneId || !canonicalZones.includes(zoneId)) && device.heartRate) {
-      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
-      if (derived) zoneId = derived.id;
+      const derived = deriveZoneFromHR(device.heartRate, userName);
+      if (derived) {
+        zoneId = derived.id;
+      }
     }
-    if (!zoneId) return null;
+    if (!zoneId) {
+      return null;
+    }
     zoneId = zoneId.toLowerCase();
     return canonicalZones.includes(zoneId) ? zoneId : null;
-  };
+  }, [resolveDeviceParticipant, userCurrentZones, colorToZoneId, deriveZoneFromHR]);
 
-  const getDeviceZoneColor = (device) => {
+  const getDeviceZoneColor = React.useCallback((device) => {
     if (device.type !== 'heart_rate') return null;
-    const userObj = participantByHrId.get(String(device.deviceId));
-    if (!userObj) return null;
-    const entry = userCurrentZones?.[userObj.name];
+    const { key, userName } = resolveDeviceParticipant(device);
+    if (!key || !userName) return null;
+    const entry = userCurrentZones?.[userName];
     if (entry) {
       if (typeof entry === 'object' && entry.color) {
         return entry.color;
@@ -145,14 +270,15 @@ const SidebarFooter = ({ onContentSelect }) => {
       }
     }
     if (device.heartRate) {
-      const derived = deriveZoneFromHR(device.heartRate, userObj.name);
-      if (derived?.color) return derived.color;
+      const derived = deriveZoneFromHR(device.heartRate, userName);
+      if (derived?.color) {
+        return derived.color;
+      }
     }
     return null;
-  };
+  }, [resolveDeviceParticipant, userCurrentZones, deriveZoneFromHR]);
 
-  // Sort devices whenever HR devices or supporting data change
-  useEffect(() => {
+  const sortedDevices = React.useMemo(() => {
     const hrDevices = heartRateDevices ? [...heartRateDevices] : [];
 
     // Sort heart rate devices: zone rank DESC (fire top, cool bottom), then HR DESC, then active status as tertiary
@@ -166,35 +292,45 @@ const SidebarFooter = ({ onContentSelect }) => {
       const hrDelta = (b.heartRate || 0) - (a.heartRate || 0);
       if (hrDelta !== 0) return hrDelta;
       // Tertiary: active devices first
-      if (a.isActive && !b.isActive) return -1;
-      if (!a.isActive && b.isActive) return 1;
+      const aActive = computeDeviceActive(a);
+      const bActive = computeDeviceActive(b);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
       // Stable fallback by deviceId
-      return String(a.deviceId).localeCompare(String(b.deviceId));
+      const aKey = resolveDeviceKey(a) || '';
+      const bKey = resolveDeviceKey(b) || '';
+      return aKey.localeCompare(bKey);
     });
-    
-    // Only keep the single top performer to prevent growth
-    const limitedHrDevices = hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
 
-    // Update the sorted devices (no other device types shown)
-    setSortedDevices(limitedHrDevices);
-  }, [heartRateDevices, participantRoster, userCurrentZones, zones]);
+    // Only keep the single top performer to prevent growth
+    return hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
+  }, [heartRateDevices, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive]);
 
   return (
     <div className="sidebar-footer">
-      <FlipMove 
-        className="device-container" 
-        duration={300} 
-        easing="ease-out"
-        staggerDelayBy={20}
-        enterAnimation="fade"
-        leaveAnimation="fade"
-        maintainContainerHeight={true}
-      >
-        {sortedDevices.map((device) => {
-          const deviceId = String(device.deviceId);
-          const ownerName = device.type === 'heart_rate' ? hrOwnerMap[deviceId] : null;
-          const profileId = device.type === 'heart_rate' ? 
-            (userIdMap[deviceId] || 'user') : 'user';
+      <div className="device-container">
+        {sortedDevices.map((device, index) => {
+          const deviceKey = resolveDeviceKey(device) || `device-${index}`;
+          let ownerName = device.type === 'heart_rate' ? hrOwnerMap[deviceKey] : null;
+          if (!ownerName && typeof getUserByDevice === 'function') {
+            const user = getUserByDevice(deviceKey);
+            ownerName = user?.name || ownerName;
+          }
+          let profileId = device.type === 'heart_rate' 
+            ? (userIdMap[deviceKey] || getConfiguredProfileId(ownerName) || 'user')
+            : 'user';
+          if (device.type === 'heart_rate' && profileId === 'user' && ownerName) {
+            profileId = getConfiguredProfileId(ownerName) || slugifyId(ownerName, 'user');
+          }
+          if (device.type === 'heart_rate' && (!ownerName || profileId === 'user')) {
+            console.warn('[SidebarFooter] Missing avatar data', {
+              deviceKey,
+              ownerName,
+              profileId,
+              participantRosterSize: participantRoster?.length || 0,
+              heartRate: device.heartRate
+            });
+          }
           const heartRate = device.type === 'heart_rate' && device.heartRate ? device.heartRate : null;
           const zoneId = getDeviceZoneId(device);
           const zoneColor = getDeviceZoneColor(device) || null;
@@ -203,26 +339,27 @@ const SidebarFooter = ({ onContentSelect }) => {
             ? Math.max(0, Math.min(1, progressEntry.progress))
             : null;
           const cardZoneClass = getZoneClass(device);
-          const cardClasses = ['device-card', cardZoneClass, device.isActive ? 'active' : 'inactive']
+          const isActive = computeDeviceActive(device);
+          const cardClasses = ['device-card', cardZoneClass, isActive ? 'active' : 'inactive']
             .filter(Boolean)
             .join(' ');
           
           return (
             <div
-              key={deviceId}
+              key={deviceKey}
               className={cardClasses}
               onPointerDown={() => onContentSelect && onContentSelect('users')}
             >
               {device.type === 'heart_rate' ? (
                 <CircularUserAvatar
-                  name={ownerName || deviceId}
+                  name={ownerName || deviceKey}
                   avatarSrc={DaylightMediaPath(`/media/img/users/${profileId}`)}
                   fallbackSrc={DaylightMediaPath('/media/img/users/user.png')}
                   heartRate={heartRate}
                   zoneId={zoneId}
                   zoneColor={zoneColor}
                   progress={progressValue}
-                  opacity={device.isActive ? 1 : 0.6}
+                  opacity={isActive ? 1 : 0.6}
                   size="100%"
                   ringWidth={8}
                   showIndicator={false}
@@ -239,7 +376,7 @@ const SidebarFooter = ({ onContentSelect }) => {
             </div>
           );
         })}
-      </FlipMove>
+      </div>
       
       {sortedDevices.length === 0 && (
         <div

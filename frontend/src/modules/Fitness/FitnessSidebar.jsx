@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useFitnessContext, slugifyId } from '../../context/FitnessContext.jsx';
+import { useFitnessContext } from '../../context/FitnessContext.jsx';
+import { slugifyId } from '../../hooks/useFitnessSession.js';
 import FitnessTreasureBox from './FitnessSidebar/FitnessTreasureBox.jsx';
 import FitnessUsersList from './FitnessSidebar/FitnessUsers.jsx';
 import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
