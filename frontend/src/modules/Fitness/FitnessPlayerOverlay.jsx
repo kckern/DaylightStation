@@ -522,28 +522,16 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     const resolveUserTargetThreshold = typeof fitnessCtx?.getUserZoneThreshold === 'function'
       ? fitnessCtx.getUserZoneThreshold
       : null;
-    const registerConfigs = (list, fallbackLabel) => {
-      if (!Array.isArray(list)) return;
-      list.forEach((entry) => {
-        if (!entry?.name) return;
-        const key = normalizeName(entry.name);
-        if (!key) return;
-        if (fallbackLabel) {
-          if (!groupLabelMap.has(key)) {
-            const label = entry.group_label || fallbackLabel || entry.source || entry.category || null;
-            if (label) {
-              groupLabelMap.set(key, label);
-            }
-          }
-        }
-      });
-    };
-    const usersConfigRaw = fitnessCtx?.usersConfigRaw || {};
-    registerConfigs(usersConfigRaw?.primary, 'Primary');
-    registerConfigs(usersConfigRaw?.secondary, 'Secondary');
-    registerConfigs(usersConfigRaw?.family, 'Family');
-    registerConfigs(usersConfigRaw?.friends, 'Friend');
-    registerConfigs(usersConfigRaw?.guests, 'Guest');
+    
+    // Build groupLabel lookup from participantRoster (centralized source)
+    participants.forEach((participant) => {
+      if (!participant?.name) return;
+      const key = normalizeName(participant.name);
+      if (!key) return;
+      if (participant.groupLabel) {
+        groupLabelMap.set(key, participant.groupLabel);
+      }
+    });
 
     const topZoneId = participants.reduce((top, participant) => {
       const zoneId = participant?.zoneId

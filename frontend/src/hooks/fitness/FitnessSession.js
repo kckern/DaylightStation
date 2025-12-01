@@ -158,6 +158,7 @@ export class FitnessSession {
         roster.push({
           name: guestName,
           displayLabel,
+          groupLabel: null, // Guests don't have group labels
           profileId: slugifyId(guestName),
           baseUserName: null,
           isGuest: true,
@@ -167,7 +168,9 @@ export class FitnessSession {
           zoneId: zoneInfo?.zoneId || null,
           zoneColor: zoneInfo?.color || null,
           source: 'Guest',
-          userId: null
+          category: 'Guest',
+          userId: null,
+          avatarUrl: null
         });
         return;
       }
@@ -183,11 +186,16 @@ export class FitnessSession {
              resolvedHeartRate = Math.round(mappedUser.currentData.heartRate);
         }
 
-        const displayLabel = resolveDisplayLabel({ name });
+        const displayLabel = resolveDisplayLabel({
+          name,
+          groupLabel: mappedUser.groupLabel,
+          preferGroupLabel: true
+        });
         
         roster.push({
           name,
           displayLabel,
+          groupLabel: mappedUser.groupLabel || null, // NOW INCLUDED FROM USER
           profileId: mappedUser.id || slugifyId(name),
           baseUserName: name,
           isGuest: false,
@@ -196,8 +204,10 @@ export class FitnessSession {
           heartRate: resolvedHeartRate,
           zoneId: zoneInfo?.zoneId || mappedUser.currentData?.zone || null,
           zoneColor: zoneInfo?.color || mappedUser.currentData?.color || null,
-          source: 'Primary',
-          userId: mappedUser.id || null
+          source: mappedUser.source || 'Primary',
+          category: mappedUser.category || 'Family',
+          userId: mappedUser.id || null,
+          avatarUrl: mappedUser.avatarUrl || null
         });
       }
     });
@@ -335,21 +345,19 @@ export class FitnessSession {
     this._maybeAutosave();
     
     // Run Governance Evaluation
-    // We need to construct the inputs for GovernanceEngine.evaluate()
-    const activeParticipants = allUsers
-        .filter((u) => {
-          const hr = Number.isFinite(u?.currentData?.heartRate)
-            ? u.currentData.heartRate
-            : Number.isFinite(u?.currentHeartRate)
-              ? u.currentHeartRate
-              : 0;
-          return hr > 0;
+    // Use the roster which already filters out suppressed devices
+    const activeParticipants = this.roster
+        .filter((entry) => {
+          const hr = Number.isFinite(entry?.heartRate) ? entry.heartRate : 0;
+          return hr > 0 && entry.name;
         })
-        .map(u => u.name);
+        .map(entry => entry.name);
         
     const userZoneMap = {};
-    allUsers.forEach(u => {
-        userZoneMap[u.name] = u?.currentData?.zone || null;
+    this.roster.forEach(entry => {
+        if (entry.name) {
+            userZoneMap[entry.name] = entry.zoneId || null;
+        }
     });
     
     // We need zoneRankMap and zoneInfoMap from somewhere (likely computed from zoneConfig)
