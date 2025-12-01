@@ -38,6 +38,10 @@ export class FitnessSession {
     this.governanceEngine = new GovernanceEngine();
     this.voiceMemoManager = new VoiceMemoManager(this);
     this.treasureBox = null; // Instantiated on start
+    this._userCollectionsCache = null;
+    this._deviceOwnershipCache = null;
+    this._guestCandidatesCache = null;
+    this._userZoneProfilesCache = null;
 
     this._autosaveIntervalMs = 15000;
     this._lastAutosaveAt = 0;
@@ -343,6 +347,10 @@ export class FitnessSession {
     }
 
     this._maybeAutosave();
+    this._userCollectionsCache = this.userManager.getUserCollections();
+    this._deviceOwnershipCache = this.userManager.getDeviceOwnership();
+    this._guestCandidatesCache = this.userManager.getGuestCandidates();
+    this._userZoneProfilesCache = this.userManager.getUserZoneProfiles();
     
     // Run Governance Evaluation
     // Use the roster which already filters out suppressed devices
@@ -517,4 +525,39 @@ export class FitnessSession {
   addVoiceMemo(memo) { return this.voiceMemoManager.addMemo(memo); }
   removeVoiceMemo(memoId) { return this.voiceMemoManager.removeMemo(memoId); }
   replaceVoiceMemo(memoId, memo) { return this.voiceMemoManager.replaceMemo(memoId, memo); }
+
+  get userCollections() {
+    if (!this._userCollectionsCache) {
+      this._userCollectionsCache = this.userManager.getUserCollections();
+    }
+    return this._userCollectionsCache;
+  }
+
+  get deviceOwnership() {
+    if (!this._deviceOwnershipCache) {
+      this._deviceOwnershipCache = this.userManager.getDeviceOwnership();
+    }
+    return this._deviceOwnershipCache;
+  }
+
+  get guestCandidates() {
+    if (!this._guestCandidatesCache) {
+      this._guestCandidatesCache = this.userManager.getGuestCandidates();
+    }
+    return this._guestCandidatesCache;
+  }
+
+  get userZoneProfiles() {
+    if (!this._userZoneProfilesCache) {
+      this._userZoneProfilesCache = this.userManager.getUserZoneProfiles();
+    }
+    return this._userZoneProfilesCache;
+  }
+
+  invalidateUserCaches() {
+    this._userCollectionsCache = null;
+    this._deviceOwnershipCache = null;
+    this._guestCandidatesCache = null;
+    this._userZoneProfilesCache = null;
+  }
 }

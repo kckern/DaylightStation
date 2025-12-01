@@ -21,6 +21,7 @@
       height: 100%;
       object-fit: cover;
       transform: scaleX(-1); // Mirror effect
+      filter: saturate(2) contrast(1.2) brightness(0.9);
     }
 
     .video-error {
