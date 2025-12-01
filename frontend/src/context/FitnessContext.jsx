@@ -102,7 +102,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governanceConfig,
     equipmentConfig,
     nomusicLabels,
-    governedLabels
+    governedLabels,
+    governedTypes
   } = React.useMemo(() => {
     const root = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
     const plex = root?.plex || {};
@@ -111,6 +112,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       ? governance.governed_labels
       : plex?.governed_labels;
     const normalizedGovernedLabels = normalizeLabelList(governanceLabelSource);
+    const governanceTypeSource = Array.isArray(governance?.governed_types) && governance.governed_types.length > 0
+      ? governance.governed_types
+      : plex?.governed_types;
+    const normalizedGovernedTypes = normalizeLabelList(governanceTypeSource);
     const normalizedNomusicLabels = Array.isArray(plex?.nomusic_labels)
       ? plex.nomusic_labels.filter((label) => typeof label === 'string')
       : [];
@@ -124,11 +129,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       zoneConfig: root?.zones,
       governanceConfig: {
         ...governance,
-        governed_labels: normalizedGovernedLabels
+        governed_labels: normalizedGovernedLabels,
+        governed_types: normalizedGovernedTypes
       },
       equipmentConfig: root?.equipment || [],
       nomusicLabels: normalizedNomusicLabels,
-      governedLabels: normalizedGovernedLabels
+      governedLabels: normalizedGovernedLabels,
+      governedTypes: normalizedGovernedTypes
     };
   }, [fitnessConfiguration]);
 
@@ -491,7 +498,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const session = fitnessSessionRef.current;
     if (!session) return;
     
-    const media = input ? { id: input.id, labels: normalizeLabelList(input.labels) } : null;
+    const media = input ? {
+      id: input.id,
+      labels: normalizeLabelList(input.labels),
+      type: typeof input.type === 'string' ? input.type.trim().toLowerCase() : null
+    } : null;
     session.governanceEngine.setMedia(media);
     forceUpdate();
   }, [forceUpdate]);
@@ -654,6 +665,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [zoneConfig]);
 
   const governedLabelSet = React.useMemo(() => new Set(normalizeLabelList(governedLabels)), [governedLabels]);
+  const governedTypeSet = React.useMemo(() => new Set(normalizeLabelList(governedTypes)), [governedTypes]);
 
 
 
@@ -1004,6 +1016,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governanceConfig,
     governedLabels,
     governedLabelSet,
+    governedTypes,
+    governedTypeSet,
+    governedTypes,
+    governedTypeSet,
     
     connected,
     fitnessDevices,
