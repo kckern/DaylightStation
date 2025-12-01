@@ -813,6 +813,25 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     setPlayerMode(m => m === 'fullscreen' ? (lastNonFullscreenRef.current || 'normal') : 'fullscreen');
   }, []);
 
+  const shouldBlockFullscreenToggle = useCallback((eventTarget) => {
+    if (typeof Element === 'undefined') {
+      return false;
+    }
+    if (!eventTarget || !(eventTarget instanceof Element)) {
+      return false;
+    }
+    const interactive = eventTarget.closest('button, a, input, textarea, [role="button"]');
+    if (interactive) {
+      return true;
+    }
+    const guardMatch = eventTarget.closest('[data-no-fullscreen]');
+    if (!guardMatch) {
+      return false;
+    }
+    const loadingOverlay = guardMatch.closest('.loading-overlay.loading');
+    return !loadingOverlay;
+  }, []);
+
   const handleVideoContainerPointerDown = useCallback((event) => {
     logFitnessEvent('fullscreen-pointerdown', {
       button: event.button,
@@ -824,7 +843,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     });
     if (typeof event.button === 'number' && event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target && target.closest('button, a, input, textarea, [role="button"], [data-no-fullscreen]')) {
+    if (shouldBlockFullscreenToggle(target)) {
       return;
     }
     logFitnessEvent('fullscreen-toggle-request', {
@@ -833,7 +852,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       button: event.button
     });
     toggleFullscreen();
-  }, [toggleFullscreen, logFitnessEvent]);
+  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle]);
 
   const handleVideoContainerClickCapture = useCallback((event) => {
     logFitnessEvent('fullscreen-click-capture', {
@@ -855,7 +874,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
     const contentEl = contentRef.current;
     if (!contentEl || !contentEl.contains(target)) return;
-    if (target.closest('button, a, input, textarea, [role="button"], [data-no-fullscreen]')) {
+    if (shouldBlockFullscreenToggle(target)) {
       return;
     }
 
@@ -865,7 +884,59 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       button: event.button
     });
     toggleFullscreen();
-  }, [toggleFullscreen, logFitnessEvent]);
+  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle]);
+
+  const allowLoadingOverlayFullscreen = Boolean(resilienceState?.waitingToPlay || resilienceState?.stalled);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    if (!allowLoadingOverlayFullscreen) {
+      return undefined;
+    }
+    const handleGlobalPointerDown = (event) => {
+      if (!contentRef.current) {
+        return;
+      }
+      if (typeof event.button === 'number' && event.button !== 0) {
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) {
+        return;
+      }
+      const loadingOverlay = target.closest('.loading-overlay.loading');
+      if (!loadingOverlay) {
+        return;
+      }
+      if (shouldBlockFullscreenToggle(target)) {
+        return;
+      }
+      const rect = contentRef.current.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+      const { clientX, clientY } = event;
+      if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+        return;
+      }
+      const withinBounds = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+      if (!withinBounds) {
+        return;
+      }
+      logFitnessEvent('fullscreen-toggle-request', {
+        source: 'loading-overlay',
+        pointerType: event.pointerType,
+        button: event.button
+      });
+      toggleFullscreen();
+    };
+    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+    };
+  }, [allowLoadingOverlayFullscreen, toggleFullscreen, shouldBlockFullscreenToggle, logFitnessEvent]);
 
   const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
   const playerRootClasses = useMemo(() => {
