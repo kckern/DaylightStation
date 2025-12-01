@@ -170,7 +170,7 @@ const logToInfinity = async (media_key, { percent, seconds }) => {
 
 mediaRouter.post('/log', async (req, res) => {
     const postData = req.body;
-    const { type, media_key, percent, seconds, title } = postData;
+    const { type, media_key, percent, seconds, title, watched_duration } = postData;
     if (!type || !media_key || !percent) {
         return res.status(400).json({ error: `Invalid request: Missing ${!type ? 'type' : !media_key ? 'media_key' : 'percent'}` });
     }
@@ -187,9 +187,24 @@ mediaRouter.post('/log', async (req, res) => {
                 logPath = `history/media_memory/plex/${librarystring}`;
             }
         }
-
         const log = loadFile(logPath) || {};
-        log[media_key] = { time: moment().format('YYYY-MM-DD hh:mm:ssa'), title, media_key, seconds: parseInt(seconds), percent: parseFloat(percent) };
+        const normalizedSeconds = parseInt(seconds);
+        const normalizedPercent = parseFloat(percent);
+        const normalizedWatched = Number.parseFloat(watched_duration);
+        const watchedDurationValue = Number.isFinite(normalizedWatched) && normalizedWatched >= 0
+            ? Number(normalizedWatched.toFixed(3))
+            : null;
+        const entry = {
+            time: moment().format('YYYY-MM-DD hh:mm:ssa'),
+            title,
+            media_key,
+            seconds: normalizedSeconds,
+            percent: normalizedPercent
+        };
+        if (watchedDurationValue != null) {
+            entry.watched_duration = watchedDurationValue;
+        }
+        log[media_key] = entry;
         if(!log[media_key].title) delete log[media_key].title;
         const sortedLog = Object.fromEntries(
             Object.entries(log).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
@@ -472,6 +487,10 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             item.watchProgress = parseFloat(watchData.percent) || 0;
             item.watchSeconds = parseInt(watchData.seconds) || 0;
             item.watchedDate = watchData.time;
+            const watchedDurationValue = parseFloat(watchData.watched_duration);
+            if (!Number.isNaN(watchedDurationValue) && watchedDurationValue >= 0) {
+                item.watchDurationSeconds = watchedDurationValue;
+            }
         } else {
              // console.log(`No history for ${item.plex} (type: ${typeof item.plex})`);
         }
