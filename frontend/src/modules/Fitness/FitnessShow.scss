@@ -568,6 +568,10 @@
           box-shadow: 0 0 12px rgba(46, 204, 113, 0.25);
           .episode-thumbnail img { filter: grayscale(0.6) brightness(0.7); }
           &:hover { .episode-thumbnail img { filter: none; } }
+
+          &.selected {
+            box-shadow: 0 0 16px rgba(118, 255, 182, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.2);
+          }
         }
 
         &.in-progress {
@@ -575,11 +579,15 @@
           border-color: rgba(240, 194, 70, 0.65);
           box-shadow: 0 0 12px rgba(240, 194, 70, 0.25);
           .episode-thumbnail img { filter: grayscale(0.3) brightness(0.8) saturate(0.9); }
+
+          &.selected {
+            box-shadow: 0 0 16px rgba(255, 219, 120, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.15);
+          }
         }
 
         /* Hover removed */
 
-        &.selected {
+        &.selected:not(.watched):not(.in-progress) {
           background: rgba(255, 255, 255, 0.1);
           border-color: rgba(255, 255, 255, 0.5);
         }
