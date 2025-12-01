@@ -126,35 +126,85 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     equipment,
     users,
     hrColorMap: contextHrColorMap,
-    usersConfigRaw,
     zones,
     guestAssignments: guestAssignmentsFromContext,
     userZoneProgress,
     getUserVitals,
     participantsByDevice: participantsByDeviceMap,
     participantRoster,
-    getUserByDevice
+    getUserByDevice,
+    userCollections,
+    deviceOwnership,
+    userZoneProfiles
   } = fitnessContext;
+
+  const normalizedCollections = userCollections || {};
+  const configuredUsers = normalizedCollections.all || [];
+
+  const registeredUsers = React.useMemo(() => {
+    if (users instanceof Map) {
+      return Array.from(users.values());
+    }
+    if (Array.isArray(users)) {
+      return users;
+    }
+    if (users && typeof users === 'object') {
+      return Object.values(users);
+    }
+    return [];
+  }, [users]);
+
+  const guestAssignments = React.useMemo(() => {
+    if (guestAssignmentsFromContext instanceof Map) return guestAssignmentsFromContext;
+    if (Array.isArray(guestAssignmentsFromContext)) {
+      const map = new Map();
+      guestAssignmentsFromContext.forEach((entry) => {
+        if (!entry) return;
+        const key = entry.deviceId ?? entry.device_id ?? entry.deviceID ?? entry.device_id_str;
+        if (key == null) return;
+        map.set(String(key), entry);
+      });
+      return map;
+    }
+    if (guestAssignmentsFromContext && typeof guestAssignmentsFromContext === 'object') {
+      const map = new Map();
+      Object.entries(guestAssignmentsFromContext).forEach(([key, value]) => {
+        if (key == null) return;
+        map.set(String(key), value);
+      });
+      return map;
+    }
+    return new Map();
+  }, [guestAssignmentsFromContext]);
+
+  const guestAssignmentEntries = React.useMemo(() => {
+    return Array.from(guestAssignments.entries());
+  }, [guestAssignments]);
+
+  const getGuestAssignment = React.useCallback((deviceId) => {
+    if (deviceId == null) return null;
+    return guestAssignments.get(String(deviceId)) || null;
+  }, [guestAssignments]);
 
   const userProfileIdMap = React.useMemo(() => {
     const map = new Map();
-    const addEntry = (cfg) => {
-      if (!cfg?.name) return;
-      const profileId = cfg.id || slugifyId(cfg.name);
-      const key = String(cfg.name).trim().toLowerCase();
-      if (key) map.set(key, profileId);
-      if (cfg.group_label) {
-        const gKey = String(cfg.group_label).trim().toLowerCase();
-        if (gKey) map.set(gKey, profileId);
-      }
+    const addEntry = (descriptor) => {
+      if (!descriptor?.name) return;
+      const profileId = descriptor.profileId || descriptor.id || slugifyId(descriptor.name);
+      const addKey = (value) => {
+        if (!value) return;
+        const normalized = String(value).trim().toLowerCase();
+        if (normalized) {
+          map.set(normalized, profileId);
+        }
+      };
+      addKey(descriptor.name);
+      addKey(descriptor.slug);
+      addKey(descriptor.groupLabel);
     };
-    const addFrom = (arr) => Array.isArray(arr) && arr.forEach(addEntry);
-    addFrom(usersConfigRaw?.primary);
-    addFrom(usersConfigRaw?.secondary);
-    addFrom(usersConfigRaw?.family);
-    addFrom(usersConfigRaw?.friends);
+    configuredUsers.forEach(addEntry);
     return map;
-  }, [usersConfigRaw]);
+  }, [configuredUsers]);
 
   const getConfiguredProfileId = React.useCallback((name) => {
     if (!name) return null;
@@ -163,47 +213,97 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return userProfileIdMap.get(key) || null;
   }, [userProfileIdMap]);
 
+  const heartRateOwners = React.useMemo(() => {
+    const ownership = deviceOwnership?.heartRate;
+    if (ownership instanceof Map) return ownership;
+    if (ownership && typeof ownership === 'object') {
+      const map = new Map();
+      Object.entries(ownership).forEach(([deviceId, descriptor]) => {
+        map.set(String(deviceId), descriptor);
+      });
+      return map;
+    }
+    return new Map();
+  }, [deviceOwnership]);
+
+  const zoneProfileMap = React.useMemo(() => {
+    if (userZoneProfiles instanceof Map) return userZoneProfiles;
+    if (userZoneProfiles && typeof userZoneProfiles === 'object') {
+      const map = new Map();
+      Object.entries(userZoneProfiles).forEach(([key, value]) => {
+        map.set(key, value);
+      });
+      return map;
+    }
+    return new Map();
+  }, [userZoneProfiles]);
+
   const participantsByDevice = React.useMemo(() => {
     if (participantsByDeviceMap instanceof Map) return participantsByDeviceMap;
-    const map = new Map();
     if (participantsByDeviceMap && typeof participantsByDeviceMap === 'object') {
+      const map = new Map();
       Object.entries(participantsByDeviceMap).forEach(([key, value]) => {
         map.set(String(key), value);
       });
+      return map;
     }
-    return map;
+    return new Map();
   }, [participantsByDeviceMap]);
 
-  const registeredUsers = (() => {
-    if (!users) return [];
-    if (users instanceof Map) return Array.from(users.values());
-    if (Array.isArray(users)) return users;
-    if (typeof users === 'object') return Object.values(users);
-    return [];
-  })();
+  const { userIdMap, participantByHrId } = React.useMemo(() => {
+    const participantMap = new Map();
+    const map = {};
 
-  const guestAssignmentEntries = (() => {
-    if (!guestAssignmentsFromContext) return [];
-    if (guestAssignmentsFromContext instanceof Map) {
-      return Array.from(guestAssignmentsFromContext.entries());
-    }
-    if (typeof guestAssignmentsFromContext === 'object') {
-      return Object.entries(guestAssignmentsFromContext);
-    }
-    return [];
-  })();
+    const assignProfile = (deviceId, profileId) => {
+      if (deviceId == null || !profileId) return;
+      map[String(deviceId)] = profileId;
+    };
 
-  const getGuestAssignment = React.useCallback((deviceId) => {
-    if (!guestAssignmentsFromContext) return null;
-    const key = String(deviceId);
-    if (guestAssignmentsFromContext instanceof Map) {
-      return guestAssignmentsFromContext.get(key) || null;
+    const registerParticipant = (deviceId, participant) => {
+      if (deviceId == null || !participant) return;
+      const normalized = String(deviceId);
+      if (!participantMap.has(normalized)) {
+        participantMap.set(normalized, participant);
+      }
+      if (!map[normalized]) {
+        const profileId = participant.profileId
+          || participant.userId
+          || getConfiguredProfileId(participant.name)
+          || (participant.name ? slugifyId(participant.name) : null);
+        if (profileId) map[normalized] = profileId;
+      }
+    };
+
+    if (Array.isArray(participantRoster)) {
+      participantRoster.forEach((participant) => {
+        const keys = [participant?.hrDeviceId, participant?.deviceId];
+        keys.forEach((key) => registerParticipant(key, participant));
+      });
     }
-    if (typeof guestAssignmentsFromContext === 'object') {
-      return guestAssignmentsFromContext[key] || null;
-    }
-    return null;
-  }, [guestAssignmentsFromContext]);
+
+    participantsByDevice.forEach((participant, key) => {
+      registerParticipant(key, participant);
+    });
+
+    heartRateOwners.forEach((descriptor, deviceId) => {
+      const profileId = descriptor?.profileId || descriptor?.id || slugifyId(descriptor?.name);
+      assignProfile(deviceId, profileId);
+    });
+
+    guestAssignmentEntries.forEach(([deviceId, assignment]) => {
+      if (!assignment) return;
+      const profileId = assignment.profileId || assignment.id || slugifyId(assignment.name);
+      assignProfile(deviceId, profileId);
+    });
+
+    registeredUsers.forEach((user) => {
+      if (user?.hrDeviceId !== undefined && user?.hrDeviceId !== null) {
+        assignProfile(user.hrDeviceId, user.id || slugifyId(user.name));
+      }
+    });
+
+    return { userIdMap: map, participantByHrId: participantMap };
+  }, [participantRoster, participantsByDevice, guestAssignmentEntries, registeredUsers, getConfiguredProfileId, heartRateOwners]);
 
   const zoneProgressMap = React.useMemo(() => {
     const map = new Map();
@@ -273,66 +373,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [deviceConfiguration]);
 
-  const { userIdMap, participantByHrId } = React.useMemo(() => {
-    const participantMap = new Map();
-    const map = {};
-
-    const assignProfile = (deviceId, profileId) => {
-      if (deviceId == null || !profileId) return;
-      map[String(deviceId)] = profileId;
-    };
-
-    const registerParticipant = (deviceId, participant) => {
-      if (deviceId == null || !participant) return;
-      const normalized = String(deviceId);
-      if (!participantMap.has(normalized)) {
-        participantMap.set(normalized, participant);
-      }
-      if (!map[normalized]) {
-        const profileId = participant.profileId
-          || participant.userId
-          || getConfiguredProfileId(participant.name)
-          || (participant.name ? slugifyId(participant.name) : null);
-        if (profileId) map[normalized] = profileId;
-      }
-    };
-
-    if (Array.isArray(participantRoster)) {
-      participantRoster.forEach((participant) => {
-        const keys = [participant?.hrDeviceId, participant?.deviceId];
-        keys.forEach((key) => registerParticipant(key, participant));
-      });
-    }
-
-    participantsByDevice.forEach((participant, key) => {
-      registerParticipant(key, participant);
-    });
-
-    const addFromConfig = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
-      if (cfg?.hr !== undefined && cfg.hr !== null) {
-        assignProfile(cfg.hr, cfg.id || slugifyId(cfg.name));
-      }
-    });
-    addFromConfig(usersConfigRaw?.primary);
-    addFromConfig(usersConfigRaw?.secondary);
-    addFromConfig(usersConfigRaw?.family);
-    addFromConfig(usersConfigRaw?.friends);
-
-    guestAssignmentEntries.forEach(([deviceId, assignment]) => {
-      if (!assignment) return;
-      const profileId = assignment.profileId || assignment.id || slugifyId(assignment.name);
-      assignProfile(deviceId, profileId);
-    });
-
-    registeredUsers.forEach((user) => {
-      if (user?.hrDeviceId !== undefined && user?.hrDeviceId !== null) {
-        assignProfile(user.hrDeviceId, user.id || slugifyId(user.name));
-      }
-    });
-
-    return { userIdMap: map, participantByHrId: participantMap };
-  }, [participantRoster, participantsByDevice, usersConfigRaw, guestAssignmentEntries, registeredUsers, getConfiguredProfileId]);
-
   // Map of deviceId -> user name (config + roster fallbacks)
   const hrOwnerBaseMap = React.useMemo(() => {
     const map = {};
@@ -340,22 +380,18 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       if (!participant?.name) return;
       map[String(key)] = participant.name;
     });
-    const addFrom = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
-      if (cfg && cfg.name && (cfg.hr !== undefined && cfg.hr !== null)) {
-        map[String(cfg.hr)] = cfg.name;
+    heartRateOwners.forEach((descriptor, deviceId) => {
+      if (descriptor?.name) {
+        map[String(deviceId)] = descriptor.name;
       }
     });
-    addFrom(usersConfigRaw?.primary);
-    addFrom(usersConfigRaw?.secondary);
-    addFrom(usersConfigRaw?.family);
-    addFrom(usersConfigRaw?.friends);
     registeredUsers.forEach((user) => {
       if (user?.hrDeviceId !== undefined && user?.hrDeviceId !== null && user?.name) {
         map[String(user.hrDeviceId)] = user.name;
       }
     });
     return map;
-  }, [participantByHrId, usersConfigRaw, registeredUsers]);
+  }, [participantByHrId, heartRateOwners, registeredUsers]);
 
   const hrOwnerMap = React.useMemo(() => {
     const map = { ...hrOwnerBaseMap };
@@ -376,13 +412,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     if (activeHrDeviceIds.length <= 1) return hrOwnerMap;
     
     const labelLookup = {};
-    const gather = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
-      if (cfg?.hr !== undefined && cfg?.hr !== null && cfg.group_label) {
-        labelLookup[String(cfg.hr)] = cfg.group_label;
+    heartRateOwners.forEach((descriptor, deviceId) => {
+      if (descriptor?.groupLabel) {
+        labelLookup[String(deviceId)] = descriptor.groupLabel;
       }
     });
-    gather(usersConfigRaw?.primary);
-    gather(usersConfigRaw?.secondary);
     if (Object.keys(labelLookup).length === 0) return hrOwnerMap;
     const out = { ...hrOwnerMap };
     Object.keys(labelLookup).forEach(deviceId => {
@@ -392,7 +426,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       }
     });
     return out;
-  }, [hrOwnerMap, allDevices, usersConfigRaw, getGuestAssignment]);
+  }, [hrOwnerMap, allDevices, heartRateOwners, getGuestAssignment]);
 
   const resolveCanonicalUserName = React.useCallback((deviceId, fallbackName = null) => {
     if (deviceId == null) return fallbackName;
@@ -427,17 +461,24 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   // Fallback zone derivation using configured zones + per-user overrides
   const deriveZoneFromHR = React.useCallback((hr, userName) => {
     if (!hr || hr <= 0 || !Array.isArray(zones) || zones.length === 0) return null;
-    const cfg = usersConfigRaw?.primary?.find(u => u.name === userName) 
-      || usersConfigRaw?.secondary?.find(u => u.name === userName);
-    const overrides = cfg?.zones || {};
-    const sorted = [...zones].sort((a,b) => b.min - a.min);
+    const profileKey = userName ? slugifyId(userName) : null;
+    const zoneProfile = profileKey ? zoneProfileMap.get(profileKey) : null;
+    const getOverrideMin = (zoneId) => {
+      if (!zoneProfile?.zoneConfig) return null;
+      const normalized = String(zoneId).toLowerCase();
+      const match = zoneProfile.zoneConfig.find((zone) => String(zone.id).toLowerCase() === normalized);
+      return Number.isFinite(match?.min) ? match.min : null;
+    };
+    const sorted = [...zones].sort((a, b) => (b.min ?? 0) - (a.min ?? 0));
     for (const z of sorted) {
-      const overrideMin = overrides[z.id];
-      const min = (typeof overrideMin === 'number') ? overrideMin : z.min;
-      if (hr >= min) return { id: z.id, color: z.color };
+      const overrideMin = getOverrideMin(z.id);
+      const min = Number.isFinite(overrideMin) ? overrideMin : z.min;
+      if (Number.isFinite(min) && hr >= min) {
+        return { id: z.id, color: z.color };
+      }
     }
     return null;
-  }, [zones, usersConfigRaw]);
+  }, [zones, zoneProfileMap]);
   
   // Map of deviceId -> equipment name and ID
   const equipmentMap = React.useMemo(() => {

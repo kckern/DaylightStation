@@ -29,6 +29,20 @@ const VOICE_MEMO_OVERLAY_INITIAL = {
   startedAt: null
 };
 
+const EMPTY_USER_COLLECTIONS = Object.freeze({
+  primary: [],
+  secondary: [],
+  family: [],
+  friends: [],
+  other: [],
+  all: []
+});
+
+const createEmptyOwnership = () => ({
+  heartRate: new Map(),
+  cadence: new Map()
+});
+
 // Custom hook for using the context
 export const useFitnessContext = () => {
   const context = useContext(FitnessContext);
@@ -202,6 +216,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
     // Configure User Manager
     session.userManager.configure(usersConfig, zoneConfig);
+    session.invalidateUserCaches?.();
 
     // Configure Governance
     session.governanceEngine.configure(governanceConfig);
@@ -768,6 +783,28 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return map;
   }, [allUsers, guestAssignments, getDisplayLabel]);
 
+  const userCollections = React.useMemo(() => {
+    const collections = session?.userCollections;
+    return collections || EMPTY_USER_COLLECTIONS;
+  }, [session, version]);
+
+  const deviceOwnership = React.useMemo(() => {
+    const ownership = session?.deviceOwnership;
+    if (ownership) {
+      return ownership;
+    }
+    return createEmptyOwnership();
+  }, [session, version]);
+
+  const guestCandidateList = React.useMemo(() => {
+    return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
+  }, [session, version]);
+
+  const userZoneProfiles = React.useMemo(() => {
+    const profiles = session?.userZoneProfiles;
+    return profiles instanceof Map ? profiles : new Map();
+  }, [session, version]);
+
   const userHeartRateMap = React.useMemo(() => {
     const map = new Map();
     userVitalsMap.forEach((entry, key) => {
@@ -972,6 +1009,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     fitnessDevices,
     users,
     guestAssignments,
+    userCollections,
+    deviceOwnership,
+    guestCandidates: guestCandidateList,
+    userZoneProfiles,
     
     allDevices,
     allUsers,
