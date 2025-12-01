@@ -2,12 +2,16 @@ import { slugifyId, resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnap
 
 export class User {
   constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
-    const { id: configuredId, globalZones, zoneOverrides } = options;
+    const { id: configuredId, globalZones, zoneOverrides, groupLabel, source, category, avatarUrl } = options;
     this.id = configuredId ? String(configuredId) : slugifyId(name);
     this.name = name;
     this.birthyear = birthyear;
     this.hrDeviceId = hrDeviceId;
     this.cadenceDeviceId = cadenceDeviceId;
+    this.groupLabel = groupLabel || null; // e.g., "Dad", "Mom", etc.
+    this.source = source || null; // e.g., "Primary", "Secondary", "Guest"
+    this.category = category || null; // e.g., "Family", "Friend"
+    this.avatarUrl = avatarUrl || null;
     this.age = new Date().getFullYear() - (birthyear || new Date().getFullYear());
     this.zoneConfig = buildZoneConfig(globalZones, zoneOverrides);
     this.zoneSnapshot = deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate: 0 });
@@ -209,21 +213,23 @@ export class UserManager {
   configure(usersConfig, globalZones) {
     if (!usersConfig) return;
     
-    const processUserList = (list) => {
+    const processUserList = (list, defaultSource = null, defaultCategory = null) => {
       if (!Array.isArray(list)) return;
       list.forEach(userConfig => {
         if (!userConfig || !userConfig.name) return;
         this.registerUser({
           ...userConfig,
-          globalZones
+          globalZones,
+          source: userConfig.source || defaultSource,
+          category: userConfig.category || defaultCategory
         });
       });
     };
 
-    processUserList(usersConfig.primary);
-    processUserList(usersConfig.secondary);
-    processUserList(usersConfig.family);
-    processUserList(usersConfig.friends);
+    processUserList(usersConfig.primary, 'Primary', 'Family');
+    processUserList(usersConfig.secondary, 'Secondary', 'Family');
+    processUserList(usersConfig.family, 'Family', 'Family');
+    processUserList(usersConfig.friends, 'Friend', 'Friend');
   }
 
   registerUser(config) {
@@ -231,11 +237,20 @@ export class UserManager {
     const birthYear = config.birth_year ?? config.birthyear ?? config.birthYear ?? null;
     const hrDeviceId = config.hr_device_id ?? config.hr ?? config.hrDeviceId ?? config.deviceId ?? null;
     const cadenceDeviceId = config.cadence_device_id ?? config.cadence ?? config.cadenceDeviceId ?? null;
+    const groupLabel = config.group_label ?? config.groupLabel ?? null;
+    const source = config.source ?? null;
+    const category = config.category ?? null;
+    const avatarUrl = config.avatar_url ?? config.avatarUrl ?? null;
+    
     if (!this.users.has(id)) {
       const user = new User(config.name, birthYear, hrDeviceId, cadenceDeviceId, {
         id: config.id,
         globalZones: config.globalZones,
-        zoneOverrides: config.zones
+        zoneOverrides: config.zones,
+        groupLabel,
+        source,
+        category,
+        avatarUrl
       });
       this.users.set(id, user);
     } else {
@@ -243,6 +258,10 @@ export class UserManager {
       const user = this.users.get(id);
       user.hrDeviceId = hrDeviceId ?? user.hrDeviceId;
       user.cadenceDeviceId = cadenceDeviceId ?? user.cadenceDeviceId;
+      user.groupLabel = groupLabel ?? user.groupLabel;
+      user.source = source ?? user.source;
+      user.category = category ?? user.category;
+      user.avatarUrl = avatarUrl ?? user.avatarUrl;
       if (config.id) {
         user.id = String(config.id);
       }
