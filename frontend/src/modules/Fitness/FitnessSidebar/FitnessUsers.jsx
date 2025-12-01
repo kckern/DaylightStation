@@ -4,6 +4,7 @@ import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import FlipMove from 'react-flip-move';
 import '../FitnessCam.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
+import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
 
 const slugifyId = (value, fallback = 'user') => {
   if (!value) return fallback;
@@ -793,50 +794,28 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
                         const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
                         const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
-                        const rpm = rpmDevice.cadence || 0;
-                        const isZero = rpm === 0;
-                        const animationDuration = rpm > 0 ? `${CONFIG.rpm.animationBase / rpm}s` : '0s';
+                        const rpmValue = Number.isFinite(rpmDevice.cadence)
+                          ? Math.max(0, Math.round(rpmDevice.cadence))
+                          : 0;
+                        const animationDuration = rpmValue > 0
+                          ? `${CONFIG.rpm.animationBase / Math.max(rpmValue, 1)}s`
+                          : '0s';
                         const deviceColor = cadenceColorMap[String(rpmDevice.deviceId)];
                         const colorMap = CONFIG.rpm.colorMap;
                         const borderColor = deviceColor ? (colorMap[deviceColor] || deviceColor) : colorMap.green;
-                        
+
                         return (
-                          <div key={`rpm-${rpmDevice.deviceId}`} className="rpm-device-avatar">
-                            <div className="rpm-avatar-wrapper">
-                              {!isZero && (
-                                <div 
-                                  className="rpm-spinning-border"
-                                  style={{
-                                    '--spin-duration': animationDuration,
-                                    borderColor: borderColor
-                                  }}
-                                />
-                              )}
-                              <div className="rpm-avatar-content">
-                                <img
-                                  src={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
-                                  alt={deviceName}
-                                  className="rpm-device-image"
-                                  onError={(e) => {
-                                    if (e.target.dataset.fallback) {
-                                      e.target.style.display = 'none';
-                                      return;
-                                    }
-                                    e.target.dataset.fallback = '1';
-                                    e.target.src = DaylightMediaPath('/media/img/equipment/equipment');
-                                  }}
-                                />
-                                <div 
-                                  className={`rpm-value-overlay ${isZero ? 'rpm-zero' : ''}`}
-                                  style={{
-                                    background: CONFIG.rpm.overlayBg
-                                  }}
-                                >
-                                  {rpm}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
+                          <RpmDeviceAvatar
+                            key={`rpm-${rpmDevice.deviceId}`}
+                            rpm={rpmValue}
+                            animationDuration={animationDuration}
+                            avatarSrc={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
+                            avatarAlt={deviceName}
+                            imageClassName="rpm-device-image"
+                            spinnerStyle={{ borderColor }}
+                            valueStyle={{ background: CONFIG.rpm.overlayBg }}
+                            fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
+                          />
                         );
                       })}
                     </div>
