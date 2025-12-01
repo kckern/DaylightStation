@@ -252,20 +252,51 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [assignGuestToDevice]);
 
   const suppressDeviceUntilNextReading = React.useCallback((deviceId) => {
-    // DeviceManager doesn't have explicit suppression, but we can implement it or just ignore.
-    // For now, maybe just ignore or add to a local set if needed.
-    // The old code removed it from `fitnessDevices` map.
-    // We can ask DeviceManager to remove it?
-    // session.deviceManager.removeDevice(deviceId);
-    // But it will reappear on next WS message.
-    // That's fine, "UntilNextReading" implies temporary.
-    if (deviceId) {
-        // We don't have a removeDevice method exposed on session, but we can access manager
-        // session.deviceManager.devices.delete(String(deviceId));
-        // But DeviceManager encapsulates map.
-        // Let's skip this feature for now or implement it later if critical.
+    if (deviceId == null) return false;
+
+    const session = fitnessSessionRef.current;
+    if (!session) return false;
+
+    const rawId = String(deviceId);
+    const slugId = slugifyId(deviceId);
+    const candidateIds = Array.from(new Set([rawId, slugId].filter(Boolean)));
+
+    let mutated = false;
+
+    if (session.deviceManager?.removeDevice) {
+      mutated = session.deviceManager.removeDevice(rawId) || mutated;
+    } else if (session.deviceManager?.devices instanceof Map) {
+      candidateIds.forEach((key) => {
+        if (session.deviceManager.devices.delete(key)) {
+          mutated = true;
+        }
+      });
     }
-  }, []);
+
+    const activeIds = session.activeDeviceIds;
+    if (activeIds instanceof Set) {
+      candidateIds.forEach((key) => {
+        if (activeIds.delete(key)) {
+          mutated = true;
+        }
+      });
+    }
+
+    const guestAssignmentsMap = session.userManager?.guestAssignments;
+    if (guestAssignmentsMap instanceof Map) {
+      candidateIds.forEach((key) => {
+        if (guestAssignmentsMap.delete(key)) {
+          mutated = true;
+        }
+      });
+    }
+
+    if (mutated) {
+      forceUpdate();
+    }
+
+    return mutated;
+  }, [forceUpdate]);
 
   // Voice Memos
   const voiceMemos = React.useMemo(() => {
