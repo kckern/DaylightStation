@@ -47,6 +47,8 @@ const SYSTEM_HEALTH = Object.freeze({
 const DECODER_NUDGE_MIN_BUFFER_MS = 8000;
 const DECODER_NUDGE_COOLDOWN_MS = 3000;
 const DECODER_NUDGE_GRACE_MS = 2000;
+const BITRATE_REDUCTION_FACTOR = 0.9;
+const DEFAULT_FALLBACK_MAX_VIDEO_BITRATE = 2000;
 
 const useLatest = (value) => {
   const ref = useRef(value);
@@ -89,6 +91,7 @@ function useUserIntentControls({ isPaused, isSeeking, pauseIntent }) {
 export function useMediaResilience({
   getMediaEl,
   meta = {},
+  maxVideoBitrate: maxVideoBitrateProp = null,
   seconds = 0,
   isPaused = false,
   isSeeking = false,
@@ -186,6 +189,44 @@ export function useMediaResilience({
     return Math.max(0, hardRecoverLoadingGraceMs);
   }, [hardRecoverLoadingGraceMs]);
 
+  const resolveInitialMaxVideoBitrate = useCallback(() => {
+    const explicit = Number(maxVideoBitrateProp);
+    if (Number.isFinite(explicit) && explicit > 0) {
+      return Math.round(explicit);
+    }
+    const metaValue = Number(meta?.maxVideoBitrate);
+    if (Number.isFinite(metaValue) && metaValue > 0) {
+      return Math.round(metaValue);
+    }
+    return DEFAULT_FALLBACK_MAX_VIDEO_BITRATE;
+  }, [maxVideoBitrateProp, meta?.maxVideoBitrate]);
+
+  const [bitrateState, setBitrateState] = useState(() => {
+    const baseline = resolveInitialMaxVideoBitrate();
+    return {
+      waitKeySnapshot: waitKey,
+      current: baseline,
+      lastSyncedBaseline: baseline
+    };
+  });
+  const bitrateStateRef = useLatest(bitrateState);
+
+  useEffect(() => {
+    const baseline = resolveInitialMaxVideoBitrate();
+    setBitrateState((prev) => {
+      const waitKeyChanged = prev.waitKeySnapshot !== waitKey;
+      const baselineChanged = Math.abs((prev.lastSyncedBaseline ?? baseline) - baseline) >= 1;
+      if (!waitKeyChanged && !baselineChanged) {
+        return prev;
+      }
+      return {
+        waitKeySnapshot: waitKey,
+        current: baseline,
+        lastSyncedBaseline: baseline
+      };
+    });
+  }, [waitKey, resolveInitialMaxVideoBitrate]);
+
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
   const nudgePlaybackRef = useLatest(typeof nudgePlayback === 'function' ? nudgePlayback : null);
@@ -280,6 +321,80 @@ export function useMediaResilience({
       }
     });
   }, [logContextRef]);
+
+  const applyBitrateOverride = useCallback((nextValue, options = {}) => {
+    if (!Number.isFinite(nextValue) || nextValue <= 0) {
+      return null;
+    }
+    const normalized = Math.max(1, Math.round(nextValue));
+    const {
+      reason = 'resilience-bitrate-adjustment',
+      source = 'resilience',
+      fetchReason = reason
+    } = options || {};
+
+    let stateChanged = false;
+    setBitrateState((prev) => {
+      if (prev.current === normalized) {
+        return prev;
+      }
+      stateChanged = true;
+      return {
+        ...prev,
+        current: normalized
+      };
+    });
+
+    if (stateChanged) {
+      logResilienceEvent('bitrate-target-updated', {
+        targetKbps: normalized,
+        reason,
+        source
+      }, { level: 'info' });
+    }
+
+    const fetchFn = fetchVideoInfoRef.current;
+    if (typeof fetchFn === 'function') {
+      Promise.resolve(fetchFn({
+        reason: fetchReason,
+        maxVideoBitrateOverride: normalized
+      }))
+        .then(() => {
+          setLastFetchAt(Date.now());
+        })
+        .catch((error) => {
+          logResilienceEvent('bitrate-target-update-error', {
+            reason: fetchReason,
+            error: error?.message || String(error)
+          }, { level: 'error' });
+        });
+    }
+
+    return normalized;
+  }, [fetchVideoInfoRef, logResilienceEvent, setBitrateState, setLastFetchAt]);
+
+  const reduceBitrateAfterHardReset = useCallback((context = {}) => {
+    const previous = bitrateStateRef.current;
+    const currentValue = Number.isFinite(previous?.current) && previous.current > 0
+      ? previous.current
+      : resolveInitialMaxVideoBitrate();
+    const reducedValue = Math.max(1, Math.round(currentValue * BITRATE_REDUCTION_FACTOR));
+    if (reducedValue >= currentValue) {
+      return;
+    }
+
+    logResilienceEvent('bitrate-reduction-applied', {
+      previousKbps: currentValue,
+      nextKbps: reducedValue,
+      reason: context?.reason || 'hard-reset'
+    }, { level: 'info' });
+
+    applyBitrateOverride(reducedValue, {
+      reason: context?.reason || 'hard-reset',
+      source: context?.source || 'resilience',
+      fetchReason: 'resilience-hard-reset-bitrate'
+    });
+  }, [applyBitrateOverride, bitrateStateRef, logResilienceEvent, resolveInitialMaxVideoBitrate]);
 
   const requestDecoderNudge = useCallback((reason = 'decoder-stall', extraDetails = {}) => {
     const nudgeFn = nudgePlaybackRef.current;
@@ -559,9 +674,10 @@ export function useMediaResilience({
     updateSessionTargetTimeSeconds(normalizedSeconds);
   }, [updateSessionTargetTimeSeconds]);
 
-  const handleHardResetCycle = useCallback(() => {
+  const handleHardResetCycle = useCallback((payload = {}) => {
     setHardResetLoopCount((count) => count + 1);
-  }, [setHardResetLoopCount]);
+    reduceBitrateAfterHardReset(payload);
+  }, [reduceBitrateAfterHardReset]);
 
   const recordSeekIntentMs = useCallback((valueMs, reason = 'seek-intent') => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
@@ -1292,7 +1408,8 @@ export function useMediaResilience({
     shouldRenderOverlay,
     playbackHealth,
     hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs,
-    hardRecoverLoadingGraceMs: effectiveLoadingGraceMs
+    hardRecoverLoadingGraceMs: effectiveLoadingGraceMs,
+    currentMaxVideoBitrate: bitrateState.current ?? null
   }), [
     status,
     waitingToPlay,
@@ -1312,7 +1429,8 @@ export function useMediaResilience({
     shouldRenderOverlay,
     playbackHealth,
     effectiveHardRecoverAfterStalledForMs,
-    effectiveLoadingGraceMs
+    effectiveLoadingGraceMs,
+    bitrateState.current
   ]);
   const stateRef = useLatest(state);
 
@@ -1389,7 +1507,8 @@ export function useMediaResilience({
     togglePauseOverlay,
     recordSeekIntentSeconds,
     recordSeekIntentMs,
-    getSeekIntentMs: () => resolveSeekIntentMs()
+    getSeekIntentMs: () => resolveSeekIntentMs(),
+    getMaxVideoBitrate: () => bitrateStateRef.current?.current ?? null
   }), [
     fetchVideoInfoRef,
     markHealthy,
@@ -1407,7 +1526,8 @@ export function useMediaResilience({
     resilienceActions,
     setOverlayPausePreference,
     setHardResetLoopCount,
-    markLoadingIntentActive
+    markLoadingIntentActive,
+    bitrateStateRef
   ]);
 
   useEffect(() => {

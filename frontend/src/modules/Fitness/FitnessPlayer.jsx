@@ -118,7 +118,7 @@ const resolveMediaIdentity = (meta) => {
   return candidate != null ? String(candidate) : null;
 };
 
-const FITNESS_MAX_VIDEO_BITRATE = 2000;
+const FITNESS_MAX_VIDEO_BITRATE = 3000;
 
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const mainPlayerRef = useRef(null);

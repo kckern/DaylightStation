@@ -461,6 +461,10 @@ const Player = forwardRef(function Player(props, ref) {
   const { overlayProps, onStartupSignal } = useMediaResilience({
     getMediaEl: getResilienceMediaEl,
     meta: effectiveMeta,
+    maxVideoBitrate: effectiveMeta?.maxVideoBitrate
+      ?? singlePlayerProps?.maxVideoBitrate
+      ?? maxVideoBitrate
+      ?? null,
     seconds: effectiveMeta ? playbackMetrics.seconds : 0,
     isPaused: effectiveMeta ? playbackMetrics.isPaused : false,
     isSeeking: effectiveMeta ? playbackMetrics.isSeeking : false,
