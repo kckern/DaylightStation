@@ -222,6 +222,28 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     }
   };
   
+  const normalizeResumeMeta = (media) => {
+    const normalizeNumber = (value) => {
+      if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return Number.isFinite(value) ? value : null;
+    };
+    const secondsCandidates = [media.watchSeconds, media.seconds, media.resumeSeconds];
+    let resolvedSeconds = secondsCandidates.map(normalizeNumber).find((value) => Number.isFinite(value) && value > 0) || 0;
+    const normalizedProgress = normalizeNumber(media.watchProgress);
+    const normalizedDuration = normalizeNumber(media.duration);
+    if (!resolvedSeconds && Number.isFinite(normalizedProgress) && Number.isFinite(normalizedDuration) && normalizedDuration > 0) {
+      resolvedSeconds = (Math.max(0, Math.min(100, normalizedProgress)) / 100) * normalizedDuration;
+    }
+    return {
+      seconds: resolvedSeconds,
+      watchSeconds: resolvedSeconds || undefined,
+      watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined
+    };
+  };
+
   const handleAddToQueue = (event, show) => {
     event.stopPropagation(); // Prevent triggering the show click
   // adding to queue (debug removed)
@@ -230,11 +252,17 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
     if (didScroll) return;
     if (setFitnessPlayQueue) {
+      const resumeMeta = normalizeResumeMeta(show);
       setFitnessPlayQueue(prevQueue => [...prevQueue, {
         id: show.plex || show.id,
         title: show.label,
         videoUrl: show.url || show.videoUrl,
-        type: show.type || null
+        duration: show.duration,
+        thumb_id: show.thumb_id,
+        image: show.image,
+        labels: show.labels,
+        type: show.type || null,
+        ...resumeMeta
       }]);
     }
   };

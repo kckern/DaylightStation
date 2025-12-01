@@ -152,8 +152,9 @@ async function initializeApp() {
   }
 
   // Start HTTP server
-  server.listen(3112, () => {
-    console.log('Listening on port 3112');
+  const port = process.env.PORT || 3112;
+  server.listen(port, () => {
+    console.log(`Listening on port ${port}`);
   });
 }
 
