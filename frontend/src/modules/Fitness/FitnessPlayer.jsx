@@ -159,9 +159,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     governedTypes,
     governedLabelSet: contextGovernedLabelSet,
     governedTypeSet: contextGovernedTypeSet,
-    governanceState
+    governanceState,
+    plexConfig
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
+  const seekIntentRef = useRef(null); // Track seek/resume intent to override actual time
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
   const renderCountRef = useRef(0);
@@ -532,7 +534,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Function to handle seeking to a specific point in the video
   const handleSeek = useCallback((seconds) => {
     if (playIsGoverned) return;
-    if (Number.isFinite(seconds)) seekTo(seconds);
+    if (Number.isFinite(seconds)) {
+      seekTo(seconds);
+      setCurrentTime(seconds);
+      seekIntentRef.current = { time: seconds, timestamp: performance.now() };
+    }
   }, [seekTo, playIsGoverned]);
 
   const handleClose = () => {
@@ -576,13 +582,46 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     
     // Get duration in seconds from various possible sources
     const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 0;
-    const thirtyMinutes = 30 * 60; // 1800 seconds
     
-    // For videos < 30 minutes, always start from 0
-    // For videos ≥ 30 minutes, allow resume from saved position
+    // Check if this media is resumable based on labels
+    const resumableLabels = plexConfig?.resumable_labels || [];
+    const itemLabels = Array.isArray(currentItem.labels) ? currentItem.labels : [];
+    const normalizedResumableLabels = resumableLabels.map(l => (typeof l === 'string' ? l.toLowerCase() : ''));
+    const normalizedItemLabels = itemLabels.map(l => (typeof l === 'string' ? l.toLowerCase() : ''));
+    
+    const isResumable = normalizedItemLabels.some(label => normalizedResumableLabels.includes(label));
+    
+    // Only allow resume if explicitly resumable
     let resumeSeconds = 0;
-    if (totalDuration >= thirtyMinutes && currentItem.seconds) {
-      resumeSeconds = currentItem.seconds;
+    if (isResumable) {
+      const candidateSeconds = [
+        currentItem.seconds,
+        currentItem.watchSeconds,
+        currentItem.resumeSeconds,
+        currentItem.progressSeconds
+      ].map((value) => {
+        if (typeof value === 'string') {
+          const parsed = parseFloat(value);
+          return Number.isNaN(parsed) ? null : parsed;
+        }
+        return value;
+      });
+      const resolvedSeconds = candidateSeconds.find((value) => Number.isFinite(value) && value > 0);
+      if (Number.isFinite(resolvedSeconds)) {
+        resumeSeconds = resolvedSeconds;
+      } else {
+        const normalizedProgress = typeof currentItem.watchProgress === 'string'
+          ? parseFloat(currentItem.watchProgress)
+          : currentItem.watchProgress;
+        if (Number.isFinite(normalizedProgress) && totalDuration > 0) {
+          const pct = Math.max(0, Math.min(100, normalizedProgress));
+          resumeSeconds = (pct / 100) * totalDuration;
+        }
+      }
+    }
+
+    if (resumeSeconds && totalDuration) {
+      resumeSeconds = Math.min(resumeSeconds, totalDuration);
     }
     
     const enhanced = {
@@ -602,13 +641,41 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       thumb_id: currentItem.thumb_id,
       show: currentItem.show || 'Fitness',
       season: currentItem.season || 'Workout',
-      percent: 0,
+      percent: (() => {
+        const normalized = typeof currentItem.watchProgress === 'string'
+          ? parseFloat(currentItem.watchProgress)
+          : currentItem.watchProgress;
+        return Number.isFinite(normalized) ? normalized : 0;
+      })(),
+      watchProgress: (() => {
+        const normalized = typeof currentItem.watchProgress === 'string'
+          ? parseFloat(currentItem.watchProgress)
+          : currentItem.watchProgress;
+        return Number.isFinite(normalized) ? normalized : undefined;
+      })(),
+      watchSeconds: (() => {
+        const normalized = typeof currentItem.watchSeconds === 'string'
+          ? parseFloat(currentItem.watchSeconds)
+          : currentItem.watchSeconds;
+        return Number.isFinite(normalized) ? normalized : undefined;
+      })(),
       seconds: resumeSeconds,
       continuous: false
     };
     
     return enhanced;
-  }, [currentItem]);
+  }, [currentItem, plexConfig]);
+
+  // Effect: Set initial time from resume point (intent)
+  useEffect(() => {
+    const resumeSeconds = enhancedCurrentItem?.seconds || 0;
+    setCurrentTime(resumeSeconds);
+    if (resumeSeconds > 0) {
+      seekIntentRef.current = { time: resumeSeconds, timestamp: performance.now() };
+    } else {
+      seekIntentRef.current = null;
+    }
+  }, [enhancedCurrentItem?.guid, enhancedCurrentItem?.seconds]);
 
   const playObject = useMemo(() => {
     if (!enhancedCurrentItem) return null;
@@ -759,6 +826,32 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const handlePlayerProgress = useCallback(({ currentTime: ct, duration: d, paused }) => {
     // Throttle currentTime updates to ~4Hz
     const now = performance.now();
+
+    // Check intent to prevent jumping back
+    if (seekIntentRef.current) {
+      const { time: intentTime, timestamp: intentTs } = seekIntentRef.current;
+      if (Math.abs(ct - intentTime) < 2) { // 2 seconds threshold
+        seekIntentRef.current = null; // Caught up
+      } else if (now - intentTs < 5000) { // 5 seconds timeout
+        // Still waiting for seek to complete, ignore actual time for display
+        // But update duration/paused
+        if (d && d !== progressMetaRef.current.lastDuration) {
+          progressMetaRef.current.lastDuration = d;
+          setDuration(d);
+        }
+        setIsPaused(paused);
+        if (playIsGoverned && !paused && pausePlayback) {
+          pausePlayback();
+        }
+        if (setVideoPlayerPaused) {
+          setVideoPlayerPaused(paused);
+        }
+        return;
+      } else {
+        seekIntentRef.current = null; // Timeout
+      }
+    }
+
     const last = progressMetaRef.current.lastSetTime;
     if (now - last > 250) {
       progressMetaRef.current.lastSetTime = now;

@@ -3,6 +3,22 @@ import { LoadingOverlay, Alert } from '@mantine/core';
 import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import './FitnessShow.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
+import moment from 'moment';
+
+const formatWatchedDate = (dateString) => {
+  try {
+    const parsed = moment(dateString, 'YYYY-MM-DD hh:mm:ssa');
+    const today = moment();
+    const yesterday = moment().subtract(1, 'days');
+    
+    if (parsed.isSame(today, 'day')) return 'Today';
+    if (parsed.isSame(yesterday, 'day')) return 'Yesterday';
+    if (parsed.year() === today.year()) return parsed.format('MMM D');
+    return parsed.format('MMM D, YYYY');
+  } catch (e) {
+    return '';
+  }
+};
 
 // Season Info Component - Shows detailed info for a season or episode
 // showSummary: parent show (series) summary for fallback when season summary absent
@@ -152,6 +168,33 @@ const formatDurationBadge = (seconds) => {
   return `${minutes}m`;
 };
 
+const normalizeNumber = (value) => {
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return Number.isFinite(value) ? value : null;
+};
+
+const deriveResumeMeta = (episode) => {
+  const duration = normalizeNumber(episode?.duration);
+  const normalizedProgress = normalizeNumber(episode?.watchProgress);
+  const secondsCandidates = [episode?.watchSeconds, episode?.seconds, episode?.resumeSeconds];
+  let resolvedSeconds = secondsCandidates
+    .map(normalizeNumber)
+    .find((value) => Number.isFinite(value) && value > 0) || 0;
+
+  if (!resolvedSeconds && Number.isFinite(normalizedProgress) && Number.isFinite(duration) && duration > 0) {
+    resolvedSeconds = (Math.max(0, Math.min(100, normalizedProgress)) / 100) * duration;
+  }
+
+  return {
+    resolvedSeconds,
+    normalizedProgress,
+    normalizedDuration: duration
+  };
+};
+
 const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   const [showData, setShowData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -175,6 +218,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     setMusicAutoEnabled,
     nomusicLabels = [],
     governedLabels,
+    plexConfig,
     governedTypes,
     governedLabelSet: contextGovernedLabelSet,
     governedTypeSet: contextGovernedTypeSet
@@ -424,6 +468,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   // constructed media URL (debug removed)
       }
       
+      const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
+
       // Create the queue item with all available information
       const queueItem = {
         id: episode.plex || `episode-${Date.now()}`,
@@ -435,9 +481,12 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         seasonId: episode.seasonId,
         seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined)),
         labels: deriveEpisodeLabels(episode),
-        type: episode.type || 'episode'
+        type: episode.type || 'episode',
+        seconds: resolvedSeconds,
+        watchSeconds: resolvedSeconds || undefined,
+        watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined
       };
-      
+
   // created queue item (debug removed)
       
       // Update the selected episode for the UI
@@ -479,6 +528,18 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   };
 
   const { info, items = [], seasons: seasonsMap = null } = showData || {};
+
+  const resumableLabels = useMemo(() => {
+    const labels = plexConfig?.resumable_labels;
+    return Array.isArray(labels) 
+      ? new Set(labels.map(l => l.toLowerCase())) 
+      : new Set();
+  }, [plexConfig]);
+
+  const isResumable = useMemo(() => {
+    if (!info?.labels) return false;
+    return info.labels.some(label => resumableLabels.has(label.toLowerCase()));
+  }, [info, resumableLabels]);
 
   const governedLabelSet = useMemo(() => {
     if (contextGovernedLabelSet instanceof Set) return contextGovernedLabelSet;
@@ -747,17 +808,22 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       }
 
       if (episodeUrl) {
+        const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
+
         const queueItem = {
           id: episode.plex || `episode-${Date.now()}`,
           title: episode.label,
           videoUrl: episodeUrl,
           duration: episode.duration,
-            thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
+          thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
           image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,
           seasonId: episode.seasonId,
           seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined)),
           labels: deriveEpisodeLabels(episode),
-          type: episode.type || 'episode'
+          type: episode.type || 'episode',
+          seconds: resolvedSeconds,
+          watchSeconds: resolvedSeconds || undefined,
+          watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined
         };
         
         // Use the appropriate setter
@@ -856,10 +922,20 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                         if (n <= 9) return 'zoom-150';
                         return '';
                       })()}`}>
-                        {seasonEpisodes.map((episode, index) => (
+                        {seasonEpisodes.map((episode, index) => {
+                          const watchProgress = episode.watchProgress || 0;
+                          const watchedDate = episode.watchedDate;
+                          const isWatched = watchProgress >= 50;
+                          const hasProgress = watchProgress > 15;
+                          const showProgressBar = isResumable && hasProgress && !isWatched;
+                          const episodeNumber = Number.isFinite(episode?.episodeNumber)
+                            ? episode.episodeNumber
+                            : (Number.isFinite(episode?.index) ? episode.index : null);
+
+                          return (
                           <div
                             key={episode.plex || index}
-                            className={`episode-card vertical ${selectedEpisode?.plex === episode.plex ? 'selected' : ''}`}
+                            className={`episode-card vertical ${selectedEpisode?.plex === episode.plex ? 'selected' : ''} ${isWatched ? 'watched' : ''} ${showProgressBar ? 'in-progress' : ''}`}
                             title={episode.label}
                           >
                             {episode.image && (
@@ -882,10 +958,17 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                                   <div className="badge duration">
                                     {episode.duration && formatDurationBadge(episode.duration)}
                                   </div>
+                                  {isWatched && watchedDate && (
+                                    <div className="badge watched-date">
+                                     ✔️ {formatWatchedDate(watchedDate)}
+                                    </div>
+                                  )}
                                 </div>
+                                {showProgressBar && (
                                 <div className="thumbnail-progress">
-                                  <div className="progress-bar" style={{ width: '50%' }} />
+                                  <div className="progress-bar" style={{ width: `${watchProgress}%` }} />
                                 </div>
+                                )}
                               </div>
                             )}
                             <div 
@@ -900,10 +983,17 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                                 handleEpisodeSelect(episode);
                               }}
                             >
-                              <span className="episode-title-text">{episode.label}</span>
+                              <div className="episode-title-flex">
+                                {typeof episodeNumber === 'number' && (
+                                  <span className="episode-pill" aria-hidden="true">
+                                    {episodeNumber}
+                                  </span>
+                                )}
+                                <span className="episode-title-text">{episode.label}</span>
+                              </div>
                             </div>
                           </div>
-                        ))}
+                        );})}
                       </div>
                     </div>
                   );
