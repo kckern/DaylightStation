@@ -2,7 +2,7 @@ import React from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
-import '../FitnessUsers.scss';
+import '../FitnessCam.scss';
 
 const slugifyId = (value, fallback = 'user') => {
   if (!value) return fallback;
@@ -21,6 +21,7 @@ const FitnessSidebarMenu = ({
   musicEnabled,
   onToggleMusic,
   mode = 'settings',
+  appMode = 'player',
   targetDeviceId,
   targetDefaultName,
   guestAssignments = {},
@@ -496,6 +497,7 @@ const FitnessSidebarMenu = ({
         )}
       </div>
 
+      {appMode === 'player' && (
       <div className="menu-section">
         <h4>Video Controls</h4>
         <div className="menu-item touch-volume-item" role="group" aria-label="Video volume">
@@ -513,6 +515,7 @@ const FitnessSidebarMenu = ({
           )}
         </div>
       </div>
+      )}
 
     </>
   );

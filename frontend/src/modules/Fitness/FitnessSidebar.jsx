@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { slugifyId } from '../../hooks/useFitnessSession.js';
 import FitnessTreasureBox from './FitnessSidebar/FitnessTreasureBox.jsx';
@@ -8,10 +8,10 @@ import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
 import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
 import FitnessMusicPlayer from './FitnessSidebar/FitnessMusicPlayer.jsx';
 import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
-import './FitnessUsers.scss';
+import './FitnessCam.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
-const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) => {
+const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSeconds = 0, mode = 'player' }, ref) => {
   const fitnessContext = useFitnessContext();
   const isGovernedInitial = Boolean(fitnessContext?.governanceState?.isGoverned);
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
@@ -102,6 +102,10 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
     setMenuState({ open: true, mode: 'settings', target: null });
   }, []);
 
+  useImperativeHandle(ref, () => ({
+    openSettingsMenu
+  }));
+
   const handleGuestAssignmentRequest = React.useCallback(({ deviceId, defaultName }) => {
     if (!deviceId) return;
     setMenuState({ open: true, mode: 'guest', target: { deviceId, defaultName: defaultName || null } });
@@ -182,7 +186,7 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
       )}
 
       {/* Combined Video + Voice Memo Controls */}
-      {(visibility.video || visibility.voiceMemo) && (
+      {(visibility.video || visibility.voiceMemo) && mode === 'player' && (
         <div className="fitness-sidebar-media">
           <FitnessVoiceMemo 
             minimal 
@@ -206,6 +210,7 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
           <div className="sidebar-menu-overlay" onClick={() => setMenuState({ open: false, mode: 'settings', target: null })} />
           <FitnessSidebarMenu 
             onClose={() => setMenuState({ open: false, mode: 'settings', target: null })}
+            appMode={mode}
             visibility={visibility}
             onToggleVisibility={handleToggleVisibility}
             musicEnabled={musicEnabled}
@@ -229,6 +234,6 @@ const FitnessSidebar = ({ playerRef, onReloadVideo, reloadTargetSeconds = 0 }) =
       )}
     </div>
   );
-};
+});
 
 export default FitnessSidebar;
