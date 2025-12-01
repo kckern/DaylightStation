@@ -268,6 +268,11 @@ const FitnessApp = () => {
         setCurrentView('show');
         break;
       }
+      case 'movie': {
+        //send directly to player queue
+        setFitnessPlayQueue(prev => [...prev, value]);
+        break;
+      }
       case 'users': {
         setCurrentView('users');
         break;

@@ -216,8 +216,9 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     const card = e.currentTarget;
     const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
     if (didScroll) return;
+    
     if (onContentSelect) {
-      onContentSelect('show', show);
+      onContentSelect(show.type || 'show', show);
     }
   };
   
@@ -232,7 +233,8 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
       setFitnessPlayQueue(prevQueue => [...prevQueue, {
         id: show.plex || show.id,
         title: show.label,
-        videoUrl: show.url || show.videoUrl
+        videoUrl: show.url || show.videoUrl,
+        type: show.type || null
       }]);
     }
   };
