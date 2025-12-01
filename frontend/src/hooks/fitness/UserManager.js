@@ -326,4 +326,100 @@ export class UserManager {
     }
     return null;
   }
+
+  #buildUserDescriptor(user) {
+    if (!user) return null;
+    const slug = slugifyId(user.name);
+    return {
+      id: user.id || slug,
+      name: user.name,
+      slug,
+      profileId: user.id || slug,
+      groupLabel: user.groupLabel || null,
+      source: user.source || null,
+      category: user.category || user.source || null,
+      avatarUrl: user.avatarUrl || null,
+      hrDeviceId: user.hrDeviceId ? String(user.hrDeviceId) : null,
+      cadenceDeviceId: user.cadenceDeviceId ? String(user.cadenceDeviceId) : null
+    };
+  }
+
+  getUserCollections() {
+    const collections = {
+      primary: [],
+      secondary: [],
+      family: [],
+      friends: [],
+      other: [],
+      all: []
+    };
+    this.users.forEach((user) => {
+      const descriptor = this.#buildUserDescriptor(user);
+      if (!descriptor) return;
+      const category = (descriptor.category || descriptor.source || '').toLowerCase();
+      switch (category) {
+        case 'primary':
+          collections.primary.push(descriptor);
+          break;
+        case 'secondary':
+          collections.secondary.push(descriptor);
+          break;
+        case 'family':
+          collections.family.push(descriptor);
+          break;
+        case 'friend':
+          collections.friends.push(descriptor);
+          break;
+        default:
+          collections.other.push(descriptor);
+          break;
+      }
+      collections.all.push(descriptor);
+    });
+    return collections;
+  }
+
+  getDeviceOwnership() {
+    const owners = {
+      heartRate: new Map(),
+      cadence: new Map()
+    };
+    this.users.forEach((user) => {
+      const descriptor = this.#buildUserDescriptor(user);
+      if (!descriptor) return;
+      if (descriptor.hrDeviceId) {
+        owners.heartRate.set(descriptor.hrDeviceId, descriptor);
+      }
+      if (descriptor.cadenceDeviceId) {
+        owners.cadence.set(descriptor.cadenceDeviceId, descriptor);
+      }
+    });
+    return owners;
+  }
+
+  getGuestCandidates() {
+    const collections = this.getUserCollections();
+    return [
+      ...collections.family,
+      ...collections.friends,
+      ...collections.secondary,
+      ...collections.other
+    ].map((descriptor) => ({
+      ...descriptor,
+      allowWhileAssigned: descriptor.source === 'Friend'
+    }));
+  }
+
+  getUserZoneProfiles() {
+    const profiles = new Map();
+    this.users.forEach((user) => {
+      if (!user?.name) return;
+      profiles.set(slugifyId(user.name), {
+        name: user.name,
+        zoneConfig: user.zoneConfig,
+        zoneSnapshot: user.zoneSnapshot
+      });
+    });
+    return profiles;
+  }
 }
