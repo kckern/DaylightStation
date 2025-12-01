@@ -451,6 +451,12 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     const unwatchedList = list; //list.filter(item => unwatched_keys.includes(item.key || item.plex || item.media_key));
     // Prepare Plex instance for building thumb URLs (season thumbnails)
     const plexThumb = new Plex();
+    const viewingHistory = plexThumb.loadPlexViewingHistory();
+    
+    // Debug logging for history lookup
+    const historyKeys = Object.keys(viewingHistory);
+    console.log(`Loaded ${historyKeys.length} history items. Sample keys: ${historyKeys.slice(0, 5).join(', ')}`);
+
     list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex,userRating,thumb_id,artist,albumArtist,album,grandparentTitle,originalTitle}) => {
         const item = {
             label: title,
@@ -460,6 +466,15 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             image: handleDevImage(req, image),
             thumb_id
         };
+
+        const watchData = viewingHistory[item.plex] || viewingHistory[String(item.plex)];
+        if (watchData) {
+            item.watchProgress = parseFloat(watchData.percent) || 0;
+            item.watchSeconds = parseInt(watchData.seconds) || 0;
+            item.watchedDate = watchData.time;
+        } else {
+             // console.log(`No history for ${item.plex} (type: ${typeof item.plex})`);
+        }
         
         // Add music-specific metadata for tracks
         if (type === 'track') {
@@ -595,6 +610,16 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             responseData.seasons = seasons; // Insert seasons before items
         }
         responseData.items = applyParamsToItems(list);
+        
+        // Temporary Debugging
+        responseData._debug = {
+            dataPath: process.env.path.data,
+            historyCount: Object.keys(viewingHistory).length,
+            sampleKeys: Object.keys(viewingHistory).slice(0, 5),
+            firstItemPlex: list[0]?.plex,
+            firstItemHistory: viewingHistory[list[0]?.plex] || viewingHistory[String(list[0]?.plex)]
+        };
+
         res.json(responseData);
     } catch (error) {
         res.status(500).json({ error: 'Error fetching from Plex server', message: error.message });

@@ -562,6 +562,21 @@
         flex-direction: column;
         align-items: stretch;
 
+        &.watched {
+          background: rgba(8, 48, 22, 0.92);
+          border-color: rgba(46, 204, 113, 0.65);
+          box-shadow: 0 0 12px rgba(46, 204, 113, 0.25);
+          .episode-thumbnail img { filter: grayscale(0.6) brightness(0.7); }
+          &:hover { .episode-thumbnail img { filter: none; } }
+        }
+
+        &.in-progress {
+          background: rgba(66, 54, 8, 0.92);
+          border-color: rgba(240, 194, 70, 0.65);
+          box-shadow: 0 0 12px rgba(240, 194, 70, 0.25);
+          .episode-thumbnail img { filter: grayscale(0.3) brightness(0.8) saturate(0.9); }
+        }
+
         /* Hover removed */
 
         &.selected {
@@ -641,7 +656,7 @@
           margin-top: 0.0rem;
           min-height: calc(2 * 1.2em); /* reserve space for 2 lines */
           display: flex;
-          text-align: center;
+          text-align: left;
           align-items: center; /* centers single line vertically */
           cursor: pointer;
           padding: 0.25rem;
@@ -650,8 +665,15 @@
           
           /* Hover removed */
 
-          .episode-title-text {
+          .episode-title-flex {
             width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+          }
+
+          .episode-title-text {
+            flex: 1 1 auto;
             font-size: calc(0.95rem * var(--tile-zoom, 1));
             font-weight: 700;
             color: white;
@@ -662,6 +684,20 @@
             -webkit-box-orient: vertical;
             overflow: hidden;
             text-overflow: ellipsis;
+            text-align: center;
+            padding-right: 1rem
+          }
+
+          .episode-pill {
+            flex: 0 0 auto;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #d5d8de;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 999px;
+            padding: 0.1rem 0.5rem;
+            letter-spacing: 0.02em;
           }
         }
       }
@@ -892,6 +928,18 @@
       top: 0.3rem;
       left: 0.3rem;
       background: rgba(76, 175, 80, 0.9);
+    }
+
+    &.watched-date {
+      top: auto;
+      bottom: 0.35rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(126, 214, 129, 0.75);
+      color:#000;
+      font-family: monospace;
+      letter-spacing: -0.5px;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.35);
     }
 
     &.up-next {
