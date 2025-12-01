@@ -40,7 +40,7 @@ const FitnessCam = () => {
         <FullscreenVitalsOverlay visible={isFullscreen} />
       </div>
       <div className={`fitness-cam-sidebar ${isFullscreen ? 'hidden' : ''}`}>
-        <FitnessSidebar ref={sidebarRef} mode="cam" />
+        <FitnessSidebar ref={sidebarRef} mode="cam" governanceDisabled />
       </div>
     </div>
   );

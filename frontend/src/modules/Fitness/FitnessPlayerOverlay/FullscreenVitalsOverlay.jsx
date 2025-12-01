@@ -4,6 +4,7 @@ import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { slugifyId } from '../../../hooks/useFitnessSession.js';
 import CircularUserAvatar from '../components/CircularUserAvatar.jsx';
+import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
 import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {
@@ -245,39 +246,21 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
       {rpmItems.length > 0 && (
         <div className={`fullscreen-vitals-group rpm-group count-${rpmItems.length}`}>
           {rpmItems.map((item) => (
-            <div
+            <RpmDeviceAvatar
               key={`rpm-${item.deviceId}`}
+              baseClassName={null}
               className="vital-rpm"
+              rpm={item.rpm}
+              animationDuration={item.animationDuration}
+              avatarSrc={item.avatarSrc}
+              avatarAlt=""
               style={{
                 '--rpm-ring-color': item.ringColor,
                 '--rpm-overlay-bg': item.overlayBg
               }}
-            >
-              {!Number.isFinite(item.rpm) || item.rpm <= 0 ? null : (
-                <div
-                  className="rpm-spinning-border"
-                  style={{ '--spin-duration': item.animationDuration }}
-                />
-              )}
-              <div className="rpm-avatar-content">
-                <img
-                  src={item.avatarSrc}
-                  alt=""
-                  onError={(event) => {
-                    const img = event.currentTarget;
-                    if (img.dataset.fallback) {
-                      img.style.display = 'none';
-                      return;
-                    }
-                    img.dataset.fallback = '1';
-                    img.src = DaylightMediaPath('/media/img/equipment/equipment');
-                  }}
-                />
-                <div className="rpm-value-overlay">
-                  <span className="rpm-value">{item.rpm}</span>
-                </div>
-              </div>
-            </div>
+              fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
+              renderValue={(value) => (Number.isFinite(value) ? value : 0)}
+            />
           ))}
         </div>
       )}
