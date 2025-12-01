@@ -69,6 +69,7 @@ export function useCommonMediaController({
   queuePosition,
   ignoreKeys,
   onProgress,
+  watchedDurationProvider = null,
   onMediaRef,
   onController,
   keyboardOverrides,
@@ -214,6 +215,18 @@ export function useCommonMediaController({
       return next;
     });
   }, [baseInstanceKey, logControllerEvent, setReloadNonce]);
+
+  const resolveWatchedDuration = useCallback(() => {
+    if (typeof watchedDurationProvider !== 'function') {
+      return null;
+    }
+    try {
+      const value = watchedDurationProvider();
+      return Number.isFinite(value) ? value : null;
+    } catch (_) {
+      return null;
+    }
+  }, [watchedDurationProvider]);
 
   const handleRegisterMediaAccess = useCallback((payload = {}) => {
     if (!bridgeRegisterAccess) return;
@@ -383,7 +396,12 @@ export function useCommonMediaController({
           const secs = mediaEl.currentTime || 0;
           if (secs > 10) {
             const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
-            await DaylightAPI('media/log', { title, type, media_key, seconds: secs, percent: pct });
+            const logPayload = { title, type, media_key, seconds: secs, percent: pct };
+            const watchedDurationSeconds = resolveWatchedDuration();
+            if (watchedDurationSeconds != null) {
+              logPayload.watched_duration = Number(watchedDurationSeconds.toFixed(3));
+            }
+            await DaylightAPI('media/log', logPayload);
           }
         }
       };
@@ -650,7 +668,7 @@ export function useCommonMediaController({
       }
       cleanup();
     };
-  }, [formatWaitKeyForLogs, getMediaEl, isDash, media_key, meta, onEnd, onMediaRef, onProgress, playbackRate, resolvedInstanceKey, start, type, volume]);
+  }, [formatWaitKeyForLogs, getMediaEl, isDash, media_key, meta, onEnd, onMediaRef, onProgress, playbackRate, resolveWatchedDuration, resolvedInstanceKey, start, type, volume]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();

@@ -24,7 +24,8 @@ export function AudioPlayer({
   onProgress, 
   onMediaRef, 
   onController,
-  resilienceBridge
+  resilienceBridge,
+  watchedDurationProvider
 }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
   const baseMediaKey = useMemo(
@@ -64,7 +65,8 @@ export function AudioPlayer({
     instanceKey: baseMediaKey,
     fetchVideoInfo,
     seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
-    resilienceBridge
+    resilienceBridge,
+    watchedDurationProvider
   });
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
@@ -121,6 +123,7 @@ AudioPlayer.propTypes = {
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   onController: PropTypes.func,
+  watchedDurationProvider: PropTypes.func,
   resilienceBridge: PropTypes.shape({
     onPlaybackMetrics: PropTypes.func,
     onRegisterMediaAccess: PropTypes.func,
