@@ -153,7 +153,7 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
   };
 
   return (
-    <div className="fitness-sidebar-container">
+    <div className={`fitness-sidebar-container fitness-sidebar-mode-${mode}`}>
       {/* Treasure Box */}
       {visibility.treasureBox && (
         <div className="fitness-sidebar-treasurebox">

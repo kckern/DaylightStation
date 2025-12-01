@@ -857,7 +857,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   ? participantEntry.heartRate
                   : (Number.isFinite(device.heartRate) ? device.heartRate : null));
               const deviceName = isHeartRate ? 
-                (guestAssignment?.name || displayLabel || participantEntry?.name || ownerName || deviceIdStr) : String(device.deviceId);
+                (guestAssignment?.name || ownerName || displayLabel || participantEntry?.name || deviceIdStr) : String(device.deviceId);
               const zoneIdForGrouping = isHeartRate ? getDeviceZoneId(device) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping

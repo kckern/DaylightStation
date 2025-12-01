@@ -5,6 +5,49 @@ import './VoiceMemoOverlay.scss';
 
 const VOICE_MEMO_AUTO_ACCEPT_MS = 4000;
 
+const Icons = {
+  Review: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+    </svg>
+  ),
+  Redo: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/>
+    </svg>
+  ),
+  Delete: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"></polyline>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+    </svg>
+  ),
+  Keep: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+  ),
+  Close: () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"></line>
+      <line x1="6" y1="6" x2="18" y2="18"></line>
+    </svg>
+  ),
+  Record: () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+      <line x1="12" y1="19" x2="12" y2="22"></line>
+      <line x1="8" y1="22" x2="16" y2="22"></line>
+    </svg>
+  ),
+  Stop: () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect>
+    </svg>
+  )
+};
+
 const formatTime = (seconds) => {
   if (!seconds || isNaN(seconds)) return '00:00';
 
@@ -22,7 +65,7 @@ const formatTime = (seconds) => {
 const formatMemoTimestamp = (memo) => {
   if (!memo) return '';
   if (memo.sessionElapsedSeconds != null) {
-    return `T+${formatTime(Math.max(0, Math.round(memo.sessionElapsedSeconds)))}`;
+    return formatTime(Math.max(0, Math.round(memo.sessionElapsedSeconds)));
   }
   if (memo.createdAt) {
     try {
@@ -215,7 +258,9 @@ const VoiceMemoOverlay = ({
           <div className="voice-memo-overlay__title">
             {showList ? 'Voice Memos' : showRedo ? 'Redo Voice Memo' : 'Voice Memo Review'}
           </div>
-          <button type="button" className="voice-memo-overlay__close" onClick={handleClose} aria-label="Close voice memo overlay">×</button>
+          <button type="button" className="voice-memo-overlay__close" onClick={handleClose} aria-label="Close voice memo overlay">
+            <Icons.Close />
+          </button>
         </div>
 
         {showList ? (
@@ -236,9 +281,12 @@ const VoiceMemoOverlay = ({
                         <div className="voice-memo-overlay__transcript">{memoTranscript}</div>
                       </div>
                       <div className="voice-memo-overlay__list-actions">
-                        <button type="button" onClick={() => handleReviewSelect(memo)}>Review</button>
-                        <button type="button" onClick={() => handleRedo(memoId)}>Redo</button>
-                        <button type="button" onClick={() => handleDeleteFromList(memoId)}>Delete</button>
+                        <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--redo" onClick={() => handleRedo(memoId)} title="Redo">
+                          <Icons.Redo />
+                        </button>
+                        <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--delete" onClick={() => handleDeleteFromList(memoId)} title="Delete">
+                          <Icons.Delete />
+                        </button>
                       </div>
                     </li>
                   );
@@ -250,9 +298,8 @@ const VoiceMemoOverlay = ({
 
         {showReview && currentMemo ? (
           <div className="voice-memo-overlay__content">
-            <div className="voice-memo-overlay__meta">
-              {memoTimestamp && <span className="voice-memo-overlay__tag">{memoTimestamp}</span>}
-              {memoVideoTimestamp && <span className="voice-memo-overlay__tag">Video {memoVideoTimestamp}</span>}
+            <div className="voice-memo-overlay__meta-large">
+              {memoTimestamp && <span className="voice-memo-overlay__timestamp">{memoTimestamp}</span>}
             </div>
             <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--large">{transcript}</div>
             {overlayState.autoAccept ? (
@@ -262,42 +309,47 @@ const VoiceMemoOverlay = ({
               </div>
             ) : null}
             <div className="voice-memo-overlay__actions">
-              <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--primary" onClick={handleAccept}>Keep</button>
-              <button type="button" className="voice-memo-overlay__btn" onClick={() => handleRedo(currentMemo.memoId)}>Redo</button>
-              <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--danger" onClick={handleDelete}>Delete</button>
+              <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--keep" onClick={handleAccept} title="Keep">
+                <Icons.Keep />
+              </button>
+              <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--redo" onClick={() => handleRedo(currentMemo.memoId)} title="Redo">
+                <Icons.Redo />
+              </button>
+              <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--delete" onClick={handleDelete} title="Delete">
+                <Icons.Delete />
+              </button>
             </div>
           </div>
         ) : null}
 
         {showRedo && currentMemo ? (
-          <div className="voice-memo-overlay__content">
-            <div className="voice-memo-overlay__meta">
-              {memoTimestamp && <span className="voice-memo-overlay__tag">{memoTimestamp}</span>}
-              {memoVideoTimestamp && <span className="voice-memo-overlay__tag">Video {memoVideoTimestamp}</span>}
+          <div className="voice-memo-overlay__content voice-memo-overlay__content--centered">
+            <div className="voice-memo-overlay__meta-large">
+              {memoTimestamp && <span className="voice-memo-overlay__timestamp">{memoTimestamp}</span>}
             </div>
             <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--faded">{transcript}</div>
-            <div className="voice-memo-overlay__hint">Record a new memo to replace this one.</div>
+            
             {recorderError ? <div className="voice-memo-overlay__error">{recorderError}</div> : null}
+            
             <div className="voice-memo-overlay__redo-controls">
               {!isRecording && !uploading ? (
-                <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--primary" onClick={handleStartRedoRecording}>Record Again</button>
+                <button type="button" className="voice-memo-overlay__record-btn" onClick={handleStartRedoRecording}>
+                  <Icons.Record />
+                </button>
               ) : null}
+              
               {isRecording ? (
-                <button type="button" className="voice-memo-overlay__btn" onClick={stopRecording}>Stop ({recordingTimeLabel})</button>
+                <>
+                  <div className="voice-memo-overlay__hint voice-memo-overlay__hint--recording">Recording… {recordingTimeLabel}</div>
+                  <button type="button" className="voice-memo-overlay__record-btn voice-memo-overlay__record-btn--active" onClick={stopRecording}>
+                    <Icons.Stop />
+                  </button>
+                </>
               ) : null}
-              {(isRecording || uploading) ? (
-                <span className="voice-memo-overlay__status">{isRecording ? `Recording… ${recordingTimeLabel}` : 'Uploading…'}</span>
+              
+              {uploading ? (
+                <span className="voice-memo-overlay__status">Uploading…</span>
               ) : null}
-            </div>
-            <div className="voice-memo-overlay__actions">
-              <button
-                type="button"
-                className="voice-memo-overlay__btn"
-                onClick={() => handleReviewSelect(currentMemo)}
-                disabled={isRecording || uploading}
-              >
-                Back to review
-              </button>
             </div>
           </div>
         ) : null}

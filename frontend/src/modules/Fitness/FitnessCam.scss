@@ -3532,3 +3532,92 @@
     flex: 1;
   }
 }
+
+/* Overrides for FitnessPlayer context (compact/original size) */
+.fitness-sidebar-mode-player .fitness-music-player-container {
+  min-height: 56px;
+  
+  .music-player-content {
+    height: 56px;
+  }
+  
+  .music-player-artwork {
+    flex: 0 0 56px;
+    width: 56px;
+    height: 56px;
+    
+    .artwork-placeholder .artwork-icon { font-size: 1.8rem; }
+    
+    .playback-overlay .playback-icon {
+      font-size: 1.6rem;
+    }
+  }
+  
+  .music-player-info {
+    padding: 0 12px;
+    
+    .track-details {
+      .track-title { font-size: 0.95rem; }
+      .track-artist { font-size: 0.8rem; }
+    }
+    
+    .track-progress {
+      margin-top: 3px;
+      .progress-bar { height: 4px; }
+    }
+  }
+  
+  .music-player-controls {
+    flex: 0 0 56px;
+    width: 56px;
+    height: 56px;
+    
+    .control-button {
+      font-size: 1.6rem;
+    }
+  }
+  
+  .music-player-empty {
+    gap: 8px;
+    .empty-icon { font-size: 1.6rem; }
+    .empty-text { font-size: 1rem; }
+  }
+  
+  /* Compact expanded view */
+  .music-player-expanded {
+    padding: 16px 20px 20px;
+    gap: 14px;
+    
+    .section-title { font-size: 1rem; }
+    
+    .playlist-select {
+      padding: 8px 12px;
+      font-size: 1rem;
+    }
+    
+    .mix-row {
+      gap: 4px;
+      font-size: 1rem;
+    }
+    
+    .mix-label { font-size: 1rem; }
+    
+    .mix-controls {
+      .touch-volume-button {
+        font-size: 0.9rem;
+        height: 4ex!important;
+      }
+      .mix-value {
+        font-size: 1rem;
+        width: 4rem;
+      }
+    }
+    
+    .music-toggle-button {
+      font-size: 0.9rem;
+      margin-top: 1ex;
+      padding: 8px 0;
+    }
+  }
+}
+

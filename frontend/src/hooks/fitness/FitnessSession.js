@@ -3,6 +3,7 @@ import { DeviceManager } from './DeviceManager';
 import { UserManager } from './UserManager';
 import { GovernanceEngine } from './GovernanceEngine';
 import { FitnessTreasureBox } from './TreasureBox';
+import { VoiceMemoManager } from './VoiceMemoManager';
 import { DaylightAPI } from '../../lib/api.mjs';
 
 // -------------------- Timeout Configuration --------------------
@@ -30,12 +31,12 @@ export class FitnessSession {
     this.activeDeviceIds = new Set();
     this.eventLog = [];
     this._saveTriggered = false;
-    this.voiceMemos = [];
     
     // Sub-managers
     this.deviceManager = new DeviceManager();
     this.userManager = new UserManager();
     this.governanceEngine = new GovernanceEngine();
+    this.voiceMemoManager = new VoiceMemoManager(this);
     this.treasureBox = null; // Instantiated on start
 
     this._autosaveIntervalMs = 15000;
@@ -429,7 +430,7 @@ export class FitnessSession {
     }
     this.treasureBox = null;
     this._saveTriggered = false;
-    this.voiceMemos = [];
+    this.voiceMemoManager.reset();
     this.userManager = new UserManager(); // Reset users? Or keep them? Usually reset for new session context.
     this.deviceManager = new DeviceManager(); // Reset devices?
     this._stopAutosaveTimer();
@@ -497,9 +498,15 @@ export class FitnessSession {
       return {
           sessionId: this.sessionId,
           startTime: this.startTime,
-          // ... other fields
+          endTime: this.endTime,
+          voiceMemos: this.voiceMemoManager.summary,
           treasureBox: this.treasureBox ? this.treasureBox.summary : null,
           // ...
       };
   }
+
+  // Voice Memo Delegation
+  addVoiceMemo(memo) { return this.voiceMemoManager.addMemo(memo); }
+  removeVoiceMemo(memoId) { return this.voiceMemoManager.removeMemo(memoId); }
+  replaceVoiceMemo(memoId, memo) { return this.voiceMemoManager.replaceMemo(memoId, memo); }
 }
