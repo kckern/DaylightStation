@@ -1,5 +1,5 @@
 import React from 'react';
-import FitnessUsers from './FitnessUsers.jsx';
+import FitnessCam from './FitnessCam.jsx';
 
 const FitnessPlayerSidebar = ({
   currentItem,
@@ -39,7 +39,7 @@ const FitnessPlayerSidebar = ({
 
       {!minimized && (
         <div className="sidebar-content">
-          <FitnessUsers />
+          <FitnessCam />
         </div>
       )}
 

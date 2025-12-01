@@ -1,3 +1,374 @@
+.fitness-cam {
+  width: 100%;
+  height: 100%;
+  color: #fff;
+}
+
+.fitness-cam-layout {
+  display: flex;
+  gap: 0;
+  height: 100%;
+  max-height: 100%;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+
+  .fitness-cam-main {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    margin-left: -1.5rem;
+  }
+
+  &.fullscreen-mode {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2000;
+    background: #000;
+    padding: 0;
+    gap: 0;
+
+    .fitness-cam-main {
+      flex: 1 1 100%;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+
+      .fitness-cam-stage {
+        border-radius: 0;
+        border: none;
+        box-shadow: none;
+        height: 100%;
+        width: 100%;
+        padding: 0;
+        background: #000;
+        
+        .fitness-cam-stage__video-shell {
+          border-radius: 0;
+          border: none;
+          height: 100%;
+        }
+
+        // Hide default controls in fullscreen if desired, or style them
+        .controls-overlay {
+           // Keep controls visible or hide? 
+           // User didn't specify, but usually fullscreen implies cleaner view.
+           // But they might want to switch cameras.
+           // Let's keep them but ensure they are on top of overlay if needed.
+           z-index: 2001; 
+        }
+
+        .fitness-cam-settings-btn {
+          display: none;
+        }
+      }
+    }
+  }
+}
+
+.fitness-cam-stage {
+  flex: 1 1 65%;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.fitness-cam-stage__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.fitness-cam-stage__eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.2rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.fitness-cam-stage__header h2 {
+  margin: 0.15rem 0 0;
+  font-size: 1.85rem;
+}
+
+.fitness-cam-stage__status {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.fitness-cam-stage__refresh {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  color: #fff;
+  padding: 0.35rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.fitness-cam-stage__refresh:hover,
+.fitness-cam-stage__refresh:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.fitness-cam-stage__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.fitness-cam-stage__stat {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+}
+
+.fitness-cam-stage__stat .label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.08rem;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 0.25rem;
+}
+
+.fitness-cam-stage__stat .value {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.fitness-cam-stage__video-shell {
+  position: relative;
+  flex: 1;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(3, 3, 5, 0.7);
+  min-height: 320px;
+}
+
+.fitness-cam-stage__video-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  background: linear-gradient(135deg, rgba(20, 22, 35, 0.9), rgba(7, 7, 10, 0.9));
+}
+
+.fitness-cam-stage__video-message {
+  max-width: 320px;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.fitness-cam-stage__video-message span {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.fitness-cam-stage__spotlight {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+
+.spotlight-card {
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  min-width: 140px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px);
+}
+
+.spotlight-card__name {
+  font-size: 0.85rem;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.spotlight-card__value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.spotlight-card__value small {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.spotlight-card__zone {
+  font-size: 0.7rem;
+  letter-spacing: 0.08rem;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.fitness-cam-stage__footer {
+  margin-top: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.fitness-cam-stage__levels-placeholder {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.25rem;
+  flex: 1;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 10px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fitness-cam-stage__levels-placeholder span {
+  display: block;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #51cf66, #1098ad);
+  animation: cam-placeholder-level 1.2s ease-in-out infinite;
+}
+
+@keyframes cam-placeholder-level {
+  0%, 100% { height: 20%; opacity: 0.4; }
+  50% { height: 90%; opacity: 1; }
+}
+
+.fitness-cam-stage__footer-meta {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.fitness-cam-sidebar {
+  flex: 0 0 30%;
+  width: 30%;
+  max-width: 30%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+
+  &.hidden {
+    display: none;
+  }
+}
+
+.fitness-cam-sidebar__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.fitness-cam-sidebar__panel {
+  background: rgba(7, 7, 10, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.fitness-cam-sidebar__panel--roster {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fitness-cam-sidebar__panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.fitness-cam-sidebar__panel-header .eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.fitness-cam-sidebar__panel-header h3 {
+  margin: 0.15rem 0 0;
+  font-size: 1.2rem;
+}
+
+.fitness-cam-sidebar__panel-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.fitness-cam-sidebar__panel-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.fitness-cam-sidebar__panel--voice .voice-memo-standalone,
+.fitness-cam-sidebar__panel--music .fitness-music-player-container {
+  margin: 0;
+}
+
+@media (max-width: 1280px) {
+  .fitness-cam-layout {
+    flex-direction: column;
+    padding: 1rem;
+  }
+
+  .fitness-cam-stage {
+    flex: 0 0 auto;
+    min-height: 420px;
+  }
+
+  .fitness-cam-sidebar {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 .fitness-devices-nav {
   width: 100%;
   height: 100%;
@@ -667,7 +1038,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 2px solid #000;
 
   .sidebar-menu-toggle-floating {
     position: absolute;
@@ -1157,8 +1528,10 @@
   flex-direction: column;
   align-items: stretch;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin: 0;
-  min-height: 40px;
+  min-height: 80px;
   height: auto;
   background: rgba(24, 24, 24, 0.85);
   border: none;
@@ -1182,8 +1555,8 @@
     justify-content: center;
     gap: 10px;
     color: rgba(255, 255, 255, 0.6);
-    .empty-icon { font-size: 1.2rem; }
-    .empty-text { font-size: 0.8rem; }
+    .empty-icon { font-size: 2.4rem; }
+    .empty-text { font-size: 1.6rem; }
   }
 
   .music-player-content {
@@ -1191,13 +1564,14 @@
     flex-direction: row;
     align-items: center;
     width: 100%;
-    height: 40px;
+    min-width: 0;
+    height: 80px;
   }
 
   .music-player-artwork {
-    flex: 0 0 40px;
-    width: 40px;
-    height: 40px;
+    flex: 0 0 80px;
+    width: 80px;
+    height: 80px;
     position: relative;
     
     .artwork-image {
@@ -1212,7 +1586,7 @@
       align-items: center;
       justify-content: center;
       background-color: #222;
-      .artwork-icon { font-size: 1.5rem; }
+      .artwork-icon { font-size: 3rem; }
     }
     
     .playback-overlay {
@@ -1230,7 +1604,7 @@
       pointer-events: none;
       
       .playback-icon {
-        font-size: 1.2rem;
+        font-size: 2.4rem;
         color: white;
         text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
       }
@@ -1251,6 +1625,7 @@
     height: 100%;
     cursor: pointer;
     user-select: none;
+    overflow: hidden;
 
     .track-details {
       display: flex;
@@ -1371,7 +1746,7 @@
             color: #ffd43b;
           }
         }
-        font-size: 0.8rem;
+        font-size: 1.1rem;
         font-weight: 600;
         color: #fff;
         white-space: nowrap;
@@ -1379,7 +1754,7 @@
         text-overflow: ellipsis;
       }
       .track-artist {
-        font-size: 0.7rem;
+        font-size: 0.9rem;
         color: rgba(255, 255, 255, 0.6);
         white-space: nowrap;
         overflow: hidden;
@@ -1388,17 +1763,17 @@
     }
 
     .track-progress {
-      margin-top: 2px;
+      margin-top: 4px;
       .progress-bar {
         width: 100%;
-        height: 3px;
+        height: 6px;
         background-color: rgba(255, 255, 255, 0.2);
-        border-radius: 2px;
+        border-radius: 4px;
         overflow: hidden;
         .progress-fill {
           height: 100%;
           background-color: #fff;
-          border-radius: 2px;
+          border-radius: 4px;
           transition: width 0.2s linear;
         }
       }
@@ -1409,9 +1784,9 @@
   }
 
   .music-player-controls {
-    flex: 0 0 40px;
-    width: 40px;
-    height: 40px;
+    flex: 0 0 80px;
+    width: 80px;
+    height: 80px;
 
     .control-button {
       width: 100%;
@@ -1424,14 +1799,14 @@
       align-items: center;
       justify-content: center;
       padding: 0;
-      font-size: 1.2rem;
+      font-size: 2.4rem;
     }
   }
   .music-player-expanded {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 10px 14px 14px;
+    gap: 20px;
+    padding: 20px 28px 28px;
     background: rgba(12, 12, 12, 0.9);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
 
@@ -1453,8 +1828,8 @@
       color: #fff;
       font-weight: 600;
       letter-spacing: 0.04em;
-      font-size: 1.5ex;
-      margin-top: 1ex;
+      font-size: 3ex;
+      margin-top: 2ex;
       text-transform: uppercase;
       padding: 0;
       cursor: pointer;
@@ -1484,7 +1859,7 @@
     }
 
     .section-title {
-      font-size: 0.72rem;
+      font-size: 1.4rem;
       font-weight: 600;
       text-transform: uppercase;
       color: rgba(255, 255, 255, 0.65);
@@ -1493,12 +1868,12 @@
 
     .playlist-select {
       width: 100%;
-      padding: 6px 10px;
-      border-radius: 6px;
+      padding: 12px 20px;
+      border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, 0.12);
       background: rgba(30, 30, 30, 0.95);
       color: #fff;
-      font-size: 0.78rem;
+      font-size: 1.5rem;
       outline: none;
 
       &:focus {
@@ -1515,13 +1890,13 @@
     .mix-row {
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      font-size: 0.72rem;
+      gap: 8px;
+      font-size: 1.4rem;
       color: rgba(255, 255, 255, 0.85);
     }
 
     .mix-label {
-      font-size: 0.7rem;
+      font-size: 1.4rem;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.8);
     }
@@ -1552,8 +1927,8 @@
         border: 1px solid rgba(255, 255, 255, 0.2);
         background: rgba(255, 255, 255, 0.08);
         color: transparent;
-        border-radius: 2px;
-        font-size: 0.6rem;
+        border-radius: 4px;
+        font-size: 1.2rem;
         padding: 0;
         cursor: pointer;
         transition: background 0.2s ease, border 0.2s ease;
@@ -1594,9 +1969,9 @@
       }
 
       .mix-value {
-        width: 3rem;
+        width: 6rem;
         text-align: right;
-        font-size: 0.7rem;
+        font-size: 1.4rem;
         color: rgba(255, 255, 255, 0.7);
       }
     }
@@ -2953,5 +3328,207 @@
       .memo-time { font-size: 0.75rem; opacity: 0.7; min-width: 3.5rem; }
       .memo-text { font-size: 0.9rem; color: #fff; }
     }
+  }
+}
+
+.fitness-cam-main {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+
+.fitness-playlist-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+
+  .playlist-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    &.selected {
+      background: rgba(81, 207, 102, 0.15);
+      border-color: rgba(81, 207, 102, 0.4);
+      
+      .playlist-name {
+        color: #51cf66;
+      }
+    }
+
+    .playlist-thumb {
+      width: 48px;
+      height: 48px;
+      border-radius: 6px;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      &.placeholder {
+        font-size: 1.5rem;
+      }
+      
+      .placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+      }
+    }
+
+    .playlist-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+
+      .playlist-name {
+        font-size: 1rem;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.9);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .playlist-meta {
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.5);
+      }
+    }
+  }
+}
+
+.current-playlist-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .playlist-icon {
+    font-size: 1.4rem;
+  }
+
+  .playlist-name {
+    flex: 1;
+    text-align: left;
+    font-size: 1.1rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .playlist-arrow {
+    font-size: 0.8rem;
+    opacity: 0.6;
+  }
+}
+
+.playlist-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.playlist-modal-content {
+  width: 100%;
+  max-width: 400px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+
+  .playlist-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+
+    h3 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: white;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+      
+      &:hover {
+        color: white;
+      }
+    }
+  }
+
+  .fitness-playlist-selector {
+    padding: 12px;
+    max-height: none; // Let flex handle height
+    overflow-y: auto;
+    flex: 1;
   }
 }
