@@ -954,6 +954,23 @@
       border-bottom-left-radius: 0;
     }
 
+    &.progress-percent {
+      top: auto;
+      bottom: 0rem;
+      left: 50%;
+      padding: 0.45ex 1.1ex 0.35ex;
+      transform: translate(-50%, 0);
+      background: rgba(240, 194, 70, 0.95);
+      color: #221b00;
+      font-family: monospace;
+      letter-spacing: -0.5px;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.35);
+      border-bottom-right-radius: 0;
+      border-bottom-left-radius: 0;
+      border-top-left-radius: 0.25rem;
+      border-top-right-radius: 0.25rem;
+    }
+
     &.up-next {
       top: 0.3rem;
       right: 0.3rem;
