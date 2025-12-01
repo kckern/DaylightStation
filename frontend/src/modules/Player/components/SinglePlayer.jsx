@@ -49,7 +49,8 @@ export function SinglePlayer(props = {}) {
     volume,
     playbackRate,
     onProgress,
-    onMediaRef
+    onMediaRef,
+    media_key: mediaKeyProp
   } = play || {};
   
   // Prepare common props for content scroller components
@@ -79,6 +80,104 @@ export function SinglePlayer(props = {}) {
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
+  const watchedDurationRef = useRef(0);
+  const playbackTimerRef = useRef({ lastTickTs: null });
+
+  const setWatchedDurationValue = useCallback((value = 0) => {
+    const numeric = Number(value);
+    watchedDurationRef.current = Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
+    playbackTimerRef.current.lastTickTs = null;
+  }, []);
+
+  const getWatchedDuration = useCallback(() => watchedDurationRef.current, []);
+
+  const accumulateWatchedDuration = useCallback((progress = {}) => {
+    const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
+    const paused = Boolean(progress?.paused);
+    if (!paused) {
+      if (playbackTimerRef.current.lastTickTs != null) {
+        const deltaSeconds = Math.max(0, (now - playbackTimerRef.current.lastTickTs) / 1000);
+        watchedDurationRef.current += deltaSeconds;
+      }
+      playbackTimerRef.current.lastTickTs = now;
+    } else {
+      playbackTimerRef.current.lastTickTs = null;
+    }
+    return watchedDurationRef.current;
+  }, []);
+
+  const playbackSessionKey = useMemo(() => {
+    const candidates = [
+      mediaInfo?.media_key,
+      mediaInfo?.key,
+      mediaInfo?.plex,
+      mediaInfo?.id,
+      mediaInfo?.media_url,
+      plex,
+      mediaKeyProp,
+      media
+    ];
+    const firstDefined = candidates.find((value) => value != null && String(value).length);
+    return firstDefined != null ? String(firstDefined) : null;
+  }, [mediaInfo?.media_key, mediaInfo?.key, mediaInfo?.plex, mediaInfo?.id, mediaInfo?.media_url, plex, mediaKeyProp, media]);
+
+  const handleProgress = useCallback((payload = {}) => {
+    const watchedDuration = accumulateWatchedDuration(payload);
+    if (typeof window !== 'undefined') {
+      const percentValue = Number(payload?.percent);
+      const storageKey = playbackSessionKey ? `watchedDuration:${playbackSessionKey}` : null;
+      if (storageKey) {
+        try {
+          if (Number.isFinite(percentValue) && percentValue >= 99) {
+            window.localStorage.removeItem(storageKey);
+          } else {
+            window.localStorage.setItem(storageKey, JSON.stringify({
+              value: watchedDuration,
+              updatedAt: Date.now()
+            }));
+          }
+        } catch (_) {
+          // Ignore storage errors; timer state remains in memory
+        }
+      }
+    }
+    if (typeof onProgress === 'function') {
+      onProgress({
+        ...payload,
+        watchedDuration
+      });
+    }
+  }, [accumulateWatchedDuration, onProgress, playbackSessionKey]);
+
+  useEffect(() => {
+    if (!playbackSessionKey || typeof window === 'undefined') {
+      setWatchedDurationValue(0);
+      return;
+    }
+    const storageKey = `watchedDuration:${playbackSessionKey}`;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        setWatchedDurationValue(0);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      const storedValue = typeof parsed === 'number'
+        ? parsed
+        : Number.isFinite(parsed?.value)
+          ? parsed.value
+          : null;
+      if (Number.isFinite(storedValue) && storedValue >= 0) {
+        setWatchedDurationValue(storedValue);
+      } else {
+        setWatchedDurationValue(0);
+      }
+    } catch (_) {
+      setWatchedDurationValue(0);
+    }
+  }, [playbackSessionKey, setWatchedDurationValue]);
 
   // Store initial max video bitrate to prevent it being lost on re-renders
   const initialMaxVideoBitrateRef = useRef(play.maxVideoBitrate);
@@ -225,13 +324,14 @@ export function SinglePlayer(props = {}) {
             queuePosition,
             fetchVideoInfo: fetchVideoInfoCallback,
             ignoreKeys,
-            onProgress,
+            onProgress: handleProgress,
             onMediaRef,
             keyboardOverrides: play?.keyboardOverrides,
             onController: play?.onController,
             resilienceBridge,
             maxVideoBitrate: mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null,
-            maxResolution: mediaInfo?.maxResolution ?? play?.maxResolution ?? null
+            maxResolution: mediaInfo?.maxResolution ?? play?.maxResolution ?? null,
+            watchedDurationProvider: getWatchedDuration
           }
         )
       )}

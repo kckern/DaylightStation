@@ -127,7 +127,8 @@ export function VideoPlayer({
   onController,
   resilienceBridge,
   maxVideoBitrate,
-  maxResolution
+  maxResolution,
+  watchedDurationProvider
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -196,6 +197,7 @@ export function VideoPlayer({
     fetchVideoInfo,
     seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
     resilienceBridge,
+    watchedDurationProvider,
     mediaAccessExtras
   });
   const dashSource = useMemo(() => {
@@ -784,5 +786,6 @@ VideoPlayer.propTypes = {
     onStartupSignal: PropTypes.func
   }),
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  watchedDurationProvider: PropTypes.func
 };

@@ -940,14 +940,18 @@
 
     &.watched-date {
       top: auto;
-      bottom: 0.35rem;
+      bottom: 0rem;
       left: 50%;
+      padding:0.5ex;
+      padding-right: 1ex;
       transform: translateX(-50%);
-      background: rgba(126, 214, 129, 0.75);
+      background: rgba(126, 214, 129, 0.9);
       color:#000;
       font-family: monospace;
       letter-spacing: -0.5px;
       box-shadow: 0 0 6px rgba(0, 0, 0, 0.35);
+      border-bottom-right-radius: 0;
+      border-bottom-left-radius: 0;
     }
 
     &.up-next {

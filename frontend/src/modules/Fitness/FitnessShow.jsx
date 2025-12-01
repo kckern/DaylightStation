@@ -13,7 +13,7 @@ const formatWatchedDate = (dateString) => {
     
     if (parsed.isSame(today, 'day')) return 'Today';
     if (parsed.isSame(yesterday, 'day')) return 'Yesterday';
-    if (parsed.year() === today.year()) return parsed.format('MMM D');
+    if (parsed.year() === today.year()) return parsed.format('ddd D MMM');
     return parsed.format('MMM D, YYYY');
   } catch (e) {
     return '';
@@ -923,10 +923,22 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                         return '';
                       })()}`}>
                         {seasonEpisodes.map((episode, index) => {
-                          const watchProgress = episode.watchProgress || 0;
+                          const watchProgress = normalizeNumber(episode.watchProgress) ?? 0;
                           const watchedDate = episode.watchedDate;
-                          const isWatched = watchProgress >= 50;
-                          const hasProgress = watchProgress > 15;
+                          const watchDurationSeconds = normalizeNumber(
+                            episode.watchDurationSeconds ?? episode.watchedDuration ?? episode.watched_duration
+                          );
+                          const episodeDurationSeconds = normalizeNumber(episode.duration);
+                          const hasDurationSignal = Number.isFinite(watchDurationSeconds) && Number.isFinite(episodeDurationSeconds) && episodeDurationSeconds > 0;
+                          const watchedByDurationPercent = hasDurationSignal
+                            ? (watchDurationSeconds / episodeDurationSeconds) * 100
+                            : null;
+                          const isWatched = hasDurationSignal
+                            ? watchedByDurationPercent >= 50
+                            : watchProgress >= 50;
+                          const hasProgress = hasDurationSignal
+                            ? watchDurationSeconds > 0
+                            : watchProgress > 15;
                           const showProgressBar = isResumable && hasProgress && !isWatched;
                           const episodeNumber = Number.isFinite(episode?.episodeNumber)
                             ? episode.episodeNumber
