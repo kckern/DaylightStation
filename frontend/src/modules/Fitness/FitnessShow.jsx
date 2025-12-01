@@ -939,6 +939,9 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                           const hasProgress = hasDurationSignal
                             ? watchDurationSeconds > 0
                             : watchProgress > 15;
+                          const progressPercent = hasDurationSignal
+                            ? Math.max(0, Math.min(100, watchedByDurationPercent ?? 0))
+                            : Math.max(0, Math.min(100, watchProgress));
                           const showProgressBar = isResumable && hasProgress && !isWatched;
                           const episodeNumber = Number.isFinite(episode?.episodeNumber)
                             ? episode.episodeNumber
@@ -975,10 +978,15 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                                      ✔️ {formatWatchedDate(watchedDate)}
                                     </div>
                                   )}
+                                    {showProgressBar && progressPercent > 0 && (
+                                      <div className="badge progress-percent">
+                                        {Math.round(progressPercent)}%
+                                      </div>
+                                    )}
                                 </div>
                                 {showProgressBar && (
                                 <div className="thumbnail-progress">
-                                  <div className="progress-bar" style={{ width: `${watchProgress}%` }} />
+                                  <div className="progress-bar" style={{ width: `${progressPercent}%` }} />
                                 </div>
                                 )}
                               </div>
