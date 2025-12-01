@@ -226,6 +226,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     };
   }, [coinTimeUnitMs, zoneConfig, usersConfig, forceUpdate, version]);
 
+  useEffect(() => {
+    const session = fitnessSessionRef.current;
+    const manager = session?.voiceMemoManager || null;
+    if (!manager) return;
+
+    manager.setMutationCallback(forceUpdate);
+    return () => {
+      if (manager === session?.voiceMemoManager) {
+        manager.setMutationCallback(null);
+      }
+    };
+  }, [forceUpdate, version]);
+
   // Sidebar toggle
   const toggleSidebarSizeMode = React.useCallback(() => {
     setSidebarSizeMode((m) => (m === 'regular' ? 'large' : 'regular'));
@@ -300,7 +313,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // Voice Memos
   const voiceMemos = React.useMemo(() => {
-    const raw = fitnessSessionRef.current?.voiceMemos;
+    const raw = fitnessSessionRef.current?.voiceMemoManager?.memos;
     if (!Array.isArray(raw)) return [];
     return raw.map((memo) => ({ ...memo }));
   }, [voiceMemoVersion, version]); // Depend on version too

@@ -241,7 +241,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
 const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
   const fitnessCtx = useFitnessContext();
 
-  const voiceMemoOverlayState = fitnessCtx?.voiceMemoOverlay;
+  const voiceMemoOverlayState = fitnessCtx?.voiceMemoOverlayState;
   const voiceMemos = fitnessCtx?.voiceMemos || [];
   const voiceMemoOverlayOpen = Boolean(voiceMemoOverlayState?.open);
   const closeVoiceMemoOverlay = fitnessCtx?.closeVoiceMemoOverlay;
