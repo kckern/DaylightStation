@@ -56,6 +56,7 @@ export class GovernanceEngine {
     };
 
     this._governedLabelSet = new Set();
+    this._governedTypeSet = new Set();
     this._latestInputs = {
       activeParticipants: [],
       userZoneMap: {},
@@ -150,6 +151,19 @@ export class GovernanceEngine {
     return labels.some((label) => this._governedLabelSet.has(normalizeLabel(label)));
   }
 
+  _mediaHasGovernedType() {
+    if (!this.media || !this.media.id || !this._governedTypeSet.size) {
+      return false;
+    }
+    const mediaType = typeof this.media.type === 'string' ? normalizeLabel(this.media.type) : '';
+    if (!mediaType) return false;
+    return this._governedTypeSet.has(mediaType);
+  }
+
+  _mediaIsGoverned() {
+    return this._mediaHasGovernedLabel() || this._mediaHasGovernedType();
+  }
+
   _captureLatestInputs(payload) {
     if (!payload) return;
     const activeParticipants = Array.isArray(payload.activeParticipants)
@@ -178,6 +192,10 @@ export class GovernanceEngine {
       ? this.config.governed_labels
       : [];
     this._governedLabelSet = new Set(normalizeLabelList(governedLabelSource));
+    const governedTypeSource = this.config && Array.isArray(this.config.governed_types)
+      ? this.config.governed_types
+      : [];
+    this._governedTypeSet = new Set(normalizeLabelList(governedTypeSource));
   }
 
   _normalizePolicies(policiesRaw) {
@@ -388,7 +406,7 @@ export class GovernanceEngine {
     const nextChallengeSnapshot = this._buildNextChallengeSnapshot(now);
 
     return {
-      isGoverned: this._mediaHasGovernedLabel(),
+      isGoverned: this._mediaIsGoverned(),
       status: this.phase || 'idle',
       labels: Array.isArray(this.media && this.media.labels) ? [...this.media.labels] : [],
       requirements: summary.requirements || [],
@@ -415,17 +433,17 @@ export class GovernanceEngine {
   // Main evaluation loop, called periodically or on data change
   evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount }) {
     const now = Date.now();
-    const governedLabelSet = this._governedLabelSet;
+    const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
     
     // 1. Check if media is governed
-    if (!this.media || !this.media.id || !governedLabelSet.size) {
+    if (!this.media || !this.media.id || !hasGovernanceRules) {
       this.reset();
       this._setPhase(null);
       return;
     }
 
-    const hasGovernedLabel = this._mediaHasGovernedLabel();
-    if (!hasGovernedLabel) {
+    const hasGovernedMedia = this._mediaIsGoverned();
+    if (!hasGovernedMedia) {
       this.reset();
       this._setPhase(null);
       return;

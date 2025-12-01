@@ -156,6 +156,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     governance,
     setGovernanceMedia,
     governedLabels,
+    governedTypes,
+    governedLabelSet: contextGovernedLabelSet,
+    governedTypeSet: contextGovernedTypeSet,
     governanceState
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
@@ -192,13 +195,24 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [governanceOverlay.filterClass, governanceOverlay.status]);
 
   const governedLabelSet = useMemo(() => {
+    if (contextGovernedLabelSet instanceof Set) return contextGovernedLabelSet;
     if (!Array.isArray(governedLabels) || !governedLabels.length) return new Set();
     return new Set(
       governedLabels
         .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
         .filter(Boolean)
     );
-  }, [governedLabels]);
+  }, [contextGovernedLabelSet, governedLabels]);
+
+  const governedTypeSet = useMemo(() => {
+    if (contextGovernedTypeSet instanceof Set) return contextGovernedTypeSet;
+    if (!Array.isArray(governedTypes) || !governedTypes.length) return new Set();
+    return new Set(
+      governedTypes
+        .map((type) => (typeof type === 'string' ? type.trim().toLowerCase() : ''))
+        .filter(Boolean)
+    );
+  }, [contextGovernedTypeSet, governedTypes]);
 
   useEffect(() => {
     lastKnownTimeRef.current = 0;
@@ -219,12 +233,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const mediaId = currentItem.media_key || currentItem.id || currentItem.plex || currentItem.videoUrl || currentItem.media_url || currentItem.guid;
     setGovernanceMedia({
       id: mediaId || `unknown-${currentItem.title || 'fitness'}`,
-      labels: Array.isArray(currentItem.labels) ? currentItem.labels : []
+      labels: Array.isArray(currentItem.labels) ? currentItem.labels : [],
+      type: currentItem.type || currentItem.media_type || null
     });
   }, [currentItem, setGovernanceMedia]);
 
   useEffect(() => {
-    if (!currentItem || !governedLabelSet.size) {
+    const hasLabelGovernance = governedLabelSet.size > 0;
+    const hasTypeGovernance = governedTypeSet.size > 0;
+    if (!currentItem || (!hasLabelGovernance && !hasTypeGovernance)) {
       setPlayIsGoverned(false);
       return;
     }
@@ -232,7 +249,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const normalizedLabels = rawLabels
       .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
       .filter(Boolean);
-    const mediaGoverned = normalizedLabels.some((label) => governedLabelSet.has(label));
+    const labelGoverned = hasLabelGovernance && normalizedLabels.some((label) => governedLabelSet.has(label));
+    const normalizedType = typeof currentItem.type === 'string' ? currentItem.type.trim().toLowerCase() : '';
+    const typeGoverned = hasTypeGovernance && normalizedType && governedTypeSet.has(normalizedType);
+    const mediaGoverned = labelGoverned || typeGoverned;
     if (!mediaGoverned) {
       setPlayIsGoverned(false);
       return;
@@ -242,7 +262,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const governanceVideoLocked = Boolean(governanceState?.videoLocked);
     const locked = governanceVideoLocked || (governance !== 'green' && governance !== 'yellow');
     setPlayIsGoverned(locked);
-  }, [currentItem, governedLabelSet, governance, governanceState?.videoLocked]);
+  }, [currentItem, governedLabelSet, governedTypeSet, governance, governanceState?.videoLocked]);
 
   useEffect(() => {
     if (!pausePlayback || !playPlayback) return;
@@ -577,7 +597,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       media_url: currentItem.media_url || currentItem.videoUrl,
       title: currentItem.title || currentItem.label,
       media_type: 'video',
-      type: 'video',
+      type: currentItem.type || currentItem.media_type || 'video',
       media_key: currentItem.id || currentItem.media_key || `fitness-${currentItem.id || ''}`,
       thumb_id: currentItem.thumb_id,
       show: currentItem.show || 'Fitness',
@@ -598,7 +618,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const normalizedLabels = rawLabels
       .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
       .filter(Boolean);
-    const mediaGoverned = governedLabelSet.size > 0 && normalizedLabels.some((label) => governedLabelSet.has(label));
+    const labelGoverned = governedLabelSet.size > 0 && normalizedLabels.some((label) => governedLabelSet.has(label));
+    const normalizedType = typeof currentItem?.type === 'string'
+      ? currentItem.type.trim().toLowerCase()
+      : (typeof enhancedCurrentItem?.type === 'string' ? enhancedCurrentItem.type.trim().toLowerCase() : '');
+    const typeGoverned = governedTypeSet.size > 0 && normalizedType ? governedTypeSet.has(normalizedType) : false;
+    const mediaGoverned = labelGoverned || typeGoverned;
     
     // Only autoplay if:
     // 1. Media is not governed, OR
@@ -628,7 +653,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       continuous: false,
       autoplay: canAutoplay
     };
-  }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate, currentItem?.labels, governedLabelSet, governance]);
+  }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
 
   const currentMediaIdentity = useMemo(
     () => resolveMediaIdentity(enhancedCurrentItem || currentItem),
