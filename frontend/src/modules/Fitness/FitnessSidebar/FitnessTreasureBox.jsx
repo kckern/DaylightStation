@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import '../FitnessUsers.scss';
+import '../FitnessCam.scss';
 
 // Lightweight treasure box summary component
 const FitnessTreasureBox = ({ box, session }) => {

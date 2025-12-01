@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useFitness } from '../../../context/FitnessContext.jsx';
-import '../FitnessUsers.scss';
+import { useFitnessContext } from '../../../context/FitnessContext.jsx';
+import '../FitnessCam.scss';
 
 const FitnessVideo = ({ minimal = false }) => {
   const videoRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const streamRef = useRef(null);
-  const { toggleSidebarSizeMode } = useFitness() || {};
+  const { toggleSidebarSizeMode } = useFitnessContext() || {};
 
   useEffect(() => {
     let mounted = true;

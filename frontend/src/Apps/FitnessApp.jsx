@@ -3,7 +3,7 @@ import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantin
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
 import { DaylightAPI } from '../lib/api.mjs';
-import FitnessUsers from '../modules/Fitness/FitnessUsers.jsx';
+import FitnessCam from "../modules/Fitness/FitnessCam.jsx";
 import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessNavbar from '../modules/Fitness/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
@@ -456,9 +456,9 @@ const FitnessApp = () => {
                 activeCollection={activeCollection}
                 onContentSelect={handleContentSelect}
               />
-              <div className="fitness-main-content">
+              <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
                 {currentView === 'users' && (
-                  <FitnessUsers />
+                  <FitnessCam />
                 )}
                 {currentView === 'show' && selectedShow && (
                   <FitnessShow 

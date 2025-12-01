@@ -3,7 +3,8 @@ import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
-import '../FitnessUsers.scss';
+import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
+import '../FitnessCam.scss';
 
 const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
 const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
@@ -36,8 +37,10 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const [isPlaying, setIsPlaying] = useState(true);
   const audioPlayerRef = useRef(null);
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
   const [musicVolume, setMusicVolume] = useState(0.1);
   const [videoVolume, setVideoVolume] = useState(1);
+  const [isVideoAvailable, setIsVideoAvailable] = useState(false);
   const touchHandledRef = useRef(false);
   
   const fitnessContext = useFitnessContext();
@@ -95,16 +98,27 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
+    
+    if (!videoPlayerRef) {
+      setIsVideoAvailable(false);
+      return;
+    }
 
     let frameId = null;
     // Poll until the fitness video exposes its media element so the slider can mirror the live volume.
     const probeVideoElement = () => {
-      if (!videoPlayerRef?.current) return;
-      const media = videoPlayerRef.current.getMediaElement?.();
-      if (!media) {
+      if (!videoPlayerRef?.current) {
+        setIsVideoAvailable(false);
         frameId = window.requestAnimationFrame(probeVideoElement);
         return;
       }
+      const media = videoPlayerRef.current.getMediaElement?.();
+      if (!media) {
+        setIsVideoAvailable(false);
+        frameId = window.requestAnimationFrame(probeVideoElement);
+        return;
+      }
+      setIsVideoAvailable(true);
       if (typeof media.volume === 'number') {
         setVideoVolume(media.volume);
       }
@@ -234,15 +248,6 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
 
   const handleMusicLevelSelect = (level) => {
     setMusicVolume(logVolumeFromLevel(level));
-  };
-
-  const handlePlaylistChange = (event) => {
-    const isNoMusic = event.target.value === '';
-    if(isNoMusic) return handleMusicToggle();
-    const nextId = event.target.value || null;
-    if (setGlobalPlaylistId) {
-      setGlobalPlaylistId(nextId);
-    }
   };
 
   const toggleControls = () => {
@@ -410,19 +415,21 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
           <div className="music-player-expanded">
 
             <div className="expanded-section">
-              <div className="mix-row">
-                <label id="video-volume-label" className="mix-label">Video Volume: {Math.round(videoVolume * 100)}%
+              {isVideoAvailable && (
+                <div className="mix-row">
+                  <label id="video-volume-label" className="mix-label">Video Volume: {Math.round(videoVolume * 100)}%
 
-                </label>
-                <div className="mix-controls">
-            <TouchVolumeButtons
-              controlId="video-volume"
-              currentLevel={videoDisplayLevel}
-              disabled={!videoMediaAvailable}
-              onSelect={handleVideoLevelSelect}
-            />
+                  </label>
+                  <div className="mix-controls">
+                    <TouchVolumeButtons
+                      controlId="video-volume"
+                      currentLevel={videoDisplayLevel}
+                      disabled={!isVideoAvailable}
+                      onSelect={handleVideoLevelSelect}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="mix-row">
                 <label id="music-volume-label" className="mix-label">Music Volume: {Math.round(musicVolume * 100)}%
 
@@ -440,20 +447,41 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
             <div className="expanded-section">
               {playlists.length > 0 ? (
                 <>
-            <select
-              id="fitness-playlist-select"
-              style={{marginTop:"1ex"}}
-              className="playlist-select"
-              value={selectedPlaylistId || ''}
-              onChange={handlePlaylistChange}
-            >
-              <option value="">🔇 No Music</option>
-              {playlists.map((playlist) => (
-                <option key={playlist.id} value={playlist.id}>
-                 🎵 {playlist.name}
-                </option>
-              ))}
-            </select>
+                  <button 
+                    className="current-playlist-button"
+                    onClick={() => setPlaylistModalOpen(true)}
+                  >
+                    <span className="playlist-icon">🎵</span>
+                    <span className="playlist-name">
+                      {playlists.find(p => p.id === selectedPlaylistId)?.name || 'Select Playlist'}
+                    </span>
+                    <span className="playlist-arrow">▼</span>
+                  </button>
+
+                  {playlistModalOpen && (
+                    <div className="playlist-modal-overlay" onClick={() => setPlaylistModalOpen(false)}>
+                      <div className="playlist-modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="playlist-modal-header">
+                          <h3>Select Playlist</h3>
+                          <button className="close-btn" onClick={() => setPlaylistModalOpen(false)}>×</button>
+                        </div>
+                        <FitnessPlaylistSelector
+                          playlists={playlists}
+                          selectedPlaylistId={selectedPlaylistId}
+                          onSelect={(id) => {
+                            if (!id) {
+                              handleMusicToggle();
+                            } else if (setGlobalPlaylistId) {
+                              setGlobalPlaylistId(id);
+                            }
+                            setPlaylistModalOpen(false);
+                            setControlsOpen(false);
+                          }}
+                          onClose={() => setPlaylistModalOpen(false)}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="empty-state">No playlists configured.</div>

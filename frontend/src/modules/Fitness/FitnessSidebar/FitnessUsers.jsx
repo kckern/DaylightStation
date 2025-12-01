@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Badge } from '@mantine/core';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import FlipMove from 'react-flip-move';
-import '../FitnessUsers.scss';
+import '../FitnessCam.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 
 const slugifyId = (value, fallback = 'user') => {

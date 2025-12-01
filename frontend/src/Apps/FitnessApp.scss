@@ -48,6 +48,10 @@
     margin-left: 5rem;
     padding: 0;
     box-sizing: border-box;
+
+    &.fitness-cam-active {
+      margin-left: 4rem;
+    }
   }
 }
 

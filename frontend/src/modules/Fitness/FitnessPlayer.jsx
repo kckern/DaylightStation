@@ -5,7 +5,7 @@ import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
 import usePlayerController from '../Player/usePlayerController.js';
 import { DaylightMediaPath } from '../../lib/api.mjs';
-import FitnessUsers from './FitnessUsers.jsx';
+import FitnessCam from './FitnessCam.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '../Player/lib/playbackLogger.js';
