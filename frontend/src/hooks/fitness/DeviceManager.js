@@ -123,6 +123,12 @@ export class DeviceManager {
     return device;
   }
 
+  removeDevice(deviceId) {
+    const id = slugifyId(deviceId);
+    if (!id) return false;
+    return this.devices.delete(id);
+  }
+
   getDevice(id) {
     return this.devices.get(slugifyId(id));
   }
