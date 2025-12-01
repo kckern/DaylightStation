@@ -11,13 +11,13 @@ import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
 import './FitnessCam.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
-const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSeconds = 0, mode = 'player' }, ref) => {
+const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false }, ref) => {
   const fitnessContext = useFitnessContext();
-  const isGovernedInitial = Boolean(fitnessContext?.governanceState?.isGoverned);
+  const isGovernedInitial = governanceDisabled ? false : Boolean(fitnessContext?.governanceState?.isGoverned);
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
   const [visibility, setVisibility] = useState(() => ({
-    governance: isGovernedInitial,
-    treasureBox: !isGovernedInitial,
+    governance: governanceDisabled ? false : isGovernedInitial,
+    treasureBox: governanceDisabled ? true : !isGovernedInitial,
     users: true,
     video: true,
     voiceMemo: true
@@ -110,8 +110,8 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
     if (!deviceId) return;
     setMenuState({ open: true, mode: 'guest', target: { deviceId, defaultName: defaultName || null } });
   }, []);
-  const isGoverned = Boolean(governanceState?.isGoverned);
-  const showGovernancePanel = isGoverned || visibility.governance;
+  const isGoverned = governanceDisabled ? false : Boolean(governanceState?.isGoverned);
+  const showGovernancePanel = !governanceDisabled && (isGoverned || visibility.governance);
 
   const handleToggleMusic = React.useCallback(() => {
     if (!setMusicOverride) return;
@@ -119,6 +119,9 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
   }, [musicEnabled, setMusicOverride]);
 
   React.useEffect(() => {
+    if (governanceDisabled) {
+      return;
+    }
     setVisibility((prev) => {
       let next = prev;
 
@@ -140,9 +143,12 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
 
       return next === prev ? prev : next;
     });
-  }, [isGoverned, treasureBoxOverridden]);
+  }, [isGoverned, treasureBoxOverridden, governanceDisabled]);
 
   const handleToggleVisibility = (component) => {
+    if (governanceDisabled && component === 'governance') {
+      return;
+    }
     setVisibility(prev => ({
       ...prev,
       [component]: !prev[component]
@@ -229,6 +235,7 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
             preferredMicrophoneId={preferredMicrophoneId}
             onSelectMicrophone={setPreferredMicrophoneId}
             sidebarSizeMode={sidebarSizeMode}
+            governanceDisabled={governanceDisabled}
           />
         </>
       )}

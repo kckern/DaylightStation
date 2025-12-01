@@ -31,7 +31,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       requirements: [],
       highlightUsers: [],
       countdown: null,
-      countdownTotal: null
+      countdownTotal: null,
+      allowGenericAny: false
     };
   }
 
@@ -144,7 +145,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       requirements: combinedRequirements,
       highlightUsers: combinedMissingUsers,
       countdown: null,
-      countdownTotal: null
+      countdownTotal: null,
+      allowGenericAny: challengeRequiredCount === 1
     };
   }
 
@@ -159,7 +161,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       requirements: [],
       highlightUsers: [],
       countdown: null,
-      countdownTotal: null
+      countdownTotal: null,
+      allowGenericAny: false
     };
   }
 
@@ -186,7 +189,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       requirements: [],
       highlightUsers: warningHighlights,
       countdown,
-      countdownTotal
+      countdownTotal,
+      allowGenericAny: false
     };
   }
 
@@ -213,7 +217,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
         ...missingUsers
       ])),
       countdown: null,
-      countdownTotal: null
+      countdownTotal: null,
+      allowGenericAny: false
     };
   }
 
@@ -234,7 +239,8 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     requirements: unsatisfied,
     highlightUsers: greyHighlightUsers,
     countdown: null,
-    countdownTotal: null
+    countdownTotal: null,
+    allowGenericAny: false
   };
 }, [governanceState]);
 
@@ -449,6 +455,10 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     if (requirementList.length === 0) {
       return [];
     }
+    const allowGenericAny = Boolean(overlay.allowGenericAny);
+    const highlightList = Array.isArray(overlay.highlightUsers)
+      ? overlay.highlightUsers.filter(Boolean)
+      : [];
 
     const buildProgressGradient = (currentZone, targetZone) => {
       const start = currentZone?.color || 'rgba(148, 163, 184, 0.6)';
@@ -700,6 +710,24 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       const requiresAny = Number.isFinite(requirement?.requiredCount) && Number(requirement.requiredCount) === 1;
       if (requiresAny) {
         const namedParticipants = participants.filter((participant) => participant?.name);
+        if (!allowGenericAny) {
+          const sourceNames = (missing.length ? missing : (highlightList.length ? highlightList : namedParticipants.map((p) => p.name)))
+            .map((value) => (typeof value === 'string' ? value.trim() : String(value || '')).trim())
+            .filter(Boolean);
+          const uniqueNames = Array.from(new Set(sourceNames));
+          const list = uniqueNames.length ? uniqueNames : namedParticipants.map((p) => p.name).filter(Boolean);
+          const targets = list.length ? list : [];
+          if (!targets.length && namedParticipants.length === 1) {
+            addRow({ name: namedParticipants[0].name, participant: namedParticipants[0], target });
+            return;
+          }
+          targets.forEach((userName) => {
+            if (!userName) return;
+            const participant = participantMap.get(normalizeName(userName));
+            addRow({ name: userName, participant, target });
+          });
+          return;
+        }
         if (namedParticipants.length === 1) {
           addRow({ name: namedParticipants[0].name, participant: namedParticipants[0], target });
           return;
@@ -846,7 +874,8 @@ FitnessPlayerOverlay.propTypes = {
     })),
     highlightUsers: PropTypes.arrayOf(PropTypes.string),
     countdown: PropTypes.number,
-    countdownTotal: PropTypes.number
+    countdownTotal: PropTypes.number,
+    allowGenericAny: PropTypes.bool
   }),
   playerRef: PropTypes.shape({
     current: PropTypes.any
