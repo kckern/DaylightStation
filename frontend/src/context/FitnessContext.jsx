@@ -125,7 +125,26 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const guestAssignments = session.userManager.guestAssignments;
   
   // Legacy/Compatibility State
-  const userGroupLabelMap = React.useMemo(() => new Map(), []);
+  const userGroupLabelMap = React.useMemo(() => {
+    const map = new Map();
+    const registerGroupLabels = (list) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((entry) => {
+        if (!entry?.name) return;
+        const slug = slugifyId(entry.name);
+        const label = entry.group_label ?? entry.groupLabel ?? null;
+        if (slug && label && !map.has(slug)) {
+          map.set(slug, label);
+        }
+      });
+    };
+    registerGroupLabels(usersConfig?.primary);
+    registerGroupLabels(usersConfig?.secondary);
+    registerGroupLabels(usersConfig?.family);
+    registerGroupLabels(usersConfig?.friends);
+    registerGroupLabels(usersConfig?.guests);
+    return map;
+  }, [usersConfig]);
   const lastUpdate = 0;
   const governancePulse = 0;
   const effectiveUsersConfig = usersConfig;
