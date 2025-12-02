@@ -152,6 +152,8 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           ? Math.max(0, Math.min(1, progressEntry.progress))
           : null;
         const effectiveZoneColor = zoneInfo.color || 'rgba(128, 128, 128, 0.6)';
+        const isInactive = device.inactiveSince || device.connectionState !== 'connected';
+        
         return {
           deviceId: device.deviceId,
           name: user?.name || String(device.deviceId),
@@ -159,7 +161,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           zoneId: zoneInfo.id,
           zoneColor: effectiveZoneColor,
           heartRate: Number.isFinite(device?.heartRate) ? Math.round(device.heartRate) : null,
-          opacity: zoneInfo.color ? 1 : 0.5,
+          isInactive,
           progressValue
         };
       });
@@ -237,7 +239,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
               zoneId={item.zoneId}
               zoneColor={item.zoneColor}
               progress={item.progressValue}
-              opacity={item.opacity}
+              className={item.isInactive ? 'inactive' : ''}
               showIndicator={item.progressValue !== null}
             />
           ))}

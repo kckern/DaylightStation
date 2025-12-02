@@ -393,12 +393,13 @@ export class FitnessSession {
   // I will include the essential ones for session lifecycle.
 
   updateActiveDevices() {
-    const { remove } = this._getTimeouts();
+    const timeouts = this._getTimeouts();
+    const { remove } = timeouts;
     const now = Date.now();
     const stillActive = new Set();
     
     // Prune DeviceManager
-    this.deviceManager.pruneStaleDevices(remove);
+    this.deviceManager.pruneStaleDevices(timeouts);
     
     // Re-check active set
     const allDevices = this.deviceManager.getAllDevices();
