@@ -36,7 +36,7 @@ const CircularUserAvatar = ({
   style,
   showGauge = true,
   showIndicator = true,
-  opacity = 1,
+  opacity,
   ariaLabel,
   children,
   onClick,
@@ -54,9 +54,12 @@ const CircularUserAvatar = ({
     ...style,
     '--vital-ring-color': zoneColor || style?.['--vital-ring-color'],
     '--vital-avatar-size': formatSize(size) || style?.['--vital-avatar-size'],
-    '--vital-ring-width': formatRingWidth(ringWidth) || style?.['--vital-ring-width'],
-    opacity
+    '--vital-ring-width': formatRingWidth(ringWidth) || style?.['--vital-ring-width']
   };
+
+  if (Number.isFinite(opacity)) {
+    rootStyle.opacity = opacity;
+  }
 
   Object.keys(rootStyle).forEach((key) => {
     if (rootStyle[key] == null) {

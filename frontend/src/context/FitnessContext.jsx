@@ -573,10 +573,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const { inactive, remove } = getFitnessTimeouts();
+      const timeouts = getFitnessTimeouts();
       const session = fitnessSessionRef.current;
       if (session) {
-        session.deviceManager.pruneStaleDevices(remove);
+        session.deviceManager.pruneStaleDevices(timeouts);
         forceUpdate();
       }
     }, 3000);

@@ -893,6 +893,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               if (zoneIdForGrouping) seenZones.add(zoneIdForGrouping);
               if (!zoneIdForGrouping && device.type === 'heart_rate' && !noZoneShown) noZoneShown = true;
 
+              const removalCountdown = device.removalCountdown;
+              const isCountdownActive = Number.isFinite(removalCountdown);
+              const countdownWidth = isCountdownActive ? Math.round(removalCountdown * 100) : 0;
+              // Robust check for inactivity: handle both class instance (getter) and serialized object (property)
+              const isInactive = device.isActive === false || !!device.inactiveSince;
+
               return (
                 <div className="device-wrapper" key={`device-${device.deviceId}`}>
                   <div className={`device-zone-info ${zoneClass} ${device.type === 'heart_rate' && layoutMode === 'vert' ? 'for-vert' : ''}`}>
@@ -922,7 +928,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     )}
                   </div>
                   <div 
-                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${device.isActive ? 'active' : 'inactive'} ${zoneClass}`}
+                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                     role={isHeartRate ? 'button' : undefined}
                     tabIndex={isHeartRate ? 0 : undefined}
@@ -935,6 +941,14 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     } : undefined}
                     aria-label={isHeartRate ? `Reassign ${deviceName}` : undefined}
                   >
+                    {isCountdownActive && (
+                      <div className="device-timeout-bar" aria-label="Removal countdown" role="presentation">
+                        <div
+                          className="device-timeout-fill"
+                          style={{ width: `${Math.max(0, Math.min(100, countdownWidth))}%` }}
+                        />
+                      </div>
+                    )}
                     <div
                       className={`user-profile-img-container ${zoneClass}`}
                     >
