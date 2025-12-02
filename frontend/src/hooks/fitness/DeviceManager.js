@@ -13,6 +13,12 @@ export class Device {
     this.assignedUser = data.assignedUser || null; // userId
     this.connectionState = data.connectionState || 'disconnected';
     
+    // Inactivity Lifecycle
+    this.inactiveSince = data.inactiveSince || null;
+    this.removalAt = data.removalAt || null;
+    this.removalCountdown = Number.isFinite(data.removalCountdown) ? data.removalCountdown : null;
+    this.lastSignificantActivity = data.lastSignificantActivity || this.lastSeen;
+
     // Sensor Data
     this.heartRate = Number.isFinite(data.heartRate) ? data.heartRate : null;
     this.cadence = Number.isFinite(data.cadence) ? data.cadence : null;
@@ -25,6 +31,17 @@ export class Device {
 
   get deviceId() {
     return this.id;
+  }
+
+  get isActive() {
+    return !this.inactiveSince;
+  }
+
+  resetMetrics() {
+    this.cadence = 0;
+    this.power = 0;
+    this.speed = 0;
+    this.heartRate = null;
   }
 
   update(data = {}) {
@@ -44,6 +61,19 @@ export class Device {
     if (Number.isFinite(data.distance)) this.distance = data.distance;
     if (Number.isFinite(data.revolutionCount)) this.revolutionCount = data.revolutionCount;
     if (data.timestamp) this.timestamp = data.timestamp;
+
+    // Check for significant activity to reset inactivity flags
+    const hasHeartRate = Number.isFinite(this.heartRate) && this.heartRate > 0;
+    const hasCadence = Number.isFinite(this.cadence) && this.cadence > 0;
+    const hasPower = Number.isFinite(this.power) && this.power > 0;
+    const hasSpeed = Number.isFinite(this.speed) && this.speed > 0;
+    
+    if (hasHeartRate || hasCadence || hasPower || hasSpeed) {
+      this.lastSignificantActivity = Date.now();
+      this.inactiveSince = null;
+      this.removalAt = null;
+      this.removalCountdown = null;
+    }
   }
 
   serialize() {
@@ -57,6 +87,10 @@ export class Device {
       lastSeen: this.lastSeen,
       assignedUser: this.assignedUser,
       connectionState: this.connectionState,
+      inactiveSince: this.inactiveSince,
+      removalAt: this.removalAt,
+      removalCountdown: this.removalCountdown,
+      lastSignificantActivity: this.lastSignificantActivity,
       heartRate: this.heartRate,
       cadence: this.cadence,
       power: this.power,
@@ -161,14 +195,68 @@ export class DeviceManager {
     return this.getAllDevices().filter(d => d.assignedUser === userId);
   }
 
-  pruneStaleDevices(timeoutMs = 60000) {
+  pruneStaleDevices(config = {}) {
     const now = Date.now();
     const staleIds = [];
+    
+    // Handle legacy signature (timeoutMs) or new config object
+    const timeouts = typeof config === 'number' 
+      ? { inactive: config, remove: config * 3, rpmZero: 12000 }
+      : { 
+          inactive: config.inactive || 60000, 
+          remove: config.remove || 180000, 
+          rpmZero: config.rpmZero || 12000 
+        };
+
     for (const [id, device] of this.devices) {
-      if (now - device.lastSeen > timeoutMs && device.connectionState !== 'connected') {
-        staleIds.push(id);
+      // Determine effective last activity time
+      // For cadence devices, we use lastSignificantActivity to handle 0 RPM coasting
+      // For others, we use lastSeen (which updates on every packet)
+      const isCadence = device.type === 'cadence' || (device.cadence !== null && device.type !== 'heart_rate');
+      
+      // Use lastSignificantActivity for cadence devices so they timeout when stopped (even if connected)
+      // Use lastSeen for HR/others so they only timeout when disconnected
+      const effectiveLastActivity = isCadence ? (device.lastSignificantActivity || device.lastSeen) : device.lastSeen;
+      
+      const timeSinceActivity = now - effectiveLastActivity;
+
+      // 0. Check for RPM Zeroing (stale data while connected)
+      // If we haven't had significant activity (pedaling) for a while, reset display values to 0
+      const timeSinceSignificant = now - (device.lastSignificantActivity || device.lastSeen);
+      if (isCadence && timeSinceSignificant > timeouts.rpmZero) {
+        if (device.cadence > 0 || device.power > 0 || device.speed > 0) {
+          device.resetMetrics();
+        }
+      }
+      
+      // 1. Check for Inactivity (Connection Loss OR Stopped Pedaling)
+      if (timeSinceActivity > timeouts.inactive) {
+        if (!device.inactiveSince) {
+          device.inactiveSince = now;
+          device.removalAt = now + (timeouts.remove - timeouts.inactive);
+        }
+        
+        // 2. Calculate Countdown
+        if (device.removalAt) {
+          const totalGracePeriod = timeouts.remove - timeouts.inactive;
+          const remaining = device.removalAt - now;
+          device.removalCountdown = Math.max(0, Math.min(1, remaining / totalGracePeriod));
+        }
+        
+        // 3. Check for Removal
+        if (now > device.removalAt) {
+          staleIds.push(id);
+        }
+      } else {
+        // Device is active or re-connected
+        if (device.inactiveSince) {
+          device.inactiveSince = null;
+          device.removalAt = null;
+          device.removalCountdown = null;
+        }
       }
     }
+    
     staleIds.forEach(id => this.devices.delete(id));
     return staleIds;
   }

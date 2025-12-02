@@ -17,6 +17,19 @@
   background: transparent;
   transition: opacity 0.25s ease;
 
+  &.inactive {
+    opacity: 0.5;
+    filter: grayscale(0.8);
+    
+    .zone-progress-gauge .gauge-arc-progress {
+      stroke: rgba(255, 255, 255, 0.2);
+    }
+    
+    .zone-progress-indicator {
+      display: none;
+    }
+  }
+
   &::after {
     content: '';
     position: absolute;
