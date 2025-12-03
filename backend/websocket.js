@@ -27,6 +27,12 @@ function getLogger() {
     return info;
   });
 
+  // Reorder keys to put message first (after timestamp/level)
+  const reorderFormat = winston.format((info) => {
+      const { timestamp, level, message, ...rest } = info;
+      return { timestamp, level, message, ...rest };
+  });
+
   const winstonTransportList = [
     new winston.transports.Console({
       format: winston.format.combine(
@@ -51,6 +57,11 @@ function getLogger() {
 
   backendLogger = winston.createLogger({
     level: process.env.WEBSOCKET_LOG_LEVEL || 'info',
+    format: winston.format.combine(
+        winston.format.timestamp(),
+        reorderFormat(),
+        winston.format.json() 
+    ),
     transports: winstonTransportList
   });
   
@@ -95,19 +106,15 @@ export function createWebsocketServer(server) {
             // Log playback events to backend logger (which forwards to Loggly)
             const { level, event, payload, context } = data;
             
-            // Safely construct meta data
-            let safePayload = {};
-            if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-                safePayload = payload;
-            } else if (payload !== undefined) {
-                safePayload = { payload };
-            }
-
-            const meta = { 
-                ...(context || {}), 
-                ...safePayload, 
-                source: data.source, 
-                event 
+            // Construct a cleaner meta object
+            // We want 'message' to be the main thing, which is passed as the first arg to logger.info
+            // We want to avoid polluting the root with all payload fields.
+            
+            const meta = {
+              event,
+              source: data.source,
+              context: context || {},
+              data: payload // Nested!
             };
             
             // Map frontend log levels to backend logger methods

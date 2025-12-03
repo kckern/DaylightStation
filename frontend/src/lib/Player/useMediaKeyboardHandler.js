@@ -1,6 +1,7 @@
 import { DaylightAPI } from '../api.mjs';
 import { usePlayerKeyboard } from '../keyboard/keyboardManager.js';
 import { createMediaTransportAdapter } from './mediaTransportAdapter.js';
+import { playbackLog } from '../../modules/Player/lib/playbackLogger.js';
 
 /**
  * Custom hook for handling media playback keyboard shortcuts
@@ -31,6 +32,27 @@ export function useMediaKeyboardHandler(config) {
     mediaRef,
     getMediaEl
   });
+
+  const mediaIdentityKey = meta?.media_key || media_key || meta?.id || null;
+  const mediaTitle = meta?.title || meta?.name || meta?.show || null;
+
+  const logUserAction = (action, payload = {}, level = 'info') => {
+    playbackLog('player.user-action', {
+      action,
+      type,
+      mediaKey: mediaIdentityKey,
+      title: mediaTitle,
+      queuePosition,
+      ...payload
+    }, {
+      level,
+      context: {
+        source: 'useMediaKeyboardHandler',
+        mediaKey: mediaIdentityKey,
+        queuePosition
+      }
+    });
+  };
 
   const getPlaybackState = () => mediaController.getPlaybackState?.();
 
@@ -79,6 +101,13 @@ export function useMediaKeyboardHandler(config) {
   // Custom action handlers for Player-specific logging
   const customActionHandlers = {
     nextTrack: () => {
+      const { currentTime, percent } = readProgressSnapshot();
+      logUserAction('queue-skip', {
+        direction: 'next',
+        seconds: Number.isFinite(currentTime) ? currentTime : null,
+        percent: Number.isFinite(percent) ? percent : null,
+        trigger: 'keyboard'
+      });
       if (meta && type && media_key) {
         const { currentTime, percent } = readProgressSnapshot();
         const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
@@ -93,6 +122,11 @@ export function useMediaKeyboardHandler(config) {
     previousTrack: () => {
       const { currentTime } = readProgressSnapshot();
       const resolvedCurrent = Number.isFinite(currentTime) ? currentTime : 0;
+      logUserAction('queue-skip', {
+        direction: resolvedCurrent > 5 ? 'restart-current' : 'previous',
+        seconds: resolvedCurrent,
+        trigger: 'keyboard'
+      });
       if (resolvedCurrent > 5) {
         const next = mediaController.seek?.(0);
         setCurrentTime && setCurrentTime(Number.isFinite(next) ? next : 0);
@@ -104,11 +138,21 @@ export function useMediaKeyboardHandler(config) {
     // Override default seek to use Player-specific increment calculation
     seekForward: () => {
       const increment = resolveSeekIncrement();
+      logUserAction('seek', {
+        direction: 'forward',
+        deltaSeconds: increment,
+        trigger: 'keyboard'
+      }, 'debug');
       applySeekDelta(increment);
     },
 
     seekBackward: () => {
       const increment = resolveSeekIncrement();
+      logUserAction('seek', {
+        direction: 'backward',
+        deltaSeconds: increment,
+        trigger: 'keyboard'
+      }, 'debug');
       applySeekDelta(-increment);
     }
   };

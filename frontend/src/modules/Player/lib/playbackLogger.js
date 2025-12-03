@@ -22,6 +22,7 @@ const PLAYBACK_SOCKET_SOURCE = 'playback-logger';
 const QUEUE_FALLBACK_LIMIT = 500;
 const THROTTLE_MAP = new Map();
 const THROTTLE_INTERVAL = 15000;
+const RATE_LIMIT_MIN_INTERVAL = 50;
 
 let playerDebugMode = PLAYER_DEBUG_MODE_DEFAULT;
 let globalLoggerContext = { ...DEFAULT_CONTEXT };
@@ -403,6 +404,18 @@ const shouldSampleRecord = (event, overrideRate) => {
   return resolveSamplingDecision(loggerConfig.sampling, event, randomFn);
 };
 
+const sanitizePayload = (payload) => {
+  if (!payload || typeof payload !== 'object') return payload;
+  const clone = { ...payload };
+  
+  // Truncate instanceKey if present
+  if (typeof clone.instanceKey === 'string' && clone.instanceKey.length > 50) {
+    clone.instanceKey = clone.instanceKey.substring(0, 47) + '...';
+  }
+  
+  return clone;
+};
+
 const serializePayload = (payload) => {
   if (payload instanceof Error) {
     return {
@@ -410,7 +423,7 @@ const serializePayload = (payload) => {
       stack: payload.stack
     };
   }
-  return payload;
+  return sanitizePayload(payload);
 };
 
 const stringifyValue = (value) => {
@@ -460,9 +473,39 @@ const looksLikeOptionsBag = (value) => (
   && Array.from(OPTION_KEYS).some((key) => Object.prototype.hasOwnProperty.call(value, key))
 );
 
-const shouldThrottle = (event, payload) => {
-  // Check for Shaka timeupdate
+const shouldThrottle = (event, payload, options = {}) => {
+  const rateLimit = options?.rateLimit;
+  if (rateLimit && typeof rateLimit === 'object') {
+    const when = rateLimit.when;
+    const shouldApply = typeof when === 'function'
+      ? when(payload, event)
+      : (typeof when === 'boolean' ? when : true);
+    if (!shouldApply) {
+      return false;
+    }
+    const key = rateLimit.key || event;
+    if (!key) {
+      return false;
+    }
+    const resolvedInterval = Number.isFinite(rateLimit.interval) && rateLimit.interval > 0
+      ? Math.max(RATE_LIMIT_MIN_INTERVAL, Math.floor(rateLimit.interval))
+      : THROTTLE_INTERVAL;
+    const now = Date.now();
+    const last = THROTTLE_MAP.get(key) || 0;
+    if (now - last < resolvedInterval) {
+      return true;
+    }
+    THROTTLE_MAP.set(key, now);
+    return false;
+  }
+
   if (event === 'shaka-video-event' && payload?.eventName === 'timeupdate') {
+    const readyState = Number(payload?.readyState);
+    const smoothPlayback = payload?.smooth === true
+      || (Number.isFinite(readyState) && readyState >= 3 && payload?.paused === false && payload?.buffering !== true);
+    if (!smoothPlayback) {
+      return false;
+    }
     const key = 'shaka-timeupdate';
     const now = Date.now();
     const last = THROTTLE_MAP.get(key) || 0;
@@ -470,6 +513,7 @@ const shouldThrottle = (event, payload) => {
     THROTTLE_MAP.set(key, now);
     return false;
   }
+
   return false;
 };
 
@@ -481,7 +525,7 @@ const logInternal = (level, event, payload, options = {}) => {
   if (!shouldSampleRecord(event, options.sampleRate)) {
     return;
   }
-  if (shouldThrottle(event, payload)) {
+  if (shouldThrottle(event, payload, options)) {
     return;
   }
 
