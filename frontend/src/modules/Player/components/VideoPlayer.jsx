@@ -298,7 +298,7 @@ export function VideoPlayer({
   const resolvedMaxResolution = maxResolution ?? media?.maxResolution ?? null;
 
   const videoKey = useMemo(
-    () => `${media_url || ''}:${resolvedMaxVideoBitrate ?? 'unlimited'}:${resolvedMaxResolution ?? 'native'}`,
+    () => `${media_url || ''}__cap=${resolvedMaxVideoBitrate ?? 'unlimited'}__res=${resolvedMaxResolution ?? 'native'}`,
     [media_url, resolvedMaxVideoBitrate, resolvedMaxResolution]
   );
 
@@ -342,8 +342,10 @@ export function VideoPlayer({
     instanceKey: videoKey,
     fetchVideoInfo,
     seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
+    const troubleDiagnosticsRef = useRef(() => null);
     resilienceBridge,
     watchedDurationProvider,
+      getTroubleDiagnostics: () => troubleDiagnosticsRef.current?.()
     mediaAccessExtras
   });
   const dashSource = useMemo(() => {
@@ -378,6 +380,15 @@ export function VideoPlayer({
   }, [containerRef]);
 
   const shakaPlayerRef = useRef(null);
+    useEffect(() => {
+      troubleDiagnosticsRef.current = () => {
+        const mediaEl = getCurrentMediaElement();
+        return buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
+      };
+      return () => {
+        troubleDiagnosticsRef.current = () => null;
+      };
+    }, [getCurrentMediaElement]);
   const shakaNetworkingCleanupRef = useRef(() => {});
   const shakaRecoveryStateRef = useRef({
     attempts: 0,
