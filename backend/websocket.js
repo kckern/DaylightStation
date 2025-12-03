@@ -5,40 +5,49 @@ import { WebSocketServer } from 'ws';
 import winston from 'winston';
 import { Loggly } from 'winston-loggly-bulk';
 
-const LOGGLY_TOKEN = process.env.LOGGLY_TOKEN || process.env.LOGGLY_INPUT_TOKEN || null;
-const LOGGLY_SUBDOMAIN = process.env.LOGGLY_SUBDOMAIN || null;
 const LOGGLY_TAGS = ['backend', 'websocket'];
 
-const winstonTransportList = [
-  new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.timestamp(),
-      winston.format.printf(({ level, message, timestamp, ...meta }) => {
-        const serializedMeta = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-        return `${timestamp} [WebSocket] ${level}: ${message}${serializedMeta}`;
-      })
-    )
-  })
-];
+let backendLogger = null;
 
-if (LOGGLY_TOKEN && LOGGLY_SUBDOMAIN) {
-  winstonTransportList.push(new Loggly({
-    token: LOGGLY_TOKEN,
-    subdomain: LOGGLY_SUBDOMAIN,
-    tags: LOGGLY_TAGS,
-    json: true
-  }));
+function getLogger() {
+  if (backendLogger) return backendLogger;
+
+  const LOGGLY_TOKEN = process.env.LOGGLY_TOKEN || process.env.LOGGLY_INPUT_TOKEN;
+  const LOGGLY_SUBDOMAIN = process.env.LOGGLY_SUBDOMAIN;
+
+  const winstonTransportList = [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.printf(({ level, message, timestamp, ...meta }) => {
+          const serializedMeta = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+          return `${timestamp} [WebSocket] ${level}: ${message}${serializedMeta}`;
+        })
+      )
+    })
+  ];
+
+  if (LOGGLY_TOKEN && LOGGLY_SUBDOMAIN) {
+    winstonTransportList.push(new Loggly({
+      token: LOGGLY_TOKEN,
+      subdomain: LOGGLY_SUBDOMAIN,
+      tags: LOGGLY_TAGS,
+      json: true
+    }));
+  }
+
+  backendLogger = winston.createLogger({
+    level: process.env.WEBSOCKET_LOG_LEVEL || 'info',
+    transports: winstonTransportList
+  });
+  
+  return backendLogger;
 }
 
-const backendLogger = winston.createLogger({
-  level: process.env.WEBSOCKET_LOG_LEVEL || 'info',
-  transports: winstonTransportList
-});
-
 const logger = {
-  info: (message, meta = {}) => backendLogger.info(message, meta),
-  warn: (message, meta = {}) => backendLogger.warn(message, meta),
-  error: (message, meta = {}) => backendLogger.error(message, meta)
+  info: (message, meta = {}) => getLogger().info(message, meta),
+  warn: (message, meta = {}) => getLogger().warn(message, meta),
+  error: (message, meta = {}) => getLogger().error(message, meta)
 };
 
 let wssNav = null;
