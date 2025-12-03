@@ -303,8 +303,10 @@ export function VideoPlayer({
   );
 
   const shakaNudgePlaybackRef = useRef(async () => ({ ok: false, outcome: 'not-ready' }));
+  const troubleDiagnosticsRef = useRef(() => null);
   const mediaAccessExtras = useMemo(() => ({
-    nudgePlayback: (...args) => shakaNudgePlaybackRef.current?.(...args)
+    nudgePlayback: (...args) => shakaNudgePlaybackRef.current?.(...args),
+    getTroubleDiagnostics: () => troubleDiagnosticsRef.current?.()
   }), []);
 
   const {
@@ -342,10 +344,8 @@ export function VideoPlayer({
     instanceKey: videoKey,
     fetchVideoInfo,
     seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
-    const troubleDiagnosticsRef = useRef(() => null);
     resilienceBridge,
     watchedDurationProvider,
-      getTroubleDiagnostics: () => troubleDiagnosticsRef.current?.()
     mediaAccessExtras
   });
   const dashSource = useMemo(() => {
@@ -380,15 +380,15 @@ export function VideoPlayer({
   }, [containerRef]);
 
   const shakaPlayerRef = useRef(null);
-    useEffect(() => {
-      troubleDiagnosticsRef.current = () => {
-        const mediaEl = getCurrentMediaElement();
-        return buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
-      };
-      return () => {
-        troubleDiagnosticsRef.current = () => null;
-      };
-    }, [getCurrentMediaElement]);
+  useEffect(() => {
+    troubleDiagnosticsRef.current = () => {
+      const mediaEl = getCurrentMediaElement();
+      return buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
+    };
+    return () => {
+      troubleDiagnosticsRef.current = () => null;
+    };
+  }, [getCurrentMediaElement]);
   const shakaNetworkingCleanupRef = useRef(() => {});
   const shakaRecoveryStateRef = useRef({
     attempts: 0,
