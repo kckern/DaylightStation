@@ -13,6 +13,14 @@ const logFooterEvent = (phase, payload = {}) => {
   playbackLog(FOOTER_LOG_EVENT, { phase, ...payload });
 };
 
+const resolveSeekDirection = (targetSeconds, referenceSeconds) => {
+  if (!Number.isFinite(targetSeconds) || !Number.isFinite(referenceSeconds)) return 'unknown';
+  const EPSILON = 0.001;
+  if (targetSeconds > referenceSeconds + EPSILON) return 'forward';
+  if (targetSeconds < referenceSeconds - EPSILON) return 'backward';
+  return 'steady';
+};
+
 const FitnessPlayerFooterSeekThumbnails = ({
   duration,
   currentTime,
@@ -384,6 +392,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
   const commit = useCallback((t) => {
     if (disabled) return;
     const normalizedTarget = Number.isFinite(t) ? Math.max(0, t) : 0;
+    const seekDirection = resolveSeekDirection(normalizedTarget, currentTime);
     const intentMeta = recordSeekIntent(normalizedTarget);
     setPendingTime(normalizedTarget);
     awaitingSettleRef.current = true;
@@ -400,10 +409,22 @@ const FitnessPlayerFooterSeekThumbnails = ({
       previousPreviewTime: previewTime,
       previousPendingTime: pendingTime,
       currentTimeSnapshot: currentTime,
+      direction: seekDirection,
       mediaIdentity: currentMediaIdentity
     };
     lastCommitRef.current = commitSnapshot;
     logFooterEvent('seek-commit', commitSnapshot);
+    logFooterEvent('seek-dispatch', {
+      target: normalizedTarget,
+      direction: seekDirection,
+      performedReset,
+      transport: performedReset ? 'resilience-force-reset' : 'player-seek',
+      interaction: lastInteractionRef.current,
+      pendingMeta: pendingMetaRef.current,
+      previousPreviewTime: previewTime,
+      previousPendingTime: pendingTime,
+      currentTimeSnapshot: currentTime
+    });
     if (!performedReset) {
       seek(normalizedTarget);
     }
@@ -468,6 +489,12 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const meta = pendingMetaRef.current || {};
     const target = Number.isFinite(meta.target) ? meta.target : pendingTime;
     if (!Number.isFinite(target)) {
+      logFooterEvent('pending-cleared', {
+        reason: 'invalid-target',
+        pendingMeta: meta,
+        pendingTime,
+        currentTimeSnapshot: currentTime
+      });
       pendingMetaRef.current = { target: null, startedAt: 0, settledAt: 0 };
       awaitingSettleRef.current = false;
       setPendingTime(null);
@@ -477,7 +504,19 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const now = nowTs();
     const delta = Math.abs(currentTime - target);
     const tolerance = awaitingSettleRef.current ? BASE_PENDING_TOLERANCE : CLEAR_PENDING_TOLERANCE;
-    const clearIntent = () => {
+    const pendingDirection = resolveSeekDirection(target, currentTime);
+    const clearIntent = (reason, extra = {}) => {
+      logFooterEvent('pending-cleared', {
+        reason,
+        targetSeconds: target,
+        delta,
+        tolerance,
+        pendingMeta: meta,
+        pendingTime,
+        currentTimeSnapshot: currentTime,
+        direction: pendingDirection,
+        ...extra
+      });
       pendingMetaRef.current = { target: null, startedAt: 0, settledAt: 0 };
       awaitingSettleRef.current = false;
       setPendingTime(null);
@@ -485,20 +524,20 @@ const FitnessPlayerFooterSeekThumbnails = ({
     };
 
     if (delta <= tolerance) {
-      clearIntent();
+      clearIntent('within-tolerance');
       return;
     }
 
     if (meta.settledAt) {
       const relaxedTolerance = CLEAR_PENDING_TOLERANCE * 1.5;
       if (now - meta.settledAt > SETTLED_GRACE_MS && delta <= relaxedTolerance) {
-        clearIntent();
+        clearIntent('grace-window', { relaxedTolerance });
         return;
       }
     }
 
     if (meta.startedAt && now - meta.startedAt > PENDING_MAX_HOLD_MS) {
-      clearIntent();
+      clearIntent('max-hold-expired', { holdDurationMs: now - meta.startedAt });
     }
   }, [currentTime, pendingTime]);
 
@@ -565,10 +604,12 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const resolvedTarget = Number.isFinite(rangeAnchor)
       ? rangeAnchor
       : (Number.isFinite(seekTarget) ? seekTarget : rangeStart);
+    const direction = resolveSeekDirection(resolvedTarget, currentTime);
     logFooterEvent('thumbnail-seek-intent', {
       seekTarget,
       rangeAnchor,
       resolvedTarget,
+      direction,
       thumbnailMeta: meta,
       interaction: lastInteractionRef.current,
       currentTimeSnapshot: currentTime,

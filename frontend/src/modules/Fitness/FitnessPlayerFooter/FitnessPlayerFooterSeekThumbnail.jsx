@@ -6,7 +6,7 @@ import './FitnessPlayerFooterSeekThumbnail.scss';
 
 const clampRatio = (value) => (value < 0 ? 0 : value > 1 ? 1 : value);
 const REFRESH_INTERVAL_MS = 8000;
-const THUMBNAIL_TIME_OFFSET_MS = 2000;
+const THUMBNAIL_TIME_OFFSET_MS = 10000;
 const TIMESTAMP_PATTERNS = [
   /(\/indexes\/(?:sd|ld)\/)(\d+)/i,
   /(\/thumb\/)(\d+)/i,
@@ -60,6 +60,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
   const containerClass = `${className}${disabled ? ' disabled' : ''}`;
   const perc = clampRatio(progressRatio);
   const sparkRatio = clampRatio(visibleRatio);
+  const [panToggle, setPanToggle] = useState(false);
   const [posterFallbackActive, setPosterFallbackActive] = useState(false);
   const [imageUnavailable, setImageUnavailable] = useState(!imgSrc);
   const [liveFrameSrc, setLiveFrameSrc] = useState(imgSrc || null);
@@ -125,6 +126,12 @@ const FitnessPlayerFooterSeekThumbnail = ({
     if (isActive && canAnimateThumbnail) return liveFrameSrc || imgSrc || null;
     return imgSrc || null;
   }, [imageUnavailable, posterFallbackActive, posterSrc, isActive, canAnimateThumbnail, liveFrameSrc, imgSrc]);
+
+  useEffect(() => {
+    if (resolvedSrc) {
+      setPanToggle((prev) => !prev);
+    }
+  }, [resolvedSrc]);
 
   useEffect(() => {
     setFrameState((prev) => {
@@ -222,7 +229,8 @@ const FitnessPlayerFooterSeekThumbnail = ({
         data-label-time={labelTime}
         data-origin={isOrigin ? '1' : '0'}
         style={{
-          '--pan-duration': `${REFRESH_INTERVAL_MS / 1000}s`
+          '--pan-duration': `${REFRESH_INTERVAL_MS / 1000}s`,
+          '--pan-direction': panToggle ? 'normal' : 'reverse'
         }}
       >
         <div className="thumbnail-wrapper">
