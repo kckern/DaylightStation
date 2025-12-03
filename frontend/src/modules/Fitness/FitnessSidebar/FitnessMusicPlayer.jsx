@@ -27,6 +27,16 @@ const logLevelFromVolume = (volume) => {
   return Math.min(100, Math.max(0, Math.round(percent)));
 };
 
+const normalizeTrackDurationSeconds = (...candidates) => {
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+    const normalized = typeof candidate === 'string' ? parseFloat(candidate) : Number(candidate);
+    if (!Number.isFinite(normalized) || normalized <= 0) continue;
+    return Math.round(normalized > 1000 ? normalized / 1000 : normalized);
+  }
+  return null;
+};
+
 const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -36,6 +46,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const [error, setError] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const audioPlayerRef = useRef(null);
+  const loggedTrackRef = useRef(null);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
   const [musicVolume, setMusicVolume] = useState(0.1);
@@ -49,6 +60,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const setGlobalPlaylistId = fitnessContext?.setSelectedPlaylistId;
   const setMusicOverride = fitnessContext?.setMusicOverride;
   const musicEnabled = fitnessContext?.musicEnabled ?? true;
+  const sessionInstance = fitnessContext?.fitnessSessionInstance;
 
   // Sync music player with video player pause state
   useEffect(() => {
@@ -68,6 +80,16 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
       setControlsOpen(false);
     }
   }, [selectedPlaylistId]);
+
+  const currentTrackIdentity = useMemo(() => {
+    if (!currentTrack) return null;
+    return currentTrack.key
+      || currentTrack.plex
+      || currentTrack.media_key
+      || currentTrack.ratingKey
+      || currentTrack.id
+      || null;
+  }, [currentTrack]);
 
   const applyMusicVolume = useCallback((volume) => {
     const media = audioPlayerRef.current?.getMediaElement?.();
@@ -211,6 +233,38 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
       setDuration(progressData.duration);
     }
   };
+
+  useEffect(() => {
+    if (!sessionInstance || typeof sessionInstance.logEvent !== 'function') {
+      return;
+    }
+    if (!currentTrackIdentity) {
+      loggedTrackRef.current = null;
+      return;
+    }
+    if (loggedTrackRef.current === currentTrackIdentity) {
+      return;
+    }
+    loggedTrackRef.current = currentTrackIdentity;
+    const durationSeconds = normalizeTrackDurationSeconds(
+      currentTrack?.duration,
+      currentTrack?.length,
+      currentTrack?.Duration
+    );
+    sessionInstance.logEvent('media_start', {
+      source: 'music_player',
+      mediaId: currentTrackIdentity,
+      title: currentTrack?.title || currentTrack?.label || null,
+      artist: currentTrack?.artist || currentTrack?.albumArtist || currentTrack?.grandparentTitle || null,
+      album: currentTrack?.album || currentTrack?.parentTitle || null,
+      playlistId: selectedPlaylistId || null,
+      plexId: currentTrack?.plex || null,
+      mediaKey: currentTrack?.key || currentTrack?.media_key || null,
+      durationSeconds,
+      volume: Math.round((musicVolume || 0) * 100) / 100,
+      musicEnabled: Boolean(musicEnabled)
+    });
+  }, [sessionInstance, currentTrackIdentity, currentTrack, selectedPlaylistId, musicVolume, musicEnabled]);
 
   const handleNext = () => {
     console.log('[Next] Button clicked');

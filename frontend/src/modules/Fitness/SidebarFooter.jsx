@@ -86,12 +86,9 @@ const SidebarFooter = ({ onContentSelect }) => {
   const hrOwnerMap = React.useMemo(() => {
     const map = {};
     participantRoster.forEach((participant) => {
-      const keys = [participant?.hrDeviceId, participant?.deviceId];
-      keys.forEach((key) => {
-        if (key !== undefined && key !== null) {
-          map[String(key)] = participant.name;
-        }
-      });
+      if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
+        map[String(participant.hrDeviceId)] = participant.name;
+      }
     });
     if (participantsByDevice && typeof participantsByDevice.forEach === 'function') {
       participantsByDevice.forEach((participant, key) => {
@@ -119,16 +116,13 @@ const SidebarFooter = ({ onContentSelect }) => {
     const map = {};
     participantRoster.forEach((participant) => {
       const profileId = participant.profileId
-        || participant.userId
         || getConfiguredProfileId(participant?.name)
         || (participant?.name ? slugifyId(participant.name) : null);
-      const keys = [participant?.hrDeviceId, participant?.deviceId];
-      keys.forEach((key) => {
-        if (key === undefined || key === null) return;
-        const normalized = String(key);
+      if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
+        const normalized = String(participant.hrDeviceId);
         map[normalized] = profileId || 'user';
         participantMap.set(normalized, participant);
-      });
+      }
     });
     if (participantsByDevice && typeof participantsByDevice.forEach === 'function') {
       participantsByDevice.forEach((participant, key) => {
@@ -139,7 +133,6 @@ const SidebarFooter = ({ onContentSelect }) => {
         }
         if (!map[normalized]) {
           const profileId = participant.profileId
-            || participant.userId
             || getConfiguredProfileId(participant?.name)
             || (participant?.name ? slugifyId(participant.name) : null);
           map[normalized] = profileId || 'user';

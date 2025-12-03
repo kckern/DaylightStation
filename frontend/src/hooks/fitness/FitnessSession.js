@@ -1,9 +1,10 @@
-import { formatSessionId, slugifyId, ensureSeriesCapacity, trimTrailingNulls, serializeSeries, deepClone, resolveDisplayLabel } from './types';
+import { formatSessionId, slugifyId, ensureSeriesCapacity, deepClone, resolveDisplayLabel } from './types';
 import { DeviceManager } from './DeviceManager';
 import { UserManager } from './UserManager';
 import { GovernanceEngine } from './GovernanceEngine';
 import { FitnessTreasureBox } from './TreasureBox';
 import { VoiceMemoManager } from './VoiceMemoManager';
+import { FitnessTimeline } from './FitnessTimeline';
 import { DaylightAPI } from '../../lib/api.mjs';
 
 // -------------------- Timeout Configuration --------------------
@@ -46,6 +47,9 @@ export class FitnessSession {
     this._autosaveIntervalMs = 15000;
     this._lastAutosaveAt = 0;
     this._autosaveTimer = null;
+    this._tickTimer = null;
+    this._tickIntervalMs = 5000;
+    this._pendingSnapshotRef = null;
 
     this.snapshot = {
       participantRoster: [],
@@ -63,12 +67,15 @@ export class FitnessSession {
       intervalCount: 0
     };
     this._lastSampleIndex = -1;
+    this.timeline = null;
     
     this.screenshots = {
       captures: [],
       intervalMs: null,
       filenamePattern: null
     };
+    this._telemetryTickInterval = 12;
+    this._lastTelemetrySnapshotTick = -1;
   }
 
   ingestData(payload) {
@@ -118,6 +125,7 @@ export class FitnessSession {
     }
 
     if (started) this._log('session_started', { sessionId: this.sessionId });
+    this._maybeTickTimeline(deviceData?.timestamp || now);
   }
 
   setParticipantRoster(roster = [], guestAssignments = {}) {
@@ -132,88 +140,67 @@ export class FitnessSession {
   get roster() {
     const roster = [];
     const heartRateDevices = this.deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
-    const treasureSummary = this.treasureBox ? this.treasureBox.summary : null;
-    
     const zoneLookup = new Map();
-    if (treasureSummary?.perUser) {
-      treasureSummary.perUser.forEach((entry) => {
-        if (!entry || !entry.user) return;
-        const key = slugifyId(entry.user);
-        if (!key) return;
-        zoneLookup.set(key, {
-          zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
-          color: entry.currentColor || null
-        });
+    const zoneSnapshot = typeof this.treasureBox?.getUserZoneSnapshot === 'function'
+      ? this.treasureBox.getUserZoneSnapshot()
+      : [];
+    zoneSnapshot.forEach((entry) => {
+      if (!entry || !entry.user) return;
+      const key = slugifyId(entry.user);
+      if (!key) return;
+      zoneLookup.set(key, {
+        zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
+        color: entry.color || null
       });
-    }
+    });
 
     heartRateDevices.forEach((device) => {
       if (!device || device.id == null) return;
       const deviceId = String(device.id);
       const heartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
-      
+      const guestEntry = this.userManager?.guestAssignments instanceof Map
+        ? this.userManager.guestAssignments.get(deviceId)
+        : null;
       const guestName = this.userManager.getGuestNameForDevice(deviceId);
-      
-      if (guestName) {
-        const key = slugifyId(guestName);
-        const zoneInfo = zoneLookup.get(key) || null;
-        const displayLabel = resolveDisplayLabel({ name: guestName, preferGroupLabel: false });
-        
-        roster.push({
-          name: guestName,
-          displayLabel,
-          groupLabel: null, // Guests don't have group labels
-          profileId: slugifyId(guestName),
-          baseUserName: null,
-          isGuest: true,
-          deviceId,
-          hrDeviceId: deviceId,
-          heartRate,
-          zoneId: zoneInfo?.zoneId || null,
-          zoneColor: zoneInfo?.color || null,
-          source: 'Guest',
-          category: 'Guest',
-          userId: null,
-          avatarUrl: null
-        });
-        return;
-      }
-
       const mappedUser = this.userManager.resolveUserForDevice(deviceId);
-      if (mappedUser) {
-        const name = mappedUser.name;
-        const key = slugifyId(name);
-        const zoneInfo = zoneLookup.get(key) || null;
-        
-        let resolvedHeartRate = heartRate;
-        if (mappedUser.currentData && Number.isFinite(mappedUser.currentData.heartRate)) {
-             resolvedHeartRate = Math.round(mappedUser.currentData.heartRate);
-        }
+      const participantName = guestName || mappedUser?.name;
+      if (!participantName) return;
 
-        const displayLabel = resolveDisplayLabel({
-          name,
-          groupLabel: mappedUser.groupLabel,
-          preferGroupLabel: true
-        });
-        
-        roster.push({
-          name,
-          displayLabel,
-          groupLabel: mappedUser.groupLabel || null, // NOW INCLUDED FROM USER
-          profileId: mappedUser.id || slugifyId(name),
-          baseUserName: name,
-          isGuest: false,
-          deviceId,
-          hrDeviceId: deviceId,
-          heartRate: resolvedHeartRate,
-          zoneId: zoneInfo?.zoneId || mappedUser.currentData?.zone || null,
-          zoneColor: zoneInfo?.color || mappedUser.currentData?.color || null,
-          source: mappedUser.source || 'Primary',
-          category: mappedUser.category || 'Family',
-          userId: mappedUser.id || null,
-          avatarUrl: mappedUser.avatarUrl || null
-        });
+      const key = slugifyId(participantName);
+      const zoneInfo = zoneLookup.get(key) || null;
+      const fallbackZoneId = mappedUser?.currentData?.zone || null;
+      const fallbackZoneColor = mappedUser?.currentData?.color || null;
+
+      let resolvedHeartRate = heartRate;
+      if (mappedUser?.currentData && Number.isFinite(mappedUser.currentData.heartRate)) {
+        const candidateHr = Math.round(mappedUser.currentData.heartRate);
+        if (candidateHr > 0) {
+          resolvedHeartRate = candidateHr;
+        }
       }
+
+      const isGuest = Boolean(guestName);
+      const displayLabel = resolveDisplayLabel({
+        name: participantName,
+        groupLabel: isGuest ? null : mappedUser?.groupLabel,
+        preferGroupLabel: !isGuest
+      });
+
+      roster.push({
+        name: participantName,
+        displayLabel,
+        groupLabel: isGuest ? null : mappedUser?.groupLabel || null,
+        profileId: mappedUser?.id || key,
+        baseUserName: isGuest
+          ? (guestEntry?.baseUserName || null)
+          : participantName,
+        isGuest,
+        hrDeviceId: deviceId,
+        heartRate: resolvedHeartRate,
+        zoneId: zoneInfo?.zoneId || fallbackZoneId || null,
+        zoneColor: zoneInfo?.color || fallbackZoneColor || null,
+        avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null
+      });
     });
 
     return roster;
@@ -232,6 +219,11 @@ export class FitnessSession {
     this.timebase.intervalCount = 0;
     this.timebase.intervalMs = this.timebase.intervalMs || 5000;
     this._lastSampleIndex = -1;
+    this.timeline = new FitnessTimeline(now, this.timebase.intervalMs);
+    this._tickIntervalMs = this.timeline.timebase.intervalMs;
+    this.timebase.intervalMs = this.timeline.timebase.intervalMs;
+    this.timebase.startAbsMs = this.timeline.timebase.startTime;
+    this._pendingSnapshotRef = null;
     
     // Reset snapshot structures
     this.snapshot.participantSeries = new Map();
@@ -252,6 +244,8 @@ export class FitnessSession {
     
     this._lastAutosaveAt = 0;
     this._startAutosaveTimer();
+    this._startTickTimer();
+    this._collectTimelineTick({ timestamp: now });
     return true;
   }
 
@@ -272,6 +266,11 @@ export class FitnessSession {
 
     const intervalMs = this.treasureBox?.coinTimeUnitMs || this.timebase.intervalMs || 5000;
     this.timebase.intervalMs = intervalMs;
+    if (this.timeline) {
+      this.timeline.setIntervalMs(intervalMs);
+      this._tickIntervalMs = intervalMs;
+      this._startTickTimer();
+    }
     const now = Date.now();
     const elapsed = this.timebase.startAbsMs ? Math.max(0, now - this.timebase.startAbsMs) : 0;
     const intervalIndex = intervalMs > 0 ? Math.floor(elapsed / intervalMs) : 0;
@@ -389,6 +388,152 @@ export class FitnessSession {
     });
   }
 
+  _collectTimelineTick({ timestamp } = {}) {
+    if (!this.timeline || !this.sessionId) return null;
+
+    const tickPayload = {};
+    const assignMetric = (key, value) => {
+      if (value == null || (typeof value === 'number' && Number.isNaN(value))) return;
+      tickPayload[key] = value;
+    };
+    const sanitizeHeartRate = (value) => (Number.isFinite(value) && value > 0 ? Math.round(value) : null);
+    const sanitizeNumber = (value) => (Number.isFinite(value) ? value : null);
+    const sanitizeDistance = (value) => (Number.isFinite(value) && value > 0 ? value : null);
+    const hasNumericSample = (metrics = {}) => ['heartRate', 'rpm', 'power', 'distance'].some((key) => metrics[key] != null);
+    const stageUserEntry = (user) => {
+      if (!user?.name) return null;
+      const slug = slugifyId(user.name);
+      if (!slug) return null;
+      const snapshot = typeof user.getMetricsSnapshot === 'function' ? user.getMetricsSnapshot() : {};
+      const staged = {
+        slug,
+        metadata: {
+          name: user.name,
+          groupLabel: user.groupLabel || null,
+          source: user.source || null,
+          color: snapshot?.zoneColor || user.currentData?.color || null
+        },
+        metrics: {
+          heartRate: sanitizeHeartRate(snapshot?.heartRate ?? user.currentData?.heartRate),
+          zoneId: snapshot?.zoneId || user.currentData?.zone || null,
+          rpm: sanitizeNumber(snapshot?.rpm),
+          power: sanitizeNumber(snapshot?.power),
+          distance: sanitizeDistance(snapshot?.distance)
+        }
+      };
+      return staged;
+    };
+    const isValidTickKey = (key) => {
+      if (!key || typeof key !== 'string') return false;
+      const segments = key.split(':');
+      if (segments.length !== 3) return false;
+      return segments.every((segment) => !!segment && /^[a-z0-9_]+$/i.test(segment));
+    };
+    const validateTickPayloadKeys = () => {
+      const invalidKeys = [];
+      Object.keys(tickPayload).forEach((key) => {
+        if (isValidTickKey(key)) return;
+        invalidKeys.push(key);
+        delete tickPayload[key];
+      });
+      if (invalidKeys.length) {
+        this._log('timeline_tick_invalid_key', { keys: invalidKeys });
+      }
+    };
+    const userMetricMap = new Map();
+
+    const currentTickIndex = this.timeline.timebase?.tickCount ?? 0;
+    const users = this.userManager.getAllUsers();
+    users.forEach((user) => {
+      const staged = stageUserEntry(user);
+      if (staged) {
+        userMetricMap.set(staged.slug, staged);
+      }
+    });
+
+    const devices = this.deviceManager.getAllDevices();
+    devices.forEach((device) => {
+      if (!device) return;
+      const deviceId = slugifyId(device.id || device.deviceId || device.name);
+      const metrics = typeof device.getMetricsSnapshot === 'function'
+        ? device.getMetricsSnapshot()
+        : null;
+      const sanitizedDeviceMetrics = {
+        rpm: sanitizeNumber(metrics?.rpm ?? metrics?.cadence),
+        power: sanitizeNumber(metrics?.power),
+        speed: sanitizeNumber(metrics?.speed),
+        distance: sanitizeDistance(metrics?.distance),
+        heartRate: sanitizeHeartRate(metrics?.heartRate)
+      };
+      const hasDeviceSample = Object.values(sanitizedDeviceMetrics).some((val) => val != null);
+      if (hasDeviceSample) {
+        assignMetric(`device:${deviceId}:rpm`, sanitizedDeviceMetrics.rpm);
+        assignMetric(`device:${deviceId}:power`, sanitizedDeviceMetrics.power);
+        assignMetric(`device:${deviceId}:speed`, sanitizedDeviceMetrics.speed);
+        assignMetric(`device:${deviceId}:distance`, sanitizedDeviceMetrics.distance);
+        assignMetric(`device:${deviceId}:heart_rate`, sanitizedDeviceMetrics.heartRate);
+      }
+
+      if (!deviceId) return;
+      const mappedUser = this.userManager.resolveUserForDevice(device.id || device.deviceId);
+      if (!mappedUser) return;
+      const slug = slugifyId(mappedUser.name);
+      if (!slug) return;
+      if (!userMetricMap.has(slug)) {
+        const staged = stageUserEntry(mappedUser);
+        if (staged) {
+          userMetricMap.set(slug, staged);
+        }
+      }
+      const entry = userMetricMap.get(slug);
+      if (!entry) return;
+      entry.metrics.heartRate = entry.metrics.heartRate ?? sanitizedDeviceMetrics.heartRate;
+      entry.metrics.rpm = entry.metrics.rpm ?? sanitizedDeviceMetrics.rpm;
+      entry.metrics.power = entry.metrics.power ?? sanitizedDeviceMetrics.power;
+      entry.metrics.distance = entry.metrics.distance ?? sanitizedDeviceMetrics.distance;
+    });
+    userMetricMap.forEach((entry, slug) => {
+      if (!entry || !hasNumericSample(entry.metrics)) return;
+      assignMetric(`user:${slug}:heart_rate`, entry.metrics.heartRate);
+      assignMetric(`user:${slug}:zone_id`, entry.metrics.zoneId);
+      assignMetric(`user:${slug}:rpm`, entry.metrics.rpm);
+      assignMetric(`user:${slug}:power`, entry.metrics.power);
+      assignMetric(`user:${slug}:distance`, entry.metrics.distance);
+    });
+
+    if (this.treasureBox) {
+      const treasureSummary = this.treasureBox.summary;
+      if (treasureSummary) {
+        assignMetric('global:coins_total', treasureSummary.totalCoins);
+      }
+      const perUserCoinTotals = typeof this.treasureBox.getPerUserTotals === 'function'
+        ? this.treasureBox.getPerUserTotals()
+        : null;
+      if (perUserCoinTotals && typeof perUserCoinTotals.forEach === 'function') {
+        perUserCoinTotals.forEach((coins, userName) => {
+          if (!userName) return;
+          const slug = slugifyId(userName);
+          if (!slug) return;
+          assignMetric(`user:${slug}:coins_total`, Number.isFinite(coins) ? coins : null);
+        });
+      }
+    }
+
+    if (this._pendingSnapshotRef) {
+      assignMetric('global:snapshot_ref', this._pendingSnapshotRef);
+      this._pendingSnapshotRef = null;
+    }
+
+    validateTickPayloadKeys();
+    const tickResult = this.timeline.tick(tickPayload, { timestamp });
+    this.timebase.intervalCount = this.timeline.timebase.tickCount;
+    this.timebase.intervalMs = this.timeline.timebase.intervalMs;
+    this.timebase.startAbsMs = this.timeline.timebase.startTime;
+    this.timebase.lastTickTimestamp = this.timeline.timebase.lastTickTimestamp;
+    this._maybeLogTimelineTelemetry();
+    return tickResult;
+  }
+
   // ... (Rest of methods: updateActiveDevices, maybeEnd, _persistSession, autosave, voice memos, summary)
   // I will include the essential ones for session lifecycle.
 
@@ -422,6 +567,7 @@ export class FitnessSession {
     if (!this.lastActivityTime || (now - this.lastActivityTime) < remove) return false;
     
     this.endTime = now;
+    this._collectTimelineTick({ timestamp: now });
     this._log('end', { sessionId: this.sessionId, durationMs: this.endTime - this.startTime });
     
     let sessionData = null;
@@ -453,6 +599,19 @@ export class FitnessSession {
     this._stopAutosaveTimer();
     this._lastAutosaveAt = 0;
     this.governanceEngine.reset();
+    if (this.timeline) {
+      this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
+    }
+    this.timeline = null;
+    this.timebase = {
+      startAbsMs: null,
+      intervalMs: 5000,
+      intervalCount: 0
+    };
+    this._lastSampleIndex = -1;
+    this._pendingSnapshotRef = null;
+    this._lastTelemetrySnapshotTick = -1;
+    this._tickIntervalMs = 5000;
   }
 
   _persistSession(sessionData, { force = false } = {}) {
@@ -469,6 +628,47 @@ export class FitnessSession {
       this._saveTriggered = false;
     });
     return true;
+  }
+
+  _startTickTimer() {
+    this._stopTickTimer();
+    const interval = this.timeline?.timebase.intervalMs || this._tickIntervalMs;
+    if (!(interval > 0)) return;
+    this._tickTimer = setInterval(() => {
+      try {
+        this._collectTimelineTick();
+      } catch (_) {
+        // swallow to keep timer alive
+      }
+    }, interval);
+  }
+
+  _stopTickTimer() {
+    if (this._tickTimer) {
+      clearInterval(this._tickTimer);
+      this._tickTimer = null;
+    }
+  }
+
+  _maybeLogTimelineTelemetry() {
+    if (!this.timeline) return;
+    const tickCount = this.timeline.timebase?.tickCount ?? 0;
+    if (!(this._telemetryTickInterval > 0)) return;
+    if (this._lastTelemetrySnapshotTick >= 0) {
+      const delta = tickCount - this._lastTelemetrySnapshotTick;
+      if (delta < this._telemetryTickInterval) return;
+    }
+    this._lastTelemetrySnapshotTick = tickCount;
+    const seriesRef = this.timeline.series || {};
+    const seriesCount = Object.keys(seriesRef).length;
+    const totalPoints = Object.values(seriesRef).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+    const eventCount = Array.isArray(this.timeline.events) ? this.timeline.events.length : 0;
+    this._log('timeline_telemetry', {
+      tickCount,
+      eventCount,
+      seriesCount,
+      totalPoints
+    });
   }
 
   _startAutosaveTimer() {
@@ -498,9 +698,31 @@ export class FitnessSession {
       const now = Date.now();
       if (this._lastAutosaveAt && (now - this._lastAutosaveAt) < this._autosaveIntervalMs) return;
     }
+    this._maybeTickTimeline();
     const snapshot = this.summary;
     if (!snapshot) return;
     this._persistSession(snapshot, { force });
+  }
+
+  _maybeTickTimeline(targetTimestamp = Date.now()) {
+    if (!this.timeline || !this.sessionId) return;
+    const interval = this.timeline.timebase?.intervalMs || 0;
+    if (!(interval > 0)) return;
+    let lastTick = this.timeline.timebase?.lastTickTimestamp
+      ?? this.timeline.timebase?.startTime
+      ?? this.startTime
+      ?? targetTimestamp;
+    if (!Number.isFinite(lastTick)) {
+      lastTick = targetTimestamp;
+    }
+    const maxIterations = 1000;
+    let iterations = 0;
+    while ((targetTimestamp - lastTick) >= interval && iterations < maxIterations) {
+      const nextTickTimestamp = lastTick + interval;
+      this._collectTimelineTick({ timestamp: nextTickTimestamp });
+      lastTick = this.timeline.timebase?.lastTickTimestamp ?? nextTickTimestamp;
+      iterations += 1;
+    }
   }
 
   get isActive() {
@@ -511,15 +733,45 @@ export class FitnessSession {
       // (Implement summary generation similar to original, aggregating from managers)
       // For brevity, returning a stub that calls managers
       if (!this.sessionId) return null;
-      
-      return {
+      const timelineSummary = this.timeline ? this.timeline.summary : null;
+      const tickBasedEndTime = (() => {
+        const start = timelineSummary?.timebase?.startTime;
+        const interval = timelineSummary?.timebase?.intervalMs;
+        const tickCount = timelineSummary?.timebase?.tickCount;
+        if (Number.isFinite(start) && Number.isFinite(interval) && Number.isFinite(tickCount) && tickCount > 0) {
+          return start + (tickCount * interval);
+        }
+        return null;
+      })();
+      const derivedEndTime = this.endTime
+        || timelineSummary?.timebase?.lastTickTimestamp
+        || tickBasedEndTime
+        || this.timebase?.lastTickTimestamp
+        || this.lastActivityTime
+        || Date.now();
+      this.endTime = derivedEndTime;
+        return {
           sessionId: this.sessionId,
           startTime: this.startTime,
-          endTime: this.endTime,
+          endTime: derivedEndTime,
+          roster: this.roster,
           voiceMemos: this.voiceMemoManager.summary,
           treasureBox: this.treasureBox ? this.treasureBox.summary : null,
-          // ...
-      };
+          timeline: timelineSummary,
+          timebase: timelineSummary?.timebase || this.timebase,
+          events: timelineSummary?.events || []
+        };
+  }
+
+  logEvent(type, data = {}, timestamp) {
+    if (!type) return null;
+    return this.timeline ? this.timeline.logEvent(type, data, timestamp) : null;
+  }
+
+  recordSnapshot(filename) {
+    if (!filename) return null;
+    this._pendingSnapshotRef = filename;
+    return filename;
   }
 
   // Voice Memo Delegation

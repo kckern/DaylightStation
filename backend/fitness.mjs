@@ -4,6 +4,140 @@ import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
+const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+
+const trimTrailingNulls = (series = []) => {
+    if (!Array.isArray(series)) return [];
+    const copy = series.map((value) => (value === undefined ? null : value));
+    let end = copy.length;
+    while (end > 0 && copy[end - 1] == null) {
+        end -= 1;
+    }
+    return copy.slice(0, end);
+};
+
+const normalizeNumber = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+};
+
+const normalizeTimelineForPersistence = (timeline = {}) => {
+    if (!isPlainObject(timeline)) return null;
+    const normalizedSeries = {};
+    const sourceSeries = timeline.series && isPlainObject(timeline.series) ? timeline.series : {};
+    Object.entries(sourceSeries).forEach(([key, values]) => {
+        if (!Array.isArray(values)) return;
+        normalizedSeries[key] = trimTrailingNulls(values);
+    });
+
+    const normalizedEvents = Array.isArray(timeline.events)
+        ? timeline.events
+            .map((event) => {
+                if (!isPlainObject(event)) return null;
+                const type = typeof event.type === 'string' ? event.type.trim() : null;
+                if (!type) return null;
+                return {
+                    timestamp: normalizeNumber(event.timestamp),
+                    offsetMs: normalizeNumber(event.offsetMs),
+                    tickIndex: Number.isFinite(event.tickIndex) ? event.tickIndex : null,
+                    type,
+                    source: typeof event.source === 'string' ? event.source : null,
+                    data: isPlainObject(event.data) ? { ...event.data } : (event.data ?? null)
+                };
+            })
+            .filter(Boolean)
+        : [];
+
+    const timebase = isPlainObject(timeline.timebase) ? { ...timeline.timebase } : {};
+    if (!Number.isFinite(timebase.startTime)) {
+        timebase.startTime = Date.now();
+    }
+    if (!(Number.isFinite(timebase.intervalMs) && timebase.intervalMs > 0)) {
+        timebase.intervalMs = 5000;
+    }
+    if (!Number.isFinite(timebase.tickCount)) {
+        const fallback = Object.values(normalizedSeries)[0]?.length ?? 0;
+        timebase.tickCount = fallback;
+    }
+
+    const normalizedTimeline = {
+        ...timeline,
+        timebase,
+        series: normalizedSeries,
+        events: normalizedEvents
+    };
+
+    return normalizedTimeline;
+};
+
+export const prepareSessionForPersistence = (sessionData = {}) => {
+    if (!isPlainObject(sessionData)) return sessionData;
+    const prepared = { ...sessionData };
+    if (prepared.timeline) {
+        const normalizedTimeline = normalizeTimelineForPersistence(prepared.timeline);
+        if (normalizedTimeline) {
+            prepared.timeline = normalizedTimeline;
+            prepared.timebase = normalizedTimeline.timebase;
+            prepared.events = normalizedTimeline.events;
+        }
+    }
+    return prepared;
+};
+
+const stringifyTimelineSeriesForFile = (sessionData = {}) => {
+    if (!isPlainObject(sessionData)) return sessionData;
+    if (!sessionData.timeline || !isPlainObject(sessionData.timeline)) return sessionData;
+    const clone = { ...sessionData, timeline: { ...sessionData.timeline } };
+    const sourceSeries = sessionData.timeline.series;
+    if (!isPlainObject(sourceSeries)) return clone;
+    const serializedSeries = {};
+    Object.entries(sourceSeries).forEach(([key, values]) => {
+        if (!Array.isArray(values) && typeof values !== 'string') return;
+        if (typeof values === 'string') {
+            serializedSeries[key] = values;
+            return;
+        }
+        try {
+            serializedSeries[key] = JSON.stringify(values);
+        } catch (_) {
+            serializedSeries[key] = '[]';
+        }
+    });
+    clone.timeline.series = serializedSeries;
+    return clone;
+};
+
+const deriveSessionDate = (sessionId) => {
+    if (!sessionId || sessionId.length < 8) return null;
+    return `${sessionId.slice(0, 4)}-${sessionId.slice(4, 6)}-${sessionId.slice(6, 8)}`;
+};
+
+const getSessionStoragePaths = (sessionId) => {
+    if (!sessionId) return null;
+    const sessionDate = deriveSessionDate(sessionId);
+    if (!sessionDate) return null;
+    const dataRoot = resolveDataRoot();
+    const relativeBase = `fitness/sessions/${sessionDate}/${sessionId}`;
+    const sessionDirFs = path.join(dataRoot, 'fitness', 'sessions', sessionDate, sessionId);
+    const screenshotsDirFs = path.join(sessionDirFs, 'screenshots');
+    return {
+        sessionDate,
+        relativeBase,
+        sessionDirFs,
+        screenshotsDirFs,
+        sessionFileRelative: `${relativeBase}/session`,
+        screenshotsRelativeBase: `${relativeBase}/screenshots`,
+        manifestRelativePath: `${relativeBase}/screenshots/manifest`
+    };
+};
+
+const ensureDirectory = (dirPath) => {
+    if (!dirPath) return;
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+};
+
 // Lazy init OpenAI (will throw if key missing on first use only)
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
@@ -26,14 +160,21 @@ fitnessRouter.post('/save_session', (req, res) => {
     }
 
     // Ensure the session data reflects the sanitized identifier
-    sessionData.sessionId = sanitizedSessionId;
+    const preparedSession = prepareSessionForPersistence({ ...sessionData, sessionId: sanitizedSessionId });
+    preparedSession.sessionId = sanitizedSessionId;
+    const filePayload = stringifyTimelineSeriesForFile(preparedSession);
 
-    const sessionDate = `${sanitizedSessionId.slice(0, 4)}-${sanitizedSessionId.slice(4, 6)}-${sanitizedSessionId.slice(6, 8)}`;
-    const filename = `fitness/sessions/${sessionDate}/${sessionData.sessionId}`;
-    saveFile(filename, sessionData);
+    const storagePaths = getSessionStoragePaths(sanitizedSessionId);
+    if (!storagePaths) {
+        return res.status(500).json({ error: 'Failed to resolve session storage path' });
+    }
+    ensureDirectory(storagePaths.sessionDirFs);
+    ensureDirectory(storagePaths.screenshotsDirFs);
+    saveFile(storagePaths.sessionFileRelative, filePayload);
+    const filename = `${storagePaths.sessionFileRelative}.yaml`;
     //trigger printer (TODO)
 
-    res.json({ message: 'Session data saved successfully', filename, sessionData });
+    res.json({ message: 'Session data saved successfully', filename, sessionData: preparedSession });
 });
 
 const resolveDataRoot = () => {
@@ -80,13 +221,17 @@ fitnessRouter.post('/save_screenshot', (req, res) => {
         const indexValue = Number.isFinite(index) ? Number(index) : null;
         const indexFragment = indexValue != null ? String(indexValue).padStart(4, '0') : Date.now().toString(36);
         const filename = `${safeSessionId}_${indexFragment}.${extension}`;
+        const storagePaths = getSessionStoragePaths(safeSessionId);
+        if (!storagePaths) {
+            return res.status(500).json({ ok: false, error: 'Failed to resolve session directories' });
+        }
+        ensureDirectory(storagePaths.sessionDirFs);
+        ensureDirectory(storagePaths.screenshotsDirFs);
         const dataRoot = resolveDataRoot();
-        const screenshotDir = path.join(dataRoot, 'fitness', 'screenshots', safeSessionId);
-        fs.mkdirSync(screenshotDir, { recursive: true });
-        const filePath = path.join(screenshotDir, filename);
+        const filePath = path.join(storagePaths.screenshotsDirFs, filename);
         fs.writeFileSync(filePath, buffer);
 
-        const relativePath = path.relative(dataRoot, filePath).split(path.sep).join('/');
+        const relativePath = `${storagePaths.screenshotsRelativeBase}/${filename}`.split(path.sep).join('/');
         const captureInfo = {
             ok: true,
             sessionId: safeSessionId,
@@ -99,7 +244,7 @@ fitnessRouter.post('/save_screenshot', (req, res) => {
         };
 
         try {
-            const manifestPath = `fitness/screenshots/${safeSessionId}/manifest`;
+            const manifestPath = storagePaths.manifestRelativePath;
             const manifestRaw = loadFile(manifestPath);
             const manifest = (manifestRaw && typeof manifestRaw === 'object') ? manifestRaw : { sessionId: safeSessionId, captures: [] };
             if (!Array.isArray(manifest.captures)) {
@@ -107,6 +252,7 @@ fitnessRouter.post('/save_screenshot', (req, res) => {
             }
             manifest.sessionId = safeSessionId;
             manifest.updatedAt = Date.now();
+            manifest.captures = manifest.captures.filter((entry) => entry?.filename !== filename);
             manifest.captures.push({
                 index: indexValue,
                 filename,

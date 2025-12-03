@@ -27,6 +27,24 @@ export class VoiceMemoManager {
     };
     
     this.memos.push(newMemo);
+    const session = this.sessionRef;
+    if (session && typeof session.logEvent === 'function') {
+      try {
+        const transcriptPreview = newMemo.transcriptClean || newMemo.transcriptRaw || null;
+        session.logEvent('voice_memo_start', {
+          memoId: newMemo.memoId,
+          elapsedSeconds: newMemo.sessionElapsedSeconds ?? null,
+          videoTimeSeconds: newMemo.videoTimeSeconds ?? null,
+          durationSeconds: newMemo.durationSeconds ?? null,
+          author: newMemo.author || newMemo.user || null,
+          transcriptPreview: typeof transcriptPreview === 'string'
+            ? transcriptPreview.slice(0, 280)
+            : transcriptPreview
+        });
+      } catch (_) {
+        // Swallow logging errors to avoid breaking memo recording.
+      }
+    }
     this._notifyMutation();
     return newMemo;
   }

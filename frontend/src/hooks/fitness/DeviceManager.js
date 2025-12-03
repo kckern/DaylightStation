@@ -98,6 +98,22 @@ export class Device {
       distance: this.distance
     };
   }
+
+  getMetricsSnapshot() {
+    return {
+      deviceId: this.id,
+      label: this.name,
+      type: this.type,
+      rpm: Number.isFinite(this.cadence) ? this.cadence : null,
+      cadence: Number.isFinite(this.cadence) ? this.cadence : null,
+      power: Number.isFinite(this.power) ? this.power : null,
+      heartRate: Number.isFinite(this.heartRate) ? this.heartRate : null,
+      speed: Number.isFinite(this.speed) ? this.speed : null,
+      distance: Number.isFinite(this.distance) ? this.distance : null,
+      revolutionCount: Number.isFinite(this.revolutionCount) ? this.revolutionCount : null,
+      timestamp: Number.isFinite(this.timestamp) ? this.timestamp : this.lastSeen
+    };
+  }
 }
 
 export class DeviceManager {

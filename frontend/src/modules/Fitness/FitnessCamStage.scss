@@ -15,6 +15,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
 
     .webcam-video {
       width: 100%;
@@ -33,6 +34,40 @@
       background: rgba(0, 0, 0, 0.8);
       padding: 1rem;
       border-radius: 8px;
+    }
+
+    .snapshot-status {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      border-radius: 999px;
+      pointer-events: none;
+      transition: background 0.2s ease;
+
+      .indicator {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #4caf50;
+      }
+
+      &.uploading .indicator {
+        background: #ffc107;
+        animation: pulse 1.2s infinite;
+      }
+
+      &.error {
+        background: rgba(120, 0, 0, 0.75);
+      }
     }
   }
 
@@ -110,4 +145,10 @@
       border-color: rgba(255, 255, 255, 0.5);
     }
   }
+}
+
+@keyframes pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
 }

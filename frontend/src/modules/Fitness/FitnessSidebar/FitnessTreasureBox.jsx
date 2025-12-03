@@ -6,7 +6,7 @@ const FitnessTreasureBox = ({ box, session }) => {
   const [tick, setTick] = useState(Date.now());
   // Update every second while active
   // Start ticking when either treasure box start or session start is present
-  const startTime = box?.sessionStartTime || session?.startedAt || null;
+  const startTime = session?.startTime || session?.startedAt || null;
   useEffect(() => {
     if (!startTime) return; // wait until we have a start
     const interval = setInterval(() => setTick(Date.now()), 1000);
@@ -17,11 +17,11 @@ const FitnessTreasureBox = ({ box, session }) => {
   // Recompute elapsed locally so we aren't dependent on a stale snapshot object
   const elapsed = startTime
     ? Math.floor((Date.now() - startTime) / 1000)
-    : (box.sessionElapsedSeconds || session?.durationSeconds || 0);
+    : (session?.durationSeconds || 0);
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
-  const totalCoins = box.totalCoinsAllColors ?? box.totalCoins ?? 0;
-  const colorCoins = box.colorCoins || box.buckets || {};
+  const totalCoins = box.totalCoins ?? 0;
+  const colorCoins = box.buckets || {};
   // Rank colors by zone intensity: fire (red) > hot (orange) > warm (yellow) > active (green) > cool (blue)
   const colorRank = (cRaw) => {
     if (!cRaw) return 0;

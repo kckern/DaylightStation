@@ -268,7 +268,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       }
       if (!map[normalized]) {
         const profileId = participant.profileId
-          || participant.userId
           || getConfiguredProfileId(participant.name)
           || (participant.name ? slugifyId(participant.name) : null);
         if (profileId) map[normalized] = profileId;
@@ -277,8 +276,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
     if (Array.isArray(participantRoster)) {
       participantRoster.forEach((participant) => {
-        const keys = [participant?.hrDeviceId, participant?.deviceId];
-        keys.forEach((key) => registerParticipant(key, participant));
+        registerParticipant(participant?.hrDeviceId, participant);
       });
     }
 

@@ -18,6 +18,38 @@ const slugifyId = (value, fallback = 'user') => {
   return slug || fallback;
 };
 
+const normalizeChallengeStatusForLogging = (status) => {
+  const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  if (normalized === 'success') return 'success';
+  if (normalized === 'failed' || normalized === 'fail') return 'failed';
+  if (normalized === 'pending' || normalized === 'active' || normalized === 'running') return 'pending';
+  return normalized || 'pending';
+};
+
+const resolveChallengeIdentity = (challenge) => {
+  if (!challenge) return null;
+  return challenge.id || challenge.selectionLabel || challenge.zone || challenge.zoneLabel || null;
+};
+
+const buildChallengeEventPayload = (challenge, statusOverride = null) => {
+  if (!challenge) return null;
+  return {
+    challengeId: resolveChallengeIdentity(challenge),
+    status: statusOverride || normalizeChallengeStatusForLogging(challenge.status),
+    title: challenge.zoneLabel || challenge.zone || challenge.title || '',
+    zoneId: challenge.zone || null,
+    zoneLabel: challenge.zoneLabel || null,
+    selectionLabel: challenge.selectionLabel || null,
+    requiredCount: Number.isFinite(challenge.requiredCount) ? challenge.requiredCount : null,
+    actualCount: Number.isFinite(challenge.actualCount) ? challenge.actualCount : null,
+    missingUsers: Array.isArray(challenge.missingUsers) ? challenge.missingUsers.filter(Boolean) : [],
+    metUsers: Array.isArray(challenge.metUsers) ? challenge.metUsers.filter(Boolean) : [],
+    totalSeconds: Number.isFinite(challenge.totalSeconds)
+      ? Math.max(0, Math.round(challenge.totalSeconds))
+      : (Number.isFinite(challenge.timeLimitSeconds) ? Math.max(0, Math.round(challenge.timeLimitSeconds)) : null)
+  };
+};
+
 
 export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   if (!governanceState?.isGoverned) {
@@ -261,11 +293,57 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     || fitnessCtx?.fitnessSessionInstance?.sessionId
     || null;
   const governanceState = fitnessCtx?.governanceState || null;
+  const sessionInstance = fitnessCtx?.fitnessSessionInstance || null;
   const { current: currentChallengeOverlay, upcoming: upcomingChallengeOverlay } = useChallengeOverlays(
     governanceState,
     fitnessCtx?.zones
   );
   const isGovernanceRed = overlay?.category === 'governance' && overlay.status === 'red';
+  const activeChallenge = governanceState?.challenge || null;
+  const challengeEventRef = React.useRef({ id: null, status: null });
+
+  React.useEffect(() => {
+    if (!sessionInstance || typeof sessionInstance.logEvent !== 'function') {
+      return;
+    }
+    const tracker = challengeEventRef.current;
+    if (!activeChallenge) {
+      if (tracker.id) {
+        sessionInstance.logEvent('challenge_end', {
+          challengeId: tracker.id,
+          result: 'cleared'
+        });
+      }
+      challengeEventRef.current = { id: null, status: null };
+      return;
+    }
+    const status = normalizeChallengeStatusForLogging(activeChallenge.status);
+    const challengeId = resolveChallengeIdentity(activeChallenge);
+    if (tracker.id && tracker.id !== challengeId) {
+      sessionInstance.logEvent('challenge_end', {
+        challengeId: tracker.id,
+        result: 'replaced'
+      });
+    }
+    if (status === 'pending') {
+      if (tracker.id !== challengeId || tracker.status !== 'pending') {
+        sessionInstance.logEvent('challenge_start', buildChallengeEventPayload(activeChallenge, 'pending'));
+      }
+      challengeEventRef.current = { id: challengeId, status };
+      return;
+    }
+    if (status === 'success' || status === 'failed') {
+      if (tracker.id !== challengeId || tracker.status !== status) {
+        sessionInstance.logEvent('challenge_end', {
+          ...buildChallengeEventPayload(activeChallenge, status),
+          result: status
+        });
+      }
+      challengeEventRef.current = { id: null, status };
+      return;
+    }
+    challengeEventRef.current = { id: challengeId, status };
+  }, [sessionInstance, activeChallenge]);
 
   const zoneMetadata = useMemo(() => {
     const zoneList = Array.isArray(fitnessCtx?.zones) ? fitnessCtx.zones.filter(Boolean) : [];
@@ -622,7 +700,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         ? (groupLabel || 'Any participant')
         : (groupLabel
           || groupLabelMap.get(normalizeName(name))
-          || resolvedParticipant?.source
+          || (resolvedParticipant?.isGuest ? 'Guest' : null)
           || null);
       const currentZone = overrides.currentZone !== undefined
         ? overrides.currentZone
