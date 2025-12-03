@@ -304,6 +304,7 @@ export function VideoPlayer({
 
   const shakaNudgePlaybackRef = useRef(async () => ({ ok: false, outcome: 'not-ready' }));
   const troubleDiagnosticsRef = useRef(() => null);
+  const lastPlayInvokeRef = useRef(0);
   const mediaAccessExtras = useMemo(() => ({
     nudgePlayback: (...args) => shakaNudgePlaybackRef.current?.(...args),
     getTroubleDiagnostics: () => troubleDiagnosticsRef.current?.()
@@ -319,7 +320,8 @@ export function VideoPlayer({
     getMediaEl,
     isPaused,
     isSeeking,
-    hardReset
+    hardReset,
+    waitKey
   } = useCommonMediaController({
     start: initialStartSeconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -447,11 +449,12 @@ export function VideoPlayer({
       level,
       context: {
         mediaKey: media?.media_key || media?.id || null,
-        instanceKey: mediaInstanceKey
+        instanceKey: mediaInstanceKey,
+        waitKey: waitKey || null
       },
       ...(rateLimit ? { rateLimit } : {})
     });
-  }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey]);
+  }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey, waitKey]);
 
   const shakaNudgePlayback = useCallback(async ({ reason = 'decoder-stall' } = {}) => {
     const mediaEl = getCurrentMediaElement();
@@ -815,9 +818,13 @@ export function VideoPlayer({
       if (typeof mediaEl.play === 'function') {
         const originalPlay = mediaEl.play;
         mediaEl.play = (...args) => {
-          logShakaDiagnostic('dash-video-play-invoked', {
-            argsLength: args.length
-          }, 'debug');
+          const now = Date.now();
+          if (now - lastPlayInvokeRef.current > 5) {
+            logShakaDiagnostic('dash-video-play-invoked', {
+              argsLength: args.length
+            }, 'debug');
+            lastPlayInvokeRef.current = now;
+          }
           try {
             const result = originalPlay.apply(mediaEl, args);
             if (result && typeof result.then === 'function') {
