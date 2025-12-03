@@ -120,6 +120,16 @@ const resolveMediaIdentity = (meta) => {
 
 const FITNESS_MAX_VIDEO_BITRATE = null;
 
+const normalizeDurationSeconds = (...candidates) => {
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+    const normalized = typeof candidate === 'string' ? parseFloat(candidate) : Number(candidate);
+    if (!Number.isFinite(normalized) || normalized <= 0) continue;
+    return Math.round(normalized > 1000 ? normalized / 1000 : normalized);
+  }
+  return null;
+};
+
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const mainPlayerRef = useRef(null);
   const contentRef = useRef(null);
@@ -160,14 +170,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     governedLabelSet: contextGovernedLabelSet,
     governedTypeSet: contextGovernedTypeSet,
     governanceState,
-    plexConfig
+    plexConfig,
+    fitnessSessionInstance
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
   const seekIntentRef = useRef(null); // Track seek/resume intent to override actual time
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
   const renderCountRef = useRef(0);
+  const loggedVideoMediaRef = useRef(null);
   const queue = useMemo(() => playQueue || fitnessPlayQueue || [], [playQueue, fitnessPlayQueue]);
+  const queueSize = Array.isArray(queue) ? queue.length : 0;
   const setQueue = setPlayQueue || setFitnessPlayQueue;
   const {
     seek: seekTo,
@@ -722,10 +735,50 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     };
   }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
 
+  const autoplayEnabled = Boolean(playObject?.autoplay);
+
   const currentMediaIdentity = useMemo(
     () => resolveMediaIdentity(enhancedCurrentItem || currentItem),
     [enhancedCurrentItem, currentItem]
   );
+
+  useEffect(() => {
+    const session = fitnessSessionInstance;
+    if (!session || typeof session.logEvent !== 'function') {
+      return;
+    }
+    if (!currentMediaIdentity) {
+      loggedVideoMediaRef.current = null;
+      return;
+    }
+    if (loggedVideoMediaRef.current === currentMediaIdentity) {
+      return;
+    }
+    const media = enhancedCurrentItem || currentItem;
+    if (!media) {
+      return;
+    }
+    loggedVideoMediaRef.current = currentMediaIdentity;
+    const durationSeconds = normalizeDurationSeconds(
+      media.duration,
+      media.length,
+      media.metadata?.duration
+    );
+    session.logEvent('media_start', {
+      source: 'video_player',
+      mediaId: currentMediaIdentity,
+      title: media.title || media.label || null,
+      plexId: media.plex || media.id || null,
+      mediaKey: media.media_key || null,
+      durationSeconds,
+      resumeSeconds: Number.isFinite(media.seconds) ? Math.round(media.seconds) : null,
+      autoplay: autoplayEnabled,
+      governed: Boolean(playIsGoverned),
+      labels: Array.isArray(media.labels) ? media.labels : [],
+      type: media.type || media.media_type || 'video',
+      queueSize
+    });
+  }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, playIsGoverned, queueSize]);
 
   const resilienceMediaIdentity = useMemo(
     () => resolveMediaIdentity(resilienceState?.meta),

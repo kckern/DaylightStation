@@ -8,6 +8,7 @@ import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
 import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
 import FitnessMusicPlayer from './FitnessSidebar/FitnessMusicPlayer.jsx';
 import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
+import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import './FitnessCam.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
@@ -178,6 +179,12 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
       {visibility.users && (
         <div className="fitness-sidebar-devices">
           <FitnessUsersList onRequestGuestAssignment={handleGuestAssignmentRequest} />
+        </div>
+      )}
+
+      {false && visibility.users && (
+        <div className="fitness-sidebar-chart">
+          <FitnessChart />
         </div>
       )}
 

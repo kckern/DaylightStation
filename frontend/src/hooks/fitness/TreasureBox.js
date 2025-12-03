@@ -1,5 +1,3 @@
-import { serializeSeries, ensureSeriesCapacity } from './types';
-
 const NO_ZONE_LABEL = 'No Zone';
 
 export class FitnessTreasureBox {
@@ -53,14 +51,16 @@ export class FitnessTreasureBox {
     if (users) {
       const collectOverrides = (arr) => {
         if (!Array.isArray(arr)) return;
-        arr.forEach(u => {
-          if (u?.zones) {
-            this.usersConfigOverrides.set(u.name, { ...u.zones });
-          }
+        arr.forEach((u) => {
+          if (!u?.name || !u?.zones) return;
+          this.usersConfigOverrides.set(u.name, { ...u.zones });
         });
       };
-      collectOverrides(users.primary);
-      collectOverrides(users.secondary);
+      if (Array.isArray(users)) {
+        collectOverrides(users);
+      } else if (typeof users === 'object') {
+        Object.values(users).forEach((value) => collectOverrides(value));
+      }
     }
     // Start / restart autonomous interval processing so awards happen even without continuous HR samples
     this._backfillExistingUsers();
@@ -146,6 +146,25 @@ export class FitnessTreasureBox {
     }
   }
 
+  getTimelineSnapshotForIndex(index) {
+    if (!Number.isFinite(index) || index < 0) return null;
+    this._ensureTimelineIndex(index);
+    const perColor = {};
+    this._timeline.perColor.forEach((series, color) => {
+      if (!series || !series.length) return;
+      const value = series[index];
+      if (Number.isFinite(value)) {
+        perColor[color] = value;
+      }
+    });
+    const cumulative = this._timeline.cumulative[index];
+    return {
+      perColor,
+      cumulative: Number.isFinite(cumulative) ? cumulative : null,
+      totalCoins: this.totalCoins
+    };
+  }
+
   // Determine zone for HR for a given user, returns zone object or null
   resolveZone(userName, hr) {
     if (!hr || hr <= 0 || this.globalZones.length === 0) return null;
@@ -176,6 +195,7 @@ export class FitnessTreasureBox {
         currentColor: NO_ZONE_LABEL,
         lastColor: NO_ZONE_LABEL,
         lastZoneId: null,
+        totalCoins: 0
       };
       this.perUser.set(userName, acc);
     }
@@ -235,6 +255,11 @@ export class FitnessTreasureBox {
     if (this.sessionRef?.timebase && intervalIndex + 1 > this.sessionRef.timebase.intervalCount) {
       this.sessionRef.timebase.intervalCount = intervalIndex + 1;
     }
+    const acc = this.perUser.get(userName);
+    if (acc) {
+      acc.totalCoins = (acc.totalCoins || 0) + zone.coins;
+      acc.lastAwardedAt = now;
+    }
     // Log event in session if available
     try {
       this.sessionRef._log('coin_award', { user: userName, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
@@ -244,46 +269,35 @@ export class FitnessTreasureBox {
 
   get summary() {
     // Derive session timing from owning sessionRef (if available and started)
-    const sessionStarted = this.sessionRef?.startTime || null;
-    const sessionEnded = this.sessionRef?.endTime || null;
-    const now = Date.now();
-    const elapsedSeconds = sessionStarted ? Math.floor(((sessionEnded || now) - sessionStarted) / 1000) : 0;
-    const intervalCount = Math.max(
-      this._timeline.lastIndex + 1,
-      this.sessionRef?.timebase?.intervalCount || 0
-    );
-    const normalizeTimeline = (arr = []) => {
-      const series = Array.isArray(arr) ? arr.slice(0, intervalCount) : [];
-      if (intervalCount > 0 && series.length < intervalCount) {
-        ensureSeriesCapacity(series, intervalCount - 1);
-      }
-      return series.map((value) => (Number.isFinite(value) ? value : 0));
-    };
-    const perColorTimeline = {};
-    this._timeline.perColor.forEach((series, color) => {
-      perColorTimeline[color] = normalizeTimeline(series);
-    });
-    const cumulativeCoins = normalizeTimeline(this._timeline.cumulative);
-
-    // Backward compatible fields retained: coinTimeUnitMs, totalCoins, buckets, perUser
-    // New self-contained fields: sessionStartTime, sessionElapsedSeconds, colorCoins (alias of buckets), totalCoinsAllColors (alias totalCoins)
     return {
       coinTimeUnitMs: this.coinTimeUnitMs,
       totalCoins: this.totalCoins,
-      buckets: { ...this.buckets },
-      perUser: Array.from(this.perUser.entries()).map(([user, data]) => ({
-        user,
-        currentColor: data.currentColor || data.lastColor || null,
-        zoneId: data.lastZoneId || null,
-      })),
-      // Added fields
-      sessionStartTime: sessionStarted,
-      sessionElapsedSeconds: elapsedSeconds,
-      colorCoins: { ...this.buckets },
-      totalCoinsAllColors: this.totalCoins,
-      perColorTimeline,
-      cumulativeCoins,
-      intervalCount
+      buckets: { ...this.buckets }
     };
+  }
+
+  getUserZoneSnapshot() {
+    const snapshot = [];
+    this.perUser.forEach((data, user) => {
+      if (!user || !data) return;
+      const currentColor = data.currentColor && data.currentColor !== NO_ZONE_LABEL ? data.currentColor : null;
+      const lastColor = data.lastColor && data.lastColor !== NO_ZONE_LABEL ? data.lastColor : null;
+      snapshot.push({
+        user,
+        color: currentColor || lastColor || null,
+        zoneId: data.lastZoneId || null
+      });
+    });
+    return snapshot;
+  }
+
+  getPerUserTotals() {
+    const totals = new Map();
+    this.perUser.forEach((data, user) => {
+      if (!user || !data) return;
+      const coins = Number.isFinite(data.totalCoins) ? data.totalCoins : 0;
+      totals.set(user, coins);
+    });
+    return totals;
   }
 }

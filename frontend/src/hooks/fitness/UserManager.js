@@ -201,6 +201,40 @@ export class User {
       zones: { ...this._cumulativeData.heartRate.zones }
     };
   }
+
+  getMetricsSnapshot() {
+    const latestCadence = this._cumulativeData?.cadence?.readings;
+    const latestPower = this._cumulativeData?.power?.readings;
+    const recentCadence = Array.isArray(latestCadence) && latestCadence.length > 0
+      ? latestCadence[latestCadence.length - 1]?.value
+      : null;
+    const recentPower = Array.isArray(latestPower) && latestPower.length > 0
+      ? latestPower[latestPower.length - 1]?.value
+      : null;
+    const heartRate = Number.isFinite(this.currentData?.heartRate)
+      ? Math.max(0, Math.round(this.currentData.heartRate))
+      : null;
+    return {
+      userId: this.id || slugifyId(this.name),
+      name: this.name,
+      heartRate,
+      zoneId: this.currentData?.zone || null,
+      zoneColor: this.currentData?.color || null,
+      zoneName: this.currentData?.zoneName || null,
+      epochMs: Date.now(),
+      rpm: Number.isFinite(recentCadence) ? recentCadence : null,
+      power: Number.isFinite(recentPower) ? recentPower : null,
+      avgRpm: Number.isFinite(this._cumulativeData?.cadence?.avgRPM)
+        ? this._cumulativeData.cadence.avgRPM
+        : null,
+      avgPower: Number.isFinite(this._cumulativeData?.power?.avgPower)
+        ? this._cumulativeData.power.avgPower
+        : null,
+      distance: Number.isFinite(this._cumulativeData?.distance?.total)
+        ? this._cumulativeData.distance.total
+        : null
+    };
+  }
 }
 
 export class UserManager {
@@ -287,11 +321,40 @@ export class UserManager {
   }
 
   assignGuest(deviceId, guestName, metadata = {}) {
-    this.guestAssignments.set(String(deviceId), { name: guestName, ...metadata });
+    if (deviceId == null) return;
+    const key = String(deviceId);
+
+    if (!guestName) {
+      const existing = this.guestAssignments.get(key);
+      this.guestAssignments.delete(key);
+      if (existing?.name) {
+        const user = this.getUser(existing.name);
+        if (user && (user.hrDeviceId === key || !user.hrDeviceId)) {
+          const restored = existing.prevHrDeviceId ?? null;
+          user.hrDeviceId = restored;
+        }
+      }
+      return;
+    }
+
+    let guestUser = this.getUser(guestName);
+    if (!guestUser) {
+      guestUser = new User(guestName, null, deviceId, null, {});
+      this.users.set(slugifyId(guestName), guestUser);
+    }
+
+    const previousHrDeviceId = guestUser.hrDeviceId === key ? guestUser.hrDeviceId : (guestUser.hrDeviceId ?? null);
+    guestUser.hrDeviceId = key;
+
+    this.guestAssignments.set(key, {
+      name: guestName,
+      prevHrDeviceId: previousHrDeviceId === key ? null : previousHrDeviceId,
+      ...metadata
+    });
   }
 
   clearGuestAssignment(deviceId) {
-    this.guestAssignments.delete(String(deviceId));
+    this.assignGuest(deviceId, null);
   }
 
   getGuestNameForDevice(deviceId) {
