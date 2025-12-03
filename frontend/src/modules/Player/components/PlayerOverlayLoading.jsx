@@ -1,7 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
+
+const AUTO_FATAL_RETRY_DELAY_MS = 10000;
+const FATAL_RETRY_KEY_BINDINGS = new Set(['Space', 'Enter', 'MediaPlayPause']);
 
 /**
  * Loading / resilience overlay shown while media is buffering, stalling, or waiting to start.
@@ -38,6 +41,10 @@ export function PlayerOverlayLoading({
     isVisible,
     pauseOverlayActive
   });
+  const retryDeadlineRef = useRef(null);
+  const retryFrameRef = useRef(null);
+  const autoRetryTriggeredRef = useRef(false);
+  const [retryRemainingMs, setRetryRemainingMs] = useState(null);
 
   useEffect(() => {
     if (shouldRender && isVisible) {
@@ -186,12 +193,83 @@ export function PlayerOverlayLoading({
     || fatalErrorState?.detail?.message
     || 'Playback cannot continue because the media pipeline encountered a fatal error.';
   const handleFatalRetry = useCallback(() => {
+    autoRetryTriggeredRef.current = true;
+    retryDeadlineRef.current = null;
+    setRetryRemainingMs(null);
     emitManualReset('fatal-overlay-retry', {
       fatal: true,
       fatalReason: fatalReasonLabel,
       fatalCode: fatalErrorState?.code ?? null
     });
   }, [emitManualReset, fatalErrorState, fatalReasonLabel]);
+
+  const handleFatalRetryTouch = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    handleFatalRetry();
+  }, [handleFatalRetry]);
+
+  useEffect(() => {
+    if (!fatalOverlayActive) {
+      if (retryFrameRef.current) {
+        cancelAnimationFrame(retryFrameRef.current);
+        retryFrameRef.current = null;
+      }
+      retryDeadlineRef.current = null;
+      autoRetryTriggeredRef.current = false;
+      setRetryRemainingMs(null);
+      return undefined;
+    }
+
+    retryDeadlineRef.current = Date.now() + AUTO_FATAL_RETRY_DELAY_MS;
+    autoRetryTriggeredRef.current = false;
+    setRetryRemainingMs(AUTO_FATAL_RETRY_DELAY_MS);
+
+    const tick = () => {
+      if (!retryDeadlineRef.current) {
+        return;
+      }
+      const remaining = Math.max(0, retryDeadlineRef.current - Date.now());
+      setRetryRemainingMs(remaining);
+      if (remaining <= 0) {
+        if (!autoRetryTriggeredRef.current) {
+          autoRetryTriggeredRef.current = true;
+          handleFatalRetry();
+        }
+        return;
+      }
+      retryFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    retryFrameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (retryFrameRef.current) {
+        cancelAnimationFrame(retryFrameRef.current);
+        retryFrameRef.current = null;
+      }
+    };
+  }, [fatalOverlayActive, handleFatalRetry, fatalErrorState?.occurredAt]);
+
+  useEffect(() => {
+    if (!fatalOverlayActive) return undefined;
+    const handleKeyPress = (event) => {
+      const key = event.code || event.key;
+      if (FATAL_RETRY_KEY_BINDINGS.has(key) || key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        event.stopPropagation();
+        handleFatalRetry();
+      }
+    };
+    window.addEventListener('keydown', handleKeyPress, true);
+    return () => window.removeEventListener('keydown', handleKeyPress, true);
+  }, [fatalOverlayActive, handleFatalRetry]);
+
+  const retrySecondsRemaining = Number.isFinite(retryRemainingMs)
+    ? Math.ceil(Math.max(0, retryRemainingMs) / 1000)
+    : null;
+  const retryProgressPercent = Number.isFinite(retryRemainingMs)
+    ? Math.min(100, Math.max(0, ((AUTO_FATAL_RETRY_DELAY_MS - retryRemainingMs) / AUTO_FATAL_RETRY_DELAY_MS) * 100))
+    : 0;
 
   if (!overlayDisplayActive) {
     return null;
@@ -217,10 +295,24 @@ export function PlayerOverlayLoading({
             <div className="loading-fatal__detail">
               {[fatalReasonLabel, fatalCodeLabel].filter(Boolean).join(' · ') || 'Fatal media error'}
             </div>
+            <div className="loading-fatal__countdown" role="status" aria-live="polite">
+              <div className="loading-fatal__countdown-label">
+                {retrySecondsRemaining && retrySecondsRemaining > 0
+                  ? `Retrying automatically in ${retrySecondsRemaining}s`
+                  : 'Retrying…'}
+              </div>
+              <div className="loading-fatal__progress" aria-hidden="true">
+                <div
+                  className="loading-fatal__progress-bar"
+                  style={{ width: `${retryProgressPercent}%` }}
+                />
+              </div>
+            </div>
             <button
               type="button"
               className="loading-fatal__action"
               onClick={handleFatalRetry}
+              onTouchStart={handleFatalRetryTouch}
               data-no-fullscreen="true"
             >
               Try Again
