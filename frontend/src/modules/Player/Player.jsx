@@ -40,14 +40,17 @@ const createDefaultMediaAccess = () => ({
   getMediaEl: null,
   hardReset: null,
   fetchVideoInfo: null,
-  nudgePlayback: null
+  nudgePlayback: null,
+  getTroubleDiagnostics: null
 });
 
 const createDefaultPlaybackMetrics = () => ({
   seconds: 0,
   isPaused: false,
   isSeeking: false,
-  pauseIntent: null
+  pauseIntent: null,
+  diagnostics: null,
+  diagnosticsVersion: 0
 });
 
 /**
@@ -218,17 +221,28 @@ const Player = forwardRef(function Player(props, ref) {
           ? metrics.pauseIntent
           : prev.pauseIntent)
         : prev.pauseIntent;
+      const diagnosticsProvided = Object.prototype.hasOwnProperty.call(metrics, 'diagnostics');
+      const nextDiagnostics = diagnosticsProvided ? (metrics.diagnostics || null) : prev.diagnostics;
+      const nextDiagnosticsVersion = Number.isFinite(metrics.diagnosticsVersion)
+        ? metrics.diagnosticsVersion
+        : (diagnosticsProvided && nextDiagnostics !== prev.diagnostics
+          ? prev.diagnosticsVersion + 1
+          : prev.diagnosticsVersion);
       const next = {
         seconds: Number.isFinite(metrics.seconds) ? metrics.seconds : prev.seconds,
         isPaused: typeof metrics.isPaused === 'boolean' ? metrics.isPaused : prev.isPaused,
         isSeeking: typeof metrics.isSeeking === 'boolean' ? metrics.isSeeking : prev.isSeeking,
-        pauseIntent: nextPauseIntent
+        pauseIntent: nextPauseIntent,
+        diagnostics: nextDiagnostics,
+        diagnosticsVersion: nextDiagnosticsVersion
       };
       if (
         prev.seconds === next.seconds
         && prev.isPaused === next.isPaused
         && prev.isSeeking === next.isSeeking
         && prev.pauseIntent === next.pauseIntent
+        && prev.diagnostics === next.diagnostics
+        && prev.diagnosticsVersion === next.diagnosticsVersion
       ) {
         return prev;
       }
@@ -241,7 +255,8 @@ const Player = forwardRef(function Player(props, ref) {
       getMediaEl: typeof access.getMediaEl === 'function' ? access.getMediaEl : null,
       hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
       fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null,
-      nudgePlayback: typeof access.nudgePlayback === 'function' ? access.nudgePlayback : null
+      nudgePlayback: typeof access.nudgePlayback === 'function' ? access.nudgePlayback : null,
+      getTroubleDiagnostics: typeof access.getTroubleDiagnostics === 'function' ? access.getTroubleDiagnostics : null
     });
   }, []);
 
@@ -469,10 +484,12 @@ const Player = forwardRef(function Player(props, ref) {
     isPaused: effectiveMeta ? playbackMetrics.isPaused : false,
     isSeeking: effectiveMeta ? playbackMetrics.isSeeking : false,
     pauseIntent: effectiveMeta ? playbackMetrics.pauseIntent : null,
+    playbackDiagnostics: effectiveMeta ? playbackMetrics.diagnostics : null,
     initialStart: Number(effectiveMeta?.seconds) || 0,
     waitKey: resolvedWaitKey,
     fetchVideoInfo: mediaAccess.fetchVideoInfo,
     nudgePlayback: mediaAccess.nudgePlayback,
+    diagnosticsProvider: mediaAccess.getTroubleDiagnostics,
     onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
     configOverrides: resolvedResilience.config,
