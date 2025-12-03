@@ -1,7 +1,186 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import pause from '../../../assets/icons/pause.svg';
+import { playbackLog } from '../lib/playbackLogger.js';
+
+const EMPTY_MEDIA_DIAGNOSTICS = Object.freeze({
+  hasElement: false,
+  currentTime: null,
+  readyState: null,
+  networkState: null,
+  paused: null,
+  playbackRate: null,
+  buffered: [],
+  bufferAheadSeconds: null,
+  bufferBehindSeconds: null,
+  nextBufferStartSeconds: null,
+  bufferGapSeconds: null,
+  droppedFrames: null,
+  totalFrames: null
+});
+
+const serializeRanges = (ranges) => {
+  if (!ranges || typeof ranges.length !== 'number') {
+    return [];
+  }
+  const out = [];
+  for (let index = 0; index < ranges.length; index += 1) {
+    try {
+      const start = ranges.start(index);
+      const end = ranges.end(index);
+      out.push({
+        start: Number.isFinite(start) ? Number(start.toFixed(3)) : start,
+        end: Number.isFinite(end) ? Number(end.toFixed(3)) : end
+      });
+    } catch (_) {
+      // ignore bad range
+    }
+  }
+  return out;
+};
+
+const computeBufferDiagnostics = (mediaEl) => {
+  if (!mediaEl) {
+    return {
+      buffered: [],
+      bufferAheadSeconds: null,
+      bufferBehindSeconds: null,
+      nextBufferStartSeconds: null,
+      bufferGapSeconds: null
+    };
+  }
+  const buffered = serializeRanges(mediaEl.buffered);
+  const currentTime = Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : null;
+  if (!buffered.length || !Number.isFinite(currentTime)) {
+    return {
+      buffered,
+      bufferAheadSeconds: null,
+      bufferBehindSeconds: null,
+      nextBufferStartSeconds: null,
+      bufferGapSeconds: null
+    };
+  }
+  let bufferAheadSeconds = null;
+  let bufferBehindSeconds = null;
+  let nextBufferStartSeconds = null;
+  for (let index = 0; index < buffered.length; index += 1) {
+    const range = buffered[index];
+    if (currentTime >= range.start && currentTime <= range.end) {
+      bufferAheadSeconds = Number((range.end - currentTime).toFixed(3));
+      bufferBehindSeconds = Number((currentTime - range.start).toFixed(3));
+      if (index + 1 < buffered.length) {
+        nextBufferStartSeconds = buffered[index + 1].start;
+      }
+      break;
+    }
+    if (currentTime < range.start) {
+      nextBufferStartSeconds = range.start;
+      break;
+    }
+  }
+  const bufferGapSeconds = Number.isFinite(nextBufferStartSeconds)
+    ? Number((nextBufferStartSeconds - currentTime).toFixed(3))
+    : null;
+  return {
+    buffered,
+    bufferAheadSeconds,
+    bufferBehindSeconds,
+    nextBufferStartSeconds,
+    bufferGapSeconds
+  };
+};
+
+const readPlaybackQuality = (mediaEl) => {
+  if (!mediaEl) {
+    return {
+      droppedFrames: null,
+      totalFrames: null
+    };
+  }
+  try {
+    if (typeof mediaEl.getVideoPlaybackQuality === 'function') {
+      const sample = mediaEl.getVideoPlaybackQuality();
+      return {
+        droppedFrames: Number.isFinite(sample?.droppedVideoFrames)
+          ? sample.droppedVideoFrames
+          : (Number.isFinite(sample?.droppedFrames) ? sample.droppedFrames : null),
+        totalFrames: Number.isFinite(sample?.totalVideoFrames)
+          ? sample.totalVideoFrames
+          : (Number.isFinite(sample?.totalFrames) ? sample.totalFrames : null)
+      };
+    }
+  } catch (_) {
+    // ignore playback quality errors
+  }
+  const dropped = Number.isFinite(mediaEl?.webkitDroppedFrameCount)
+    ? mediaEl.webkitDroppedFrameCount
+    : null;
+  const decoded = Number.isFinite(mediaEl?.webkitDecodedFrameCount)
+    ? mediaEl.webkitDecodedFrameCount
+    : null;
+  return {
+    droppedFrames: dropped,
+    totalFrames: decoded
+  };
+};
+
+const buildMediaDiagnostics = (mediaEl) => {
+  if (!mediaEl) {
+    return EMPTY_MEDIA_DIAGNOSTICS;
+  }
+  const buffer = computeBufferDiagnostics(mediaEl);
+  const quality = readPlaybackQuality(mediaEl);
+  return {
+    hasElement: true,
+    currentTime: Number.isFinite(mediaEl.currentTime) ? Number(mediaEl.currentTime.toFixed(1)) : null,
+    readyState: typeof mediaEl.readyState === 'number' ? mediaEl.readyState : null,
+    networkState: typeof mediaEl.networkState === 'number' ? mediaEl.networkState : null,
+    paused: typeof mediaEl.paused === 'boolean' ? mediaEl.paused : null,
+    playbackRate: Number.isFinite(mediaEl.playbackRate) ? Number(mediaEl.playbackRate.toFixed(3)) : null,
+    buffered: buffer.buffered,
+    bufferAheadSeconds: buffer.bufferAheadSeconds,
+    bufferBehindSeconds: buffer.bufferBehindSeconds,
+    nextBufferStartSeconds: buffer.nextBufferStartSeconds,
+    bufferGapSeconds: buffer.bufferGapSeconds,
+    droppedFrames: quality.droppedFrames,
+    totalFrames: quality.totalFrames
+  };
+};
+
+const bufferedRangesEqual = (left = [], right = []) => {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (!a || !b) return false;
+    if (a.start !== b.start || a.end !== b.end) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const mediaDiagnosticsEqual = (prev, next) => {
+  if (prev === next) return true;
+  if (!prev || !next) return false;
+  const keys = Object.keys(EMPTY_MEDIA_DIAGNOSTICS);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === 'buffered') {
+      if (!bufferedRangesEqual(prev[key], next[key])) {
+        return false;
+      }
+      continue;
+    }
+    if (prev[key] !== next[key]) {
+      return false;
+    }
+  }
+  return true;
+};
 
 /**
  * Pure presentation component for media loading / pause overlay.
@@ -32,13 +211,7 @@ export function LoadingOverlay({
   const [localTimerSeconds, setLocalTimerSeconds] = useState(0);
   const localTimerRef = useRef(null);
   const hardResetTriggeredRef = useRef(false);
-  const [mediaElementDetails, setMediaElementDetails] = useState({
-    hasElement: false,
-    currentTime: null,
-    readyState: null,
-    networkState: null,
-    paused: null
-  });
+  const [mediaElementDetails, setMediaElementDetails] = useState(EMPTY_MEDIA_DIAGNOSTICS);
 
   const clearLocalTimer = useCallback(() => {
     if (localTimerRef.current) {
@@ -58,6 +231,7 @@ export function LoadingOverlay({
   const overlayStateClass = shouldShowPauseIcon ? 'paused' : 'loading';
   const fallbackTimerActive = isVisible && !shouldShowPauseIcon;
   const timerActive = overlayTimerActive || fallbackTimerActive;
+  const overlayLogContext = useMemo(() => ({ source: 'LoadingOverlay' }), []);
 
   const emitHardReset = useCallback((reasonOrPayload, extra = {}) => {
     const basePayload = typeof reasonOrPayload === 'string'
@@ -70,16 +244,39 @@ export function LoadingOverlay({
       ...basePayload,
       ...extra
     };
+    playbackLog('overlay.hard-reset-request', {
+      ...finalPayload,
+      overlayTimerActive: timerActive,
+      hardResetDeadlineMs
+    }, {
+      level: stalled ? 'error' : 'warn',
+      context: overlayLogContext
+    });
     if (!onRequestHardReset) {
       console.warn('[LoadingOverlay] Hard reset requested but no handler configured', finalPayload);
+      playbackLog('overlay.hard-reset-error', {
+        reason: 'missing-handler',
+        payload: finalPayload
+      }, {
+        level: 'error',
+        context: overlayLogContext
+      });
       return;
     }
     try {
       onRequestHardReset(finalPayload);
     } catch (error) {
       console.error('[LoadingOverlay] hard reset handler failed', error, finalPayload);
+      playbackLog('overlay.hard-reset-error', {
+        reason: 'handler-threw',
+        error: error?.message || String(error),
+        payload: finalPayload
+      }, {
+        level: 'error',
+        context: overlayLogContext
+      });
     }
-  }, [onRequestHardReset, waitingToPlay, stalled]);
+  }, [hardResetDeadlineMs, onRequestHardReset, overlayLogContext, stalled, timerActive, waitingToPlay]);
 
   useEffect(() => {
     if (!timerActive) {
@@ -107,19 +304,23 @@ export function LoadingOverlay({
     const elapsedMs = (Number.isFinite(countUpSeconds) ? countUpSeconds : localTimerSeconds) * 1000;
     if (elapsedMs >= hardResetDeadlineMs) {
       hardResetTriggeredRef.current = true;
+      playbackLog('overlay.hard-reset-failsafe', {
+        elapsedSeconds: Number((elapsedMs / 1000).toFixed(2)),
+        hardResetDeadlineMs,
+        stalled,
+        waitingToPlay,
+        timerActive
+      }, {
+        level: 'error',
+        context: overlayLogContext
+      });
       emitHardReset('overlay-failsafe-timer', { elapsedSeconds: elapsedMs / 1000 });
     }
-  }, [timerActive, hardResetDeadlineMs, localTimerSeconds, countUpSeconds, emitHardReset]);
+  }, [countUpSeconds, emitHardReset, hardResetDeadlineMs, localTimerSeconds, overlayLogContext, stalled, timerActive, waitingToPlay]);
 
   useEffect(() => {
     if (typeof getMediaEl !== 'function' || !isVisible) {
-      setMediaElementDetails((prev) => (prev.hasElement ? {
-        hasElement: false,
-        currentTime: null,
-        readyState: null,
-        networkState: null,
-        paused: null
-      } : prev));
+      setMediaElementDetails((prev) => (prev.hasElement ? EMPTY_MEDIA_DIAGNOSTICS : prev));
       return () => {};
     }
 
@@ -127,24 +328,19 @@ export function LoadingOverlay({
       try {
         const el = getMediaEl();
         if (!el) {
-          setMediaElementDetails((prev) => (prev.hasElement ? {
-            hasElement: false,
-            currentTime: null,
-            readyState: null,
-            networkState: null,
-            paused: null
-          } : prev));
+          setMediaElementDetails((prev) => (prev.hasElement ? EMPTY_MEDIA_DIAGNOSTICS : prev));
           return;
         }
-        setMediaElementDetails({
-          hasElement: true,
-          currentTime: Number.isFinite(el.currentTime) ? Number(el.currentTime).toFixed(1) : null,
-          readyState: typeof el.readyState === 'number' ? el.readyState : null,
-          networkState: typeof el.networkState === 'number' ? el.networkState : null,
-          paused: typeof el.paused === 'boolean' ? el.paused : null
-        });
+        const diagnostics = buildMediaDiagnostics(el);
+        setMediaElementDetails((prev) => (mediaDiagnosticsEqual(prev, diagnostics) ? prev : diagnostics));
       } catch (error) {
         console.warn('[LoadingOverlay] failed to inspect media element', error);
+        playbackLog('overlay.media-inspect-error', {
+          error: error?.message || String(error)
+        }, {
+          level: 'warn',
+          context: overlayLogContext
+        });
       }
     };
 
@@ -153,7 +349,7 @@ export function LoadingOverlay({
     return () => {
       clearInterval(intervalId);
     };
-  }, [getMediaEl, isVisible]);
+  }, [getMediaEl, isVisible, overlayLogContext]);
 
   const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
 
@@ -170,8 +366,18 @@ export function LoadingOverlay({
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.nativeEvent?.stopImmediatePropagation?.();
+    playbackLog('overlay.spinner-interaction', {
+      eventType: event?.type || 'unknown',
+      seconds,
+      stalled,
+      waitingToPlay,
+      mediaDetails: mediaElementDetails
+    }, {
+      level: 'info',
+      context: overlayLogContext
+    });
     emitHardReset('overlay-spinner-manual', { eventType: event?.type });
-  }, [emitHardReset, shouldShowPauseIcon]);
+  }, [emitHardReset, mediaElementDetails, overlayLogContext, seconds, shouldShowPauseIcon, stalled, waitingToPlay]);
 
   const spinnerInteractionProps = shouldShowPauseIcon ? {} : {
     onClick: handleSpinnerInteraction,
@@ -195,34 +401,49 @@ export function LoadingOverlay({
     : 'startup:idle';
 
   const logIntervalRef = useRef(null);
-  const logOverlaySummary = useCallback(() => {
-    if (shouldShowPauseIcon || !isVisible) return;
-    try {
-      console.log('[LoadingOverlay]', `${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`);
-    } catch (_) {
-      /* no-op */
+  const clearOverlayLogInterval = useCallback(() => {
+    if (logIntervalRef.current) {
+      clearInterval(logIntervalRef.current);
+      logIntervalRef.current = null;
     }
-  }, [shouldShowPauseIcon, isVisible, timerSummary, seekSummary, mediaSummary]);
+  }, []);
+
+  const logOverlaySummary = useCallback(() => {
+    if (shouldShowPauseIcon || !isVisible) {
+      return;
+    }
+    playbackLog('overlay.loading-summary', {
+      summary: `${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`,
+      seconds,
+      stalled,
+      waitingToPlay,
+      timerSeconds: localTimerSeconds,
+      countUpSeconds: Number.isFinite(countUpSeconds) ? countUpSeconds : null,
+      hardResetDeadlineMs,
+      overlayTimerActive,
+      timerActive,
+      overlayStateClass,
+      mediaDetails: mediaElementDetails,
+      startupWatchdogState,
+      pauseOverlayActive,
+      shouldShowPauseIcon
+    }, {
+      level: stalled ? 'warn' : 'info',
+      context: overlayLogContext
+    });
+  }, [countUpSeconds, hardResetDeadlineMs, isVisible, localTimerSeconds, mediaElementDetails, overlayLogContext, overlayStateClass, overlayTimerActive, pauseOverlayActive, seekSummary, seconds, shouldShowPauseIcon, stalled, startupSummary, startupWatchdogState, timerActive, timerSummary, waitingToPlay]);
 
   useEffect(() => {
     if (shouldShowPauseIcon || !isVisible) {
-      if (logIntervalRef.current) {
-        clearInterval(logIntervalRef.current);
-        logIntervalRef.current = null;
-      }
+      clearOverlayLogInterval();
       return () => {};
     }
 
     logOverlaySummary();
     logIntervalRef.current = setInterval(logOverlaySummary, 1000);
 
-    return () => {
-      if (logIntervalRef.current) {
-        clearInterval(logIntervalRef.current);
-        logIntervalRef.current = null;
-      }
-    };
-  }, [shouldShowPauseIcon, isVisible, logOverlaySummary]);
+    return clearOverlayLogInterval;
+  }, [clearOverlayLogInterval, isVisible, logOverlaySummary, shouldShowPauseIcon]);
 
   return (
     <div

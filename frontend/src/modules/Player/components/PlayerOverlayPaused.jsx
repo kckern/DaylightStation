@@ -1,6 +1,7 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import pause from '../../../assets/icons/pause.svg';
+import { playbackLog } from '../lib/playbackLogger.js';
 
 /**
  * Pause overlay shown when pause overlay preference is active and media is paused but healthy.
@@ -23,11 +24,45 @@ export function PlayerOverlayPaused({
     && !stalled
     && !isInitialPlayback;
 
+  const overlayContextRef = useRef({ source: 'PlayerOverlayPaused' });
+  const visibilityRef = useRef(shouldShowPauseOverlay);
+
+  useEffect(() => {
+    if (visibilityRef.current === shouldShowPauseOverlay) {
+      return;
+    }
+    visibilityRef.current = shouldShowPauseOverlay;
+    playbackLog('overlay.paused-visibility', {
+      visible: shouldShowPauseOverlay,
+      seconds,
+      stalled,
+      waitingToPlay,
+      positionDisplay: playerPositionDisplay || null
+    }, {
+      level: shouldShowPauseOverlay ? 'info' : 'debug',
+      context: overlayContextRef.current
+    });
+  }, [playerPositionDisplay, seconds, shouldShowPauseOverlay, stalled, waitingToPlay]);
+
   const blockFullscreenToggle = useCallback((event) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.nativeEvent?.stopImmediatePropagation?.();
   }, []);
+
+  const handlePauseToggle = useCallback((event) => {
+    blockFullscreenToggle(event);
+    playbackLog('overlay.pause-toggle', {
+      trigger: event?.type || 'doubleclick',
+      seconds,
+      stalled,
+      positionDisplay: playerPositionDisplay || null
+    }, {
+      level: 'info',
+      context: overlayContextRef.current
+    });
+    togglePauseOverlay?.();
+  }, [blockFullscreenToggle, playerPositionDisplay, seconds, stalled, togglePauseOverlay]);
 
   if (!shouldShowPauseOverlay) {
     return null;
@@ -41,7 +76,7 @@ export function PlayerOverlayPaused({
         opacity: 1,
         transition: 'opacity 0.3s ease-in-out'
       }}
-      onDoubleClick={togglePauseOverlay}
+      onDoubleClick={handlePauseToggle}
       onPointerDownCapture={blockFullscreenToggle}
       onMouseDownCapture={blockFullscreenToggle}
     >

@@ -107,6 +107,152 @@ const serializeTimeRanges = (ranges) => {
   return entries;
 };
 
+const computeBufferSnapshot = (mediaEl) => {
+  if (!mediaEl) {
+    return {
+      currentTime: null,
+      buffered: [],
+      bufferAheadSeconds: null,
+      bufferBehindSeconds: null,
+      nextBufferStartSeconds: null,
+      bufferGapSeconds: null
+    };
+  }
+  const buffered = serializeTimeRanges(mediaEl.buffered);
+  const currentTime = Number.isFinite(mediaEl.currentTime) ? Number(mediaEl.currentTime.toFixed(3)) : null;
+  if (currentTime == null || !buffered.length) {
+    return {
+      currentTime,
+      buffered,
+      bufferAheadSeconds: null,
+      bufferBehindSeconds: null,
+      nextBufferStartSeconds: null,
+      bufferGapSeconds: null
+    };
+  }
+  let bufferAheadSeconds = null;
+  let bufferBehindSeconds = null;
+  let nextBufferStartSeconds = null;
+  for (let index = 0; index < buffered.length; index += 1) {
+    const range = buffered[index];
+    if (currentTime >= range.start && currentTime <= range.end) {
+      bufferAheadSeconds = Number((range.end - currentTime).toFixed(3));
+      bufferBehindSeconds = Number((currentTime - range.start).toFixed(3));
+      if (index + 1 < buffered.length) {
+        nextBufferStartSeconds = buffered[index + 1].start;
+      }
+      break;
+    }
+    if (currentTime < range.start) {
+      nextBufferStartSeconds = range.start;
+      break;
+    }
+  }
+  const bufferGapSeconds = Number.isFinite(nextBufferStartSeconds)
+    ? Number((nextBufferStartSeconds - currentTime).toFixed(3))
+    : null;
+  return {
+    currentTime,
+    buffered,
+    bufferAheadSeconds,
+    bufferBehindSeconds,
+    nextBufferStartSeconds,
+    bufferGapSeconds
+  };
+};
+
+const readVideoPlaybackQuality = (mediaEl) => {
+  if (!mediaEl) {
+    return {
+      droppedFrames: null,
+      totalFrames: null
+    };
+  }
+  try {
+    if (typeof mediaEl.getVideoPlaybackQuality === 'function') {
+      const sample = mediaEl.getVideoPlaybackQuality();
+      return {
+        droppedFrames: Number.isFinite(sample?.droppedVideoFrames)
+          ? sample.droppedVideoFrames
+          : (Number.isFinite(sample?.droppedFrames) ? sample.droppedFrames : null),
+        totalFrames: Number.isFinite(sample?.totalVideoFrames)
+          ? sample.totalVideoFrames
+          : (Number.isFinite(sample?.totalFrames) ? sample.totalFrames : null)
+      };
+    }
+  } catch (_) {
+    // ignore playback quality errors
+  }
+  const dropped = Number.isFinite(mediaEl?.webkitDroppedFrameCount)
+    ? mediaEl.webkitDroppedFrameCount
+    : null;
+  const decoded = Number.isFinite(mediaEl?.webkitDecodedFrameCount)
+    ? mediaEl.webkitDecodedFrameCount
+    : null;
+  return {
+    droppedFrames: dropped,
+    totalFrames: decoded
+  };
+};
+
+const summarizeShakaStats = (player) => {
+  if (!player || typeof player.getStats !== 'function') {
+    return null;
+  }
+  try {
+    const stats = player.getStats();
+    if (!stats || typeof stats !== 'object') {
+      return null;
+    }
+    return {
+      width: stats.width ?? null,
+      height: stats.height ?? null,
+      streamBandwidth: stats.streamBandwidth ?? null,
+      estimatedBandwidth: stats.estimatedBandwidth ?? null,
+      decodedFrames: stats.decodedFrames ?? null,
+      droppedFrames: stats.droppedFrames ?? null,
+      bufferLength: stats.bufferLength ?? null,
+      stateHistoryLength: Array.isArray(stats.stateHistory) ? stats.stateHistory.length : null
+    };
+  } catch (_) {
+    return null;
+  }
+};
+
+const buildTroubleDiagnostics = (mediaEl, player) => {
+  if (!mediaEl) {
+    return null;
+  }
+  const buffer = computeBufferSnapshot(mediaEl);
+  const quality = readVideoPlaybackQuality(mediaEl);
+  const shaka = summarizeShakaStats(player);
+  return {
+    currentTime: buffer.currentTime,
+    bufferAheadSeconds: buffer.bufferAheadSeconds,
+    bufferBehindSeconds: buffer.bufferBehindSeconds,
+    nextBufferStartSeconds: buffer.nextBufferStartSeconds,
+    bufferGapSeconds: buffer.bufferGapSeconds,
+    buffered: buffer.buffered,
+    playbackRate: Number.isFinite(mediaEl.playbackRate) ? Number(mediaEl.playbackRate.toFixed(3)) : null,
+    paused: typeof mediaEl.paused === 'boolean' ? mediaEl.paused : null,
+    readyState: typeof mediaEl.readyState === 'number' ? mediaEl.readyState : null,
+    networkState: typeof mediaEl.networkState === 'number' ? mediaEl.networkState : null,
+    quality,
+    shaka
+  };
+};
+
+const isSmoothPlaybackSample = (mediaEl) => {
+  if (!mediaEl) {
+    return false;
+  }
+  const readyState = typeof mediaEl.readyState === 'number' ? mediaEl.readyState : 0;
+  const networkState = typeof mediaEl.networkState === 'number' ? mediaEl.networkState : 0;
+  return readyState >= 3 && mediaEl.paused === false && networkState !== 2;
+};
+
+const SMOOTH_PLAYBACK_HEARTBEAT_INTERVAL_MS = 15000;
+
 export function VideoPlayer({ 
   media, 
   advance, 
@@ -266,6 +412,22 @@ export function VideoPlayer({
   }, []);
 
   const logShakaDiagnostic = useCallback((event, payload = {}, level = 'debug') => {
+    const rateLimit = event === 'shaka-video-event'
+      ? {
+          key: 'playback-heartbeat',
+          interval: SMOOTH_PLAYBACK_HEARTBEAT_INTERVAL_MS,
+          when: (recordPayload) => (
+            recordPayload?.eventName === 'timeupdate'
+            && (recordPayload?.smooth === true
+              || (
+                typeof recordPayload?.readyState === 'number'
+                && recordPayload.readyState >= 3
+                && recordPayload?.paused === false
+                && recordPayload?.buffering !== true
+              ))
+          )
+        }
+      : undefined;
     playbackLog(event, {
       ...payload,
       mediaType: media?.media_type || null,
@@ -275,7 +437,8 @@ export function VideoPlayer({
       context: {
         mediaKey: media?.media_key || media?.id || null,
         instanceKey: mediaInstanceKey
-      }
+      },
+      ...(rateLimit ? { rateLimit } : {})
     });
   }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey]);
 
@@ -406,6 +569,9 @@ export function VideoPlayer({
             if ('buffering' in event) payload.buffering = Boolean(event.buffering);
             if ('detail' in event) payload.detail = serializePlaybackError(event.detail);
           }
+          if (eventName === 'buffering' || eventName === 'error') {
+            payload.diagnostics = buildTroubleDiagnostics(getCurrentMediaElement(), shakaPlayerRef.current || thirdPartyPlayer || null);
+          }
           logShakaDiagnostic('shaka-player-event', payload, eventName === 'error' ? 'warn' : 'debug');
         };
         thirdPartyPlayer.addEventListener(eventName, handler);
@@ -507,7 +673,7 @@ export function VideoPlayer({
     if (setProperties) {
       setProperties({ playbackRate: playbackRate || media.playbackRate || 1 });
     }
-  }, [dashSource?.startPosition, dashSource?.streamUrl, logShakaDiagnostic, media.playbackRate, playbackRate, shakaConfiguration]);
+  }, [dashSource?.startPosition, dashSource?.streamUrl, getCurrentMediaElement, logShakaDiagnostic, media.playbackRate, playbackRate, shakaConfiguration]);
 
   const handleShakaPlaybackError = useCallback((error) => {
     const serializedError = serializePlaybackError(error);
@@ -686,6 +852,12 @@ export function VideoPlayer({
         };
         if (event.type === 'error') {
           payload.mediaError = serializeMediaError(mediaEl.error);
+        }
+        if (event.type === 'timeupdate') {
+          payload.smooth = isSmoothPlaybackSample(mediaEl);
+        }
+        if (event.type === 'waiting' || event.type === 'stalled' || event.type === 'error' || event.type === 'seeking') {
+          payload.diagnostics = buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
         }
         logShakaDiagnostic('shaka-video-event', payload, event.type === 'error' ? 'error' : 'debug');
       };

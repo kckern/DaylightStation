@@ -83,6 +83,22 @@ const hasOverlayVisibilityChanged = (previous, next) => {
   );
 };
 
+const hasOverlayStateChanged = (previous, next) => {
+  if (!previous) return true;
+  return (
+    previous.waitKey !== next.waitKey
+    || previous.overlayActive !== next.overlayActive
+    || previous.overlayIntentActive !== next.overlayIntentActive
+    || previous.overlayTimerActive !== next.overlayTimerActive
+    || previous.overlayLoggingActive !== next.overlayLoggingActive
+    || previous.overlayGraceReason !== next.overlayGraceReason
+    || previous.pauseOverlayActive !== next.pauseOverlayActive
+    || previous.holdOverlayActive !== next.holdOverlayActive
+    || previous.overlayCountdownSeconds !== next.overlayCountdownSeconds
+    || previous.playbackHealthy !== next.playbackHealthy
+  );
+};
+
 const useOverlayTimer = (overlayActive, overlayDeadlineMs, triggerRecovery) => {
   const [elapsedMs, setElapsedMs] = useState(0);
   const rafRef = useRef(null);
@@ -185,6 +201,7 @@ export function useOverlayPresentation({
   const overlayDecisionRef = useRef(null);
   const overlayVisibilityRef = useRef(null);
   const overlayHoldLogRef = useRef(false);
+  const overlayStateRef = useRef(null);
 
   const resetOverlayState = useCallback(() => {
     setShowPauseOverlay(pauseOverlayPreference);
@@ -363,6 +380,76 @@ export function useOverlayPresentation({
     overlayGraceReason
   ]);
 
+  const resolvedStallDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
+  const resolvedLoadingDeadlineMs = Number.isFinite(loadingGraceDeadlineMs) && loadingGraceDeadlineMs > 0
+    ? loadingGraceDeadlineMs
+    : resolvedStallDeadlineMs;
+  const overlayDeadlineMs = stallOverlayActive
+    ? resolvedStallDeadlineMs
+    : ((waitingToPlay || loadingIntentActive) ? resolvedLoadingDeadlineMs : resolvedStallDeadlineMs);
+  const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayDeadlineMs, triggerRecovery);
+  const overlayCountdownSeconds = overlayTimerActive && overlayDeadlineMs > 0
+    ? Math.max(0, Math.ceil((overlayDeadlineMs - overlayElapsedSeconds * 1000) / 1000))
+    : null;
+  const playbackHealthy = Boolean(
+    playbackHealth?.elementSignals?.playing && !playbackHealth?.isWaiting && !playbackHealth?.isStalledEvent
+  );
+  const overlayLoggingActive = overlayTimerActive && (!playbackHealthy || explicitShow);
+  const overlayLogLabel = logWaitKey || waitKey || meta?.title || meta?.media_url || 'player-overlay';
+  const overlayContext = useMemo(() => ({
+    source: 'useOverlayPresentation',
+    waitKey: logWaitKey || waitKey || null
+  }), [logWaitKey, waitKey]);
+
+  const logOverlayUiEvent = useCallback((eventName, payload = {}, level = 'info') => {
+    playbackLog('overlay-ui', {
+      event: eventName,
+      waitKey: logWaitKey,
+      overlayLabel: overlayLogLabel,
+      ...payload
+    }, {
+      level,
+      context: overlayContext
+    });
+  }, [logWaitKey, overlayContext, overlayLogLabel]);
+
+  useEffect(() => {
+    const stateSnapshot = {
+      waitKey: logWaitKey,
+      label: overlayLogLabel,
+      overlayActive,
+      overlayIntentActive,
+      overlayTimerActive,
+      overlayLoggingActive,
+      overlayGraceReason,
+      pauseOverlayActive,
+      holdOverlayActive,
+      overlayCountdownSeconds,
+      playbackHealthy
+    };
+    if (!hasOverlayStateChanged(overlayStateRef.current, stateSnapshot)) {
+      return;
+    }
+    overlayStateRef.current = stateSnapshot;
+    playbackLog('overlay-state', stateSnapshot, {
+      level: overlayActive ? 'info' : 'debug',
+      context: overlayContext
+    });
+  }, [
+    holdOverlayActive,
+    logWaitKey,
+    overlayActive,
+    overlayContext,
+    overlayCountdownSeconds,
+    overlayGraceReason,
+    overlayIntentActive,
+    overlayLogLabel,
+    overlayLoggingActive,
+    overlayTimerActive,
+    pauseOverlayActive,
+    playbackHealthy
+  ]);
+
   useEffect(() => {
     if (!shouldRenderOverlay) {
       setOverlayVisible(false);
@@ -419,36 +506,27 @@ export function useOverlayPresentation({
     };
   }, [getMediaEl, overlayActive, waitKey]);
 
-  const resolvedStallDeadlineMs = hardRecoverAfterStalledForMs > 0 ? hardRecoverAfterStalledForMs : 6000;
-  const resolvedLoadingDeadlineMs = Number.isFinite(loadingGraceDeadlineMs) && loadingGraceDeadlineMs > 0
-    ? loadingGraceDeadlineMs
-    : resolvedStallDeadlineMs;
-  const overlayDeadlineMs = stallOverlayActive
-    ? resolvedStallDeadlineMs
-    : ((waitingToPlay || loadingIntentActive) ? resolvedLoadingDeadlineMs : resolvedStallDeadlineMs);
-  const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayDeadlineMs, triggerRecovery);
-  const overlayCountdownSeconds = overlayTimerActive && overlayDeadlineMs > 0
-    ? Math.max(0, Math.ceil((overlayDeadlineMs - overlayElapsedSeconds * 1000) / 1000))
-    : null;
-  const playbackHealthy = Boolean(
-    playbackHealth?.elementSignals?.playing && !playbackHealth?.isWaiting && !playbackHealth?.isStalledEvent
-  );
-  const overlayLoggingActive = overlayTimerActive && (!playbackHealthy || explicitShow);
-  const overlayLogLabel = logWaitKey || waitKey || meta?.title || meta?.media_url || 'player-overlay';
-
   const togglePauseOverlay = useCallback(() => {
     setShowPauseOverlay((prev) => {
       const next = !prev;
       pauseOverlayPreference = next;
+      logOverlayUiEvent('pause-overlay-preference', {
+        active: next,
+        trigger: 'toggle'
+      }, 'info');
       return next;
     });
-  }, []);
+  }, [logOverlayUiEvent]);
 
   const setPauseOverlayVisible = useCallback((value) => {
     const next = value ?? true;
     pauseOverlayPreference = next;
+    logOverlayUiEvent('pause-overlay-preference', {
+      active: next,
+      trigger: 'command'
+    }, 'debug');
     setShowPauseOverlay(next);
-  }, []);
+  }, [logOverlayUiEvent]);
 
   useEffect(() => {
     if (!pauseToggleKeys.length) return () => {};
