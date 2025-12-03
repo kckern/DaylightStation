@@ -222,7 +222,7 @@
     width: 100%;
     height: 100%;
     .regular{
-        h2{ display: none;}
+        // Leave headings visible so shader overrides can hide them explicitly when needed
     }
     .dark {
         background-color: #000000;
