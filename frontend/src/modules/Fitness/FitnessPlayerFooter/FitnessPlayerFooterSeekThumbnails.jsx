@@ -8,8 +8,19 @@ import './FitnessPlayerFooterSeekThumbnails.scss';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const FOOTER_LOG_EVENT = 'fitness-footer';
+const DEBUG_FOOTER = false;
+const FOOTER_LOG_PHASES = new Set([
+  'seek-intent-recorded',
+  'seek-intent-restored',
+  'seek-commit',
+  'seek-dispatch',
+  'media-seeked',
+  'thumbnail-seek-intent'
+]);
 
 const logFooterEvent = (phase, payload = {}) => {
+  if (!DEBUG_FOOTER) return;
+  if (!FOOTER_LOG_PHASES.has(phase)) return;
   playbackLog(FOOTER_LOG_EVENT, { phase, ...payload });
 };
 

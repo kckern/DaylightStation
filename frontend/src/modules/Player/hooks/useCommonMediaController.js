@@ -109,6 +109,8 @@ export function useCommonMediaController({
   const isInitialLoadRef = useRef(true);
   const lastSeekIntentRef = useRef(null);
   const pendingAutoSeekRef = useRef(null);
+  const lastWaitStatusRef = useRef(null);
+  const lastLoggedMetadataKeyRef = useRef(null);
 
   const assignMediaElementRef = (candidate) => {
     mediaElementRef.current = candidate || null;
@@ -316,7 +318,6 @@ export function useCommonMediaController({
     let waitTimer = null;
     let observer = null;
     let cancelled = false;
-    let waitLogTimestamp = 0;
     let waitAttempts = 0;
 
     const teardownObserver = () => {
@@ -332,14 +333,12 @@ export function useCommonMediaController({
       }
       detachListeners = null;
       teardownObserver();
+      lastWaitStatusRef.current = null;
     };
 
     const logWaitingStatus = (status) => {
-      const now = Date.now();
-      if (status === 'pending') {
-        if (now - waitLogTimestamp < 1000) return;
-        waitLogTimestamp = now;
-      }
+      if (lastWaitStatusRef.current === status) return;
+      lastWaitStatusRef.current = status;
       playbackLog('media-el-wait', {
         status,
         attempts: waitAttempts,
@@ -459,6 +458,14 @@ export function useCommonMediaController({
         const adjustedVolume = Math.min(1, Math.max(0, normalizedVolume));
         const isVideoEl = mediaEl.tagName && mediaEl.tagName.toLowerCase() === 'video';
 
+        // Deduplication check for metadata/autoplay logs
+        const logKey = `${resolvedInstanceKey}:${mediaEl.src}:${durationValue}`;
+        const alreadyLoggedMetadata = lastLoggedMetadataKeyRef.current === logKey;
+        
+        if (!alreadyLoggedMetadata) {
+          lastLoggedMetadataKeyRef.current = logKey;
+        }
+
         if (isInitialLoadRef.current && !hasAppliedForKey) {
           const shouldApplyStart = (durationValue > 12 * 60) || isVideoEl;
           desiredStart = shouldApplyStart ? start : 0;
@@ -541,7 +548,10 @@ export function useCommonMediaController({
           pendingSeekSeconds: roundSeconds(pendingSeekValue),
           autoplay: true
         };
-        playbackLog('transport-autoplay-primed', autoplayLogContext, { level: 'debug' });
+        
+        if (!alreadyLoggedMetadata) {
+          playbackLog('transport-autoplay-primed', autoplayLogContext, { level: 'debug' });
+        }
 
         try {
           const playPromise = mediaEl.play?.();
@@ -602,13 +612,15 @@ export function useCommonMediaController({
           rateCleanup = null;
         }
 
-        playbackLog('media-loadedmetadata', {
-          media_key,
-          desiredStart,
-          duration: durationValue,
-          volume: adjustedVolume,
-          loop: mediaEl.loop
-        }, { level: 'debug' });
+        if (!alreadyLoggedMetadata) {
+          playbackLog('media-loadedmetadata', {
+            media_key,
+            desiredStart,
+            duration: durationValue,
+            volume: adjustedVolume,
+            loop: mediaEl.loop
+          }, { level: 'debug' });
+        }
       };
 
       const handleSeeking = () => {
@@ -802,6 +814,7 @@ export function useCommonMediaController({
     hardReset,
     transport,
     getPlaybackState,
-    setControllerExtras: setControllerExtrasState
+    setControllerExtras: setControllerExtrasState,
+    waitKey: formatWaitKeyForLogs(resolvedInstanceKey)
   };
 }
