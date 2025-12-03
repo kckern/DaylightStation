@@ -173,44 +173,6 @@ export function PlayerOverlayLoading({
     };
   }, [logOverlaySummary, overlayLoggingActive]);
 
-  useEffect(() => {
-    const prev = overlayVisibilityRef.current;
-    if (
-      prev.overlayDisplayActive === overlayDisplayActive
-      && prev.shouldRender === shouldRender
-      && prev.isVisible === isVisible
-      && prev.pauseOverlayActive === pauseOverlayActive
-    ) {
-      return;
-    }
-    overlayVisibilityRef.current = {
-      overlayDisplayActive,
-      shouldRender,
-      isVisible,
-      pauseOverlayActive
-    };
-    const reason = overlayDisplayActive
-      ? 'visible'
-      : (!shouldRender
-        ? 'should-render=false'
-        : (!isVisible
-          ? 'is-visible=false'
-          : 'pause-overlay-active'));
-    playbackLog('overlay-visibility', {
-      label: overlayLogLabel || waitKey || 'loading-overlay',
-      waitKey,
-      visible: overlayDisplayActive,
-      reason,
-      shouldRender,
-      isVisible,
-      pauseOverlayActive,
-      overlayRevealDelayMs
-    }, {
-      level: 'debug',
-      context: overlayLogContext
-    });
-  }, [overlayDisplayActive, shouldRender, isVisible, pauseOverlayActive, overlayLogLabel, waitKey, overlayRevealDelayMs, overlayLogContext]);
-
   if (!overlayDisplayActive) {
     return null;
   }
