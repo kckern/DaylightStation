@@ -13,13 +13,15 @@ const RESILIENCE_STATUS_LABELS = {
   playing: { icon: '🟢', label: 'Standby' },
   paused: { icon: '⏸️', label: 'Paused' },
   stalling: { icon: '🔴', label: 'Stalling' },
-  recovering: { icon: '🟠', label: 'Recovering' }
+  recovering: { icon: '🟠', label: 'Recovering' },
+  recoveringFatal: { icon: '💥', label: 'Fatal' }
 };
 
 const SYSTEM_HEALTH_LABELS = {
   ok: { icon: '🟢', label: 'Healthy' },
   buffering: { icon: '🟡', label: 'Buffering' },
-  stalled: { icon: '🔴', label: 'Stalled' }
+  stalled: { icon: '🔴', label: 'Stalled' },
+  fatal: { icon: '💥', label: 'Fatal' }
 };
 
 const toDisplay = (map, key, fallback) => (map[key] || fallback);

@@ -19,13 +19,15 @@ const deriveOverlayDrivers = ({
   stallOverlayActive,
   explicitShow,
   pauseOverlayActive,
-  holdOverlayActive
+  holdOverlayActive,
+  fatalOverlayActive
 }) => ({
   waiting: Boolean(waitingToPlay),
   stalled: Boolean(stallOverlayActive),
   explicit: Boolean(explicitShow),
   pause: Boolean(pauseOverlayActive),
-  hold: Boolean(holdOverlayActive)
+  hold: Boolean(holdOverlayActive),
+  fatal: Boolean(fatalOverlayActive)
 });
 
 const summarizeActiveDrivers = (drivers) => Object.entries(drivers)
@@ -189,6 +191,7 @@ export function useOverlayPresentation({
   loadingGraceDeadlineMs,
   triggerRecovery,
   stallOverlayActive,
+  fatalOverlayActive,
   waitingToPlay,
   playbackHasProgress,
   userIntentIsPaused,
@@ -221,14 +224,14 @@ export function useOverlayPresentation({
   const playbackElementPlaying = Boolean(playbackHealth?.elementSignals?.playing);
 
   useEffect(() => {
-    if (status === RESILIENCE_STATUS.recovering) {
+    if (status === RESILIENCE_STATUS.recovering || fatalOverlayActive) {
       setOverlayHoldActive(true);
       return;
     }
     if (playbackHasProgress || playbackElementPlaying) {
       setOverlayHoldActive(false);
     }
-  }, [status, playbackHasProgress, playbackElementPlaying]);
+  }, [status, playbackHasProgress, playbackElementPlaying, fatalOverlayActive]);
 
   const pauseToggleKeys = useMemo(() => {
     const keys = overlayConfig?.pauseToggleKeys;
@@ -245,7 +248,8 @@ export function useOverlayPresentation({
   const overlayIntentActive = waitingToPlay
     || stallOverlayActive
     || explicitShow
-    || holdOverlayActive;
+    || holdOverlayActive
+    || fatalOverlayActive;
 
   useEffect(() => {
     if (!initialOverlayGraceActive) return () => {};
@@ -269,15 +273,17 @@ export function useOverlayPresentation({
     && userIntentIsPaused
     && isPaused
     && !waitingToPlay
-    && !computedStalled;
+    && !computedStalled
+    && !fatalOverlayActive;
 
   const overlayDrivers = useMemo(() => deriveOverlayDrivers({
     waitingToPlay,
     stallOverlayActive,
     explicitShow,
     pauseOverlayActive,
-    holdOverlayActive
-  }), [waitingToPlay, stallOverlayActive, explicitShow, pauseOverlayActive, holdOverlayActive]);
+    holdOverlayActive,
+    fatalOverlayActive
+  }), [waitingToPlay, stallOverlayActive, explicitShow, pauseOverlayActive, holdOverlayActive, fatalOverlayActive]);
   const overlayActiveReasons = useMemo(() => summarizeActiveDrivers(overlayDrivers), [overlayDrivers]);
 
   useEffect(() => {
@@ -297,11 +303,12 @@ export function useOverlayPresentation({
     || overlayDrivers.stalled
     || overlayDrivers.explicit
     || overlayDrivers.pause
-    || overlayDrivers.hold;
+    || overlayDrivers.hold
+    || overlayDrivers.fatal;
   const overlayActive = shouldRenderOverlay && isOverlayVisible;
-  const overlayTimerActive = overlayActive && !pauseOverlayActive;
+  const overlayTimerActive = overlayActive && !pauseOverlayActive && !fatalOverlayActive;
   const overlayGraceReason = (() => {
-    if (!overlayRevealDelayMs) return null;
+    if (!overlayRevealDelayMs || fatalOverlayActive) return null;
     if (initialOverlayGraceActive) return 'initial-load';
     if (isSeeking) return 'seeking';
     return null;
@@ -311,9 +318,11 @@ export function useOverlayPresentation({
   const resolvedLoadingDeadlineMs = Number.isFinite(loadingGraceDeadlineMs) && loadingGraceDeadlineMs > 0
     ? loadingGraceDeadlineMs
     : resolvedStallDeadlineMs;
-  const overlayDeadlineMs = stallOverlayActive
-    ? resolvedStallDeadlineMs
-    : ((waitingToPlay || loadingIntentActive) ? resolvedLoadingDeadlineMs : resolvedStallDeadlineMs);
+  const overlayDeadlineMs = fatalOverlayActive
+    ? 0
+    : (stallOverlayActive
+      ? resolvedStallDeadlineMs
+      : ((waitingToPlay || loadingIntentActive) ? resolvedLoadingDeadlineMs : resolvedStallDeadlineMs));
   const overlayElapsedSeconds = useOverlayTimer(overlayTimerActive, overlayDeadlineMs, triggerRecovery);
   const overlayCountdownSeconds = overlayTimerActive && overlayDeadlineMs > 0
     ? Math.max(0, Math.ceil((overlayDeadlineMs - overlayElapsedSeconds * 1000) / 1000))
@@ -321,7 +330,7 @@ export function useOverlayPresentation({
   const playbackHealthy = Boolean(
     playbackHealth?.elementSignals?.playing && !playbackHealth?.isWaiting && !playbackHealth?.isStalledEvent
   );
-  const overlayLoggingActive = overlayTimerActive && (!playbackHealthy || explicitShow);
+  const overlayLoggingActive = (overlayTimerActive || fatalOverlayActive) && (!playbackHealthy || explicitShow || fatalOverlayActive);
   const overlayLogLabel = logWaitKey || waitKey || meta?.title || meta?.media_url || 'player-overlay';
   const overlayLogContext = useMemo(() => ({
     source: 'useOverlayPresentation',

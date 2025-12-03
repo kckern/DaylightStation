@@ -17,6 +17,8 @@ export function SinglePlayer(props = {}) {
     onPlaybackMetrics,
     onRegisterMediaAccess,
     onStartupSignal,
+    onPlayerError,
+    onRecoveryRequest,
     seekToIntentSeconds = null,
     onSeekRequestConsumed,
     remountDiagnostics,
@@ -70,7 +72,9 @@ export function SinglePlayer(props = {}) {
     seekToIntentSeconds,
     onSeekRequestConsumed,
     remountDiagnostics,
-    onStartupSignal
+    onStartupSignal,
+    onPlayerError,
+    onRecoveryRequest
   };
 
   if (!!scripture) return <Scriptures {...contentProps} {...contentScrollerBridge} />;
@@ -252,8 +256,19 @@ export function SinglePlayer(props = {}) {
     seekToIntentSeconds,
     onSeekRequestConsumed,
     remountDiagnostics,
-    onStartupSignal
-  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onStartupSignal]);
+    onStartupSignal,
+    onPlayerError,
+    onRecoveryRequest
+  }), [
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds,
+    onSeekRequestConsumed,
+    remountDiagnostics,
+    onStartupSignal,
+    onPlayerError,
+    onRecoveryRequest
+  ]);
   
   const playerBody = (
     <>
@@ -362,6 +377,8 @@ SinglePlayer.propTypes = {
   onPlaybackMetrics: PropTypes.func,
   onRegisterMediaAccess: PropTypes.func,
   onStartupSignal: PropTypes.func,
+  onPlayerError: PropTypes.func,
+  onRecoveryRequest: PropTypes.func,
   seekToIntentSeconds: PropTypes.number,
   onSeekRequestConsumed: PropTypes.func,
   remountDiagnostics: PropTypes.shape({

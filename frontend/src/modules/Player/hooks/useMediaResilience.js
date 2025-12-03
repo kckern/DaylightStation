@@ -29,7 +29,8 @@ const STATUS = {
   playing: RESILIENCE_STATUS.playing,
   paused: RESILIENCE_STATUS.paused,
   stalling: RESILIENCE_STATUS.stalling,
-  recovering: RESILIENCE_STATUS.recovering
+  recovering: RESILIENCE_STATUS.recovering,
+  fatal: RESILIENCE_STATUS.recoveringFatal
 };
 
 const USER_INTENT = Object.freeze({
@@ -41,7 +42,8 @@ const USER_INTENT = Object.freeze({
 const SYSTEM_HEALTH = Object.freeze({
   ok: 'ok',
   buffering: 'buffering',
-  stalled: 'stalled'
+  stalled: 'stalled',
+  fatal: 'fatal'
 });
 
 const DECODER_NUDGE_MIN_BUFFER_MS = 8000;
@@ -187,6 +189,8 @@ export function useMediaResilience({
   const [hardResetLoopCount, setHardResetLoopCount] = useState(0);
   const hardResetLoopCountRef = useLatest(hardResetLoopCount);
   const hardResetLimitLoggedRef = useRef(false);
+  const [fatalErrorState, setFatalErrorState] = useState(null);
+  const fatalErrorRef = useRef(null);
   const [loadingIntentState, setLoadingIntentState] = useState(() => ({ active: true, token: 0 }));
   const loadingIntentActive = loadingIntentState.active;
   const loadingIntentToken = loadingIntentState.token;
@@ -281,6 +285,15 @@ export function useMediaResilience({
   const lastKnownSeekIntentMsRef = useRef(Number.isFinite(initialStart) && initialStart > 0
     ? Math.max(0, initialStart * 1000)
     : null);
+  const recoveryBudgetRef = useRef({
+    key: null,
+    windowStartedAt: 0,
+    attempts: 0,
+    lockUntil: 0,
+    consecutiveAttempts: 0,
+    lastAttemptAt: 0
+  });
+  const recoveryLockTimerRef = useRef(null);
   const stallTimerRef = useRef(null);
   const reloadTimerRef = useRef(null);
   const hardRecoveryTimerRef = useRef(null);
@@ -308,8 +321,18 @@ export function useMediaResilience({
   }));
   const lastReloadAtRef = useRef(0);
   const mediaIdentity = meta?.media_key || meta?.key || meta?.plex || meta?.id || meta?.guid || meta?.media_url || null;
+  const metaGuid = meta?.guid || null;
+  const metaMediaKey = meta?.media_key || null;
+  const metaPlex = meta?.plex || null;
+  const metaId = meta?.id || null;
+  const metaKey = meta?.key || null;
   const mediaIdentityRef = useRef(mediaIdentity);
   const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
+  const recoveryIdentityKey = useMemo(() => {
+    const identitySeed = mediaIdentity || metaMediaKey || metaPlex || null;
+    const guidSeed = metaGuid || metaId || metaKey || playbackSessionKey || null;
+    return `${identitySeed || 'media'}:${guidSeed || 'session'}`;
+  }, [mediaIdentity, metaMediaKey, metaPlex, metaGuid, metaId, metaKey, playbackSessionKey]);
   const logContextRef = useLatest({
     waitKey: logWaitKey,
     mediaIdentity,
@@ -348,16 +371,37 @@ export function useMediaResilience({
   }, [lastProgressSecondsRef, lastSecondsRef, seekIntentNoiseThresholdSeconds]);
 
 
+  const getRecoveryBudgetSnapshot = useCallback(() => {
+    const state = recoveryBudgetRef.current;
+    if (!state) {
+      return null;
+    }
+    const remainingMs = state.lockUntil ? Math.max(0, state.lockUntil - Date.now()) : null;
+    return {
+      key: state.key,
+      windowStartedAt: state.windowStartedAt,
+      attempts: state.attempts,
+      lockUntil: state.lockUntil,
+      lockRemainingMs: remainingMs,
+      consecutiveAttempts: state.consecutiveAttempts,
+      lastAttemptAt: state.lastAttemptAt
+    };
+  }, []);
+
   const logResilienceEvent = useCallback((event, details = {}, options = {}) => {
     const context = logContextRef.current || {};
     const { level: detailLevel, tags: detailTags, ...restDetails } = details || {};
     const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
     const resolvedLevel = resolvedOptions.level || detailLevel || 'debug';
     const combinedTags = detailTags || resolvedOptions.tags;
+    const snapshot = getRecoveryBudgetSnapshot();
+    const payloadDetails = snapshot && !Object.prototype.hasOwnProperty.call(restDetails, 'recoveryBudgetState')
+      ? { ...restDetails, recoveryBudgetState: snapshot }
+      : restDetails;
     playbackLog('media-resilience', {
       event,
       ...context,
-      ...restDetails
+      ...payloadDetails
     }, {
       ...resolvedOptions,
       level: resolvedLevel,
@@ -367,7 +411,7 @@ export function useMediaResilience({
         ...(resolvedOptions.context || {})
       }
     });
-  }, [logContextRef]);
+  }, [logContextRef, getRecoveryBudgetSnapshot]);
 
   const applyBitrateOverride = useCallback((nextValue, options = {}) => {
     if (!Number.isFinite(nextValue) || nextValue <= 0) {
@@ -672,6 +716,89 @@ export function useMediaResilience({
     publishStartupWatchdogState({ timeoutMs: startupTimeoutMs || null });
   }, [startupTimeoutMs, publishStartupWatchdogState]);
 
+  useEffect(() => {
+    const state = recoveryBudgetRef.current;
+    if (state.key === recoveryIdentityKey) {
+      return;
+    }
+    recoveryBudgetRef.current = {
+      key: recoveryIdentityKey,
+      windowStartedAt: 0,
+      attempts: 0,
+      lockUntil: 0,
+      consecutiveAttempts: 0,
+      lastAttemptAt: 0
+    };
+    clearTimer(recoveryLockTimerRef);
+  }, [recoveryIdentityKey, clearTimer]);
+
+  const clearFatalErrorState = useCallback((reason = 'manual-clear') => {
+    if (!fatalErrorRef.current) {
+      return null;
+    }
+    const snapshot = fatalErrorRef.current;
+    fatalErrorRef.current = null;
+    setFatalErrorState(null);
+    logResilienceEvent('fatal-error-cleared', {
+      reason,
+      code: snapshot?.code ?? null,
+      fatalReason: snapshot?.reason || null,
+      waitKey: snapshot?.waitKey || logWaitKey
+    }, { level: 'info' });
+    return snapshot;
+  }, [logResilienceEvent, logWaitKey]);
+
+  const activateFatalErrorState = useCallback((details = {}) => {
+    if (fatalErrorRef.current) {
+      logResilienceEvent('fatal-error-duplicate', {
+        incomingReason: details?.reason || null,
+        code: details?.code ?? null,
+        waitKey: logWaitKey
+      }, { level: 'debug' });
+      return fatalErrorRef.current;
+    }
+    const snapshot = {
+      code: details?.code ?? null,
+      category: details?.category ?? null,
+      reason: details?.reason || 'player-error',
+      source: details?.source || 'player',
+      message: details?.message ?? null,
+      data: details?.data ?? null,
+      detail: details?.detail ?? null,
+      diagnostics: summarizeDiagnosticsForLog(details?.diagnostics) || null,
+      occurredAt: Date.now(),
+      waitKey: logWaitKey,
+      mediaIdentity
+    };
+    fatalErrorRef.current = snapshot;
+    setFatalErrorState(snapshot);
+    clearTimer(stallTimerRef);
+    clearTimer(reloadTimerRef);
+    clearTimer(hardRecoveryTimerRef);
+    clearTimer(loadingRecoveryTimerRef);
+    clearMountWatchdog();
+    clearStartupTimeout();
+    decoderNudgeStateRef.current = { lastRequestedAt: 0, inflight: false, graceUntil: 0 };
+    resolveLoadingIntent();
+    resilienceActions.setStatus(RESILIENCE_STATUS.recoveringFatal, {
+      clearStallToken: true,
+      clearRecoveryGuard: true,
+      resetAttempts: true,
+      carryRecovery: false
+    });
+    logResilienceEvent('fatal-error', snapshot, { level: 'error' });
+    return snapshot;
+  }, [
+    clearMountWatchdog,
+    clearStartupTimeout,
+    clearTimer,
+    logResilienceEvent,
+    logWaitKey,
+    mediaIdentity,
+    resolveLoadingIntent,
+    resilienceActions
+  ]);
+
   const handleStartupSignal = useCallback((signal) => {
     if (!signal || typeof signal !== 'object') {
       return;
@@ -735,6 +862,28 @@ export function useMediaResilience({
     setStartupSignalVersion((token) => token + 1);
   }, [logResilienceEvent]);
 
+  const handlePlayerErrorEvent = useCallback((details = {}) => {
+    const payload = typeof details === 'object' && details !== null ? details : {};
+    const fatal = Boolean(payload.fatal ?? payload.isFatal);
+    logResilienceEvent('player-error', {
+      ...payload,
+      fatal
+    }, { level: fatal ? 'error' : 'warn' });
+
+    if (fatal) {
+      activateFatalErrorState({
+        reason: payload.reason || payload.fatalReason || payload.category || 'player-error',
+        source: payload.source || payload.origin || 'player',
+        code: payload.code ?? payload.errorCode ?? null,
+        category: payload.category || null,
+        message: payload.message || payload.detail?.message || null,
+        detail: payload.detail || null,
+        data: payload.data || null,
+        diagnostics: payload.diagnostics || null
+      });
+    }
+  }, [activateFatalErrorState, logResilienceEvent]);
+
   const invalidatePendingStallDetection = useCallback((reason = 'seek-intent') => {
     const hadPendingTimers = Boolean(stallTimerRef.current || hardRecoveryTimerRef.current);
     const wasStalling = statusRef.current === STATUS.stalling;
@@ -747,7 +896,11 @@ export function useMediaResilience({
       resilienceActions.setStatus(statusRef.current, { clearStallToken: true });
     }
 
-    if (wasStalling && statusRef.current !== STATUS.recovering) {
+    if (
+      wasStalling
+      && statusRef.current !== STATUS.recovering
+      && statusRef.current !== STATUS.fatal
+    ) {
       resilienceActions.setStatus(STATUS.pending, { clearRecoveryGuard: true });
     }
 
@@ -768,10 +921,11 @@ export function useMediaResilience({
   useEffect(() => {
     resetDetectionState();
     setShowDebug(false);
+    clearFatalErrorState('wait-key-change');
     resilienceActions.reset({
       nextStatus: resilienceState.carryRecovery ? STATUS.recovering : STATUS.pending
     });
-  }, [waitKey, resetDetectionState, resilienceActions, resilienceState.carryRecovery]);
+  }, [waitKey, resetDetectionState, resilienceActions, resilienceState.carryRecovery, clearFatalErrorState]);
 
   useEffect(() => {
     updateExplicitPauseState(false);
@@ -793,7 +947,11 @@ export function useMediaResilience({
   }, [hardResetLoopCount]);
 
   useEffect(() => {
-    if (status !== RESILIENCE_STATUS.stalling && status !== RESILIENCE_STATUS.recovering) {
+    if (
+      status !== RESILIENCE_STATUS.stalling
+      && status !== RESILIENCE_STATUS.recovering
+      && status !== STATUS.fatal
+    ) {
       stallInsightsRef.current = { classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 };
       return;
     }
@@ -848,9 +1006,120 @@ export function useMediaResilience({
     updateSessionTargetTimeSeconds(normalizedSeconds);
   }, [updateSessionTargetTimeSeconds]);
 
+  const scheduleRecoveryLockRelease = useCallback((lockUntilTs) => {
+    if (!Number.isFinite(lockUntilTs)) {
+      return;
+    }
+    const delay = Math.max(0, lockUntilTs - Date.now());
+    if (delay <= 0) {
+      return;
+    }
+    clearTimer(recoveryLockTimerRef);
+    recoveryLockTimerRef.current = setTimeout(() => {
+      recoveryLockTimerRef.current = null;
+      const state = recoveryBudgetRef.current;
+      if (state.lockUntil && Date.now() >= state.lockUntil) {
+        state.lockUntil = null;
+        state.windowStartedAt = 0;
+        state.attempts = 0;
+        logResilienceEvent('recovery-rate-limit-cleared', {
+          lockExpiredAt: Date.now()
+        }, { level: 'info' });
+        if (fatalErrorRef.current?.reason === 'recovery-rate-limit') {
+          clearFatalErrorState('recovery-lock-elapsed');
+          if (statusRef.current === STATUS.fatal) {
+            resilienceActions.setStatus(STATUS.pending, {
+              clearRecoveryGuard: true,
+              clearStallToken: true
+            });
+          }
+        }
+      }
+    }, delay);
+  }, [clearTimer, clearFatalErrorState, logResilienceEvent, resilienceActions, statusRef]);
+
+  const evaluateRecoveryBudget = useCallback(({ reason, force } = {}) => {
+    const state = recoveryBudgetRef.current;
+    if (!state) {
+      return { allowed: true, extraDelayMs: 0 };
+    }
+    if (force) {
+      state.consecutiveAttempts = 0;
+      state.lastAttemptAt = Date.now();
+      return { allowed: true, extraDelayMs: 0 };
+    }
+
+    const windowMs = Math.max(1000, Number.isFinite(recoveryConfig.rateLimitWindowMs)
+      ? recoveryConfig.rateLimitWindowMs
+      : 30000);
+    const maxAttempts = Math.max(1, Number.isFinite(recoveryConfig.rateLimitMaxAttempts)
+      ? recoveryConfig.rateLimitMaxAttempts
+      : 3);
+    const lockoutMs = Math.max(1000, Number.isFinite(recoveryConfig.rateLimitLockoutMs)
+      ? recoveryConfig.rateLimitLockoutMs
+      : 60000);
+    const backoffBaseDelayMs = Math.max(0, Number.isFinite(recoveryConfig.backoffBaseDelayMs)
+      ? recoveryConfig.backoffBaseDelayMs
+      : 0);
+
+    const now = Date.now();
+    if (state.lockUntil && now < state.lockUntil) {
+      return {
+        allowed: false,
+        blockReason: 'rate-limit-lock',
+        blockDetails: { remainingMs: state.lockUntil - now }
+      };
+    }
+
+    if (!state.windowStartedAt || (now - state.windowStartedAt) > windowMs) {
+      state.windowStartedAt = now;
+      state.attempts = 0;
+    }
+
+    const projectedAttempts = (state.attempts || 0) + 1;
+    if (projectedAttempts > maxAttempts) {
+      state.lockUntil = now + lockoutMs;
+      state.windowStartedAt = now;
+      state.attempts = 0;
+      logResilienceEvent('recovery-rate-limit-triggered', {
+        reason,
+        lockoutMs,
+        maxAttempts,
+        windowMs
+      }, { level: 'warn' });
+      scheduleRecoveryLockRelease(state.lockUntil);
+      return {
+        allowed: false,
+        blockReason: 'rate-limit-exceeded',
+        blockDetails: { lockoutMs }
+      };
+    }
+
+    state.attempts = projectedAttempts;
+    state.lastAttemptAt = now;
+    state.consecutiveAttempts = (state.consecutiveAttempts || 0) + 1;
+
+    const extraDelayMs = backoffBaseDelayMs > 0
+      ? Math.min(60000, Math.round(backoffBaseDelayMs * (2 ** Math.min(state.consecutiveAttempts - 1, 8))))
+      : 0;
+
+    if (extraDelayMs > 0) {
+      logResilienceEvent('recovery-backoff-applied', {
+        reason,
+        extraDelayMs,
+        consecutiveAttempts: state.consecutiveAttempts
+      }, { level: extraDelayMs > 2000 ? 'warn' : 'info' });
+    }
+
+    return {
+      allowed: true,
+      extraDelayMs
+    };
+  }, [logResilienceEvent, recoveryConfig.backoffBaseDelayMs, recoveryConfig.rateLimitLockoutMs, recoveryConfig.rateLimitMaxAttempts, recoveryConfig.rateLimitWindowMs, scheduleRecoveryLockRelease]);
+
   const shouldAllowHardResetAttempt = useCallback(({ reason, force } = {}) => {
     if (force) {
-      return true;
+      return { allowed: true, extraDelayMs: 0 };
     }
     const attempts = hardResetLoopCountRef.current || 0;
     if (attempts >= HARD_RESET_MAX_ATTEMPTS) {
@@ -862,10 +1131,35 @@ export function useMediaResilience({
           maxAttempts: HARD_RESET_MAX_ATTEMPTS
         }, { level: 'error' });
       }
-      return false;
+      return { allowed: false, blockReason: 'attempts-exhausted' };
     }
-    return true;
-  }, [logResilienceEvent, hardResetLoopCountRef]);
+
+    const budgetResult = evaluateRecoveryBudget({ reason, force });
+    if (!budgetResult.allowed) {
+      if (budgetResult.blockReason === 'rate-limit-exceeded') {
+        activateFatalErrorState({
+          reason: 'recovery-rate-limit',
+          category: 'recovery-budget',
+          message: 'Playback recoveries have been paused to allow the stream to stabilize.',
+          data: {
+            lockoutMs: budgetResult.blockDetails?.lockoutMs ?? null,
+            waitKey,
+            mediaIdentity: mediaIdentityRef.current
+          }
+        });
+      }
+      return budgetResult;
+    }
+
+    return budgetResult;
+  }, [
+    activateFatalErrorState,
+    evaluateRecoveryBudget,
+    hardResetLoopCountRef,
+    logResilienceEvent,
+    mediaIdentityRef,
+    waitKey
+  ]);
 
   const computeHardResetDelay = useCallback(({ attempts = 0 } = {}) => {
     const configuredBase = Number.isFinite(recoveryConfig.reloadDelayMs)
@@ -978,6 +1272,7 @@ export function useMediaResilience({
     statusRef,
     pendingStatusValue: STATUS.pending,
     recoveringStatusValue: STATUS.recovering,
+    fatalStatusValue: STATUS.fatal,
     userIntentRef,
     pausedIntentValue: USER_INTENT.paused,
     recoveryAttempts: resilienceState.recoveryAttempts,
@@ -985,6 +1280,33 @@ export function useMediaResilience({
     shouldAttemptRecovery: shouldAllowHardResetAttempt,
     computeRecoveryDelayMs: computeHardResetDelay
   });
+
+  const handlePlayerRecoveryRequest = useCallback((input) => {
+    const payload = typeof input === 'string'
+      ? { reason: input }
+      : (input && typeof input === 'object' ? input : {});
+    const {
+      reason = 'player-recovery-request',
+      seekToIntentMs: overrideIntentMs = null,
+      seekSeconds = null,
+      ignorePaused = true,
+      force = false,
+      skipRecoveryNotification = false
+    } = payload;
+
+    const normalizedSeekMs = (() => {
+      if (Number.isFinite(overrideIntentMs)) return Math.max(0, overrideIntentMs);
+      if (Number.isFinite(seekSeconds)) return Math.max(0, seekSeconds * 1000);
+      return null;
+    })();
+
+    return triggerRecovery(reason, {
+      ignorePaused,
+      force,
+      seekToIntentMs: normalizedSeekMs,
+      skipRecoveryNotification
+    });
+  }, [triggerRecovery]);
 
   const startMountWatchdog = useCallback((reason = 'pending') => {
     if (!mountTimeoutMs || mountTimeoutMs <= 0) return;
@@ -1042,7 +1364,7 @@ export function useMediaResilience({
     ) {
       return;
     }
-    if (statusRef.current === STATUS.recovering) {
+    if (statusRef.current === STATUS.recovering || statusRef.current === STATUS.fatal) {
       return;
     }
     resilienceActions.stallDetected({ stallToken: playbackHealth.progressToken });
@@ -1085,7 +1407,11 @@ export function useMediaResilience({
       waitKey: logWaitKey
     }, { level: 'debug' });
 
-    if (status === STATUS.stalling && previous !== STATUS.recovering) {
+    if (
+      status === STATUS.stalling
+      && previous !== STATUS.recovering
+      && previous !== STATUS.fatal
+    ) {
       logResilienceEvent('stall-detected', {
         seconds: normalizedSeconds,
         lastProgressSeconds: lastProgressSecondsRef.current,
@@ -1103,10 +1429,23 @@ export function useMediaResilience({
         attempts: resilienceState.recoveryAttempts,
         reason: mountWatchdogReasonRef.current || 'auto'
       }, { level: 'info' });
+    } else if (status === STATUS.fatal && previous !== STATUS.fatal) {
+      logResilienceEvent('fatal-recovery-blocked', {
+        seconds: normalizedSeconds,
+        fatalError: fatalErrorRef.current || fatalErrorState || null
+      }, { level: 'error' });
     }
 
     statusTransitionRef.current = status;
-  }, [status, logResilienceEvent, normalizedSeconds, playbackHealth.progressToken, logWaitKey, resilienceState.recoveryAttempts]);
+  }, [
+    status,
+    logResilienceEvent,
+    normalizedSeconds,
+    playbackHealth.progressToken,
+    logWaitKey,
+    resilienceState.recoveryAttempts,
+    fatalErrorState
+  ]);
 
   const monitorSuspended = userIntent === USER_INTENT.paused;
 
@@ -1133,6 +1472,9 @@ export function useMediaResilience({
   }, [bufferRunwayMs, elementBuffering, elementWaiting, monitorSuspended, requestDecoderNudge, status]);
 
   useEffect(() => {
+    if (status === STATUS.fatal) {
+      return;
+    }
     if (userIntent === USER_INTENT.paused) {
       if (status !== STATUS.paused) {
         resilienceActions.setStatus(STATUS.paused, {
@@ -1165,6 +1507,13 @@ export function useMediaResilience({
           resetAttempts: true
         });
       }
+      return;
+    }
+
+    if (status === STATUS.fatal) {
+      clearTimer(stallTimerRef);
+      clearTimer(hardRecoveryTimerRef);
+      clearTimer(loadingRecoveryTimerRef);
       return;
     }
 
@@ -1209,7 +1558,7 @@ export function useMediaResilience({
       } else {
         // Ignore early signals (e.g., "playing" events before the clock advances)
         lastProgressTsRef.current = playbackHealth.lastProgressAt ?? lastProgressTsRef.current;
-        if (statusRef.current !== STATUS.recovering) {
+        if (statusRef.current !== STATUS.recovering && statusRef.current !== STATUS.fatal) {
           resilienceActions.setStatus(STATUS.pending);
         }
         clearTimer(stallTimerRef);
@@ -1235,7 +1584,11 @@ export function useMediaResilience({
     }
 
     if (!hasStarted) {
-      if (statusRef.current !== STATUS.stalling && statusRef.current !== STATUS.pending) {
+      if (
+        statusRef.current !== STATUS.stalling
+        && statusRef.current !== STATUS.pending
+        && statusRef.current !== STATUS.fatal
+      ) {
         resilienceActions.setStatus(STATUS.pending);
       }
       clearTimer(stallTimerRef);
@@ -1244,7 +1597,11 @@ export function useMediaResilience({
     }
 
     if (!hasObservedProgress) {
-      if (statusRef.current !== STATUS.stalling && statusRef.current !== STATUS.pending) {
+      if (
+        statusRef.current !== STATUS.stalling
+        && statusRef.current !== STATUS.pending
+        && statusRef.current !== STATUS.fatal
+      ) {
         resilienceActions.setStatus(STATUS.pending);
       }
       clearTimer(stallTimerRef);
@@ -1292,7 +1649,7 @@ export function useMediaResilience({
       startupAttemptsRef.current = 0;
       return;
     }
-    const waitingState = status === STATUS.pending || status === STATUS.recovering;
+    const waitingState = status === STATUS.pending || status === STATUS.recovering || status === STATUS.fatal;
     const elementPlayingSignal = Boolean(playbackHealth?.elementSignals?.playing);
     const reporterSnapshot = startupSignalsRef.current;
     const reporterProgressSignal = Boolean(reporterSnapshot.progressAt);
@@ -1414,7 +1771,7 @@ export function useMediaResilience({
   ]);
 
   useEffect(() => {
-    if (!loadingIntentActive || monitorSuspended || status === STATUS.recovering) {
+    if (!loadingIntentActive || monitorSuspended || status === STATUS.recovering || status === STATUS.fatal) {
       clearTimer(loadingRecoveryTimerRef);
       return;
     }
@@ -1453,11 +1810,12 @@ export function useMediaResilience({
     clearTimer(loadingRecoveryTimerRef);
     clearMountWatchdog();
     clearStartupTimeout();
-  }, [clearTimer, clearMountWatchdog, clearStartupTimeout]);
+    clearFatalErrorState('unmount');
+  }, [clearTimer, clearMountWatchdog, clearStartupTimeout, clearFatalErrorState]);
 
 
   useEffect(() => {
-    const waiting = status === STATUS.pending || status === STATUS.recovering;
+    const waiting = status === STATUS.pending || status === STATUS.recovering || status === STATUS.fatal;
     if (userIntent === USER_INTENT.paused) {
       setShowDebug(false);
       return () => {};
@@ -1471,9 +1829,13 @@ export function useMediaResilience({
   }, [explicitShow, userIntent, status, debugConfig.revealDelayMs]);
 
   const startupWatchdogState = internalStartupWatchdogState;
+  const fatalOverlayActive = Boolean(fatalErrorState);
   const isStartupPhase = status === RESILIENCE_STATUS.startup;
-  const waitingToPlay = isStartupPhase || status === STATUS.recovering;
+  const waitingToPlay = isStartupPhase || status === STATUS.recovering || status === STATUS.fatal;
   const baseSystemHealth = (() => {
+    if (fatalOverlayActive || status === STATUS.fatal) {
+      return SYSTEM_HEALTH.fatal;
+    }
     if (userIntent === USER_INTENT.paused) {
       return SYSTEM_HEALTH.ok;
     }
@@ -1486,14 +1848,18 @@ export function useMediaResilience({
     return SYSTEM_HEALTH.ok;
   })();
   const systemHealth = (() => {
+    if (fatalOverlayActive) {
+      return SYSTEM_HEALTH.fatal;
+    }
     if (typeof stalledOverride === 'boolean') {
       return stalledOverride ? SYSTEM_HEALTH.stalled : SYSTEM_HEALTH.ok;
     }
     return baseSystemHealth;
   })();
-  const computedStalled = userIntent !== USER_INTENT.paused
+  const computedStalled = !fatalOverlayActive
+    && userIntent !== USER_INTENT.paused
     && (systemHealth === SYSTEM_HEALTH.stalled || status === STATUS.recovering);
-  const stallOverlayActive = computedStalled;
+  const stallOverlayActive = fatalOverlayActive || computedStalled;
 
   const telemetryHasProgress = playbackHealth.progressToken > 0
     && Number.isFinite(playbackHealth?.lastProgressSeconds);
@@ -1502,7 +1868,7 @@ export function useMediaResilience({
     : (telemetryHasProgress
       ? playbackHealth.lastProgressSeconds
       : null);
-  const playbackHasProgress = status === STATUS.recovering
+  const playbackHasProgress = (status === STATUS.recovering || status === STATUS.fatal)
     ? false
     : (Number.isFinite(observedProgressSeconds) && observedProgressSeconds > epsilonSeconds);
   useEffect(() => {
@@ -1545,6 +1911,7 @@ export function useMediaResilience({
     loadingGraceDeadlineMs: effectiveLoadingGraceMs,
     triggerRecovery,
     stallOverlayActive,
+    fatalOverlayActive,
     waitingToPlay,
     playbackHasProgress,
     userIntentIsPaused: userIntent === USER_INTENT.paused,
@@ -1584,6 +1951,7 @@ export function useMediaResilience({
   }, [status, hardResetLoopCount]);
 
   const markHealthy = useCallback(() => {
+    clearFatalErrorState('mark-healthy');
     clearTimer(stallTimerRef);
     clearTimer(reloadTimerRef);
     resilienceActions.setStatus(STATUS.playing, {
@@ -1593,7 +1961,7 @@ export function useMediaResilience({
     });
     setHardResetLoopCount(0);
     resolveLoadingIntent();
-  }, [clearTimer, resilienceActions, setHardResetLoopCount, resolveLoadingIntent]);
+  }, [clearFatalErrorState, clearTimer, resilienceActions, setHardResetLoopCount, resolveLoadingIntent]);
 
   const state = useMemo(() => ({
     status,
@@ -1610,6 +1978,8 @@ export function useMediaResilience({
     isSeeking,
     userIntent,
     systemHealth,
+    fatalErrorState,
+    fatalOverlayActive,
     meta,
     waitKey,
     lastFetchAt,
@@ -1632,10 +2002,12 @@ export function useMediaResilience({
     showDebug,
     computedStalled,
     systemHealth,
+    fatalErrorState,
     seconds,
     resolvedIsPaused,
     isSeeking,
     userIntent,
+    fatalOverlayActive,
     meta,
     waitKey,
     lastFetchAt,
@@ -1654,6 +2026,7 @@ export function useMediaResilience({
 
   const debugStateSnapshotRef = useRef({
     userIntent,
+    fatalErrorState,
     status,
     systemHealth
   });
@@ -1690,6 +2063,7 @@ export function useMediaResilience({
 
   const controller = useMemo(() => ({
     reset: () => {
+      clearFatalErrorState('controller-reset');
       resetDetectionState();
       resilienceActions.reset({ nextStatus: STATUS.pending, clearCarry: true });
       setShowDebug(false);
@@ -1698,6 +2072,7 @@ export function useMediaResilience({
       markLoadingIntentActive();
     },
     forceReload: (options = {}) => {
+      clearFatalErrorState('controller-force-reload');
       const overrideMs = Number.isFinite(options.seekToIntentMs)
         ? Math.max(0, options.seekToIntentMs)
         : Number.isFinite(options.seekSeconds)
@@ -1729,6 +2104,7 @@ export function useMediaResilience({
     getMaxVideoBitrate: () => bitrateStateRef.current?.current ?? null,
     restoreMaxVideoBitrate: (options) => restoreBitrateTarget(options)
   }), [
+    clearFatalErrorState,
     fetchVideoInfoRef,
     markHealthy,
     meta,
@@ -1775,6 +2151,8 @@ export function useMediaResilience({
     isPaused: resolvedIsPaused,
     userIntent,
     systemHealth,
+    fatalOverlayActive,
+    fatalErrorState,
     pauseOverlayActive,
     seconds,
     computedStalled,
@@ -1801,7 +2179,14 @@ export function useMediaResilience({
     startupWatchdogState
   });
 
-  return { overlayProps, controller, state, onStartupSignal: handleStartupSignal };
+  return {
+    overlayProps,
+    controller,
+    state,
+    onStartupSignal: handleStartupSignal,
+    onPlayerError: handlePlayerErrorEvent,
+    onRecoveryRequest: handlePlayerRecoveryRequest
+  };
 }
 
 function createOverlayProps({
@@ -1812,6 +2197,8 @@ function createOverlayProps({
   isPaused,
   userIntent,
   systemHealth,
+  fatalOverlayActive,
+  fatalErrorState,
   pauseOverlayActive,
   seconds,
   computedStalled,
@@ -1845,6 +2232,8 @@ function createOverlayProps({
     isPaused,
     userIntent,
     systemHealth,
+    fatalOverlayActive,
+    fatalErrorState,
     pauseOverlayActive,
     seconds,
     stalled: computedStalled,

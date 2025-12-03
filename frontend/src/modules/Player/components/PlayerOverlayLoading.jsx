@@ -15,6 +15,8 @@ export function PlayerOverlayLoading({
   waitingToPlay = false,
   startupWatchdogState = null,
   status = 'pending',
+  fatalOverlayActive = false,
+  fatalErrorState = null,
   togglePauseOverlay,
   playerPositionDisplay,
   intentPositionDisplay,
@@ -26,7 +28,7 @@ export function PlayerOverlayLoading({
   overlayRevealDelayMs = 0,
   mediaDetails: mediaDetailsProp = null
 }) {
-  const overlayDisplayActive = shouldRender && isVisible && !pauseOverlayActive;
+  const overlayDisplayActive = shouldRender && isVisible && (!pauseOverlayActive || fatalOverlayActive);
 
   const logIntervalRef = useRef(null);
   const visibleSinceRef = useRef(null);
@@ -94,6 +96,7 @@ export function PlayerOverlayLoading({
   const hasValidPosition = positionDisplay && positionDisplay !== '0:00';
   const isStartupPhase = status === 'startup';
   const statusLabel = (() => {
+    if (fatalOverlayActive) return 'Playback Failed';
     if (isStartupPhase) return 'Starting…';
     if (status === 'seeking') return 'Seeking…';
     if (stalled) return 'Recovering…';
@@ -116,13 +119,15 @@ export function PlayerOverlayLoading({
     emitManualReset('overlay-spinner-manual', { eventType: event?.type });
   }, [emitManualReset]);
 
-  const spinnerInteractionProps = {
-    onClick: handleSpinnerInteraction,
-    onTouchStart: handleSpinnerInteraction,
-    onDoubleClick: handleSpinnerInteraction,
-    onMouseDown: handleSpinnerInteraction,
-    onPointerDown: handleSpinnerInteraction
-  };
+  const spinnerInteractionProps = fatalOverlayActive
+    ? {}
+    : {
+        onClick: handleSpinnerInteraction,
+        onTouchStart: handleSpinnerInteraction,
+        onDoubleClick: handleSpinnerInteraction,
+        onMouseDown: handleSpinnerInteraction,
+        onPointerDown: handleSpinnerInteraction
+      };
 
   const countdownLabel = Number.isFinite(countdownSeconds)
     ? `${Math.max(0, Math.floor(countdownSeconds))}s`
@@ -173,13 +178,28 @@ export function PlayerOverlayLoading({
     };
   }, [logOverlaySummary, overlayLoggingActive]);
 
+  const fatalCodeLabel = Number.isFinite(fatalErrorState?.code)
+    ? `Code ${fatalErrorState.code}`
+    : (fatalErrorState?.code ? `Code ${fatalErrorState.code}` : null);
+  const fatalReasonLabel = fatalErrorState?.reason || fatalErrorState?.category || null;
+  const fatalMessage = fatalErrorState?.message
+    || fatalErrorState?.detail?.message
+    || 'Playback cannot continue because the media pipeline encountered a fatal error.';
+  const handleFatalRetry = useCallback(() => {
+    emitManualReset('fatal-overlay-retry', {
+      fatal: true,
+      fatalReason: fatalReasonLabel,
+      fatalCode: fatalErrorState?.code ?? null
+    });
+  }, [emitManualReset, fatalErrorState, fatalReasonLabel]);
+
   if (!overlayDisplayActive) {
     return null;
   }
 
   return (
     <div
-      className="loading-overlay loading"
+      className={`loading-overlay loading${fatalOverlayActive ? ' fatal' : ''}`}
       data-no-fullscreen="true"
       style={{
         opacity: isVisible ? 1 : 0,
@@ -190,25 +210,43 @@ export function PlayerOverlayLoading({
       onMouseDownCapture={blockFullscreenToggle}
     >
       <div className="loading-overlay__inner">
-        <div className="loading-timing">
-          <div
-            className="loading-spinner"
-            data-no-fullscreen="true"
-            {...spinnerInteractionProps}
-          >
-            <img
-              src={spinner}
-              alt=""
-              draggable={false}
+        {fatalOverlayActive ? (
+          <div className="loading-fatal" data-no-fullscreen="true">
+            <div className="loading-fatal__title">Playback Failed</div>
+            <div className="loading-fatal__message">{fatalMessage}</div>
+            <div className="loading-fatal__detail">
+              {[fatalReasonLabel, fatalCodeLabel].filter(Boolean).join(' · ') || 'Fatal media error'}
+            </div>
+            <button
+              type="button"
+              className="loading-fatal__action"
+              onClick={handleFatalRetry}
               data-no-fullscreen="true"
-            />
-            <div className="loading-metrics">
-              <div className="loading-position">
-                {hasValidPosition ? positionDisplay : ''}
+            >
+              Try Again
+            </button>
+          </div>
+        ) : (
+          <div className="loading-timing">
+            <div
+              className="loading-spinner"
+              data-no-fullscreen="true"
+              {...spinnerInteractionProps}
+            >
+              <img
+                src={spinner}
+                alt=""
+                draggable={false}
+                data-no-fullscreen="true"
+              />
+              <div className="loading-metrics">
+                <div className="loading-position">
+                  {hasValidPosition ? positionDisplay : ''}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -228,6 +266,14 @@ PlayerOverlayLoading.propTypes = {
     attempts: PropTypes.number,
     timeoutMs: PropTypes.number,
     timestamp: PropTypes.number
+  }),
+  fatalOverlayActive: PropTypes.bool,
+  fatalErrorState: PropTypes.shape({
+    code: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    reason: PropTypes.string,
+    category: PropTypes.string,
+    message: PropTypes.string,
+    detail: PropTypes.any
   }),
   togglePauseOverlay: PropTypes.func,
   status: PropTypes.string,

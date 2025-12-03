@@ -22,7 +22,11 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
     enabled: true,
     reloadDelayMs: 0,
     cooldownMs: 4000,
-    maxAttempts: 8
+    maxAttempts: 8,
+    rateLimitWindowMs: 30000,
+    rateLimitMaxAttempts: 3,
+    rateLimitLockoutMs: 60000,
+    backoffBaseDelayMs: 800
   },
   debug: {
     revealDelayMs: 5000
@@ -96,7 +100,11 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
         enabled: recoveryConfig.enabled ?? legacyReload.enabled ?? true,
         reloadDelayMs: coerceNumber(recoveryConfig.reloadDelayMs ?? legacyReload.stallMs, 0),
         cooldownMs: coerceNumber(recoveryConfig.cooldownMs ?? legacyReload.cooldownMs, 4000),
-        maxAttempts: coerceNumber(recoveryConfig.maxAttempts ?? legacyReload.maxAttempts, 2)
+        maxAttempts: coerceNumber(recoveryConfig.maxAttempts ?? legacyReload.maxAttempts, 2),
+        rateLimitWindowMs: coerceNumber(recoveryConfig.rateLimitWindowMs, 30000),
+        rateLimitMaxAttempts: coerceNumber(recoveryConfig.rateLimitMaxAttempts, 3),
+        rateLimitLockoutMs: coerceNumber(recoveryConfig.rateLimitLockoutMs, 60000),
+        backoffBaseDelayMs: coerceNumber(recoveryConfig.backoffBaseDelayMs, 800)
       }
     };
   }, [contextConfig, configOverrides, runtimeOverrides]);

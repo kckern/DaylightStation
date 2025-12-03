@@ -473,7 +473,13 @@ const Player = forwardRef(function Player(props, ref) {
     });
   }, [forceSinglePlayerRemount, mediaAccess, getResilienceMediaEl]);
 
-  const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
+  const {
+    overlayProps,
+    state: resilienceState,
+    onStartupSignal,
+    onPlayerError,
+    onRecoveryRequest
+  } = useMediaResilience({
     getMediaEl: getResilienceMediaEl,
     meta: effectiveMeta,
     maxVideoBitrate: effectiveMeta?.maxVideoBitrate
@@ -652,6 +658,8 @@ const Player = forwardRef(function Player(props, ref) {
     onPlaybackMetrics: handlePlaybackMetrics,
     onRegisterMediaAccess: handleRegisterMediaAccess,
     onStartupSignal,
+    onPlayerError,
+    onRecoveryRequest,
     resilienceBitrateInfo,
     onRestoreFullBitrate: handleRestoreFullBitrate,
     seekToIntentSeconds: targetTimeSeconds,

@@ -129,6 +129,8 @@ AudioPlayer.propTypes = {
     onRegisterMediaAccess: PropTypes.func,
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
-    onStartupSignal: PropTypes.func
+    onStartupSignal: PropTypes.func,
+    onPlayerError: PropTypes.func,
+    onRecoveryRequest: PropTypes.func
   })
 };

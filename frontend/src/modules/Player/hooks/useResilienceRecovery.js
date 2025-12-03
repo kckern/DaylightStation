@@ -22,6 +22,7 @@ export function useResilienceRecovery({
   statusRef,
   pendingStatusValue,
   recoveringStatusValue,
+  fatalStatusValue,
   userIntentRef,
   pausedIntentValue,
   recoveryAttempts,
@@ -46,29 +47,19 @@ export function useResilienceRecovery({
     force = false,
     skipRecoveryNotification = false
   } = {}) => {
-    if (!force && !recoveryConfig.enabled) return;
-    if (!force && !ignorePaused && userIntentRef.current === pausedIntentValue) return;
-    if (!force && recoveryConfig.maxAttempts && recoveryAttempts >= recoveryConfig.maxAttempts) return;
-    if (!force && typeof shouldAttemptRecovery === 'function') {
-      let allowed = true;
-      try {
-        allowed = shouldAttemptRecovery({ reason, attempts: recoveryAttempts, force });
-      } catch (error) {
-        if (process.env?.NODE_ENV !== 'production') {
-          console.warn('[useResilienceRecovery] shouldAttemptRecovery failed', error);
-        }
-        allowed = true;
-      }
-      if (!allowed) {
-        logResilienceEvent('recovery-suppressed-policy', {
-          reason,
-          attempts: recoveryAttempts
-        }, { level: 'warn' });
-        return;
-      }
+    if (!force && !recoveryConfig.enabled) return false;
+    if (!force && !ignorePaused && userIntentRef.current === pausedIntentValue) return false;
+    if (!force && recoveryConfig.maxAttempts && recoveryAttempts >= recoveryConfig.maxAttempts) return false;
+    if (!force && fatalStatusValue && statusRef.current === fatalStatusValue) {
+      logResilienceEvent('recovery-suppressed-fatal', {
+        reason,
+        attempts: recoveryAttempts
+      }, { level: 'warn' });
+      return false;
     }
+
     const now = Date.now();
-    if (!force && recoveryConfig.cooldownMs && now - (lastReloadAtRef.current || 0) < recoveryConfig.cooldownMs) return;
+    if (!force && recoveryConfig.cooldownMs && now - (lastReloadAtRef.current || 0) < recoveryConfig.cooldownMs) return false;
 
     if (!force && statusRef.current === pendingStatusValue) {
       const progressedSeconds = Number.isFinite(lastProgressSecondsRef.current)
@@ -80,7 +71,53 @@ export function useResilienceRecovery({
           progressedSeconds,
           epsilonSeconds
         }, { level: 'info' });
-        return;
+        return false;
+      }
+    }
+
+    let gatingResult = { allowed: true, extraDelayMs: 0 };
+    if (!force && typeof shouldAttemptRecovery === 'function') {
+      try {
+        const response = shouldAttemptRecovery({ reason, attempts: recoveryAttempts, force });
+        if (response == null) {
+          gatingResult = { allowed: true, extraDelayMs: 0 };
+        } else if (typeof response === 'boolean') {
+          gatingResult = { allowed: response, extraDelayMs: 0 };
+        } else if (typeof response === 'object') {
+          gatingResult = {
+            allowed: response.allowed !== false,
+            extraDelayMs: Number.isFinite(response.extraDelayMs) ? Math.max(0, response.extraDelayMs) : 0,
+            blockReason: response.blockReason,
+            blockDetails: response.blockDetails,
+            onBlocked: typeof response.onBlocked === 'function' ? response.onBlocked : null
+          };
+        } else {
+          gatingResult = { allowed: Boolean(response), extraDelayMs: 0 };
+        }
+      } catch (error) {
+        if (process.env?.NODE_ENV !== 'production') {
+          console.warn('[useResilienceRecovery] shouldAttemptRecovery failed', error);
+        }
+        gatingResult = { allowed: true, extraDelayMs: 0 };
+      }
+
+      if (!gatingResult.allowed) {
+        logResilienceEvent('recovery-suppressed-policy', {
+          reason,
+          attempts: recoveryAttempts,
+          policy: gatingResult.blockReason || 'custom',
+          details: gatingResult.blockDetails || null
+        }, { level: 'warn' });
+        if (gatingResult.onBlocked) {
+          try {
+            gatingResult.onBlocked();
+          } catch (error) {
+            if (process.env?.NODE_ENV !== 'production') {
+              console.warn('[useResilienceRecovery] onBlocked callback failed', error);
+            }
+          }
+        }
+        return false;
       }
     }
 
@@ -91,7 +128,8 @@ export function useResilienceRecovery({
       ignorePaused,
       force,
       attempts: recoveryAttempts,
-      seekToIntentMs: resolvedIntentMs
+      seekToIntentMs: resolvedIntentMs,
+      extraDelayMs: gatingResult.extraDelayMs || 0
     }, { level: 'info' });
 
     if (!skipRecoveryNotification) {
@@ -119,7 +157,7 @@ export function useResilienceRecovery({
       onReloadRef.current?.({ reason, meta, waitKey, seekToIntentMs: resolvedIntentMs });
     };
 
-    const resolvedDelayMs = (() => {
+    const computedDelayMs = (() => {
       if (typeof computeRecoveryDelayMs === 'function') {
         const candidate = computeRecoveryDelayMs({ reason, attempts: recoveryAttempts, force });
         if (Number.isFinite(candidate) && candidate > 0) {
@@ -130,12 +168,16 @@ export function useResilienceRecovery({
       return Math.max(0, Number.isFinite(recoveryConfig.reloadDelayMs) ? recoveryConfig.reloadDelayMs : 0);
     })();
 
-    if (resolvedDelayMs > 0) {
+    const totalDelayMs = Math.max(0, computedDelayMs + (gatingResult.extraDelayMs || 0));
+
+    if (totalDelayMs > 0) {
       clearTimer(reloadTimerRef);
-      reloadTimerRef.current = setTimeout(performReload, resolvedDelayMs);
+      reloadTimerRef.current = setTimeout(performReload, totalDelayMs);
     } else {
       performReload();
     }
+
+    return true;
   }, [
     recoveryConfig,
     userIntentRef,
@@ -156,6 +198,7 @@ export function useResilienceRecovery({
     reloadTimerRef,
     pendingStatusValue,
     statusRef,
+    fatalStatusValue,
     pausedIntentValue,
     notifyHardResetCycle,
     shouldAttemptRecovery,
@@ -168,11 +211,23 @@ export function useResilienceRecovery({
       return;
     }
     if (hardRecoveryTimerRef.current) return;
+    if (fatalStatusValue && statusRef.current === fatalStatusValue) {
+      return;
+    }
     hardRecoveryTimerRef.current = setTimeout(() => {
       hardRecoveryTimerRef.current = null;
+      if (fatalStatusValue && statusRef.current === fatalStatusValue) {
+        return;
+      }
       triggerRecovery('stall-hard-recovery');
     }, hardRecoverAfterStalledForMs);
-  }, [hardRecoverAfterStalledForMs, triggerRecovery, hardRecoveryTimerRef]);
+  }, [
+    hardRecoverAfterStalledForMs,
+    triggerRecovery,
+    hardRecoveryTimerRef,
+    fatalStatusValue,
+    statusRef
+  ]);
 
   const forcePlayerRemount = useCallback((reason = 'overlay-hard-reset', options = {}) => {
     const {

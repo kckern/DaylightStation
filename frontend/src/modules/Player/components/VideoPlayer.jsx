@@ -74,6 +74,39 @@ const serializePlaybackError = (error) => {
   return { value: error };
 };
 
+const FATAL_SHAKA_ERROR_CODES = Object.freeze({
+  4032: 'license-denied',
+  4012: 'auth-failed'
+});
+
+const resolveShakaErrorCode = (error) => {
+  if (!error) return null;
+  const candidates = [
+    error?.code,
+    error?.detail?.code,
+    Array.isArray(error?.data) ? error.data[0] : null
+  ];
+  for (const candidate of candidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+};
+
+const getFatalShakaDescriptor = (error) => {
+  const code = resolveShakaErrorCode(error);
+  if (!Number.isFinite(code)) {
+    return null;
+  }
+  const reason = FATAL_SHAKA_ERROR_CODES[code];
+  if (!reason) {
+    return null;
+  }
+  return { code, reason };
+};
+
 const serializeMediaError = (mediaError) => {
   if (!mediaError) return null;
   const { code, message, MEDIA_ERR_NETWORK, MEDIA_ERR_DECODE, MEDIA_ERR_SRC_NOT_SUPPORTED, MEDIA_ERR_ABORTED } = mediaError;
@@ -329,7 +362,6 @@ export function VideoPlayer({
     getMediaEl,
     isPaused,
     isSeeking,
-    hardReset,
     waitKey
   } = useCommonMediaController({
     start: initialStartSeconds,
@@ -708,6 +740,25 @@ export function VideoPlayer({
       error: serializedError
     }, 'error');
 
+    const fatalDescriptor = getFatalShakaDescriptor(serializedError);
+    const normalizedCode = fatalDescriptor?.code ?? resolveShakaErrorCode(serializedError);
+
+    if (typeof resilienceBridge?.onPlayerError === 'function') {
+      resilienceBridge.onPlayerError({
+        source: 'shaka',
+        fatal: Boolean(fatalDescriptor),
+        reason: fatalDescriptor?.reason || 'shaka-playback-error',
+        code: normalizedCode,
+        category: serializedError?.category || 'shaka',
+        message: serializedError?.message || error?.message || null,
+        data: serializedError?.data || null,
+        detail: serializedError,
+        waitKey,
+        mediaInstanceKey,
+        seconds: Number.isFinite(seconds) ? Number(seconds.toFixed(3)) : null
+      });
+    }
+
     if (typeof resilienceBridge?.onStartupSignal === 'function') {
       resilienceBridge.onStartupSignal({
         type: 'shaka-playback-error',
@@ -718,6 +769,15 @@ export function VideoPlayer({
 
     const state = shakaRecoveryStateRef.current;
     if (!state || state.skipped) {
+      return;
+    }
+
+    if (fatalDescriptor) {
+      state.skipped = true;
+      logShakaDiagnostic('shaka-recovery-skip', {
+        reason: `fatal:${fatalDescriptor.reason}`,
+        code: fatalDescriptor.code
+      }, 'error');
       return;
     }
 
@@ -743,15 +803,48 @@ export function VideoPlayer({
     const seekSeconds = Number.isFinite(seconds) ? Number(seconds.toFixed(3)) : null;
 
     if (attempt === 1) {
-      logShakaDiagnostic('shaka-recovery-action', {
-        action: 'hard-reset',
-        attempt,
-        seekSeconds
-      }, 'warn');
-      if (typeof resilienceBridge?.onStartupSignal === 'function') {
-        resilienceBridge.onStartupSignal({ type: 'hard-reset-triggered', timestamp: Date.now() });
+      let recoveryAccepted = false;
+      if (typeof resilienceBridge?.onRecoveryRequest === 'function') {
+        try {
+          recoveryAccepted = Boolean(resilienceBridge.onRecoveryRequest({
+            reason: 'shaka-playback-error',
+            seekSeconds,
+            ignorePaused: true
+          }));
+        } catch (recoveryError) {
+          logShakaDiagnostic('shaka-recovery-request-error', {
+            attempt,
+            error: serializePlaybackError(recoveryError)
+          }, 'error');
+        }
       }
-      hardReset({ seekToSeconds: seekSeconds });
+
+      if (recoveryAccepted) {
+        logShakaDiagnostic('shaka-recovery-action', {
+          action: 'request-hard-recovery',
+          attempt,
+          seekSeconds
+        }, 'warn');
+        if (typeof resilienceBridge?.onStartupSignal === 'function') {
+          resilienceBridge.onStartupSignal({
+            type: 'hard-reset-triggered',
+            timestamp: Date.now(),
+            detail: {
+              source: 'shaka',
+              attempt,
+              seekSeconds
+            }
+          });
+        }
+      } else {
+        const skipReason = typeof resilienceBridge?.onRecoveryRequest === 'function'
+          ? 'recovery-request-denied'
+          : 'missing-recovery-bridge';
+        logShakaDiagnostic('shaka-recovery-skip', {
+          reason: skipReason,
+          attempt
+        }, skipReason === 'missing-recovery-bridge' ? 'error' : 'warn');
+      }
       return;
     }
 
@@ -783,7 +876,7 @@ export function VideoPlayer({
       attempt
     }, 'error');
     advance?.(1);
-  }, [advance, fetchVideoInfo, hardReset, logShakaDiagnostic, resilienceBridge, seconds]);
+  }, [advance, fetchVideoInfo, logShakaDiagnostic, resilienceBridge, seconds]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   
@@ -1020,7 +1113,9 @@ VideoPlayer.propTypes = {
     onRegisterMediaAccess: PropTypes.func,
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
-    onStartupSignal: PropTypes.func
+    onStartupSignal: PropTypes.func,
+    onPlayerError: PropTypes.func,
+    onRecoveryRequest: PropTypes.func
   }),
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
