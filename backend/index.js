@@ -24,7 +24,7 @@ const server = createServer(app);
 
 async function initializeApp() {
   // Create WebSocket server FIRST, before any Express routes
-  createWebsocketServer(server);
+  // createWebsocketServer(server);
 
   // Exclude WebSocket paths from all Express middleware
   app.use((req, res, next) => {
@@ -43,6 +43,9 @@ async function initializeApp() {
 
     // Construct the process.env object
     process.env = { ...process.env, isDocker, ...appConfig, ...secretsConfig, ...localConfig };
+
+    // Initialize WebSocket server after config is loaded
+    createWebsocketServer(server);
 
     // Import routers dynamically after configuration is set
     const { default: cron } = await import('./cron.mjs');
