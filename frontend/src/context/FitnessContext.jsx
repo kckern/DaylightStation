@@ -1234,7 +1234,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     zones: zoneConfig || [],
     userCurrentZones,
     heartRate: heartRateDevices[0] || null,
-    getUserByName: (name) => users.get(name),
+    getUserByName: (name) => {
+      if (!name) return null;
+      const slug = slugifyId(name);
+      return users.get(slug) || users.get(name) || null;
+    },
     getUserByDevice: resolveUserByDevice
   };
 
