@@ -15,9 +15,22 @@ function getLogger() {
   const LOGGLY_TOKEN = process.env.LOGGLY_TOKEN || process.env.LOGGLY_INPUT_TOKEN;
   const LOGGLY_SUBDOMAIN = process.env.LOGGLY_SUBDOMAIN;
 
+  console.log('[WebSocket] Initializing logger. Loggly Config:', {
+    hasToken: !!LOGGLY_TOKEN,
+    subdomain: LOGGLY_SUBDOMAIN,
+    tokenPrefix: LOGGLY_TOKEN ? LOGGLY_TOKEN.substring(0, 4) + '...' : 'N/A'
+  });
+
+  // Filter to exclude playback-logger events from the console
+  const ignorePlayback = winston.format((info) => {
+    if (info.source === 'playback-logger') return false;
+    return info;
+  });
+
   const winstonTransportList = [
     new winston.transports.Console({
       format: winston.format.combine(
+        ignorePlayback(),
         winston.format.timestamp(),
         winston.format.printf(({ level, message, timestamp, ...meta }) => {
           const serializedMeta = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
@@ -66,8 +79,9 @@ export function createWebsocketServer(server) {
       
       // Handle incoming messages from fitness controller
       ws.on('message', (message) => {
+        const rawMessage = message.toString();
         try {
-          const data = JSON.parse(message.toString());
+          const data = JSON.parse(rawMessage);
           
           // Check if message is from fitness controller
           if (data.source === 'fitness' || data.source === 'fitness-simulator') {
@@ -77,9 +91,38 @@ export function createWebsocketServer(server) {
               ...data
             });
             logger.info('Broadcasted fitness payload', { topic: 'fitness', source: data.source });
+          } else if (data.source === 'playback-logger') {
+            // Log playback events to backend logger (which forwards to Loggly)
+            const { level, event, payload, context } = data;
+            
+            // Safely construct meta data
+            let safePayload = {};
+            if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+                safePayload = payload;
+            } else if (payload !== undefined) {
+                safePayload = { payload };
+            }
+
+            const meta = { 
+                ...(context || {}), 
+                ...safePayload, 
+                source: data.source, 
+                event 
+            };
+            
+            // Map frontend log levels to backend logger methods
+            if (level === 'error') {
+              logger.error(`[Frontend] ${event}`, meta);
+            } else if (level === 'warn') {
+              logger.warn(`[Frontend] ${event}`, meta);
+            } else {
+              logger.info(`[Frontend] ${event}`, meta);
+            }
+          } else {
+             logger.warn('Received unknown WebSocket message source', { source: data.source, data });
           }
         } catch (error) {
-          // Ignore non-JSON messages or parsing errors
+          logger.warn('Failed to parse WebSocket message', { error: error.message, raw: rawMessage });
         }
       });
       
