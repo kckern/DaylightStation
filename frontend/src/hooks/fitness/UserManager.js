@@ -314,6 +314,17 @@ export class UserManager {
     return this.users.get(slugifyId(id));
   }
 
+  getUserById(userId) {
+    if (!userId) return null;
+    const normalizedId = String(userId);
+    for (const user of this.users.values()) {
+      if (String(user.id) === normalizedId) {
+        return user;
+      }
+    }
+    return null;
+  }
+
   getAllUsers() {
     return Array.from(this.users.values());
   }
