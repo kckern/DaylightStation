@@ -28,7 +28,7 @@ async function initializeApp() {
 
   // Exclude WebSocket paths from all Express middleware
   app.use((req, res, next) => {
-    if (req.path.startsWith('/ws/')) {
+    if (req.path.startsWith('/ws')) {
       return next('route'); // Skip all remaining middleware for this route
     }
     next();
@@ -132,7 +132,7 @@ async function initializeApp() {
 
       // Forward non-matching paths to frontend for React Router to handle, but skip /ws/* for WebSocket
       app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/ws/')) {
+        if (req.path.startsWith('/ws')) {
           // Let the WebSocket server handle this
           return next();
         }
