@@ -619,7 +619,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
       const state = isActive ? 'active' : (isPast ? 'past' : 'future');
 
       const sampleTime = segmentStart;
-      const labelTime = segmentStart;
+      const labelTime = isActive ? displayTime : segmentStart;
       const seekTime = segmentStart;
 
       const isOrigin = !isZoomed && Math.abs(segmentStart - rangeStart) < 0.001;
@@ -673,6 +673,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
       return (
         <FitnessPlayerFooterSeekThumbnail
           key={`rng-${idx}-${Math.round(segmentStart)}`}
+          index={idx}
           state={state}
           isOrigin={isOrigin}
           disabled={disabled}
