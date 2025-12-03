@@ -729,9 +729,6 @@ export function VideoPlayer({
 
   return (
     <div className={`video-player ${shader}`}>
-      <h2>
-        {heading} {`(${playbackRate}×)`}
-      </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       {isDash ? (
         <div ref={containerRef} className="video-element-host">
