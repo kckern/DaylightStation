@@ -232,6 +232,7 @@ export function useMediaResilience({
   const nudgePlaybackRef = useLatest(typeof nudgePlayback === 'function' ? nudgePlayback : null);
   const lastProgressTsRef = useRef(null);
   const lastProgressSecondsRef = useRef(null);
+  const lastLoggedProgressRef = useRef(0);
   const lastKnownSeekIntentMsRef = useRef(Number.isFinite(initialStart) && initialStart > 0
     ? Math.max(0, initialStart * 1000)
     : null);
@@ -578,11 +579,25 @@ export function useMediaResilience({
     const { type } = signal;
     if (!type) return;
     const timestamp = Number.isFinite(signal.timestamp) ? signal.timestamp : Date.now();
-    logResilienceEvent('startup-signal', {
-      type,
-      timestamp,
-      detail: signal
-    }, { level: 'debug' });
+    
+    let shouldLog = true;
+    if (type === 'progress-tick') {
+      const now = Date.now();
+      if (now - lastLoggedProgressRef.current < 15000) {
+        shouldLog = false;
+      } else {
+        lastLoggedProgressRef.current = now;
+      }
+    }
+
+    if (shouldLog) {
+      logResilienceEvent('startup-signal', {
+        type,
+        timestamp,
+        detail: signal
+      }, { level: 'debug' });
+    }
+
     const snapshot = {
       ...startupSignalsRef.current,
       lastType: type,

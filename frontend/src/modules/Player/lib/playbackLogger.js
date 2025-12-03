@@ -6,7 +6,7 @@ const LOG_LEVEL_PRIORITY = Object.freeze({
   warn: 30,
   error: 40
 });
-const DEFAULT_CONTEXT = Object.freeze({ threadId: null, mediaKey: null, sessionId: null });
+const DEFAULT_CONTEXT = Object.freeze({ sessionId: null });
 const OPTION_KEYS = new Set(['level', 'context', 'extra', 'tags', 'sampleRate']);
 
 const DEFAULT_WEBSOCKET_OPTIONS = Object.freeze({
@@ -20,6 +20,8 @@ const DEFAULT_WEBSOCKET_OPTIONS = Object.freeze({
 
 const PLAYBACK_SOCKET_SOURCE = 'playback-logger';
 const QUEUE_FALLBACK_LIMIT = 500;
+const THROTTLE_MAP = new Map();
+const THROTTLE_INTERVAL = 15000;
 
 let playerDebugMode = PLAYER_DEBUG_MODE_DEFAULT;
 let globalLoggerContext = { ...DEFAULT_CONTEXT };
@@ -31,6 +33,16 @@ const websocketState = {
   connecting: false,
   reconnectDelay: DEFAULT_WEBSOCKET_OPTIONS.reconnectBaseDelay,
   reconnectTimer: null
+};
+
+const cleanObject = (obj) => {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj;
+  const out = {};
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value != null) out[key] = value;
+  });
+  return out;
 };
 
 const defaultFormatter = (record) => {
@@ -448,12 +460,28 @@ const looksLikeOptionsBag = (value) => (
   && Array.from(OPTION_KEYS).some((key) => Object.prototype.hasOwnProperty.call(value, key))
 );
 
+const shouldThrottle = (event, payload) => {
+  // Check for Shaka timeupdate
+  if (event === 'shaka-video-event' && payload?.eventName === 'timeupdate') {
+    const key = 'shaka-timeupdate';
+    const now = Date.now();
+    const last = THROTTLE_MAP.get(key) || 0;
+    if (now - last < THROTTLE_INTERVAL) return true;
+    THROTTLE_MAP.set(key, now);
+    return false;
+  }
+  return false;
+};
+
 const logInternal = (level, event, payload, options = {}) => {
   const normalizedLevel = normalizeLevel(level);
   if (!shouldLog(normalizedLevel)) {
     return;
   }
   if (!shouldSampleRecord(event, options.sampleRate)) {
+    return;
+  }
+  if (shouldThrottle(event, payload)) {
     return;
   }
 
@@ -463,7 +491,7 @@ const logInternal = (level, event, payload, options = {}) => {
     event,
     payload: serializePayload(payload),
     extra: typeof options.extra === 'undefined' ? undefined : serializePayload(options.extra),
-    context: mergeContext(options.context),
+    context: cleanObject(mergeContext(options.context)),
     tags: Array.isArray(options.tags) ? options.tags.filter(Boolean) : undefined
   };
 

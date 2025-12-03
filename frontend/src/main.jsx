@@ -9,6 +9,29 @@ import HealthApp from './Apps/HealthApp.jsx';
 import LifelogApp from './Apps/LifelogApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
+import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
+
+const getWebSocketUrl = () => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.hostname;
+  const port = window.location.port;
+  
+  // If running on dev port 3111, connect to backend on 3112
+  if (port === '3111') {
+    return `${protocol}//${host}:3112/ws`;
+  }
+  
+  // Otherwise use relative path (production/same-origin)
+  return `${protocol}//${window.location.host}/ws`;
+};
+
+// Enable playback logging via WebSocket
+configurePlaybackLogger({
+  websocket: {
+    enabled: true,
+    url: getWebSocketUrl()
+  }
+});
 
 // Wrapper component for HomeApp with WebSocket
 const HomeAppWithWebSocket = () => (
