@@ -9,9 +9,6 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
     let localStream = null;
 
     const startStream = async () => {
-      // If no devices selected yet, wait
-      if (!selectedVideoDevice && !selectedAudioDevice) return;
-
       try {
         // Stop existing tracks
         if (stream) {
@@ -23,9 +20,12 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
             ? {
                 deviceId: { exact: selectedVideoDevice },
                 width: { ideal: 1280 },
-                height: { ideal: 720 },
+                height: { ideal: 720 }
               }
-            : true,
+            : {
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+              },
           audio: selectedAudioDevice
             ? { deviceId: { exact: selectedAudioDevice } }
             : true,

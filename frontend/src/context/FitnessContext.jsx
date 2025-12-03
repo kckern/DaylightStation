@@ -143,7 +143,30 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const session = fitnessSessionRef.current;
   const fitnessDevices = session.deviceManager.devices;
   const users = session.userManager.users;
-  const guestAssignments = session.userManager.guestAssignments;
+  const rawGuestAssignments = session.userManager.guestAssignments;
+  const guestAssignments = React.useMemo(() => {
+    if (rawGuestAssignments instanceof Map) {
+      const snapshot = {};
+      rawGuestAssignments.forEach((value, key) => {
+        if (key == null) return;
+        snapshot[String(key)] = value;
+      });
+      return snapshot;
+    }
+    if (Array.isArray(rawGuestAssignments)) {
+      return rawGuestAssignments.reduce((acc, entry) => {
+        if (!entry) return acc;
+        const key = entry.deviceId ?? entry.device_id ?? entry.deviceID ?? entry.device_id_str;
+        if (key == null) return acc;
+        acc[String(key)] = entry;
+        return acc;
+      }, {});
+    }
+    if (rawGuestAssignments && typeof rawGuestAssignments === 'object') {
+      return { ...rawGuestAssignments };
+    }
+    return {};
+  }, [rawGuestAssignments, version]);
   
   // Legacy/Compatibility State
   const userGroupLabelMap = React.useMemo(() => {
@@ -703,7 +726,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (!guestAssignments || primaryConfigByName.size === 0) return [];
     const seen = new Set();
     const pool = [];
-    Array.from(guestAssignments.values()).forEach((assignment) => {
+    Object.values(guestAssignments || {}).forEach((assignment) => {
       if (!assignment?.baseUserName) return;
       const config = primaryConfigByName.get(assignment.baseUserName);
       if (!config) return;
@@ -734,15 +757,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     };
     participantRoster.forEach((entry) => {
       if (!entry) return;
-      const candidates = [
-        entry.hrDeviceId,
-        entry.deviceId,
-        entry.device_id,
-        entry.antDeviceId,
-        entry.device?.id,
-        entry.device?.deviceId
-      ];
-      candidates.forEach((key) => addKey(key, entry));
+      const primaryKey = entry.hrDeviceId ?? entry.deviceId ?? entry.device_id ?? entry.antDeviceId ?? entry.device?.id ?? entry.device?.deviceId;
+      addKey(primaryKey, entry);
     });
     return map;
   }, [participantRoster]);
@@ -849,8 +865,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
     const mergedZoneColor = existing?.zoneColor || participant?.zoneColor || null;
     const mergedProfileId = existing?.profileId || participant?.profileId || participant?.userId || slug;
-    const mergedDeviceId = existing?.deviceId || participant?.hrDeviceId || participant?.deviceId || null;
-    const mergedSource = existing?.source || participant?.source || null;
+    const mergedDeviceId = existing?.deviceId || participant?.hrDeviceId || null;
+    const mergedSource = existing?.source || (participant?.isGuest ? 'Guest' : null);
     const mergedDisplayLabel = existing?.displayLabel
       || participant?.displayLabel
       || getDisplayLabel(participant?.name || name, { preferGroupLabel: false });
@@ -961,6 +977,100 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const zoneProfile = user?.zoneConfig || normalizedBaseZoneConfig;
     return resolveZoneThreshold(zoneProfile, zoneId);
   }, [normalizedBaseZoneConfig]);
+
+  const timelineSelectors = React.useMemo(() => {
+    const timeline = session?.timeline || null;
+    const seriesRef = timeline?.series || {};
+    const eventsRef = Array.isArray(timeline?.events) ? timeline.events.slice() : [];
+    const timebaseRef = timeline?.timebase || session?.timebase || null;
+
+    const normalizeKind = (raw) => {
+      const token = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+      if (!token) return null;
+      if (token === 'users' || token === 'user') return 'user';
+      if (token === 'devices' || token === 'device') return 'device';
+      if (token === 'globals' || token === 'global') return 'global';
+      return token;
+    };
+
+    const buildSeriesKey = (descriptor) => {
+      if (!descriptor) return null;
+      if (typeof descriptor === 'string') {
+        const trimmed = descriptor.trim();
+        return trimmed || null;
+      }
+      if (descriptor.key) {
+        const trimmed = String(descriptor.key).trim();
+        return trimmed || null;
+      }
+      const normalizedKind = normalizeKind(descriptor.kind);
+      const metricToken = descriptor.metric ? String(descriptor.metric).trim().toLowerCase() : null;
+      if (!normalizedKind || !metricToken) return null;
+      if (normalizedKind === 'global') {
+        return `global:${metricToken}`;
+      }
+      const rawId = descriptor.id ?? descriptor.slug ?? descriptor.name ?? null;
+      if (rawId == null) return null;
+      const normalizedId = normalizedKind === 'user'
+        ? (slugifyId(rawId) || String(rawId).trim().toLowerCase())
+        : String(rawId).trim().toLowerCase();
+      if (!normalizedId) return null;
+      return `${normalizedKind}:${normalizedId}:${metricToken}`;
+    };
+
+    const applyWindow = (source = [], options = {}) => {
+      const shouldClone = options.clone !== false;
+      const baseSeries = shouldClone ? source.slice() : source;
+      const windowSizeRaw = Number(options.windowSize);
+      if (!Number.isFinite(windowSizeRaw) || windowSizeRaw <= 0) {
+        return baseSeries;
+      }
+      const offsetRaw = Number(options.offset);
+      const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? offsetRaw : 0;
+      const end = Math.max(0, baseSeries.length - offset);
+      const start = Math.max(0, end - windowSizeRaw);
+      return baseSeries.slice(start, end);
+    };
+
+    const getSeries = (descriptor, options = {}) => {
+      const key = buildSeriesKey(descriptor);
+      if (!key) return [];
+      const rawSeries = seriesRef[key];
+      if (!Array.isArray(rawSeries)) return [];
+      return applyWindow(rawSeries, options);
+    };
+
+    const getUserSeries = (identifier, metric = 'heart_rate', options = {}) => {
+      if (!identifier) return [];
+      const key = buildSeriesKey({ kind: 'user', id: identifier, metric });
+      if (!key) return [];
+      return getSeries(key, options);
+    };
+
+    const getLatestValue = (descriptor) => {
+      const key = buildSeriesKey(descriptor);
+      if (!key) return null;
+      const rawSeries = seriesRef[key];
+      if (!Array.isArray(rawSeries) || rawSeries.length === 0) return null;
+      for (let index = rawSeries.length - 1; index >= 0; index -= 1) {
+        const value = rawSeries[index];
+        if (value !== undefined && value !== null) {
+          return value;
+        }
+      }
+      return null;
+    };
+
+    return {
+      timebase: timebaseRef,
+      events: eventsRef,
+      getSeries,
+      getUserSeries,
+      getLatestValue,
+      getSeriesKey: buildSeriesKey,
+      seriesKeys: Object.keys(seriesRef)
+    };
+  }, [session, version]);
 
   // The session already owns the roster; avoid writing it back every render to prevent update loops.
 
@@ -1074,6 +1184,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     triggerChallengeNow,
     
     treasureBox,
+    timelineTimebase: timelineSelectors.timebase,
+    timelineEvents: timelineSelectors.events,
+    getTimelineSeries: timelineSelectors.getSeries,
+    getUserTimelineSeries: timelineSelectors.getUserSeries,
+    getTimelineLatestValue: timelineSelectors.getLatestValue,
+    getTimelineSeriesKey: timelineSelectors.getSeriesKey,
+    timelineSeriesKeys: timelineSelectors.seriesKeys,
     
     getDisplayLabel,
     zoneRankMap,
