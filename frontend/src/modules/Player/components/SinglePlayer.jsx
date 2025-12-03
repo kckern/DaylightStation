@@ -191,42 +191,14 @@ export function SinglePlayer(props = {}) {
     }
   }, [play.maxVideoBitrate]);
 
-  // LocalStorage helpers (per-device, per-plexId)
-  const bitrateKey = useCallback((plexId) => `dashMaxVideoBitrate:${plexId}`, []);
-  const readStoredBitrate = useCallback((plexId) => {
-    try {
-      const raw = window.localStorage.getItem(bitrateKey(plexId));
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      if (!obj || typeof obj !== 'object') return null;
-      const now = Date.now();
-      if (obj.expiresAt && now > obj.expiresAt) {
-        window.localStorage.removeItem(bitrateKey(plexId));
-        return null;
-      }
-      return (obj.valueKbps ?? null);
-    } catch {
-      return null;
-    }
-  }, [bitrateKey]);
-  const writeStoredBitrate = useCallback((plexId, valueKbps) => {
-    try {
-      const now = Date.now();
-      const ttl = 30 * 24 * 60 * 60 * 1000; // 30 days
-      const payload = { valueKbps: valueKbps ?? null, updatedAt: now, expiresAt: now + ttl };
-      window.localStorage.setItem(bitrateKey(plexId), JSON.stringify(payload));
-    } catch {}
-  }, [bitrateKey]);
-
   const fetchVideoInfoCallback = useCallback(async (opts = {}) => {
     setIsReady(false);
     // Determine plexId (prefer explicit plex prop)
     const plexId = plex || mediaInfo?.media_key || play?.media_key || play?.plex;
-    // Respect override; else use stored; else use initial maxVideoBitrate from ref
+    // Respect override; else use initial maxVideoBitrate from ref
     const bitrateOverride = opts?.maxVideoBitrateOverride;
     const resolutionOverride = opts?.maxResolutionOverride;
-    const stored = plexId ? readStoredBitrate(plexId) : null;
-    const effectiveMax = (bitrateOverride !== undefined) ? bitrateOverride : (stored != null ? stored : initialMaxVideoBitrateRef.current);
+    const effectiveMax = (bitrateOverride !== undefined) ? bitrateOverride : initialMaxVideoBitrateRef.current;
     const effectiveResolution = (resolutionOverride !== undefined) ? resolutionOverride : play?.maxResolution;
 
     const info = await fetchMediaInfo({ 
@@ -253,14 +225,10 @@ export function SinglePlayer(props = {}) {
       
       setMediaInfo(withCap);
       setIsReady(true);
-      // Persist override if provided
-      if (bitrateOverride !== undefined && plexId) {
-        writeStoredBitrate(plexId, bitrateOverride);
-      }
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, shuffle, continuous, mediaInfo?.media_key, play?.media_key, play?.plex, play?.maxResolution, readStoredBitrate, writeStoredBitrate]);
+  }, [plex, media, rate, open, shuffle, continuous, mediaInfo?.media_key, play?.media_key, play?.plex, play?.maxResolution]);
   // Note: initialMaxVideoBitrateRef intentionally not in deps - we use the ref to preserve the initial value
 
   useEffect(() => {
