@@ -147,7 +147,7 @@ export function PlayerOverlayLoading({
     const visibleDurationMs = visibleSinceRef.current ? now - visibleSinceRef.current : null;
     const revealLabel = Number.isFinite(overlayRevealDelayMs) ? `${overlayRevealDelayMs}ms` : 'n/a';
     const visibilitySummary = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'}/${revealLabel}`;
-    const summary = `${visibilitySummary} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
+    const summary = `${visibilitySummary} | status:${statusLabel} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
     playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary, {
       level: 'debug',
       sampleRate: 0.25,
@@ -228,9 +228,6 @@ export function PlayerOverlayLoading({
       onMouseDownCapture={blockFullscreenToggle}
     >
       <div className="loading-overlay__inner">
-        <div className="loading-debug-strip">
-          {statusLabel} | {timerSummary} | {seekSummary} | {mediaSummary}
-        </div>
         <div className="loading-timing">
           <div
             className="loading-spinner"
