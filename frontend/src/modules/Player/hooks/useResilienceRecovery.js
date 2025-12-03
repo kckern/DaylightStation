@@ -25,7 +25,9 @@ export function useResilienceRecovery({
   userIntentRef,
   pausedIntentValue,
   recoveryAttempts,
-  onHardResetCycle
+  onHardResetCycle,
+  shouldAttemptRecovery,
+  computeRecoveryDelayMs
 }) {
   const notifyHardResetCycle = useCallback((payload = {}) => {
     if (typeof onHardResetCycle !== 'function') return;
@@ -47,6 +49,24 @@ export function useResilienceRecovery({
     if (!force && !recoveryConfig.enabled) return;
     if (!force && !ignorePaused && userIntentRef.current === pausedIntentValue) return;
     if (!force && recoveryConfig.maxAttempts && recoveryAttempts >= recoveryConfig.maxAttempts) return;
+    if (!force && typeof shouldAttemptRecovery === 'function') {
+      let allowed = true;
+      try {
+        allowed = shouldAttemptRecovery({ reason, attempts: recoveryAttempts, force });
+      } catch (error) {
+        if (process.env?.NODE_ENV !== 'production') {
+          console.warn('[useResilienceRecovery] shouldAttemptRecovery failed', error);
+        }
+        allowed = true;
+      }
+      if (!allowed) {
+        logResilienceEvent('recovery-suppressed-policy', {
+          reason,
+          attempts: recoveryAttempts
+        }, { level: 'warn' });
+        return;
+      }
+    }
     const now = Date.now();
     if (!force && recoveryConfig.cooldownMs && now - (lastReloadAtRef.current || 0) < recoveryConfig.cooldownMs) return;
 
@@ -99,9 +119,20 @@ export function useResilienceRecovery({
       onReloadRef.current?.({ reason, meta, waitKey, seekToIntentMs: resolvedIntentMs });
     };
 
-    if (recoveryConfig.reloadDelayMs > 0) {
+    const resolvedDelayMs = (() => {
+      if (typeof computeRecoveryDelayMs === 'function') {
+        const candidate = computeRecoveryDelayMs({ reason, attempts: recoveryAttempts, force });
+        if (Number.isFinite(candidate) && candidate > 0) {
+          return candidate;
+        }
+        return 0;
+      }
+      return Math.max(0, Number.isFinite(recoveryConfig.reloadDelayMs) ? recoveryConfig.reloadDelayMs : 0);
+    })();
+
+    if (resolvedDelayMs > 0) {
       clearTimer(reloadTimerRef);
-      reloadTimerRef.current = setTimeout(performReload, recoveryConfig.reloadDelayMs);
+      reloadTimerRef.current = setTimeout(performReload, resolvedDelayMs);
     } else {
       performReload();
     }
@@ -126,7 +157,9 @@ export function useResilienceRecovery({
     pendingStatusValue,
     statusRef,
     pausedIntentValue,
-    notifyHardResetCycle
+    notifyHardResetCycle,
+    shouldAttemptRecovery,
+    computeRecoveryDelayMs
   ]);
 
   const scheduleHardRecovery = useCallback(() => {
@@ -158,11 +191,6 @@ export function useResilienceRecovery({
       return;
     }
     logResilienceEvent('hard-reset-force-remount', logPayload, { level: 'warn' });
-    notifyHardResetCycle({
-      reason,
-      seekToIntentMs: normalizedIntentMs,
-      source: 'force-player-remount'
-    });
     lastReloadAtRef.current = Date.now();
     resilienceActions.setStatus(recoveringStatusValue, {
       carryRecovery: true,

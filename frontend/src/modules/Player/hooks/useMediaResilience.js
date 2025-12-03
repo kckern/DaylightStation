@@ -49,6 +49,10 @@ const DECODER_NUDGE_COOLDOWN_MS = 3000;
 const DECODER_NUDGE_GRACE_MS = 2000;
 const BITRATE_REDUCTION_FACTOR = 0.9;
 const DEFAULT_FALLBACK_MAX_VIDEO_BITRATE = 2000;
+const MIN_MAX_VIDEO_BITRATE = 300;
+const HARD_RESET_MAX_ATTEMPTS = 10;
+const HARD_RESET_MIN_DELAY_MS = 1000;
+const HARD_RESET_DELAY_MULTIPLIER = 1.5;
 
 const deriveDroppedRatio = (decoderMetrics = null) => {
   if (!decoderMetrics) return null;
@@ -181,6 +185,8 @@ export function useMediaResilience({
   } = useResilienceState(STATUS.pending);
   const [lastFetchAt, setLastFetchAt] = useState(null);
   const [hardResetLoopCount, setHardResetLoopCount] = useState(0);
+  const hardResetLoopCountRef = useLatest(hardResetLoopCount);
+  const hardResetLimitLoggedRef = useRef(false);
   const [loadingIntentState, setLoadingIntentState] = useState(() => ({ active: true, token: 0 }));
   const loadingIntentActive = loadingIntentState.active;
   const loadingIntentToken = loadingIntentState.token;
@@ -221,13 +227,13 @@ export function useMediaResilience({
   const resolveInitialMaxVideoBitrate = useCallback(() => {
     const explicit = Number(maxVideoBitrateProp);
     if (Number.isFinite(explicit) && explicit > 0) {
-      return Math.round(explicit);
+      return Math.max(MIN_MAX_VIDEO_BITRATE, Math.round(explicit));
     }
     const metaValue = Number(meta?.maxVideoBitrate);
     if (Number.isFinite(metaValue) && metaValue > 0) {
-      return Math.round(metaValue);
+      return Math.max(MIN_MAX_VIDEO_BITRATE, Math.round(metaValue));
     }
-    return DEFAULT_FALLBACK_MAX_VIDEO_BITRATE;
+    return Math.max(MIN_MAX_VIDEO_BITRATE, DEFAULT_FALLBACK_MAX_VIDEO_BITRATE);
   }, [maxVideoBitrateProp, meta?.maxVideoBitrate]);
 
   const [bitrateState, setBitrateState] = useState(() => {
@@ -367,7 +373,7 @@ export function useMediaResilience({
     if (!Number.isFinite(nextValue) || nextValue <= 0) {
       return null;
     }
-    const normalized = Math.max(1, Math.round(nextValue));
+    const normalized = Math.max(MIN_MAX_VIDEO_BITRATE, Math.round(nextValue));
     const {
       reason = 'resilience-bitrate-adjustment',
       source = 'resilience',
@@ -430,7 +436,8 @@ export function useMediaResilience({
     const currentValue = Number.isFinite(previous?.current) && previous.current > 0
       ? previous.current
       : resolveInitialMaxVideoBitrate();
-    const reducedValue = Math.max(1, Math.round(currentValue * BITRATE_REDUCTION_FACTOR));
+    const desiredValue = Math.round(currentValue * BITRATE_REDUCTION_FACTOR);
+    const reducedValue = Math.max(MIN_MAX_VIDEO_BITRATE, desiredValue);
     if (reducedValue >= currentValue) {
       return;
     }
@@ -780,6 +787,12 @@ export function useMediaResilience({
   }, [mediaIdentity, playbackSessionKey, setHardResetLoopCount]);
 
   useEffect(() => {
+    if (hardResetLoopCount < HARD_RESET_MAX_ATTEMPTS && hardResetLimitLoggedRef.current) {
+      hardResetLimitLoggedRef.current = false;
+    }
+  }, [hardResetLoopCount]);
+
+  useEffect(() => {
     if (status !== RESILIENCE_STATUS.stalling && status !== RESILIENCE_STATUS.recovering) {
       stallInsightsRef.current = { classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 };
       return;
@@ -834,6 +847,38 @@ export function useMediaResilience({
     const normalizedSeconds = Math.max(0, valueMs / 1000);
     updateSessionTargetTimeSeconds(normalizedSeconds);
   }, [updateSessionTargetTimeSeconds]);
+
+  const shouldAllowHardResetAttempt = useCallback(({ reason, force } = {}) => {
+    if (force) {
+      return true;
+    }
+    const attempts = hardResetLoopCountRef.current || 0;
+    if (attempts >= HARD_RESET_MAX_ATTEMPTS) {
+      if (!hardResetLimitLoggedRef.current) {
+        hardResetLimitLoggedRef.current = true;
+        logResilienceEvent('hard-reset-attempts-exhausted', {
+          reason,
+          attempts,
+          maxAttempts: HARD_RESET_MAX_ATTEMPTS
+        }, { level: 'error' });
+      }
+      return false;
+    }
+    return true;
+  }, [logResilienceEvent, hardResetLoopCountRef]);
+
+  const computeHardResetDelay = useCallback(({ attempts = 0 } = {}) => {
+    const configuredBase = Number.isFinite(recoveryConfig.reloadDelayMs)
+      ? recoveryConfig.reloadDelayMs
+      : 0;
+    const baseline = Math.max(HARD_RESET_MIN_DELAY_MS, configuredBase);
+    if (baseline <= 0) {
+      return 0;
+    }
+    const normalizedAttempts = Math.max(0, attempts);
+    const multiplier = HARD_RESET_DELAY_MULTIPLIER ** normalizedAttempts;
+    return Math.round(baseline * multiplier);
+  }, [recoveryConfig.reloadDelayMs]);
 
   const handleHardResetCycle = useCallback((payload = {}) => {
     setHardResetLoopCount((count) => count + 1);
@@ -936,7 +981,9 @@ export function useMediaResilience({
     userIntentRef,
     pausedIntentValue: USER_INTENT.paused,
     recoveryAttempts: resilienceState.recoveryAttempts,
-    onHardResetCycle: handleHardResetCycle
+    onHardResetCycle: handleHardResetCycle,
+    shouldAttemptRecovery: shouldAllowHardResetAttempt,
+    computeRecoveryDelayMs: computeHardResetDelay
   });
 
   const startMountWatchdog = useCallback((reason = 'pending') => {
