@@ -718,6 +718,9 @@ export function useMediaResilience({
         }
         lastProgressTsRef.current = timestamp;
         break;
+      case 'hard-reset-triggered':
+        reduceBitrateAfterHardReset({ reason: 'hard-reset-triggered', source: 'video-player' });
+        break;
       default:
         break;
     }

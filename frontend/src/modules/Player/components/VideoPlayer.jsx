@@ -307,8 +307,8 @@ export function VideoPlayer({
   const hardRecoveryBitrateCapActive = Boolean(resilienceBitrateInfo?.isHardRecovery);
 
   const videoKey = useMemo(
-    () => `${media_url || ''}__cap=${resolvedMaxVideoBitrate ?? 'unlimited'}__res=${resolvedMaxResolution ?? 'native'}`,
-    [media_url, resolvedMaxVideoBitrate, resolvedMaxResolution]
+    () => `${media_url || ''}__cap=${effectiveBitrateCap ?? 'unlimited'}__res=${resolvedMaxResolution ?? 'native'}`,
+    [media_url, effectiveBitrateCap, resolvedMaxResolution]
   );
 
   const shakaNudgePlaybackRef = useRef(async () => ({ ok: false, outcome: 'not-ready' }));
@@ -561,17 +561,21 @@ export function VideoPlayer({
       bandwidthUpgradeTarget: 0.85,
       bandwidthDowngradeTarget: 0.95
     };
+    const restrictions = {
+      maxBandwidth: Number.isFinite(effectiveBitrateCap) ? effectiveBitrateCap * 1000 : Infinity
+    };
     return {
       playsInline: true,
       shakaPlayer: {
         installPolyfills: true,
         customConfiguration: {
           streaming,
-          abr
+          abr,
+          restrictions
         }
       }
     };
-  }, []);
+  }, [effectiveBitrateCap]);
 
   const handleShakaReady = useCallback(({ thirdPartyPlayer, play, setProperties }) => {
     shakaPlayerRef.current = thirdPartyPlayer || null;
@@ -744,6 +748,9 @@ export function VideoPlayer({
         attempt,
         seekSeconds
       }, 'warn');
+      if (typeof resilienceBridge?.onStartupSignal === 'function') {
+        resilienceBridge.onStartupSignal({ type: 'hard-reset-triggered', timestamp: Date.now() });
+      }
       hardReset({ seekToSeconds: seekSeconds });
       return;
     }
