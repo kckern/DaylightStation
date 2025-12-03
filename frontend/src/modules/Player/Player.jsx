@@ -473,7 +473,7 @@ const Player = forwardRef(function Player(props, ref) {
     });
   }, [forceSinglePlayerRemount, mediaAccess, getResilienceMediaEl]);
 
-  const { overlayProps, onStartupSignal } = useMediaResilience({
+  const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
     getMediaEl: getResilienceMediaEl,
     meta: effectiveMeta,
     maxVideoBitrate: effectiveMeta?.maxVideoBitrate
@@ -498,6 +498,34 @@ const Player = forwardRef(function Player(props, ref) {
     playbackSessionKey,
     debugContext: { scope: 'player', entryGuid: activeEntryGuid || null }
   });
+
+  const resilienceBitrateInfo = useMemo(() => {
+    if (!resilienceState) return null;
+    const current = resilienceState.currentMaxVideoBitrate ?? null;
+    const baseline = resilienceState.baselineMaxVideoBitrate ?? null;
+    const tag = resilienceState.bitrateOverrideTag || null;
+    const isHardRecovery = tag === 'hard-recovery'
+      && Number.isFinite(baseline)
+      && Number.isFinite(current)
+      && current < baseline;
+
+    return {
+      current,
+      baseline,
+      tag,
+      reason: resilienceState.bitrateOverrideReason || null,
+      updatedAt: resilienceState.bitrateOverrideAt || null,
+      source: resilienceState.bitrateOverrideSource || null,
+      isHardRecovery
+    };
+  }, [resilienceState]);
+
+  const handleRestoreFullBitrate = useCallback((options = {}) => {
+    const restoreFn = resilienceControllerRef.current?.restoreMaxVideoBitrate;
+    if (typeof restoreFn === 'function') {
+      restoreFn({ source: options.source || 'video-player' });
+    }
+  }, []);
 
   // Get playback rate from the current item, falling back to queue/play level, then default
   const currentItemPlaybackRate = effectiveMeta?.playbackRate || effectiveMeta?.playbackrate;
@@ -624,6 +652,8 @@ const Player = forwardRef(function Player(props, ref) {
     onPlaybackMetrics: handlePlaybackMetrics,
     onRegisterMediaAccess: handleRegisterMediaAccess,
     onStartupSignal,
+    resilienceBitrateInfo,
+    onRestoreFullBitrate: handleRestoreFullBitrate,
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,
