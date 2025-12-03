@@ -242,10 +242,12 @@ export class UserManager {
     this.users = new Map(); // userId -> User
     this.roster = []; // Array of participant objects
     this.guestAssignments = new Map(); // deviceId -> guestName
+    this._defaultZones = null;
   }
 
   configure(usersConfig, globalZones) {
     if (!usersConfig) return;
+    this._defaultZones = Array.isArray(globalZones) ? globalZones : null;
     
     const processUserList = (list, defaultSource = null, defaultCategory = null) => {
       if (!Array.isArray(list)) return;
@@ -279,7 +281,7 @@ export class UserManager {
     if (!this.users.has(id)) {
       const user = new User(config.name, birthYear, hrDeviceId, cadenceDeviceId, {
         id: config.id,
-        globalZones: config.globalZones,
+        globalZones: config.globalZones || this._defaultZones,
         zoneOverrides: config.zones,
         groupLabel,
         source,
@@ -339,8 +341,13 @@ export class UserManager {
 
     let guestUser = this.getUser(guestName);
     if (!guestUser) {
-      guestUser = new User(guestName, null, deviceId, null, {});
+      guestUser = new User(guestName, null, deviceId, null, {
+        globalZones: this._defaultZones,
+        zoneOverrides: metadata?.zones || null
+      });
       this.users.set(slugifyId(guestName), guestUser);
+    } else if (Array.isArray(guestUser.zoneConfig) && Array.isArray(this._defaultZones)) {
+      guestUser.zoneConfig = buildZoneConfig(this._defaultZones, metadata?.zones || null);
     }
 
     const previousHrDeviceId = guestUser.hrDeviceId === key ? guestUser.hrDeviceId : (guestUser.hrDeviceId ?? null);
@@ -484,5 +491,13 @@ export class UserManager {
       });
     });
     return profiles;
+  }
+
+  resetAllSessions() {
+    this.users.forEach((user) => {
+      if (typeof user?.resetSession === 'function') {
+        user.resetSession();
+      }
+    });
   }
 }
