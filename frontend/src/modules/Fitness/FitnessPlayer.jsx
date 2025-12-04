@@ -10,6 +10,8 @@ import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '../Player/lib/playbackLogger.js';
 
+const DEBUG_FITNESS_INTERACTIONS = false;
+
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
   
@@ -350,6 +352,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }), [currentItem, playerMode, playIsGoverned]);
 
   const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
+    if (!DEBUG_FITNESS_INTERACTIONS) return;
     const { level: detailLevel, ...restDetails } = details || {};
     const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
     playbackLog('fitness-player', {
@@ -1004,6 +1007,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, []);
 
   const handleVideoContainerPointerDown = useCallback((event) => {
+    if (typeof event.button === 'number' && event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (shouldBlockFullscreenToggle(target)) {
+      return;
+    }
     logFitnessEvent('fullscreen-pointerdown', {
       button: event.button,
       pointerType: event.pointerType,
@@ -1012,11 +1020,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         ? event.composedPath().map((node) => node?.tagName || node?.className || node?.id).slice(0, 6)
         : null
     });
-    if (typeof event.button === 'number' && event.button !== 0) return;
-    const target = event.target instanceof Element ? event.target : null;
-    if (shouldBlockFullscreenToggle(target)) {
-      return;
-    }
     logFitnessEvent('fullscreen-toggle-request', {
       source: 'video-container',
       pointerType: event.pointerType,
@@ -1033,12 +1036,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [logFitnessEvent]);
 
   const handleRootPointerDownCapture = useCallback((event) => {
-    logFitnessEvent('root-pointerdown', {
-      targetTag: event.target?.tagName || null,
-      button: event.button,
-      pointerType: event.pointerType
-    });
-
     if (typeof event.button === 'number' && event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
@@ -1048,6 +1045,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (shouldBlockFullscreenToggle(target)) {
       return;
     }
+
+    logFitnessEvent('root-pointerdown', {
+      targetTag: event.target?.tagName || null,
+      button: event.button,
+      pointerType: event.pointerType
+    });
 
     logFitnessEvent('fullscreen-toggle-request', {
       source: 'root-capture',
