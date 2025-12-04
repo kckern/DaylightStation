@@ -33,11 +33,29 @@
   filter: blur(0.35px);
   opacity: 0;
   transition: opacity 0.2s ease;
-  will-change: opacity;
+  will-change: opacity, object-position;
 }
 
 .seek-thumbnail-layer[data-visible='true'] {
   opacity: 1;
+}
+
+@keyframes pan-scan {
+  0% {
+    object-position: 0% 50%;
+  }
+  100% {
+    object-position: 100% 50%;
+  }
+}
+
+.seek-button-container.active .seek-thumbnail-layer {
+  animation-name: pan-scan;
+  animation-duration: var(--pan-duration, 5s);
+  animation-timing-function: cubic-bezier(0.15, 0.45, 0.85, 0.55);
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+  animation-direction: var(--layer-pan-direction, normal);
 }
 
 .seek-button-container .thumbnail-wrapper::after {
@@ -53,8 +71,22 @@
     rgba(0, 0, 0, 0) 3px
   );
   mix-blend-mode: screen;
-  opacity: 0.18;
+  opacity: 0.5;
   z-index: 1;
+}
+
+@keyframes scanline-scroll {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 12px;
+  }
+}
+
+.seek-button-container.active .thumbnail-wrapper::after {
+  animation: scanline-scroll 1s linear infinite;
+  opacity: 0.7;
 }
 
 .thumbnail-fallback {

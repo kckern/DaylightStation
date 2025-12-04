@@ -5,7 +5,8 @@ import ProgressFrame from './ProgressFrame.jsx';
 import './FitnessPlayerFooterSeekThumbnail.scss';
 
 const clampRatio = (value) => (value < 0 ? 0 : value > 1 ? 1 : value);
-const REFRESH_INTERVAL_MS = 5000;
+const REFRESH_INTERVAL_MS = 8000;
+const THUMBNAIL_TIME_OFFSET_MS = 10000;
 const TIMESTAMP_PATTERNS = [
   /(\/indexes\/(?:sd|ld)\/)(\d+)/i,
   /(\/thumb\/)(\d+)/i,
@@ -32,6 +33,7 @@ const supportsLivePreview = (src) => {
 const FitnessPlayerFooterSeekThumbnail = ({
   className,
   state,
+  index = 0,
   isOrigin = false,
   disabled = false,
   segmentStart,
@@ -58,6 +60,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
   const containerClass = `${className}${disabled ? ' disabled' : ''}`;
   const perc = clampRatio(progressRatio);
   const sparkRatio = clampRatio(visibleRatio);
+  const [panToggle, setPanToggle] = useState(false);
   const [posterFallbackActive, setPosterFallbackActive] = useState(false);
   const [imageUnavailable, setImageUnavailable] = useState(!imgSrc);
   const [liveFrameSrc, setLiveFrameSrc] = useState(imgSrc || null);
@@ -66,8 +69,8 @@ const FitnessPlayerFooterSeekThumbnail = ({
     activeIndex: 0,
     pendingIndex: null,
     layers: [
-      { id: 0, src: imgSrc || null, loaded: !!imgSrc },
-      { id: 1, src: null, loaded: false }
+      { id: 0, src: imgSrc || null, loaded: !!imgSrc, direction: 'normal' },
+      { id: 1, src: null, loaded: false, direction: 'reverse' }
     ]
   }));
 
@@ -83,8 +86,8 @@ const FitnessPlayerFooterSeekThumbnail = ({
       activeIndex: 0,
       pendingIndex: null,
       layers: [
-        { ...prev.layers[0], id: 0, src: imgSrc || null, loaded: !!imgSrc },
-        { ...prev.layers[1], id: 1, src: null, loaded: false }
+        { ...prev.layers[0], id: 0, src: imgSrc || null, loaded: !!imgSrc, direction: 'normal' },
+        { ...prev.layers[1], id: 1, src: null, loaded: false, direction: 'reverse' }
       ]
     }));
   }, [imgSrc, posterSrc]);
@@ -105,7 +108,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
       const safeEnd = Number.isFinite(segmentEnd) ? segmentEnd : safeStart;
       const span = Math.max(safeEnd - safeStart, 0);
       const ratio = span > 0 ? progressRatioRef.current : 0;
-      const liveTime = safeStart + span * ratio;
+      const liveTime = safeStart + span * ratio + (THUMBNAIL_TIME_OFFSET_MS / 1000);
       const nextSrc = updateThumbnailTimestamp(imgSrc, liveTime);
       if (nextSrc) {
         setLiveFrameSrc((prev) => (prev === nextSrc ? prev : nextSrc));
@@ -123,6 +126,12 @@ const FitnessPlayerFooterSeekThumbnail = ({
     if (isActive && canAnimateThumbnail) return liveFrameSrc || imgSrc || null;
     return imgSrc || null;
   }, [imageUnavailable, posterFallbackActive, posterSrc, isActive, canAnimateThumbnail, liveFrameSrc, imgSrc]);
+
+  useEffect(() => {
+    if (resolvedSrc) {
+      setPanToggle((prev) => !prev);
+    }
+  }, [resolvedSrc]);
 
   useEffect(() => {
     setFrameState((prev) => {
@@ -146,9 +155,11 @@ const FitnessPlayerFooterSeekThumbnail = ({
         return prev;
       }
 
+      const nextDirection = activeLayer.direction === 'normal' ? 'reverse' : 'normal';
+
       const layers = prev.layers.map((layer, idx) => (
         idx === inactiveIndex
-          ? { ...layer, src: resolvedSrc, loaded: false }
+          ? { ...layer, src: resolvedSrc, loaded: false, direction: nextDirection }
           : layer
       ));
 
@@ -217,6 +228,10 @@ const FitnessPlayerFooterSeekThumbnail = ({
         data-sample-time={sampleTime}
         data-label-time={labelTime}
         data-origin={isOrigin ? '1' : '0'}
+        style={{
+          '--pan-duration': `${REFRESH_INTERVAL_MS / 1000}s`,
+          '--pan-direction': panToggle ? 'normal' : 'reverse'
+        }}
       >
         <div className="thumbnail-wrapper">
           <div className="seek-thumbnail-stack">
@@ -230,6 +245,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
                   className="seek-thumbnail-layer"
                   data-visible={idx === frameState.activeIndex && layer.loaded ? 'true' : 'false'}
                   data-layer={idx}
+                  style={{ '--layer-pan-direction': layer.direction || 'normal' }}
                   onLoad={() => handleLayerLoad(idx)}
                   onError={(e) => handleLayerError(e.currentTarget?.src)}
                 />
@@ -261,6 +277,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
 FitnessPlayerFooterSeekThumbnail.propTypes = {
   className: PropTypes.string.isRequired,
   state: PropTypes.oneOf(['active', 'past', 'future']).isRequired,
+  index: PropTypes.number,
   isOrigin: PropTypes.bool,
   disabled: PropTypes.bool,
   segmentStart: PropTypes.number,
