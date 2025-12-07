@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useMemo } from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { Webcam as FitnessWebcam } from '../components/FitnessWebcam.jsx';
 import '../FitnessCam.scss';
@@ -8,6 +8,8 @@ const FitnessVideo = ({ minimal = false }) => {
   const [loading, setLoading] = useState(true);
   const webcamRef = useRef(null);
   const { toggleSidebarSizeMode } = useFitnessContext() || {};
+
+  const videoConstraints = useMemo(() => ({ width: { ideal: 1280 }, height: { ideal: 720 } }), []);
 
   const handleStreamReady = useCallback(() => {
     setLoading(false);
@@ -66,7 +68,7 @@ const FitnessVideo = ({ minimal = false }) => {
           ref={webcamRef}
           enabled
           audioConstraints={false}
-          videoConstraints={{ width: { ideal: 1280 }, height: { ideal: 720 } }}
+          videoConstraints={videoConstraints}
           onStreamReady={handleStreamReady}
           onError={handleError}
           videoClassName="fitness-video-feed"
