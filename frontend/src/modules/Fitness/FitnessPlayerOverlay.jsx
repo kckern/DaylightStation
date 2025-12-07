@@ -137,6 +137,10 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
       .flatMap((rule) => rule.missingUsers)
       .filter(Boolean)
   ));
+  const metUsers = Array.from(new Set([
+    ...challengeMetUsers,
+    ...unsatisfied.flatMap((rule) => rule.metUsers || []).filter(Boolean)
+  ]));
 
   if (challengeLocked) {
     const zoneLabel = challengeZoneLabel;
@@ -216,7 +220,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     const warningHighlights = Array.from(new Set([
       ...challengeMissingUsers,
       ...missingUsers
-    ]));
+    ])).filter((user) => !metUsers.includes(user));
     return {
       category: 'governance-warning-progress',
       status: 'yellow',
