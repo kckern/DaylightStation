@@ -9,6 +9,7 @@ import FitnessCam from './FitnessCam.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '../Player/lib/playbackLogger.js';
+import { usePersistentVolume } from './usePersistentVolume.js';
 
 const DEBUG_FITNESS_INTERACTIONS = false;
 
@@ -351,6 +352,111 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     isGoverned: playIsGoverned
   }), [currentItem, playerMode, playIsGoverned]);
 
+  const enhancedCurrentItem = useMemo(() => {
+    if (!currentItem) return null;
+    const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 0;
+    const resumableLabels = plexConfig?.resumable_labels || [];
+    const itemLabels = Array.isArray(currentItem.labels) ? currentItem.labels : [];
+    const normalizedResumableLabels = resumableLabels.map((l) => (typeof l === 'string' ? l.toLowerCase() : ''));
+    const normalizedItemLabels = itemLabels.map((l) => (typeof l === 'string' ? l.toLowerCase() : ''));
+    const isResumable = normalizedItemLabels.some((label) => normalizedResumableLabels.includes(label));
+
+    let resumeSeconds = 0;
+    if (isResumable) {
+      const candidateSeconds = [
+        currentItem.seconds,
+        currentItem.watchSeconds,
+        currentItem.resumeSeconds,
+        currentItem.progressSeconds
+      ].map((value) => {
+        if (typeof value === 'string') {
+          const parsed = parseFloat(value);
+          return Number.isNaN(parsed) ? null : parsed;
+        }
+        return value;
+      });
+      const resolvedSeconds = candidateSeconds.find((value) => Number.isFinite(value) && value > 0);
+      if (Number.isFinite(resolvedSeconds)) {
+        resumeSeconds = resolvedSeconds;
+      } else {
+        const normalizedProgress = typeof currentItem.watchProgress === 'string'
+          ? parseFloat(currentItem.watchProgress)
+          : currentItem.watchProgress;
+        if (Number.isFinite(normalizedProgress) && totalDuration > 0) {
+          const pct = Math.max(0, Math.min(100, normalizedProgress));
+          resumeSeconds = (pct / 100) * totalDuration;
+        }
+      }
+    }
+
+    if (resumeSeconds && totalDuration) {
+      resumeSeconds = Math.min(resumeSeconds, totalDuration);
+    }
+
+    const enhanced = {
+      ...currentItem,
+      guid: currentItem.guid
+        || currentItem.media_key
+        || currentItem.id
+        || currentItem.plex
+        || currentItem.media_url
+        || `fitness-${currentItem.id || ''}`,
+      plex: currentItem.id || currentItem.plex,
+      media_url: currentItem.media_url || currentItem.videoUrl,
+      title: currentItem.title || currentItem.label,
+      media_type: 'video',
+      type: currentItem.type || currentItem.media_type || 'video',
+      media_key: currentItem.id || currentItem.media_key || `fitness-${currentItem.id || ''}`,
+      thumb_id: currentItem.thumb_id,
+      show: currentItem.show || 'Fitness',
+      season: currentItem.season || 'Workout',
+      percent: (() => {
+        const normalized = typeof currentItem.watchProgress === 'string'
+          ? parseFloat(currentItem.watchProgress)
+          : currentItem.watchProgress;
+        return Number.isFinite(normalized) ? normalized : 0;
+      })(),
+      watchProgress: (() => {
+        const normalized = typeof currentItem.watchProgress === 'string'
+          ? parseFloat(currentItem.watchProgress)
+          : currentItem.watchProgress;
+        return Number.isFinite(normalized) ? normalized : undefined;
+      })(),
+      watchSeconds: (() => {
+        const normalized = typeof currentItem.watchSeconds === 'string'
+          ? parseFloat(currentItem.watchSeconds)
+          : currentItem.watchSeconds;
+        return Number.isFinite(normalized) ? normalized : undefined;
+      })(),
+      seconds: resumeSeconds,
+      continuous: false
+    };
+
+    return enhanced;
+  }, [currentItem, plexConfig]);
+
+  const showId = useMemo(
+    () => enhancedCurrentItem?.showId || currentItem?.showId || currentItem?.seriesId || currentItem?.plex || 'fitness',
+    [enhancedCurrentItem?.showId, currentItem?.showId, currentItem?.seriesId, currentItem?.plex]
+  );
+
+  const seasonId = useMemo(
+    () => enhancedCurrentItem?.seasonId || currentItem?.seasonId || 'unknown',
+    [enhancedCurrentItem?.seasonId, currentItem?.seasonId]
+  );
+
+  const currentMediaIdentity = useMemo(
+    () => resolveMediaIdentity(enhancedCurrentItem || currentItem),
+    [enhancedCurrentItem, currentItem]
+  );
+
+  const { volume: persistedVolume, applyToPlayer: applyPersistedVolume } = usePersistentVolume({
+    showId,
+    seasonId,
+    trackId: currentMediaIdentity,
+    playerRef
+  });
+
   const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
     if (!DEBUG_FITNESS_INTERACTIONS) return;
     const { level: detailLevel, ...restDetails } = details || {};
@@ -593,94 +699,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
   };
 
-  const enhancedCurrentItem = useMemo(() => {
-    if (!currentItem) return null;
-    
-    // Get duration in seconds from various possible sources
-    const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 0;
-    
-    // Check if this media is resumable based on labels
-    const resumableLabels = plexConfig?.resumable_labels || [];
-    const itemLabels = Array.isArray(currentItem.labels) ? currentItem.labels : [];
-    const normalizedResumableLabels = resumableLabels.map(l => (typeof l === 'string' ? l.toLowerCase() : ''));
-    const normalizedItemLabels = itemLabels.map(l => (typeof l === 'string' ? l.toLowerCase() : ''));
-    
-    const isResumable = normalizedItemLabels.some(label => normalizedResumableLabels.includes(label));
-    
-    // Only allow resume if explicitly resumable
-    let resumeSeconds = 0;
-    if (isResumable) {
-      const candidateSeconds = [
-        currentItem.seconds,
-        currentItem.watchSeconds,
-        currentItem.resumeSeconds,
-        currentItem.progressSeconds
-      ].map((value) => {
-        if (typeof value === 'string') {
-          const parsed = parseFloat(value);
-          return Number.isNaN(parsed) ? null : parsed;
-        }
-        return value;
-      });
-      const resolvedSeconds = candidateSeconds.find((value) => Number.isFinite(value) && value > 0);
-      if (Number.isFinite(resolvedSeconds)) {
-        resumeSeconds = resolvedSeconds;
-      } else {
-        const normalizedProgress = typeof currentItem.watchProgress === 'string'
-          ? parseFloat(currentItem.watchProgress)
-          : currentItem.watchProgress;
-        if (Number.isFinite(normalizedProgress) && totalDuration > 0) {
-          const pct = Math.max(0, Math.min(100, normalizedProgress));
-          resumeSeconds = (pct / 100) * totalDuration;
-        }
-      }
-    }
-
-    if (resumeSeconds && totalDuration) {
-      resumeSeconds = Math.min(resumeSeconds, totalDuration);
-    }
-    
-    const enhanced = {
-      ...currentItem,
-      guid: currentItem.guid
-        || currentItem.media_key
-        || currentItem.id
-        || currentItem.plex
-        || currentItem.media_url
-        || `fitness-${currentItem.id || ''}`,
-      plex: currentItem.id || currentItem.plex,
-      media_url: currentItem.media_url || currentItem.videoUrl,
-      title: currentItem.title || currentItem.label,
-      media_type: 'video',
-      type: currentItem.type || currentItem.media_type || 'video',
-      media_key: currentItem.id || currentItem.media_key || `fitness-${currentItem.id || ''}`,
-      thumb_id: currentItem.thumb_id,
-      show: currentItem.show || 'Fitness',
-      season: currentItem.season || 'Workout',
-      percent: (() => {
-        const normalized = typeof currentItem.watchProgress === 'string'
-          ? parseFloat(currentItem.watchProgress)
-          : currentItem.watchProgress;
-        return Number.isFinite(normalized) ? normalized : 0;
-      })(),
-      watchProgress: (() => {
-        const normalized = typeof currentItem.watchProgress === 'string'
-          ? parseFloat(currentItem.watchProgress)
-          : currentItem.watchProgress;
-        return Number.isFinite(normalized) ? normalized : undefined;
-      })(),
-      watchSeconds: (() => {
-        const normalized = typeof currentItem.watchSeconds === 'string'
-          ? parseFloat(currentItem.watchSeconds)
-          : currentItem.watchSeconds;
-        return Number.isFinite(normalized) ? normalized : undefined;
-      })(),
-      seconds: resumeSeconds,
-      continuous: false
-    };
-    
-    return enhanced;
-  }, [currentItem, plexConfig]);
 
   // Effect: Set initial time from resume point (intent)
   useEffect(() => {
@@ -730,20 +748,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       title: enhancedCurrentItem.title,
       seconds: enhancedCurrentItem.seconds,
       shader: 'minimal',
-      volume: currentItem?.volume || 1.0,
+      volume: persistedVolume,
       playbackRate: currentItem?.playbackRate || 1.0,
       type: 'video',
       continuous: false,
       autoplay: canAutoplay
     };
-  }, [enhancedCurrentItem, currentItem?.volume, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
+  }, [enhancedCurrentItem, persistedVolume, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
 
   const autoplayEnabled = Boolean(playObject?.autoplay);
 
-  const currentMediaIdentity = useMemo(
-    () => resolveMediaIdentity(enhancedCurrentItem || currentItem),
-    [enhancedCurrentItem, currentItem]
-  );
+  useEffect(() => {
+    applyPersistedVolume();
+  }, [applyPersistedVolume, currentMediaIdentity]);
 
   useEffect(() => {
     const session = fitnessSessionInstance;
