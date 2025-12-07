@@ -50,6 +50,33 @@ const DECODER_NUDGE_GRACE_MS = 2000;
 const BITRATE_REDUCTION_FACTOR = 0.9;
 const DEFAULT_FALLBACK_MAX_VIDEO_BITRATE = 2000;
 
+const deriveDroppedRatio = (decoderMetrics = null) => {
+  if (!decoderMetrics) return null;
+  const { droppedFrames, totalFrames } = decoderMetrics;
+  if (!Number.isFinite(totalFrames) || totalFrames <= 0) {
+    return null;
+  }
+  const dropped = Number.isFinite(droppedFrames) ? droppedFrames : 0;
+  return Math.max(0, dropped) / totalFrames;
+};
+
+const summarizeDiagnosticsForLog = (diagnostics = null) => {
+  if (!diagnostics) {
+    return null;
+  }
+  const buffer = diagnostics.buffer || {};
+  const decoder = diagnostics.decoder || {};
+  return {
+    bufferAheadSeconds: buffer.bufferAheadSeconds ?? null,
+    bufferGapSeconds: buffer.bufferGapSeconds ?? null,
+    nextBufferStartSeconds: buffer.nextBufferStartSeconds ?? null,
+    droppedFrames: decoder.droppedFrames ?? null,
+    totalFrames: decoder.totalFrames ?? null,
+    readyState: diagnostics.readyState ?? null,
+    networkState: diagnostics.networkState ?? null
+  };
+};
+
 const useLatest = (value) => {
   const ref = useRef(value);
   useEffect(() => {
@@ -96,6 +123,7 @@ export function useMediaResilience({
   isPaused = false,
   isSeeking = false,
   pauseIntent = null,
+  playbackDiagnostics = null,
   initialStart = 0,
   waitKey,
   fetchVideoInfo,
@@ -112,7 +140,8 @@ export function useMediaResilience({
   mediaTypeHint,
   playerFlavorHint,
   threadId = null,
-  nudgePlayback = null
+  nudgePlayback = null,
+  diagnosticsProvider = null
 }) {
   const [runtimeOverrides, setRuntimeOverrides] = useState(null);
   const {
@@ -206,7 +235,11 @@ export function useMediaResilience({
     return {
       waitKeySnapshot: waitKey,
       current: baseline,
-      lastSyncedBaseline: baseline
+      lastSyncedBaseline: baseline,
+      lastOverrideTag: null,
+      lastOverrideReason: null,
+      lastOverrideSource: null,
+      lastOverrideAt: null
     };
   });
   const bitrateStateRef = useLatest(bitrateState);
@@ -222,7 +255,11 @@ export function useMediaResilience({
       return {
         waitKeySnapshot: waitKey,
         current: baseline,
-        lastSyncedBaseline: baseline
+        lastSyncedBaseline: baseline,
+        lastOverrideTag: null,
+        lastOverrideReason: null,
+        lastOverrideSource: null,
+        lastOverrideAt: null
       };
     });
   }, [waitKey, resolveInitialMaxVideoBitrate]);
@@ -230,6 +267,8 @@ export function useMediaResilience({
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
   const nudgePlaybackRef = useLatest(typeof nudgePlayback === 'function' ? nudgePlayback : null);
+  const playbackDiagnosticsRef = useLatest(playbackDiagnostics);
+  const diagnosticsProviderRef = useLatest(typeof diagnosticsProvider === 'function' ? diagnosticsProvider : null);
   const lastProgressTsRef = useRef(null);
   const lastProgressSecondsRef = useRef(null);
   const lastLoggedProgressRef = useRef(0);
@@ -285,6 +324,7 @@ export function useMediaResilience({
   const mountWatchdogAttemptsRef = useRef(0);
   const statusTransitionRef = useRef(status);
   const decoderNudgeStateRef = useRef({ lastRequestedAt: 0, inflight: false, graceUntil: 0 });
+  const stallInsightsRef = useRef({ classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 });
   const seekIntentNoiseThresholdSeconds = useMemo(
     () => Math.max(0.5, epsilonSeconds * 2),
     [epsilonSeconds]
@@ -331,19 +371,30 @@ export function useMediaResilience({
     const {
       reason = 'resilience-bitrate-adjustment',
       source = 'resilience',
-      fetchReason = reason
+      fetchReason = reason,
+      overrideTag = null
     } = options || {};
 
     let stateChanged = false;
     setBitrateState((prev) => {
-      if (prev.current === normalized) {
+      const nextState = {
+        ...prev,
+        current: normalized,
+        lastOverrideTag: overrideTag || null,
+        lastOverrideReason: reason || null,
+        lastOverrideSource: source || null,
+        lastOverrideAt: Date.now()
+      };
+      if (
+        prev.current === nextState.current
+        && prev.lastOverrideTag === nextState.lastOverrideTag
+        && prev.lastOverrideReason === nextState.lastOverrideReason
+        && prev.lastOverrideSource === nextState.lastOverrideSource
+      ) {
         return prev;
       }
       stateChanged = true;
-      return {
-        ...prev,
-        current: normalized
-      };
+      return nextState;
     });
 
     if (stateChanged) {
@@ -393,9 +444,28 @@ export function useMediaResilience({
     applyBitrateOverride(reducedValue, {
       reason: context?.reason || 'hard-reset',
       source: context?.source || 'resilience',
-      fetchReason: 'resilience-hard-reset-bitrate'
+      fetchReason: 'resilience-hard-reset-bitrate',
+      overrideTag: 'hard-recovery'
     });
   }, [applyBitrateOverride, bitrateStateRef, logResilienceEvent, resolveInitialMaxVideoBitrate]);
+
+  const restoreBitrateTarget = useCallback((options = {}) => {
+    const baseline = bitrateStateRef.current?.lastSyncedBaseline ?? resolveInitialMaxVideoBitrate();
+    if (!Number.isFinite(baseline) || baseline <= 0) {
+      return null;
+    }
+    const currentValue = bitrateStateRef.current?.current;
+    const overrideTag = bitrateStateRef.current?.lastOverrideTag;
+    if (Math.abs((currentValue ?? baseline) - baseline) < 1 && !overrideTag) {
+      return baseline;
+    }
+    return applyBitrateOverride(baseline, {
+      reason: options?.reason || 'manual-bitrate-restore',
+      source: options?.source || 'ui',
+      fetchReason: 'manual-bitrate-restore',
+      overrideTag: null
+    });
+  }, [applyBitrateOverride, bitrateStateRef, resolveInitialMaxVideoBitrate]);
 
   const requestDecoderNudge = useCallback((reason = 'decoder-stall', extraDetails = {}) => {
     const nudgeFn = nudgePlaybackRef.current;
@@ -440,6 +510,29 @@ export function useMediaResilience({
 
     return true;
   }, [logResilienceEvent, nudgePlaybackRef]);
+
+  const classifyStallNature = useCallback((diagnostics, playbackHealthSnapshot) => {
+    if (!diagnostics) {
+      return 'unknown';
+    }
+    const bufferAhead = diagnostics?.buffer?.bufferAheadSeconds;
+    if (Number.isFinite(bufferAhead) && bufferAhead < 0.75) {
+      return 'buffer-starved';
+    }
+    const bufferGap = diagnostics?.buffer?.bufferGapSeconds;
+    if (Number.isFinite(bufferGap) && bufferGap > 0.25) {
+      return 'seek-gap';
+    }
+    const droppedRatio = deriveDroppedRatio(diagnostics?.decoder);
+    const frameInfo = playbackHealthSnapshot?.frameInfo;
+    if (frameInfo?.supported && frameInfo.advancing === false) {
+      return 'decoder-stall';
+    }
+    if (droppedRatio != null && droppedRatio > 0.2) {
+      return 'decoder-stall';
+    }
+    return 'unknown';
+  }, []);
 
   const resolvedMediaType = useMemo(() => {
     if (mediaTypeHint) return mediaTypeHint;
@@ -682,6 +775,56 @@ export function useMediaResilience({
   useEffect(() => {
     setHardResetLoopCount(0);
   }, [mediaIdentity, playbackSessionKey, setHardResetLoopCount]);
+
+  useEffect(() => {
+    if (status !== RESILIENCE_STATUS.stalling && status !== RESILIENCE_STATUS.recovering) {
+      stallInsightsRef.current = { classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 };
+      return;
+    }
+    const diagnostics = playbackDiagnosticsRef.current
+      || (typeof diagnosticsProviderRef.current === 'function'
+        ? diagnosticsProviderRef.current()
+        : null);
+    if (!diagnostics) {
+      return;
+    }
+    const classification = classifyStallNature(diagnostics, playbackHealth);
+    if (!classification || classification === 'unknown') {
+      return;
+    }
+    const now = Date.now();
+    const lastSnapshot = stallInsightsRef.current;
+    if (classification !== lastSnapshot.classification || (now - lastSnapshot.lastLoggedAt) > 4000) {
+      logResilienceEvent('stall-root-cause', {
+        classification,
+        diagnostics: summarizeDiagnosticsForLog(diagnostics)
+      }, { level: classification === 'buffer-starved' ? 'warn' : 'info' });
+      stallInsightsRef.current = {
+        ...lastSnapshot,
+        classification,
+        lastLoggedAt: now
+      };
+    }
+    if (classification === 'buffer-starved') {
+      if ((now - lastSnapshot.lastMitigationAt) > 3000) {
+        reduceBitrateAfterHardReset({ reason: 'buffer-starved', source: 'stall-guard' });
+        stallInsightsRef.current = {
+          ...stallInsightsRef.current,
+          lastMitigationAt: now
+        };
+      }
+      return;
+    }
+    if (classification === 'decoder-stall') {
+      requestDecoderNudge('decoder-stall', {
+        droppedRatio: deriveDroppedRatio(diagnostics?.decoder)
+      });
+      stallInsightsRef.current = {
+        ...stallInsightsRef.current,
+        lastMitigationAt: now
+      };
+    }
+  }, [status, playbackDiagnosticsRef, diagnosticsProviderRef, classifyStallNature, playbackHealth, logResilienceEvent, reduceBitrateAfterHardReset, requestDecoderNudge]);
 
   const persistSeekIntentMs = useCallback((valueMs) => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
@@ -1424,7 +1567,12 @@ export function useMediaResilience({
     playbackHealth,
     hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs,
     hardRecoverLoadingGraceMs: effectiveLoadingGraceMs,
-    currentMaxVideoBitrate: bitrateState.current ?? null
+    currentMaxVideoBitrate: bitrateState.current ?? null,
+    baselineMaxVideoBitrate: bitrateState.lastSyncedBaseline ?? null,
+    bitrateOverrideTag: bitrateState.lastOverrideTag || null,
+    bitrateOverrideReason: bitrateState.lastOverrideReason || null,
+    bitrateOverrideSource: bitrateState.lastOverrideSource || null,
+    bitrateOverrideAt: bitrateState.lastOverrideAt || null
   }), [
     status,
     waitingToPlay,
@@ -1445,7 +1593,12 @@ export function useMediaResilience({
     playbackHealth,
     effectiveHardRecoverAfterStalledForMs,
     effectiveLoadingGraceMs,
-    bitrateState.current
+    bitrateState.current,
+    bitrateState.lastSyncedBaseline,
+    bitrateState.lastOverrideTag,
+    bitrateState.lastOverrideReason,
+    bitrateState.lastOverrideSource,
+    bitrateState.lastOverrideAt
   ]);
   const stateRef = useLatest(state);
 
@@ -1523,7 +1676,8 @@ export function useMediaResilience({
     recordSeekIntentSeconds,
     recordSeekIntentMs,
     getSeekIntentMs: () => resolveSeekIntentMs(),
-    getMaxVideoBitrate: () => bitrateStateRef.current?.current ?? null
+    getMaxVideoBitrate: () => bitrateStateRef.current?.current ?? null,
+    restoreMaxVideoBitrate: (options) => restoreBitrateTarget(options)
   }), [
     fetchVideoInfoRef,
     markHealthy,
@@ -1542,7 +1696,8 @@ export function useMediaResilience({
     setOverlayPausePreference,
     setHardResetLoopCount,
     markLoadingIntentActive,
-    bitrateStateRef
+    bitrateStateRef,
+    restoreBitrateTarget
   ]);
 
   useEffect(() => {

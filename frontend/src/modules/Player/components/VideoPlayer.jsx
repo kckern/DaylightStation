@@ -274,7 +274,9 @@ export function VideoPlayer({
   resilienceBridge,
   maxVideoBitrate,
   maxResolution,
-  watchedDurationProvider
+  watchedDurationProvider,
+  resilienceBitrateInfo = null,
+  onRestoreFullBitrate = null
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -296,15 +298,25 @@ export function VideoPlayer({
 
   const resolvedMaxVideoBitrate = maxVideoBitrate ?? media?.maxVideoBitrate ?? null;
   const resolvedMaxResolution = maxResolution ?? media?.maxResolution ?? null;
+  const resilienceBitrateTag = resilienceBitrateInfo?.tag ?? null;
+  const baselineMaxVideoBitrate = Number(resilienceBitrateInfo?.baseline) || null;
+  const resilienceBitrate = Number(resilienceBitrateInfo?.current);
+  const effectiveBitrateCap = Number.isFinite(resilienceBitrate)
+    ? resilienceBitrate
+    : (Number.isFinite(resolvedMaxVideoBitrate) ? Number(resolvedMaxVideoBitrate) : null);
+  const hardRecoveryBitrateCapActive = Boolean(resilienceBitrateInfo?.isHardRecovery);
 
   const videoKey = useMemo(
-    () => `${media_url || ''}:${resolvedMaxVideoBitrate ?? 'unlimited'}:${resolvedMaxResolution ?? 'native'}`,
+    () => `${media_url || ''}__cap=${resolvedMaxVideoBitrate ?? 'unlimited'}__res=${resolvedMaxResolution ?? 'native'}`,
     [media_url, resolvedMaxVideoBitrate, resolvedMaxResolution]
   );
 
   const shakaNudgePlaybackRef = useRef(async () => ({ ok: false, outcome: 'not-ready' }));
+  const troubleDiagnosticsRef = useRef(() => null);
+  const lastPlayInvokeRef = useRef(0);
   const mediaAccessExtras = useMemo(() => ({
-    nudgePlayback: (...args) => shakaNudgePlaybackRef.current?.(...args)
+    nudgePlayback: (...args) => shakaNudgePlaybackRef.current?.(...args),
+    getTroubleDiagnostics: () => troubleDiagnosticsRef.current?.()
   }), []);
 
   const {
@@ -317,7 +329,8 @@ export function VideoPlayer({
     getMediaEl,
     isPaused,
     isSeeking,
-    hardReset
+    hardReset,
+    waitKey
   } = useCommonMediaController({
     start: initialStartSeconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -378,6 +391,15 @@ export function VideoPlayer({
   }, [containerRef]);
 
   const shakaPlayerRef = useRef(null);
+  useEffect(() => {
+    troubleDiagnosticsRef.current = () => {
+      const mediaEl = getCurrentMediaElement();
+      return buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
+    };
+    return () => {
+      troubleDiagnosticsRef.current = () => null;
+    };
+  }, [getCurrentMediaElement]);
   const shakaNetworkingCleanupRef = useRef(() => {});
   const shakaRecoveryStateRef = useRef({
     attempts: 0,
@@ -436,11 +458,12 @@ export function VideoPlayer({
       level,
       context: {
         mediaKey: media?.media_key || media?.id || null,
-        instanceKey: mediaInstanceKey
+        instanceKey: mediaInstanceKey,
+        waitKey: waitKey || null
       },
       ...(rateLimit ? { rateLimit } : {})
     });
-  }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey]);
+  }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey, waitKey]);
 
   const shakaNudgePlayback = useCallback(async ({ reason = 'decoder-stall' } = {}) => {
     const mediaEl = getCurrentMediaElement();
@@ -804,9 +827,13 @@ export function VideoPlayer({
       if (typeof mediaEl.play === 'function') {
         const originalPlay = mediaEl.play;
         mediaEl.play = (...args) => {
-          logShakaDiagnostic('dash-video-play-invoked', {
-            argsLength: args.length
-          }, 'debug');
+          const now = Date.now();
+          if (now - lastPlayInvokeRef.current > 5) {
+            logShakaDiagnostic('dash-video-play-invoked', {
+              argsLength: args.length
+            }, 'debug');
+            lastPlayInvokeRef.current = now;
+          }
           try {
             const result = originalPlay.apply(mediaEl, args);
             if (result && typeof result.then === 'function') {
@@ -899,6 +926,29 @@ export function VideoPlayer({
     }
   }, []);
 
+  const formatBitrateLabel = useCallback((value) => {
+    if (!Number.isFinite(value)) return null;
+    if (value >= 1000) {
+      const mbps = value / 1000;
+      return `${mbps.toFixed(mbps >= 10 ? 0 : 1)} Mbps`;
+    }
+    return `${value} kbps`;
+  }, []);
+
+  const handleBitrateBadgeActivate = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    playbackLog('bitrate-restore-request', {
+      waitKey: waitKey || null,
+      currentKbps: effectiveBitrateCap ?? null,
+      baselineKbps: baselineMaxVideoBitrate ?? null,
+      tag: resilienceBitrateTag
+    }, { level: 'info' });
+    if (typeof onRestoreFullBitrate === 'function') {
+      onRestoreFullBitrate({ source: 'video-player' });
+    }
+  }, [baselineMaxVideoBitrate, effectiveBitrateCap, onRestoreFullBitrate, resilienceBitrateTag, waitKey]);
+
   return (
     <div className={`video-player ${shader}`}>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
@@ -921,6 +971,17 @@ export function VideoPlayer({
           className="video-element"
           src={media_url}
         />
+      )}
+      {hardRecoveryBitrateCapActive && Number.isFinite(effectiveBitrateCap) && (
+        <button
+          type="button"
+          className="bitrate-cap-badge"
+          onClick={handleBitrateBadgeActivate}
+          aria-label="Bitrate capped after recovery. Tap to restore full bitrate."
+        >
+          <span>Bitrate cap {formatBitrateLabel(effectiveBitrateCap)}</span>
+          <span className="bitrate-cap-reset">Reset</span>
+        </button>
       )}
     </div>
   );
@@ -956,5 +1017,15 @@ VideoPlayer.propTypes = {
   }),
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  watchedDurationProvider: PropTypes.func
+  watchedDurationProvider: PropTypes.func,
+  resilienceBitrateInfo: PropTypes.shape({
+    current: PropTypes.number,
+    baseline: PropTypes.number,
+    tag: PropTypes.string,
+    reason: PropTypes.string,
+    updatedAt: PropTypes.number,
+    source: PropTypes.string,
+    isHardRecovery: PropTypes.bool
+  }),
+  onRestoreFullBitrate: PropTypes.func
 };
