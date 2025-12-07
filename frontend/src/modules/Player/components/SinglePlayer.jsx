@@ -22,6 +22,8 @@ export function SinglePlayer(props = {}) {
     remountDiagnostics,
     wrapWithContainer = true,
     suppressLocalOverlay = false,
+    resilienceBitrateInfo = null,
+    onRestoreFullBitrate = null,
     ...play
   } = props;
   const {
@@ -331,6 +333,8 @@ export function SinglePlayer(props = {}) {
             resilienceBridge,
             maxVideoBitrate: mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null,
             maxResolution: mediaInfo?.maxResolution ?? play?.maxResolution ?? null,
+            resilienceBitrateInfo,
+            onRestoreFullBitrate,
             watchedDurationProvider: getWatchedDuration
           }
         )
@@ -404,5 +408,15 @@ SinglePlayer.propTypes = {
   }),
   suppressLocalOverlay: PropTypes.bool,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  resilienceBitrateInfo: PropTypes.shape({
+    current: PropTypes.number,
+    baseline: PropTypes.number,
+    tag: PropTypes.string,
+    reason: PropTypes.string,
+    updatedAt: PropTypes.number,
+    source: PropTypes.string,
+    isHardRecovery: PropTypes.bool
+  }),
+  onRestoreFullBitrate: PropTypes.func
 };

@@ -147,7 +147,7 @@ export function PlayerOverlayLoading({
     const visibleDurationMs = visibleSinceRef.current ? now - visibleSinceRef.current : null;
     const revealLabel = Number.isFinite(overlayRevealDelayMs) ? `${overlayRevealDelayMs}ms` : 'n/a';
     const visibilitySummary = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'}/${revealLabel}`;
-    const summary = `${visibilitySummary} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
+    const summary = `${visibilitySummary} | status:${statusLabel} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
     playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary, {
       level: 'debug',
       sampleRate: 0.25,
@@ -173,44 +173,6 @@ export function PlayerOverlayLoading({
     };
   }, [logOverlaySummary, overlayLoggingActive]);
 
-  useEffect(() => {
-    const prev = overlayVisibilityRef.current;
-    if (
-      prev.overlayDisplayActive === overlayDisplayActive
-      && prev.shouldRender === shouldRender
-      && prev.isVisible === isVisible
-      && prev.pauseOverlayActive === pauseOverlayActive
-    ) {
-      return;
-    }
-    overlayVisibilityRef.current = {
-      overlayDisplayActive,
-      shouldRender,
-      isVisible,
-      pauseOverlayActive
-    };
-    const reason = overlayDisplayActive
-      ? 'visible'
-      : (!shouldRender
-        ? 'should-render=false'
-        : (!isVisible
-          ? 'is-visible=false'
-          : 'pause-overlay-active'));
-    playbackLog('overlay-visibility', {
-      label: overlayLogLabel || waitKey || 'loading-overlay',
-      waitKey,
-      visible: overlayDisplayActive,
-      reason,
-      shouldRender,
-      isVisible,
-      pauseOverlayActive,
-      overlayRevealDelayMs
-    }, {
-      level: 'debug',
-      context: overlayLogContext
-    });
-  }, [overlayDisplayActive, shouldRender, isVisible, pauseOverlayActive, overlayLogLabel, waitKey, overlayRevealDelayMs, overlayLogContext]);
-
   if (!overlayDisplayActive) {
     return null;
   }
@@ -228,9 +190,6 @@ export function PlayerOverlayLoading({
       onMouseDownCapture={blockFullscreenToggle}
     >
       <div className="loading-overlay__inner">
-        <div className="loading-debug-strip">
-          {statusLabel} | {timerSummary} | {seekSummary} | {mediaSummary}
-        </div>
         <div className="loading-timing">
           <div
             className="loading-spinner"

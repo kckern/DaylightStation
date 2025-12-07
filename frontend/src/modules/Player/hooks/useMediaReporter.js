@@ -17,6 +17,133 @@ const normalizePauseIntent = (value, fallback = null) => {
   return fallback ?? null;
 };
 
+const clampNumber = (value, precision = 3) => (
+  Number.isFinite(value) ? Number(value.toFixed(precision)) : null
+);
+
+const serializeTimeRanges = (ranges) => {
+  if (!ranges || typeof ranges.length !== 'number') {
+    return [];
+  }
+  const entries = [];
+  for (let index = 0; index < ranges.length; index += 1) {
+    try {
+      const start = ranges.start(index);
+      const end = ranges.end(index);
+      entries.push({
+        start: clampNumber(start),
+        end: clampNumber(end)
+      });
+    } catch (_) {
+      break;
+    }
+  }
+  return entries;
+};
+
+const computeBufferMetrics = (mediaEl) => {
+  if (!mediaEl || !mediaEl.buffered) {
+    return null;
+  }
+  const currentTime = clampNumber(mediaEl.currentTime, 3);
+  if (currentTime == null) {
+    return null;
+  }
+  const buffered = serializeTimeRanges(mediaEl.buffered);
+  if (!buffered.length) {
+    return { currentTime, buffered };
+  }
+  let bufferAheadSeconds = null;
+  let bufferBehindSeconds = null;
+  let nextBufferStartSeconds = null;
+  for (let index = 0; index < buffered.length; index += 1) {
+    const { start, end } = buffered[index];
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      continue;
+    }
+    if (currentTime >= start && currentTime <= end) {
+      bufferAheadSeconds = clampNumber(end - currentTime, 3);
+      bufferBehindSeconds = clampNumber(currentTime - start, 3);
+    } else if (currentTime < start && nextBufferStartSeconds == null) {
+      nextBufferStartSeconds = start;
+      break;
+    }
+  }
+  const bufferGapSeconds = Number.isFinite(nextBufferStartSeconds)
+    ? clampNumber(nextBufferStartSeconds - currentTime, 3)
+    : null;
+  return {
+    currentTime,
+    bufferAheadSeconds,
+    bufferBehindSeconds,
+    nextBufferStartSeconds,
+    bufferGapSeconds,
+    buffered
+  };
+};
+
+const readDecoderMetrics = (mediaEl) => {
+  if (!mediaEl) {
+    return null;
+  }
+  if (typeof mediaEl.getVideoPlaybackQuality === 'function') {
+    try {
+      const quality = mediaEl.getVideoPlaybackQuality();
+      if (quality && Number.isFinite(quality.totalVideoFrames)) {
+        return {
+          totalFrames: Number(quality.totalVideoFrames) || 0,
+          droppedFrames: Number(quality.droppedVideoFrames) || 0
+        };
+      }
+    } catch (_) {
+      // ignore quality read errors
+    }
+  }
+  const decoded = mediaEl.webkitDecodedFrameCount ?? mediaEl.mozDecodedFrames ?? mediaEl.decodedFrameCount;
+  if (Number.isFinite(decoded)) {
+    const dropped = mediaEl.webkitDroppedFrameCount ?? mediaEl.mozDroppedFrames ?? mediaEl.droppedFrameCount;
+    return {
+      totalFrames: Number(decoded) || 0,
+      droppedFrames: Number(dropped) || 0
+    };
+  }
+  return null;
+};
+
+const buildDiagnosticsSnapshot = (mediaEl) => {
+  if (!mediaEl) {
+    return null;
+  }
+  const buffer = computeBufferMetrics(mediaEl);
+  const decoder = readDecoderMetrics(mediaEl);
+  const readyState = typeof mediaEl.readyState === 'number' ? mediaEl.readyState : null;
+  const networkState = typeof mediaEl.networkState === 'number' ? mediaEl.networkState : null;
+  return {
+    buffer,
+    decoder,
+    readyState,
+    networkState,
+    collectedAt: Date.now()
+  };
+};
+
+const hashDiagnostics = (diagnostics) => {
+  if (!diagnostics) {
+    return 'diagnostics:none';
+  }
+  const buffer = diagnostics.buffer || {};
+  const decoder = diagnostics.decoder || {};
+  return [
+    clampNumber(buffer?.bufferAheadSeconds) ?? -1,
+    clampNumber(buffer?.bufferGapSeconds) ?? -1,
+    clampNumber(buffer?.nextBufferStartSeconds) ?? -1,
+    Number(decoder?.droppedFrames ?? -1),
+    Number(decoder?.totalFrames ?? -1),
+    Number(diagnostics.readyState ?? -1),
+    Number(diagnostics.networkState ?? -1)
+  ].join('|');
+};
+
 /**
  * useMediaReporter centralizes how bespoke media renderers (e.g. ContentScroller)
  * report playback state up to the Player resilience bridge. Components hand it a
@@ -37,7 +164,16 @@ export function useMediaReporter({
 }) {
   const seekingRef = useRef(false);
   const pendingSeekSecondsRef = useRef(null);
-  const lastMetricsRef = useRef({ seconds: 0, isPaused: true, isSeeking: false, pauseIntent: null });
+  const lastMetricsRef = useRef({
+    seconds: 0,
+    isPaused: true,
+    isSeeking: false,
+    pauseIntent: null,
+    diagnostics: null,
+    diagnosticsHash: 'diagnostics:none',
+    diagnosticsVersion: 0
+  });
+  const lastDiagnosticsHashRef = useRef('diagnostics:none');
   const startupAttachmentRef = useRef(false);
 
   const emitStartupSignal = useCallback((type, detail = {}) => {
@@ -64,14 +200,16 @@ export function useMediaReporter({
         seconds: 0,
         isPaused: true,
         isSeeking: seekingRef.current,
-        pauseIntent: lastMetricsRef.current.pauseIntent ?? null
+        pauseIntent: lastMetricsRef.current.pauseIntent ?? null,
+        diagnostics: null
       };
     }
     return {
       seconds: Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : 0,
       isPaused: Boolean(mediaEl.paused),
       isSeeking: seekingRef.current,
-      pauseIntent: lastMetricsRef.current.pauseIntent ?? null
+      pauseIntent: lastMetricsRef.current.pauseIntent ?? null,
+      diagnostics: buildDiagnosticsSnapshot(mediaEl)
     };
   }, [mediaRef]);
 
@@ -82,20 +220,40 @@ export function useMediaReporter({
     const base = readPlaybackMetrics();
     const hasPauseIntentOverride = Boolean(override && Object.prototype.hasOwnProperty.call(override, 'pauseIntent'));
     const resolvedBaseIntent = normalizePauseIntent(base.pauseIntent, lastMetricsRef.current.pauseIntent);
+    const diagnosticsOverrideProvided = Boolean(override && Object.prototype.hasOwnProperty.call(override, 'diagnostics'));
+    let diagnostics = diagnosticsOverrideProvided ? override.diagnostics : base.diagnostics;
+    let diagnosticsHash = hashDiagnostics(diagnostics);
+    if (!diagnosticsOverrideProvided) {
+      if (diagnosticsHash === lastDiagnosticsHashRef.current) {
+        diagnostics = lastMetricsRef.current.diagnostics;
+      } else {
+        lastDiagnosticsHashRef.current = diagnosticsHash;
+      }
+    } else {
+      lastDiagnosticsHashRef.current = diagnosticsHash;
+    }
+    const prev = lastMetricsRef.current;
+    const diagnosticsVersion = diagnosticsHash === prev.diagnosticsHash
+      ? prev.diagnosticsVersion
+      : prev.diagnosticsVersion + 1;
     const merged = {
       seconds: coerceSeconds(override?.seconds, base.seconds),
       isPaused: coerceBoolean(override?.isPaused, base.isPaused),
       isSeeking: coerceBoolean(override?.isSeeking, base.isSeeking),
       pauseIntent: hasPauseIntentOverride
         ? normalizePauseIntent(override.pauseIntent, resolvedBaseIntent)
-        : resolvedBaseIntent
+        : resolvedBaseIntent,
+      diagnostics,
+      diagnosticsHash,
+      diagnosticsVersion
     };
-    const prev = lastMetricsRef.current;
     if (
       prev.seconds === merged.seconds
       && prev.isPaused === merged.isPaused
       && prev.isSeeking === merged.isSeeking
       && prev.pauseIntent === merged.pauseIntent
+      && prev.diagnosticsHash === merged.diagnosticsHash
+      && prev.diagnosticsVersion === merged.diagnosticsVersion
     ) {
       return prev;
     }
