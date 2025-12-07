@@ -24,7 +24,6 @@ const FitnessSidebarMenu = ({
   appMode = 'player',
   targetDeviceId,
   targetDefaultName,
-  guestAssignments = {},
   assignGuestToDevice,
   clearGuestAssignment,
   guestCandidates = [],
@@ -36,16 +35,22 @@ const FitnessSidebarMenu = ({
   sidebarSizeMode = 'regular'
 }) => {
   const fitnessContext = useFitnessContext();
+  const deviceAssignments = fitnessContext?.deviceAssignments || [];
+  const getDeviceAssignment = fitnessContext?.getDeviceAssignment;
   const [selectedTab, setSelectedTab] = React.useState('friends');
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
   const suppressDeviceUntilNextReading = fitnessContext?.suppressDeviceUntilNextReading;
   const hasMusicPlaylists = playlists.length > 0;
   const deviceIdStr = targetDeviceId ? String(targetDeviceId) : null;
-  const activeAssignment = deviceIdStr ? guestAssignments[deviceIdStr] : null;
+  const activeAssignment = deviceIdStr
+    ? (typeof getDeviceAssignment === 'function'
+        ? getDeviceAssignment(deviceIdStr)
+        : deviceAssignments.find((entry) => String(entry.deviceId) === deviceIdStr))
+    : null;
   const baseUser = deviceIdStr ? fitnessContext?.getUserByDevice?.(deviceIdStr) : null;
-  const baseName = activeAssignment?.baseUserName || targetDefaultName || baseUser?.name || null;
+  const baseName = activeAssignment?.metadata?.baseUserName || targetDefaultName || baseUser?.name || null;
   const monitorLabel = deviceIdStr ? `#${deviceIdStr}` : 'Unknown';
-  const currentLabel = activeAssignment?.name || baseName || 'Unassigned';
+  const currentLabel = activeAssignment?.occupantName || activeAssignment?.metadata?.name || baseName || 'Unassigned';
   const currentSummaryClass = `guest-summary-value${activeAssignment ? ' guest-summary-value--active' : ''}`;
   const [videoVolume, setVideoVolume] = React.useState(() => {
     const media = playerRef?.current?.getMediaElement?.();
@@ -249,32 +254,30 @@ const FitnessSidebarMenu = ({
     });
     
     // Track the currently selected user to exclude them from the list
-    const currentlySelectedId = activeAssignment?.candidateId || activeAssignment?.profileId;
+    const currentlySelectedId = activeAssignment?.metadata?.candidateId
+      || activeAssignment?.metadata?.profileId
+      || activeAssignment?.occupantSlug;
     if (currentlySelectedId) {
       seen.add(currentlySelectedId);
     }
     
     // Exclude users already assigned to OTHER devices (not the current one)
-    Object.entries(guestAssignments).forEach(([assignedDeviceId, assignment]) => {
-      // Skip the current device we're editing
-      if (assignedDeviceId === deviceIdStr) return;
+    deviceAssignments.forEach((assignment) => {
+      const assignedDeviceId = assignment?.deviceId != null ? String(assignment.deviceId) : null;
+      if (!assignedDeviceId || assignedDeviceId === deviceIdStr) return;
       const blockKeys = [];
-      if (assignment?.candidateId) {
-        blockKeys.push(String(assignment.candidateId));
-      }
-      if (assignment?.profileId) {
-        blockKeys.push(String(assignment.profileId));
-      }
-      if (assignment?.name) {
-        blockKeys.push(slugifyId(assignment.name));
-      }
+      const metadata = assignment?.metadata || {};
+      if (metadata.candidateId) blockKeys.push(String(metadata.candidateId));
+      if (metadata.profileId) blockKeys.push(String(metadata.profileId));
+      const occupantName = assignment?.occupantName || metadata.name;
+      if (occupantName) blockKeys.push(slugifyId(occupantName));
       const allowReuse = blockKeys.some((key) => multiAssignableKeys.has(key));
       if (allowReuse) return;
       blockKeys.forEach((key) => seen.add(key));
     });
     
     // Add original owner as first option if a guest is currently assigned
-    if (activeAssignment && baseName && activeAssignment.name !== baseName) {
+    if (activeAssignment && baseName && (activeAssignment.occupantName || activeAssignment.metadata?.name) !== baseName) {
       const baseId = slugifyId(baseName);
       if (!seen.has(baseId)) {
         seen.add(baseId);
@@ -331,7 +334,7 @@ const FitnessSidebarMenu = ({
       topOptions,
       filteredOptions: [...withAvatars, ...withoutAvatars]
     };
-  }, [guestCandidates, activeAssignment, baseName, deviceIdStr, selectedTab, guestAssignments]);
+    }, [guestCandidates, activeAssignment, baseName, deviceIdStr, selectedTab, deviceAssignments]);
 
   // Auto-switch to Family tab if Friends tab is empty or all used up
   React.useEffect(() => {

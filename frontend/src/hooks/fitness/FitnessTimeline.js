@@ -1,4 +1,4 @@
-import { deepClone } from './types';
+import { deepClone } from './types.js';
 
 const DEFAULT_INTERVAL_MS = 5000;
 

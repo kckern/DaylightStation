@@ -5,6 +5,7 @@ import FlipMove from 'react-flip-move';
 import '../FitnessCam.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
+import { useZoneProfiles } from '../../../hooks/useZoneProfiles.js';
 
 const slugifyId = (value, fallback = 'user') => {
   if (!value) return fallback;
@@ -128,7 +129,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     users,
     hrColorMap: contextHrColorMap,
     zones,
-    guestAssignments: guestAssignmentsFromContext,
+    deviceAssignments = [],
+    getDeviceAssignment,
     userZoneProgress,
     getUserVitals,
     participantsByDevice: participantsByDeviceMap,
@@ -136,8 +138,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     getUserByDevice,
     userCollections,
     deviceOwnership,
-    userZoneProfiles
   } = fitnessContext;
+  const zoneProfiles = useZoneProfiles();
 
   const normalizedCollections = userCollections || {};
   const configuredUsers = normalizedCollections.all || [];
@@ -155,37 +157,26 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return [];
   }, [users]);
 
-  const guestAssignments = React.useMemo(() => {
-    if (guestAssignmentsFromContext instanceof Map) return guestAssignmentsFromContext;
-    if (Array.isArray(guestAssignmentsFromContext)) {
-      const map = new Map();
-      guestAssignmentsFromContext.forEach((entry) => {
-        if (!entry) return;
-        const key = entry.deviceId ?? entry.device_id ?? entry.deviceID ?? entry.device_id_str;
-        if (key == null) return;
-        map.set(String(key), entry);
-      });
-      return map;
-    }
-    if (guestAssignmentsFromContext && typeof guestAssignmentsFromContext === 'object') {
-      const map = new Map();
-      Object.entries(guestAssignmentsFromContext).forEach(([key, value]) => {
-        if (key == null) return;
-        map.set(String(key), value);
-      });
-      return map;
-    }
-    return new Map();
-  }, [guestAssignmentsFromContext]);
+  const assignmentMap = React.useMemo(() => {
+    const map = new Map();
+    deviceAssignments.forEach((entry) => {
+      if (!entry || entry.deviceId == null) return;
+      map.set(String(entry.deviceId), entry);
+    });
+    return map;
+  }, [deviceAssignments]);
 
-  const guestAssignmentEntries = React.useMemo(() => {
-    return Array.from(guestAssignments.entries());
-  }, [guestAssignments]);
+  const guestAssignmentEntries = React.useMemo(() => Array.from(assignmentMap.entries()), [assignmentMap]);
 
   const getGuestAssignment = React.useCallback((deviceId) => {
     if (deviceId == null) return null;
-    return guestAssignments.get(String(deviceId)) || null;
-  }, [guestAssignments]);
+    const fromMap = assignmentMap.get(String(deviceId)) || null;
+    if (fromMap) return fromMap;
+    if (typeof getDeviceAssignment === 'function') {
+      return getDeviceAssignment(deviceId);
+    }
+    return null;
+  }, [assignmentMap, getDeviceAssignment]);
 
   const userProfileIdMap = React.useMemo(() => {
     const map = new Map();
@@ -227,17 +218,47 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return new Map();
   }, [deviceOwnership]);
 
-  const zoneProfileMap = React.useMemo(() => {
-    if (userZoneProfiles instanceof Map) return userZoneProfiles;
-    if (userZoneProfiles && typeof userZoneProfiles === 'object') {
-      const map = new Map();
-      Object.entries(userZoneProfiles).forEach(([key, value]) => {
-        map.set(key, value);
-      });
-      return map;
-    }
-    return new Map();
-  }, [userZoneProfiles]);
+  const zoneProfileLookup = React.useMemo(() => {
+    const map = new Map();
+    zoneProfiles.forEach((profile) => {
+      if (!profile?.slug) return;
+      map.set(profile.slug, profile);
+      if (profile.name) {
+        const nameKey = slugifyId(profile.name);
+        if (nameKey) {
+          map.set(nameKey, profile);
+        }
+      }
+    });
+    return map;
+  }, [zoneProfiles]);
+
+  const resolveZoneProfile = React.useCallback((name) => {
+    if (!name) return null;
+    const slug = slugifyId(name);
+    if (!slug) return null;
+    return zoneProfileLookup.get(slug) || null;
+  }, [zoneProfileLookup]);
+
+  const deriveZoneFromProfile = React.useCallback((profile, heartRate) => {
+    if (!profile || !Number.isFinite(heartRate)) return null;
+    const sequence = Array.isArray(profile.zoneSnapshot?.zoneSequence)
+      ? profile.zoneSnapshot.zoneSequence
+      : profile.zoneSequence;
+    if (!Array.isArray(sequence) || sequence.length === 0) return null;
+    const sorted = sequence.slice().sort((a, b) => (a?.threshold ?? 0) - (b?.threshold ?? 0));
+    let resolved = sorted[0]?.id || null;
+    sorted.forEach((zone, index) => {
+      const threshold = Number.isFinite(zone?.threshold)
+        ? zone.threshold
+        : (index === 0 ? 0 : null);
+      if (threshold == null) return;
+      if (heartRate >= threshold) {
+        resolved = zone.id || resolved;
+      }
+    });
+    return resolved;
+  }, []);
 
   const participantsByDevice = React.useMemo(() => {
     if (participantsByDeviceMap instanceof Map) return participantsByDeviceMap;
@@ -291,7 +312,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
     guestAssignmentEntries.forEach(([deviceId, assignment]) => {
       if (!assignment) return;
-      const profileId = assignment.profileId || assignment.id || slugifyId(assignment.name);
+      const profileId = assignment.metadata?.profileId
+        || assignment.metadata?.candidateId
+        || assignment.occupantSlug
+        || slugifyId(assignment.occupantName || assignment.metadata?.name || deviceId);
       assignProfile(deviceId, profileId);
     });
 
@@ -395,8 +419,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   const hrOwnerMap = React.useMemo(() => {
     const map = { ...hrOwnerBaseMap };
     guestAssignmentEntries.forEach(([deviceId, assignment]) => {
-      if (assignment?.name) {
-        map[String(deviceId)] = assignment.name;
+      const occupantName = assignment?.occupantName || assignment?.metadata?.name;
+      if (occupantName) {
+        map[String(deviceId)] = occupantName;
       }
     });
     return map;
@@ -432,7 +457,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const key = String(deviceId);
     if (hrOwnerMap[key]) return hrOwnerMap[key];
     const guest = getGuestAssignment(key);
-    if (guest?.name) return guest.name;
+    if (guest?.occupantName || guest?.metadata?.name) return guest.occupantName || guest.metadata.name;
     if (hrOwnerBaseMap[key]) return hrOwnerBaseMap[key];
     return fallbackName;
   }, [hrOwnerMap, getGuestAssignment, hrOwnerBaseMap]);
@@ -457,28 +482,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [zones]);
 
-  // Fallback zone derivation using configured zones + per-user overrides
-  const deriveZoneFromHR = React.useCallback((hr, userName) => {
-    if (!hr || hr <= 0 || !Array.isArray(zones) || zones.length === 0) return null;
-    const profileKey = userName ? slugifyId(userName) : null;
-    const zoneProfile = profileKey ? zoneProfileMap.get(profileKey) : null;
-    const getOverrideMin = (zoneId) => {
-      if (!zoneProfile?.zoneConfig) return null;
-      const normalized = String(zoneId).toLowerCase();
-      const match = zoneProfile.zoneConfig.find((zone) => String(zone.id).toLowerCase() === normalized);
-      return Number.isFinite(match?.min) ? match.min : null;
-    };
-    const sorted = [...zones].sort((a, b) => (b.min ?? 0) - (a.min ?? 0));
-    for (const z of sorted) {
-      const overrideMin = getOverrideMin(z.id);
-      const min = Number.isFinite(overrideMin) ? overrideMin : z.min;
-      if (Number.isFinite(min) && hr >= min) {
-        return { id: z.id, color: z.color };
-      }
-    }
-    return null;
-  }, [zones, zoneProfileMap]);
-  
   // Map of deviceId -> equipment name and ID
   const equipmentMap = React.useMemo(() => {
     const map = {};
@@ -568,10 +571,21 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       zoneId = String(participantEntry.zoneId).toLowerCase();
     }
 
-    if ((!zoneId || !canonicalZones.includes(zoneId)) && device.heartRate) {
-      const derived = deriveZoneFromHR(device.heartRate, canonicalName || participantEntry?.name || userObj?.name);
-      if (derived?.id) {
-        zoneId = String(derived.id).toLowerCase();
+    if (!zoneId || !canonicalZones.includes(zoneId)) {
+      const profileName = canonicalName || participantEntry?.name || userObj?.name;
+      const zoneProfile = resolveZoneProfile(profileName);
+      if (zoneProfile?.currentZoneId) {
+        zoneId = String(zoneProfile.currentZoneId).toLowerCase();
+      } else if (zoneProfile?.zoneSnapshot?.currentZoneId) {
+        zoneId = String(zoneProfile.zoneSnapshot.currentZoneId).toLowerCase();
+      } else if (zoneProfile) {
+        const hrValue = Number(device?.heartRate);
+        if (Number.isFinite(hrValue) && hrValue > 0) {
+          const derivedId = deriveZoneFromProfile(zoneProfile, hrValue);
+          if (derivedId) {
+            zoneId = String(derivedId).toLowerCase();
+          }
+        }
       }
     }
 
@@ -835,17 +849,19 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     : registeredUsers.find(u => String(u.hrDeviceId) === deviceIdStr))
                 : null;
               const canonicalUserName = isHeartRate
-                ? resolveCanonicalUserName(deviceIdStr, guestAssignment?.name || participantEntry?.name || resolvedUser?.name || null)
+                ? resolveCanonicalUserName(deviceIdStr, guestAssignment?.occupantName || guestAssignment?.metadata?.name || participantEntry?.name || resolvedUser?.name || null)
                 : null;
               const userVitalsEntry = isHeartRate && canonicalUserName && typeof getUserVitals === 'function'
                 ? getUserVitals(canonicalUserName)
                 : null;
               const displayLabel = userVitalsEntry?.displayLabel || participantEntry?.displayLabel || null;
               const profileId = isHeartRate
-                ? (guestAssignment?.profileId
+                ? (guestAssignment?.metadata?.profileId
+                    || guestAssignment?.metadata?.candidateId
+                    || guestAssignment?.occupantSlug
                     || participantEntry?.profileId
                     || userIdMap[deviceIdStr]
-                    || getConfiguredProfileId(guestAssignment?.name)
+                    || getConfiguredProfileId(guestAssignment?.occupantName || guestAssignment?.metadata?.name)
                     || getConfiguredProfileId(participantEntry?.name)
                     || getConfiguredProfileId(ownerName)
                     || resolvedUser?.id
@@ -875,7 +891,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   ? participantEntry.heartRate
                   : (Number.isFinite(device.heartRate) ? device.heartRate : null));
               const deviceName = isHeartRate ? 
-                (guestAssignment?.name || ownerName || displayLabel || participantEntry?.name || deviceIdStr) : String(device.deviceId);
+                (guestAssignment?.occupantName || guestAssignment?.metadata?.name || ownerName || displayLabel || participantEntry?.name || deviceIdStr) : String(device.deviceId);
               const zoneIdForGrouping = isHeartRate ? getDeviceZoneId(device) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping

@@ -30,7 +30,7 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
     selectedPlaylistId, 
     governanceState,
     usersConfigRaw,
-    guestAssignments,
+    deviceAssignments = [],
     assignGuestToDevice,
     clearGuestAssignment,
     sidebarSizeMode,
@@ -63,10 +63,10 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
     }
 
     const primaryGuestPool = [];
-    if (guestAssignments && primaryByName.size) {
-      Object.values(guestAssignments).forEach((assignment) => {
-        if (!assignment?.name) return;
-        const match = primaryByName.get(assignment.name);
+    if (primaryByName.size) {
+      deviceAssignments.forEach((assignment) => {
+        if (!assignment?.occupantName) return;
+        const match = primaryByName.get(assignment.occupantName);
         if (!match) return;
         const id = match.id || slugifyId(match.name);
         primaryGuestPool.push({
@@ -97,7 +97,7 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
       });
       return acc;
     }, []);
-  }, [guestAssignments, replacedPrimaryPool, usersConfigRaw?.family, usersConfigRaw?.friends, usersConfigRaw?.primary]);
+  }, [deviceAssignments, replacedPrimaryPool, usersConfigRaw?.family, usersConfigRaw?.friends, usersConfigRaw?.primary]);
 
   const openSettingsMenu = React.useCallback(() => {
     setMenuState({ open: true, mode: 'settings', target: null });
@@ -232,7 +232,6 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
             mode={menuState.mode}
             targetDeviceId={menuState.target?.deviceId || null}
             targetDefaultName={menuState.target?.defaultName || null}
-            guestAssignments={guestAssignments}
             assignGuestToDevice={assignGuestToDevice}
             clearGuestAssignment={clearGuestAssignment}
             guestCandidates={guestCandidates}

@@ -1,11 +1,13 @@
-import { formatSessionId, slugifyId, ensureSeriesCapacity, deepClone, resolveDisplayLabel } from './types';
-import { DeviceManager } from './DeviceManager';
-import { UserManager } from './UserManager';
-import { GovernanceEngine } from './GovernanceEngine';
-import { FitnessTreasureBox } from './TreasureBox';
-import { VoiceMemoManager } from './VoiceMemoManager';
-import { FitnessTimeline } from './FitnessTimeline';
+import { formatSessionId, slugifyId, ensureSeriesCapacity, deepClone, resolveDisplayLabel } from './types.js';
+import { DeviceManager } from './DeviceManager.js';
+import { UserManager } from './UserManager.js';
+import { GovernanceEngine } from './GovernanceEngine.js';
+import { FitnessTreasureBox } from './TreasureBox.js';
+import { VoiceMemoManager } from './VoiceMemoManager.js';
+import { FitnessTimeline } from './FitnessTimeline.js';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { ZoneProfileStore } from './ZoneProfileStore.js';
+import { EventJournal } from './EventJournal.js';
 
 // -------------------- Timeout Configuration --------------------
 const FITNESS_TIMEOUTS = {
@@ -38,6 +40,8 @@ export class FitnessSession {
     this.userManager = new UserManager();
     this.governanceEngine = new GovernanceEngine();
     this.voiceMemoManager = new VoiceMemoManager(this);
+    this.zoneProfileStore = new ZoneProfileStore();
+    this.eventJournal = new EventJournal();
     this.treasureBox = null; // Instantiated on start
     this._userCollectionsCache = null;
     this._deviceOwnershipCache = null;
@@ -122,19 +126,70 @@ export class FitnessSession {
            this.treasureBox.recordUserHeartRate(user.name, deviceData.heartRate);
         }
       }
+      const ledger = this.userManager?.assignmentLedger;
+      if (ledger) {
+        const ledgerEntry = ledger.get(device.id);
+        const resolvedSlug = user ? slugifyId(user.name) : null;
+        if (ledgerEntry) {
+          if (ledgerEntry.occupantSlug && resolvedSlug && ledgerEntry.occupantSlug !== resolvedSlug) {
+            this.eventJournal?.log('LEDGER_DEVICE_MISMATCH', {
+              deviceId: device.id,
+              ledgerSlug: ledgerEntry.occupantSlug,
+              resolvedSlug
+            }, { severity: 'warn' });
+          }
+          if (ledgerEntry.occupantSlug && !resolvedSlug) {
+            this.eventJournal?.log('LEDGER_DEVICE_MISSING_USER', {
+              deviceId: device.id,
+              ledgerSlug: ledgerEntry.occupantSlug
+            }, { severity: 'warn' });
+          }
+        }
+      }
     }
 
     if (started) this._log('session_started', { sessionId: this.sessionId });
     this._maybeTickTimeline(deviceData?.timestamp || now);
   }
 
-  setParticipantRoster(roster = [], guestAssignments = {}) {
+  setParticipantRoster(roster = [], deviceAssignments = {}) {
     this.userManager.setRoster(roster);
-    if (guestAssignments && typeof guestAssignments === 'object') {
-      Object.entries(guestAssignments).forEach(([deviceId, guestName]) => {
-        this.userManager.assignGuest(deviceId, guestName);
+    if (!deviceAssignments || typeof deviceAssignments !== 'object') return;
+
+    const assign = (deviceId, assignment) => {
+      if (!deviceId || !assignment) return;
+      const name = assignment?.occupantName
+        || assignment?.name
+        || assignment?.metadata?.name
+        || (typeof assignment === 'string' ? assignment : null);
+      const metadata = {
+        ...(assignment && typeof assignment === 'object' ? assignment : {}),
+        name,
+        zones: assignment?.zones || assignment?.metadata?.zones || null,
+        baseUserName: assignment?.baseUserName || assignment?.metadata?.baseUserName || assignment?.metadata?.base_user_name || null,
+        profileId: assignment?.profileId ?? assignment?.metadata?.profileId ?? assignment?.metadata?.profile_id ?? null
+      };
+      this.userManager.assignGuest(deviceId, name, metadata);
+    };
+
+    if (Array.isArray(deviceAssignments)) {
+      deviceAssignments.forEach((assignment) => {
+        if (!assignment) return;
+        const deviceId = assignment.deviceId
+          ?? assignment.device_id
+          ?? assignment.deviceID
+          ?? assignment.device_id_str;
+        assign(deviceId, assignment);
       });
+      return;
     }
+
+    if (deviceAssignments instanceof Map) {
+      deviceAssignments.forEach((assignment, deviceId) => assign(deviceId, assignment));
+      return;
+    }
+
+    Object.entries(deviceAssignments).forEach(([deviceId, assignment]) => assign(deviceId, assignment));
   }
 
   get roster() {
@@ -158,12 +213,10 @@ export class FitnessSession {
       if (!device || device.id == null) return;
       const deviceId = String(device.id);
       const heartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
-      const guestEntry = this.userManager?.guestAssignments instanceof Map
-        ? this.userManager.guestAssignments.get(deviceId)
-        : null;
-      const guestName = this.userManager.getGuestNameForDevice(deviceId);
+      const guestEntry = this.userManager?.assignmentLedger?.get?.(deviceId) || null;
+      const ledgerName = guestEntry?.occupantName || guestEntry?.metadata?.name || null;
       const mappedUser = this.userManager.resolveUserForDevice(deviceId);
-      const participantName = guestName || mappedUser?.name;
+      const participantName = ledgerName || mappedUser?.name;
       if (!participantName) return;
 
       const key = slugifyId(participantName);
@@ -179,7 +232,10 @@ export class FitnessSession {
         }
       }
 
-      const isGuest = Boolean(guestName);
+      const isGuest = (guestEntry?.occupantType || 'guest') === 'guest';
+      const baseUserName = isGuest
+        ? (guestEntry?.metadata?.baseUserName || guestEntry?.metadata?.base_user_name || null)
+        : participantName;
       const displayLabel = resolveDisplayLabel({
         name: participantName,
         groupLabel: isGuest ? null : mappedUser?.groupLabel,
@@ -191,9 +247,7 @@ export class FitnessSession {
         displayLabel,
         groupLabel: isGuest ? null : mappedUser?.groupLabel || null,
         profileId: mappedUser?.id || key,
-        baseUserName: isGuest
-          ? (guestEntry?.baseUserName || null)
-          : participantName,
+        baseUserName,
         isGuest,
         hrDeviceId: deviceId,
         heartRate: resolvedHeartRate,
@@ -285,6 +339,10 @@ export class FitnessSession {
       this.userManager.setRoster(participantRoster);
     }
 
+    if (zoneConfig) {
+      this.zoneProfileStore?.setBaseZoneConfig(zoneConfig);
+    }
+
     // Process Users (from UserManager)
     const allUsers = this.userManager.getAllUsers();
     allUsers.forEach(user => {
@@ -309,7 +367,8 @@ export class FitnessSession {
         ensureSeriesCapacity(series, intervalIndex);
         series[intervalIndex] = hrValue > 0 ? hrValue : null;
         this.snapshot.participantSeries.set(slug, series);
-    });
+      });
+      this.zoneProfileStore?.syncFromUsers(allUsers);
 
     // Process Devices (from DeviceManager)
     const allDevices = this.deviceManager.getAllDevices();
@@ -342,14 +401,16 @@ export class FitnessSession {
     }
     
     if (zoneConfig) {
-        this.snapshot.zoneConfig = deepClone(zoneConfig);
+      this.snapshot.zoneConfig = deepClone(zoneConfig);
     }
 
     this._maybeAutosave();
     this._userCollectionsCache = this.userManager.getUserCollections();
     this._deviceOwnershipCache = this.userManager.getDeviceOwnership();
     this._guestCandidatesCache = this.userManager.getGuestCandidates();
-    this._userZoneProfilesCache = this.userManager.getUserZoneProfiles();
+    this._userZoneProfilesCache = this.zoneProfileStore
+      ? this.zoneProfileStore.getProfileMap()
+      : this.userManager.getUserZoneProfiles();
     
     // Run Governance Evaluation
     // Use the roster which already filters out suppressed devices
@@ -802,9 +863,91 @@ export class FitnessSession {
 
   get userZoneProfiles() {
     if (!this._userZoneProfilesCache) {
-      this._userZoneProfilesCache = this.userManager.getUserZoneProfiles();
+      this._userZoneProfilesCache = this.zoneProfileStore
+        ? this.zoneProfileStore.getProfileMap()
+        : this.userManager.getUserZoneProfiles();
     }
     return this._userZoneProfilesCache;
+  }
+
+  get zoneProfiles() {
+    return this.zoneProfileStore ? this.zoneProfileStore.getProfiles() : [];
+  }
+
+  getZoneProfile(identifier) {
+    return this.zoneProfileStore ? this.zoneProfileStore.getProfile(identifier) : null;
+  }
+
+  cleanupOrphanGuests() {
+    const ledger = this.userManager?.assignmentLedger;
+    if (!ledger) {
+      return { removed: 0, devices: [] };
+    }
+    const snapshot = ledger.snapshot();
+    const removedDevices = [];
+    snapshot.forEach((entry) => {
+      if (!entry) return;
+      const slug = entry.occupantSlug || null;
+      const user = slug ? this.userManager.getUser(slug) : null;
+      const boundDeviceId = user?.hrDeviceId ? String(user.hrDeviceId) : null;
+      const deviceMatches = boundDeviceId === entry.deviceId;
+      if (!user || !deviceMatches) {
+        ledger.remove(entry.deviceId);
+        removedDevices.push(entry.deviceId);
+        this.eventJournal?.log('ORPHAN_GUEST_REMOVED', {
+          deviceId: entry.deviceId,
+          occupantSlug: entry.occupantSlug || null,
+          reason: !user ? 'user-missing' : 'device-mismatch'
+        }, { severity: 'warn' });
+      }
+    });
+    return { removed: removedDevices.length, devices: removedDevices };
+  }
+
+  reconcileAssignments() {
+    const ledger = this.userManager?.assignmentLedger;
+    const mismatches = [];
+    if (!ledger) {
+      return { mismatches };
+    }
+    const snapshot = ledger.snapshot();
+    snapshot.forEach((entry) => {
+      if (!entry) return;
+      const slug = entry.occupantSlug || null;
+      const user = slug ? this.userManager.getUser(slug) : null;
+      if (!user) {
+        mismatches.push({ type: 'missing-user', deviceId: entry.deviceId, occupantSlug: slug });
+        this.eventJournal?.log('LEDGER_RECONCILE_WARN', {
+          deviceId: entry.deviceId,
+          occupantSlug: slug,
+          issue: 'missing-user'
+        }, { severity: 'warn' });
+        return;
+      }
+      const boundDeviceId = user.hrDeviceId ? String(user.hrDeviceId) : null;
+      if (boundDeviceId && boundDeviceId !== entry.deviceId) {
+        mismatches.push({ type: 'device-mismatch', deviceId: entry.deviceId, occupantSlug: slug, boundDeviceId });
+        this.eventJournal?.log('LEDGER_RECONCILE_WARN', {
+          deviceId: entry.deviceId,
+          occupantSlug: slug,
+          issue: 'device-mismatch',
+          boundDeviceId
+        }, { severity: 'warn' });
+      }
+      const device = this.deviceManager.getDevice(entry.deviceId);
+      if (!device) {
+        mismatches.push({ type: 'device-missing', deviceId: entry.deviceId, occupantSlug: slug });
+        this.eventJournal?.log('LEDGER_RECONCILE_WARN', {
+          deviceId: entry.deviceId,
+          occupantSlug: slug,
+          issue: 'device-missing'
+        }, { severity: 'warn' });
+      }
+    });
+    if (mismatches.length === 0) {
+      this.eventJournal?.log('LEDGER_RECONCILE_OK', { count: snapshot.length });
+    }
+    return { mismatches };
   }
 
   invalidateUserCaches() {
@@ -812,5 +955,6 @@ export class FitnessSession {
     this._deviceOwnershipCache = null;
     this._guestCandidatesCache = null;
     this._userZoneProfilesCache = null;
+    this.zoneProfileStore?.clear();
   }
 }

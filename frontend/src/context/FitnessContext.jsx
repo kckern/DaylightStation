@@ -5,10 +5,10 @@ import {
   getFitnessTimeouts,
   resolveDisplayLabel,
   slugifyId,
-  buildZoneConfig,
-  deriveZoneProgressSnapshot,
   resolveZoneThreshold
 } from '../hooks/useFitnessSession.js';
+import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.js';
+import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.js';
 
 // Create context
 const FitnessContext = createContext(null);
@@ -81,6 +81,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [connected, setConnected] = useState(false);
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
   const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
+  const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
+  const guestAssignmentServiceRef = useRef(null);
+  const [ledgerVersion, setLedgerVersion] = useState(0);
 
   // Session State
   const fitnessSessionRef = useRef(new FitnessSession());
@@ -143,30 +146,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const session = fitnessSessionRef.current;
   const fitnessDevices = session.deviceManager.devices;
   const users = session.userManager.users;
-  const rawGuestAssignments = session.userManager.guestAssignments;
-  const guestAssignments = React.useMemo(() => {
-    if (rawGuestAssignments instanceof Map) {
-      const snapshot = {};
-      rawGuestAssignments.forEach((value, key) => {
-        if (key == null) return;
-        snapshot[String(key)] = value;
-      });
-      return snapshot;
-    }
-    if (Array.isArray(rawGuestAssignments)) {
-      return rawGuestAssignments.reduce((acc, entry) => {
-        if (!entry) return acc;
-        const key = entry.deviceId ?? entry.device_id ?? entry.deviceID ?? entry.device_id_str;
-        if (key == null) return acc;
-        acc[String(key)] = entry;
-        return acc;
-      }, {});
-    }
-    if (rawGuestAssignments && typeof rawGuestAssignments === 'object') {
-      return { ...rawGuestAssignments };
-    }
-    return {};
-  }, [rawGuestAssignments, version]);
+  useEffect(() => {
+    const ledger = guestAssignmentLedgerRef.current;
+    ledger?.setEventJournal?.(session?.eventJournal || null);
+    const service = new GuestAssignmentService({ session, ledger });
+    guestAssignmentServiceRef.current = service;
+    session?.userManager?.setAssignmentLedger?.(ledger, {
+      onChange: () => setLedgerVersion((v) => v + 1)
+    });
+    return () => {
+      session?.userManager?.setAssignmentLedger?.(null);
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+    session.cleanupOrphanGuests?.();
+    session.reconcileAssignments?.();
+  }, [session, ledgerVersion]);
   
   // Legacy/Compatibility State
   const userGroupLabelMap = React.useMemo(() => {
@@ -311,22 +308,22 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // Guest Assignment
   const assignGuestToDevice = React.useCallback((deviceId, assignment) => {
-    if (deviceId == null) return;
-    const key = String(deviceId);
-    const session = fitnessSessionRef.current;
-    
-    if (!assignment) {
-      session.userManager.assignGuest(key, null);
-    } else {
-      const normalizedName = assignment.name || 'Guest';
-      session.userManager.assignGuest(key, normalizedName, assignment);
+    if (!guestAssignmentServiceRef.current) return;
+    const result = guestAssignmentServiceRef.current.assignGuest(deviceId, assignment);
+    if (!result?.ok && FITNESS_DEBUG) {
+      console.warn('[FitnessContext] assignGuestToDevice failed', result?.message);
     }
     forceUpdate();
   }, [forceUpdate]);
 
   const clearGuestAssignment = React.useCallback((deviceId) => {
-    assignGuestToDevice(deviceId, null);
-  }, [assignGuestToDevice]);
+    if (!guestAssignmentServiceRef.current) return;
+    const result = guestAssignmentServiceRef.current.clearGuest(deviceId);
+    if (!result?.ok && FITNESS_DEBUG) {
+      console.warn('[FitnessContext] clearGuestAssignment failed', result?.message);
+    }
+    forceUpdate();
+  }, [forceUpdate]);
 
   const suppressDeviceUntilNextReading = React.useCallback((deviceId) => {
     if (deviceId == null) return false;
@@ -354,15 +351,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (activeIds instanceof Set) {
       candidateIds.forEach((key) => {
         if (activeIds.delete(key)) {
-          mutated = true;
-        }
-      });
-    }
-
-    const guestAssignmentsMap = session.userManager?.guestAssignments;
-    if (guestAssignmentsMap instanceof Map) {
-      candidateIds.forEach((key) => {
-        if (guestAssignmentsMap.delete(key)) {
           mutated = true;
         }
       });
@@ -723,12 +711,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [participantRoster]);
 
   const replacedPrimaryPool = React.useMemo(() => {
-    if (!guestAssignments || primaryConfigByName.size === 0) return [];
+    if (primaryConfigByName.size === 0) return [];
     const seen = new Set();
     const pool = [];
-    Object.values(guestAssignments || {}).forEach((assignment) => {
-      if (!assignment?.baseUserName) return;
-      const config = primaryConfigByName.get(assignment.baseUserName);
+    deviceAssignments.forEach((assignment) => {
+      const baseUserName = assignment?.metadata?.baseUserName || assignment?.metadata?.base_user_name;
+      if (!baseUserName) return;
+      const config = primaryConfigByName.get(baseUserName);
       if (!config) return;
       const id = config.id || slugifyId(config.name);
       if (seen.has(id)) return;
@@ -743,7 +732,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       });
     });
     return pool;
-  }, [guestAssignments, primaryConfigByName]);
+  }, [deviceAssignments, primaryConfigByName]);
 
   const participantLookupByDevice = React.useMemo(() => {
     const map = new Map();
@@ -784,7 +773,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       const data = user.currentData || {};
       
       const deviceId = user.hrDeviceId ? String(user.hrDeviceId) : null;
-      const isGuest = deviceId && guestAssignments && guestAssignments[deviceId];
+      const ledgerEntry = deviceId ? deviceAssignmentMap.get(deviceId) : null;
+      const isGuest = Boolean(ledgerEntry);
       const source = isGuest ? 'Guest' : 'Primary';
       const displayLabel = getDisplayLabel(user.name);
 
@@ -809,7 +799,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       });
     });
     return map;
-  }, [allUsers, guestAssignments, getDisplayLabel]);
+  }, [allUsers, deviceAssignmentMap, getDisplayLabel]);
 
   const userCollections = React.useMemo(() => {
     const collections = session?.userCollections;
@@ -828,10 +818,69 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
   }, [session, version]);
 
-  const userZoneProfiles = React.useMemo(() => {
-    const profiles = session?.userZoneProfiles;
-    return profiles instanceof Map ? profiles : new Map();
+  const deviceAssignments = React.useMemo(() => {
+    return guestAssignmentLedgerRef.current.snapshot();
+  }, [ledgerVersion]);
+
+  const deviceAssignmentMap = React.useMemo(() => {
+    const map = new Map();
+    deviceAssignments.forEach((entry) => {
+      if (!entry || entry.deviceId == null) return;
+      map.set(String(entry.deviceId), entry);
+    });
+    return map;
+  }, [deviceAssignments]);
+
+  const getDeviceAssignment = React.useCallback((deviceId) => {
+    if (deviceId == null) return null;
+    return deviceAssignmentMap.get(String(deviceId)) || null;
+  }, [deviceAssignmentMap]);
+
+  const zoneProfiles = React.useMemo(() => {
+    if (!session) return [];
+    const profiles = Array.isArray(session.zoneProfiles)
+      ? session.zoneProfiles
+      : session.zoneProfileStore?.getProfiles?.() || [];
+    return profiles.map((profile) => ({
+      ...profile,
+      zoneConfig: Array.isArray(profile.zoneConfig)
+        ? profile.zoneConfig.map((zone) => ({ ...zone }))
+        : [],
+      zoneSequence: Array.isArray(profile.zoneSequence)
+        ? profile.zoneSequence.map((zone) => ({ ...zone }))
+        : [],
+      zoneSnapshot: profile.zoneSnapshot
+        ? {
+            ...profile.zoneSnapshot,
+            zoneSequence: Array.isArray(profile.zoneSnapshot.zoneSequence)
+              ? profile.zoneSnapshot.zoneSequence.map((zone) => ({ ...zone }))
+              : null
+          }
+        : null
+    }));
   }, [session, version]);
+
+  const zoneProfileLookup = React.useMemo(() => {
+    const map = new Map();
+    zoneProfiles.forEach((profile) => {
+      if (!profile?.slug) return;
+      map.set(profile.slug, profile);
+      if (profile.name) {
+        const nameKey = slugifyId(profile.name);
+        if (nameKey) {
+          map.set(nameKey, profile);
+        }
+      }
+    });
+    return map;
+  }, [zoneProfiles]);
+
+  const getZoneProfile = React.useCallback((identifier) => {
+    if (!identifier) return null;
+    const slug = slugifyId(identifier);
+    if (!slug) return null;
+    return zoneProfileLookup.get(slug) || null;
+  }, [zoneProfileLookup]);
 
   const userHeartRateMap = React.useMemo(() => {
     const map = new Map();
@@ -972,11 +1021,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const getUserZoneThreshold = React.useCallback((userName, zoneId) => {
     if (!zoneId) return null;
-    const session = fitnessSessionRef.current;
-    const user = session?.userManager?.getUser(userName);
-    const zoneProfile = user?.zoneConfig || normalizedBaseZoneConfig;
-    return resolveZoneThreshold(zoneProfile, zoneId);
-  }, [normalizedBaseZoneConfig]);
+    const profile = getZoneProfile(userName);
+    const zoneConfig = Array.isArray(profile?.zoneConfig) && profile.zoneConfig.length > 0
+      ? profile.zoneConfig
+      : normalizedBaseZoneConfig;
+    return resolveZoneThreshold(zoneConfig, zoneId);
+  }, [getZoneProfile, normalizedBaseZoneConfig]);
 
   const timelineSelectors = React.useMemo(() => {
     const timeline = session?.timeline || null;
@@ -1134,11 +1184,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     connected,
     fitnessDevices,
     users,
-    guestAssignments,
+    deviceAssignments,
+    zoneProfiles,
+    getZoneProfile,
     userCollections,
     deviceOwnership,
     guestCandidates: guestCandidateList,
-    userZoneProfiles,
     
     allDevices,
     allUsers,
@@ -1196,8 +1247,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     zoneRankMap,
     colorToZoneId,
     zoneInfoMap,
+    guestAssignmentService: guestAssignmentServiceRef.current,
     
     getDeviceUser: resolveUserByDevice,
+    getDeviceAssignment,
     
     // Legacy / Compatibility
     fitnessSession: session?.summary,
@@ -1220,7 +1273,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     getUserZoneThreshold,
     userHeartRates: new Map(), // TODO
     getUserHeartRate,
-    replacedPrimaryPool: [],
+    replacedPrimaryPool,
     primaryUsers: [],
     secondaryUsers: [],
     deviceConfiguration: ant_devices,
