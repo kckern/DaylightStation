@@ -5,6 +5,7 @@ import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
 import '../FitnessCam.scss';
+import { usePersistentVolume } from '../usePersistentVolume.js';
 
 const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
 const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
@@ -49,8 +50,6 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   const loggedTrackRef = useRef(null);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
-  const [musicVolume, setMusicVolume] = useState(0.1);
-  const [videoVolume, setVideoVolume] = useState(1);
   const [isVideoAvailable, setIsVideoAvailable] = useState(false);
   const touchHandledRef = useRef(false);
   
@@ -91,32 +90,23 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
       || null;
   }, [currentTrack]);
 
-  const applyMusicVolume = useCallback((volume) => {
-    const media = audioPlayerRef.current?.getMediaElement?.();
-    if (media && typeof media.volume === 'number') {
-      media.volume = volume;
-    }
-  }, []);
+  const videoVolumeState = usePersistentVolume({
+    showId: 'fitness-video',
+    seasonId: 'unknown',
+    trackId: 'video',
+    playerRef: videoPlayerRef
+  });
 
-  const applyVideoVolume = useCallback((volume) => {
-    if (!videoPlayerRef?.current) return;
-    const media = videoPlayerRef.current.getMediaElement?.();
-    if (media && typeof media.volume === 'number') {
-      media.volume = volume;
-    }
-  }, [videoPlayerRef]);
+  const musicVolumeState = usePersistentVolume({
+    showId: 'fitness-music',
+    seasonId: 'unknown',
+    trackId: currentTrackIdentity || 'music',
+    playerRef: audioPlayerRef
+  });
 
-  useEffect(() => {
-    applyMusicVolume(musicVolume);
-  }, [musicVolume, applyMusicVolume]);
-
-  useEffect(() => {
-    applyMusicVolume(musicVolume);
-  }, [playQueueData, applyMusicVolume, musicVolume]);
-
-  useEffect(() => {
-    applyVideoVolume(videoVolume);
-  }, [videoVolume, applyVideoVolume]);
+  const applyVideoVolume = useCallback(() => {
+    videoVolumeState.applyToPlayer();
+  }, [videoVolumeState]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -141,15 +131,13 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
         return;
       }
       setIsVideoAvailable(true);
-      if (typeof media.volume === 'number') {
-        setVideoVolume(media.volume);
-      }
+      applyVideoVolume();
     };
     probeVideoElement();
     return () => {
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, [videoPlayerRef]);
+  }, [videoPlayerRef, applyVideoVolume]);
 
   // Load playlist when selectedPlaylistId changes
   useEffect(() => {
@@ -261,10 +249,10 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
       plexId: currentTrack?.plex || null,
       mediaKey: currentTrack?.key || currentTrack?.media_key || null,
       durationSeconds,
-      volume: Math.round((musicVolume || 0) * 100) / 100,
+      volume: Math.round((musicVolumeState.volume || 0) * 100) / 100,
       musicEnabled: Boolean(musicEnabled)
     });
-  }, [sessionInstance, currentTrackIdentity, currentTrack, selectedPlaylistId, musicVolume, musicEnabled]);
+  }, [sessionInstance, currentTrackIdentity, currentTrack, selectedPlaylistId, musicVolumeState.volume, musicEnabled]);
 
   const handleNext = () => {
     console.log('[Next] Button clicked');
@@ -293,15 +281,21 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
     }
   };
 
-  const videoDisplayLevel = useMemo(() => snapToTouchLevel(linearLevelFromVolume(videoVolume)), [videoVolume]);
-  const musicDisplayLevel = useMemo(() => snapToTouchLevel(logLevelFromVolume(musicVolume)), [musicVolume]);
+  const videoDisplayLevel = useMemo(
+    () => snapToTouchLevel(linearLevelFromVolume(videoVolumeState.volume)),
+    [videoVolumeState.volume]
+  );
+  const musicDisplayLevel = useMemo(
+    () => snapToTouchLevel(logLevelFromVolume(musicVolumeState.volume)),
+    [musicVolumeState.volume]
+  );
 
   const handleVideoLevelSelect = (level) => {
-    setVideoVolume(linearVolumeFromLevel(level));
+    videoVolumeState.setVolume(linearVolumeFromLevel(level));
   };
 
   const handleMusicLevelSelect = (level) => {
-    setMusicVolume(logVolumeFromLevel(level));
+    musicVolumeState.setVolume(logVolumeFromLevel(level));
   };
 
   const toggleControls = () => {
@@ -341,6 +335,12 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
 
   const videoMediaAvailable = Boolean(videoPlayerRef?.current?.getMediaElement?.());
   const musicMediaAvailable = Boolean(audioPlayerRef.current?.getMediaElement?.());
+
+  useEffect(() => {
+    if (musicMediaAvailable) {
+      musicVolumeState.applyToPlayer();
+    }
+  }, [musicMediaAvailable, musicVolumeState]);
 
   const formatTime = (seconds) => {
     if (!seconds || !isFinite(seconds)) return '0:00';
@@ -471,7 +471,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
             <div className="expanded-section">
               {isVideoAvailable && (
                 <div className="mix-row">
-                  <label id="video-volume-label" className="mix-label">Video Volume: {Math.round(videoVolume * 100)}%
+                  <label id="video-volume-label" className="mix-label">Video Volume: {Math.round((videoVolumeState.volume || 0) * 100)}%
 
                   </label>
                   <div className="mix-controls">
@@ -485,7 +485,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
                 </div>
               )}
               <div className="mix-row">
-                <label id="music-volume-label" className="mix-label">Music Volume: {Math.round(musicVolume * 100)}%
+                <label id="music-volume-label" className="mix-label">Music Volume: {Math.round((musicVolumeState.volume || 0) * 100)}%
 
                 </label>
                 <div className="mix-controls">
@@ -551,7 +551,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
             ref={audioPlayerRef}
             key={selectedPlaylistId} // Remount only when playlist ID changes
             queue={playQueueData}
-            play={{ volume: musicVolume }}
+            play={{ volume: musicVolumeState.volume }}
             onProgress={handleProgress}
             playerType="audio"
           />

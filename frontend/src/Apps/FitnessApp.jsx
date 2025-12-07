@@ -8,6 +8,7 @@ import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessNavbar from '../modules/Fitness/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
+import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 
 const FitnessApp = () => {
@@ -353,51 +354,52 @@ const FitnessApp = () => {
   
   return (
     <MantineProvider theme={{ colorScheme: 'dark' }}>
-      <FitnessProvider 
-        fitnessConfiguration={fitnessConfiguration}
-        fitnessPlayQueue={fitnessPlayQueue}
-        setFitnessPlayQueue={setFitnessPlayQueue}
-      >
-        <div className={`fitness-app-container ${kioskUI ? 'kiosk-ui' : ''}`}>
-          <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
-            {loading && (
-              <div style={{display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',position:'absolute',inset:0}}>
-                <Text size="lg">Loading fitness configuration…</Text>
-                <Text size="sm" style={{marginTop: '0.5rem', opacity: 0.7}}>
-                  {kioskUI ? 'Firefox detected - optimized for kiosk mode' : 'Preparing application...'}
-                </Text>
-                <button 
-                  style={{
-                    marginTop: '1rem',
-                    padding: '0.75rem 1.5rem',
-                    fontSize: '1rem',
-                    backgroundColor: '#228be6',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '0.5rem',
-                    cursor: 'pointer',
-                    fontWeight: 'bold'
-                  }}
-                  onPointerDown={(e) => {
-                    try {
-                      e.preventDefault();
-                      window.location.reload();
-                    } catch (err) {
-                      console.warn('Reload failed, trying alternative method:', err);
-                      window.location.href = window.location.href;
-                    }
-                  }}
-                  onClick={(e) => {
-                    // Fallback for browsers that don't support pointerdown properly
-                    try {
-                      e.preventDefault();
-                      window.location.reload();
-                    } catch (err) {
-                      console.warn('Reload failed, trying alternative method:', err);
-                      window.location.href = window.location.href;
-                    }
-                  }}
-                  onKeyDown={(e) => {
+      <VolumeProvider>
+        <FitnessProvider 
+          fitnessConfiguration={fitnessConfiguration}
+          fitnessPlayQueue={fitnessPlayQueue}
+          setFitnessPlayQueue={setFitnessPlayQueue}
+        >
+          <div className={`fitness-app-container ${kioskUI ? 'kiosk-ui' : ''}`}>
+            <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
+              {loading && (
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',position:'absolute',inset:0}}>
+                  <Text size="lg">Loading fitness configuration…</Text>
+                  <Text size="sm" style={{marginTop: '0.5rem', opacity: 0.7}}>
+                    {kioskUI ? 'Firefox detected - optimized for kiosk mode' : 'Preparing application...'}
+                  </Text>
+                  <button 
+                    style={{
+                      marginTop: '1rem',
+                      padding: '0.75rem 1.5rem',
+                      fontSize: '1rem',
+                      backgroundColor: '#228be6',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.5rem',
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                    onPointerDown={(e) => {
+                      try {
+                        e.preventDefault();
+                        window.location.reload();
+                      } catch (err) {
+                        console.warn('Reload failed, trying alternative method:', err);
+                        window.location.href = window.location.href;
+                      }
+                    }}
+                    onClick={(e) => {
+                      // Fallback for browsers that don't support pointerdown properly
+                      try {
+                        e.preventDefault();
+                        window.location.reload();
+                      } catch (err) {
+                        console.warn('Reload failed, trying alternative method:', err);
+                        window.location.href = window.location.href;
+                      }
+                    }}
+                    onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       try {
                         e.preventDefault();
@@ -504,6 +506,7 @@ const FitnessApp = () => {
           </div>
         </div>
       </FitnessProvider>
+    </VolumeProvider>
     </MantineProvider>
   );
 };
