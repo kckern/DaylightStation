@@ -29,9 +29,6 @@ function sanitizeVolume(entry, fallback = DEFAULT_VOLUME) {
 }
 
 function parseKeyMeta(key) {
-  if (key === GLOBAL_KEY) {
-    return { showId: null, seasonId: null, trackId: null };
-  }
   const match = key.match(VOLUME_KEY_PATTERN);
   if (!match) return null;
   const [, showId, seasonId, trackId] = match;
@@ -51,7 +48,7 @@ function parseStoredEntry(key, rawValue) {
 }
 
 function isVolumeKey(key) {
-  return key === GLOBAL_KEY || key.startsWith(`${FITNESS_PREFIX}:`);
+  return key.startsWith(`${FITNESS_PREFIX}:`);
 }
 
 function ensureGlobalDefault(map) {
@@ -66,7 +63,7 @@ function stripMeta(entry) {
 
 function normalizeIds(ids = {}) {
   const showId = ids.showId != null ? String(ids.showId) : null;
-  const seasonId = ids.seasonId != null ? String(ids.seasonId) : 'unknown';
+  const seasonId = ids.seasonId != null ? String(ids.seasonId) : 'global';
   const trackId = ids.trackId != null ? String(ids.trackId) : null;
   return { showId, seasonId, trackId };
 }
@@ -142,6 +139,7 @@ export function createVolumeStore(options = {}) {
 
   function writeThrough(key, entry) {
     if (!storage) return;
+    if (key === GLOBAL_KEY) return; // never persist global defaults
     try {
       storage.setItem(key, JSON.stringify(stripMeta(entry)));
       storageHealthy = true;
@@ -155,7 +153,14 @@ export function createVolumeStore(options = {}) {
 
   function setVolume(ids, patch) {
     const normalizedIds = normalizeIds(ids);
-    const key = makeTrackKey(normalizedIds) || GLOBAL_KEY;
+    const key = makeTrackKey(normalizedIds);
+
+    // Missing identity should never persist; just echo resolved fallback.
+    if (!key) {
+      const resolved = resolveFromMap(map, normalizedIds);
+      return { ...resolved, source: resolved.source || 'global' };
+    }
+
     const existing = map.get(key) || map.get(GLOBAL_KEY) || { ...DEFAULT_VOLUME, updatedAt: 0 };
     const next = sanitizeVolume({
       level: patch?.level ?? existing.level,
@@ -165,7 +170,7 @@ export function createVolumeStore(options = {}) {
     const entryWithMeta = { ...next, ...parseKeyMeta(key), key };
     map.set(key, entryWithMeta);
     writeThrough(key, entryWithMeta);
-    return { ...entryWithMeta, source: key === GLOBAL_KEY ? 'global' : 'exact' };
+    return { ...entryWithMeta, source: 'exact' };
   }
 
   function getVolume(ids) {
