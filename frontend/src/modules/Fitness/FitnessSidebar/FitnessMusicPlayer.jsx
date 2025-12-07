@@ -92,14 +92,14 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
 
   const videoVolumeState = usePersistentVolume({
     showId: 'fitness-video',
-    seasonId: 'unknown',
+    seasonId: 'global',
     trackId: 'video',
     playerRef: videoPlayerRef
   });
 
   const musicVolumeState = usePersistentVolume({
     showId: 'fitness-music',
-    seasonId: 'unknown',
+    seasonId: selectedPlaylistId || 'global',
     trackId: currentTrackIdentity || 'music',
     playerRef: audioPlayerRef
   });

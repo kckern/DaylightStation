@@ -3,9 +3,23 @@ import { useVolumeStore } from './VolumeProvider.jsx';
 
 const defaultState = { level: 0.6, muted: false, source: 'global' };
 
+const normalizePart = (value, fallback) => {
+  if (value === undefined || value === null) return fallback;
+  const normalized = String(value).trim();
+  if (!normalized || normalized.toLowerCase() === 'unknown') return fallback;
+  return normalized;
+};
+
 export function usePersistentVolume({ showId, seasonId, trackId, playerRef } = {}) {
   const { getVolume, setVolume, applyToPlayer } = useVolumeStore();
-  const ids = useMemo(() => ({ showId, seasonId, trackId }), [showId, seasonId, trackId]);
+  const ids = useMemo(
+    () => ({
+      showId: normalizePart(showId, 'fitness'),
+      seasonId: normalizePart(seasonId, 'global'),
+      trackId: normalizePart(trackId, null)
+    }),
+    [showId, seasonId, trackId]
+  );
   const [volume, setVolumeState] = useState(defaultState.level);
   const [muted, setMutedState] = useState(defaultState.muted);
   const [source, setSource] = useState(defaultState.source);
