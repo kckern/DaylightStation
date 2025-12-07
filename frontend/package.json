@@ -7,7 +7,8 @@
     "dev": "SASS_SILENCE_DEPRECATIONS=legacy-js-api vite --port 3111",
     "build": "SASS_SILENCE_DEPRECATIONS=legacy-js-api vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-specifier-resolution=node --test"
   },
   "dependencies": {
     "@mantine/carousel": "^7.11.1",
