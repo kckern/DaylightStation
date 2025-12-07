@@ -105,7 +105,9 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     usersConfigRaw = {},
     equipment = [],
     deviceConfiguration,
-    userZoneProgress
+    userZoneProgress,
+    getDeviceAssignment,
+    deviceAssignments = []
   } = fitnessCtx || {};
 
   const equipmentMap = useMemo(() => {
@@ -173,14 +175,16 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     return cadenceDevices
       .filter((device) => device && device.deviceId != null)
       .map((device) => {
-        const assignment = fitnessCtx?.guestAssignments?.[String(device.deviceId)] || null;
+        const assignment = typeof getDeviceAssignment === 'function'
+          ? getDeviceAssignment(device.deviceId)
+          : deviceAssignments.find((entry) => String(entry.deviceId) === String(device.deviceId));
         const baseUser = typeof getUserByDevice === 'function'
           ? getUserByDevice(device.deviceId)
           : allUsers.find((u) => String(u.cadenceDeviceId) === String(device.deviceId));
         const equipmentInfo = equipmentMap[String(device.deviceId)] || {};
         const equipmentSlug = equipmentInfo.slug
-          || (assignment?.equipmentId ? slugifyId(assignment.equipmentId, 'equipment') : null)
-          || slugifyId(assignment?.name || baseUser?.name || device.deviceId, 'equipment');
+          || (assignment?.metadata?.equipmentId ? slugifyId(assignment.metadata.equipmentId, 'equipment') : null)
+          || slugifyId(assignment?.occupantName || assignment?.metadata?.name || baseUser?.name || device.deviceId, 'equipment');
         const avatarSrc = DaylightMediaPath(`/media/img/equipment/${equipmentSlug}`);
         const rpm = Math.max(0, Math.round(device.cadence || 0));
         const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
@@ -198,7 +202,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           overlayBg
         };
       });
-  }, [cadenceDevices, equipmentMap, fitnessCtx?.guestAssignments, deviceConfiguration?.cadence, getUserByDevice, allUsers]);
+  }, [cadenceDevices, equipmentMap, deviceConfiguration?.cadence, getUserByDevice, allUsers]);
 
   const handleToggleAnchor = useCallback((event) => {
     if (event) {

@@ -1,4 +1,4 @@
-import { slugifyId, resolveDisplayLabel, deepClone } from './types';
+import { slugifyId, resolveDisplayLabel, deepClone } from './types.js';
 
 export class Device {
   constructor(data = {}) {

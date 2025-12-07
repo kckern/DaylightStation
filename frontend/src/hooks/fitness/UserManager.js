@@ -1,4 +1,4 @@
-import { slugifyId, resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnapshot } from './types';
+import { slugifyId, resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnapshot } from './types.js';
 
 export class User {
   constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
@@ -241,8 +241,9 @@ export class UserManager {
   constructor() {
     this.users = new Map(); // userId -> User
     this.roster = []; // Array of participant objects
-    this.guestAssignments = new Map(); // deviceId -> guestName
     this._defaultZones = null;
+    this.assignmentLedger = null;
+    this._onLedgerChange = null;
   }
 
   configure(usersConfig, globalZones) {
@@ -266,6 +267,11 @@ export class UserManager {
     processUserList(usersConfig.secondary, 'Secondary', 'Family');
     processUserList(usersConfig.family, 'Family', 'Family');
     processUserList(usersConfig.friends, 'Friend', 'Friend');
+  }
+
+  setAssignmentLedger(ledger, { onChange } = {}) {
+    this.assignmentLedger = ledger || null;
+    this._onLedgerChange = typeof onChange === 'function' ? onChange : null;
   }
 
   registerUser(config) {
@@ -334,41 +340,56 @@ export class UserManager {
   }
 
   assignGuest(deviceId, guestName, metadata = {}) {
-    if (deviceId == null) return;
+    if (deviceId == null) return null;
+
     const key = String(deviceId);
 
     if (!guestName) {
-      const existing = this.guestAssignments.get(key);
-      this.guestAssignments.delete(key);
-      if (existing?.name) {
-        const user = this.getUser(existing.name);
-        if (user && (user.hrDeviceId === key || !user.hrDeviceId)) {
-          const restored = existing.prevHrDeviceId ?? null;
-          user.hrDeviceId = restored;
+      if (this.assignmentLedger) {
+        const removed = this.assignmentLedger.remove(key);
+        if (removed) {
+          this.#emitLedgerChange();
         }
       }
-      return;
+      return null;
     }
 
-    let guestUser = this.getUser(guestName);
-    if (!guestUser) {
-      guestUser = new User(guestName, null, deviceId, null, {
-        globalZones: this._defaultZones,
-        zoneOverrides: metadata?.zones || null
-      });
-      this.users.set(slugifyId(guestName), guestUser);
-    } else if (Array.isArray(guestUser.zoneConfig) && Array.isArray(this._defaultZones)) {
-      guestUser.zoneConfig = buildZoneConfig(this._defaultZones, metadata?.zones || null);
+    const normalizedMetadata = this.#normalizeMetadata(metadata);
+    const zones = Array.isArray(normalizedMetadata?.zones) ? normalizedMetadata.zones : null;
+    const timestamp = Number.isFinite(normalizedMetadata?.updatedAt) ? normalizedMetadata.updatedAt : Date.now();
+    const displacedSlug = normalizedMetadata?.baseUserName ? slugifyId(normalizedMetadata.baseUserName) : null;
+    const occupantType = normalizedMetadata?.occupantType || 'guest';
+    const payload = {
+      deviceId: key,
+      occupantSlug: slugifyId(guestName),
+      occupantName: guestName,
+      occupantType,
+      displacedSlug,
+      overridesHash: zones ? JSON.stringify(zones) : null,
+      metadata: {
+        ...normalizedMetadata,
+        name: guestName,
+        updatedAt: timestamp
+      },
+      updatedAt: timestamp
+    };
+
+    if (this.assignmentLedger) {
+      this.assignmentLedger.upsert(payload);
+      this.#emitLedgerChange();
     }
 
-    const previousHrDeviceId = guestUser.hrDeviceId === key ? guestUser.hrDeviceId : (guestUser.hrDeviceId ?? null);
-    guestUser.hrDeviceId = key;
-
-    this.guestAssignments.set(key, {
+    const guestUser = this.#ensureUserFromAssignment({
       name: guestName,
-      prevHrDeviceId: previousHrDeviceId === key ? null : previousHrDeviceId,
-      ...metadata
+      deviceId: key,
+      zones,
+      profileId: normalizedMetadata?.profileId,
+      occupantType
     });
+    if (guestUser) {
+      guestUser.hrDeviceId = key;
+    }
+    return payload;
   }
 
   clearGuestAssignment(deviceId) {
@@ -376,27 +397,31 @@ export class UserManager {
   }
 
   getGuestNameForDevice(deviceId) {
-    const entry = this.guestAssignments.get(String(deviceId));
-    return entry?.name || (typeof entry === 'string' ? entry : null);
+    const entry = this.assignmentLedger?.get?.(deviceId);
+    if (!entry) return null;
+    if (entry.occupantType && entry.occupantType !== 'guest') return null;
+    return entry.occupantName || entry.metadata?.name || null;
   }
 
   resolveUserForDevice(deviceId) {
     const idStr = String(deviceId);
-    
-    // Check guest assignments first
-    const guestEntry = this.guestAssignments.get(idStr);
-    const guestName = guestEntry?.name || (typeof guestEntry === 'string' ? guestEntry : null);
-    
-    if (guestName) {
-      // Return a temporary user-like object or look up if we created a guest user
-      // For now, let's assume we might have a guest user registered or we return a stub
-      let guestUser = this.getUser(guestName);
-      if (!guestUser) {
-         // Create ad-hoc guest user if not exists
-         guestUser = new User(guestName, null, deviceId, null, {});
-         this.users.set(slugifyId(guestName), guestUser);
+    const ledgerEntry = this.assignmentLedger?.get?.(idStr);
+    const ledgerName = ledgerEntry?.occupantName || ledgerEntry?.metadata?.name || null;
+    if (ledgerName) {
+      const zones = Array.isArray(ledgerEntry?.metadata?.zones) ? ledgerEntry.metadata.zones : null;
+      const profileId = ledgerEntry?.metadata?.profileId ?? ledgerEntry?.metadata?.profile_id ?? null;
+      const occupantType = ledgerEntry?.occupantType || 'guest';
+      const user = this.#ensureUserFromAssignment({
+        name: ledgerName,
+        deviceId: idStr,
+        zones,
+        profileId,
+        occupantType
+      });
+      if (user && !user.hrDeviceId) {
+        user.hrDeviceId = idStr;
       }
-      return guestUser;
+      return user;
     }
 
     // Check registered users
@@ -406,6 +431,73 @@ export class UserManager {
       }
     }
     return null;
+  }
+
+  #normalizeMetadata(metadata) {
+    if (metadata && typeof metadata === 'object') {
+      return { ...metadata };
+    }
+    return {};
+  }
+
+  #createLedgerPayload(deviceId, assignment) {
+    return null;
+  }
+
+  #writeLedgerEntryFromAssignment(deviceId, assignment) {
+    return null;
+  }
+
+  #removeLedgerEntry(deviceId) {
+    if (!this.assignmentLedger) return;
+    const removed = this.assignmentLedger.remove(deviceId);
+    if (removed) {
+      this.#emitLedgerChange();
+    }
+  }
+
+  #hydrateLedgerFromAssignments() {
+    return null;
+  }
+
+  #emitLedgerChange() {
+    if (typeof this._onLedgerChange === 'function') {
+      this._onLedgerChange();
+    }
+  }
+
+  #ensureUserFromAssignment({ name, deviceId, zones, profileId, occupantType = 'guest' }) {
+    if (!name) return null;
+    const slug = slugifyId(name);
+    let user = null;
+
+    if (profileId != null) {
+      user = this.getUserById(profileId);
+    }
+
+    if (!user) {
+      user = this.users.get(slug) || null;
+    }
+
+    if (!user) {
+      user = new User(name, null, deviceId, null, {
+        id: profileId || undefined,
+        globalZones: this._defaultZones,
+        zoneOverrides: zones || null,
+        source: occupantType === 'guest' ? 'Guest' : null,
+        category: occupantType === 'guest' ? 'Guest' : null
+      });
+      this.users.set(slug, user);
+      return user;
+    }
+
+    if (zones && Array.isArray(this._defaultZones)) {
+      user.zoneConfig = buildZoneConfig(this._defaultZones, zones);
+    }
+    if (deviceId && !user.hrDeviceId) {
+      user.hrDeviceId = String(deviceId);
+    }
+    return user;
   }
 
   #buildUserDescriptor(user) {

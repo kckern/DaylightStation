@@ -1,0 +1,204 @@
+import { slugifyId, deriveZoneProgressSnapshot, getZoneMin } from './types.js';
+
+const cloneZoneConfig = (config = []) => {
+  if (!Array.isArray(config)) return [];
+  return config.map((zone, index) => ({
+    id: zone?.id ?? zone?.name ?? `zone-${index}`,
+    name: zone?.name ?? zone?.id ?? `Zone ${index + 1}`,
+    color: zone?.color || null,
+    min: Number.isFinite(zone?.min) ? zone.min : null
+  }));
+};
+
+const cloneZoneSequence = (sequence) => {
+  if (!Array.isArray(sequence)) return null;
+  return sequence.map((zone, index) => ({
+    id: zone?.id ?? zone?.name ?? `zone-${index}`,
+    name: zone?.name ?? zone?.id ?? `Zone ${index + 1}`,
+    color: zone?.color || null,
+    threshold: Number.isFinite(zone?.threshold)
+      ? zone.threshold
+      : getZoneMin(zone, { isFirst: index === 0 }),
+    index: Number.isFinite(zone?.index) ? zone.index : index
+  }));
+};
+
+const cloneSnapshot = (snapshot) => {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  const { zoneSequence, ...rest } = snapshot;
+  return {
+    ...rest,
+    zoneSequence: cloneZoneSequence(zoneSequence)
+  };
+};
+
+const now = () => Date.now();
+
+export class ZoneProfileStore {
+  constructor() {
+    this._profiles = new Map();
+    this._signature = null;
+    this._baseZoneConfig = null;
+  }
+
+  setBaseZoneConfig(zoneConfig) {
+    if (!Array.isArray(zoneConfig)) {
+      this._baseZoneConfig = null;
+      return;
+    }
+    this._baseZoneConfig = cloneZoneConfig(zoneConfig);
+  }
+
+  clear() {
+    this._profiles.clear();
+    this._signature = null;
+  }
+
+  syncFromUsers(usersIterable) {
+    const nextMap = new Map();
+    if (usersIterable && typeof usersIterable[Symbol.iterator] === 'function') {
+      for (const user of usersIterable) {
+        const profile = this.#buildProfileFromUser(user);
+        if (profile) {
+          nextMap.set(profile.slug, profile);
+        }
+      }
+    }
+    const signature = this.#computeSignature(nextMap);
+    if (signature === this._signature) {
+      return false;
+    }
+    this._profiles = nextMap;
+    this._signature = signature;
+    return true;
+  }
+
+  getProfiles() {
+    return Array.from(this._profiles.values()).map((profile) => this.#cloneProfile(profile));
+  }
+
+  getProfile(identifier) {
+    const resolved = this.#resolveProfile(identifier);
+    return resolved ? this.#cloneProfile(resolved) : null;
+  }
+
+  getProfileMap() {
+    return new Map(
+      Array.from(this._profiles.entries()).map(([slug, profile]) => [slug, this.#cloneProfile(profile)])
+    );
+  }
+
+  getZoneState(identifier) {
+    const profile = this.#resolveProfile(identifier);
+    if (!profile) return null;
+    return {
+      slug: profile.slug,
+      name: profile.name,
+      heartRate: profile.heartRate,
+      zoneId: profile.currentZoneId,
+      zoneName: profile.currentZoneName,
+      zoneColor: profile.currentZoneColor,
+      nextZoneId: profile.nextZoneId,
+      nextZoneThreshold: profile.nextZoneThreshold,
+      currentZoneThreshold: profile.currentZoneThreshold,
+      progress: profile.progress,
+      rangeMin: profile.rangeMin,
+      rangeMax: profile.rangeMax,
+      targetHeartRate: profile.targetHeartRate,
+      showBar: profile.showBar
+    };
+  }
+
+  #resolveProfile(identifier) {
+    if (!identifier) return null;
+    if (typeof identifier === 'string') {
+      const slug = slugifyId(identifier);
+      if (!slug) return null;
+      return this._profiles.get(slug) || null;
+    }
+    if (identifier?.slug) {
+      return this._profiles.get(identifier.slug) || null;
+    }
+    return null;
+  }
+
+  #buildProfileFromUser(user) {
+    if (!user?.name) return null;
+    const slug = slugifyId(user.name);
+    if (!slug) return null;
+
+    const hasCustomZones = Array.isArray(user.zoneConfig) && user.zoneConfig.length > 0;
+    const sourceZoneConfig = hasCustomZones ? user.zoneConfig : this._baseZoneConfig;
+    const normalizedZoneConfig = cloneZoneConfig(sourceZoneConfig || []);
+
+    const heartRate = Number.isFinite(user?.currentData?.heartRate)
+      ? Math.max(0, user.currentData.heartRate)
+      : (Number.isFinite(user?.zoneSnapshot?.currentHR) ? Math.max(0, user.zoneSnapshot.currentHR) : 0);
+
+    const snapshot = Array.isArray(sourceZoneConfig)
+      ? deriveZoneProgressSnapshot({ zoneConfig: sourceZoneConfig, heartRate })
+      : null;
+    const normalizedSnapshot = cloneSnapshot(snapshot);
+    const zoneSequence = normalizedSnapshot?.zoneSequence || this.#buildZoneSequence(normalizedZoneConfig);
+
+    return {
+      slug,
+      name: user.name,
+      displayName: user.displayName || user.name,
+      groupLabel: user.groupLabel || null,
+      profileId: user.id || slug,
+      zoneConfig: normalizedZoneConfig,
+      zoneSequence,
+      zoneSnapshot: normalizedSnapshot,
+      currentZoneId: normalizedSnapshot?.currentZoneId ?? null,
+      currentZoneName: normalizedSnapshot?.currentZoneName ?? null,
+      currentZoneColor: normalizedSnapshot?.currentZoneColor ?? null,
+      currentZoneThreshold: normalizedSnapshot?.currentZoneThreshold ?? null,
+      nextZoneId: normalizedSnapshot?.nextZoneId ?? null,
+      nextZoneThreshold: normalizedSnapshot?.nextZoneThreshold ?? null,
+      heartRate,
+      progress: normalizedSnapshot?.progress ?? null,
+      rangeMin: normalizedSnapshot?.rangeMin ?? null,
+      rangeMax: normalizedSnapshot?.rangeMax ?? null,
+      targetHeartRate: normalizedSnapshot?.targetHeartRate ?? null,
+      showBar: normalizedSnapshot?.showBar ?? false,
+      source: user.source || null,
+      updatedAt: now()
+    };
+  }
+
+  #buildZoneSequence(zoneConfig = []) {
+    if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return [];
+    return zoneConfig.map((zone, index) => ({
+      id: zone?.id ?? zone?.name ?? `zone-${index}`,
+      name: zone?.name ?? zone?.id ?? `Zone ${index + 1}`,
+      color: zone?.color || null,
+      threshold: Number.isFinite(zone?.min)
+        ? zone.min
+        : getZoneMin(zone, { isFirst: index === 0 }),
+      index
+    }));
+  }
+
+  #cloneProfile(profile) {
+    if (!profile) return null;
+    return {
+      ...profile,
+      zoneConfig: cloneZoneConfig(profile.zoneConfig),
+      zoneSequence: cloneZoneSequence(profile.zoneSequence) || [],
+      zoneSnapshot: profile.zoneSnapshot ? cloneSnapshot(profile.zoneSnapshot) : null
+    };
+  }
+
+  #computeSignature(map) {
+    const fingerprint = Array.from(map.values()).map((profile) => ({
+      slug: profile.slug,
+      hr: profile.heartRate,
+      zone: profile.currentZoneId,
+      progress: profile.progress,
+      config: profile.zoneConfig.map((zone) => `${zone.id}:${zone.min ?? ''}`).join('|')
+    }));
+    fingerprint.sort((a, b) => a.slug.localeCompare(b.slug));
+    return JSON.stringify(fingerprint);
+  }
+}
