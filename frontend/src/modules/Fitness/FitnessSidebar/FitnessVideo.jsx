@@ -1,63 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
+import { Webcam as FitnessWebcam } from '../components/FitnessWebcam.jsx';
 import '../FitnessCam.scss';
 
 const FitnessVideo = ({ minimal = false }) => {
-  const videoRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const streamRef = useRef(null);
+  const webcamRef = useRef(null);
   const { toggleSidebarSizeMode } = useFitnessContext() || {};
 
-  useEffect(() => {
-    let mounted = true;
+  const handleStreamReady = useCallback(() => {
+    setLoading(false);
+    setError(null);
+  }, []);
 
-    const startWebcam = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Request access to the first available webcam
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        });
-
-        if (!mounted) {
-          // Component unmounted, stop the stream
-          stream.getTracks().forEach(track => track.stop());
-          return;
-        }
-
-        streamRef.current = stream;
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-
-        setLoading(false);
-      } catch (err) {
-        console.error('Error accessing webcam:', err);
-        if (mounted) {
-          setError(err.message || 'Failed to access webcam');
-          setLoading(false);
-        }
-      }
-    };
-
-    startWebcam();
-
-    // Cleanup function
-    return () => {
-      mounted = false;
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-    };
+  const handleError = useCallback((err) => {
+    setError(err?.message || 'Failed to access webcam');
+    setLoading(false);
   }, []);
 
   return (
@@ -103,22 +62,41 @@ const FitnessVideo = ({ minimal = false }) => {
           </div>
         )}
         
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="fitness-video-feed"
-          style={{ 
+        <FitnessWebcam
+          ref={webcamRef}
+          enabled
+          audioConstraints={false}
+          videoConstraints={{ width: { ideal: 1280 }, height: { ideal: 720 } }}
+          onStreamReady={handleStreamReady}
+          onError={handleError}
+          videoClassName="fitness-video-feed"
+          videoStyle={{
             display: loading || error ? 'none' : 'block',
-            ...(minimal ? { 
-              width: '100%', 
-              height: '100%', 
+            ...(minimal ? {
+              width: '100%',
+              height: '100%',
               objectFit: 'cover',
               margin: 0,
               padding: 0
             } : {})
           }}
+          style={minimal ? { width: '100%', height: '100%' } : undefined}
+          renderOverlay={({ status, error: overlayError, permissionError }) => (
+            <>
+              {(status === 'starting' || status === 'reconnecting') && (
+                <div className="video-status">
+                  <div className="status-icon">⏳</div>
+                  <div className="status-text">Requesting camera access...</div>
+                </div>
+              )}
+              {(overlayError || permissionError) && (
+                <div className="video-status error">
+                  <div className="status-icon">⚠️</div>
+                  <div className="status-text">{overlayError?.message || permissionError?.message || 'Failed to access webcam'}</div>
+                </div>
+              )}
+            </>
+          )}
         />
       </div>
     </div>
