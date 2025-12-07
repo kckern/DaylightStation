@@ -710,6 +710,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return participantRoster.map(p => p.name).filter(Boolean);
   }, [participantRoster]);
 
+  const deviceAssignments = React.useMemo(() => {
+    return guestAssignmentLedgerRef.current.snapshot();
+  }, [ledgerVersion]);
+
+  const deviceAssignmentMap = React.useMemo(() => {
+    const map = new Map();
+    deviceAssignments.forEach((entry) => {
+      if (!entry || entry.deviceId == null) return;
+      map.set(String(entry.deviceId), entry);
+    });
+    return map;
+  }, [deviceAssignments]);
+
+  const getDeviceAssignment = React.useCallback((deviceId) => {
+    if (deviceId == null) return null;
+    return deviceAssignmentMap.get(String(deviceId)) || null;
+  }, [deviceAssignmentMap]);
+
   const replacedPrimaryPool = React.useMemo(() => {
     if (primaryConfigByName.size === 0) return [];
     const seen = new Set();
@@ -817,24 +835,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const guestCandidateList = React.useMemo(() => {
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
   }, [session, version]);
-
-  const deviceAssignments = React.useMemo(() => {
-    return guestAssignmentLedgerRef.current.snapshot();
-  }, [ledgerVersion]);
-
-  const deviceAssignmentMap = React.useMemo(() => {
-    const map = new Map();
-    deviceAssignments.forEach((entry) => {
-      if (!entry || entry.deviceId == null) return;
-      map.set(String(entry.deviceId), entry);
-    });
-    return map;
-  }, [deviceAssignments]);
-
-  const getDeviceAssignment = React.useCallback((deviceId) => {
-    if (deviceId == null) return null;
-    return deviceAssignmentMap.get(String(deviceId)) || null;
-  }, [deviceAssignmentMap]);
 
   const zoneProfiles = React.useMemo(() => {
     if (!session) return [];

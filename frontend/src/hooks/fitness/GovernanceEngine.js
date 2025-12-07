@@ -10,6 +10,128 @@ const normalizeLabelList = (labels) => {
     .filter(Boolean);
 };
 
+const normalizeZoneId = (value) => {
+  if (!value) return null;
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-');
+};
+
+const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const scoreRequirement = (req, { zoneRankMap } = {}) => {
+  const rankMap = zoneRankMap || {};
+  const zoneId = normalizeZoneId(req?.zone || req?.zoneLabel);
+  const zoneRank = zoneId != null && Number.isFinite(rankMap[zoneId]) ? rankMap[zoneId] : null;
+  const targetHeartRate = Number.isFinite(req?.targetHeartRate)
+    ? req.targetHeartRate
+    : (Number.isFinite(req?.threshold) ? req.threshold : null);
+  return {
+    zoneRank,
+    targetHeartRate
+  };
+};
+
+export const RequirementSeverity = {
+  UNKNOWN: -1
+};
+
+// Returns 1 if a is stricter than b, -1 if looser, 0 if equivalent
+export const compareSeverity = (a, b, options = {}) => {
+  const aScore = scoreRequirement(a, options);
+  const bScore = scoreRequirement(b, options);
+
+  if (aScore.zoneRank != null || bScore.zoneRank != null) {
+    if (aScore.zoneRank == null) return -1;
+    if (bScore.zoneRank == null) return 1;
+    if (aScore.zoneRank === bScore.zoneRank) return 0;
+    return aScore.zoneRank > bScore.zoneRank ? 1 : -1;
+  }
+
+  if (aScore.targetHeartRate != null || bScore.targetHeartRate != null) {
+    if (aScore.targetHeartRate == null) return -1;
+    if (bScore.targetHeartRate == null) return 1;
+    if (aScore.targetHeartRate === bScore.targetHeartRate) return 0;
+    return aScore.targetHeartRate > bScore.targetHeartRate ? 1 : -1;
+  }
+
+  return 0;
+};
+
+const buildRequirementKey = (req) => {
+  const zoneId = normalizeZoneId(req?.zone || req?.zoneLabel) || 'zone';
+  const selection = req?.selectionLabel || '';
+  const rule = req?.ruleLabel || req?.rule || '';
+  const requiredCount = Number.isFinite(req?.requiredCount) ? req.requiredCount : '';
+  return `${zoneId}|${selection}|${rule}|${requiredCount}`;
+};
+
+export const normalizeRequirements = (rawReqs, comparator = compareSeverity, options = {}) => {
+  const list = Array.isArray(rawReqs) ? rawReqs.filter(Boolean) : [];
+  const perParticipant = new Map();
+
+  list.forEach((req, index) => {
+    const missing = Array.isArray(req?.missingUsers) ? req.missingUsers.filter(Boolean) : [];
+    if (!missing.length) return;
+
+    missing.forEach((name) => {
+      const key = normalizeName(name);
+      if (!key) return;
+      const existing = perParticipant.get(key);
+      const incoming = {
+        req,
+        participantName: name,
+        updatedAt: Number.isFinite(req?.updatedAt) ? req.updatedAt : null,
+        index
+      };
+      if (!existing) {
+        perParticipant.set(key, incoming);
+        return;
+      }
+      const cmp = comparator(req, existing.req, options);
+      if (cmp > 0) {
+        perParticipant.set(key, incoming);
+        return;
+      }
+      if (cmp === 0) {
+        const hasIncomingUpdated = Number.isFinite(incoming.updatedAt);
+        const hasExistingUpdated = Number.isFinite(existing.updatedAt);
+        if (hasIncomingUpdated && hasExistingUpdated) {
+          if (incoming.updatedAt > existing.updatedAt) {
+            perParticipant.set(key, incoming);
+            return;
+          }
+        } else if (hasIncomingUpdated && !hasExistingUpdated) {
+          perParticipant.set(key, incoming);
+          return;
+        } else if (!hasIncomingUpdated && !hasExistingUpdated && incoming.index > existing.index) {
+          perParticipant.set(key, incoming);
+        }
+      }
+    });
+  });
+
+  const grouped = new Map();
+  perParticipant.forEach(({ req, participantName }) => {
+    const key = buildRequirementKey(req);
+    const existing = grouped.get(key);
+    const missingUsers = participantName ? [participantName] : [];
+    if (existing) {
+      const mergedMissing = Array.isArray(existing.missingUsers) ? existing.missingUsers : [];
+      if (participantName && !mergedMissing.includes(participantName)) {
+        mergedMissing.push(participantName);
+      }
+      grouped.set(key, { ...existing, missingUsers: mergedMissing });
+    } else {
+      const base = { ...req, missingUsers };
+      grouped.set(key, base);
+    }
+  });
+
+  return Array.from(grouped.values());
+};
+
 export class GovernanceEngine {
   constructor() {
     this.config = {};
@@ -405,11 +527,89 @@ export class GovernanceEngine {
     const challengeSnapshot = this._buildChallengeSnapshot(now);
     const nextChallengeSnapshot = this._buildNextChallengeSnapshot(now);
 
+    const unsatisfied = Array.isArray(summary.requirements)
+      ? summary.requirements.filter((rule) => rule && !rule.satisfied)
+      : [];
+    const combinedRequirements = (() => {
+      const list = [...unsatisfied];
+      if (challengeSnapshot && challengeSnapshot.status === 'pending') {
+        const challengeRequirement = {
+          zone: challengeSnapshot.zone || challengeSnapshot.zoneLabel,
+          targetZoneId: challengeSnapshot.zone || challengeSnapshot.zoneLabel || null,
+          zoneLabel: challengeSnapshot.zoneLabel || challengeSnapshot.zone || 'Target zone',
+          rule: challengeSnapshot.rule ?? null,
+          ruleLabel: challengeSnapshot.selectionLabel || challengeSnapshot.rule || 'Challenge requirement',
+          satisfied: false,
+          missingUsers: Array.isArray(challengeSnapshot.missingUsers)
+            ? challengeSnapshot.missingUsers.filter(Boolean)
+            : [],
+          metUsers: Array.isArray(challengeSnapshot.metUsers)
+            ? challengeSnapshot.metUsers.filter(Boolean)
+            : [],
+          requiredCount: Number.isFinite(challengeSnapshot.requiredCount) ? challengeSnapshot.requiredCount : null,
+          actualCount: Number.isFinite(challengeSnapshot.actualCount) ? challengeSnapshot.actualCount : null,
+          selectionLabel: challengeSnapshot.selectionLabel || '',
+          participantKey: null,
+          severity: (() => {
+            const zoneId = challengeSnapshot.zone || null;
+            const rankMap = this._latestInputs.zoneRankMap || {};
+            return zoneId && Number.isFinite(rankMap[zoneId]) ? rankMap[zoneId] : null;
+          })()
+        };
+        list.unshift(challengeRequirement);
+      }
+      return list;
+    })();
+
+    const lockRowsNormalized = normalizeRequirements(
+      combinedRequirements,
+      (a, b) => compareSeverity(a, b, { zoneRankMap: this._latestInputs.zoneRankMap || {} }),
+      { zoneRankMap: this._latestInputs.zoneRankMap || {} }
+    ).map((entry) => ({
+      ...entry,
+      participantKey: entry.participantKey || null,
+      targetZoneId: entry.targetZoneId || entry.zone || null,
+      severity: entry.severity != null ? entry.severity : (entry.targetZoneId && Number.isFinite((this._latestInputs.zoneRankMap || {})[entry.targetZoneId])
+        ? (this._latestInputs.zoneRankMap || {})[entry.targetZoneId]
+        : null)
+    }));
+
+    const enforceOneRowPerParticipant = (rows) => {
+      const seen = new Map();
+      const deduped = [];
+      const dropped = [];
+      rows.forEach((row) => {
+        const missing = Array.isArray(row.missingUsers) ? row.missingUsers : [];
+        const remaining = [];
+        missing.forEach((name) => {
+          const key = normalizeName(name);
+          if (!key) return;
+          if (seen.has(key)) {
+            dropped.push({ participant: key, kept: seen.get(key), dropped: row.targetZoneId || row.zone || null });
+            return;
+          }
+          seen.set(key, row.targetZoneId || row.zone || null);
+          remaining.push(name);
+        });
+        if (remaining.length) {
+          deduped.push({ ...row, missingUsers: remaining });
+        }
+      });
+      if (dropped.length && typeof console !== 'undefined' && console.warn) {
+        console.warn('[GovernanceEngine] Dropped duplicate participant requirements', dropped);
+      }
+      return deduped;
+    };
+
+    const lockRows = enforceOneRowPerParticipant(lockRowsNormalized);
+
     return {
       isGoverned: this._mediaIsGoverned(),
       status: this.phase || 'idle',
       labels: Array.isArray(this.media && this.media.labels) ? [...this.media.labels] : [],
       requirements: summary.requirements || [],
+      lockRows,
+      zoneRankMap: { ...(this._latestInputs.zoneRankMap || {}) },
       targetUserCount: summary.targetUserCount != null ? summary.targetUserCount : null,
       policyId: summary.policyId || null,
       policyName: this.challengeState?.activePolicyName || summary.policyId || null,
@@ -623,6 +823,9 @@ export class GovernanceEngine {
     return {
       zone: zoneId,
       zoneLabel: zoneInfo?.name || zoneId,
+      targetZoneId: zoneId,
+      participantKey: null,
+      severity: requiredRank,
       rule,
       ruleLabel: this._describeRule(rule, requiredCount),
       requiredCount,

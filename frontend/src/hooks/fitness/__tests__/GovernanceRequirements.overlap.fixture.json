@@ -1,0 +1,4 @@
+[
+  {"zone":"green","zoneLabel":"Green","missingUsers":["blue"],"satisfied":false},
+  {"zone":"yellow","zoneLabel":"Yellow","missingUsers":["blue"],"satisfied":false}
+]
