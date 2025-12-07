@@ -5,6 +5,7 @@ import { DaylightMediaPath } from '../../lib/api.mjs';
 import { COOL_ZONE_PROGRESS_MARGIN, calculateZoneProgressTowardsTarget } from '../../hooks/useFitnessSession.js';
 import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlay/ChallengeOverlay.jsx';
 import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverlay.jsx';
+import { normalizeRequirements, compareSeverity } from '../../hooks/fitness/GovernanceEngine.js';
 import VoiceMemoOverlay from './FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
 import FullscreenVitalsOverlay from './FitnessPlayerOverlay/FullscreenVitalsOverlay.jsx';
 
@@ -71,6 +72,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   const rawStatus = typeof governanceState.status === 'string' ? governanceState.status.toLowerCase() : '';
   const normalizedStatus = rawStatus === 'green' ? 'green' : rawStatus === 'yellow' ? 'yellow' : rawStatus === 'red' ? 'red' : 'grey';
   const requirementSummaries = Array.isArray(governanceState.requirements) ? governanceState.requirements : [];
+  const normalizedLockRows = Array.isArray(governanceState.lockRows) ? governanceState.lockRows : null;
   const watchers = Array.isArray(governanceState.watchers) ? governanceState.watchers : [];
   const challengeLocked = Boolean(governanceState.videoLocked);
   const challenge = governanceState.challenge;
@@ -157,10 +159,14 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
         selectionLabel: challengeSelectionLabel || ''
       }
       : null;
-    const combinedRequirements = [
-      ...(challengeRequirementItem ? [challengeRequirementItem] : []),
-      ...baseRequirementItems
-    ];
+    const combinedRequirements = normalizeRequirements(
+      [
+        ...(challengeRequirementItem ? [challengeRequirementItem] : []),
+        ...baseRequirementItems
+      ],
+      (a, b) => compareSeverity(a, b, { zoneRankMap: governanceState?.zoneRankMap || {} }),
+      { zoneRankMap: governanceState?.zoneRankMap || {} }
+    );
     const combinedMissingUsers = Array.from(new Set([...(missingChallengeUsers || []), ...missingUsers]));
 
     return {
@@ -240,10 +246,14 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
           ? `Goal: ${challengeRequirement.zone}${challengeRequiredCount != null ? ` (${challengeRequiredCount} ${challengeRequiredCount === 1 ? 'person' : 'people'})` : ''}`
           : null
       ].filter(Boolean),
-      requirements: [
-        ...(challengeRequirement ? [cloneRequirement(challengeRequirement)] : []),
-        ...unsatisfied
-      ],
+      requirements: normalizeRequirements(
+        [
+          ...(challengeRequirement ? [cloneRequirement(challengeRequirement)] : []),
+          ...unsatisfied
+        ],
+        (a, b) => compareSeverity(a, b, { zoneRankMap: governanceState?.zoneRankMap || {} }),
+        { zoneRankMap: governanceState?.zoneRankMap || {} }
+      ),
       highlightUsers: Array.from(new Set([
         ...challengeMissingUsers,
         ...missingUsers
@@ -268,7 +278,11 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     filterClass: '',
     title: 'Video Locked',
     descriptions: greyDescriptions,
-    requirements: unsatisfied,
+    requirements: normalizedLockRows || normalizeRequirements(
+      unsatisfied,
+      (a, b) => compareSeverity(a, b, { zoneRankMap: governanceState?.zoneRankMap || {} }),
+      { zoneRankMap: governanceState?.zoneRankMap || {} }
+    ),
     highlightUsers: greyHighlightUsers,
     countdown: null,
     countdownTotal: null,
