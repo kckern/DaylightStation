@@ -88,7 +88,7 @@ test('exact match wins even when siblings are fresher', () => {
   assert.equal(exact.source, 'exact');
 });
 
-test('malformed storage entries are ignored and fallback to global', () => {
+test('malformed storage entries are ignored and fallback to in-memory default global', () => {
   const storage = makeMemoryStorage({
     'volume:fitness:show:season:track': 'not-json',
     'volume:global': JSON.stringify({ level: 0.4, muted: false, updatedAt: 2 }),
@@ -96,8 +96,17 @@ test('malformed storage entries are ignored and fallback to global', () => {
   const store = createVolumeStore({ storage });
 
   const result = store.getVolume({ showId: 'show', seasonId: 'season', trackId: 'track' });
-  assert.equal(result.level, 0.4);
+  assert.equal(result.level, 0.6); // stored global is ignored; defaults stay in-memory only
   assert.equal(result.source, 'global');
+});
+
+test('missing identity never writes global and echoes fallback', () => {
+  const storage = makeMemoryStorage();
+  const store = createVolumeStore({ storage, now: makeTickingNow() });
+
+  const resolved = store.setVolume({ showId: null, seasonId: null, trackId: null }, { level: 0.1 });
+  assert.equal(resolved.level, 0.6);
+  assert.equal(storage.length, 0); // nothing persisted when identity is missing
 });
 
 test('write failures still update memory and only log once', () => {

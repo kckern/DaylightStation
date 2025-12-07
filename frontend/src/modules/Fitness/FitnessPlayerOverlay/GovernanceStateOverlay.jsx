@@ -5,7 +5,7 @@ import Player from '../../Player/Player.jsx';
 import './GovernanceStateOverlay.scss';
 
 const GOVERNANCE_AUDIO_TRACKS = {
-  init: 'sfx/bgmusic/fitness/init',
+  init: 'sfx/bgmusic/fitness/start',
   locked: 'sfx/bgmusic/fitness/locked'
 };
 
