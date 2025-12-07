@@ -63,7 +63,7 @@ class HomeAssistant {
     }
 
     async getSensorData(entityId) {
-        //eg sensor.living_room_plug_tv_power
+        //eg sensor.living_room_tv_plug_power
         const path = `/api/states/${entityId}`;
         return await this.fetch(path, 'GET');
     }
