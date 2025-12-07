@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import PropTypes from 'prop-types';
 import useVoiceMemoRecorder from '../FitnessSidebar/useVoiceMemoRecorder.js';
 import './VoiceMemoOverlay.scss';
@@ -86,6 +86,7 @@ const VoiceMemoOverlay = ({
   onOpenList,
   onOpenRedo,
   onRemoveMemo,
+  onAddMemo,
   onReplaceMemo,
   sessionId,
   playerRef,
@@ -106,6 +107,13 @@ const VoiceMemoOverlay = ({
   }, [overlayState?.memoId, voiceMemos]);
 
   const [autoAcceptProgress, setAutoAcceptProgress] = useState(0);
+  const [micLevel, setMicLevel] = useState(0);
+  const micLevelRafRef = React.useRef(null);
+  const liveMessageRef = React.useRef('');
+  const closeButtonRef = React.useRef(null);
+  const recordButtonRef = React.useRef(null);
+  const stopButtonRef = React.useRef(null);
+  const autoStartRef = React.useRef(false);
 
   const handleClose = useCallback(() => {
     onClose?.();
@@ -152,15 +160,16 @@ const VoiceMemoOverlay = ({
       return;
     }
     const targetId = overlayState?.memoId;
-    const stored = targetId ? (onReplaceMemo?.(targetId, memo) || memo) : memo;
+    const stored = targetId ? (onReplaceMemo?.(targetId, memo) || memo) : (onAddMemo?.(memo) || memo);
     const nextTarget = stored || memo;
     if (nextTarget) {
       onOpenReview?.(nextTarget, { autoAccept: false });
     } else {
       onClose?.();
     }
-  }, [overlayState?.memoId, onReplaceMemo, onOpenReview, onClose]);
+  }, [overlayState?.memoId, onReplaceMemo, onAddMemo, onOpenReview, onClose]);
 
+  const [recorderState, setRecorderState] = useState('idle'); // idle|recording|processing|ready|error
   const {
     isRecording,
     recordingDuration,
@@ -173,13 +182,28 @@ const VoiceMemoOverlay = ({
     sessionId,
     playerRef,
     preferredMicrophoneId,
-    onMemoCaptured: handleRedoCaptured
+    onMemoCaptured: handleRedoCaptured,
+    onStateChange: setRecorderState,
+    onLevel: useCallback((level) => {
+      if (micLevelRafRef.current) {
+        cancelAnimationFrame(micLevelRafRef.current);
+      }
+      micLevelRafRef.current = requestAnimationFrame(() => {
+        setMicLevel(Number.isFinite(level) ? level : 0);
+      });
+    }, [])
   });
+
+  const isProcessing = uploading || recorderState === 'processing';
+  const recorderErrorMessage = typeof recorderError === 'string' ? recorderError : recorderError?.message;
+  const recorderErrorRetryable = recorderError?.retryable !== false;
+  const isRecorderErrored = recorderState === 'error' || Boolean(recorderError);
 
   const handleStartRedoRecording = useCallback(() => {
     setRecorderError(null);
+    setRecorderState('recording');
     startRecording();
-  }, [setRecorderError, startRecording]);
+  }, [setRecorderError, setRecorderState, startRecording]);
 
   useEffect(() => {
     if (!overlayState?.open || overlayState.mode !== 'review' || !overlayState.autoAccept) {
@@ -209,6 +233,7 @@ const VoiceMemoOverlay = ({
   useEffect(() => {
     if (!overlayState?.open) {
       setAutoAcceptProgress(0);
+      setMicLevel(0);
     }
   }, [overlayState?.open]);
 
@@ -224,23 +249,87 @@ const VoiceMemoOverlay = ({
     }
   }, [overlayState?.mode, setRecorderError]);
 
+  // Auto-start recording for fresh redo captures (no memo id yet)
+  useLayoutEffect(() => {
+    if (!overlayState?.open || overlayState.mode !== 'redo') {
+      autoStartRef.current = false;
+      return;
+    }
+    if (!overlayState.memoId && !isRecording && !isProcessing && !isRecorderErrored && !autoStartRef.current) {
+      autoStartRef.current = true;
+      handleStartRedoRecording();
+    }
+  }, [overlayState?.open, overlayState?.mode, overlayState?.memoId, isRecording, isProcessing, isRecorderErrored, handleStartRedoRecording]);
+
   useEffect(() => {
     if (!overlayState?.open) return;
-    if ((overlayState.mode === 'review' || overlayState.mode === 'redo') && !currentMemo) {
-      if (voiceMemos.length > 0) {
-        onOpenList?.();
-      } else {
-        onClose?.();
-      }
-    }
-  }, [overlayState?.open, overlayState?.mode, currentMemo, voiceMemos, onOpenList, onClose]);
+    // Keep the overlay mounted; list should only open explicitly.
+  }, [overlayState?.open]);
 
-  const transcript = currentMemo?.transcriptClean || currentMemo?.transcriptRaw || 'Transcription in progress…';
-  const memoTimestamp = formatMemoTimestamp(currentMemo);
-  const memoVideoTimestamp = currentMemo?.videoTimeSeconds != null
-    ? formatTime(Math.max(0, Math.round(currentMemo.videoTimeSeconds)))
-    : '';
-  const recordingTimeLabel = formatTime(Math.max(0, Math.floor(recordingDuration / 1000)));
+  useEffect(() => {
+    if (overlayState?.mode === 'redo' && isProcessing) {
+      // keep overlay pinned; ensure recorder state reflects processing
+      setRecorderState('processing');
+    }
+    if (overlayState?.mode !== 'redo' && recorderState !== 'idle' && recorderState !== 'ready') {
+      setRecorderState('idle');
+    }
+  }, [overlayState?.mode, isProcessing, recorderState]);
+
+  useEffect(() => () => {
+    if (micLevelRafRef.current) {
+      cancelAnimationFrame(micLevelRafRef.current);
+    }
+  }, []);
+
+  // Focus management on mode change
+  useEffect(() => {
+    if (!overlayState?.open) return;
+    if (overlayState.mode === 'redo') {
+      const target = isRecording ? stopButtonRef.current : recordButtonRef.current;
+      target?.focus?.();
+    } else if (overlayState.mode === 'review' || overlayState.mode === 'list') {
+      closeButtonRef.current?.focus?.();
+    }
+  }, [overlayState?.open, overlayState?.mode, isRecording]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!overlayState?.open) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClose();
+      }
+      if (overlayState.mode === 'redo' && isRecording && (e.key === ' ' || e.key === 'Spacebar')) {
+        e.preventDefault();
+        stopRecording();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [overlayState?.open, overlayState?.mode, isRecording, handleClose, stopRecording]);
+
+  // ARIA live announcements for start/stop/processing
+  const prevRecordingRef = React.useRef(false);
+  const prevProcessingRef = React.useRef(false);
+  useEffect(() => {
+    const wasRecording = prevRecordingRef.current;
+    if (!wasRecording && isRecording) {
+      liveMessageRef.current = 'Recording started';
+    } else if (wasRecording && !isRecording) {
+      liveMessageRef.current = 'Recording stopped';
+    }
+    prevRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  useEffect(() => {
+    const wasProcessing = prevProcessingRef.current;
+    if (!wasProcessing && isProcessing) {
+      liveMessageRef.current = 'Processing voice memo';
+    }
+    prevProcessingRef.current = isProcessing;
+  }, [isProcessing]);
 
   if (!overlayState?.open) {
     return null;
@@ -250,15 +339,31 @@ const VoiceMemoOverlay = ({
   const showList = mode === 'list';
   const showReview = mode === 'review';
   const showRedo = mode === 'redo';
+  const titleText = showList
+    ? 'Voice Memos'
+    : showRedo
+      ? (overlayState.memoId ? 'Record Voice Memo' : 'Voice Memo')
+      : 'Voice Memo Review';
+
+  const transcript = currentMemo?.transcriptClean || currentMemo?.transcriptRaw || 'Transcription in progress…';
+  const memoTimestamp = currentMemo ? formatMemoTimestamp(currentMemo) : '';
+  const memoVideoTimestamp = currentMemo?.videoTimeSeconds != null
+    ? formatTime(Math.max(0, Math.round(currentMemo.videoTimeSeconds)))
+    : '';
+  const recordingTimeLabel = formatTime(Math.max(0, Math.floor(recordingDuration / 1000)));
+  const displayTranscript = showRedo
+    ? (isRecording || (!isProcessing && !isRecording) ? 'Recording…' : 'Processing voice memo…')
+    : (showReview && !currentMemo ? 'Finalizing memo…' : transcript);
+  const hasMemoId = Boolean(currentMemo?.memoId || overlayState?.memoId);
+  const memoTitle = currentMemo?.title || currentMemo?.name || currentMemo?.label || '';
+  const micLabel = preferredMicrophoneId ? `Mic: ${preferredMicrophoneId}` : '';
 
   return (
     <div className={`voice-memo-overlay voice-memo-overlay--${mode}`}>
       <div className="voice-memo-overlay__panel">
         <div className="voice-memo-overlay__header">
-          <div className="voice-memo-overlay__title">
-            {showList ? 'Voice Memos' : showRedo ? 'Redo Voice Memo' : 'Voice Memo Review'}
-          </div>
-          <button type="button" className="voice-memo-overlay__close" onClick={handleClose} aria-label="Close voice memo overlay">
+          <div className="voice-memo-overlay__title">{titleText}</div>
+          <button type="button" className="voice-memo-overlay__close" onClick={handleClose} aria-label="Close voice memo overlay" ref={closeButtonRef}>
             <Icons.Close />
           </button>
         </div>
@@ -296,12 +401,14 @@ const VoiceMemoOverlay = ({
           </div>
         ) : null}
 
-        {showReview && currentMemo ? (
+        {showReview ? (
           <div className="voice-memo-overlay__content">
             <div className="voice-memo-overlay__meta-large">
+              {memoTitle ? <span className="voice-memo-overlay__meta-heading">{memoTitle}</span> : null}
               {memoTimestamp && <span className="voice-memo-overlay__timestamp">{memoTimestamp}</span>}
+              {micLabel ? <span className="voice-memo-overlay__meta mic">{micLabel}</span> : null}
             </div>
-            <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--large">{transcript}</div>
+            <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--large">{displayTranscript}</div>
             {overlayState.autoAccept ? (
               <div className="voice-memo-overlay__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(autoAcceptProgress * 100)}>
                 <div className="voice-memo-overlay__progress-fill" style={{ transform: `scaleX(${autoAcceptProgress})` }} />
@@ -312,28 +419,56 @@ const VoiceMemoOverlay = ({
               <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--keep" onClick={handleAccept} title="Keep">
                 <Icons.Keep />
               </button>
-              <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--redo" onClick={() => handleRedo(currentMemo.memoId)} title="Redo">
+              <button
+                type="button"
+                className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--redo"
+                onClick={() => handleRedo(currentMemo?.memoId || overlayState?.memoId)}
+                title="Redo"
+                disabled={!hasMemoId}
+              >
                 <Icons.Redo />
               </button>
-              <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--delete" onClick={handleDelete} title="Delete">
+              <button
+                type="button"
+                className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--delete"
+                onClick={handleDelete}
+                title="Delete"
+                disabled={!hasMemoId}
+              >
                 <Icons.Delete />
               </button>
             </div>
           </div>
         ) : null}
 
-        {showRedo && currentMemo ? (
+        {showRedo ? (
           <div className="voice-memo-overlay__content voice-memo-overlay__content--centered">
             <div className="voice-memo-overlay__meta-large">
+              {memoTitle ? <span className="voice-memo-overlay__meta-heading">{memoTitle}</span> : null}
               {memoTimestamp && <span className="voice-memo-overlay__timestamp">{memoTimestamp}</span>}
+              {micLabel ? <span className="voice-memo-overlay__meta mic">{micLabel}</span> : null}
             </div>
-            <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--faded">{transcript}</div>
+            <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--faded">{displayTranscript}</div>
+            {!isProcessing ? (
+              <div className="voice-memo-overlay__meter" aria-hidden="true">
+                <div className="voice-memo-overlay__meter-fill" style={{ transform: `scaleX(${Math.max(0, Math.min(1, micLevel || 0))})` }} />
+              </div>
+            ) : (
+              <div className="voice-memo-overlay__spinner" aria-hidden="true" />
+            )}
             
-            {recorderError ? <div className="voice-memo-overlay__error">{recorderError}</div> : null}
+            {recorderErrorMessage ? <div className="voice-memo-overlay__error">{recorderErrorMessage}</div> : null}
             
             <div className="voice-memo-overlay__redo-controls">
-              {!isRecording && !uploading ? (
-                <button type="button" className="voice-memo-overlay__record-btn" onClick={handleStartRedoRecording}>
+              {!isRecording && !isProcessing && !isRecorderErrored ? (
+                <button
+                  type="button"
+                  className="voice-memo-overlay__record-btn"
+                  onClick={handleStartRedoRecording}
+                  disabled={isProcessing}
+                  aria-label="Start recording"
+                  ref={recordButtonRef}
+                >
                   <Icons.Record />
                 </button>
               ) : null}
@@ -341,18 +476,37 @@ const VoiceMemoOverlay = ({
               {isRecording ? (
                 <>
                   <div className="voice-memo-overlay__hint voice-memo-overlay__hint--recording">Recording… {recordingTimeLabel}</div>
-                  <button type="button" className="voice-memo-overlay__record-btn voice-memo-overlay__record-btn--active" onClick={stopRecording}>
+                  <button
+                    type="button"
+                    className="voice-memo-overlay__record-btn voice-memo-overlay__record-btn--active"
+                    onClick={stopRecording}
+                    disabled={isProcessing}
+                    aria-label="Stop recording"
+                    ref={stopButtonRef}
+                  >
                     <Icons.Stop />
                   </button>
                 </>
               ) : null}
               
-              {uploading ? (
-                <span className="voice-memo-overlay__status">Uploading…</span>
+              {isProcessing ? (
+                <div className="voice-memo-overlay__status voice-memo-overlay__status--processing">Processing voice memo…</div>
+              ) : null}
+
+              {isRecorderErrored ? (
+                <div className="voice-memo-overlay__retry-row">
+                  {recorderErrorRetryable ? (
+                    <button type="button" className="voice-memo-overlay__btn" onClick={handleStartRedoRecording}>Retry</button>
+                  ) : null}
+                  <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--ghost" onClick={handleClose}>Discard</button>
+                </div>
               ) : null}
             </div>
           </div>
         ) : null}
+      </div>
+      <div aria-live="assertive" aria-atomic="true" className="sr-only">
+        {liveMessageRef.current}
       </div>
     </div>
   );
@@ -379,6 +533,7 @@ VoiceMemoOverlay.propTypes = {
   onOpenList: PropTypes.func,
   onOpenRedo: PropTypes.func,
   onRemoveMemo: PropTypes.func,
+  onAddMemo: PropTypes.func,
   onReplaceMemo: PropTypes.func,
   sessionId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   playerRef: PropTypes.shape({
@@ -395,6 +550,7 @@ VoiceMemoOverlay.defaultProps = {
   onOpenList: null,
   onOpenRedo: null,
   onRemoveMemo: null,
+  onAddMemo: null,
   onReplaceMemo: null,
   sessionId: null,
   playerRef: null,

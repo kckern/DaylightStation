@@ -2,7 +2,6 @@ import React, { useCallback, useMemo } from 'react';
 import '../FitnessCam.scss';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import FitnessVideo from './FitnessVideo.jsx';
-import useVoiceMemoRecorder from './useVoiceMemoRecorder.js';
 
 // UI Label Constants
 const UI_LABELS = {
@@ -17,10 +16,11 @@ const UI_LABELS = {
   SHOW_MEMOS_TOOLTIP: 'Review voice memos'
 };
 
-const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, playerRef, preferredMicrophoneId = '' }) => {
+const FitnessVoiceMemo = ({ onToggleMenu }) => {
   const fitnessCtx = useFitnessContext();
-  const session = fitnessCtx?.fitnessSession;
+  // const session = fitnessCtx?.fitnessSession; // Removed unused session reference
   const voiceMemos = fitnessCtx?.voiceMemos || [];
+  const overlayOpen = Boolean(fitnessCtx?.voiceMemoOverlayState?.open);
   const memoCount = voiceMemos.length;
   const memoCountLabel = useMemo(() => {
     if (memoCount > 99) return '99+';
@@ -28,53 +28,15 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
     return String(memoCount);
   }, [memoCount]);
 
-  const handleMemoCaptured = useCallback((memo) => {
-    if (!memo) return;
-    const stored = fitnessCtx?.addVoiceMemoToSession?.(memo) || memo;
-    const target = stored || memo;
-    if (target && fitnessCtx?.openVoiceMemoReview) {
-      fitnessCtx.openVoiceMemoReview(target, { autoAccept: true });
-    }
-  }, [fitnessCtx]);
-
-  const {
-    isRecording,
-    recordingDuration,
-    uploading,
-    error: recorderError,
-    setError: setRecorderError,
-    startRecording,
-    stopRecording
-  } = useVoiceMemoRecorder({
-    sessionId: session?.sessionId,
-    playerRef,
-    preferredMicrophoneId,
-    onMemoCaptured: handleMemoCaptured
-  });
-
   const handleStartRecording = useCallback(() => {
-    setRecorderError(null);
-    startRecording();
-  }, [setRecorderError, startRecording]);
+    fitnessCtx?.openVoiceMemoRedo?.(null);
+  }, [fitnessCtx]);
 
   const handleOpenList = useCallback(() => {
     fitnessCtx?.openVoiceMemoList?.();
   }, [fitnessCtx]);
 
-  // Format milliseconds to MM:SS
-  const formatDuration = useCallback((ms) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }, []);
-
-  const stopAriaLabel = useMemo(() => {
-    if (!isRecording) return UI_LABELS.STOP_TOOLTIP;
-    return `${UI_LABELS.STOP_BUTTON_PREFIX} ${formatDuration(recordingDuration)}`;
-  }, [isRecording, recordingDuration, formatDuration]);
-
-  const error = recorderError;
+  const error = null;
 
   return (
     <>
@@ -96,38 +58,18 @@ const FitnessVoiceMemo = ({ minimal = false, menuOpen = false, onToggleMenu, pla
             ⋮
           </button>
           
-          {/* Record/Stop Button - Middle or Bottom */}
-          {!isRecording && !uploading && (
-            <button
-              className="media-record-btn"
-              onClick={handleStartRecording}
-              disabled={uploading}
-              title={UI_LABELS.RECORD_TOOLTIP}
-            >
-              ●
-            </button>
-          )}
-          {isRecording && (
-            <button
-              className="media-stop-btn"
-              onClick={stopRecording}
-              title={stopAriaLabel}
-            >
-              ■
-            </button>
-          )}
-          {uploading && (
-            <button
-              className="media-saving-btn"
-              disabled
-              title="Saving memo"
-            >
-              ⏳
-            </button>
-          )}
+          {/* Record Button - opens overlay/recorder */}
+          <button
+            className="media-record-btn"
+            onClick={handleStartRecording}
+            disabled={overlayOpen}
+            title={UI_LABELS.RECORD_TOOLTIP}
+          >
+            ●
+          </button>
           
           {/* Counter Button - Bottom (when memos exist) */}
-          {memoCount > 0 && !isRecording && !uploading && (
+          {memoCount > 0 && (
             <button
               className="media-counter-btn"
               onClick={handleOpenList}

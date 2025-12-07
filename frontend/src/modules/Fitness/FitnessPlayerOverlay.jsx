@@ -302,6 +302,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
   const openVoiceMemoRedo = fitnessCtx?.openVoiceMemoRedo;
   const removeVoiceMemo = fitnessCtx?.removeVoiceMemoFromSession;
   const replaceVoiceMemo = fitnessCtx?.replaceVoiceMemoInSession;
+  const addVoiceMemo = fitnessCtx?.addVoiceMemoToSession;
   const preferredMicrophoneId = fitnessCtx?.preferredMicrophoneId || '';
   const sessionId = fitnessCtx?.fitnessSession?.sessionId
     || fitnessCtx?.fitnessSessionInstance?.sessionId
@@ -932,6 +933,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           onOpenList={openVoiceMemoList}
           onOpenRedo={openVoiceMemoRedo}
           onRemoveMemo={removeVoiceMemo}
+          onAddMemo={addVoiceMemo}
           onReplaceMemo={replaceVoiceMemo}
           sessionId={sessionId}
           playerRef={playerRef}
