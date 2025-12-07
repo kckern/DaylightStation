@@ -8,11 +8,12 @@
   align-items: flex-end;
   justify-content: center;
   pointer-events: none;
-  width: min(500px, calc(100% - 32px));
+  width: min(560px, calc(100% - 32px));
 
   &__panel {
     pointer-events: auto;
     width: 100%;
+    max-width: 560px;
     background: rgba(13, 18, 28, 0.92);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 24px;

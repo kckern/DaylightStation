@@ -93,6 +93,23 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [version, setVersion] = useState(0); // Trigger re-render
   const scheduledUpdateRef = useRef(false);
 
+  const emitVoiceMemoTelemetry = React.useCallback((eventName, payload = {}) => {
+    if (!eventName) return;
+    const detail = { event: eventName, ...payload };
+    try {
+      console.info('[VoiceMemoTelemetry]', detail);
+    } catch (_) {
+      // ignore logging errors
+    }
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent('voice-memo-event', { detail }));
+      } catch (_) {
+        // ignore dispatch errors
+      }
+    }
+  }, []);
+
   // Configuration extraction
   const {
     fitnessRoot,
@@ -370,6 +387,29 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return raw.map((memo) => ({ ...memo }));
   }, [voiceMemoVersion, version]); // Depend on version too
 
+  const getVoiceMemoById = React.useCallback((memoId) => {
+    if (!memoId) return null;
+    const targetId = String(memoId);
+    return voiceMemos.find((memo) => memo && String(memo.memoId) === targetId) || null;
+  }, [voiceMemos]);
+
+  const setVoiceMemoOverlayStateGuarded = React.useCallback((nextState) => {
+    setVoiceMemoOverlayState((prev) => {
+      if (!nextState || nextState.open !== true) {
+        return VOICE_MEMO_OVERLAY_INITIAL;
+      }
+      if (
+        prev.open === nextState.open &&
+        prev.mode === nextState.mode &&
+        prev.memoId === nextState.memoId &&
+        prev.autoAccept === nextState.autoAccept
+      ) {
+        return prev;
+      }
+      return nextState;
+    });
+  }, []);
+
   const addVoiceMemoToSession = React.useCallback((memo) => {
     if (!memo) return null;
     let stored = memo;
@@ -379,8 +419,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       console.warn('[FitnessContext] addVoiceMemoToSession failed', error);
     }
     setVoiceMemoVersion((version) => version + 1);
+    if (stored) {
+      emitVoiceMemoTelemetry('voice_memo_added', { memoId: stored.memoId || memo.memoId || null });
+    }
     return stored;
-  }, []);
+  }, [emitVoiceMemoTelemetry]);
 
   const removeVoiceMemoFromSession = React.useCallback((memoId) => {
     if (!memoId) return null;
@@ -392,9 +435,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     }
     if (removed) {
       setVoiceMemoVersion((version) => version + 1);
+      emitVoiceMemoTelemetry('voice_memo_removed', { memoId: memoId || removed.memoId || null });
     }
     return removed;
-  }, []);
+  }, [emitVoiceMemoTelemetry]);
 
   const replaceVoiceMemoInSession = React.useCallback((memoId, memo) => {
     if (!memoId || !memo) return null;
@@ -406,47 +450,92 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     }
     if (stored) {
       setVoiceMemoVersion((version) => version + 1);
+      emitVoiceMemoTelemetry('voice_memo_replaced', { memoId, nextMemoId: memo?.memoId || memoId });
     }
     return stored;
-  }, []);
+  }, [emitVoiceMemoTelemetry]);
 
   const closeVoiceMemoOverlay = React.useCallback(() => {
-    setVoiceMemoOverlayState(VOICE_MEMO_OVERLAY_INITIAL);
-  }, []);
+    emitVoiceMemoTelemetry('voice_memo_overlay_close', {
+      mode: voiceMemoOverlayState.mode,
+      memoId: voiceMemoOverlayState.memoId
+    });
+    setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
+  }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded, voiceMemoOverlayState.memoId, voiceMemoOverlayState.mode]);
 
   const openVoiceMemoReview = React.useCallback((memoOrId, { autoAccept = false } = {}) => {
-    const id = typeof memoOrId === 'string' ? memoOrId : memoOrId?.memoId;
+    // Allow optimistic review opens when we have the memo object, even if it hasn't landed in voiceMemos yet.
+    const isObject = memoOrId && typeof memoOrId === 'object';
+    const id = isObject ? memoOrId.memoId : memoOrId;
     if (!id) return;
-    setVoiceMemoOverlayState({
+
+    if (!isObject) {
+      const existing = getVoiceMemoById(id);
+      if (!existing) {
+        if (voiceMemos.length > 0) {
+          setVoiceMemoOverlayStateGuarded({
+            open: true,
+            mode: 'list',
+            memoId: null,
+            autoAccept: false,
+            startedAt: Date.now()
+          });
+        } else {
+          setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
+        }
+        return;
+      }
+    }
+
+    setVoiceMemoOverlayStateGuarded({
       open: true,
       mode: 'review',
       memoId: id,
       autoAccept,
       startedAt: Date.now()
     });
-  }, []);
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id, autoAccept });
+  }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
 
   const openVoiceMemoList = React.useCallback(() => {
-    setVoiceMemoOverlayState({
+    setVoiceMemoOverlayStateGuarded({
       open: true,
       mode: 'list',
       memoId: null,
       autoAccept: false,
       startedAt: Date.now()
     });
-  }, []);
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'list', memoId: null });
+  }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded]);
 
   const openVoiceMemoRedo = React.useCallback((memoOrId) => {
     const id = typeof memoOrId === 'string' ? memoOrId : memoOrId?.memoId;
-    if (!id) return;
-    setVoiceMemoOverlayState({
+    if (id) {
+      const existing = getVoiceMemoById(id);
+      if (!existing) {
+        if (voiceMemos.length > 0) {
+          setVoiceMemoOverlayStateGuarded({
+            open: true,
+            mode: 'list',
+            memoId: null,
+            autoAccept: false,
+            startedAt: Date.now()
+          });
+        } else {
+          setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
+        }
+        return;
+      }
+    }
+    setVoiceMemoOverlayStateGuarded({
       open: true,
       mode: 'redo',
-      memoId: id,
+      memoId: id || null,
       autoAccept: false,
       startedAt: Date.now()
     });
-  }, []);
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'redo', memoId: id || null });
+  }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
 
   React.useEffect(() => {
     if (selectedPlaylistId != null) {
