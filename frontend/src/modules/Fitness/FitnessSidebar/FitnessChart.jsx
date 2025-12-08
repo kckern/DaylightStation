@@ -15,6 +15,7 @@ const CHART_HEIGHT = 240;
 const CHART_MARGIN = { top: 8, right: 8, bottom: 32, left: 0 };
 const AVATAR_RADIUS = 12;
 const AVATAR_OVERLAP_THRESHOLD = AVATAR_RADIUS * 2; // approximate diameter for collision
+const Y_SCALE_BASE = 20; // >1 compresses lower values and expands higher values (top-heavy)
 
 const initials = (name) => {
 	if (!name) return '?';
@@ -75,8 +76,18 @@ const useRaceChartData = (roster, getSeries, timebase) => {
 
 const computeAvatarPositions = (entries, maxValue, width, height, minVisibleTicks, margin, effectiveTicks) => {
 	const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
-	const innerHeight = Math.max(1, height - (margin.top || 0) - (margin.bottom || 0));
 	const ticks = Math.max(minVisibleTicks, effectiveTicks || 1, 1);
+	const scaleY = (value) => {
+		if (!(maxValue > 0)) return (margin.top || 0) + Math.max(1, height - (margin.top || 0) - (margin.bottom || 0));
+		const innerHeight = Math.max(1, height - (margin.top || 0) - (margin.bottom || 0));
+		const t = Math.max(0, Math.min(1, value / maxValue));
+		if (Y_SCALE_BASE > 1) {
+			// Inverted log: compress bottom, expand top
+			const mapped = 1 - Math.log(1 + (1 - t) * (Y_SCALE_BASE - 1)) / Math.log(Y_SCALE_BASE);
+			return (margin.top || 0) + innerHeight - mapped * innerHeight;
+		}
+		return (margin.top || 0) + innerHeight - t * innerHeight;
+	};
 	return entries.map((entry) => {
 		const beats = entry.beats;
 		let lastIndex = -1;
@@ -93,7 +104,7 @@ const computeAvatarPositions = (entries, maxValue, width, height, minVisibleTick
 			return null;
 		}
 		const x = ticks <= 1 ? (margin.left || 0) : (margin.left || 0) + (lastIndex / (ticks - 1)) * innerWidth;
-		const y = maxValue > 0 ? (margin.top || 0) + innerHeight - (lastValue / maxValue) * innerHeight : (margin.top || 0) + innerHeight;
+		const y = scaleY(lastValue);
 		return { id: entry.id, x, y, name: entry.name, color: entry.color, avatarUrl: entry.avatarUrl, value: lastValue };
 	}).filter(Boolean);
 };
@@ -229,7 +240,8 @@ const FitnessChart = () => {
 				margin: CHART_MARGIN,
 				minVisibleTicks: MIN_VISIBLE_TICKS,
 				maxValue: paddedMaxValue,
-				effectiveTicks
+				effectiveTicks,
+				yScaleBase: Y_SCALE_BASE
 			});
 			return created.map((p, idx) => ({ ...p, id: entry.id, key: `${entry.id}-${globalIdx++}-${idx}` }));
 		});
@@ -244,18 +256,23 @@ const FitnessChart = () => {
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
+		const scaleY = (value) => {
+			const innerHeight = Math.max(1, CHART_HEIGHT - CHART_MARGIN.top - CHART_MARGIN.bottom);
+			const t = Math.max(0, Math.min(1, value / paddedMaxValue));
+			if (Y_SCALE_BASE > 1) {
+				const mapped = 1 - Math.log(1 + (1 - t) * (Y_SCALE_BASE - 1)) / Math.log(Y_SCALE_BASE);
+				return CHART_MARGIN.top + innerHeight - mapped * innerHeight;
+			}
+			return CHART_MARGIN.top + innerHeight - t * innerHeight;
+		};
 		const positions = [1, 0.75, 0.5, 0.25, 0].map((p) => ({ frac: p, value: paddedMaxValue * p }));
-		const innerHeight = Math.max(1, CHART_HEIGHT - CHART_MARGIN.top - CHART_MARGIN.bottom);
-		return positions.map((p) => {
-			const y = CHART_MARGIN.top + innerHeight - (p.frac * innerHeight);
-			return {
-				value: p.value,
-				label: p.value.toFixed(0),
-				y,
-				x1: 0,
-				x2: CHART_WIDTH
-			};
-		});
+		return positions.map((p) => ({
+			value: p.value,
+			label: p.value.toFixed(0),
+			y: scaleY(p.value),
+			x1: 0,
+			x2: CHART_WIDTH
+		}));
 	}, [paddedMaxValue]);
 
 	const xTicks = useMemo(() => {
