@@ -67,6 +67,10 @@
 .video-player dash-video video,
 .video-player video {
     object-fit: contain;
+    --player-video-filter-base: none;
+    --player-video-filter-computed: var(--player-video-filter-base);
+    filter: var(--player-video-filter-computed);
+    transition: filter 250ms ease;
 }
 
 .vjs-control-bar{
@@ -289,7 +293,7 @@
         }
 
     
-        .video-element{ filter: sepia(1) brightness(0.15) hue-rotate(-35deg); }
+        .video-element{ --player-video-filter-base: sepia(1) brightness(0.15) hue-rotate(-35deg); }
         
     }
     .minimal {
