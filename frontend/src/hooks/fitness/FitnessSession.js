@@ -16,6 +16,16 @@ const FITNESS_TIMEOUTS = {
   rpmZero: 12000
 };
 
+// Soft guardrail to prevent oversized payloads
+const MAX_SERIALIZED_SERIES_POINTS = 200000;
+
+const ZONE_SYMBOL_MAP = {
+  cool: 'c',
+  active: 'a',
+  warm: 'w',
+  hot: 'h'
+};
+
 export const setFitnessTimeouts = ({ inactive, remove, rpmZero } = {}) => {
   if (typeof inactive === 'number' && !Number.isNaN(inactive)) FITNESS_TIMEOUTS.inactive = inactive;
   if (typeof remove === 'number' && !Number.isNaN(remove)) FITNESS_TIMEOUTS.remove = remove;
@@ -47,6 +57,9 @@ export class FitnessSession {
     this._deviceOwnershipCache = null;
     this._guestCandidatesCache = null;
     this._userZoneProfilesCache = null;
+    this._equipmentIdByCadence = new Map();
+    this._cumulativeBeats = new Map();
+    this._cumulativeRotations = new Map();
 
     this._autosaveIntervalMs = 15000;
     this._lastAutosaveAt = 0;
@@ -192,6 +205,19 @@ export class FitnessSession {
     Object.entries(deviceAssignments).forEach(([deviceId, assignment]) => assign(deviceId, assignment));
   }
 
+  setEquipmentCatalog(equipmentList = []) {
+    this._equipmentIdByCadence = new Map();
+    if (!Array.isArray(equipmentList)) return;
+    equipmentList.forEach((entry) => {
+      if (!entry || entry.cadence == null || !entry.id) return;
+      const key = String(entry.cadence).trim();
+      const val = String(entry.id).trim();
+      if (key && val) {
+        this._equipmentIdByCadence.set(key, val);
+      }
+    });
+  }
+
   get roster() {
     const roster = [];
     const heartRateDevices = this.deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
@@ -260,6 +286,21 @@ export class FitnessSession {
     return roster;
   }
 
+  _resolveEquipmentId(device) {
+    if (!device) return null;
+    const explicit = device.equipmentId || device.equipment_id || device?.metadata?.equipmentId;
+    if (explicit) return String(explicit).trim();
+    const cadence = device.cadence ?? device.deviceCadence ?? device.id;
+    const cadenceKey = cadence == null ? null : String(cadence).trim();
+    if (cadenceKey && this._equipmentIdByCadence?.has(cadenceKey)) {
+      return this._equipmentIdByCadence.get(cadenceKey);
+    }
+    const name = device.name || device.label || null;
+    if (name) return slugifyId(name);
+    if (cadenceKey) return slugifyId(cadenceKey);
+    return null;
+  }
+
   ensureStarted() {
     if (this.sessionId) return false;
     const nowDate = new Date();
@@ -299,6 +340,8 @@ export class FitnessSession {
     this._lastAutosaveAt = 0;
     this._startAutosaveTimer();
     this._startTickTimer();
+    this._cumulativeBeats = new Map();
+    this._cumulativeRotations = new Map();
     this._collectTimelineTick({ timestamp: now });
     return true;
   }
@@ -502,6 +545,8 @@ export class FitnessSession {
       }
     };
     const userMetricMap = new Map();
+    const intervalMs = this.timeline?.timebase?.intervalMs || this._tickIntervalMs || 5000;
+    const intervalSeconds = intervalMs / 1000;
 
     const currentTickIndex = this.timeline.timebase?.tickCount ?? 0;
     const users = this.userManager.getAllUsers();
@@ -535,6 +580,18 @@ export class FitnessSession {
         assignMetric(`device:${deviceId}:heart_rate`, sanitizedDeviceMetrics.heartRate);
       }
 
+      const equipmentId = this._resolveEquipmentId(device);
+      const equipmentKey = equipmentId || deviceId;
+      if (equipmentKey) {
+        const prevRotations = this._cumulativeRotations.get(equipmentKey) || 0;
+        const deltaRotations = Number.isFinite(sanitizedDeviceMetrics.rpm) && sanitizedDeviceMetrics.rpm > 0
+          ? (sanitizedDeviceMetrics.rpm / 60) * intervalSeconds
+          : 0;
+        const nextRotations = prevRotations + deltaRotations;
+        this._cumulativeRotations.set(equipmentKey, nextRotations);
+        assignMetric(`device:${equipmentKey}:rotations`, nextRotations);
+      }
+
       if (!deviceId) return;
       const mappedUser = this.userManager.resolveUserForDevice(device.id || device.deviceId);
       if (!mappedUser) return;
@@ -554,7 +611,17 @@ export class FitnessSession {
       entry.metrics.distance = entry.metrics.distance ?? sanitizedDeviceMetrics.distance;
     });
     userMetricMap.forEach((entry, slug) => {
-      if (!entry || !hasNumericSample(entry.metrics)) return;
+      if (!entry) return;
+      const prevBeats = this._cumulativeBeats.get(slug) || 0;
+      const hr = entry.metrics.heartRate;
+      const deltaBeats = Number.isFinite(hr) && hr > 0
+        ? (hr / 60) * intervalSeconds
+        : 0;
+      const nextBeats = prevBeats + deltaBeats;
+      this._cumulativeBeats.set(slug, nextBeats);
+      assignMetric(`user:${slug}:heart_beats`, nextBeats);
+
+      if (!hasNumericSample(entry.metrics)) return;
       assignMetric(`user:${slug}:heart_rate`, entry.metrics.heartRate);
       assignMetric(`user:${slug}:zone_id`, entry.metrics.zoneId);
       assignMetric(`user:${slug}:rpm`, entry.metrics.rpm);
@@ -673,14 +740,157 @@ export class FitnessSession {
     this._pendingSnapshotRef = null;
     this._lastTelemetrySnapshotTick = -1;
     this._tickIntervalMs = 5000;
+    this._cumulativeBeats = new Map();
+    this._cumulativeRotations = new Map();
+  }
+
+  _encodeSeries(series = {}, tickCount = null) {
+    const encodeValue = (key, value) => {
+      if (value == null) return null;
+      const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
+      if (key.includes('zone')) {
+        if (typeof normalized === 'string') {
+          return ZONE_SYMBOL_MAP[normalized] || normalized;
+        }
+        return normalized;
+      }
+      return normalized;
+    };
+
+    const runLengthEncode = (key, arr) => {
+      const encoded = [];
+      for (let i = 0; i < arr.length; i += 1) {
+        const value = encodeValue(key, arr[i]);
+        const last = encoded[encoded.length - 1];
+        if (last && last[0] === value) {
+          last[1] += 1;
+        } else {
+          encoded.push([value, 1]);
+        }
+      }
+      return encoded;
+    };
+
+    const encodedSeries = {};
+    const seriesMeta = {};
+    Object.entries(series).forEach(([key, arr]) => {
+      if (!Array.isArray(arr)) {
+        encodedSeries[key] = arr;
+        return;
+      }
+      const rle = runLengthEncode(key, arr);
+      encodedSeries[key] = JSON.stringify(rle);
+      seriesMeta[key] = {
+        encoding: 'rle',
+        originalLength: arr.length,
+        encodedLength: rle.length,
+        tickCount
+      };
+    });
+    return { encodedSeries, seriesMeta };
+  }
+
+  _validateSessionPayload(sessionData) {
+    if (!sessionData) return { ok: false, reason: 'missing-session' };
+    const { startTime } = sessionData;
+    if (!Number.isFinite(startTime)) return { ok: false, reason: 'invalid-startTime' };
+
+    let endTime = Number(sessionData.endTime);
+    if (!Number.isFinite(endTime)) {
+      endTime = Date.now();
+    }
+    if (endTime <= startTime) {
+      endTime = startTime + 1; // ensure forward progress
+    }
+    sessionData.endTime = endTime;
+    sessionData.durationMs = Math.max(0, endTime - startTime);
+
+    const roster = Array.isArray(sessionData.roster) ? sessionData.roster : [];
+    const series = sessionData.timeline?.series || {};
+    const tickCount = Number(sessionData.timeline?.timebase?.tickCount);
+    const hasUserSeries = Object.keys(series).some((key) => typeof key === 'string' && key.startsWith('user:'));
+    const deviceAssignments = Array.isArray(sessionData.deviceAssignments)
+      ? sessionData.deviceAssignments
+      : [];
+    if (hasUserSeries && roster.length === 0) {
+      return { ok: false, reason: 'roster-required' };
+    }
+    if (hasUserSeries && deviceAssignments.length === 0) {
+      return { ok: false, reason: 'device-assignments-required' };
+    }
+
+    // Deduplicate challenge events (e.g., repeated challenge_end at same tick)
+    if (Array.isArray(sessionData.timeline?.events)) {
+      const seen = new Set();
+      sessionData.timeline.events = sessionData.timeline.events.filter((evt) => {
+        if (!evt || typeof evt !== 'object') return false;
+        const type = evt.type || evt.eventType || null;
+        if (!type) return false;
+        const tickIndex = Number.isFinite(evt.tickIndex) ? evt.tickIndex : null;
+        const challengeId = evt.data?.challengeId
+          || evt.data?.challenge_id
+          || evt.data?.challenge
+          || evt.data?.challengeID
+          || null;
+        const key = `${type}|${tickIndex}|${challengeId || ''}`;
+        if (type.startsWith('challenge_')) {
+          if (seen.has(key)) return false;
+          seen.add(key);
+        }
+        return true;
+      });
+    }
+
+    const { ok: lengthsOk, issues } = FitnessTimeline.validateSeriesLengths(sessionData.timeline?.timebase || {}, series);
+    if (!lengthsOk) {
+      return { ok: false, reason: 'series-tick-mismatch', issues };
+    }
+
+    const emptySeries = Object.entries(series).find(([_, arr]) => {
+      if (!Array.isArray(arr) || arr.length === 0) return false;
+      return arr.every((v) => v == null || v === 0);
+    });
+    if (emptySeries) {
+      return {
+        ok: false,
+        reason: 'series-empty-signal',
+        key: emptySeries[0],
+        length: emptySeries[1].length
+      };
+    }
+
+    let totalPoints = 0;
+    Object.values(series).forEach((entry) => {
+      if (Array.isArray(entry)) {
+        totalPoints += entry.length;
+      }
+    });
+    if (totalPoints > MAX_SERIALIZED_SERIES_POINTS) {
+      return { ok: false, reason: 'series-size-cap', totalPoints };
+    }
+
+    return { ok: true, endTime, durationMs: sessionData.durationMs };
   }
 
   _persistSession(sessionData, { force = false } = {}) {
     if (!sessionData) return;
     if (this._saveTriggered && !force) return;
+    const validation = this._validateSessionPayload(sessionData);
+    if (!validation?.ok) {
+      this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
+      return false;
+    }
+    // Encode series for compact, deterministic storage while keeping readability (stringified RLE)
+    if (sessionData.timeline && sessionData.timeline.series) {
+      const tickCount = Number(sessionData.timeline?.timebase?.tickCount);
+      const { encodedSeries, seriesMeta } = this._encodeSeries(sessionData.timeline.series, tickCount);
+      sessionData.timeline.series = encodedSeries;
+      sessionData.timeline.seriesMeta = seriesMeta;
+    }
     this._lastAutosaveAt = Date.now();
     this._saveTriggered = true;
-    DaylightAPI('api/fitness/save_session', { sessionData }, 'POST')
+    const persistFn = this._persistApi || DaylightAPI;
+    persistFn('api/fitness/save_session', { sessionData }, 'POST')
     .then(resp => {
       // console.log('Fitness session saved', resp);
     }).catch(err => {
@@ -762,7 +972,10 @@ export class FitnessSession {
     this._maybeTickTimeline();
     const snapshot = this.summary;
     if (!snapshot) return;
-    this._persistSession(snapshot, { force });
+    const saved = this._persistSession(snapshot, { force });
+    if (!saved) {
+      this._log('autosave_skipped', { reason: 'persist-validation-failed' });
+    }
   }
 
   _maybeTickTimeline(targetTimestamp = Date.now()) {
@@ -795,6 +1008,7 @@ export class FitnessSession {
       // For brevity, returning a stub that calls managers
       if (!this.sessionId) return null;
       const timelineSummary = this.timeline ? this.timeline.summary : null;
+      const startTime = this.startTime;
       const tickBasedEndTime = (() => {
         const start = timelineSummary?.timebase?.startTime;
         const interval = timelineSummary?.timebase?.intervalMs;
@@ -811,11 +1025,15 @@ export class FitnessSession {
         || this.lastActivityTime
         || Date.now();
       this.endTime = derivedEndTime;
+      const durationMs = Number.isFinite(startTime) ? Math.max(0, derivedEndTime - startTime) : null;
+      const deviceAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
         return {
           sessionId: this.sessionId,
-          startTime: this.startTime,
+          startTime,
           endTime: derivedEndTime,
+          durationMs,
           roster: this.roster,
+          deviceAssignments,
           voiceMemos: this.voiceMemoManager.summary,
           treasureBox: this.treasureBox ? this.treasureBox.summary : null,
           timeline: timelineSummary,
