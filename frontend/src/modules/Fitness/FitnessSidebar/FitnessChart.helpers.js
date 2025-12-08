@@ -189,6 +189,7 @@ export const createPaths = (segments = [], options = {}) => {
     return {
       zone: seg.zone,
       color: seg.color,
+      opacity: seg.color === ZONE_COLOR_MAP.default ? 0.1 : 1,
       d: path
     };
   });
