@@ -8,6 +8,40 @@ import { playbackLog } from '../lib/playbackLogger.js';
 const MAX_ADAPTIVE_VIDEO_BLUR_PX = 12;
 const MIN_SCALE_RATIO_FOR_BLUR = 1.02;
 const ADAPTIVE_BLUR_PX_PER_SCALE = 18;
+const GRAIN_TEXTURE_SIZE = 512;
+const MIN_GRAIN_OPACITY = 0.08;
+const MAX_GRAIN_OPACITY = 0.38;
+
+let cachedGrainDataUrl = null;
+
+const ensureGrainTexture = () => {
+  if (cachedGrainDataUrl || typeof document === 'undefined') {
+    return cachedGrainDataUrl;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = GRAIN_TEXTURE_SIZE;
+  canvas.height = GRAIN_TEXTURE_SIZE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const imageData = ctx.createImageData(GRAIN_TEXTURE_SIZE, GRAIN_TEXTURE_SIZE);
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    const value = Math.floor(Math.random() * 255);
+    imageData.data[i] = value;
+    imageData.data[i + 1] = value;
+    imageData.data[i + 2] = value;
+    imageData.data[i + 3] = 255;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  cachedGrainDataUrl = canvas.toDataURL('image/png');
+  return cachedGrainDataUrl;
+};
+
+const computeGrainOpacity = (blurPx) => {
+  if (!Number.isFinite(blurPx) || blurPx <= 0) return 0;
+  const ratio = Math.min(1, blurPx / MAX_ADAPTIVE_VIDEO_BLUR_PX);
+  const opacity = MIN_GRAIN_OPACITY + (MAX_GRAIN_OPACITY - MIN_GRAIN_OPACITY) * ratio;
+  return Number(opacity.toFixed(3));
+};
 
 const readVideoBaseFilter = (mediaEl) => {
   if (typeof window === 'undefined' || !mediaEl) return '';
@@ -53,11 +87,17 @@ const computeAdaptiveVideoBlurPx = (mediaEl) => {
   return Number(blurPx.toFixed(2));
 };
 
-const applyAdaptiveVideoBlur = (mediaEl, blurPx) => {
+const applyAdaptiveVideoBlur = (mediaEl, blurPx, rootEl) => {
   if (!mediaEl) return;
   if (!Number.isFinite(blurPx) || blurPx <= 0) {
     mediaEl.style.removeProperty('--player-video-filter-computed');
     mediaEl.removeAttribute('data-adaptive-blur');
+    if (rootEl) {
+      rootEl.style.removeProperty('--player-video-grain-opacity');
+      rootEl.style.removeProperty('--player-video-grain-image');
+      rootEl.style.removeProperty('--player-video-grain-offset');
+      rootEl.removeAttribute('data-adaptive-grain');
+    }
     return;
   }
   const baseFilter = readVideoBaseFilter(mediaEl);
@@ -67,6 +107,16 @@ const applyAdaptiveVideoBlur = (mediaEl, blurPx) => {
     .trim() || 'none';
   mediaEl.style.setProperty('--player-video-filter-computed', composed);
   mediaEl.dataset.adaptiveBlur = blurPx.toFixed(2);
+  if (rootEl) {
+    const opacity = computeGrainOpacity(blurPx);
+    const grainUrl = ensureGrainTexture();
+    if (grainUrl) {
+      rootEl.style.setProperty('--player-video-grain-opacity', opacity.toString());
+      rootEl.style.setProperty('--player-video-grain-image', `url(${grainUrl})`);
+      rootEl.style.setProperty('--player-video-grain-offset', '0px 0px');
+      rootEl.dataset.adaptiveGrain = opacity.toString();
+    }
+  }
 };
 
 const deriveApproxDurationSeconds = (media = {}) => {
@@ -382,6 +432,8 @@ export function VideoPlayer({
     nudgePlayback: (...args) => shakaNudgePlaybackRef.current?.(...args),
     getTroubleDiagnostics: () => troubleDiagnosticsRef.current?.()
   }), []);
+
+  const playerRootRef = useRef(null);
 
   const {
     isDash,
@@ -875,6 +927,8 @@ export function VideoPlayer({
     let measureRaf = 0;
     let lookupRaf = 0;
     let lastAppliedBlur = null;
+    let grainFrameHandle = null;
+    let grainUsingVfc = false;
     const metadataEvents = ['loadedmetadata', 'loadeddata', 'emptied'];
 
     const cancelMeasure = () => {
@@ -884,13 +938,57 @@ export function VideoPlayer({
       }
     };
 
+    const cancelGrainLoop = () => {
+      if (!grainFrameHandle) return;
+      if (grainUsingVfc && mediaEl && typeof mediaEl.cancelVideoFrameCallback === 'function') {
+        mediaEl.cancelVideoFrameCallback(grainFrameHandle);
+      } else {
+        window.cancelAnimationFrame(grainFrameHandle);
+      }
+      grainFrameHandle = null;
+    };
+
+    const scheduleGrainFrame = () => {
+      if (disposed || !mediaEl || !playerRootRef.current) return;
+      if (!lastAppliedBlur || lastAppliedBlur <= 0) {
+        cancelGrainLoop();
+        return;
+      }
+
+      const applyGrainOffset = () => {
+        if (disposed || !playerRootRef.current) return;
+        const offsetSpan = 320;
+        const x = Math.floor(Math.random() * offsetSpan);
+        const y = Math.floor(Math.random() * offsetSpan);
+        playerRootRef.current.style.setProperty('--player-video-grain-offset', `-${x}px -${y}px`);
+      };
+
+      const step = () => {
+        applyGrainOffset();
+        scheduleGrainFrame();
+      };
+
+      if (typeof mediaEl.requestVideoFrameCallback === 'function') {
+        grainUsingVfc = true;
+        grainFrameHandle = mediaEl.requestVideoFrameCallback(() => step());
+      } else {
+        grainUsingVfc = false;
+        grainFrameHandle = window.requestAnimationFrame(step);
+      }
+    };
+
     const applyBlurUpdate = () => {
       measureRaf = 0;
       if (disposed || !mediaEl) return;
       const blurPx = computeAdaptiveVideoBlurPx(mediaEl);
       if (blurPx === lastAppliedBlur) return;
       lastAppliedBlur = blurPx;
-      applyAdaptiveVideoBlur(mediaEl, blurPx);
+      applyAdaptiveVideoBlur(mediaEl, blurPx, playerRootRef.current);
+      if (blurPx > 0) {
+        scheduleGrainFrame();
+      } else {
+        cancelGrainLoop();
+      }
     };
 
     const scheduleBlurUpdate = () => {
@@ -904,8 +1002,9 @@ export function VideoPlayer({
       metadataEvents.forEach((event) => mediaEl.removeEventListener(event, scheduleBlurUpdate));
       resizeObserver?.disconnect();
       resizeObserver = null;
-      applyAdaptiveVideoBlur(mediaEl, 0);
+      applyAdaptiveVideoBlur(mediaEl, 0, playerRootRef.current);
       lastAppliedBlur = null;
+      cancelGrainLoop();
       mediaEl = null;
     };
 
@@ -951,7 +1050,7 @@ export function VideoPlayer({
       cancelMeasure();
       teardownMediaEl();
     };
-  }, [getCurrentMediaElement, mediaInstanceKey]);
+  }, [getCurrentMediaElement, mediaInstanceKey, playerRootRef]);
 
   useEffect(() => {
     if (!isDash) return () => {};
@@ -1103,7 +1202,7 @@ export function VideoPlayer({
   }, [baselineMaxVideoBitrate, effectiveBitrateCap, onRestoreFullBitrate, resilienceBitrateTag, waitKey]);
 
   return (
-    <div className={`video-player ${shader}`}>
+    <div ref={playerRootRef} className={`video-player ${shader}`}>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       {isDash ? (
         <div ref={containerRef} className="video-element-host">
@@ -1125,6 +1224,7 @@ export function VideoPlayer({
           src={media_url}
         />
       )}
+      <div className="video-grain-overlay" aria-hidden="true" />
       {hardRecoveryBitrateCapActive && Number.isFinite(effectiveBitrateCap) && (
         <button
           type="button"
