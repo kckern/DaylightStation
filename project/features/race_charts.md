@@ -79,6 +79,43 @@ Render a real-time race-style line chart showing cumulative heart activity per p
 - Responsiveness: when chart mode is active on smaller screens, ensure sidebar width accommodates the webcam preview; fall back to hiding preview if space constrained.
 - Exit paths: toggling back to “Camera” restores original layout; persist last choice per session (optional) via local state, not global context.
 
+## Avatar component migration
+**Goal:** Replace raw SVG circle/avatar rendering with the shared `CircularUserAvatar` component for consistent visuals (gauge ring, border, image fallback) and avoid duplicated styling.
+
+### Current state
+- `FitnessSidebar/FitnessChart.jsx` draws avatars with SVG `<circle>` + `<image>` clipPath, custom stroke color, overlap handling, and transform positioning.
+- Avatar stacking/downward offset already works; borders take participant color; clipping is circular.
+
+### Plan
+1) **Data shape:** For each avatar endpoint we already have `{name, avatarUrl, color, value, x, y, offsetY}`. We will map these into `CircularUserAvatar` props:
+	- `name` → `name`
+	- `avatarUrl` → `avatarSrc`
+	- `color` → `zoneColor` (also set CSS variable for ring color)
+	- `size` → use avatar diameter (2 * AVATAR_RADIUS) in px
+	- `ringWidth` → small (e.g., 4px) to mimic current stroke
+	- `showGauge` → false (unless we want ring progress); rely on border color
+	- `showIndicator` → false
+	- `className` → chart-specific class for positioning
+2) **Rendering host:** Keep positioning inside the SVG overlay layer by using `<foreignObject>` wrapping `CircularUserAvatar`, since that component outputs HTML/CSS. Position using existing transform/translate values; ensure `overflow: visible` remains.
+3) **Overlap logic:** Reuse current offset computation; apply translate to the `<foreignObject>` container; size matches avatar size.
+4) **Styling:** Add a light drop shadow around the avatar host to match prior halo; ensure border color comes from `zoneColor` via CSS variable or inline style. If `CircularUserAvatar` defaults conflict, override via CSS (race-chart scope) to remove gauges and set ring thickness.
+5) **Accessibility:** Preserve aria-hidden behavior for decorative avatars; `CircularUserAvatar` allows `ariaLabel` if needed.
+
+### Implementation steps
+- Import `CircularUserAvatar` in `FitnessChart.jsx`.
+- Replace SVG circle/image block with a `<foreignObject>` containing `CircularUserAvatar` sized to the avatar diameter.
+- Add scoped CSS for `.race-chart__avatar-fo` to ensure proper sizing and pointer-events as needed; disable gauge/indicator via props.
+- Verify stacking still works and borders retain participant color.
+- Test in sim to confirm no reintroduced gaps or misalignments.
+
+## Avatar endpoint labels — coin totals
+- **Goal:** Show each participant’s current `coins_total` immediately to the left of their avatar marker, outside the avatar chrome.
+- **Data:** Reuse the already forward/backfilled `coins_total` series; take the last numeric sample for each participant (fallback to `heart_beats` only if coins unavailable).
+- **Positioning:** Render a small label group anchored to the same `x,y+offset` as the avatar; place the text with `text-anchor="end"` and a fixed left padding (e.g., 10–12px gap) so the label sits left-aligned to the avatar edge. Keep vertical center aligned to the avatar.
+- **Rendering host:** Use an SVG `<text>` (simpler) or a lightweight `<foreignObject>` with a `<span>` if you need font control; keep `pointer-events: none` so labels don’t block hover.
+- **Styling:** Semi-bold, compact number (`font-size: 11–12px`, `font-weight: 600`, neutral/light color with slight shadow for contrast). Optionally prepend a small coin glyph; avoid colored backgrounds to reduce overlap noise.
+- **Overlap behavior:** Inherit the existing avatar stack offset so labels travel with avatars. If multiple avatars share the same `x`, allow slight vertical jitter (same as avatar offset) and do not try to horizontally separate labels (we already separate by offset).
+- **Abbreviation:** Format numbers with `toLocaleString` and short suffixes (`1.2k`, `950`, `12.4k`) to keep the label under ~4–6 chars.
 ## Detailed design — files and responsibilities
 - `frontend/src/modules/Fitness/FitnessSidebar/FitnessChart.jsx`
 	- Replace current heart-rate sparkline with new RaceChart implementation (SVG-based).

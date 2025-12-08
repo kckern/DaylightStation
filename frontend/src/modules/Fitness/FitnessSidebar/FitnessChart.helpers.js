@@ -19,14 +19,41 @@ const normalizeId = (entry) => {
   return entry.name || entry.profileId || entry.hrDeviceId || null;
 };
 
+const forwardFill = (arr = []) => {
+  if (!Array.isArray(arr)) return arr;
+  let last = null;
+  return arr.map((v) => {
+    if (Number.isFinite(v)) {
+      last = v;
+      return v;
+    }
+    return last;
+  });
+};
+
+const forwardBackwardFill = (arr = []) => {
+  if (!Array.isArray(arr)) return arr;
+  const fwd = forwardFill(arr);
+  // Back-fill leading nulls with first finite value if any
+  let firstFinite = fwd.find((v) => Number.isFinite(v)) ?? null;
+  return fwd.map((v) => (v == null ? firstFinite : v));
+};
+
 export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}) => {
   const targetId = normalizeId(rosterEntry);
   if (!targetId || typeof getSeries !== 'function') return { beats: [], zones: [] };
 
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
-  const beatsRaw = getSeries(targetId, 'heart_beats', { clone: true }) || null;
+  const coinsRaw = getSeries(targetId, 'coins_total', { clone: true }) || null;
   const zones = getSeries(targetId, 'zone_id', { clone: true }) || [];
 
+  if (Array.isArray(coinsRaw) && coinsRaw.length > 0) {
+    const beats = forwardBackwardFill(coinsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? v : null)));
+    return { beats, zones };
+  }
+
+  // Fallback: use heart beats accumulation if coins are unavailable
+  const beatsRaw = getSeries(targetId, 'heart_beats', { clone: true }) || null;
   if (Array.isArray(beatsRaw) && beatsRaw.length > 0) {
     const beats = beatsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? v : null));
     return { beats, zones };
@@ -51,6 +78,8 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}) => {
 export const buildSegments = (beats = [], zones = []) => {
   const segments = [];
   let current = null;
+  let lastZone = null;
+  let lastPoint = null;
 
   const pushCurrent = () => {
     if (current && current.points.length > 0) {
@@ -63,15 +92,23 @@ export const buildSegments = (beats = [], zones = []) => {
     const value = toNumber(beats[i]);
     if (value == null) {
       pushCurrent();
+      lastPoint = null;
       continue;
     }
-    const zone = zones?.[i] || null;
+    const zoneRaw = zones?.[i] ?? null;
+    const zone = zoneRaw || lastZone || null;
     const color = ZONE_COLOR_MAP[zone] || ZONE_COLOR_MAP.default;
     if (!current || current.zone !== zone) {
       pushCurrent();
       current = { zone, color, points: [] };
+      // Include prior point to maintain continuity across color changes
+      if (lastPoint) {
+        current.points.push({ ...lastPoint });
+      }
     }
+    lastZone = zone;
     current.points.push({ i, v: value });
+    lastPoint = { i, v: value };
   }
   pushCurrent();
   return segments;
@@ -84,15 +121,32 @@ export const createPaths = (segments = [], options = {}) => {
     minVisibleTicks = MIN_VISIBLE_TICKS,
     margin = { top: 0, right: 0, bottom: 0, left: 0 },
     effectiveTicks: effectiveTicksOverride,
-    yScaleBase = 1
+    yScaleBase = 1,
+    minValue = 0,
+    bottomFraction = 1,
+    topFraction = 0
   } = options;
 
   const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
   const innerHeight = Math.max(1, height - (margin.top || 0) - (margin.bottom || 0));
 
+  const mergedSegments = (() => {
+    const merged = [];
+    segments.forEach((seg) => {
+      if (!seg || !Array.isArray(seg.points) || seg.points.length === 0) return;
+      const prev = merged[merged.length - 1];
+      if (prev && prev.color === seg.color) {
+        prev.points.push(...seg.points);
+      } else {
+        merged.push({ ...seg, points: [...seg.points] });
+      }
+    });
+    return merged;
+  })();
+
   let maxValue = options.maxValue || 0;
   let maxIndex = 0;
-  segments.forEach((seg) => {
+  mergedSegments.forEach((seg) => {
     seg.points.forEach(({ i, v }) => {
       if (v > maxValue) maxValue = v;
       if (i > maxIndex) maxIndex = i;
@@ -103,18 +157,26 @@ export const createPaths = (segments = [], options = {}) => {
   const effectiveTicks = Math.max(minVisibleTicks, effectiveTicksOverride || maxIndex + 1, 1);
   const scaleX = (i) => {
     if (effectiveTicks <= 1) return 0;
-    return (margin.left || 0) + (i / (effectiveTicks - 1)) * innerWidth;
+    const clampedIndex = Math.max(0, i);
+    return Math.max(0, (margin.left || 0) + (clampedIndex / (effectiveTicks - 1)) * innerWidth);
   };
+  const domainMin = Math.min(minValue, maxValue);
+  const domainSpan = Math.max(1, maxValue - domainMin);
+  const topFrac = Math.max(0, Math.min(1, topFraction));
+  const bottomFrac = Math.max(topFrac, Math.min(1, bottomFraction));
+
   const scaleY = (v) => {
-    const t = Math.max(0, Math.min(1, v / maxValue));
+    const clamped = Math.max(domainMin, Math.min(maxValue, v));
+    const norm = (clamped - domainMin) / domainSpan;
+    let mapped = norm;
     if (yScaleBase > 1) {
-      const mapped = 1 - Math.log(1 + (1 - t) * (yScaleBase - 1)) / Math.log(yScaleBase);
-      return (margin.top || 0) + innerHeight - mapped * innerHeight;
+      mapped = 1 - Math.log(1 + (1 - norm) * (yScaleBase - 1)) / Math.log(yScaleBase);
     }
-    return (margin.top || 0) + innerHeight - t * innerHeight;
+    const frac = bottomFrac + (topFrac - bottomFrac) * mapped;
+    return (margin.top || 0) + frac * innerHeight;
   };
 
-  return segments.map((seg) => {
+  return mergedSegments.map((seg) => {
     const points = seg.points.length === 1 ? [...seg.points, seg.points[0]] : seg.points;
     const path = points.reduce((acc, { i, v }, idx) => {
       const x = scaleX(i).toFixed(2);

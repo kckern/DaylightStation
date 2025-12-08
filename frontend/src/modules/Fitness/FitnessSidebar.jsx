@@ -20,7 +20,8 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
     treasureBox: governanceDisabled ? true : !isGovernedInitial,
     users: true,
     video: true,
-    voiceMemo: true
+    voiceMemo: true,
+    sidebarCam: true
   }));
   const [treasureBoxOverridden, setTreasureBoxOverridden] = useState(false);
   const { 
@@ -118,6 +119,12 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
     setMusicOverride(!musicEnabled);
   }, [musicEnabled, setMusicOverride]);
 
+  const handleTreasureBoxActivate = React.useCallback(() => {
+    if (typeof onToggleViewMode === 'function') {
+      onToggleViewMode();
+    }
+  }, [onToggleViewMode]);
+
   React.useEffect(() => {
     if (governanceDisabled) {
       return;
@@ -162,12 +169,23 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
     <div className={`fitness-sidebar-container fitness-sidebar-mode-${mode}`}>
       {/* Mini cam slot when chart is in main view */}
       <div className="fitness-sidebar-controls">
-        {miniCamContent}
+        {visibility.sidebarCam ? miniCamContent : null}
       </div>
 
       {/* Treasure Box */}
       {visibility.treasureBox && (
-        <div className="fitness-sidebar-treasurebox">
+        <div
+          className="fitness-sidebar-treasurebox"
+          role="button"
+          tabIndex={0}
+          onClick={handleTreasureBoxActivate}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleTreasureBoxActivate();
+            }
+          }}
+        >
           <FitnessTreasureBox box={treasureBox} session={fitnessSession} />
         </div>
       )}
