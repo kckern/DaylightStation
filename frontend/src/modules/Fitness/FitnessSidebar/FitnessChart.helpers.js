@@ -83,7 +83,8 @@ export const createPaths = (segments = [], options = {}) => {
     height = 240,
     minVisibleTicks = MIN_VISIBLE_TICKS,
     margin = { top: 0, right: 0, bottom: 0, left: 0 },
-    effectiveTicks: effectiveTicksOverride
+    effectiveTicks: effectiveTicksOverride,
+    yScaleBase = 1
   } = options;
 
   const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
@@ -104,7 +105,14 @@ export const createPaths = (segments = [], options = {}) => {
     if (effectiveTicks <= 1) return 0;
     return (margin.left || 0) + (i / (effectiveTicks - 1)) * innerWidth;
   };
-  const scaleY = (v) => (margin.top || 0) + innerHeight - (v / maxValue) * innerHeight;
+  const scaleY = (v) => {
+    const t = Math.max(0, Math.min(1, v / maxValue));
+    if (yScaleBase > 1) {
+      const mapped = 1 - Math.log(1 + (1 - t) * (yScaleBase - 1)) / Math.log(yScaleBase);
+      return (margin.top || 0) + innerHeight - mapped * innerHeight;
+    }
+    return (margin.top || 0) + innerHeight - t * innerHeight;
+  };
 
   return segments.map((seg) => {
     const points = seg.points.length === 1 ? [...seg.points, seg.points[0]] : seg.points;
