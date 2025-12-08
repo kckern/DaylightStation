@@ -46,8 +46,10 @@
 
 .race-chart__svg {
   width: 100%;
-  height: 100%;
-  aspect-ratio: auto;
+  height: auto;
+  min-height: 220px;
+  /* Match viewBox ratio (420 / 390) to avoid distortion of circular avatars */
+  aspect-ratio: 14 / 13;
   overflow: visible;
 }
 
@@ -57,23 +59,59 @@
 }
 
 .race-chart__axes {
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.25));
+
   line {
-    stroke: rgba(255, 255, 255, 0.2);
-    stroke-width: 1;
+    stroke: rgba(255, 255, 255, 0.28);
+    stroke-width: 1.5;
   }
 
   text {
-    fill: rgba(255, 255, 255, 0.7);
-    font-size: 10px;
+    fill: rgba(255, 255, 255, 0.75);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
   }
 }
 
-.race-chart__paths path {
+.race-chart__avatar-fo {
+  overflow: visible;
+  pointer-events: none;
+
+  .race-chart__avatar {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: none;
+  }
+}
+
+.race-chart__avatar-group {
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+}
+
+.race-chart__avatar-img {
+  pointer-events: none;
+  border-radius: 50%;
+}
+
+.race-chart__avatar-backdrop {
+  fill: rgba(0, 0, 0, 0.6);
+  stroke: none;
+  pointer-events: none;
+}
+
+.race-chart__avatar-zone {
   fill: none;
-  stroke-width: 3;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.25));
+  stroke-width: 3.2;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.race-chart__avatar {
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
 }
 
 .race-chart__avatars {
@@ -81,6 +119,7 @@
     transform-box: fill-box;
     transform-origin: center;
     transition: transform 0.35s ease;
+    will-change: transform;
   }
 
   .race-chart__avatar-text {
@@ -93,6 +132,14 @@
     stroke: rgba(255, 255, 255, 0.5);
     stroke-width: 1;
   }
+}
+
+.race-chart__coin-label {
+  fill: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

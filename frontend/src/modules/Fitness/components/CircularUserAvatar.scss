@@ -4,6 +4,7 @@
   --vital-ring-width: 6px;
   width: var(--vital-avatar-size, 76px);
   height: var(--vital-avatar-size, 76px);
+  aspect-ratio: 1 / 1;
   border-radius: 50%;
   overflow: visible;
   display: flex;
@@ -44,6 +45,7 @@
     position: relative;
     width: 100%;
     height: 100%;
+    aspect-ratio: 1 / 1;
     border-radius: 50%;
     overflow: hidden;
     display: flex;

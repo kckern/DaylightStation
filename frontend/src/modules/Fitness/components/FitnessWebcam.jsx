@@ -159,6 +159,15 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
 
   const wrapperClass = `fitness-webcam${className ? ` ${className}` : ''}`;
 
+  const activeFilter = getWebcamFilter(activeFilterId);
+  const mergedVideoStyle = useMemo(() => {
+    const base = { filter: activeFilter.css || 'none', ...(videoStyle || {}) };
+    if (!base.transform && activeFilter.transform) {
+      base.transform = activeFilter.transform;
+    }
+    return base;
+  }, [activeFilter, videoStyle]);
+
   return (
     <div className={wrapperClass} style={style}>
       <video
@@ -167,7 +176,7 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
         playsInline
         muted={audioConstraints === false}
         className={`fitness-webcam-video${videoClassName ? ` ${videoClassName}` : ''}`}
-        style={{ filter: getWebcamFilter(activeFilterId).css || 'none', ...(videoStyle || {}) }}
+        style={mergedVideoStyle}
       />
       {renderOverlay ? renderOverlay({ status, error, permissionError, devices, activeVideoId, activeAudioId, nextVideo, nextAudio, lastSnapshotMeta }) : null}
       {showControls && (

@@ -69,6 +69,7 @@ export const webcamFilters = {
     id: 'mirrorAdaptive',
     label: 'Adaptive Mirror',
     css: 'saturate(2) contrast(1.2) brightness(1.2)',
+    transform: 'scaleX(-1)',
     apply: (ctx, video, width, height) => {
       if (!width || !height) return;
       applyAdaptiveMirrorFilter(ctx, video, width, height);
