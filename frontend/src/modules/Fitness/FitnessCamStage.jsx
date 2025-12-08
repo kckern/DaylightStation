@@ -163,6 +163,7 @@ const FitnessCamStage = ({ onOpenSettings }) => {
           ref={webcamRef}
           enabled
           audioConstraints={false}
+          filterId="mirrorAdaptive"
           captureIntervalMs={captureEnabled && streamReady ? captureIntervalMs : 0}
           onSnapshot={handleSnapshot}
           onStreamReady={handleStreamReady}

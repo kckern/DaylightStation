@@ -57,11 +57,14 @@ const hrUserMap = {};
 // Utility to create baseline heart rate characteristics per user/device
 function baselineForDevice(deviceId) {
   // Deterministic seed based on device id for reproducibility
-  const seed = parseInt(deviceId, 10) % 10; // 0-9
+  const seed = parseInt(deviceId, 10) % 17; // widen range a bit
   // Center base near moderate intensity (we will shape phases around this)
-  const base = 105 + seed; // 105-114
-  const variability = 15 + (seed % 5); // 15-19 bpm jitter envelope
-  return { baseHeartRate: base, variability };
+  const base = 102 + seed; // 102-118
+  const variability = 12 + (seed % 7); // 12-18 bpm jitter envelope
+  const intensityScale = 0.9 + (seed % 5) * 0.05; // 0.9 - 1.1 range
+  const phaseShiftSec = (seed * 7) % 90; // 0-89s offset so curves de-sync
+  const surgeEvery = 50 + (seed % 6) * 20; // 50-150s surge cadence
+  return { baseHeartRate: base, variability, intensityScale, phaseShiftSec, surgeEvery };
 }
 
 // Parse optional counts
@@ -103,7 +106,7 @@ if (requestedRpmCount !== null) {
 }
 
 hrDeviceIds.forEach(id => {
-  const { baseHeartRate, variability } = baselineForDevice(id);
+  const { baseHeartRate, variability, intensityScale, phaseShiftSec, surgeEvery } = baselineForDevice(id);
   devices.push({
     deviceId: Number(id),
     profile: 'HR',
@@ -111,6 +114,9 @@ hrDeviceIds.forEach(id => {
     serialNumber: Number(id),
     baseHeartRate,
     variability,
+    intensityScale,
+    phaseShiftSec,
+    surgeEvery,
     batteryLevel: 80,
     beatCount: 0,
     owner: hrUserMap[String(id)],
@@ -197,29 +203,36 @@ class FitnessSimulator {
   generateHeartRateData(device, elapsedSeconds) {
     // Four phase waveform to span 95-180 bpm range
     const phaseDur = 45; // seconds
-    const phase = Math.floor(elapsedSeconds / phaseDur) % 4; // 0..3
+    const shiftedSeconds = elapsedSeconds + (device.phaseShiftSec || 0);
+    const phase = Math.floor(shiftedSeconds / phaseDur) % 4; // 0..3
     let target;
     switch (phase) {
       case 0: { // Warm-up: 95 -> 125
-        const t = Math.min(elapsedSeconds, phaseDur) / phaseDur; // 0..1
+        const t = Math.min(shiftedSeconds, phaseDur) / phaseDur; // 0..1
         target = 95 + t * 30; // 95-125
         break; }
       case 1: { // Build: 125 -> 155
-        const t = (elapsedSeconds - phaseDur) / phaseDur;
+        const t = (shiftedSeconds - phaseDur) / phaseDur;
         target = 125 + t * 30; // 125-155
         break; }
       case 2: { // Peak oscillation: 160 +/- 20 (160->180->160)
-        const t = (elapsedSeconds - 2 * phaseDur) / phaseDur; // 0..1
+        const t = (shiftedSeconds - 2 * phaseDur) / phaseDur; // 0..1
         target = 160 + Math.sin(t * Math.PI) * 20; // 160-180-160
         break; }
       case 3:
       default: { // Cooldown: 150 -> 110
-        const t = (elapsedSeconds - 3 * phaseDur) / phaseDur; // 0..1
+        const t = (shiftedSeconds - 3 * phaseDur) / phaseDur; // 0..1
         target = 150 - t * 40; // 150-110
         break; }
     }
-    // Add device-specific base modifier (kept subtle to stay within bounds)
-    target += (device.baseHeartRate - 110) * 0.4; // shift +/- a few bpm
+    // Apply device-specific intensity and base to differentiate curves
+    target *= device.intensityScale || 1;
+    target += (device.baseHeartRate - 110) * 0.5; // shift +/- a bit more
+
+    // Inject occasional surges unique per device
+    if (device.surgeEvery && device.surgeEvery > 0 && (Math.floor(shiftedSeconds) % device.surgeEvery) === 0) {
+      target += 10 + (device.baseHeartRate % 6); // brief surge
+    }
     const variation = (Math.random() - 0.5) * device.variability; // jitter
     let heartRate = Math.round(target + variation);
     if (heartRate < 95) heartRate = 95;

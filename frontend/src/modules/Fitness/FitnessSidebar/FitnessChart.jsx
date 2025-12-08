@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import './FitnessChart.scss';
@@ -10,19 +10,16 @@ import {
 	createPaths
 } from './FitnessChart.helpers.js';
 
-const CHART_WIDTH = 380;
-const CHART_HEIGHT = 240;
-const CHART_MARGIN = { top: 8, right: 8, bottom: 32, left: 0 };
-const AVATAR_RADIUS = 12;
+const DEFAULT_CHART_WIDTH = 420;
+const DEFAULT_CHART_HEIGHT = 390;
+const CHART_MARGIN = { top: 10, right: 64, bottom: 38, left: 4 };
+const AVATAR_RADIUS = 30;
 const AVATAR_OVERLAP_THRESHOLD = AVATAR_RADIUS * 2; // approximate diameter for collision
+const COIN_LABEL_GAP = 8;
 const Y_SCALE_BASE = 20; // >1 compresses lower values and expands higher values (top-heavy)
-
-const initials = (name) => {
-	if (!name) return '?';
-	const parts = String(name).trim().split(/\s+/);
-	if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-	return (parts[0][0] || '').toUpperCase() + (parts[1][0] || '').toUpperCase();
-};
+const PATH_STROKE_WIDTH = 5;
+const TICK_FONT_SIZE = 20;
+const COIN_FONT_SIZE = 20;
 
 const slugifyId = (value, fallback = 'user') => {
 	if (!value) return fallback;
@@ -34,39 +31,48 @@ const slugifyId = (value, fallback = 'user') => {
 	return slug || fallback;
 };
 
+const formatCompactNumber = (value) => {
+	if (!Number.isFinite(value)) return '';
+	const abs = Math.abs(value);
+	if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}m`;
+	if (abs >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
+	return value.toLocaleString();
+};
+
 const useRaceChartData = (roster, getSeries, timebase) => {
 	return useMemo(() => {
 		if (!Array.isArray(roster) || roster.length === 0 || typeof getSeries !== 'function') {
 			return { entries: [], maxValue: 0, maxIndex: 0 };
 		}
 
-		const shaped = roster.map((entry, idx) => {
-			const { beats, zones } = buildBeatsSeries(entry, getSeries, timebase);
-			const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
-			const segments = buildSegments(beats, zones);
-			const profileId = entry.profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || entry.id || entry.profileId || idx);
-			const entryId = entry.name || profileId || entry.hrDeviceId || `anon-${idx}`;
-			let lastIndex = -1;
-			for (let i = beats.length - 1; i >= 0; i -= 1) {
-				if (Number.isFinite(beats[i])) {
-					lastIndex = i;
-					break;
+		const shaped = roster
+			.map((entry, idx) => {
+				const { beats, zones } = buildBeatsSeries(entry, getSeries, timebase);
+				const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
+				const segments = buildSegments(beats, zones);
+				const profileId = entry.profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || entry.id || idx);
+				const entryId = entry.id || profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || idx, `anon-${idx}`);
+				let lastIndex = -1;
+				for (let i = beats.length - 1; i >= 0; i -= 1) {
+					if (Number.isFinite(beats[i])) {
+						lastIndex = i;
+						break;
+					}
 				}
-			}
-			const resolvedAvatar = entry.avatarUrl
-				|| DaylightMediaPath(`/media/img/users/${profileId || 'user'}`);
-			return {
-				id: entryId,
-				name: entry.displayLabel || entry.name || 'Unknown',
-				profileId,
-				avatarUrl: resolvedAvatar,
-				color: entry.zoneColor || ZONE_COLOR_MAP.default,
-				beats,
-				segments,
-				maxVal,
-				lastIndex
-			};
-		}).filter((item) => item.segments.length > 0 && item.maxVal > 0);
+				const resolvedAvatar = entry.avatarUrl || DaylightMediaPath(`/media/img/users/${profileId || 'user'}`);
+				return {
+					id: entryId,
+					name: entry.displayLabel || entry.name || 'Unknown',
+					profileId,
+					avatarUrl: resolvedAvatar,
+					color: entry.zoneColor || ZONE_COLOR_MAP.default,
+					beats,
+					segments,
+					maxVal,
+					lastIndex
+				};
+			})
+			.filter((item) => item.segments.length > 0 && item.maxVal > 0);
 
 		const maxValue = Math.max(0, ...shaped.map((e) => e.maxVal));
 		const maxIndex = Math.max(0, ...shaped.map((e) => e.lastIndex));
@@ -74,39 +80,30 @@ const useRaceChartData = (roster, getSeries, timebase) => {
 	}, [roster, getSeries, timebase]);
 };
 
-const computeAvatarPositions = (entries, maxValue, width, height, minVisibleTicks, margin, effectiveTicks) => {
+const computeAvatarPositions = (entries, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
 	const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
 	const ticks = Math.max(minVisibleTicks, effectiveTicks || 1, 1);
-	const scaleY = (value) => {
-		if (!(maxValue > 0)) return (margin.top || 0) + Math.max(1, height - (margin.top || 0) - (margin.bottom || 0));
-		const innerHeight = Math.max(1, height - (margin.top || 0) - (margin.bottom || 0));
-		const t = Math.max(0, Math.min(1, value / maxValue));
-		if (Y_SCALE_BASE > 1) {
-			// Inverted log: compress bottom, expand top
-			const mapped = 1 - Math.log(1 + (1 - t) * (Y_SCALE_BASE - 1)) / Math.log(Y_SCALE_BASE);
-			return (margin.top || 0) + innerHeight - mapped * innerHeight;
-		}
-		return (margin.top || 0) + innerHeight - t * innerHeight;
-	};
-	return entries.map((entry) => {
-		const beats = entry.beats;
-		let lastIndex = -1;
-		let lastValue = null;
-		for (let i = beats.length - 1; i >= 0; i -= 1) {
-			const v = beats[i];
-			if (Number.isFinite(v)) {
-				lastIndex = i;
-				lastValue = v;
-				break;
+	return entries
+		.map((entry) => {
+			const beats = entry.beats;
+			let lastIndex = -1;
+			let lastValue = null;
+			for (let i = beats.length - 1; i >= 0; i -= 1) {
+				const v = beats[i];
+				if (Number.isFinite(v)) {
+					lastIndex = i;
+					lastValue = v;
+					break;
+				}
 			}
-		}
-		if (lastIndex < 0 || !Number.isFinite(lastValue)) {
-			return null;
-		}
-		const x = ticks <= 1 ? (margin.left || 0) : (margin.left || 0) + (lastIndex / (ticks - 1)) * innerWidth;
-		const y = scaleY(lastValue);
-		return { id: entry.id, x, y, name: entry.name, color: entry.color, avatarUrl: entry.avatarUrl, value: lastValue };
-	}).filter(Boolean);
+			if (lastIndex < 0 || !Number.isFinite(lastValue)) {
+				return null;
+			}
+			const x = ticks <= 1 ? margin.left || 0 : (margin.left || 0) + (lastIndex / (ticks - 1)) * innerWidth;
+			const y = scaleY(lastValue);
+			return { id: entry.id, x, y, name: entry.name, color: entry.color, avatarUrl: entry.avatarUrl, value: lastValue };
+		})
+		.filter(Boolean);
 };
 
 const resolveAvatarOffsets = (avatars) => {
@@ -145,146 +142,229 @@ const formatDuration = (ms) => {
 	return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const RaceChartSvg = ({ paths, avatars, xTicks, yTicks }) => {
-	return (
-		<svg className="race-chart__svg" viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} role="presentation" aria-hidden="true">
-			<g className="race-chart__grid">
-				{yTicks.map((tick) => (
-					<line key={tick.value} x1={0} x2={CHART_WIDTH} y1={tick.y} y2={tick.y} />
-				))}
-				<line x1={0} x2={CHART_WIDTH} y1={CHART_HEIGHT - CHART_MARGIN.bottom} y2={CHART_HEIGHT - CHART_MARGIN.bottom} />
-			</g>
-			<g className="race-chart__axes">
-				<line x1={0} x2={0} y1={CHART_MARGIN.top} y2={CHART_HEIGHT - CHART_MARGIN.bottom} />
-				{xTicks.map((tick) => (
-					<g key={tick.label} transform={`translate(${tick.x}, ${CHART_HEIGHT - CHART_MARGIN.bottom})`}>
-						<line x1="0" x2="0" y1="0" y2="6" />
-						<text y="16" textAnchor="middle">{tick.label}</text>
-					</g>
-				))}
-				{yTicks.map((tick) => (
-					<g key={tick.value} transform={`translate(0, ${tick.y})`}>
-						<line x1="0" x2="8" y1="0" y2="0" />
-						<text x="12" dy="4" textAnchor="start">{tick.label}</text>
-					</g>
-				))}
-			</g>
-			<g className="race-chart__paths">
-				{paths.map((path) => (
-					<path key={path.key} d={path.d} stroke={path.color} />
-				))}
-			</g>
-			<g className="race-chart__avatars">
-				{avatars.map((avatar, idx) => {
-					const clipId = `avatar-clip-${slugifyId(avatar.id || avatar.name || 'user')}-${idx}`;
-					return (
+const RaceChartSvg = ({ paths, avatars, xTicks, yTicks, width, height }) => (
+	<svg
+		className="race-chart__svg"
+		viewBox={`0 0 ${width} ${height}`}
+		preserveAspectRatio="xMidYMid meet"
+		role="presentation"
+		aria-hidden="true"
+	>
+		<g className="race-chart__grid">
+			{yTicks.map((tick) => (
+				<line key={tick.value} x1={0} x2={width} y1={tick.y} y2={tick.y} />
+			))}
+			<line x1={0} x2={width} y1={height - CHART_MARGIN.bottom} y2={height - CHART_MARGIN.bottom} />
+		</g>
+		<g className="race-chart__axes">
+			<line x1={0} x2={0} y1={CHART_MARGIN.top} y2={height - CHART_MARGIN.bottom} />
+			{xTicks.map((tick) => (
+				<g key={tick.label} transform={`translate(${tick.x}, ${height - CHART_MARGIN.bottom})`}>
+					<line x1="0" x2="0" y1="0" y2="6" />
+					<text y="16" textAnchor="middle" fontSize={TICK_FONT_SIZE}>{tick.label}</text>
+				</g>
+			))}
+			{yTicks.map((tick) => (
+				<g key={tick.value} transform={`translate(0, ${tick.y})`}>
+					<line x1="0" x2="8" y1="0" y2="0" />
+					<text x="12" dy="4" textAnchor="start" fontSize={TICK_FONT_SIZE}>{tick.label}</text>
+				</g>
+			))}
+		</g>
+		<g className="race-chart__paths">
+			{paths.map((path, idx) => (
+				<path
+					key={`${path.zone || 'seg'}-${idx}`}
+					d={path.d}
+					stroke={path.color}
+					fill="none"
+					strokeWidth={PATH_STROKE_WIDTH}
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			))}
+		</g>
+		<g className="race-chart__avatars">
+			{avatars.map((avatar, idx) => {
+				const size = AVATAR_RADIUS * 2;
+				const labelX = AVATAR_RADIUS + COIN_LABEL_GAP;
+				const labelY = 0;
+				const clipSafeId = slugifyId(avatar.id, 'user');
+				const clipId = `race-clip-${clipSafeId}-${idx}`;
+				return (
 					<g
-						key={avatar.id}
-						style={{
-							transform: `translate(${avatar.x}px, ${avatar.y + avatar.offsetY}px)`,
-							transition: 'transform 0.35s ease'
-						}}
+						key={clipId}
+						className="race-chart__avatar-group"
+						transform={`translate(${avatar.x}, ${avatar.y + avatar.offsetY})`}
 					>
-						{avatar.avatarUrl ? (
-							<>
-								<defs>
-									<clipPath id={clipId}>
-										<circle r={AVATAR_RADIUS} />
-									</clipPath>
-								</defs>
-								<circle r={AVATAR_RADIUS} fill={avatar.color} className="race-chart__avatar-circle" />
-								<image
-									href={avatar.avatarUrl}
-									x={-AVATAR_RADIUS}
-									y={-AVATAR_RADIUS}
-									width={AVATAR_RADIUS * 2}
-									height={AVATAR_RADIUS * 2}
-									clipPath={`url(#${clipId})`}
-									preserveAspectRatio="xMidYMid slice"
-									style={{ borderRadius: '50%' }}
-								/>
-								<circle r={AVATAR_RADIUS} fill="none" stroke={avatar.color} strokeWidth={3} className="race-chart__avatar-border" />
-							</>
-						) : (
-							<>
-								<circle r={AVATAR_RADIUS} fill={avatar.color} stroke={avatar.color} strokeWidth={2.5} className="race-chart__avatar-circle" />
-								<text className="race-chart__avatar-text" dy="4" textAnchor="middle">
-									{initials(avatar.name)}
-								</text>
-							</>
-						)}
+						<defs>
+							<clipPath id={clipId}>
+								<circle r={AVATAR_RADIUS} cx={0} cy={0} />
+							</clipPath>
+						</defs>
+						<text
+							x={labelX}
+							y={labelY}
+							className="race-chart__coin-label"
+							textAnchor="start"
+							dominantBaseline="middle"
+							fontSize={COIN_FONT_SIZE}
+							aria-hidden="true"
+						>
+							{formatCompactNumber(avatar.value)}
+						</text>
+						<circle className="race-chart__avatar-backdrop" r={AVATAR_RADIUS + 6} />
+						<circle
+							className="race-chart__avatar-zone"
+							r={AVATAR_RADIUS + 1.5}
+							stroke={avatar.color}
+						/>
+						<image
+							href={avatar.avatarUrl}
+							x={-AVATAR_RADIUS}
+							y={-AVATAR_RADIUS}
+							width={size}
+							height={size}
+							clipPath={`url(#${clipId})`}
+							preserveAspectRatio="xMidYMid slice"
+							className="race-chart__avatar-img"
+						/>
 					</g>
 				);
-				})}
-			</g>
-		</svg>
-	);
-};
+			})}
+		</g>
+	</svg>
+);
 
 const FitnessChart = () => {
 	const { participantRoster = [], getUserTimelineSeries, timelineTimebase } = useFitnessContext();
+	const containerRef = useRef(null);
+	const [chartSize, setChartSize] = useState({ width: DEFAULT_CHART_WIDTH, height: DEFAULT_CHART_HEIGHT });
+
+	useLayoutEffect(() => {
+		const el = containerRef.current;
+		if (!el) return;
+
+		const updateSize = () => {
+			const rect = el.getBoundingClientRect();
+			const width = Math.max(240, rect.width || DEFAULT_CHART_WIDTH);
+			const height = Math.max(200, rect.height || DEFAULT_CHART_HEIGHT);
+			setChartSize({ width, height });
+		};
+
+		updateSize();
+		const resizeObserver = new ResizeObserver(() => updateSize());
+		resizeObserver.observe(el);
+		return () => resizeObserver.disconnect();
+	}, []);
 
 	const { entries, maxValue, maxIndex } = useRaceChartData(participantRoster, getUserTimelineSeries, timelineTimebase);
+	const { width: chartWidth, height: chartHeight } = chartSize;
 	const intervalMs = Number(timelineTimebase?.intervalMs) > 0 ? Number(timelineTimebase.intervalMs) : 5000;
 	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, 1);
-	const paddedMaxValue = maxValue > 0 ? maxValue * 1.15 : 0;
+	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : 0;
 	const [persisted, setPersisted] = useState(null);
+
+	const minDataValue = useMemo(() => {
+		const vals = entries.flatMap((e) => e.beats || []).filter((v) => Number.isFinite(v));
+		return vals.length ? Math.min(...vals) : 0;
+	}, [entries]);
+
+	const minAxisValue = useMemo(() => {
+		// Clamp the vertical domain to never dip below zero so the x-axis sits on 0.
+		return Math.min(0, minDataValue);
+	}, [minDataValue]);
+
+	const lowestAvatarValue = useMemo(() => {
+		let min = Number.POSITIVE_INFINITY;
+		entries.forEach((entry) => {
+			const beats = entry.beats || [];
+			for (let i = beats.length - 1; i >= 0; i -= 1) {
+				const v = beats[i];
+				if (Number.isFinite(v)) {
+					if (v < min) min = v;
+					break;
+				}
+			}
+		});
+		if (min === Number.POSITIVE_INFINITY) return Math.max(0, minDataValue);
+		return Math.max(0, min);
+	}, [entries, minDataValue]);
+
+	const scaleY = useMemo(() => {
+		const domainMin = Math.min(minAxisValue, paddedMaxValue);
+		const domainSpan = Math.max(1, paddedMaxValue - domainMin);
+		const topFrac = 0.06;
+		const bottomFrac = 1; // anchor zero directly on the x-axis
+		const innerHeight = Math.max(1, chartHeight - CHART_MARGIN.top - CHART_MARGIN.bottom);
+		const logBase = Y_SCALE_BASE;
+		return (value) => {
+			const clamped = Math.max(domainMin, Math.min(paddedMaxValue, value));
+			const norm = (clamped - domainMin) / domainSpan;
+			let mapped = norm;
+			if (logBase > 1) {
+				mapped = 1 - Math.log(1 + (1 - norm) * (logBase - 1)) / Math.log(logBase);
+			}
+			const frac = bottomFrac + (topFrac - bottomFrac) * mapped;
+			return CHART_MARGIN.top + frac * innerHeight;
+		};
+	}, [minDataValue, paddedMaxValue, chartHeight]);
 
 	const paths = useMemo(() => {
 		if (!entries.length || !(paddedMaxValue > 0)) return [];
 		let globalIdx = 0;
 		const allSegments = entries.flatMap((entry) => {
 			const created = createPaths(entry.segments, {
-				width: CHART_WIDTH,
-				height: CHART_HEIGHT,
+				width: chartWidth,
+				height: chartHeight,
 				margin: CHART_MARGIN,
 				minVisibleTicks: MIN_VISIBLE_TICKS,
 				maxValue: paddedMaxValue,
+				minValue: minAxisValue,
+				bottomFraction: 1,
+				topFraction: 0.06,
 				effectiveTicks,
 				yScaleBase: Y_SCALE_BASE
 			});
 			return created.map((p, idx) => ({ ...p, id: entry.id, key: `${entry.id}-${globalIdx++}-${idx}` }));
 		});
 		return allSegments;
-	}, [entries, paddedMaxValue, effectiveTicks]);
+	}, [entries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue]);
 
 	const avatars = useMemo(() => {
 		if (!entries.length || !(paddedMaxValue > 0)) return [];
-		const base = computeAvatarPositions(entries, paddedMaxValue, CHART_WIDTH, CHART_HEIGHT, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
+		const base = computeAvatarPositions(entries, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
 		return resolveAvatarOffsets(base);
-	}, [entries, paddedMaxValue, effectiveTicks]);
+	}, [entries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
-		const scaleY = (value) => {
-			const innerHeight = Math.max(1, CHART_HEIGHT - CHART_MARGIN.top - CHART_MARGIN.bottom);
-			const t = Math.max(0, Math.min(1, value / paddedMaxValue));
-			if (Y_SCALE_BASE > 1) {
-				const mapped = 1 - Math.log(1 + (1 - t) * (Y_SCALE_BASE - 1)) / Math.log(Y_SCALE_BASE);
-				return CHART_MARGIN.top + innerHeight - mapped * innerHeight;
-			}
-			return CHART_MARGIN.top + innerHeight - t * innerHeight;
-		};
-		const positions = [1, 0.75, 0.5, 0.25, 0].map((p) => ({ frac: p, value: paddedMaxValue * p }));
-		return positions.map((p) => ({
-			value: p.value,
-			label: p.value.toFixed(0),
-			y: scaleY(p.value),
+		const start = Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
+		const tickCount = 4;
+		const span = Math.max(1, paddedMaxValue - start);
+		const values = Array.from({ length: tickCount }, (_, idx) => {
+			const t = idx / Math.max(1, tickCount - 1);
+			return start + span * t;
+		});
+		return values.map((value) => ({
+			value,
+			label: value.toFixed(0),
+			y: scaleY(value),
 			x1: 0,
-			x2: CHART_WIDTH
+			x2: chartWidth
 		}));
-	}, [paddedMaxValue]);
+	}, [paddedMaxValue, lowestAvatarValue, chartWidth, scaleY]);
 
 	const xTicks = useMemo(() => {
 		const totalMs = effectiveTicks * intervalMs;
 		const positions = [0, 0.25, 0.5, 0.75, 1];
-		const innerWidth = Math.max(1, CHART_WIDTH - CHART_MARGIN.left - CHART_MARGIN.right);
+		const innerWidth = Math.max(1, chartWidth - CHART_MARGIN.left - CHART_MARGIN.right);
 		return positions.map((p) => {
 			const x = CHART_MARGIN.left + p * innerWidth;
 			const label = formatDuration(totalMs * p);
 			return { x, label };
 		});
-	}, [effectiveTicks, intervalMs]);
+	}, [effectiveTicks, intervalMs, chartWidth]);
 
 	const leaderValue = useMemo(() => {
 		const vals = avatars.map((a) => a.value).filter((v) => Number.isFinite(v));
@@ -303,14 +383,21 @@ const FitnessChart = () => {
 	const displayAvatars = hasData ? avatars : persisted?.avatars || [];
 	const displayXTicks = (hasData ? xTicks : persisted?.xTicks || xTicks) || [];
 	const displayYTicks = (hasData ? yTicks : persisted?.yTicks || yTicks) || [];
-	const displayLeader = hasData ? leaderValue : persisted?.leaderValue;
+	// leaderValue currently unused in render, but persisted for potential highlights.
 
 	return (
-		<div className="race-chart-panel">
+		<div className="race-chart-panel" ref={containerRef}>
 			{!hasData && !persisted && <div className="race-chart-panel__empty">Timeline warming up…</div>}
 			{(hasData || persisted) && (
 				<div className="race-chart-panel__body">
-					<RaceChartSvg paths={displayPaths} avatars={displayAvatars} xTicks={displayXTicks} yTicks={displayYTicks} />
+					<RaceChartSvg
+						paths={displayPaths}
+						avatars={displayAvatars}
+						xTicks={displayXTicks}
+						yTicks={displayYTicks}
+						width={chartWidth}
+						height={chartHeight}
+					/>
 				</div>
 			)}
 		</div>

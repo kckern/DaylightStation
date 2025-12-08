@@ -464,20 +464,41 @@ const FitnessSidebarMenu = ({
         <button type="button" className="menu-item action-item" onClick={handleReloadPage}>
           <span>🔄 Reload App</span>
         </button>
-        {typeof onToggleViewMode === 'function' && (
-          <button
-            type="button"
-            className="menu-item action-item"
-            onClick={onToggleViewMode}
-          >
-            {viewMode === 'chart' ? 'Show Camera' : 'Show Race Chart'}
-          </button>
-        )}
       </div>
 
       <div className="menu-section">
 
         <h4>Media Visibility</h4>
+        <div
+          className="menu-item toggle-item"
+          onPointerDown={() => handleToggle('sidebarCam')}
+        >
+          <span>📹 Sidebar Webcam</span>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={Boolean(visibility.sidebarCam)}
+              readOnly
+            />
+            <span className="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div
+          className="menu-item toggle-item"
+          onPointerDown={() => onToggleViewMode?.()}
+        >
+          <span>📈 Fitness Chart</span>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={viewMode === 'chart'}
+              readOnly
+            />
+            <span className="toggle-slider"></span>
+          </label>
+        </div>
+
         <div className="menu-item toggle-item"
          onPointerDown={() => handleToggle('treasureBox')}
          >

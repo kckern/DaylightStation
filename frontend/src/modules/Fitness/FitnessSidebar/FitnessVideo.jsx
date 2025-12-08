@@ -68,6 +68,7 @@ const FitnessVideo = ({ minimal = false }) => {
           ref={webcamRef}
           enabled
           audioConstraints={false}
+          filterId="mirrorAdaptive"
           videoConstraints={videoConstraints}
           onStreamReady={handleStreamReady}
           onError={handleError}
