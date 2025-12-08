@@ -1,6 +1,6 @@
 const MIN_SHARP_DIMENSION = 480;
 const MAX_BLUR_PX = 14;
-const DEFAULT_FILTER_ID = 'mirrorAdaptive';
+export const DEFAULT_FILTER_ID = 'mirrorAdaptive';
 
 const computeAdaptiveBlur = (width, height) => {
   if (!Number.isFinite(width) || !Number.isFinite(height)) return 0;
@@ -97,6 +97,10 @@ export const webcamFilters = {
 };
 
 export function getWebcamFilter(id) {
-  if (!id) return webcamFilters[DEFAULT_FILTER_ID];
-  return webcamFilters[id] || webcamFilters[DEFAULT_FILTER_ID];
+  return webcamFilters[resolveFilterId(id)];
+}
+
+export function resolveFilterId(id) {
+  if (id && webcamFilters[id]) return id;
+  return DEFAULT_FILTER_ID;
 }
