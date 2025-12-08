@@ -6,10 +6,12 @@ import { ProgressBar } from './ProgressBar.jsx';
 import { playbackLog } from '../lib/playbackLogger.js';
 
 const MAX_ADAPTIVE_VIDEO_BLUR_PX = 5;
-const ADAPTIVE_BLUR_PX_PER_SCALE = 2.5;
-const GRAIN_TEXTURE_SIZE = 512;
-const MIN_GRAIN_OPACITY = 0.08;
-const MAX_GRAIN_OPACITY = 0.38;
+const ADAPTIVE_BLUR_PX_PER_SCALE = 1.5;
+const GRAIN_TEXTURE_SIZE = 256;
+const MIN_GRAIN_OPACITY = 0.01;
+const MAX_GRAIN_OPACITY = 0.5;
+const GRAIN_SCANLINE_PERIOD = 4; // px
+const GRAIN_SCANLINE_ALPHA = 5;
 
 let cachedGrainDataUrl = null;
 
@@ -31,6 +33,11 @@ const ensureGrainTexture = () => {
     imageData.data[i + 3] = 255;
   }
   ctx.putImageData(imageData, 0, 0);
+  // Subtle CRT-style scanlines layered over the static grain
+  ctx.fillStyle = `rgba(0, 0, 0, ${GRAIN_SCANLINE_ALPHA})`;
+  for (let y = 0; y < GRAIN_TEXTURE_SIZE; y += GRAIN_SCANLINE_PERIOD) {
+    ctx.fillRect(0, y, GRAIN_TEXTURE_SIZE, 1);
+  }
   cachedGrainDataUrl = canvas.toDataURL('image/png');
   return cachedGrainDataUrl;
 };
