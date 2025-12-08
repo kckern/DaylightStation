@@ -112,6 +112,27 @@ export class FitnessTimeline {
     };
   }
 
+  static validateSeriesLengths(timebase = {}, series = {}) {
+    const tickCount = Number(timebase?.tickCount);
+    if (!Number.isFinite(tickCount) || tickCount < 0) {
+      return { ok: true, issues: [] };
+    }
+
+    const issues = [];
+    Object.entries(series || {}).forEach(([key, arr]) => {
+      if (!Array.isArray(arr)) return;
+      if (arr.length !== tickCount) {
+        issues.push({ key, length: arr.length, tickCount });
+      }
+    });
+
+    return { ok: issues.length === 0, issues };
+  }
+
+  validateSeriesLengths(seriesOverride = null) {
+    return FitnessTimeline.validateSeriesLengths(this.timebase, seriesOverride || this.series);
+  }
+
   _normalizeSnapshot(metricsSnapshot) {
     const entries = this._entriesFromSnapshot(metricsSnapshot);
     if (!entries.length) return {};
