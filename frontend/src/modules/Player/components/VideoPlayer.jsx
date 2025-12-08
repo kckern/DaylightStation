@@ -5,9 +5,8 @@ import { useCommonMediaController, shouldRestartFromBeginning } from '../hooks/u
 import { ProgressBar } from './ProgressBar.jsx';
 import { playbackLog } from '../lib/playbackLogger.js';
 
-const MAX_ADAPTIVE_VIDEO_BLUR_PX = 12;
-const MIN_SCALE_RATIO_FOR_BLUR = 1.02;
-const ADAPTIVE_BLUR_PX_PER_SCALE = 18;
+const MAX_ADAPTIVE_VIDEO_BLUR_PX = 5;
+const ADAPTIVE_BLUR_PX_PER_SCALE = 2.5;
 const GRAIN_TEXTURE_SIZE = 512;
 const MIN_GRAIN_OPACITY = 0.08;
 const MAX_GRAIN_OPACITY = 0.38;
@@ -55,35 +54,30 @@ const readVideoBaseFilter = (mediaEl) => {
 const readVideoDisplayMetrics = (mediaEl) => {
   if (!mediaEl) return null;
   const rect = typeof mediaEl.getBoundingClientRect === 'function' ? mediaEl.getBoundingClientRect() : null;
-  const displayWidth = rect?.width || mediaEl.clientWidth || mediaEl.offsetWidth || 0;
   const displayHeight = rect?.height || mediaEl.clientHeight || mediaEl.offsetHeight || 0;
-  const intrinsicWidth = Number(mediaEl.videoWidth) || Number(mediaEl.naturalWidth) || 0;
-  const intrinsicHeight = Number(mediaEl.videoHeight) || Number(mediaEl.naturalHeight) || 0;
-  if (!displayWidth || !displayHeight || !intrinsicWidth || !intrinsicHeight) {
+  const intrinsicHeight = Number(mediaEl.naturalHeight || mediaEl.videoHeight || 0);
+  if (!displayHeight || !intrinsicHeight) {
     return null;
   }
   return {
-    displayWidth,
     displayHeight,
-    intrinsicWidth,
-    intrinsicHeight
+    intrinsicHeight,
   };
 };
 
 const computeAdaptiveVideoBlurPx = (mediaEl) => {
   const metrics = readVideoDisplayMetrics(mediaEl);
   if (!metrics) return 0;
-  const widthRatio = metrics.displayWidth / metrics.intrinsicWidth;
-  const heightRatio = metrics.displayHeight / metrics.intrinsicHeight;
-  const scaleRatio = Math.max(widthRatio, heightRatio);
-  if (!Number.isFinite(scaleRatio) || scaleRatio <= MIN_SCALE_RATIO_FOR_BLUR) {
+  const { displayHeight, intrinsicHeight } = metrics;
+  if (!Number.isFinite(displayHeight) || !Number.isFinite(intrinsicHeight) || intrinsicHeight <= 0) {
     return 0;
   }
-  const scaledExcess = Math.max(0, scaleRatio - MIN_SCALE_RATIO_FOR_BLUR);
-  const blurPx = Math.min(
-    MAX_ADAPTIVE_VIDEO_BLUR_PX,
-    scaledExcess * ADAPTIVE_BLUR_PX_PER_SCALE
-  );
+  if (displayHeight <= intrinsicHeight) {
+    return 0;
+  }
+  const scaleRatio = displayHeight / intrinsicHeight;
+  const scaledExcess = Math.max(0, scaleRatio - 1);
+  const blurPx = Math.min(MAX_ADAPTIVE_VIDEO_BLUR_PX, scaledExcess * ADAPTIVE_BLUR_PX_PER_SCALE);
   return Number(blurPx.toFixed(2));
 };
 
