@@ -30,7 +30,8 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-
+    --player-video-grain-opacity: 0;
+    --player-video-grain-image: none;
 }
 
 .video-element-host{
@@ -71,6 +72,20 @@
     --player-video-filter-computed: var(--player-video-filter-base);
     filter: var(--player-video-filter-computed);
     transition: filter 250ms ease;
+}
+
+.video-player .video-grain-overlay{
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: var(--player-layer-grain, 35);
+    opacity: var(--player-video-grain-opacity, 0);
+    background-image: var(--player-video-grain-image, none);
+    background-repeat: repeat;
+    background-size: 320px 320px;
+    background-position: var(--player-video-grain-offset, 0 0);
+    mix-blend-mode: screen;
+    transition: opacity 180ms ease;
 }
 
 .vjs-control-bar{
