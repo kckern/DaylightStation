@@ -15,6 +15,7 @@ const DEFAULT_CHART_HEIGHT = 390;
 const CHART_MARGIN = { top: 10, right: 64, bottom: 38, left: 4 };
 const AVATAR_RADIUS = 30;
 const AVATAR_OVERLAP_THRESHOLD = AVATAR_RADIUS * 2; // approximate diameter for collision
+const ABSENT_BADGE_RADIUS = 10;
 const COIN_LABEL_GAP = 8;
 const Y_SCALE_BASE = 20; // >1 compresses lower values and expands higher values (top-heavy)
 const PATH_STROKE_WIDTH = 5;
@@ -80,6 +81,93 @@ const useRaceChartData = (roster, getSeries, timebase) => {
 	}, [roster, getSeries, timebase]);
 };
 
+const getLastFiniteValue = (arr = []) => {
+	for (let i = arr.length - 1; i >= 0; i -= 1) {
+		const v = arr[i];
+		if (Number.isFinite(v)) return v;
+	}
+	return null;
+};
+
+const findFirstFiniteAfter = (arr = [], index) => {
+	for (let i = index + 1; i < arr.length; i += 1) {
+		if (Number.isFinite(arr[i])) return i;
+	}
+	return null;
+};
+
+const useRaceChartWithHistory = (roster, getSeries, timebase) => {
+	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase);
+	const [participantCache, setParticipantCache] = useState({});
+
+	useEffect(() => {
+		setParticipantCache((prev) => {
+			const next = { ...prev };
+			const presentIds = new Set();
+			presentEntries.forEach((entry) => {
+				const id = entry.id;
+				presentIds.add(id);
+				const lastValue = getLastFiniteValue(entry.beats || []);
+				const lastSeenTick = entry.lastIndex;
+				const prevEntry = prev[id];
+				let segments = entry.segments;
+				if (prevEntry && !prevEntry.isPresent && prevEntry.lastValue != null && (prevEntry.lastSeenTick ?? -1) > 0) {
+					const firstNewIdx = findFirstFiniteAfter(entry.beats || [], prevEntry.lastSeenTick ?? -1);
+					if (firstNewIdx != null) {
+						const gapSegment = {
+							zone: null,
+							color: ZONE_COLOR_MAP.default,
+							points: [
+								{ i: prevEntry.lastSeenTick, v: prevEntry.lastValue },
+								{ i: firstNewIdx, v: entry.beats[firstNewIdx] }
+							]
+						};
+						segments = [gapSegment, ...segments];
+					}
+				}
+				next[id] = {
+					...prevEntry,
+					...entry,
+					segments,
+					beats: entry.beats,
+					zones: entry.zones,
+					lastSeenTick,
+					lastValue,
+					isPresent: true,
+					absentSinceTick: null
+				};
+			});
+			Object.keys(next).forEach((id) => {
+				if (!presentIds.has(id)) {
+					const ent = next[id];
+					if (ent) {
+						next[id] = {
+							...ent,
+							isPresent: false,
+							absentSinceTick: ent.absentSinceTick ?? ent.lastSeenTick ?? 0
+						};
+					}
+				}
+			});
+			return next;
+		});
+	}, [presentEntries]);
+
+	const allEntries = useMemo(() => Object.values(participantCache).filter((e) => e && (e.segments?.length || 0) > 0), [participantCache]);
+	const present = useMemo(() => allEntries.filter((e) => e.isPresent), [allEntries]);
+	const absent = useMemo(() => allEntries.filter((e) => !e.isPresent), [allEntries]);
+	const maxValue = useMemo(() => {
+		const vals = allEntries.flatMap((e) => (e.beats || []).filter((v) => Number.isFinite(v)));
+		return vals.length ? Math.max(...vals, 0) : 0;
+	}, [allEntries]);
+	const maxIndex = useMemo(() => {
+		const idxs = allEntries.map((e) => e.lastSeenTick ?? -1);
+		return idxs.length ? Math.max(...idxs, 0) : 0;
+	}, [allEntries]);
+
+	return { allEntries, presentEntries: present, absentEntries: absent, maxValue, maxIndex };
+};
+
 const computeAvatarPositions = (entries, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
 	const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
 	const ticks = Math.max(minVisibleTicks, effectiveTicks || 1, 1);
@@ -135,6 +223,23 @@ const resolveAvatarOffsets = (avatars) => {
 	return placed;
 };
 
+const computeBadgePositions = (entries, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
+	const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
+	const ticks = Math.max(minVisibleTicks, effectiveTicks || 1, 1);
+	return entries
+		.map((entry) => {
+			const lastIndex = Number.isFinite(entry.lastSeenTick) ? entry.lastSeenTick : -1;
+			const lastValue = Number.isFinite(entry.lastValue) ? entry.lastValue : null;
+			if (lastIndex < 0 || lastValue == null) return null;
+			const x = ticks <= 1 ? margin.left || 0 : (margin.left || 0) + (lastIndex / (ticks - 1)) * innerWidth;
+			const y = scaleY(lastValue);
+			const label = (entry.name || '?').trim();
+			const initial = label ? label[0].toUpperCase() : '?';
+			return { id: entry.id, x, y, initial };
+		})
+		.filter(Boolean);
+};
+
 const formatDuration = (ms) => {
 	const totalSeconds = Math.max(0, Math.floor(ms / 1000));
 	const minutes = Math.floor(totalSeconds / 60);
@@ -142,7 +247,7 @@ const formatDuration = (ms) => {
 	return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const RaceChartSvg = ({ paths, avatars, xTicks, yTicks, width, height }) => (
+const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height }) => (
 	<svg
 		className="race-chart__svg"
 		viewBox={`0 0 ${width} ${height}`}
@@ -179,9 +284,27 @@ const RaceChartSvg = ({ paths, avatars, xTicks, yTicks, width, height }) => (
 					stroke={path.color}
 					fill="none"
 					strokeWidth={PATH_STROKE_WIDTH}
+					opacity={path.opacity ?? 1}
 					strokeLinecap="round"
 					strokeLinejoin="round"
 				/>
+			))}
+		</g>
+		<g className="race-chart__absent-badges">
+			{badges.map((badge) => (
+				<g key={`absent-${badge.id}`} transform={`translate(${badge.x}, ${badge.y})`}>
+					<circle r={ABSENT_BADGE_RADIUS} fill="#f3f4f6" stroke="#9ca3af" strokeWidth="1.5" />
+					<text
+						x="0"
+						y="4"
+						textAnchor="middle"
+						fontSize={12}
+						fill="#4b5563"
+						fontWeight="600"
+					>
+						{badge.initial}
+					</text>
+				</g>
 			))}
 		</g>
 		<g className="race-chart__avatars">
@@ -258,17 +381,18 @@ const FitnessChart = () => {
 		return () => resizeObserver.disconnect();
 	}, []);
 
-	const { entries, maxValue, maxIndex } = useRaceChartData(participantRoster, getUserTimelineSeries, timelineTimebase);
+	const { allEntries, presentEntries, absentEntries, maxValue, maxIndex } = useRaceChartWithHistory(participantRoster, getUserTimelineSeries, timelineTimebase);
 	const { width: chartWidth, height: chartHeight } = chartSize;
 	const intervalMs = Number(timelineTimebase?.intervalMs) > 0 ? Number(timelineTimebase.intervalMs) : 5000;
 	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, 1);
 	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : 2; // keep drawable even before first coin
+	const yScaleBase = allEntries.length <= 1 ? 1 : Y_SCALE_BASE; // single user: linear scale
 	const [persisted, setPersisted] = useState(null);
 
 	const minDataValue = useMemo(() => {
-		const vals = entries.flatMap((e) => e.beats || []).filter((v) => Number.isFinite(v));
+		const vals = allEntries.flatMap((e) => e.beats || []).filter((v) => Number.isFinite(v));
 		return vals.length ? Math.min(...vals) : 0;
-	}, [entries]);
+	}, [allEntries]);
 
 	const minAxisValue = useMemo(() => {
 		// Clamp the vertical domain to never dip below zero so the x-axis sits on 0.
@@ -277,7 +401,7 @@ const FitnessChart = () => {
 
 	const lowestAvatarValue = useMemo(() => {
 		let min = Number.POSITIVE_INFINITY;
-		entries.forEach((entry) => {
+		presentEntries.forEach((entry) => {
 			const beats = entry.beats || [];
 			for (let i = beats.length - 1; i >= 0; i -= 1) {
 				const v = beats[i];
@@ -289,7 +413,7 @@ const FitnessChart = () => {
 		});
 		if (min === Number.POSITIVE_INFINITY) return Math.max(0, minDataValue);
 		return Math.max(0, min);
-	}, [entries, minDataValue]);
+	}, [presentEntries, minDataValue]);
 
 	const scaleY = useMemo(() => {
 		const domainMin = Math.min(minAxisValue, paddedMaxValue);
@@ -297,7 +421,7 @@ const FitnessChart = () => {
 		const topFrac = 0.06;
 		const bottomFrac = 1; // anchor zero directly on the x-axis
 		const innerHeight = Math.max(1, chartHeight - CHART_MARGIN.top - CHART_MARGIN.bottom);
-		const logBase = Y_SCALE_BASE;
+		const logBase = yScaleBase;
 		return (value) => {
 			const clamped = Math.max(domainMin, Math.min(paddedMaxValue, value));
 			const norm = (clamped - domainMin) / domainSpan;
@@ -308,12 +432,12 @@ const FitnessChart = () => {
 			const frac = bottomFrac + (topFrac - bottomFrac) * mapped;
 			return CHART_MARGIN.top + frac * innerHeight;
 		};
-	}, [minDataValue, paddedMaxValue, chartHeight]);
+	}, [minDataValue, paddedMaxValue, chartHeight, yScaleBase]);
 
 	const paths = useMemo(() => {
-		if (!entries.length || !(paddedMaxValue > 0)) return [];
+		if (!allEntries.length || !(paddedMaxValue > 0)) return [];
 		let globalIdx = 0;
-		const allSegments = entries.flatMap((entry) => {
+		const allSegments = allEntries.flatMap((entry) => {
 			const created = createPaths(entry.segments, {
 				width: chartWidth,
 				height: chartHeight,
@@ -324,18 +448,23 @@ const FitnessChart = () => {
 				bottomFraction: 1,
 				topFraction: 0.06,
 				effectiveTicks,
-				yScaleBase: Y_SCALE_BASE
+				yScaleBase
 			});
 			return created.map((p, idx) => ({ ...p, id: entry.id, key: `${entry.id}-${globalIdx++}-${idx}` }));
 		});
 		return allSegments;
-	}, [entries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue]);
+	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase]);
 
 	const avatars = useMemo(() => {
-		if (!entries.length || !(paddedMaxValue > 0)) return [];
-		const base = computeAvatarPositions(entries, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
+		if (!presentEntries.length || !(paddedMaxValue > 0)) return [];
+		const base = computeAvatarPositions(presentEntries, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
 		return resolveAvatarOffsets(base);
-	}, [entries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
+	}, [presentEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
+
+	const badges = useMemo(() => {
+		if (!absentEntries.length || !(paddedMaxValue > 0)) return [];
+		return computeBadgePositions(absentEntries, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
+	}, [absentEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
@@ -371,18 +500,19 @@ const FitnessChart = () => {
 		return vals.length ? Math.max(...vals) : null;
 	}, [avatars]);
 
-	const hasData = entries.length > 0 && paths.length > 0;
+	const hasData = allEntries.length > 0 && paths.length > 0;
 
 	useEffect(() => {
 		if (hasData) {
-			setPersisted({ paths, avatars, xTicks, yTicks, leaderValue });
+			setPersisted({ paths, avatars, badges, xTicks, yTicks, leaderValue });
 		}
-	}, [hasData, paths, avatars, xTicks, yTicks, leaderValue]);
+		}, [hasData, paths, avatars, badges, xTicks, yTicks, leaderValue]);
 
-	const displayPaths = hasData ? paths : persisted?.paths || [];
-	const displayAvatars = hasData ? avatars : persisted?.avatars || [];
-	const displayXTicks = (hasData ? xTicks : persisted?.xTicks || xTicks) || [];
-	const displayYTicks = (hasData ? yTicks : persisted?.yTicks || yTicks) || [];
+		const displayPaths = hasData ? paths : persisted?.paths || [];
+		const displayAvatars = hasData ? avatars : persisted?.avatars || [];
+		const displayBadges = hasData ? badges : persisted?.badges || [];
+		const displayXTicks = (hasData ? xTicks : persisted?.xTicks || xTicks) || [];
+		const displayYTicks = (hasData ? yTicks : persisted?.yTicks || yTicks) || [];
 	// leaderValue currently unused in render, but persisted for potential highlights.
 
 	return (
@@ -393,6 +523,7 @@ const FitnessChart = () => {
 					<RaceChartSvg
 						paths={displayPaths}
 						avatars={displayAvatars}
+						badges={displayBadges}
 						xTicks={displayXTicks}
 						yTicks={displayYTicks}
 						width={chartWidth}
