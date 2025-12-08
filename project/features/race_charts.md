@@ -106,13 +106,11 @@ Render a real-time race-style line chart showing cumulative heart activity per p
 	- Storybook/story (if used) to visualize overlap handling and early-session padding.
 
 ## Phased implementation plan
-- Phase A: Data shaping + helpers
+- Phase 1: Data shaping + helpers
 	- Implement `buildBeatsSeries`, `buildSegments`, and `createPaths` in `FitnessChart.jsx` (or colocated helper file), with unit tests for beats integration, zone segmentation, and path generation.
-- Phase B: SVG rendering
+- Phase 2: SVG rendering
 	- Replace `FitnessChart.jsx` UI with `RaceChartSvg`, `RaceChartAvatar`, segmented polylines, empty/leader states, and overlap handling; update `FitnessChart.scss` styling.
-- Phase C: Integration with context
+- Phase 3: Integration with context
 	- Wire the chart to `useFitnessContext` data (`participantRoster`, `getUserTimelineSeries`, `timelineTimebase`); ensure zone series pulled and mapped. Validate early-session padding behavior.
-- Phase D: FitnessCam/Sidebar toggle
+- Phase 4: FitnessCam/Sidebar toggle
 	- Add `viewMode` state to `FitnessCam.jsx`, sidebar toggle UI in `FitnessSidebar.jsx`, and mini-cam placement when chart mode is active.
-- Phase E: Polish and tests
-	- Add optional tests/stories for helper logic and rendering variants (overlap, late join, empty state). Tune SCSS, accessibility labels, and responsive behavior.
