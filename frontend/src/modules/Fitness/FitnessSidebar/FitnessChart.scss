@@ -1,4 +1,4 @@
-.fitness-chart-panel {
+.race-chart-panel {
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
@@ -6,9 +6,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  height: 100%;
+  flex: 1;
 }
 
-.fitness-chart-panel__header {
+.race-chart-panel__header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -29,76 +31,72 @@
   }
 }
 
-.fitness-chart-panel__empty {
+.race-chart-panel__empty {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.6);
   padding: 0.5rem 0;
 }
 
-.fitness-chart-panel__body {
+.race-chart-panel__body {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
 }
 
-.fitness-chart-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.5rem 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-
-  &:first-of-type {
-    border-top: none;
-    padding-top: 0;
-  }
-}
-
-.fitness-chart-row__meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.fitness-chart-row__name {
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.fitness-chart-row__value {
-  font-size: 1rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-
-  .suffix {
-    font-size: 0.7rem;
-    margin-left: 0.2rem;
-    color: rgba(255, 255, 255, 0.6);
-  }
-}
-
-.fitness-chart-row__range {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.fitness-chart__sparkline {
+.race-chart__svg {
   width: 100%;
-  height: 38px;
+  height: 100%;
+  aspect-ratio: auto;
+  overflow: visible;
+}
 
-  path {
-    fill: none;
-    stroke: rgba(255, 255, 255, 0.85);
-    stroke-width: 1.5;
+.race-chart__grid line {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.race-chart__axes {
+  line {
+    stroke: rgba(255, 255, 255, 0.2);
+    stroke-width: 1;
+  }
+
+  text {
+    fill: rgba(255, 255, 255, 0.7);
+    font-size: 10px;
   }
 }
 
-.fitness-chart__sparkline--empty {
-  width: 100%;
-  height: 36px;
-  border: 1px dashed rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
+.race-chart__paths path {
+  fill: none;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.25));
+}
+
+.race-chart__avatars {
+  g {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform 0.35s ease;
+  }
+
+  .race-chart__avatar-text {
+    fill: #0f172a;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .race-chart__avatar-connector {
+    stroke: rgba(255, 255, 255, 0.5);
+    stroke-width: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .race-chart__avatars g {
+    transition: none;
+  }
 }

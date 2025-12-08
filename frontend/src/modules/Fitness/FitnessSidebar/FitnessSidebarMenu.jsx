@@ -32,7 +32,9 @@ const FitnessSidebarMenu = ({
   reloadTargetSeconds = 0,
   preferredMicrophoneId = '',
   onSelectMicrophone,
-  sidebarSizeMode = 'regular'
+  sidebarSizeMode = 'regular',
+  viewMode = 'cam',
+  onToggleViewMode = null
 }) => {
   const fitnessContext = useFitnessContext();
   const deviceAssignments = fitnessContext?.deviceAssignments || [];
@@ -462,6 +464,15 @@ const FitnessSidebarMenu = ({
         <button type="button" className="menu-item action-item" onClick={handleReloadPage}>
           <span>🔄 Reload App</span>
         </button>
+        {typeof onToggleViewMode === 'function' && (
+          <button
+            type="button"
+            className="menu-item action-item"
+            onClick={onToggleViewMode}
+          >
+            {viewMode === 'chart' ? 'Show Camera' : 'Show Race Chart'}
+          </button>
+        )}
       </div>
 
       <div className="menu-section">
