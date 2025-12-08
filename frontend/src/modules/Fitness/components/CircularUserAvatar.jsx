@@ -43,11 +43,12 @@ const CircularUserAvatar = ({
   role
 }) => {
   const normalizedProgress = clamp(progress, 0, 1);
-  const progressForRing = normalizedProgress === null ? 1 : normalizedProgress;
   const indicatorAngle = normalizedProgress !== null
     ? 180 + normalizedProgress * 180
     : null;
-  const strokeDashoffset = GAUGE_CIRCUMFERENCE * (1 - progressForRing);
+  const strokeDashoffset = normalizedProgress !== null
+    ? GAUGE_CIRCUMFERENCE * (1 - indicatorAngle / 360)
+    : GAUGE_CIRCUMFERENCE;
 
   const rootStyle = {
     ...style,
