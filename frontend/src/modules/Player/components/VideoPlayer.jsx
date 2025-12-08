@@ -5,6 +5,70 @@ import { useCommonMediaController, shouldRestartFromBeginning } from '../hooks/u
 import { ProgressBar } from './ProgressBar.jsx';
 import { playbackLog } from '../lib/playbackLogger.js';
 
+const MAX_ADAPTIVE_VIDEO_BLUR_PX = 12;
+const MIN_SCALE_RATIO_FOR_BLUR = 1.02;
+const ADAPTIVE_BLUR_PX_PER_SCALE = 18;
+
+const readVideoBaseFilter = (mediaEl) => {
+  if (typeof window === 'undefined' || !mediaEl) return '';
+  const computed = window.getComputedStyle?.(mediaEl);
+  if (!computed) return '';
+  const base = computed.getPropertyValue('--player-video-filter-base')?.trim();
+  if (!base || base === 'none') return '';
+  return base;
+};
+
+const readVideoDisplayMetrics = (mediaEl) => {
+  if (!mediaEl) return null;
+  const rect = typeof mediaEl.getBoundingClientRect === 'function' ? mediaEl.getBoundingClientRect() : null;
+  const displayWidth = rect?.width || mediaEl.clientWidth || mediaEl.offsetWidth || 0;
+  const displayHeight = rect?.height || mediaEl.clientHeight || mediaEl.offsetHeight || 0;
+  const intrinsicWidth = Number(mediaEl.videoWidth) || Number(mediaEl.naturalWidth) || 0;
+  const intrinsicHeight = Number(mediaEl.videoHeight) || Number(mediaEl.naturalHeight) || 0;
+  if (!displayWidth || !displayHeight || !intrinsicWidth || !intrinsicHeight) {
+    return null;
+  }
+  return {
+    displayWidth,
+    displayHeight,
+    intrinsicWidth,
+    intrinsicHeight
+  };
+};
+
+const computeAdaptiveVideoBlurPx = (mediaEl) => {
+  const metrics = readVideoDisplayMetrics(mediaEl);
+  if (!metrics) return 0;
+  const widthRatio = metrics.displayWidth / metrics.intrinsicWidth;
+  const heightRatio = metrics.displayHeight / metrics.intrinsicHeight;
+  const scaleRatio = Math.max(widthRatio, heightRatio);
+  if (!Number.isFinite(scaleRatio) || scaleRatio <= MIN_SCALE_RATIO_FOR_BLUR) {
+    return 0;
+  }
+  const scaledExcess = Math.max(0, scaleRatio - MIN_SCALE_RATIO_FOR_BLUR);
+  const blurPx = Math.min(
+    MAX_ADAPTIVE_VIDEO_BLUR_PX,
+    scaledExcess * ADAPTIVE_BLUR_PX_PER_SCALE
+  );
+  return Number(blurPx.toFixed(2));
+};
+
+const applyAdaptiveVideoBlur = (mediaEl, blurPx) => {
+  if (!mediaEl) return;
+  if (!Number.isFinite(blurPx) || blurPx <= 0) {
+    mediaEl.style.removeProperty('--player-video-filter-computed');
+    mediaEl.removeAttribute('data-adaptive-blur');
+    return;
+  }
+  const baseFilter = readVideoBaseFilter(mediaEl);
+  const composed = [baseFilter, `blur(${blurPx.toFixed(2)}px)`]
+    .filter(Boolean)
+    .join(' ')
+    .trim() || 'none';
+  mediaEl.style.setProperty('--player-video-filter-computed', composed);
+  mediaEl.dataset.adaptiveBlur = blurPx.toFixed(2);
+};
+
 const deriveApproxDurationSeconds = (media = {}) => {
   const numericFields = [
     media?.duration,
@@ -798,6 +862,95 @@ export function VideoPlayer({
     mediaEl.style.maxHeight = '100%';
     mediaEl.style.width = '100%';
     mediaEl.style.height = '100%';
+  }, [getCurrentMediaElement, mediaInstanceKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return undefined;
+    }
+
+    let disposed = false;
+    let mediaEl = null;
+    let resizeObserver = null;
+    let measureRaf = 0;
+    let lookupRaf = 0;
+    let lastAppliedBlur = null;
+    const metadataEvents = ['loadedmetadata', 'loadeddata', 'emptied'];
+
+    const cancelMeasure = () => {
+      if (measureRaf) {
+        window.cancelAnimationFrame(measureRaf);
+        measureRaf = 0;
+      }
+    };
+
+    const applyBlurUpdate = () => {
+      measureRaf = 0;
+      if (disposed || !mediaEl) return;
+      const blurPx = computeAdaptiveVideoBlurPx(mediaEl);
+      if (blurPx === lastAppliedBlur) return;
+      lastAppliedBlur = blurPx;
+      applyAdaptiveVideoBlur(mediaEl, blurPx);
+    };
+
+    const scheduleBlurUpdate = () => {
+      if (!mediaEl || disposed) return;
+      cancelMeasure();
+      measureRaf = window.requestAnimationFrame(applyBlurUpdate);
+    };
+
+    const teardownMediaEl = () => {
+      if (!mediaEl) return;
+      metadataEvents.forEach((event) => mediaEl.removeEventListener(event, scheduleBlurUpdate));
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      applyAdaptiveVideoBlur(mediaEl, 0);
+      lastAppliedBlur = null;
+      mediaEl = null;
+    };
+
+    const bindMediaEl = (node) => {
+      if (!node || disposed) return;
+      teardownMediaEl();
+      mediaEl = node;
+      metadataEvents.forEach((event) => mediaEl.addEventListener(event, scheduleBlurUpdate));
+      if (typeof ResizeObserver === 'function') {
+        resizeObserver = new ResizeObserver(() => scheduleBlurUpdate());
+        resizeObserver.observe(mediaEl);
+      }
+      scheduleBlurUpdate();
+    };
+
+    const lookupMediaEl = () => {
+      lookupRaf = 0;
+      if (disposed) return;
+      const node = getCurrentMediaElement();
+      if (node) {
+        bindMediaEl(node);
+        return;
+      }
+      lookupRaf = window.requestAnimationFrame(lookupMediaEl);
+    };
+
+    const handleGlobalChange = () => scheduleBlurUpdate();
+
+    window.addEventListener('resize', handleGlobalChange);
+    window.addEventListener('orientationchange', handleGlobalChange);
+    document.addEventListener('fullscreenchange', handleGlobalChange);
+
+    lookupMediaEl();
+
+    return () => {
+      disposed = true;
+      window.removeEventListener('resize', handleGlobalChange);
+      window.removeEventListener('orientationchange', handleGlobalChange);
+      document.removeEventListener('fullscreenchange', handleGlobalChange);
+      if (lookupRaf) {
+        window.cancelAnimationFrame(lookupRaf);
+      }
+      cancelMeasure();
+      teardownMediaEl();
+    };
   }, [getCurrentMediaElement, mediaInstanceKey]);
 
   useEffect(() => {
