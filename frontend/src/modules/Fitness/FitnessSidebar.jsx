@@ -8,11 +8,10 @@ import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
 import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
 import FitnessMusicPlayer from './FitnessSidebar/FitnessMusicPlayer.jsx';
 import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
-import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import './FitnessCam.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
-const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false }, ref) => {
+const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null }, ref) => {
   const fitnessContext = useFitnessContext();
   const isGovernedInitial = governanceDisabled ? false : Boolean(fitnessContext?.governanceState?.isGoverned);
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
@@ -161,6 +160,11 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
 
   return (
     <div className={`fitness-sidebar-container fitness-sidebar-mode-${mode}`}>
+      {/* Mini cam slot when chart is in main view */}
+      <div className="fitness-sidebar-controls">
+        {miniCamContent}
+      </div>
+
       {/* Treasure Box */}
       {visibility.treasureBox && (
         <div className="fitness-sidebar-treasurebox">
@@ -179,12 +183,6 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
       {visibility.users && (
         <div className="fitness-sidebar-devices">
           <FitnessUsersList onRequestGuestAssignment={handleGuestAssignmentRequest} />
-        </div>
-      )}
-
-      {false && visibility.users && (
-        <div className="fitness-sidebar-chart">
-          <FitnessChart />
         </div>
       )}
 
@@ -242,6 +240,8 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
             onSelectMicrophone={setPreferredMicrophoneId}
             sidebarSizeMode={sidebarSizeMode}
             governanceDisabled={governanceDisabled}
+            viewMode={viewMode}
+            onToggleViewMode={onToggleViewMode}
           />
         </>
       )}

@@ -3,11 +3,13 @@ import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import FitnessSidebar from './FitnessSidebar.jsx';
 import FitnessCamStage from './FitnessCamStage.jsx';
 import FullscreenVitalsOverlay from './FitnessPlayerOverlay/FullscreenVitalsOverlay.jsx';
+import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import './FitnessCam.scss';
 
 const FitnessCam = () => {
   const { setMusicOverride } = useFitnessContext();
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [viewMode, setViewMode] = useState('cam'); // 'cam' | 'chart'
   const sidebarRef = useRef(null);
 
   useEffect(() => {
@@ -23,6 +25,10 @@ const FitnessCam = () => {
     setIsFullscreen(prev => !prev);
   }, []);
 
+  const toggleViewMode = useCallback(() => {
+    setViewMode((prev) => (prev === 'cam' ? 'chart' : 'cam'));
+  }, []);
+
   const handleOpenSettings = useCallback(() => {
     if (isFullscreen) {
       setIsFullscreen(false);
@@ -35,12 +41,32 @@ const FitnessCam = () => {
 
   return (
     <div className={`fitness-cam-layout ${isFullscreen ? 'fullscreen-mode' : ''}`}>
-      <div className="fitness-cam-main" onClick={toggleFullscreen}>
-        <FitnessCamStage onOpenSettings={handleOpenSettings} />
-        <FullscreenVitalsOverlay visible={isFullscreen} />
+      <div className={`fitness-cam-main ${viewMode === 'chart' ? 'chart-mode' : ''}`} onClick={toggleFullscreen}>
+        {viewMode === 'cam' && (
+          <>
+            <FitnessCamStage onOpenSettings={handleOpenSettings} />
+            <FullscreenVitalsOverlay visible={isFullscreen} />
+          </>
+        )}
+        {viewMode === 'chart' && (
+          <div className="fitness-cam-main-chart" style={{marginLeft:"1.5rem"}}>
+            <FitnessChart />
+          </div>
+        )}
       </div>
       <div className={`fitness-cam-sidebar ${isFullscreen ? 'hidden' : ''}`}>
-        <FitnessSidebar ref={sidebarRef} mode="cam" governanceDisabled />
+        <FitnessSidebar
+          ref={sidebarRef}
+          mode="cam"
+          governanceDisabled
+          viewMode={viewMode}
+          onToggleViewMode={toggleViewMode}
+          miniCamContent={viewMode === 'chart' ? (
+            <div className="fitness-sidebar-mini-cam">
+              <FitnessCamStage onOpenSettings={handleOpenSettings} />
+            </div>
+          ) : null}
+        />
       </div>
     </div>
   );
