@@ -2,8 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, use
 import { useMediaDevices } from './useMediaDevices.js';
 import { useWebcamStream } from './useWebcamStream.js';
 import { useWebcamSnapshots } from './useWebcamSnapshots.js';
-import { getWebcamFilter } from './webcamFilters.js';
-import './webcamFilters.scss';
+import { DEFAULT_FILTER_ID, getWebcamFilter, resolveFilterId } from './webcamFilters.js';
 
 const noop = () => {};
 
@@ -20,7 +19,7 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
     enabled = true,
     videoConstraints,
     audioConstraints,
-    filterId = 'crt',
+    filterId = DEFAULT_FILTER_ID,
     filterParams,
     captureIntervalMs = 0,
     onSnapshot = noop,
@@ -39,7 +38,7 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [lastSnapshotMeta, setLastSnapshotMeta] = useState(null);
-  const [activeFilterId, setActiveFilterId] = useState(filterId);
+  const [activeFilterId, setActiveFilterId] = useState(resolveFilterId(filterId));
 
   const {
     devices,
@@ -158,7 +157,7 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
     },
   }), [start, stop, nextVideo, nextAudio, setActiveVideoId, setActiveAudioId, makeSnapshot, stream]);
 
-  const wrapperClass = `fitness-webcam${className ? ` ${className}` : ''}${activeFilterId === 'crt' ? ' webcam-crt' : ''}`;
+  const wrapperClass = `fitness-webcam${className ? ` ${className}` : ''}`;
 
   return (
     <div className={wrapperClass} style={style}>
@@ -170,7 +169,6 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
         className={`fitness-webcam-video${videoClassName ? ` ${videoClassName}` : ''}`}
         style={{ filter: getWebcamFilter(activeFilterId).css || 'none', ...(videoStyle || {}) }}
       />
-      <canvas ref={canvasRef} className="fitness-webcam-canvas" style={{ display: 'none' }} />
       {renderOverlay ? renderOverlay({ status, error, permissionError, devices, activeVideoId, activeAudioId, nextVideo, nextAudio, lastSnapshotMeta }) : null}
       {showControls && (
         <div className="fitness-webcam-controls">
