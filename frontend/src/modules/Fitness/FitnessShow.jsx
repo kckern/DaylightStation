@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { LoadingOverlay, Alert } from '@mantine/core';
 import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import './FitnessShow.scss';
@@ -229,61 +229,71 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       : [];
     return new Set(normalized);
   }, [nomusicLabels]);
-  
+
+  const fetchShowData = useCallback(async () => {
+    if (!showId) {
+      setLoading(false);
+      if (typeof setMusicAutoEnabled === 'function') {
+        setMusicAutoEnabled(false);
+      }
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await DaylightAPI(`/media/plex/list/${showId}/playable`);
+      setShowData(response);
+      
+      const rawLabels = [];
+      if (Array.isArray(response?.info?.labels)) {
+        rawLabels.push(...response.info.labels);
+      }
+      if (Array.isArray(response?.info?.Label)) {
+        response.info.Label.forEach((entry) => {
+          if (typeof entry === 'string') {
+            rawLabels.push(entry);
+          } else if (entry && typeof entry === 'object' && entry.tag) {
+            rawLabels.push(entry.tag);
+          }
+        });
+      }
+      const normalizedLabels = rawLabels
+        .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
+        .filter(Boolean);
+      const hasNoMusicLabel = normalizedLabels.some((label) => nomusicLabelSet.has(label));
+      if (typeof setMusicAutoEnabled === 'function') {
+        setMusicAutoEnabled(hasNoMusicLabel);
+      }
+      
+      // Auto-select first episode if available
+      if (response.items && response.items.length > 0) {
+        setSelectedEpisode(response.items[0]);
+      }
+    } catch (err) {
+      console.error('🎬 ERROR: Error fetching show data:', err);
+      setError(err.message);
+      if (typeof setMusicAutoEnabled === 'function') {
+        setMusicAutoEnabled(false);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [showId, nomusicLabelSet, setMusicAutoEnabled]);
 
   useEffect(() => {
-    const fetchShowData = async () => {
-      if (!showId) {
-        setLoading(false);
-        if (typeof setMusicAutoEnabled === 'function') {
-          setMusicAutoEnabled(false);
-        }
-        return;
-      }
-
-      try {
-        setLoading(true);
-        const response = await DaylightAPI(`/media/plex/list/${showId}/playable`);
-        setShowData(response);
-        
-        const rawLabels = [];
-        if (Array.isArray(response?.info?.labels)) {
-          rawLabels.push(...response.info.labels);
-        }
-        if (Array.isArray(response?.info?.Label)) {
-          response.info.Label.forEach((entry) => {
-            if (typeof entry === 'string') {
-              rawLabels.push(entry);
-            } else if (entry && typeof entry === 'object' && entry.tag) {
-              rawLabels.push(entry.tag);
-            }
-          });
-        }
-        const normalizedLabels = rawLabels
-          .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
-          .filter(Boolean);
-        const hasNoMusicLabel = normalizedLabels.some((label) => nomusicLabelSet.has(label));
-        if (typeof setMusicAutoEnabled === 'function') {
-          setMusicAutoEnabled(hasNoMusicLabel);
-        }
-        
-        // Auto-select first episode if available
-        if (response.items && response.items.length > 0) {
-          setSelectedEpisode(response.items[0]);
-        }
-      } catch (err) {
-        console.error('🎬 ERROR: Error fetching show data:', err);
-        setError(err.message);
-        if (typeof setMusicAutoEnabled === 'function') {
-          setMusicAutoEnabled(false);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchShowData();
-  }, [showId, nomusicLabelSet, setMusicAutoEnabled]);
+  }, [fetchShowData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleRefresh = (event) => {
+      const targetId = event?.detail?.showId || event?.detail?.id || null;
+      if (targetId && String(targetId) !== String(showId)) return;
+      fetchShowData();
+    };
+    window.addEventListener('fitness-show-refresh', handleRefresh);
+    return () => window.removeEventListener('fitness-show-refresh', handleRefresh);
+  }, [showId, fetchShowData]);
 
   // Handle poster aspect ratio with JavaScript
   // Poster size effect: run on mount and when showId changes; guard against state churn
@@ -451,6 +461,19 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     return Array.from(new Set([...(fromEpisode || []), ...(fromShow || [])]));
   };
 
+  const isEpisodeWatched = useCallback((episode) => {
+    const watchProgress = normalizeNumber(episode?.watchProgress) ?? 0;
+    const watchDurationSeconds = normalizeNumber(
+      episode?.watchDurationSeconds ?? episode?.watchedDuration ?? episode?.watched_duration
+    );
+    const episodeDurationSeconds = normalizeNumber(episode?.duration);
+    const hasDurationSignal = Number.isFinite(watchDurationSeconds) && Number.isFinite(episodeDurationSeconds) && episodeDurationSeconds > 0;
+    const watchedByDurationPercent = hasDurationSignal
+      ? (watchDurationSeconds / episodeDurationSeconds) * 100
+      : null;
+    return hasDurationSignal ? watchedByDurationPercent >= 50 : watchProgress >= 50;
+  }, []);
+
   const handlePlayEpisode = async (episode, sourceEl = null) => {
   // play episode (debug removed)
     // If source element provided, require full visibility before play
@@ -482,6 +505,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined)),
         labels: deriveEpisodeLabels(episode),
         type: episode.type || 'episode',
+        showId,
         seconds: resolvedSeconds,
         watchSeconds: resolvedSeconds || undefined,
         watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined
@@ -678,15 +702,46 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       if (activeSeasonId !== null) setActiveSeasonId(null);
       return;
     }
-    if (seasons.length === 1) {
-      if (activeSeasonId !== null) setActiveSeasonId(null); // no filter when single season
-      return;
-    }
-    // Multiple seasons: derive fallback
-    const seasonOne = seasons.find(s => s.number === 1);
-    const fallbackId = seasonOne ? seasonOne.id : seasons[0].id;
-    setActiveSeasonId(prev => (prev && seasons.some(s => s.id === prev)) ? prev : fallbackId);
-  }, [seasons]);
+
+    const seasonById = (id) => seasons.find((s) => s.id === id);
+    const seasonOne = seasons.find((s) => Number.isFinite(s.number) && s.number === 1);
+
+    const isSeasonComplete = (season) => {
+      if (!season) return false;
+      const seasonEpisodes = items.filter((ep) => ep.seasonId === season.id);
+      if (!seasonEpisodes.length) return false;
+      return seasonEpisodes.every(isEpisodeWatched);
+    };
+
+    const findFirstIncompleteAfter = (startIndex = 0) => {
+      const slice = seasons.slice(startIndex);
+      return slice.find((season) => items.some((ep) => ep.seasonId === season.id && !isEpisodeWatched(ep)));
+    };
+
+    const desiredSeasonId = (() => {
+      if (seasonOne) {
+        if (!isSeasonComplete(seasonOne)) return seasonOne.id; // prefer Season 1 even if specials exist
+        const seasonOneIndex = seasons.findIndex((s) => s.id === seasonOne.id);
+        const nextIncomplete = findFirstIncompleteAfter(seasonOneIndex + 1);
+        if (nextIncomplete) return nextIncomplete.id;
+        return seasonOne.id; // all complete -> default back to S01
+      }
+      const firstIncomplete = findFirstIncompleteAfter(0);
+      return (firstIncomplete || seasons[0]).id;
+    })();
+
+    setActiveSeasonId((prev) => {
+      const prevValid = prev && seasons.some((s) => s.id === prev);
+      if (!prevValid) return desiredSeasonId ?? null;
+      const prevSeason = seasonById(prev);
+      const prevComplete = isSeasonComplete(prevSeason);
+      const prevIsSpecials = prevSeason && Number.isFinite(prevSeason.number) && prevSeason.number === 0;
+      if ((prevComplete || prevIsSpecials) && desiredSeasonId && desiredSeasonId !== prev) {
+        return desiredSeasonId;
+      }
+      return prev;
+    });
+  }, [seasons, items, isEpisodeWatched]);
 
   // Keep selected episode in sync with filter
   useEffect(() => {
@@ -821,6 +876,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
           seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined)),
           labels: deriveEpisodeLabels(episode),
           type: episode.type || 'episode',
+          showId,
           seconds: resolvedSeconds,
           watchSeconds: resolvedSeconds || undefined,
           watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined

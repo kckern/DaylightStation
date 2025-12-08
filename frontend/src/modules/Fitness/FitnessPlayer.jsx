@@ -4,7 +4,7 @@ import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
 import usePlayerController from '../Player/usePlayerController.js';
-import { DaylightMediaPath } from '../../lib/api.mjs';
+import { DaylightMediaPath, DaylightAPI } from '../../lib/api.mjs';
 import FitnessCam from './FitnessCam.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
@@ -194,6 +194,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     play: playPlayback
   } = usePlayerController(playerRef);
   const lastKnownTimeRef = useRef(0);
+  const statusUpdateRef = useRef({ lastSent: 0, inflight: false, endSent: false });
   const governancePausedRef = useRef(false);
   const governanceInitialPauseRef = useRef({ handled: false, timer: null });
   const [playIsGoverned, setPlayIsGoverned] = useState(false);
@@ -234,6 +235,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   useEffect(() => {
     lastKnownTimeRef.current = 0;
+    statusUpdateRef.current = { lastSent: 0, inflight: false, endSent: false };
     const state = governanceInitialPauseRef.current;
     if (state.timer) {
       clearTimeout(state.timer);
@@ -663,7 +665,72 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
   }, [seekTo, playIsGoverned]);
 
+  const computeEpisodeStatusPayload = useCallback(({ naturalEnd = false } = {}) => {
+    if (!currentItem) return null;
+    const durationSeconds = Math.max(0, Math.floor(Number.isFinite(duration) ? duration : (currentItem.duration || 0) || 0));
+    const positionSeconds = Math.max(0, Math.floor(lastKnownTimeRef.current || currentTime || 0));
+    const percent = durationSeconds > 0 ? Math.min(100, (positionSeconds / durationSeconds) * 100) : null;
+
+    let status = 'none';
+    if (durationSeconds < 30 && naturalEnd) {
+      status = 'completed';
+    } else if (naturalEnd || (percent != null && percent >= 90)) {
+      status = 'completed';
+    } else if (percent != null && percent >= 10) {
+      status = 'in_progress';
+    }
+    if (status === 'none') return null;
+
+    const mediaKey = currentItem.media_key || currentItem.plex || currentItem.id || currentItem.guid || null;
+    if (!mediaKey) return null;
+
+    return {
+      episodeId: mediaKey,
+      media_key: mediaKey,
+      status,
+      percent: percent != null ? Math.round(percent) : null,
+      positionSeconds,
+      durationSeconds,
+      naturalEnd: Boolean(naturalEnd),
+      title: currentItem.title || currentItem.label || 'Episode',
+      type: currentItem.type || 'episode',
+      showId: currentItem.showId || null
+    };
+  }, [currentItem, currentTime, duration]);
+
+  const postEpisodeStatus = useCallback(async ({ naturalEnd = false, reason = 'unknown' } = {}) => {
+    const payload = computeEpisodeStatusPayload({ naturalEnd });
+    if (!payload) return;
+    const now = Date.now();
+    if (statusUpdateRef.current.inflight) return;
+    if (now - statusUpdateRef.current.lastSent < 500) return;
+    statusUpdateRef.current.inflight = true;
+    try {
+      await DaylightAPI('media/log', {
+        title: payload.title,
+        type: payload.type,
+        media_key: payload.media_key,
+        seconds: payload.positionSeconds,
+        percent: payload.percent ?? undefined,
+        status: payload.status,
+        naturalEnd: payload.naturalEnd,
+        duration: payload.durationSeconds,
+        reason
+      }, 'POST');
+      statusUpdateRef.current.lastSent = now;
+      if (payload.showId && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('fitness-show-refresh', { detail: { showId: payload.showId } }));
+      }
+    } catch (err) {
+      console.error('Failed to post episode status', err);
+    } finally {
+      statusUpdateRef.current.inflight = false;
+    }
+  }, [computeEpisodeStatusPayload]);
+
   const handleClose = () => {
+    statusUpdateRef.current.endSent = true;
+    postEpisodeStatus({ naturalEnd: false, reason: 'close' });
     if (setQueue) {
       setQueue([]);
     }
@@ -671,6 +738,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   };
 
   const handleNext = () => {
+    const naturalEnd = currentTime >= Math.max(1, (duration || 0) * 0.98);
+    statusUpdateRef.current.endSent = statusUpdateRef.current.endSent || naturalEnd;
+    postEpisodeStatus({ naturalEnd, reason: 'advance' });
     const currentIndex = queue.findIndex(item => item.id === currentItem?.id);
     if (currentIndex < queue.length - 1) {
       const nextItem = queue[currentIndex + 1];
@@ -948,6 +1018,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setVideoPlayerPaused(paused);
     }
   }, [setVideoPlayerPaused, playIsGoverned, pausePlayback]);
+
+  useEffect(() => {
+    if (!currentItem) return;
+    const total = Number.isFinite(duration) ? duration : (currentItem.duration || 0);
+    if (!total || total <= 0) return;
+    if (statusUpdateRef.current.endSent) return;
+    const pos = Math.max(lastKnownTimeRef.current || 0, currentTime || 0);
+    if (pos >= Math.max(1, total * 0.98)) {
+      statusUpdateRef.current.endSent = true;
+      postEpisodeStatus({ naturalEnd: true, reason: 'auto-end' });
+    }
+  }, [currentItem, currentTime, duration, postEpisodeStatus]);
 
   const handleReloadEpisode = useCallback(() => {
     const api = playerRef.current;
