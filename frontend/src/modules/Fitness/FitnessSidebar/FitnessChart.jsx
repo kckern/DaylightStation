@@ -72,7 +72,7 @@ const useRaceChartData = (roster, getSeries, timebase) => {
 					lastIndex
 				};
 			})
-			.filter((item) => item.segments.length > 0 && item.maxVal > 0);
+			.filter((item) => item.segments.length > 0);
 
 		const maxValue = Math.max(0, ...shaped.map((e) => e.maxVal));
 		const maxIndex = Math.max(0, ...shaped.map((e) => e.lastIndex));
@@ -262,7 +262,7 @@ const FitnessChart = () => {
 	const { width: chartWidth, height: chartHeight } = chartSize;
 	const intervalMs = Number(timelineTimebase?.intervalMs) > 0 ? Number(timelineTimebase.intervalMs) : 5000;
 	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, 1);
-	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : 0;
+	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : 2; // keep drawable even before first coin
 	const [persisted, setPersisted] = useState(null);
 
 	const minDataValue = useMemo(() => {

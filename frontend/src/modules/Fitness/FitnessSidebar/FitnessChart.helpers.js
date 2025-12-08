@@ -152,7 +152,10 @@ export const createPaths = (segments = [], options = {}) => {
       if (i > maxIndex) maxIndex = i;
     });
   });
-  if (!(maxValue > 0) || segments.length === 0) return [];
+  if (segments.length === 0) return [];
+  if (!(maxValue > 0)) {
+    maxValue = 1; // ensure drawable domain even when all values are zero
+  }
 
   const effectiveTicks = Math.max(minVisibleTicks, effectiveTicksOverride || maxIndex + 1, 1);
   const scaleX = (i) => {
