@@ -841,22 +841,26 @@ export class FitnessSession {
       });
     }
 
+    // Drop completely empty signals (all null/zero) per series and warn instead of failing the whole session
+    const emptySeriesEntries = [];
+    Object.entries(series).forEach(([key, arr]) => {
+      if (!Array.isArray(arr) || arr.length === 0) return;
+      const allEmpty = arr.every((v) => v == null || v === 0);
+      if (allEmpty) {
+        emptySeriesEntries.push({ key, length: arr.length });
+        delete series[key];
+      }
+    });
+    if (emptySeriesEntries.length) {
+      sessionData._persistWarnings = sessionData._persistWarnings || [];
+      emptySeriesEntries.forEach((entry) => {
+        sessionData._persistWarnings.push({ reason: 'series-empty-signal', ...entry });
+      });
+    }
+
     const { ok: lengthsOk, issues } = FitnessTimeline.validateSeriesLengths(sessionData.timeline?.timebase || {}, series);
     if (!lengthsOk) {
       return { ok: false, reason: 'series-tick-mismatch', issues };
-    }
-
-    const emptySeries = Object.entries(series).find(([_, arr]) => {
-      if (!Array.isArray(arr) || arr.length === 0) return false;
-      return arr.every((v) => v == null || v === 0);
-    });
-    if (emptySeries) {
-      return {
-        ok: false,
-        reason: 'series-empty-signal',
-        key: emptySeries[0],
-        length: emptySeries[1].length
-      };
     }
 
     let totalPoints = 0;
@@ -879,6 +883,11 @@ export class FitnessSession {
     if (!validation?.ok) {
       this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
       return false;
+    }
+    if (Array.isArray(sessionData._persistWarnings) && sessionData._persistWarnings.length) {
+      sessionData._persistWarnings.forEach((warn) => {
+        this._log('persist_validation_warn', warn);
+      });
     }
     // Encode series for compact, deterministic storage while keeping readability (stringified RLE)
     if (sessionData.timeline && sessionData.timeline.series) {
