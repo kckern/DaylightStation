@@ -271,8 +271,12 @@ async function searchLogs() {
 
         // fallback string formatting
         if (parsed) {
-          const summary = parsed.message || parsed.event || message;
-          logInfo(`[${timestamp}] [${tags}] ${summary} ${JSON.stringify(parsed)}`);
+          if (parsed.data && typeof parsed.data === 'object') {
+            logInfo({ timestamp, ...parsed.data });
+          } else {
+            const summary = parsed.message || parsed.event || message;
+            logInfo(`[${timestamp}] [${tags}] ${summary} ${JSON.stringify(parsed)}`);
+          }
         } else {
           logInfo(`[${timestamp}] [${tags}] ${message}`);
         }
