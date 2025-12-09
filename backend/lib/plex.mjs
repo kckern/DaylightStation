@@ -64,15 +64,17 @@ export class Plex {
   } = opts || {};
   const session = optsSession || defaultSession;
   const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
-  // Generate a random UUID for this specific playback request
+  // Generate unique identifiers per request so remount retries don't reuse terminated sessions
   const sessionUUID = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
+  const clientIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
 
     try {
       if (media_type === 'audio') {
         const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
         if (!mediaKey) throw new Error("Media key not found for audio.");
         const separator = mediaKey.includes('?') ? '&' : '?';
-        return `${plexProxyHost}${mediaKey}${separator}X-Plex-Client-Identifier=${session}-${sessionUUID}&X-Plex-Session-Identifier=${sessionUUID}`;
+        return `${plexProxyHost}${mediaKey}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`;
       } else {
         if (!key) throw new Error("Rating key not found for video.");
         // Build base params
@@ -80,8 +82,8 @@ export class Plex {
         const baseParams = [
           `path=%2Flibrary%2Fmetadata%2F${key}`,
           `protocol=${protocol}`,
-          `X-Plex-Client-Identifier=${session}-${sessionUUID}`,
-          `X-Plex-Session-Identifier=${sessionUUID}`,
+          `X-Plex-Client-Identifier=${clientIdentifier}`,
+          `X-Plex-Session-Identifier=${sessionIdentifier}`,
           `X-Plex-Platform=${platform}`,
           //Resiliance hard-coded params:
           `autoAdjustQuality=1`,
