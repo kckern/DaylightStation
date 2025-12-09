@@ -12,6 +12,7 @@ import { playbackLog } from '../Player/lib/playbackLogger.js';
 import { usePersistentVolume } from './usePersistentVolume.js';
 import { resolveMediaIdentity, normalizeDuration } from '../Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
+import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 
 const DEBUG_FITNESS_INTERACTIONS = false;
 
@@ -178,6 +179,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const governancePausedRef = useRef(false);
   const governanceInitialPauseRef = useRef({ handled: false, timer: null });
   const [playIsGoverned, setPlayIsGoverned] = useState(false);
+  const [showChart, setShowChart] = useState(true);
 
   const governanceOverlay = useGovernanceOverlay(governanceState);
   renderCountRef.current += 1;
@@ -1220,6 +1222,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         playerRef={playerRef}
         showFullscreenVitals={playerMode === 'fullscreen'}
       />
+      {/* DEBUG: Check if chart is rendering */}
+      {showChart && (
+        <div className="fitness-chart-overlay" style={{ border: '2px solid red', zIndex: 9999 }}>
+          <FitnessChart />
+        </div>
+      )}
       {hasActiveItem ? (
         <Player
           key={playerKey}
@@ -1262,6 +1270,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               playerRef={playerRef}
               onReloadVideo={handleReloadEpisode}
               reloadTargetSeconds={reloadTargetSeconds}
+              onToggleChart={() => setShowChart(prev => !prev)}
+              showChart={showChart}
             />
           </div>
         )}
