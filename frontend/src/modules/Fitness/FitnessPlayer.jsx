@@ -1222,12 +1222,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         playerRef={playerRef}
         showFullscreenVitals={playerMode === 'fullscreen'}
       />
-      {/* DEBUG: Check if chart is rendering */}
-      {showChart && (
-        <div className="fitness-chart-overlay" style={{ border: '2px solid red', zIndex: 9999 }}>
-          <FitnessChart />
-        </div>
-      )}
       {hasActiveItem ? (
         <Player
           key={playerKey}
@@ -1245,6 +1239,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           ref={playerRef}
         />
       ) : null}
+      {showChart && (
+        <div className="fitness-chart-overlay">
+          <FitnessChart />
+        </div>
+      )}
     </div>
   );
 
