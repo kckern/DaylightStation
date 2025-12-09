@@ -175,7 +175,7 @@ async function initializeApp() {
         });
 
         proxyRequest.on('response', (response) => {
-          if (response.statusCode >= 400 && response.statusCode < 500 && retries < maxRetries) {
+          if (response.statusCode >= 400 && response.statusCode < 600 && retries < maxRetries) {
             // console.log(`${response.statusCode} detected for ${url}, retrying (${retries + 1}/${maxRetries})...`);
             setTimeout(() => attemptProxy(retries + 1), retryDelay);
           } else {
