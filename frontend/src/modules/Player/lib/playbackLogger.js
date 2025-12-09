@@ -1,5 +1,5 @@
-const PLAYER_DEBUG_MODE_DEFAULT = false;
-const DEFAULT_LOG_LEVEL = 'info';
+const PLAYER_DEBUG_MODE_DEFAULT = true;
+const DEFAULT_LOG_LEVEL = 'debug';
 const LOG_LEVEL_PRIORITY = Object.freeze({
   debug: 10,
   info: 20,
@@ -10,9 +10,9 @@ const DEFAULT_CONTEXT = Object.freeze({ sessionId: null });
 const OPTION_KEYS = new Set(['level', 'context', 'extra', 'tags', 'sampleRate']);
 
 const DEFAULT_WEBSOCKET_OPTIONS = Object.freeze({
-  enabled: false,
+  enabled: true,
   url: null,
-  topic: 'playback-log',
+  topic: 'playback',
   maxQueue: 200,
   reconnectBaseDelay: 1000,
   reconnectMaxDelay: 15000
@@ -77,12 +77,12 @@ const defaultSink = (record, formatted) => {
   const target = record.level === 'error'
     ? console.error
     : (record.level === 'warn' ? console.warn : console.log);
-//  target(formatted);
+  target(formatted);
 };
 
 const loggerConfig = {
   level: DEFAULT_LOG_LEVEL,
-  enabledOverride: null,
+  enabledOverride: true,
   formatter: defaultFormatter,
   sinks: [defaultSink],
   sampling: null,
