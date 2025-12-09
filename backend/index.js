@@ -119,8 +119,8 @@ async function initializeApp() {
         });
 
         proxyRequest.on('response', (response) => {
-          if (response.statusCode === 404 && retries < maxRetries) {
-            // console.log(`404 detected for ${url}, retrying (${retries + 1}/${maxRetries})...`);
+          if (response.statusCode >= 400 && response.statusCode < 500 && retries < maxRetries) {
+            // console.log(`${response.statusCode} detected for ${url}, retrying (${retries + 1}/${maxRetries})...`);
             setTimeout(() => attemptProxy(retries + 1), retryDelay);
           } else {
             res.writeHead(response.statusCode, response.headers);
