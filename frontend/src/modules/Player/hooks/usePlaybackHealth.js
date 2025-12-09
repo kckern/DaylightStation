@@ -8,7 +8,9 @@ const DEFAULT_SIGNALS = Object.freeze({
   playing: false,
   paused: false,
   ended: false,
-  buffering: false
+  buffering: false,
+  readyState: null,
+  networkState: null
 });
 
 const NO_FRAME_INFO = Object.freeze({
@@ -206,6 +208,11 @@ export function usePlaybackHealth({
       }
     };
 
+    const readReadyNetworkState = () => ({
+      readyState: typeof mediaEl?.readyState === 'number' ? mediaEl.readyState : null,
+      networkState: typeof mediaEl?.networkState === 'number' ? mediaEl.networkState : null
+    });
+
     const readBufferRunwayMs = () => {
       if (!mediaEl || !mediaEl.buffered) return null;
       const current = Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : null;
@@ -233,6 +240,7 @@ export function usePlaybackHealth({
 
     const updateBufferRunway = () => {
       safeSetBufferRunway(readBufferRunwayMs());
+      safeUpdate(readReadyNetworkState());
     };
 
     const handleWaiting = () => safeUpdate({ waiting: true, buffering: true });
@@ -272,7 +280,8 @@ export function usePlaybackHealth({
       paused: mediaEl.paused,
       playing: !mediaEl.paused && !mediaEl.ended,
       waiting: initialWaiting,
-      stalled: false
+      stalled: false,
+      ...readReadyNetworkState()
     });
     updateBufferRunway();
 
