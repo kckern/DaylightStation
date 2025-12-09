@@ -339,6 +339,8 @@ export function useCommonMediaController({
     const logWaitingStatus = (status) => {
       if (lastWaitStatusRef.current === status) return;
       lastWaitStatusRef.current = status;
+      // Skip logging for immediate resolution to reduce noise
+      if (status === 'resolved' && waitAttempts === 0) return;
       playbackLog('media-el-wait', {
         status,
         attempts: waitAttempts,

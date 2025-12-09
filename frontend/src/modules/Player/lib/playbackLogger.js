@@ -1,5 +1,5 @@
-const PLAYER_DEBUG_MODE_DEFAULT = true;
-const DEFAULT_LOG_LEVEL = 'debug';
+const PLAYER_DEBUG_MODE_DEFAULT = false;
+const DEFAULT_LOG_LEVEL = 'info';
 const LOG_LEVEL_PRIORITY = Object.freeze({
   debug: 10,
   info: 20,
