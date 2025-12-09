@@ -13,3 +13,4 @@ known_hosts
 /_extentions/fitness/node_modules
 /_extentions/fitness/_reference
 *.dev
+/docs/ops

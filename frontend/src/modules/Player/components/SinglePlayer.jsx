@@ -194,6 +194,23 @@ export function SinglePlayer(props = {}) {
 
   // LocalStorage helpers (per-device, per-plexId)
   const bitrateKey = useCallback((plexId) => `dashMaxVideoBitrate:${plexId}`, []);
+  // Clear any cached bitrate caps on page load to avoid sticky limits across sessions
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const keysToDelete = [];
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (key && key.startsWith('dashMaxVideoBitrate:')) {
+          keysToDelete.push(key);
+        }
+      }
+      keysToDelete.forEach((key) => window.localStorage.removeItem(key));
+    } catch {
+      // Best-effort cleanup; ignore storage errors
+    }
+  }, []);
+
   const readStoredBitrate = useCallback((plexId) => {
     try {
       const raw = window.localStorage.getItem(bitrateKey(plexId));
