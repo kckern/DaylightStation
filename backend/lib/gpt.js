@@ -6,6 +6,14 @@ import axios from './http.mjs';
 import crypto from 'crypto';
 import fs from 'fs';
 
+const writeStderr = (message) => {
+  try {
+    process.stderr.write(`${message}\n`);
+  } catch (_) {
+    /* noop */
+  }
+};
+
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
 const secretspath = `${__appDirectory}/config.secrets.yml`;
 const { OPENAI_API_KEY} = yaml.load(readFileSync(secretspath, 'utf8'));
@@ -46,7 +54,7 @@ const logGPT = (model, promptTokens, completionTokens, generated_text) => {
   // Check if the file exists, and if not, create it and then log the message.
   appendFile(logPath, logMessage, (err) => {
     if (err) {
-      console.error('Error writing to log file:', err);
+      writeStderr(`Error writing to log file: ${err?.message || err}`);
     }
   });
 };
@@ -62,10 +70,6 @@ export const askGPT = async (messages, model = 'gpt-4o', extraconfig) => {
   const modelFound = Object.keys(models).includes(model);
   if(!modelFound && /-4/.test(model)) model =  Object.keys(models).find(m => /-4/.test(m) && models[m].flagship);
   if(!modelFound) model =  Object.keys(models).find(m => /-3/.test(m) && models[m].flagship);
-
-
-
-  //console.log('Asking GPT:', model, messages);
 
 
 
@@ -103,7 +107,7 @@ export const askGPT = async (messages, model = 'gpt-4o', extraconfig) => {
 
     return generated_text;
   } catch(error) {
-    console.error('Error:', error?.response?.data?.error?.message || error.message);
+    writeStderr(`Error: ${error?.response?.data?.error?.message || error.message}`);
     return false;
   }
 };

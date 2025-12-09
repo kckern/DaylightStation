@@ -25,50 +25,37 @@
  */
 
 const axios = require('axios');
-const fs = require('fs');
 const path = require('path');
-const yaml = require('js-yaml');
 
-// Load config files similar to backend/index.js
-try {
-  const rootDir = path.resolve(__dirname, '..');
-  const appConfigPath = path.join(rootDir, 'config.app.yml');
-  const secretsConfigPath = path.join(rootDir, 'config.secrets.yml');
-  const localConfigPath = path.join(rootDir, 'config.app-local.yml');
+const formatArg = (arg) => {
+  if (typeof arg === 'string') return arg;
+  try { return JSON.stringify(arg, null, 2); }
+  catch (_) { return String(arg); }
+};
 
-  let appConfig = {};
-  let secretsConfig = {};
-  let localConfig = {};
+const write = (stream, ...args) => {
+  stream.write(args.map(formatArg).join(' ') + '\n');
+};
 
-  if (fs.existsSync(appConfigPath)) {
-    appConfig = yaml.load(fs.readFileSync(appConfigPath, 'utf8'));
+const logInfo = (...args) => write(process.stdout, ...args);
+const logWarn = (...args) => write(process.stderr, ...args);
+const logError = (...args) => write(process.stderr, ...args);
+
+async function hydrateEnv() {
+  try {
+    const { hydrateProcessEnvFromConfigs } = await import('../backend/lib/logging/config.js');
+    hydrateProcessEnvFromConfigs(path.resolve(__dirname, '..'));
+  } catch (e) {
+    logWarn('Warning: Failed to load YAML configuration files:', e.message);
   }
-  if (fs.existsSync(secretsConfigPath)) {
-    secretsConfig = yaml.load(fs.readFileSync(secretsConfigPath, 'utf8'));
-  }
-  if (fs.existsSync(localConfigPath)) {
-    localConfig = yaml.load(fs.readFileSync(localConfigPath, 'utf8'));
-  }
-
-  // Merge configs into process.env
-  process.env = { ...process.env, ...appConfig, ...secretsConfig, ...localConfig };
-
-} catch (e) {
-  console.warn('Warning: Failed to load YAML configuration files:', e.message);
 }
 
-const SUBDOMAIN = process.env.LOGGLY_SUBDOMAIN;
-const API_TOKEN = process.env.LOGGLY_API_TOKEN || process.env.LOGGLY_TOKEN;
+let envReady = false;
 
-if (!SUBDOMAIN) {
-  console.error('Error: LOGGLY_SUBDOMAIN environment variable is required.');
-  process.exit(1);
-}
-
-if (!API_TOKEN) {
-  console.error('Error: LOGGLY_API_TOKEN (or LOGGLY_TOKEN) environment variable is required.');
-  console.error('Note: You need an API Token from Loggly Settings > API Tokens, not just the Input Token.');
-  process.exit(1);
+async function ensureEnv() {
+  if (envReady) return;
+  await hydrateEnv();
+  envReady = true;
 }
 
 const PRESETS = {
@@ -162,7 +149,7 @@ for (let i = 0; i < args.length; i++) {
       options.json = true;
       break;
     case '--help':
-      console.log(`
+      logInfo(`
 Loggly CLI Utility
 
 Usage:
@@ -185,13 +172,6 @@ Options:
   }
 }
 
-const apiClient = axios.create({
-  baseURL: `https://${SUBDOMAIN}.loggly.com/apiv2`,
-  headers: {
-    'Authorization': `Bearer ${API_TOKEN}`
-  }
-});
-
 const getPath = (obj, pathStr) => {
   if (!obj || !pathStr) return null;
   return pathStr.split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : null), obj);
@@ -199,6 +179,28 @@ const getPath = (obj, pathStr) => {
 
 async function searchLogs() {
   try {
+    await ensureEnv();
+    const SUBDOMAIN = process.env.LOGGLY_SUBDOMAIN;
+    const API_TOKEN = process.env.LOGGLY_API_TOKEN || process.env.LOGGLY_TOKEN;
+
+    if (!SUBDOMAIN) {
+      logError('Error: LOGGLY_SUBDOMAIN environment variable is required.');
+      process.exit(1);
+    }
+
+    if (!API_TOKEN) {
+      logError('Error: LOGGLY_API_TOKEN (or LOGGLY_TOKEN) environment variable is required.');
+      logError('Note: You need an API Token from Loggly Settings > API Tokens, not just the Input Token.');
+      process.exit(1);
+    }
+
+    const apiClient = axios.create({
+      baseURL: `https://${SUBDOMAIN}.loggly.com/apiv2`,
+      headers: {
+        'Authorization': `Bearer ${API_TOKEN}`
+      }
+    });
+
     if (options.preset && PRESETS[options.preset]) {
       options.query = PRESETS[options.preset].query;
       // Modest defaults for presets
@@ -210,11 +212,11 @@ async function searchLogs() {
       }
     }
     if (!options.json) {
-      console.log(`Searching Loggly (${SUBDOMAIN})...`);
-      console.log(`Query: ${options.query}`);
-      console.log(`Time: ${options.from} to ${options.until}`);
+      logInfo(`Searching Loggly (${SUBDOMAIN})...`);
+      logInfo(`Query: ${options.query}`);
+      logInfo(`Time: ${options.from} to ${options.until}`);
       if (options.preset) {
-        console.log(`Preset: ${options.preset}`);
+        logInfo(`Preset: ${options.preset}`);
       }
     }
 
@@ -231,7 +233,7 @@ async function searchLogs() {
     const rsid = searchRes.data.rsid.id;
 
     if (!options.json) {
-      console.log(`Search initiated. RSID: ${rsid}. Waiting for results...`);
+      logInfo(`Search initiated. RSID: ${rsid}. Waiting for results...`);
     }
 
     // Step 2: Retrieve Events
@@ -240,9 +242,9 @@ async function searchLogs() {
     const events = eventsRes.data.events;
 
     if (options.json) {
-      console.log(JSON.stringify(events, null, 2));
+      logInfo(JSON.stringify(events, null, 2));
     } else {
-      console.log(`\nFound ${events.length} events:\n`);
+      logInfo(`\nFound ${events.length} events:\n`);
       events.forEach(event => {
         const timestamp = new Date(event.timestamp).toISOString();
         const tags = (event.tags || []).join(', ');
@@ -263,29 +265,29 @@ async function searchLogs() {
             const value = pathStr === 'timestamp' ? timestamp : getPath(parsed, pathStr);
             return `${label}=${value == null ? 'n/a' : value}`;
           }).join(' ');
-          console.log(`[${timestamp}] [${tags}] ${row}`);
+          logInfo(`[${timestamp}] [${tags}] ${row}`);
           return;
         }
 
         // fallback string formatting
         if (parsed) {
           const summary = parsed.message || parsed.event || message;
-          console.log(`[${timestamp}] [${tags}] ${summary} ${JSON.stringify(parsed)}`);
+          logInfo(`[${timestamp}] [${tags}] ${summary} ${JSON.stringify(parsed)}`);
         } else {
-          console.log(`[${timestamp}] [${tags}] ${message}`);
+          logInfo(`[${timestamp}] [${tags}] ${message}`);
         }
       });
     }
 
   } catch (error) {
     if (error.response) {
-      console.error(`API Error: ${error.response.status} ${error.response.statusText}`);
-      console.error(JSON.stringify(error.response.data, null, 2));
+      logError(`API Error: ${error.response.status} ${error.response.statusText}`);
+      logError(JSON.stringify(error.response.data, null, 2));
       if (error.response.status === 401 || error.response.status === 403) {
-        console.error('\nCheck your LOGGLY_API_TOKEN. It must be a valid API Token (not Input Token).');
+        logError('\nCheck your LOGGLY_API_TOKEN. It must be a valid API Token (not Input Token).');
       }
     } else {
-      console.error('Error:', error.message);
+      logError('Error:', error.message);
     }
     process.exit(1);
   }

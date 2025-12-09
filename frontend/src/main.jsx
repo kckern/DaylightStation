@@ -10,6 +10,7 @@ import LifelogApp from './Apps/LifelogApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
+import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
 
 const getWebSocketUrl = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -25,12 +26,26 @@ const getWebSocketUrl = () => {
   return `${protocol}//${window.location.host}/ws`;
 };
 
+// Bootstrap DaylightLogger and expose a shared frontend logger
+configureDaylightLogger({
+  websocket: true,
+  wsUrl: getWebSocketUrl(),
+  context: {
+    app: 'frontend'
+  }
+});
+const frontendLogger = getDaylightLogger();
+if (typeof window !== 'undefined') {
+  window.DaylightLogger = frontendLogger;
+}
+frontendLogger.info('frontend-start', { path: window.location?.pathname });
+
 // Enable playback logging via WebSocket
 configurePlaybackLogger({
   websocket: {
-    enabled: true,
-    url: getWebSocketUrl()
-  }
+    enabled: false
+  },
+  forwardToDaylight: true
 });
 
 // Wrapper component for HomeApp with WebSocket

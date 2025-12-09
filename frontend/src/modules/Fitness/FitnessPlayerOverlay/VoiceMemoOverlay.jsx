@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback, useLayoutEffect } fro
 import PropTypes from 'prop-types';
 import useVoiceMemoRecorder from '../FitnessSidebar/useVoiceMemoRecorder.js';
 import './VoiceMemoOverlay.scss';
+import { playbackLog } from '../../Player/lib/playbackLogger.js';
 
 const VOICE_MEMO_AUTO_ACCEPT_MS = 4000;
 
@@ -92,6 +93,21 @@ const VoiceMemoOverlay = ({
   playerRef,
   preferredMicrophoneId
 }) => {
+  const logVoiceMemo = useCallback((event, payload = {}, options = {}) => {
+    playbackLog('voice-memo', {
+      event,
+      ...payload
+    }, {
+      level: options.level || 'info',
+      context: {
+        source: 'VoiceMemoOverlay',
+        sessionId: sessionId || null,
+        ...(options.context || {})
+      },
+      tags: options.tags || undefined
+    });
+  }, [sessionId]);
+
   const sortedMemos = useMemo(() => {
     return voiceMemos.slice().sort((a, b) => {
       const aValue = a?.createdAt ?? (a?.sessionElapsedSeconds != null ? a.sessionElapsedSeconds * 1000 : 0);
@@ -116,26 +132,31 @@ const VoiceMemoOverlay = ({
   const autoStartRef = React.useRef(false);
 
   const handleClose = useCallback(() => {
+    logVoiceMemo('overlay-close-request');
     onClose?.();
-  }, [onClose]);
+  }, [logVoiceMemo, onClose]);
 
   const handleAccept = useCallback(() => {
+    logVoiceMemo('overlay-accept', { memoId: overlayState?.memoId || null });
     onClose?.();
-  }, [onClose]);
+  }, [logVoiceMemo, onClose, overlayState?.memoId]);
 
   const handleReviewSelect = useCallback((memoRef) => {
     if (!memoRef) return;
+    logVoiceMemo('overlay-select-review', { memoId: memoRef.memoId || null });
     onOpenReview?.(memoRef, { autoAccept: false });
-  }, [onOpenReview]);
+  }, [logVoiceMemo, onOpenReview]);
 
   const handleRedo = useCallback((memoId) => {
     if (!memoId) return;
+    logVoiceMemo('overlay-redo-request', { memoId });
     onOpenRedo?.(memoId);
-  }, [onOpenRedo]);
+  }, [logVoiceMemo, onOpenRedo]);
 
   const handleDelete = useCallback(() => {
     const memoId = overlayState?.memoId;
     if (!memoId) return;
+    logVoiceMemo('overlay-delete-request', { memoId });
     onRemoveMemo?.(memoId);
     const remaining = voiceMemos.filter((memo) => memo && String(memo.memoId) !== String(memoId)).length;
     if (remaining <= 0) {
@@ -143,23 +164,26 @@ const VoiceMemoOverlay = ({
     } else if (overlayState.mode !== 'list') {
       onOpenList?.();
     }
-  }, [overlayState?.memoId, overlayState?.mode, voiceMemos, onRemoveMemo, onClose, onOpenList]);
+  }, [logVoiceMemo, overlayState?.memoId, overlayState?.mode, voiceMemos, onRemoveMemo, onClose, onOpenList]);
 
   const handleDeleteFromList = useCallback((memoId) => {
     if (!memoId) return;
+    logVoiceMemo('overlay-delete-from-list', { memoId });
     onRemoveMemo?.(memoId);
     const remaining = voiceMemos.filter((memo) => memo && String(memo.memoId) !== String(memoId)).length;
     if (remaining <= 0) {
       onClose?.();
     }
-  }, [onRemoveMemo, voiceMemos, onClose]);
+  }, [logVoiceMemo, onRemoveMemo, voiceMemos, onClose]);
 
   const handleRedoCaptured = useCallback((memo) => {
     if (!memo) {
+      logVoiceMemo('overlay-redo-cancel');
       onClose?.();
       return;
     }
     const targetId = overlayState?.memoId;
+    logVoiceMemo('overlay-redo-captured', { memoId: targetId || memo.memoId || null });
     const stored = targetId ? (onReplaceMemo?.(targetId, memo) || memo) : (onAddMemo?.(memo) || memo);
     const nextTarget = stored || memo;
     if (nextTarget) {
@@ -167,7 +191,7 @@ const VoiceMemoOverlay = ({
     } else {
       onClose?.();
     }
-  }, [overlayState?.memoId, onReplaceMemo, onAddMemo, onOpenReview, onClose]);
+  }, [logVoiceMemo, overlayState?.memoId, onReplaceMemo, onAddMemo, onOpenReview, onClose]);
 
   const [recorderState, setRecorderState] = useState('idle'); // idle|recording|processing|ready|error
   const {
@@ -202,8 +226,9 @@ const VoiceMemoOverlay = ({
   const handleStartRedoRecording = useCallback(() => {
     setRecorderError(null);
     setRecorderState('recording');
+    logVoiceMemo('overlay-redo-start-recording', { memoId: overlayState?.memoId || null });
     startRecording();
-  }, [setRecorderError, setRecorderState, startRecording]);
+  }, [logVoiceMemo, overlayState?.memoId, setRecorderError, setRecorderState, startRecording]);
 
   useEffect(() => {
     if (!overlayState?.open || overlayState.mode !== 'review' || !overlayState.autoAccept) {
@@ -219,6 +244,7 @@ const VoiceMemoOverlay = ({
       setAutoAcceptProgress(progress);
       if (progress >= 1 && !cancelled) {
         cancelled = true;
+        logVoiceMemo('overlay-auto-accept', { memoId: overlayState?.memoId || null });
         handleAccept();
       }
     };

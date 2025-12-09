@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   DaylightAPI,
   DaylightHostPath,
@@ -8,10 +8,15 @@ import {
 import "./AppContainer.scss";
 import  WebcamApp  from "../Input/Webcam.jsx";
 import Gratitude from "./Apps/Gratitude.jsx";
+import { getChildLogger } from "../../lib/logging/singleton.js";
 
 export default function AppContainer({ open, clear }) {
   const app = open?.app || open.open || open;
   const param = open?.param || open.param || open;
+  const logger = useMemo(() => getChildLogger({ app: 'app-container' }), []);
+  useEffect(() => {
+    logger.info('app-container-open', { app, param });
+  }, [app, param, logger]);
   useEffect(
     () => {
       const handleKeyDown = event => {

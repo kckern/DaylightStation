@@ -11,10 +11,12 @@ import "./FinanceApp.scss"
 import '@mantine/core/styles.css';
 import spinner from '../assets/icons/spinner.svg';
 import moment from 'moment';
+import { getChildLogger } from '../lib/logging/singleton.js';
 
 const isLocalhost = /localhost/.test(window.location.href);
 
 const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+const financeLogger = getChildLogger({ app: 'finance' });
 
 const fetchBudget = async () => {
   const response = await fetch(`${baseUrl}/data/budget`);
@@ -94,13 +96,13 @@ function Header({
 
 
   const handleChange = (value) => {
-    console.log(value);
+    financeLogger.info('finance.budget.change', { value });
     const isSameAsactiveBudgetKey = value === activeBudgetKey;
     if (isSameAsactiveBudgetKey) {
       return;
     }
     if (availableBudgetKeys.includes(value) === false) {
-      console.error(`Budget key ${value} not found in available budget keys.`);
+      financeLogger.error('finance.budget.invalidKey', { value, availableKeys: availableBudgetKeys });
       return;
     }
     setActiveBudgetKey(value);

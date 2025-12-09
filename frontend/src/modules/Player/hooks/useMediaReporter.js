@@ -188,9 +188,10 @@ export function useMediaReporter({
         ...detail
       });
     } catch (error) {
-      if (process.env?.NODE_ENV !== 'production') {
-        console.warn('[useMediaReporter] failed to emit startup signal', type, error);
-      }
+      playbackLog('reporter.startup-signal-error', {
+        type,
+        error: error?.message || String(error)
+      }, { level: 'warn' });
     }
   }, [onStartupSignal]);
 

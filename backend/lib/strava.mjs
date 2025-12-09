@@ -2,11 +2,20 @@ import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile } from './io.mjs';
 import axios from './http.mjs';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
+const defaultStravaLogger = createLogger({
+    name: 'backend-strava',
+    context: { app: 'backend', module: 'strava' },
+    level: process.env.STRAVA_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+    transports: [logglyTransportAdapter({ tags: ['backend', 'strava'] })]
+});
+const asLogger = (logger) => logger || defaultStravaLogger;
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
 
-export const getAccessToken = async () => {
+export const getAccessToken = async (logger) => {
+    const log = asLogger(logger);
     if (process.env.STRAVA_ACCESS_TOKEN) return process.env.STRAVA_ACCESS_TOKEN;
 
     const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = process.env;
@@ -29,7 +38,7 @@ export const getAccessToken = async () => {
         process.env.STRAVA_ACCESS_TOKEN = accessToken;
         return accessToken;
     } catch (error) {
-    console.error('Error fetching Strava access token:', error?.shortMessage || error.message);
+    log.error('harvest.strava.access_token.error', { error: error?.shortMessage || error.message });
         return false;
     }
 };
@@ -42,7 +51,8 @@ const reauthSequence = async () => {
     };
 }
 
-const baseAPI = async (endpoint) => {
+const baseAPI = async (endpoint, logger) => {
+    const log = asLogger(logger);
     const base_url = `https://www.strava.com/api/v3`;
     const { STRAVA_ACCESS_TOKEN } = process.env;
 
@@ -53,14 +63,14 @@ const baseAPI = async (endpoint) => {
         const dataResponse = await axios.get(url, { headers });
         return dataResponse.data;
     } catch (error) {
-        console.warn(`Error fetching Strava data from ${endpoint}:`, {STRAVA_ACCESS_TOKEN},error.response.data || error.message);
+        log.warn('harvest.strava.fetch.error', { endpoint, error: error.response?.data || error.message });
         return false;
-        throw error;
     }
 };
 
-export const getActivities = async () => {
-    await getAccessToken();
+export const getActivities = async (logger) => {
+    const log = asLogger(logger);
+    await getAccessToken(logger);
 
     const activities = [];
     let page = 1;
@@ -70,7 +80,7 @@ export const getActivities = async () => {
     const after = oneYearAgo.unix();
 
     while (true) {
-        const response = await baseAPI(`athlete/activities?before=${before}&after=${after}&page=${page}&per_page=${perPage}`);
+        const response = await baseAPI(`athlete/activities?before=${before}&after=${after}&page=${page}&per_page=${perPage}`, logger);
         if (!response) return false;
         activities.push(...response);
 
@@ -91,7 +101,7 @@ export const getActivities = async () => {
             const alreadyHasHR = onFileActivity[md5(activity.id?.toString())]?.data?.heartRateOverTime || null;
             if(alreadyHasHR) return alreadyHasHR
             try {
-                const heartRateResponse = await baseAPI(`activities/${activity.id}/streams?keys=heartrate&key_by_type=true`);
+                const heartRateResponse = await baseAPI(`activities/${activity.id}/streams?keys=heartrate&key_by_type=true`, logger);
                 if (heartRateResponse && heartRateResponse.heartrate) {
                     activity.heartRateOverTime = heartRateResponse.heartrate.data.map((value, index) => {
                         //const time = moment(activity.start_date).add(index, 'seconds').tz(timezone).format('HH:mm:ss');
@@ -101,7 +111,7 @@ export const getActivities = async () => {
                     activity.heartRateOverTime = [0];
                 }
             } catch (error) {
-                console.warn(`Error fetching heart rate data for activity ${activity.id}:`, error.message);
+                log.warn('harvest.strava.heartrate.error', { activityId: activity.id, error: error.message });
                 activity.heartRateOverTime = [1];
             }
 
@@ -112,11 +122,12 @@ export const getActivities = async () => {
     return { items: activitiesWithHeartRate };
 };
 
-const harvestActivities = async () => {
+const harvestActivities = async (logger, job_id) => {
+    const log = asLogger(logger);
     try {
-        const activitiesData = await getActivities();
+        const activitiesData = await getActivities(logger);
         if(!activitiesData) return await reauthSequence();
-        console.log(`Strava activities harvested: ${activitiesData.items.length}`);
+        log.info('harvest.strava.activities', { jobId: job_id, count: activitiesData.items.length });
         const activities = activitiesData.items.map(item => {
             const src = "strava";
             const { start_date: timestamp, type, id: itemId } = item;
@@ -169,6 +180,7 @@ const harvestActivities = async () => {
 
         return reducedSaveMe;
     } catch (error) {
+        log.error('harvest.strava.failure', { jobId: job_id, error: error.message });
         return { success: false, error: error.message };
     }
 };

@@ -3,6 +3,14 @@ import yaml from 'js-yaml';
 import {decode} from 'html-entities';
 import smartquotes from 'smartquotes';
 import axios from './http.mjs';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
+
+const ioLogger = createLogger({
+    name: 'backend-io',
+    context: { app: 'backend', module: 'io' },
+    level: process.env.IO_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+    transports: [logglyTransportAdapter({ tags: ['backend', 'io'] })]
+});
 
 class FlowSequence extends Array {}
 
@@ -14,6 +22,10 @@ const FlowSequenceType = new yaml.Type('tag:yaml.org,2002:seq', {
 });
 
 const CUSTOM_YAML_SCHEMA = yaml.DEFAULT_SCHEMA.extend([FlowSequenceType]);
+
+// Per-path write queues to avoid concurrent save collisions
+const SAVE_QUEUES = globalThis.__daylightSaveQueues || new Map();
+globalThis.__daylightSaveQueues = SAVE_QUEUES;
 
 const isNullOrInteger = (value) => value === null || (typeof value === 'number' && Number.isInteger(value));
 
@@ -78,7 +90,7 @@ export const saveImage = async (url, folder, uid) => {
             writer.on('error', reject);
         });
     } catch (error) {
-    console.error(`Failed to save image from ${url}:`, error?.shortMessage || error.message);
+        ioLogger.error('io.saveImage.failed', { url, message: error?.shortMessage || error.message });
         return false;
     }
 };
@@ -86,7 +98,7 @@ export const saveImage = async (url, folder, uid) => {
 export const loadRandom = (folder) => {
     const path = `${process.env.path.data}/${folder}`;
     if (!fs.existsSync(path)) {
-        console.error(`Folder does not exist: ${path}`);
+        ioLogger.error('io.loadRandom.folderMissing', { path });
         return false;
     }
 
@@ -94,7 +106,7 @@ export const loadRandom = (folder) => {
         file.endsWith('.yaml') && !file.startsWith('._')
     );
     if (files.length === 0) {
-        console.error(`No YAML files found in folder: ${path}`);
+        ioLogger.warn('io.loadRandom.noYamlFiles', { path });
         return false;
     }
 
@@ -106,7 +118,7 @@ export const loadRandom = (folder) => {
         const object = yaml.load(fileData);
         return object;
     } catch (e) {
-        console.error(`Failed to parse YAML file: ${filePath}`, e);
+        ioLogger.error('io.loadRandom.parseError', { filePath, message: e?.message || e });
         return false;
     }
 };
@@ -132,7 +144,7 @@ const loadFile = (path) => {
     } else if (fs.existsSync(ymlPath)) {
         fileToLoad = ymlPath;
     } else {
-        console.warn(`File does not exist: ${yamlPath} or ${ymlPath}`);
+        ioLogger.warn('io.loadFile.missingFile', { yamlPath, ymlPath });
         //touch file
         saveFile(yamlPath, {});
         return null;
@@ -147,7 +159,7 @@ const loadFile = (path) => {
         if (object && Object.keys(object).length === 0) return null;
         return object || null;
     } catch (e) {
-        console.error(`Failed to parse YAML file: ${fileToLoad}`, e);
+        ioLogger.error('io.loadFile.parseError', { fileToLoad, message: e?.message || e });
         return fileData || null;
     }
 }
@@ -177,24 +189,55 @@ const mkDirIfNotExists= (path) =>{
     });
 }
 
+const getQueue = (key) => {
+    if (!SAVE_QUEUES.has(key)) {
+        SAVE_QUEUES.set(key, { writing: false, pending: [] });
+    }
+    return SAVE_QUEUES.get(key);
+};
+
+const processQueue = (key) => {
+    const queue = SAVE_QUEUES.get(key);
+    if (!queue || queue.writing) return;
+    const job = queue.pending.shift();
+    if (!job) {
+        SAVE_QUEUES.delete(key);
+        return;
+    }
+
+    queue.writing = true;
+    try {
+        mkDirIfNotExists(job.normalizedPath);
+        const processed = markFlowSequences(job.data);
+        const dst = `${process.env.path.data}/${job.yamlFile}`;
+        const yamlString = yaml.dump(processed, {
+            schema: CUSTOM_YAML_SCHEMA,
+            lineWidth: -1
+        });
+        fs.writeFileSync(dst, yamlString, 'utf8');
+    } catch (err) {
+        ioLogger.error('io.saveFile.queueWriteFailed', { yamlFile: job.yamlFile, message: err?.message || err });
+    } finally {
+        queue.writing = false;
+        if (queue.pending.length === 0) {
+            SAVE_QUEUES.delete(key);
+        } else {
+            processQueue(key);
+        }
+    }
+};
+
 const saveFile = (path, data) => {
-    if(typeof path !== 'string') return false;
-    path = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
-    //mkdir if not exists
-    mkDirIfNotExists(path);
-    //add yaml if it doesnt end with .yaml
-    const yamlFile = path.endsWith('.yaml') ? path : `${path}.yaml`;
-    data = JSON.parse(JSON.stringify(removeCircularReferences(data)));
-    data = markFlowSequences(data);
-    const dst = `${process.env.path.data}/${yamlFile}`;
-    const yamlString = yaml.dump(data, {
-        schema: CUSTOM_YAML_SCHEMA,
-        lineWidth: -1
-    });
-    fs.writeFileSync(`${dst}`, yamlString, 'utf8');
+    if (typeof path !== 'string') return false;
+    const normalizedPath = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
+    const yamlFile = normalizedPath.endsWith('.yaml') ? normalizedPath : `${normalizedPath}.yaml`;
 
-    //console.log(`Saved file to ${dst}`);
+    const queue = getQueue(yamlFile);
+    // Clone eagerly so callers can mutate after queuing without affecting the write
+    const cloned = JSON.parse(JSON.stringify(removeCircularReferences(data)));
 
+    queue.pending.push({ normalizedPath, yamlFile, data: cloned });
+    processQueue(yamlFile);
     return true;
 }
 

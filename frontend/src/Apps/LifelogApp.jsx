@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MantineProvider, Paper, Title, Group, Text, Alert } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./LifelogApp.scss";
 import Nutrition from '../modules/Health/Nutrition';
 import { DaylightAPI } from '../lib/api.mjs';
+import { getChildLogger } from '../lib/logging/singleton.js';
 
 const LifelogApp = () => {
+  const logger = useMemo(() => getChildLogger({ app: 'lifelog' }), []);
   const [lifelogMessage, setLifelogMessage] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -15,7 +17,7 @@ const LifelogApp = () => {
         const response = await DaylightAPI('/api/lifelog');
         setLifelogMessage(response);
       } catch (error) {
-        console.error('Error fetching lifelog data:', error);
+        logger.error('lifelog.fetch.failed', { message: error?.message, name: error?.name });
         setLifelogMessage({ message: 'Error loading lifelog data', status: 'error' });
       } finally {
         setLoading(false);

@@ -10,6 +10,7 @@ import { getChildrenFromMediaKey } from './fetch.mjs';
 import Infinity from './lib/infinity.js';
 import { isWatched } from './lib/utils.mjs';
 import { slugify } from './lib/utils.mjs';
+import { createLogger, logglyTransportAdapter } from './lib/logging/index.js';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -18,6 +19,13 @@ const audioPath = `${process.env.path.media}`;
 const videoPath = `${process.env.path.media}`;
 const mediaPath = `${process.env.path.media}`;
 const notFound = `${audioPath}/${process.env.media.error}`;
+
+const mediaLogger = createLogger({
+    name: 'backend-media',
+    context: { app: 'backend', module: 'media' },
+    level: process.env.MEDIA_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+    transports: [logglyTransportAdapter({ tags: ['backend', 'media'] })]
+});
 
 const ext = ['mp3','mp4','m4a', 'webm'];
 export const findFileFromMediaKey = media_key => {
@@ -79,7 +87,7 @@ mediaRouter.get('/img/*', async (req, res) => {
                 return res.status(200).send(buffer); // Send the buffer as the image
             }
         } catch (error) {
-            console.error(`Error parsing media file for image: ${error.message}`);
+            mediaLogger.error('Error parsing media file for image', { message: error.message });
         }
     }
 
@@ -163,7 +171,7 @@ const logToInfinity = async (media_key, { percent, seconds }) => {
             await Infinity.loadTable(watchlistTableId);
 
         }
-        console.log(`Infinity updated: ${uid} - ${percent}%`);
+        mediaLogger.info('Infinity updated', { uid, percent });
     }
     return true;
 };
@@ -214,7 +222,7 @@ mediaRouter.post('/log', async (req, res) => {
         await logToInfinity(media_key,{percent, seconds});
         res.json({ response: {type,library:librarystring,...log[media_key]} });
     } catch (error) {
-        console.error('Error handling /log:', error.message);
+        mediaLogger.error('Error handling /log', { message: error.message });
         res.status(500).json({ error: 'Failed to process log.' });
     }
 });
@@ -266,12 +274,12 @@ mediaRouter.all(`/info/*`, async (req, res) => {
         let unfilteredItems = (await Promise.all(
             mediakeys.map(async key => {
             const { items } = await getChildrenFromMediaKey({ media_key: key });
-            console.log(items); 
+            mediaLogger.debug('Filtered items', { items }); 
             return items || [];
             })
         )).flat().sort(sortItems);
 
-        console.log(unfilteredItems);
+        mediaLogger.debug('Unfiltered items', { items: unfilteredItems });
         
         let items = unfilteredItems.filter(filterItems);
         if(items.length === 0) {
@@ -409,7 +417,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                 });
             }
         } catch (error) {
-            console.error('Error loading plex info:', error);
+            mediaLogger.error('Error loading plex info', { message: error.message });
         }
     }
     
@@ -419,7 +427,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             
             // Handle case where Plex item is not found or invalid
             if (!result || result.error) {
-                console.warn(`⚠️ Plex item not found or invalid: ${plex_key}`, result?.error || 'Unknown error');
+                mediaLogger.warn('Plex item not found or invalid', { plex_key, error: result?.error || 'Unknown error' });
                 continue; // Skip this item and continue with the next one
             }
             
@@ -427,7 +435,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             
             // Debug: log the first item to see available fields
             if (items && items.length > 0) {
-                console.log('🎬 DEBUG: First item from plex.loadChildrenFromKey:', JSON.stringify(items[0], null, 2));
+                mediaLogger.debug('plex.loadChildrenFromKey first item', { item: items[0] });
             }
             
             // Only process if we have valid items
@@ -452,12 +460,11 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                     const [meta] = metaResult || [];
                     librarySection = meta && meta.librarySectionTitle ? slugify(meta.librarySectionTitle) : null;
                 } catch (metaError) {
-                    console.warn(`⚠️ Failed to get library section for ${plex_key}:`, metaError.message);
+                    mediaLogger.warn('Failed to get library section', { plex_key, error: metaError.message });
                 }
             }
         } catch (error) {
-            console.error(`❌ Error processing Plex key ${plex_key}:`, error.message);
-            console.error('Stack trace:', error.stack);
+            mediaLogger.error('Error processing Plex key', { plex_key, message: error.message, stack: error.stack });
             // Continue processing other items instead of crashing
             continue;
         }
@@ -474,7 +481,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
     
     // Debug logging for history lookup
     const historyKeys = Object.keys(viewingHistory);
-    console.log(`Loaded ${historyKeys.length} history items. Sample keys: ${historyKeys.slice(0, 5).join(', ')}`);
+    mediaLogger.info('Loaded history items', { count: historyKeys.length, sampleKeys: historyKeys.slice(0, 5) });
 
     list = unwatchedList.map(({key,plex,type,title,image,parent,parentTitle,parentRatingKey,summary,index,duration,parentThumb,grandparentThumb,parentIndex,userRating,thumb_id,artist,albumArtist,album,grandparentTitle,originalTitle}) => {
         const item = {
@@ -622,7 +629,7 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             }
         }
     } catch (e) {
-        console.warn('Failed to build seasons map:', e.message);
+        mediaLogger.warn('Failed to build seasons map', { message: e.message });
     }
     try {
         const responseData = {...info};
@@ -752,7 +759,7 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
             }
             return url;
         });
-        console.log(`Fetching image from: ${urls.join(', ')}`);
+        mediaLogger.debug('Fetching image', { urls });
         const [imgUrl] = await Promise.all(
             urls.map(url =>
             axios.get(url, { method: 'HEAD' })
@@ -770,10 +777,10 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
         // Save the image to the cache
         const writeStream = fs.createWriteStream(cacheFile);
         response.data.pipe(writeStream)
-            .on('finish', () => console.log(`Image cached: ${cacheFile}`))
-            .on('error', (err) => console.error(`Cache error: ${err.message}`));
+            .on('finish', () => mediaLogger.info('Image cached', { cacheFile }))
+            .on('error', (err) => mediaLogger.error('Cache error', { message: err.message }));
     } catch (err) {
-        console.error(`Fetch error: ${err.message || err.code}`);
+        mediaLogger.error('Fetch error', { message: err.message || err.code });
         res.status(500).json({ error: 'Error fetching image', message: err.message });
     }
 });

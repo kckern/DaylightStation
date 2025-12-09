@@ -1,5 +1,13 @@
 
 import { loadFile, saveFile } from '../lib/io.mjs';
+import { createLogger, logglyTransportAdapter } from '../lib/logging/index.js';
+
+const eventsLogger = createLogger({
+    name: 'backend-events',
+    context: { app: 'backend', module: 'events' },
+    level: process.env.EVENTS_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+    transports: [logglyTransportAdapter({ tags: ['backend', 'events'] })]
+});
 export default async (job_id) => {
 
 
@@ -45,7 +53,7 @@ export default async (job_id) => {
                     }
                 }
             } catch (error) {
-                console.warn('Invalid date format for Todoist item:', id, due);
+                eventsLogger.warn('events.todoist.invalidDueDate', { id, due, message: error?.message || error });
             }
         }
         

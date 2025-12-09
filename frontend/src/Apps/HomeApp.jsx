@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import './HomeApp.scss'
 import moment from 'moment'
 import CryptoJS from 'crypto-js'
@@ -20,9 +20,11 @@ import { useWebSocket } from '../contexts/WebSocketContext.jsx'
 import { createWebSocketHandler } from '../lib/HomeApp/websocketHandler.js'
 import { useKeyboardHandler } from '../lib/HomeApp/keyboardHandler.js'
 import { createMenuSelectionHandler } from '../lib/HomeApp/menuHandler.js'
+import { getChildLogger } from '../lib/logging/singleton.js'
 
 function HomeApp() {
-  console.log('HomeApp component is rendering...');
+  const logger = useMemo(() => getChildLogger({ app: 'home' }), []);
+  logger.debug('home.render');
   
   const [queue, setQueue] = useState([])
   const [menu, setMenu] = useState(false)
@@ -39,7 +41,7 @@ function HomeApp() {
 
   // Get WebSocket functions
   const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket()
-  console.log('WebSocket context:', { registerPayloadCallback: !!registerPayloadCallback, unregisterPayloadCallback: !!unregisterPayloadCallback });
+  logger.debug('home.websocket.context', { registerPayloadCallback: !!registerPayloadCallback, unregisterPayloadCallback: !!unregisterPayloadCallback });
 
   const resetQueue = useCallback(() => {
     setQueue([])
@@ -113,10 +115,10 @@ function HomeApp() {
 
   // Fetch the key map once
   useEffect(() => {
-    console.log('Fetching keyboard configuration...');
+    logger.info('home.keyboard.fetch.start');
     DaylightAPI('/data/keyboard/officekeypad')
       .then((fetchedMap) => {
-        console.log('Keyboard configuration loaded:', fetchedMap);
+        logger.info('home.keyboard.fetch.success', { hasKeys: !!fetchedMap, keyCount: Object.keys(fetchedMap || {}).length });
         setKeyMap(fetchedMap)
 
         // Rename to avoid overshadowing state variable
@@ -131,11 +133,11 @@ function HomeApp() {
             return acc
           }, {})
 
-        console.log('Playback keys processed:', newPlaybackKeys);
+        logger.debug('home.keyboard.playback-keys', { keys: newPlaybackKeys });
         setPlaybackKeys(newPlaybackKeys)
       })
       .catch((error) => {
-        console.error('Failed to fetch keyboard configuration:', error)
+        logger.error('home.keyboard.fetch.error', { message: error?.message, name: error?.name })
       })
   }, [])
 
@@ -146,7 +148,7 @@ function HomeApp() {
         setWeatherData(data)
       })
       .catch((error) => {
-        console.error('Failed to fetch weather data:', error)
+        logger.error('home.weather.fetch.error', { message: error?.message, name: error?.name })
       })
   }, [])
 
@@ -212,7 +214,7 @@ function HomeApp() {
 
     // Optional: if keyMap or playbackKeys doesn't exist yet, you can show a loading screen
     if (!keyMap || !playbackKeys) {
-      console.log('Loading state:', { keyMap: !!keyMap, playbackKeys: !!playbackKeys });
+      logger.debug('home.loading.state', { keyMap: !!keyMap, playbackKeys: !!playbackKeys });
       return (
         <>
           <p>Loading key map...</p>

@@ -6,9 +6,23 @@ import moment from "moment-timezone";
 import { CronExpressionParser } from "cron-parser";
 import Infinity from "./lib/infinity.js";
 import { loadFile, saveFile } from "./lib/io.mjs";
+import { createLogger, consoleTransport, logglyTransportAdapter, resolveLogglyToken } from './lib/logging/index.js';
 
 const apiRouter = express.Router();
 const timeZone = "America/Los_Angeles";
+
+const buildTransports = (tags = ['backend', 'cron']) => {
+  const transports = [consoleTransport()];
+  const token = resolveLogglyToken();
+  if (token) transports.push(logglyTransportAdapter({ token, tags }));
+  return transports;
+};
+
+const cronLogger = createLogger({
+  name: 'DaylightBackend',
+  context: { app: 'cron', env: process.env.NODE_ENV },
+  transports: buildTransports()
+});
 
 const cron = {
   cron10Mins: [
@@ -32,7 +46,7 @@ const cron = {
 };
 
 apiRouter.use((err, req, res, next) => {
-  console.error(err.stack);
+  cronLogger.error('cron.middleware.error', { error: err?.message, stack: err?.stack });
   res.status(500).json({ error: err.message });
 });
 
@@ -51,7 +65,7 @@ Object.keys(cron).forEach(key => {
         })
       );
       const guidId = crypto.randomUUID().split("-").pop();
-      console.log(`[${key}] Job ID: ${guidId}`);
+      cronLogger.info('cron.endpoint.called', { key, guidId });
       const data = {
         time: new Date().toISOString(),
         message: `Called endpoint for ${key}`,
@@ -128,11 +142,11 @@ export const cronContinuous = async () => {
   const now = moment().tz(timeZone);
   const cronJobs = loadCronConfig();
   if (!Array.isArray(cronJobs)) {
-    console.error("cronJobs is not iterable. Cancelling execution.");
+    cronLogger.error('cron.config.invalid');
     return;
   }for (const job of cronJobs) {
     if (typeof job !== "object" || job === null) {
-      console.warn(`Invalid job format:`, job);
+      cronLogger.warn('cron.job.invalid', { job });
       continue; // Skip invalid jobs
     }
     if (!job.nextRun) {
@@ -148,7 +162,7 @@ export const cronContinuous = async () => {
   }
   for (const job of cronJobs) {
     if (!moment.tz(job.nextRun, "YYYY-MM-DD HH:mm:ss", timeZone).isValid()) {
-      console.warn(`Invalid nextRun for job:`, job);
+      cronLogger.warn('cron.nextRun.invalid', { job });
       job.needsToRun = false;
       continue; // Skip invalid jobs
     }
@@ -184,13 +198,20 @@ export const cronContinuous = async () => {
           return null; // Gracefully handle invalid items
         })
       );
+      const invoke = (fn) => {
+        const scopedLogger = cronLogger.child({ jobId: guidId, job: jobName });
+        if (fn.length >= 2) return fn(scopedLogger, guidId);
+        if (fn.length === 1) return fn(guidId);
+        return fn(scopedLogger, guidId);
+      };
+
       await Promise.all(
         funcs.map(fn => {
           if (typeof fn === "function") {
-            return fn(guidId);
-          } else {
-            console.warn(`Skipped execution for non-function in ${jobName}:`, fn);
+            return invoke(fn);
           }
+          cronLogger.warn('cron.job.invalidFunction', { job: jobName, fnType: typeof fn });
+          return null;
         })
       );
       job.messageIds = job.messageIds ? [...job.messageIds, guidId] : [guidId];
@@ -203,7 +224,7 @@ export const cronContinuous = async () => {
       job.secondsUntil = newNextRunMoment.unix() - now.unix();
       job.needsToRun = false;
     } catch (e) {
-      console.error(`Error computing next run for ${job.name}, disabling it.`, e);
+      cronLogger.error('cron.schedule.compute.error', { job: job.name, error: e?.message, stack: e?.stack });
       job.needsToRun = false;
       job.error = "Invalid cron_tab";
     }
@@ -215,5 +236,5 @@ export const cronContinuous = async () => {
 };
 
 setInterval(() => {
-  cronContinuous().catch(err => console.error("Error running some cron jobs:", err));
+  cronContinuous().catch(err => cronLogger.error('cron.run.error', { error: err?.message, stack: err?.stack }));
 }, 5000);

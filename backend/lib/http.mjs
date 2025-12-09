@@ -1,4 +1,12 @@
 import axios from 'axios';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
+
+const httpLogger = createLogger({
+  name: 'backend-http',
+  context: { app: 'backend', module: 'http' },
+  level: process.env.HTTP_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+  transports: [logglyTransportAdapter({ tags: ['backend', 'http'] })]
+});
 
 // Build a concise, 1-2 line description of an axios error
 export function formatAxiosError(error) {
@@ -63,7 +71,7 @@ function ensureInterceptors() {
       // Build a short, single-line log and attach to the error
       const line = formatAxiosError(error);
       // Prefer warn to reduce noise level while still surfacing
-      console.error(`[HTTP] ${line}`);
+      httpLogger.warn('http.request.failed', { message: line });
       error.shortMessage = line;
       return Promise.reject(error);
     }

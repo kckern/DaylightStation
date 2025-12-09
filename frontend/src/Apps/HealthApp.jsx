@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MantineProvider, Paper, Title, Group, Text, Alert } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./HealthApp.scss";
 import Nutrition from '../modules/Health/Nutrition';
 import { DaylightAPI } from '../lib/api.mjs';
+import { getChildLogger } from '../lib/logging/singleton.js';
 
 const HealthApp = () => {
+  const logger = useMemo(() => getChildLogger({ app: 'health' }), []);
   const [healthMessage, setHealthMessage] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -15,7 +17,7 @@ const HealthApp = () => {
         const response = await DaylightAPI('/api/health/status');
         setHealthMessage(response);
       } catch (error) {
-        console.error('Error fetching health data:', error);
+        logger.error('health.fetch.failed', { message: error?.message, name: error?.name });
         setHealthMessage({ message: 'Error loading health data', status: 'error' });
       } finally {
         setLoading(false);

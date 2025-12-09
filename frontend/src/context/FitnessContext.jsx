@@ -9,6 +9,7 @@ import {
 } from '../hooks/useFitnessSession.js';
 import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.js';
 import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.js';
+import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 
 // Create context
 const FitnessContext = createContext(null);
@@ -88,19 +89,61 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Session State
   const fitnessSessionRef = useRef(new FitnessSession());
   const treasureConfigSignatureRef = useRef(null);
+  const configuredSignatureRef = useRef(null);
   const emptyRosterRef = useRef([]);
   const rosterCacheRef = useRef({ signature: null, value: emptyRosterRef.current });
   const [version, setVersion] = useState(0); // Trigger re-render
   const scheduledUpdateRef = useRef(false);
 
+  const forceUpdate = React.useCallback(() => {
+    setVersion((v) => v + 1);
+  }, []);
+
+  // Logging helpers scoped after session ref so sessionId is available
+  const voiceMemoLogContext = React.useMemo(() => ({
+    source: 'FitnessContext',
+    sessionId: () => fitnessSessionRef.current?.sessionId || null
+  }), []);
+
+  const logVoiceMemo = React.useCallback((event, payload = {}, options = {}) => {
+    const contextValue = typeof voiceMemoLogContext.sessionId === 'function'
+      ? voiceMemoLogContext.sessionId()
+      : voiceMemoLogContext.sessionId;
+    playbackLog('voice-memo', {
+      event,
+      ...payload
+    }, {
+      level: options.level || 'info',
+      context: {
+        source: voiceMemoLogContext.source,
+        sessionId: contextValue,
+        ...(options.context || {})
+      },
+      tags: options.tags || undefined
+    });
+  }, [voiceMemoLogContext]);
+
+  const logFitnessContext = React.useCallback((event, payload = {}, options = {}) => {
+    const contextValue = typeof voiceMemoLogContext.sessionId === 'function'
+      ? voiceMemoLogContext.sessionId()
+      : voiceMemoLogContext.sessionId;
+    playbackLog('fitness-context', {
+      event,
+      ...payload
+    }, {
+      level: options.level || 'info',
+      context: {
+        source: 'FitnessContext',
+        sessionId: contextValue,
+        ...(options.context || {})
+      }
+    });
+  }, [voiceMemoLogContext]);
+
   const emitVoiceMemoTelemetry = React.useCallback((eventName, payload = {}) => {
     if (!eventName) return;
     const detail = { event: eventName, ...payload };
-    try {
-      console.info('[VoiceMemoTelemetry]', detail);
-    } catch (_) {
-      // ignore logging errors
-    }
+    logVoiceMemo('telemetry', detail, { level: 'info' });
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
       try {
         window.dispatchEvent(new CustomEvent('voice-memo-event', { detail }));
@@ -108,7 +151,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         // ignore dispatch errors
       }
     }
-  }, []);
+  }, [logVoiceMemo]);
 
   // Configuration extraction
   const {
@@ -207,51 +250,40 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const governancePulse = 0;
   const effectiveUsersConfig = usersConfig;
   const normalizedBaseZoneConfig = zoneConfig?.[0] || {};
-  
+
   const primaryConfigByName = React.useMemo(() => {
-      const map = new Map();
-      if (Array.isArray(usersConfig?.primary)) {
-          usersConfig.primary.forEach(u => { if(u?.name) map.set(u.name, u); });
+    const map = new Map();
+    const list = Array.isArray(usersConfig?.primary) ? usersConfig.primary : [];
+    list.forEach((entry) => {
+      if (!entry?.name) return;
+      map.set(entry.name, entry);
+      const slug = slugifyId(entry.name);
+      if (slug) {
+        map.set(slug, entry);
       }
-      return map;
+    });
+    return map;
   }, [usersConfig]);
 
-  // Helper to force update (throttled to one microtask to avoid re-entrant loops)
-  const forceUpdate = React.useCallback(() => {
-    if (scheduledUpdateRef.current) return;
-    scheduledUpdateRef.current = true;
-    const scheduleFlush = typeof queueMicrotask === 'function'
-      ? queueMicrotask
-      : (cb) => Promise.resolve().then(cb);
-    scheduleFlush(() => {
-      scheduledUpdateRef.current = false;
-      setVersion((v) => v + 1);
-    });
-  }, []);
+  const configurationInputs = React.useMemo(() => ({
+    ant_devices,
+    usersConfig,
+    zoneConfig,
+    governanceConfig,
+    coinTimeUnitMs,
+    equipmentConfig,
+    nomusicLabels,
+    governedLabels,
+    governedTypes
+  }), [ant_devices, usersConfig, zoneConfig, governanceConfig, coinTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes]);
 
-  const configurationInputs = React.useMemo(() => {
-    return {
-      usersConfig,
-      zoneConfig,
-      governanceConfig,
-      ant_devices,
-      signature: JSON.stringify({ usersConfig, zoneConfig, governanceConfig, ant_devices })
-    };
-  }, [usersConfig, zoneConfig, governanceConfig, ant_devices]);
-
-  const configuredSignatureRef = React.useRef(null);
-
-  // Initialize Session Configuration
+  const configurationSignature = React.useMemo(() => JSON.stringify(configurationInputs), [configurationInputs]);
+  
   useEffect(() => {
-    const session = fitnessSessionRef.current;
-    if (!session) return;
-
-    const { usersConfig, zoneConfig, governanceConfig, ant_devices, signature } = configurationInputs;
-
-    if (configuredSignatureRef.current === signature) {
+    if (configuredSignatureRef.current === configurationSignature) {
       return;
     }
-    configuredSignatureRef.current = signature;
+    configuredSignatureRef.current = configurationSignature;
 
     // Configure Timeouts
     const inactive = ant_devices?.timeout?.inactive;
@@ -274,7 +306,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Actually, session.ensureStarted() creates treasureBox.
     
     forceUpdate();
-  }, [configurationInputs, forceUpdate]);
+  }, [configurationSignature, ant_devices, usersConfig, zoneConfig, governanceConfig, session, forceUpdate]);
 
   useEffect(() => {
     const session = fitnessSessionRef.current;
@@ -328,7 +360,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (!guestAssignmentServiceRef.current) return;
     const result = guestAssignmentServiceRef.current.assignGuest(deviceId, assignment);
     if (!result?.ok && FITNESS_DEBUG) {
-      console.warn('[FitnessContext] assignGuestToDevice failed', result?.message);
+      logFitnessContext('assign-guest-failed', { deviceId, message: result?.message }, { level: 'warn' });
     }
     forceUpdate();
   }, [forceUpdate]);
@@ -337,7 +369,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (!guestAssignmentServiceRef.current) return;
     const result = guestAssignmentServiceRef.current.clearGuest(deviceId);
     if (!result?.ok && FITNESS_DEBUG) {
-      console.warn('[FitnessContext] clearGuestAssignment failed', result?.message);
+      logFitnessContext('clear-guest-failed', { deviceId, message: result?.message }, { level: 'warn' });
     }
     forceUpdate();
   }, [forceUpdate]);
@@ -396,72 +428,98 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const setVoiceMemoOverlayStateGuarded = React.useCallback((nextState) => {
     setVoiceMemoOverlayState((prev) => {
       if (!nextState || nextState.open !== true) {
+        logVoiceMemo('overlay-reset', { reason: 'closed' });
         return VOICE_MEMO_OVERLAY_INITIAL;
       }
       if (
-        prev.open === nextState.open &&
-        prev.mode === nextState.mode &&
-        prev.memoId === nextState.memoId &&
-        prev.autoAccept === nextState.autoAccept
+        prev.open === nextState.open
+        && prev.mode === nextState.mode
+        && prev.memoId === nextState.memoId
+        && prev.autoAccept === nextState.autoAccept
       ) {
         return prev;
       }
+      logVoiceMemo('overlay-state-change', {
+        from: { open: prev.open, mode: prev.mode, memoId: prev.memoId },
+        to: { open: nextState.open, mode: nextState.mode, memoId: nextState.memoId }
+      }, { level: 'debug' });
       return nextState;
     });
-  }, []);
+  }, [logVoiceMemo]);
 
   const addVoiceMemoToSession = React.useCallback((memo) => {
     if (!memo) return null;
+    logVoiceMemo('memo-add-request', { memoId: memo.memoId || null });
     let stored = memo;
     try {
       stored = fitnessSessionRef.current?.addVoiceMemo?.(memo) || memo;
     } catch (error) {
-      console.warn('[FitnessContext] addVoiceMemoToSession failed', error);
+      logVoiceMemo('memo-add-error', {
+        memoId: memo.memoId || null,
+        error: error?.message || String(error)
+      }, { level: 'warn' });
     }
     setVoiceMemoVersion((version) => version + 1);
     if (stored) {
-      emitVoiceMemoTelemetry('voice_memo_added', { memoId: stored.memoId || memo.memoId || null });
+      const memoId = stored.memoId || memo.memoId || null;
+      logVoiceMemo('memo-added', { memoId });
+      emitVoiceMemoTelemetry('voice_memo_added', { memoId });
     }
     return stored;
-  }, [emitVoiceMemoTelemetry]);
+  }, [emitVoiceMemoTelemetry, logVoiceMemo]);
 
   const removeVoiceMemoFromSession = React.useCallback((memoId) => {
     if (!memoId) return null;
+    logVoiceMemo('memo-remove-request', { memoId });
     let removed = null;
     try {
       removed = fitnessSessionRef.current?.removeVoiceMemo?.(memoId) || null;
     } catch (error) {
-      console.warn('[FitnessContext] removeVoiceMemoFromSession failed', error);
+      logVoiceMemo('memo-remove-error', {
+        memoId,
+        error: error?.message || String(error)
+      }, { level: 'warn' });
     }
     if (removed) {
       setVoiceMemoVersion((version) => version + 1);
+      logVoiceMemo('memo-removed', { memoId: memoId || removed.memoId || null });
       emitVoiceMemoTelemetry('voice_memo_removed', { memoId: memoId || removed.memoId || null });
     }
     return removed;
-  }, [emitVoiceMemoTelemetry]);
+  }, [emitVoiceMemoTelemetry, logVoiceMemo]);
 
   const replaceVoiceMemoInSession = React.useCallback((memoId, memo) => {
     if (!memoId || !memo) return null;
+    logVoiceMemo('memo-replace-request', { memoId, nextMemoId: memo?.memoId || null });
     let stored = null;
     try {
       stored = fitnessSessionRef.current?.replaceVoiceMemo?.(memoId, memo) || null;
     } catch (error) {
-      console.warn('[FitnessContext] replaceVoiceMemoInSession failed', error);
+      logVoiceMemo('memo-replace-error', {
+        memoId,
+        nextMemoId: memo?.memoId || null,
+        error: error?.message || String(error)
+      }, { level: 'warn' });
     }
     if (stored) {
       setVoiceMemoVersion((version) => version + 1);
+      logVoiceMemo('memo-replaced', { memoId, nextMemoId: memo?.memoId || memoId });
       emitVoiceMemoTelemetry('voice_memo_replaced', { memoId, nextMemoId: memo?.memoId || memoId });
     }
     return stored;
-  }, [emitVoiceMemoTelemetry]);
+  }, [emitVoiceMemoTelemetry, logVoiceMemo]);
 
   const closeVoiceMemoOverlay = React.useCallback(() => {
     emitVoiceMemoTelemetry('voice_memo_overlay_close', {
       mode: voiceMemoOverlayState.mode,
       memoId: voiceMemoOverlayState.memoId
     });
+    logVoiceMemo('overlay-close', {
+      mode: voiceMemoOverlayState.mode,
+      memoId: voiceMemoOverlayState.memoId
+    });
     setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
-  }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded, voiceMemoOverlayState.memoId, voiceMemoOverlayState.mode]);
+  }, [emitVoiceMemoTelemetry, logVoiceMemo, setVoiceMemoOverlayStateGuarded, voiceMemoOverlayState.memoId, voiceMemoOverlayState.mode]);
 
   const openVoiceMemoReview = React.useCallback((memoOrId, { autoAccept = false } = {}) => {
     // Allow optimistic review opens when we have the memo object, even if it hasn't landed in voiceMemos yet.
@@ -494,6 +552,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       autoAccept,
       startedAt: Date.now()
     });
+    logVoiceMemo('overlay-open-review', { memoId: id, autoAccept });
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id, autoAccept });
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
 
@@ -505,6 +564,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       autoAccept: false,
       startedAt: Date.now()
     });
+    logVoiceMemo('overlay-open-list');
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'list', memoId: null });
   }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded]);
 
@@ -534,6 +594,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       autoAccept: false,
       startedAt: Date.now()
     });
+    logVoiceMemo('overlay-open-redo', { memoId: id || null });
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'redo', memoId: id || null });
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
 
@@ -1216,16 +1277,22 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   useEffect(() => {
     if (!voiceMemoOverlayState.open) return;
     if (voiceMemoOverlayState.mode === 'list' && voiceMemos.length === 0) {
+      logVoiceMemo('overlay-auto-close', { reason: 'no-memos', mode: voiceMemoOverlayState.mode });
       setVoiceMemoOverlayState(VOICE_MEMO_OVERLAY_INITIAL);
       return;
     }
     if (voiceMemoOverlayState.memoId) {
       const exists = voiceMemos.some((memo) => memo && String(memo.memoId) === String(voiceMemoOverlayState.memoId));
       if (!exists && voiceMemoOverlayState.mode !== 'redo') {
+        logVoiceMemo('overlay-clear-memo', {
+          reason: 'memo-missing',
+          memoId: voiceMemoOverlayState.memoId,
+          mode: voiceMemoOverlayState.mode
+        }, { level: 'warn' });
         setVoiceMemoOverlayState((prev) => ({ ...prev, memoId: null }));
       }
     }
-  }, [voiceMemoOverlayState, voiceMemos, setVoiceMemoOverlayState]);
+  }, [logVoiceMemo, voiceMemoOverlayState, voiceMemos, setVoiceMemoOverlayState]);
 
   useEffect(() => {
     const session = fitnessSessionRef.current;
@@ -1240,7 +1307,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       });
     } catch (error) {
       if (FITNESS_DEBUG) {
-        console.warn('[FitnessContext] session updateSnapshot failed', error);
+        logFitnessContext('snapshot-error', { error: error?.message || String(error) }, { level: 'warn' });
       }
     }
   }, [users, fitnessDevices, fitnessPlayQueue, participantRoster, zoneConfig]);
@@ -1265,8 +1332,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governanceConfig,
     governedLabels,
     governedLabelSet,
-    governedTypes,
-    governedTypeSet,
     governedTypes,
     governedTypeSet,
     

@@ -1,6 +1,14 @@
 import { createCanvas, registerFont, loadImage } from 'canvas';
 import QRCode from 'qrcode';
 import axios from './http.mjs';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
+
+const graphicsLogger = createLogger({
+  name: 'backend-graphics',
+  context: { app: 'backend', module: 'graphics' },
+  level: process.env.GRAPHICS_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+  transports: [logglyTransportAdapter({ tags: ['backend', 'graphics'] })]
+});
 
 /**
  * Register fonts for canvas text rendering
@@ -23,11 +31,11 @@ export const generateFamilyCard = async (code = "KWCF-2MD", options = {}) => {
   // Fetch data from FamilySearch API
   let personData;
   try {
-    console.log(`Fetching data for code: ${code}`);
+    graphicsLogger.info('Fetching family data', { code });
     const response = await axios.get(`https://ancestors.familysearch.org/service/tree/tree-data/published/persons/${code}`);
     personData = response.data;
   } catch (error) {
-    console.error('Error fetching family search data:', error);
+    graphicsLogger.error('Error fetching family search data', { message: error?.message, stack: error?.stack, code });
     // Create a canvas and draw an error message
     const canvas = createCanvas(options.width || 1000, options.height || 700);
     const ctx = canvas.getContext('2d');
@@ -88,7 +96,7 @@ export const generateFamilyCard = async (code = "KWCF-2MD", options = {}) => {
       const portraitImage = await loadImage(portraitUrl);
       ctx.drawImage(portraitImage, circleCenterX - circleRadius, circleCenterY - circleRadius, circleRadius * 2, circleRadius * 2);
     } catch (imgError) {
-      console.error("Could not load portrait image.", imgError);
+      graphicsLogger.warn('Could not load portrait image', { message: imgError?.message, code, portraitUrl });
       // Draw a placeholder if image fails to load
       ctx.fillStyle = '#cccccc';
       ctx.fill();
