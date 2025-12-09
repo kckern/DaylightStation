@@ -64,10 +64,13 @@ export class Plex {
   } = opts || {};
   const session = optsSession || defaultSession;
   const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
-  // Generate unique identifiers per request so remount retries don't reuse terminated sessions
+  // Generate a fresh session identifier for each playback attempt, but keep the client identifier stable
+  // Plex expects X-Plex-Client-Identifier to remain consistent for a device/app, while X-Plex-Session-Identifier
+  // should be unique per playback. Previously we varied both, which can cause PMS to treat the client as unknown
+  // and terminate the session.
   const sessionUUID = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  const clientIdentifier = session || defaultSession || sessionUUID;
   const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
-  const clientIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
 
     try {
       if (media_type === 'audio') {
