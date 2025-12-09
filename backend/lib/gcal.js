@@ -1,8 +1,17 @@
 import { google } from 'googleapis';
 import { saveFile, sanitize } from './io.mjs';
 import saveEvents from '../jobs/events.mjs';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
 
-const listCalendarEvents = async (job_id) => {
+const defaultGcalLogger = createLogger({
+    name: 'backend-gcal',
+    context: { app: 'backend', module: 'gcal' },
+    level: process.env.GCAL_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+    transports: [logglyTransportAdapter({ tags: ['backend', 'gcal'] })]
+});
+
+const listCalendarEvents = async (logger, job_id) => {
+    const log = logger || defaultGcalLogger;
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;
 
     if(!(GOOGLE_CLIENT_ID || GOOGLE_CLIENT_SECRET || GOOGLE_REDIRECT_URI || GOOGLE_REFRESH_TOKEN)) {
@@ -39,7 +48,7 @@ const listCalendarEvents = async (job_id) => {
     //sort 
     allEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
 
-    console.log(`\t[${job_id}] Calendar: ${allEvents.length} events found`);
+    log.info('harvest.gcal.events', { jobId: job_id, count: allEvents.length });
     saveFile('lifelog/calendar', allEvents);
     saveEvents(job_id);
     return allEvents;

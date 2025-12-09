@@ -3,6 +3,14 @@ import yaml from 'js-yaml';
 import { readFileSync } from 'fs';
 import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';
 import { loadFile, saveFile } from '../../lib/io.mjs';
+import { createLogger, logglyTransportAdapter } from '../../lib/logging/index.js';
+
+const payrollLogger = createLogger({
+  name: 'backend-payroll',
+  context: { app: 'backend', module: 'payroll' },
+  level: process.env.PAYROLL_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+  transports: [logglyTransportAdapter({ tags: ['backend', 'payroll'] })]
+});
 
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -4).join('/')}`;
@@ -15,7 +23,7 @@ const {  buxfer: {payroll_account_id, direct_deposit_account_id} } = yaml.load(r
 
 const  payrollSync = async (key,req) => {
 
-  console.log(`Running Payroll Sync Job [${key}]`);
+  payrollLogger.info('payroll.sync.start', { key });
 
     const authKey = req.query.token || PAYROLL_AUTH;
 
@@ -24,7 +32,7 @@ const  payrollSync = async (key,req) => {
     const pastDates = Object.keys(pastPaycheckData.paychecks);
 
     const url = `https://${PAYROLL_BASE}/${PAYROLL_COMPANY}/${PAYROLL_EMPLOYEE}/paychecks`;
-    console.log(url);
+    payrollLogger.info('payroll.fetch.url', { url });
     const options = {
         method: 'GET',
         url,
@@ -45,7 +53,7 @@ const  payrollSync = async (key,req) => {
         const alreadyRetrieved = pastDates.includes(payEndDt);
         if(alreadyRetrieved) {
           paychecks[payEndDt] = pastPaycheckData.paychecks[payEndDt];
-          console.log(`Skipping paycheck for ${payEndDt} (${i}/${checkCount})`);
+          payrollLogger.info('payroll.paycheck.skip', { payEndDt, index: i, total: checkCount });
           continue;
         }
         const checkUrl = `https://${PAYROLL_BASE}/${PAYROLL_COMPANY}/${PAYROLL_EMPLOYEE}/paycheck-details/${id}`;
@@ -60,17 +68,17 @@ const  payrollSync = async (key,req) => {
             const checkResponse = await axios.request(checkOptions);
             const date = checkResponse.data.data.header.payEndDt;
             paychecks[date] = checkResponse.data.data;
-            console.log(`Got paycheck for ${date}`);
+            payrollLogger.info('payroll.paycheck.fetched', { date, index: i, total: checkCount });
           }
           catch(e) {
               const errorCode = e.response.status;
-              console.log(`Error [${errorCode}] getting paycheck for ${id} (${i}/${checkCount})`);
+              payrollLogger.warn('payroll.paycheck.fetchError', { errorCode, id, index: i, total: checkCount, message: e?.message || e });
           }
 
             //sleep for 1 second to avoid rate limiting
             await new Promise(resolve => setTimeout(resolve, 3000));
       }
-    //  if(Object.keys(paychecks).length !== checkCount)  return console.log('Error: Not all paychecks were retrieved');
+    //  if(Object.keys(paychecks).length !== checkCount)  return payrollLogger.error('payroll.missingPaychecks');
 
         saveFile('budget/payroll', {paychecks});
 
@@ -86,7 +94,7 @@ const  payrollSync = async (key,req) => {
         for(const date of Object.keys(paychecks)){
             const {header:{checkDt}, detail} = paychecks[date];
             const {key,taxData,earns,taxWithholdings,preTaxDedns,postTaxDedns,employerBenefits,employerBenefitsTaxable,employerBenefitsNonTaxable,totals,ptos,netPayDistributions,directDepositDistributions,flsaDetails} = detail;
-            if(!checkDt) console.log('Error: No check date on date: ', date);
+            if(!checkDt) payrollLogger.error('payroll.noCheckDate', { date });
             function mapAndFilterTransactions(transactions, mapping, checkDt) {
               return transactions
                 .map(i => ({ desc: i.desc || i.taxDesc || i.curEarnsDesc, amount: parseFloat(i.curTaxes || i.curDedns || i.curEarnsEarn), date: checkDt }))
@@ -128,9 +136,9 @@ const  payrollSync = async (key,req) => {
            return needsUpload;
         });
 
-        console.log(`Transactions needing upload: ${transactionNeedingUpload.length}`);
+          payrollLogger.info('payroll.upload.count', { count: transactionNeedingUpload.length });
        for(const transaction of transactionNeedingUpload) {
-           console.log(`Uploading ${transaction.date} ${transaction.amount} ${transaction.desc} [${transaction.category}]`);
+            payrollLogger.info('payroll.upload.transaction', { date: transaction.date, amount: transaction.amount, desc: transaction.desc, category: transaction.category });
            const insert = {
             accountId: payroll_account_id,
             amount: transaction.amount,
@@ -145,18 +153,18 @@ const  payrollSync = async (key,req) => {
             else insert['fromAccountId'] = payroll_account_id;
             const r = await addTransaction(insert);
             const {id} = r;
-            console.log(`\t🟢 Transaction added: https://www.buxfer.com/transactions?tids=${id}`);
+            payrollLogger.info('payroll.upload.success', { url: `https://www.buxfer.com/transactions?tids=${id}`, transactionId: id });
 
        }
 
 
       }catch(e) {
         const errorCode = e.response?.status;
-        if(!errorCode) return console.error(`Error Message: ${e.message}`);
-        else if(errorCode === 401) return console.error('Error: Please fetch new auth token');
-       // else if(errorCode) return console.error(`Error [${errorCode}] fetching paychecks`);
-        console.error(`Error [${errorCode}] fetching paychecks`);
-        console.error(e.message);
+        if(!errorCode) return payrollLogger.error('payroll.error', { message: e?.message || e });
+        else if(errorCode === 401) return payrollLogger.error('payroll.auth.required', { errorCode });
+       // else if(errorCode) return payrollLogger.error('payroll.fetch.error', { errorCode });
+        payrollLogger.error('payroll.fetch.error', { errorCode });
+        payrollLogger.error('payroll.fetch.error.details', { message: e?.message || e });
       }
 }
 

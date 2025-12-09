@@ -3,6 +3,14 @@ import { loadFile, saveFile } from '../lib/io.mjs';
 import { clearWatchedItems } from '../fetch.mjs';
 import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';
 import fs from 'fs';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
+
+const plexLogger = createLogger({
+  name: 'backend-plex',
+  context: { app: 'backend', module: 'plex' },
+  level: process.env.PLEX_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+  transports: [logglyTransportAdapter({ tags: ['backend', 'plex'] })]
+});
 
 
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } }
@@ -24,8 +32,7 @@ export class Plex {
       const response = await axios.get(url);
       return response.data;
     } catch (error) {
-      console.error(`Error fetching data from Plex API: ${error.message}`);
-      console.error(`URL: ${url}`); 
+      plexLogger.error('Plex API fetch failed', { message: error.message, url });
       return null; // Return null to indicate failure
     }
   }
@@ -33,7 +40,7 @@ export class Plex {
   async loadmedia_url(itemData, attempt = 0, opts = {}) {
     // opts: { maxVideoBitrate?: number }
     const plex = itemData?.plex || itemData?.ratingKey;
-    if(!attempt >= 1) console.log("Attempting to load media URL for itemData: " , plex);
+    if (!attempt >= 1) plexLogger.debug('Attempting to load media URL', { plex });
     if (typeof itemData === 'string') {
       const meta = await this.loadMeta(itemData);
       if (!meta || !meta.length) return null;
@@ -94,7 +101,7 @@ export class Plex {
         return url;
       }
     } catch (error) {
-      console.error("Error generating media URL:", error.message);
+      plexLogger.error('Error generating media URL', { message: error.message });
       return null;
     }
   }
@@ -355,7 +362,7 @@ export class Plex {
 
     // If the selected item is not directly playable (e.g., season, show), drill down further
     if (!this.isPlayableType(itemData.type)) {
-      console.log(`Item ${selectedKey} is not playable (type: ${itemData.type}), drilling down...`);
+      plexLogger.info('Non-playable item, drilling down', { selectedKey, type: itemData.type });
   return await this.loadPlayableItemFromKey(selectedKey.plex || selectedKey, shuffle, opts);
     }
 
@@ -450,13 +457,12 @@ export class Plex {
     // Load viewing history from all plex library logs
     const log = this.loadPlexViewingHistory();
     
-    // Debug output
-    console.log(`selectKeyToPlay: Loaded ${Object.keys(log).length} history entries for ${keys.length} keys`);
+    plexLogger.info('selectKeyToPlay loaded history', { entries: Object.keys(log).length, keyCount: keys.length });
     
     // Categorize episodes by viewing status using centralized utility
     const { watched, inProgress, unwatched } = categorizeByWatchStatus(keys, log);
 
-    console.log(`selectKeyToPlay: Watched: ${watched.length}, In Progress: ${inProgress.length}, Unwatched: ${unwatched.length}`);
+    plexLogger.info('selectKeyToPlay categories', { watched: watched.length, inProgress: inProgress.length, unwatched: unwatched.length });
 
     // Sequential selection logic
     return this.selectEpisodeByPriority(unwatched, inProgress, watched, log, shuffle);
@@ -467,7 +473,7 @@ export class Plex {
     let log = {};
 
     if (!fs.existsSync(plexLogDir)) {
-      console.log(`selectKeyToPlay: History directory ${plexLogDir} does not exist`);
+      plexLogger.warn('selectKeyToPlay history dir missing', { dir: plexLogDir });
       return log;
     }
 
@@ -488,7 +494,7 @@ export class Plex {
     // Priority 1: First unwatched episode in sequence
     if (unwatched.length > 0) {
       const selected = shuffle ? unwatched[Math.floor(Math.random() * unwatched.length)] : unwatched[0];
-      console.log(`selectKeyToPlay: Selected unwatched episode: ${selected}`);
+      plexLogger.info('selectKeyToPlay selected unwatched', { selected });
       return [selected, 0, 0];
     }
 
@@ -496,7 +502,7 @@ export class Plex {
     if (inProgress.length > 0) {
       const selected = shuffle ? inProgress[Math.floor(Math.random() * inProgress.length)] : inProgress[0];
       const { seconds = 0, percent = 0 } = log[selected] || {};
-      console.log(`selectKeyToPlay: Selected in-progress episode: ${selected} at ${percent}%`);
+      plexLogger.info('selectKeyToPlay selected in-progress', { selected, percent });
       return [selected, seconds, percent];
     }
 
@@ -505,11 +511,11 @@ export class Plex {
       clearWatchedItems(watched, "plex");
       const selected = watched[0];
       const { seconds = 0, percent = 0 } = log[selected] || {};
-      console.log(`selectKeyToPlay: All episodes watched, restarting from: ${selected}`);
+      plexLogger.info('selectKeyToPlay restarting watched sequence', { selected });
       return [selected, seconds, percent];
     }
 
-    console.log(`selectKeyToPlay: No episodes found`);
+    plexLogger.warn('selectKeyToPlay no episodes found');
     return [null, 0, 0];
   }
 

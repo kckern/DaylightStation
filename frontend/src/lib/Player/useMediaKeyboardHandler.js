@@ -1,7 +1,9 @@
+import { useMemo, useRef, useEffect } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { usePlayerKeyboard } from '../keyboard/keyboardManager.js';
 import { createMediaTransportAdapter } from './mediaTransportAdapter.js';
 import { playbackLog } from '../../modules/Player/lib/playbackLogger.js';
+import { getChildLogger } from '../logging/singleton.js';
 
 /**
  * Custom hook for handling media playback keyboard shortcuts
@@ -27,6 +29,9 @@ export function useMediaKeyboardHandler(config) {
     isPaused: isPausedProp
   } = config;
 
+  const logger = useMemo(() => getChildLogger({ component: 'useMediaKeyboardHandler' }), []);
+  const pausedNoticeLogged = useRef(false);
+
   const mediaController = createMediaTransportAdapter({
     controller,
     mediaRef,
@@ -37,14 +42,15 @@ export function useMediaKeyboardHandler(config) {
   const mediaTitle = meta?.title || meta?.name || meta?.show || null;
 
   const logUserAction = (action, payload = {}, level = 'info') => {
-    playbackLog('player.user-action', {
+    const data = {
       action,
       type,
       mediaKey: mediaIdentityKey,
       title: mediaTitle,
       queuePosition,
       ...payload
-    }, {
+    };
+    playbackLog('player.user-action', data, {
       level,
       context: {
         source: 'useMediaKeyboardHandler',
@@ -52,7 +58,25 @@ export function useMediaKeyboardHandler(config) {
         queuePosition
       }
     });
+    try {
+      logger[level === 'debug' ? 'debug' : level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info']('ui.key.action', data, {
+        context: { mediaKey: mediaIdentityKey, queuePosition },
+        tags: ['keyboard']
+      });
+    } catch (_) {
+      // logger best effort
+    }
   };
+
+  // Log keyboard configuration once per render
+  useEffect(() => {
+    logger.debug('ui.keyboard.config_loaded', {
+      playbackKeyCount: Object.keys(playbackKeys || {}).length,
+      hasOverrides: Boolean(keyboardOverrides && Object.keys(keyboardOverrides).length),
+      queuePosition,
+      paused: Boolean(isPausedProp)
+    });
+  }, [logger, playbackKeys, keyboardOverrides, queuePosition, isPausedProp]);
 
   const getPlaybackState = () => mediaController.getPlaybackState?.();
 
@@ -168,6 +192,10 @@ export function useMediaKeyboardHandler(config) {
   if (isPaused) {
     conditionalOverrides['ArrowUp'] = () => {}; // Let pause overlay handle
     conditionalOverrides['ArrowDown'] = () => {}; // Let pause overlay handle
+    if (!pausedNoticeLogged.current) {
+      logger.debug('ui.key.ignored-when-paused', { keys: ['ArrowUp', 'ArrowDown'], queuePosition });
+      pausedNoticeLogged.current = true;
+    }
   }
 
   return usePlayerKeyboard({

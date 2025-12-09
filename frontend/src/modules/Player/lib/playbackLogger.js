@@ -1,3 +1,25 @@
+import { getDaylightLogger } from '../../../lib/logging/singleton.js';
+
+const formatArg = (arg) => {
+  if (typeof arg === 'string') return arg;
+  try { return JSON.stringify(arg); }
+  catch (_) { return String(arg); }
+};
+
+const devOutput = (level, ...args) => {
+  const message = args.map(formatArg).join(' ');
+  const stream = (level === 'error' || level === 'warn') && typeof process !== 'undefined' && process.stderr
+    ? process.stderr
+    : (typeof process !== 'undefined' && process.stdout ? process.stdout : null);
+  if (stream && typeof stream.write === 'function') {
+    stream.write(`${message}\n`);
+    return;
+  }
+  if (typeof window !== 'undefined' && typeof window.postMessage === 'function') {
+    window.postMessage({ type: 'playback-log', level, message }, '*');
+  }
+};
+
 const PLAYER_DEBUG_MODE_DEFAULT = true;
 const DEFAULT_LOG_LEVEL = 'debug';
 const LOG_LEVEL_PRIORITY = Object.freeze({
@@ -23,6 +45,9 @@ const QUEUE_FALLBACK_LIMIT = 500;
 const THROTTLE_MAP = new Map();
 const THROTTLE_INTERVAL = 15000;
 const RATE_LIMIT_MIN_INTERVAL = 50;
+
+let daylightForwardingEnabled = true;
+let daylightPlaybackLogger = null;
 
 let playerDebugMode = PLAYER_DEBUG_MODE_DEFAULT;
 let globalLoggerContext = { ...DEFAULT_CONTEXT };
@@ -74,17 +99,41 @@ const defaultFormatter = (record) => {
 };
 
 const defaultSink = (record, formatted) => {
-  const target = record.level === 'error'
-    ? console.error
-    : (record.level === 'warn' ? console.warn : console.log);
-  target(formatted);
+  const level = record.level === 'error' ? 'error' : record.level === 'warn' ? 'warn' : 'info';
+  devOutput(level, formatted);
+};
+
+const getDaylightPlaybackLogger = () => {
+  if (daylightPlaybackLogger) return daylightPlaybackLogger;
+  try {
+    daylightPlaybackLogger = getDaylightLogger({ context: { channel: 'playback' } });
+  } catch (error) {
+    daylightPlaybackLogger = null;
+  }
+  return daylightPlaybackLogger;
+};
+
+const daylightSink = (record) => {
+  if (!daylightForwardingEnabled) return;
+  const logger = getDaylightPlaybackLogger();
+  if (!logger) return;
+  const level = LOG_LEVEL_PRIORITY[record.level] ? record.level : 'info';
+  const eventName = `playback.${record.event}`;
+  const payload = {
+    payload: record.payload,
+    extra: record.extra
+  };
+  logger[level](eventName, payload, {
+    context: record.context,
+    tags: record.tags
+  });
 };
 
 const loggerConfig = {
   level: DEFAULT_LOG_LEVEL,
   enabledOverride: true,
   formatter: defaultFormatter,
-  sinks: [defaultSink],
+  sinks: [defaultSink, daylightSink],
   sampling: null,
   random: () => Math.random()
 };
@@ -185,7 +234,7 @@ const flushWebSocketQueue = () => {
     try {
       websocketState.socket.send(JSON.stringify(payload));
     } catch (error) {
-      console.warn('[PlaybackLogger] WebSocket send failed', error);
+      devOutput('warn', '[PlaybackLogger] WebSocket send failed', error);
       break;
     }
   }
@@ -252,7 +301,7 @@ const ensureWebSocketTransport = () => {
   } catch (error) {
     websocketState.connecting = false;
     websocketState.socket = null;
-    console.warn('[PlaybackLogger] Failed to open WebSocket', error);
+    devOutput('warn', '[PlaybackLogger] Failed to open WebSocket', error);
     scheduleWebSocketReconnect();
   }
 };
@@ -365,7 +414,7 @@ const resolveSamplingDecision = (rule, event, randomFn) => {
       if (normalizedFnRate === 1) return true;
       return randomFn() < normalizedFnRate;
     } catch (error) {
-      console.warn('[PlaybackLogger] sampler failed', error);
+      devOutput('warn', '[PlaybackLogger] sampler failed', error);
       return true;
     }
   }
@@ -460,7 +509,7 @@ const emitLogRecord = (record) => {
       sink(record, formatted);
     } catch (error) {
       // Avoid recursive logging
-      console.warn('[PlaybackLogger] sink failed', error);
+      devOutput('warn', '[PlaybackLogger] sink failed', error);
     }
   });
   maybeSendToPlaybackWebSocket(record);
@@ -562,6 +611,9 @@ export const configurePlaybackLogger = (options = {}) => {
   }
   if (typeof options.enabled === 'boolean') {
     loggerConfig.enabledOverride = options.enabled;
+  }
+  if (typeof options.forwardToDaylight === 'boolean') {
+    daylightForwardingEnabled = options.forwardToDaylight;
   }
   if (typeof options.formatter === 'function') {
     loggerConfig.formatter = options.formatter;

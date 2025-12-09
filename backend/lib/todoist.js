@@ -1,17 +1,25 @@
-import { TodoistApi } from '@doist/todoist-api-typescript'
-import { saveFile, loadFile } from './io.mjs';
+import { TodoistApi } from '@doist/todoist-api-typescript';
+import { saveFile } from './io.mjs';
 import saveEvents from '../jobs/events.mjs';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
 
+const defaultTodoistLogger = createLogger({
+        name: 'backend-todoist',
+        context: { app: 'backend', module: 'todoist' },
+        level: process.env.TODOIST_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+        transports: [logglyTransportAdapter({ tags: ['backend', 'todoist'] })]
+});
 
-const getTasks = async (job_id) => {
-        const { TODOIST_KEY } = process.env
-        if(!TODOIST_KEY) Error('Todoist API key not found in .env file');
+const getTasks = async (logger, job_id) => {
+        const log = logger || defaultTodoistLogger;
+        const { TODOIST_KEY } = process.env;
+        if(!TODOIST_KEY) throw new Error('Todoist API key not found in .env file');
         const api = new TodoistApi(TODOIST_KEY);
-        const tasks = await api.getTasks()
-        console.log(`\t[${job_id}] Todoist: ${tasks.length} tasks found`);
+        const tasks = await api.getTasks();
+        log.info('harvest.todoist.tasks', { jobId: job_id, count: tasks.length });
         saveFile('lifelog/todoist', tasks);
         saveEvents(job_id);
         return tasks;
-}
+};
 
-export default getTasks
+export default getTasks;

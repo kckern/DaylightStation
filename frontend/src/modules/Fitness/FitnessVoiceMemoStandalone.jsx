@@ -2,6 +2,7 @@ import React, { useCallback, useMemo } from 'react';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import useVoiceMemoRecorder from './FitnessSidebar/useVoiceMemoRecorder.js';
 import './FitnessSidebar/FitnessVoiceMemoStandalone.scss';
+import { playbackLog } from '../Player/lib/playbackLogger.js';
 
 const UI = {
   TITLE: 'Voice Memo',
@@ -26,6 +27,18 @@ const FitnessVoiceMemoStandalone = ({ playerRef = null, preferredMicrophoneId = 
   const voiceMemos = fitnessCtx?.voiceMemos || [];
   const resolvedPreferredMic = preferredMicrophoneId || fitnessCtx?.preferredMicrophoneId || '';
   const memoCount = voiceMemos.length;
+  const logVoiceMemo = useCallback((event, payload = {}, options = {}) => {
+    playbackLog('voice-memo', {
+      event,
+      ...payload
+    }, {
+      level: options.level || 'info',
+      context: {
+        source: 'VoiceMemoStandalone',
+        sessionId: fitnessCtx?.fitnessSession?.sessionId || null
+      }
+    });
+  }, [fitnessCtx?.fitnessSession?.sessionId]);
   const memoCountLabel = useMemo(() => {
     if (memoCount > 99) return '99+';
     if (memoCount > 9) return '9+';
@@ -34,12 +47,13 @@ const FitnessVoiceMemoStandalone = ({ playerRef = null, preferredMicrophoneId = 
 
   const handleMemoCaptured = useCallback((memo) => {
     if (!memo) return;
+    logVoiceMemo('standalone-memo-captured', { memoId: memo.memoId || null });
     const stored = fitnessCtx?.addVoiceMemoToSession?.(memo) || memo;
     const target = stored || memo;
     if (target && fitnessCtx?.openVoiceMemoReview) {
       fitnessCtx.openVoiceMemoReview(target, { autoAccept: true });
     }
-  }, [fitnessCtx]);
+  }, [fitnessCtx, logVoiceMemo]);
 
   const {
     isRecording,
@@ -58,12 +72,14 @@ const FitnessVoiceMemoStandalone = ({ playerRef = null, preferredMicrophoneId = 
 
   const handleRecord = useCallback(() => {
     setError(null);
+    logVoiceMemo('standalone-record-toggle', { action: isRecording ? 'stop' : 'start' });
     startRecording();
-  }, [setError, startRecording]);
+  }, [isRecording, logVoiceMemo, setError, startRecording]);
 
   const handleViewMemos = useCallback(() => {
+    logVoiceMemo('standalone-open-list', { memoCount });
     fitnessCtx?.openVoiceMemoList?.();
-  }, [fitnessCtx]);
+  }, [fitnessCtx, logVoiceMemo, memoCount]);
 
   const statusText = useMemo(() => {
     if (uploading) return UI.SAVING;

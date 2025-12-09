@@ -6,6 +6,14 @@ import { storyTeller } from './story/story.mjs';
 import { v4 as uuidv4 } from 'uuid';
 import { loadFile, saveFile } from './lib/io.mjs';
 import cookieParser from 'cookie-parser';
+import { createLogger, logglyTransportAdapter } from './lib/logging/index.js';
+
+const ttsLogger = createLogger({
+    name: 'backend-tts',
+    context: { app: 'backend', module: 'tts' },
+    level: process.env.TTS_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+    transports: [logglyTransportAdapter({ tags: ['backend', 'tts'] })]
+});
 
 
 const ttsRouter = express.Router();
@@ -30,7 +38,7 @@ ttsRouter.all('/story', async (req, res) => {
     let sessionId = req.body?.sessionId || req.query?.sessionId || req.cookies?.sessionId;
     let storybook, newSession = false;
 
-    console.log(`Received input: ${input}, sessionId: ${sessionId}`);
+    ttsLogger.info('tts.story.receivedInput', { input, sessionId });
 
     if (input === 'X' || !sessionId) {
         // Start a new session
@@ -49,9 +57,9 @@ ttsRouter.all('/story', async (req, res) => {
     else{
 
         storybook = loadFile(`story_gpt/sessions/${sessionId}`) || {};
-        console.log(`Loaded storybook for session ${sessionId}:`, storybook);
+        ttsLogger.info('tts.story.loadedStorybook', { sessionId, storybookLength: Array.isArray(storybook) ? storybook.length : 0 });
         if (!Array.isArray(storybook)){
-            console.warn(`Invalid storybook format for session ${sessionId}, initializing new session.`);
+            ttsLogger.warn('tts.story.invalidStorybook', { sessionId });
             storybook = loadFile(`story_gpt/story_gpt`).storybook || {};
             storybook.push({
                 role: 'user',
@@ -70,7 +78,7 @@ ttsRouter.all('/story', async (req, res) => {
 
 
 
-    console.log(`Using storybook for session ${sessionId}:`, storybook, sessionId);
+    ttsLogger.info('tts.story.usingStorybook', { sessionId, length: storybook?.length });
 
     // Get story and choices from GPT
     const { story, choices, storybook: updatedStorybook } = await storyTeller({
@@ -115,7 +123,7 @@ const respondWithAudio = async (input, res) => {
                 res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
                 audioStream.on('error', (err) => {
-                    console.error('Audio stream error:', err);
+                    ttsLogger.error('tts.audio.streamError', { message: err?.message || err, stack: err?.stack });
                     if (!res.headersSent) {
                         res.status(500).json({ error: 'Error streaming audio' });
                     }
@@ -127,7 +135,7 @@ const respondWithAudio = async (input, res) => {
             }
         })
         .catch(err => {
-            console.error('Error generating speech:', err);
+            ttsLogger.error('tts.generateSpeech.failed', { message: err?.message || err, stack: err?.stack });
             res.status(500).json({ error: 'Error generating speech' });
         });
 };

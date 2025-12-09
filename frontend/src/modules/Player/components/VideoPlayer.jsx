@@ -394,7 +394,6 @@ export function VideoPlayer({
   resilienceBitrateInfo = null,
   onRestoreFullBitrate = null
 }) {
-  // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
   
   const { show, season, title, media_url } = media;
@@ -777,7 +776,9 @@ export function VideoPlayer({
         try {
           fn();
         } catch (error) {
-          console.warn('[VideoPlayer] Failed to cleanup shaka diagnostics', error);
+          logShakaDiagnostic('shaka-network-hooks-cleanup-error', {
+            error: serializePlaybackError(error)
+          }, 'warn');
         }
       });
     };

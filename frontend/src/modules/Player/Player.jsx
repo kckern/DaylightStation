@@ -85,9 +85,7 @@ const Player = forwardRef(function Player(props, ref) {
     pauseDecision
   } = props || {};
   const compositeChannel = useCompositeControllerChannel(playerType);
-  
-  // console.log('[Player] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
-  
+
   // Override playback rate if passed in via menu selection
   if (playbackrate && play) play['playbackRate'] = playbackrate;
 

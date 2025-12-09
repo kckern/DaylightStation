@@ -163,13 +163,20 @@ export function useCommonMediaController({
       mediaEl.currentTime = targetSeconds;
       pendingAutoSeekRef.current = null;
       if (DEBUG_MEDIA) {
-        console.log('[Media] applySeekToMediaEl', { source, targetSeconds });
+        playbackLog('media.seek-apply', {
+          source,
+          targetSeconds
+        }, { level: 'debug' });
       }
       return true;
     } catch (error) {
       pendingAutoSeekRef.current = targetSeconds;
       if (DEBUG_MEDIA) {
-        console.warn('[Media] failed to apply seek intent', { source, targetSeconds, error });
+        playbackLog('media.seek-apply-error', {
+          source,
+          targetSeconds,
+          error: error?.message || String(error)
+        }, { level: 'warn' });
       }
       return false;
     }
@@ -261,7 +268,12 @@ export function useCommonMediaController({
       if (media_key) {
         if (!useCommonMediaController.__prevKeyLog) useCommonMediaController.__prevKeyLog = media_key;
         if (useCommonMediaController.__prevKeyLog !== media_key) {
-          if (DEBUG_MEDIA) console.log('[MediaKey] change detected', { from: useCommonMediaController.__prevKeyLog, to: media_key });
+          if (DEBUG_MEDIA) {
+            playbackLog('media-key-change', {
+              from: useCommonMediaController.__prevKeyLog,
+              to: media_key
+            }, { level: 'debug' });
+          }
           useCommonMediaController.__prevKeyLog = media_key;
         }
       }

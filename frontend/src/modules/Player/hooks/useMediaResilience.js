@@ -1233,7 +1233,10 @@ export function useMediaResilience({
       try {
         mediaEl = getMediaEl();
       } catch (error) {
-        console.warn('[useMediaResilience] failed to read media element during mount watchdog', error);
+        logResilienceEvent('mount-watchdog-read-error', {
+          error: error?.message || String(error),
+          reason
+        }, { level: 'warn' });
       }
 
       if (mediaEl) {
@@ -1246,9 +1249,15 @@ export function useMediaResilience({
       if (elapsed >= mountTimeoutMs) {
         clearMountWatchdog();
         const attempts = ++mountWatchdogAttemptsRef.current;
-        console.warn(`[useMediaResilience] mount watchdog fired (${reason})`, { attempts });
+        logResilienceEvent('mount-watchdog-fired', {
+          attempts,
+          reason
+        }, { level: 'warn' });
         if (mountMaxAttempts && attempts > mountMaxAttempts) {
-          console.error('[useMediaResilience] mount watchdog exceeded max attempts; forcing hard reload');
+          logResilienceEvent('mount-watchdog-max-attempts', {
+            attempts,
+            reason
+          }, { level: 'error' });
           onReloadRef.current?.({ reason: 'mount-watchdog-max', meta, waitKey, forceFullReload: true });
           defaultReload();
           return;

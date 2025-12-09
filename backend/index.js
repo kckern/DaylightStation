@@ -7,11 +7,30 @@ import request from 'request'; // Import the request module
 import { createWebsocketServer } from './websocket.js';
 import { createServer } from 'http';
 import { loadFile } from './lib/io.mjs';
+import { createLogger, logglyTransportAdapter, resolveLogglyToken } from './lib/logging/index.js';
+import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags } from './lib/logging/config.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
 const configExists = existsSync(`${__dirname}/../config.app.yml`);
 const isDocker = existsSync('/.dockerenv');
+
+let loggingConfig = loadLoggingConfig();
+
+const buildTransports = (tagsOverride) => {
+  const tags = tagsOverride || getLoggingTags(loggingConfig) || ['backend', 'api'];
+  const transports = [];
+  const token = resolveLogglyToken();
+  if (token) transports.push(logglyTransportAdapter({ token, tags }));
+  return transports;
+};
+
+let rootLogger = createLogger({
+  name: 'DaylightBackend',
+  context: { app: 'api', env: process.env.NODE_ENV },
+  level: resolveLoggerLevel('backend', loggingConfig),
+  transports: buildTransports()
+});
 
 const app = express();
 app.use(cors()); // Step 3: Enable CORS for all routes
@@ -43,6 +62,15 @@ async function initializeApp() {
 
     // Construct the process.env object
     process.env = { ...process.env, isDocker, ...appConfig, ...secretsConfig, ...localConfig };
+    loggingConfig = loadLoggingConfig();
+
+    // Recreate logger with updated env/config
+    rootLogger = createLogger({
+      name: 'DaylightBackend',
+      context: { app: 'api', env: process.env.NODE_ENV },
+      level: resolveLoggerLevel('backend', loggingConfig),
+      transports: buildTransports()
+    });
 
     // Initialize WebSocket server after config is loaded
     createWebsocketServer(server);
@@ -65,6 +93,34 @@ async function initializeApp() {
     const { default: tts } = await import('./tts.mjs');
 
     // Backend API
+    app.post('/api/logs', (req, res) => {
+      const body = req.body;
+      const entries = Array.isArray(body) ? body : [body];
+      const ingestLogger = rootLogger.child({ module: 'http-logs' });
+      const allowedLevels = new Set(['debug', 'info', 'warn', 'error']);
+      let accepted = 0;
+
+      for (const entry of entries) {
+        if (!entry || typeof entry.event !== 'string') continue;
+        const level = String(entry.level || 'info').toLowerCase();
+        const safeLevel = allowedLevels.has(level) ? level : 'info';
+        const data = entry.data || entry.payload || {};
+        const context = entry.context || {};
+        const tags = entry.tags || [];
+        ingestLogger[safeLevel](entry.event, data, {
+          message: entry.message,
+          context,
+          tags,
+          source: entry.source || 'http-logs'
+        });
+        accepted += 1;
+      }
+
+      if (!accepted) {
+        return res.status(400).json({ status: 'error', message: 'No valid log events' });
+      }
+      return res.status(202).json({ status: 'ok', accepted });
+    });
     app.get('/debug', (_, res) => res.json({ process: { __dirname, env: process.env } }));
     
     // Health check endpoints
@@ -113,7 +169,7 @@ async function initializeApp() {
 
         proxyRequest.on('error', (err) => {
           if (!res.headersSent) {
-            console.error(`Error proxying request to: ${url}`, err);
+            rootLogger.error('proxy.error', { url, error: err?.message, stack: err?.stack });
             res.status(500).json({ error: 'Failed to proxy request', details: err.message });
           }
         });
@@ -151,8 +207,8 @@ async function initializeApp() {
         res.sendFile(join(frontendPath, 'index.html'));
       });
     } else {
-      console.log('Frontend not found. Redirecting to localhost:3111');
-      console.log(`I was expecting to find the frontend at ${frontendPath} but it was not there. Please run the frontend build script first.`);
+      rootLogger.warn('frontend.missing', { path: frontendPath }, { message: 'Frontend not found. Redirecting to localhost:3111' });
+      rootLogger.warn('frontend.missing.redirect', { target: 'http://localhost:3111' });
       app.use('/', (req, res, next) => {
         if (req.path.startsWith('/ws/')) return next();
         res.redirect('http://localhost:3111');
@@ -169,12 +225,12 @@ async function initializeApp() {
   // Start HTTP server
   const port = process.env.PORT || 3112;
   server.listen(port, () => {
-    console.log(`Listening on port ${port}`);
+    rootLogger.info('server.listen', { port });
   });
 }
 
 // Initialize the app
-initializeApp().catch(err => console.error('Error initializing app:', err));
+initializeApp().catch(err => rootLogger.error('server.init.failure', { error: err?.message, stack: err?.stack }));
 
 
 
@@ -194,7 +250,7 @@ async function initializeApiApp() {
   api_app.use('', apiRouter);
   
   api_app.listen(3119, () => {
-    console.log('API app listening on port 3119');
+    rootLogger.info('api.secondary.listen', { port: 3119 });
   });
 
 
@@ -202,6 +258,6 @@ async function initializeApiApp() {
   
 }
 
-initializeApiApp().catch(err => console.error('Error initializing api app:', err));
+initializeApiApp().catch(err => rootLogger.error('api.secondary.init.failure', { message: err?.message || err, stack: err?.stack }));
 
 

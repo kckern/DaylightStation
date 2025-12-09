@@ -36,6 +36,11 @@ export function PlayerOverlayLoading({
     isVisible,
     pauseOverlayActive
   });
+  const overlayLogContext = useMemo(() => ({
+    source: 'PlayerOverlayLoading',
+    overlayLogLabel: overlayLogLabel || null,
+    waitKey: waitKey || null
+  }), [overlayLogLabel, waitKey]);
 
   useEffect(() => {
     if (shouldRender && isVisible) {
@@ -61,15 +66,24 @@ export function PlayerOverlayLoading({
       ...extra
     };
     if (!onRequestHardReset) {
-      console.warn('[PlayerOverlayLoading] Hard reset requested but no handler configured', finalPayload);
+      playbackLog('overlay.hard-reset-missing-handler', finalPayload, {
+        level: 'error',
+        context: overlayLogContext
+      });
       return;
     }
     try {
       onRequestHardReset(finalPayload);
     } catch (error) {
-      console.error('[PlayerOverlayLoading] hard reset handler failed', error, finalPayload);
+      playbackLog('overlay.hard-reset-handler-error', {
+        ...finalPayload,
+        error: error?.message || String(error)
+      }, {
+        level: 'error',
+        context: overlayLogContext
+      });
     }
-  }, [onRequestHardReset, seconds, stalled, waitingToPlay]);
+  }, [onRequestHardReset, overlayLogContext, seconds, stalled, waitingToPlay]);
 
   const normalizedMediaDetails = useMemo(() => {
     if (mediaDetailsProp && typeof mediaDetailsProp === 'object') {
@@ -137,10 +151,6 @@ export function PlayerOverlayLoading({
     : 'startup:idle';
 
   const logLabel = overlayLogLabel || waitKey || '';
-  const overlayLogContext = useMemo(() => ({
-    waitKey: waitKey || overlayLogLabel || 'loading-overlay',
-    source: 'PlayerOverlayLoading'
-  }), [overlayLogLabel, waitKey]);
   const overlaySummarySampleRate = useMemo(() => {
     const fromWindow = typeof window !== 'undefined'
       ? Number(window.PLAYER_OVERLAY_SUMMARY_SAMPLE_RATE)
