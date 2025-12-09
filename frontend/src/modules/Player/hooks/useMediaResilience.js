@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { formatTime } from '../lib/helpers.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { getLogWaitKey } from '../lib/waitKeyLabel.js';
 import { usePlaybackHealth } from './usePlaybackHealth.js';
@@ -7,7 +6,9 @@ import { useResilienceConfig } from './useResilienceConfig.js';
 import { useResilienceState, RESILIENCE_STATUS } from './useResilienceState.js';
 import { useResilienceRecovery } from './useResilienceRecovery.js';
 import { usePlaybackSession } from './usePlaybackSession.js';
-import { useOverlayPresentation } from './useOverlayPresentation.js';
+import { resolveMediaIdentity } from '../utils/mediaIdentity.js';
+import { useResiliencePolicy } from './policy/useResiliencePolicy.js';
+import { useResiliencePresentation } from './presentation/useResiliencePresentation.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -49,33 +50,6 @@ const DECODER_NUDGE_COOLDOWN_MS = 3000;
 const DECODER_NUDGE_GRACE_MS = 2000;
 const BITRATE_REDUCTION_FACTOR = 0.9;
 const DEFAULT_FALLBACK_MAX_VIDEO_BITRATE = 2000;
-
-const deriveDroppedRatio = (decoderMetrics = null) => {
-  if (!decoderMetrics) return null;
-  const { droppedFrames, totalFrames } = decoderMetrics;
-  if (!Number.isFinite(totalFrames) || totalFrames <= 0) {
-    return null;
-  }
-  const dropped = Number.isFinite(droppedFrames) ? droppedFrames : 0;
-  return Math.max(0, dropped) / totalFrames;
-};
-
-const summarizeDiagnosticsForLog = (diagnostics = null) => {
-  if (!diagnostics) {
-    return null;
-  }
-  const buffer = diagnostics.buffer || {};
-  const decoder = diagnostics.decoder || {};
-  return {
-    bufferAheadSeconds: buffer.bufferAheadSeconds ?? null,
-    bufferGapSeconds: buffer.bufferGapSeconds ?? null,
-    nextBufferStartSeconds: buffer.nextBufferStartSeconds ?? null,
-    droppedFrames: decoder.droppedFrames ?? null,
-    totalFrames: decoder.totalFrames ?? null,
-    readyState: diagnostics.readyState ?? null,
-    networkState: diagnostics.networkState ?? null
-  };
-};
 
 const useLatest = (value) => {
   const ref = useRef(value);
@@ -141,7 +115,9 @@ export function useMediaResilience({
   playerFlavorHint,
   threadId = null,
   nudgePlayback = null,
-  diagnosticsProvider = null
+  diagnosticsProvider = null,
+  externalPauseReason = null,
+  externalPauseActive = false
 }) {
   const [runtimeOverrides, setRuntimeOverrides] = useState(null);
   const {
@@ -164,7 +140,6 @@ export function useMediaResilience({
     startupMaxAttempts
   } = monitorSettings;
 
-  const [showDebug, setShowDebug] = useState(false);
   const {
     userIntent,
     userIntentRef,
@@ -269,6 +244,14 @@ export function useMediaResilience({
   const nudgePlaybackRef = useLatest(typeof nudgePlayback === 'function' ? nudgePlayback : null);
   const playbackDiagnosticsRef = useLatest(playbackDiagnostics);
   const diagnosticsProviderRef = useLatest(typeof diagnosticsProvider === 'function' ? diagnosticsProvider : null);
+
+  const readPolicyDiagnostics = useCallback(() => {
+    const diagnostics = playbackDiagnosticsRef.current
+      || (typeof diagnosticsProviderRef.current === 'function'
+        ? diagnosticsProviderRef.current()
+        : null);
+    return diagnostics || null;
+  }, [playbackDiagnosticsRef, diagnosticsProviderRef]);
   const lastProgressTsRef = useRef(null);
   const lastProgressSecondsRef = useRef(null);
   const lastLoggedProgressRef = useRef(0);
@@ -301,7 +284,7 @@ export function useMediaResilience({
     timestamp: null
   }));
   const lastReloadAtRef = useRef(0);
-  const mediaIdentity = meta?.media_key || meta?.key || meta?.plex || meta?.id || meta?.guid || meta?.media_url || null;
+  const mediaIdentity = resolveMediaIdentity(meta);
   const mediaIdentityRef = useRef(mediaIdentity);
   const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
   const logContextRef = useLatest({
@@ -324,7 +307,6 @@ export function useMediaResilience({
   const mountWatchdogAttemptsRef = useRef(0);
   const statusTransitionRef = useRef(status);
   const decoderNudgeStateRef = useRef({ lastRequestedAt: 0, inflight: false, graceUntil: 0 });
-  const stallInsightsRef = useRef({ classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 });
   const seekIntentNoiseThresholdSeconds = useMemo(
     () => Math.max(0.5, epsilonSeconds * 2),
     [epsilonSeconds]
@@ -510,29 +492,6 @@ export function useMediaResilience({
 
     return true;
   }, [logResilienceEvent, nudgePlaybackRef]);
-
-  const classifyStallNature = useCallback((diagnostics, playbackHealthSnapshot) => {
-    if (!diagnostics) {
-      return 'unknown';
-    }
-    const bufferAhead = diagnostics?.buffer?.bufferAheadSeconds;
-    if (Number.isFinite(bufferAhead) && bufferAhead < 0.75) {
-      return 'buffer-starved';
-    }
-    const bufferGap = diagnostics?.buffer?.bufferGapSeconds;
-    if (Number.isFinite(bufferGap) && bufferGap > 0.25) {
-      return 'seek-gap';
-    }
-    const droppedRatio = deriveDroppedRatio(diagnostics?.decoder);
-    const frameInfo = playbackHealthSnapshot?.frameInfo;
-    if (frameInfo?.supported && frameInfo.advancing === false) {
-      return 'decoder-stall';
-    }
-    if (droppedRatio != null && droppedRatio > 0.2) {
-      return 'decoder-stall';
-    }
-    return 'unknown';
-  }, []);
 
   const resolvedMediaType = useMemo(() => {
     if (mediaTypeHint) return mediaTypeHint;
@@ -746,6 +705,12 @@ export function useMediaResilience({
     }
   }, [clearTimer, logResilienceEvent, resilienceActions, resilienceState.lastStallToken, statusRef]);
 
+  useEffect(() => {
+    if (externalPauseReason === 'PAUSED_GOVERNANCE') {
+      invalidatePendingStallDetection('governance-pause');
+    }
+  }, [externalPauseReason, invalidatePendingStallDetection]);
+
   const resetDetectionState = useCallback(() => {
     clearTimer(stallTimerRef);
     clearTimer(reloadTimerRef);
@@ -757,7 +722,6 @@ export function useMediaResilience({
 
   useEffect(() => {
     resetDetectionState();
-    setShowDebug(false);
     resilienceActions.reset({
       nextStatus: resilienceState.carryRecovery ? STATUS.recovering : STATUS.pending
     });
@@ -769,62 +733,11 @@ export function useMediaResilience({
 
   useEffect(() => {
     resilienceActions.setStatus(STATUS.pending);
-    setShowDebug(false);
   }, [mediaIdentity, resilienceActions]);
 
   useEffect(() => {
     setHardResetLoopCount(0);
   }, [mediaIdentity, playbackSessionKey, setHardResetLoopCount]);
-
-  useEffect(() => {
-    if (status !== RESILIENCE_STATUS.stalling && status !== RESILIENCE_STATUS.recovering) {
-      stallInsightsRef.current = { classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 };
-      return;
-    }
-    const diagnostics = playbackDiagnosticsRef.current
-      || (typeof diagnosticsProviderRef.current === 'function'
-        ? diagnosticsProviderRef.current()
-        : null);
-    if (!diagnostics) {
-      return;
-    }
-    const classification = classifyStallNature(diagnostics, playbackHealth);
-    if (!classification || classification === 'unknown') {
-      return;
-    }
-    const now = Date.now();
-    const lastSnapshot = stallInsightsRef.current;
-    if (classification !== lastSnapshot.classification || (now - lastSnapshot.lastLoggedAt) > 4000) {
-      logResilienceEvent('stall-root-cause', {
-        classification,
-        diagnostics: summarizeDiagnosticsForLog(diagnostics)
-      }, { level: classification === 'buffer-starved' ? 'warn' : 'info' });
-      stallInsightsRef.current = {
-        ...lastSnapshot,
-        classification,
-        lastLoggedAt: now
-      };
-    }
-    if (classification === 'buffer-starved') {
-      if ((now - lastSnapshot.lastMitigationAt) > 3000) {
-        reduceBitrateAfterHardReset({ reason: 'buffer-starved', source: 'stall-guard' });
-        stallInsightsRef.current = {
-          ...stallInsightsRef.current,
-          lastMitigationAt: now
-        };
-      }
-      return;
-    }
-    if (classification === 'decoder-stall') {
-      requestDecoderNudge('decoder-stall', {
-        droppedRatio: deriveDroppedRatio(diagnostics?.decoder)
-      });
-      stallInsightsRef.current = {
-        ...stallInsightsRef.current,
-        lastMitigationAt: now
-      };
-    }
-  }, [status, playbackDiagnosticsRef, diagnosticsProviderRef, classifyStallNature, playbackHealth, logResilienceEvent, reduceBitrateAfterHardReset, requestDecoderNudge]);
 
   const persistSeekIntentMs = useCallback((valueMs) => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
@@ -1059,6 +972,17 @@ export function useMediaResilience({
   }, [status, logResilienceEvent, normalizedSeconds, playbackHealth.progressToken, logWaitKey, resilienceState.recoveryAttempts]);
 
   const monitorSuspended = userIntent === USER_INTENT.paused;
+
+  const { policyState, stallClassification } = useResiliencePolicy({
+    status,
+    externalPauseReason,
+    monitorSuspended,
+    playbackHealth,
+    readDiagnostics: readPolicyDiagnostics,
+    reduceBitrateAfterHardReset,
+    requestDecoderNudge,
+    logResilienceEvent
+  });
 
   const bufferRunwayMs = Number.isFinite(playbackHealth?.bufferRunwayMs)
     ? playbackHealth.bufferRunwayMs
@@ -1406,20 +1330,6 @@ export function useMediaResilience({
   }, [clearTimer, clearMountWatchdog, clearStartupTimeout]);
 
 
-  useEffect(() => {
-    const waiting = status === STATUS.pending || status === STATUS.recovering;
-    if (userIntent === USER_INTENT.paused) {
-      setShowDebug(false);
-      return () => {};
-    }
-    if (!(explicitShow || waiting)) {
-      setShowDebug(false);
-      return () => {};
-    }
-    const timeout = setTimeout(() => setShowDebug(true), debugConfig.revealDelayMs ?? 3000);
-    return () => clearTimeout(timeout);
-  }, [explicitShow, userIntent, status, debugConfig.revealDelayMs]);
-
   const startupWatchdogState = internalStartupWatchdogState;
   const isStartupPhase = status === RESILIENCE_STATUS.startup;
   const waitingToPlay = isStartupPhase || status === STATUS.recovering;
@@ -1469,21 +1379,12 @@ export function useMediaResilience({
     updateExplicitPauseState
   ]);
 
-  const {
-    isOverlayVisible,
-    showPauseOverlay,
-    pauseOverlayActive,
-    shouldRenderOverlay,
-    overlayRevealDelayMs,
-    overlayCountdownSeconds,
-    overlayLoggingActive,
-    overlayLogLabel,
-    mediaDetails,
-    togglePauseOverlay,
-    setPauseOverlayVisible: setOverlayPausePreference,
-    resetOverlayState
-  } = useOverlayPresentation({
+  const resolvedPlexId = plexId || meta?.media_key || meta?.key || meta?.plex || null;
+  const intentMsForDisplay = resolveSeekIntentMs();
+
+  const presentation = useResiliencePresentation({
     overlayConfig,
+    debugRevealDelayMs: debugConfig.revealDelayMs,
     waitKey,
     logWaitKey,
     status,
@@ -1492,19 +1393,42 @@ export function useMediaResilience({
     getMediaEl,
     meta,
     hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs,
-    loadingGraceDeadlineMs: effectiveLoadingGraceMs,
+    loadingGraceMs: effectiveLoadingGraceMs,
     triggerRecovery,
     stallOverlayActive,
     waitingToPlay,
     playbackHasProgress,
-    userIntentIsPaused: userIntent === USER_INTENT.paused,
+    userIntent,
     explicitPauseActive,
-    isPaused: resolvedIsPaused,
+    resolvedIsPaused,
     computedStalled,
     playbackHealth,
     loadingIntentActive,
-    seconds
+    seconds,
+    initialStart,
+    message,
+    resolvedPlexId,
+    debugContext,
+    lastProgressTs: lastProgressTsRef.current,
+    requestOverlayHardReset,
+    systemHealth,
+    startupWatchdogState: internalStartupWatchdogState,
+    intentMsForDisplay
   });
+
+  const { overlayProps, presentationState, controls: presentationControls } = presentation;
+  const {
+    isOverlayVisible,
+    showPauseOverlay,
+    shouldRenderOverlay,
+    pauseOverlayActive,
+    showDebug
+  } = presentationState;
+  const {
+    togglePauseOverlay,
+    setOverlayPausePreference,
+    resetOverlayState
+  } = presentationControls;
 
   useEffect(() => {
     if (!mountTimeoutMs || mountTimeoutMs <= 0) {
@@ -1547,6 +1471,7 @@ export function useMediaResilience({
 
   const state = useMemo(() => ({
     status,
+    policyState,
     waitingToPlay,
     waitingForPlayback: waitingToPlay,
     graceElapsed: !waitingToPlay,
@@ -1555,6 +1480,7 @@ export function useMediaResilience({
     showPauseOverlay,
     showDebug,
     stalled: computedStalled,
+    stallClassification,
     seconds,
     isPaused: resolvedIsPaused,
     isSeeking,
@@ -1575,12 +1501,14 @@ export function useMediaResilience({
     bitrateOverrideAt: bitrateState.lastOverrideAt || null
   }), [
     status,
+    policyState,
     waitingToPlay,
     loadingIntentActive,
     isOverlayVisible,
     showPauseOverlay,
     showDebug,
     computedStalled,
+    stallClassification,
     systemHealth,
     seconds,
     resolvedIsPaused,
@@ -1642,7 +1570,6 @@ export function useMediaResilience({
     reset: () => {
       resetDetectionState();
       resilienceActions.reset({ nextStatus: STATUS.pending, clearCarry: true });
-      setShowDebug(false);
       resetOverlayState();
       setHardResetLoopCount(0);
       markLoadingIntentActive();
@@ -1710,114 +1637,5 @@ export function useMediaResilience({
     };
   }, [controller, controllerRef]);
 
-  const resolvedPlexId = plexId || meta?.media_key || meta?.key || meta?.plex || null;
-  const intentMsForDisplay = resolveSeekIntentMs();
-  const intentSecondsForDisplay = Number.isFinite(intentMsForDisplay) ? intentMsForDisplay / 1000 : null;
-  const playerPositionDisplay = formatTime(Math.max(0, seconds));
-  const intentPositionDisplay = Number.isFinite(intentSecondsForDisplay)
-    ? formatTime(Math.max(0, intentSecondsForDisplay))
-    : null;
-  const overlayProps = createOverlayProps({
-    status,
-    isOverlayVisible,
-    shouldRenderOverlay,
-    waitingToPlay,
-    isPaused: resolvedIsPaused,
-    userIntent,
-    systemHealth,
-    pauseOverlayActive,
-    seconds,
-    computedStalled,
-    showPauseOverlay,
-    showDebug,
-    initialStart,
-    message,
-    resolvedPlexId,
-    debugContext,
-    lastProgressTs: lastProgressTsRef.current,
-    togglePauseOverlay,
-    explicitShow,
-    isSeeking,
-    overlayLoggingActive,
-    overlayLogLabel,
-    overlayRevealDelayMs,
-    waitKey,
-    requestOverlayHardReset,
-    overlayCountdownSeconds,
-    playerPositionDisplay,
-    intentPositionDisplay,
-    playbackHealth,
-    mediaDetails,
-    startupWatchdogState
-  });
-
   return { overlayProps, controller, state, onStartupSignal: handleStartupSignal };
-}
-
-function createOverlayProps({
-  status,
-  isOverlayVisible,
-  shouldRenderOverlay,
-  waitingToPlay,
-  isPaused,
-  userIntent,
-  systemHealth,
-  pauseOverlayActive,
-  seconds,
-  computedStalled,
-  showPauseOverlay,
-  showDebug,
-  initialStart,
-  message,
-  resolvedPlexId,
-  debugContext,
-  lastProgressTs,
-  togglePauseOverlay,
-  explicitShow,
-  isSeeking,
-  overlayLoggingActive,
-  overlayLogLabel,
-  overlayRevealDelayMs,
-  waitKey,
-  requestOverlayHardReset,
-  overlayCountdownSeconds,
-  playerPositionDisplay,
-  intentPositionDisplay,
-  playbackHealth,
-  mediaDetails,
-  startupWatchdogState
-}) {
-  return {
-    status,
-    isVisible: isOverlayVisible && shouldRenderOverlay,
-    shouldRender: shouldRenderOverlay,
-    waitingToPlay,
-    isPaused,
-    userIntent,
-    systemHealth,
-    pauseOverlayActive,
-    seconds,
-    stalled: computedStalled,
-    showPauseOverlay,
-    showDebug,
-    initialStart,
-    message,
-    plexId: resolvedPlexId,
-    debugContext,
-    lastProgressTs,
-    togglePauseOverlay,
-    explicitShow,
-    isSeeking,
-    overlayLoggingActive,
-    overlayLogLabel,
-    overlayRevealDelayMs,
-    waitKey,
-    onRequestHardReset: requestOverlayHardReset,
-    countdownSeconds: overlayCountdownSeconds,
-    playerPositionDisplay,
-    intentPositionDisplay,
-    playbackHealth,
-    mediaDetails,
-    startupWatchdogState
-  };
 }
