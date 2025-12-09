@@ -163,6 +163,7 @@ export function useMediaReporter({
   mediaAccessExtras = null
 }) {
   const seekingRef = useRef(false);
+  const isHardResettingRef = useRef(false);
   const pendingSeekSecondsRef = useRef(null);
   const lastMetricsRef = useRef({
     seconds: 0,
@@ -303,6 +304,8 @@ export function useMediaReporter({
   const hardResetMedia = useCallback(({ seekToSeconds } = {}) => {
     const mediaEl = mediaRef?.current;
     if (!mediaEl) return;
+    isHardResettingRef.current = true;
+    setTimeout(() => { isHardResettingRef.current = false; }, 1000);
     const normalized = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
     pendingSeekSecondsRef.current = normalized;
     try {
@@ -385,7 +388,7 @@ export function useMediaReporter({
     };
     const handlePause = (event) => {
       logExplicitPlaybackToggle('pause');
-      const intent = event?.isTrusted === false ? 'system' : 'user';
+      const intent = (event?.isTrusted === false || isHardResettingRef.current) ? 'system' : 'user';
       reportPlaybackMetrics({ isPaused: true, pauseIntent: intent });
     };
     const handleTimeUpdate = () => {
