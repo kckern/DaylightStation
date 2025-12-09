@@ -40,7 +40,7 @@ export class Plex {
       itemData = meta[0];
     }
     if (!itemData) return null;
-    const {host, plex: { host:plexHost,  session, protocol, platform },PLEX_TOKEN:token } = process.env;
+    const {host, plex: { host:plexHost,  session: defaultSession, protocol, platform },PLEX_TOKEN:token } = process.env;
     const plexProxyHost = `${host || ""}/plex_proxy`;
     const { ratingKey:key, type } = itemData;
     if(!["episode", "movie", "track"].includes(type)) {
@@ -52,14 +52,20 @@ export class Plex {
   const {
     maxVideoBitrate = null,
     maxResolution = null,
-    maxVideoResolution = null
+    maxVideoResolution = null,
+    session: optsSession = null
   } = opts || {};
+  const session = optsSession || defaultSession;
   const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
+  // Generate a random UUID for this specific playback request
+  const sessionUUID = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
     try {
       if (media_type === 'audio') {
-      const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
-      if (!mediaKey) throw new Error("Media key not found for audio.");
-      return `${plexProxyHost}${mediaKey}`;
+        const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
+        if (!mediaKey) throw new Error("Media key not found for audio.");
+        const separator = mediaKey.includes('?') ? '&' : '?';
+        return `${plexProxyHost}${mediaKey}${separator}X-Plex-Client-Identifier=${session}-${sessionUUID}&X-Plex-Session-Identifier=${sessionUUID}`;
       } else {
         if (!key) throw new Error("Rating key not found for video.");
         // Build base params
@@ -67,7 +73,8 @@ export class Plex {
         const baseParams = [
           `path=%2Flibrary%2Fmetadata%2F${key}`,
           `protocol=${protocol}`,
-          `X-Plex-Client-Identifier=${session}`,
+          `X-Plex-Client-Identifier=${session}-${sessionUUID}`,
+          `X-Plex-Session-Identifier=${sessionUUID}`,
           `X-Plex-Platform=${platform}`,
           //Resiliance hard-coded params:
           `autoAdjustQuality=1`,
@@ -84,11 +91,7 @@ export class Plex {
         // Note: codec/container forcing removed; rely on server capabilities and bitrate
         const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
 
-        const isValid = await axios.get(url).then((response) => {
-          return response.status >= 200 && response.status < 300;
-        }).catch(() => false);
-        if(isValid || attempt > 10) return url;
-        else return await this.loadmedia_url(itemData, attempt + 1, opts);
+        return url;
       }
     } catch (error) {
       console.error("Error generating media URL:", error.message);

@@ -624,7 +624,8 @@ const Player = forwardRef(function Player(props, ref) {
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,
     wrapWithContainer: false,
-    suppressLocalOverlay: !!overlayElements
+    suppressLocalOverlay: !!overlayElements,
+    sessionId: activeEntryGuid
   };
 
   const playerShellClass = ['player', effectiveShader, props.playerType || '']
