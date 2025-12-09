@@ -340,13 +340,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     <>{formatTime(ct)} / {formatTime(dur)}</>
   )), []);
 
-  const fitnessLogContext = useMemo(() => ({
-    mediaId: resolveMediaIdentity(currentItem),
-    title: currentItem?.title,
-    playerMode,
-    isGoverned: playIsGoverned
-  }), [currentItem, playerMode, playIsGoverned]);
-
   const enhancedCurrentItem = useMemo(() => {
     if (!currentItem) return null;
     const totalDuration = currentItem.duration || currentItem.length || (currentItem.metadata && currentItem.metadata.duration) || 0;
@@ -444,6 +437,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     () => resolveMediaIdentity(enhancedCurrentItem || currentItem),
     [enhancedCurrentItem, currentItem]
   );
+
+  const fitnessLogContext = useMemo(() => ({
+    mediaId: resolveMediaIdentity(currentItem),
+    title: currentItem?.title,
+    show: enhancedCurrentItem?.show,
+    season: enhancedCurrentItem?.season,
+    playerMode,
+    isGoverned: playIsGoverned
+  }), [currentItem, enhancedCurrentItem, playerMode, playIsGoverned]);
 
   const { volume: persistedVolume, applyToPlayer: applyPersistedVolume } = usePersistentVolume({
     showId,
