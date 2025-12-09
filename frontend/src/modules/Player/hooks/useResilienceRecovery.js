@@ -8,6 +8,7 @@ export function useResilienceRecovery({
   resolveSeekIntentMs,
   epsilonSeconds,
   logResilienceEvent,
+  logMetric,
   defaultReload,
   onReloadRef,
   persistSeekIntentMs,
@@ -25,7 +26,8 @@ export function useResilienceRecovery({
   userIntentRef,
   pausedIntentValue,
   recoveryAttempts,
-  onHardResetCycle
+  onHardResetCycle,
+  onRecoveryAttempt
 }) {
   const notifyHardResetCycle = useCallback((payload = {}) => {
     if (typeof onHardResetCycle !== 'function') return;
@@ -73,6 +75,15 @@ export function useResilienceRecovery({
       attempts: recoveryAttempts,
       seekToIntentMs: resolvedIntentMs
     }, { level: 'info' });
+
+    if (typeof onRecoveryAttempt === 'function') {
+      onRecoveryAttempt({ reason, attempts: recoveryAttempts + 1 });
+    } else if (typeof logMetric === 'function') {
+      logMetric('recovery_attempt', {
+        reason,
+        attempts: recoveryAttempts + 1
+      }, { level: 'info', tags: ['metric', 'recovery'] });
+    }
 
     if (!skipRecoveryNotification) {
       notifyHardResetCycle({

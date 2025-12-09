@@ -12,6 +12,9 @@
  *   -u, --until <string>      End time (default: "now")
  *   -l, --limit <number>      Number of events to retrieve (default: 50)
  *   -o, --order <string>      Order: "asc" or "desc" (default: "desc")
+ *   --stalls                  Preset query for stall lifecycle diagnostics
+ *   --overlay                 Preset query for overlay visibility/summary
+ *   --startup                 Preset query for startup watchdog signals
  *   --json                    Output raw JSON
  *   --help                    Show this help message
  * 
@@ -68,6 +71,51 @@ if (!API_TOKEN) {
   process.exit(1);
 }
 
+const PRESETS = {
+  stalls: {
+    query: 'media-resilience AND (stall OR stallId:*)',
+    columns: [
+      ['ts', 'timestamp'],
+      ['event', 'event'],
+      ['stallId', 'stallId'],
+      ['waitKey', 'waitKey'],
+      ['seconds', 'seconds'],
+      ['bufferMs', 'bufferRunwayMs'],
+      ['ready', 'readyState'],
+      ['net', 'networkState'],
+      ['progress', 'progressToken'],
+      ['frame', 'frame.advancing'],
+      ['durationMs', 'stallDurationMs']
+    ]
+  },
+  overlay: {
+    query: 'overlay-state-change OR overlay-summary OR overlay-ui',
+    columns: [
+      ['ts', 'timestamp'],
+      ['event', 'event'],
+      ['waitKey', 'waitKey'],
+      ['label', 'overlayLabel'],
+      ['visible', 'isVisible'],
+      ['active', 'overlayActive'],
+      ['reasons', 'reasons'],
+      ['severity', 'severity']
+    ]
+  },
+  startup: {
+    query: 'startup-watchdog* OR startup-signal',
+    columns: [
+      ['ts', 'timestamp'],
+      ['event', 'event'],
+      ['waitKey', 'waitKey'],
+      ['state', 'state'],
+      ['reason', 'reason'],
+      ['attempts', 'attempts'],
+      ['elapsedMs', 'elapsedMs'],
+      ['timeoutMs', 'timeoutMs']
+    ]
+  }
+};
+
 const args = process.argv.slice(2);
 const options = {
   query: '*',
@@ -75,7 +123,8 @@ const options = {
   until: 'now',
   limit: 50,
   order: 'desc',
-  json: false
+  json: false,
+  preset: null
 };
 
 for (let i = 0; i < args.length; i++) {
@@ -100,6 +149,15 @@ for (let i = 0; i < args.length; i++) {
     case '--order':
       options.order = args[++i];
       break;
+    case '--stalls':
+      options.preset = 'stalls';
+      break;
+    case '--overlay':
+      options.preset = 'overlay';
+      break;
+    case '--startup':
+      options.preset = 'startup';
+      break;
     case '--json':
       options.json = true;
       break;
@@ -116,6 +174,9 @@ Options:
   -u, --until <string>      End time (default: "now")
   -l, --limit <number>      Number of events to retrieve (default: 50)
   -o, --order <string>      Order: "asc" or "desc" (default: "desc")
+  --stalls                  Preset query for stall lifecycle diagnostics
+  --overlay                 Preset query for overlay visibility/summary
+  --startup                 Preset query for startup watchdog signals
   --json                    Output raw JSON
   --help                    Show this help message
 `);
@@ -131,12 +192,30 @@ const apiClient = axios.create({
   }
 });
 
+const getPath = (obj, pathStr) => {
+  if (!obj || !pathStr) return null;
+  return pathStr.split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : null), obj);
+};
+
 async function searchLogs() {
   try {
+    if (options.preset && PRESETS[options.preset]) {
+      options.query = PRESETS[options.preset].query;
+      // Modest defaults for presets
+      if (options.from === '-1h' && options.preset === 'startup') {
+        options.from = '-2h';
+      }
+      if (options.limit === 50) {
+        options.limit = 100;
+      }
+    }
     if (!options.json) {
       console.log(`Searching Loggly (${SUBDOMAIN})...`);
       console.log(`Query: ${options.query}`);
       console.log(`Time: ${options.from} to ${options.until}`);
+      if (options.preset) {
+        console.log(`Preset: ${options.preset}`);
+      }
     }
 
     // Step 1: Initiate Search
@@ -158,7 +237,6 @@ async function searchLogs() {
     // Step 2: Retrieve Events
     // The events endpoint waits until results are ready
     const eventsRes = await apiClient.get(`/events?rsid=${rsid}`);
-    
     const events = eventsRes.data.events;
 
     if (options.json) {
@@ -167,25 +245,35 @@ async function searchLogs() {
       console.log(`\nFound ${events.length} events:\n`);
       events.forEach(event => {
         const timestamp = new Date(event.timestamp).toISOString();
-        const tags = event.tags.join(', ');
+        const tags = (event.tags || []).join(', ');
+        const preset = options.preset && PRESETS[options.preset];
         let message = event.logmsg;
-        
-        // Try to parse JSON message if it looks like one
+        let parsed = null;
+
         try {
-            if (typeof message === 'string' && (message.startsWith('{') || message.startsWith('['))) {
-                const parsed = JSON.parse(message);
-                // If it has a 'message' field, use that, otherwise show the whole object
-                message = parsed.message || JSON.stringify(parsed);
-                
-                // If we have a 'meta' or 'context' object, maybe show it too
-                if (parsed.meta) message += ` ${JSON.stringify(parsed.meta)}`;
-                if (parsed.context) message += ` ${JSON.stringify(parsed.context)}`;
-            }
-        } catch (e) {
-            // Keep original message
+          if (typeof message === 'string' && (message.trim().startsWith('{') || message.trim().startsWith('['))) {
+            parsed = JSON.parse(message);
+          }
+        } catch (_) {
+          parsed = null;
         }
 
-        console.log(`[${timestamp}] [${tags}] ${message}`);
+        if (preset && parsed && typeof parsed === 'object') {
+          const row = preset.columns.map(([label, pathStr]) => {
+            const value = pathStr === 'timestamp' ? timestamp : getPath(parsed, pathStr);
+            return `${label}=${value == null ? 'n/a' : value}`;
+          }).join(' ');
+          console.log(`[${timestamp}] [${tags}] ${row}`);
+          return;
+        }
+
+        // fallback string formatting
+        if (parsed) {
+          const summary = parsed.message || parsed.event || message;
+          console.log(`[${timestamp}] [${tags}] ${summary} ${JSON.stringify(parsed)}`);
+        } else {
+          console.log(`[${timestamp}] [${tags}] ${message}`);
+        }
       });
     }
 

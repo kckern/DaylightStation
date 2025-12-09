@@ -141,6 +141,12 @@ export function PlayerOverlayLoading({
     waitKey: waitKey || overlayLogLabel || 'loading-overlay',
     source: 'PlayerOverlayLoading'
   }), [overlayLogLabel, waitKey]);
+  const overlaySummarySampleRate = useMemo(() => {
+    const fromWindow = typeof window !== 'undefined'
+      ? Number(window.PLAYER_OVERLAY_SUMMARY_SAMPLE_RATE)
+      : null;
+    return Number.isFinite(fromWindow) ? fromWindow : 0.25;
+  }, []);
   const logOverlaySummary = useCallback(() => {
     const now = Date.now();
     const timestampLabel = new Date(now).toISOString();
@@ -150,10 +156,10 @@ export function PlayerOverlayLoading({
     const summary = `${visibilitySummary} | status:${statusLabel} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
     playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary, {
       level: 'debug',
-      sampleRate: 0.25,
+      sampleRate: overlaySummarySampleRate,
       context: overlayLogContext
     });
-  }, [overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext]);
+  }, [overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, overlaySummarySampleRate]);
 
   useEffect(() => {
     if (!overlayLoggingActive) {
