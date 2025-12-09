@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
 import { useCommonMediaController, shouldRestartFromBeginning } from '../hooks/useCommonMediaController.js';
+import { useBufferResilience } from '../hooks/useBufferResilience.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { playbackLog } from '../lib/playbackLogger.js';
 
@@ -518,12 +519,6 @@ export function VideoPlayer({
     };
   }, [getCurrentMediaElement]);
   const shakaNetworkingCleanupRef = useRef(() => {});
-  const shakaRecoveryStateRef = useRef({
-    attempts: 0,
-    pendingFetch: false,
-    skipped: false,
-    cooldownUntil: 0
-  });
   const findNextBufferedStart = useCallback((mediaEl, currentSeconds) => {
     if (!mediaEl?.buffered) return null;
     try {
@@ -648,14 +643,20 @@ export function VideoPlayer({
     shakaNudgePlaybackRef.current = shakaNudgePlayback;
   }, [shakaNudgePlayback]);
 
-  useEffect(() => {
-    shakaRecoveryStateRef.current = {
-      attempts: 0,
-      pendingFetch: false,
-      skipped: false,
-      cooldownUntil: 0
-    };
-  }, [mediaInstanceKey]);
+  const {
+    handleNetworkResponse,
+    handlePlayerStateChange,
+    handlePlaybackError: handleShakaPlaybackError
+  } = useBufferResilience({
+    mediaInstanceKey,
+    logShakaDiagnostic,
+    hardReset,
+    getCurrentMediaElement,
+    resilienceBridge,
+    fetchVideoInfo,
+    advance,
+    seconds
+  });
 
   const shakaConfiguration = useMemo(() => {
     const streaming = {
@@ -713,6 +714,8 @@ export function VideoPlayer({
             payload.diagnostics = buildTroubleDiagnostics(getCurrentMediaElement(), shakaPlayerRef.current || thirdPartyPlayer || null);
           }
           logShakaDiagnostic('shaka-player-event', payload, eventName === 'error' ? 'warn' : 'debug');
+
+          handlePlayerStateChange(eventName, event);
         };
         thirdPartyPlayer.addEventListener(eventName, handler);
         cleanupFns.push(() => thirdPartyPlayer.removeEventListener(eventName, handler));
@@ -741,16 +744,7 @@ export function VideoPlayer({
           allowCrossSiteCredentials: Boolean(request?.allowCrossSiteCredentials)
         }, 'debug');
       };
-      const responseFilter = (requestType, response) => {
-        const status = typeof response?.status === 'number' ? response.status : null;
-        logShakaDiagnostic('shaka-network-response', {
-          requestType,
-          uri: response?.uri || null,
-          originalUri: response?.originalUri || null,
-          fromCache: Boolean(response?.fromCache),
-          status
-        }, status && status >= 400 ? 'warn' : 'debug');
-      };
+      const responseFilter = handleNetworkResponse;
       networkingEngine.registerRequestFilter?.(requestFilter);
       networkingEngine.registerResponseFilter?.(responseFilter);
       cleanupFns.push(() => {
@@ -813,100 +807,9 @@ export function VideoPlayer({
     if (setProperties) {
       setProperties({ playbackRate: playbackRate || media.playbackRate || 1 });
     }
-  }, [dashSource?.startPosition, dashSource?.streamUrl, getCurrentMediaElement, logShakaDiagnostic, media.playbackRate, playbackRate, shakaConfiguration]);
+  }, [dashSource?.startPosition, dashSource?.streamUrl, getCurrentMediaElement, logShakaDiagnostic, media.playbackRate, playbackRate, shakaConfiguration, handleNetworkResponse, handlePlayerStateChange]);
 
-  const handleShakaPlaybackError = useCallback((error) => {
-    const serializedError = serializePlaybackError(error);
-    logShakaDiagnostic('shaka-playback-error', {
-      error: serializedError
-    }, 'error');
 
-    if (typeof resilienceBridge?.onStartupSignal === 'function') {
-      resilienceBridge.onStartupSignal({
-        type: 'shaka-playback-error',
-        timestamp: Date.now(),
-        detail: serializedError
-      });
-    }
-
-    const state = shakaRecoveryStateRef.current;
-    if (!state || state.skipped) {
-      return;
-    }
-
-    if (state.pendingFetch) {
-      logShakaDiagnostic('shaka-recovery-skip', {
-        reason: 'pending-media-refetch'
-      }, 'debug');
-      return;
-    }
-
-    const now = Date.now();
-    if (state.cooldownUntil && now < state.cooldownUntil) {
-      logShakaDiagnostic('shaka-recovery-skip', {
-        reason: 'cooldown',
-        retryInMs: state.cooldownUntil - now
-      }, 'debug');
-      return;
-    }
-
-    state.cooldownUntil = now + 2000;
-    state.attempts += 1;
-    const attempt = state.attempts;
-    const seekSeconds = Number.isFinite(seconds) ? Number(seconds.toFixed(3)) : null;
-
-    const is404 = serializedError?.code === 1001 || String(serializedError?.message).includes('404');
-
-    if (attempt === 1) {
-      if (is404) {
-        const skipTarget = (seekSeconds || 0) + 2;
-        logShakaDiagnostic('shaka-recovery-action', {
-          action: '404-skip-reset',
-          attempt,
-          seekSeconds: skipTarget
-        }, 'warn');
-        hardReset({ seekToSeconds: skipTarget });
-        return;
-      }
-
-      logShakaDiagnostic('shaka-recovery-action', {
-        action: 'hard-reset',
-        attempt,
-        seekSeconds
-      }, 'warn');
-      hardReset({ seekToSeconds: seekSeconds });
-      return;
-    }
-
-    if (attempt === 2 && typeof fetchVideoInfo === 'function') {
-      state.pendingFetch = true;
-      logShakaDiagnostic('shaka-recovery-action', {
-        action: 'refetch-media-info',
-        attempt
-      }, 'warn');
-      Promise.resolve(fetchVideoInfo({ reason: 'shaka-playback-error', attempt }))
-        .catch((refetchError) => {
-          logShakaDiagnostic('shaka-recovery-action', {
-            action: 'refetch-media-info',
-            attempt,
-            status: 'rejected',
-            error: serializePlaybackError(refetchError)
-          }, 'error');
-        })
-        .finally(() => {
-          state.pendingFetch = false;
-          state.cooldownUntil = Date.now() + 1000;
-        });
-      return;
-    }
-
-    state.skipped = true;
-    logShakaDiagnostic('shaka-recovery-action', {
-      action: 'skip-entry',
-      attempt
-    }, 'error');
-    advance?.(1);
-  }, [advance, fetchVideoInfo, hardReset, logShakaDiagnostic, resilienceBridge, seconds]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   
