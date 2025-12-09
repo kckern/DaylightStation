@@ -100,6 +100,11 @@ export function usePlaybackHealth({
     [epsilonSeconds]
   );
 
+  const currentSecondsRef = useRef(seconds);
+  useEffect(() => {
+    currentSecondsRef.current = seconds;
+  }, [seconds]);
+
   const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : null);
   const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
   const logContextRef = useRef({
@@ -148,16 +153,17 @@ export function usePlaybackHealth({
   }, []);
 
   const recordProgress = useCallback((source, payload = {}) => {
+    const currentSeconds = currentSecondsRef.current;
     setProgressSignal((prev) => ({
       progressToken: prev.progressToken + 1,
       lastProgressSource: source,
       lastProgressAt: Date.now(),
       lastProgressSeconds: Number.isFinite(payload.seconds)
         ? payload.seconds
-        : (Number.isFinite(seconds) ? seconds : prev.lastProgressSeconds),
+        : (Number.isFinite(currentSeconds) ? currentSeconds : prev.lastProgressSeconds),
       details: payload.details || null
     }));
-  }, [seconds]);
+  }, []);
 
   const updateElementSignals = useCallback((patch) => {
     setElementSignals((prev) => ({
