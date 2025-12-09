@@ -10,6 +10,8 @@ import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '../Player/lib/playbackLogger.js';
 import { usePersistentVolume } from './usePersistentVolume.js';
+import { resolveMediaIdentity, normalizeDuration } from '../Player/utils/mediaIdentity.js';
+import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 
 const DEBUG_FITNESS_INTERACTIONS = false;
 
@@ -109,29 +111,7 @@ const formatTime = (seconds) => {
 
 const DEFAULT_SIDEBAR = 250;
 
-const resolveMediaIdentity = (meta) => {
-  if (!meta) return null;
-  const candidate = meta.media_key
-    ?? meta.key
-    ?? meta.plex
-    ?? meta.id
-    ?? meta.guid
-    ?? meta.media_url
-    ?? null;
-  return candidate != null ? String(candidate) : null;
-};
-
 const FITNESS_MAX_VIDEO_BITRATE = null;
-
-const normalizeDurationSeconds = (...candidates) => {
-  for (const candidate of candidates) {
-    if (candidate == null) continue;
-    const normalized = typeof candidate === 'string' ? parseFloat(candidate) : Number(candidate);
-    if (!Number.isFinite(normalized) || normalized <= 0) continue;
-    return Math.round(normalized > 1000 ? normalized / 1000 : normalized);
-  }
-  return null;
-};
 
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const mainPlayerRef = useRef(null);
@@ -233,6 +213,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     );
   }, [contextGovernedTypeSet, governedTypes]);
 
+  const pauseDecision = useMemo(() => resolvePause({
+    governance: { blocked: playIsGoverned || governanceState?.videoLocked },
+    resilience: {
+      stalled: resilienceState?.stalled,
+      waiting: resilienceState?.waitingToPlay
+    },
+    user: { paused: isPaused }
+  }), [playIsGoverned, governanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+
+  const governancePaused = pauseDecision.reason === PAUSE_REASON.GOVERNANCE && pauseDecision.paused;
+
   useEffect(() => {
     lastKnownTimeRef.current = 0;
     statusUpdateRef.current = { lastSent: 0, inflight: false, endSent: false };
@@ -288,7 +279,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (!pausePlayback || !playPlayback) return;
     const state = governanceInitialPauseRef.current;
 
-    if (playIsGoverned) {
+    if (governancePaused) {
       if (!state.handled) {
         state.handled = true;
         if (state.timer) {
@@ -330,7 +321,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setVideoPlayerPaused?.(false);
       governancePausedRef.current = false;
     }
-  }, [playIsGoverned, pausePlayback, playPlayback, setVideoPlayerPaused]);
+  }, [governancePaused, pausePlayback, playPlayback, setVideoPlayerPaused]);
 
   useEffect(() => {
     return () => {
@@ -480,7 +471,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const keyboardOverrides = useMemo(() => ({
     'Escape': () => handleClose(),
     'ArrowLeft': (event) => {
-      if (playIsGoverned) {
+      if (governancePaused) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -506,7 +497,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       }
     },
     'ArrowRight': (event) => {
-      if (playIsGoverned) {
+      if (governancePaused) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -657,13 +648,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   
   // Function to handle seeking to a specific point in the video
   const handleSeek = useCallback((seconds) => {
-    if (playIsGoverned) return;
+    if (governancePaused) return;
     if (Number.isFinite(seconds)) {
       seekTo(seconds);
       setCurrentTime(seconds);
       seekIntentRef.current = { time: seconds, timestamp: performance.now() };
     }
-  }, [seekTo, playIsGoverned]);
+  }, [seekTo, governancePaused]);
 
   const computeEpisodeStatusPayload = useCallback(({ naturalEnd = false } = {}) => {
     if (!currentItem) return null;
@@ -849,7 +840,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       return;
     }
     loggedVideoMediaRef.current = currentMediaIdentity;
-    const durationSeconds = normalizeDurationSeconds(
+    const durationSeconds = normalizeDuration(
       media.duration,
       media.length,
       media.metadata?.duration
@@ -982,12 +973,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           progressMetaRef.current.lastDuration = d;
           setDuration(d);
         }
-        setIsPaused(paused);
-        if (playIsGoverned && !paused && pausePlayback) {
+        setIsPaused(paused || governancePaused);
+        if (governancePaused && !paused && pausePlayback) {
           pausePlayback();
         }
         if (setVideoPlayerPaused) {
-          setVideoPlayerPaused(paused);
+          setVideoPlayerPaused(paused || governancePaused);
         }
         return;
       } else {
@@ -1006,18 +997,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       progressMetaRef.current.lastDuration = d;
       setDuration(d);
     }
-    setIsPaused(paused);
+    setIsPaused(paused || governancePaused);
 
     // Immediately pause if governed and locked
-    if (playIsGoverned && !paused && pausePlayback) {
+    if (governancePaused && !paused && pausePlayback) {
       pausePlayback();
     }
 
     // Update context so music player can sync
     if (setVideoPlayerPaused) {
-      setVideoPlayerPaused(paused);
+      setVideoPlayerPaused(paused || governancePaused);
     }
-  }, [setVideoPlayerPaused, playIsGoverned, pausePlayback]);
+  }, [setVideoPlayerPaused, governancePaused, pausePlayback]);
 
   useEffect(() => {
     if (!currentItem) return;
@@ -1242,6 +1233,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           onProgress={handlePlayerProgress}
           onController={handlePlayerControllerUpdate}
           onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
+          pauseDecision={pauseDecision}
           ref={playerRef}
         />
       ) : null}

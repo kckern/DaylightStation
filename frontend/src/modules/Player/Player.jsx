@@ -12,6 +12,8 @@ import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
 import { useCompositeControllerChannel } from './components/CompositeControllerContext.jsx';
+import { resolveMediaIdentity } from './utils/mediaIdentity.js';
+import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 
 const reloadDocument = () => {
   try {
@@ -79,7 +81,8 @@ const Player = forwardRef(function Player(props, ref) {
     onResilienceState,
     mediaResilienceRef,
     maxVideoBitrate,
-    maxResolution
+    maxResolution,
+    pauseDecision
   } = props || {};
   const compositeChannel = useCompositeControllerChannel(playerType);
   
@@ -87,8 +90,6 @@ const Player = forwardRef(function Player(props, ref) {
   
   // Override playback rate if passed in via menu selection
   if (playbackrate && play) play['playbackRate'] = playbackrate;
-  // Convert lowercase to camelCase
-  if (play?.playbackrate && !play?.playbackRate) play['playbackRate'] = play.playbackrate;
 
   const {
     classes,
@@ -170,32 +171,15 @@ const Player = forwardRef(function Player(props, ref) {
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
   const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.media_key || null;
 
+  const mediaIdentity = useMemo(
+    () => resolveMediaIdentity(effectiveMeta) || resolveMediaIdentity(singlePlayerProps) || resolveMediaIdentity(play) || resolveMediaIdentity(queue),
+    [effectiveMeta, singlePlayerProps, play, queue]
+  );
+
   const playbackSessionKey = useMemo(() => {
-    const candidates = [
-      activeEntryGuid,
-      resolvedMeta?.guid,
-      resolvedMeta?.media_key,
-      resolvedMeta?.plex,
-      singlePlayerProps?.guid,
-      singlePlayerProps?.media_key,
-      singlePlayerProps?.plex,
-      queue?.plex,
-      play?.plex
-    ];
-    const identifier = candidates.find((value) => typeof value === 'string' && value.length)
-      ?? candidates.find((value) => Number.isFinite(value));
+    const identifier = activeEntryGuid ?? mediaIdentity;
     return identifier ? `player-session:${identifier}` : 'player-session:idle';
-  }, [
-    activeEntryGuid,
-    resolvedMeta?.guid,
-    resolvedMeta?.media_key,
-    resolvedMeta?.plex,
-    singlePlayerProps?.guid,
-    singlePlayerProps?.media_key,
-    singlePlayerProps?.plex,
-    queue?.plex,
-    play?.plex
-  ]);
+  }, [activeEntryGuid, mediaIdentity]);
 
   const {
     targetTimeSeconds,
@@ -266,15 +250,9 @@ const Player = forwardRef(function Player(props, ref) {
 
   const resolvedWaitKey = useMemo(() => {
     if (!effectiveMeta) return 'player-idle';
-    const fallback = effectiveMeta.guid
-      || effectiveMeta.waitKey
-      || effectiveMeta.media_key
-      || effectiveMeta.plex
-      || effectiveMeta.media
-      || effectiveMeta.media_url
-      || 'player-entry';
+    const fallback = mediaIdentity || effectiveMeta.waitKey || 'player-entry';
     return `${fallback}:${remountState.nonce}`;
-  }, [effectiveMeta, remountState.nonce]);
+  }, [effectiveMeta, mediaIdentity, remountState.nonce]);
 
   const forceSinglePlayerRemount = useCallback((input = null) => {
     const options = (input && typeof input === 'object' && !Array.isArray(input))
@@ -289,12 +267,7 @@ const Player = forwardRef(function Player(props, ref) {
     } = options || {};
 
     const normalized = Number.isFinite(seekSeconds) ? Math.max(0, seekSeconds) : null;
-    const metaKey = effectiveMeta?.media_key
-      || effectiveMeta?.plex
-      || effectiveMeta?.media
-      || effectiveMeta?.id
-      || effectiveMeta?.guid
-      || null;
+    const metaKey = mediaIdentity;
     const currentRemountNonce = remountInfoRef.current?.nonce ?? 0;
     const diagnostics = {
       reason,
@@ -339,17 +312,6 @@ const Player = forwardRef(function Player(props, ref) {
     if (!singlePlayerProps) return 'player-idle';
     return `${activeEntryGuid || 'entry'}:${remountState.nonce}`;
   }, [singlePlayerProps, activeEntryGuid, remountState.nonce]);
-
-  const getResilienceMediaEl = useCallback(() => {
-    if (typeof mediaAccess.getMediaEl === 'function') {
-      try {
-        return mediaAccess.getMediaEl();
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
-  }, [mediaAccess]);
 
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
@@ -410,6 +372,8 @@ const Player = forwardRef(function Player(props, ref) {
 
   const resilienceControllerRef = resolvedResilience.controllerRef;
 
+  const transportAdapter = useMediaTransportAdapter({ controllerRef, mediaAccess });
+
   const resolvedResilienceOnState = resolvedResilience.onStateChange;
 
   const compositeAwareOnState = useCallback((state) => {
@@ -460,7 +424,7 @@ const Player = forwardRef(function Player(props, ref) {
     const conditions = {
       hardResetInvoked,
       hardResetErrored,
-      mediaElementPresent: Boolean(getResilienceMediaEl()),
+      mediaElementPresent: Boolean(transportAdapter.getMediaEl()),
       pendingSeekSeconds: seekSeconds
     };
 
@@ -471,10 +435,10 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [forceSinglePlayerRemount, mediaAccess, getResilienceMediaEl]);
+  }, [forceSinglePlayerRemount, mediaAccess, transportAdapter]);
 
   const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
-    getMediaEl: getResilienceMediaEl,
+    getMediaEl: transportAdapter.getMediaEl,
     meta: effectiveMeta,
     maxVideoBitrate: effectiveMeta?.maxVideoBitrate
       ?? singlePlayerProps?.maxVideoBitrate
@@ -488,15 +452,17 @@ const Player = forwardRef(function Player(props, ref) {
     initialStart: Number(effectiveMeta?.seconds) || 0,
     waitKey: resolvedWaitKey,
     fetchVideoInfo: mediaAccess.fetchVideoInfo,
-    nudgePlayback: mediaAccess.nudgePlayback,
-    diagnosticsProvider: mediaAccess.getTroubleDiagnostics,
+    nudgePlayback: transportAdapter.nudge,
+    diagnosticsProvider: transportAdapter.readDiagnostics,
     onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
     configOverrides: resolvedResilience.config,
     controllerRef: resilienceControllerRef,
     plexId,
     playbackSessionKey,
-    debugContext: { scope: 'player', entryGuid: activeEntryGuid || null }
+    debugContext: { scope: 'player', entryGuid: activeEntryGuid || null },
+    externalPauseReason: pauseDecision?.reason,
+    externalPauseActive: pauseDecision?.paused
   });
 
   const resilienceBitrateInfo = useMemo(() => {
