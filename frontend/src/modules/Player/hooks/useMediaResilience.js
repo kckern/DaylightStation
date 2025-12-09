@@ -552,11 +552,19 @@ export function useMediaResilience({
       return;
     }
     if (shouldApplyPausedIntent) {
+      // If we are already tracking a stall or recovery, and the pause signal is not explicitly
+      // marked as user-initiated, assume it's a system pause (e.g. buffer underrun) and keep 'playing' intent
+      // so the stall overlay remains visible.
+      const isResilienceState = status === STATUS.stalling || status === STATUS.recovering;
+      if (isResilienceState && pauseIntent !== 'user') {
+        setUserIntent(USER_INTENT.playing);
+        return;
+      }
       setUserIntent(USER_INTENT.paused);
       return;
     }
     setUserIntent(USER_INTENT.playing);
-  }, [isSeeking, shouldApplyPausedIntent]);
+  }, [isSeeking, shouldApplyPausedIntent, status, pauseIntent]);
 
   useEffect(() => {
     if (!Number.isFinite(seconds)) return;
