@@ -218,6 +218,13 @@ export function useMediaResilience({
     };
   });
   const bitrateStateRef = useLatest(bitrateState);
+  const metricsRef = useRef({
+    stallCount: 0,
+    stallDurationMs: 0,
+    recoveryAttempts: 0,
+    decoderNudges: 0,
+    bitrateOverrides: 0
+  });
 
   useEffect(() => {
     const baseline = resolveInitialMaxVideoBitrate();
@@ -263,6 +270,8 @@ export function useMediaResilience({
   const hardRecoveryTimerRef = useRef(null);
   const loadingRecoveryTimerRef = useRef(null);
   const startupTimeoutRef = useRef(null);
+  const startupWatchdogStartRef = useRef(null);
+  const startupArmedKeyRef = useRef(null);
   const startupAttemptsRef = useRef(0);
   const startupSignalsRef = useRef({
     lastType: null,
@@ -301,12 +310,23 @@ export function useMediaResilience({
   } = usePlaybackSession({ sessionKey: playbackSessionKey });
   const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : 0);
   const progressTokenRef = useRef(0);
+  const stallSequenceRef = useRef(0);
+  const stallStateRef = useRef({ id: null, token: null, startedAt: null });
+  const lastLoggedIntentRef = useRef(userIntent);
   const mountWatchdogTimerRef = useRef(null);
   const mountWatchdogStartRef = useRef(null);
   const mountWatchdogReasonRef = useRef(null);
   const mountWatchdogAttemptsRef = useRef(0);
   const statusTransitionRef = useRef(status);
   const decoderNudgeStateRef = useRef({ lastRequestedAt: 0, inflight: false, graceUntil: 0 });
+  const metricRateOverridesRef = useRef({
+    progressTickSampleRate: Number.isFinite(debugConfig?.progressTickSampleRate)
+      ? debugConfig.progressTickSampleRate
+      : 0.2,
+    overlaySummarySampleRate: Number.isFinite(debugConfig?.overlaySummarySampleRate)
+      ? debugConfig.overlaySummarySampleRate
+      : 0.25
+  });
   const seekIntentNoiseThresholdSeconds = useMemo(
     () => Math.max(0.5, epsilonSeconds * 2),
     [epsilonSeconds]
@@ -326,22 +346,61 @@ export function useMediaResilience({
 
   const logResilienceEvent = useCallback((event, details = {}, options = {}) => {
     const context = logContextRef.current || {};
-    const { level: detailLevel, tags: detailTags, ...restDetails } = details || {};
+    const stallSnapshot = stallStateRef.current || {};
+    const { level: detailLevel, tags: detailTags, severity: detailSeverity, ...restDetails } = details || {};
     const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
-    const resolvedLevel = resolvedOptions.level || detailLevel || 'debug';
-    const combinedTags = detailTags || resolvedOptions.tags;
+    const resolvedLevel = (resolvedOptions.level || detailLevel || 'debug').toLowerCase();
+    const resolvedSeverity = (resolvedOptions.severity || detailSeverity || resolvedLevel || 'info').toLowerCase();
+    const resolvedStallId = restDetails.stallId ?? stallSnapshot.id ?? null;
+    const resolvedStallToken = restDetails.stallToken ?? stallSnapshot.token ?? null;
+    const resolvedStallStartedAt = restDetails.stallStartedAt ?? stallSnapshot.startedAt ?? null;
+    const eventKey = String(event || '').toLowerCase();
+    const defaultTags = [];
+    if (eventKey.includes('stall')) defaultTags.push('stall');
+    if (eventKey.includes('overlay')) defaultTags.push('overlay');
+    if (eventKey.includes('startup')) defaultTags.push('startup');
+    if (eventKey.includes('recovery') || eventKey.includes('reset')) defaultTags.push('recovery');
+    const incomingTags = Array.isArray(detailTags || resolvedOptions.tags)
+      ? (detailTags || resolvedOptions.tags)
+      : (detailTags || resolvedOptions.tags ? [detailTags || resolvedOptions.tags] : []);
+    const tags = Array.from(new Set([...defaultTags, ...incomingTags].filter(Boolean)));
+
     playbackLog('media-resilience', {
       event,
+      severity: resolvedSeverity,
       ...context,
+      stallId: resolvedStallId,
+      stallToken: resolvedStallToken,
+      stallStartedAt: resolvedStallStartedAt,
       ...restDetails
     }, {
       ...resolvedOptions,
       level: resolvedLevel,
-      tags: combinedTags,
+      tags,
       context: {
         ...context,
+        stallId: resolvedStallId,
+        stallToken: resolvedStallToken,
+        severity: resolvedSeverity,
         ...(resolvedOptions.context || {})
       }
+    });
+  }, [logContextRef, stallStateRef]);
+
+  const logMetric = useCallback((name, payload = {}, options = {}) => {
+    const context = logContextRef.current || {};
+    playbackLog('media-metric', {
+      metric: name,
+      ...context,
+      ...payload
+    }, {
+      level: options.level || 'info',
+      sampleRate: options.sampleRate,
+      context: {
+        ...context,
+        ...(options.context || {})
+      },
+      tags: options.tags || ['metric']
     });
   }, [logContextRef]);
 
@@ -380,6 +439,13 @@ export function useMediaResilience({
     });
 
     if (stateChanged) {
+      metricsRef.current.bitrateOverrides += 1;
+      logMetric('bitrate_override', {
+        targetKbps: normalized,
+        reason,
+        source,
+        bitrateOverrides: metricsRef.current.bitrateOverrides
+      }, { level: 'info', tags: ['metric', 'bitrate'] });
       logResilienceEvent('bitrate-target-updated', {
         targetKbps: normalized,
         reason,
@@ -466,6 +532,11 @@ export function useMediaResilience({
     state.lastRequestedAt = now;
     state.graceUntil = now + DECODER_NUDGE_GRACE_MS;
 
+    metricsRef.current.decoderNudges += 1;
+    logMetric('decoder_nudge', {
+      reason,
+      decoderNudges: metricsRef.current.decoderNudges
+    }, { level: 'info', tags: ['metric', 'decoder'] });
     logResilienceEvent('decoder-nudge-requested', {
       reason,
       ...extraDetails
@@ -529,11 +600,37 @@ export function useMediaResilience({
     lastProgressTsRef.current = null;
     statusTransitionRef.current = STATUS.pending;
     lastSecondsRef.current = 0;
+    stallSequenceRef.current = 0;
+    stallStateRef.current = { id: null, token: null, startedAt: null };
+    metricsRef.current = {
+      stallCount: 0,
+      stallDurationMs: 0,
+      recoveryAttempts: 0,
+      decoderNudges: 0,
+      bitrateOverrides: 0
+    };
     lastKnownSeekIntentMsRef.current = Number.isFinite(initialStart) && initialStart > 0
       ? Math.max(0, initialStart * 1000)
       : null;
     markLoadingIntentActive();
   }, [waitKey, markLoadingIntentActive]);
+
+  useEffect(() => {
+    if (startupTimeoutRef.current) {
+      const elapsedMs = startupWatchdogStartRef.current
+        ? Math.max(0, Date.now() - startupWatchdogStartRef.current)
+        : null;
+      logResilienceEvent('startup-watchdog-cleared', {
+        reason: 'waitKey-changed',
+        attempts: startupAttemptsRef.current,
+        elapsedMs
+      }, { level: 'debug' });
+      clearStartupTimeout();
+    }
+    startupAttemptsRef.current = 0;
+    startupWatchdogStartRef.current = null;
+    startupArmedKeyRef.current = null;
+  }, [waitKey, clearStartupTimeout, logResilienceEvent]);
 
   useEffect(() => {
     decoderNudgeStateRef.current = { lastRequestedAt: 0, inflight: false, graceUntil: 0 };
@@ -552,11 +649,21 @@ export function useMediaResilience({
       return;
     }
     if (shouldApplyPausedIntent) {
-      // If we are already tracking a stall or recovery, and the pause signal is not explicitly
-      // marked as user-initiated, assume it's a system pause (e.g. buffer underrun) and keep 'playing' intent
-      // so the stall overlay remains visible.
+      // If we are already tracking a stall or recovery, or if the media element reports it is waiting/stalled,
+      // and the pause signal is not explicitly marked as user-initiated, assume it's a system pause
+      // (e.g. buffer underrun) and keep 'playing' intent so the stall overlay remains visible.
       const isResilienceState = status === STATUS.stalling || status === STATUS.recovering;
-      if (isResilienceState && pauseIntent !== 'user') {
+      const isSystemStallSignal = playbackHealth.isWaiting || playbackHealth.isStalledEvent;
+
+      if ((isResilienceState || isSystemStallSignal) && pauseIntent !== 'user') {
+        if (userIntentRef.current !== USER_INTENT.playing) {
+          logResilienceEvent('pause-intent-overridden', {
+            reason: pauseIntent || 'system',
+            status,
+            stallId: stallStateRef.current?.id || null,
+            stallToken: stallStateRef.current?.token || playbackHealth.progressToken || null
+          }, { level: 'debug', rateLimit: { key: `pause-override-${logWaitKey}`, interval: 2000 } });
+        }
         setUserIntent(USER_INTENT.playing);
         return;
       }
@@ -564,7 +671,39 @@ export function useMediaResilience({
       return;
     }
     setUserIntent(USER_INTENT.playing);
-  }, [isSeeking, shouldApplyPausedIntent, status, pauseIntent]);
+  }, [isSeeking, shouldApplyPausedIntent, status, pauseIntent, logResilienceEvent, playbackHealth.isStalledEvent, playbackHealth.isWaiting, logWaitKey, userIntentRef]);
+
+  useEffect(() => {
+    const previous = lastLoggedIntentRef.current;
+    if (previous === userIntent) return;
+
+    if (userIntent === USER_INTENT.paused) {
+      const reason = pauseIntent || externalPauseReason || 'unknown';
+      logResilienceEvent('pause-intent', {
+        reason,
+        pauseIntent: pauseIntent || null,
+        externalPauseReason: externalPauseReason || null,
+        status,
+        isSeeking,
+        resolvedIsPaused
+      }, {
+        level: 'info',
+        rateLimit: { key: `pause-intent-${logWaitKey}`, interval: 2000 }
+      });
+    } else if (previous === USER_INTENT.paused && userIntent !== USER_INTENT.paused) {
+      logResilienceEvent('resume-intent', {
+        from: previous,
+        to: userIntent,
+        reason: pauseIntent || externalPauseReason || 'resume',
+        status
+      }, {
+        level: 'info',
+        rateLimit: { key: `resume-intent-${logWaitKey}`, interval: 2000 }
+      });
+    }
+
+    lastLoggedIntentRef.current = userIntent;
+  }, [externalPauseReason, isSeeking, logResilienceEvent, logWaitKey, pauseIntent, resolvedIsPaused, status, userIntent]);
 
   useEffect(() => {
     if (!Number.isFinite(seconds)) return;
@@ -655,7 +794,12 @@ export function useMediaResilience({
         type,
         timestamp,
         detail: signal
-      }, { level: 'debug' });
+      }, {
+        level: 'debug',
+        sampleRate: type === 'progress-tick'
+          ? metricRateOverridesRef.current.progressTickSampleRate
+          : undefined
+      });
     }
 
     const snapshot = {
@@ -692,6 +836,114 @@ export function useMediaResilience({
     setStartupSignalVersion((token) => token + 1);
   }, [logResilienceEvent]);
 
+  const createStallId = useCallback((stallToken) => {
+    stallSequenceRef.current += 1;
+    const seq = String(stallSequenceRef.current).padStart(2, '0');
+    const tokenPart = Number.isFinite(stallToken) ? stallToken : 'na';
+    return `${logWaitKey || waitKey || 'playback'}-stall-${seq}-${tokenPart}`;
+  }, [logWaitKey, waitKey]);
+
+  const resolveStallContext = useCallback(() => {
+    const now = Date.now();
+    const bufferRunwayMs = Number.isFinite(playbackHealth?.bufferRunwayMs)
+      ? Math.max(0, Math.round(playbackHealth.bufferRunwayMs))
+      : null;
+    const readyState = Number.isFinite(playbackHealth?.elementSignals?.readyState)
+      ? playbackHealth.elementSignals.readyState
+      : null;
+    const networkState = Number.isFinite(playbackHealth?.elementSignals?.networkState)
+      ? playbackHealth.elementSignals.networkState
+      : null;
+    const frameInfo = playbackHealth?.frameInfo;
+    const frame = frameInfo?.supported
+      ? {
+        advancing: Boolean(frameInfo.advancing),
+        total: Number.isFinite(frameInfo.total) ? frameInfo.total : null,
+        dropped: Number.isFinite(frameInfo.dropped) ? frameInfo.dropped : null,
+        corrupted: Number.isFinite(frameInfo.corrupted) ? frameInfo.corrupted : null
+      }
+      : null;
+    const decoderGraceActive = (decoderNudgeStateRef.current?.graceUntil || 0) > now;
+
+    const metrics = metricsRef.current || {};
+
+    return {
+      bufferRunwayMs,
+      readyState,
+      networkState,
+      progressToken: playbackHealth?.progressToken ?? null,
+      lastProgressSeconds: Number.isFinite(lastProgressSecondsRef.current)
+        ? lastProgressSecondsRef.current
+        : null,
+      frame,
+      decoderGraceActive,
+      stallCount: metrics.stallCount,
+      totalStallDurationMs: metrics.stallDurationMs,
+      decoderNudges: metrics.decoderNudges,
+      bitrateOverrides: metrics.bitrateOverrides,
+      recoveryAttempts: metrics.recoveryAttempts
+    };
+  }, [playbackHealth]);
+
+  const beginStallLifecycle = useCallback((stallToken) => {
+    const nextId = createStallId(stallToken);
+    stallStateRef.current = {
+      id: nextId,
+      token: stallToken ?? null,
+      startedAt: Date.now()
+    };
+    metricsRef.current.stallCount += 1;
+    logMetric('stall_count', {
+      stallId: nextId,
+      stallToken,
+      stallCount: metricsRef.current.stallCount
+    }, { level: 'info', tags: ['stall', 'metric'] });
+    logResilienceEvent('stall-lifecycle-start', {
+      stallId: nextId,
+      stallToken,
+      stallStartedAt: stallStateRef.current.startedAt,
+      ...resolveStallContext()
+    }, { level: 'info' });
+    return stallStateRef.current;
+  }, [createStallId, logResilienceEvent, logMetric, resolveStallContext]);
+
+  const resolveStallLifecycle = useCallback((reason = 'recovered', meta = {}) => {
+    const snapshot = stallStateRef.current;
+    if (!snapshot?.id) {
+      return null;
+    }
+    const resolvedAt = Date.now();
+    const stallDurationMs = snapshot.startedAt ? resolvedAt - snapshot.startedAt : null;
+    if (Number.isFinite(stallDurationMs)) {
+      metricsRef.current.stallDurationMs += stallDurationMs;
+      const bucket = (() => {
+        if (stallDurationMs <= 500) return '<=500ms';
+        if (stallDurationMs <= 2000) return '<=2000ms';
+        if (stallDurationMs <= 5000) return '<=5000ms';
+        if (stallDurationMs <= 10000) return '<=10000ms';
+        return '>10000ms';
+      })();
+      logMetric('stall_duration_ms', {
+        stallId: snapshot.id,
+        stallToken: snapshot.token,
+        durationMs: stallDurationMs,
+        bucket,
+        stallCount: metricsRef.current.stallCount,
+        totalStallDurationMs: metricsRef.current.stallDurationMs
+      }, { level: 'info', tags: ['stall', 'metric'] });
+    }
+    logResilienceEvent('stall-lifecycle-resolved', {
+      stallId: snapshot.id,
+      stallToken: snapshot.token,
+      stallDurationMs,
+      reason,
+      ...resolveStallContext(),
+      ...meta
+    }, { level: 'info' });
+    stallStateRef.current = { id: null, token: null, startedAt: null };
+    return stallDurationMs;
+  }, [logResilienceEvent, logMetric, resolveStallContext]);
+
   const invalidatePendingStallDetection = useCallback((reason = 'seek-intent') => {
     const hadPendingTimers = Boolean(stallTimerRef.current || hardRecoveryTimerRef.current);
     const wasStalling = statusRef.current === STATUS.stalling;
@@ -702,6 +954,10 @@ export function useMediaResilience({
 
     if (resilienceState.lastStallToken != null) {
       resilienceActions.setStatus(statusRef.current, { clearStallToken: true });
+    }
+
+    if (stallStateRef.current?.id) {
+      stallStateRef.current = { id: null, token: null, startedAt: null };
     }
 
     if (wasStalling && statusRef.current !== STATUS.recovering) {
@@ -726,6 +982,7 @@ export function useMediaResilience({
     clearTimer(loadingRecoveryTimerRef);
     lastProgressTsRef.current = null;
     lastProgressSecondsRef.current = null;
+    stallStateRef.current = { id: null, token: null, startedAt: null };
   }, [clearTimer]);
 
   useEffect(() => {
@@ -837,6 +1094,7 @@ export function useMediaResilience({
     resolveSeekIntentMs,
     epsilonSeconds,
     logResilienceEvent,
+    logMetric,
     defaultReload,
     onReloadRef,
     persistSeekIntentMs,
@@ -854,7 +1112,14 @@ export function useMediaResilience({
     userIntentRef,
     pausedIntentValue: USER_INTENT.paused,
     recoveryAttempts: resilienceState.recoveryAttempts,
-    onHardResetCycle: handleHardResetCycle
+    onHardResetCycle: handleHardResetCycle,
+    onRecoveryAttempt: ({ reason, attempts }) => {
+      metricsRef.current.recoveryAttempts = attempts;
+      logMetric('recovery_attempt', {
+        reason,
+        attempts
+      }, { level: 'info', tags: ['metric', 'recovery'] });
+    }
   });
 
   const startMountWatchdog = useCallback((reason = 'pending') => {
@@ -916,8 +1181,12 @@ export function useMediaResilience({
     if (statusRef.current === STATUS.recovering) {
       return;
     }
+    const isSameToken = stallStateRef.current?.token === playbackHealth.progressToken;
+    if (!isSameToken) {
+      beginStallLifecycle(playbackHealth.progressToken);
+    }
     resilienceActions.stallDetected({ stallToken: playbackHealth.progressToken });
-  }, [playbackHealth.progressToken, resilienceActions, resilienceState.lastStallToken, statusRef]);
+  }, [beginStallLifecycle, playbackHealth.progressToken, resilienceActions, resilienceState.lastStallToken, statusRef]);
 
   const scheduleStallCheck = useCallback((timeoutMs, { restart = true } = {}) => {
     if (!timeoutMs || timeoutMs <= 0) {
@@ -949,35 +1218,56 @@ export function useMediaResilience({
       return;
     }
 
+    const stallSnapshot = stallStateRef.current;
+    const stallDurationMs = stallSnapshot?.startedAt ? Math.max(0, Date.now() - stallSnapshot.startedAt) : null;
+    const stallContext = resolveStallContext();
+
     logResilienceEvent('status-transition', {
       from: previous,
       to: status,
       seconds: normalizedSeconds,
-      waitKey: logWaitKey
+      waitKey: logWaitKey,
+      stallId: stallSnapshot?.id || null,
+      stallToken: stallSnapshot?.token || null,
+      stallDurationMs,
+      ...stallContext
     }, { level: 'debug' });
 
     if (status === STATUS.stalling && previous !== STATUS.recovering) {
       logResilienceEvent('stall-detected', {
         seconds: normalizedSeconds,
         lastProgressSeconds: lastProgressSecondsRef.current,
-        progressToken: playbackHealth.progressToken
+        progressToken: playbackHealth.progressToken,
+        stallId: stallSnapshot?.id || null,
+        stallToken: stallSnapshot?.token || null,
+        stallStartedAt: stallSnapshot?.startedAt || Date.now(),
+        ...stallContext
       }, { level: 'warn' });
-    } else if (status === STATUS.playing && previous === STATUS.stalling) {
+    } else if (status === STATUS.playing && (previous === STATUS.stalling || previous === STATUS.recovering)) {
       logResilienceEvent('stall-recovered', {
         seconds: normalizedSeconds,
         lastProgressSeconds: lastProgressSecondsRef.current,
-        progressToken: playbackHealth.progressToken
+        progressToken: playbackHealth.progressToken,
+        stallId: stallSnapshot?.id || null,
+        stallToken: stallSnapshot?.token || null,
+        stallDurationMs,
+        ...stallContext
       }, { level: 'info' });
+      resolveStallLifecycle('recovered', { stallDurationMs });
     } else if (status === STATUS.recovering && previous !== STATUS.recovering) {
       logResilienceEvent('stall-recovering', {
         seconds: normalizedSeconds,
         attempts: resilienceState.recoveryAttempts,
-        reason: mountWatchdogReasonRef.current || 'auto'
+        reason: mountWatchdogReasonRef.current || 'auto',
+        stallId: stallSnapshot?.id || null,
+        stallToken: stallSnapshot?.token || null,
+        stallDurationMs,
+        ...stallContext
       }, { level: 'info' });
     }
 
     statusTransitionRef.current = status;
-  }, [status, logResilienceEvent, normalizedSeconds, playbackHealth.progressToken, logWaitKey, resilienceState.recoveryAttempts]);
+  }, [status, logResilienceEvent, normalizedSeconds, playbackHealth.progressToken, logWaitKey, resilienceState.recoveryAttempts, resolveStallLifecycle, resolveStallContext]);
 
   const monitorSuspended = userIntent === USER_INTENT.paused;
 
@@ -1016,6 +1306,9 @@ export function useMediaResilience({
 
   useEffect(() => {
     if (userIntent === USER_INTENT.paused) {
+      if (stallStateRef.current?.id) {
+        resolveStallLifecycle('paused-intent');
+      }
       if (status !== STATUS.paused) {
         resilienceActions.setStatus(STATUS.paused, {
           clearStallToken: true,
@@ -1031,7 +1324,7 @@ export function useMediaResilience({
         clearRecoveryGuard: true
       });
     }
-  }, [userIntent, status, resilienceActions]);
+  }, [userIntent, status, resilienceActions, resolveStallLifecycle]);
 
   useEffect(() => {
     const detectionDelay = stallDetectionThresholdMs;
@@ -1190,7 +1483,10 @@ export function useMediaResilience({
       if (startupTimeoutRef.current) {
         logResilienceEvent('startup-watchdog-cleared', {
           reason: monitorSuspended ? 'monitor-suspended' : 'status-changed',
-          attempts: startupAttemptsRef.current
+          attempts: startupAttemptsRef.current,
+          elapsedMs: startupWatchdogStartRef.current
+            ? Math.max(0, Date.now() - startupWatchdogStartRef.current)
+            : null
         }, { level: 'debug' });
       }
       publishStartupWatchdogState({
@@ -1204,6 +1500,8 @@ export function useMediaResilience({
       if (!waitingState || hasProgressSignal) {
         startupAttemptsRef.current = 0;
       }
+      startupWatchdogStartRef.current = null;
+      startupArmedKeyRef.current = null;
       return;
     }
 
@@ -1211,7 +1509,10 @@ export function useMediaResilience({
       if (startupTimeoutRef.current) {
         logResilienceEvent('startup-watchdog-cleared', {
           reason: 'progress-detected',
-          attempts: startupAttemptsRef.current
+          attempts: startupAttemptsRef.current,
+          elapsedMs: startupWatchdogStartRef.current
+            ? Math.max(0, Date.now() - startupWatchdogStartRef.current)
+            : null
         }, { level: 'debug' });
       }
       publishStartupWatchdogState({
@@ -1223,6 +1524,8 @@ export function useMediaResilience({
       });
       clearStartupTimeout();
       startupAttemptsRef.current = 0;
+      startupWatchdogStartRef.current = null;
+      startupArmedKeyRef.current = null;
       return;
     }
 
@@ -1230,13 +1533,15 @@ export function useMediaResilience({
       return;
     }
 
-    logResilienceEvent('startup-watchdog-armed', {
-      timeoutMs: startupTimeoutMs,
-      attempts: startupAttemptsRef.current,
-      reporterAttachmentActive,
-      reporterProgressSignal,
-      reporterPlayingSignal
-    }, { level: 'debug' });
+    if (startupArmedKeyRef.current !== waitKey) {
+      logResilienceEvent('startup-watchdog-armed', {
+        timeoutMs: startupTimeoutMs,
+        attempts: startupAttemptsRef.current,
+        reporterAttachmentActive,
+        reporterProgressSignal,
+        reporterPlayingSignal
+      }, { level: 'debug' });
+    }
     publishStartupWatchdogState({
       active: true,
       state: 'armed',
@@ -1244,6 +1549,8 @@ export function useMediaResilience({
       attempts: startupAttemptsRef.current,
       timestamp: Date.now()
     });
+    startupWatchdogStartRef.current = Date.now();
+    startupArmedKeyRef.current = waitKey;
 
     startupTimeoutRef.current = setTimeout(() => {
       startupTimeoutRef.current = null;
@@ -1257,6 +1564,9 @@ export function useMediaResilience({
         maxAttempts,
         timeoutMs: startupTimeoutMs
       }, { level: reachedMax ? 'error' : 'warn' });
+
+      startupWatchdogStartRef.current = null;
+      startupArmedKeyRef.current = null;
 
       publishStartupWatchdogState({
         active: !reachedMax,

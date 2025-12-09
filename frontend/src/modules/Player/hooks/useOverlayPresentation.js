@@ -289,8 +289,9 @@ export function useOverlayPresentation({
       holdOverlayActive,
       playbackHasProgress,
       status,
-      reasons: overlayActiveReasons.join(',') || 'none'
-    }, { level: 'debug' });
+      reasons: overlayActiveReasons.join(',') || 'none',
+      severity: 'debug'
+    }, { level: 'debug', tags: ['overlay'] });
   }, [overlayHoldActive, holdOverlayActive, playbackHasProgress, logWaitKey, status, overlayActiveReasons]);
 
   const shouldRenderOverlay = overlayDrivers.waiting
@@ -325,17 +326,21 @@ export function useOverlayPresentation({
   const overlayLogLabel = logWaitKey || waitKey || meta?.title || meta?.media_url || 'player-overlay';
   const overlayLogContext = useMemo(() => ({
     source: 'useOverlayPresentation',
-    waitKey: logWaitKey || waitKey || null
-  }), [logWaitKey, waitKey]);
+    waitKey: logWaitKey || waitKey || null,
+    label: overlayLogLabel
+  }), [logWaitKey, overlayLogLabel, waitKey]);
   const logOverlayUiEvent = useCallback((eventName, payload = {}, level = 'info') => {
+    const severity = (payload?.severity || level || 'info');
     playbackLog('overlay-ui', {
       event: eventName,
       waitKey: logWaitKey,
       overlayLabel: overlayLogLabel,
+      severity,
       ...payload
     }, {
       level,
-      context: overlayLogContext
+      context: overlayLogContext,
+      tags: ['overlay']
     });
   }, [logWaitKey, overlayLogContext, overlayLogLabel]);
   const overlayTelemetryEnabled = overlayIntentActive
@@ -374,10 +379,22 @@ export function useOverlayPresentation({
       return;
     }
     overlayStateRef.current = stateSnapshot;
-      playbackLog('overlay-state-change', stateSnapshot, {
-        level: overlayActive ? 'info' : 'debug',
-        context: overlayLogContext
-      });
+    const overlayLogSampleRate = overlayActive ? 1 : 0.3;
+    const severity = overlayActive ? 'info' : 'debug';
+    playbackLog('overlay-state-change', {
+      ...stateSnapshot,
+      severity
+    }, {
+      level: overlayActive ? 'info' : 'debug',
+      context: overlayLogContext,
+      sampleRate: overlayLogSampleRate,
+      rateLimit: {
+        key: `overlay-state-${overlayLogLabel}`,
+        interval: overlayActive ? 750 : 2500,
+        when: true
+      },
+      tags: ['overlay']
+    });
   }, [
     holdOverlayActive,
     logWaitKey,
@@ -399,6 +416,7 @@ export function useOverlayPresentation({
     stallOverlayActive,
     explicitShow,
     overlayActiveReasons,
+    overlayLogLabel,
     seconds
   ]);
 
