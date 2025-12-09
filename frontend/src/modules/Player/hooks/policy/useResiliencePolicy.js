@@ -1,0 +1,161 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RESILIENCE_STATUS } from '../useResilienceState.js';
+
+export const POLICY_STATE = Object.freeze({
+  IDLE: 'IDLE',
+  PLAYING: 'PLAYING',
+  STALLED: 'STALLED',
+  RECOVERING: 'RECOVERING',
+  LOCKED: 'LOCKED'
+});
+
+const deriveDroppedRatio = (decoderMetrics = null) => {
+  if (!decoderMetrics) return null;
+  const { droppedFrames, totalFrames } = decoderMetrics;
+  if (!Number.isFinite(totalFrames) || totalFrames <= 0) {
+    return null;
+  }
+  const dropped = Number.isFinite(droppedFrames) ? droppedFrames : 0;
+  return Math.max(0, dropped) / totalFrames;
+};
+
+const summarizeDiagnosticsForLog = (diagnostics = null) => {
+  if (!diagnostics) {
+    return null;
+  }
+  const buffer = diagnostics.buffer || {};
+  const decoder = diagnostics.decoder || {};
+  return {
+    bufferAheadSeconds: buffer.bufferAheadSeconds ?? null,
+    bufferGapSeconds: buffer.bufferGapSeconds ?? null,
+    nextBufferStartSeconds: buffer.nextBufferStartSeconds ?? null,
+    droppedFrames: decoder.droppedFrames ?? null,
+    totalFrames: decoder.totalFrames ?? null,
+    readyState: diagnostics.readyState ?? null,
+    networkState: diagnostics.networkState ?? null
+  };
+};
+
+const classifyStallNature = (diagnostics, playbackHealthSnapshot) => {
+  if (!diagnostics) {
+    return 'unknown';
+  }
+  const bufferAhead = diagnostics?.buffer?.bufferAheadSeconds;
+  if (Number.isFinite(bufferAhead) && bufferAhead < 0.75) {
+    return 'buffer-starved';
+  }
+  const bufferGap = diagnostics?.buffer?.bufferGapSeconds;
+  if (Number.isFinite(bufferGap) && bufferGap > 0.25) {
+    return 'seek-gap';
+  }
+  const droppedRatio = deriveDroppedRatio(diagnostics?.decoder);
+  const frameInfo = playbackHealthSnapshot?.frameInfo;
+  if (frameInfo?.supported && frameInfo.advancing === false) {
+    return 'decoder-stall';
+  }
+  if (droppedRatio != null && droppedRatio > 0.2) {
+    return 'decoder-stall';
+  }
+  return 'unknown';
+};
+
+export function useResiliencePolicy({
+  status,
+  externalPauseReason,
+  monitorSuspended = false,
+  playbackHealth,
+  readDiagnostics,
+  reduceBitrateAfterHardReset,
+  requestDecoderNudge,
+  logResilienceEvent
+}) {
+  const [stallClassification, setStallClassification] = useState('unknown');
+  const stallInsightsRef = useRef({ classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 });
+
+  const policyState = useMemo(() => {
+    if (monitorSuspended) return POLICY_STATE.LOCKED;
+    if (externalPauseReason === 'PAUSED_GOVERNANCE') return POLICY_STATE.LOCKED;
+    if (status === RESILIENCE_STATUS.recovering) return POLICY_STATE.RECOVERING;
+    if (status === RESILIENCE_STATUS.stalling) return POLICY_STATE.STALLED;
+    if (status === RESILIENCE_STATUS.playing) return POLICY_STATE.PLAYING;
+    return POLICY_STATE.IDLE;
+  }, [externalPauseReason, monitorSuspended, status]);
+
+  const classify = useCallback(
+    (diagnostics) => classifyStallNature(diagnostics, playbackHealth),
+    [playbackHealth]
+  );
+
+  useEffect(() => {
+    if (policyState !== POLICY_STATE.STALLED && policyState !== POLICY_STATE.RECOVERING) {
+      stallInsightsRef.current = { classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 };
+      setStallClassification('unknown');
+      return;
+    }
+
+    let diagnostics = null;
+    try {
+      diagnostics = typeof readDiagnostics === 'function' ? readDiagnostics() : null;
+    } catch (error) {
+      logResilienceEvent?.('policy-diagnostics-error', {
+        message: error?.message || 'policy-diagnostics-error'
+      }, { level: 'warn' });
+      diagnostics = null;
+    }
+
+    if (!diagnostics) {
+      setStallClassification('unknown');
+      return;
+    }
+
+    const classification = classify(diagnostics) || 'unknown';
+    setStallClassification(classification);
+
+    if (classification === 'unknown') {
+      return;
+    }
+
+    const now = Date.now();
+    const lastSnapshot = stallInsightsRef.current;
+
+    if (classification !== lastSnapshot.classification || (now - lastSnapshot.lastLoggedAt) > 4000) {
+      logResilienceEvent?.('stall-root-cause', {
+        classification,
+        diagnostics: summarizeDiagnosticsForLog(diagnostics)
+      }, { level: classification === 'buffer-starved' ? 'warn' : 'info' });
+      stallInsightsRef.current = {
+        ...lastSnapshot,
+        classification,
+        lastLoggedAt: now
+      };
+    }
+
+    if (classification === 'buffer-starved') {
+      if ((now - lastSnapshot.lastMitigationAt) > 3000) {
+        reduceBitrateAfterHardReset?.({ reason: 'buffer-starved', source: 'stall-guard' });
+        stallInsightsRef.current = {
+          ...stallInsightsRef.current,
+          lastMitigationAt: now
+        };
+      }
+      return;
+    }
+
+    if (classification === 'decoder-stall') {
+      requestDecoderNudge?.('decoder-stall', {
+        droppedRatio: deriveDroppedRatio(diagnostics?.decoder)
+      });
+      stallInsightsRef.current = {
+        ...stallInsightsRef.current,
+        lastMitigationAt: now
+      };
+    }
+  }, [classify, logResilienceEvent, policyState, readDiagnostics, reduceBitrateAfterHardReset, requestDecoderNudge]);
+
+  return useMemo(() => ({
+    policyState,
+    stallClassification
+  }), [policyState, stallClassification]);
+}
+
+export default useResiliencePolicy;
