@@ -315,6 +315,7 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
         // Optional bitrate/resolution caps via query
         const qBitrate = parseInt(req.query.maxVideoBitrate, 10);
         const qResolution = req.query.maxResolution ?? req.query.maxVideoResolution;
+        const qSession = req.query.session;
         const opts = {};
         if (Number.isFinite(qBitrate)) {
             opts.maxVideoBitrate = qBitrate;
@@ -322,6 +323,9 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
         if (typeof qResolution === 'string' && qResolution.length) {
             opts.maxResolution = qResolution;
             opts.maxVideoResolution = qResolution;
+        }
+        if (typeof qSession === 'string' && qSession.length) {
+            opts.session = qSession;
         }
     
     let infos = [];

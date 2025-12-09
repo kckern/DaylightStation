@@ -41,9 +41,10 @@ export async function flattenQueueItems(items, level = 1) {
  * @param {boolean} params.shuffle - Whether to shuffle
  * @param {string|number} params.maxVideoBitrate - Preferred maximum video bitrate param
  * @param {string|number} params.maxResolution - Preferred maximum resolution param
+ * @param {string} params.session - Optional session identifier
  * @returns {Promise<Object>} Media information
  */
-export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, maxResolution }) {
+export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, maxResolution, session }) {
   // Helper to build a URL with query params safely
   const buildUrl = (base, params = {}) => {
     const searchParams = new URLSearchParams();
@@ -60,6 +61,9 @@ export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, ma
   }
   if (maxResolution !== undefined) {
     queryCommon.maxResolution = maxResolution;
+  }
+  if (session !== undefined && session !== null) {
+    queryCommon.session = session;
   }
 
   if (plex) {

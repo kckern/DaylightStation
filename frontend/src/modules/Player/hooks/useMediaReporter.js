@@ -388,10 +388,20 @@ export function useMediaReporter({
     };
     const handlePause = (event) => {
       logExplicitPlaybackToggle('pause');
-      const intent = (event?.isTrusted === false || isHardResettingRef.current) ? 'system' : 'user';
+      let intent = (event?.isTrusted === false || isHardResettingRef.current) ? 'system' : 'user';
+      // If the browser pauses due to buffer underrun, it may still emit a trusted event.
+      // We check the readyState and networkState to infer if this is actually a stall.
+      // networkState 2 = NETWORK_LOADING
+      // readyState < 3 = HAVE_FUTURE_DATA (so 0, 1, 2 means we can't play forward)
+      if (intent === 'user' && mediaEl.networkState === 2 && mediaEl.readyState < 3) {
+        intent = 'system';
+      }
       reportPlaybackMetrics({ isPaused: true, pauseIntent: intent });
     };
     const handleTimeUpdate = () => {
+      reportPlaybackMetrics();
+    };
+    const handleStallSignal = () => {
       reportPlaybackMetrics();
     };
     const handleSeeking = () => {
@@ -419,6 +429,8 @@ export function useMediaReporter({
     mediaEl.addEventListener('play', handlePlay);
     mediaEl.addEventListener('pause', handlePause);
     mediaEl.addEventListener('timeupdate', handleTimeUpdate);
+    mediaEl.addEventListener('waiting', handleStallSignal);
+    mediaEl.addEventListener('stalled', handleStallSignal);
     mediaEl.addEventListener('seeking', handleSeeking);
     mediaEl.addEventListener('seeked', handleSeeked);
     mediaEl.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -430,6 +442,8 @@ export function useMediaReporter({
       mediaEl.removeEventListener('play', handlePlay);
       mediaEl.removeEventListener('pause', handlePause);
       mediaEl.removeEventListener('timeupdate', handleTimeUpdate);
+      mediaEl.removeEventListener('waiting', handleStallSignal);
+      mediaEl.removeEventListener('stalled', handleStallSignal);
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', handleSeeked);
       mediaEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
