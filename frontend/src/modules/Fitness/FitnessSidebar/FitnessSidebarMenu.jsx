@@ -2,6 +2,7 @@ import React from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
+import { useMediaAmplifier } from '../components/useMediaAmplifier';
 import '../FitnessCam.scss';
 
 const slugifyId = (value, fallback = 'user') => {
@@ -61,11 +62,9 @@ const FitnessSidebarMenu = ({
     }
     return 1;
   });
-  const [microphones, setMicrophones] = React.useState([]);
-  const [microphonesLoading, setMicrophonesLoading] = React.useState(false);
-  const [microphoneError, setMicrophoneError] = React.useState(null);
-  const [micDropdownOpen, setMicDropdownOpen] = React.useState(false);
-  const micDropdownRef = React.useRef(null);
+
+  const mediaElement = playerRef?.current?.getMediaElement?.();
+  const { boostLevel, setBoost } = useMediaAmplifier(mediaElement);
 
   const isWideSidebar = sidebarSizeMode === 'large';
 
@@ -102,83 +101,6 @@ const FitnessSidebarMenu = ({
     }
   }, []);
 
-  const enumerateMicrophones = React.useCallback(async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
-      setMicrophoneError('Device enumeration not supported in this browser.');
-      setMicrophones([]);
-      return;
-    }
-    try {
-      setMicrophonesLoading(true);
-      setMicrophoneError(null);
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const seen = new Set();
-      const micList = [];
-      devices.forEach((device, index) => {
-        if (device.kind !== 'audioinput') return;
-        const id = device.deviceId && device.deviceId.length ? device.deviceId : 'default';
-        if (id === 'default') return;
-        if (seen.has(id)) return;
-        seen.add(id);
-        const label = device.label && device.label.length
-          ? device.label
-          : `Microphone ${micList.length + 1}`;
-        micList.push({ id, label });
-      });
-      setMicrophones(micList);
-    } catch (err) {
-      console.error('Failed to enumerate microphones', err);
-      setMicrophones([]);
-      setMicrophoneError(err?.message || 'Failed to list microphones.');
-    } finally {
-      setMicrophonesLoading(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    enumerateMicrophones();
-  }, [enumerateMicrophones]);
-
-  React.useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices) return undefined;
-    const mediaDevices = navigator.mediaDevices;
-    const handleDeviceChange = () => {
-      enumerateMicrophones();
-    };
-    if (mediaDevices.addEventListener) {
-      mediaDevices.addEventListener('devicechange', handleDeviceChange);
-      return () => {
-        mediaDevices.removeEventListener('devicechange', handleDeviceChange);
-      };
-    }
-    const originalHandler = mediaDevices.ondevicechange;
-    mediaDevices.ondevicechange = handleDeviceChange;
-    return () => {
-      if (mediaDevices.ondevicechange === handleDeviceChange) {
-        mediaDevices.ondevicechange = originalHandler || null;
-      }
-    };
-  }, [enumerateMicrophones]);
-
-  const effectiveMicrophones = React.useMemo(() => {
-    const seen = new Set();
-    const deduped = [];
-    microphones.forEach((mic) => {
-      if (!mic?.id) return;
-      if (seen.has(mic.id)) return;
-      seen.add(mic.id);
-      deduped.push(mic);
-    });
-    if (preferredMicrophoneId && !seen.has(preferredMicrophoneId)) {
-      deduped.push({ id: preferredMicrophoneId, label: 'Previously selected (unavailable)' });
-    }
-    return deduped;
-  }, [microphones, preferredMicrophoneId]);
-
-  const handleRefreshMicrophones = () => {
-    enumerateMicrophones();
-  };
-
   const handleReloadPage = () => {
     if (typeof window !== 'undefined') {
       window.location.reload();
@@ -205,44 +127,6 @@ const FitnessSidebarMenu = ({
 
   const reloadLabel = formatSeconds(reloadTargetSeconds);
   const volumePercent = Math.round(clampVolume(videoVolume) * 100);
-  const microphoneOptions = React.useMemo(() => [{ id: '', label: 'Use browser default' }, ...effectiveMicrophones], [effectiveMicrophones]);
-  const selectedMicrophoneLabel = React.useMemo(() => {
-    const normalizedId = preferredMicrophoneId || '';
-    const match = microphoneOptions.find((mic) => (mic.id || '') === normalizedId);
-    return match ? match.label : 'Use browser default';
-  }, [microphoneOptions, preferredMicrophoneId]);
-
-  const handleSelectMicrophone = React.useCallback((nextId) => {
-    if (onSelectMicrophone) {
-      onSelectMicrophone(nextId);
-    }
-    setMicDropdownOpen(false);
-  }, [onSelectMicrophone]);
-
-  const handleMicrophoneChange = (event) => {
-    handleSelectMicrophone(event.target.value);
-  };
-
-  React.useEffect(() => {
-    if (!micDropdownOpen) return undefined;
-    const handleOutside = (event) => {
-      if (micDropdownRef.current && !micDropdownRef.current.contains(event.target)) {
-        setMicDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutside);
-    document.addEventListener('touchstart', handleOutside, { passive: true });
-    return () => {
-      document.removeEventListener('mousedown', handleOutside);
-      document.removeEventListener('touchstart', handleOutside, { passive: true });
-    };
-  }, [micDropdownOpen]);
-
-  React.useEffect(() => {
-    if (isWideSidebar && micDropdownOpen) {
-      setMicDropdownOpen(false);
-    }
-  }, [isWideSidebar, micDropdownOpen]);
 
   const guestOptions = React.useMemo(() => {
     const seen = new Set();
@@ -379,87 +263,6 @@ const FitnessSidebarMenu = ({
     <>
 
       <div className="menu-section">
-        <h4>Microphone</h4>
-        <div className={`menu-item mic-select${isWideSidebar ? ' mic-select--wide' : ' mic-select--compact'}`} role="group" aria-label="Microphone selection">
-          <div className={`mic-select-row${isWideSidebar ? '' : ' mic-select-row--compact'}`}>
-            {isWideSidebar ? (
-              <>
-                <select
-                  id="microphone-select"
-                  value={preferredMicrophoneId}
-                  onChange={handleMicrophoneChange}
-                  disabled={microphonesLoading && effectiveMicrophones.length === 0}
-                >
-                  {microphoneOptions.map((mic) => (
-                    <option key={`${mic.id || 'default'}-${mic.label}`} value={mic.id}>
-                      {mic.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="mic-refresh-btn"
-                  onClick={handleRefreshMicrophones}
-                  title="Refresh device list"
-                >
-                  ↻
-                </button>
-              </>
-            ) : (
-              <>
-                <div className={`mic-dropdown${micDropdownOpen ? ' open' : ''}`} ref={micDropdownRef}>
-                  <button
-                    type="button"
-                    className="mic-dropdown-button"
-                    onClick={() => setMicDropdownOpen((prev) => !prev)}
-                    disabled={microphonesLoading && microphoneOptions.length <= 1}
-                    aria-haspopup="listbox"
-                    aria-expanded={micDropdownOpen}
-                  >
-                    <span className="mic-dropdown-label">{selectedMicrophoneLabel}</span>
-                    <span className="mic-dropdown-caret">▾</span>
-                  </button>
-                  {micDropdownOpen && (
-                    <ul className="mic-dropdown-menu" role="listbox">
-                      {microphoneOptions.map((mic) => (
-                        <li
-                          key={`${mic.id || 'default'}-${mic.label}`}
-                          role="option"
-                          aria-selected={(mic.id || '') === (preferredMicrophoneId || '')}
-                          className={(mic.id || '') === (preferredMicrophoneId || '') ? 'active' : ''}
-                          onClick={() => handleSelectMicrophone(mic.id)}
-                        >
-                          {mic.label}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="mic-refresh-btn"
-                  onClick={() => {
-                    setMicDropdownOpen(false);
-                    handleRefreshMicrophones();
-                  }}
-                  title="Refresh device list"
-                >
-                  ↻
-                </button>
-              </>
-            )}
-          </div>
-          {microphonesLoading && (
-            <div className="menu-item-subtext loading">Scanning for microphones…</div>
-          )}
-          {microphoneError && (
-            <div className="menu-item-subtext error">{microphoneError}</div>
-          )}
-        </div>
-      </div>
-
-
-      <div className="menu-section">
         <h4>Quick Actions</h4>
         <button type="button" className="menu-item action-item" onClick={handleReloadPage}>
           <span>🔄 Reload App</span>
@@ -548,6 +351,24 @@ const FitnessSidebarMenu = ({
           {!videoMediaAvailable && (
             <div className="menu-item-subtext">Video player inactive.</div>
           )}
+        </div>
+        <div className="menu-item touch-volume-item" role="group" aria-label="Video volume">
+          <div className="mix-label" id="video-volume-label">
+            Video Volume Boost
+          </div>
+          <div className="volume-boost-controls">
+            {[1, 5, 10, 20].map((level) => (
+              <button
+                key={level}
+                type="button"
+                className={`boost-btn ${boostLevel === level ? 'active' : ''}`}
+                onClick={() => setBoost(level)}
+                disabled={!videoMediaAvailable}
+              >
+                {level}x
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       )}
