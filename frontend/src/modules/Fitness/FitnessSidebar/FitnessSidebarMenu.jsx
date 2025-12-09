@@ -35,7 +35,9 @@ const FitnessSidebarMenu = ({
   onSelectMicrophone,
   sidebarSizeMode = 'regular',
   viewMode = 'cam',
-  onToggleViewMode = null
+  onToggleViewMode = null,
+  showChart = true,
+  onToggleChart = null
 }) => {
   const fitnessContext = useFitnessContext();
   const deviceAssignments = fitnessContext?.deviceAssignments || [];
@@ -289,13 +291,13 @@ const FitnessSidebarMenu = ({
 
         <div
           className="menu-item toggle-item"
-          onPointerDown={() => onToggleViewMode?.()}
+          onPointerDown={() => onToggleChart?.()}
         >
           <span>📈 Fitness Chart</span>
           <label className="toggle-switch">
             <input
               type="checkbox"
-              checked={viewMode === 'chart'}
+              checked={showChart}
               readOnly
             />
             <span className="toggle-slider"></span>

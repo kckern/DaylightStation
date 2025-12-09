@@ -527,7 +527,7 @@ export const ChallengeOverlay = ({ overlay }) => {
 					)}
 				</div>
 				<div className="challenge-overlay__time-block" aria-label={timeAriaLabel} role="timer">
-					<div className="challenge-overlay__time">{normalizedTime}</div>
+					<div className="challenge-overlay__time">{isSuccess ? '✅' : normalizedTime}</div>
 				</div>
 			</div>
 		</div>

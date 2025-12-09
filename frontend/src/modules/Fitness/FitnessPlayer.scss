@@ -1598,4 +1598,21 @@ dash-video {
   .fitness-player-footer { display:flex; }
 }
 
+.fitness-chart-overlay {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 360px;
+  height: 280px;
+  z-index: 15;
+  pointer-events: none;
+  opacity: 0.9;
+  
+  .race-chart-panel {
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+}
+
 }
