@@ -51,6 +51,35 @@ const DECODER_NUDGE_GRACE_MS = 2000;
 const BITRATE_REDUCTION_FACTOR = 0.9;
 const DEFAULT_FALLBACK_MAX_VIDEO_BITRATE = 2000;
 
+const shallowEqualObjects = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i += 1) {
+    const key = aKeys[i];
+    if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+};
+
+// Prevents re-entrant onStateChange cascades in the same tick
+const createReentryGuard = () => {
+  let active = false;
+  return {
+    enter() {
+      if (active) return false;
+      active = true;
+      return true;
+    },
+    exit() {
+      active = false;
+    }
+  };
+};
+
 const useLatest = (value) => {
   const ref = useRef(value);
   useEffect(() => {
@@ -193,58 +222,6 @@ export function useMediaResilience({
     return Math.max(0, hardRecoverLoadingGraceMs);
   }, [hardRecoverLoadingGraceMs]);
 
-  const resolveInitialMaxVideoBitrate = useCallback(() => {
-    const explicit = Number(maxVideoBitrateProp);
-    if (Number.isFinite(explicit) && explicit > 0) {
-      return Math.round(explicit);
-    }
-    const metaValue = Number(meta?.maxVideoBitrate);
-    if (Number.isFinite(metaValue) && metaValue > 0) {
-      return Math.round(metaValue);
-    }
-    return DEFAULT_FALLBACK_MAX_VIDEO_BITRATE;
-  }, [maxVideoBitrateProp, meta?.maxVideoBitrate]);
-
-  const [bitrateState, setBitrateState] = useState(() => {
-    const baseline = resolveInitialMaxVideoBitrate();
-    return {
-      waitKeySnapshot: waitKey,
-      current: baseline,
-      lastSyncedBaseline: baseline,
-      lastOverrideTag: null,
-      lastOverrideReason: null,
-      lastOverrideSource: null,
-      lastOverrideAt: null
-    };
-  });
-  const bitrateStateRef = useLatest(bitrateState);
-  const metricsRef = useRef({
-    stallCount: 0,
-    stallDurationMs: 0,
-    recoveryAttempts: 0,
-    decoderNudges: 0,
-    bitrateOverrides: 0
-  });
-
-  useEffect(() => {
-    const baseline = resolveInitialMaxVideoBitrate();
-    setBitrateState((prev) => {
-      const waitKeyChanged = prev.waitKeySnapshot !== waitKey;
-      const baselineChanged = Math.abs((prev.lastSyncedBaseline ?? baseline) - baseline) >= 1;
-      if (!waitKeyChanged && !baselineChanged) {
-        return prev;
-      }
-      return {
-        waitKeySnapshot: waitKey,
-        current: baseline,
-        lastSyncedBaseline: baseline,
-        lastOverrideTag: null,
-        lastOverrideReason: null,
-        lastOverrideSource: null,
-        lastOverrideAt: null
-      };
-    });
-  }, [waitKey, resolveInitialMaxVideoBitrate]);
 
   const fetchVideoInfoRef = useLatest(fetchVideoInfo);
   const onReloadRef = useLatest(onReload);
@@ -327,6 +304,7 @@ export function useMediaResilience({
       ? debugConfig.overlaySummarySampleRate
       : 0.25
   });
+  const bitrateBaselineLogRef = useRef(null);
   const seekIntentNoiseThresholdSeconds = useMemo(
     () => Math.max(0.5, epsilonSeconds * 2),
     [epsilonSeconds]
@@ -403,6 +381,82 @@ export function useMediaResilience({
       tags: options.tags || ['metric']
     });
   }, [logContextRef]);
+
+  const resolveInitialMaxVideoBitrate = useCallback(() => {
+    const explicit = Number(maxVideoBitrateProp);
+    if (Number.isFinite(explicit) && explicit > 0) {
+      const normalized = Math.round(explicit);
+      if (bitrateBaselineLogRef.current !== normalized) {
+        logResilienceEvent('bitrate-baseline', {
+          source: 'prop',
+          baselineKbps: normalized
+        }, { level: 'info', tags: ['bitrate'] });
+        bitrateBaselineLogRef.current = normalized;
+      }
+      return normalized;
+    }
+    const metaValue = Number(meta?.maxVideoBitrate);
+    if (Number.isFinite(metaValue) && metaValue > 0) {
+      const normalized = Math.round(metaValue);
+      if (bitrateBaselineLogRef.current !== normalized) {
+        logResilienceEvent('bitrate-baseline', {
+          source: 'meta',
+          baselineKbps: normalized
+        }, { level: 'info', tags: ['bitrate'] });
+        bitrateBaselineLogRef.current = normalized;
+      }
+      return normalized;
+    }
+    if (bitrateBaselineLogRef.current !== DEFAULT_FALLBACK_MAX_VIDEO_BITRATE) {
+      logResilienceEvent('bitrate-baseline', {
+        source: 'fallback-default',
+        baselineKbps: DEFAULT_FALLBACK_MAX_VIDEO_BITRATE
+      }, { level: 'info', tags: ['bitrate'] });
+      bitrateBaselineLogRef.current = DEFAULT_FALLBACK_MAX_VIDEO_BITRATE;
+    }
+    return DEFAULT_FALLBACK_MAX_VIDEO_BITRATE;
+  }, [logResilienceEvent, maxVideoBitrateProp, meta?.maxVideoBitrate]);
+
+  const [bitrateState, setBitrateState] = useState(() => {
+    const baseline = resolveInitialMaxVideoBitrate();
+    return {
+      waitKeySnapshot: waitKey,
+      current: baseline,
+      lastSyncedBaseline: baseline,
+      lastOverrideTag: null,
+      lastOverrideReason: null,
+      lastOverrideSource: null,
+      lastOverrideAt: null
+    };
+  });
+  const bitrateStateRef = useLatest(bitrateState);
+  const metricsRef = useRef({
+    stallCount: 0,
+    stallDurationMs: 0,
+    recoveryAttempts: 0,
+    decoderNudges: 0,
+    bitrateOverrides: 0
+  });
+
+  useEffect(() => {
+    const baseline = resolveInitialMaxVideoBitrate();
+    setBitrateState((prev) => {
+      const waitKeyChanged = prev.waitKeySnapshot !== waitKey;
+      const baselineChanged = Math.abs((prev.lastSyncedBaseline ?? baseline) - baseline) >= 1;
+      if (!waitKeyChanged && !baselineChanged) {
+        return prev;
+      }
+      return {
+        waitKeySnapshot: waitKey,
+        current: baseline,
+        lastSyncedBaseline: baseline,
+        lastOverrideTag: null,
+        lastOverrideReason: null,
+        lastOverrideSource: null,
+        lastOverrideAt: null
+      };
+    });
+  }, [waitKey, resolveInitialMaxVideoBitrate]);
 
   const applyBitrateOverride = useCallback((nextValue, options = {}) => {
     if (!Number.isFinite(nextValue) || nextValue <= 0) {
@@ -593,6 +647,10 @@ export function useMediaResilience({
   });
 
   const resolvedIsPaused = Boolean(isPaused || playbackHealth?.elementSignals?.paused);
+  const normalizedSeconds = useMemo(() => {
+    if (!Number.isFinite(seconds)) return 0;
+    return Math.max(0, seconds);
+  }, [seconds]);
 
   useEffect(() => {
     progressTokenRef.current = 0;
@@ -614,23 +672,6 @@ export function useMediaResilience({
       : null;
     markLoadingIntentActive();
   }, [waitKey, markLoadingIntentActive]);
-
-  useEffect(() => {
-    if (startupTimeoutRef.current) {
-      const elapsedMs = startupWatchdogStartRef.current
-        ? Math.max(0, Date.now() - startupWatchdogStartRef.current)
-        : null;
-      logResilienceEvent('startup-watchdog-cleared', {
-        reason: 'waitKey-changed',
-        attempts: startupAttemptsRef.current,
-        elapsedMs
-      }, { level: 'debug' });
-      clearStartupTimeout();
-    }
-    startupAttemptsRef.current = 0;
-    startupWatchdogStartRef.current = null;
-    startupArmedKeyRef.current = null;
-  }, [waitKey, clearStartupTimeout, logResilienceEvent]);
 
   useEffect(() => {
     decoderNudgeStateRef.current = { lastRequestedAt: 0, inflight: false, graceUntil: 0 };
@@ -745,6 +786,23 @@ export function useMediaResilience({
       startupTimeoutRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (startupTimeoutRef.current) {
+      const elapsedMs = startupWatchdogStartRef.current
+        ? Math.max(0, Date.now() - startupWatchdogStartRef.current)
+        : null;
+      logResilienceEvent('startup-watchdog-cleared', {
+        reason: 'waitKey-changed',
+        attempts: startupAttemptsRef.current,
+        elapsedMs
+      }, { level: 'debug' });
+      clearStartupTimeout();
+    }
+    startupAttemptsRef.current = 0;
+    startupWatchdogStartRef.current = null;
+    startupArmedKeyRef.current = null;
+  }, [waitKey, clearStartupTimeout, logResilienceEvent]);
 
   const publishStartupWatchdogState = useCallback((patch = {}) => {
     setInternalStartupWatchdogState((prev) => {
@@ -944,6 +1002,20 @@ export function useMediaResilience({
     return stallDurationMs;
   }, [logResilienceEvent, logMetric, resolveStallContext]);
 
+  const enterStallingState = useCallback((options = {}) => {
+    const stallToken = options.stallToken ?? playbackHealth?.progressToken ?? stallStateRef.current?.token ?? progressTokenRef.current ?? null;
+    if (!stallStateRef.current?.id) {
+      beginStallLifecycle(stallToken);
+    }
+    if (statusRef.current === STATUS.stalling) {
+      return;
+    }
+    resilienceActions.setStatus(STATUS.stalling, {
+      stallToken: stallToken ?? stallStateRef.current?.token ?? null,
+      clearRecoveryGuard: true
+    });
+  }, [beginStallLifecycle, playbackHealth?.progressToken, resilienceActions, progressTokenRef, statusRef]);
+
   const invalidatePendingStallDetection = useCallback((reason = 'seek-intent') => {
     const hadPendingTimers = Boolean(stallTimerRef.current || hardRecoveryTimerRef.current);
     const wasStalling = statusRef.current === STATUS.stalling;
@@ -1122,6 +1194,26 @@ export function useMediaResilience({
     }
   });
 
+  const scheduleStallCheck = useCallback((delayMs, options = {}) => {
+    const restart = options.restart !== false;
+    if (restart) {
+      clearTimer(stallTimerRef);
+    } else if (stallTimerRef.current) {
+      return stallTimerRef.current;
+    }
+
+    if (!Number.isFinite(delayMs) || delayMs <= 0) {
+      return null;
+    }
+
+    const timer = setTimeout(() => {
+      enterStallingState();
+      scheduleHardRecovery();
+    }, delayMs);
+    stallTimerRef.current = timer;
+    return timer;
+  }, [clearTimer, enterStallingState, scheduleHardRecovery]);
+
   const startMountWatchdog = useCallback((reason = 'pending') => {
     if (!mountTimeoutMs || mountTimeoutMs <= 0) return;
     if (typeof getMediaEl !== 'function') return;
@@ -1171,62 +1263,21 @@ export function useMediaResilience({
     poll();
   }, [mountTimeoutMs, mountPollIntervalMs, mountMaxAttempts, getMediaEl, clearMountWatchdog, triggerRecovery, onReloadRef, meta, waitKey, defaultReload]);
 
-  const enterStallingState = useCallback(() => {
-    if (
-      resilienceState.lastStallToken === playbackHealth.progressToken
-      && statusRef.current === STATUS.stalling
-    ) {
-      return;
-    }
-    if (statusRef.current === STATUS.recovering) {
-      return;
-    }
-    const isSameToken = stallStateRef.current?.token === playbackHealth.progressToken;
-    if (!isSameToken) {
-      beginStallLifecycle(playbackHealth.progressToken);
-    }
-    resilienceActions.stallDetected({ stallToken: playbackHealth.progressToken });
-  }, [beginStallLifecycle, playbackHealth.progressToken, resilienceActions, resilienceState.lastStallToken, statusRef]);
-
-  const scheduleStallCheck = useCallback((timeoutMs, { restart = true } = {}) => {
-    if (!timeoutMs || timeoutMs <= 0) {
-      clearTimer(stallTimerRef);
-      return;
-    }
-    if (!restart && stallTimerRef.current) {
-      return;
-    }
-    clearTimer(stallTimerRef);
-    stallTimerRef.current = setTimeout(() => {
-      if (userIntentRef.current === USER_INTENT.paused) return;
-      enterStallingState();
-      scheduleHardRecovery();
-    }, timeoutMs);
-  }, [clearTimer, scheduleHardRecovery, enterStallingState, userIntentRef]);
-
-  useEffect(() => {
-    if (status === STATUS.stalling) {
-      scheduleHardRecovery();
-    }
-  }, [scheduleHardRecovery, status]);
-
-  const normalizedSeconds = Number.isFinite(seconds) ? seconds : null;
-
   useEffect(() => {
     const previous = statusTransitionRef.current;
-    if (previous === status) {
-      return;
-    }
+    if (previous === status) return;
 
-    const stallSnapshot = stallStateRef.current;
-    const stallDurationMs = stallSnapshot?.startedAt ? Math.max(0, Date.now() - stallSnapshot.startedAt) : null;
+    const stallSnapshot = stallStateRef.current || {};
     const stallContext = resolveStallContext();
+    const stallDurationMs = stallSnapshot?.startedAt
+      ? Math.max(0, Date.now() - stallSnapshot.startedAt)
+      : null;
 
     logResilienceEvent('status-transition', {
       from: previous,
       to: status,
       seconds: normalizedSeconds,
-      waitKey: logWaitKey,
+      progressToken: playbackHealth.progressToken,
       stallId: stallSnapshot?.id || null,
       stallToken: stallSnapshot?.token || null,
       stallDurationMs,
@@ -1848,6 +1899,47 @@ export function useMediaResilience({
   ]);
   const stateRef = useLatest(state);
 
+  const stateNotifySignature = useMemo(() => ({
+    status,
+    systemHealth,
+    userIntent,
+    computedStalled,
+    waitKey,
+    isPaused: resolvedIsPaused,
+    isSeeking,
+    seconds: Math.round(normalizedSeconds * 10) / 10,
+    waitingToPlay,
+    stallClassification,
+    recoveryAttempts: resilienceState.recoveryAttempts,
+    currentMaxVideoBitrate: bitrateState.current ?? null,
+    baselineMaxVideoBitrate: bitrateState.lastSyncedBaseline ?? null,
+    startupWatchdogState: internalStartupWatchdogState.state,
+    startupWatchdogActive: internalStartupWatchdogState.active,
+    startupWatchdogAttempts: internalStartupWatchdogState.attempts
+  }), [
+    status,
+    systemHealth,
+    userIntent,
+    computedStalled,
+    waitKey,
+    resolvedIsPaused,
+    isSeeking,
+    normalizedSeconds,
+    waitingToPlay,
+    stallClassification,
+    resilienceState.recoveryAttempts,
+    bitrateState.current,
+    bitrateState.lastSyncedBaseline,
+    internalStartupWatchdogState.state,
+    internalStartupWatchdogState.active,
+    internalStartupWatchdogState.attempts
+  ]);
+
+  const lastNotifiedSignatureRef = useRef(null);
+  const notifyGuardRef = useRef(createReentryGuard());
+  const pendingNotifyTimerRef = useRef(null);
+  const pendingNotifySignatureRef = useRef(null);
+
   const debugStateSnapshotRef = useRef({
     userIntent,
     status,
@@ -1879,10 +1971,42 @@ export function useMediaResilience({
   }, [userIntent, status, systemHealth, logResilienceEvent]);
 
   useEffect(() => {
-    if (typeof onStateChange === 'function') {
-      onStateChange(state);
+    if (typeof onStateChange !== 'function') return;
+    if (typeof onStateChange !== 'function') return;
+    const prev = lastNotifiedSignatureRef.current;
+    const next = stateNotifySignature;
+    if (prev && shallowEqualObjects(prev, next)) {
+      return;
     }
-  }, [onStateChange, state]);
+
+    // Batch notifications to the next tick to avoid synchronous update cascades
+    pendingNotifySignatureRef.current = next;
+    if (pendingNotifyTimerRef.current) return;
+
+    pendingNotifyTimerRef.current = setTimeout(() => {
+      pendingNotifyTimerRef.current = null;
+      const guard = notifyGuardRef.current;
+      if (!guard.enter()) {
+        return;
+      }
+      try {
+        const signature = pendingNotifySignatureRef.current;
+        pendingNotifySignatureRef.current = null;
+        lastNotifiedSignatureRef.current = signature;
+        onStateChange(stateRef.current);
+      } finally {
+        guard.exit();
+      }
+    }, 0);
+
+    return () => {
+      if (pendingNotifyTimerRef.current) {
+        clearTimeout(pendingNotifyTimerRef.current);
+        pendingNotifyTimerRef.current = null;
+        pendingNotifySignatureRef.current = null;
+      }
+    };
+  }, [onStateChange, stateNotifySignature, stateRef]);
 
   const controller = useMemo(() => ({
     reset: () => {
