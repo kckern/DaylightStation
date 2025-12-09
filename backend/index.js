@@ -105,21 +105,33 @@ async function initializeApp() {
 
      // console.log(`Proxying request to: ${url}`);
 
-      const proxyRequest = request({ qs: req.query, uri: url });
+      const maxRetries = 20; // Try for ~10 seconds (20 * 500ms)
+      const retryDelay = 500;
 
-      let responseSent = false;
+      const attemptProxy = (retries) => {
+        const proxyRequest = request({ qs: req.query, uri: url });
 
-      proxyRequest.on('error', (err) => {
-        if (!responseSent) {
-          responseSent = true;
-          console.error(`Error proxying request to: ${url}`, err);
-          res.status(500).json({ error: 'Failed to proxy request', details: err.message });
-        }
-      });
+        proxyRequest.on('error', (err) => {
+          if (!res.headersSent) {
+            console.error(`Error proxying request to: ${url}`, err);
+            res.status(500).json({ error: 'Failed to proxy request', details: err.message });
+          }
+        });
 
-      req.pipe(proxyRequest).on('response', () => {
-        responseSent = true;
-      }).pipe(res);
+        proxyRequest.on('response', (response) => {
+          if (response.statusCode === 404 && retries < maxRetries) {
+            // console.log(`404 detected for ${url}, retrying (${retries + 1}/${maxRetries})...`);
+            setTimeout(() => attemptProxy(retries + 1), retryDelay);
+          } else {
+            res.writeHead(response.statusCode, response.headers);
+            response.pipe(res);
+          }
+        });
+
+        req.pipe(proxyRequest);
+      };
+
+      attemptProxy(0);
     });
 
 
