@@ -187,7 +187,7 @@ export function createWebsocketServer(server) {
       
       ws.on('close', () => {
         // Connection closed
-        logger.info('WebSocket connection closed');
+       // logger.info('WebSocket connection closed');
       });
     });
     wssNav.on('error', (err) => {
