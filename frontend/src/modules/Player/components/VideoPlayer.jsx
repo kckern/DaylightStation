@@ -855,7 +855,20 @@ export function VideoPlayer({
     const attempt = state.attempts;
     const seekSeconds = Number.isFinite(seconds) ? Number(seconds.toFixed(3)) : null;
 
+    const is404 = serializedError?.code === 1001 || String(serializedError?.message).includes('404');
+
     if (attempt === 1) {
+      if (is404) {
+        const skipTarget = (seekSeconds || 0) + 2;
+        logShakaDiagnostic('shaka-recovery-action', {
+          action: '404-skip-reset',
+          attempt,
+          seekSeconds: skipTarget
+        }, 'warn');
+        hardReset({ seekToSeconds: skipTarget });
+        return;
+      }
+
       logShakaDiagnostic('shaka-recovery-action', {
         action: 'hard-reset',
         attempt,
