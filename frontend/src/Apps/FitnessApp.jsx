@@ -10,6 +10,7 @@ import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
 import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
+import { getChildLogger } from '../lib/logging/singleton.js';
 
 const FitnessApp = () => {
   // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
@@ -32,6 +33,14 @@ const FitnessApp = () => {
     return isFirefox;
   });
   const viewportRef = useRef(null);
+  const logger = useMemo(() => getChildLogger({ app: 'fitness' }), []);
+
+  useEffect(() => {
+    logger.info('fitness-app-mount');
+  }, [logger]);
+  useEffect(() => {
+    logger.info('fitness-kiosk-state', { kiosk: kioskUI });
+  }, [kioskUI, logger]);
   
   // In kiosk mode, block right-click/context menu and secondary button actions
   useEffect(() => {
@@ -43,7 +52,7 @@ const FitnessApp = () => {
         return false;
       } catch (err) {
         // Firefox sometimes throws on preventDefault in certain contexts
-        console.warn('Context menu prevention failed:', err);
+        logger.warn('fitness-contextmenu-prevention-failed', { message: err?.message });
         return false;
       }
     };
@@ -57,7 +66,7 @@ const FitnessApp = () => {
         }
       } catch (err) {
         // Firefox compatibility
-        console.warn('Secondary button prevention failed:', err);
+        logger.warn('fitness-secondary-button-prevention-failed', { message: err?.message });
         return false;
       }
     };
@@ -105,7 +114,7 @@ const FitnessApp = () => {
           document.documentElement.appendChild(style);
         }
       } catch (err) {
-        console.warn('Failed to add tooltip hiding styles:', err);
+        logger.warn('fitness-tooltip-style-failed', { message: err?.message });
       }
       
       // Remove title attributes from all elements to prevent alt text popups
@@ -130,7 +139,7 @@ const FitnessApp = () => {
             }
           });
         } catch (err) {
-          console.warn('Failed to remove tooltips:', err);
+          logger.warn('fitness-tooltip-remove-failed', { message: err?.message });
         }
       };
       
@@ -153,7 +162,7 @@ const FitnessApp = () => {
           });
         }
       } catch (err) {
-        console.warn('Failed to set up MutationObserver:', err);
+        logger.warn('fitness-tooltip-observer-failed', { message: err?.message });
       }
       
       return () => {
@@ -179,7 +188,7 @@ const FitnessApp = () => {
         window.addEventListener('pointerdown', preventSecondary, { capture: true, passive: false });
       }
     } catch (err) {
-      console.warn('Failed to add event listeners:', err);
+      logger.warn('fitness-event-listener-add-failed', { message: err?.message });
     }
     
     return () => {
@@ -190,14 +199,14 @@ const FitnessApp = () => {
           window.removeEventListener('pointerdown', preventSecondary, { capture: true });
         }
       } catch (err) {
-        console.warn('Failed to remove event listeners:', err);
+        logger.warn('fitness-event-listener-remove-failed', { message: err?.message });
       }
       
       if (cleanupTooltips) {
         try {
           cleanupTooltips();
         } catch (err) {
-          console.warn('Failed to cleanup tooltips:', err);
+          logger.warn('fitness-tooltip-cleanup-failed', { message: err?.message });
         }
       }
     };
@@ -208,24 +217,25 @@ const FitnessApp = () => {
     const handleFirstTouch = () => {
       try {
         setKioskUI(true);
+        logger.info('fitness-kiosk-touch-detected');
         // Remove listener after first touch detected
         window.removeEventListener('touchstart', handleFirstTouch);
       } catch (err) {
-        console.warn('Failed to handle touch event:', err);
+        logger.warn('fitness-touch-handle-failed', { message: err?.message });
       }
     };
     
     try {
       window.addEventListener('touchstart', handleFirstTouch, { passive: true });
     } catch (err) {
-      console.warn('Failed to add touch listener:', err);
+      logger.warn('fitness-touch-listener-add-failed', { message: err?.message });
     }
     
     return () => {
       try {
         window.removeEventListener('touchstart', handleFirstTouch);
       } catch (err) {
-        console.warn('Failed to remove touch listener:', err);
+        logger.warn('fitness-touch-listener-remove-failed', { message: err?.message });
       }
     };
   }, []);
@@ -255,6 +265,7 @@ const FitnessApp = () => {
   }, [fitnessConfiguration]);
 
   const handleContentSelect = (category, value) => {
+    logger.info('fitness-content-select', { category });
     switch (category) {
       case 'collection': {
         const id = typeof value === 'object' && value !== null ? value.id : value;
@@ -293,6 +304,7 @@ const FitnessApp = () => {
   useEffect(() => {
     const fetchFitnessData = async () => {
       try {
+        logger.info('fitness-config-request');
         const response = await DaylightAPI('/api/fitness');
         
         // Validate response structure
@@ -318,15 +330,19 @@ const FitnessApp = () => {
 
         // Provide the normalized config to provider
         setFitnessConfiguration(response);
-      } catch (error) {
-        console.error('Error fetching fitness data:', error);
-        
-        // Enhanced error logging for Firefox debugging
-        if (error.name === 'TypeError' && error.message.includes('NetworkError')) {
-          console.error('Firefox NetworkError detected - check CORS/SSL/network settings');
-        } else if (error.name === 'AbortError') {
-          console.error('Request was aborted - possibly due to Firefox security restrictions');
+        logger.info('fitness-config-loaded', {
+          collections: (response?.fitness?.plex?.collections || []).length || 0,
+          users: (response?.fitness?.users?.primary || []).length || 0,
+          sensors: Array.isArray(response?.fitness?.ant_devices) ? response.fitness.ant_devices.length : 0
+        });
+        const antDevices = Array.isArray(response?.fitness?.ant_devices) ? response.fitness.ant_devices : [];
+        if (antDevices.length) {
+          logger.info('fitness-sensor-connected', { count: antDevices.length });
+        } else {
+          logger.debug('fitness-sensor-none-detected');
         }
+      } catch (error) {
+        logger.error('fitness-config-failed', { name: error?.name, message: error?.message });
         
         setFetchError(error);
       } finally {
@@ -340,7 +356,7 @@ const FitnessApp = () => {
     }, 100);
     
     return () => clearTimeout(timeoutId);
-  }, []);
+  }, [logger]);
 
   // Initialize the active collection once collections arrive
   useEffect(() => {
@@ -349,6 +365,11 @@ const FitnessApp = () => {
       setActiveCollection(Array.isArray(initialId) ? [...initialId] : initialId);
     }
   }, [collections, activeCollection]);
+
+  const queueSize = fitnessPlayQueue.length;
+  useEffect(() => {
+    logger.debug('fitness-view-state', { view: currentView, queueSize });
+  }, [currentView, queueSize, logger]);
 
   // render diagnostics removed
   
@@ -385,7 +406,7 @@ const FitnessApp = () => {
                         e.preventDefault();
                         window.location.reload();
                       } catch (err) {
-                        console.warn('Reload failed, trying alternative method:', err);
+                        logger.warn('fitness-reload-fallback', { message: err?.message });
                         window.location.href = window.location.href;
                       }
                     }}
@@ -395,7 +416,7 @@ const FitnessApp = () => {
                         e.preventDefault();
                         window.location.reload();
                       } catch (err) {
-                        console.warn('Reload failed, trying alternative method:', err);
+                        logger.warn('fitness-reload-fallback', { message: err?.message });
                         window.location.href = window.location.href;
                       }
                     }}
@@ -405,7 +426,7 @@ const FitnessApp = () => {
                         e.preventDefault();
                         window.location.reload();
                       } catch (err) {
-                        console.warn('Reload failed, trying alternative method:', err);
+                        logger.warn('fitness-reload-fallback', { message: err?.message });
                         window.location.href = window.location.href;
                       }
                     }

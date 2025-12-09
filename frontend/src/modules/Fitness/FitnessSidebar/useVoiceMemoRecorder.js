@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { playbackLog } from '../../Player/lib/playbackLogger.js';
 
 const blobToBase64 = (blob) => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -68,6 +69,21 @@ const useVoiceMemoRecorder = ({
   onStateChange,
   onLevel
 } = {}) => {
+  const logVoiceMemo = useCallback((event, payload = {}, options = {}) => {
+    playbackLog('voice-memo', {
+      event,
+      ...payload
+    }, {
+      level: options.level || 'info',
+      context: {
+        source: 'VoiceMemoRecorder',
+        sessionId: sessionId || null,
+        ...(options.context || {})
+      },
+      tags: options.tags || undefined
+    });
+  }, [sessionId]);
+
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
@@ -79,6 +95,7 @@ const useVoiceMemoRecorder = ({
   const recordingStartTimeRef = useRef(null);
   const wasPlayingBeforeRecordingRef = useRef(false);
   const durationIntervalRef = useRef(null);
+  const lastStateRef = useRef(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -93,7 +110,11 @@ const useVoiceMemoRecorder = ({
         // ignore consumer errors
       }
     }
-  }, [onStateChange]);
+    if (lastStateRef.current !== state) {
+      logVoiceMemo('recorder-state', { state, detail }, { level: 'debug' });
+      lastStateRef.current = state;
+    }
+  }, [logVoiceMemo, onStateChange]);
 
   const emitLevel = useCallback((level) => {
     if (typeof onLevel === 'function') {
@@ -109,6 +130,11 @@ const useVoiceMemoRecorder = ({
     const normalized = normalizeRecorderError(err, fallbackMessage, code, retryable);
     setError(normalized);
     emitState('error', normalized);
+    logVoiceMemo('recorder-error', {
+      code: normalized.code,
+      message: normalized.message,
+      retryable: normalized.retryable
+    }, { level: 'warn' });
     if (typeof onError === 'function') {
       try {
         onError(normalized);
@@ -117,7 +143,7 @@ const useVoiceMemoRecorder = ({
       }
     }
     return normalized;
-  }, [emitState, onError]);
+  }, [emitState, logVoiceMemo, onError]);
 
   const clearDurationTimer = useCallback(() => {
     if (durationIntervalRef.current) {
@@ -160,6 +186,7 @@ const useVoiceMemoRecorder = ({
   const startLevelMonitor = useCallback((stream) => {
     if (!stream || !onLevel) return;
     try {
+      logVoiceMemo('recorder-level-start', {}, { level: 'debug' });
       const audioContext = new AudioContext();
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
@@ -194,12 +221,15 @@ const useVoiceMemoRecorder = ({
 
       levelRafRef.current = requestAnimationFrame(sample);
     } catch (_) {
+      logVoiceMemo('recorder-level-error', { reason: 'metering-failed' }, { level: 'warn' });
       // ignore metering failures; recording can proceed without VU
     }
-  }, [emitLevel, onLevel]);
+  }, [emitLevel, logVoiceMemo, onLevel]);
 
   const handleRecordingStop = useCallback(async () => {
     if (!chunksRef.current.length) return;
+
+    logVoiceMemo('recording-stop', { chunks: chunksRef.current.length });
 
     const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
     chunksRef.current = [];
@@ -241,19 +271,29 @@ const useVoiceMemoRecorder = ({
       if (memo && onMemoCaptured) {
         onMemoCaptured(memo);
       }
+      if (memo) {
+        logVoiceMemo('recording-upload-complete', { memoId: memo.memoId || null, durationMs: payload?.endedAt - payload?.startedAt });
+      } else {
+        logVoiceMemo('recording-upload-complete', { memoId: null, durationMs: payload?.endedAt - payload?.startedAt });
+      }
       emitState('ready');
     } catch (err) {
       emitError(err, timedOut ? 'Processing timed out' : 'Upload failed', timedOut ? 'processing_timeout' : 'upload_failed', true);
+      logVoiceMemo('recording-upload-error', {
+        error: err?.message || String(err),
+        timedOut
+      }, { level: 'warn' });
     } finally {
       setUploading(false);
     }
-  }, [emitError, emitState, onMemoCaptured, sessionId]);
+  }, [emitError, emitState, logVoiceMemo, onMemoCaptured, sessionId]);
 
   const startRecording = useCallback(async () => {
     setError(null);
     emitState('requesting');
     emitLevel(null);
     pauseMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
+    logVoiceMemo('recording-start-request', { preferredMicrophoneId: preferredMicrophoneId || null });
     try {
       const audioConstraints = resolveAudioConstraints(preferredMicrophoneId);
       let stream;
@@ -282,6 +322,10 @@ const useVoiceMemoRecorder = ({
       recorder.start();
       setIsRecording(true);
       emitState('recording');
+      logVoiceMemo('recording-started', {
+        trackCount: typeof stream?.getTracks === 'function' ? stream.getTracks().length : null,
+        preferredMicrophoneId: preferredMicrophoneId || null
+      });
       clearDurationTimer();
       durationIntervalRef.current = setInterval(() => {
         if (!recordingStartTimeRef.current) return;
@@ -291,10 +335,12 @@ const useVoiceMemoRecorder = ({
     } catch (err) {
       resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
       emitError(err, 'Failed to access microphone', 'mic_access_denied', false);
+      logVoiceMemo('recording-start-error', { error: err?.message || String(err) }, { level: 'warn' });
     }
-  }, [clearDurationTimer, emitError, emitLevel, emitState, handleRecordingStop, playerRef, preferredMicrophoneId, startLevelMonitor]);
+  }, [clearDurationTimer, emitError, emitLevel, emitState, handleRecordingStop, logVoiceMemo, playerRef, preferredMicrophoneId, startLevelMonitor]);
 
   const stopRecording = useCallback(() => {
+    logVoiceMemo('recording-stop-request');
     try {
       mediaRecorderRef.current?.stop();
     } catch (_) {
@@ -307,7 +353,7 @@ const useVoiceMemoRecorder = ({
     cleanupStream();
     resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
     emitLevel(null);
-  }, [cleanupStream, clearDurationTimer, emitLevel, emitState, playerRef]);
+  }, [cleanupStream, clearDurationTimer, emitLevel, emitState, logVoiceMemo, playerRef]);
 
   useEffect(() => () => {
     clearDurationTimer();

@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import "./TVApp.scss";
 import { DaylightAPI } from "../lib/api.mjs";
 import { TVMenu } from "../modules/Menu/Menu";
 import Player from "../modules/Player/Player";
 import AppContainer from "../modules/AppContainer/AppContainer";
 import { PlayerOverlayLoading } from "../modules/Player/Player";
+import { getChildLogger } from "../lib/logging/singleton.js";
 
 export function TVAppWrapper({ content }) {
   return (
@@ -58,6 +59,7 @@ function setupNavigationHandlers() {
 export default function TVApp({ appParam }) {
   const [list, setList] = useState([]);
   const [autoplayed, setAutoplayed] = useState(false);
+  const logger = useMemo(() => getChildLogger({ app: 'tv' }), []);
 
   // Stack to track current menu/content components
   // (Each element is a React element representing a menu level)
@@ -72,9 +74,10 @@ export default function TVApp({ appParam }) {
     const fetchData = async () => {
       const data = await DaylightAPI("data/list/TVApp/recent_on_top");
       setList(data);
+      logger.info('tvapp-data-loaded', { count: Array.isArray(data) ? data.length : null });
     };
     fetchData();
-  }, []);
+  }, [logger]);
 
   const params = new URLSearchParams(window.location.search);
   const queryEntries = Object.fromEntries(params.entries());
@@ -120,8 +123,7 @@ export default function TVApp({ appParam }) {
     delete safeSelection.key;
     const clear = () => setCurrentContent(null);
     const props = { ...safeSelection, clear, onSelect: handleSelection, onEscape: handleEscape };
-    console.log('[TVApp] mapSelectionToContent - selection:', selection);
-    console.log('[TVApp] props being passed to Player/Menu:', props);
+    logger.debug('tvapp-selection', { selectionKeys: Object.keys(selection || {}), props: Object.keys(props || {}) });
     const options = {
       play:      <Player {...props} />,
       queue:     <Player {...props} />,
@@ -157,6 +159,7 @@ export default function TVApp({ appParam }) {
     if (newContent) {
       setCurrentContent(newContent);
     } else {
+      logger.warn('tvapp-selection-miss', { selection });
       alert(
         "No valid action found for selection: " + JSON.stringify(Object.keys(selection))
       );
@@ -189,14 +192,16 @@ export default function TVApp({ appParam }) {
       const newContent = handleAutoplay(autoplay);
       if (newContent) setCurrentContent(newContent);
       setAutoplayed(true);
+      logger.info('tvapp-autoplay', { keys: Object.keys(autoplay || {}) });
     }
-  }, [autoplay, autoplayed, setCurrentContent]);
+  }, [autoplay, autoplayed, setCurrentContent, logger]);
 
   useEffect(() => {
     if (appParam) {
       setContentStack([<AppContainer open={{ app: appParam }} clear={() => setContentStack([])} />]);
+      logger.info('tvapp-app-param', { app: appParam });
     }
-  }, [appParam]);
+  }, [appParam, logger]);
 
   if (list.length === 0 && (isQueueOrPlay && !autoplayed)) {
     return <TVAppWrapper content={<PlayerOverlayLoading shouldRender isVisible />} />;

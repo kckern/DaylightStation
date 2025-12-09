@@ -253,7 +253,6 @@ export function LoadingOverlay({
       context: overlayLogContext
     });
     if (!onRequestHardReset) {
-      console.warn('[LoadingOverlay] Hard reset requested but no handler configured', finalPayload);
       playbackLog('overlay.hard-reset-error', {
         reason: 'missing-handler',
         payload: finalPayload
@@ -266,7 +265,6 @@ export function LoadingOverlay({
     try {
       onRequestHardReset(finalPayload);
     } catch (error) {
-      console.error('[LoadingOverlay] hard reset handler failed', error, finalPayload);
       playbackLog('overlay.hard-reset-error', {
         reason: 'handler-threw',
         error: error?.message || String(error),
@@ -334,7 +332,6 @@ export function LoadingOverlay({
         const diagnostics = buildMediaDiagnostics(el);
         setMediaElementDetails((prev) => (mediaDiagnosticsEqual(prev, diagnostics) ? prev : diagnostics));
       } catch (error) {
-        console.warn('[LoadingOverlay] failed to inspect media element', error);
         playbackLog('overlay.media-inspect-error', {
           error: error?.message || String(error)
         }, {

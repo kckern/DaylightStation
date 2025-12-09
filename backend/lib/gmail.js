@@ -1,7 +1,16 @@
 import { google } from 'googleapis';
 import { saveFile,sanitize } from './io.mjs';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
 
-const listMails = async (job_id) => {
+const defaultGmailLogger = createLogger({
+    name: 'backend-gmail',
+    context: { app: 'backend', module: 'gmail' },
+    level: process.env.GMAIL_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+    transports: [logglyTransportAdapter({ tags: ['backend', 'gmail'] })]
+});
+
+const listMails = async (logger, job_id) => {
+    const log = logger || defaultGmailLogger;
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;
 
     if(!(GOOGLE_CLIENT_ID || GOOGLE_CLIENT_SECRET || GOOGLE_REDIRECT_URI || GOOGLE_REFRESH_TOKEN)) {
@@ -28,7 +37,7 @@ const listMails = async (job_id) => {
         return { subject, from, to, snippet };
     }));
 
-    console.log(`\t[${job_id}] Gmail: ${messages.length} messages found`);
+    log.info('harvest.gmail.messages', { jobId: job_id, count: messages.length });
     saveFile('lifelog/gmail', messages);
     return messages;
 }

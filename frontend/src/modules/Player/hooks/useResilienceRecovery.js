@@ -34,9 +34,10 @@ export function useResilienceRecovery({
     try {
       onHardResetCycle(payload);
     } catch (error) {
-      if (process.env?.NODE_ENV !== 'production') {
-        console.warn('[useResilienceRecovery] hard reset callback failed', error);
-      }
+      logResilienceEvent('hard-reset-callback-error', {
+        error: error?.message || String(error),
+        payload
+      }, { level: 'warn' });
     }
   }, [onHardResetCycle]);
 

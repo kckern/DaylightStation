@@ -4,22 +4,41 @@
 import { WebSocketServer } from 'ws';
 import winston from 'winston';
 import { Loggly } from 'winston-loggly-bulk';
+import { createLogger, winstonTransportAdapter } from './lib/logging/index.js';
+import { getLogglyConfig } from './lib/logging/logglyConfig.js';
+import { loadLoggingConfig, resolveLoggerLevel } from './lib/logging/config.js';
 
 const LOGGLY_TAGS = ['backend', 'websocket'];
+let loggingConfig = loadLoggingConfig();
 
 let backendLogger = null;
+let backendRootLoggerInstance = null;
+
+function getBackendRootLogger() {
+  if (backendRootLoggerInstance) return backendRootLoggerInstance;
+  backendRootLoggerInstance = backendRootLogger();
+  return backendRootLoggerInstance;
+}
+
+const backendRootLogger = () =>
+  createLogger({
+    name: 'DaylightBackend',
+    context: { app: 'websocket' },
+    level: resolveLoggerLevel('websocket', loggingConfig),
+    transports: [winstonTransportAdapter(getLogger())]
+  });
 
 function getLogger() {
   if (backendLogger) return backendLogger;
 
-  const LOGGLY_TOKEN = process.env.LOGGLY_TOKEN || process.env.LOGGLY_INPUT_TOKEN;
-  const LOGGLY_SUBDOMAIN = process.env.LOGGLY_SUBDOMAIN;
-
-  console.log('[WebSocket] Initializing logger. Loggly Config:', {
+  const { token: LOGGLY_TOKEN, subdomain: LOGGLY_SUBDOMAIN } = getLogglyConfig({ tags: LOGGLY_TAGS });
+  // Avoid recursion: log initialization via console to prevent calling Daylight logger before it exists
+  const initLine = `[WebSocket] Logger init ${JSON.stringify({
     hasToken: !!LOGGLY_TOKEN,
     subdomain: LOGGLY_SUBDOMAIN,
-    tokenPrefix: LOGGLY_TOKEN ? LOGGLY_TOKEN.substring(0, 4) + '...' : 'N/A'
-  });
+    tokenPrefix: LOGGLY_TOKEN ? `${LOGGLY_TOKEN.substring(0, 4)}...` : 'N/A'
+  })}\n`;
+  process.stdout.write(initLine);
 
   // Filter to exclude playback-logger events from the console
   const ignorePlayback = winston.format((info) => {
@@ -33,18 +52,7 @@ function getLogger() {
       return { timestamp, level, message, ...rest };
   });
 
-  const winstonTransportList = [
-    new winston.transports.Console({
-      format: winston.format.combine(
-        ignorePlayback(),
-        winston.format.timestamp(),
-        winston.format.printf(({ level, message, timestamp, ...meta }) => {
-          const serializedMeta = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-          return `${timestamp} [WebSocket] ${level}: ${message}${serializedMeta}`;
-        })
-      )
-    })
-  ];
+  const winstonTransportList = [];
 
   if (LOGGLY_TOKEN && LOGGLY_SUBDOMAIN) {
     winstonTransportList.push(new Loggly({
@@ -56,7 +64,7 @@ function getLogger() {
   }
 
   backendLogger = winston.createLogger({
-    level: process.env.WEBSOCKET_LOG_LEVEL || 'info',
+    level: resolveLoggerLevel('websocket', loggingConfig) || process.env.WEBSOCKET_LOG_LEVEL || 'info',
     format: winston.format.combine(
         winston.format.timestamp(),
         reorderFormat(),
@@ -86,13 +94,18 @@ export function createWebsocketServer(server) {
     logger.info('Creating WebSocket server for /ws...');
     wssNav = new WebSocketServer({ server, path: '/ws' });
     logger.info('WebSocket server created, adding listeners...');
-    wssNav.on('connection', (ws) => {
+    wssNav.on('connection', (ws, req) => {
+      ws._clientMeta = {
+        ip: req?.socket?.remoteAddress,
+        userAgent: req?.headers?.['user-agent']
+      };
       
       // Handle incoming messages from fitness controller
       ws.on('message', (message) => {
         const rawMessage = message.toString();
         try {
           const data = JSON.parse(rawMessage);
+          const ingestLogger = getBackendRootLogger().child({ module: 'ws-ingest' });
           
           // Check if message is from fitness controller
           if (data.source === 'fitness' || data.source === 'fitness-simulator') {
@@ -125,6 +138,45 @@ export function createWebsocketServer(server) {
             } else {
               logger.info(`[Frontend] ${event}`, meta);
             }
+          } else if (data.topic === 'logging') {
+            const events = Array.isArray(data.events)
+              ? data.events
+              : data.event
+                ? [data.event]
+                : [data];
+
+            events.forEach((evt) => {
+              // Some clients wrap the actual log event inside an `event` property; unwrap it when present
+              const nestedEvent = evt && typeof evt.event === 'object' && !Array.isArray(evt.event) ? evt.event : null;
+              const base = nestedEvent ? { ...evt, ...nestedEvent } : evt || {};
+              const eventName = typeof base.event === 'string' && base.event.length
+                ? base.event
+                : nestedEvent && typeof nestedEvent.event === 'string'
+                  ? nestedEvent.event
+                  : 'logging.event';
+
+              const normalized = {
+                ts: base.ts || new Date().toISOString(),
+                level: base.level || 'info',
+                event: eventName,
+                message: base.message,
+                data: base.data || base.payload || {},
+                tags: base.tags || [],
+                source: base.source || 'frontend',
+                context: {
+                  ...(base.context || {}),
+                  ip: ws._clientMeta?.ip,
+                  userAgent: ws._clientMeta?.userAgent
+                }
+              };
+
+              ingestLogger.log(normalized.level, normalized.event, normalized.data, {
+                message: normalized.message,
+                tags: normalized.tags,
+                context: normalized.context,
+                source: normalized.source
+              });
+            });
           } else {
              logger.warn('Received unknown WebSocket message source', { source: data.source, data });
           }

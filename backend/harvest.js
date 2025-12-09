@@ -1,6 +1,7 @@
 import express from 'express';
 const harvestRouter = express.Router();
 import crypto from 'crypto';
+import { createLogger, consoleTransport, logglyTransportAdapter, resolveLogglyToken } from './lib/logging/index.js';
 
 import todoist from './lib/todoist.js';
 import gmail from './lib/gmail.js';
@@ -21,44 +22,67 @@ import strava from './lib/strava.mjs';
 import garmin from './lib/garmin.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from './lib/budget.mjs';
 
+const buildTransports = (tags = ['backend', 'harvest']) => {
+    const transports = [consoleTransport()];
+    const token = resolveLogglyToken();
+    if (token) transports.push(logglyTransportAdapter({ token, tags }));
+    return transports;
+};
+
+const harvestRootLogger = () => createLogger({
+    name: 'DaylightBackend',
+    context: { app: 'harvest', env: process.env.NODE_ENV },
+    transports: buildTransports()
+});
+
 const harvesters = {
-    ...Infinity.keys.reduce((fn, i) => (fn[i] = (req) => Infinity.loadData(i,req), fn), {}),
-    todoist,
-    gmail,
-    gcal,
-    withings,
-    ldsgc,
-    weather,
-    scripture,
-    clickup,
-    lastfm,
-    letterboxd,
-    goodreads,
-    budget,
-    youtube_dl,
-    fitness,
-    strava,
-    health,
-    garmin,
-    payroll: payrollSyncJob
+    ...Infinity.keys.reduce((fn, i) => {
+        fn[i] = (_logger, _guidId, req) => Infinity.loadData(i, req);
+        return fn;
+    }, {}),
+    todoist: (logger, guidId, req) => todoist(logger, guidId, req),
+    gmail: (logger, guidId, req) => gmail(logger, guidId, req),
+    gcal: (logger, guidId, req) => gcal(logger, guidId, req),
+    withings: (_logger, guidId, req) => withings(guidId, req),
+    ldsgc: (_logger, guidId, req) => ldsgc(guidId, req),
+    weather: (_logger, guidId, req) => weather(guidId, req),
+    scripture: (_logger, guidId, req) => scripture(guidId, req),
+    clickup: (_logger, guidId, req) => clickup(guidId, req),
+    lastfm: (_logger, guidId, req) => lastfm(guidId, req),
+    letterboxd: (_logger, guidId, req) => letterboxd(guidId, req),
+    goodreads: (_logger, guidId, req) => goodreads(guidId, req),
+    budget: (_logger, guidId, req) => budget(guidId, req),
+    youtube_dl: (_logger, guidId, req) => youtube_dl(guidId, req),
+    fitness: (_logger, guidId, req) => fitness(guidId, req),
+    strava: (logger, guidId, req) => strava(logger, guidId, req),
+    health: (_logger, guidId, req) => health(guidId, req),
+    garmin: (_logger, guidId, req) => garmin(guidId, req),
+    payroll: (_logger, guidId, req) => payrollSyncJob(guidId, req)
     
 }
 
 const harvestKeys = Object.keys(harvesters);
+const baseLogger = harvestRootLogger();
 
 harvestKeys.forEach(key => {
     harvestRouter.get(`/${key}`, async (req, res) =>{
         try {
-            console.log(`Harvest endpoint called: ${key}`);
             const guidId = crypto.randomUUID().split('-').pop();
-            console.log(`About to call harvester for ${key} with guidId: ${guidId}`);
-            const response = await harvesters[key](guidId,req);
-            console.log(`Harvester ${key} returned response type: ${typeof response}, isArray: ${Array.isArray(response)}`);
+            const requestLogger = baseLogger.child({ harvester: key, requestId: guidId });
+            requestLogger.info('harvest.request', { path: req.originalUrl, method: req.method });
+
+            const invokeHarvester = (fn) => {
+                if (fn.length >= 3) return fn(requestLogger, guidId, req);
+                if (fn.length === 2) return fn(requestLogger, guidId);
+                return fn(guidId, req);
+            };
+
+            const response = await invokeHarvester(harvesters[key]);
+            requestLogger.info('harvest.response', { type: typeof response, isArray: Array.isArray(response) });
             return res.status(200).json(response);
         
         } catch (error) {
-            console.error(`Error in harvest endpoint ${key}:`, error.message);
-            console.error('Stack trace:', error.stack);
+            baseLogger.error('harvest.error', { harvester: key, error: error.message, stack: error.stack });
             return res.status(500).json({error: error.message});
         }
     });

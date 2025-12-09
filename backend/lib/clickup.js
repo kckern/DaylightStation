@@ -1,6 +1,14 @@
 import axios from './http.mjs';
 import { buildCurl } from './httpUtils.mjs';
 import { saveFile } from './io.mjs';
+import { createLogger, logglyTransportAdapter } from './logging/index.js';
+
+const clickupLogger = createLogger({
+    name: 'backend-clickup',
+    context: { app: 'backend', module: 'clickup' },
+    level: process.env.CLICKUP_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
+    transports: [logglyTransportAdapter({ tags: ['backend', 'clickup'] })]
+});
 
 const getTickets = async () => {
     const { CLICKUP_PK, clickup: { statuses, team_id } } = process.env;
@@ -34,10 +42,10 @@ const getTickets = async () => {
             lastPage = team_tickets.last_page;
             page++;
         } catch (error) {
-            console.error(`Error fetching tickets:`, error?.shortMessage || error.message);
+            clickupLogger.error('Error fetching tickets', { message: error?.shortMessage || error.message, url });
             if (process.env.DEBUG_CURL === '1') {
                 const curlString = buildCurl({ method: 'GET', url, headers: { Authorization: CLICKUP_PK } });
-                console.error(curlString);
+                clickupLogger.warn('Debug CURL', { curl: curlString });
             }
             break; // Exit the loop on error
         }
@@ -82,9 +90,9 @@ const getTickets = async () => {
         return newTicket;
     });
 
-    console.log('Total tickets fetched:', tickets.length);
+    clickupLogger.info('Total tickets fetched', { count: tickets.length });
     saveFile('lifelog/clickup', tickets);
-    console.log('Tickets saved to file.');
+    clickupLogger.info('Tickets saved to file', { path: 'lifelog/clickup' });
 
     return tickets;
 };

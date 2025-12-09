@@ -7,6 +7,9 @@ import { buildBudget } from '../backend/lib/budgetlib/build_budget.mjs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
+const log = (...args) => process.stdout.write(`${args.join(' ')}\n`);
+const logError = (...args) => process.stderr.write(`${args.join(' ')}\n`);
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Load configuration
@@ -190,7 +193,7 @@ const processMortgage = (mortgage, accountBalances, mortgageTransactions) => {
 };
 
 const compileBudget = async () => {
-  console.log('Starting budget compilation...');
+  log('Starting budget compilation...');
   
   const budgetConfig = yaml.load(readFileSync(budgetPath, 'utf8'));
   const budgetStartDates = budgetConfig.budget.map(b => b.timeframe.start);
@@ -201,7 +204,7 @@ const compileBudget = async () => {
   
   const rawTransactions = budgetStartDates.map(date => {
     const transactionFileName = transactionPath.replace('{{BUDGET_INDEX}}', moment(date).utc().format('YYYY-MM-DD'));
-    console.log(`Reading transactions from ${transactionFileName}`);
+    log(`Reading transactions from ${transactionFileName}`);
     return yaml.load(readFileSync(transactionFileName, 'utf8')).transactions;
   }).flat();
   
@@ -217,23 +220,23 @@ const compileBudget = async () => {
     const budgetStart = moment(budget.timeframe.start).toISOString().slice(0, 10);
     const budgetEnd = moment(budget.timeframe.end).toISOString().slice(0, 10);
     const transactions = rawTransactions.filter(txn => txn.date >= budgetStart && txn.date <= budgetEnd);
-    console.log(`\n\n #### Compiling budget for ${budgetStart} to ${budgetEnd} ####\n\n`);
+    log(`\n\n #### Compiling budget for ${budgetStart} to ${budgetEnd} ####\n\n`);
     budgets[budgetStart] = buildBudget(budget, transactions);
   }
   
   writeFileSync(financesPath, yaml.dump({ budgets, mortgage }));
-  console.log(`Saved finances to ${financesPath}`);
+  log(`Saved finances to ${financesPath}`);
   return { status: 'success' };
 };
 
 // Execute the function
 compileBudget()
   .then(result => {
-    console.log('Budget compilation completed successfully:', result);
-    console.log(`\nOutput file: ${financesPath}`);
+    log('Budget compilation completed successfully:', result);
+    log(`\nOutput file: ${financesPath}`);
     process.exit(0);
   })
   .catch(error => {
-    console.error('Error compiling budget:', error);
+    logError('Error compiling budget:', error);
     process.exit(1);
   });
