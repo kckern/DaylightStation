@@ -43,7 +43,7 @@ frontendLogger.info('frontend-start', { path: window.location?.pathname });
 // Enable playback logging via WebSocket
 configurePlaybackLogger({
   websocket: {
-    enabled: false
+    enabled: true
   },
   forwardToDaylight: true
 });

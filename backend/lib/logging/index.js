@@ -79,7 +79,9 @@ function logglyTransportAdapter({ token = resolveLogglyToken(), tags = ['dayligh
         }
       };
       const req = https.request(options, () => {});
-      req.on('error', () => {});
+      req.on('error', (err) => {
+        process.stderr.write(`[DaylightLogger] Loggly transport error: ${err.message}\n`);
+      });
       req.write(payload);
       req.end();
     }

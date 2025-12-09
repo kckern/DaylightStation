@@ -493,9 +493,16 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       
       const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
 
+      // Resolve season and show titles for logging
+      const seasonObj = seasons && seasons.find(s => s.id === episode.seasonId);
+      const seasonTitle = seasonObj ? (seasonObj.title || seasonObj.name || seasonObj.rawName) : undefined;
+      const showTitle = info?.title;
+
       // Create the queue item with all available information
       const queueItem = {
         id: episode.plex || `episode-${Date.now()}`,
+        show: showTitle,
+        season: seasonTitle,
         title: episode.label,
         videoUrl: episodeUrl || 'https://example.com/fallback.mp4', // Add fallback for testing
         duration: episode.duration,
@@ -865,8 +872,15 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       if (episodeUrl) {
         const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
 
+        // Resolve season and show titles for logging
+        const seasonObj = seasons && seasons.find(s => s.id === episode.seasonId);
+        const seasonTitle = seasonObj ? (seasonObj.title || seasonObj.name || seasonObj.rawName) : undefined;
+        const showTitle = info?.title;
+
         const queueItem = {
           id: episode.plex || `episode-${Date.now()}`,
+          show: showTitle,
+          season: seasonTitle,
           title: episode.label,
           videoUrl: episodeUrl,
           duration: episode.duration,
