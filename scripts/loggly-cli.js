@@ -63,42 +63,42 @@ const PRESETS = {
     query: 'media-resilience AND (stall OR stallId:*)',
     columns: [
       ['ts', 'timestamp'],
-      ['event', 'event'],
-      ['stallId', 'stallId'],
-      ['waitKey', 'waitKey'],
-      ['seconds', 'seconds'],
-      ['bufferMs', 'bufferRunwayMs'],
-      ['ready', 'readyState'],
-      ['net', 'networkState'],
-      ['progress', 'progressToken'],
-      ['frame', 'frame.advancing'],
-      ['durationMs', 'stallDurationMs']
+      ['event', 'data.event'],
+      ['stallId', 'data.stallId'],
+      ['waitKey', 'data.waitKey'],
+      ['seconds', 'data.seconds'],
+      ['bufferMs', 'data.bufferRunwayMs'],
+      ['ready', 'data.readyState'],
+      ['net', 'data.networkState'],
+      ['progress', 'data.progressToken'],
+      ['frame', 'data.frame.advancing'],
+      ['durationMs', 'data.stallDurationMs']
     ]
   },
   overlay: {
     query: 'overlay-state-change OR overlay-summary OR overlay-ui',
     columns: [
       ['ts', 'timestamp'],
-      ['event', 'event'],
-      ['waitKey', 'waitKey'],
-      ['label', 'overlayLabel'],
-      ['visible', 'isVisible'],
-      ['active', 'overlayActive'],
-      ['reasons', 'reasons'],
-      ['severity', 'severity']
+      ['event', 'data.event'],
+      ['waitKey', 'data.waitKey'],
+      ['label', 'data.overlayLabel'],
+      ['visible', 'data.isVisible'],
+      ['active', 'data.overlayActive'],
+      ['reasons', 'data.reasons'],
+      ['severity', 'data.severity']
     ]
   },
   startup: {
     query: 'startup-watchdog* OR startup-signal',
     columns: [
       ['ts', 'timestamp'],
-      ['event', 'event'],
-      ['waitKey', 'waitKey'],
-      ['state', 'state'],
-      ['reason', 'reason'],
-      ['attempts', 'attempts'],
-      ['elapsedMs', 'elapsedMs'],
-      ['timeoutMs', 'timeoutMs']
+      ['event', 'data.event'],
+      ['waitKey', 'data.waitKey'],
+      ['state', 'data.state'],
+      ['reason', 'data.reason'],
+      ['attempts', 'data.attempts'],
+      ['elapsedMs', 'data.elapsedMs'],
+      ['timeoutMs', 'data.timeoutMs']
     ]
   }
 };
