@@ -92,6 +92,21 @@ export function CompositePlayer(props) {
     return { play: normalized };
   }, [overlayConfig]);
 
+  const primaryKeyboardOverrides = React.useMemo(() => {
+    if (!overlayProps) return primaryProps.keyboardOverrides;
+    return {
+      ...(primaryProps.keyboardOverrides || {}),
+      'ArrowLeft': () => {},
+      'ArrowRight': () => {},
+      'j': () => {},
+      'l': () => {},
+      'n': () => {},
+      'p': () => {},
+      'MediaNextTrack': () => {},
+      'MediaPreviousTrack': () => {}
+    };
+  }, [overlayProps, primaryProps.keyboardOverrides]);
+
   const shader = (
     primaryProps.play?.shader
     || primaryProps.queue?.shader
@@ -104,7 +119,7 @@ export function CompositePlayer(props) {
         {overlayProps && (
           <Player
             playerType="overlay"
-            ignoreKeys
+            ignoreKeys={props.ignoreKeys}
             clear={noop}
             {...overlayProps}
           />
@@ -112,7 +127,7 @@ export function CompositePlayer(props) {
         <Player
           playerType="primary"
           {...primaryProps}
-          ignoreKeys
+          keyboardOverrides={primaryKeyboardOverrides}
         />
       </div>
     </CompositeControllerProvider>
