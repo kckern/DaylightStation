@@ -124,7 +124,7 @@ export function CompositeControllerProvider({ children, config }) {
     if (prevStatus && didRecoverFromStall(prevStatus, status)) {
       const overlayController = getTransportApi(registry.overlay.controller);
       overlayController?.play?.();
-      syncOverlayToPrimary();
+      // syncOverlayToPrimary(); // Disabled: overlay audio should be independent
       if (overlayMuteStateRef.current.active) {
         applyOverlayMute(false);
       }
