@@ -387,16 +387,25 @@ export function useMediaReporter({
       logExplicitPlaybackToggle('play');
       reportPlaybackMetrics({ isPaused: false, isSeeking: false, pauseIntent: null });
     };
+    const classifyPauseIntent = () => {
+      // Default: treat as user unless we detect system/automatic causes.
+      const ended = Boolean(mediaEl?.ended);
+      const duration = Number.isFinite(mediaEl?.duration) ? mediaEl.duration : null;
+      const current = Number.isFinite(mediaEl?.currentTime) ? mediaEl.currentTime : null;
+      const nearNaturalEnd = Number.isFinite(duration) && Number.isFinite(current)
+        ? (duration - current) <= 1.5
+        : false;
+      // Browser/network driven pauses count as system
+      const networkStarved = mediaEl?.networkState === 2 && mediaEl?.readyState < 3;
+      if (ended || nearNaturalEnd || networkStarved || isHardResettingRef.current) {
+        return 'system';
+      }
+      return 'user';
+    };
+
     const handlePause = (event) => {
       logExplicitPlaybackToggle('pause');
-      let intent = (event?.isTrusted === false || isHardResettingRef.current) ? 'system' : 'user';
-      // If the browser pauses due to buffer underrun, it may still emit a trusted event.
-      // We check the readyState and networkState to infer if this is actually a stall.
-      // networkState 2 = NETWORK_LOADING
-      // readyState < 3 = HAVE_FUTURE_DATA (so 0, 1, 2 means we can't play forward)
-      if (intent === 'user' && mediaEl.networkState === 2 && mediaEl.readyState < 3) {
-        intent = 'system';
-      }
+      const intent = (event?.isTrusted === false) ? 'system' : classifyPauseIntent();
       reportPlaybackMetrics({ isPaused: true, pauseIntent: intent });
     };
     const handleTimeUpdate = () => {
@@ -426,6 +435,10 @@ export function useMediaReporter({
         readyState: mediaEl.readyState
       });
     };
+    const handleEnded = () => {
+      logExplicitPlaybackToggle('pause');
+      reportPlaybackMetrics({ isPaused: true, pauseIntent: 'system' });
+    };
 
     mediaEl.addEventListener('play', handlePlay);
     mediaEl.addEventListener('pause', handlePause);
@@ -436,6 +449,7 @@ export function useMediaReporter({
     mediaEl.addEventListener('seeked', handleSeeked);
     mediaEl.addEventListener('loadedmetadata', handleLoadedMetadata);
     mediaEl.addEventListener('playing', handlePlaying);
+    mediaEl.addEventListener('ended', handleEnded);
 
     reportPlaybackMetrics();
 
@@ -449,6 +463,7 @@ export function useMediaReporter({
       mediaEl.removeEventListener('seeked', handleSeeked);
       mediaEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
       mediaEl.removeEventListener('playing', handlePlaying);
+      mediaEl.removeEventListener('ended', handleEnded);
       if (startupAttachmentRef.current) {
         startupAttachmentRef.current = false;
         emitStartupSignal('media-el-detached', {
