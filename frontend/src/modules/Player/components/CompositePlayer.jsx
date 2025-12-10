@@ -18,16 +18,20 @@ export function CompositePlayer(props) {
     const overlayKey = isQueue ? 'queue' : 'play';
     const normalizePrimaryEntry = (value) => {
       if (!value) return value;
-      const applyDefaults = (entry) => ({
-        ...entry,
-        seconds: 0,
-        resume: false,
-        shader: 'minimal'
-      });
+      const applyDefaults = (entry) => {
+        const originalSeconds = entry.seconds;
+        const normalized = {
+          ...entry,
+          seconds: 0,
+          resume: false,
+          shader: 'minimal'
+        };
+        return normalized;
+      };
       return Array.isArray(value) ? value.map(applyDefaults) : applyDefaults(value);
     };
 
-    if (baseProps[overlayKey]) {
+    if (baseProps[overlayKey] && !Array.isArray(baseProps[overlayKey])) {
       baseProps[overlayKey] = { ...baseProps[overlayKey], overlay: undefined };
     }
 
@@ -47,11 +51,18 @@ export function CompositePlayer(props) {
   const overlayProps = React.useMemo(() => {
     if (!overlayConfig) return null;
 
-    const ensureSecondsReset = (entry = {}) => ({
-      ...entry,
-      seconds: 0,
-      shader: entry.shader || 'minimal'
-    });
+    const ensureSecondsReset = (entry = {}) => {
+      const originalSeconds = entry.seconds;
+      const normalized = {
+        ...entry,
+        seconds: 0,
+          resume: false,
+          shader: entry.shader || 'minimal'
+        };
+        return normalized;
+      };    const normalizeOverlayValue = (value) => (
+      Array.isArray(value) ? value.map(ensureSecondsReset) : ensureSecondsReset(value)
+    );
 
     if (Array.isArray(overlayConfig)) {
       return { queue: overlayConfig.map(ensureSecondsReset) };
@@ -63,9 +74,9 @@ export function CompositePlayer(props) {
 
     if (overlayConfig.play || overlayConfig.queue) {
       if (overlayConfig.queue) {
-        return { queue: ensureSecondsReset(overlayConfig.queue) };
+        return { queue: normalizeOverlayValue(overlayConfig.queue) };
       }
-      return { play: ensureSecondsReset(overlayConfig.play) };
+      return { play: normalizeOverlayValue(overlayConfig.play) };
     }
 
     const normalized = ensureSecondsReset(overlayConfig);
@@ -88,8 +99,19 @@ export function CompositePlayer(props) {
 
   return (
     <div className={`player composite ${shader}`}>
-      {overlayProps && <Player playerType="overlay" ignoreKeys clear={noop} {...overlayProps} />}
-      <Player playerType="primary" {...primaryProps} ignoreKeys />
+      {overlayProps && (
+        <Player
+          playerType="overlay"
+          ignoreKeys
+          clear={noop}
+          {...overlayProps}
+        />
+      )}
+      <Player
+        playerType="primary"
+        {...primaryProps}
+        ignoreKeys
+      />
     </div>
   );
 }

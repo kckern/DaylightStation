@@ -62,6 +62,19 @@ export function useQueueController({ play, queue, clear }) {
 
     async function initQueue() {
       let newQueue = [];
+      
+      // Extract overrides that should apply to all generated items
+      // This ensures that props like 'resume: false' or 'seconds: 0' from CompositePlayer
+      // are propagated to items fetched from the API.
+      const sourceObj = (play && typeof play === 'object' && !Array.isArray(play)) ? play : 
+                       (queue && typeof queue === 'object' && !Array.isArray(queue)) ? queue : {};
+      
+      const itemOverrides = {};
+      if (sourceObj.resume !== undefined) itemOverrides.resume = sourceObj.resume;
+      if (sourceObj.seconds !== undefined) itemOverrides.seconds = sourceObj.seconds;
+      if (sourceObj.maxVideoBitrate !== undefined) itemOverrides.maxVideoBitrate = sourceObj.maxVideoBitrate;
+      if (sourceObj.maxResolution !== undefined) itemOverrides.maxResolution = sourceObj.maxResolution;
+
       if (Array.isArray(play)) {
         newQueue = play.map(item => ({ ...item, guid: guid() }));
       } else if (Array.isArray(queue)) {
@@ -71,12 +84,12 @@ export function useQueueController({ play, queue, clear }) {
         if (queue_media_key) {
           const { items } = await DaylightAPI(`data/list/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
-          newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
+          newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         } else if (queue?.plex || play?.plex) {
           const plexId = queue?.plex || play?.plex;
           const { items } = await DaylightAPI(`media/plex/list/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
-          newQueue = flattened.map(item => ({ ...item, ...item.play, guid: guid() }));
+          newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         }
       }
       if (!isCancelled) {

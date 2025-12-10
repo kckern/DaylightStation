@@ -143,14 +143,16 @@ const deriveApproxDurationSeconds = (media = {}) => {
 
 const resolveInitialStartSeconds = (media) => {
   const rawStart = Number(media?.seconds);
-  const normalizedStart = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : 0;
+  const normalizedStart = Number.isFinite(rawStart) && rawStart >= 0 ? rawStart : 0;
   const approxDuration = deriveApproxDurationSeconds(media);
   const decision = shouldRestartFromBeginning(approxDuration, normalizedStart);
-  return {
+  const result = {
     startSeconds: decision.restart ? 0 : normalizedStart,
     decision,
     approxDuration
   };
+  
+  return result;
 };
 
 /**
@@ -478,7 +480,7 @@ export function VideoPlayer({
   });
   const dashSource = useMemo(() => {
     if (!media_url) return null;
-    const startPosition = Number.isFinite(initialStartSeconds) && initialStartSeconds > 0 ? initialStartSeconds : undefined;
+    const startPosition = Number.isFinite(initialStartSeconds) && initialStartSeconds >= 0 ? initialStartSeconds : undefined;
     return startPosition != null
       ? { streamUrl: media_url, contentType: 'application/dash+xml', startPosition }
       : { streamUrl: media_url, contentType: 'application/dash+xml' };
