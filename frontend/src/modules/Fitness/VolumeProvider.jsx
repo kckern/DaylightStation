@@ -34,7 +34,7 @@ const applyVolumeToMedia = (media, state) => {
 
 export const VolumeProvider = ({ children, storage, now }) => {
   const storeRef = useRef(null);
-  const [, bumpVersion] = useState(0);
+  const [version, bumpVersion] = useState(0);
 
   if (!storeRef.current) {
     storeRef.current = createVolumeStore({
@@ -67,9 +67,10 @@ export const VolumeProvider = ({ children, storage, now }) => {
       setVolume,
       applyToPlayer,
       isStorageHealthy: () => storeRef.current.isStorageHealthy(),
-      getSnapshot: storeRef.current.getSnapshot
+      getSnapshot: storeRef.current.getSnapshot,
+      version
     }),
-    [getVolume, setVolume, applyToPlayer]
+    [getVolume, setVolume, applyToPlayer, version]
   );
 
   return <VolumeContext.Provider value={value}>{children}</VolumeContext.Provider>;

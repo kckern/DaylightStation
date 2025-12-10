@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useVolumeStore } from '../VolumeProvider.jsx';
 
 const amplifiers = new WeakMap();
 
@@ -51,15 +52,34 @@ const buildAmplifier = (element, boostLevel) => {
   return amp;
 };
 
-export const useMediaAmplifier = (mediaElement) => {
-  const [boostLevel, setBoostLevel] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem('daylight-media-boost');
-      return saved ? parseFloat(saved) : 1;
-    }
-    return 1;
-  });
+const normalizePart = (value, fallback) => {
+  if (value === undefined || value === null) return fallback;
+  const normalized = String(value).trim();
+  if (!normalized || normalized.toLowerCase() === 'unknown') return fallback;
+  return normalized;
+};
+
+export const useMediaAmplifier = (mediaElement, { showId, seasonId, trackId } = {}) => {
+  const { getVolume, setVolume } = useVolumeStore();
+  
+  const ids = useMemo(
+    () => ({
+      showId: normalizePart(showId, 'fitness'),
+      seasonId: normalizePart(seasonId, 'global'),
+      trackId: normalizePart(trackId, null)
+    }),
+    [showId, seasonId, trackId]
+  );
+
+  const [boostLevel, setBoostLevel] = useState(1);
   const amplifierRef = useRef(null);
+
+  useEffect(() => {
+    const resolved = getVolume(ids);
+    if (resolved && typeof resolved.boost === 'number') {
+      setBoostLevel(resolved.boost);
+    }
+  }, [ids, getVolume]);
 
   useEffect(() => {
     // Clear stale ref when the element changes
@@ -140,14 +160,12 @@ export const useMediaAmplifier = (mediaElement) => {
             mediaElement.dispatchEvent(new Event('volumechange'));
         }
     }
-    if (typeof window !== 'undefined') {
-        window.localStorage.setItem('daylight-media-boost', boostLevel);
-    }
   }, [boostLevel, mediaElement]);
 
-  const setBoost = (level) => {
+  const setBoost = useCallback((level) => {
     setBoostLevel(level);
-  };
+    setVolume(ids, { boost: level });
+  }, [ids, setVolume]);
 
   return {
     boostLevel,

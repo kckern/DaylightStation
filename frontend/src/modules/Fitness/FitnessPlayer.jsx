@@ -13,6 +13,7 @@ import { usePersistentVolume } from './usePersistentVolume.js';
 import { resolveMediaIdentity, normalizeDuration } from '../Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
+import { useMediaAmplifier } from './components/useMediaAmplifier.js';
 
 const DEBUG_FITNESS_INTERACTIONS = false;
 
@@ -158,6 +159,32 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     fitnessSessionInstance
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
+
+  const [mediaElement, setMediaElement] = useState(null);
+
+  // Track media element replacements so boost can rebind after player remounts
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    let cancelled = false;
+    const updateElement = () => {
+      const next = playerRef?.current?.getMediaElement?.() || null;
+      setMediaElement((prev) => (prev === next ? prev : next));
+    };
+    updateElement();
+    const intervalId = window.setInterval(() => {
+      if (!cancelled) updateElement();
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [playerRef]);
+
+  const { boostLevel, setBoost } = useMediaAmplifier(mediaElement, {
+    showId: currentItem?.showId,
+    seasonId: currentItem?.seasonId,
+    trackId: currentItem?.id
+  });
   const seekIntentRef = useRef(null); // Track seek/resume intent to override actual time
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
@@ -1273,6 +1300,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
               reloadTargetSeconds={reloadTargetSeconds}
               onToggleChart={() => setShowChart(prev => !prev)}
               showChart={showChart}
+              boostLevel={boostLevel}
+              setBoost={setBoost}
             />
           </div>
         )}
