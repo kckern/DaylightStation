@@ -480,8 +480,11 @@ export function useCommonMediaController({
           lastLoggedMetadataKeyRef.current = logKey;
         }
 
-        if (isInitialLoadRef.current && !hasAppliedForKey) {
-          const shouldApplyStart = (durationValue > 12 * 60) || isVideoEl;
+        const explicitResume = meta?.resume;
+        const forceStart = explicitResume === false;
+
+        if ((isInitialLoadRef.current && !hasAppliedForKey) || forceStart) {
+          const shouldApplyStart = (durationValue > 12 * 60) || isVideoEl || forceStart;
           desiredStart = shouldApplyStart ? start : 0;
 
           const initialDecision = shouldRestartFromBeginning(durationValue, desiredStart);
@@ -491,11 +494,12 @@ export function useCommonMediaController({
             desiredStart,
             duration: durationValue,
             restart: initialDecision.restart,
-            reason: initialDecision.reason
+            reason: initialDecision.reason,
+            forceStart
           }, { level: 'debug' });
 
-          if (initialDecision.restart) {
-            desiredStart = 0;
+          if (initialDecision.restart || forceStart) {
+            desiredStart = forceStart ? start : 0;
             clearResumeHistoryForKey(media_key);
             lastSeekIntentRef.current = null;
             lastPlaybackPosRef.current = 0;
@@ -542,7 +546,7 @@ export function useCommonMediaController({
 
         mediaEl.dataset.key = media_key;
 
-        if (Number.isFinite(desiredStart) && desiredStart > 0) {
+        if (Number.isFinite(desiredStart) && desiredStart >= 0) {
           try {
             mediaEl.currentTime = desiredStart;
           } catch (error) {
