@@ -87,6 +87,7 @@ async function initializeApp() {
     const { default: fitnessRouter } = await import('./fitness.mjs');
     const { default: printerRouter } = await import('./printer.mjs');
     const { default: gratitudeRouter } = await import('./gratitude.mjs');
+    const { default: plexRouter } = await import('./plex.mjs');
 
 
     const { default: exe } = await import('./exe.js');
@@ -151,44 +152,7 @@ async function initializeApp() {
     app.use("/print", printerRouter);
     app.use("/tts", tts);
     app.use("/api/gratitude", gratitudeRouter);
-
-
-    // Proxy app for Plex
-    const {host} = process.env.plex;
-    app.use('/plex_proxy', (req, res) => {
-      const url = `${host}${req.url.replace(/\/plex_proxy/, '')}${req.url.includes('?') ? '&' : '?'}${req.url.includes('X-Plex-Token') ? '' : `X-Plex-Token=${process.env.PLEX_TOKEN}`}`;
-      // localhost:3112/plex_proxy/library/metadata/311217/thumb/1614603573
-
-     // console.log(`Proxying request to: ${url}`);
-
-      const maxRetries = 20; // Try for ~10 seconds (20 * 500ms)
-      const retryDelay = 500;
-
-      const attemptProxy = (retries) => {
-        const proxyRequest = request({ qs: req.query, uri: url });
-
-        proxyRequest.on('error', (err) => {
-          if (!res.headersSent) {
-            rootLogger.error('proxy.error', { url, error: err?.message, stack: err?.stack });
-            res.status(500).json({ error: 'Failed to proxy request', details: err.message });
-          }
-        });
-
-        proxyRequest.on('response', (response) => {
-          if (response.statusCode >= 400 && response.statusCode < 600 && retries < maxRetries) {
-            // console.log(`${response.statusCode} detected for ${url}, retrying (${retries + 1}/${maxRetries})...`);
-            setTimeout(() => attemptProxy(retries + 1), retryDelay);
-          } else {
-            res.writeHead(response.statusCode, response.headers);
-            response.pipe(res);
-          }
-        });
-
-        req.pipe(proxyRequest);
-      };
-
-      attemptProxy(0);
-    });
+    app.use("/plex_proxy", plexRouter);
 
 
     // Frontend

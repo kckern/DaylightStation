@@ -1,0 +1,14 @@
+[Unit]
+Description=Plex Permissions Monitor
+After=docker.service network.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/plex-perms-monitor.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
