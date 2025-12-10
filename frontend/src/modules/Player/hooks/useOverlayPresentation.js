@@ -191,6 +191,7 @@ export function useOverlayPresentation({
   stallOverlayActive,
   waitingToPlay,
   playbackHasProgress,
+  pauseIntentIsUser,
   userIntentIsPaused,
   explicitPauseActive,
   isPaused,
@@ -268,6 +269,7 @@ export function useOverlayPresentation({
     && explicitPauseActive
     && userIntentIsPaused
     && isPaused
+    && pauseIntentIsUser
     && !waitingToPlay
     && !computedStalled;
 
