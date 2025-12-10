@@ -603,7 +603,11 @@ export function VideoPlayer({
     }
 
     const player = shakaPlayerRef.current;
-    if (player && typeof player.retryStreaming === 'function') {
+    // For decoder stalls (where we have buffer but no progress), retryStreaming is often insufficient.
+    // We prefer a micro-seek to kick the decoder.
+    const preferSeek = reason === 'decoder-stall';
+
+    if (!preferSeek && player && typeof player.retryStreaming === 'function') {
       try {
         await player.retryStreaming();
         logShakaDiagnostic('shaka-nudge-retry-streaming', { reason }, 'info');
