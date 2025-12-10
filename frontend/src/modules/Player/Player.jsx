@@ -400,6 +400,16 @@ const Player = forwardRef(function Player(props, ref) {
       return;
     }
 
+    // Prevent infinite remount loops for overlay players
+    if (playerType === 'overlay' && (remountInfoRef.current?.nonce ?? 0) > 5) {
+      playbackLog('player-remount-suppressed', {
+        reason: 'max-remounts-exceeded',
+        playerType,
+        nonce: remountInfoRef.current?.nonce
+      });
+      return;
+    }
+
     const seekSeconds = Number.isFinite(seekToIntentMs) ? Math.max(0, seekToIntentMs / 1000) : null;
 
     let hardResetInvoked = false;
