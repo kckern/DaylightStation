@@ -10,12 +10,12 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
     progressEpsilonSeconds: 0.25,
     stallDetectionThresholdMs: 500,
     hardRecoverAfterStalledForMs: 4000,
-    hardRecoverLoadingGraceMs: 12000,
+    hardRecoverLoadingGraceMs: 6000,
     hardRecoverAttemptBackoffMs: 1000,
     mountTimeoutMs: 5000,
     mountPollIntervalMs: 750,
     mountMaxAttempts: 3,
-    startupTimeoutMs: 12000,
+    startupTimeoutMs: 6000,
     startupMaxAttempts: 2
   },
   recovery: {
