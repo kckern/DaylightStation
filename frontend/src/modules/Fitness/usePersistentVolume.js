@@ -11,7 +11,7 @@ const normalizePart = (value, fallback) => {
 };
 
 export function usePersistentVolume({ showId, seasonId, trackId, playerRef } = {}) {
-  const { getVolume, setVolume, applyToPlayer } = useVolumeStore();
+  const { getVolume, setVolume, applyToPlayer, version } = useVolumeStore();
   const ids = useMemo(
     () => ({
       showId: normalizePart(showId, 'fitness'),
@@ -32,7 +32,7 @@ export function usePersistentVolume({ showId, seasonId, trackId, playerRef } = {
     if (playerRef?.current) {
       applyToPlayer(playerRef, resolved);
     }
-  }, [ids, playerRef, getVolume, applyToPlayer]);
+  }, [ids, playerRef, getVolume, applyToPlayer, version]);
 
   const persistVolume = useCallback(
     (nextLevel) => {
@@ -73,12 +73,12 @@ export function usePersistentVolume({ showId, seasonId, trackId, playerRef } = {
     [applyToPlayer, playerRef, volume, muted]
   );
 
-  return {
+  return useMemo(() => ({
     volume,
     muted,
     source,
     setVolume: persistVolume,
     toggleMute,
     applyToPlayer: apply,
-  };
+  }), [volume, muted, source, persistVolume, toggleMute, apply]);
 }
