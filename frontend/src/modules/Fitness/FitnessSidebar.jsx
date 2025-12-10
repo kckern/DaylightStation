@@ -11,7 +11,7 @@ import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
 import './FitnessCam.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
-const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true }, ref) => {
+const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true, boostLevel, setBoost }, ref) => {
   const fitnessContext = useFitnessContext();
   const isGovernedInitial = governanceDisabled ? false : Boolean(fitnessContext?.governanceState?.isGoverned);
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
@@ -266,6 +266,8 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
             onToggleViewMode={onToggleViewMode}
             showChart={showChart}
             onToggleChart={onToggleChart}
+            boostLevel={boostLevel}
+            setBoost={setBoost}
           />
         </>
       )}

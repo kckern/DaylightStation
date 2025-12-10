@@ -1,6 +1,6 @@
 const GLOBAL_KEY = 'volume:global';
 const FITNESS_PREFIX = 'volume:fitness';
-const DEFAULT_VOLUME = { level: 0.6, muted: false, updatedAt: 0 };
+const DEFAULT_VOLUME = { level: 0.6, muted: false, boost: 1, updatedAt: 0 };
 
 const VOLUME_KEY_PATTERN = /^volume:fitness:([^:]+):([^:]+):(.+)$/;
 
@@ -24,8 +24,9 @@ function clampLevel(level) {
 function sanitizeVolume(entry, fallback = DEFAULT_VOLUME) {
   const level = clampLevel(entry?.level ?? fallback.level);
   const muted = typeof entry?.muted === 'boolean' ? entry.muted : fallback.muted;
+  const boost = typeof entry?.boost === 'number' ? entry.boost : fallback.boost;
   const updatedAt = typeof entry?.updatedAt === 'number' ? entry.updatedAt : fallback.updatedAt;
-  return { level, muted, updatedAt };
+  return { level, muted, boost, updatedAt };
 }
 
 function parseKeyMeta(key) {
@@ -58,7 +59,7 @@ function ensureGlobalDefault(map) {
 }
 
 function stripMeta(entry) {
-  return { level: entry.level, muted: entry.muted, updatedAt: entry.updatedAt };
+  return { level: entry.level, muted: entry.muted, boost: entry.boost, updatedAt: entry.updatedAt };
 }
 
 function normalizeIds(ids = {}) {
@@ -165,6 +166,7 @@ export function createVolumeStore(options = {}) {
     const next = sanitizeVolume({
       level: patch?.level ?? existing.level,
       muted: patch?.muted ?? existing.muted,
+      boost: patch?.boost ?? existing.boost,
       updatedAt: now(),
     }, existing);
     const entryWithMeta = { ...next, ...parseKeyMeta(key), key };
@@ -188,6 +190,7 @@ export function createVolumeStore(options = {}) {
         trackId: entry.trackId,
         level: entry.level,
         muted: entry.muted,
+        boost: entry.boost,
         updatedAt: entry.updatedAt,
       })),
     };

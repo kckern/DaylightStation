@@ -468,12 +468,7 @@ const FitnessChart = () => {
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
-
-		const useFullRange = yScaleBase === 1;
-		const start = useFullRange
-			? Math.min(minAxisValue, paddedMaxValue)
-			: Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
-
+		const start = Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
 		const tickCount = 4;
 		const span = Math.max(1, paddedMaxValue - start);
 		const values = Array.from({ length: tickCount }, (_, idx) => {
@@ -487,7 +482,7 @@ const FitnessChart = () => {
 			x1: 0,
 			x2: chartWidth
 		}));
-	}, [paddedMaxValue, lowestAvatarValue, chartWidth, scaleY, yScaleBase, minAxisValue]);
+	}, [paddedMaxValue, lowestAvatarValue, chartWidth, scaleY]);
 
 	const xTicks = useMemo(() => {
 		const totalMs = effectiveTicks * intervalMs;

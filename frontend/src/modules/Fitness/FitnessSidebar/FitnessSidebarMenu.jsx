@@ -3,7 +3,6 @@ import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { usePersistentVolume } from '../../Fitness/usePersistentVolume.js';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
-import { useMediaAmplifier } from '../components/useMediaAmplifier';
 import '../FitnessCam.scss';
 
 const slugifyId = (value, fallback = 'user') => {
@@ -38,7 +37,9 @@ const FitnessSidebarMenu = ({
   viewMode = 'cam',
   onToggleViewMode = null,
   showChart = true,
-  onToggleChart = null
+  onToggleChart = null,
+  boostLevel,
+  setBoost
 }) => {
   const fitnessContext = useFitnessContext();
   const deviceAssignments = fitnessContext?.deviceAssignments || [];
@@ -60,7 +61,6 @@ const FitnessSidebarMenu = ({
   const currentSummaryClass = `guest-summary-value${activeAssignment ? ' guest-summary-value--active' : ''}`;
   const [mediaElement, setMediaElement] = React.useState(() => playerRef?.current?.getMediaElement?.() || null);
 
-  const { boostLevel, setBoost } = useMediaAmplifier(mediaElement);
   const videoVolumeState = usePersistentVolume({
     showId: 'fitness-video',
     seasonId: 'global',
@@ -91,18 +91,9 @@ const FitnessSidebarMenu = ({
   }, [playerRef]);
 
   React.useEffect(() => {
-    if (!mediaElement || typeof mediaElement.volume !== 'number') {
-      return undefined;
+    if (mediaElement) {
+      videoVolumeState.applyToPlayer();
     }
-    const syncVolume = () => {
-      const current = mediaElement.volume ?? 1;
-      videoVolumeState.setVolume(current);
-    };
-    syncVolume();
-    mediaElement.addEventListener('volumechange', syncVolume);
-    return () => {
-      mediaElement.removeEventListener('volumechange', syncVolume);
-    };
   }, [mediaElement, videoVolumeState]);
 
   const videoDisplayLevel = React.useMemo(
@@ -113,10 +104,7 @@ const FitnessSidebarMenu = ({
   const handleVideoLevelSelect = React.useCallback((level) => {
     const next = linearVolumeFromLevel(level);
     videoVolumeState.setVolume(next);
-    if (mediaElement && typeof mediaElement.volume === 'number') {
-      mediaElement.volume = next;
-    }
-  }, [mediaElement, videoVolumeState]);
+  }, [videoVolumeState]);
 
   const handleReloadPage = () => {
     if (typeof window !== 'undefined') {
