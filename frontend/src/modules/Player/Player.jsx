@@ -395,7 +395,7 @@ const Player = forwardRef(function Player(props, ref) {
       ...rest
     } = options || {};
 
-    if (forceDocReload || forceFullReload) {
+    if ((forceDocReload || forceFullReload) && playerType !== 'overlay') {
       reloadDocument();
       return;
     }

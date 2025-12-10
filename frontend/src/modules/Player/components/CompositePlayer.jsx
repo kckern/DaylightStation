@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { CompositeControllerProvider } from './CompositeControllerContext.jsx';
 
 /**
  * Composite Player - Video player with audio overlay
@@ -98,21 +99,23 @@ export function CompositePlayer(props) {
   );
 
   return (
-    <div className={`player composite ${shader}`}>
-      {overlayProps && (
+    <CompositeControllerProvider config={props.coordination}>
+      <div className={`player composite ${shader}`}>
+        {overlayProps && (
+          <Player
+            playerType="overlay"
+            ignoreKeys
+            clear={noop}
+            {...overlayProps}
+          />
+        )}
         <Player
-          playerType="overlay"
+          playerType="primary"
+          {...primaryProps}
           ignoreKeys
-          clear={noop}
-          {...overlayProps}
         />
-      )}
-      <Player
-        playerType="primary"
-        {...primaryProps}
-        ignoreKeys
-      />
-    </div>
+      </div>
+    </CompositeControllerProvider>
   );
 }
 

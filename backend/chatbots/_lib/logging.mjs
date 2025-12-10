@@ -6,6 +6,7 @@
 //  - Each log line is a single JSON object (machine parsable)
 
 import crypto from 'crypto';
+import { loggers } from 'winston';
 
 const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
 const levelNames = Object.keys(LEVELS);
