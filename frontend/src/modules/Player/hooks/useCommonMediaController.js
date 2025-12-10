@@ -16,7 +16,7 @@ export const shouldRestartFromBeginning = (durationSeconds, candidateSeconds) =>
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
     return { restart: false, reason: 'invalid-duration' };
   }
-  if (!Number.isFinite(candidateSeconds) || candidateSeconds <= 0) {
+  if (!Number.isFinite(candidateSeconds) || candidateSeconds < 0) {
     return { restart: false, reason: 'invalid-candidate' };
   }
   const secondsRemaining = durationSeconds - candidateSeconds;
@@ -482,6 +482,18 @@ export function useCommonMediaController({
 
         const explicitResume = meta?.resume;
         const forceStart = explicitResume === false;
+
+        if (!alreadyLoggedMetadata) {
+          playbackLog('media-resume-check', {
+            media_key,
+            explicitResume,
+            forceStart,
+            start,
+            duration: durationValue,
+            isInitial: isInitialLoadRef.current,
+            hasApplied: hasAppliedForKey
+          }, { level: 'info' });
+        }
 
         if ((isInitialLoadRef.current && !hasAppliedForKey) || forceStart) {
           const shouldApplyStart = (durationValue > 12 * 60) || isVideoEl || forceStart;
