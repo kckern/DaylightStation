@@ -15,6 +15,8 @@ import { useCompositeControllerChannel } from './components/CompositeControllerC
 import { resolveMediaIdentity } from './utils/mediaIdentity.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 
+const MAX_REMOUNT_ATTEMPTS = 5;
+
 const reloadDocument = () => {
   try {
     if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
@@ -400,13 +402,26 @@ const Player = forwardRef(function Player(props, ref) {
       return;
     }
 
-    // Prevent infinite remount loops for overlay players
-    if (playerType === 'overlay' && (remountInfoRef.current?.nonce ?? 0) > 5) {
-      playbackLog('player-remount-suppressed', {
+    const currentNonce = remountInfoRef.current?.nonce ?? 0;
+
+    // Prevent infinite remount loops
+    if (currentNonce > MAX_REMOUNT_ATTEMPTS) {
+      playbackLog('player-remount-failed-skipping', {
         reason: 'max-remounts-exceeded',
         playerType,
-        nonce: remountInfoRef.current?.nonce
-      });
+        nonce: currentNonce,
+        guid: activeEntryGuid
+      }, { level: 'error' });
+
+      if (playerType === 'overlay') {
+        return;
+      }
+
+      if (isQueue) {
+        advance();
+      } else {
+        clear();
+      }
       return;
     }
 
@@ -448,7 +463,7 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [forceSinglePlayerRemount, mediaAccess, transportAdapter]);
+  }, [forceSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, activeEntryGuid]);
 
   const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
