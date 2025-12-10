@@ -32,6 +32,7 @@ export function CompositeControllerProvider({ children, config }) {
   }));
 
   const previousPrimaryStatusRef = useRef(null);
+  const lastKnownOverlayStatusRef = useRef(null);
   const overlayMuteStateRef = useRef({ active: false, previousMuted: null });
 
   const updateRoleEntry = useCallback((role, patch) => {
@@ -121,6 +122,8 @@ export function CompositeControllerProvider({ children, config }) {
     }
 
     if (prevStatus && didRecoverFromStall(prevStatus, status)) {
+      const overlayController = getTransportApi(registry.overlay.controller);
+      overlayController?.play?.();
       syncOverlayToPrimary();
       if (overlayMuteStateRef.current.active) {
         applyOverlayMute(false);
@@ -132,6 +135,9 @@ export function CompositeControllerProvider({ children, config }) {
     const overlayStatus = registry.overlay.resilience?.status || null;
     if (!overlayStatus) return;
 
+    const prevStatus = lastKnownOverlayStatusRef.current;
+    lastKnownOverlayStatusRef.current = overlayStatus;
+
     if (isStalled(overlayStatus)) {
       if (coordination.overlayStallStrategy === 'pause-primary') {
         const primaryController = getTransportApi(registry.primary.controller);
@@ -142,10 +148,21 @@ export function CompositeControllerProvider({ children, config }) {
       return;
     }
 
+    const wasStalling = prevStatus === RESILIENCE_STATUS.stalling || prevStatus === RESILIENCE_STATUS.recovering;
+    const isNowActive = overlayStatus === RESILIENCE_STATUS.playing || overlayStatus === RESILIENCE_STATUS.startup;
+
+    if (wasStalling && isNowActive) {
+      const overlayResilience = registry.overlay.resilience;
+      if (overlayResilience?.userIntent === 'playing') {
+        const overlayController = getTransportApi(registry.overlay.controller);
+        overlayController?.play?.();
+      }
+    }
+
     if (overlayStatus === RESILIENCE_STATUS.playing && overlayMuteStateRef.current.active) {
       applyOverlayMute(false);
     }
-  }, [registry.overlay.resilience, registry.primary.controller, coordination.overlayStallStrategy, applyOverlayMute]);
+  }, [registry.overlay.resilience, registry.primary.controller, registry.overlay.controller, coordination.overlayStallStrategy, applyOverlayMute]);
 
   useEffect(() => () => {
     overlayMuteStateRef.current = { active: false, previousMuted: null };
