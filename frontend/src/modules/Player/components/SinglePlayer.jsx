@@ -269,6 +269,11 @@ export function SinglePlayer(props = {}) {
       if (play?.seconds !== undefined) {
         withCap.seconds = play.seconds;
       }
+
+      // Override resume if explicitly provided in play object
+      if (play?.resume !== undefined) {
+        withCap.resume = play.resume;
+      }
       
       setMediaInfo(withCap);
       setIsReady(true);

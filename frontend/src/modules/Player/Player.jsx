@@ -179,6 +179,11 @@ const Player = forwardRef(function Player(props, ref) {
     return identifier ? `player-session:${identifier}` : 'player-session:idle';
   }, [activeEntryGuid, mediaIdentity]);
 
+  const explicitStartProvided = effectiveMeta && Object.prototype.hasOwnProperty.call(effectiveMeta, 'seconds');
+  const explicitStartSeconds = explicitStartProvided
+    ? Math.max(0, Number(effectiveMeta.seconds) || 0)
+    : null;
+
   const {
     targetTimeSeconds,
     setTargetTimeSeconds,
@@ -447,7 +452,8 @@ const Player = forwardRef(function Player(props, ref) {
     isSeeking: effectiveMeta ? playbackMetrics.isSeeking : false,
     pauseIntent: effectiveMeta ? playbackMetrics.pauseIntent : null,
     playbackDiagnostics: effectiveMeta ? playbackMetrics.diagnostics : null,
-    initialStart: Number(effectiveMeta?.seconds) || 0,
+    initialStart: explicitStartSeconds ?? 0,
+    explicitStartProvided,
     waitKey: resolvedWaitKey,
     fetchVideoInfo: mediaAccess.fetchVideoInfo,
     nudgePlayback: transportAdapter.nudge,

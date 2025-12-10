@@ -128,6 +128,7 @@ export function useMediaResilience({
   pauseIntent = null,
   playbackDiagnostics = null,
   initialStart = 0,
+  explicitStartProvided = false,
   waitKey,
   fetchVideoInfo,
   onStateChange,
@@ -149,6 +150,11 @@ export function useMediaResilience({
   externalPauseActive = false
 }) {
   const [runtimeOverrides, setRuntimeOverrides] = useState(null);
+  const explicitStartMs = useMemo(() => (
+    explicitStartProvided && Number.isFinite(initialStart)
+      ? Math.max(0, initialStart * 1000)
+      : null
+  ), [explicitStartProvided, initialStart]);
   const {
     overlayConfig,
     debugConfig,
@@ -239,7 +245,7 @@ export function useMediaResilience({
   const lastProgressTsRef = useRef(null);
   const lastProgressSecondsRef = useRef(null);
   const lastLoggedProgressRef = useRef(0);
-  const lastKnownSeekIntentMsRef = useRef(Number.isFinite(initialStart) && initialStart > 0
+  const lastKnownSeekIntentMsRef = useRef(Number.isFinite(initialStart) && initialStart >= 0
     ? Math.max(0, initialStart * 1000)
     : null);
   const stallTimerRef = useRef(null);
@@ -667,7 +673,7 @@ export function useMediaResilience({
       decoderNudges: 0,
       bitrateOverrides: 0
     };
-    lastKnownSeekIntentMsRef.current = Number.isFinite(initialStart) && initialStart > 0
+    lastKnownSeekIntentMsRef.current = Number.isFinite(initialStart) && initialStart >= 0
       ? Math.max(0, initialStart * 1000)
       : null;
     markLoadingIntentActive();
@@ -678,7 +684,7 @@ export function useMediaResilience({
   }, [waitKey]);
 
   useEffect(() => {
-    if (!Number.isFinite(initialStart) || initialStart <= 0) return;
+    if (!Number.isFinite(initialStart) || initialStart < 0) return;
     lastKnownSeekIntentMsRef.current = Math.max(0, initialStart * 1000);
   }, [initialStart]);
 
@@ -1130,11 +1136,16 @@ export function useMediaResilience({
 
   useEffect(() => {
     if (Number.isFinite(sessionTargetTimeSeconds)) {
-      lastKnownSeekIntentMsRef.current = Math.max(0, sessionTargetTimeSeconds * 1000);
+      if (!explicitStartProvided) {
+        lastKnownSeekIntentMsRef.current = Math.max(0, sessionTargetTimeSeconds * 1000);
+      }
     }
-  }, [sessionTargetTimeSeconds]);
+  }, [sessionTargetTimeSeconds, explicitStartProvided]);
 
   const resolveSeekIntentMs = useCallback((overrideMs = null) => {
+    if (explicitStartMs != null) {
+      return explicitStartMs;
+    }
     if (Number.isFinite(overrideMs)) {
       return Math.max(0, overrideMs);
     }
@@ -1151,7 +1162,7 @@ export function useMediaResilience({
       return Math.max(0, lastSecondsRef.current * 1000);
     }
     return null;
-  }, [sessionTargetTimeSeconds]);
+  }, [explicitStartMs, sessionTargetTimeSeconds]);
 
   const {
     triggerRecovery,
