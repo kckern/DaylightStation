@@ -159,10 +159,18 @@ export function CompositeControllerProvider({ children, config }) {
       }
     }
 
+    // Enforce overlay playback if primary is playing but overlay is paused
+    const primaryStatus = registry.primary.resilience?.status || null;
+    const isPrimaryPlaying = primaryStatus === RESILIENCE_STATUS.playing || primaryStatus === RESILIENCE_STATUS.startup;
+    if (isPrimaryPlaying && overlayStatus === RESILIENCE_STATUS.paused) {
+      const overlayController = getTransportApi(registry.overlay.controller);
+      overlayController?.play?.();
+    }
+
     if (overlayStatus === RESILIENCE_STATUS.playing && overlayMuteStateRef.current.active) {
       applyOverlayMute(false);
     }
-  }, [registry.overlay.resilience, registry.primary.controller, registry.overlay.controller, coordination.overlayStallStrategy, applyOverlayMute]);
+  }, [registry.overlay.resilience, registry.primary.resilience, registry.primary.controller, registry.overlay.controller, coordination.overlayStallStrategy, applyOverlayMute]);
 
   useEffect(() => () => {
     overlayMuteStateRef.current = { active: false, previousMuted: null };
