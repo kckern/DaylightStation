@@ -165,6 +165,7 @@ export function useMediaReporter({
   const seekingRef = useRef(false);
   const isHardResettingRef = useRef(false);
   const pendingSeekSecondsRef = useRef(null);
+  const lastErrorRef = useRef({ at: null, detail: null });
   const lastMetricsRef = useRef({
     seconds: 0,
     isPaused: true,
@@ -387,8 +388,8 @@ export function useMediaReporter({
       logExplicitPlaybackToggle('play');
       reportPlaybackMetrics({ isPaused: false, isSeeking: false, pauseIntent: null });
     };
-    const classifyPauseIntent = () => {
-      // Default: treat as user unless we detect system/automatic causes.
+    const classifyPauseIntent = (pauseEventIsTrusted = false) => {
+      const now = Date.now();
       const ended = Boolean(mediaEl?.ended);
       const duration = Number.isFinite(mediaEl?.duration) ? mediaEl.duration : null;
       const current = Number.isFinite(mediaEl?.currentTime) ? mediaEl.currentTime : null;
@@ -397,16 +398,43 @@ export function useMediaReporter({
         : false;
       // Browser/network driven pauses count as system
       const networkStarved = mediaEl?.networkState === 2 && mediaEl?.readyState < 3;
-      if (ended || nearNaturalEnd || networkStarved || isHardResettingRef.current) {
+      const networkNoSource = mediaEl?.networkState === 3;
+      const mediaErrorPresent = Boolean(mediaEl?.error);
+      const recentSystemError = Number.isFinite(lastErrorRef.current?.at)
+        ? (now - lastErrorRef.current.at) <= 8000
+        : false;
+
+      if (
+        ended
+        || nearNaturalEnd
+        || networkStarved
+        || networkNoSource
+        || mediaErrorPresent
+        || recentSystemError
+        || isHardResettingRef.current
+      ) {
         return 'system';
       }
-      return 'user';
+
+      // Only return user when we have a trusted pause event and no recent/system errors.
+      if (pauseEventIsTrusted) {
+        return 'user';
+      }
+
+      return 'system';
     };
 
     const handlePause = (event) => {
+      const pauseEventIsTrusted = event?.isTrusted === true;
       logExplicitPlaybackToggle('pause');
-      const intent = (event?.isTrusted === false) ? 'system' : classifyPauseIntent();
+      const intent = classifyPauseIntent(pauseEventIsTrusted);
       reportPlaybackMetrics({ isPaused: true, pauseIntent: intent });
+    };
+    const handleError = (event) => {
+      const now = Date.now();
+      const detail = event?.error || event?.target?.error || null;
+      lastErrorRef.current = { at: now, detail };
+      reportPlaybackMetrics();
     };
     const handleTimeUpdate = () => {
       reportPlaybackMetrics();
@@ -442,6 +470,7 @@ export function useMediaReporter({
 
     mediaEl.addEventListener('play', handlePlay);
     mediaEl.addEventListener('pause', handlePause);
+    mediaEl.addEventListener('error', handleError);
     mediaEl.addEventListener('timeupdate', handleTimeUpdate);
     mediaEl.addEventListener('waiting', handleStallSignal);
     mediaEl.addEventListener('stalled', handleStallSignal);
@@ -456,6 +485,7 @@ export function useMediaReporter({
     return () => {
       mediaEl.removeEventListener('play', handlePlay);
       mediaEl.removeEventListener('pause', handlePause);
+      mediaEl.removeEventListener('error', handleError);
       mediaEl.removeEventListener('timeupdate', handleTimeUpdate);
       mediaEl.removeEventListener('waiting', handleStallSignal);
       mediaEl.removeEventListener('stalled', handleStallSignal);
