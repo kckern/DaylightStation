@@ -15,7 +15,7 @@ import { useCompositeControllerChannel } from './components/CompositeControllerC
 import { resolveMediaIdentity } from './utils/mediaIdentity.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 
-const MAX_REMOUNT_ATTEMPTS = 5;
+const MAX_REMOUNT_ATTEMPTS = 50;
 
 const reloadDocument = () => {
   try {
@@ -103,6 +103,12 @@ const Player = forwardRef(function Player(props, ref) {
     playQueue,
     advance
   } = useQueueController({ play, queue, clear });
+
+  const hasNextQueueItem = useMemo(() => (
+    isQueue
+    && Array.isArray(playQueue)
+    && playQueue.length > 1
+  ), [isQueue, playQueue]);
 
   const activeSource = useMemo(() => {
     if (isQueue && playQueue?.length > 0) {
@@ -417,10 +423,8 @@ const Player = forwardRef(function Player(props, ref) {
         return;
       }
 
-      if (isQueue) {
+      if (hasNextQueueItem) {
         advance();
-      } else {
-        clear();
       }
       return;
     }
