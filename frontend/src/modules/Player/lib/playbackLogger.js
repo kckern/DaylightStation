@@ -284,16 +284,24 @@ const ensureWebSocketTransport = () => {
     const socket = new window.WebSocket(targetUrl);
     websocketState.socket = socket;
     socket.onopen = () => {
+      devOutput('debug', '[PlaybackLogger] WebSocket connected');
       websocketState.connecting = false;
-      websocketState.reconnectDelay = websocketOptions.reconnectBaseDelay;
+      // Only reset backoff if connection stays healthy for a bit
+      setTimeout(() => {
+        if (websocketState.socket && websocketState.socket.readyState === window.WebSocket.OPEN) {
+          websocketState.reconnectDelay = websocketOptions.reconnectBaseDelay;
+        }
+      }, 5000);
       flushWebSocketQueue();
     };
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      devOutput('debug', '[PlaybackLogger] WebSocket closed', event.code, event.reason);
       websocketState.connecting = false;
       websocketState.socket = null;
       scheduleWebSocketReconnect();
     };
-    socket.onerror = () => {
+    socket.onerror = (error) => {
+      devOutput('warn', '[PlaybackLogger] WebSocket error', error);
       websocketState.connecting = false;
       websocketState.socket = null;
       scheduleWebSocketReconnect();

@@ -8,9 +8,12 @@ import { createWebsocketServer } from './websocket.js';
 import { createServer } from 'http';
 import { loadFile } from './lib/io.mjs';
 import { createLogger, logglyTransportAdapter, resolveLogglyToken } from './lib/logging/index.js';
-import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags } from './lib/logging/config.js';
+import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, hydrateProcessEnvFromConfigs } from './lib/logging/config.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
+
+// Load configuration from YAML files into process.env
+hydrateProcessEnvFromConfigs(path.join(__dirname, '..'));
 
 const configExists = existsSync(`${__dirname}/../config.app.yml`);
 const isDocker = existsSync('/.dockerenv');
