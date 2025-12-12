@@ -43,9 +43,12 @@ frontendLogger.info('frontend-start', { path: window.location?.pathname });
 // Enable playback logging via WebSocket
 configurePlaybackLogger({
   websocket: {
-    enabled: true
+    enabled: true,
+    // Force playback logger to the same backend websocket endpoint used by the Daylight logger
+    url: getWebSocketUrl()
   },
-  forwardToDaylight: true
+  forwardToDaylight: true,
+  level: 'debug'
 });
 
 // Wrapper component for HomeApp with WebSocket

@@ -15,7 +15,7 @@ import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
 
-const DEBUG_FITNESS_INTERACTIONS = false;
+const DEBUG_FITNESS_INTERACTIONS = true;
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -755,6 +755,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     postEpisodeStatus({ naturalEnd: false, reason: 'close' });
     if (setQueue) {
       setQueue([]);
+    }
+    // Trigger show refresh on manual exit
+    if (currentItem?.showId && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('fitness-show-refresh', { detail: { showId: currentItem.showId } }));
     }
     setCurrentItem(null);
   };
