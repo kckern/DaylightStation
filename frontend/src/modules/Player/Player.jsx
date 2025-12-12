@@ -15,7 +15,9 @@ import { useCompositeControllerChannel } from './components/CompositeControllerC
 import { resolveMediaIdentity } from './utils/mediaIdentity.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 
-const MAX_REMOUNT_ATTEMPTS = 50;
+const REMOUNT_BACKOFF_BASE_MS = 1000;
+const REMOUNT_BACKOFF_FACTOR = 1.5;
+const REMOUNT_BACKOFF_MAX_MS = 45000;
 
 const reloadDocument = () => {
   try {
@@ -162,17 +164,34 @@ const Player = forwardRef(function Player(props, ref) {
   const [playbackMetrics, setPlaybackMetrics] = useState(() => createDefaultPlaybackMetrics());
   const [remountState, setRemountState] = useState(() => ({ guid: activeEntryGuid || null, nonce: 0, context: null }));
   const remountInfoRef = useRef(remountState);
+  const remountTimerRef = useRef(null);
 
   useEffect(() => {
     remountInfoRef.current = remountState;
   }, [remountState]);
+
+  const clearRemountTimer = useCallback(() => {
+    if (remountTimerRef.current) {
+      clearTimeout(remountTimerRef.current);
+      remountTimerRef.current = null;
+    }
+  }, []);
+
+  const computeRemountDelayMs = useCallback((attempt = 1) => {
+    const normalizedAttempt = Math.max(1, attempt);
+    if (normalizedAttempt <= 1) return 0;
+    const exponent = Math.max(0, normalizedAttempt - 2);
+    const delay = REMOUNT_BACKOFF_BASE_MS * (REMOUNT_BACKOFF_FACTOR ** exponent);
+    return Math.min(Math.round(delay), REMOUNT_BACKOFF_MAX_MS);
+  }, []);
 
   useEffect(() => {
     setResolvedMeta(null);
     setMediaAccess(createDefaultMediaAccess());
     setPlaybackMetrics(createDefaultPlaybackMetrics());
     setRemountState((prev) => (prev.guid === activeEntryGuid ? prev : { guid: activeEntryGuid || null, nonce: 0, context: null }));
-  }, [activeEntryGuid]);
+    clearRemountTimer();
+  }, [activeEntryGuid, clearRemountTimer]);
 
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
   const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.media_key || null;
@@ -265,7 +284,7 @@ const Player = forwardRef(function Player(props, ref) {
     return `${fallback}:${remountState.nonce}`;
   }, [effectiveMeta, mediaIdentity, remountState.nonce]);
 
-  const forceSinglePlayerRemount = useCallback((input = null) => {
+  const forceSinglePlayerRemount = useCallback((input = null, meta = {}) => {
     const options = (input && typeof input === 'object' && !Array.isArray(input))
       ? input
       : { seekSeconds: input };
@@ -277,9 +296,14 @@ const Player = forwardRef(function Player(props, ref) {
       conditions = undefined
     } = options || {};
 
+    const { scheduledDelayMs = 0, attempt: attemptOverride = null } = meta || {};
+
     const normalized = Number.isFinite(seekSeconds) ? Math.max(0, seekSeconds) : null;
     const metaKey = mediaIdentity;
     const currentRemountNonce = remountInfoRef.current?.nonce ?? 0;
+    const attempt = Number.isFinite(attemptOverride)
+      ? attemptOverride
+      : currentRemountNonce + 1;
     const diagnostics = {
       reason,
       source,
@@ -288,7 +312,9 @@ const Player = forwardRef(function Player(props, ref) {
       conditions,
       waitKey: resolvedWaitKey,
       remountNonce: currentRemountNonce + 1,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      scheduledDelayMs,
+      attempt
     };
 
     playbackLog('player-remount', {
@@ -298,6 +324,8 @@ const Player = forwardRef(function Player(props, ref) {
       seekSeconds: normalized,
       guid: activeEntryGuid,
       remountNonce: currentRemountNonce,
+      attempt,
+      backoffMs: scheduledDelayMs,
       playerType: playerType || null,
       isQueue,
       metaKey,
@@ -318,6 +346,33 @@ const Player = forwardRef(function Player(props, ref) {
       return { guid: prev.guid, nonce: prev.nonce + 1, context: diagnostics };
     });
   }, [activeEntryGuid, effectiveMeta, isQueue, playerType, playbackMetrics, resolvedWaitKey, setTargetTimeSeconds]);
+
+  const scheduleSinglePlayerRemount = useCallback((input = null) => {
+    const attempt = (remountInfoRef.current?.nonce ?? 0) + 1;
+    const backoffMs = computeRemountDelayMs(attempt);
+
+    clearRemountTimer();
+
+    playbackLog('player-remount-scheduled', {
+      waitKey: resolvedWaitKey,
+      attempt,
+      backoffMs,
+      guid: activeEntryGuid,
+      playerType: playerType || null,
+      isQueue,
+      playbackSeconds: playbackMetrics?.seconds ?? null
+    }, { level: backoffMs > 0 ? 'info' : 'debug' });
+
+    if (!Number.isFinite(backoffMs) || backoffMs <= 0) {
+      forceSinglePlayerRemount(input, { scheduledDelayMs: 0, attempt });
+      return;
+    }
+
+    remountTimerRef.current = setTimeout(() => {
+      remountTimerRef.current = null;
+      forceSinglePlayerRemount(input, { scheduledDelayMs: backoffMs, attempt });
+    }, backoffMs);
+  }, [activeEntryGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playbackMetrics, playerType, resolvedWaitKey]);
 
   const singlePlayerKey = useMemo(() => {
     if (!singlePlayerProps) return 'player-idle';
@@ -408,27 +463,6 @@ const Player = forwardRef(function Player(props, ref) {
       return;
     }
 
-    const currentNonce = remountInfoRef.current?.nonce ?? 0;
-
-    // Prevent infinite remount loops
-    if (currentNonce > MAX_REMOUNT_ATTEMPTS) {
-      playbackLog('player-remount-failed-skipping', {
-        reason: 'max-remounts-exceeded',
-        playerType,
-        nonce: currentNonce,
-        guid: activeEntryGuid
-      }, { level: 'error' });
-
-      if (playerType === 'overlay') {
-        return;
-      }
-
-      if (hasNextQueueItem) {
-        advance();
-      }
-      return;
-    }
-
     const seekSeconds = Number.isFinite(seekToIntentMs) ? Math.max(0, seekToIntentMs / 1000) : null;
 
     let hardResetInvoked = false;
@@ -460,14 +494,14 @@ const Player = forwardRef(function Player(props, ref) {
       pendingSeekSeconds: seekSeconds
     };
 
-    forceSinglePlayerRemount({
+    scheduleSinglePlayerRemount({
       seekSeconds,
       reason: rest?.reason || 'resilience',
       source: rest?.source || 'resilience',
       trigger: triggerDetails,
       conditions
     });
-  }, [forceSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, activeEntryGuid]);
+  }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, activeEntryGuid]);
 
   const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
@@ -621,6 +655,8 @@ const Player = forwardRef(function Player(props, ref) {
     forceMediaInfoFetch: (opts) => resilienceControllerRef.current?.forceFetchInfo?.(opts),
     getPlaybackState: () => controllerRef.current?.getPlaybackState?.() || controllerRef.current?.transport?.getPlaybackState?.() || null
   }), []);
+
+  useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
   const overlayElements = overlayProps ? (
     <>

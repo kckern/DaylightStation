@@ -50,6 +50,9 @@ const DECODER_NUDGE_COOLDOWN_MS = 3000;
 const DECODER_NUDGE_GRACE_MS = 2000;
 const BITRATE_REDUCTION_FACTOR = 0.9;
 const DEFAULT_FALLBACK_MAX_VIDEO_BITRATE = 2000;
+const RECOVERY_WATCHDOG_FACTOR = 1.5;
+const RECOVERY_WATCHDOG_BASE_MS = 4000;
+const RECOVERY_WATCHDOG_MAX_MS = 60000;
 
 const shallowEqualObjects = (a, b) => {
   if (a === b) return true;
@@ -251,6 +254,7 @@ export function useMediaResilience({
   const stallTimerRef = useRef(null);
   const reloadTimerRef = useRef(null);
   const hardRecoveryTimerRef = useRef(null);
+  const recoveryOutcomeTimerRef = useRef(null);
   const loadingRecoveryTimerRef = useRef(null);
   const startupTimeoutRef = useRef(null);
   const startupWatchdogStartRef = useRef(null);
@@ -1359,6 +1363,25 @@ export function useMediaResilience({
   const elementWaiting = Boolean(playbackHealth?.elementSignals?.waiting);
   const elementBuffering = Boolean(playbackHealth?.elementSignals?.buffering);
 
+  const computeRecoveryWatchdogMs = useCallback((attempts = 1) => {
+    const baseCandidates = [RECOVERY_WATCHDOG_BASE_MS];
+    if (Number.isFinite(effectiveHardRecoverAfterStalledForMs)) {
+      baseCandidates.push(effectiveHardRecoverAfterStalledForMs);
+    }
+    if (Number.isFinite(effectiveLoadingGraceMs)) {
+      baseCandidates.push(effectiveLoadingGraceMs);
+    }
+    if (Number.isFinite(stallDetectionThresholdMs)) {
+      baseCandidates.push(stallDetectionThresholdMs * 2);
+    }
+
+    const base = Math.max(...baseCandidates.filter((value) => Number.isFinite(value) && value > 0));
+    const normalizedAttempts = Math.max(1, attempts);
+    const exponent = Math.max(0, normalizedAttempts - 1);
+    const delay = base * (RECOVERY_WATCHDOG_FACTOR ** exponent);
+    return Math.min(Math.round(delay), RECOVERY_WATCHDOG_MAX_MS);
+  }, [effectiveHardRecoverAfterStalledForMs, effectiveLoadingGraceMs, stallDetectionThresholdMs]);
+
   useEffect(() => {
     if (monitorSuspended) {
       return;
@@ -1529,6 +1552,55 @@ export function useMediaResilience({
     resilienceActions,
     resilienceState.recoveryGuardToken,
     resolveLoadingIntent
+  ]);
+
+  useEffect(() => {
+    if (status === STATUS.playing || status === STATUS.paused) {
+      if (recoveryOutcomeTimerRef.current) {
+        logResilienceEvent('stall-recovery-watchdog-cleared', {
+          reason: 'playback-progress',
+          status,
+          attempts: resilienceState.recoveryAttempts
+        }, { level: 'debug', tags: ['recovery', 'watchdog'] });
+      }
+      clearTimer(recoveryOutcomeTimerRef);
+      return;
+    }
+
+    if (status !== STATUS.recovering && status !== STATUS.stalling) {
+      clearTimer(recoveryOutcomeTimerRef);
+      return;
+    }
+
+    const attempts = resilienceState.recoveryAttempts || 0;
+    const timeoutMs = computeRecoveryWatchdogMs(attempts || 1);
+    const stallSnapshot = stallStateRef.current || {};
+
+    clearTimer(recoveryOutcomeTimerRef);
+    recoveryOutcomeTimerRef.current = setTimeout(() => {
+      logResilienceEvent('stall-recovery-watchdog-timeout', {
+        attempts,
+        timeoutMs,
+        status: statusRef.current,
+        stallId: stallSnapshot.id || null,
+        stallToken: stallSnapshot.token || null,
+        stallStartedAt: stallSnapshot.startedAt || null,
+        stallDurationMs: stallSnapshot.startedAt ? Math.max(0, Date.now() - stallSnapshot.startedAt) : null,
+        bufferRunwayMs,
+        classification: stallClassification?.type || null
+      }, { level: 'error', tags: ['stall', 'recovery', 'watchdog'] });
+    }, timeoutMs);
+
+    return () => clearTimer(recoveryOutcomeTimerRef);
+  }, [
+    bufferRunwayMs,
+    clearTimer,
+    computeRecoveryWatchdogMs,
+    logResilienceEvent,
+    resilienceState.recoveryAttempts,
+    stallClassification,
+    status,
+    statusRef
   ]);
 
   useEffect(() => {

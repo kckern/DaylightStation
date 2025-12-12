@@ -2,10 +2,10 @@
 
 /**
  * Loggly CLI Utility
- * 
+ *
  * Usage:
  *   node scripts/loggly-cli.js [options]
- * 
+ *
  * Options:
  *   -q, --query <string>      Search query (default: "*")
  *   -f, --from <string>       Start time (default: "-1h")
@@ -17,11 +17,24 @@
  *   --startup                 Preset query for startup watchdog signals
  *   --json                    Output raw JSON
  *   --help                    Show this help message
- * 
+ *
  * Environment Variables:
  *   LOGGLY_SUBDOMAIN          Your Loggly subdomain (required)
  *   LOGGLY_API_TOKEN          Your Loggly API Token (required for search)
  *   LOGGLY_TOKEN              Fallback for API Token (usually this is input token, but checked just in case)
+ *
+ * Examples (copy/paste):
+ *   # Recent unrecovered stalls (new watchdog logs)
+ *   node scripts/loggly-cli.js -q "stall-recovery-watchdog-timeout" -f "-30m" -l 40 -o desc
+ *
+ *   # Remount backoff visibility
+ *   node scripts/loggly-cli.js -q "player-remount-scheduled OR player-remount" -f "-2h" -l 50 -o desc
+ *
+ *   # Fitness player coverage
+ *   node scripts/loggly-cli.js -q "playerType:fitness-video" -f "-6h" -l 50 -o desc
+ *
+ *   # Stall lifecycle (preset columns)
+ *   node scripts/loggly-cli.js --stalls -f "-1h" -l 100 -o asc
  */
 
 const axios = require('axios');
@@ -166,6 +179,12 @@ Options:
   --startup                 Preset query for startup watchdog signals
   --json                    Output raw JSON
   --help                    Show this help message
+
+Examples:
+  node scripts/loggly-cli.js -q "stall-recovery-watchdog-timeout" -f "-30m" -l 40 -o desc
+  node scripts/loggly-cli.js -q "player-remount-scheduled OR player-remount" -f "-2h" -l 50 -o desc
+  node scripts/loggly-cli.js -q "playerType:fitness-video" -f "-6h" -l 50 -o desc
+  node scripts/loggly-cli.js --stalls -f "-1h" -l 100 -o asc
 `);
       process.exit(0);
       break;
