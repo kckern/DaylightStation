@@ -11,7 +11,7 @@ import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
 import './FitnessCam.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
-const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true, boostLevel, setBoost }, ref) => {
+const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true, boostLevel, setBoost }, ref) => {
   const fitnessContext = useFitnessContext();
   const isGovernedInitial = governanceDisabled ? false : Boolean(fitnessContext?.governanceState?.isGoverned);
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
@@ -214,6 +214,7 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
           <FitnessMusicPlayer 
             selectedPlaylistId={selectedPlaylistId} 
             videoPlayerRef={playerRef}
+            videoVolume={videoVolume}
           />
         </div>
       )}
@@ -268,6 +269,7 @@ const FitnessSidebar = forwardRef(({ playerRef, onReloadVideo, reloadTargetSecon
             onToggleChart={onToggleChart}
             boostLevel={boostLevel}
             setBoost={setBoost}
+            videoVolume={videoVolume}
           />
         </>
       )}

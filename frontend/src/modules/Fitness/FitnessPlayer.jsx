@@ -9,7 +9,7 @@ import FitnessCam from './FitnessCam.jsx';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '../Player/lib/playbackLogger.js';
-import { usePersistentVolume } from './usePersistentVolume.js';
+import { useFitnessVolumeControls } from './useFitnessVolumeControls.js';
 import { resolveMediaIdentity, normalizeDuration } from '../Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
@@ -474,11 +474,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     isGoverned: playIsGoverned
   }), [currentItem, enhancedCurrentItem, playerMode, playIsGoverned]);
 
-  const { volume: persistedVolume, applyToPlayer: applyPersistedVolume } = usePersistentVolume({
-    showId,
-    seasonId,
-    trackId: currentMediaIdentity,
-    playerRef
+  const { videoVolume } = useFitnessVolumeControls({
+    videoPlayerRef: playerRef,
+    videoShowId: showId,
+    videoSeasonId: seasonId,
+    videoTrackId: currentMediaIdentity
   });
 
   const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
@@ -844,19 +844,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       title: enhancedCurrentItem.title,
       seconds: enhancedCurrentItem.seconds,
       shader: 'minimal',
-      volume: persistedVolume,
+      volume: videoVolume.volume,
       playbackRate: currentItem?.playbackRate || 1.0,
       type: 'video',
       continuous: false,
       autoplay: canAutoplay
     };
-  }, [enhancedCurrentItem, persistedVolume, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
+  }, [enhancedCurrentItem, videoVolume.volume, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
 
   const autoplayEnabled = Boolean(playObject?.autoplay);
 
   useEffect(() => {
-    applyPersistedVolume();
-  }, [applyPersistedVolume, currentMediaIdentity]);
+    videoVolume.applyToPlayer();
+  }, [videoVolume, currentMediaIdentity]);
 
   useEffect(() => {
     const session = fitnessSessionInstance;
@@ -1300,6 +1300,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
             {/* Keep sidebar mounted in fullscreen so auxiliary players (music) continue running */}
             <FitnessSidebar
               playerRef={playerRef}
+              videoVolume={videoVolume}
               onReloadVideo={handleReloadEpisode}
               reloadTargetSeconds={reloadTargetSeconds}
               onToggleChart={() => setShowChart(prev => !prev)}
