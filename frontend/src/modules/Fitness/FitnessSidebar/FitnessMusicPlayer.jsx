@@ -38,7 +38,7 @@ const normalizeTrackDurationSeconds = (...candidates) => {
   return null;
 };
 
-const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
+const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume }) => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -90,23 +90,12 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
       || null;
   }, [currentTrack]);
 
-  const videoVolumeState = usePersistentVolume({
-    showId: 'fitness-video',
-    seasonId: 'global',
-    trackId: 'video',
-    playerRef: videoPlayerRef
-  });
-
   const musicVolumeState = usePersistentVolume({
     showId: 'fitness-music',
     seasonId: selectedPlaylistId || 'global',
     trackId: currentTrackIdentity || 'music',
     playerRef: audioPlayerRef
   });
-
-  const applyVideoVolume = useCallback(() => {
-    videoVolumeState.applyToPlayer();
-  }, [videoVolumeState]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -131,13 +120,13 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
         return;
       }
       setIsVideoAvailable(true);
-      applyVideoVolume();
+      videoVolume?.applyToPlayer?.();
     };
     probeVideoElement();
     return () => {
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, [videoPlayerRef, applyVideoVolume]);
+  }, [videoPlayerRef, videoVolume]);
 
   // Load playlist when selectedPlaylistId changes
   useEffect(() => {
@@ -282,8 +271,8 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   };
 
   const videoDisplayLevel = useMemo(
-    () => snapToTouchLevel(linearLevelFromVolume(videoVolumeState.volume)),
-    [videoVolumeState.volume]
+    () => snapToTouchLevel(linearLevelFromVolume(videoVolume?.volume)),
+    [videoVolume?.volume]
   );
   const musicDisplayLevel = useMemo(
     () => snapToTouchLevel(logLevelFromVolume(musicVolumeState.volume)),
@@ -291,7 +280,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
   );
 
   const handleVideoLevelSelect = (level) => {
-    videoVolumeState.setVolume(linearVolumeFromLevel(level));
+    videoVolume?.setVolume?.(linearVolumeFromLevel(level));
   };
 
   const handleMusicLevelSelect = (level) => {
@@ -471,7 +460,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef }) => {
             <div className="expanded-section">
               {isVideoAvailable && (
                 <div className="mix-row">
-                  <label id="video-volume-label" className="mix-label">Video Volume: {Math.round((videoVolumeState.volume || 0) * 100)}%
+                  <label id="video-volume-label" className="mix-label">Video Volume: {Math.round((videoVolume?.volume || 0) * 100)}%
 
                   </label>
                   <div className="mix-controls">
