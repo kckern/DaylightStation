@@ -52,7 +52,14 @@ function getLogger() {
       return { timestamp, level, message, ...rest };
   });
 
-  const winstonTransportList = [];
+  const winstonTransportList = [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    })
+  ];
 
   if (LOGGLY_TOKEN && LOGGLY_SUBDOMAIN) {
     winstonTransportList.push(new Loggly({
@@ -99,6 +106,8 @@ export function createWebsocketServer(server) {
         ip: req?.socket?.remoteAddress,
         userAgent: req?.headers?.['user-agent']
       };
+
+      logger.info('WebSocket connection established', { ip: ws._clientMeta.ip });
       
       // Handle incoming messages from fitness controller
       ws.on('message', (message) => {
@@ -187,7 +196,7 @@ export function createWebsocketServer(server) {
       
       ws.on('close', () => {
         // Connection closed
-       // logger.info('WebSocket connection closed');
+        logger.info('WebSocket connection closed');
       });
     });
     wssNav.on('error', (err) => {
