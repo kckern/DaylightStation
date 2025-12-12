@@ -49,7 +49,14 @@ export function useResilienceRecovery({
   } = {}) => {
     if (!force && !recoveryConfig.enabled) return;
     if (!force && !ignorePaused && userIntentRef.current === pausedIntentValue) return;
-    if (!force && recoveryConfig.maxAttempts && recoveryAttempts >= recoveryConfig.maxAttempts) return;
+    if (!force && recoveryConfig.maxAttempts && recoveryAttempts >= recoveryConfig.maxAttempts) {
+      logResilienceEvent('recovery-suppressed-max-attempts', {
+        reason,
+        attempts: recoveryAttempts,
+        maxAttempts: recoveryConfig.maxAttempts
+      }, { level: 'error' });
+      return;
+    }
     const now = Date.now();
     if (!force && recoveryConfig.cooldownMs && now - (lastReloadAtRef.current || 0) < recoveryConfig.cooldownMs) return;
 
