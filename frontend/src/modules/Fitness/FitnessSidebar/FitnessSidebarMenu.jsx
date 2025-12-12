@@ -1,7 +1,6 @@
 import React from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import { usePersistentVolume } from '../../Fitness/usePersistentVolume.js';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import '../FitnessCam.scss';
 
@@ -39,7 +38,8 @@ const FitnessSidebarMenu = ({
   showChart = true,
   onToggleChart = null,
   boostLevel,
-  setBoost
+  setBoost,
+  videoVolume
 }) => {
   const fitnessContext = useFitnessContext();
   const deviceAssignments = fitnessContext?.deviceAssignments || [];
@@ -60,13 +60,6 @@ const FitnessSidebarMenu = ({
   const currentLabel = activeAssignment?.occupantName || activeAssignment?.metadata?.name || baseName || 'Unassigned';
   const currentSummaryClass = `guest-summary-value${activeAssignment ? ' guest-summary-value--active' : ''}`;
   const [mediaElement, setMediaElement] = React.useState(() => playerRef?.current?.getMediaElement?.() || null);
-
-  const videoVolumeState = usePersistentVolume({
-    showId: 'fitness-video',
-    seasonId: 'global',
-    trackId: 'video',
-    playerRef
-  });
 
   const isWideSidebar = sidebarSizeMode === 'large';
 
@@ -91,20 +84,20 @@ const FitnessSidebarMenu = ({
   }, [playerRef]);
 
   React.useEffect(() => {
-    if (mediaElement) {
-      videoVolumeState.applyToPlayer();
+    if (mediaElement && videoVolume) {
+      videoVolume.applyToPlayer?.();
     }
-  }, [mediaElement, videoVolumeState]);
+  }, [mediaElement, videoVolume]);
 
   const videoDisplayLevel = React.useMemo(
-    () => snapToTouchLevel(linearLevelFromVolume(videoVolumeState.volume)),
-    [videoVolumeState.volume]
+    () => snapToTouchLevel(linearLevelFromVolume(videoVolume?.volume)),
+    [videoVolume?.volume]
   );
 
   const handleVideoLevelSelect = React.useCallback((level) => {
     const next = linearVolumeFromLevel(level);
-    videoVolumeState.setVolume(next);
-  }, [videoVolumeState]);
+    videoVolume?.setVolume?.(next);
+  }, [videoVolume]);
 
   const handleReloadPage = () => {
     if (typeof window !== 'undefined') {
@@ -131,7 +124,6 @@ const FitnessSidebarMenu = ({
   };
 
   const reloadLabel = formatSeconds(reloadTargetSeconds);
-  const volumePercent = Math.round(Math.min(1, Math.max(0, videoVolumeState.volume || 0)) * 100);
 
   const guestOptions = React.useMemo(() => {
     const seen = new Set();
