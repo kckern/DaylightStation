@@ -124,6 +124,19 @@ const PRESETS = {
       ['elapsedMs', 'data.elapsedMs'],
       ['timeoutMs', 'data.timeoutMs']
     ]
+  },
+  startupTiming: {
+    query: 'startup-watchdog OR startup-timeout OR startup-hard-timeout OR startup-watchdog-warning OR startup-watchdog-bitrate-reduction OR startup_intervention_count OR startup_duration_ms',
+    columns: [
+      ['ts', 'timestamp'],
+      ['event', 'data.event'],
+      ['action', 'data.action'],
+      ['waitKey', 'data.waitKey'],
+      ['attempts', 'data.attempts'],
+      ['durationMs', 'data.durationMs'],
+      ['timeoutMs', 'data.timeoutMs'],
+      ['count', 'data.count']
+    ]
   }
 };
 
@@ -168,6 +181,9 @@ for (let i = 0; i < args.length; i++) {
       break;
     case '--startup':
       options.preset = 'startup';
+      break;
+    case '--startup-timing':
+      options.preset = 'startupTiming';
       break;
     case '--json':
       options.json = true;
