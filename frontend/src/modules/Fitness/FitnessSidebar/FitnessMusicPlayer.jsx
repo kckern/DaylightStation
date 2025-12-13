@@ -543,6 +543,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
             play={{ volume: musicVolumeState.volume }}
             onProgress={handleProgress}
             playerType="audio"
+            sessionId="fitness-music"
           />
         </div>
       ) : (
