@@ -31,12 +31,10 @@ const allIcons = fs
 // For demo purposes, using built-in system fonts:
 //console.log(process.env);
 const fontDir = process.env.path?.font || './backend/journalist/fonts/roboto-condensed';
-const fontPath =fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
+const fontPath = fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
 
-console.log('Registering font:', fontPath);
-
-//register font ./fonts/RobotoCondensed-Regular.ttf
-registerFont(fontPath, {  family: 'Roboto Condensed', });
+// Register font for canvas text rendering
+registerFont(fontPath, { family: 'Roboto Condensed' });
 
 
 const DEFAULT_FONT = '32px "Roboto Condensed"';
