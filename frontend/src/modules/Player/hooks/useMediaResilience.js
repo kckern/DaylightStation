@@ -47,12 +47,19 @@ const SYSTEM_HEALTH = Object.freeze({
 
 const DECODER_NUDGE_MIN_BUFFER_MS = 8000;
 const DECODER_NUDGE_COOLDOWN_MS = 3000;
-const DECODER_NUDGE_GRACE_MS = 2000;
+// Default: allow Shaka a longer startup window before we consider nudging the decoder
+const DECODER_NUDGE_GRACE_MS = 8000;
 const BITRATE_REDUCTION_FACTOR = 0.9;
 const DEFAULT_FALLBACK_MAX_VIDEO_BITRATE = 2000;
 const RECOVERY_WATCHDOG_FACTOR = 1.5;
 const RECOVERY_WATCHDOG_BASE_MS = 4000;
 const RECOVERY_WATCHDOG_MAX_MS = 60000;
+const STARTUP_WATCHDOG_TIERS = [
+  { atMs: 8000, action: 'warn' },
+  { atMs: 15000, action: 'reduce-bitrate' },
+  { atMs: 20000, action: 'remount' },
+  { atMs: 30000, action: 'hard-reload' }
+];
 
 const shallowEqualObjects = (a, b) => {
   if (a === b) return true;
@@ -175,8 +182,17 @@ export function useMediaResilience({
     mountPollIntervalMs,
     mountMaxAttempts,
     startupTimeoutMs,
-    startupMaxAttempts
+    startupMaxAttempts,
+    decoderNudgeGraceMs: decoderNudgeGraceMsConfig,
+    startupWatchdogTiers: startupWatchdogTiersConfig
   } = monitorSettings;
+
+  const decoderNudgeGraceMs = Number.isFinite(decoderNudgeGraceMsConfig)
+    ? decoderNudgeGraceMsConfig
+    : DECODER_NUDGE_GRACE_MS;
+  const startupWatchdogTiers = Array.isArray(startupWatchdogTiersConfig) && startupWatchdogTiersConfig.length
+    ? startupWatchdogTiersConfig
+    : STARTUP_WATCHDOG_TIERS;
 
   const {
     userIntent,
@@ -257,6 +273,7 @@ export function useMediaResilience({
   const recoveryOutcomeTimerRef = useRef(null);
   const loadingRecoveryTimerRef = useRef(null);
   const startupTimeoutRef = useRef(null);
+  const startupTierTimersRef = useRef([]);
   const startupWatchdogStartRef = useRef(null);
   const startupArmedKeyRef = useRef(null);
   const startupAttemptsRef = useRef(0);
@@ -445,7 +462,8 @@ export function useMediaResilience({
     stallDurationMs: 0,
     recoveryAttempts: 0,
     decoderNudges: 0,
-    bitrateOverrides: 0
+    bitrateOverrides: 0,
+    startupInterventions: 0
   });
 
   useEffect(() => {
@@ -594,7 +612,7 @@ export function useMediaResilience({
     }
     state.inflight = true;
     state.lastRequestedAt = now;
-    state.graceUntil = now + DECODER_NUDGE_GRACE_MS;
+    state.graceUntil = now + decoderNudgeGraceMs;
 
     metricsRef.current.decoderNudges += 1;
     logMetric('decoder_nudge', {
@@ -794,6 +812,10 @@ export function useMediaResilience({
     if (startupTimeoutRef.current) {
       clearTimeout(startupTimeoutRef.current);
       startupTimeoutRef.current = null;
+    }
+    if (startupTierTimersRef.current?.length) {
+      startupTierTimersRef.current.forEach((id) => clearTimeout(id));
+      startupTierTimersRef.current = [];
     }
   }, []);
 
@@ -1362,6 +1384,7 @@ export function useMediaResilience({
     externalPauseReason,
     monitorSuspended,
     playbackHealth,
+    isStartupPhase: status === STATUS.startup || status === STATUS.pending,
     readDiagnostics: readPolicyDiagnostics,
     reduceBitrateAfterHardReset,
     requestDecoderNudge,
@@ -1669,6 +1692,17 @@ export function useMediaResilience({
             : null
         }, { level: 'debug' });
       }
+      const startupStartTs = startupWatchdogStartRef.current
+        || startupSignalsRef.current?.attachedAt
+        || startupSignalsRef.current?.lastTimestamp
+        || null;
+      if (startupStartTs) {
+        const durationMs = Math.max(0, Date.now() - startupStartTs);
+        logMetric('startup_duration_ms', {
+          durationMs,
+          attempts: startupAttemptsRef.current
+        }, { level: 'info', tags: ['metric', 'startup'] });
+      }
       publishStartupWatchdogState({
         active: false,
         state: 'resolved',
@@ -1706,43 +1740,105 @@ export function useMediaResilience({
     startupWatchdogStartRef.current = Date.now();
     startupArmedKeyRef.current = waitKey;
 
-    startupTimeoutRef.current = setTimeout(() => {
-      startupTimeoutRef.current = null;
-      startupAttemptsRef.current += 1;
-      const attempt = startupAttemptsRef.current;
-      const maxAttempts = Number.isFinite(startupMaxAttempts) ? startupMaxAttempts : null;
-      const reachedMax = maxAttempts != null && attempt >= maxAttempts;
+    // Arm tiered startup watchdog actions
+    const tierTimers = [];
+    startupWatchdogTiers.forEach((tier) => {
+      const { atMs, action } = tier || {};
+      if (!Number.isFinite(atMs) || atMs <= 0) return;
+      tierTimers.push(setTimeout(() => {
+        if (action === 'warn') {
+          logResilienceEvent('startup-watchdog-warning', {
+            atMs,
+            attempts: startupAttemptsRef.current
+          }, { level: 'warn' });
+          metricsRef.current.startupInterventions += 1;
+          logMetric('startup_intervention_count', {
+            count: metricsRef.current.startupInterventions,
+            action
+          }, { level: 'info', tags: ['metric', 'startup'] });
+          return;
+        }
 
-      logResilienceEvent('startup-timeout', {
-        attempt,
-        maxAttempts,
-        timeoutMs: startupTimeoutMs
-      }, { level: reachedMax ? 'error' : 'warn' });
+        if (action === 'reduce-bitrate') {
+          reduceBitrateAfterHardReset({ reason: 'startup-watchdog', source: 'startup' });
+          logResilienceEvent('startup-watchdog-bitrate-reduction', {
+            atMs,
+            attempts: startupAttemptsRef.current
+          }, { level: 'info' });
+          metricsRef.current.startupInterventions += 1;
+          logMetric('startup_intervention_count', {
+            count: metricsRef.current.startupInterventions,
+            action
+          }, { level: 'info', tags: ['metric', 'startup'] });
+          return;
+        }
 
-      startupWatchdogStartRef.current = null;
-      startupArmedKeyRef.current = null;
+        if (action === 'remount') {
+          logResilienceEvent('startup-timeout', {
+            attempt: startupAttemptsRef.current + 1,
+            maxAttempts: startupMaxAttempts,
+            timeoutMs: atMs
+          }, { level: 'warn' });
+          startupAttemptsRef.current += 1;
+          const maxAttempts = Number.isFinite(startupMaxAttempts) ? startupMaxAttempts : null;
+          const reachedMax = maxAttempts != null && startupAttemptsRef.current >= maxAttempts;
+          publishStartupWatchdogState({
+            active: !reachedMax,
+            state: reachedMax ? 'aborted' : 'timeout',
+            reason: 'startup-timeout',
+            attempts: startupAttemptsRef.current,
+            timestamp: Date.now()
+          });
+          metricsRef.current.startupInterventions += 1;
+          logMetric('startup_intervention_count', {
+            count: metricsRef.current.startupInterventions,
+            action
+          }, { level: 'info', tags: ['metric', 'startup'] });
 
-      publishStartupWatchdogState({
-        active: !reachedMax,
-        state: reachedMax ? 'aborted' : 'timeout',
-        reason: 'startup-timeout',
-        attempts: attempt,
-        timestamp: Date.now()
-      });
+          if (reachedMax) {
+            forcePlayerRemount('startup-timeout-max', {
+              seekToIntentMs: resolveSeekIntentMs()
+            });
+          } else {
+            triggerRecovery('startup-timeout', {
+              ignorePaused: true,
+              force: true,
+              seekToIntentMs: resolveSeekIntentMs()
+            });
+          }
+          return;
+        }
 
-      if (reachedMax) {
-        forcePlayerRemount('startup-timeout-max', {
-          seekToIntentMs: resolveSeekIntentMs()
-        });
-        return;
-      }
+        if (action === 'hard-reload') {
+          logResilienceEvent('startup-hard-timeout', {
+            attempts: startupAttemptsRef.current,
+            timeoutMs: atMs
+          }, { level: 'error' });
+          metricsRef.current.startupInterventions += 1;
+          logMetric('startup_intervention_count', {
+            count: metricsRef.current.startupInterventions,
+            action
+          }, { level: 'warn', tags: ['metric', 'startup'] });
+          publishStartupWatchdogState({
+            active: false,
+            state: 'aborted',
+            reason: 'startup-hard-timeout',
+            attempts: startupAttemptsRef.current,
+            timestamp: Date.now()
+          });
+          triggerRecovery('startup-hard-timeout', {
+            ignorePaused: true,
+            force: true,
+            seekToIntentMs: resolveSeekIntentMs()
+          });
+        }
+      }, atMs));
+    });
 
-      triggerRecovery('startup-timeout', {
-        ignorePaused: true,
-        force: true,
-        seekToIntentMs: resolveSeekIntentMs()
-      });
-    }, startupTimeoutMs);
+    startupTierTimersRef.current = tierTimers;
+
+    // Preserve existing max-attempts guard using the primary timeout (remount tier)
+    startupTimeoutRef.current = tierTimers.find(Boolean) || null;
   }, [
     startupTimeoutMs,
     startupMaxAttempts,
@@ -1756,7 +1852,8 @@ export function useMediaResilience({
     triggerRecovery,
     resolveSeekIntentMs,
     publishStartupWatchdogState,
-    startupSignalVersion
+    startupSignalVersion,
+    reduceBitrateAfterHardReset
   ]);
 
   useEffect(() => {

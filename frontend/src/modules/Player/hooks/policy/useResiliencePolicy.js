@@ -9,6 +9,8 @@ export const POLICY_STATE = Object.freeze({
   LOCKED: 'LOCKED'
 });
 
+const SHAKA_STALL_GRACE_MS = 2000;
+
 const deriveDroppedRatio = (decoderMetrics = null) => {
   if (!decoderMetrics) return null;
   const { droppedFrames, totalFrames } = decoderMetrics;
@@ -55,10 +57,25 @@ const summarizeDiagnosticsForLog = (diagnostics = null) => {
   };
 };
 
-const classifyStallNature = (diagnostics, playbackHealthSnapshot) => {
+const classifyStallNature = (diagnostics, playbackHealthSnapshot, isStartupPhase = false) => {
   if (!diagnostics) {
     return 'unknown';
   }
+  const readyState = diagnostics?.readyState;
+  const networkState = diagnostics?.networkState;
+  const buffered = diagnostics?.buffer?.buffered || diagnostics?.buffer?.raw || [];
+  const totalFrames = diagnostics?.decoder?.totalFrames;
+
+  // During startup, treat missing data as pending instead of stalled
+  if (isStartupPhase) {
+    if (Number.isFinite(readyState) && readyState < 2) {
+      return 'startup-pending';
+    }
+    if ((!buffered || buffered.length === 0) && (!Number.isFinite(totalFrames) || totalFrames === 0)) {
+      return 'startup-buffering';
+    }
+  }
+
   const bufferAhead = diagnostics?.buffer?.bufferAheadSeconds;
   if (Number.isFinite(bufferAhead) && bufferAhead < 0.75) {
     return 'buffer-starved';
@@ -75,6 +92,15 @@ const classifyStallNature = (diagnostics, playbackHealthSnapshot) => {
   if (droppedRatio != null && droppedRatio > 0.2) {
     return 'decoder-stall';
   }
+  // If we had frames or buffered data but lost readiness, treat as decoder stall
+  if ((Number.isFinite(totalFrames) && totalFrames > 0) || (buffered && buffered.length > 0)) {
+    if (Number.isFinite(readyState) && readyState < 3) {
+      return 'decoder-stall';
+    }
+  }
+  if (Number.isFinite(networkState) && (networkState === 0 || networkState === 3)) {
+    return 'network-stall';
+  }
   return 'unknown';
 };
 
@@ -83,13 +109,19 @@ export function useResiliencePolicy({
   externalPauseReason,
   monitorSuspended = false,
   playbackHealth,
+  isStartupPhase = false,
   readDiagnostics,
   reduceBitrateAfterHardReset,
   requestDecoderNudge,
   logResilienceEvent
 }) {
   const [stallClassification, setStallClassification] = useState('unknown');
-  const stallInsightsRef = useRef({ classification: 'unknown', lastLoggedAt: 0, lastMitigationAt: 0 });
+  const stallInsightsRef = useRef({
+    classification: 'unknown',
+    lastLoggedAt: 0,
+    lastMitigationAt: 0,
+    lastDetectedAt: 0
+  });
 
   const policyState = useMemo(() => {
     if (monitorSuspended) return POLICY_STATE.LOCKED;
@@ -101,8 +133,8 @@ export function useResiliencePolicy({
   }, [externalPauseReason, monitorSuspended, status]);
 
   const classify = useCallback(
-    (diagnostics) => classifyStallNature(diagnostics, playbackHealth),
-    [playbackHealth]
+    (diagnostics) => classifyStallNature(diagnostics, playbackHealth, isStartupPhase),
+    [playbackHealth, isStartupPhase]
   );
 
   useEffect(() => {
@@ -130,7 +162,7 @@ export function useResiliencePolicy({
     const classification = classify(diagnostics) || 'unknown';
     setStallClassification(classification);
 
-    if (classification === 'unknown') {
+    if (classification === 'unknown' || classification === 'startup-pending' || classification === 'startup-buffering') {
       return;
     }
 
@@ -145,7 +177,8 @@ export function useResiliencePolicy({
       stallInsightsRef.current = {
         ...lastSnapshot,
         classification,
-        lastLoggedAt: now
+        lastLoggedAt: now,
+        lastDetectedAt: now
       };
     }
 
@@ -161,6 +194,10 @@ export function useResiliencePolicy({
     }
 
     if (classification === 'decoder-stall') {
+      const detectedAgo = now - (lastSnapshot.lastDetectedAt || now);
+      if (detectedAgo < SHAKA_STALL_GRACE_MS) {
+        return; // allow Shaka a brief window to self-recover
+      }
       requestDecoderNudge?.('decoder-stall', {
         droppedRatio: deriveDroppedRatio(diagnostics?.decoder)
       });
