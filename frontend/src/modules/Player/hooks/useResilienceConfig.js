@@ -10,13 +10,17 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
     progressEpsilonSeconds: 0.25,
     stallDetectionThresholdMs: 500,
     hardRecoverAfterStalledForMs: 4000,
-    hardRecoverLoadingGraceMs: 6000,
+    // Give startup more room before hard recovery kicks in (helps NAS spin-up)
+    hardRecoverLoadingGraceMs: 12000,
     hardRecoverAttemptBackoffMs: 1000,
     mountTimeoutMs: 5000,
     mountPollIntervalMs: 750,
     mountMaxAttempts: 3,
-    startupTimeoutMs: 6000,
-    startupMaxAttempts: 2
+    // Extended startup timeout to allow slow cold starts/transcodes
+    startupTimeoutMs: 20000,
+    startupMaxAttempts: 2,
+    decoderNudgeGraceMs: 8000,
+    startupWatchdogTiers: null
   },
   recovery: {
     enabled: true,
@@ -83,14 +87,18 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
         hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 6000),
         hardRecoverLoadingGraceMs: coerceNumber(
           monitorConfig.hardRecoverLoadingGraceMs ?? monitorConfig.hardRecoverStartupGraceMs,
-          10000
+          12000
         ),
         hardRecoverAttemptBackoffMs: coerceNumber(monitorConfig.hardRecoverAttemptBackoffMs, 1000),
         mountTimeoutMs: coerceNumber(monitorConfig.mountTimeoutMs, 6000),
         mountPollIntervalMs: coerceNumber(monitorConfig.mountPollIntervalMs, 750),
         mountMaxAttempts: coerceNumber(monitorConfig.mountMaxAttempts, 3),
-        startupTimeoutMs: coerceNumber(monitorConfig.startupTimeoutMs, 12000),
-        startupMaxAttempts: coerceNumber(monitorConfig.startupMaxAttempts, 2)
+        startupTimeoutMs: coerceNumber(monitorConfig.startupTimeoutMs, 20000),
+        startupMaxAttempts: coerceNumber(monitorConfig.startupMaxAttempts, 2),
+        decoderNudgeGraceMs: coerceNumber(monitorConfig.decoderNudgeGraceMs, 8000),
+        startupWatchdogTiers: Array.isArray(monitorConfig.startupWatchdogTiers)
+          ? monitorConfig.startupWatchdogTiers
+          : null
       },
       recoveryConfig: {
         enabled: recoveryConfig.enabled ?? legacyReload.enabled ?? true,
