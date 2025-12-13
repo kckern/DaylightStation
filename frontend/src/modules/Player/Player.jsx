@@ -694,7 +694,7 @@ const Player = forwardRef(function Player(props, ref) {
     remountDiagnostics: remountState.context,
     wrapWithContainer: false,
     suppressLocalOverlay: !!overlayElements,
-    sessionId: activeEntryGuid ? `${activeEntryGuid}-r${remountState.nonce}` : null
+    plexClientSession: activeEntryGuid ? `${activeEntryGuid}-r${remountState.nonce}` : null
   };
 
   const playerShellClass = ['player', effectiveShader, props.playerType || '']

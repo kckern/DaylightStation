@@ -17,8 +17,10 @@ export function CompositePlayer(props) {
 
   // Stable session IDs for each player to ensure distinct Plex client identifiers
   // This prevents the overlay (audio) player from killing the primary (video) player's transcode session
-  const primarySessionId = React.useMemo(() => `composite-primary-${guid()}`, []);
-  const overlaySessionId = React.useMemo(() => `composite-overlay-${guid()}`, []);
+  // Stable Plex client session IDs for each player to ensure distinct X-Plex-Client-Identifier values
+  // This prevents the overlay (audio) player from killing the primary (video) player's transcode session
+  const primaryPlexSession = React.useMemo(() => `composite-primary-${guid()}`, []);
+  const overlayPlexSession = React.useMemo(() => `composite-overlay-${guid()}`, []);
 
   const primaryProps = React.useMemo(() => {
     const { coordination: _ignoredCoordination, Player: _ignoredPlayer, ...baseProps } = props;
@@ -127,13 +129,13 @@ export function CompositePlayer(props) {
             playerType="overlay"
             ignoreKeys={props.ignoreKeys}
             clear={noop}
-            sessionId={overlaySessionId}
+            plexClientSession={overlayPlexSession}
             {...overlayProps}
           />
         )}
         <Player
           playerType="primary"
-          sessionId={primarySessionId}
+          plexClientSession={primaryPlexSession}
           {...primaryProps}
           keyboardOverrides={primaryKeyboardOverrides}
         />
