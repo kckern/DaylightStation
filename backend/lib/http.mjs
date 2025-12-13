@@ -1,11 +1,9 @@
 import axios from 'axios';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 
 const httpLogger = createLogger({
-  name: 'backend-http',
-  context: { app: 'backend', module: 'http' },
-  level: process.env.HTTP_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-  transports: [logglyTransportAdapter({ tags: ['backend', 'http'] })]
+  source: 'backend',
+  app: 'http'
 });
 
 // Build a concise, 1-2 line description of an axios error

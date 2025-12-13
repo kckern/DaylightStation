@@ -6,22 +6,15 @@ import moment from "moment-timezone";
 import { CronExpressionParser } from "cron-parser";
 import Infinity from "./lib/infinity.js";
 import { loadFile, saveFile } from "./lib/io.mjs";
-import { createLogger, consoleTransport, logglyTransportAdapter, resolveLogglyToken } from './lib/logging/index.js';
+import { createLogger } from './lib/logging/logger.js';
 
 const apiRouter = express.Router();
 const timeZone = "America/Los_Angeles";
 
-const buildTransports = (tags = ['backend', 'cron']) => {
-  const transports = [consoleTransport()];
-  const token = resolveLogglyToken();
-  if (token) transports.push(logglyTransportAdapter({ token, tags }));
-  return transports;
-};
-
 const cronLogger = createLogger({
-  name: 'DaylightBackend',
-  context: { app: 'cron', env: process.env.NODE_ENV },
-  transports: buildTransports()
+  source: 'cron',
+  app: 'scheduler',
+  context: { env: process.env.NODE_ENV }
 });
 
 const cron = {

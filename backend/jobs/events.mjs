@@ -1,12 +1,10 @@
 
 import { loadFile, saveFile } from '../lib/io.mjs';
-import { createLogger, logglyTransportAdapter } from '../lib/logging/index.js';
+import { createLogger } from '../lib/logging/logger.js';
 
 const eventsLogger = createLogger({
-    name: 'backend-events',
-    context: { app: 'backend', module: 'events' },
-    level: process.env.EVENTS_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'events'] })]
+    source: 'backend',
+    app: 'events'
 });
 export default async (job_id) => {
 

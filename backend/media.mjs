@@ -10,7 +10,7 @@ import { getChildrenFromMediaKey } from './fetch.mjs';
 import Infinity from './lib/infinity.js';
 import { isWatched } from './lib/utils.mjs';
 import { slugify } from './lib/utils.mjs';
-import { createLogger, logglyTransportAdapter } from './lib/logging/index.js';
+import { createLogger } from './lib/logging/logger.js';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -21,10 +21,8 @@ const mediaPath = `${process.env.path.media}`;
 const notFound = `${audioPath}/${process.env.media.error}`;
 
 const mediaLogger = createLogger({
-    name: 'backend-media',
-    context: { app: 'backend', module: 'media' },
-    level: process.env.MEDIA_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'media'] })]
+    source: 'backend',
+    app: 'media'
 });
 
 const ext = ['mp3','mp4','m4a', 'webm'];

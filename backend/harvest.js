@@ -1,7 +1,7 @@
 import express from 'express';
 const harvestRouter = express.Router();
 import crypto from 'crypto';
-import { createLogger, consoleTransport, logglyTransportAdapter, resolveLogglyToken } from './lib/logging/index.js';
+import { createLogger } from './lib/logging/logger.js';
 
 import todoist from './lib/todoist.js';
 import gmail from './lib/gmail.js';
@@ -22,17 +22,10 @@ import strava from './lib/strava.mjs';
 import garmin from './lib/garmin.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from './lib/budget.mjs';
 
-const buildTransports = (tags = ['backend', 'harvest']) => {
-    const transports = [consoleTransport()];
-    const token = resolveLogglyToken();
-    if (token) transports.push(logglyTransportAdapter({ token, tags }));
-    return transports;
-};
-
 const harvestRootLogger = () => createLogger({
-    name: 'DaylightBackend',
-    context: { app: 'harvest', env: process.env.NODE_ENV },
-    transports: buildTransports()
+    source: 'backend',
+    app: 'harvest',
+    context: { env: process.env.NODE_ENV }
 });
 
 const harvesters = {

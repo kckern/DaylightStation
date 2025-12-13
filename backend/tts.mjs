@@ -6,13 +6,11 @@ import { storyTeller } from './story/story.mjs';
 import { v4 as uuidv4 } from 'uuid';
 import { loadFile, saveFile } from './lib/io.mjs';
 import cookieParser from 'cookie-parser';
-import { createLogger, logglyTransportAdapter } from './lib/logging/index.js';
+import { createLogger } from './lib/logging/logger.js';
 
 const ttsLogger = createLogger({
-    name: 'backend-tts',
-    context: { app: 'backend', module: 'tts' },
-    level: process.env.TTS_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'tts'] })]
+    source: 'backend',
+    app: 'tts'
 });
 
 
