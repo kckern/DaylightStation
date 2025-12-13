@@ -24,7 +24,8 @@ const buildTransports = (tagsOverride) => {
   const tags = tagsOverride || getLoggingTags(loggingConfig) || ['backend', 'api'];
   const transports = [];
   const token = resolveLogglyToken();
-  if (token) transports.push(logglyTransportAdapter({ token, tags }));
+  const subdomain = process.env.LOGGLY_SUBDOMAIN || process.env.LOGGLY_SUB_DOMAIN;
+  if (token) transports.push(logglyTransportAdapter({ token, subdomain, tags }));
   return transports;
 };
 
