@@ -1,12 +1,10 @@
 import { google } from 'googleapis';
 import { saveFile,sanitize } from './io.mjs';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 
 const defaultGmailLogger = createLogger({
-    name: 'backend-gmail',
-    context: { app: 'backend', module: 'gmail' },
-    level: process.env.GMAIL_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'gmail'] })]
+    source: 'backend',
+    app: 'gmail'
 });
 
 const listMails = async (logger, job_id) => {

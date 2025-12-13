@@ -3,13 +3,11 @@ import { loadFile, saveFile } from '../lib/io.mjs';
 import { clearWatchedItems } from '../fetch.mjs';
 import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';
 import fs from 'fs';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 
 const plexLogger = createLogger({
-  name: 'backend-plex',
-  context: { app: 'backend', module: 'plex' },
-  level: process.env.PLEX_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-  transports: [logglyTransportAdapter({ tags: ['backend', 'plex'] })]
+  source: 'backend',
+  app: 'plex'
 });
 
 

@@ -2,13 +2,11 @@ import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile } from './io.mjs';
 import axios from './http.mjs';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 const defaultStravaLogger = createLogger({
-    name: 'backend-strava',
-    context: { app: 'backend', module: 'strava' },
-    level: process.env.STRAVA_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'strava'] })]
+    source: 'backend',
+    app: 'strava'
 });
 const asLogger = (logger) => logger || defaultStravaLogger;
 
