@@ -24,7 +24,7 @@ export function SinglePlayer(props = {}) {
     suppressLocalOverlay = false,
     resilienceBitrateInfo = null,
     onRestoreFullBitrate = null,
-    sessionId = null,
+    plexClientSession = null,
     ...play
   } = props;
   const {
@@ -253,7 +253,7 @@ export function SinglePlayer(props = {}) {
       shuffle, 
       maxVideoBitrate: effectiveMax,
       maxResolution: effectiveResolution,
-      session: sessionId
+      session: plexClientSession
     });
     
     if (info) {
@@ -284,7 +284,7 @@ export function SinglePlayer(props = {}) {
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, shuffle, continuous, mediaInfo?.media_key, play?.media_key, play?.plex, play?.maxResolution, readStoredBitrate, writeStoredBitrate, sessionId]);
+  }, [plex, media, rate, open, shuffle, continuous, mediaInfo?.media_key, play?.media_key, play?.plex, play?.maxResolution, readStoredBitrate, writeStoredBitrate, plexClientSession]);
   // Note: initialMaxVideoBitrateRef intentionally not in deps - we use the ref to preserve the initial value
 
   useEffect(() => {

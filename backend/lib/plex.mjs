@@ -75,6 +75,16 @@ export class Plex {
   const clientIdentifier = media_type === 'audio' ? `${baseClientId}-audio` : baseClientId;
   const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
 
+  // Log session identifiers for debugging session collision issues
+  plexLogger.info('plex.media-url-generated', {
+    mediaType: media_type,
+    plexId: key,
+    clientIdentifier,
+    sessionIdentifier,
+    baseClientId,
+    optsSession: optsSession || null
+  });
+
     try {
       if (media_type === 'audio') {
         const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;

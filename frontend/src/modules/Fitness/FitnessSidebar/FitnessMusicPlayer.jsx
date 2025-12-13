@@ -55,7 +55,8 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
   const musicEnabled = fitnessContext?.musicEnabled ?? true;
   const sessionInstance = fitnessContext?.fitnessSessionInstance;
 
-  const musicSessionId = useMemo(() => `fitness-music-${guid()}`, []);
+  // Stable Plex client session ID - ensures music player has distinct X-Plex-Client-Identifier from video player
+  const musicPlexSession = useMemo(() => `fitness-music-${guid()}`, []);
 
   // Sync music player with video player pause state
   useEffect(() => {
@@ -539,7 +540,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
             play={{ volume: musicVolumeState.volume }}
             onProgress={handleProgress}
             playerType="audio"
-            sessionId={musicSessionId}
+            plexClientSession={musicPlexSession}
           />
         </div>
       ) : (
