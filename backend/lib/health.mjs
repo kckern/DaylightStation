@@ -5,6 +5,9 @@ import moment from "moment";
 import crypto from "crypto";
 import { load } from "js-yaml";
 import { generateCoachingMessageForDailyHealth } from "../journalist/lib/gpt_food.mjs";
+import { createLogger } from "./logging/logger.js";
+
+const healthLogger = createLogger({ source: 'backend', app: 'health' });
 
 function md5(string) {
     string = string.toString(); 
@@ -17,7 +20,7 @@ const dailyHealth = async (jobId) => {
     const {nutribot_chat_id} = process.env;
     
     if (!nutribot_chat_id) {
-        console.error('Missing nutribot_chat_id environment variable');
+        healthLogger.error('health.config.missing', { key: 'nutribot_chat_id' });
         return null;
     }
     

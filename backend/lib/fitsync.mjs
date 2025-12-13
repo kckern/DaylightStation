@@ -2,7 +2,11 @@ import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile } from './io.mjs';
 import axios from './http.mjs';
+import { createLogger } from './logging/logger.js';
+import { serializeError } from './logging/utils.js';
+
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
+const fitsyncLogger = createLogger({ source: 'backend', app: 'fitsync' });
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
 
@@ -52,7 +56,7 @@ try {
     const dataResponse = await axios.get(url, { headers });
     return dataResponse.data;
 } catch (error) {
-    console.error(`Error fetching data from ${endpoint}:`, error);
+    fitsyncLogger.error('fitsync.fetch.failed', { endpoint, error: serializeError(error) });
     throw error;
 }
 };
@@ -185,7 +189,8 @@ try {
 
     return reducedSaveMe;
 } catch (error) {
-    return { success: false, error: error.message}
+    fitsyncLogger.error('fitsync.harvest.failed', { error: serializeError(error) });
+    return { success: false, error: error.message };
 }
 };
 

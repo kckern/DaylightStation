@@ -4,6 +4,7 @@ import { clearWatchedItems } from '../fetch.mjs';
 import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';
 import fs from 'fs';
 import { createLogger } from './logging/logger.js';
+import { serializeError } from './logging/utils.js';
 
 const plexLogger = createLogger({
   source: 'backend',
@@ -30,7 +31,7 @@ export class Plex {
       const response = await axios.get(url);
       return response.data;
     } catch (error) {
-      plexLogger.error('Plex API fetch failed', { message: error.message, url });
+      plexLogger.error('Plex API fetch failed', { error: serializeError(error), url });
       return null; // Return null to indicate failure
     }
   }
@@ -104,7 +105,7 @@ export class Plex {
         return url;
       }
     } catch (error) {
-      plexLogger.error('Error generating media URL', { message: error.message });
+      plexLogger.error('Error generating media URL', { error: serializeError(error) });
       return null;
     }
   }

@@ -6,6 +6,10 @@ import { exec } from 'child_process';
 import axios from './lib/http.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
 import { broadcastToWebsockets, restartWebsocketServer } from './websocket.js';
+import { createLogger } from './lib/logging/logger.js';
+import { serializeError } from './lib/logging/utils.js';
+
+const exeLogger = createLogger({ source: 'backend', app: 'exe' });
 
 const promiseExec = util.promisify(exec);
 const exeRouter = express.Router();
@@ -55,7 +59,7 @@ class HomeAssistant {
             const response = await axios(options);
             return response.data;
         } catch (error) {
-            console.error(`Error fetching ${url}:`, error.message || error);
+            exeLogger.error('exe.homeassistant.fetch.failed', { url, error: serializeError(error) });
             throw error;
         }
 
@@ -93,9 +97,9 @@ class HomeAssistant {
         while (state !== desiredState && (Date.now() - startTime) / 1000 < timeout) {
             const updatedSensor = await this.getSensorData(entityId);
             state = updatedSensor.state;
-            console.log(`${entityId} state:`, state);
+            exeLogger.debug('exe.homeassistant.waitForState', { entityId, state, desiredState });
             if (state === desiredState) {
-                console.log(`${entityId} is now in the desired state: ${desiredState}.`);
+                exeLogger.info('exe.homeassistant.stateReached', { entityId, desiredState });
                 return Math.floor((Date.now() - startTime) / 1000);
             }
             await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second interval
@@ -154,17 +158,17 @@ class Kiosk {
                 const response = await axios.get(url);
                 if (response.status === 200) {
                     const secondsTaken = Math.floor((Date.now() - startTime) / 1000);
-                    console.log(`Kiosk is ready (took ${secondsTaken} seconds)`);
+                    exeLogger.info('exe.kiosk.ready', { secondsTaken });
                     return Math.max(secondsTaken, 1);
                 }
             } catch (error) {
-                console.log(`Attempt ${attempts + 1} failed: ${error.message || error}`);
+                exeLogger.debug('exe.kiosk.waitAttempt', { attempt: attempts + 1, error: error.message });
             }
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second interval
         }
 
-        console.error('Kiosk did not become ready within the timeout period');
+        exeLogger.error('exe.kiosk.timeout', { maxAttempts, timeoutSeconds: 30 });
         return false;
     }
 
@@ -183,13 +187,13 @@ class Kiosk {
         const url = `http://${this.host}:${this.port}/?cmd=loadUrl&password=${this.password}&url=${encodedUrl}`;
         await axios.get(url);
         const isLoaded = await this.waitForUrl(dst_url);
-        console.log({isLoaded, dst_url});
+        exeLogger.debug('exe.kiosk.loadUrl', { isLoaded, dst_url });
         const secondsToLoadUrl = Math.floor((Date.now() - startTime) / 1000);
         if (isLoaded) {
             return { success: true, secondsToLoadKiosk, secondsToLoadUrl };
         }
 
-        console.log(`Attempt ${attempt} failed. Retrying...`);
+        exeLogger.debug('exe.kiosk.loadUrl.retry', { attempt });
         await new Promise(resolve => setTimeout(resolve, 1000));
         return this.loadUrl(path, query, attempt + 1);
     }
@@ -206,7 +210,7 @@ class Kiosk {
                     return true;
                 }
             } catch (error) {
-                console.error(`Attempt ${tries + 1} failed: ${error.message || error}`);
+                exeLogger.debug('exe.kiosk.waitForUrl.attempt', { attempt: tries + 1, error: error.message });
             }
 
             tries++;
@@ -255,7 +259,7 @@ async function executeCommand(sshCommand) {
         const { stdout } = await promiseExec(sshCommand);
         return stdout.trim().split('\n');
     } catch (error) {
-        console.error(`exec error: ${error}`);
+        exeLogger.error('exe.exec.failed', { error: serializeError(error) });
         throw error;
     }
 }
@@ -282,28 +286,28 @@ const tasker = new Tasker(
 // Routes
 exeRouter.get('/tv/:state(on|off|toggle)', async (req, res) => {
     try {
-        console.log('param:', req.params.state);
+        exeLogger.info('exe.tv.request', { state: req.params.state });
         let result;
         if (req.params.state === 'toggle') result = await homeAssistant.toggleTV();
         if (req.params.state === 'on') result = await homeAssistant.turnOnTV();
         if (req.params.state === 'off') result = await homeAssistant.turnOffTV();
         res.json({ result });
     } catch (error) {
-        console.error('Error in /tv/:state endpoint:', error.message || error);
+        exeLogger.error('exe.tv.failed', { state: req.params.state, error: serializeError(error) });
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
 
 exeRouter.get('/office_tv/:state(on|off|toggle)', async (req, res) => {
     try {
-        console.log('param:', req.params.state);
+        exeLogger.info('exe.officeTv.request', { state: req.params.state });
         let result;
         if (req.params.state === 'toggle') result = await homeAssistant.toggleTV('office');
         if (req.params.state === 'on') result = await homeAssistant.turnOnTV('office');
         if (req.params.state === 'off') result = await homeAssistant.turnOffTV('office');
         res.json({ result });
     } catch (error) {
-        console.error('Error in /office_tv/:state endpoint:', error.message || error);
+        exeLogger.error('exe.officeTv.failed', { state: req.params.state, error: serializeError(error) });
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
@@ -318,7 +322,7 @@ exeRouter.get('/tv', async (req, res) => {
         const {success, secondsToLoadKiosk, secondsToLoadUrl} = await kiosk.loadUrl('/tv', query);
         res.json({ status: 'ok', secondsToTurnOnTV, secondsToOpenKiosk, secondsToPrepareKiosk, secondsToLoadKiosk, secondsToLoadUrl });
     } catch (error) {
-        console.error('Error in /tv endpoint:', error.message || error);
+        exeLogger.error('exe.tv.loadFailed', { error: serializeError(error) });
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
@@ -334,7 +338,7 @@ async function execmd(cmd) {
         resolvedKnownHosts = path.resolve(process.cwd(), resolvedKnownHosts);
     }
     
-    console.log(`[execmd] Using known_hosts: ${resolvedKnownHosts}`);
+    exeLogger.debug('exe.execmd.knownHosts', { path: resolvedKnownHosts });
 
     // Ensure directory exists
     let knownIsEmpty = true;
@@ -347,15 +351,15 @@ async function execmd(cmd) {
         // Create or check known_hosts file
         if (!fs.existsSync(resolvedKnownHosts)) {
             fs.writeFileSync(resolvedKnownHosts, '', { mode: 0o600 });
-            console.log(`[execmd] Created known_hosts at ${resolvedKnownHosts}`);
+            exeLogger.info('exe.execmd.knownHostsCreated', { path: resolvedKnownHosts });
             knownIsEmpty = true;
         } else {
             const content = fs.readFileSync(resolvedKnownHosts, 'utf8');
             knownIsEmpty = !content || content.trim().length === 0;
-            console.log(`[execmd] known_hosts exists, isEmpty: ${knownIsEmpty}`);
+            exeLogger.debug('exe.execmd.knownHostsExists', { path: resolvedKnownHosts, isEmpty: knownIsEmpty });
         }
     } catch (err) {
-        console.error(`[execmd] Error handling known_hosts file:`, err);
+        exeLogger.error('exe.execmd.knownHostsError', { error: serializeError(err) });
         // Continue anyway - SSH will use StrictHostKeyChecking=no
         knownIsEmpty = true;
     }
@@ -369,12 +373,12 @@ async function execmd(cmd) {
     ].filter(Boolean).join(' ');
     
     const sshCommand = `ssh ${sshOptions} ${user}@${host} "echo ${base64Cmd} | base64 -d | bash"`;
-    console.log(`[execmd] Executing SSH command to ${user}@${host}`);
+    exeLogger.info('exe.execmd.executing', { host, user });
     
     try {
         return await executeCommand(sshCommand);
     } catch (err) {
-        console.error(`[execmd] Command failed:`, err);
+        exeLogger.error('exe.execmd.failed', { host, user, error: serializeError(err) });
         throw err;
     }
 }
@@ -440,7 +444,7 @@ async function handleVolumeRequest(req, res) {
         const afterState = loadFile(volumeStateFile);
         res.json({ stout, beforeState, afterState });
     } catch (error) {
-        console.error('Error in volume endpoint:', error.message || error);
+        exeLogger.error('exe.volume.failed', { level, error: serializeError(error) });
         res.status(500).json({ error: error.message || 'Internal Server Error', body: req.body, query: req.query });
     }
 }
@@ -457,7 +461,7 @@ exeRouter.get('/audio/:device', async (req, res) => {
             stout 
         });
     } catch (error) {
-        console.error('Error in /audio/:device endpoint:', error.message || error);
+        exeLogger.error('exe.audio.failed', { device, error: serializeError(error) });
         res.status(500).json({ error: error.message || 'Internal Server Error', body: req.body, query: req.query });
     }
 });
@@ -487,7 +491,7 @@ exeRouter.all("/ws", async (req, res) => {
             description: 'Frontend will receive the raw payload data'
         });
     } catch (error) {
-        console.error('Error in /ws endpoint:', error.message || error);
+        exeLogger.error('exe.ws.broadcast.failed', { error: serializeError(error) });
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
@@ -495,7 +499,7 @@ exeRouter.all("/ws", async (req, res) => {
 // WebSocket restart endpoint
 exeRouter.post("/ws/restart", async (req, res) => {
     try {
-        console.log('WebSocket restart requested...');
+        exeLogger.info('exe.ws.restart.requested');
         const success = restartWebsocketServer();
         
         if (success) {
@@ -510,7 +514,7 @@ exeRouter.post("/ws/restart", async (req, res) => {
             });
         }
     } catch (error) {
-        console.error('Error in /ws/restart endpoint:', error.message || error);
+        exeLogger.error('exe.ws.restart.failed', { error: serializeError(error) });
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
@@ -523,7 +527,7 @@ exeRouter.post('/cmd', async (req, res) => {
         const stout = await execmd(cmd);
         res.json({ stout });
     } catch (error) {
-        console.error('Error in /cmd endpoint:', error.message || error);
+        exeLogger.error('exe.cmd.failed', { error: serializeError(error) });
         res.status(500).json({ error: error.message || 'Internal Server Error', body: req.body, query: req.query });
     }
 });

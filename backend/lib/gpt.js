@@ -5,6 +5,10 @@ import { readFileSync } from 'fs';
 import axios from './http.mjs';
 import crypto from 'crypto';
 import fs from 'fs';
+import { createLogger } from './logging/logger.js';
+import { serializeError } from './logging/utils.js';
+
+const gptLogger = createLogger({ source: 'backend', app: 'gpt' });
 
 const writeStderr = (message) => {
   try {
@@ -134,8 +138,7 @@ export async function generateSpeech(text, voice, instructions) {
 
     return response.data; // This is a readable stream
   } catch (error) {
-    const line = error?.shortMessage || `${error?.message || 'TTS request failed'}`;
-    console.error(`[TTS] ${line}`);
+    gptLogger.error('gpt.tts.failed', { error: serializeError(error) });
     throw error; // rethrow to allow upstream handling while keeping logs clean
   }
 }
@@ -148,8 +151,8 @@ export const askGPTWithJSONOutput = async (messages, model = 'gpt-4o', extraconf
   const response = await askGPT(messages, model, extraconfig);
   if (!response) return false;
 
+  let txt = response.trim();
   try {
-    let txt = response.trim();
     // Remove markdown code fences if present
     if (/^```/.test(txt)) {
       txt = txt.replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
@@ -162,7 +165,7 @@ export const askGPTWithJSONOutput = async (messages, model = 'gpt-4o', extraconf
     }
     return JSON.parse(txt);
   } catch (error) {
-    console.error('Error parsing JSON response:', error.message);
+    gptLogger.error('gpt.json.parseError', { error: serializeError(error), responseText: txt?.substring(0, 200) });
     return false;
   }
 };

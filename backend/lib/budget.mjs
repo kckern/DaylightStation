@@ -4,6 +4,9 @@ import moment from 'moment-timezone';
 import { buildBudget } from './budgetlib/build_budget.mjs';
 import { processTransactions, processMortgageTransactions, getAccountBalances } from './buxfer.mjs';
 import payrollSync from '../jobs/finance/payroll.mjs';
+import { createLogger } from './logging/logger.js';
+
+const budgetLogger = createLogger({ source: 'backend', app: 'budget' });
 
 moment.tz.setDefault('America/Los_Angeles');
 
@@ -192,7 +195,7 @@ export const compileBudget = async () => {
     const mortgage = processMortgage(budgetConfig.mortgage, accountBalances, mortgageTransactions);
     const rawTransactions = budgetStartDates.map(date => {
       const transactionFileName = transactionPath.replace('{{BUDGET_INDEX}}', moment(date).utc().format('YYYY-MM-DD'));
-      console.log(`Reading transactions from ${transactionFileName}`);
+      budgetLogger.info('budget.transactions.read', { file: transactionFileName });
       return yaml.load(readFileSync(transactionFileName, 'utf8')).transactions;
     }).flat();
     //Apply Memos
@@ -208,11 +211,11 @@ export const compileBudget = async () => {
         const budgetStart = moment(budget.timeframe.start).toISOString().slice(0, 10);
         const budgetEnd = moment(budget.timeframe.end).toISOString().slice(0, 10);
         const transactions = rawTransactions.filter(txn => txn.date >= budgetStart && txn.date <= budgetEnd);
-        console.log(`\n\n #### Compiling budget for ${budgetStart} to ${budgetEnd} ####\n\n`);
+        budgetLogger.info('budget.compile.start', { start: budgetStart, end: budgetEnd });
         budgets[budgetStart] = buildBudget(budget, transactions);
     }
     writeFileSync(financesPath, yaml.dump({budgets,mortgage}));
-    console.log(`Saved finances to ${financesPath}`);
+    budgetLogger.info('budget.finances.saved', { path: financesPath });
     return { status: 'success' };
 }
 
@@ -221,7 +224,7 @@ export const refreshFinancialData = async (noDL) => {
 
         const { budget:budgets, mortgage } = yaml.load(readFileSync(budgetPath, 'utf8'));
         const startDates = budgets.map(b => b.timeframe.start);
-        console.log({startDates});
+        budgetLogger.debug('budget.startDates', { startDates });
         const accounts = [];
         for (const budget of budgets)
         {
@@ -230,24 +233,24 @@ export const refreshFinancialData = async (noDL) => {
             accounts.push(...b_accounts.filter(account => !accounts.includes(account)));
             const startDate = moment(start).utc().format('YYYY-MM-DD');
             const endDate = moment(end).utc().format('YYYY-MM-DD');
-          console.log(`\n\n #### Refreshing financial data for ${startDate} to ${endDate} ####\n\n`);
+          budgetLogger.info('budget.refresh.start', { start: startDate, end: endDate });
           const transactions = await processTransactions({ startDate, endDate, accounts });
           const budgetTransactionPath = transactionPath.replace('{{BUDGET_INDEX}}', startDate);
-          console.log(`Creating ${budgetBasePath}/${startDate}`);
+          budgetLogger.debug('budget.directory.created', { path: `${budgetBasePath}/${startDate}` });
           mkdirSync(`${budgetBasePath}/${startDate}`, { recursive: true });
           const txnCount = transactions.length;
-          console.log(`Writing ${txnCount} transactions to ${budgetTransactionPath}`);
+          budgetLogger.info('budget.transactions.write', { count: txnCount, path: budgetTransactionPath });
           writeFileSync(budgetTransactionPath, yaml.dump({ transactions }));
   
         }
-        console.log("outside loop");
+        budgetLogger.debug('budget.loop.complete');
         const accountBalances = await getAccountBalances({ accounts: [...accounts, ...mortgage.accounts] });
         writeFileSync(accountBalancePath, yaml.dump({ accountBalances }));
         const mortgageTransactions = await processMortgageTransactions({ accounts: mortgage.accounts, startDate: mortgage.startDate});
         writeFileSync(mortgageTransactionPath, yaml.dump({ mortgageTransactions }));
 
 
-    console.log(`Now compiling budget...`);
+    budgetLogger.info('budget.compile.triggered');
     await compileBudget();
     return { status: 'success', transactionCount: transactions?.length };
 }
