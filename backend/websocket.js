@@ -66,7 +66,8 @@ function getLogger() {
       token: LOGGLY_TOKEN,
       subdomain: LOGGLY_SUBDOMAIN,
       tags: LOGGLY_TAGS,
-      json: true
+      json: true,
+      bufferOptions: { size: 1, retriesInMilliSeconds: 60 * 1000 }
     }));
   }
 
@@ -148,6 +149,9 @@ export function createWebsocketServer(server) {
               logger.info(`[Frontend] ${event}`, meta);
             }
           } else if (data.topic === 'logging') {
+            // DEBUG: Print received logging payload
+            console.log('[WebSocket] Received logging payload:', JSON.stringify(data).substring(0, 200));
+
             const events = Array.isArray(data.events)
               ? data.events
               : data.event

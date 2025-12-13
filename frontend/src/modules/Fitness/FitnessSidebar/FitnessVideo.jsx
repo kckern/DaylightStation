@@ -1,6 +1,7 @@
-import React, { useRef, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { Webcam as FitnessWebcam } from '../components/FitnessWebcam.jsx';
+import { getDaylightLogger } from '../../../lib/logging/singleton.js';
 import '../FitnessCam.scss';
 
 const FitnessVideo = ({ minimal = false }) => {
@@ -8,6 +9,10 @@ const FitnessVideo = ({ minimal = false }) => {
   const [loading, setLoading] = useState(true);
   const webcamRef = useRef(null);
   const { toggleSidebarSizeMode } = useFitnessContext() || {};
+
+  useEffect(() => {
+    getDaylightLogger().info('fitness-video-mounted', { minimal });
+  }, [minimal]);
 
   const videoConstraints = useMemo(() => ({ width: { ideal: 1280 }, height: { ideal: 720 } }), []);
 
