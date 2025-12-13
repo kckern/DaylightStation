@@ -59,4 +59,8 @@ export const resolveLoggerLevel = (name, config = loadLoggingConfig()) => {
 
 export const getLoggingTags = (config = loadLoggingConfig()) => config.tags || ['backend'];
 
+// Token resolution helpers
+export const resolveLogglyToken = () => process.env.LOGGLY_TOKEN || process.env.LOGGLY_INPUT_TOKEN;
+export const resolveLogglySubdomain = () => process.env.LOGGLY_SUBDOMAIN || process.env.LOGGLY_SUB_DOMAIN;
+
 export default loadLoggingConfig;

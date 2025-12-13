@@ -1,13 +1,11 @@
 import axios from './http.mjs';
 import { buildCurl } from './httpUtils.mjs';
 import { saveFile } from './io.mjs';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 
 const clickupLogger = createLogger({
-    name: 'backend-clickup',
-    context: { app: 'backend', module: 'clickup' },
-    level: process.env.CLICKUP_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'clickup'] })]
+    source: 'backend',
+    app: 'clickup'
 });
 
 const getTickets = async () => {

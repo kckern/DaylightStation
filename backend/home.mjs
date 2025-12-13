@@ -1,13 +1,11 @@
 import express from 'express';
 import { turnOnTVPlug } from './lib/homeassistant.mjs';
-import { createLogger, logglyTransportAdapter } from './lib/logging/index.js';
+import { createLogger } from './lib/logging/logger.js';
 const apiRouter = express.Router();
 
 const homeLogger = createLogger({
-    name: 'backend-home',
-    context: { app: 'backend', module: 'home' },
-    level: process.env.HOME_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'home'] })]
+    source: 'backend',
+    app: 'home'
 });
 
 

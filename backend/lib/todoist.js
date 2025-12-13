@@ -1,13 +1,11 @@
 import { TodoistApi } from '@doist/todoist-api-typescript';
 import { saveFile } from './io.mjs';
 import saveEvents from '../jobs/events.mjs';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 
 const defaultTodoistLogger = createLogger({
-        name: 'backend-todoist',
-        context: { app: 'backend', module: 'todoist' },
-        level: process.env.TODOIST_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-        transports: [logglyTransportAdapter({ tags: ['backend', 'todoist'] })]
+        source: 'backend',
+        app: 'todoist'
 });
 
 const getTasks = async (logger, job_id) => {

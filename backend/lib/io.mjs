@@ -3,13 +3,11 @@ import yaml from 'js-yaml';
 import {decode} from 'html-entities';
 import smartquotes from 'smartquotes';
 import axios from './http.mjs';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 
 const ioLogger = createLogger({
-    name: 'backend-io',
-    context: { app: 'backend', module: 'io' },
-    level: process.env.IO_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'io'] })]
+    source: 'backend',
+    app: 'io'
 });
 
 class FlowSequence extends Array {}

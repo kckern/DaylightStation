@@ -1,13 +1,11 @@
 import { google } from 'googleapis';
 import { saveFile, sanitize } from './io.mjs';
 import saveEvents from '../jobs/events.mjs';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 
 const defaultGcalLogger = createLogger({
-    name: 'backend-gcal',
-    context: { app: 'backend', module: 'gcal' },
-    level: process.env.GCAL_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-    transports: [logglyTransportAdapter({ tags: ['backend', 'gcal'] })]
+    source: 'backend',
+    app: 'gcal'
 });
 
 const listCalendarEvents = async (logger, job_id) => {

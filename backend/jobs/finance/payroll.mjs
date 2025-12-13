@@ -3,13 +3,11 @@ import yaml from 'js-yaml';
 import { readFileSync } from 'fs';
 import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';
 import { loadFile, saveFile } from '../../lib/io.mjs';
-import { createLogger, logglyTransportAdapter } from '../../lib/logging/index.js';
+import { createLogger } from '../../lib/logging/logger.js';
 
 const payrollLogger = createLogger({
-  name: 'backend-payroll',
-  context: { app: 'backend', module: 'payroll' },
-  level: process.env.PAYROLL_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-  transports: [logglyTransportAdapter({ tags: ['backend', 'payroll'] })]
+  source: 'backend',
+  app: 'payroll'
 });
 
 

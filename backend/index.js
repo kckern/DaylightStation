@@ -7,8 +7,13 @@ import request from 'request'; // Import the request module
 import { createWebsocketServer } from './websocket.js';
 import { createServer } from 'http';
 import { loadFile } from './lib/io.mjs';
-import { createLogger, logglyTransportAdapter, resolveLogglyToken } from './lib/logging/index.js';
-import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, hydrateProcessEnvFromConfigs } from './lib/logging/config.js';
+
+// Logging system
+import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
+import { createConsoleTransport, createLogglyTransport } from './lib/logging/transports/index.js';
+import { createLogger } from './lib/logging/logger.js';
+import { ingestFrontendLogs } from './lib/logging/ingestion.js';
+import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, hydrateProcessEnvFromConfigs, resolveLogglyToken } from './lib/logging/config.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -20,20 +25,40 @@ const isDocker = existsSync('/.dockerenv');
 
 let loggingConfig = loadLoggingConfig();
 
-const buildTransports = (tagsOverride) => {
-  const tags = tagsOverride || getLoggingTags(loggingConfig) || ['backend', 'api'];
-  const transports = [];
-  const token = resolveLogglyToken();
-  const subdomain = process.env.LOGGLY_SUBDOMAIN || process.env.LOGGLY_SUB_DOMAIN;
-  if (token) transports.push(logglyTransportAdapter({ token, subdomain, tags }));
-  return transports;
-};
+// Initialize the new unified logging system
+const dispatcher = initializeLogging({ 
+  defaultLevel: resolveLoggerLevel('backend', loggingConfig) 
+});
 
+// Add console transport
+dispatcher.addTransport(createConsoleTransport({ 
+  colorize: !isDocker,
+  format: isDocker ? 'json' : 'pretty'
+}));
+
+// Add Loggly transport if configured
+const logglyToken = resolveLogglyToken();
+const logglySubdomain = process.env.LOGGLY_SUBDOMAIN || process.env.LOGGLY_SUB_DOMAIN;
+if (logglyToken && logglySubdomain) {
+  dispatcher.addTransport(createLogglyTransport({
+    token: logglyToken,
+    subdomain: logglySubdomain,
+    tags: getLoggingTags(loggingConfig) || ['daylight', 'backend']
+  }));
+}
+
+// Create the root logger using the new system
 let rootLogger = createLogger({
-  name: 'DaylightBackend',
-  context: { app: 'api', env: process.env.NODE_ENV },
-  level: resolveLoggerLevel('backend', loggingConfig),
-  transports: buildTransports()
+  source: 'backend',
+  app: 'api',
+  context: { env: process.env.NODE_ENV }
+});
+
+// Log startup
+rootLogger.info('app.logging.initialized', { 
+  transports: dispatcher.getTransportNames(),
+  level: loggingConfig.defaultLevel || 'info',
+  isDocker
 });
 
 const app = express();
@@ -68,12 +93,19 @@ async function initializeApp() {
     process.env = { ...process.env, isDocker, ...appConfig, ...secretsConfig, ...localConfig };
     loggingConfig = loadLoggingConfig();
 
-    // Recreate logger with updated env/config
+    // Update dispatcher level if needed
+    dispatcher.setLevel(resolveLoggerLevel('backend', loggingConfig));
+
+    // Recreate root logger with updated context (new system)
     rootLogger = createLogger({
-      name: 'DaylightBackend',
-      context: { app: 'api', env: process.env.NODE_ENV },
-      level: resolveLoggerLevel('backend', loggingConfig),
-      transports: buildTransports()
+      source: 'backend',
+      app: 'api',
+      context: { env: process.env.NODE_ENV }
+    });
+
+    rootLogger.info('app.config.loaded', { 
+      isDocker, 
+      transports: dispatcher.getTransportNames() 
     });
 
     // Initialize WebSocket server after config is loaded
@@ -133,6 +165,18 @@ async function initializeApp() {
       rootLogger.warn('debug.log.test', { message: msg, type: 'warn' });
       rootLogger.error('debug.log.test', { message: msg, type: 'error' });
       res.json({ status: 'ok', message: 'Logs emitted', content: msg });
+    });
+
+    // Logging health/metrics endpoint
+    app.get('/api/logging/health', (_, res) => {
+      const metrics = dispatcher.getMetrics();
+      const transports = dispatcher.getTransportNames();
+      res.json({
+        status: 'ok',
+        dispatcher: metrics,
+        transports: transports.map(name => ({ name, status: 'ok' })),
+        level: loggingConfig.defaultLevel || 'info'
+      });
     });
     
     // Health check endpoints

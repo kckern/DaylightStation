@@ -1,4 +1,4 @@
-import { getDaylightLogger } from '../../../lib/logging/singleton.js';
+import { getLogger } from '../../../lib/logging/Logger.js';
 
 const formatArg = (arg) => {
   if (typeof arg === 'string') return arg;
@@ -31,35 +31,18 @@ const LOG_LEVEL_PRIORITY = Object.freeze({
 const DEFAULT_CONTEXT = Object.freeze({ sessionId: null });
 const OPTION_KEYS = new Set(['level', 'context', 'extra', 'tags', 'sampleRate']);
 
-const DEFAULT_WEBSOCKET_OPTIONS = Object.freeze({
-  enabled: true,
-  url: null,
-  topic: 'playback',
-  maxQueue: 200,
-  reconnectBaseDelay: 1000,
-  reconnectMaxDelay: 15000
-});
-
+// WebSocket transport is now handled by UnifiedLogger - these constants kept for backward compat
 const PLAYBACK_SOCKET_SOURCE = 'playback-logger';
 const QUEUE_FALLBACK_LIMIT = 500;
 const THROTTLE_MAP = new Map();
 const THROTTLE_INTERVAL = 15000;
 const RATE_LIMIT_MIN_INTERVAL = 50;
 
-let daylightForwardingEnabled = true;
-let daylightPlaybackLogger = null;
+// UnifiedLogger handles all WebSocket transport
+let unifiedLoggerInstance = null;
 
 let playerDebugMode = PLAYER_DEBUG_MODE_DEFAULT;
 let globalLoggerContext = { ...DEFAULT_CONTEXT };
-let websocketOptions = { ...DEFAULT_WEBSOCKET_OPTIONS };
-
-const websocketQueue = [];
-const websocketState = {
-  socket: null,
-  connecting: false,
-  reconnectDelay: DEFAULT_WEBSOCKET_OPTIONS.reconnectBaseDelay,
-  reconnectTimer: null
-};
 
 const cleanObject = (obj) => {
   if (!obj || typeof obj !== 'object') return obj;
@@ -103,27 +86,27 @@ const defaultSink = (record, formatted) => {
   devOutput(level, formatted);
 };
 
-const getDaylightPlaybackLogger = () => {
-  if (daylightPlaybackLogger) return daylightPlaybackLogger;
+const getPlaybackLogger = () => {
+  if (unifiedLoggerInstance) return unifiedLoggerInstance;
   try {
-    daylightPlaybackLogger = getDaylightLogger({ context: { channel: 'playback' } });
+    unifiedLoggerInstance = getLogger().child({ channel: 'playback' });
   } catch (error) {
-    daylightPlaybackLogger = null;
+    unifiedLoggerInstance = null;
   }
-  return daylightPlaybackLogger;
+  return unifiedLoggerInstance;
 };
 
-const daylightSink = (record) => {
-  if (!daylightForwardingEnabled) return;
-  const logger = getDaylightPlaybackLogger();
+// Single sink that sends to Logger (which handles WebSocket transport)
+const loggerSink = (record) => {
+  const logger = getPlaybackLogger();
   if (!logger) return;
   const level = LOG_LEVEL_PRIORITY[record.level] ? record.level : 'info';
   const eventName = `playback.${record.event}`;
-  const payload = {
+  const data = {
     payload: record.payload,
     extra: record.extra
   };
-  logger[level](eventName, payload, {
+  logger[level](eventName, data, {
     context: record.context,
     tags: record.tags
   });
@@ -133,206 +116,12 @@ const loggerConfig = {
   level: DEFAULT_LOG_LEVEL,
   enabledOverride: true,
   formatter: defaultFormatter,
-  sinks: [defaultSink, daylightSink],
+  sinks: [defaultSink, loggerSink],
   sampling: null,
   random: () => Math.random()
 };
 
-const applyWebSocketOptions = (options = {}) => {
-  const next = { ...websocketOptions };
-  if (typeof options.enabled === 'boolean') {
-    next.enabled = options.enabled;
-  }
-  if (typeof options.url === 'string') {
-    const trimmed = options.url.trim();
-    next.url = trimmed.length ? trimmed : null;
-  }
-  if (typeof options.topic === 'string') {
-    const trimmed = options.topic.trim();
-    if (trimmed.length) {
-      next.topic = trimmed;
-    }
-  }
-  if (Number.isFinite(options.maxQueue) && options.maxQueue > 0) {
-    next.maxQueue = Math.min(Math.max(Math.floor(options.maxQueue), 25), QUEUE_FALLBACK_LIMIT);
-  }
-  if (Number.isFinite(options.reconnectBaseDelay) && options.reconnectBaseDelay > 0) {
-    next.reconnectBaseDelay = Math.max(250, Math.floor(options.reconnectBaseDelay));
-  }
-  if (Number.isFinite(options.reconnectMaxDelay) && options.reconnectMaxDelay > 0) {
-    next.reconnectMaxDelay = Math.max(next.reconnectBaseDelay, Math.floor(options.reconnectMaxDelay));
-  }
-  if (next.url && typeof options.enabled === 'undefined') {
-    next.enabled = true;
-  }
-  const changed = JSON.stringify(next) !== JSON.stringify(websocketOptions);
-  websocketOptions = next;
-  if (changed) {
-    teardownWebSocketTransport();
-  }
-  return websocketOptions;
-};
-
-const teardownWebSocketTransport = () => {
-  if (typeof window === 'undefined') return;
-  try {
-    if (websocketState.socket) {
-      websocketState.socket.close();
-    }
-  } catch (_) {
-    // ignore close errors
-  }
-  websocketState.socket = null;
-  websocketState.connecting = false;
-  if (websocketState.reconnectTimer) {
-    clearTimeout(websocketState.reconnectTimer);
-    websocketState.reconnectTimer = null;
-  }
-  websocketState.reconnectDelay = websocketOptions.reconnectBaseDelay;
-};
-
-const shouldUseWebSocketTransport = () => (
-  typeof window !== 'undefined'
-  && typeof window.WebSocket === 'function'
-  && websocketOptions.enabled
-);
-
-const resolveWebSocketUrl = () => {
-  if (websocketOptions.url) {
-    return websocketOptions.url;
-  }
-  if (typeof window === 'undefined' || !window.location) {
-    return null;
-  }
-  const origin = window.location.origin || '';
-  if (!origin) {
-    return null;
-  }
-  return `${origin.replace(/^http/, 'ws')}/ws`;
-};
-
-const enqueueWebSocketPayload = (payload) => {
-  if (!websocketOptions.maxQueue) {
-    return;
-  }
-  while (websocketQueue.length >= websocketOptions.maxQueue) {
-    websocketQueue.shift();
-  }
-  websocketQueue.push(payload);
-};
-
-const flushWebSocketQueue = () => {
-  if (!shouldUseWebSocketTransport()) {
-    websocketQueue.length = 0;
-    return;
-  }
-  if (!websocketState.socket || websocketState.socket.readyState !== window.WebSocket.OPEN) {
-    return;
-  }
-  while (websocketQueue.length) {
-    const payload = websocketQueue.shift();
-    try {
-      websocketState.socket.send(JSON.stringify(payload));
-    } catch (error) {
-      devOutput('warn', '[PlaybackLogger] WebSocket send failed', error);
-      break;
-    }
-  }
-};
-
-const scheduleWebSocketReconnect = () => {
-  if (!shouldUseWebSocketTransport()) {
-    return;
-  }
-  if (websocketState.reconnectTimer) {
-    return;
-  }
-  const delay = Math.min(
-    websocketState.reconnectDelay || websocketOptions.reconnectBaseDelay,
-    websocketOptions.reconnectMaxDelay
-  );
-  websocketState.reconnectTimer = setTimeout(() => {
-    websocketState.reconnectTimer = null;
-    websocketState.reconnectDelay = Math.min(delay * 2, websocketOptions.reconnectMaxDelay);
-    ensureWebSocketTransport();
-  }, delay);
-};
-
-const ensureWebSocketTransport = () => {
-  if (!shouldUseWebSocketTransport()) {
-    return;
-  }
-  if (websocketState.socket) {
-    const readyState = websocketState.socket.readyState;
-    if (readyState === window.WebSocket.OPEN) {
-      flushWebSocketQueue();
-      return;
-    }
-    if (readyState === window.WebSocket.CONNECTING) {
-      return;
-    }
-  }
-  if (websocketState.connecting) {
-    return;
-  }
-  const targetUrl = resolveWebSocketUrl();
-  if (!targetUrl) {
-    return;
-  }
-  try {
-    websocketState.connecting = true;
-    const socket = new window.WebSocket(targetUrl);
-    websocketState.socket = socket;
-    socket.onopen = () => {
-      devOutput('debug', '[PlaybackLogger] WebSocket connected');
-      websocketState.connecting = false;
-      // Only reset backoff if connection stays healthy for a bit
-      setTimeout(() => {
-        if (websocketState.socket && websocketState.socket.readyState === window.WebSocket.OPEN) {
-          websocketState.reconnectDelay = websocketOptions.reconnectBaseDelay;
-        }
-      }, 5000);
-      flushWebSocketQueue();
-    };
-    socket.onclose = (event) => {
-      devOutput('debug', '[PlaybackLogger] WebSocket closed', event.code, event.reason);
-      websocketState.connecting = false;
-      websocketState.socket = null;
-      scheduleWebSocketReconnect();
-    };
-    socket.onerror = (error) => {
-      devOutput('warn', '[PlaybackLogger] WebSocket error', error);
-      websocketState.connecting = false;
-      websocketState.socket = null;
-      scheduleWebSocketReconnect();
-    };
-  } catch (error) {
-    websocketState.connecting = false;
-    websocketState.socket = null;
-    devOutput('warn', '[PlaybackLogger] Failed to open WebSocket', error);
-    scheduleWebSocketReconnect();
-  }
-};
-
-const maybeSendToPlaybackWebSocket = (record) => {
-  if (!shouldUseWebSocketTransport()) {
-    return;
-  }
-  const payload = {
-    topic: websocketOptions.topic || 'playback-log',
-    source: PLAYBACK_SOCKET_SOURCE,
-    level: record.level,
-    event: record.event,
-    timestamp: record.timestamp,
-    context: record.context,
-    payload: record.payload,
-    extra: record.extra,
-    tags: record.tags
-  };
-  enqueueWebSocketPayload(payload);
-  ensureWebSocketTransport();
-  flushWebSocketQueue();
-};
+// Legacy WebSocket functions removed - Logger module now handles all WebSocket transport
 
 const coerceBoolean = (value) => {
   if (typeof value === 'boolean') return value;
@@ -520,7 +309,7 @@ const emitLogRecord = (record) => {
       devOutput('warn', '[PlaybackLogger] sink failed', error);
     }
   });
-  maybeSendToPlaybackWebSocket(record);
+  // WebSocket transport now handled by loggerSink → Logger
 };
 
 const looksLikeOptionsBag = (value) => (
@@ -620,9 +409,7 @@ export const configurePlaybackLogger = (options = {}) => {
   if (typeof options.enabled === 'boolean') {
     loggerConfig.enabledOverride = options.enabled;
   }
-  if (typeof options.forwardToDaylight === 'boolean') {
-    daylightForwardingEnabled = options.forwardToDaylight;
-  }
+  // forwardToDaylight is now always true - UnifiedLogger handles all transport
   if (typeof options.formatter === 'function') {
     loggerConfig.formatter = options.formatter;
   }
@@ -637,9 +424,7 @@ export const configurePlaybackLogger = (options = {}) => {
   if (typeof options.sampling !== 'undefined') {
     loggerConfig.sampling = options.sampling;
   }
-  if (options.websocket) {
-    applyWebSocketOptions(options.websocket);
-  }
+  // WebSocket options now handled by UnifiedLogger - use configure() on UnifiedLogger if needed
   return { ...loggerConfig };
 };
 

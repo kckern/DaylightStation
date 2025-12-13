@@ -1,9 +1,9 @@
 import express from 'express';
 import request from 'request';
-import { createLogger } from './lib/logging/index.js';
+import { createLogger } from './lib/logging/logger.js';
 
 const router = express.Router();
-const logger = createLogger({ name: 'PlexProxy' });
+const logger = createLogger({ source: 'backend', app: 'plex-proxy' });
 
 router.use('/', (req, res) => {
   const { host } = process.env.plex;

@@ -1,13 +1,11 @@
 import { createCanvas, registerFont, loadImage } from 'canvas';
 import QRCode from 'qrcode';
 import axios from './http.mjs';
-import { createLogger, logglyTransportAdapter } from './logging/index.js';
+import { createLogger } from './logging/logger.js';
 
 const graphicsLogger = createLogger({
-  name: 'backend-graphics',
-  context: { app: 'backend', module: 'graphics' },
-  level: process.env.GRAPHICS_LOG_LEVEL || process.env.LOG_LEVEL || 'info',
-  transports: [logglyTransportAdapter({ tags: ['backend', 'graphics'] })]
+  source: 'backend',
+  app: 'graphics'
 });
 
 /**
