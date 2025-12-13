@@ -127,6 +127,13 @@ async function initializeApp() {
       return res.status(202).json({ status: 'ok', accepted });
     });
     app.get('/debug', (_, res) => res.json({ process: { __dirname, env: process.env } }));
+    app.get('/debug/log', (req, res) => {
+      const msg = req.query.message || 'Test log from /debug/log';
+      rootLogger.info('debug.log.test', { message: msg, type: 'info' });
+      rootLogger.warn('debug.log.test', { message: msg, type: 'warn' });
+      rootLogger.error('debug.log.test', { message: msg, type: 'error' });
+      res.json({ status: 'ok', message: 'Logs emitted', content: msg });
+    });
     
     // Health check endpoints
     app.get('/api/ping', (_, res) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() }));
