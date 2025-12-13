@@ -1,16 +1,21 @@
 // DaylightLogger - Backend core
 // Structured logger with pluggable transports
 
-import https from 'https';
 import os from 'os';
+import winston from 'winston';
+import { Loggly } from 'winston-loggly-bulk';
 
 const LEVELS = ['debug', 'info', 'warn', 'error'];
 const LEVEL_PRIORITY = LEVELS.reduce((acc, level, idx) => ({ ...acc, [level]: idx }), {});
+
+// Cache winston loggers per tag signature so multiple modules reuse a single transport
+const logglyLoggerCache = new Map();
 
 const defaultFormatter = (event) => event;
 
 // Single place to resolve Loggly tokens (DRY)
 const resolveLogglyToken = () => process.env.LOGGLY_TOKEN || process.env.LOGGLY_INPUT_TOKEN;
+const resolveLogglySubdomain = () => process.env.LOGGLY_SUBDOMAIN || process.env.LOGGLY_SUB_DOMAIN;
 
 const isLevelEnabled = (currentLevel, targetLevel) => {
   const cur = LEVEL_PRIORITY[currentLevel] ?? LEVEL_PRIORITY.info;
@@ -52,7 +57,7 @@ function winstonTransportAdapter(winstonLogger) {
   };
 }
 
-function logglyTransportAdapter({ token = resolveLogglyToken(), tags = ['daylight'], endpoint = 'logs-01.loggly.com' } = {}) {
+function logglyTransportAdapter({ token = resolveLogglyToken(), subdomain = resolveLogglySubdomain(), tags = ['daylight'], endpoint = 'logs-01.loggly.com' } = {}) {
   if (!token) {
     return {
       name: 'loggly-null',
@@ -63,27 +68,44 @@ function logglyTransportAdapter({ token = resolveLogglyToken(), tags = ['dayligh
   }
 
   const tagString = Array.isArray(tags) ? tags.join(',') : String(tags);
+  const cacheKey = `${subdomain || endpoint}|${tagString}|${token}`;
+
+  // Create or reuse a cached winston logger with Loggly bulk transport
+  const getOrCreateWinstonLogger = () => {
+    if (logglyLoggerCache.has(cacheKey)) return logglyLoggerCache.get(cacheKey);
+
+    const transports = [
+      new Loggly({
+        token,
+        subdomain: subdomain || endpoint.replace('.loggly.com', ''),
+        tags,
+        json: true,
+        endpoint
+      })
+    ];
+
+    // Use a simple JSON logger; we rely on upstream to shape the event
+    const logger = winston.createLogger({
+      level: 'info',
+      format: winston.format.json(),
+      transports
+    });
+
+    logglyLoggerCache.set(cacheKey, logger);
+    return logger;
+  };
+
+  const logger = getOrCreateWinstonLogger();
 
   return {
     name: 'loggly',
     send: (evt) => {
-      const payload = JSON.stringify(evt);
-      const options = {
-        hostname: endpoint,
-        port: 443,
-        path: `/inputs/${token}/tag/${encodeURIComponent(tagString)}/`,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
-      };
-      const req = https.request(options, () => {});
-      req.on('error', (err) => {
-        process.stderr.write(`[DaylightLogger] Loggly transport error: ${err.message}\n`);
-      });
-      req.write(payload);
-      req.end();
+      // Preserve incoming level if present; fallback to info
+      const level = typeof evt?.level === 'string' ? evt.level.toLowerCase() : 'info';
+      // Winston requires a message; use event name or a fallback
+      const message = evt?.event || evt?.message || 'log-event';
+
+      logger.log({ level, message, ...evt });
     }
   };
 }
