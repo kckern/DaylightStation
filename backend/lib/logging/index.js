@@ -80,7 +80,9 @@ function logglyTransportAdapter({ token = resolveLogglyToken(), subdomain = reso
         subdomain: subdomain || endpoint.replace('.loggly.com', ''),
         tags,
         json: true,
-        endpoint
+        endpoint,
+        networkErrorsOnConsole: true,
+        bufferOptions: { size: 1, retriesInMilliSeconds: 1000 }
       })
     ];
 
