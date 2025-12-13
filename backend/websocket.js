@@ -13,14 +13,12 @@ let wssNav = null;
 let httpServer = null;
 
 export function createWebsocketServer(server) {
-  logger.info('Creating WebSocket servers...');
   httpServer = server; // Store reference to HTTP server
   
   // /ws: WebSocket messages
   if (!wssNav) {
-    logger.info('Creating WebSocket server for /ws...');
     wssNav = new WebSocketServer({ server, path: '/ws' });
-    logger.info('WebSocket server created, adding listeners...');
+    logger.info('websocket.server.started', { path: '/ws' });
     wssNav.on('connection', (ws, req) => {
       ws._clientMeta = {
         ip: req?.socket?.remoteAddress,

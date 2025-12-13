@@ -54,13 +54,6 @@ let rootLogger = createLogger({
   context: { env: process.env.NODE_ENV }
 });
 
-// Log startup
-rootLogger.info('app.logging.initialized', { 
-  transports: dispatcher.getTransportNames(),
-  level: loggingConfig.defaultLevel || 'info',
-  isDocker
-});
-
 const app = express();
 app.use(cors()); // Step 3: Enable CORS for all routes
 app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies with increased limit for voice memos
@@ -101,11 +94,6 @@ async function initializeApp() {
       source: 'backend',
       app: 'api',
       context: { env: process.env.NODE_ENV }
-    });
-
-    rootLogger.info('app.config.loaded', { 
-      isDocker, 
-      transports: dispatcher.getTransportNames() 
     });
 
     // Initialize WebSocket server after config is loaded
@@ -226,8 +214,7 @@ async function initializeApp() {
         res.sendFile(join(frontendPath, 'index.html'));
       });
     } else {
-      rootLogger.warn('frontend.missing', { path: frontendPath }, { message: 'Frontend not found. Redirecting to localhost:3111' });
-      rootLogger.warn('frontend.missing.redirect', { target: 'http://localhost:3111' });
+      rootLogger.debug('frontend.dev.redirect', { path: frontendPath, target: 'http://localhost:3111' });
       app.use('/', (req, res, next) => {
         if (req.path.startsWith('/ws/')) return next();
         res.redirect('http://localhost:3111');
@@ -244,7 +231,11 @@ async function initializeApp() {
   // Start HTTP server
   const port = process.env.PORT || 3112;
   server.listen(port, () => {
-    rootLogger.info('server.listen', { port });
+    rootLogger.info('server.started', { 
+      port, 
+      env: process.env.NODE_ENV || 'development',
+      transports: dispatcher.getTransportNames()
+    });
   });
 }
 
