@@ -6,7 +6,7 @@ import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLeve
 import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
 import '../FitnessCam.scss';
 import { usePersistentVolume } from '../usePersistentVolume.js';
-import { normalizeTrackDurationSeconds } from '../../Player/utils/mediaIdentity.js';
+import { normalizeDuration } from '../../Player/utils/mediaIdentity.js';
 import { guid } from '../../Player/lib/helpers.js';
 
 const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
@@ -30,15 +30,7 @@ const logLevelFromVolume = (volume) => {
   return Math.min(100, Math.max(0, Math.round(percent)));
 };
 
-const normalizeTrackDurationSeconds = (...candidates) => {
-  for (const candidate of candidates) {
-    if (candidate == null) continue;
-    const normalized = typeof candidate === 'string' ? parseFloat(candidate) : Number(candidate);
-    if (!Number.isFinite(normalized) || normalized <= 0) continue;
-    return Math.round(normalized > 1000 ? normalized / 1000 : normalized);
-  }
-  return null;
-};
+
 
 const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume }) => {
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -227,7 +219,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
       return;
     }
     loggedTrackRef.current = currentTrackIdentity;
-    const durationSeconds = normalizeTrackDurationSeconds(
+    const durationSeconds = normalizeDuration(
       currentTrack?.duration,
       currentTrack?.length,
       currentTrack?.Duration
