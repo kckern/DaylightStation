@@ -68,7 +68,11 @@ export class Plex {
   // should be unique per playback. Previously we varied both, which can cause PMS to treat the client as unknown
   // and terminate the session.
   const sessionUUID = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  const clientIdentifier = session || defaultSession || sessionUUID;
+  // Use distinct client identifiers for audio vs video to prevent Plex from treating them as the same
+  // playback session. When audio and video share a client identifier, starting audio playback causes
+  // Plex to terminate the video transcode session ("Client stopped playback").
+  const baseClientId = session || defaultSession || sessionUUID;
+  const clientIdentifier = media_type === 'audio' ? `${baseClientId}-audio` : baseClientId;
   const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
 
     try {

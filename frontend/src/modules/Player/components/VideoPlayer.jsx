@@ -585,19 +585,26 @@ export function VideoPlayer({
       return { ok: false, outcome: 'no-media-element' };
     }
 
+    const diagnostics = buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
+
     const currentTime = Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : 0;
     const gapTarget = findNextBufferedStart(mediaEl, currentTime);
     if (Number.isFinite(gapTarget) && gapTarget - currentTime > 0.05) {
       try {
         mediaEl.currentTime = Math.max(0, gapTarget);
         mediaEl.play?.().catch(() => {});
-        logShakaDiagnostic('shaka-nudge-gap-skip', { reason, targetSeconds: gapTarget }, 'info');
+        logShakaDiagnostic('shaka-nudge-gap-skip', {
+          reason,
+          targetSeconds: gapTarget,
+          diagnostics
+        }, 'info');
         return { ok: true, action: 'gap-skip', targetSeconds: gapTarget };
       } catch (error) {
         logShakaDiagnostic('shaka-nudge-gap-error', {
           reason,
           targetSeconds: gapTarget,
-          error: serializePlaybackError(error)
+          error: serializePlaybackError(error),
+          diagnostics
         }, 'warn');
       }
     }
@@ -615,7 +622,8 @@ export function VideoPlayer({
       } catch (error) {
         logShakaDiagnostic('shaka-nudge-retry-error', {
           reason,
-          error: serializePlaybackError(error)
+          error: serializePlaybackError(error),
+          diagnostics
         }, 'warn');
       }
     }
@@ -629,18 +637,23 @@ export function VideoPlayer({
       try {
         mediaEl.currentTime = targetSeconds;
         mediaEl.play?.().catch(() => {});
-        logShakaDiagnostic('shaka-nudge-microseek', { reason, targetSeconds }, 'info');
+        logShakaDiagnostic('shaka-nudge-microseek', {
+          reason,
+          targetSeconds,
+          diagnostics
+        }, 'info');
         return { ok: true, action: 'micro-seek', targetSeconds };
       } catch (error) {
         logShakaDiagnostic('shaka-nudge-microseek-error', {
           reason,
           targetSeconds,
-          error: serializePlaybackError(error)
+          error: serializePlaybackError(error),
+          diagnostics
         }, 'warn');
       }
     }
 
-    logShakaDiagnostic('shaka-nudge-exhausted', { reason }, 'warn');
+    logShakaDiagnostic('shaka-nudge-exhausted', { reason, diagnostics }, 'warn');
     return { ok: false, outcome: 'exhausted' };
   }, [findNextBufferedStart, getCurrentMediaElement, logShakaDiagnostic]);
 
