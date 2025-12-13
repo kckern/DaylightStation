@@ -1,6 +1,10 @@
 import axios from './http.mjs';
 import { buildCurl } from './httpUtils.mjs';
 import { saveFile, saveImage } from './io.mjs';
+import { createLogger } from './logging/logger.js';
+import { serializeError } from './logging/utils.js';
+
+const infinityLogger = createLogger({ source: 'backend', app: 'infinity' });
 
 const keys = Object.keys(process.env.infinity || {});
 
@@ -27,12 +31,12 @@ const loadTable = async (tableId , data = [], after = "") => {
     const { INFINITY_WORKSPACE } = process.env;
 
     if(!tableId) {
-        console.log('loadTable: No tableId provided');
+        infinityLogger.warn('infinity.loadTable.noTableId');
         return [];
     }
     const token = await authInfinity();
     if (!token) {
-        console.log('loadTable: No auth token available');
+        infinityLogger.warn('infinity.loadTable.noAuthToken');
         return [];
     }
     try{
@@ -68,15 +72,21 @@ const loadTable = async (tableId , data = [], after = "") => {
     
 
     }catch(e){
-        console.log('loadTable error:', e.message);
-        console.log('loadTable error response:', e.response?.data);
+        infinityLogger.error('infinity.loadTable.failed', { 
+            error: serializeError(e), 
+            responseData: e.response?.data 
+        });
         return [];
     }
 }
 const processTable = (tableData, folders) => {
-    console.log(`processTable called with tableData type: ${typeof tableData}, isArray: ${Array.isArray(tableData)}`);
+    infinityLogger.debug('infinity.processTable.start', { 
+        type: typeof tableData, 
+        isArray: Array.isArray(tableData),
+        itemCount: tableData?.length 
+    });
     if (!Array.isArray(tableData)) {
-        console.error('processTable received non-array tableData:', tableData);
+        infinityLogger.error('infinity.processTable.invalidData', { type: typeof tableData });
         return [];
     }
     const items = tableData.map(item => {
@@ -152,39 +162,54 @@ const updateItem = async (tableId, itemId, key, val) => {
         });
         return response.data;
     } catch (e) {
-        console.error("Error updating item:", e?.shortMessage || e.message);
+        infinityLogger.error('infinity.updateItem.failed', { 
+            error: serializeError(e),
+            tableId,
+            itemId 
+        });
         // To debug full payload, enable DEBUG_CURL=1 env
         if (process.env.DEBUG_CURL === '1') {
-            console.error("Curl equivalent:");
-            console.error(buildCurl({ method: 'PUT', url, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, data }));
+            const curl = buildCurl({ method: 'PUT', url, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, data });
+            infinityLogger.debug('infinity.updateItem.curl', { curl });
         }
         return false;
     }
 };
 
 const loadData = async (name,req) => {
-    console.log(`Loading data for: ${name}`);
-    console.log(`Table ID: ${process.env.infinity[name]}`);
+    infinityLogger.info('infinity.loadData.start', { 
+        name, 
+        tableId: process.env.infinity[name] 
+    });
     
     let data = await loadTable(process.env.infinity[name]);
-    console.log(`loadTable returned:`, typeof data, Array.isArray(data), data?.length || 'no length property');
+    infinityLogger.debug('infinity.loadData.tableLoaded', { 
+        type: typeof data, 
+        isArray: Array.isArray(data), 
+        length: data?.length 
+    });
     
     if (!data || !Array.isArray(data)) {
-        console.error(`Failed to load table data for ${name}, or data is not an array:`, data);
+        infinityLogger.error('infinity.loadData.invalidData', { name, dataType: typeof data });
         return [];
     }
     
-    console.log(`About to call saveImages with ${data.length} items`);
+    infinityLogger.debug('infinity.loadData.savingImages', { name, itemCount: data.length });
     data = await saveImages(data, name);
     saveFile(`config/${name}`, data);
     return data;
 }
 
 const saveImages = async (items, table_name) => {
-    console.log(`saveImages called with items type: ${typeof items}, isArray: ${Array.isArray(items)}, length: ${items?.length || 'no length'}`);
+    infinityLogger.debug('infinity.saveImages.start', { 
+        table: table_name,
+        type: typeof items, 
+        isArray: Array.isArray(items), 
+        length: items?.length 
+    });
     
     if (!items || !Array.isArray(items)) {
-        console.error(`saveImages received invalid items for table ${table_name}:`, items);
+        infinityLogger.error('infinity.saveImages.invalidData', { table: table_name, type: typeof items });
         return [];
     }
     const hasImages = items.filter(item => item.image);
@@ -202,7 +227,7 @@ const saveImages = async (items, table_name) => {
 
 const checkForDupeImages = async (items) => {
     if (!items || !Array.isArray(items)) {
-        console.error('checkForDupeImages received invalid items:', items);
+        infinityLogger.error('infinity.checkForDupeImages.invalidData', { type: typeof items });
         return [];
     }
     const itemsWithImages = items.filter(item => item.image);

@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { loadFile, saveFile } from './io.mjs';
 import axios from './http.mjs';
 import { createLogger } from './logging/logger.js';
+import { serializeError } from './logging/utils.js';
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 const defaultStravaLogger = createLogger({
     source: 'backend',
@@ -36,7 +37,7 @@ export const getAccessToken = async (logger) => {
         process.env.STRAVA_ACCESS_TOKEN = accessToken;
         return accessToken;
     } catch (error) {
-    log.error('harvest.strava.access_token.error', { error: error?.shortMessage || error.message });
+        log.error('harvest.strava.access_token.error', { error: serializeError(error) });
         return false;
     }
 };
@@ -61,7 +62,7 @@ const baseAPI = async (endpoint, logger) => {
         const dataResponse = await axios.get(url, { headers });
         return dataResponse.data;
     } catch (error) {
-        log.warn('harvest.strava.fetch.error', { endpoint, error: error.response?.data || error.message });
+        log.warn('harvest.strava.fetch.error', { endpoint, error: serializeError(error), responseData: error.response?.data });
         return false;
     }
 };
@@ -109,7 +110,7 @@ export const getActivities = async (logger) => {
                     activity.heartRateOverTime = [0];
                 }
             } catch (error) {
-                log.warn('harvest.strava.heartrate.error', { activityId: activity.id, error: error.message });
+                log.warn('harvest.strava.heartrate.error', { activityId: activity.id, error: serializeError(error) });
                 activity.heartRateOverTime = [1];
             }
 
@@ -178,7 +179,7 @@ const harvestActivities = async (logger, job_id) => {
 
         return reducedSaveMe;
     } catch (error) {
-        log.error('harvest.strava.failure', { jobId: job_id, error: error.message });
+        log.error('harvest.strava.failure', { jobId: job_id, error: serializeError(error) });
         return { success: false, error: error.message };
     }
 };

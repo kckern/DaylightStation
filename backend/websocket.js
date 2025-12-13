@@ -3,6 +3,7 @@
 
 import { WebSocketServer } from 'ws';
 import { createLogger } from './lib/logging/logger.js';
+import { serializeError } from './lib/logging/utils.js';
 import { ingestFrontendLogs } from './lib/logging/ingestion.js';
 import { isLoggingInitialized } from './lib/logging/dispatcher.js';
 
@@ -52,7 +53,7 @@ export function createWebsocketServer(server) {
              logger.warn('Received unknown WebSocket message source', { source: data.source, data });
           }
         } catch (error) {
-          logger.warn('Failed to parse WebSocket message', { error: error.message, raw: rawMessage });
+          logger.warn('Failed to parse WebSocket message', { error: serializeError(error), raw: rawMessage });
         }
       });
       
