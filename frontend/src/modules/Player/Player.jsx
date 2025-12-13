@@ -122,7 +122,7 @@ const Player = forwardRef(function Player(props, ref) {
     return null;
   }, [isQueue, playQueue, play]);
 
-  const activeEntryGuid = useMemo(() => {
+  const currentMediaGuid = useMemo(() => {
     if (!activeSource) return null;
     if (activeSource.guid) return activeSource.guid;
     return ensureEntryGuid(activeSource);
@@ -131,8 +131,8 @@ const Player = forwardRef(function Player(props, ref) {
   const singlePlayerProps = useMemo(() => {
     if (!activeSource) return null;
     const cloned = { ...activeSource };
-    if (!cloned.guid && activeEntryGuid) {
-      cloned.guid = activeEntryGuid;
+    if (!cloned.guid && currentMediaGuid) {
+      cloned.guid = currentMediaGuid;
     }
 
     const rootPlay = (play && typeof play === 'object' && !Array.isArray(play)) ? play : null;
@@ -157,12 +157,12 @@ const Player = forwardRef(function Player(props, ref) {
       cloned.maxResolution = resolvedMaxResolution;
     }
     return cloned;
-  }, [activeSource, activeEntryGuid, play, queue, maxVideoBitrate, maxResolution]);
+  }, [activeSource, currentMediaGuid, play, queue, maxVideoBitrate, maxResolution]);
 
   const [resolvedMeta, setResolvedMeta] = useState(null);
   const [mediaAccess, setMediaAccess] = useState(() => createDefaultMediaAccess());
   const [playbackMetrics, setPlaybackMetrics] = useState(() => createDefaultPlaybackMetrics());
-  const [remountState, setRemountState] = useState(() => ({ guid: activeEntryGuid || null, nonce: 0, context: null }));
+  const [remountState, setRemountState] = useState(() => ({ guid: currentMediaGuid || null, nonce: 0, context: null }));
   const remountInfoRef = useRef(remountState);
   const remountTimerRef = useRef(null);
 
@@ -189,9 +189,9 @@ const Player = forwardRef(function Player(props, ref) {
     setResolvedMeta(null);
     setMediaAccess(createDefaultMediaAccess());
     setPlaybackMetrics(createDefaultPlaybackMetrics());
-    setRemountState((prev) => (prev.guid === activeEntryGuid ? prev : { guid: activeEntryGuid || null, nonce: 0, context: null }));
+    setRemountState((prev) => (prev.guid === currentMediaGuid ? prev : { guid: currentMediaGuid || null, nonce: 0, context: null }));
     clearRemountTimer();
-  }, [activeEntryGuid, clearRemountTimer]);
+  }, [currentMediaGuid, clearRemountTimer]);
 
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
   const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.media_key || null;
@@ -202,9 +202,9 @@ const Player = forwardRef(function Player(props, ref) {
   );
 
   const playbackSessionKey = useMemo(() => {
-    const identifier = activeEntryGuid ?? mediaIdentity;
+    const identifier = currentMediaGuid ?? mediaIdentity;
     return identifier ? `player-session:${identifier}` : 'player-session:idle';
-  }, [activeEntryGuid, mediaIdentity]);
+  }, [currentMediaGuid, mediaIdentity]);
 
   const explicitStartProvided = effectiveMeta && Object.prototype.hasOwnProperty.call(effectiveMeta, 'seconds');
   const explicitStartSeconds = explicitStartProvided
@@ -322,7 +322,7 @@ const Player = forwardRef(function Player(props, ref) {
       reason,
       source,
       seekSeconds: normalized,
-      guid: activeEntryGuid,
+      guid: currentMediaGuid,
       remountNonce: currentRemountNonce,
       attempt,
       backoffMs: scheduledDelayMs,
@@ -340,12 +340,12 @@ const Player = forwardRef(function Player(props, ref) {
     setMediaAccess(createDefaultMediaAccess());
     setPlaybackMetrics(createDefaultPlaybackMetrics());
     setRemountState((prev) => {
-      if (prev.guid !== activeEntryGuid) {
-        return { guid: activeEntryGuid || null, nonce: 0, context: diagnostics };
+      if (prev.guid !== currentMediaGuid) {
+        return { guid: currentMediaGuid || null, nonce: 0, context: diagnostics };
       }
       return { guid: prev.guid, nonce: prev.nonce + 1, context: diagnostics };
     });
-  }, [activeEntryGuid, effectiveMeta, isQueue, playerType, playbackMetrics, resolvedWaitKey, setTargetTimeSeconds]);
+  }, [currentMediaGuid, effectiveMeta, isQueue, playerType, playbackMetrics, resolvedWaitKey, setTargetTimeSeconds]);
 
   const scheduleSinglePlayerRemount = useCallback((input = null) => {
     const attempt = (remountInfoRef.current?.nonce ?? 0) + 1;
@@ -357,7 +357,7 @@ const Player = forwardRef(function Player(props, ref) {
       waitKey: resolvedWaitKey,
       attempt,
       backoffMs,
-      guid: activeEntryGuid,
+      guid: currentMediaGuid,
       playerType: playerType || null,
       isQueue,
       playbackSeconds: playbackMetrics?.seconds ?? null
@@ -372,12 +372,12 @@ const Player = forwardRef(function Player(props, ref) {
       remountTimerRef.current = null;
       forceSinglePlayerRemount(input, { scheduledDelayMs: backoffMs, attempt });
     }, backoffMs);
-  }, [activeEntryGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playbackMetrics, playerType, resolvedWaitKey]);
+  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playbackMetrics, playerType, resolvedWaitKey]);
 
   const singlePlayerKey = useMemo(() => {
     if (!singlePlayerProps) return 'player-idle';
-    return `${activeEntryGuid || 'entry'}:${remountState.nonce}`;
-  }, [singlePlayerProps, activeEntryGuid, remountState.nonce]);
+    return `${currentMediaGuid || 'entry'}:${remountState.nonce}`;
+  }, [singlePlayerProps, currentMediaGuid, remountState.nonce]);
 
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
@@ -501,7 +501,7 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, activeEntryGuid]);
+  }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid]);
 
   const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
@@ -527,7 +527,7 @@ const Player = forwardRef(function Player(props, ref) {
     controllerRef: resilienceControllerRef,
     plexId,
     playbackSessionKey,
-    debugContext: { scope: 'player', entryGuid: activeEntryGuid || null },
+    debugContext: { scope: 'player', mediaGuid: currentMediaGuid || null },
     externalPauseReason: pauseDecision?.reason,
     externalPauseActive: pauseDecision?.paused
   });
@@ -694,7 +694,7 @@ const Player = forwardRef(function Player(props, ref) {
     remountDiagnostics: remountState.context,
     wrapWithContainer: false,
     suppressLocalOverlay: !!overlayElements,
-    plexClientSession: activeEntryGuid ? `${activeEntryGuid}-r${remountState.nonce}` : null
+    plexClientSession: currentMediaGuid ? `${currentMediaGuid}-r${remountState.nonce}` : null
   };
 
   const playerShellClass = ['player', effectiveShader, props.playerType || '']
