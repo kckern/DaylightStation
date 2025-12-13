@@ -6,22 +6,56 @@ const toNumber = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
+/**
+ * Normalize diagnostics from VideoPlayer's buildTroubleDiagnostics
+ * Handles both flat structure (from VideoPlayer) and nested structure (legacy)
+ */
 const normalizeDiagnostics = (raw) => {
   if (!raw || typeof raw !== 'object') return null;
-  const buffer = raw.buffer || {};
+  
+  // Support both flat (VideoPlayer) and nested (legacy) buffer data
+  const bufferAhead = toNumber(raw.bufferAheadSeconds ?? raw.buffer?.bufferAheadSeconds);
+  const bufferGap = toNumber(raw.bufferGapSeconds ?? raw.buffer?.bufferGapSeconds);
+  const nextBufferStart = toNumber(raw.nextBufferStartSeconds ?? raw.buffer?.nextBufferStartSeconds);
+  const bufferBehind = toNumber(raw.bufferBehindSeconds ?? raw.buffer?.bufferBehindSeconds);
+  
+  // Support both flat quality object (VideoPlayer) and nested decoder (legacy)
+  const quality = raw.quality || {};
   const decoder = raw.decoder || {};
+  const droppedFrames = toNumber(quality.droppedFrames ?? decoder.droppedFrames);
+  const totalFrames = toNumber(quality.totalFrames ?? decoder.totalFrames);
+  
+  // Preserve Shaka player stats if available
+  const shaka = raw.shaka || null;
+  
   return {
     buffer: {
-      bufferAheadSeconds: toNumber(buffer.bufferAheadSeconds),
-      bufferGapSeconds: toNumber(buffer.bufferGapSeconds),
-      nextBufferStartSeconds: toNumber(buffer.nextBufferStartSeconds)
+      bufferAheadSeconds: bufferAhead,
+      bufferBehindSeconds: bufferBehind,
+      bufferGapSeconds: bufferGap,
+      nextBufferStartSeconds: nextBufferStart,
+      buffered: Array.isArray(raw.buffered) ? raw.buffered : null
     },
     decoder: {
-      droppedFrames: toNumber(decoder.droppedFrames),
-      totalFrames: toNumber(decoder.totalFrames)
+      droppedFrames,
+      totalFrames
     },
     readyState: raw.readyState ?? raw.ready_state ?? null,
-    networkState: raw.networkState ?? raw.network_state ?? null
+    networkState: raw.networkState ?? raw.network_state ?? null,
+    playbackRate: toNumber(raw.playbackRate),
+    paused: typeof raw.paused === 'boolean' ? raw.paused : null,
+    currentTime: toNumber(raw.currentTime),
+    // Include full Shaka player stats for detailed diagnostics
+    shaka: shaka ? {
+      width: toNumber(shaka.width),
+      height: toNumber(shaka.height),
+      streamBandwidth: toNumber(shaka.streamBandwidth),
+      estimatedBandwidth: toNumber(shaka.estimatedBandwidth),
+      decodedFrames: toNumber(shaka.decodedFrames),
+      droppedFrames: toNumber(shaka.droppedFrames),
+      bufferLength: toNumber(shaka.bufferLength),
+      stateHistoryLength: toNumber(shaka.stateHistoryLength)
+    } : null
   };
 };
 

@@ -935,6 +935,14 @@ export function useMediaResilience({
 
     const metrics = metricsRef.current || {};
 
+    // Pull full diagnostics including Shaka stats when available
+    let fullDiagnostics = null;
+    try {
+      fullDiagnostics = readPolicyDiagnostics();
+    } catch (_) {
+      // ignore diagnostics read errors
+    }
+
     return {
       bufferRunwayMs,
       readyState,
@@ -949,9 +957,12 @@ export function useMediaResilience({
       totalStallDurationMs: metrics.stallDurationMs,
       decoderNudges: metrics.decoderNudges,
       bitrateOverrides: metrics.bitrateOverrides,
-      recoveryAttempts: metrics.recoveryAttempts
+      recoveryAttempts: metrics.recoveryAttempts,
+      // Include Shaka player diagnostics for DASH streams
+      shaka: fullDiagnostics?.shaka ?? null,
+      buffer: fullDiagnostics?.buffer ?? null
     };
-  }, [playbackHealth]);
+  }, [playbackHealth, readPolicyDiagnostics]);
 
   const beginStallLifecycle = useCallback((stallToken) => {
     const nextId = createStallId(stallToken);

@@ -25,14 +25,33 @@ const summarizeDiagnosticsForLog = (diagnostics = null) => {
   }
   const buffer = diagnostics.buffer || {};
   const decoder = diagnostics.decoder || {};
+  const shaka = diagnostics.shaka || null;
+  
   return {
+    // Buffer state
     bufferAheadSeconds: buffer.bufferAheadSeconds ?? null,
+    bufferBehindSeconds: buffer.bufferBehindSeconds ?? null,
     bufferGapSeconds: buffer.bufferGapSeconds ?? null,
     nextBufferStartSeconds: buffer.nextBufferStartSeconds ?? null,
+    // Decoder metrics
     droppedFrames: decoder.droppedFrames ?? null,
     totalFrames: decoder.totalFrames ?? null,
+    // Media element state
     readyState: diagnostics.readyState ?? null,
-    networkState: diagnostics.networkState ?? null
+    networkState: diagnostics.networkState ?? null,
+    playbackRate: diagnostics.playbackRate ?? null,
+    paused: diagnostics.paused ?? null,
+    currentTime: diagnostics.currentTime ?? null,
+    // Shaka player stats (critical for DASH debugging)
+    shaka: shaka ? {
+      width: shaka.width,
+      height: shaka.height,
+      streamBandwidth: shaka.streamBandwidth,
+      estimatedBandwidth: shaka.estimatedBandwidth,
+      decodedFrames: shaka.decodedFrames,
+      droppedFrames: shaka.droppedFrames,
+      bufferLength: shaka.bufferLength
+    } : null
   };
 };
 
