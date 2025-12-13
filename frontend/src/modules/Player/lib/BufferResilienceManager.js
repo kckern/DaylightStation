@@ -23,6 +23,14 @@ export class BufferResilienceManager {
    */
   handleNetworkResponse(requestType, response) {
     const status = typeof response?.status === 'number' ? response.status : null;
+    const latencyMs = (() => {
+      const candidate = response?.timeMs ?? response?.time ?? response?.durationMs ?? response?.tookMs ?? response?.elapsedMs;
+      return Number.isFinite(candidate) ? Math.round(candidate) : null;
+    })();
+    const bytes = (() => {
+      const candidate = response?.bytesLoaded ?? response?.totalBytes ?? response?.size ?? null;
+      return Number.isFinite(candidate) ? candidate : null;
+    })();
 
     // 1 = SEGMENT
     if (status === 404 && requestType === 1) {
@@ -44,8 +52,19 @@ export class BufferResilienceManager {
       uri: response?.uri || null,
       originalUri: response?.originalUri || null,
       fromCache: Boolean(response?.fromCache),
-      status
+      status,
+      latencyMs,
+      bytes
     });
+
+    if (Number.isFinite(latencyMs) && latencyMs >= 2000 && (!status || status < 400)) {
+      this.callbacks.onLog('info', 'shaka-network-slow', {
+        requestType,
+        uri: response?.uri || null,
+        latencyMs,
+        status
+      });
+    }
   }
 
   /**

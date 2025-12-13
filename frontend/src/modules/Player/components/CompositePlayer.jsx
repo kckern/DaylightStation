@@ -1,6 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { CompositeControllerProvider } from './CompositeControllerContext.jsx';
+import { guid } from '../lib/helpers.js';
 
 /**
  * Composite Player - Video player with audio overlay
@@ -13,6 +14,11 @@ export function CompositePlayer(props) {
   const { play, queue, Player } = props;
   const isQueue = !!queue;
   const noop = React.useCallback(() => {}, []);
+
+  // Stable session IDs for each player to ensure distinct Plex client identifiers
+  // This prevents the overlay (audio) player from killing the primary (video) player's transcode session
+  const primarySessionId = React.useMemo(() => `composite-primary-${guid()}`, []);
+  const overlaySessionId = React.useMemo(() => `composite-overlay-${guid()}`, []);
 
   const primaryProps = React.useMemo(() => {
     const { coordination: _ignoredCoordination, Player: _ignoredPlayer, ...baseProps } = props;
@@ -121,11 +127,13 @@ export function CompositePlayer(props) {
             playerType="overlay"
             ignoreKeys={props.ignoreKeys}
             clear={noop}
+            sessionId={overlaySessionId}
             {...overlayProps}
           />
         )}
         <Player
           playerType="primary"
+          sessionId={primarySessionId}
           {...primaryProps}
           keyboardOverrides={primaryKeyboardOverrides}
         />
