@@ -6,6 +6,8 @@ import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLeve
 import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
 import '../FitnessCam.scss';
 import { usePersistentVolume } from '../usePersistentVolume.js';
+import { normalizeTrackDurationSeconds } from '../../Player/utils/mediaIdentity.js';
+import { guid } from '../../Player/lib/helpers.js';
 
 const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
 const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
@@ -60,6 +62,8 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
   const setMusicOverride = fitnessContext?.setMusicOverride;
   const musicEnabled = fitnessContext?.musicEnabled ?? true;
   const sessionInstance = fitnessContext?.fitnessSessionInstance;
+
+  const musicSessionId = useMemo(() => `fitness-music-${guid()}`, []);
 
   // Sync music player with video player pause state
   useEffect(() => {
@@ -543,7 +547,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
             play={{ volume: musicVolumeState.volume }}
             onProgress={handleProgress}
             playerType="audio"
-            sessionId="fitness-music"
+            sessionId={musicSessionId}
           />
         </div>
       ) : (
