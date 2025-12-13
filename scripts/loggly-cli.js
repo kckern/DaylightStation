@@ -6,6 +6,9 @@
  *  ssh server 'docker exec plex grep -C 20 "650610" "/config/Library/Application Support/Plex Media Server/Logs/Plex Media Server.log"'
  * Grep Pattern for Transcoder Logs: ( where "2ecfbcbd-4864-4885-85b5-89101d12ec88" is the session identifier )
  * ssh server 'docker exec plex grep "2ecfbcbd-4864-4885-85b5-89101d12ec88" "/config/Library/Application Support/Plex Media Server/Logs/Plex Transcoder Statistics.log"'
+ * 
+ * #Docker Logs 
+ * ssh server 'docker logs daylight-station'
  */
 
 /**

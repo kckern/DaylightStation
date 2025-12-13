@@ -155,7 +155,8 @@ function createBufferingWebSocketTransport(options = {}) {
   let connecting = false;
   let queue = [];
   let reconnectDelay = reconnectBaseDelay;
-  let timer = null;
+  let flushTimer = null;
+  let reconnectTimer = null;
 
   const resolveUrl = () => {
     if (url) return url;
@@ -184,18 +185,18 @@ function createBufferingWebSocketTransport(options = {}) {
   };
 
   const scheduleFlush = () => {
-    if (timer) return;
-    timer = setTimeout(() => {
-      timer = null;
+    if (flushTimer) return;
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
       flush();
     }, flushInterval);
   };
 
   const scheduleReconnect = () => {
-    if (timer) return; // let flush timer handle immediate retries
+    if (reconnectTimer) return;
     const delay = Math.min(reconnectDelay, reconnectMaxDelay);
-    timer = setTimeout(() => {
-      timer = null;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
       reconnectDelay = Math.min(delay * 2, reconnectMaxDelay);
       ensure();
     }, delay);
