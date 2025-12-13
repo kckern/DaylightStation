@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * How to query PLEX logs:
+ * How to query PLEX logs: (`server` is the actual alias or IP of the Plex server, not a placeholder!)
  *  Grep Pattern for Server Logs (where "650610" is the media identifier):
  *  ssh server 'docker exec plex grep -C 20 "650610" "/config/Library/Application Support/Plex Media Server/Logs/Plex Media Server.log"'
  * Grep Pattern for Transcoder Logs: ( where "2ecfbcbd-4864-4885-85b5-89101d12ec88" is the session identifier )
