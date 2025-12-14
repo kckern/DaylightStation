@@ -295,6 +295,15 @@ export class NutriLog {
     });
   }
 
+  /**
+   * Update items (alias for setItems)
+   * @param {FoodItem[]|object[]} items
+   * @returns {NutriLog}
+   */
+  updateItems(items) {
+    return this.setItems(items);
+  }
+
   // ==================== Other Updates ====================
 
   /**
