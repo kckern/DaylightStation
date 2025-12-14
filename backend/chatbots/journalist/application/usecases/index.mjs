@@ -3,8 +3,24 @@
  * @module journalist/application/usecases
  */
 
+// Core use cases
 export { ProcessTextEntry } from './ProcessTextEntry.mjs';
 export { ProcessVoiceEntry } from './ProcessVoiceEntry.mjs';
 export { InitiateJournalPrompt } from './InitiateJournalPrompt.mjs';
 export { GenerateMultipleChoices } from './GenerateMultipleChoices.mjs';
 export { HandleCallbackResponse } from './HandleCallbackResponse.mjs';
+
+// Quiz use cases
+export { SendQuizQuestion } from './SendQuizQuestion.mjs';
+export { RecordQuizAnswer } from './RecordQuizAnswer.mjs';
+export { AdvanceToNextQuizQuestion } from './AdvanceToNextQuizQuestion.mjs';
+export { HandleQuizAnswer } from './HandleQuizAnswer.mjs';
+
+// Analysis use cases
+export { GenerateTherapistAnalysis } from './GenerateTherapistAnalysis.mjs';
+export { ReviewJournalEntries } from './ReviewJournalEntries.mjs';
+export { ExportJournalMarkdown } from './ExportJournalMarkdown.mjs';
+
+// Command use cases
+export { HandleSlashCommand } from './HandleSlashCommand.mjs';
+export { HandleSpecialStart } from './HandleSpecialStart.mjs';
