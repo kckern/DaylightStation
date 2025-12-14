@@ -22,7 +22,7 @@ export function createLogglyTransport(options = {}) {
     token, 
     subdomain, 
     tags = ['daylight'], 
-    bufferSize = 1 
+    bufferSize = 50 
   } = options;
   
   // Return no-op transport if not configured
@@ -44,7 +44,7 @@ export function createLogglyTransport(options = {}) {
     networkErrorsOnConsole: true,
     bufferOptions: { 
       size: bufferSize, 
-      retriesInMilliSeconds: 60000 
+      retriesInMilliSeconds: 30000 
     }
   });
 
@@ -62,6 +62,7 @@ export function createLogglyTransport(options = {}) {
 
   let lastFlush = null;
   let eventsSent = 0;
+  const startupState = new Map(); // key -> { firstSent: bool, finalSent: bool }
 
   return {
     name: 'loggly',
@@ -71,6 +72,28 @@ export function createLogglyTransport(options = {}) {
      * @param {Object} event - Normalized log event
      */
     send(event) {
+      // Throttle ultra-high-frequency startup metrics before hitting Loggly
+      if (event?.event === 'playback.media-metric' && event?.data?.metric === 'startup_duration_ms') {
+        const key = event?.data?.waitKey || event?.context?.sessionId || 'global-startup-metric';
+        const state = startupState.get(key) || { firstSent: false, finalSent: false };
+
+        const isFinal = event?.data?.final === true || event?.data?.isFinal === true;
+
+        // Only send first and final samples per waitKey
+        if (!state.firstSent) {
+          startupState.set(key, { firstSent: true, finalSent: state.finalSent });
+        } else if (isFinal && !state.finalSent) {
+          startupState.set(key, { ...state, finalSent: true });
+        } else {
+          return; // drop intermediate samples
+        }
+
+        // Prevent unbounded growth in long-lived processes
+        if (startupState.size > 2000) {
+          startupState.clear();
+        }
+      }
+
       // Winston expects (level, message, meta)
       // We pass the event name as the message and include full event as meta
       winstonLogger.log(event.level, event.event, {
