@@ -1,0 +1,474 @@
+/**
+ * NutriLog Entity
+ * @module nutribot/domain/NutriLog
+ * 
+ * Aggregate root for food logging entries.
+ * Manages the lifecycle of a food log from creation through acceptance.
+ */
+
+import { v4 as uuidv4 } from 'uuid';
+import { validateNutriLog, getMealTimeFromHour, LogStatuses } from './schemas.mjs';
+import { FoodItem } from './FoodItem.mjs';
+import { ValidationError } from '../../_lib/errors/index.mjs';
+import { Timestamp } from '../../domain/value-objects/Timestamp.mjs';
+
+/**
+ * NutriLog entity - aggregate root for food logging
+ */
+export class NutriLog {
+  /** @type {string} */
+  #id;
+  /** @type {string} */
+  #userId;
+  /** @type {string} */
+  #conversationId;
+  /** @type {string} */
+  #status;
+  /** @type {string} */
+  #text;
+  /** @type {object} */
+  #meal;
+  /** @type {FoodItem[]} */
+  #items;
+  /** @type {object[]} */
+  #questions;
+  /** @type {object} */
+  #nutrition;
+  /** @type {object} */
+  #metadata;
+  /** @type {string} */
+  #createdAt;
+  /** @type {string} */
+  #updatedAt;
+  /** @type {string|null} */
+  #acceptedAt;
+
+  /**
+   * @param {object} props - NutriLog properties
+   */
+  constructor(props) {
+    // Convert FoodItem arrays if needed
+    const itemsAsObjects = (props.items || []).map(item => 
+      item instanceof FoodItem ? item.toJSON() : item
+    );
+
+    // Validate
+    const result = validateNutriLog({
+      ...props,
+      items: itemsAsObjects,
+    });
+    
+    if (!result.valid) {
+      throw new ValidationError('Invalid NutriLog', {
+        errors: result.errors,
+      });
+    }
+
+    const data = result.value;
+    this.#id = data.id;
+    this.#userId = data.userId;
+    this.#conversationId = data.conversationId;
+    this.#status = data.status;
+    this.#text = data.text;
+    this.#meal = Object.freeze({ ...data.meal });
+    this.#items = data.items.map(item => FoodItem.from(item));
+    this.#questions = Object.freeze([...data.questions]);
+    this.#nutrition = Object.freeze({ ...data.nutrition });
+    this.#metadata = Object.freeze({ ...data.metadata });
+    this.#createdAt = data.createdAt;
+    this.#updatedAt = data.updatedAt;
+    this.#acceptedAt = data.acceptedAt;
+
+    Object.freeze(this);
+  }
+
+  // ==================== Getters ====================
+
+  get id() { return this.#id; }
+  get userId() { return this.#userId; }
+  get conversationId() { return this.#conversationId; }
+  get status() { return this.#status; }
+  get text() { return this.#text; }
+  get meal() { return this.#meal; }
+  get items() { return [...this.#items]; }
+  get questions() { return [...this.#questions]; }
+  get nutrition() { return { ...this.#nutrition }; }
+  get metadata() { return { ...this.#metadata }; }
+  get createdAt() { return this.#createdAt; }
+  get updatedAt() { return this.#updatedAt; }
+  get acceptedAt() { return this.#acceptedAt; }
+
+  // ==================== Computed Properties ====================
+
+  /**
+   * Check if the log is pending confirmation
+   */
+  get isPending() {
+    return this.#status === 'pending';
+  }
+
+  /**
+   * Check if the log has been accepted
+   */
+  get isAccepted() {
+    return this.#status === 'accepted';
+  }
+
+  /**
+   * Check if the log has been rejected
+   */
+  get isRejected() {
+    return this.#status === 'rejected';
+  }
+
+  /**
+   * Check if the log has been deleted
+   */
+  get isDeleted() {
+    return this.#status === 'deleted';
+  }
+
+  /**
+   * Get the number of food items
+   */
+  get itemCount() {
+    return this.#items.length;
+  }
+
+  /**
+   * Get total grams across all items
+   */
+  get totalGrams() {
+    return this.#items.reduce((sum, item) => sum + item.grams, 0);
+  }
+
+  /**
+   * Get count of items by color
+   */
+  get colorCounts() {
+    return this.#items.reduce((counts, item) => {
+      counts[item.color] = (counts[item.color] || 0) + 1;
+      return counts;
+    }, { green: 0, yellow: 0, orange: 0 });
+  }
+
+  /**
+   * Get grams by color
+   */
+  get gramsByColor() {
+    return this.#items.reduce((grams, item) => {
+      grams[item.color] = (grams[item.color] || 0) + item.grams;
+      return grams;
+    }, { green: 0, yellow: 0, orange: 0 });
+  }
+
+  /**
+   * Check if there are unanswered questions
+   */
+  get hasUnansweredQuestions() {
+    return this.#questions.some(q => !q.answered);
+  }
+
+  /**
+   * Get the meal date as a Date object
+   */
+  get mealDate() {
+    return new Date(this.#meal.date);
+  }
+
+  // ==================== Status Transitions ====================
+
+  /**
+   * Accept the log (confirm items are correct)
+   * @returns {NutriLog}
+   */
+  accept() {
+    if (!this.isPending) {
+      throw new ValidationError(`Cannot accept log with status: ${this.#status}`);
+    }
+    
+    return new NutriLog({
+      ...this.toJSON(),
+      status: 'accepted',
+      acceptedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Reject the log
+   * @returns {NutriLog}
+   */
+  reject() {
+    if (!this.isPending) {
+      throw new ValidationError(`Cannot reject log with status: ${this.#status}`);
+    }
+    
+    return new NutriLog({
+      ...this.toJSON(),
+      status: 'rejected',
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Delete the log (soft delete)
+   * @returns {NutriLog}
+   */
+  delete() {
+    if (this.isDeleted) {
+      return this; // Already deleted
+    }
+    
+    return new NutriLog({
+      ...this.toJSON(),
+      status: 'deleted',
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  // ==================== Item Management ====================
+
+  /**
+   * Add a food item
+   * @param {FoodItem|object} item
+   * @returns {NutriLog}
+   */
+  addItem(item) {
+    const foodItem = item instanceof FoodItem ? item : FoodItem.from(item);
+    
+    return new NutriLog({
+      ...this.toJSON(),
+      items: [...this.#items.map(i => i.toJSON()), foodItem.toJSON()],
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Remove a food item by ID
+   * @param {string} itemId
+   * @returns {NutriLog}
+   */
+  removeItem(itemId) {
+    return new NutriLog({
+      ...this.toJSON(),
+      items: this.#items.filter(i => i.id !== itemId).map(i => i.toJSON()),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Update a food item
+   * @param {string} itemId
+   * @param {object} updates
+   * @returns {NutriLog}
+   */
+  updateItem(itemId, updates) {
+    const items = this.#items.map(item => {
+      if (item.id === itemId) {
+        return item.with(updates).toJSON();
+      }
+      return item.toJSON();
+    });
+
+    return new NutriLog({
+      ...this.toJSON(),
+      items,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Replace all items
+   * @param {FoodItem[]|object[]} items
+   * @returns {NutriLog}
+   */
+  setItems(items) {
+    const itemsAsJson = items.map(item => 
+      item instanceof FoodItem ? item.toJSON() : item
+    );
+
+    return new NutriLog({
+      ...this.toJSON(),
+      items: itemsAsJson,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  // ==================== Other Updates ====================
+
+  /**
+   * Update nutrition summary
+   * @param {object} nutrition
+   * @returns {NutriLog}
+   */
+  setNutrition(nutrition) {
+    return new NutriLog({
+      ...this.toJSON(),
+      nutrition: { ...this.#nutrition, ...nutrition },
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Update the text
+   * @param {string} text
+   * @returns {NutriLog}
+   */
+  setText(text) {
+    return new NutriLog({
+      ...this.toJSON(),
+      text,
+      metadata: { ...this.#metadata, originalText: this.#text },
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Create a copy with updates
+   * @param {object} updates
+   * @returns {NutriLog}
+   */
+  with(updates) {
+    return new NutriLog({
+      ...this.toJSON(),
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  // ==================== Serialization ====================
+
+  /**
+   * Convert to plain object
+   * @returns {object}
+   */
+  toJSON() {
+    return {
+      id: this.#id,
+      userId: this.#userId,
+      conversationId: this.#conversationId,
+      status: this.#status,
+      text: this.#text,
+      meal: { ...this.#meal },
+      items: this.#items.map(item => item.toJSON()),
+      questions: [...this.#questions],
+      nutrition: { ...this.#nutrition },
+      metadata: { ...this.#metadata },
+      createdAt: this.#createdAt,
+      updatedAt: this.#updatedAt,
+      acceptedAt: this.#acceptedAt,
+    };
+  }
+
+  /**
+   * Convert to NutriList items (denormalized)
+   * @returns {object[]}
+   */
+  toNutriListItems() {
+    return this.#items.map(item => ({
+      logId: this.#id,
+      label: item.label,
+      grams: item.grams,
+      color: item.color,
+      status: this.#status,
+      createdAt: this.#createdAt,
+      acceptedAt: this.#acceptedAt,
+    }));
+  }
+
+  // ==================== Factory Methods ====================
+
+  /**
+   * Create a new pending NutriLog
+   * @param {object} props
+   * @returns {NutriLog}
+   */
+  static create(props) {
+    const now = new Date();
+    const meal = props.meal || {
+      date: now.toISOString().split('T')[0],
+      time: getMealTimeFromHour(now.getHours()),
+    };
+
+    // Generate IDs for items if needed
+    const items = (props.items || []).map(item => {
+      if (!item.id) {
+        return FoodItem.create(item).toJSON();
+      }
+      return item;
+    });
+
+    return new NutriLog({
+      id: uuidv4(),
+      userId: props.userId,
+      conversationId: props.conversationId,
+      status: 'pending',
+      text: props.text || '',
+      meal,
+      items,
+      questions: props.questions || [],
+      nutrition: props.nutrition || {},
+      metadata: {
+        source: 'telegram',
+        ...props.metadata,
+      },
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      acceptedAt: null,
+    });
+  }
+
+  /**
+   * Create from plain object
+   * @param {object} obj
+   * @returns {NutriLog}
+   */
+  static from(obj) {
+    if (obj instanceof NutriLog) return obj;
+    return new NutriLog(obj);
+  }
+
+  /**
+   * Create from legacy format
+   * @param {object} legacy - Legacy NutriLog from existing data
+   * @param {string} userId - System user ID (from config mapping)
+   * @param {string} conversationId - Channel:identifier format
+   * @returns {NutriLog}
+   */
+  static fromLegacy(legacy, userId, conversationId) {
+    const items = (legacy.food_data?.food || []).map((item) => ({
+      id: uuidv4(), // Generate new UUID for each item
+      label: item.item,
+      icon: item.icon || 'default',
+      grams: item.amount, // Assume same for now
+      unit: item.unit,
+      amount: item.amount,
+      color: item.noom_color,
+    }));
+
+    return new NutriLog({
+      id: legacy.uuid,
+      userId,
+      conversationId,
+      status: legacy.status,
+      text: legacy.food_data?.text || '',
+      meal: {
+        date: legacy.food_data?.date || new Date().toISOString().split('T')[0],
+        time: legacy.food_data?.time || 'morning',
+      },
+      items,
+      questions: legacy.food_data?.questions || [],
+      nutrition: legacy.food_data?.nutrition || {},
+      metadata: {
+        messageId: String(legacy.message_id),
+        source: 'migration',
+      },
+      createdAt: legacy.createdAt || new Date().toISOString(),
+      updatedAt: legacy.updatedAt || new Date().toISOString(),
+      acceptedAt: legacy.status === 'accepted' ? (legacy.acceptedAt || legacy.updatedAt || new Date().toISOString()) : null,
+    });
+  }
+}
+
+export default NutriLog;

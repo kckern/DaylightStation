@@ -1,0 +1,289 @@
+# NutriBot Configuration
+# ========================
+# This configuration file defines:
+# - Bot identity and credentials
+# - User mappings (Telegram -> System User)
+# - Storage paths
+# - Feature flags and settings
+
+# Bot Identity
+# ------------
+bot:
+  name: "nutribot"
+  displayName: "NutriBot"
+  description: "AI-powered food logging assistant"
+  version: "2.0.0"
+
+# Telegram Configuration
+# ----------------------
+# Maps Telegram bot/user IDs to internal identifiers
+telegram:
+  # Bot credentials (token stored in secrets.yml)
+  botId: "${NUTRIBOT_TELEGRAM_BOT_ID}"
+  botToken: "${NUTRIBOT_TELEGRAM_BOT_TOKEN}"
+  
+  # Webhook configuration
+  webhook:
+    path: "/foodlog"
+    devUrl: "https://api-dev.kckern.net/foodlog"
+    prodUrl: "https://daylightstation-api.kckern.net/foodlog"
+
+# User Mappings
+# -------------
+# Maps Telegram chat identifiers to system users
+# Format: telegram:{botId}_{chatId} -> systemUserId
+#
+# This is the ONLY place where Telegram-specific IDs are mapped
+# to internal user identifiers. The rest of the system uses
+# the systemUserId for data storage and queries.
+users:
+  # Primary user
+  - telegram:
+      botId: "6898194425"
+      chatId: "575596036"
+    systemUser: "kirk"
+    displayName: "Kirk"
+    timezone: "America/Los_Angeles"
+    settings:
+      defaultMealTimes:
+        morning: "07:00"
+        afternoon: "12:00"
+        evening: "18:00"
+        night: "21:00"
+      notifications:
+        enabled: true
+        reminderTime: "20:00"
+
+  # Example: Additional users (commented out)
+  # - telegram:
+  #     botId: "6898194425"
+  #     chatId: "123456789"
+  #   systemUser: "jane"
+  #   displayName: "Jane"
+  #   timezone: "America/New_York"
+
+# Storage Configuration
+# ---------------------
+storage:
+  # Base data directory (relative to process.env.path.data)
+  basePath: "nutribot"
+  
+  # Per-user data paths
+  paths:
+    nutrilog: "{userId}/nutrilog.yml"      # Individual meal logs
+    nutrilist: "{userId}/nutrilist.yml"    # Denormalized item list
+    preferences: "{userId}/preferences.yml" # User preferences
+
+  # Legacy path pattern (for migration)
+  legacy:
+    enabled: true
+    pattern: "journalist/nutribot/nutrilogs/b{botId}_u{chatId}.yaml"
+
+# AI Configuration
+# ----------------
+ai:
+  # Model for food parsing
+  parser:
+    model: "gpt-4o-mini"
+    temperature: 0.3
+    maxTokens: 2000
+    
+  # System prompts
+  prompts:
+    # Location of prompt templates
+    templatesPath: "prompts/"
+    
+    # Default parsing prompt
+    parseFood: "parse-food.md"
+    
+    # Clarification question prompt
+    clarify: "clarify.md"
+    
+    # Nutrition estimation prompt
+    estimateNutrition: "estimate-nutrition.md"
+
+# Noom Color Categories
+# ---------------------
+noomColors:
+  green:
+    label: "Green Foods"
+    description: "Low calorie density, eat freely"
+    examples:
+      - "fruits"
+      - "vegetables"
+      - "broth-based soups"
+      - "non-fat dairy"
+    caloriesDensity: "< 1 cal/gram"
+    
+  yellow:
+    label: "Yellow Foods"
+    description: "Moderate calorie density"
+    examples:
+      - "lean proteins"
+      - "whole grains"
+      - "low-fat dairy"
+      - "legumes"
+    caloriesDensity: "1-2.4 cal/gram"
+    
+  orange:
+    label: "Orange Foods"
+    description: "High calorie density, eat sparingly"
+    examples:
+      - "oils"
+      - "nuts"
+      - "cheese"
+      - "processed foods"
+      - "sweets"
+    caloriesDensity: "> 2.4 cal/gram"
+
+# Meal Times
+# ----------
+mealTimes:
+  morning:
+    label: "Breakfast"
+    icon: "🌅"
+    timeRange: ["05:00", "11:59"]
+    
+  afternoon:
+    label: "Lunch"
+    icon: "☀️"
+    timeRange: ["12:00", "16:59"]
+    
+  evening:
+    label: "Dinner"
+    icon: "🌆"
+    timeRange: ["17:00", "20:59"]
+    
+  night:
+    label: "Late Night"
+    icon: "🌙"
+    timeRange: ["21:00", "04:59"]
+
+# Log Status Definitions
+# ----------------------
+statuses:
+  pending:
+    label: "Pending"
+    description: "Awaiting user confirmation"
+    canEdit: true
+    canDelete: true
+    
+  accepted:
+    label: "Accepted"
+    description: "Confirmed by user, included in reports"
+    canEdit: true
+    canDelete: true
+    
+  rejected:
+    label: "Rejected"
+    description: "Declined by user, not in reports"
+    canEdit: false
+    canDelete: false
+    
+  deleted:
+    label: "Deleted"
+    description: "Soft-deleted by user"
+    canEdit: false
+    canDelete: false
+
+# Icon Mappings
+# -------------
+# Standard icons for common food items
+icons:
+  # Proteins
+  egg: "🥚"
+  chicken: "🍗"
+  salmon: "🐟"
+  shrimp: "🦐"
+  beef: "🥩"
+  pork: "🥓"
+  
+  # Grains
+  rice: "🍚"
+  bread: "🍞"
+  toast: "🍞"
+  pasta: "🍝"
+  oatmeal: "🥣"
+  cereal: "🥣"
+  
+  # Dairy
+  milk: "🥛"
+  cheese: "🧀"
+  yogurt: "🥛"
+  
+  # Fruits
+  apple: "🍎"
+  banana: "🍌"
+  berry: "🫐"
+  orange: "🍊"
+  
+  # Vegetables
+  broccoli: "🥦"
+  carrot: "🥕"
+  tomato: "🍅"
+  salad: "🥗"
+  kale: "🥬"
+  spinach: "🥬"
+  zucchini: "🥒"
+  avocado: "🥑"
+  
+  # Drinks
+  coffee: "☕"
+  tea: "🍵"
+  water: "💧"
+  juice: "🧃"
+  
+  # Other
+  oil: "🫒"
+  sauce: "🥫"
+  dressing: "🥗"
+  peanut_butter: "🥜"
+  nuts: "🥜"
+  default: "🍽️"
+
+# Feature Flags
+# -------------
+features:
+  # Enable AI-powered nutrition estimation
+  nutritionEstimation: true
+  
+  # Enable voice message transcription
+  voiceTranscription: true
+  
+  # Enable photo food detection
+  photoDetection: false
+  
+  # Enable daily summary notifications
+  dailySummary: true
+  
+  # Enable weekly reports
+  weeklyReports: true
+  
+  # Enable streak tracking
+  streakTracking: true
+
+# Rate Limits
+# -----------
+rateLimits:
+  # Max logs per minute per user
+  logsPerMinute: 10
+  
+  # Max AI requests per minute per user
+  aiRequestsPerMinute: 5
+  
+  # Max photo uploads per day per user
+  photosPerDay: 20
+
+# External Services
+# -----------------
+services:
+  # Nutritionix API for nutrition data
+  nutritionix:
+    appId: "${NUTRITIONIX_APP_ID}"
+    appKey: "${NUTRITIONIX_APP_KEY}"
+    enabled: true
+    
+  # Report generation endpoint
+  reports:
+    host: "https://daylightstation-api.kckern.net"
+    path: "/nutribot/report"

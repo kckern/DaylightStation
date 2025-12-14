@@ -1,6 +1,7 @@
 # Install OS
 ARG NODE_VERSION=20.11.0
-FROM --platform=linux/amd64 node:${NODE_VERSION}-alpine
+ARG TARGETPLATFORM=linux/amd64
+FROM --platform=$TARGETPLATFORM node:${NODE_VERSION}-alpine
 
 # Set work directory to /usr/src/app
 WORKDIR /usr/src/app
