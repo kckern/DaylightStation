@@ -36,8 +36,139 @@ export class Plex {
     }
   }
 
+  /**
+   * Request a transcode decision from Plex before streaming video.
+   * This authorizes the session and determines whether direct play or transcode is needed.
+   * @param {string} key - The Plex rating key for the media item
+   * @param {Object} opts - Options for the decision request
+   * @returns {Promise<Object>} Decision result with session identifiers and stream info
+   */
+  async requestTranscodeDecision(key, opts = {}) {
+    const {
+      maxVideoBitrate = null,
+      maxResolution = null,
+      session = null,
+      startOffset = 0
+    } = opts;
+
+    const { plex: { protocol, platform, session: defaultSession }, PLEX_TOKEN: token } = process.env;
+
+    // Generate session identifiers
+    const sessionUUID = Math.random().toString(36).substring(2, 15) +
+      Math.random().toString(36).substring(2, 15);
+    const baseClientId = session || defaultSession || sessionUUID;
+    const clientIdentifier = baseClientId;
+    const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
+
+    // Build decision endpoint URL with URLSearchParams for proper encoding
+    const params = new URLSearchParams();
+    params.append('path', `/library/metadata/${key}`);
+    params.append('protocol', protocol || 'dash');
+    params.append('X-Plex-Client-Identifier', clientIdentifier);
+    params.append('X-Plex-Session-Identifier', sessionIdentifier);
+    params.append('X-Plex-Platform', platform || 'Chrome');
+    params.append('autoAdjustQuality', '1');
+    params.append('directPlay', '0');
+    params.append('directStream', '1');
+    params.append('subtitleSize', '100');
+    params.append('audioBoost', '100');
+    params.append('fastSeek', '1');
+    if (startOffset > 0) {
+      params.append('offset', String(Math.floor(startOffset)));
+    }
+    params.append('X-Plex-Token', token);
+
+    if (maxVideoBitrate != null) {
+      params.append('maxVideoBitrate', String(maxVideoBitrate));
+    }
+    if (maxResolution != null) {
+      params.append('maxVideoResolution', String(maxResolution));
+    }
+
+    const decisionUrl = `${this.baseUrl}/video/:/transcode/universal/decision?${params.toString()}`;
+
+    try {
+      plexLogger.info('plex.decision-request', {
+        plexId: key,
+        clientIdentifier,
+        sessionIdentifier,
+        maxVideoBitrate,
+        maxResolution
+      });
+
+      // Request JSON response from Plex (default is XML)
+      const response = await axios.get(decisionUrl, {
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      // Parse decision response - Plex returns XML converted to JSON by axios
+      const container = response.data?.MediaContainer;
+      if (!container) {
+        throw new Error('Invalid decision response: missing MediaContainer');
+      }
+
+      // Extract decision codes
+      const generalDecisionCode = parseInt(container.generalDecisionCode, 10) || 0;
+      const generalDecisionText = container.generalDecisionText || '';
+      const transcodeDecisionCode = parseInt(container.transcodeDecisionCode, 10) || 0;
+      const transcodeDecisionText = container.transcodeDecisionText || '';
+
+      // Extract direct stream path if available (for direct play)
+      let directStreamPath = null;
+      let directStreamContainer = null;
+      const video = Array.isArray(container.Video) ? container.Video[0] : container.Video;
+      if (video?.Media) {
+        const media = Array.isArray(video.Media) ? video.Media[0] : video.Media;
+        if (media?.Part) {
+          const part = Array.isArray(media.Part) ? media.Part[0] : media.Part;
+          directStreamPath = part?.key || null;
+          directStreamContainer = media?.container || null;
+        }
+      }
+
+      plexLogger.info('plex.decision-response', {
+        plexId: key,
+        generalDecisionCode,
+        generalDecisionText,
+        transcodeDecisionCode,
+        transcodeDecisionText,
+        directStreamPath: directStreamPath ? '(present)' : null,
+        directStreamContainer
+      });
+
+      return {
+        success: true,
+        sessionIdentifier,
+        clientIdentifier,
+        decision: {
+          generalDecisionCode,
+          generalDecisionText,
+          transcodeDecisionCode,
+          transcodeDecisionText,
+          directStreamPath,
+          directStreamContainer,
+          canDirectPlay: generalDecisionCode === 2000,
+          canTranscode: transcodeDecisionCode === 1000 || generalDecisionCode !== 2000
+        }
+      };
+    } catch (error) {
+      plexLogger.error('plex.decision-failed', {
+        plexId: key,
+        error: serializeError(error)
+      });
+      return {
+        success: false,
+        error: error.message,
+        sessionIdentifier,
+        clientIdentifier
+      };
+    }
+  }
+
   async loadmedia_url(itemData, attempt = 0, opts = {}) {
-    // opts: { maxVideoBitrate?: number }
+    // opts: { maxVideoBitrate?: number, maxResolution?: string, session?: string, startOffset?: number }
     const plex = itemData?.plex || itemData?.ratingKey;
     if (!attempt >= 1) plexLogger.debug('Attempting to load media URL', { plex });
     if (typeof itemData === 'string') {
@@ -59,69 +190,112 @@ export class Plex {
     maxVideoBitrate = null,
     maxResolution = null,
     maxVideoResolution = null,
-    session: optsSession = null
+    session: optsSession = null,
+    startOffset = 0
   } = opts || {};
   const session = optsSession || defaultSession;
   const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
-  // Generate a fresh session identifier for each playback attempt, but keep the client identifier stable
-  // Plex expects X-Plex-Client-Identifier to remain consistent for a device/app, while X-Plex-Session-Identifier
-  // should be unique per playback. Previously we varied both, which can cause PMS to treat the client as unknown
-  // and terminate the session.
-  const sessionUUID = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  // Use distinct client identifiers for audio vs video to prevent Plex from treating them as the same
-  // playback session. When audio and video share a client identifier, starting audio playback causes
-  // Plex to terminate the video transcode session ("Client stopped playback").
-  const baseClientId = session || defaultSession || sessionUUID;
-  const clientIdentifier = media_type === 'audio' ? `${baseClientId}-audio` : baseClientId;
-  const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
-
-  // Log session identifiers for debugging session collision issues
-  plexLogger.info('plex.media-url-generated', {
-    mediaType: media_type,
-    plexId: key,
-    clientIdentifier,
-    sessionIdentifier,
-    baseClientId,
-    optsSession: optsSession || null
-  });
 
     try {
       if (media_type === 'audio') {
+        // Audio: Direct stream without decision (no transcode needed for audio)
+        const sessionUUID = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const baseClientId = session || defaultSession || sessionUUID;
+        const clientIdentifier = `${baseClientId}-audio`;
+        const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
+
         const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
         if (!mediaKey) throw new Error("Media key not found for audio.");
         const separator = mediaKey.includes('?') ? '&' : '?';
+
+        plexLogger.info('plex.media-url-generated', {
+          mediaType: media_type,
+          plexId: key,
+          clientIdentifier,
+          sessionIdentifier,
+          streamType: 'direct-audio'
+        });
+
         return `${plexProxyHost}${mediaKey}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`;
       } else {
+        // Video: Use decision API to authorize session and determine stream type
         if (!key) throw new Error("Rating key not found for video.");
-        // Build base params
-        const mediaBufferSize = 5242880 * 20; //  buffer for better streaming
-        const baseParams = [
-          `path=%2Flibrary%2Fmetadata%2F${key}`,
-          `protocol=${protocol}`,
-          `X-Plex-Client-Identifier=${clientIdentifier}`,
-          `X-Plex-Session-Identifier=${sessionIdentifier}`,
-          `X-Plex-Platform=${platform}`,
-          //Resiliance hard-coded params:
-          `autoAdjustQuality=1`,
-          `fastSeek=1`,
-          `mediaBufferSize=${mediaBufferSize}`,
-          `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`,
-        ];
-        if (maxVideoBitrate != null) {
-          baseParams.push(`maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
-        }
-        if (resolvedMaxResolution != null) {
-          baseParams.push(`maxVideoResolution=${encodeURIComponent(resolvedMaxResolution)}`);
-        }
-        // Note: codec/container forcing removed; rely on server capabilities and bitrate
-        const url =  `${plexProxyHost}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
 
-        return url;
+        // Step 1: Request decision from Plex
+        const decisionResult = await this.requestTranscodeDecision(key, {
+          maxVideoBitrate,
+          maxResolution: resolvedMaxResolution,
+          session,
+          startOffset
+        });
+
+        if (!decisionResult.success) {
+          plexLogger.warn('plex.decision-failed-fallback', {
+            plexId: key,
+            error: decisionResult.error,
+            action: 'falling-back-to-transcode-url'
+          });
+          // Fallback: try transcode URL anyway (old behavior)
+          // This maintains backward compatibility if decision endpoint fails
+          const { sessionIdentifier, clientIdentifier } = decisionResult;
+          return this._buildTranscodeUrl(plexProxyHost, key, clientIdentifier, sessionIdentifier, protocol, platform, maxVideoBitrate, resolvedMaxResolution);
+        }
+
+        const { sessionIdentifier, clientIdentifier, decision } = decisionResult;
+
+        // Step 2: Handle direct play if available
+        if (decision.canDirectPlay && decision.directStreamPath) {
+          plexLogger.info('plex.using-direct-stream', {
+            plexId: key,
+            container: decision.directStreamContainer,
+            path: decision.directStreamPath ? '(present)' : null
+          });
+
+          const directPath = decision.directStreamPath;
+          const separator = directPath.includes('?') ? '&' : '?';
+          return `${plexProxyHost}${directPath}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`;
+        }
+
+        // Step 3: Use transcode URL with authorized session
+        plexLogger.info('plex.using-transcode-stream', {
+          plexId: key,
+          transcodeDecisionCode: decision.transcodeDecisionCode,
+          transcodeDecisionText: decision.transcodeDecisionText
+        });
+
+        return this._buildTranscodeUrl(plexProxyHost, key, clientIdentifier, sessionIdentifier, protocol, platform, maxVideoBitrate, resolvedMaxResolution);
       }
     } catch (error) {
       plexLogger.error('Error generating media URL', { error: serializeError(error) });
       return null;
     }
+  }
+
+  /**
+   * Build a transcode URL for video streaming
+   * @private
+   */
+  _buildTranscodeUrl(plexProxyHost, key, clientIdentifier, sessionIdentifier, protocol, platform, maxVideoBitrate, maxResolution) {
+    const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
+    const baseParams = [
+      `path=%2Flibrary%2Fmetadata%2F${key}`,
+      `protocol=${protocol}`,
+      `X-Plex-Client-Identifier=${clientIdentifier}`,
+      `X-Plex-Session-Identifier=${sessionIdentifier}`,
+      `X-Plex-Platform=${platform}`,
+      // Resilience hard-coded params:
+      `autoAdjustQuality=1`,
+      `fastSeek=1`,
+      `mediaBufferSize=${mediaBufferSize}`,
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`,
+    ];
+    if (maxVideoBitrate != null) {
+      baseParams.push(`maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
+    }
+    if (maxResolution != null) {
+      baseParams.push(`maxVideoResolution=${encodeURIComponent(maxResolution)}`);
+    }
+    return `${plexProxyHost}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
   }
 
   async loadMeta(plex, type = '') {
