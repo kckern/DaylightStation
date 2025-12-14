@@ -1,0 +1,110 @@
+/**
+ * Revise Food Log Use Case
+ * @module nutribot/application/usecases/ReviseFoodLog
+ * 
+ * Enters revision mode for a pending food log.
+ */
+
+import { createLogger } from '../../../_lib/logging/index.mjs';
+
+/**
+ * Revise food log use case
+ */
+export class ReviseFoodLog {
+  #messagingGateway;
+  #nutrilogRepository;
+  #conversationStateStore;
+  #logger;
+
+  constructor(deps) {
+    if (!deps.messagingGateway) throw new Error('messagingGateway is required');
+
+    this.#messagingGateway = deps.messagingGateway;
+    this.#nutrilogRepository = deps.nutrilogRepository;
+    this.#conversationStateStore = deps.conversationStateStore;
+    this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'nutribot' });
+  }
+
+  /**
+   * Execute the use case
+   * @param {Object} input
+   * @param {string} input.userId
+   * @param {string} input.conversationId
+   * @param {string} input.logUuid
+   * @param {string} [input.messageId]
+   */
+  async execute(input) {
+    const { userId, conversationId, logUuid, messageId } = input;
+
+    this.#logger.debug('reviseLog.start', { conversationId, logUuid });
+
+    try {
+      // 1. Load the log to show current items
+      let nutriLog = null;
+      if (this.#nutrilogRepository) {
+        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid);
+      }
+
+      // 2. Set conversation state to revision mode
+      if (this.#conversationStateStore) {
+        await this.#conversationStateStore.set(conversationId, {
+          flow: 'revision',
+          pendingLogUuid: logUuid,
+          originalMessageId: messageId,
+        });
+      }
+
+      // 3. Build revision prompt
+      let currentItems = '';
+      if (nutriLog?.items?.length > 0) {
+        currentItems = nutriLog.items.map(item => {
+          const qty = item.quantity || 1;
+          const unit = item.unit || '';
+          return `• ${qty} ${unit} ${item.name}`;
+        }).join('\n');
+      }
+
+      const message = `✏️ **Revision Mode**
+
+Current items:
+${currentItems || '(none)'}
+
+Reply with corrections, for example:
+• "remove the apple"
+• "change chicken to 200g"
+• "add 2 tbsp olive oil"
+• "it was actually a turkey sandwich"`;
+
+      // 4. Update the message or send new one
+      if (messageId) {
+        await this.#messagingGateway.updateMessage(conversationId, messageId, {
+          text: message,
+          choices: [
+            [{ text: '❌ Cancel', callback_data: `discard:${logUuid}` }],
+          ],
+          inline: true,
+        });
+      } else {
+        await this.#messagingGateway.sendMessage(conversationId, message, {
+          choices: [
+            [{ text: '❌ Cancel', callback_data: `discard:${logUuid}` }],
+          ],
+          inline: true,
+        });
+      }
+
+      this.#logger.info('reviseLog.modeEnabled', { conversationId, logUuid });
+
+      return {
+        success: true,
+        logUuid,
+        mode: 'revision',
+      };
+    } catch (error) {
+      this.#logger.error('reviseLog.error', { conversationId, logUuid, error: error.message });
+      throw error;
+    }
+  }
+}
+
+export default ReviseFoodLog;

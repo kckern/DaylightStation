@@ -4,13 +4,21 @@
 import express from 'express';
 import crypto from 'crypto';
 import nutribotRouter from './nutribot/server.mjs';
+import journalistRouter from './journalist/server.mjs';
 import { requestLogger, logger } from './_lib/logging.mjs';
 
 const router = express.Router();
 
+// Trace ID middleware
+router.use((req, res, next) => {
+  req.traceId = req.headers['x-trace-id'] || crypto.randomUUID();
+  res.setHeader('X-Trace-Id', req.traceId);
+  next();
+});
+
+// Mount bot routers
 router.use('/nutribot', nutribotRouter);
-
-
+router.use('/journalist', journalistRouter);
 
 // Fallback for unknown routes under /chatbots
 router.all('*', (req, res) => {
