@@ -34,22 +34,30 @@ export function createLogglyTransport(options = {}) {
     };
   }
 
+  // Create the Loggly transport
+  const logglyTransport = new Loggly({
+    token,
+    subdomain,
+    tags,
+    json: true,
+    isBulk: true,
+    networkErrorsOnConsole: true,
+    bufferOptions: { 
+      size: bufferSize, 
+      retriesInMilliSeconds: 60000 
+    }
+  });
+
+  // Listen for errors on the transport
+  logglyTransport.on('error', (err) => {
+    process.stderr.write(`[LogglyTransport] Error: ${err.message}\n`);
+  });
+
   // Create internal winston logger for Loggly bulk transport
   const winstonLogger = winston.createLogger({
     level: 'debug',  // Accept all levels; filtering done by dispatcher
     format: winston.format.json(),
-    transports: [
-      new Loggly({
-        token,
-        subdomain,
-        tags,
-        json: true,
-        bufferOptions: { 
-          size: bufferSize, 
-          retriesInMilliSeconds: 60000 
-        }
-      })
-    ]
+    transports: [logglyTransport]
   });
 
   let lastFlush = null;
