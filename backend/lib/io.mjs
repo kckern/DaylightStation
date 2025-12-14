@@ -227,8 +227,8 @@ const processQueue = (key) => {
 
 const saveFile = (path, data) => {
     if (typeof path !== 'string') return false;
-    const normalizedPath = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '');
-    const yamlFile = normalizedPath.endsWith('.yaml') ? normalizedPath : `${normalizedPath}.yaml`;
+    const normalizedPath = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
+    const yamlFile = `${normalizedPath}.yaml`;
 
     const queue = getQueue(yamlFile);
     // Clone eagerly so callers can mutate after queuing without affecting the write

@@ -17,7 +17,8 @@
     "react-flip-move": "^3.0.5",
     "string-similarity": "^4.0.4",
     "winston": "^3.18.3",
-    "winston-loggly-bulk": "^3.3.3"
+    "winston-loggly-bulk": "^3.3.3",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@babel/core": "^7.27.4",
