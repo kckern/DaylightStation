@@ -67,12 +67,16 @@ export class AcceptFoodLog {
 
       // 4. Add items to nutrilist
       if (this.#nutrilistRepository && nutriLog.items?.length > 0) {
-        const today = new Date().toISOString().split('T')[0];
+        // Use the date from the nutriLog (parsed from user input like "yesterday")
+        // Fall back to today if no date was specified
+        const fallbackDate = new Date().toISOString().split('T')[0];
+        const logDate = nutriLog.date || fallbackDate;
+        
         const listItems = nutriLog.items.map(item => ({
           ...item,
           chatId: conversationId,
           logUuid: logUuid,
-          date: today,
+          date: logDate,
         }));
         await this.#nutrilistRepository.saveMany(listItems);
       }

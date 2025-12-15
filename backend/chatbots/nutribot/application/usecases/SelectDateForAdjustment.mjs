@@ -21,19 +21,16 @@ import { createLogger } from '../../../_lib/logging/index.mjs';
 export class SelectDateForAdjustment {
   #messagingGateway;
   #conversationStateStore;
-  #nutriLogRepository;
+  #nutrilistRepository;
   #config;
   #logger;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
-    if (!deps.conversationStateStore) throw new Error('conversationStateStore is required');
-    if (!deps.nutriLogRepository) throw new Error('nutriLogRepository is required');
-    if (!deps.config) throw new Error('config is required');
 
     this.#messagingGateway = deps.messagingGateway;
     this.#conversationStateStore = deps.conversationStateStore;
-    this.#nutriLogRepository = deps.nutriLogRepository;
+    this.#nutrilistRepository = deps.nutrilistRepository;
     this.#config = deps.config;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'nutribot' });
   }
@@ -42,47 +39,45 @@ export class SelectDateForAdjustment {
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, messageId, daysAgo } = input;
+    const { userId, conversationId, messageId, daysAgo, offset = 0 } = input;
 
     this.#logger.debug('adjustment.selectDate', { userId, daysAgo });
 
     try {
       // 1. Calculate date
-      const date = this.#getDateFromDaysAgo(userId, daysAgo);
+      const date = this.#getDateFromDaysAgo(daysAgo);
 
-      // 2. Load items for date
-      const logs = await this.#nutriLogRepository.findByDate(userId, date);
-      const acceptedLogs = logs.filter(log => log.isAccepted);
-      
-      // Flatten items with log reference
-      const items = [];
-      for (const log of acceptedLogs) {
-        for (const item of log.items) {
-          items.push({
-            ...item,
-            logId: log.id,
-            meal: log.meal,
-          });
-        }
+      // 2. Load items for date from nutrilist
+      let items = [];
+      if (this.#nutrilistRepository?.findByDate) {
+        items = await this.#nutrilistRepository.findByDate(userId, date) || [];
+      } else if (this.#nutrilistRepository?.getAll) {
+        const allItems = this.#nutrilistRepository.getAll();
+        items = allItems.filter(item => item.date === date);
       }
 
       // 3. If no items, show message and stay at level 0
       if (items.length === 0) {
+        // Build date keyboard for going back
+        const keyboard = this.#buildDateKeyboard();
         await this.#messagingGateway.updateMessage(conversationId, messageId, {
           text: `📅 <b>No items for ${date}</b>\n\nNo food logged for this date. Select another date:`,
           parseMode: 'HTML',
+          choices: keyboard,
         });
         return { success: true, noItems: true };
       }
 
-      // 4. Update state
-      await this.#conversationStateStore.update(conversationId, {
-        step: 'item_selection',
-        data: { level: 1, date, items: items.map(i => i.id), offset: 0 },
-      });
+      // 4. Update state (if store available)
+      if (this.#conversationStateStore?.update) {
+        await this.#conversationStateStore.update(conversationId, {
+          step: 'item_selection',
+          data: { level: 1, date, daysAgo, items: items.map(i => i.id), offset },
+        });
+      }
 
       // 5. Build item selection keyboard
-      const keyboard = this.#buildItemKeyboard(items, 0);
+      const keyboard = this.#buildItemKeyboard(items, offset);
 
       // 6. Build message with items list
       const message = this.#buildItemsMessage(date, items);
@@ -104,36 +99,54 @@ export class SelectDateForAdjustment {
   }
 
   /**
-   * Get date string from days ago
+   * Get date string from days ago (local time)
    * @private
    */
-  #getDateFromDaysAgo(userId, daysAgo) {
-    const timezone = this.#config.getUserTimezone(userId);
+  #getDateFromDaysAgo(daysAgo) {
     const date = new Date();
     date.setDate(date.getDate() - daysAgo);
-    return date.toLocaleDateString('en-CA', { timeZone: timezone });
+    // Use local date format YYYY-MM-DD
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 
   /**
-   * Build items message
+   * Build date keyboard (for going back)
+   * @private
+   */
+  #buildDateKeyboard() {
+    const keyboard = [];
+    const today = new Date();
+
+    keyboard.push([
+      { text: '☀️ Today', callback_data: 'adj_date_0' },
+      { text: '📆 Yesterday', callback_data: 'adj_date_1' },
+    ]);
+
+    const row2 = [];
+    for (let i = 2; i <= 4; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+      row2.push({ text: dayName, callback_data: `adj_date_${i}` });
+    }
+    keyboard.push(row2);
+
+    keyboard.push([{ text: '↩️ Done', callback_data: 'adj_done' }]);
+
+    return keyboard;
+  }
+
+  /**
+   * Build items message (simplified - buttons show the items)
    * @private
    */
   #buildItemsMessage(date, items) {
-    const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' };
+    const totalCal = items.reduce((sum, i) => sum + (i.calories || 0), 0);
+    const totalGrams = items.reduce((sum, i) => sum + (i.grams || 0), 0);
     
-    let message = `📅 <b>${date}</b>\n\nSelect an item to adjust:\n\n`;
-    
-    for (let i = 0; i < Math.min(items.length, 10); i++) {
-      const item = items[i];
-      const emoji = colorEmoji[item.color] || '⚪';
-      message += `${i + 1}. ${emoji} ${item.label} (${item.grams}g)\n`;
-    }
-
-    if (items.length > 10) {
-      message += `\n... and ${items.length - 10} more`;
-    }
-
-    return message;
+    return `📅 <b>${date}</b>\n` +
+      `${items.length} items • ${totalGrams}g • ${totalCal} cal\n\n` +
+      `Select an item to adjust:`;
   }
 
   /**
@@ -142,32 +155,31 @@ export class SelectDateForAdjustment {
    */
   #buildItemKeyboard(items, offset) {
     const keyboard = [];
-    const pageSize = 5;
+    const pageSize = 6;
     const pageItems = items.slice(offset, offset + pageSize);
     const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' };
 
-    // Item buttons (2 per row)
-    for (let i = 0; i < pageItems.length; i += 2) {
-      const row = [];
-      for (let j = i; j < Math.min(i + 2, pageItems.length); j++) {
-        const item = pageItems[j];
-        const emoji = colorEmoji[item.color] || '⚪';
-        const label = item.label.length > 12 ? item.label.slice(0, 12) + '…' : item.label;
-        row.push({
-          text: `${emoji} ${label}`,
-          callback_data: `adj_item_${item.id}`,
-        });
-      }
-      keyboard.push(row);
+    // Item buttons (1 per row for better readability)
+    for (const item of pageItems) {
+      const emoji = colorEmoji[item.noom_color || item.color] || '⚪';
+      const name = item.name || item.label || 'Item';
+      const cal = item.calories || 0;
+      const grams = item.grams || 0;
+      // Show full name with cal/grams
+      const label = `${emoji} ${name} (${grams}g, ${cal} cal)`;
+      keyboard.push([{
+        text: label,
+        callback_data: `adj_item_${item.id}`,
+      }]);
     }
 
     // Navigation row
     const navRow = [];
     if (offset > 0) {
-      navRow.push({ text: '⏮️ Prev', callback_data: `adj_page_${offset - pageSize}` });
+      navRow.push({ text: '⬆️ Prev', callback_data: `adj_page_${offset - pageSize}` });
     }
     if (offset + pageSize < items.length) {
-      navRow.push({ text: '⏭️ Next', callback_data: `adj_page_${offset + pageSize}` });
+      navRow.push({ text: '⬇️ More', callback_data: `adj_page_${offset + pageSize}` });
     }
     if (navRow.length > 0) {
       keyboard.push(navRow);
@@ -176,7 +188,7 @@ export class SelectDateForAdjustment {
     // Action row
     keyboard.push([
       { text: '📅 Other Day', callback_data: 'adj_back_date' },
-      { text: '↩️ Done', callback_data: 'adj_done' },
+      { text: '✅ Done', callback_data: 'adj_done' },
     ]);
 
     return keyboard;

@@ -90,11 +90,12 @@ export class NutribotContainer {
    * @param {Object} [options.nutrilistRepository] - NutriList repository
    * @param {Object} [options.conversationStateStore] - Conversation state store
    * @param {Object} [options.reportRenderer] - Report renderer
+   * @param {Object} [options.logger] - Custom logger instance
    */
   constructor(config, options = {}) {
     this.#config = config;
     this.#options = options;
-    this.#logger = createLogger({ source: 'container', app: 'nutribot' });
+    this.#logger = options.logger || createLogger({ source: 'container', app: 'nutribot' });
 
     // Accept injected dependencies
     this.#messagingGateway = options.messagingGateway;
@@ -199,8 +200,9 @@ export class NutribotContainer {
 
   getAcceptFoodLog() {
     if (!this.#acceptFoodLog) {
-      // Only pass generateDailyReport if we have the required config
-      const generateDailyReport = this.#config && this.#nutrilogRepository && this.#nutrilistRepository
+      // Only pass generateDailyReport if we have the required config AND not in skipAutoReport mode
+      const shouldAutoReport = !this.#config?.skipAutoReport;
+      const generateDailyReport = shouldAutoReport && this.#config && this.#nutrilogRepository && this.#nutrilistRepository
         ? this.getGenerateDailyReport()
         : null;
       
