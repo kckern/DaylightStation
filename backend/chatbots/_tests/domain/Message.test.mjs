@@ -114,24 +114,33 @@ describe('Phase1: Message', () => {
       expect(message.text).toBeNull();
     });
 
-    it('photo should return photo content', () => {
+    it('photo should return photo attachment', () => {
       const photo = { fileId: 'file123', width: 800, height: 600 };
       const message = new Message({
         ...validProps,
         type: MessageType.PHOTO,
         content: { photo },
       });
-      expect(message.photo).toEqual(photo);
+      // photo getter now returns an Attachment object
+      expect(message.photo).not.toBeNull();
+      expect(message.photo.fileId).toBe('file123');
+      expect(message.photo.width).toBe(800);
+      expect(message.photo.height).toBe(600);
+      expect(message.photo.isPhoto).toBe(true);
     });
 
-    it('voice should return voice content', () => {
+    it('voice should return voice attachment', () => {
       const voice = { fileId: 'voice123', duration: 10 };
       const message = new Message({
         ...validProps,
         type: MessageType.VOICE,
         content: { voice },
       });
-      expect(message.voice).toEqual(voice);
+      // voice getter now returns an Attachment object
+      expect(message.voice).not.toBeNull();
+      expect(message.voice.fileId).toBe('voice123');
+      expect(message.voice.duration).toBe(10);
+      expect(message.voice.isVoice).toBe(true);
     });
 
     it('callbackData should return callback data', () => {
@@ -193,7 +202,10 @@ describe('Phase1: Message', () => {
       expect(json.messageId).toBe('msg789');
       expect(json.type).toBe(MessageType.TEXT);
       expect(json.direction).toBe(MessageDirection.INCOMING);
-      expect(json.content).toEqual({ text: 'Hello' });
+      // content includes text and legacy fields
+      expect(json.content.text).toBe('Hello');
+      expect(json.text).toBe('Hello');
+      expect(json.attachments).toEqual([]);
       expect(json.timestamp).toBeDefined();
     });
   });
@@ -235,7 +247,25 @@ describe('Phase1: Message', () => {
       
       expect(message.type).toBe(MessageType.PHOTO);
       expect(message.direction).toBe(MessageDirection.INCOMING);
-      expect(message.photo).toEqual(photo);
+      // photo getter returns Attachment
+      expect(message.photo).not.toBeNull();
+      expect(message.photo.fileId).toBe('file123');
+      expect(message.photo.isPhoto).toBe(true);
+    });
+
+    it('incomingPhoto should support caption', () => {
+      const photo = { fileId: 'file123' };
+      const message = Message.incomingPhoto({
+        conversationId,
+        messageId,
+        photo,
+        caption: 'My photo caption',
+      });
+      
+      expect(message.type).toBe(MessageType.PHOTO);
+      expect(message.text).toBe('My photo caption');
+      expect(message.caption).toBe('My photo caption');
+      expect(message.photo.fileId).toBe('file123');
     });
 
     it('incomingVoice should create voice message', () => {
@@ -248,7 +278,11 @@ describe('Phase1: Message', () => {
       
       expect(message.type).toBe(MessageType.VOICE);
       expect(message.direction).toBe(MessageDirection.INCOMING);
-      expect(message.voice).toEqual(voice);
+      // voice getter returns Attachment
+      expect(message.voice).not.toBeNull();
+      expect(message.voice.fileId).toBe('voice123');
+      expect(message.voice.duration).toBe(5);
+      expect(message.voice.isVoice).toBe(true);
     });
 
     it('incomingCallback should create callback message', () => {
