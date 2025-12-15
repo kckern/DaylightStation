@@ -101,13 +101,8 @@ export class GetReportAsJSON {
       }
     }
 
-    // Sort items by meal time
-    const mealOrder = { morning: 0, afternoon: 1, evening: 2, night: 3 };
-    items.sort((a, b) => {
-      const mealDiff = mealOrder[a.meal?.time] - mealOrder[b.meal?.time];
-      if (mealDiff !== 0) return mealDiff;
-      return new Date(a.createdAt) - new Date(b.createdAt);
-    });
+    // Sort items by calories descending
+    items.sort((a, b) => (b.calories || 0) - (a.calories || 0));
 
     // Calculate percentages
     if (totals.grams > 0) {

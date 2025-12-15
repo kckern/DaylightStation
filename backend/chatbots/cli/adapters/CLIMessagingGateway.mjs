@@ -393,7 +393,7 @@ export class CLIMessagingGateway {
   async sendPhoto(conversationId, photo, options = {}) {
     const messageId = this.#generateMessageId();
     
-    this.#logger.debug('sendPhoto', { conversationId, messageId, hasCaption: !!options.caption });
+    this.#logger.debug('sendPhoto', { conversationId, messageId, hasCaption: !!options.caption, hasChoices: !!options.choices });
 
     let savedPath = null;
 
@@ -412,31 +412,42 @@ export class CLIMessagingGateway {
         }
       }
 
-      if (savedPath) {
-        this.#presenter.printImageSaved(savedPath);
-      } else {
-        this.#presenter.printSystemMessage(`[Image: ${typeof photo === 'string' ? photo : 'Buffer'}]`);
-      }
+      // Store message for potential updates
+      this.#messages.set(messageId, { 
+        text: options.caption || '', 
+        options, 
+        conversationId, 
+        buttonIds: [],
+        imagePath: savedPath,
+      });
 
-      // Print caption if present
-      if (options.caption) {
-        this.#presenter.printBotMessage(options.caption, {
+      if (!this.#testMode) {
+        // Use the standard photo message format with ASCII art frame
+        this.#presenter.printPhotoMessage({
+          caption: options.caption || '',
+          emoji: '📷',
           botName: this.#getBotNameFromConversation(conversationId),
-          emoji: '🖼️',
+          botEmoji: this.#getBotEmoji(conversationId),
+          filePath: savedPath || photo,
         });
+
+        this.#presenter.printSystemMessage(`[Message ${messageId} - photo]`);
       }
 
-      // Handle choices
+      // Handle choices (non-blocking button registration, same as sendMessage)
       if (options.choices && options.choices.length > 0) {
-        this.#presenter.printChoicesPreview(options.choices);
-        
-        const selected = await this.#inputHandler.promptChoice(
-          options.choices,
-          'Choose an action:'
-        );
-
-        if (selected) {
-          this.#lastCallbackData = selected;
+        if (this.#testMode) {
+          // In test mode, auto-select based on configured index
+          const flatChoices = options.choices.flat();
+          if (flatChoices.length > 0) {
+            const choice = flatChoices[Math.min(this.#autoSelectIndex, flatChoices.length - 1)];
+            this.#lastCallbackData = choice.callback_data || choice.text || choice;
+            this.#logger.debug('sendPhoto.autoSelected', { messageId, selected: this.#lastCallbackData });
+          }
+        } else {
+          // Register buttons (non-blocking) and display them
+          const buttons = this.#registerButtons(messageId, options.choices);
+          this.#presenter.printButtonBar(buttons);
         }
       }
     } catch (error) {

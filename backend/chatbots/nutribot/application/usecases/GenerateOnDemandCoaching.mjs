@@ -105,7 +105,8 @@ export class GenerateOnDemandCoaching {
     for (let i = 0; i < days; i++) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
+      // Use local date, not UTC
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       
       const summary = await this.#nutriLogRepository.getDailySummary(userId, dateStr);
       if (summary.logCount > 0) {

@@ -23,6 +23,7 @@ import {
   MemoryJournalEntryRepository,
   MemoryMessageQueueRepository,
 } from './mocks/index.mjs';
+import { RealUPCGateway } from '../infrastructure/gateways/RealUPCGateway.mjs';
 
 import fs from 'fs';
 import path from 'path';
@@ -139,12 +140,14 @@ export class CLIChatSimulator {
    * @param {boolean} [options.debug] - Enable debug logging
    * @param {string} [options.bot] - Start with specific bot
    * @param {boolean} [options.useRealAI] - Use real OpenAI API
+   * @param {boolean} [options.useRealUPC] - Use real UPC lookup APIs
    * @param {boolean} [options.testMode] - Non-interactive mode for testing
    */
   constructor(options = {}) {
     // Store options for later
     this._testMode = options.testMode || false;
     this._useRealAI = options.useRealAI || false;
+    this._useRealUPC = options.useRealUPC || false;
     this._debug = options.debug || false;
 
     // Create logger - only output if debug mode is enabled
@@ -253,6 +256,62 @@ export class CLIChatSimulator {
       this.#logger.debug('simulator.usingMockAI');
     }
 
+    // Initialize real UPC gateway if requested (or if using real AI)
+    if (this._useRealAI || this._useRealUPC) {
+      console.log('🔌 Connecting to UPC APIs...');
+      try {
+        // Simple OpenFoodFacts lookup (no journalist dependencies)
+        const openFoodFactsLookup = async (barcode) => {
+          const response = await fetch(`https://world.openfoodfacts.net/api/v2/product/${barcode}.json`);
+          if (!response.ok) return null;
+          
+          const data = await response.json();
+          if (!data.product || data.status !== 1) return null;
+          
+          const product = data.product;
+          const nutrients = product.nutriments || {};
+          
+          return {
+            label: product.product_name || product.product_name_en,
+            brand: product.brands,
+            image: product.image_url || product.image_front_url,
+            noom_color: 'yellow',
+            icon: '🍽️',
+            servingSizes: product.serving_quantity 
+              ? [{ quantity: parseInt(product.serving_quantity), label: product.serving_quantity_unit || 'g' }]
+              : [{ quantity: 100, label: 'g' }],
+            servingsPerContainer: product.product_quantity && product.serving_quantity
+              ? parseFloat(product.product_quantity) / parseFloat(product.serving_quantity)
+              : 1,
+            nutrients: {
+              calories: nutrients['energy-kcal'] || 0,
+              protein: nutrients.proteins || 0,
+              carbs: nutrients.carbohydrates || 0,
+              fat: nutrients.fat || 0,
+              fiber: nutrients.fiber || 0,
+              sugar: nutrients.sugars || 0,
+              sodium: nutrients.sodium || 0,
+            },
+          };
+        };
+
+        this.#upcGateway = new RealUPCGateway({ 
+          upcLookup: openFoodFactsLookup,
+          logger: createLogger({ 
+            source: 'upc-gateway', 
+            app: 'nutribot',
+            output: this._debug ? console.log : () => {},
+          }),
+        });
+        console.log('✅ Connected to UPC APIs (OpenFoodFacts)');
+      } catch (error) {
+        console.log('⚠️  Failed to connect to UPC APIs. Using mock database.');
+        this.#logger.warn('upcGateway.initError', { error: error.message });
+      }
+    } else {
+      this.#logger.debug('simulator.usingMockUPC');
+    }
+
     // Initialize bot containers
     await this.#initializeBotContainers();
 
@@ -272,8 +331,6 @@ export class CLIChatSimulator {
       goals: { calories: 2000, protein: 150, carbs: 200, fat: 65 },
       getUserTimezone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
       getGoalsForUser: () => ({ calories: 2000, protein: 150, carbs: 200, fat: 65 }),
-      // CLI mode: don't auto-generate text report on accept (CLI handles photo report)
-      skipAutoReport: true,
     };
 
     // Create silent logger for containers (unless debug mode)
@@ -781,6 +838,11 @@ export class CLIChatSimulator {
           // Don't generate report on discard, just confirm
           break;
 
+        case 'portion':
+          // Handle UPC portion selection (logUuid is actually the portion multiplier)
+          await this.#handleUPCPortionSelection(container, logUuid);
+          break;
+
         default:
           this.#logger.debug('buttonPress.unknownAction', { action, logUuid });
       }
@@ -1275,6 +1337,15 @@ export class CLIChatSimulator {
           if (handled) return;
         }
         
+        // Check if text is a UPC barcode (all digits, more than 1 char)
+        // Single digit is reserved for button presses
+        const isUPC = /^\d{2,}$/.test(text.trim());
+        if (isUPC) {
+          this.#logger.info('handleTextMessage.upcDetected', { upc: text.trim() });
+          await this.#handleUPCInput(container, text.trim());
+          return;
+        }
+        
         // Normal food logging
         const useCase = container.getLogFoodFromText();
         const result = await useCase.execute({
@@ -1597,6 +1668,100 @@ User revision: "${text}"`;
     }
     
     return true; // Handled
+  }
+
+  /**
+   * Handle UPC barcode input
+   * @private
+   */
+  async #handleUPCInput(container, upc) {
+    const conversationId = this.#session.getConversationId();
+    const userId = this.#session.getUserId();
+
+    this.#logger.info('handleUPCInput.start', { upc });
+
+    try {
+      const useCase = container.getLogFoodFromUPC();
+      const result = await useCase.execute({
+        userId,
+        conversationId,
+        upc,
+      });
+
+      this.#logger.info('handleUPCInput.result', { 
+        success: result.success, 
+        productName: result.product?.name,
+        logUuid: result.nutrilogUuid,
+      });
+
+      // Store the pending log UUID for slash commands
+      if (result.success && result.nutrilogUuid) {
+        this.#session.setLastPendingLogUuid(result.nutrilogUuid);
+        this.#session.addPendingLogUuid(result.nutrilogUuid);
+      }
+
+      return result.success;
+    } catch (error) {
+      this.#logger.error('handleUPCInput.error', { upc, error: error.message });
+      this.#presenter.printError(`Failed to look up barcode: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Handle UPC portion selection callback
+   * @private
+   */
+  async #handleUPCPortionSelection(container, portionStr) {
+    const conversationId = this.#session.getConversationId();
+    const userId = this.#session.getUserId();
+
+    this.#logger.info('handleUPCPortionSelection.start', { portionStr });
+
+    try {
+      // Get the current state to find the pending log
+      const state = await this.#conversationStateStore?.get(conversationId);
+      if (!state || state.flow !== 'upc_portion' || !state.pendingLogUuid) {
+        this.#logger.warn('handleUPCPortionSelection.noState', { state });
+        this.#presenter.printWarning('No pending UPC selection. Please scan again.');
+        return;
+      }
+
+      const logUuid = state.pendingLogUuid;
+      const portionFactor = parseFloat(portionStr);
+
+      if (isNaN(portionFactor) || portionFactor <= 0) {
+        this.#logger.warn('handleUPCPortionSelection.invalidPortion', { portionStr });
+        return;
+      }
+
+      // Use SelectUPCPortion use case
+      const useCase = container.getSelectUPCPortion();
+      const result = await useCase.execute({
+        userId,
+        conversationId,
+        logUuid,
+        portionFactor,
+      });
+
+      this.#logger.info('handleUPCPortionSelection.result', { success: result.success });
+
+      if (result.success) {
+        // Remove from pending logs
+        this.#session.removePendingLogUuid(logUuid);
+
+        // Show confirmation
+        if (result.item) {
+          await this.#showAcceptConfirmation({ items: [result.item] });
+        }
+
+        // Generate PNG report
+        await this.#generatePhotoReport();
+      }
+    } catch (error) {
+      this.#logger.error('handleUPCPortionSelection.error', { error: error.message });
+      this.#presenter.printError(`Failed to select portion: ${error.message}`);
+    }
   }
 
   /**

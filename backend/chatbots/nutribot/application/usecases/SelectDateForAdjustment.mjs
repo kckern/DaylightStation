@@ -156,7 +156,9 @@ export class SelectDateForAdjustment {
   #buildItemKeyboard(items, offset) {
     const keyboard = [];
     const pageSize = 6;
-    const pageItems = items.slice(offset, offset + pageSize);
+    // Sort by calories descending
+    const sortedItems = [...items].sort((a, b) => (b.calories || 0) - (a.calories || 0));
+    const pageItems = sortedItems.slice(offset, offset + pageSize);
     const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' };
 
     // Item buttons (1 per row for better readability)
@@ -178,7 +180,7 @@ export class SelectDateForAdjustment {
     if (offset > 0) {
       navRow.push({ text: '⬆️ Prev', callback_data: `adj_page_${offset - pageSize}` });
     }
-    if (offset + pageSize < items.length) {
+    if (offset + pageSize < sortedItems.length) {
       navRow.push({ text: '⬇️ More', callback_data: `adj_page_${offset + pageSize}` });
     }
     if (navRow.length > 0) {
