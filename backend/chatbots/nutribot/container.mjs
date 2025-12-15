@@ -200,18 +200,12 @@ export class NutribotContainer {
 
   getAcceptFoodLog() {
     if (!this.#acceptFoodLog) {
-      // Only pass generateDailyReport if we have the required config AND not in skipAutoReport mode
-      const shouldAutoReport = !this.#config?.skipAutoReport;
-      const generateDailyReport = shouldAutoReport && this.#config && this.#nutrilogRepository && this.#nutrilistRepository
-        ? this.getGenerateDailyReport()
-        : null;
-      
+      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#acceptFoodLog = new AcceptFoodLog({
         messagingGateway: this.getMessagingGateway(),
         nutrilogRepository: this.#nutrilogRepository,
         nutrilistRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
-        generateDailyReport,
         logger: this.#logger,
       });
     }
@@ -257,17 +251,12 @@ export class NutribotContainer {
 
   getSelectUPCPortion() {
     if (!this.#selectUPCPortion) {
-      // Only pass generateDailyReport if we have the required config
-      const generateDailyReport = this.#config && this.#nutrilogRepository && this.#nutrilistRepository
-        ? this.getGenerateDailyReport()
-        : null;
-
+      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#selectUPCPortion = new SelectUPCPortion({
         messagingGateway: this.getMessagingGateway(),
         nutrilogRepository: this.#nutrilogRepository,
         nutrilistRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
-        generateDailyReport,
         logger: this.#logger,
       });
     }
@@ -369,11 +358,11 @@ export class NutribotContainer {
 
   getApplyPortionAdjustment() {
     if (!this.#applyPortionAdjustment) {
+      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#applyPortionAdjustment = new ApplyPortionAdjustment({
         messagingGateway: this.getMessagingGateway(),
         nutrilistRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
-        generateDailyReport: this.getGenerateDailyReport(),
         logger: this.#logger,
       });
     }
@@ -382,11 +371,11 @@ export class NutribotContainer {
 
   getDeleteListItem() {
     if (!this.#deleteListItem) {
+      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#deleteListItem = new DeleteListItem({
         messagingGateway: this.getMessagingGateway(),
         nutrilistRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
-        generateDailyReport: this.getGenerateDailyReport(),
         logger: this.#logger,
       });
     }
@@ -395,11 +384,11 @@ export class NutribotContainer {
 
   getMoveItemToDate() {
     if (!this.#moveItemToDate) {
+      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#moveItemToDate = new MoveItemToDate({
         messagingGateway: this.getMessagingGateway(),
         nutrilistRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
-        generateDailyReport: this.getGenerateDailyReport(),
         logger: this.#logger,
       });
     }

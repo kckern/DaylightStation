@@ -84,7 +84,9 @@ export class SelectUPCPortion {
 
       // 5. Add to nutrilist
       if (this.#nutrilistRepository) {
-        const today = new Date().toISOString().split('T')[0];
+        // Use local date, not UTC
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const listItems = scaledItems.map(item => ({
           ...item,
           chatId: conversationId,
@@ -108,22 +110,14 @@ export class SelectUPCPortion {
         }
       }
 
-      // 8. Generate daily report
+      // 8. Generate daily report (if available, skipped in CLI mode)
       if (this.#generateDailyReport) {
         await this.#generateDailyReport.execute({
           userId,
           conversationId,
         });
-      } else {
-        // Simple confirmation
-        const item = scaledItems[0];
-        const portionLabel = portionFactor === 1 ? '1 serving' : `${portionFactor} servings`;
-        await this.#messagingGateway.sendMessage(
-          conversationId,
-          `✅ Logged ${portionLabel} of ${item.name} (${item.calories} cal)`,
-          {}
-        );
       }
+      // Note: Confirmation message handled by caller (CLI shows its own)
 
       this.#logger.info('selectPortion.complete', { 
         conversationId, 
@@ -135,6 +129,7 @@ export class SelectUPCPortion {
         success: true,
         logUuid,
         portionFactor,
+        item: scaledItems[0], // Primary item for confirmation
         scaledItems,
       };
     } catch (error) {
