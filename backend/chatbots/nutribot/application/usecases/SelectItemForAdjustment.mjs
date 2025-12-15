@@ -13,19 +13,16 @@ import { createLogger } from '../../../_lib/logging/index.mjs';
 export class SelectItemForAdjustment {
   #messagingGateway;
   #conversationStateStore;
-  #nutriLogRepository;
+  #nutrilistRepository;
   #config;
   #logger;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
-    if (!deps.conversationStateStore) throw new Error('conversationStateStore is required');
-    if (!deps.nutriLogRepository) throw new Error('nutriLogRepository is required');
-    if (!deps.config) throw new Error('config is required');
 
     this.#messagingGateway = deps.messagingGateway;
     this.#conversationStateStore = deps.conversationStateStore;
-    this.#nutriLogRepository = deps.nutriLogRepository;
+    this.#nutrilistRepository = deps.nutrilistRepository;
     this.#config = deps.config;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'nutribot' });
   }
@@ -39,25 +36,24 @@ export class SelectItemForAdjustment {
     this.#logger.debug('adjustment.selectItem', { userId, itemId });
 
     try {
-      // 1. Get current state
-      const state = await this.#conversationStateStore.get(conversationId);
-      const { date } = state?.data || {};
-
-      if (!date) {
-        throw new Error('No date in adjustment state');
+      // 1. Get current state to find the date
+      let date = null;
+      if (this.#conversationStateStore?.get) {
+        const state = await this.#conversationStateStore.get(conversationId);
+        date = state?.data?.date;
       }
 
-      // 2. Find the item in logs
-      const logs = await this.#nutriLogRepository.findByDate(userId, date);
+      // 2. Find the item in nutrilist
       let foundItem = null;
-      let foundLog = null;
-
-      for (const log of logs) {
-        const item = log.items.find(i => i.id === itemId);
-        if (item) {
-          foundItem = item;
-          foundLog = log;
-          break;
+      if (this.#nutrilistRepository) {
+        // Try to find by ID directly
+        if (this.#nutrilistRepository.findById) {
+          foundItem = await this.#nutrilistRepository.findById(itemId);
+        }
+        // Fall back to getAll and filter
+        if (!foundItem && this.#nutrilistRepository.getAll) {
+          const allItems = this.#nutrilistRepository.getAll();
+          foundItem = allItems.find(item => item.id === itemId);
         }
       }
 
@@ -66,11 +62,16 @@ export class SelectItemForAdjustment {
         return { success: false, error: 'Item not found' };
       }
 
-      // 3. Update state
-      await this.#conversationStateStore.update(conversationId, {
-        step: 'action_selection',
-        data: { level: 2, date, itemId, logId: foundLog.id },
-      });
+      // Use item's date if we don't have one from state
+      date = date || foundItem.date;
+
+      // 3. Update state (if store available)
+      if (this.#conversationStateStore?.update) {
+        await this.#conversationStateStore.update(conversationId, {
+          step: 'action_selection',
+          data: { level: 2, date, itemId },
+        });
+      }
 
       // 4. Build action keyboard
       const keyboard = this.#buildActionKeyboard();
@@ -85,7 +86,8 @@ export class SelectItemForAdjustment {
         choices: keyboard,
       });
 
-      this.#logger.info('adjustment.itemSelected', { userId, itemId, label: foundItem.label });
+      const label = foundItem.name || foundItem.label || 'item';
+      this.#logger.info('adjustment.itemSelected', { userId, itemId, label });
 
       return { success: true, item: foundItem };
     } catch (error) {
@@ -100,12 +102,15 @@ export class SelectItemForAdjustment {
    */
   #buildItemDetailMessage(item, date) {
     const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' };
-    const emoji = colorEmoji[item.color] || '⚪';
+    const color = item.noom_color || item.color;
+    const emoji = colorEmoji[color] || '⚪';
+    const name = item.name || item.label || 'Unknown';
 
-    return `${emoji} <b>${item.label}</b>\n\n` +
+    return `${emoji} <b>${name}</b>\n\n` +
       `📅 Date: ${date}\n` +
-      `⚖️ Amount: ${item.grams}g\n` +
-      `🎨 Color: ${item.color}\n\n` +
+      `⚖️ Amount: ${item.grams || '?'}g\n` +
+      `🔥 Calories: ${item.calories || '?'}\n` +
+      `🎨 Color: ${color || 'unknown'}\n\n` +
       `Select an action:`;
   }
 

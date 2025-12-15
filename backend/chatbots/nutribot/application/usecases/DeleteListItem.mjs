@@ -77,32 +77,41 @@ export class DeleteListItem {
       // 6. Sync to nutrilist (will remove items for this log)
       await this.#nutriListRepository.syncFromLog(updatedLog);
 
-      // 7. Clear adjustment state
-      await this.#conversationStateStore.clear(conversationId);
+      // 7. Don't clear state yet - user might want to make more adjustments
 
-      // 8. Delete adjustment message
-      try {
-        await this.#messagingGateway.deleteMessage(conversationId, messageId);
-      } catch (e) {
-        // Ignore delete errors
-      }
-
-      // 9. Send confirmation
-      await this.#messagingGateway.sendMessage(
-        conversationId,
-        `🗑️ <b>${item.label}</b> deleted`,
-        { parseMode: 'HTML' }
-      );
-
-      // 10. Regenerate report if available
-      if (this.#generateDailyReport) {
-        await this.#generateDailyReport.execute({
-          userId,
-          conversationId,
-          date,
-          forceRegenerate: true,
+      // 8. Update message with confirmation and follow-up options
+      const confirmationText = `🗑️ <b>${item.label}</b> deleted`;
+      
+      if (messageId) {
+        await this.#messagingGateway.updateMessage(conversationId, messageId, {
+          text: confirmationText,
+          parseMode: 'HTML',
+          choices: [
+            [
+              { text: '✏️ More Adjustments', callback_data: 'adj_back_items' },
+              { text: '✅ Done', callback_data: 'adj_done' },
+            ],
+          ],
+          inline: true,
         });
+      } else {
+        await this.#messagingGateway.sendMessage(
+          conversationId,
+          confirmationText,
+          { 
+            parseMode: 'HTML',
+            choices: [
+              [
+                { text: '✏️ More Adjustments', callback_data: 'adj_back_items' },
+                { text: '✅ Done', callback_data: 'adj_done' },
+              ],
+            ],
+            inline: true,
+          }
+        );
       }
+
+      // 9. Report regeneration is now triggered by user pressing "Done" button
 
       this.#logger.info('adjustment.deleted', { userId, itemId, label: item.label });
 

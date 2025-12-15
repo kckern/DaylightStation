@@ -11,6 +11,7 @@ import { createLogger } from '../../../_lib/logging/index.mjs';
  * @typedef {Object} StartAdjustmentFlowInput
  * @property {string} userId - User ID
  * @property {string} conversationId - Conversation ID for messaging
+ * @property {string} [messageId] - Optional message ID to update (instead of creating new)
  */
 
 /**
@@ -30,8 +31,6 @@ export class StartAdjustmentFlow {
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
-    if (!deps.conversationStateStore) throw new Error('conversationStateStore is required');
-    if (!deps.config) throw new Error('config is required');
 
     this.#messagingGateway = deps.messagingGateway;
     this.#conversationStateStore = deps.conversationStateStore;
@@ -45,34 +44,52 @@ export class StartAdjustmentFlow {
    * @returns {Promise<StartAdjustmentFlowResult>}
    */
   async execute(input) {
-    const { userId, conversationId } = input;
+    const { userId, conversationId, messageId: existingMessageId } = input;
 
-    this.#logger.debug('adjustment.start', { userId });
+    this.#logger.debug('adjustment.start', { userId, existingMessageId });
 
     try {
-      // 1. Set conversation state
-      await this.#conversationStateStore.set(conversationId, {
-        flow: 'adjustment',
-        step: 'date_selection',
-        data: { level: 0 },
-        lastActivity: new Date().toISOString(),
-      });
+      // 1. Set conversation state (if store available)
+      if (this.#conversationStateStore) {
+        await this.#conversationStateStore.set(conversationId, {
+          flow: 'adjustment',
+          step: 'date_selection',
+          data: { level: 0, originMessageId: existingMessageId },
+          lastActivity: new Date().toISOString(),
+        });
+      }
 
       // 2. Build date selection keyboard
       const keyboard = this.#buildDateKeyboard(7);
 
-      // 3. Send message
-      const { messageId } = await this.#messagingGateway.sendMessage(
-        conversationId,
-        '📅 <b>Review & Adjust</b>\n\nSelect a date to review:',
-        {
+      // 3. Update existing message or send new one
+      const text = '📅 <b>Review & Adjust</b>\n\nSelect a date to review:';
+      let messageId;
+
+      if (existingMessageId) {
+        // Update the existing message (e.g., the photo message caption + buttons)
+        await this.#messagingGateway.updateMessage(conversationId, existingMessageId, {
+          text,
           parseMode: 'HTML',
           choices: keyboard,
           inline: true,
-        }
-      );
+        });
+        messageId = existingMessageId;
+      } else {
+        // Create new message
+        const result = await this.#messagingGateway.sendMessage(
+          conversationId,
+          text,
+          {
+            parseMode: 'HTML',
+            choices: keyboard,
+            inline: true,
+          }
+        );
+        messageId = result.messageId;
+      }
 
-      this.#logger.info('adjustment.started', { userId, messageId });
+      this.#logger.info('adjustment.started', { userId, messageId, wasUpdate: !!existingMessageId });
 
       return { success: true, messageId };
     } catch (error) {

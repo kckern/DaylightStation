@@ -7,6 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../../../_lib/logging/index.mjs';
+import { FOOD_ICONS_STRING } from '../constants/foodIcons.mjs';
 
 /**
  * Log food from image use case
@@ -143,23 +144,36 @@ export class LogFoodFromImage {
         content: `You are a nutrition analyzer. Given an image of food:
 1. Identify each food item visible
 2. Estimate portion sizes in grams or common measures
-3. Estimate macros (calories, protein, carbs, fat) for each item
+3. Estimate macros (calories, protein, carbs, fat) and micronutrients (fiber, sugar, sodium, cholesterol) for each item
+4. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density)
+5. Select the best matching icon from this list: ${FOOD_ICONS_STRING}
 
 Respond in JSON format:
 {
   "items": [
     {
       "name": "food name",
+      "icon": "chicken",
+      "noom_color": "yellow",
       "quantity": 1,
       "unit": "piece|cup|tbsp|g|oz",
       "grams": 100,
       "calories": 150,
       "protein": 10,
       "carbs": 15,
-      "fat": 5
+      "fat": 5,
+      "fiber": 2,
+      "sugar": 3,
+      "sodium": 200,
+      "cholesterol": 25
     }
   ]
 }
+
+Noom colors:
+- green: lowest calorie density (vegetables, fruits, lean proteins)
+- yellow: moderate calorie density (grains, legumes, lean meats)
+- orange: highest calorie density (nuts, oils, sweets, fried foods)
 
 Be conservative with estimates. If uncertain, give ranges or note uncertainty.`,
       },
