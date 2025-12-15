@@ -8,6 +8,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { FOOD_ICONS_STRING } from '../constants/foodIcons.mjs';
+import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
+import NutriLog from '../../domain/NutriLog.mjs';
 
 /**
  * Log food from image use case
@@ -73,16 +75,27 @@ export class LogFoodFromImage {
         return { success: false, error: 'No food detected' };
       }
 
-      // 5. Create log data object (plain object, not domain entity)
-      const nutriLog = {
-        uuid: uuidv4(),
-        chatId: conversationId,
+      // 5. Create NutriLog domain entity
+      const today = new Date().toISOString().split('T')[0];
+      const hour = new Date().getHours();
+      let mealTime = 'morning';
+      if (hour >= 11 && hour < 14) mealTime = 'afternoon';
+      else if (hour >= 14 && hour < 20) mealTime = 'evening';
+      else if (hour >= 20 || hour < 5) mealTime = 'night';
+      
+      const nutriLog = NutriLog.create({
+        userId: conversationId.split(':')[0] === 'cli' ? 'cli-user' : userId,
+        conversationId,
         items: foodItems,
-        source: 'image',
-        imageUrl: imageUrl,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
+        meal: {
+          date: today,
+          time: mealTime,
+        },
+        metadata: {
+          source: 'image',
+          imageUrl: imageUrl,
+        },
+      });
 
       // 6. Save NutriLog
       if (this.#nutrilogRepository) {
@@ -91,10 +104,11 @@ export class LogFoodFromImage {
 
       // 7. Update conversation state
       if (this.#conversationStateStore) {
-        await this.#conversationStateStore.set(conversationId, {
-          flow: 'food_confirmation',
-          pendingLogUuid: nutriLog.uuid,
+        const state = ConversationState.create(conversationId, {
+          activeFlow: 'food_confirmation',
+          flowState: { pendingLogUuid: nutriLog.id },
         });
+        await this.#conversationStateStore.set(conversationId, state);
       }
 
       // 8. Delete user's original message and status message
@@ -113,7 +127,7 @@ export class LogFoodFromImage {
 
       // 9. Send image message with food list as caption and buttons
       const caption = this.#formatFoodCaption(foodItems);
-      const buttons = this.#buildActionButtons(nutriLog.uuid);
+      const buttons = this.#buildActionButtons(nutriLog.id);
 
       const { messageId: photoMsgId } = await this.#messagingGateway.sendPhoto(
         conversationId,
@@ -128,12 +142,12 @@ export class LogFoodFromImage {
       this.#logger.info('logImage.complete', { 
         conversationId, 
         itemCount: foodItems.length,
-        logUuid: nutriLog.uuid,
+        logUuid: nutriLog.id,
       });
 
       return {
         success: true,
-        nutrilogUuid: nutriLog.uuid,
+        nutrilogUuid: nutriLog.id,
         messageId: photoMsgId,
         itemCount: foodItems.length,
       };
@@ -204,13 +218,58 @@ Be conservative with estimates. If uncertain, give ranges or note uncertainty.`,
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const data = JSON.parse(jsonMatch[0]);
-        return data.items || [];
+        const rawItems = data.items || [];
+        
+        // Transform AI response items into domain FoodItem format
+        const items = rawItems.map(item => ({
+          id: uuidv4(),
+          label: item.name || item.label || 'Unknown',
+          grams: item.grams || this.#estimateGrams(item),
+          unit: item.unit || 'serving',
+          amount: item.quantity || item.amount || 1,
+          color: this.#normalizeNoomColor(item.noom_color || item.color),
+          // Preserve extra data for display
+          calories: item.calories || 0,
+          icon: item.icon || 'default',
+        }));
+        
+        return items;
       }
       return [];
     } catch (e) {
       this.#logger.warn('logImage.parseError', { error: e.message });
       return [];
     }
+  }
+
+  /**
+   * Estimate grams from item data
+   * @private
+   */
+  #estimateGrams(item) {
+    if (item.grams) return item.grams;
+    if (item.calories) return Math.round(item.calories / 1.5);
+    
+    const unitDefaults = {
+      'cup': 240, 'piece': 50, 'slice': 30, 'oz': 28,
+      'tbsp': 15, 'tsp': 5, 'serving': 100,
+    };
+    
+    const unit = (item.unit || 'serving').toLowerCase();
+    const amount = item.quantity || item.amount || 1;
+    return (unitDefaults[unit] || 100) * amount;
+  }
+
+  /**
+   * Normalize Noom color
+   * @private
+   */
+  #normalizeNoomColor(color) {
+    const normalized = String(color || 'yellow').toLowerCase();
+    if (['green', 'yellow', 'orange', 'red'].includes(normalized)) {
+      return normalized === 'red' ? 'orange' : normalized;
+    }
+    return 'yellow';
   }
 
   /**

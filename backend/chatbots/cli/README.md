@@ -6,7 +6,7 @@ Interactive command-line interface for testing chatbots without server/webhook i
 
 ```bash
 cd backend
-node chatbots/cli/index.mjs
+node chatbots/cli/index.mjs --bot nutribot --real-ai
 ```
 
 ## Installation
@@ -66,13 +66,17 @@ node chatbots/cli/index.mjs --debug --session mytest
 
 Sessions persist conversation history and state between runs. Use the same session name to continue where you left off.
 
-### 4. Use Real OpenAI API
+### 4. Use Real OpenAI API (Required)
 
 ```bash
 node chatbots/cli/index.mjs --real-ai --bot nutribot
 ```
 
-> ⚠️ Requires `OPENAI_API_KEY` environment variable to be set.
+> ⚠️ **Required**: The CLI now uses real implementations only. You must:
+> - Set `OPENAI_API_KEY` in environment or `config.secrets.yml`
+> - Use the `--real-ai` flag
+> 
+> Mock responses have been removed to ensure CLI behavior matches production.
 
 ---
 

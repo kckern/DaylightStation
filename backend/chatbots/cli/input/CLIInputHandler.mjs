@@ -23,6 +23,8 @@ const SPECIAL_PATTERNS = {
   IMAGE_PATH: /^(\.{0,2}\/[^\s]+\.(jpe?g|png|gif|webp|bmp))$/i,
   // Base64 data URL for images
   BASE64_IMAGE: /^data:image\/(jpe?g|png|gif|webp|bmp);base64,/i,
+  // Audio file path (.ogg, .mp3, .wav, .m4a)
+  AUDIO_PATH: /^(\.{0,2}\/[^\s]+\.(ogg|mp3|wav|m4a|webm))$/i,
 };
 
 /**
@@ -292,6 +294,15 @@ export class CLIInputHandler {
       return {
         type: InputType.PHOTO,
         data: { base64: trimmed, sourceType: 'base64' },
+      };
+    }
+
+    // Check for audio file path (.ogg, .mp3, .wav, .m4a)
+    if (SPECIAL_PATTERNS.AUDIO_PATH.test(trimmed)) {
+      this.#logger.debug('input.audioPath', { path: trimmed });
+      return {
+        type: InputType.VOICE,
+        data: { path: trimmed, sourceType: 'file' },
       };
     }
 

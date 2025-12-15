@@ -191,6 +191,23 @@ export class ConversationState {
   }
 
   /**
+   * Create a new ConversationState with the given properties
+   * @param {ConversationId|object|string} conversationId - Conversation identifier
+   * @param {object} [props] - Additional properties
+   * @param {string} [props.activeFlow] - Active flow name
+   * @param {object} [props.flowState] - Flow-specific state
+   * @returns {ConversationState}
+   */
+  static create(conversationId, props = {}) {
+    return new ConversationState({
+      conversationId,
+      activeFlow: props.activeFlow || null,
+      flowState: props.flowState || {},
+      lastMessageId: props.lastMessageId || null,
+    });
+  }
+
+  /**
    * Create from a plain object
    * @param {object} obj
    * @returns {ConversationState}

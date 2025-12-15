@@ -4,6 +4,7 @@
  */
 
 import { MessageId } from '../../domain/value-objects/MessageId.mjs';
+import { createLogger } from '../../_lib/logging/index.mjs';
 
 /**
  * Console-based implementation of IMessagingGateway
@@ -12,75 +13,89 @@ import { MessageId } from '../../domain/value-objects/MessageId.mjs';
 export class ConsoleGateway {
   #nextMessageId = 1;
   #prefix;
+  #logger;
 
   /**
    * @param {Object} [options]
    * @param {string} [options.prefix='[ChatBot]']
+   * @param {Object} [options.logger] - Logger instance
    */
   constructor(options = {}) {
     this.#prefix = options.prefix || '[ChatBot]';
+    this.#logger = options.logger || createLogger({ app: 'console-gateway' });
     this.botId = 'console';
   }
 
   /**
-   * Send a text message (logs to console)
+   * Send a text message (logs to logger)
    */
   async sendMessage(chatId, text, options = {}) {
     const messageId = MessageId.from(this.#nextMessageId++);
     
-    console.log(`${this.#prefix} → ${chatId.userId}:`);
-    console.log(`  ${text}`);
-    
-    if (options.choices) {
-      console.log(`  [Choices: ${options.choices.flat().join(', ')}]`);
-    }
+    this.#logger.debug('console.sendMessage', {
+      chatId: chatId.userId,
+      text,
+      hasChoices: !!options.choices,
+      choices: options.choices ? options.choices.flat() : undefined,
+    });
     
     return { messageId };
   }
 
   /**
-   * Send an image (logs to console)
+   * Send an image (logs to logger)
    */
   async sendImage(chatId, imageSource, caption, options = {}) {
     const messageId = MessageId.from(this.#nextMessageId++);
     
-    console.log(`${this.#prefix} → ${chatId.userId}: [IMAGE]`);
-    console.log(`  Source: ${Buffer.isBuffer(imageSource) ? '[Buffer]' : imageSource}`);
-    if (caption) {
-      console.log(`  Caption: ${caption}`);
-    }
+    this.#logger.debug('console.sendImage', {
+      chatId: chatId.userId,
+      imageSource: Buffer.isBuffer(imageSource) ? '[Buffer]' : imageSource,
+      caption,
+    });
     
     return { messageId };
   }
 
   /**
-   * Update message (logs to console)
+   * Update message (logs to logger)
    */
   async updateMessage(chatId, messageId, updates) {
-    console.log(`${this.#prefix} → ${chatId.userId}: [UPDATE #${messageId}]`);
-    console.log(`  Updates: ${JSON.stringify(updates)}`);
+    this.#logger.debug('console.updateMessage', {
+      chatId: chatId.userId,
+      messageId: messageId.toString(),
+      updates,
+    });
   }
 
   /**
-   * Update keyboard (logs to console)
+   * Update keyboard (logs to logger)
    */
   async updateKeyboard(chatId, messageId, choices) {
-    console.log(`${this.#prefix} → ${chatId.userId}: [UPDATE KEYBOARD #${messageId}]`);
-    console.log(`  Choices: ${choices.flat().join(', ')}`);
+    this.#logger.debug('console.updateKeyboard', {
+      chatId: chatId.userId,
+      messageId: messageId.toString(),
+      choices: choices.flat(),
+    });
   }
 
   /**
-   * Delete message (logs to console)
+   * Delete message (logs to logger)
    */
   async deleteMessage(chatId, messageId) {
-    console.log(`${this.#prefix} → ${chatId.userId}: [DELETE #${messageId}]`);
+    this.#logger.debug('console.deleteMessage', {
+      chatId: chatId.userId,
+      messageId: messageId.toString(),
+    });
   }
 
   /**
    * Transcribe voice (returns placeholder)
    */
   async transcribeVoice(voiceFileId) {
-    console.log(`${this.#prefix}: [TRANSCRIBE ${voiceFileId}]`);
+    this.#logger.debug('console.transcribeVoice', {
+      voiceFileId,
+    });
     return '[Voice transcription not available in console mode]';
   }
 

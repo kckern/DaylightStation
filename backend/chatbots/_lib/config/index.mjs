@@ -20,3 +20,9 @@ export {
   hasEnvVarReference,
   getSchemaForBot,
 } from './ConfigSchema.mjs';
+
+export {
+  ConfigProvider,
+  getConfigProvider,
+  resetConfigProvider,
+} from './ConfigProvider.mjs';
