@@ -16,6 +16,7 @@ const UPC_PATTERN = /^\d[\d-]{6,13}\d$/;
 export class NutribotEventRouter {
   #container;
   #logger;
+  #botId;
 
   /**
    * @param {import('../container.mjs').NutribotContainer} container
@@ -24,6 +25,18 @@ export class NutribotEventRouter {
     if (!container) throw new Error('container is required');
     this.#container = container;
     this.#logger = createLogger({ source: 'router', app: 'nutribot' });
+    // Get botId from container config for constructing ConversationId
+    this.#botId = container.getConfig?.()?.telegram?.botId || process.env.NUTRIBOT_TELEGRAM_BOT_ID || '6898194425';
+  }
+
+  /**
+   * Build a conversationId string from Telegram chatId
+   * @private
+   * @param {string} chatId - Telegram chat ID
+   * @returns {string} - Format: "telegram:{botId}_{chatId}"
+   */
+  #buildConversationId(chatId) {
+    return `telegram:${this.#botId}_${chatId}`;
   }
 
   /**
@@ -129,7 +142,7 @@ export class NutribotEventRouter {
     const useCase = this.#container.getLogFoodFromImage();
     return useCase.execute({
       userId: chatId,
-      conversationId: chatId,
+      conversationId: this.#buildConversationId(chatId),
       imageData: { fileId },
       messageId,
     });
@@ -148,7 +161,7 @@ export class NutribotEventRouter {
     const useCase = this.#container.getLogFoodFromUPC();
     return useCase.execute({
       userId: chatId,
-      conversationId: chatId,
+      conversationId: this.#buildConversationId(chatId),
       upc: cleanUPC,
       messageId,
     });
@@ -161,17 +174,28 @@ export class NutribotEventRouter {
   async #handleText(chatId, text, messageId, from) {
     this.#logger.debug('router.text', { chatId, textLength: text.length });
 
+    const conversationId = this.#buildConversationId(chatId);
+
     // Check conversation state for revising
     const conversationStateStore = this.#container.getConversationStateStore();
-    const state = await conversationStateStore.get(chatId);
+    const state = await conversationStateStore.get(conversationId);
+    
+    // CRITICAL DEBUG: Log state lookup result
+    this.#logger.info('router.text.stateLookup', {
+      conversationId,
+      hasState: !!state,
+      activeFlow: state?.activeFlow || 'none',
+      hasPendingLogUuid: !!state?.flowState?.pendingLogUuid,
+    });
 
-    if (state?.flow === 'revision' && state?.pendingLogUuid) {
+    // Check activeFlow (not flow) and flowState.pendingLogUuid - matches what ReviseFoodLog sets
+    if (state?.activeFlow === 'revision' && state?.flowState?.pendingLogUuid) {
+      this.#logger.info('router.text.revisionDetected', { logUuid: state.flowState.pendingLogUuid });
       const useCase = this.#container.getProcessRevisionInput();
       return useCase.execute({
         userId: chatId,
-        conversationId: chatId,
-        logUuid: state.pendingLogUuid,
-        revisionText: text,
+        conversationId,
+        text,
         messageId,
       });
     }
@@ -180,7 +204,7 @@ export class NutribotEventRouter {
     const useCase = this.#container.getLogFoodFromText();
     return useCase.execute({
       userId: chatId,
-      conversationId: chatId,
+      conversationId,
       text,
       messageId,
     });
@@ -196,7 +220,7 @@ export class NutribotEventRouter {
     const useCase = this.#container.getLogFoodFromVoice();
     return useCase.execute({
       userId: chatId,
-      conversationId: chatId,
+      conversationId: this.#buildConversationId(chatId),
       voiceData: { fileId: voice.file_id },
       messageId,
     });
@@ -220,7 +244,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getAcceptFoodLog();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
           logUuid,
           messageId,
         });
@@ -233,7 +257,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getDiscardFoodLog();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
           logUuid,
           messageId,
         });
@@ -246,7 +270,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getReviseFoodLog();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
           logUuid,
           messageId,
         });
@@ -257,7 +281,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getSelectUPCPortion();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
           portionFactor: factor,
           messageId,
         });
@@ -268,7 +292,7 @@ export class NutribotEventRouter {
         const date = params[0];
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
           date,
         });
       }
@@ -278,7 +302,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getSelectItemForAdjustment();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
           itemUuid,
         });
       }
@@ -288,7 +312,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getApplyPortionAdjustment();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
           factor,
         });
       }
@@ -298,7 +322,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getDeleteListItem();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
           itemUuid,
         });
       }
@@ -321,14 +345,14 @@ export class NutribotEventRouter {
       case 'help':
       case 'start': {
         const useCase = this.#container.getHandleHelpCommand();
-        return useCase.execute({ conversationId: chatId });
+        return useCase.execute({ conversationId: this.#buildConversationId(chatId) });
       }
 
       case 'report': {
         const useCase = this.#container.getGenerateDailyReport();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
         });
       }
 
@@ -337,7 +361,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getStartAdjustmentFlow();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
         });
       }
 
@@ -345,7 +369,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getGenerateOnDemandCoaching();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
         });
       }
 
@@ -353,7 +377,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getConfirmAllPending();
         return useCase.execute({
           userId: chatId,
-          conversationId: chatId,
+          conversationId: this.#buildConversationId(chatId),
         });
       }
 

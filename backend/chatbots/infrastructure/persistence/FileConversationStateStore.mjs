@@ -57,9 +57,23 @@ export class FileConversationStateStore {
   async get(chatId) {
     const path = this.#getPath(chatId);
     
-    this.#logger.debug('state-store.get', { chatId: chatId.toString() });
+    // CRITICAL DEBUG: Log at INFO level to see in production
+    this.#logger.info('state-store.get', { 
+      chatId: chatId?.toString?.() || String(chatId),
+      path,
+      storePath: this.#storePath,
+    });
 
     const data = loadFile(path);
+    
+    // CRITICAL DEBUG: Log whether file was found
+    this.#logger.info('state-store.get.result', {
+      chatId: chatId?.toString?.() || String(chatId),
+      path,
+      fileFound: !!data,
+      activeFlow: data?.activeFlow || 'none',
+    });
+    
     if (!data) return null;
 
     // Convert to ConversationState
@@ -74,7 +88,7 @@ export class FileConversationStateStore {
 
     // Check expiration
     if (state.isExpired) {
-      this.#logger.debug('state-store.expired', { chatId: chatId.toString() });
+      this.#logger.info('state-store.expired', { chatId: chatId?.toString?.() || String(chatId) });
       await this.clear(chatId);
       return null;
     }
@@ -148,6 +162,15 @@ export class FileConversationStateStore {
 
     // Save empty object to clear
     saveFile(path, {});
+  }
+
+  /**
+   * Delete state for a chat (alias for clear)
+   * @param {ChatId|string} chatId
+   * @returns {Promise<void>}
+   */
+  async delete(chatId) {
+    return this.clear(chatId);
   }
 
   /**

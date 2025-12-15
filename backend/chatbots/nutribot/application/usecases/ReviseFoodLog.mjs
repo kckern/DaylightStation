@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../_lib/logging/index.mjs';
+import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
 
 /**
  * Revise food log use case
@@ -47,20 +48,24 @@ export class ReviseFoodLog {
 
       // 2. Set conversation state to revision mode
       if (this.#conversationStateStore) {
-        await this.#conversationStateStore.set(conversationId, {
-          flow: 'revision',
-          pendingLogUuid: logUuid,
-          originalMessageId: messageId,
+        const state = ConversationState.create(conversationId, {
+          activeFlow: 'revision',
+          flowState: { 
+            pendingLogUuid: logUuid,
+            originalMessageId: messageId,
+          },
         });
+        await this.#conversationStateStore.set(conversationId, state);
       }
 
       // 3. Build revision prompt
       let currentItems = '';
       if (nutriLog?.items?.length > 0) {
         currentItems = nutriLog.items.map(item => {
-          const qty = item.quantity || 1;
+          const qty = item.amount || item.quantity || 1;
           const unit = item.unit || '';
-          return `• ${qty} ${unit} ${item.name}`;
+          const name = item.label || item.name || 'Unknown';
+          return `• ${qty} ${unit} ${name}`;
         }).join('\n');
       }
 
@@ -99,6 +104,7 @@ Reply with corrections, for example:
         success: true,
         logUuid,
         mode: 'revision',
+        message, // Include message for testing/debugging
       };
     } catch (error) {
       this.#logger.error('reviseLog.error', { conversationId, logUuid, error: error.message });

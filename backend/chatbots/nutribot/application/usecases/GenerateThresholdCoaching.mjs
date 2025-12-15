@@ -67,7 +67,7 @@ export class GenerateThresholdCoaching {
         const state = await this.#conversationStateStore.get(conversationId);
         const coachingKey = `coaching_${threshold}_${this.#getTodayDate(userId)}`;
         
-        if (state?.data?.[coachingKey]) {
+        if (state?.flowState?.[coachingKey]) {
           this.#logger.debug('coaching.threshold.skipped', { userId, reason: 'already_given' });
           return { success: true, skipped: true };
         }

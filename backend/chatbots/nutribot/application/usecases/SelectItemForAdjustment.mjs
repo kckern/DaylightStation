@@ -40,7 +40,7 @@ export class SelectItemForAdjustment {
       let date = null;
       if (this.#conversationStateStore?.get) {
         const state = await this.#conversationStateStore.get(conversationId);
-        date = state?.data?.date;
+        date = state?.flowState?.date;
       }
 
       // 2. Find the item in nutrilist

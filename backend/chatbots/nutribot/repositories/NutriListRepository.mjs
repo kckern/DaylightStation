@@ -53,11 +53,19 @@ export class NutriListRepository {
 
     this.#logger.debug('nutrilist.sync', { path, logId, status: nutriLog.status });
 
-    // Load existing data (array format)
-    let items = loadFile(path) || [];
+    // Load existing data - handle both legacy object format and new array format
+    let rawData = loadFile(path);
+    let items = [];
+    
+    if (Array.isArray(rawData)) {
+      items = rawData;
+    } else if (rawData && typeof rawData === 'object') {
+      this.#logger.info('nutrilist.convertingLegacyFormat', { path });
+      items = Object.values(rawData);
+    }
 
     // Remove existing items for this log
-    items = items.filter(item => item.logId !== logId);
+    items = items.filter(item => item.logId !== logId && item.log_uuid !== logId);
 
     // Add new items if log is accepted
     if (nutriLog.isAccepted) {
@@ -67,12 +75,53 @@ export class NutriListRepository {
 
     // Sort by date descending
     items.sort((a, b) => {
-      const dateA = a.createdAt || '';
-      const dateB = b.createdAt || '';
+      const dateA = a.createdAt || a.date || '';
+      const dateB = b.createdAt || b.date || '';
       return dateB.localeCompare(dateA);
     });
 
-    // Save back
+    // Save back (always in array format)
+    saveFile(path, items);
+  }
+
+  /**
+   * Save multiple items at once
+   * @param {Object[]} newItems - Items to save
+   * @returns {Promise<void>}
+   */
+  async saveMany(newItems) {
+    if (!newItems || newItems.length === 0) return;
+    
+    // Get userId from first item
+    const userId = newItems[0].userId || 'cli-user';
+    const path = this.#getPath(userId);
+
+    this.#logger.debug('nutrilist.saveMany', { path, count: newItems.length });
+
+    // Load existing data - handle both legacy object format and new array format
+    let rawData = loadFile(path);
+    let items = [];
+    
+    if (Array.isArray(rawData)) {
+      // New array format
+      items = rawData;
+    } else if (rawData && typeof rawData === 'object') {
+      // Legacy object format - convert to array
+      this.#logger.info('nutrilist.convertingLegacyFormat', { path });
+      items = Object.values(rawData);
+    }
+
+    // Add new items
+    items.push(...newItems);
+
+    // Sort by date descending
+    items.sort((a, b) => {
+      const dateA = a.createdAt || a.date || '';
+      const dateB = b.createdAt || b.date || '';
+      return dateB.localeCompare(dateA);
+    });
+
+    // Save back (always in array format)
     saveFile(path, items);
   }
 
@@ -86,14 +135,23 @@ export class NutriListRepository {
    */
   async findAll(userId, options = {}) {
     const path = this.#getPath(userId);
-    let items = loadFile(path) || [];
+    
+    // Load and handle both legacy object format and new array format
+    let rawData = loadFile(path);
+    let items = [];
+    
+    if (Array.isArray(rawData)) {
+      items = rawData;
+    } else if (rawData && typeof rawData === 'object') {
+      items = Object.values(rawData);
+    }
 
     if (options.status) {
       items = items.filter(item => item.status === options.status);
     }
 
     if (options.color) {
-      items = items.filter(item => item.color === options.color);
+      items = items.filter(item => item.color === options.color || item.noom_color === options.color);
     }
 
     return items;
@@ -169,10 +227,19 @@ export class NutriListRepository {
    */
   async removeByLogId(userId, logId) {
     const path = this.#getPath(userId);
-    let items = loadFile(path) || [];
+    
+    // Load and handle both legacy object format and new array format
+    let rawData = loadFile(path);
+    let items = [];
+    
+    if (Array.isArray(rawData)) {
+      items = rawData;
+    } else if (rawData && typeof rawData === 'object') {
+      items = Object.values(rawData);
+    }
     
     const before = items.length;
-    items = items.filter(item => item.logId !== logId);
+    items = items.filter(item => item.logId !== logId && item.log_uuid !== logId);
     const removed = before - items.length;
     
     if (removed > 0) {

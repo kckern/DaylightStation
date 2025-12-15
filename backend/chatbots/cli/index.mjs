@@ -15,8 +15,16 @@
  */
 
 import { parseArgs } from 'node:util';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { CLIChatSimulator } from './CLIChatSimulator.mjs';
 import { createLogger } from '../_lib/logging/index.mjs';
+
+// Initialize process.env.path for io.mjs compatibility
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const baseDir = path.resolve(__dirname, '../../..');
+import { hydrateProcessEnvFromConfigs } from '../../lib/logging/config.js';
+hydrateProcessEnvFromConfigs(baseDir);
 
 // Parse command line arguments
 const { values: args } = parseArgs({

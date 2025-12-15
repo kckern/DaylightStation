@@ -17,6 +17,7 @@ import {
 import { nutribotWebhookHandler } from './handlers/webhook.mjs';
 import { nutribotReportHandler } from './handlers/report.mjs';
 import { nutribotReportImgHandler } from './handlers/reportImg.mjs';
+import { directUPCHandler, directImageHandler, directTextHandler } from './handlers/directInput.mjs';
 
 /**
  * Create NutriBot Express Router
@@ -37,6 +38,11 @@ export function createNutribotRouter(container) {
     idempotencyMiddleware({ ttlMs: 300000 }),
     asyncHandler(nutribotWebhookHandler(container))
   );
+
+  // Direct input endpoints (programmatic API access)
+  router.all('/upc', asyncHandler(directUPCHandler(container)));
+  router.all('/image', asyncHandler(directImageHandler(container)));
+  router.all('/text', asyncHandler(directTextHandler(container)));
 
   // Report endpoints (no webhook middleware needed)
   router.get('/report', asyncHandler(nutribotReportHandler(container)));
