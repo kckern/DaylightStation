@@ -39,40 +39,31 @@ export class LogFoodFromImage {
    * @param {string} [input.messageId]
    */
   async execute(input) {
-    const { userId, conversationId, imageData, messageId } = input;
+    const { userId, conversationId, imageData, messageId: userMessageId } = input;
 
     this.#logger.debug('logImage.start', { conversationId });
 
     try {
-      // 1. Delete original user message (if provided)
-      if (messageId) {
-        try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
-        } catch (e) {
-          // Ignore delete errors
-        }
-      }
-
-      // 2. Send "Analyzing..." message with thumbnail
+      // 1. Send "Analyzing..." status message
       const { messageId: statusMsgId } = await this.#messagingGateway.sendMessage(
         conversationId,
         '🔍 Analyzing your food...',
         {}
       );
 
-      // 3. Get image URL/data for AI
+      // 2. Get image URL/data for AI
       let imageUrl = imageData.url;
       if (imageData.fileId && this.#messagingGateway.getFileUrl) {
         imageUrl = await this.#messagingGateway.getFileUrl(imageData.fileId);
       }
 
-      // 4. Call AI for food detection
+      // 3. Call AI for food detection
       const prompt = this.#buildDetectionPrompt();
       const response = await this.#aiGateway.chatWithImage(prompt, imageUrl, {
         maxTokens: 1000,
       });
 
-      // 5. Parse response into food items
+      // 4. Parse response into food items
       const foodItems = this.#parseFoodResponse(response);
 
       if (foodItems.length === 0) {
@@ -82,22 +73,23 @@ export class LogFoodFromImage {
         return { success: false, error: 'No food detected' };
       }
 
-      // 6. Create log data object (plain object, not domain entity)
+      // 5. Create log data object (plain object, not domain entity)
       const nutriLog = {
         uuid: uuidv4(),
         chatId: conversationId,
         items: foodItems,
         source: 'image',
+        imageUrl: imageUrl,
         status: 'pending',
         createdAt: new Date().toISOString(),
       };
 
-      // 7. Save NutriLog
+      // 6. Save NutriLog
       if (this.#nutrilogRepository) {
         await this.#nutrilogRepository.save(nutriLog);
       }
 
-      // 8. Update conversation state
+      // 7. Update conversation state
       if (this.#conversationStateStore) {
         await this.#conversationStateStore.set(conversationId, {
           flow: 'food_confirmation',
@@ -105,15 +97,33 @@ export class LogFoodFromImage {
         });
       }
 
-      // 9. Update message with food list and buttons
-      const foodList = this.#formatFoodList(foodItems);
+      // 8. Delete user's original message and status message
+      if (userMessageId) {
+        try {
+          await this.#messagingGateway.deleteMessage(conversationId, userMessageId);
+        } catch (e) {
+          // Ignore delete errors
+        }
+      }
+      try {
+        await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+      } catch (e) {
+        // Ignore delete errors
+      }
+
+      // 9. Send image message with food list as caption and buttons
+      const caption = this.#formatFoodCaption(foodItems);
       const buttons = this.#buildActionButtons(nutriLog.uuid);
 
-      await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
-        text: `📸 I detected:\n\n${foodList}`,
-        choices: buttons,
-        inline: true,
-      });
+      const { messageId: photoMsgId } = await this.#messagingGateway.sendPhoto(
+        conversationId,
+        imageUrl,
+        {
+          caption,
+          choices: buttons,
+          inline: true,
+        }
+      );
 
       this.#logger.info('logImage.complete', { 
         conversationId, 
@@ -124,7 +134,7 @@ export class LogFoodFromImage {
       return {
         success: true,
         nutrilogUuid: nutriLog.uuid,
-        messageId: statusMsgId,
+        messageId: photoMsgId,
         itemCount: foodItems.length,
       };
     } catch (error) {
@@ -214,6 +224,25 @@ Be conservative with estimates. If uncertain, give ranges or note uncertainty.`,
       const cals = item.calories || 0;
       return `• ${qty} ${unit} ${item.name} (${cals} cal)`;
     }).join('\n');
+  }
+
+  /**
+   * Format food caption for image message (with icons and colors)
+   * @private
+   */
+  #formatFoodCaption(items) {
+    const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' };
+    const totalCal = items.reduce((sum, i) => sum + (i.calories || 0), 0);
+    
+    const lines = items.map(item => {
+      const emoji = colorEmoji[item.noom_color] || '⚪';
+      const qty = item.quantity || 1;
+      const unit = item.unit || '';
+      const cals = item.calories || 0;
+      return `${emoji} ${qty} ${unit} ${item.name} (${cals} cal)`;
+    });
+    
+    return `📸 Detected ${items.length} item${items.length !== 1 ? 's' : ''} (${totalCal} cal total)\n\n${lines.join('\n')}`;
   }
 
   /**

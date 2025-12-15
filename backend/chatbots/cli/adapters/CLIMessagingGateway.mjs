@@ -403,7 +403,14 @@ export class CLIMessagingGateway {
         if (Buffer.isBuffer(photo)) {
           savedPath = await this.#imageHandler.saveBuffer(photo, 'image.png');
         } else if (typeof photo === 'string') {
-          if (photo.startsWith('http')) {
+          if (photo.startsWith('data:image/')) {
+            // Base64 data URL - extract and save
+            const matches = photo.match(/^data:image\/(\w+);base64,(.+)$/);
+            if (matches) {
+              const [, ext, base64Data] = matches;
+              savedPath = await this.#imageHandler.saveBase64(base64Data, `image/${ext}`);
+            }
+          } else if (photo.startsWith('http')) {
             savedPath = await this.#imageHandler.downloadImage(photo);
           } else {
             // Local file path - copy to tmp
