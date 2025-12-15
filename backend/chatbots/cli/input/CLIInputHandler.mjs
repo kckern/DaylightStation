@@ -17,6 +17,12 @@ const SPECIAL_PATTERNS = {
   VOICE: /^\[voice:(.+)\]$/i,
   UPC: /^\[upc:(\d+)\]$/i,
   COMMAND: /^\/(\w+)(?:\s+(.*))?$/,
+  // Image URL (http/https with image extension)
+  IMAGE_URL: /^(https?:\/\/[^\s]+\.(jpe?g|png|gif|webp|bmp))(\?.*)?$/i,
+  // Local file path with image extension
+  IMAGE_PATH: /^(\.{0,2}\/[^\s]+\.(jpe?g|png|gif|webp|bmp))$/i,
+  // Base64 data URL for images
+  BASE64_IMAGE: /^data:image\/(jpe?g|png|gif|webp|bmp);base64,/i,
 };
 
 /**
@@ -259,6 +265,33 @@ export class CLIInputHandler {
       return {
         type: InputType.UPC,
         data: { upc },
+      };
+    }
+
+    // Check for image URL (http/https with image extension)
+    if (SPECIAL_PATTERNS.IMAGE_URL.test(trimmed)) {
+      this.#logger.debug('input.imageUrl', { url: trimmed });
+      return {
+        type: InputType.PHOTO,
+        data: { url: trimmed, sourceType: 'url' },
+      };
+    }
+
+    // Check for local image path
+    if (SPECIAL_PATTERNS.IMAGE_PATH.test(trimmed)) {
+      this.#logger.debug('input.imagePath', { path: trimmed });
+      return {
+        type: InputType.PHOTO,
+        data: { path: trimmed, sourceType: 'path' },
+      };
+    }
+
+    // Check for base64 image data URL
+    if (SPECIAL_PATTERNS.BASE64_IMAGE.test(trimmed)) {
+      this.#logger.debug('input.base64Image', { length: trimmed.length });
+      return {
+        type: InputType.PHOTO,
+        data: { base64: trimmed, sourceType: 'base64' },
       };
     }
 

@@ -532,7 +532,7 @@ export class CLIChatSimulator {
             break;
           
           case InputType.PHOTO:
-            await this.#handlePhotoMessage(botName, data.path);
+            await this.#handlePhotoMessage(botName, data);
             break;
           
           case InputType.VOICE:
@@ -1276,24 +1276,59 @@ export class CLIChatSimulator {
           });
         }
       } else {
-        // No items today - show dashboard without image
-        let report = `📊 **NutriBot Dashboard** (${today})\n\n`;
-        report += `📅 **Today:** No food logged yet\n`;
+        // No items today - still generate a report image showing week history
+        const { pngPath } = await this.#generateReportFile(
+          { items: [] }, 
+          { calories: 0, protein: 0, carbs: 0, fat: 0 }, 
+          goals
+        );
+
+        let caption = `📊 NutriBot Dashboard (${today})\n`;
+        caption += `📅 Today: No food logged yet\n`;
         
         if (weekItems.length > 0) {
           const avgCal = Math.round(weekTotals.calories / 7);
-          report += `📈 **This Week:** ${weekItems.length} items • avg ${avgCal} cal/day\n`;
+          caption += `📈 This Week: ${weekItems.length} items • avg ${avgCal} cal/day`;
+        } else {
+          caption += `💡 Send a photo, text, or barcode to log food`;
         }
 
-        report += `\n💡 Send a photo, text, or barcode to log food`;
+        if (pngPath) {
+          // Create attachment
+          const attachment = Attachment.photo({
+            localPath: pngPath,
+            mimeType: 'image/png',
+            fileName: path.basename(pngPath),
+          });
 
-        await this.#messagingGateway.sendMessage(conversationId, report, {
-          choices: [
-            [{ text: '✏️ Adjust Past Items', callback_data: 'adj_start' }],
-          ],
-          inline: true,
-          messageType: 'report',
-        });
+          // Display as photo message with bot attribution
+          this.#presenter.printPhotoMessage({
+            caption,
+            emoji: '📊',
+            botName: 'NutriBot',
+            botEmoji: '🍎',
+            filePath: pngPath,
+          });
+          
+          // Send with buttons and tag as report
+          await this.#messagingGateway.sendMessage(conversationId, caption, {
+            choices: [
+              [{ text: '✏️ Adjust Past Items', callback_data: 'adj_start' }],
+            ],
+            inline: true,
+            attachment,
+            messageType: 'report',
+          });
+        } else {
+          // Fallback if PNG generation fails
+          await this.#messagingGateway.sendMessage(conversationId, caption, {
+            choices: [
+              [{ text: '✏️ Adjust Past Items', callback_data: 'adj_start' }],
+            ],
+            inline: true,
+            messageType: 'report',
+          });
+        }
       }
 
     } catch (error) {
@@ -1805,13 +1840,16 @@ User revision: "${text}"`;
   }
 
   /**
-   * Handle photo message (simulated)
+   * Handle photo message (URL, path, or base64)
    * @private
+   * @param {string} botName
+   * @param {Object} imageData - { url, path, base64, sourceType }
    */
-  async #handlePhotoMessage(botName, imagePath) {
-    this.#presenter.printUserMessage(`[Photo: ${imagePath}]`);
+  async #handlePhotoMessage(botName, imageData) {
+    const displayText = imageData.url || imageData.path || '[Base64 Image]';
+    this.#presenter.printUserMessage(`[Photo: ${displayText}]`);
     
-    this.#session.addToHistory({ role: 'user', type: 'photo', content: imagePath });
+    this.#session.addToHistory({ role: 'user', type: 'photo', content: displayText });
 
     const container = this.#containers[botName];
     if (!container) {
@@ -1821,11 +1859,19 @@ User revision: "${text}"`;
 
     try {
       if (botName === 'nutribot') {
+        // Convert image to base64 URL for AI
+        const base64Url = await this.#prepareImageForAI(imageData);
+        
+        if (!base64Url) {
+          this.#presenter.printError('Failed to load image');
+          return;
+        }
+
         const useCase = container.getLogFoodFromImage();
         const result = await useCase.execute({
           userId: this.#session.getUserId(),
           conversationId: this.#session.getConversationId(),
-          imageData: { fileId: imagePath },
+          imageData: { url: base64Url },
         });
 
         this.#logger.info('handlePhotoMessage.result', { success: result.success });
@@ -1833,12 +1879,132 @@ User revision: "${text}"`;
         // Store the pending log UUID for slash commands
         if (result.success && result.nutrilogUuid) {
           this.#session.setLastPendingLogUuid(result.nutrilogUuid);
+          this.#session.addPendingLogUuid(result.nutrilogUuid);
+        }
+
+        // Generate PNG report after accepting
+        if (result.success) {
+          // Note: Report generation happens after user accepts
         }
       }
     } catch (error) {
       this.#logger.error('handlePhotoMessage.error', { error: error.message });
       this.#presenter.printError(`Failed to process image: ${error.message}`);
     }
+  }
+
+  /**
+   * Prepare image for AI - download/load and convert to base64 URL
+   * @private
+   * @param {Object} imageData - { url, path, base64, sourceType }
+   * @returns {Promise<string|null>} - Base64 data URL or null on error
+   */
+  async #prepareImageForAI(imageData) {
+    try {
+      // Already a base64 data URL
+      if (imageData.base64) {
+        this.#logger.debug('prepareImage.base64', { length: imageData.base64.length });
+        return imageData.base64;
+      }
+
+      // URL - download and convert
+      if (imageData.url) {
+        this.#logger.debug('prepareImage.url', { url: imageData.url });
+        return await this.#downloadAndConvertToBase64(imageData.url);
+      }
+
+      // Local path - load and convert
+      if (imageData.path) {
+        this.#logger.debug('prepareImage.path', { path: imageData.path });
+        return await this.#loadFileAsBase64(imageData.path);
+      }
+
+      return null;
+    } catch (error) {
+      this.#logger.error('prepareImage.error', { error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * Download image from URL and convert to base64 data URL
+   * @private
+   */
+  async #downloadAndConvertToBase64(url) {
+    const { createCanvas, loadImage } = await import('canvas');
+    
+    // Fetch the image
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    // Load and resize using Canvas
+    const image = await loadImage(buffer);
+    
+    // Calculate dimensions maintaining aspect ratio (max 800px width for context efficiency)
+    const maxWidth = 800;
+    const { width, height } = image;
+    const aspectRatio = height / width;
+    const newWidth = Math.min(width, maxWidth);
+    const newHeight = Math.round(newWidth * aspectRatio);
+    
+    // Create canvas and resize
+    const canvas = createCanvas(newWidth, newHeight);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0, newWidth, newHeight);
+    
+    // Convert to JPEG with quality
+    const resizedBuffer = canvas.toBuffer('image/jpeg', { quality: 0.7 });
+    const base64 = resizedBuffer.toString('base64');
+    
+    const sizeKb = Math.round(resizedBuffer.length / 1024);
+    this.#logger.debug('downloadAndConvert.complete', { originalUrl: url, sizeKb, width: newWidth, height: newHeight });
+    
+    return `data:image/jpeg;base64,${base64}`;
+  }
+
+  /**
+   * Load local file and convert to base64 data URL
+   * @private
+   */
+  async #loadFileAsBase64(filePath) {
+    const { createCanvas, loadImage } = await import('canvas');
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    
+    // Resolve relative paths
+    const resolvedPath = path.resolve(filePath);
+    
+    // Read the file
+    const buffer = await fs.readFile(resolvedPath);
+    
+    // Load and resize using Canvas
+    const image = await loadImage(buffer);
+    
+    // Calculate dimensions (max 800px width)
+    const maxWidth = 800;
+    const { width, height } = image;
+    const aspectRatio = height / width;
+    const newWidth = Math.min(width, maxWidth);
+    const newHeight = Math.round(newWidth * aspectRatio);
+    
+    // Create canvas and resize
+    const canvas = createCanvas(newWidth, newHeight);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0, newWidth, newHeight);
+    
+    // Convert to JPEG
+    const resizedBuffer = canvas.toBuffer('image/jpeg', { quality: 0.7 });
+    const base64 = resizedBuffer.toString('base64');
+    
+    const sizeKb = Math.round(resizedBuffer.length / 1024);
+    this.#logger.debug('loadFile.complete', { filePath, sizeKb, width: newWidth, height: newHeight });
+    
+    return `data:image/jpeg;base64,${base64}`;
   }
 
   /**
