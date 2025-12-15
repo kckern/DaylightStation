@@ -47,7 +47,7 @@ export class MoveItemToDate {
     try {
       // 1. Get current state
       const state = await this.#conversationStateStore.get(conversationId);
-      const { date: oldDate, itemId, logId } = state?.data || {};
+      const { date: oldDate, itemId, logId } = state?.flowState || {};
 
       if (!itemId || !logId) {
         throw new Error('No item selected in adjustment state');

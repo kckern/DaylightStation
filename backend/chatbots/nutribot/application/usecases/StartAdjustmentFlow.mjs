@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../_lib/logging/index.mjs';
+import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
 
 /**
  * @typedef {Object} StartAdjustmentFlowInput
@@ -51,12 +52,15 @@ export class StartAdjustmentFlow {
     try {
       // 1. Set conversation state (if store available)
       if (this.#conversationStateStore) {
-        await this.#conversationStateStore.set(conversationId, {
-          flow: 'adjustment',
-          step: 'date_selection',
-          data: { level: 0, originMessageId: existingMessageId },
-          lastActivity: new Date().toISOString(),
+        const state = ConversationState.create(conversationId, {
+          activeFlow: 'adjustment',
+          flowState: { 
+            step: 'date_selection',
+            level: 0, 
+            originMessageId: existingMessageId 
+          },
         });
+        await this.#conversationStateStore.set(conversationId, state);
       }
 
       // 2. Build date selection keyboard

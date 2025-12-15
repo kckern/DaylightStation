@@ -46,7 +46,7 @@ export class DeleteListItem {
     try {
       // 1. Get current state
       const state = await this.#conversationStateStore.get(conversationId);
-      const { date, itemId, logId } = state?.data || {};
+      const { date, itemId, logId } = state?.flowState || {};
 
       if (!itemId || !logId) {
         throw new Error('No item selected in adjustment state');

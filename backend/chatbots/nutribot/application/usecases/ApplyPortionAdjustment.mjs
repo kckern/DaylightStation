@@ -41,8 +41,8 @@ export class ApplyPortionAdjustment {
       let date = null;
       if (this.#conversationStateStore?.get) {
         const state = await this.#conversationStateStore.get(conversationId);
-        itemId = state?.data?.itemId;
-        date = state?.data?.date;
+        itemId = state?.flowState?.itemId;
+        date = state?.flowState?.date;
       }
 
       if (!itemId) {

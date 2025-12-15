@@ -107,6 +107,16 @@ export class NutribotContainer {
     this.#reportRenderer = options.reportRenderer;
   }
 
+  // ==================== Config Getter ====================
+
+  /**
+   * Get the configuration object
+   * @returns {Object}
+   */
+  getConfig() {
+    return this.#config;
+  }
+
   // ==================== Infrastructure Getters ====================
 
   getMessagingGateway() {

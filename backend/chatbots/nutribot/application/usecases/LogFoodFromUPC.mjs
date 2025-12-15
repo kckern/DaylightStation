@@ -7,6 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../../../_lib/logging/index.mjs';
+import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
 
 /**
  * Log food from UPC use case
@@ -117,11 +118,14 @@ export class LogFoodFromUPC {
 
       // 8. Update conversation state
       if (this.#conversationStateStore) {
-        await this.#conversationStateStore.set(conversationId, {
-          flow: 'upc_portion',
-          pendingLogUuid: nutriLog.uuid,
-          productData: product,
+        const state = ConversationState.create(conversationId, {
+          activeFlow: 'upc_portion',
+          flowState: { 
+            pendingLogUuid: nutriLog.uuid,
+            productData: product,
+          },
         });
+        await this.#conversationStateStore.set(conversationId, state);
       }
 
       // 9. Build portion selection message
@@ -167,14 +171,22 @@ export class LogFoodFromUPC {
    * @private
    */
   async #classifyProduct(product) {
+    const { FOOD_ICONS_STRING } = await import('../constants/foodIcons.mjs');
+    const availableIcons = FOOD_ICONS_STRING.split(' ');
+
     const prompt = [
       {
         role: 'system',
-        content: `Classify this food product:
-1. Pick an emoji icon that best represents it
-2. Assign a Noom color: green (whole foods), yellow (lean proteins, whole grains), red (processed/high cal)
+        content: `You are matching food products to icon filenames. Available icons:
+${FOOD_ICONS_STRING}
 
-Respond in JSON: { "icon": "🍎", "noomColor": "green" }`,
+Choose the MOST relevant icon filename for the product and assign a Noom color:
+- green: whole fruits, vegetables, leafy greens
+- yellow: lean proteins, whole grains, legumes
+- orange: processed foods, high-calorie items
+
+Respond ONLY in JSON: { "icon": "apple", "noomColor": "green" }
+If unsure, use "default" icon.`,
       },
       {
         role: 'user',
@@ -182,12 +194,17 @@ Respond in JSON: { "icon": "🍎", "noomColor": "green" }`,
       },
     ];
 
-    const response = await this.#aiGateway.chat(prompt, { maxTokens: 50 });
+    const response = await this.#aiGateway.chat(prompt, { maxTokens: 100 });
     const match = response.match(/\{[\s\S]*\}/);
     if (match) {
-      return JSON.parse(match[0]);
+      const parsed = JSON.parse(match[0]);
+      // Validate icon exists
+      if (!availableIcons.includes(parsed.icon)) {
+        parsed.icon = 'default';
+      }
+      return parsed;
     }
-    return { icon: '🍽️', noomColor: 'yellow' };
+    return { icon: 'default', noomColor: 'yellow' };
   }
 
   /**

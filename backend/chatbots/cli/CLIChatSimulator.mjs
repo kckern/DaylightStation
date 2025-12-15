@@ -13,17 +13,15 @@ import { CLIInputHandler, InputType } from './input/CLIInputHandler.mjs';
 import { CLIMessagingGateway } from './adapters/CLIMessagingGateway.mjs';
 import { CLIImageHandler } from './media/CLIImageHandler.mjs';
 import { CLISessionManager } from './session/CLISessionManager.mjs';
-import {
-  MockAIGateway,
-  MockUPCGateway,
-  MockReportRenderer,
-  MemoryNutrilogRepository,
-  MemoryNutrilistRepository,
-  MemoryConversationStateStore,
-  MemoryJournalEntryRepository,
-  MemoryMessageQueueRepository,
-} from './mocks/index.mjs';
+
+// Real infrastructure implementations (no mocks)
+import { NutriLogRepository } from '../nutribot/repositories/NutriLogRepository.mjs';
+import { NutriListRepository } from '../nutribot/repositories/NutriListRepository.mjs';
+import { FileConversationStateStore } from '../infrastructure/persistence/FileConversationStateStore.mjs';
+import { FileRepository } from '../infrastructure/persistence/FileRepository.mjs';
+import { OpenAIGateway } from '../infrastructure/ai/OpenAIGateway.mjs';
 import { RealUPCGateway } from '../infrastructure/gateways/RealUPCGateway.mjs';
+import { CanvasReportRenderer } from '../adapters/http/CanvasReportRenderer.mjs';
 
 import fs from 'fs';
 import path from 'path';
@@ -31,6 +29,34 @@ import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Load preferred timezone from config.app-local.yml/config.app.yml
+ */
+function loadAppTimezone() {
+  const searchPaths = [
+    path.resolve(__dirname, '../../../config.app-local.yml'),
+    path.resolve(__dirname, '../../../config.app.yml'),
+    path.resolve(__dirname, '../../../../config.app-local.yml'),
+    path.resolve(__dirname, '../../../../config.app.yml'),
+    path.resolve(process.cwd(), 'config.app-local.yml'),
+    path.resolve(process.cwd(), 'config.app.yml'),
+  ];
+
+  for (const p of searchPaths) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const content = fs.readFileSync(p, 'utf8');
+      const cfg = yaml.load(content) || {};
+      const tz = cfg?.timezone || cfg?.weather?.timezone;
+      if (tz) return tz;
+    } catch (err) {
+      // ignore and try next
+    }
+  }
+
+  return 'America/Los_Angeles';
+}
 
 /**
  * Load API key from config.secrets.yml if not in environment
@@ -123,6 +149,7 @@ export class CLIChatSimulator {
   #logger;
   #containers;
   #running;
+  #timezone;
   
   // Mock adapters
   #aiGateway;
@@ -150,6 +177,12 @@ export class CLIChatSimulator {
     this._useRealUPC = options.useRealUPC || false;
     this._debug = options.debug || false;
 
+    // Standardize timezone early so all Date calculations align with the app config
+    this.#timezone = loadAppTimezone();
+    if (!process.env.TZ) {
+      process.env.TZ = this.#timezone;
+    }
+
     // Create logger - only output if debug mode is enabled
     this.#logger = createLogger({ 
       source: 'cli:simulator', 
@@ -168,26 +201,48 @@ export class CLIChatSimulator {
       debug: options.debug,
     });
 
-    // Create silent logger for mocks (unless debug mode)
-    const silentLogger = createLogger({
-      source: 'cli:mock',
+    // Create logger for infrastructure (unless debug mode, then silent)
+    const infraLogger = createLogger({
+      source: 'cli:infra',
       app: 'cli',
       output: this._debug ? console.log : () => {},
     });
 
-    // Initialize mock adapters (will be replaced with real AI in initialize() if useRealAI)
-    this.#aiGateway = new MockAIGateway({ 
-      useRealAPI: false, // Will be configured properly in initialize()
-      responseDelay: options.testMode ? 0 : 300,
-      logger: silentLogger,
+    // Initialize real adapters (AI will be configured in initialize() based on useRealAI)
+    // Use _tmp directory for CLI data storage
+    const cliDataPath = path.resolve(__dirname, '../../data/_tmp');
+    
+    // Create a simple config object for repositories
+    const cliConfig = {
+      getNutrilogPath: (userId) => `${cliDataPath}/nutrilogs/${userId}`,
+      getNutrilistPath: (userId) => `${cliDataPath}/nutrilists/${userId}`,
+      getConversationStatePath: (conversationId) => `${cliDataPath}/conversation-state/${conversationId}`,
+    };
+    
+    this.#aiGateway = null; // Will be initialized in initialize()
+    this.#upcGateway = new RealUPCGateway({ logger: infraLogger });
+    this.#reportRenderer = new CanvasReportRenderer({ logger: infraLogger });
+    this.#nutrilogRepository = new NutriLogRepository({ 
+      config: cliConfig,
+      logger: infraLogger 
     });
-    this.#upcGateway = new MockUPCGateway({ responseDelay: options.testMode ? 0 : 100, logger: silentLogger });
-    this.#reportRenderer = new MockReportRenderer({ textMode: true, logger: silentLogger });
-    this.#nutrilogRepository = new MemoryNutrilogRepository({ logger: silentLogger });
-    this.#nutrilistRepository = new MemoryNutrilistRepository({ logger: silentLogger });
-    this.#conversationStateStore = new MemoryConversationStateStore({ logger: silentLogger });
-    this.#journalEntryRepository = new MemoryJournalEntryRepository({ logger: silentLogger });
-    this.#messageQueueRepository = new MemoryMessageQueueRepository({ logger: silentLogger });
+    this.#nutrilistRepository = new NutriListRepository({ 
+      config: cliConfig,
+      logger: infraLogger 
+    });
+    this.#conversationStateStore = new FileConversationStateStore({ 
+      storePath: '_tmp/conversation-state',
+      logger: infraLogger 
+    });
+    // Journalist repositories - use generic FileRepository
+    this.#journalEntryRepository = new FileRepository({ 
+      storePath: '_tmp/journal-entries',
+      logger: infraLogger 
+    });
+    this.#messageQueueRepository = new FileRepository({ 
+      storePath: '_tmp/message-queue',
+      logger: infraLogger 
+    });
 
     this.#containers = {};
     this.#running = false;
@@ -212,7 +267,8 @@ export class CLIChatSimulator {
    */
   #getLocalDate(date = new Date()) {
     const d = date instanceof Date ? date : new Date(date);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const tzDate = d.toLocaleDateString('en-CA', { timeZone: this.#timezone });
+    return tzDate; // already YYYY-MM-DD in en-CA
   }
 
   // ==================== Lifecycle ====================
@@ -227,12 +283,6 @@ export class CLIChatSimulator {
     await this.#imageHandler.initialize();
     await this.#session.initialize();
 
-    // Initialize nutrilist repository (clears today's items, keeps history)
-    const nutrilistInit = await this.#nutrilistRepository.initialize();
-    if (nutrilistInit.cleared > 0) {
-      console.log(`🧹 Cleared ${nutrilistInit.cleared} item(s) from today, kept ${nutrilistInit.remaining} from previous days`);
-    }
-
     // Create messaging gateway
     this.#messagingGateway = new CLIMessagingGateway({
       presenter: this.#presenter,
@@ -241,75 +291,18 @@ export class CLIChatSimulator {
       testMode: this._testMode,
     });
 
-    // Initialize real AI gateway if requested
+    // Initialize AI gateway (use real OpenAI or throw error)
     if (this._useRealAI) {
       console.log('🔌 Connecting to OpenAI API...');
       const realGateway = await createRealAIGateway();
       if (realGateway) {
-        // Replace mock with the real gateway directly
         this.#aiGateway = realGateway;
         console.log('✅ Connected to OpenAI API');
       } else {
-        console.log('⚠️  Failed to connect to OpenAI. Using mock responses.');
+        throw new Error('Failed to connect to OpenAI. Set OPENAI_API_KEY in environment or config.secrets.yml');
       }
     } else {
-      this.#logger.debug('simulator.usingMockAI');
-    }
-
-    // Initialize real UPC gateway if requested (or if using real AI)
-    if (this._useRealAI || this._useRealUPC) {
-      console.log('🔌 Connecting to UPC APIs...');
-      try {
-        // Simple OpenFoodFacts lookup (no journalist dependencies)
-        const openFoodFactsLookup = async (barcode) => {
-          const response = await fetch(`https://world.openfoodfacts.net/api/v2/product/${barcode}.json`);
-          if (!response.ok) return null;
-          
-          const data = await response.json();
-          if (!data.product || data.status !== 1) return null;
-          
-          const product = data.product;
-          const nutrients = product.nutriments || {};
-          
-          return {
-            label: product.product_name || product.product_name_en,
-            brand: product.brands,
-            image: product.image_url || product.image_front_url,
-            noom_color: 'yellow',
-            icon: '🍽️',
-            servingSizes: product.serving_quantity 
-              ? [{ quantity: parseInt(product.serving_quantity), label: product.serving_quantity_unit || 'g' }]
-              : [{ quantity: 100, label: 'g' }],
-            servingsPerContainer: product.product_quantity && product.serving_quantity
-              ? parseFloat(product.product_quantity) / parseFloat(product.serving_quantity)
-              : 1,
-            nutrients: {
-              calories: nutrients['energy-kcal'] || 0,
-              protein: nutrients.proteins || 0,
-              carbs: nutrients.carbohydrates || 0,
-              fat: nutrients.fat || 0,
-              fiber: nutrients.fiber || 0,
-              sugar: nutrients.sugars || 0,
-              sodium: nutrients.sodium || 0,
-            },
-          };
-        };
-
-        this.#upcGateway = new RealUPCGateway({ 
-          upcLookup: openFoodFactsLookup,
-          logger: createLogger({ 
-            source: 'upc-gateway', 
-            app: 'nutribot',
-            output: this._debug ? console.log : () => {},
-          }),
-        });
-        console.log('✅ Connected to UPC APIs (OpenFoodFacts)');
-      } catch (error) {
-        console.log('⚠️  Failed to connect to UPC APIs. Using mock database.');
-        this.#logger.warn('upcGateway.initError', { error: error.message });
-      }
-    } else {
-      this.#logger.debug('simulator.usingMockUPC');
+      throw new Error('CLI simulator requires real AI. Use --real-ai flag or set useRealAI: true');
     }
 
     // Initialize bot containers
@@ -329,7 +322,7 @@ export class CLIChatSimulator {
     // Create config object with required methods
     const config = {
       goals: { calories: 2000, protein: 150, carbs: 200, fat: 65 },
-      getUserTimezone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+      getUserTimezone: () => this.#timezone,
       getGoalsForUser: () => ({ calories: 2000, protein: 150, carbs: 200, fat: 65 }),
     };
 
@@ -536,7 +529,7 @@ export class CLIChatSimulator {
             break;
           
           case InputType.VOICE:
-            await this.#handleVoiceMessage(botName, data.transcript);
+            await this.#handleVoiceMessage(botName, data);
             break;
           
           case InputType.UPC:
@@ -924,7 +917,7 @@ export class CLIChatSimulator {
       if (callbackData === 'adj_back_items') {
         // Get current state from conversation state store
         const state = await this.#conversationStateStore?.get(conversationId);
-        const daysAgo = state?.data?.daysAgo;
+        const daysAgo = state?.getFlowValue('daysAgo');
         
         this.#presenter.printSystemMessage(`[Back to items: daysAgo=${daysAgo}, messageId=${messageId}]`);
         
@@ -960,7 +953,7 @@ export class CLIChatSimulator {
         const offset = parseInt(callbackData.replace('adj_page_', ''), 10);
         // Re-fetch items with new offset
         const state = await this.#conversationStateStore?.get(conversationId);
-        const daysAgo = state?.data?.daysAgo;
+        const daysAgo = state?.getFlowValue('daysAgo');
         if (daysAgo !== undefined) {
           const useCase = container.getSelectDateForAdjustment();
           await useCase.execute({ userId, conversationId, messageId, daysAgo, offset });
@@ -1346,12 +1339,23 @@ export class CLIChatSimulator {
   /**
    * Handle text message
    * @private
+   * @param {string} botName
+   * @param {string} text
+   * @param {Object} [options]
+   * @param {boolean} [options.skipUserPrint] - Skip printing user message (for voice flow)
+   * @param {boolean} [options.skipHistory] - Skip adding to history (for voice flow)
    */
-  async #handleTextMessage(botName, text) {
-    this.#presenter.printUserMessage(text);
+  async #handleTextMessage(botName, text, options = {}) {
+    const { skipUserPrint = false, skipHistory = false } = options;
+    
+    if (!skipUserPrint) {
+      this.#presenter.printUserMessage(text);
+    }
     
     // Add to history
-    this.#session.addToHistory({ role: 'user', type: 'text', content: text });
+    if (!skipHistory) {
+      this.#session.addToHistory({ role: 'user', type: 'text', content: text });
+    }
 
     // Route to appropriate bot
     const container = this.#containers[botName];
@@ -1367,7 +1371,7 @@ export class CLIChatSimulator {
         
         // Check for revision mode
         const state = await this.#conversationStateStore?.get(conversationId);
-        if (state?.flow === 'revision') {
+        if (state?.activeFlow === 'revision') {
           const handled = await this.#handleRevisionInput(container, text);
           if (handled) return;
         }
@@ -1637,12 +1641,12 @@ export class CLIChatSimulator {
     
     // Get revision state
     const state = await this.#conversationStateStore?.get(conversationId);
-    if (!state || state.flow !== 'revision') {
+    if (!state || state.activeFlow !== 'revision') {
       return false; // Not in revision mode
     }
 
-    const logUuid = state.pendingLogUuid;
-    const revisionMsgId = state.revisionMessageId;
+    const logUuid = state.getFlowValue('pendingLogUuid');
+    const revisionMsgId = state.getFlowValue('revisionMessageId');
 
     // Get the original log
     const nutriLog = await this.#nutrilogRepository.findByUuid(logUuid);
@@ -1756,13 +1760,13 @@ User revision: "${text}"`;
     try {
       // Get the current state to find the pending log
       const state = await this.#conversationStateStore?.get(conversationId);
-      if (!state || state.flow !== 'upc_portion' || !state.pendingLogUuid) {
+      if (!state || state.activeFlow !== 'upc_portion' || !state.getFlowValue('pendingLogUuid')) {
         this.#logger.warn('handleUPCPortionSelection.noState', { state });
         this.#presenter.printWarning('No pending UPC selection. Please scan again.');
         return;
       }
 
-      const logUuid = state.pendingLogUuid;
+      const logUuid = state.getFlowValue('pendingLogUuid');
       const portionFactor = parseFloat(portionStr);
 
       if (isNaN(portionFactor) || portionFactor <= 0) {
@@ -2008,16 +2012,152 @@ User revision: "${text}"`;
   }
 
   /**
-   * Handle voice message (simulated)
+   * Handle voice message (audio file or simulated transcript)
    * @private
+   * @param {string} botName
+   * @param {Object|string} voiceData - { path, sourceType: 'file' } or { transcript } or string transcript
    */
-  async #handleVoiceMessage(botName, transcript) {
+  async #handleVoiceMessage(botName, voiceData) {
+    // Handle legacy string input (simulated transcript)
+    if (typeof voiceData === 'string') {
+      voiceData = { transcript: voiceData };
+    }
+
+    // If it's an audio file, transcribe it first
+    if (voiceData.path && voiceData.sourceType === 'file') {
+      this.#presenter.printUserMessage(`[Voice: ${voiceData.path}]`);
+      
+      const conversationId = this.#session.getConversationId();
+      
+      // Show transcription status
+      const { messageId: statusMsgId } = await this.#messagingGateway.sendMessage(
+        conversationId,
+        '🎙️ Transcribing audio...',
+        {}
+      );
+
+      try {
+        const transcript = await this.#transcribeAudioFile(voiceData.path);
+        
+        if (!transcript) {
+          await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+          this.#presenter.printError('Failed to transcribe audio');
+          return;
+        }
+
+        // Update status message with transcription (keep visible)
+        await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
+          text: `🎙️ "${transcript}"`,
+        });
+        
+        this.#session.addToHistory({ role: 'user', type: 'voice', content: transcript });
+        
+        // Process as text - will create NEW message for analyzing → food list
+        // Skip printing user message and history (already done above)
+        await this.#handleTextMessage(botName, transcript, { skipUserPrint: true, skipHistory: true });
+      } catch (error) {
+        await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+        this.#presenter.printError(`Transcription failed: ${error.message}`);
+      }
+      return;
+    }
+
+    // Simulated transcript (from [voice:...] syntax)
+    const transcript = voiceData.transcript;
     this.#presenter.printUserMessage(`[Voice: "${transcript}"]`);
-    
     this.#session.addToHistory({ role: 'user', type: 'voice', content: transcript });
 
     // Voice messages are just text messages with the transcript
     await this.#handleTextMessage(botName, transcript);
+  }
+
+  /**
+   * Transcribe audio file using OpenAI Whisper
+   * @private
+   * @param {string} filePath - Path to audio file
+   * @returns {Promise<string|null>} - Transcribed text or null on error
+   */
+  async #transcribeAudioFile(filePath) {
+    const fs = await import('fs');
+    const pathModule = await import('path');
+    
+    // Resolve relative paths
+    const resolvedPath = pathModule.resolve(filePath);
+    
+    this.#logger.debug('transcribeAudio.start', { filePath: resolvedPath });
+
+    // Check if file exists
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error(`Audio file not found: ${resolvedPath}`);
+    }
+
+    // Get the AI gateway for transcription
+    const container = this.#containers.nutribot;
+    if (!container) {
+      throw new Error('NutriBot container not available for transcription');
+    }
+
+    const aiGateway = container.getAIGateway();
+    if (!aiGateway?.transcribe) {
+      throw new Error('AI Gateway does not support transcription');
+    }
+
+    // Read file and transcribe
+    const audioBuffer = fs.readFileSync(resolvedPath);
+    const transcript = await aiGateway.transcribe(audioBuffer, {
+      filename: pathModule.basename(resolvedPath),
+    });
+
+    this.#logger.debug('transcribeAudio.complete', { transcript: transcript?.substring(0, 50) });
+    return transcript;
+  }
+
+  /**
+   * Handle text message with custom icon (for voice transcripts)
+   * @private
+   * @param {string} botName
+   * @param {string} text
+   * @param {string} icon - Custom icon for status message
+   * @param {string} [existingMessageId] - Existing message ID to reuse (for voice flow)
+   */
+  async #handleTextMessageWithIcon(botName, text, icon, existingMessageId) {
+    // Similar to handleTextMessage but with custom icon for status message
+    const container = this.#containers[botName];
+    if (!container) {
+      this.#presenter.printError(`Bot ${botName} not available`);
+      return;
+    }
+
+    try {
+      if (botName === 'nutribot') {
+        const conversationId = this.#session.getConversationId();
+        
+        // Check for revision mode first
+        const state = await this.#conversationStateStore?.get(conversationId);
+        if (state?.activeFlow === 'revision') {
+          const handled = await this.#handleRevisionInput(container, text);
+          if (handled) return;
+        }
+        
+        // Normal food logging with voice icon
+        const useCase = container.getLogFoodFromText();
+        const result = await useCase.execute({
+          userId: this.#session.getUserId(),
+          conversationId,
+          text,
+          statusIcon: icon, // Pass custom icon
+          existingMessageId, // Reuse existing message if provided
+        });
+
+        if (result.success && result.nutrilogUuid) {
+          this.#session.setLastPendingLogUuid(result.nutrilogUuid);
+          this.#session.addPendingLogUuid(result.nutrilogUuid);
+        }
+      }
+    } catch (error) {
+      this.#logger.error('handleTextMessageWithIcon.error', { error: error.message });
+      this.#presenter.printError(`Failed to process: ${error.message}`);
+    }
   }
 
   /**

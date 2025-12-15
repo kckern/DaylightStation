@@ -1,12 +1,16 @@
 /**
  * Telegram Bot API Gateway Implementation
  * @module infrastructure/messaging/TelegramGateway
+ * 
+ * This gateway accepts plain string IDs at its boundary and converts
+ * them internally to Telegram API format. It implements IMessagingGateway.
  */
 
 import axios from 'axios';
 import { MessageId } from '../../domain/value-objects/MessageId.mjs';
 import { ExternalServiceError, RateLimitError } from '../../_lib/errors/index.mjs';
 import { createLogger } from '../../_lib/logging/index.mjs';
+import { IdConverter } from '../../_lib/ids/IdConverter.mjs';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
 
@@ -153,31 +157,109 @@ export class TelegramGateway {
   }
 
   /**
-   * Extract chat parameters from ChatId
+   * Extract Telegram chat_id from various input formats.
+   * Accepts:
+   * - Plain string user ID: "575596036"
+   * - Conversation ID: "telegram:6898194425_575596036"
+   * - Legacy format: "b6898194425_u575596036"
+   * - ChatId value object with .userId property (legacy support)
+   * 
    * @private
-   * @param {import('../../domain/value-objects/ChatId.mjs').ChatId} chatId
-   * @returns {Object}
+   * @param {string|Object} chatIdOrConversationId - Chat identifier in any supported format
+   * @returns {Object} Telegram API params with chat_id
    */
-  #extractChatParams(chatId) {
-    return { chat_id: chatId.userId };
+  #extractChatParams(chatIdOrConversationId) {
+    // Handle ChatId value objects (legacy support)
+    if (chatIdOrConversationId && typeof chatIdOrConversationId === 'object') {
+      if (chatIdOrConversationId.userId) {
+        return { chat_id: chatIdOrConversationId.userId };
+      }
+      if (chatIdOrConversationId.identifier) {
+        return { chat_id: IdConverter.getUserId(chatIdOrConversationId.identifier) };
+      }
+      throw new Error('Invalid chatId object: missing userId or identifier');
+    }
+
+    // Handle string formats
+    if (typeof chatIdOrConversationId === 'string') {
+      const userId = IdConverter.getUserId(chatIdOrConversationId);
+      return { chat_id: userId };
+    }
+
+    throw new Error(`Invalid chatId type: ${typeof chatIdOrConversationId}`);
+  }
+
+  /**
+   * Normalize messageId to a number for Telegram API.
+   * Accepts:
+   * - Number
+   * - String number
+   * - MessageId value object
+   * 
+   * @private
+   * @param {number|string|MessageId} messageId
+   * @returns {number}
+   */
+  #normalizeMessageId(messageId) {
+    if (messageId === null || messageId === undefined) {
+      throw new Error('messageId is required');
+    }
+    
+    // MessageId value object
+    if (messageId && typeof messageId === 'object' && typeof messageId.toNumber === 'function') {
+      return messageId.toNumber();
+    }
+    
+    // String or number
+    const num = parseInt(String(messageId), 10);
+    if (isNaN(num)) {
+      throw new Error(`Invalid messageId: ${messageId}`);
+    }
+    return num;
+  }
+
+  /**
+   * Normalize chatId to string for storage/history.
+   * @private
+   * @param {string|Object} chatIdOrConversationId
+   * @returns {string}
+   */
+  #normalizeChatIdForStorage(chatIdOrConversationId) {
+    if (typeof chatIdOrConversationId === 'string') {
+      return chatIdOrConversationId;
+    }
+    if (chatIdOrConversationId && typeof chatIdOrConversationId.toJSON === 'function') {
+      return chatIdOrConversationId.toJSON();
+    }
+    if (chatIdOrConversationId && chatIdOrConversationId.identifier) {
+      return chatIdOrConversationId.identifier;
+    }
+    return String(chatIdOrConversationId);
   }
 
   /**
    * Save message to history
    * @private
+   * @param {string|Object} chatId - Chat identifier
+   * @param {string|number|MessageId} messageId - Message ID
+   * @param {string} text - Message text
+   * @param {string} [foreignKey] - Optional foreign key
    */
   async #saveToHistory(chatId, messageId, text, foreignKey) {
     if (!this.#messageRepository) return;
 
     try {
+      const normalizedChatId = this.#normalizeChatIdForStorage(chatId);
+      const userId = IdConverter.getUserId(normalizedChatId);
+      
       await this.#messageRepository.save({
-        messageId: messageId.toString(),
-        chatId: chatId.toJSON(),
+        messageId: String(messageId),
+        chatId: normalizedChatId,
         text,
         foreignKey,
         timestamp: new Date().toISOString(),
         direction: 'outgoing',
-      }, chatId.userId);
+      }, userId);
     } catch (error) {
       this.#logger.warn('telegram.history.saveError', { error: error.message });
     }
@@ -185,9 +267,15 @@ export class TelegramGateway {
 
   /**
    * Send a text message
-   * @param {import('../../domain/value-objects/ChatId.mjs').ChatId} chatId
-   * @param {string} text
-   * @param {Object} [options]
+   * @param {string|Object} chatId - Chat ID (string, conversationId, or ChatId object)
+   * @param {string} text - Message text
+   * @param {Object} [options] - Send options
+   * @param {string} [options.parseMode] - 'HTML' or 'Markdown'
+   * @param {Array<Array>} [options.choices] - Keyboard buttons
+   * @param {boolean} [options.inline] - Use inline keyboard
+   * @param {boolean} [options.removeKeyboard] - Remove keyboard
+   * @param {boolean} [options.saveMessage] - Save to history (default: true)
+   * @param {string} [options.foreignKey] - Foreign key for history
    * @returns {Promise<{messageId: MessageId}>}
    */
   async sendMessage(chatId, text, options = {}) {
@@ -218,10 +306,10 @@ export class TelegramGateway {
 
   /**
    * Send an image
-   * @param {import('../../domain/value-objects/ChatId.mjs').ChatId} chatId
+   * @param {string|Object} chatId - Chat ID (string, conversationId, or ChatId object)
    * @param {string|Buffer} imageSource - URL, file path, or Buffer
-   * @param {string} [caption]
-   * @param {Object} [options]
+   * @param {string} [caption] - Image caption
+   * @param {Object} [options] - Send options
    * @returns {Promise<{messageId: MessageId}>}
    */
   async sendImage(chatId, imageSource, caption, options = {}) {
@@ -261,15 +349,19 @@ export class TelegramGateway {
 
   /**
    * Update an existing message
-   * @param {import('../../domain/value-objects/ChatId.mjs').ChatId} chatId
-   * @param {MessageId} messageId
-   * @param {Object} updates
+   * @param {string|Object} chatId - Chat ID (string, conversationId, or ChatId object)
+   * @param {string|number|MessageId} messageId - Message ID to update
+   * @param {Object} updates - Updates to apply
+   * @param {string} [updates.text] - New text content
+   * @param {string} [updates.caption] - New caption (for images)
+   * @param {string} [updates.parseMode] - Parse mode
+   * @param {Array<Array>} [updates.choices] - New keyboard
    * @returns {Promise<void>}
    */
   async updateMessage(chatId, messageId, updates) {
     const baseParams = {
       ...this.#extractChatParams(chatId),
-      message_id: messageId.toNumber(),
+      message_id: this.#normalizeMessageId(messageId),
     };
 
     if (updates.text !== undefined) {
@@ -300,15 +392,15 @@ export class TelegramGateway {
 
   /**
    * Update just the keyboard of a message
-   * @param {import('../../domain/value-objects/ChatId.mjs').ChatId} chatId
-   * @param {MessageId} messageId
-   * @param {Array<Array<string|Object>>} choices
+   * @param {string|Object} chatId - Chat ID (string, conversationId, or ChatId object)
+   * @param {string|number|MessageId} messageId - Message ID to update
+   * @param {Array<Array<string|Object>>} choices - New keyboard buttons
    * @returns {Promise<void>}
    */
   async updateKeyboard(chatId, messageId, choices) {
     const params = {
       ...this.#extractChatParams(chatId),
-      message_id: messageId.toNumber(),
+      message_id: this.#normalizeMessageId(messageId),
       reply_markup: this.#buildKeyboard(choices, true),
     };
 
@@ -317,14 +409,15 @@ export class TelegramGateway {
 
   /**
    * Delete a message
-   * @param {import('../../domain/value-objects/ChatId.mjs').ChatId} chatId
-   * @param {MessageId} messageId
+   * @param {string|Object} chatId - Chat ID (string, conversationId, or ChatId object)
+   * @param {string|number|MessageId} messageId - Message ID to delete
    * @returns {Promise<void>}
    */
   async deleteMessage(chatId, messageId) {
+    const normalizedMsgId = this.#normalizeMessageId(messageId);
     const params = {
       ...this.#extractChatParams(chatId),
-      message_id: messageId.toNumber(),
+      message_id: normalizedMsgId,
     };
 
     try {
@@ -334,8 +427,31 @@ export class TelegramGateway {
       if (!error.message?.includes('message to delete not found')) {
         throw error;
       }
-      this.#logger.debug('telegram.deleteMessage.notFound', { messageId: messageId.toString() });
+      this.#logger.debug('telegram.deleteMessage.notFound', { messageId: String(messageId) });
     }
+  }
+
+  /**
+   * Answer a callback query (acknowledge button press)
+   * @param {string} callbackQueryId - Callback query ID from Telegram
+   * @param {Object} [options] - Response options
+   * @param {string} [options.text] - Optional notification text
+   * @param {boolean} [options.showAlert] - Show as alert popup
+   * @returns {Promise<void>}
+   */
+  async answerCallbackQuery(callbackQueryId, options = {}) {
+    const params = {
+      callback_query_id: callbackQueryId,
+    };
+    
+    if (options.text) {
+      params.text = options.text;
+    }
+    if (options.showAlert) {
+      params.show_alert = true;
+    }
+    
+    await this.#callApi('answerCallbackQuery', params);
   }
 
   /**

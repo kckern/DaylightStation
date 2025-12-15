@@ -5,7 +5,9 @@
  * Processes user's revision text and updates the pending log.
  */
 
+import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../../../_lib/logging/index.mjs';
+import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
 
 /**
  * Process revision input use case
@@ -48,11 +50,11 @@ export class ProcessRevisionInput {
         state = await this.#conversationStateStore.get(conversationId);
       }
 
-      if (!state || state.flow !== 'revision') {
+      if (!state || state.activeFlow !== 'revision') {
         return { success: false, error: 'Not in revision mode' };
       }
 
-      const logUuid = state.pendingLogUuid;
+      const logUuid = state.flowState?.pendingLogUuid;
 
       // 2. Delete user's revision message
       if (messageId) {
@@ -96,10 +98,11 @@ export class ProcessRevisionInput {
 
       // 7. Update state back to confirmation
       if (this.#conversationStateStore) {
-        await this.#conversationStateStore.set(conversationId, {
-          flow: 'food_confirmation',
-          pendingLogUuid: logUuid,
+        const newState = ConversationState.create(conversationId, {
+          activeFlow: 'food_confirmation',
+          flowState: { pendingLogUuid: logUuid },
         });
+        await this.#conversationStateStore.set(conversationId, newState);
       }
 
       // 8. Show revised items with buttons
@@ -179,7 +182,7 @@ Respond in JSON format with the COMPLETE revised list:
   }
 
   /**
-   * Parse revision response
+   * Parse revision response and transform to FoodItem format
    * @private
    */
   #parseRevisionResponse(response) {
@@ -187,7 +190,20 @@ Respond in JSON format with the COMPLETE revised list:
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const data = JSON.parse(jsonMatch[0]);
-        return data.items || [];
+        const rawItems = data.items || [];
+        
+        // Transform AI response items into domain FoodItem format
+        return rawItems.map(item => ({
+          id: uuidv4(),
+          label: item.name || item.label || 'Unknown',
+          grams: item.grams || this.#estimateGrams(item),
+          unit: item.unit || 'serving',
+          amount: item.quantity || item.amount || 1,
+          color: this.#normalizeNoomColor(item.noom_color || item.color),
+          // Preserve extra data for display
+          calories: item.calories || 0,
+          icon: item.icon || 'default',
+        }));
       }
       return [];
     } catch (e) {
@@ -197,15 +213,51 @@ Respond in JSON format with the COMPLETE revised list:
   }
 
   /**
+   * Estimate grams from item data
+   * @private
+   */
+  #estimateGrams(item) {
+    if (item.grams) return item.grams;
+    if (item.calories) return Math.round(item.calories / 1.5);
+    
+    const unitDefaults = {
+      'cup': 240,
+      'piece': 50,
+      'slice': 30,
+      'oz': 28,
+      'tbsp': 15,
+      'tsp': 5,
+      'serving': 100,
+    };
+    
+    const unit = (item.unit || 'serving').toLowerCase();
+    const amount = item.quantity || item.amount || 1;
+    return (unitDefaults[unit] || 100) * amount;
+  }
+
+  /**
+   * Normalize Noom color
+   * @private
+   */
+  #normalizeNoomColor(color) {
+    if (!color) return 'yellow';
+    const normalized = color.toLowerCase().trim();
+    if (['green', 'yellow', 'orange', 'red'].includes(normalized)) {
+      return normalized === 'red' ? 'orange' : normalized;
+    }
+    return 'yellow';
+  }
+
+  /**
    * Format food list for display
    * @private
    */
   #formatFoodList(items) {
     return items.map(item => {
-      const qty = item.quantity || 1;
+      const qty = item.amount || item.quantity || 1;
       const unit = item.unit || '';
       const cals = item.calories || 0;
-      return `• ${qty} ${unit} ${item.name} (${cals} cal)`;
+      return `• ${qty} ${unit} ${item.label || item.name} (${cals} cal)`;
     }).join('\n');
   }
 

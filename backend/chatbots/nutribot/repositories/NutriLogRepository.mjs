@@ -84,6 +84,31 @@ export class NutriLogRepository {
   }
 
   /**
+   * Find a NutriLog by UUID (searches all users if userId not provided)
+   * @param {string} uuid - The log UUID
+   * @param {string} [userId] - Optional user ID to search within
+   * @returns {Promise<NutriLog|null>}
+   */
+  async findByUuid(uuid, userId = null) {
+    // If userId is provided, search only that user's logs
+    if (userId) {
+      return this.findById(userId, uuid);
+    }
+    
+    // Otherwise search all - for CLI this is fine since there's typically one user
+    // In production, userId should always be provided
+    const path = this.#getPath('cli-user');
+    const data = loadFile(path) || {};
+    
+    const entity = data[uuid];
+    if (!entity) {
+      return null;
+    }
+
+    return NutriLog.from(entity);
+  }
+
+  /**
    * Find a NutriLog by ID, throwing if not found
    * @param {string} userId
    * @param {string} id
@@ -211,6 +236,68 @@ export class NutriLogRepository {
 
     this.#logger.debug('nutrilog.hardDelete', { path, id });
     return true;
+  }
+
+  /**
+   * Update the status of a NutriLog
+   * @param {string} uuid - The log UUID
+   * @param {string} newStatus - The new status ('pending', 'accepted', 'rejected', 'deleted')
+   * @param {string} [userId='cli-user'] - Optional user ID
+   * @returns {Promise<NutriLog|null>}
+   */
+  async updateStatus(uuid, newStatus, userId = 'cli-user') {
+    const nutriLog = await this.findByUuid(uuid, userId);
+    if (!nutriLog) {
+      this.#logger.warn('nutrilog.updateStatus.notFound', { uuid, userId });
+      return null;
+    }
+
+    // Use the appropriate domain method based on status
+    let updated;
+    switch (newStatus) {
+      case 'accepted':
+        updated = nutriLog.accept();
+        break;
+      case 'rejected':
+      case 'deleted':
+        updated = nutriLog.delete();
+        break;
+      default:
+        // For other statuses, create a new log with updated status
+        updated = NutriLog.from({
+          ...nutriLog.toJSON(),
+          status: newStatus,
+          updatedAt: new Date().toISOString(),
+        });
+    }
+
+    return this.save(updated);
+  }
+
+  /**
+   * Update the items of a NutriLog
+   * @param {string} uuid - The log UUID
+   * @param {Array} items - The new items
+   * @param {string} [userId='cli-user'] - Optional user ID
+   * @returns {Promise<NutriLog|null>}
+   */
+  async updateItems(uuid, items, userId = 'cli-user') {
+    const nutriLog = await this.findByUuid(uuid, userId);
+    if (!nutriLog) {
+      this.#logger.warn('nutrilog.updateItems.notFound', { uuid, userId });
+      return null;
+    }
+
+    // Use the domain method to update items
+    const updated = nutriLog.updateItems(items);
+    
+    this.#logger.debug('nutrilog.updateItems', { 
+      uuid, 
+      oldItemCount: nutriLog.items.length,
+      newItemCount: items.length 
+    });
+
+    return this.save(updated);
   }
 
   /**
