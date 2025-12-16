@@ -12,6 +12,7 @@ import moment from 'moment-timezone';
 import { createNutribotRouter } from './chatbots/nutribot/server.mjs';
 import { NutribotContainer } from './chatbots/nutribot/container.mjs';
 import { getConfigProvider } from './chatbots/_lib/config/index.mjs';
+import { UserResolver } from './chatbots/_lib/users/UserResolver.mjs';
 import { TelegramGateway } from './chatbots/infrastructure/messaging/TelegramGateway.mjs';
 import { OpenAIGateway } from './chatbots/infrastructure/ai/OpenAIGateway.mjs';
 import { RealUPCGateway } from './chatbots/infrastructure/gateways/RealUPCGateway.mjs';
@@ -122,26 +123,55 @@ const initNutribotRouter = async () => {
     try {
         const configProvider = getConfigProvider();
         const nutribotConfig = configProvider.getNutribotConfig();
+        const chatbotsConfig = configProvider.get('chatbots');
         
-        // Create a NutriBotConfig adapter that provides legacy-compatible paths
-        // This bridges the new chatbots framework with the existing db.mjs storage structure
+        // Create UserResolver for username lookups
+        const userResolver = new UserResolver(chatbotsConfig, { logger });
+        
+        // Get storage paths from config
+        const storageConfig = chatbotsConfig?.data?.nutribot || {};
+        const basePath = storageConfig.basePath || 'lifelog/nutrition';
+        const paths = storageConfig.paths || {
+            nutrilog: '{username}/nutrilog',
+            nutrilist: '{username}/nutrilist',
+            nutricursor: '{username}/nutricursor',
+            nutriday: '{username}/nutriday',
+            report_state: '{username}/report_state',
+        };
+        
+        // Create a NutriBotConfig adapter with UserResolver-based paths
         const config = {
             ...nutribotConfig,
-            // Map user IDs to legacy paths like 'journalist/nutribot/nutrilogs/b{botId}_u{chatId}'
+            storage: { basePath, paths },
+            // Path getters that resolve username from conversationId
             getNutrilogPath: (userId) => {
-                // For now, use the legacy chat_id format
-                const chatId = nutribotConfig.legacyChatId || 'b6898194425_u575596036';
-                return `journalist/nutribot/nutrilogs/${chatId}`;
+                const username = userResolver.resolveUsername(userId) || userId;
+                return `${basePath}/${paths.nutrilog.replace('{username}', username)}`;
             },
             getNutrilistPath: (userId) => {
-                const chatId = nutribotConfig.legacyChatId || 'b6898194425_u575596036';
-                return `journalist/nutribot/nutrilists/${chatId}`;
+                const username = userResolver.resolveUsername(userId) || userId;
+                return `${basePath}/${paths.nutrilist.replace('{username}', username)}`;
+            },
+            getNutricursorPath: (userId) => {
+                const username = userResolver.resolveUsername(userId) || userId;
+                return `${basePath}/${paths.nutricursor.replace('{username}', username)}`;
+            },
+            getNutridayPath: (userId) => {
+                const username = userResolver.resolveUsername(userId) || userId;
+                return `${basePath}/${paths.nutriday.replace('{username}', username)}`;
+            },
+            getReportStatePath: (userId) => {
+                const username = userResolver.resolveUsername(userId) || userId;
+                return `${basePath}/${paths.report_state.replace('{username}', username)}`;
             },
             getStatePath: (userId) => {
-                const chatId = nutribotConfig.legacyChatId || 'b6898194425_u575596036';
-                return `journalist/nutribot/nutricursors/${chatId}`;
+                // Alias for conversation state (nutricursor)
+                const username = userResolver.resolveUsername(userId) || userId;
+                return `${basePath}/${paths.nutricursor.replace('{username}', username)}`;
             },
         };
+        
+        logger.info('nutribot.config.paths', { basePath, paths, userCount: userResolver.getAllUsernames().length });
         
         // Create real infrastructure dependencies
         const aiGateway = new OpenAIGateway(
@@ -172,7 +202,8 @@ const initNutribotRouter = async () => {
         });
         
         const conversationStateStore = new FileConversationStateStore({
-            storePath: 'journalist/nutribot/nutricursors',
+            storePath: basePath,
+            userResolver,
             logger
         });
         

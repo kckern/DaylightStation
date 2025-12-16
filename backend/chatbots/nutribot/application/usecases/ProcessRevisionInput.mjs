@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
+import { formatFoodList, formatDateHeader } from '../../domain/formatters.mjs';
 
 /**
  * Process revision input use case
@@ -17,6 +18,7 @@ export class ProcessRevisionInput {
   #aiGateway;
   #nutrilogRepository;
   #conversationStateStore;
+  #config;
   #logger;
 
   constructor(deps) {
@@ -27,7 +29,16 @@ export class ProcessRevisionInput {
     this.#aiGateway = deps.aiGateway;
     this.#nutrilogRepository = deps.nutrilogRepository;
     this.#conversationStateStore = deps.conversationStateStore;
+    this.#config = deps.config;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'nutribot' });
+  }
+
+  /**
+   * Get timezone from config
+   * @private
+   */
+  #getTimezone() {
+    return this.#config?.getDefaultTimezone?.() || this.#config?.weather?.timezone || 'America/Los_Angeles';
   }
 
   /**
@@ -106,18 +117,22 @@ export class ProcessRevisionInput {
       }
 
       // 8. Show revised items with buttons
-      const foodList = this.#formatFoodList(revisedItems);
+      const logDate = nutriLog.meal?.date || nutriLog.date;
+      const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone() }) : '';
+      const foodList = formatFoodList(revisedItems);
       const buttons = this.#buildActionButtons(logUuid);
+      const messageText = dateHeader ? `${dateHeader}\n\n${foodList}` : foodList;
 
       // Update or send new message
-      if (state.originalMessageId) {
-        await this.#messagingGateway.updateMessage(conversationId, state.originalMessageId, {
-          text: `✏️ Revised:\n\n${foodList}`,
+      const originalMessageId = state.getFlowValue?.('originalMessageId') || state.flowState?.originalMessageId;
+      if (originalMessageId) {
+        await this.#messagingGateway.updateMessage(conversationId, originalMessageId, {
+          text: messageText,
           choices: buttons,
           inline: true,
         });
       } else {
-        await this.#messagingGateway.sendMessage(conversationId, `✏️ Revised:\n\n${foodList}`, {
+        await this.#messagingGateway.sendMessage(conversationId, messageText, {
           choices: buttons,
           inline: true,
         });
@@ -152,8 +167,10 @@ export class ProcessRevisionInput {
         role: 'system',
         content: `You are a food log editor. Given the current food items and a revision instruction:
 1. Apply the requested changes
-2. Keep unchanged items as-is
+2. Keep unchanged items as-is (including their noom_color)
 3. Re-estimate macros for any modified items
+4. Assign noom_color for new items: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density)
+5. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes")
 
 Current items:
 ${currentJson}
@@ -162,7 +179,8 @@ Respond in JSON format with the COMPLETE revised list:
 {
   "items": [
     {
-      "name": "food name",
+      "name": "Food Name In Title Case",
+      "noom_color": "green|yellow|orange",
       "quantity": 1,
       "unit": "piece|cup|tbsp|g|oz",
       "grams": 100,
@@ -172,7 +190,12 @@ Respond in JSON format with the COMPLETE revised list:
       "fat": 5
     }
   ]
-}`,
+}
+
+Noom colors:
+- green: lowest calorie density (vegetables, fruits, lean proteins, whole grains)
+- yellow: moderate calorie density (grains, legumes, lean meats, dairy)
+- orange: highest calorie density (nuts, oils, sweets, fried foods, processed foods)`,
       },
       {
         role: 'user',
@@ -246,19 +269,6 @@ Respond in JSON format with the COMPLETE revised list:
       return normalized === 'red' ? 'orange' : normalized;
     }
     return 'yellow';
-  }
-
-  /**
-   * Format food list for display
-   * @private
-   */
-  #formatFoodList(items) {
-    return items.map(item => {
-      const qty = item.amount || item.quantity || 1;
-      const unit = item.unit || '';
-      const cals = item.calories || 0;
-      return `• ${qty} ${unit} ${item.label || item.name} (${cals} cal)`;
-    }).join('\n');
   }
 
   /**

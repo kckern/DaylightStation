@@ -16,6 +16,7 @@ export class ReviseFoodLog {
   #messagingGateway;
   #nutrilogRepository;
   #conversationStateStore;
+  #config;
   #logger;
 
   constructor(deps) {
@@ -24,7 +25,16 @@ export class ReviseFoodLog {
     this.#messagingGateway = deps.messagingGateway;
     this.#nutrilogRepository = deps.nutrilogRepository;
     this.#conversationStateStore = deps.conversationStateStore;
+    this.#config = deps.config;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'nutribot' });
+  }
+
+  /**
+   * Get timezone from config
+   * @private
+   */
+  #getTimezone() {
+    return this.#config?.getDefaultTimezone?.() || this.#config?.weather?.timezone || 'America/Los_Angeles';
   }
 
   /**
@@ -60,7 +70,8 @@ export class ReviseFoodLog {
       }
 
       // 3. Build revision prompt with same format as initial response
-      const dateHeader = nutriLog?.date ? formatDateHeader(nutriLog.date) : '';
+      const logDate = nutriLog?.meal?.date || nutriLog?.date;
+      const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone() }) : '';
       const currentItems = formatFoodList(nutriLog?.items || []);
       const message = `✏️ Revise Entry:\n\n${dateHeader ? dateHeader + '\n\n' : ''}${currentItems || '(none)'}`;
 
@@ -69,14 +80,14 @@ export class ReviseFoodLog {
         await this.#messagingGateway.updateMessage(conversationId, messageId, {
           text: message,
           choices: [
-            [{ text: '❌ Cancel', callback_data: `discard:${logUuid}` }],
+            [{ text: '❌ Cancel', callback_data: `cancel_revision:${logUuid}` }],
           ],
           inline: true,
         });
       } else {
         await this.#messagingGateway.sendMessage(conversationId, message, {
           choices: [
-            [{ text: '❌ Cancel', callback_data: `discard:${logUuid}` }],
+            [{ text: '❌ Cancel', callback_data: `cancel_revision:${logUuid}` }],
           ],
           inline: true,
         });

@@ -20,6 +20,7 @@ export class LogFoodFromImage {
   #aiGateway;
   #nutrilogRepository;
   #conversationStateStore;
+  #config;
   #logger;
 
   constructor(deps) {
@@ -30,7 +31,16 @@ export class LogFoodFromImage {
     this.#aiGateway = deps.aiGateway;
     this.#nutrilogRepository = deps.nutrilogRepository;
     this.#conversationStateStore = deps.conversationStateStore;
+    this.#config = deps.config;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'nutribot' });
+  }
+
+  /**
+   * Get timezone from config
+   * @private
+   */
+  #getTimezone() {
+    return this.#config?.getDefaultTimezone?.() || this.#config?.weather?.timezone || 'America/Los_Angeles';
   }
 
   /**
@@ -172,12 +182,13 @@ export class LogFoodFromImage {
 3. Estimate macros (calories, protein, carbs, fat) and micronutrients (fiber, sugar, sodium, cholesterol) for each item
 4. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density)
 5. Select the best matching icon from this list: ${FOOD_ICONS_STRING}
+6. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes")
 
 Respond in JSON format:
 {
   "items": [
     {
-      "name": "food name",
+      "name": "Food Name In Title Case",
       "icon": "chicken",
       "noom_color": "yellow",
       "quantity": 1,
@@ -291,7 +302,7 @@ Be conservative with estimates. If uncertain, give ranges or note uncertainty.`,
    * @private
    */
   #formatFoodCaption(items, date) {
-    const dateHeader = date ? formatDateHeader(date) : '';
+    const dateHeader = date ? formatDateHeader(date, { timezone: this.#getTimezone() }) : '';
     const foodList = formatFoodList(items);
     return `${dateHeader}\n\n${foodList}`;
   }

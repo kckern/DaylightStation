@@ -12,5 +12,8 @@ export * from './errors/index.mjs';
 // Logging
 export * from './logging/index.mjs';
 
+// Users
+export * from './users/index.mjs';
+
 // Utilities
 export * from './utils/index.mjs';
