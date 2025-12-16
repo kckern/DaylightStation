@@ -7,6 +7,7 @@
  */
 
 import { createLogger } from '../../../_lib/logging/index.mjs';
+import { NOOM_COLOR_EMOJI } from '../../domain/formatters.mjs';
 
 /**
  * @typedef {Object} GenerateDailyReportInput
@@ -138,8 +139,6 @@ export class GenerateDailyReport {
   #buildReportMessage(summary, date) {
     const { logCount, itemCount, totalGrams, colorCounts, gramsByColor } = summary;
 
-    const colorEmojis = { green: '🟢', yellow: '🟡', orange: '🟠' };
-    
     let message = `📊 <b>Nutrition Report for ${date}</b>\n\n`;
     
     message += `📝 <b>Summary:</b>\n`;
@@ -152,7 +151,7 @@ export class GenerateDailyReport {
       const count = colorCounts[color] || 0;
       const grams = gramsByColor[color] || 0;
       if (count > 0) {
-        message += `${colorEmojis[color]} ${color}: ${count} items (${grams}g)\n`;
+        message += `${NOOM_COLOR_EMOJI[color]} ${color}: ${count} items (${grams}g)\n`;
       }
     }
 
