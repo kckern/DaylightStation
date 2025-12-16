@@ -8,6 +8,10 @@
 
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { NOOM_COLOR_EMOJI } from '../../domain/formatters.mjs';
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
+import { loadFile, saveFile } from '../../../../lib/io.mjs';
 
 /**
  * @typedef {Object} GenerateDailyReportInput
@@ -72,6 +76,25 @@ export class GenerateDailyReport {
     this.#logger.debug('report.generate.start', { userId, date, forceRegenerate });
 
     try {
+      // 0. Delete any existing report message (only one report at a time)
+      try {
+        const reportStateFile = `journalist/nutribot/report_state_${userId}`;
+        const reportState = loadFile(reportStateFile) || {};
+        const lastReportMessageId = reportState.lastReportMessageId;
+        
+        this.#logger.debug('report.checkPrevious', { 
+          userId,
+          lastReportMessageId,
+        });
+        
+        if (lastReportMessageId) {
+          this.#logger.debug('report.deletePrevious', { messageId: lastReportMessageId });
+          await this.#messagingGateway.deleteMessage(conversationId, lastReportMessageId);
+        }
+      } catch (e) {
+        this.#logger.warn('report.deletePrevious.error', { error: e.message });
+      }
+
       // 1. Check for pending logs (unless force regenerate)
       if (!forceRegenerate) {
         const pendingLogs = await this.#nutriLogRepository.findPending(userId);
@@ -96,19 +119,110 @@ export class GenerateDailyReport {
         };
       }
 
-      // 4. Build report message
-      const reportMessage = this.#buildReportMessage(summary, date);
-
-      // 5. Send report
-      const { messageId } = await this.#messagingGateway.sendMessage(
+      // 4. Send "Generating..." status message
+      const { messageId: statusMsgId } = await this.#messagingGateway.sendMessage(
         conversationId,
-        reportMessage,
-        { parseMode: 'HTML' }
+        '📊 Generating report...',
+        {}
       );
+
+      // 5. Get items for the report
+      const items = await this.#nutriListRepository.findByDate(userId, date);
+      
+      // 6. Calculate totals
+      const totals = items.reduce((acc, item) => {
+        acc.calories += item.calories || 0;
+        acc.protein += item.protein || 0;
+        acc.carbs += item.carbs || 0;
+        acc.fat += item.fat || 0;
+        return acc;
+      }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+
+      const goals = { calories: 2000, protein: 150, carbs: 200, fat: 65 };
+
+      // 7. Build history for chart (last 7 days)
+      const history = await this.#buildHistory(userId, date);
+
+      // 8. Generate PNG report
+      let pngPath = null;
+      try {
+        const { CanvasReportRenderer } = await import('../../../adapters/http/CanvasReportRenderer.mjs');
+        const canvasRenderer = new CanvasReportRenderer();
+        const pngBuffer = await canvasRenderer.renderDailyReport({
+          date,
+          totals,
+          goals,
+          items,
+          history,
+        });
+        
+        // Save to temp file
+        const tmpDir = path.join(os.tmpdir(), 'nutribot-reports');
+        await fs.mkdir(tmpDir, { recursive: true });
+        const pngFileName = `report-${date}-${Date.now()}.png`;
+        pngPath = path.join(tmpDir, pngFileName);
+        await fs.writeFile(pngPath, pngBuffer);
+        this.#logger.debug('report.png.generated', { path: pngPath });
+      } catch (e) {
+        this.#logger.warn('report.png.failed', { error: e.message });
+      }
+
+      // 9. Delete status message
+      try {
+        await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+      } catch (e) {
+        // Ignore delete errors
+      }
+
+      // 10. Build caption
+      const caption =  `🤖 Coaching tip: Keep up the good work! Stay mindful of portion sizes.`; //Will replace with AI msg
+
+      // 11. Build action buttons
+      const buttons = [
+        [
+          { text: '✏️ Adjust', callback_data: 'report_adjust' },
+          { text: '✅ Accept', callback_data: 'report_accept' },
+        ],
+      ];
+
+      // 12. Send report
+      let messageId;
+      if (pngPath) {
+        // Send as photo with caption and buttons
+        const result = await this.#messagingGateway.sendPhoto(conversationId, pngPath, {
+          caption,
+          choices: buttons,
+          inline: true,
+        });
+        messageId = result.messageId;
+      } else {
+        // Fallback to text message
+        const reportMessage = this.#buildReportMessage(summary, date);
+        const result = await this.#messagingGateway.sendMessage(
+          conversationId,
+          reportMessage,
+          { parseMode: 'HTML', choices: buttons, inline: true }
+        );
+        messageId = result.messageId;
+      }
+
+      // 13. Save report message ID for later deletion
+      if (messageId) {
+        try {
+          const reportStateFile = `journalist/nutribot/report_state_${userId}`;
+          saveFile(reportStateFile, { 
+            lastReportMessageId: messageId.toString(),
+            updatedAt: new Date().toISOString(),
+          });
+          this.#logger.debug('report.saveState', { userId, messageId: messageId.toString() });
+        } catch (e) {
+          this.#logger.warn('report.saveState.error', { error: e.message });
+        }
+      }
 
       this.#logger.info('report.generate.success', { userId, date, messageId, itemCount: summary.itemCount });
 
-      // 6. Check thresholds and trigger coaching if needed
+      // 14. Check thresholds and trigger coaching if needed
       const coachingTriggered = await this.#checkAndTriggerCoaching(userId, conversationId, summary);
 
       return {
@@ -124,11 +238,48 @@ export class GenerateDailyReport {
   }
 
   /**
+   * Build history data for the weekly chart
+   * @private
+   */
+  async #buildHistory(userId, today) {
+    const history = [];
+    for (let i = 6; i >= 1; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      
+      try {
+        const items = await this.#nutriListRepository.findByDate(userId, dateStr);
+        const totalGrams = items.reduce((sum, item) => sum + (item.grams || 0), 0);
+        const totalCalories = items.reduce((sum, item) => sum + (item.calories || 0), 0);
+        history.push({
+          date: dateStr,
+          totalGrams,
+          totalCalories,
+          itemCount: items.length,
+        });
+      } catch (e) {
+        history.push({ date: dateStr, totalGrams: 0, totalCalories: 0, itemCount: 0 });
+      }
+    }
+    return history;
+  }
+
+  /**
    * Get today's date in user's timezone
    * @private
    */
   #getTodayDate(userId) {
-    const timezone = this.#config.getUserTimezone(userId);
+    let timezone = 'America/Los_Angeles';
+    try {
+      if (this.#config?.getUserTimezone) {
+        timezone = this.#config.getUserTimezone(userId);
+      } else if (this.#config?.getDefaultTimezone) {
+        timezone = this.#config.getDefaultTimezone();
+      }
+    } catch (e) {
+      // Use default
+    }
     return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
   }
 

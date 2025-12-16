@@ -21,12 +21,16 @@ export class FileConversationStateStore {
   #storePath;
   #defaultTTL;
   #logger;
+  #userResolver;
+  #pathResolver;
 
   /**
    * @param {Object} options
-   * @param {string} options.storePath - Path relative to data dir
+   * @param {string} options.storePath - Path relative to data dir (base path)
    * @param {number} [options.defaultTTL=3600] - Default TTL in seconds
    * @param {Object} [options.logger] - Logger instance
+   * @param {Object} [options.userResolver] - UserResolver for username lookups
+   * @param {Function} [options.pathResolver] - Custom path resolver function(chatId) => path
    */
   constructor(options) {
     if (!options?.storePath) {
@@ -36,6 +40,8 @@ export class FileConversationStateStore {
     this.#storePath = options.storePath;
     this.#defaultTTL = options.defaultTTL || DEFAULT_TTL_SECONDS;
     this.#logger = options.logger || createLogger({ source: 'state-store', app: 'file' });
+    this.#userResolver = options.userResolver || null;
+    this.#pathResolver = options.pathResolver || null;
   }
 
   /**
@@ -46,6 +52,21 @@ export class FileConversationStateStore {
    */
   #getPath(chatId) {
     const id = chatId instanceof ChatId ? chatId.toString() : ChatId.from(chatId).toString();
+    
+    // Use custom path resolver if provided
+    if (this.#pathResolver) {
+      return this.#pathResolver(id);
+    }
+    
+    // Use UserResolver to get username-based path
+    if (this.#userResolver) {
+      const username = this.#userResolver.resolveUsername(id);
+      if (username) {
+        return `${this.#storePath}/${username}/nutricursor`;
+      }
+    }
+    
+    // Fallback to chat ID based path
     return `${this.#storePath}/${id}`;
   }
 

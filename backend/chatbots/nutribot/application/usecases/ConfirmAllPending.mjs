@@ -45,11 +45,6 @@ export class ConfirmAllPending {
       const pendingLogs = await this.#nutriLogRepository.findPending(userId);
 
       if (pendingLogs.length === 0) {
-        await this.#messagingGateway.sendMessage(
-          conversationId,
-          '✅ No pending logs to confirm',
-          {}
-        );
         return { success: true, confirmed: 0 };
       }
 

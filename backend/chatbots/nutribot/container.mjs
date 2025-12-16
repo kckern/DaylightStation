@@ -210,12 +210,12 @@ export class NutribotContainer {
 
   getAcceptFoodLog() {
     if (!this.#acceptFoodLog) {
-      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#acceptFoodLog = new AcceptFoodLog({
         messagingGateway: this.getMessagingGateway(),
         nutrilogRepository: this.#nutrilogRepository,
         nutrilistRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
+        generateDailyReport: this.getGenerateDailyReport(),
         logger: this.#logger,
       });
     }
@@ -432,8 +432,10 @@ export class NutribotContainer {
     if (!this.#confirmAllPending) {
       this.#confirmAllPending = new ConfirmAllPending({
         messagingGateway: this.getMessagingGateway(),
-        nutrilogRepository: this.#nutrilogRepository,
-        acceptFoodLog: this.getAcceptFoodLog(),
+        nutriLogRepository: this.#nutrilogRepository,
+        nutriListRepository: this.#nutrilistRepository,
+        generateDailyReport: this.getGenerateDailyReport(),
+        config: this.#config,
         logger: this.#logger,
       });
     }

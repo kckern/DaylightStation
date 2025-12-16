@@ -75,6 +75,7 @@ export class AcceptFoodLog {
         
         const listItems = nutriLog.items.map(item => ({
           ...item,
+          userId,
           chatId: conversationId,
           logUuid: logUuid,
           date: logDate,
@@ -87,30 +88,26 @@ export class AcceptFoodLog {
         await this.#conversationStateStore.delete(conversationId);
       }
 
-      // 6. Delete the confirmation message
+      // 6. Update message to show accepted status (remove buttons, replace clock with checkmark)
       if (messageId) {
         try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
+          // Build the updated message with checkmark instead of clock
+          const { formatFoodList, formatDateHeader } = await import('../../domain/formatters.mjs');
+          const logDate = nutriLog.meal?.date || nutriLog.date;
+          // Use formatDateHeader but replace the clock emoji with checkmark
+          const dateHeader = logDate ? formatDateHeader(logDate).replace('🕒', '✅') : '';
+          const foodList = formatFoodList(nutriLog.items || []);
+          
+          const acceptedText = `${dateHeader}\n\n${foodList}`;
+          
+          await this.#messagingGateway.updateMessage(conversationId, messageId, {
+            text: acceptedText,
+            choices: [], // Remove buttons
+            inline: true,
+          });
         } catch (e) {
-          // Ignore
+          this.#logger.warn('acceptLog.updateMessageFailed', { error: e.message });
         }
-      }
-
-      // 7. Generate daily report
-      if (this.#generateDailyReport) {
-        await this.#generateDailyReport.execute({
-          userId,
-          conversationId,
-        });
-      } else {
-        // Simple confirmation
-        const itemCount = nutriLog.items?.length || 0;
-        const totalCals = nutriLog.items?.reduce((sum, i) => sum + (i.calories || 0), 0) || 0;
-        await this.#messagingGateway.sendMessage(
-          conversationId,
-          `✅ Logged ${itemCount} item${itemCount !== 1 ? 's' : ''} (${totalCals} cal)`,
-          {}
-        );
       }
 
       this.#logger.info('acceptLog.complete', { 
@@ -118,6 +115,25 @@ export class AcceptFoodLog {
         logUuid,
         itemCount: nutriLog.items?.length || 0,
       });
+
+      // 7. If no pending logs remain, auto-generate today's report
+      if (this.#nutrilogRepository?.findPending && this.#generateDailyReport) {
+        try {
+          const pending = await this.#nutrilogRepository.findPending(userId);
+          if (pending.length === 0) {
+            this.#logger.debug('acceptLog.autoreport.start', { userId, conversationId });
+            await this.#generateDailyReport.execute({
+              userId,
+              conversationId,
+              date: nutriLog.meal?.date || nutriLog.date,
+              forceRegenerate: true,
+            });
+            this.#logger.debug('acceptLog.autoreport.done', { userId, conversationId });
+          }
+        } catch (e) {
+          this.#logger.warn('acceptLog.autoreport.error', { error: e.message });
+        }
+      }
 
       return {
         success: true,

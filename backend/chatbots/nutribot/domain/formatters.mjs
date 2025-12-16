@@ -36,22 +36,40 @@ export function getTimeOfDay(hour) {
 }
 
 /**
+ * Get current hour in a specific timezone
+ * @param {string} timezone - IANA timezone string (e.g., 'America/Los_Angeles')
+ * @returns {number} Hour of day (0-23)
+ */
+export function getCurrentHourInTimezone(timezone) {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', { 
+    timeZone: timezone, 
+    hour: 'numeric', 
+    hour12: false 
+  });
+  return parseInt(timeStr, 10);
+}
+
+/**
  * Format date header for display
  * Format: "🕒 Tue, 11 Nov 2025 evening"
  * @param {string} date - Date string YYYY-MM-DD
- * @param {string} [timeOfDay] - Optional time of day override
+ * @param {Object} [options] - Options
+ * @param {string} [options.timeOfDay] - Optional time of day override
+ * @param {string} [options.timezone] - Timezone for current time (default: America/Los_Angeles)
  * @returns {string} Formatted date header
  */
-export function formatDateHeader(date, timeOfDay) {
+export function formatDateHeader(date, options = {}) {
+  const { timeOfDay, timezone = 'America/Los_Angeles' } = options;
   const logDate = new Date(date + 'T12:00:00');
   
   // Format: "Tue, 11 Nov 2025"
-  const dayName = logDate.toLocaleDateString('en-US', { weekday: 'short' });
+  const dayName = logDate.toLocaleDateString('en-US', { weekday: 'short', timeZone: timezone });
   const day = logDate.getDate();
-  const month = logDate.toLocaleDateString('en-US', { month: 'short' });
+  const month = logDate.toLocaleDateString('en-US', { month: 'short', timeZone: timezone });
   const year = logDate.getFullYear();
   
-  const time = timeOfDay || getTimeOfDay(new Date().getHours());
+  const time = timeOfDay || getTimeOfDay(getCurrentHourInTimezone(timezone));
   
   return `🕒 ${dayName}, ${day} ${month} ${year} ${time}`;
 }
@@ -64,8 +82,14 @@ export function formatDateHeader(date, timeOfDay) {
 export function formatFoodItem(item) {
   const color = getNoomColorEmoji(item.color || item.noom_color);
   const name = item.label || item.name || 'Unknown';
-  const amount = item.grams || item.amount || item.quantity || '';
-  const unit = item.unit || (item.grams ? 'g' : '');
+  // Prefer grams when available, rounding to avoid false precision
+  if (item.grams) {
+    const gramsRounded = Math.max(1, Math.round(item.grams / 5) * 5);
+    return `${color} ${name} ${gramsRounded}g`;
+  }
+
+  const amount = item.amount || item.quantity || '';
+  const unit = item.unit || '';
   const amountStr = amount ? ` ${amount}${unit}` : '';
   return `${color} ${name}${amountStr}`;
 }
@@ -84,6 +108,7 @@ export default {
   NOOM_COLOR_EMOJI,
   getNoomColorEmoji,
   getTimeOfDay,
+  getCurrentHourInTimezone,
   formatDateHeader,
   formatFoodItem,
   formatFoodList,
