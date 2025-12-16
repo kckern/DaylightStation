@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../_lib/logging/index.mjs';
+import { NOOM_COLOR_EMOJI } from '../../domain/formatters.mjs';
 
 /**
  * Select item for adjustment use case
@@ -101,9 +102,8 @@ export class SelectItemForAdjustment {
    * @private
    */
   #buildItemDetailMessage(item, date) {
-    const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' };
     const color = item.noom_color || item.color;
-    const emoji = colorEmoji[color] || '⚪';
+    const emoji = NOOM_COLOR_EMOJI[color] || '⚪';
     const name = item.name || item.label || 'Unknown';
 
     return `${emoji} <b>${name}</b>\n\n` +
