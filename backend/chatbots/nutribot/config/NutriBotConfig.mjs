@@ -11,6 +11,7 @@ import { ConversationId } from '../../domain/value-objects/ChatId.mjs';
 import { loadConfig } from '../../_lib/config/ConfigLoader.mjs';
 import { ValidationError, NotFoundError } from '../../_lib/errors/index.mjs';
 import { TestContext } from '../../_lib/testing/TestContext.mjs';
+import { UserResolver } from '../../_lib/users/UserResolver.mjs';
 
 /**
  * Validate NutriBot configuration
@@ -64,6 +65,9 @@ export class NutriBotConfig {
   /** @type {object} */
   #config;
   
+  /** @type {UserResolver} */
+  #userResolver;
+  
   /** @type {Map<string, object>} */
   #conversationToUser = new Map();
   
@@ -72,8 +76,9 @@ export class NutriBotConfig {
 
   /**
    * @param {object} config - Validated configuration object
+   * @param {UserResolver} [userResolver] - User resolver for username lookups
    */
-  constructor(config) {
+  constructor(config, userResolver = null) {
     // Validate config
     const result = validateConfig(config);
     if (!result.valid) {
@@ -83,6 +88,7 @@ export class NutriBotConfig {
     }
 
     this.#config = config;
+    this.#userResolver = userResolver;
     this.#buildUserMappings();
     
     Object.freeze(this);
@@ -245,39 +251,116 @@ export class NutriBotConfig {
   getUserTimezone(userId) {
     const conversations = this.#userToConversations.get(userId);
     if (!conversations || conversations.length === 0) {
-      return 'America/Los_Angeles'; // Default
+      return this.getDefaultTimezone();
     }
     
     // Get from first conversation mapping
     const convKey = conversations[0].conversationId.toString();
     const mapping = this.#conversationToUser.get(convKey);
-    return mapping?.timezone || 'America/Los_Angeles';
+    return mapping?.timezone || this.getDefaultTimezone();
+  }
+
+  /**
+   * Get default timezone from config (weather.timezone)
+   * @returns {string}
+   */
+  getDefaultTimezone() {
+    return this.#config.weather?.timezone || 'America/Los_Angeles';
   }
 
   // ==================== Storage Paths ====================
 
   /**
+   * Resolve a userId/conversationId to a username
+   * @private
+   * @param {string} userId - Conversation ID or username
+   * @returns {string} - Username
+   */
+  #resolveUsername(userId) {
+    // If already a simple username (no colons or underscores with 'b' prefix)
+    if (!userId.includes(':') && !userId.startsWith('b')) {
+      return userId;
+    }
+    
+    // Try UserResolver
+    if (this.#userResolver) {
+      const username = this.#userResolver.resolveUsername(userId);
+      if (username) return username;
+    }
+    
+    // Fallback: try to find in our conversation mappings
+    const mapping = this.#conversationToUser.get(userId);
+    if (mapping?.systemUser) {
+      return mapping.systemUser;
+    }
+    
+    // Last resort: return as-is (for CLI or testing)
+    return userId;
+  }
+
+  /**
+   * Get storage path for a specific path type
+   * @param {string} pathType - 'nutrilog', 'nutrilist', 'nutricursor', etc.
+   * @param {string} userId - Conversation ID or username
+   * @returns {string}
+   */
+  getStoragePath(pathType, userId) {
+    const username = this.#resolveUsername(userId);
+    const template = this.#config.storage.paths[pathType];
+    
+    if (!template) {
+      throw new Error(`Unknown storage path type: ${pathType}`);
+    }
+    
+    const basePath = `${this.#config.storage.basePath}/${template.replace('{username}', username)}`;
+    return TestContext.transformPath(basePath);
+  }
+
+  /**
    * Get the nutrilog path for a user
    * Automatically applies test prefix if in test mode
-   * @param {string} userId
+   * @param {string} userId - Conversation ID or username
    * @returns {string}
    */
   getNutrilogPath(userId) {
-    const template = this.#config.storage.paths.nutrilog;
-    const basePath = `${this.#config.storage.basePath}/${template.replace('{userId}', userId)}`;
-    return TestContext.transformPath(basePath);
+    return this.getStoragePath('nutrilog', userId);
   }
 
   /**
    * Get the nutrilist path for a user
    * Automatically applies test prefix if in test mode
-   * @param {string} userId
+   * @param {string} userId - Conversation ID or username
    * @returns {string}
    */
   getNutrilistPath(userId) {
-    const template = this.#config.storage.paths.nutrilist;
-    const basePath = `${this.#config.storage.basePath}/${template.replace('{userId}', userId)}`;
-    return TestContext.transformPath(basePath);
+    return this.getStoragePath('nutrilist', userId);
+  }
+
+  /**
+   * Get the nutricursor path for a user
+   * @param {string} userId - Conversation ID or username
+   * @returns {string}
+   */
+  getNutricursorPath(userId) {
+    return this.getStoragePath('nutricursor', userId);
+  }
+
+  /**
+   * Get the nutriday path for a user
+   * @param {string} userId - Conversation ID or username
+   * @returns {string}
+   */
+  getNutridayPath(userId) {
+    return this.getStoragePath('nutriday', userId);
+  }
+
+  /**
+   * Get the report state path for a user
+   * @param {string} userId - Conversation ID or username
+   * @returns {string}
+   */
+  getReportStatePath(userId) {
+    return this.getStoragePath('report_state', userId);
   }
 
   /**

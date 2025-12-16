@@ -93,7 +93,7 @@ export class NutriListRepository {
     if (!newItems || newItems.length === 0) return;
     
     // Get userId from first item
-    const userId = newItems[0].userId || 'cli-user';
+    const userId = newItems[0].userId || newItems[0].chatId || 'cli-user';
     const path = this.#getPath(userId);
 
     this.#logger.debug('nutrilist.saveMany', { path, count: newItems.length });
@@ -166,6 +166,17 @@ export class NutriListRepository {
   async findByLogId(userId, logId) {
     const items = await this.findAll(userId);
     return items.filter(item => item.logId === logId);
+  }
+
+  /**
+   * Get items by date
+   * @param {string} userId
+   * @param {string} date - Date in YYYY-MM-DD format
+   * @returns {Promise<Object[]>}
+   */
+  async findByDate(userId, date) {
+    const items = await this.findAll(userId);
+    return items.filter(item => item.date === date);
   }
 
   /**

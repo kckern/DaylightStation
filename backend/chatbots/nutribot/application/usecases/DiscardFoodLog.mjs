@@ -49,7 +49,7 @@ export class DiscardFoodLog {
         await this.#conversationStateStore.delete(conversationId);
       }
 
-      // 3. Delete the confirmation message
+      // 3. Delete the confirmation message (serves as visual confirmation of discard)
       if (messageId) {
         try {
           await this.#messagingGateway.deleteMessage(conversationId, messageId);
@@ -57,13 +57,6 @@ export class DiscardFoodLog {
           // Ignore delete errors
         }
       }
-
-      // 4. Send brief confirmation
-      await this.#messagingGateway.sendMessage(
-        conversationId,
-        '🗑️ Discarded.',
-        {}
-      );
 
       this.#logger.info('discardLog.complete', { conversationId, logUuid });
 

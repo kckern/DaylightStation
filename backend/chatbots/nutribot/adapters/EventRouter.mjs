@@ -172,7 +172,7 @@ export class NutribotEventRouter {
    * @private
    */
   async #handleText(chatId, text, messageId, from) {
-    this.#logger.debug('router.text', { chatId, textLength: text.length });
+    this.#logger.debug('router.text', { chatId, text, textLength: text.length });
 
     const conversationId = this.#buildConversationId(chatId);
 
@@ -180,9 +180,10 @@ export class NutribotEventRouter {
     const conversationStateStore = this.#container.getConversationStateStore();
     const state = await conversationStateStore.get(conversationId);
     
-    // CRITICAL DEBUG: Log state lookup result
-    this.#logger.info('router.text.stateLookup', {
+    // DEBUG: Log state lookup result with text content
+    this.#logger.debug('router.text.stateLookup', {
       conversationId,
+      text,
       hasState: !!state,
       activeFlow: state?.activeFlow || 'none',
       hasPendingLogUuid: !!state?.flowState?.pendingLogUuid,
@@ -190,7 +191,7 @@ export class NutribotEventRouter {
 
     // Check activeFlow (not flow) and flowState.pendingLogUuid - matches what ReviseFoodLog sets
     if (state?.activeFlow === 'revision' && state?.flowState?.pendingLogUuid) {
-      this.#logger.info('router.text.revisionDetected', { logUuid: state.flowState.pendingLogUuid });
+      this.#logger.info('router.text.revisionDetected', { logUuid: state.flowState.pendingLogUuid, text });
       const useCase = this.#container.getProcessRevisionInput();
       return useCase.execute({
         userId: chatId,
@@ -201,6 +202,7 @@ export class NutribotEventRouter {
     }
 
     // Regular food logging
+    this.#logger.debug('router.text.foodLogging', { conversationId, text });
     const useCase = this.#container.getLogFoodFromText();
     return useCase.execute({
       userId: chatId,
@@ -217,10 +219,64 @@ export class NutribotEventRouter {
   async #handleVoice(chatId, voice, messageId, from) {
     this.#logger.debug('router.voice', { chatId, duration: voice.duration });
 
+    const conversationId = this.#buildConversationId(chatId);
+
+    // Check conversation state for revision mode (same as text handler)
+    const conversationStateStore = this.#container.getConversationStateStore();
+    const state = await conversationStateStore.get(conversationId);
+
+    this.#logger.info('router.voice.stateLookup', {
+      conversationId,
+      hasState: !!state,
+      activeFlow: state?.activeFlow || 'none',
+      hasPendingLogUuid: !!state?.flowState?.pendingLogUuid,
+    });
+
+    // If in revision mode, transcribe first then process as revision
+    if (state?.activeFlow === 'revision' && state?.flowState?.pendingLogUuid) {
+      this.#logger.info('router.voice.revisionDetected', { logUuid: state.flowState.pendingLogUuid });
+      
+      // Need to transcribe voice first
+      const messagingGateway = this.#container.getMessagingGateway();
+      
+      // Delete original voice message
+      if (messageId) {
+        try {
+          await messagingGateway.deleteMessage(conversationId, messageId);
+        } catch (e) {
+          // Ignore delete errors
+        }
+      }
+
+      // Transcribe
+      let transcription;
+      if (messagingGateway.transcribeVoice) {
+        transcription = await messagingGateway.transcribeVoice(voice.file_id);
+      }
+
+      if (!transcription || transcription.trim().length === 0) {
+        await messagingGateway.sendMessage(
+          conversationId,
+          '❓ I couldn\'t understand the voice message. Please type your revision.',
+          {}
+        );
+        return { success: false, error: 'Empty transcription' };
+      }
+
+      // Process as revision
+      const useCase = this.#container.getProcessRevisionInput();
+      return useCase.execute({
+        userId: chatId,
+        conversationId,
+        text: transcription,
+      });
+    }
+
+    // Regular voice food logging
     const useCase = this.#container.getLogFoodFromVoice();
     return useCase.execute({
       userId: chatId,
-      conversationId: this.#buildConversationId(chatId),
+      conversationId,
       voiceData: { fileId: voice.file_id },
       messageId,
     });
@@ -276,6 +332,56 @@ export class NutribotEventRouter {
         });
       }
 
+      case 'cancel_revision': {
+        // Cancel revision mode - restore original message with Accept/Revise/Discard buttons
+        const logUuid = params[0];
+        const conversationId = this.#buildConversationId(chatId);
+        
+        // Clear revision state
+        const conversationStateStore = this.#container.getConversationStateStore();
+        const { ConversationState } = await import('../../domain/entities/ConversationState.mjs');
+        const newState = ConversationState.create(conversationId, {
+          activeFlow: 'food_confirmation',
+          flowState: { pendingLogUuid: logUuid },
+        });
+        await conversationStateStore.set(conversationId, newState);
+
+        // Get the log to rebuild the message
+        const nutrilogRepository = this.#container.getNutrilogRepository();
+        const nutriLog = await nutrilogRepository.findByUuid(logUuid);
+        
+        if (!nutriLog) {
+          this.#logger.warn('router.cancelRevision.logNotFound', { logUuid });
+          return { success: false, error: 'Log not found' };
+        }
+
+        // Rebuild the original message
+        const { formatFoodList, formatDateHeader } = await import('../domain/formatters.mjs');
+        const config = this.#container.getConfig?.();
+        const timezone = config?.getDefaultTimezone?.() || config?.weather?.timezone || 'America/Los_Angeles';
+        
+        const logDate = nutriLog.meal?.date || nutriLog.date;
+        const dateHeader = logDate ? formatDateHeader(logDate, { timezone }) : '';
+        const foodList = formatFoodList(nutriLog.items || []);
+        const messageText = dateHeader ? `${dateHeader}\n\n${foodList}` : foodList;
+
+        const messagingGateway = this.#container.getMessagingGateway();
+        await messagingGateway.updateMessage(conversationId, messageId, {
+          text: messageText,
+          choices: [
+            [
+              { text: '✅ Accept', callback_data: `accept:${logUuid}` },
+              { text: '✏️ Revise', callback_data: `revise:${logUuid}` },
+              { text: '🗑️ Discard', callback_data: `discard:${logUuid}` },
+            ],
+          ],
+          inline: true,
+        });
+
+        this.#logger.info('router.cancelRevision.complete', { conversationId, logUuid });
+        return { success: true };
+      }
+
       case 'portion': {
         const factor = parseFloat(params[0]) || 1;
         const useCase = this.#container.getSelectUPCPortion();
@@ -327,6 +433,31 @@ export class NutribotEventRouter {
         });
       }
 
+      case 'report_adjust': {
+        // Start adjustment flow from report
+        const useCase = this.#container.getStartAdjustmentFlow();
+        return useCase.execute({
+          userId: chatId,
+          conversationId: this.#buildConversationId(chatId),
+          messageId,
+        });
+      }
+
+      case 'report_accept': {
+        // Accept report - just remove the buttons
+        const messagingGateway = this.#container.getMessagingGateway();
+        await messagingGateway.updateMessage(
+          this.#buildConversationId(chatId),
+          messageId,
+          {
+            choices: [], // Remove buttons
+            inline: true,
+          }
+        );
+        this.#logger.info('router.reportAccept', { chatId, messageId });
+        return { success: true };
+      }
+
       default:
         this.#logger.warn('router.unknownCallback', { chatId, action, data });
         return;
@@ -339,21 +470,45 @@ export class NutribotEventRouter {
    */
   async #handleCommand(chatId, command, messageId) {
     const cmd = command.slice(1).toLowerCase().split(/\s+/)[0];
-    this.#logger.debug('router.command', { chatId, command: cmd });
+    this.#logger.debug('router.command', { chatId, command: cmd, messageId });
+
+    // Delete the command message
+    const conversationId = this.#buildConversationId(chatId);
+    if (messageId) {
+      try {
+        const messagingGateway = this.#container.getMessagingGateway();
+        await messagingGateway.deleteMessage(conversationId, messageId);
+        this.#logger.debug('router.command.deleted', { chatId, messageId });
+      } catch (e) {
+        this.#logger.warn('router.command.deleteFailed', { chatId, messageId, error: e.message });
+      }
+    }
 
     switch (cmd) {
       case 'help':
       case 'start': {
         const useCase = this.#container.getHandleHelpCommand();
-        return useCase.execute({ conversationId: this.#buildConversationId(chatId) });
+        return useCase.execute({ conversationId });
       }
 
       case 'report': {
-        const useCase = this.#container.getGenerateDailyReport();
-        return useCase.execute({
+        // Auto-accept all pending logs and generate report
+        const confirmUseCase = this.#container.getConfirmAllPending();
+        const confirmResult = await confirmUseCase.execute({
           userId: chatId,
-          conversationId: this.#buildConversationId(chatId),
+          conversationId,
         });
+        
+        // If nothing was confirmed, still try to generate report for today
+        if (confirmResult.confirmed === 0) {
+          const reportUseCase = this.#container.getGenerateDailyReport();
+          return reportUseCase.execute({
+            userId: chatId,
+            conversationId,
+            forceRegenerate: true,
+          });
+        }
+        return confirmResult;
       }
 
       case 'review':
@@ -361,7 +516,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getStartAdjustmentFlow();
         return useCase.execute({
           userId: chatId,
-          conversationId: this.#buildConversationId(chatId),
+          conversationId,
         });
       }
 
@@ -369,7 +524,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getGenerateOnDemandCoaching();
         return useCase.execute({
           userId: chatId,
-          conversationId: this.#buildConversationId(chatId),
+          conversationId,
         });
       }
 
@@ -377,7 +532,7 @@ export class NutribotEventRouter {
         const useCase = this.#container.getConfirmAllPending();
         return useCase.execute({
           userId: chatId,
-          conversationId: this.#buildConversationId(chatId),
+          conversationId,
         });
       }
 

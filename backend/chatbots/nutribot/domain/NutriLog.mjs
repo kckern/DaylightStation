@@ -304,6 +304,26 @@ export class NutriLog {
     return this.setItems(items);
   }
 
+  /**
+   * Update the date and optionally time
+   * @param {string} date - Date in YYYY-MM-DD format
+   * @param {string} [time] - Time of day (morning, afternoon, evening, night)
+   * @returns {NutriLog}
+   */
+  updateDate(date, time) {
+    const json = this.toJSON();
+    return new NutriLog({
+      ...json,
+      date,
+      meal: {
+        ...json.meal,
+        date,
+        ...(time ? { time } : {}),
+      },
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   // ==================== Other Updates ====================
 
   /**

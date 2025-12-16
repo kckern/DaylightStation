@@ -66,17 +66,21 @@ users:
 # ---------------------
 storage:
   # Base data directory (relative to process.env.path.data)
-  basePath: "nutribot"
+  basePath: "lifelog/nutrition"
   
-  # Per-user data paths
+  # Per-user data paths (use {username} placeholder)
   paths:
-    nutrilog: "{userId}/nutrilog.yml"      # Individual meal logs
-    nutrilist: "{userId}/nutrilist.yml"    # Denormalized item list
-    preferences: "{userId}/preferences.yml" # User preferences
+    nutrilog: "{username}/nutrilog"        # Individual meal logs
+    nutrilist: "{username}/nutrilist"      # Denormalized item list for reporting
+    nutricursor: "{username}/nutricursor"  # Conversation state
+    nutriday: "{username}/nutriday"        # Daily aggregates cache
+    nutricoach: "{username}/nutricoach"    # Coaching/tips state
+    report_state: "{username}/report_state" # Last report message ID
+    images: "{username}/images"            # Uploaded food photos
 
-  # Legacy path pattern (for migration)
+  # Legacy path pattern (disable after migration)
   legacy:
-    enabled: true
+    enabled: false
     pattern: "journalist/nutribot/nutrilogs/b{botId}_u{chatId}.yaml"
 
 # AI Configuration

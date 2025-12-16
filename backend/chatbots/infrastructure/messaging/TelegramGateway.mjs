@@ -7,6 +7,9 @@
  */
 
 import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import FormData from 'form-data';
 import { MessageId } from '../../domain/value-objects/MessageId.mjs';
 import { ExternalServiceError, RateLimitError } from '../../_lib/errors/index.mjs';
 import { createLogger } from '../../_lib/logging/index.mjs';
@@ -313,38 +316,92 @@ export class TelegramGateway {
    * @returns {Promise<{messageId: MessageId}>}
    */
   async sendImage(chatId, imageSource, caption, options = {}) {
-    const params = {
-      ...this.#extractChatParams(chatId),
-    };
+    const chatParams = this.#extractChatParams(chatId);
 
     // Determine how to send the photo
     if (Buffer.isBuffer(imageSource)) {
-      // For buffers, we need to use multipart form data
-      // For now, throw an error - implement FormData upload later
-      throw new Error('Buffer image upload not yet implemented');
-    } else if (imageSource.startsWith('http')) {
-      params.photo = imageSource;
+      // Buffer - upload via FormData
+      const form = new FormData();
+      form.append('chat_id', chatParams.chat_id);
+      form.append('photo', imageSource, { filename: 'photo.png', contentType: 'image/png' });
+      if (caption) form.append('caption', caption);
+      if (options.parseMode) form.append('parse_mode', options.parseMode);
+      if (options.choices) {
+        form.append('reply_markup', JSON.stringify(this.#buildKeyboard(options.choices, options.inline)));
+      }
+      
+      const url = `${TELEGRAM_API_BASE}${this.#token}/sendPhoto`;
+      const response = await axios.post(url, form, {
+        headers: form.getHeaders(),
+      });
+      
+      if (!response.data.ok) {
+        throw new ExternalServiceError('Telegram API error', { response: response.data });
+      }
+      
+      const messageId = MessageId.from(response.data.result.message_id);
+      return { messageId };
+      
+    } else if (imageSource.startsWith && imageSource.startsWith('http')) {
+      // URL - pass directly
+      const params = {
+        ...chatParams,
+        photo: imageSource,
+      };
+      if (caption) params.caption = caption;
+      if (options.parseMode) params.parse_mode = options.parseMode;
+      if (options.choices) {
+        params.reply_markup = this.#buildKeyboard(options.choices, options.inline);
+      }
+      
+      const result = await this.#callApi('sendPhoto', params);
+      const messageId = MessageId.from(result.message_id);
+      return { messageId };
+      
+    } else if (typeof imageSource === 'string' && fs.existsSync(imageSource)) {
+      // Local file path - upload via FormData
+      const form = new FormData();
+      form.append('chat_id', chatParams.chat_id);
+      form.append('photo', fs.createReadStream(imageSource), {
+        filename: path.basename(imageSource),
+        contentType: 'image/png',
+      });
+      if (caption) form.append('caption', caption);
+      if (options.parseMode) form.append('parse_mode', options.parseMode);
+      if (options.choices) {
+        form.append('reply_markup', JSON.stringify(this.#buildKeyboard(options.choices, options.inline)));
+      }
+      
+      const url = `${TELEGRAM_API_BASE}${this.#token}/sendPhoto`;
+      this.#logger.debug('telegram.api.uploadPhoto', { path: imageSource });
+      const response = await axios.post(url, form, {
+        headers: form.getHeaders(),
+      });
+      
+      if (!response.data.ok) {
+        this.#logger.error('telegram.api.error', { method: 'sendPhoto', error: response.data });
+        throw new ExternalServiceError('Telegram API error', { response: response.data });
+      }
+      
+      this.#logger.debug('telegram.api.response', { method: 'sendPhoto', success: true });
+      const messageId = MessageId.from(response.data.result.message_id);
+      return { messageId };
+      
     } else {
-      // File path - Telegram can fetch from URL, but local files need upload
-      throw new Error('Local file upload not yet implemented');
+      throw new Error(`Invalid image source: ${typeof imageSource}`);
     }
+  }
 
-    if (caption) {
-      params.caption = caption;
-    }
-
-    if (options.parseMode) {
-      params.parse_mode = options.parseMode;
-    }
-
-    if (options.choices) {
-      params.reply_markup = this.#buildKeyboard(options.choices, options.inline);
-    }
-
-    const result = await this.#callApi('sendPhoto', params);
-    const messageId = MessageId.from(result.message_id);
-
-    return { messageId };
+  /**
+   * Send a photo (alias for sendImage)
+   * @param {string|Object} chatId - Chat ID
+   * @param {string|Buffer} photo - URL, file path, or Buffer
+   * @param {Object} [options] - Send options
+   * @param {string} [options.caption] - Image caption
+   * @returns {Promise<{messageId: MessageId}>}
+   */
+  async sendPhoto(chatId, photo, options = {}) {
+    return this.sendImage(chatId, photo, options.caption, options);
   }
 
   /**

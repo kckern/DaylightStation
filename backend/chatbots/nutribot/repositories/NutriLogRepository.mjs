@@ -137,7 +137,21 @@ export class NutriLogRepository {
     const path = this.#getPath(userId);
     const data = loadFile(path) || {};
 
-    let logs = Object.values(data).map(entity => NutriLog.from(entity));
+    let logs = Object.values(data)
+      .map(entity => {
+        try {
+          // Check if it's legacy format (has food_data) or new format (has meal)
+          if (entity.food_data && !entity.meal) {
+            return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId);
+          }
+          return NutriLog.from(entity);
+        } catch (e) {
+          // Skip invalid entries
+          this.#logger.warn('nutrilog.skipInvalid', { id: entity.id || entity.uuid, error: e.message });
+          return null;
+        }
+      })
+      .filter(Boolean); // Remove nulls
 
     // Apply filters
     if (options.status) {
