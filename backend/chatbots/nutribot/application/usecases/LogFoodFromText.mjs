@@ -10,6 +10,7 @@ import { createLogger } from '../../../_lib/logging/index.mjs';
 import { FOOD_ICONS_STRING } from '../constants/foodIcons.mjs';
 import { NutriLog } from '../../domain/NutriLog.mjs';
 import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
+import { formatFoodList, formatDateHeader } from '../../domain/formatters.mjs';
 
 /**
  * Get current time details for date context in prompts
@@ -153,12 +154,12 @@ export class LogFoodFromText {
       }
 
       // 8. Update message with date header, food list, and buttons
-      const dateHeader = this.#formatDateHeader(logDate);
+      const dateHeader = formatDateHeader(logDate);
       const foodList = this.#formatFoodList(foodItems);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
       await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
-        text: `📝 ${dateHeader}\n\n${foodList}`,
+        text: `${dateHeader}\n\n${foodList}`,
         choices: buttons,
         inline: true,
       });
@@ -333,29 +334,7 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
    * @private
    */
   #formatDateHeader(date) {
-    const { today } = getCurrentTimeDetails();
-    
-    // Parse the date
-    const logDate = new Date(date + 'T12:00:00');
-    const todayDate = new Date(today + 'T12:00:00');
-    
-    // Calculate days difference
-    const diffTime = todayDate.getTime() - logDate.getTime();
-    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-    
-    // Format the date nicely
-    const options = { weekday: 'long', month: 'short', day: 'numeric' };
-    const formattedDate = logDate.toLocaleDateString('en-US', options);
-    
-    if (diffDays === 0) {
-      return `Today (${formattedDate})`;
-    } else if (diffDays === 1) {
-      return `Yesterday (${formattedDate})`;
-    } else if (diffDays > 1 && diffDays <= 7) {
-      return `${formattedDate} (${diffDays} days ago)`;
-    } else {
-      return formattedDate;
-    }
+    return formatDateHeader(date);
   }
 
   /**
@@ -363,20 +342,7 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
    * @private
    */
   #formatFoodList(items) {
-    const colorEmoji = {
-      green: '🟢',
-      yellow: '🟡',
-      orange: '🟠',
-    };
-    
-    return items.map(item => {
-      const qty = item.amount || item.quantity || 1;
-      const unit = item.unit || '';
-      const cals = item.calories || 0;
-      const color = colorEmoji[item.color] || colorEmoji[item.noom_color] || '⚪';
-      const name = item.label || item.name || 'Unknown';
-      return `${color} ${qty} ${unit} ${name} (${cals} cal)`;
-    }).join('\n');
+    return formatFoodList(items);
   }
 
   /**
@@ -489,7 +455,7 @@ User revision: "${text}"`;
     const buttons = this.#buildActionButtons(newLog.uuid);
 
     await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
-      text: `📝 ${dateHeader}\n\n${foodList}`,
+      text: `${dateHeader}\n\n${foodList}`,
       choices: buttons,
       inline: true,
     });

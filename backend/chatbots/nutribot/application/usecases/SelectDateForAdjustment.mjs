@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../_lib/logging/index.mjs';
+import { NOOM_COLOR_EMOJI } from '../../domain/formatters.mjs';
 
 /**
  * @typedef {Object} SelectDateForAdjustmentInput
@@ -159,11 +160,10 @@ export class SelectDateForAdjustment {
     // Sort by calories descending
     const sortedItems = [...items].sort((a, b) => (b.calories || 0) - (a.calories || 0));
     const pageItems = sortedItems.slice(offset, offset + pageSize);
-    const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' };
 
     // Item buttons (1 per row for better readability)
     for (const item of pageItems) {
-      const emoji = colorEmoji[item.noom_color || item.color] || '⚪';
+      const emoji = NOOM_COLOR_EMOJI[item.noom_color || item.color] || '⚪';
       const name = item.name || item.label || 'Item';
       const cal = item.calories || 0;
       const grams = item.grams || 0;

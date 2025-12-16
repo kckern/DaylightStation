@@ -10,6 +10,7 @@ import { createLogger } from '../../../_lib/logging/index.mjs';
 import { FOOD_ICONS_STRING } from '../constants/foodIcons.mjs';
 import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
 import NutriLog from '../../domain/NutriLog.mjs';
+import { formatFoodList, formatDateHeader } from '../../domain/formatters.mjs';
 
 /**
  * Log food from image use case
@@ -126,7 +127,7 @@ export class LogFoodFromImage {
       }
 
       // 9. Send image message with food list as caption and buttons
-      const caption = this.#formatFoodCaption(foodItems);
+      const caption = this.#formatFoodCaption(foodItems, nutriLog.date || today);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
       const { messageId: photoMsgId } = await this.#messagingGateway.sendPhoto(
@@ -289,19 +290,10 @@ Be conservative with estimates. If uncertain, give ranges or note uncertainty.`,
    * Format food caption for image message (with icons and colors)
    * @private
    */
-  #formatFoodCaption(items) {
-    const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' };
-    const totalCal = items.reduce((sum, i) => sum + (i.calories || 0), 0);
-    
-    const lines = items.map(item => {
-      const emoji = colorEmoji[item.noom_color] || '⚪';
-      const qty = item.quantity || 1;
-      const unit = item.unit || '';
-      const cals = item.calories || 0;
-      return `${emoji} ${qty} ${unit} ${item.name} (${cals} cal)`;
-    });
-    
-    return `📸 Detected ${items.length} item${items.length !== 1 ? 's' : ''} (${totalCal} cal total)\n\n${lines.join('\n')}`;
+  #formatFoodCaption(items, date) {
+    const dateHeader = date ? formatDateHeader(date) : '';
+    const foodList = formatFoodList(items);
+    return `${dateHeader}\n\n${foodList}`;
   }
 
   /**

@@ -7,6 +7,7 @@
 
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
+import { formatFoodList, formatDateHeader } from '../../domain/formatters.mjs';
 
 /**
  * Revise food log use case
@@ -58,27 +59,10 @@ export class ReviseFoodLog {
         await this.#conversationStateStore.set(conversationId, state);
       }
 
-      // 3. Build revision prompt
-      let currentItems = '';
-      if (nutriLog?.items?.length > 0) {
-        currentItems = nutriLog.items.map(item => {
-          const qty = item.amount || item.quantity || 1;
-          const unit = item.unit || '';
-          const name = item.label || item.name || 'Unknown';
-          return `• ${qty} ${unit} ${name}`;
-        }).join('\n');
-      }
-
-      const message = `✏️ **Revision Mode**
-
-Current items:
-${currentItems || '(none)'}
-
-Reply with corrections, for example:
-• "remove the apple"
-• "change chicken to 200g"
-• "add 2 tbsp olive oil"
-• "it was actually a turkey sandwich"`;
+      // 3. Build revision prompt with same format as initial response
+      const dateHeader = nutriLog?.date ? formatDateHeader(nutriLog.date) : '';
+      const currentItems = formatFoodList(nutriLog?.items || []);
+      const message = `✏️ Revise Entry:\n\n${dateHeader ? dateHeader + '\n\n' : ''}${currentItems || '(none)'}`;
 
       // 4. Update the message or send new one
       if (messageId) {
