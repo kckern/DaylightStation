@@ -118,8 +118,10 @@ export class NutriListRepository {
     }
 
     // Transform new items to legacy format for consistency
+    // Generate UUID if not present to ensure all items are identifiable
+    const { v4: uuidv4 } = await import('uuid');
     const transformedItems = newItems.map(item => ({
-      uuid: item.id || item.uuid,
+      uuid: item.id || item.uuid || uuidv4(),
       icon: item.icon || 'default',
       item: item.label || item.item || item.name || 'Unknown',
       unit: item.unit || 'g',

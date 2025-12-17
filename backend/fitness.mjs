@@ -3,6 +3,9 @@ import { loadFile, saveFile } from './lib/io.mjs';
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
+import { userService } from './lib/config/UserService.mjs';
+import { configService } from './lib/config/ConfigService.mjs';
+import { userDataService } from './lib/config/UserDataService.mjs';
 
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -143,11 +146,39 @@ const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPE
 
 const fitnessRouter = express.Router();
 
-// Fitness config endpoint
+/**
+ * Load fitness config from household-scoped path with legacy fallback
+ * @param {string} householdId - Household ID (defaults to system default)
+ * @returns {object|null} Fitness config
+ */
+const loadFitnessConfig = (householdId) => {
+    const hid = householdId || configService.getDefaultHouseholdId();
+    
+    // Try household-scoped path first
+    const householdConfig = userDataService.readHouseholdAppData(hid, 'fitness', 'config');
+    if (householdConfig) {
+        return householdConfig;
+    }
+    
+    // Fall back to legacy global path
+    console.warn(`[fitness] Household config not found for '${hid}', falling back to legacy fitness/config`);
+    return loadFile('fitness/config');
+};
+
+// Fitness config endpoint - hydrates primary users from profiles
+// Supports ?household=<id> query param for household selection
 fitnessRouter.get('/', (req, res) => {
-    const fitnessData = loadFile('fitness/config');
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const fitnessData = loadFitnessConfig(householdId);
     if(!fitnessData) return res.status(404).json({ error: 'Fitness configuration not found' });
-    res.json(fitnessData);
+    
+    // Hydrate users: primary users are resolved from profile files
+    const hydratedData = userService.hydrateFitnessConfig(fitnessData, householdId);
+    
+    // Include household info in response
+    hydratedData._household = householdId;
+    
+    res.json(hydratedData);
 });
 
 

@@ -1,6 +1,8 @@
 import { getNutriDaysBack, loadDailyNutrition } from "../journalist/lib/db.mjs";
 import { compileDailyFoodReport } from "../journalist/lib/food.mjs";
 import { loadFile, saveFile } from "./io.mjs";
+import { userDataService } from "./config/UserDataService.mjs";
+import { configService } from "./config/ConfigService.mjs";
 import moment from "moment";
 import crypto from "crypto";
 import { load } from "js-yaml";
@@ -8,6 +10,13 @@ import { generateCoachingMessageForDailyHealth } from "../journalist/lib/gpt_foo
 import { createLogger } from "./logging/logger.js";
 
 const healthLogger = createLogger({ source: 'backend', app: 'health' });
+
+// Get default username for legacy single-user access
+const getDefaultUsername = () => {
+  const profiles = configService.getAllUserProfiles();
+  if (profiles.size > 0) return Array.from(profiles.keys())[0];
+  return 'kckern';
+};
 
 function md5(string) {
     string = string.toString(); 
@@ -25,10 +34,13 @@ const dailyHealth = async (jobId) => {
     }
     
     await compileDailyFoodReport(nutribot_chat_id);
-    const weight = loadFile('lifelog/weight') || {};
-    const strava = loadFile('lifelog/strava') || {};
+    
+    // Use UserDataService with fallback to legacy paths
+    const username = getDefaultUsername();
+    const weight = userDataService.getLifelogData(username, 'weight') || loadFile('lifelog/weight') || {};
+    const strava = userDataService.getLifelogData(username, 'strava') || loadFile('lifelog/strava') || {};
     const dailyNutrition = getNutriDaysBack(nutribot_chat_id,30);
-    const fitness = loadFile('lifelog/fitness') || {};
+    const fitness = userDataService.getLifelogData(username, 'fitness') || loadFile('lifelog/fitness') || {};
 
     const past90Days = Array.from({length: 30}, (_, i) => 
         moment().subtract(i + 1, 'days').format('YYYY-MM-DD')

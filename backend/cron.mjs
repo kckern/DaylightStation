@@ -98,18 +98,18 @@ function computeNextRun(job, fromMoment) {
 
 // Helper function to safely load cron config with backup fallback
 const loadCronConfig = () => {
-  let cronJobs = loadFile("config/cron");
+  let cronJobs = loadFile("state/cron");
   
   // If cron config is corrupt, empty, or not an array, try to load backup
   if (!cronJobs || !Array.isArray(cronJobs) || cronJobs.length === 0) {
  //   console.warn("Main cron config is empty or corrupt, attempting to load backup...");
-    const cronBackup = loadFile("config/cron_bak");
+    const cronBackup = loadFile("state/cron_bak");
     
     if (cronBackup && Array.isArray(cronBackup) && cronBackup.length > 0) {
    //   console.log("Successfully loaded cron backup, restoring main config...");
       cronJobs = cronBackup;
       // Restore the main config file from backup
-      saveFile("config/cron", cronJobs);
+      saveFile("state/cron", cronJobs);
     } else {
     //  console.error("Both main cron config and backup are unavailable or corrupt.");
       return [];
@@ -123,7 +123,7 @@ const loadCronConfig = () => {
 const backupCronConfig = (cronJobs) => {
   if (Array.isArray(cronJobs) && cronJobs.length > 0) {
     try {
-      saveFile("config/cron_bak", cronJobs);
+      saveFile("state/cron_bak", cronJobs);
     //  console.log(`Cron config backed up with ${cronJobs.length} jobs`);
     } catch (error) {
     //  console.error("Failed to backup cron config:", error);
@@ -222,7 +222,7 @@ export const cronContinuous = async () => {
       job.error = "Invalid cron_tab";
     }
   }
-  saveFile("config/cron", cronJobs);
+  saveFile("state/cron", cronJobs);
   
   // Create backup after successful execution if there are jobs
   backupCronConfig(cronJobs);

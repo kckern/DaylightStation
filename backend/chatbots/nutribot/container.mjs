@@ -269,12 +269,12 @@ export class NutribotContainer {
 
   getSelectUPCPortion() {
     if (!this.#selectUPCPortion) {
-      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#selectUPCPortion = new SelectUPCPortion({
         messagingGateway: this.getMessagingGateway(),
         nutrilogRepository: this.#nutrilogRepository,
         nutrilistRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
+        generateDailyReport: this.getGenerateDailyReport(),
         logger: this.#logger,
       });
     }

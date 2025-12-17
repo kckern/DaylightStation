@@ -1,6 +1,9 @@
 import express from 'express';
 import fs from 'fs';
+import path from 'path';
 import { loadFile, saveFile } from './lib/io.mjs';
+import { configService } from './lib/config/ConfigService.mjs';
+import { userDataService } from './lib/config/UserDataService.mjs';
 import { broadcastToWebsockets } from './websocket.js';
 import { v4 as uuidv4 } from 'uuid';
 import moment from 'moment-timezone';
@@ -11,43 +14,81 @@ const gratitudeRouter = express.Router();
 const CATEGORIES = ['gratitude', 'hopes'];
 const isValidCategory = (c) => CATEGORIES.includes(String(c || '').toLowerCase());
 
+/**
+ * Get household ID from request or default
+ */
+const getHouseholdId = (req) => req.query.household || configService.getDefaultHouseholdId();
+
+/**
+ * Read array from household shared path with legacy fallback
+ */
+const readHouseholdArray = (householdId, key) => {
+    // Try household path first
+    const data = userDataService.readHouseholdSharedData(householdId, `gratitude/${key}`);
+    if (data !== null) {
+        return Array.isArray(data) ? data : [];
+    }
+    // Fallback to legacy
+    const legacyData = loadFile(`gratitude/${key}`);
+    return Array.isArray(legacyData) ? legacyData : [];
+};
+
+/**
+ * Write array to household shared path (also writes to legacy for now)
+ */
+const writeHouseholdArray = (householdId, key, arr) => {
+    const data = Array.isArray(arr) ? arr : [];
+    // Write to household path
+    userDataService.writeHouseholdSharedData(householdId, `gratitude/${key}`, data);
+    // Also write to legacy path during migration
+    saveFile(`gratitude/${key}`, data);
+};
+
+// Legacy helpers (for backwards compatibility during migration)
 const readArray = (key) => {
     const data = loadFile(key);
     return Array.isArray(data) ? data : [];
 };
 
-const getUsers = () => readArray('gratitude/users');
-const setUsers = (arr) => saveFile('gratitude/users', Array.isArray(arr) ? arr : []);
+const getUsers = (hid) => readHouseholdArray(hid, 'users');
+const setUsers = (hid, arr) => writeHouseholdArray(hid, 'users', arr);
 
-const getOptions = (category) => readArray(`gratitude/options.${category}`);
-const setOptions = (category, arr) => saveFile(`gratitude/options.${category}`, Array.isArray(arr) ? arr : []);
+const getOptions = (hid, category) => readHouseholdArray(hid, `options.${category}`);
+const setOptions = (hid, category, arr) => writeHouseholdArray(hid, `options.${category}`, arr);
 
+// Selections and discarded stay global for now (contain userId field)
 const getSelections = (category) => readArray(`gratitude/selections.${category}`);
 const setSelections = (category, arr) => saveFile(`gratitude/selections.${category}`, Array.isArray(arr) ? arr : []);
 
 const getDiscarded = (category) => readArray(`gratitude/discarded.${category}`);
 const setDiscarded = (category, arr) => saveFile(`gratitude/discarded.${category}`, Array.isArray(arr) ? arr : []);
 
-// Users
+// Users - now household-scoped
 gratitudeRouter.get('/users', (req, res) => {
-    res.json({ users: getUsers() });
+    const hid = getHouseholdId(req);
+    res.json({ users: getUsers(hid), _household: hid });
 });
 
-// Options
+// Options - now household-scoped
 gratitudeRouter.get('/options', (req, res) => {
-    res.json({ options: {
-        gratitude: getOptions('gratitude'),
-        hopes: getOptions('hopes')
-    }});
+    const hid = getHouseholdId(req);
+    res.json({ 
+        options: {
+            gratitude: getOptions(hid, 'gratitude'),
+            hopes: getOptions(hid, 'hopes')
+        },
+        _household: hid
+    });
 });
 
 gratitudeRouter.get('/options/:category', (req, res) => {
+    const hid = getHouseholdId(req);
     const category = String(req.params.category || '').toLowerCase();
     if (!isValidCategory(category)) return res.status(400).json({ error: 'Invalid category' });
-    res.json({ items: getOptions(category) });
+    res.json({ items: getOptions(hid, category), _household: hid });
 });
 
-// Selections (CRUD)
+// Selections (CRUD) - global but will filter/write by userId
 // GET selections for a category
 gratitudeRouter.get('/selections/:category', (req, res) => {
     const category = String(req.params.category || '').toLowerCase();
@@ -57,6 +98,7 @@ gratitudeRouter.get('/selections/:category', (req, res) => {
 
 // POST create selection: body { userId, item: { id, text } }
 gratitudeRouter.post('/selections/:category', (req, res) => {
+    const hid = getHouseholdId(req);
     const category = String(req.params.category || '').toLowerCase();
     if (!isValidCategory(category)) return res.status(400).json({ error: 'Invalid category' });
     const { userId, item } = req.body || {};
@@ -77,10 +119,10 @@ gratitudeRouter.post('/selections/:category', (req, res) => {
     const updatedSelections = [entry, ...selections];
     setSelections(category, updatedSelections);
 
-    // Remove from options if exists (transfer semantics)
-    const opts = getOptions(category);
+    // Remove from options if exists (transfer semantics) - household-scoped
+    const opts = getOptions(hid, category);
     const newOpts = opts.filter((o) => o.id !== item.id);
-    if (newOpts.length !== opts.length) setOptions(category, newOpts);
+    if (newOpts.length !== opts.length) setOptions(hid, category, newOpts);
 
     res.status(201).json({ selection: entry });
 });
@@ -107,6 +149,7 @@ gratitudeRouter.get('/discarded/:category', (req, res) => {
 
 // POST discard an option item: body { item: { id, text } }
 gratitudeRouter.post('/discarded/:category', (req, res) => {
+    const hid = getHouseholdId(req);
     const category = String(req.params.category || '').toLowerCase();
     if (!isValidCategory(category)) return res.status(400).json({ error: 'Invalid category' });
     const { item } = req.body || {};
@@ -119,20 +162,21 @@ gratitudeRouter.post('/discarded/:category', (req, res) => {
         discarded.unshift(item);
         setDiscarded(category, discarded);
     }
-    // Remove from options if exists
-    const opts = getOptions(category);
+    // Remove from options if exists - household-scoped
+    const opts = getOptions(hid, category);
     const newOpts = opts.filter((o) => o.id !== item.id);
-    if (newOpts.length !== opts.length) setOptions(category, newOpts);
+    if (newOpts.length !== opts.length) setOptions(hid, category, newOpts);
     res.status(201).json({ item });
 });
 
-// Bootstrap endpoint to fetch everything at once
+// Bootstrap endpoint to fetch everything at once - now household-aware
 gratitudeRouter.get('/bootstrap', (req, res) => {
+    const hid = getHouseholdId(req);
     res.json({
-        users: getUsers(),
+        users: getUsers(hid),
         options: {
-            gratitude: getOptions('gratitude'),
-            hopes: getOptions('hopes'),
+            gratitude: getOptions(hid, 'gratitude'),
+            hopes: getOptions(hid, 'hopes'),
         },
         selections: {
             gratitude: getSelections('gratitude'),
@@ -142,79 +186,105 @@ gratitudeRouter.get('/bootstrap', (req, res) => {
             gratitude: getDiscarded('gratitude'),
             hopes: getDiscarded('hopes'),
         },
+        _household: hid,
     });
 });
 
-// Snapshot utilities
-const SNAPSHOT_DIR = 'gratitude/snapshots';
-const ensureSnapshotDir = () => {
-    const abs = `${process.env.path.data}/${SNAPSHOT_DIR}`;
-    if (!fs.existsSync(abs)) fs.mkdirSync(abs, { recursive: true });
+// Snapshot utilities - now household-scoped
+const getSnapshotDir = (householdId) => {
+    const hid = householdId || configService.getDefaultHouseholdId();
+    return userDataService.getHouseholdSharedPath(hid, 'gratitude/snapshots');
 };
 
-const makeSnapshotPayload = () => ({
-    id: uuidv4(),
-    createdAt: new Date().toISOString(),
-    users: getUsers(),
-    options: {
-        gratitude: getOptions('gratitude'),
-        hopes: getOptions('hopes'),
-    },
-    selections: {
-        gratitude: getSelections('gratitude'),
-        hopes: getSelections('hopes'),
-    },
-    discarded: {
-        gratitude: getDiscarded('gratitude'),
-        hopes: getDiscarded('hopes'),
-    },
-});
+const ensureSnapshotDir = (householdId) => {
+    const dir = getSnapshotDir(householdId);
+    if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+};
 
-// POST /snapshot/save -> save snapshot file
+const makeSnapshotPayload = (householdId) => {
+    const hid = householdId || configService.getDefaultHouseholdId();
+    return {
+        id: uuidv4(),
+        householdId: hid,
+        createdAt: new Date().toISOString(),
+        users: getUsers(hid),
+        options: {
+            gratitude: getOptions(hid, 'gratitude'),
+            hopes: getOptions(hid, 'hopes'),
+        },
+        selections: {
+            gratitude: getSelections('gratitude'),
+            hopes: getSelections('hopes'),
+        },
+        discarded: {
+            gratitude: getDiscarded('gratitude'),
+            hopes: getDiscarded('hopes'),
+        },
+    };
+};
+
+// POST /snapshot/save -> save snapshot file (household-scoped)
 gratitudeRouter.post('/snapshot/save', (req, res) => {
     try {
-        ensureSnapshotDir();
-        const snap = makeSnapshotPayload();
+        const hid = getHouseholdId(req);
+        const snapshotDir = ensureSnapshotDir(hid);
+        if (!snapshotDir) {
+            return res.status(500).json({ error: 'Failed to resolve snapshot directory' });
+        }
+        const snap = makeSnapshotPayload(hid);
         const stamp = moment().format('YYYYMMDD_HHmmss');
-        const fileKey = `${SNAPSHOT_DIR}/${stamp}_${snap.id}`; // no .yaml for saveFile (it adds)
-        saveFile(fileKey, snap);
-        res.status(201).json({ id: snap.id, createdAt: snap.createdAt, file: `${fileKey}.yaml` });
+        const filename = `${stamp}_${snap.id}.yaml`;
+        const filePath = path.join(snapshotDir, filename);
+        fs.writeFileSync(filePath, require('js-yaml').dump(snap), 'utf8');
+        res.status(201).json({ id: snap.id, createdAt: snap.createdAt, file: filename, _household: hid });
     } catch (e) {
         console.error('Failed to save snapshot:', e);
         res.status(500).json({ error: 'Failed to save snapshot' });
     }
 });
 
-// GET /snapshot/list -> return list of available snapshots
+// GET /snapshot/list -> return list of available snapshots (household-scoped)
 gratitudeRouter.get('/snapshot/list', (req, res) => {
     try {
-        ensureSnapshotDir();
-        const dir = `${process.env.path.data}/${SNAPSHOT_DIR}`;
-        const files = fs.readdirSync(dir).filter(f => f.endsWith('.yaml') && !f.startsWith('._'));
+        const hid = getHouseholdId(req);
+        const snapshotDir = ensureSnapshotDir(hid);
+        if (!snapshotDir || !fs.existsSync(snapshotDir)) {
+            return res.json({ snapshots: [], _household: hid });
+        }
+        const files = fs.readdirSync(snapshotDir).filter(f => f.endsWith('.yaml') && !f.startsWith('._'));
+        const yaml = require('js-yaml');
         const snapshots = files.map(f => {
-            // Try to read createdAt, id from file; fallback to filename
-            const data = loadFile(`${SNAPSHOT_DIR}/${f.replace(/\.yaml$/, '')}`) || {};
-            return {
-                file: f,
-                id: data.id || f.split('_').slice(1).join('_').replace(/\.yaml$/, ''),
-                createdAt: data.createdAt || null,
-                name: f.replace(/\.yaml$/, ''),
-            };
+            try {
+                const raw = fs.readFileSync(path.join(snapshotDir, f), 'utf8');
+                const data = yaml.load(raw) || {};
+                return {
+                    file: f,
+                    id: data.id || f.split('_').slice(1).join('_').replace(/\.yaml$/, ''),
+                    createdAt: data.createdAt || null,
+                    name: f.replace(/\.yaml$/, ''),
+                };
+            } catch {
+                return { file: f, id: null, createdAt: null, name: f.replace(/\.yaml$/, '') };
+            }
         }).sort((a, b) => (a.name < b.name ? 1 : -1)); // newest first by filename stamp
-        res.json({ snapshots });
+        res.json({ snapshots, _household: hid });
     } catch (e) {
         console.error('Failed to list snapshots:', e);
         res.status(500).json({ error: 'Failed to list snapshots' });
     }
 });
 
-// POST /snapshot/restore -> restore a snapshot by id or latest
+// POST /snapshot/restore -> restore a snapshot by id or latest (household-scoped)
 // body: { id?: string, name?: string }
 gratitudeRouter.post('/snapshot/restore', (req, res) => {
     try {
-        ensureSnapshotDir();
-        const dir = `${process.env.path.data}/${SNAPSHOT_DIR}`;
-        const files = fs.readdirSync(dir).filter(f => f.endsWith('.yaml') && !f.startsWith('._'));
+        const hid = getHouseholdId(req);
+        const snapshotDir = ensureSnapshotDir(hid);
+        if (!snapshotDir || !fs.existsSync(snapshotDir)) {
+            return res.status(404).json({ error: 'No snapshots available' });
+        }
+        const files = fs.readdirSync(snapshotDir).filter(f => f.endsWith('.yaml') && !f.startsWith('._'));
         if (files.length === 0) return res.status(404).json({ error: 'No snapshots available' });
 
         let file = null;
@@ -227,19 +297,21 @@ gratitudeRouter.post('/snapshot/restore', (req, res) => {
         // default to latest (sorted by filename timestamp desc)
         if (!file) file = files.sort().reverse()[0];
 
-        const snap = loadFile(`${SNAPSHOT_DIR}/${file.replace(/\.yaml$/, '')}`);
+        const yaml = require('js-yaml');
+        const raw = fs.readFileSync(path.join(snapshotDir, file), 'utf8');
+        const snap = yaml.load(raw);
         if (!snap) return res.status(400).json({ error: 'Invalid snapshot file' });
 
-        // Restore all data
-        setUsers(snap.users || []);
-        setOptions('gratitude', snap.options?.gratitude || []);
-        setOptions('hopes', snap.options?.hopes || []);
+        // Restore all data - options to household, selections/discarded globally
+        setUsers(hid, snap.users || []);
+        setOptions(hid, 'gratitude', snap.options?.gratitude || []);
+        setOptions(hid, 'hopes', snap.options?.hopes || []);
         setSelections('gratitude', snap.selections?.gratitude || []);
         setSelections('hopes', snap.selections?.hopes || []);
         setDiscarded('gratitude', snap.discarded?.gratitude || []);
         setDiscarded('hopes', snap.discarded?.hopes || []);
 
-        res.json({ restored: file, id: snap.id || null, createdAt: snap.createdAt || null });
+        res.json({ restored: file, id: snap.id || null, createdAt: snap.createdAt || null, _household: hid });
     } catch (e) {
         console.error('Failed to restore snapshot:', e);
         res.status(500).json({ error: 'Failed to restore snapshot' });

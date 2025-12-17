@@ -196,7 +196,7 @@ const loadData = async (name,req) => {
     
     infinityLogger.debug('infinity.loadData.savingImages', { name, itemCount: data.length });
     data = await saveImages(data, name);
-    saveFile(`config/${name}`, data);
+    saveFile(`state/${name}`, data);
     return data;
 }
 

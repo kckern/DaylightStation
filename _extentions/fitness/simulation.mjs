@@ -3,7 +3,35 @@
 import WebSocket from 'ws';
 import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
+
+// Load .env file manually (avoid dotenv dependency)
+const __filename = new URL(import.meta.url).pathname;
+const rootDir = path.resolve(path.dirname(__filename), '..', '..');
+
+// Try to load .env from project root
+const envPath = path.join(rootDir, '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  envContent.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const [key, ...valueParts] = trimmed.split('=');
+      if (key && valueParts.length > 0) {
+        const value = valueParts.join('=').replace(/^["']|["']$/g, '');
+        if (!process.env[key]) { // Don't override existing env vars
+          process.env[key] = value;
+        }
+      }
+    }
+  });
+  console.log('📄 Loaded .env from project root');
+}
+
+// Import the new config framework
+import { resolveConfigPaths } from '../../backend/lib/config/pathResolver.mjs';
+import { loadAllConfig } from '../../backend/lib/config/loader.mjs';
+import { configService } from '../../backend/lib/config/ConfigService.mjs';
+import { userDataService } from '../../backend/lib/config/UserDataService.mjs';
 import { loadFile } from '../../backend/lib/io.mjs';
 
 // Configuration
@@ -12,21 +40,56 @@ const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
 const SIMULATION_DURATION = 180 * 1000; // 3 minutes in milliseconds
 const UPDATE_INTERVAL = 2000; // Send data every 2 seconds
 
-  const __filename = new URL(import.meta.url).pathname;
-  const rootDir = path.resolve(path.dirname(__filename), '..', '..');
-  const configPath = path.join(rootDir, 'config.app-local.yml');
-  const raw = fs.readFileSync(configPath, 'utf8');
-  const appConfigdata = yaml.load(raw);
-  
-  // Merge config into process.env (same as backend/index.js does)
-  process.env = { ...process.env, ...appConfigdata };
-  
-  console.log('Data path:', process.env.path?.data);
+// Initialize config using the new framework
+const isDocker = fs.existsSync('/.dockerenv');
 
-// Locate and parse the root config.app.yml
+// Resolve config paths (from env vars, mount, or fallback)
+const configPaths = resolveConfigPaths({ isDocker, codebaseDir: rootDir });
+
+if (configPaths.error) {
+  console.error('❌ Configuration error:', configPaths.error);
+  console.error('💡 Set DAYLIGHT_CONFIG_PATH and DAYLIGHT_DATA_PATH environment variables');
+  console.error('   Or create a .env file in the project root');
+  process.exit(1);
+}
+
+console.log(`📁 Config source: ${configPaths.source}`);
+console.log(`📁 Config dir: ${configPaths.configDir}`);
+console.log(`📁 Data dir: ${configPaths.dataDir}`);
+
+// Load all config using unified loader
+const configResult = loadAllConfig({
+  configDir: configPaths.configDir,
+  dataDir: configPaths.dataDir,
+  isDocker,
+  isDev: !isDocker
+});
+
+// Populate process.env with merged config (required for loadFile and services)
+process.env = { 
+  ...process.env, 
+  isDocker, 
+  ...configResult.config
+};
+
+console.log('📊 Data path:', process.env.path?.data);
+
+// Load fitness config using the new household-aware approach
 function loadConfig() {
-  // In ESM, __dirname is not available, use import.meta.url instead
   try {
+    const householdId = configService.getDefaultHouseholdId();
+    console.log(`🏠 Using household: ${householdId}`);
+    
+    // Try household-scoped path first
+    const householdConfig = userDataService.readHouseholdAppData(householdId, 'fitness', 'config');
+    if (householdConfig) {
+      console.log('✅ Loaded fitness config from household path');
+      console.log('🧪 Config structure keys:', Object.keys(householdConfig || {}));
+      return householdConfig;
+    }
+    
+    // Fall back to legacy global path
+    console.log('⚠️  Falling back to legacy fitness/config path');
     const parsed = loadFile("fitness/config");
     console.log('🧪 Config structure keys:', Object.keys(parsed || {}));
     return parsed;
@@ -39,20 +102,49 @@ function loadConfig() {
 const appConfig = loadConfig();
 // The config is flat, not nested under 'fitness'
 const fitnessCfg = appConfig || {};
+
+// Support both old and new config formats
+// New format: devices.heart_rate = { deviceId: userId }, device_colors.heart_rate = { deviceId: color }
+// Old format: ant_devices.hr = { deviceId: color }
+const devicesConfig = fitnessCfg?.devices || {};
+const deviceColorsConfig = fitnessCfg?.device_colors || {};
 const antDevices = fitnessCfg?.ant_devices || {};
-const hrDevicesConfig = antDevices?.hr || {}; // { deviceId: color }
-const cadenceDevicesConfig = antDevices?.cadence || {}; // { deviceId: color }
+
+// New format: devices.heart_rate = { deviceId: userId }
+const hrDevicesNew = devicesConfig?.heart_rate || {};
+// Old format: ant_devices.hr = { deviceId: color }
+const hrDevicesOld = antDevices?.hr || {};
+// Merge - new format takes precedence
+const hrDevicesConfig = Object.keys(hrDevicesNew).length > 0 ? hrDevicesNew : hrDevicesOld;
+const hrColorsConfig = deviceColorsConfig?.heart_rate || antDevices?.hr || {};
+
+// Same for cadence
+const cadenceDevicesNew = devicesConfig?.cadence || {};
+const cadenceDevicesOld = antDevices?.cadence || {};
+const cadenceDevicesConfig = Object.keys(cadenceDevicesNew).length > 0 ? cadenceDevicesNew : cadenceDevicesOld;
+
 const usersCfg = fitnessCfg?.users || {};
 const primaryUsers = usersCfg.primary || [];
 const secondaryUsers = usersCfg.secondary || [];
 
-// Build mapping deviceId -> user (first come first serve from primary then secondary)
+// Build mapping deviceId -> userName
+// New format: devices.heart_rate = { deviceId: userId } - direct mapping
+// Old format: users have hr property with deviceId
 const hrUserMap = {};
+
+// First, use the new devices.heart_rate mapping (deviceId -> userId)
+Object.entries(hrDevicesConfig).forEach(([deviceId, userId]) => {
+  hrUserMap[String(deviceId)] = String(userId);
+});
+
+// Fallback: Also check users for hr property (old format)
 [...primaryUsers, ...secondaryUsers].forEach(u => {
   if (u?.hr !== undefined && u?.hr !== null) {
-    hrUserMap[String(u.hr)] = u.name;
+    hrUserMap[String(u.hr)] = u.name || u.id;
   }
 });
+
+console.log('🔧 HR device to user mapping:', hrUserMap);
 
 // Utility to create baseline heart rate characteristics per user/device
 function baselineForDevice(deviceId) {

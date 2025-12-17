@@ -1,6 +1,6 @@
 import axios from '../../lib/http.mjs';
 import yaml from 'js-yaml';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';
 import { loadFile, saveFile } from '../../lib/io.mjs';
 import { createLogger } from '../../lib/logging/logger.js';
@@ -12,16 +12,57 @@ const payrollLogger = createLogger({
 
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -4).join('/')}`;
-const configpath = `${__appDirectory}/config.app.yml`;
-const secretspath = `${__appDirectory}/config.secrets.yml`;
-const {  PAYROLL_BASE, PAYROLL_AUTHKEY, PAYROLL_AUTH, PAYROLL_COMPANY, PAYROLL_EMPLOYEE } = yaml.load(readFileSync(secretspath, 'utf8'));
-const {  buxfer: {payroll_account_id, direct_deposit_account_id} } = yaml.load(readFileSync(configpath, 'utf8'));
 
-
+// Lazy-load credentials from process.env (populated by config loader)
+const getPayrollConfig = () => {
+  // Use process.env first (set by config loader)
+  const secrets = {
+    PAYROLL_BASE: process.env.PAYROLL_BASE,
+    PAYROLL_AUTHKEY: process.env.PAYROLL_AUTHKEY,
+    PAYROLL_AUTH: process.env.PAYROLL_AUTH,
+    PAYROLL_COMPANY: process.env.PAYROLL_COMPANY,
+    PAYROLL_EMPLOYEE: process.env.PAYROLL_EMPLOYEE
+  };
+  
+  const appConfig = {
+    payroll_account_id: process.env.buxfer?.payroll_account_id,
+    direct_deposit_account_id: process.env.buxfer?.direct_deposit_account_id
+  };
+  
+  // Fallback: try local files if process.env not populated
+  if (!secrets.PAYROLL_BASE) {
+    const secretspath = `${__appDirectory}/config.secrets.yml`;
+    if (existsSync(secretspath)) {
+      try {
+        const secretsYaml = yaml.load(readFileSync(secretspath, 'utf8'));
+        Object.assign(secrets, secretsYaml);
+      } catch (err) {
+        payrollLogger.warn('payroll.secrets.load-failed', { error: err.message });
+      }
+    }
+  }
+  
+  if (!appConfig.payroll_account_id) {
+    const configpath = `${__appDirectory}/config.app.yml`;
+    if (existsSync(configpath)) {
+      try {
+        const configYaml = yaml.load(readFileSync(configpath, 'utf8'));
+        appConfig.payroll_account_id = configYaml?.buxfer?.payroll_account_id;
+        appConfig.direct_deposit_account_id = configYaml?.buxfer?.direct_deposit_account_id;
+      } catch (err) {
+        payrollLogger.warn('payroll.config.load-failed', { error: err.message });
+      }
+    }
+  }
+  
+  return { ...secrets, ...appConfig };
+};
 
 const  payrollSync = async (key,req) => {
 
   payrollLogger.info('payroll.sync.start', { key });
+  const config = getPayrollConfig();
+  const { PAYROLL_BASE, PAYROLL_AUTH, PAYROLL_COMPANY, PAYROLL_EMPLOYEE, payroll_account_id, direct_deposit_account_id } = config;
 
     const authKey = req.query.token || PAYROLL_AUTH;
 

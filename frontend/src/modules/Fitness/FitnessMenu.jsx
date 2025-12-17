@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LoadingOverlay, Alert, Text } from '@mantine/core';
-import { DaylightAPI } from '../../lib/api.mjs';
+import { DaylightAPI, normalizeImageUrl } from '../../lib/api.mjs';
 import './FitnessMenu.scss';
 
 const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue }) => {
@@ -288,7 +288,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
               >
                 {show.image && (
                   <img
-                    src={show.image}
+                    src={normalizeImageUrl(show.image)}
                     alt={show.label}
                     className={`show-image ${loadedImages[show.plex || show.id] ? 'loaded' : ''}`}
                     onLoad={() => {
