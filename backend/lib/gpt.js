@@ -1,7 +1,7 @@
 import fetch from './httpFetch.mjs';
 import { appendFile } from 'fs';
 import yaml from 'js-yaml';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import axios from './http.mjs';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -18,9 +18,34 @@ const writeStderr = (message) => {
   }
 };
 
-const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
-const secretspath = `${__appDirectory}/config.secrets.yml`;
-const { OPENAI_API_KEY} = yaml.load(readFileSync(secretspath, 'utf8'));
+// Get API key from process.env (set by config loader) instead of reading file directly
+const getOpenAIKey = () => {
+  // Check process.env first (populated by config loader)
+  if (process.env.OPENAI_API_KEY) {
+    return process.env.OPENAI_API_KEY;
+  }
+  // Fallback: try to read from codebase (for backwards compatibility)
+  const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
+  const secretspath = `${__appDirectory}/config.secrets.yml`;
+  if (existsSync(secretspath)) {
+    try {
+      const secrets = yaml.load(readFileSync(secretspath, 'utf8'));
+      return secrets?.OPENAI_API_KEY;
+    } catch (err) {
+      gptLogger.warn('gpt.secrets.load-failed', { path: secretspath, error: err.message });
+    }
+  }
+  return null;
+};
+
+// Lazy-load API key on first use
+let OPENAI_API_KEY = null;
+const ensureApiKey = () => {
+  if (!OPENAI_API_KEY) {
+    OPENAI_API_KEY = getOpenAIKey();
+  }
+  return OPENAI_API_KEY;
+};
 
 const models = {
     'gpt-3.5-turbo-0125'        : {in: 0.0000005,   out: 0.0000015,  context_window: 4096, flagship: true},
@@ -90,7 +115,7 @@ export const askGPT = async (messages, model = 'gpt-4o', extraconfig) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
+        'Authorization': `Bearer ${ensureApiKey()}`
       },
       body: JSON.stringify(data)
     });
@@ -124,7 +149,7 @@ export async function generateSpeech(text, voice, instructions) {
       method: 'post',
       url: 'https://api.openai.com/v1/audio/speech',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${ensureApiKey()}`,
         'Content-Type': 'application/json'
       },
       data: {

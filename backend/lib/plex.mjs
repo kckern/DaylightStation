@@ -713,7 +713,7 @@ export class Plex {
 
   async loadSingleFromWatchlist(watchlist) {
     let log = loadFile("history/media_memory/plex") || {};
-    let watchlists = loadFile("config/watchlists");
+    let watchlists = loadFile("state/watchlists");
     let list = watchlists[watchlist];
     if (!list) return [];
     let candidates = { normal: {}, urgent: {}, in_progress: {} };

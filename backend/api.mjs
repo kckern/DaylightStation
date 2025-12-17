@@ -25,6 +25,7 @@ import { NutriCoachRepository } from './chatbots/nutribot/repositories/NutriCoac
 import { FileConversationStateStore } from './chatbots/infrastructure/persistence/FileConversationStateStore.mjs';
 import { CanvasReportRenderer } from './chatbots/adapters/http/CanvasReportRenderer.mjs';
 import { createLogger } from './chatbots/_lib/logging/index.mjs';
+import { configService } from './lib/config/ConfigService.mjs';
 
 const apiRouter = express.Router();
 apiRouter.use(express.json({
@@ -127,10 +128,38 @@ const initNutribotRouter = async () => {
     try {
         const configProvider = getConfigProvider();
         const nutribotConfig = configProvider.getNutribotConfig();
-        const chatbotsConfig = configProvider.get('chatbots');
+        const chatbotsConfig = configProvider.get('chatbots') || {};
+        
+        // Build users config from ConfigService user profiles (new architecture)
+        // UserResolver expects: { users: { username: { telegram_bot_id, telegram_user_id, ... } } }
+        const usersFromProfiles = {};
+        if (configService.isReady()) {
+            const profiles = configService.getAllUserProfiles();
+            for (const [username, profile] of profiles) {
+                const telegramId = profile.identities?.telegram?.user_id;
+                if (telegramId) {
+                    // Get default bot from chatbots app config or user profile
+                    const defaultBot = profile.identities?.telegram?.default_bot || 'nutribot';
+                    const botConfig = configService.getAppConfig('chatbots', `bots.${defaultBot}`);
+                    const botId = botConfig?.telegram_bot_id;
+                    
+                    usersFromProfiles[username] = {
+                        telegram_user_id: telegramId,
+                        telegram_bot_id: botId,
+                        default_bot: defaultBot,
+                        goals: profile.apps?.nutribot?.goals,
+                        timezone: profile.preferences?.timezone,
+                    };
+                }
+            }
+        }
+        
+        // Merge with legacy config (profiles take precedence)
+        const mergedUsers = { ...chatbotsConfig.users, ...usersFromProfiles };
+        const chatbotsConfigWithUsers = { ...chatbotsConfig, users: mergedUsers };
         
         // Create UserResolver for username lookups
-        const userResolver = new UserResolver(chatbotsConfig, { logger });
+        const userResolver = new UserResolver(chatbotsConfigWithUsers, { logger });
         
         // Get storage paths from config
         const storageConfig = chatbotsConfig?.data?.nutribot || {};

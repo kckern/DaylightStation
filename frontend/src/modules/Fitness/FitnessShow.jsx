@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { LoadingOverlay, Alert } from '@mantine/core';
-import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
+import { DaylightAPI, DaylightMediaPath, normalizeImageUrl } from '../../lib/api.mjs';
 import './FitnessShow.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import moment from 'moment';
@@ -32,7 +32,7 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
       {item.image && (
         <div className="info-image-container">
           <img 
-            src={type === 'season' && item.id ? DaylightMediaPath(`media/plex/img/${item.id}`) : item.image} 
+            src={type === 'season' && item.id ? DaylightMediaPath(`media/plex/img/${item.id}`) : normalizeImageUrl(item.image)} 
             alt={item.title || item.label || item.name} 
             className="info-image" 
           />
@@ -105,10 +105,10 @@ const EpisodeInfo = ({ episode, showInfo, seasonsMap, seasonsList, onPlay }) => 
   const seasonDescription = [season.summary, season.seasonDescription, season.description, showInfo?.summary]
     .find(v => typeof v === 'string' && v.trim().length) || '';
 
-  const seasonImage = season.img || season.seasonThumbUrl || season.image || (seasonId ? DaylightMediaPath(`media/plex/img/${seasonId}`) : showInfo?.image);
+  const seasonImage = normalizeImageUrl(season.img || season.seasonThumbUrl || season.image) || (seasonId ? DaylightMediaPath(`media/plex/img/${seasonId}`) : normalizeImageUrl(showInfo?.image));
   // Use the same episode image source as grid: primary is episode.image; fallback to thumb_id path
   const episodeImage = (episode.image && episode.image.trim())
-    ? episode.image
+    ? normalizeImageUrl(episode.image)
     : (episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : null);
   const durationText = episode.duration ? formatDuration(episode.duration) : null;
   const epTitle = episode.label || episode.title || `Episode ${episode.episodeNumber || ''}`.trim();
@@ -933,7 +933,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
               <div className="show-poster" ref={posterRef}>
                 {info.image && (
                   <img 
-                    src={info.image} 
+                    src={normalizeImageUrl(info.image)} 
                     alt={info.title} 
                     className="poster-image"
                     style={{
@@ -1029,7 +1029,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                                 onPointerDown={(e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'))}
                               >
                                 <img
-                                  src={episode.image}
+                                  src={normalizeImageUrl(episode.image)}
                                   alt={episode.label}
                                   className={`episode-img ${loadedEpisodeImages[episode.plex || episode.id] ? 'loaded' : ''}`}
                                   onLoad={() => {
@@ -1130,10 +1130,10 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                     setInfoType('season');
                   }}
                 >
-                                <div className="season-image-wrapper" style={{backgroundImage: s.image ? `url(${s.image})` : 'none'}}>
+                                <div className="season-image-wrapper" style={{backgroundImage: s.image ? `url(${normalizeImageUrl(s.image)})` : 'none'}}>
                                   {s.image ? (
                                     <img
-                                      src={s.image}
+                                      src={normalizeImageUrl(s.image)}
                         alt={s.rawName || s.name || 'Season'}
                         className={`season-image ${loadedSeasonImages[s.id] ? 'loaded' : ''}`}
                         onLoad={() => {

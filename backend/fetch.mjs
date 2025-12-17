@@ -192,7 +192,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
 
 
     const loadScriptureWatchlist = (watchListFolder) => {
-        const watchListItems = loadFile('config/watchlist') || [];
+        const watchListItems = loadFile('state/watchlist') || [];
         const filteredItems = watchListItems.filter(w => w.folder === watchListFolder);
         console.log({watchListFolder,filteredItems,watchListFolder});
         const {items:[item]} = getChildrenFromWatchlist(filteredItems);
@@ -415,7 +415,7 @@ const loadMetadataFromConfig =  (item, keys=[]) => {
 }
 
 export const loadMetadataFromMediaKey = (media_key, keys = []) => {
-    const mediaConfig = loadFile(`config/media_config`);
+    const mediaConfig = loadFile(`state/media_config`);
     const config = mediaConfig.find(c => c.media_key === media_key) || {};
 
     if (keys.length > 0) {
@@ -549,7 +549,7 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
 export const watchListFromMediaKey = (media_key) => {
 
     const normalizeKey = key => key?.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
-    const watchListItems = (loadFile('config/watchlist')||[]).filter(w => normalizeKey(w.folder) === normalizeKey(media_key));
+    const watchListItems = (loadFile('state/watchlist')||[]).filter(w => normalizeKey(w.folder) === normalizeKey(media_key));
     if (!watchListItems?.length) return null;
     return watchListItems;
 }
@@ -565,7 +565,7 @@ export const getChildrenFromMediaKey = async ({media_key, config, req}) => {
     if(watchListItems?.length) return  getChildrenFromWatchlist(watchListItems);
 
     // Check if the media_key exists in the lists first
-    const listItems = await Promise.all(loadFile(`config/lists`).map(processListItem));
+    const listItems = await Promise.all(loadFile(`state/lists`).map(processListItem));
     const filterFn = item => item?.folder?.toLowerCase() === media_key?.toLowerCase();
     const itemsFromList = listItems.filter(filterFn) || [];
     const noSort = itemsFromList.some(item => item?.folder_color);  // Color is used as an indicator for no sorting, since folders have no other attributes besides title
@@ -713,7 +713,7 @@ apiRouter.get('/list/*', async (req, res, next) => {
 apiRouter.get('/keyboard/:keyboard_id?', async (req, res) => {
     const { keyboard_id } = req.params;
     //get keyboard data from dataPath/keyboard
-    const keyboardData = loadFile(`config/keyboard`).filter(k => 
+    const keyboardData = loadFile(`state/keyboard`).filter(k => 
         k.folder?.replace(/\s+/g, '').toLowerCase() === keyboard_id?.replace(/\s+/g, '').toLowerCase()
     );
     if(!keyboardData?.length) return res.status(404).json({error: 'Keyboard not found'});

@@ -3,13 +3,19 @@
  * @module _lib/config/ConfigProvider
  * 
  * Centralized configuration loading for chatbots.
- * Loads from config.app.yml, config.secrets.yml, and environment variables.
+ * 
+ * Migration Status:
+ * - Now uses ConfigService for app configs (config/apps/chatbots.yml)
+ * - Now uses UserDataService for user data access
+ * - Legacy support maintained for backwards compatibility
  */
 
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
+import { configService } from '../../../lib/config/ConfigService.mjs';
+import { userDataService } from '../../../lib/config/UserDataService.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -174,10 +180,25 @@ export class ConfigProvider {
 
   /**
    * Get user config by internal user ID
+   * Uses ConfigService + UserDataService for new architecture
    * @param {string} internalUserId - Internal user ID (e.g., 'kckern')
    * @returns {Object|null}
    */
   getUser(internalUserId) {
+    // Try new architecture first (UserDataService + ConfigService)
+    if (configService.isReady()) {
+      const profile = configService.getUserProfile(internalUserId);
+      if (profile) {
+        return {
+          internalId: internalUserId,
+          telegramUserId: String(profile.identities?.telegram?.user_id || ''),
+          defaultBot: profile.identities?.telegram?.default_bot || 'nutribot',
+          goals: profile.apps?.nutribot?.goals || this.getNutritionGoals(),
+        };
+      }
+    }
+
+    // Fall back to legacy config
     const users = this.#appConfig.chatbots?.users || {};
     const user = users[internalUserId];
     if (!user) return null;
@@ -192,12 +213,21 @@ export class ConfigProvider {
 
   /**
    * Get internal user ID from Telegram user ID
+   * Uses ConfigService identity mappings
    * @param {string|number} telegramUserId - Telegram user ID
    * @returns {string|null}
    */
   getInternalUserId(telegramUserId) {
-    const users = this.#appConfig.chatbots?.users || {};
     const telegramId = String(telegramUserId);
+
+    // Try new architecture first (ConfigService identity mappings)
+    if (configService.isReady()) {
+      const username = configService.resolveUsername('telegram', telegramId);
+      if (username) return username;
+    }
+
+    // Fall back to legacy config
+    const users = this.#appConfig.chatbots?.users || {};
     
     for (const [internalId, user] of Object.entries(users)) {
       if (String(user.telegram_user_id) === telegramId) {
@@ -212,6 +242,20 @@ export class ConfigProvider {
    * @returns {Object[]}
    */
   getAllUsers() {
+    // Try new architecture first
+    if (configService.isReady()) {
+      const profiles = configService.getAllUserProfiles();
+      if (profiles.size > 0) {
+        return Array.from(profiles.entries()).map(([username, profile]) => ({
+          internalId: username,
+          telegramUserId: String(profile.identities?.telegram?.user_id || ''),
+          defaultBot: profile.identities?.telegram?.default_bot || 'nutribot',
+          goals: profile.apps?.nutribot?.goals || this.getNutritionGoals(),
+        }));
+      }
+    }
+
+    // Fall back to legacy config
     const users = this.#appConfig.chatbots?.users || {};
     return Object.entries(users).map(([internalId, user]) => ({
       internalId,
@@ -223,10 +267,26 @@ export class ConfigProvider {
 
   /**
    * Get nutrition goals for a specific user
+   * Uses UserDataService for user-specific goals
    * @param {string} internalUserId - Internal user ID
    * @returns {Object}
    */
   getUserGoals(internalUserId) {
+    // Try new architecture first (user profile)
+    if (configService.isReady()) {
+      const profile = configService.getUserProfile(internalUserId);
+      if (profile?.apps?.nutribot?.goals) {
+        const goals = profile.apps.nutribot.goals;
+        return {
+          calories: goals.calories || 2000,
+          protein: goals.protein || 150,
+          carbs: goals.carbs || 200,
+          fat: goals.fat || 65,
+        };
+      }
+    }
+
+    // Fall back to legacy
     const user = this.getUser(internalUserId);
     return user?.goals || this.getNutritionGoals();
   }
@@ -235,13 +295,30 @@ export class ConfigProvider {
 
   /**
    * Get bot configuration
+   * Uses ConfigService for new architecture
    * @param {string} botName - 'nutribot' or 'journalist'
    * @returns {Object}
    */
   getBotConfig(botName) {
+    const webhookEnv = this.isProduction() ? 'prod' : 'dev';
+
+    // Try new architecture first (ConfigService)
+    if (configService.isReady()) {
+      const botConfig = configService.getAppConfig('chatbots', `bots.${botName}`);
+      if (botConfig) {
+        return {
+          name: botName,
+          telegramBotId: String(botConfig.telegram_bot_id || ''),
+          token: this.getTelegramToken(botName),
+          webhookUrl: botConfig.webhooks?.[webhookEnv] || '',
+          reportHost: botConfig.report_host || null,
+        };
+      }
+    }
+
+    // Fall back to legacy config
     const chatbots = this.#appConfig.chatbots || {};
     const bot = chatbots.bots?.[botName] || {};
-    const webhookEnv = this.isProduction() ? 'prod' : 'dev';
     
     return {
       name: botName,
@@ -329,10 +406,24 @@ export class ConfigProvider {
 
   /**
    * Get default nutrition goals
+   * Uses ConfigService for new architecture
    * @returns {Object}
    */
   getNutritionGoals() {
-    // Check new structure first
+    // Try new architecture first (ConfigService app defaults)
+    if (configService.isReady()) {
+      const defaults = configService.getAppConfig('chatbots', 'defaults.nutrition_goals');
+      if (defaults) {
+        return {
+          calories: defaults.calories || 2000,
+          protein: defaults.protein || 150,
+          carbs: defaults.carbs || 200,
+          fat: defaults.fat || 65,
+        };
+      }
+    }
+
+    // Check new structure in legacy config
     const defaultUser = this.#appConfig.chatbots?.users?.kckern;
     if (defaultUser?.goals) {
       return {

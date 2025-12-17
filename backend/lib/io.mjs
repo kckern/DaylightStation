@@ -121,6 +121,24 @@ export const loadRandom = (folder) => {
     }
 };
 
+// Track deprecation warnings to avoid spam
+const deprecationWarnings = new Set();
+
+// Paths that should be migrated to user-namespaced locations
+const LEGACY_USER_PATHS = [
+    'auth/',           // OAuth tokens should be per-user
+    'lifelog/',        // Lifelog data should be per-user  
+    'nutribot/'        // Legacy nutribot data
+];
+
+// Paths that should be migrated to household-scoped locations
+const LEGACY_HOUSEHOLD_PATHS = [
+    { pattern: 'fitness/config', suggestion: 'households/{household}/apps/fitness/config' },
+    { pattern: 'gratitude/options', suggestion: 'households/{household}/shared/gratitude/options.*' },
+    { pattern: 'gratitude/users', suggestion: 'households/{household}/shared/gratitude/users' },
+    { pattern: 'gratitude/bank', suggestion: 'households/{household}/shared/gratitude/bank' },
+    { pattern: 'gratitude/snapshots', suggestion: 'households/{household}/shared/gratitude/snapshots/' },
+];
 
 const loadFile = (path) => {
     path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
@@ -130,6 +148,30 @@ const loadFile = (path) => {
     if (filename && filename.startsWith('._')) {
        // console.warn(`Skipping macOS resource fork file: ${path}`);
         return null;
+    }
+
+    // Check for legacy user-data paths and log deprecation warning (once per path)
+    const isLegacyUserPath = LEGACY_USER_PATHS.some(prefix => path.startsWith(prefix));
+    if (isLegacyUserPath && !deprecationWarnings.has(path)) {
+        deprecationWarnings.add(path);
+        ioLogger.warn('io.loadFile.deprecatedPath', {
+            path,
+            message: `Legacy path "${path}" should be migrated to user-namespaced location`,
+            suggestedPath: `users/{username}/${path}`,
+            migration: 'Run: node scripts/migrate-user-data.mjs'
+        });
+    }
+
+    // Check for legacy household paths and log deprecation warning (once per path)
+    const householdMatch = LEGACY_HOUSEHOLD_PATHS.find(h => path.startsWith(h.pattern));
+    if (householdMatch && !deprecationWarnings.has(path)) {
+        deprecationWarnings.add(path);
+        ioLogger.warn('io.loadFile.deprecatedHouseholdPath', {
+            path,
+            message: `Legacy path "${path}" should be migrated to household-scoped location`,
+            suggestedPath: householdMatch.suggestion,
+            migration: 'Use configService/userDataService household methods instead'
+        });
     }
     
     // Try .yaml first, then .yml
@@ -229,6 +271,28 @@ const saveFile = (path, data) => {
     if (typeof path !== 'string') return false;
     const normalizedPath = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
     const yamlFile = `${normalizedPath}.yaml`;
+
+    // Check for legacy user-data paths and log deprecation warning (once per path)
+    const isLegacyUserPath = LEGACY_USER_PATHS.some(prefix => normalizedPath.startsWith(prefix));
+    if (isLegacyUserPath && !deprecationWarnings.has(`save:${normalizedPath}`)) {
+        deprecationWarnings.add(`save:${normalizedPath}`);
+        ioLogger.warn('io.saveFile.deprecatedPath', {
+            path: normalizedPath,
+            message: `Legacy path "${normalizedPath}" should be migrated to user-namespaced location`,
+            suggestedPath: `users/{username}/${normalizedPath}`
+        });
+    }
+
+    // Check for legacy household paths and log deprecation warning (once per path)
+    const householdMatch = LEGACY_HOUSEHOLD_PATHS.find(h => normalizedPath.startsWith(h.pattern));
+    if (householdMatch && !deprecationWarnings.has(`save:${normalizedPath}`)) {
+        deprecationWarnings.add(`save:${normalizedPath}`);
+        ioLogger.warn('io.saveFile.deprecatedHouseholdPath', {
+            path: normalizedPath,
+            message: `Legacy path "${normalizedPath}" should be migrated to household-scoped location`,
+            suggestedPath: householdMatch.suggestion
+        });
+    }
 
     const queue = getQueue(yamlFile);
     // Clone eagerly so callers can mutate after queuing without affecting the write

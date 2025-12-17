@@ -154,7 +154,7 @@ const logToInfinity = async (media_key, { percent, seconds }) => {
     if (seconds < 10) return false;
     const duration = percent > 0 ? (seconds / (percent / 100)) : 0;
     const secondsRemaining = duration - seconds;
-    const watchList = loadFile('config/watchlist') || [];
+    const watchList = loadFile('state/watchlist') || [];
     const matches = watchList.filter(item => item.media_key === media_key) || [];
     if (!matches.length) return false;
     const uids = matches.map(item => item.uid);
@@ -353,7 +353,9 @@ mediaRouter.all('/plex/info/:plex_key/:config?', async (req, res) => {
 export const handleDevImage = (req,image) => {
     if (!image) return null; // Return null for undefined/empty images
     const isDev = !!process.env.dev;
-    const host = req.headers.host || process.env.host || "";
+    // In dev mode, always use backend port 3112 for plex_proxy URLs (frontend runs on 3111)
+    const hostname = req.headers.host?.split(':')[0] || 'localhost';
+    const host = isDev ? `${hostname}:3112` : (req.headers.host || process.env.host || "");
     return isDev && host ? `http://${host}${image}` : image;
 }
 

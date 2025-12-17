@@ -1,7 +1,7 @@
 import axios from './http.mjs';
 import { URLSearchParams } from 'url';
 import yaml from 'js-yaml';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import isJSON from 'is-json';
 import { askGPT } from './gpt.js';
 import moment from 'moment';
@@ -10,16 +10,39 @@ import moment from 'moment';
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
 
-const dataPath = `${process.env.path?.data}` || `${__appDirectory}/data`;
+const getDataPath = () => process.env.path?.data || `${__appDirectory}/data`;
 
-const secretspath = `${__appDirectory}/config.secrets.yml`;
-const { BUXFER_EMAIL, BUXFER_PW } = yaml.load(readFileSync(secretspath, 'utf8'));
+// Lazy-load credentials from process.env (populated by config loader)
+const getCredentials = () => {
+  // Use process.env first (set by config loader)
+  if (process.env.BUXFER_EMAIL && process.env.BUXFER_PW) {
+    return {
+      BUXFER_EMAIL: process.env.BUXFER_EMAIL,
+      BUXFER_PW: process.env.BUXFER_PW
+    };
+  }
+  // Fallback: try local secrets file
+  const secretspath = `${__appDirectory}/config.secrets.yml`;
+  if (existsSync(secretspath)) {
+    try {
+      const secrets = yaml.load(readFileSync(secretspath, 'utf8'));
+      return {
+        BUXFER_EMAIL: secrets.BUXFER_EMAIL,
+        BUXFER_PW: secrets.BUXFER_PW
+      };
+    } catch (err) {
+      console.warn('[buxfer] Failed to load secrets:', err.message);
+    }
+  }
+  return { BUXFER_EMAIL: null, BUXFER_PW: null };
+};
 
 const getToken = async () => {
     // If a token already exists in process.env, return it
     if (process.env.BUXFER_TOKEN) {
         return process.env.BUXFER_TOKEN;
     }
+    const { BUXFER_EMAIL, BUXFER_PW } = getCredentials();
     const url = 'https://www.buxfer.com/api/login';
     const params = {
         email: BUXFER_EMAIL,
@@ -76,6 +99,7 @@ export const deleteTransactions = async ({accountId, matchString, startDate, end
 
     //delete backup file: data/budget/deletedTransactions.yml
     //load from yaml file
+    const dataPath = getDataPath();
     const deletedTransactions = (() => { try { return yaml.load(readFileSync(`${dataPath}/budget/deletedTransactions.yml`, 'utf8')) || []; } catch { return {}; } })();
     const transactions = await getTransactions({startDate, endDate, accounts: [accountId]});
     const transactionsToDelete = transactions.filter(txn => txn.description.includes(matchString));
@@ -136,6 +160,7 @@ export const processTransactions = async ({startDate, endDate, accounts}) => {
     const txn_to_process = transactions.filter(txn => hasNoTag(txn) || hasRawDescription(txn));
    // console.log(`Processing ${txn_to_process.length} transactions to categorize...`);
     txn_to_process.forEach(txn => console.log(`${txn.date} - ${txn.description}`));
+    const dataPath = getDataPath();
     const {validTags, chat} = yaml.load(readFileSync(`${dataPath}/budget/gpt.yml`, 'utf8'));
     chat[0].content =  chat[0].content.replace("__VALID_TAGS__", JSON.stringify(validTags));
 

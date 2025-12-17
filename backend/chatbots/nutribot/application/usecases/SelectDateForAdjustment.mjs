@@ -177,7 +177,8 @@ export class SelectDateForAdjustment {
       // Truncate name if too long for button
       const truncatedName = name.length > 12 ? name.substring(0, 10) + '…' : name;
       const label = `${emoji} ${truncatedName}`;
-      const itemId = item.uuid || item.id;
+      // Use uuid, id, or fall back to log_uuid (for legacy items without uuid)
+      const itemId = item.uuid || item.id || item.log_uuid;
       
       currentRow.push({
         text: label,

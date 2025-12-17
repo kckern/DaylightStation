@@ -10,11 +10,31 @@ import { loadFile, saveFile } from '../lib/io.mjs';
 import { canvasImage } from './foodlog_hook.mjs';
 import bwipjs from 'bwip-js';
 
-const iconPath = process.env.path?.icons;
-const allIcons = fs
+// Lazy-load icons to avoid reading before config is populated
+let _allIcons = null;
+const getAllIcons = () => {
+  if (_allIcons) return _allIcons;
+  const iconPath = process.env.path?.icons;
+  if (!iconPath || !fs.existsSync(iconPath)) {
+    console.warn('[food_report] Icons path not available:', iconPath);
+    return [];
+  }
+  _allIcons = fs
     .readdirSync(iconPath)
     .filter((file) => file.endsWith('.png'))
     .map((file) => file.replace('.png', ''));
+  return _allIcons;
+};
+
+// Keep allIcons as a getter for backwards compatibility
+const allIcons = { 
+  get length() { return getAllIcons().length; },
+  filter: (...args) => getAllIcons().filter(...args),
+  map: (...args) => getAllIcons().map(...args),
+  find: (...args) => getAllIcons().find(...args),
+  includes: (...args) => getAllIcons().includes(...args),
+  [Symbol.iterator]: function* () { yield* getAllIcons(); }
+};
 /**
  * REGISTER FONTS
  * --------------------------------------------------
