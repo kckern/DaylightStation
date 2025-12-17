@@ -21,6 +21,7 @@ import { OpenAIGateway } from './chatbots/infrastructure/ai/OpenAIGateway.mjs';
 import { RealUPCGateway } from './chatbots/infrastructure/gateways/RealUPCGateway.mjs';
 import { NutriLogRepository } from './chatbots/nutribot/repositories/NutriLogRepository.mjs';
 import { NutriListRepository } from './chatbots/nutribot/repositories/NutriListRepository.mjs';
+import { NutriCoachRepository } from './chatbots/nutribot/repositories/NutriCoachRepository.mjs';
 import { FileConversationStateStore } from './chatbots/infrastructure/persistence/FileConversationStateStore.mjs';
 import { CanvasReportRenderer } from './chatbots/adapters/http/CanvasReportRenderer.mjs';
 import { createLogger } from './chatbots/_lib/logging/index.mjs';
@@ -163,6 +164,11 @@ const initNutribotRouter = async () => {
                 const username = userResolver.resolveUsername(userId) || userId;
                 return `${basePath}/${paths.nutriday.replace('{username}', username)}`;
             },
+            getNutricoachPath: (userId) => {
+                const username = userResolver.resolveUsername(userId) || userId;
+                const coachPath = paths.nutricoach || '{username}/nutricoach';
+                return `${basePath}/${coachPath.replace('{username}', username)}`;
+            },
             getReportStatePath: (userId) => {
                 const username = userResolver.resolveUsername(userId) || userId;
                 return `${basePath}/${paths.report_state.replace('{username}', username)}`;
@@ -171,6 +177,29 @@ const initNutribotRouter = async () => {
                 // Alias for conversation state (nutricursor)
                 const username = userResolver.resolveUsername(userId) || userId;
                 return `${basePath}/${paths.nutricursor.replace('{username}', username)}`;
+            },
+            // User settings methods
+            getUserTimezone: (userId) => {
+                // Get timezone from user config or default
+                const username = userResolver.resolveUsername(userId);
+                const users = chatbotsConfig?.users || {};
+                const user = users[username];
+                return user?.timezone || configProvider.get('weather')?.timezone || 'America/Los_Angeles';
+            },
+            getUserGoals: (userId) => {
+                // Get goals from user config or defaults
+                const username = userResolver.resolveUsername(userId);
+                const users = chatbotsConfig?.users || {};
+                const user = users[username];
+                const defaults = {
+                    calories: 2000,
+                    protein: 150,
+                    carbs: 200,
+                    fat: 65,
+                    fiber: 30,
+                    sodium: 2300,
+                };
+                return { ...defaults, ...(user?.goals || {}) };
             },
         };
         
@@ -202,6 +231,11 @@ const initNutribotRouter = async () => {
             logger
         });
         
+        const nutricoachRepository = new NutriCoachRepository({
+            config,
+            logger
+        });
+        
         const conversationStateStore = new FileConversationStateStore({
             storePath: basePath,
             userResolver,
@@ -221,6 +255,7 @@ const initNutribotRouter = async () => {
             upcGateway,
             nutrilogRepository,
             nutrilistRepository,
+            nutricoachRepository,
             conversationStateStore,
             reportRenderer,
             logger
