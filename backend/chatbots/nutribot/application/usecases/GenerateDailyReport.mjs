@@ -142,6 +142,12 @@ export class GenerateDailyReport {
 
       // 7. Build history for chart (last 7 days)
       const history = await this.#buildHistory(userId, date);
+      this.#logger.debug('report.history', { 
+        userId, 
+        date, 
+        historyLength: history.length,
+        historySummary: history.map(h => ({ date: h.date, cal: h.totalCalories, items: h.itemCount })),
+      });
 
       // 8. Generate PNG report
       let pngPath = null;
@@ -174,8 +180,12 @@ export class GenerateDailyReport {
         // Ignore delete errors
       }
 
-      // 10. Build caption
-      const caption =  `🤖 Coaching tip: Keep up the good work! Stay mindful of portion sizes.`; //Will replace with AI msg
+      // 10. Build caption - calorie budget summary
+      const remaining = goals.calories - totals.calories;
+      const budgetStatus = remaining >= 0 
+        ? `${remaining} cal remaining`
+        : `${Math.abs(remaining)} cal over budget`;
+      const caption = `🔥 ${totals.calories} / ${goals.calories} cal • ${budgetStatus}`;
 
       // 11. Build action buttons
       const buttons = [
@@ -243,23 +253,31 @@ export class GenerateDailyReport {
    */
   async #buildHistory(userId, today) {
     const history = [];
+    // Parse today's date components to avoid UTC conversion issues
+    const [year, month, day] = today.split('-').map(Number);
+    
     for (let i = 6; i >= 1; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
+      // Create date using local components, then subtract days
+      const d = new Date(year, month - 1, day - i);
+      // Format as YYYY-MM-DD using local date
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       
       try {
         const items = await this.#nutriListRepository.findByDate(userId, dateStr);
-        const totalGrams = items.reduce((sum, item) => sum + (item.grams || 0), 0);
-        const totalCalories = items.reduce((sum, item) => sum + (item.calories || 0), 0);
+        const calories = items.reduce((sum, item) => sum + (item.calories || 0), 0);
+        const protein = items.reduce((sum, item) => sum + (item.protein || 0), 0);
+        const carbs = items.reduce((sum, item) => sum + (item.carbs || 0), 0);
+        const fat = items.reduce((sum, item) => sum + (item.fat || 0), 0);
         history.push({
           date: dateStr,
-          totalGrams,
-          totalCalories,
+          calories,
+          protein,
+          carbs,
+          fat,
           itemCount: items.length,
         });
       } catch (e) {
-        history.push({ date: dateStr, totalGrams: 0, totalCalories: 0, itemCount: 0 });
+        history.push({ date: dateStr, calories: 0, protein: 0, carbs: 0, fat: 0, itemCount: 0 });
       }
     }
     return history;
@@ -278,9 +296,11 @@ export class GenerateDailyReport {
         timezone = this.#config.getDefaultTimezone();
       }
     } catch (e) {
-      // Use default
+      this.#logger.warn('report.timezone.error', { error: e.message });
     }
-    return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+    const date = new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+    this.#logger.debug('report.getTodayDate', { userId, timezone, date, utcNow: new Date().toISOString() });
+    return date;
   }
 
   /**

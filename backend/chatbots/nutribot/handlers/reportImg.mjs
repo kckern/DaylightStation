@@ -23,6 +23,8 @@ export function nutribotReportImgHandler(container) {
       const chatId = req.query.chatId;
       const date = req.query.date;
 
+      logger.info('reportImg.request', { chatId, date, traceId });
+
       if (!chatId) {
         return res.status(400).json({ 
           ok: false, 
@@ -37,6 +39,8 @@ export function nutribotReportImgHandler(container) {
         userId: chatId,
         date,
       });
+
+      logger.info('reportImg.data', { traceId, chatId, date, itemCount: reportData?.items?.length || 0 });
 
       // Generate image from report data
       // This would typically use a graphics library like sharp or canvas

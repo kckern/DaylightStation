@@ -22,6 +22,8 @@ export function nutribotReportHandler(container) {
       // Extract chatId from query or body
       const chatId = req.query.chatId || req.body?.chatId;
 
+      logger.info('report.request', { chatId, traceId });
+
       if (!chatId) {
         return res.status(400).json({ 
           ok: false, 

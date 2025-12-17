@@ -65,22 +65,19 @@ export class StartAdjustmentFlow {
 
       // 2. Build date selection keyboard
       const keyboard = this.#buildDateKeyboard(7);
-
-      // 3. Update existing message or send new one
-      const text = '📅 <b>Review & Adjust</b>\n\nSelect a date to review:';
-      let messageId;
+      
+      let messageId = existingMessageId;
 
       if (existingMessageId) {
-        // Update the existing message (e.g., the photo message caption + buttons)
+        // Update caption and reply markup on the photo message
         await this.#messagingGateway.updateMessage(conversationId, existingMessageId, {
-          text,
+          caption: '📅 <b>Review & Adjust</b>\n\nSelect a date to review:',
           parseMode: 'HTML',
           choices: keyboard,
-          inline: true,
         });
-        messageId = existingMessageId;
       } else {
-        // Create new message
+        // Fallback: create new message if no existing message
+        const text = '📅 <b>Review & Adjust</b>\n\nSelect a date to review:';
         const result = await this.#messagingGateway.sendMessage(
           conversationId,
           text,

@@ -79,7 +79,7 @@ export class ProcessRevisionInput {
       // 3. Load current log
       let nutriLog = null;
       if (this.#nutrilogRepository) {
-        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid);
+        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid, conversationId);
       }
 
       if (!nutriLog) {
@@ -223,9 +223,16 @@ Noom colors:
           unit: item.unit || 'serving',
           amount: item.quantity || item.amount || 1,
           color: this.#normalizeNoomColor(item.noom_color || item.color),
-          // Preserve extra data for display
-          calories: item.calories || 0,
           icon: item.icon || 'default',
+          // Nutrition fields from AI
+          calories: item.calories ?? 0,
+          protein: item.protein ?? 0,
+          carbs: item.carbs ?? 0,
+          fat: item.fat ?? 0,
+          fiber: item.fiber ?? 0,
+          sugar: item.sugar ?? 0,
+          sodium: item.sodium ?? 0,
+          cholesterol: item.cholesterol ?? 0,
         }));
       }
       return [];

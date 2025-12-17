@@ -60,7 +60,7 @@ export class LogFoodFromImage {
       // 1. Send "Analyzing..." status message
       const { messageId: statusMsgId } = await this.#messagingGateway.sendMessage(
         conversationId,
-        '🔍 Analyzing your food...',
+            `🔍 Analyzing image for nutrition...`,
         {}
       );
 
@@ -87,19 +87,23 @@ export class LogFoodFromImage {
       }
 
       // 5. Create NutriLog domain entity
-      const today = new Date().toISOString().split('T')[0];
-      const hour = new Date().getHours();
+      // Use local date/time based on timezone, not UTC
+      const timezone = this.#getTimezone();
+      const now = new Date();
+      const localDate = now.toLocaleDateString('en-CA', { timeZone: timezone }); // YYYY-MM-DD format
+      const localHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', hour12: false }));
+      
       let mealTime = 'morning';
-      if (hour >= 11 && hour < 14) mealTime = 'afternoon';
-      else if (hour >= 14 && hour < 20) mealTime = 'evening';
-      else if (hour >= 20 || hour < 5) mealTime = 'night';
+      if (localHour >= 11 && localHour < 14) mealTime = 'afternoon';
+      else if (localHour >= 14 && localHour < 20) mealTime = 'evening';
+      else if (localHour >= 20 || localHour < 5) mealTime = 'night';
       
       const nutriLog = NutriLog.create({
         userId: conversationId.split(':')[0] === 'cli' ? 'cli-user' : userId,
         conversationId,
         items: foodItems,
         meal: {
-          date: today,
+          date: localDate,
           time: mealTime,
         },
         metadata: {
@@ -122,7 +126,30 @@ export class LogFoodFromImage {
         await this.#conversationStateStore.set(conversationId, state);
       }
 
-      // 8. Delete user's original message and status message
+      // 8. Delete status message and user's original image, then send photo response
+      // Delete status message first
+      try {
+        await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+      } catch (e) {
+        // Ignore delete errors
+      }
+
+      // 9. Send photo message with food list as caption and buttons
+      // Use file_id (not URL) to avoid expiration issues
+      const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate);
+      const buttons = this.#buildActionButtons(nutriLog.id);
+
+      const { messageId: photoMsgId } = await this.#messagingGateway.sendPhoto(
+        conversationId,
+        imageData.fileId || imageUrl,  // Prefer file_id over URL
+        {
+          caption,
+          choices: buttons,
+          inline: true,
+        }
+      );
+
+      // Now delete user's original image (after our response is posted)
       if (userMessageId) {
         try {
           await this.#messagingGateway.deleteMessage(conversationId, userMessageId);
@@ -130,25 +157,6 @@ export class LogFoodFromImage {
           // Ignore delete errors
         }
       }
-      try {
-        await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
-      } catch (e) {
-        // Ignore delete errors
-      }
-
-      // 9. Send image message with food list as caption and buttons
-      const caption = this.#formatFoodCaption(foodItems, nutriLog.date || today);
-      const buttons = this.#buildActionButtons(nutriLog.id);
-
-      const { messageId: photoMsgId } = await this.#messagingGateway.sendPhoto(
-        conversationId,
-        imageUrl,
-        {
-          caption,
-          choices: buttons,
-          inline: true,
-        }
-      );
 
       this.#logger.info('logImage.complete', { 
         conversationId, 
@@ -240,9 +248,16 @@ Be conservative with estimates. If uncertain, give ranges or note uncertainty.`,
           unit: item.unit || 'serving',
           amount: item.quantity || item.amount || 1,
           color: this.#normalizeNoomColor(item.noom_color || item.color),
-          // Preserve extra data for display
-          calories: item.calories || 0,
           icon: item.icon || 'default',
+          // Nutrition fields from AI
+          calories: item.calories ?? 0,
+          protein: item.protein ?? 0,
+          carbs: item.carbs ?? 0,
+          fat: item.fat ?? 0,
+          fiber: item.fiber ?? 0,
+          sugar: item.sugar ?? 0,
+          sodium: item.sodium ?? 0,
+          cholesterol: item.cholesterol ?? 0,
         }));
         
         return items;

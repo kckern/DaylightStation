@@ -8,6 +8,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { ConversationState } from '../../../domain/entities/ConversationState.mjs';
+import { NutriLog } from '../../domain/NutriLog.mjs';
+import { createCanvas } from 'canvas';
+import bwipjs from 'bwip-js';
+import axios from 'axios';
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
 
 /**
  * Log food from UPC use case
@@ -57,8 +64,7 @@ export class LogFoodFromUPC {
       // 2. Send "Looking up..." message
       const { messageId: statusMsgId } = await this.#messagingGateway.sendMessage(
         conversationId,
-        '🔍 Looking up barcode...',
-        {}
+        `🔍 Looking up barcode ${upc}...`
       );
 
       // 3. Call UPC gateway
@@ -84,32 +90,36 @@ export class LogFoodFromUPC {
         }
       }
 
-      // 5. Create food item from product
+      // 5. Create food item from product (using FoodItem expected field names)
       const foodItem = {
-        name: product.name,
-        brand: product.brand,
-        quantity: 1,
-        unit: product.serving?.unit || 'serving',
-        grams: product.serving?.size || 100,
-        calories: product.nutrition?.calories || 0,
-        protein: product.nutrition?.protein || 0,
-        carbs: product.nutrition?.carbs || 0,
-        fat: product.nutrition?.fat || 0,
-        upc: upc,
+        label: product.name,           // FoodItem uses 'label' not 'name'
         icon: classification.icon,
-        noomColor: classification.noomColor,
+        grams: product.serving?.size || 100,
+        unit: product.serving?.unit || 'serving',
+        amount: 1,
+        color: classification.noomColor, // FoodItem uses 'color' not 'noomColor'
+        // Nutrition fields
+        calories: product.nutrition?.calories ?? 0,
+        protein: product.nutrition?.protein ?? 0,
+        carbs: product.nutrition?.carbs ?? 0,
+        fat: product.nutrition?.fat ?? 0,
+        fiber: product.nutrition?.fiber ?? 0,
+        sugar: product.nutrition?.sugar ?? 0,
+        sodium: product.nutrition?.sodium ?? 0,
+        cholesterol: product.nutrition?.cholesterol ?? 0,
       };
 
-      // 6. Create log data object
-      const nutriLog = {
-        uuid: uuidv4(),
-        chatId: conversationId,
+      // 6. Create NutriLog entity
+      const userId = conversationId.split('_').pop(); // Extract user ID from conversationId
+      const nutriLog = NutriLog.create({
+        userId,
+        conversationId,
         items: [foodItem],
-        source: 'upc',
-        sourceUpc: upc,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
+        metadata: {
+          source: 'upc',
+          sourceUpc: upc,
+        },
+      });
 
       // 7. Save NutriLog
       if (this.#nutrilogRepository) {
@@ -121,7 +131,7 @@ export class LogFoodFromUPC {
         const state = ConversationState.create(conversationId, {
           activeFlow: 'upc_portion',
           flowState: { 
-            pendingLogUuid: nutriLog.uuid,
+            pendingLogUuid: nutriLog.id,
             productData: product,
           },
         });
@@ -130,34 +140,46 @@ export class LogFoodFromUPC {
 
       // 9. Build portion selection message
       const caption = this.#buildProductCaption(product, foodItem);
-      const portionButtons = this.#buildPortionButtons(nutriLog.uuid);
+      const portionButtons = this.#buildPortionButtons(nutriLog.id);
 
-      // 10. Send product image if available, or update message
+      // 10. Get or generate image (always send photo, never text)
+      await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+      
+      let imagePath = null;
+      
+      // Try to fetch product image locally
       if (product.imageUrl) {
-        await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
-        await this.#messagingGateway.sendPhoto(conversationId, product.imageUrl, {
-          caption,
-          choices: portionButtons,
-          inline: true,
-        });
-      } else {
-        await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
-          text: caption,
-          choices: portionButtons,
-          inline: true,
-        });
+        try {
+          imagePath = await this.#downloadImageToTemp(product.imageUrl, upc);
+          this.#logger.debug('logUPC.imageFetched', { upc, imagePath });
+        } catch (e) {
+          this.#logger.warn('logUPC.imageFetchFailed', { upc, error: e.message });
+        }
       }
+      
+      // Always generate barcode image if no product image available
+      if (!imagePath) {
+        imagePath = await this.#generateBarcodeImage(upc, product.name);
+        this.#logger.debug('logUPC.barcodeGenerated', { upc, imagePath });
+      }
+      
+      // Always send photo (barcode fallback guarantees we have an image)
+      await this.#messagingGateway.sendPhoto(conversationId, imagePath, {
+        caption,
+        choices: portionButtons,
+        inline: true,
+      });
 
       this.#logger.info('logUPC.complete', { 
         conversationId, 
         upc,
         productName: product.name,
-        logUuid: nutriLog.uuid,
+        logUuid: nutriLog.id,
       });
 
       return {
         success: true,
-        nutrilogUuid: nutriLog.uuid,
+        nutrilogUuid: nutriLog.id,
         product,
       };
     } catch (error) {
@@ -212,38 +234,152 @@ If unsure, use "default" icon.`,
    * @private
    */
   #buildProductCaption(product, foodItem) {
+    const servingSize = product.serving?.size || 100;
+    const servingUnit = product.serving?.unit || 'g';
+    const brandSuffix = product.brand ? ` (${product.brand})` : '';
+    
     const lines = [
-      `${foodItem.icon} **${product.name}**`,
-      product.brand ? `_${product.brand}_` : null,
+      `${servingSize}${servingUnit} ${product.name}${brandSuffix}`,
       '',
-      `📊 Per serving (${product.serving?.size || 100}${product.serving?.unit || 'g'}):`,
-      `• Calories: ${foodItem.calories}`,
-      `• Protein: ${foodItem.protein}g`,
-      `• Carbs: ${foodItem.carbs}g`,
-      `• Fat: ${foodItem.fat}g`,
-      '',
-      'Select portion:',
+      `🔥 Calories: ${foodItem.calories}`,
+      `🍖 Protein: ${foodItem.protein}g`,
+      `🍏 Carbs: ${foodItem.carbs}g`,
+      `🧀 Fat: ${foodItem.fat}g`,
     ];
-    return lines.filter(Boolean).join('\n');
+    return lines.join('\n');
   }
 
   /**
-   * Build portion selection buttons
+   * Build portion selection buttons (matches legacy foodlog_hook.mjs format)
    * @private
    */
   #buildPortionButtons(logUuid) {
     return [
+      // One serving row
+      [
+        { text: '1 serving', callback_data: `portion:1` },
+      ],
+      // Fraction row
       [
         { text: '¼', callback_data: `portion:0.25` },
+        { text: '⅓', callback_data: `portion:0.33` },
         { text: '½', callback_data: `portion:0.5` },
-        { text: '1', callback_data: `portion:1` },
-        { text: '1½', callback_data: `portion:1.5` },
-        { text: '2', callback_data: `portion:2` },
+        { text: '⅔', callback_data: `portion:0.67` },
+        { text: '¾', callback_data: `portion:0.75` },
       ],
+      // Multiplier row
       [
-        { text: '🗑️ Cancel', callback_data: `discard:${logUuid}` },
+        { text: '×1¼', callback_data: `portion:1.25` },
+        { text: '×1½', callback_data: `portion:1.5` },
+        { text: '×2', callback_data: `portion:2` },
+        { text: '×3', callback_data: `portion:3` },
+        { text: '×4', callback_data: `portion:4` },
+      ],
+      // Cancel row
+      [
+        { text: '❌ Cancel', callback_data: `discard:${logUuid}` },
       ],
     ];
+  }
+
+  /**
+   * Download image to temp directory
+   * @private
+   */
+  async #downloadImageToTemp(imageUrl, upc) {
+    const tmpDir = path.join(os.tmpdir(), 'nutribot-upc');
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    // Handle proxy URLs from upc.mjs (format: .../nutribot/images/{encodedUrl}/{productName}/{upc})
+    // Extract the original image URL if it's a proxy URL
+    let actualUrl = imageUrl;
+    if (imageUrl.includes('/nutribot/images/')) {
+      const parts = imageUrl.split('/nutribot/images/');
+      if (parts[1]) {
+        // The encoded URL is the first path segment after /nutribot/images/
+        const encodedPart = parts[1].split('/')[0];
+        try {
+          actualUrl = decodeURIComponent(encodedPart);
+        } catch (e) {
+          // Keep original if decode fails
+        }
+      }
+    }
+    
+    // Get extension from actual URL
+    const urlPath = actualUrl.split('?')[0];
+    const ext = urlPath.split('.').pop()?.toLowerCase() || 'jpg';
+    const safeExt = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) ? ext : 'jpg';
+    const filePath = path.join(tmpDir, `${upc}-${Date.now()}.${safeExt}`);
+    
+    const response = await axios.get(actualUrl, {
+      responseType: 'arraybuffer',
+      timeout: 10000,
+    });
+    
+    await fs.writeFile(filePath, response.data);
+    return filePath;
+  }
+
+  /**
+   * Generate a barcode image for the UPC (similar to food_report.mjs generateBarcode)
+   * @private
+   */
+  async #generateBarcodeImage(upc, productName) {
+    const tmpDir = path.join(os.tmpdir(), 'nutribot-upc');
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const canvasWidth = 400;
+    const canvasHeight = 200;
+    const margin = { top: 20, right: 20, bottom: 50, left: 20 };
+
+    const canvas = createCanvas(canvasWidth, canvasHeight);
+    const ctx = canvas.getContext('2d');
+    
+    // White background
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // Generate the barcode using bwip-js (code128 like reference)
+    const barcodeBuffer = await bwipjs.toBuffer({
+      bcid: 'code128',
+      text: upc,
+      scale: 3,
+      height: canvasHeight - margin.top - margin.bottom,
+      includetext: false,
+    });
+
+    // Load and draw barcode
+    const { loadImage } = await import('canvas');
+    const barcodeImage = await loadImage(barcodeBuffer);
+    
+    ctx.drawImage(
+      barcodeImage,
+      margin.left,
+      margin.top,
+      canvasWidth - margin.left - margin.right,
+      canvasHeight - margin.top - margin.bottom - 30
+    );
+
+    // Draw UPC number centered
+    ctx.font = 'bold 24px Arial';
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.fillText(upc, canvasWidth / 2, canvasHeight - margin.bottom + 30);
+    
+    // Draw product name (truncated) at top
+    ctx.font = '14px Arial';
+    const truncatedName = productName.length > 45 
+      ? productName.substring(0, 42) + '...' 
+      : productName;
+    ctx.fillText(truncatedName, canvasWidth / 2, canvasHeight - 5);
+
+    // Save to file
+    const filePath = path.join(tmpDir, `barcode-${upc}-${Date.now()}.png`);
+    const buffer = canvas.toBuffer('image/png');
+    await fs.writeFile(filePath, buffer);
+    
+    return filePath;
   }
 }
 

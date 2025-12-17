@@ -54,7 +54,7 @@ export class ReviseFoodLog {
       // 1. Load the log to show current items
       let nutriLog = null;
       if (this.#nutrilogRepository) {
-        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid);
+        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid, conversationId);
       }
 
       // 2. Set conversation state to revision mode

@@ -501,12 +501,20 @@ export class CanvasReportRenderer extends IReportRenderer {
 
     // Build 7-day data
     const days = [];
-    const baseDate = todayDate ? new Date(todayDate) : new Date();
+    // Parse todayDate without timezone issues (YYYY-MM-DD string)
+    let baseDate;
+    if (todayDate && /^\d{4}-\d{2}-\d{2}$/.test(todayDate)) {
+      const [year, month, day] = todayDate.split('-').map(Number);
+      baseDate = new Date(year, month - 1, day);
+    } else {
+      baseDate = new Date();
+    }
     
     for (let i = barCount - 1; i >= 0; i--) {
       const d = new Date(baseDate);
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
+      // Format as YYYY-MM-DD using local date components
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
       // Check history first
       let historyDay = null;
@@ -672,7 +680,10 @@ export class CanvasReportRenderer extends IReportRenderer {
       });
     }
     try {
-      const date = new Date(dateStr);
+      // Parse YYYY-MM-DD without timezone conversion issues
+      // new Date('2025-12-16') parses as UTC midnight, which shifts the day in local time
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const date = new Date(year, month - 1, day); // Local date
       return date.toLocaleDateString('en-US', {
         weekday: 'short',
         day: 'numeric',
@@ -690,7 +701,9 @@ export class CanvasReportRenderer extends IReportRenderer {
    */
   _getDayLabel(dateStr) {
     try {
-      const date = new Date(dateStr);
+      // Parse YYYY-MM-DD without timezone conversion issues
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const date = new Date(year, month - 1, day); // Local date
       return date.toLocaleDateString('en-US', { weekday: 'short' });
     } catch (e) {
       return '';

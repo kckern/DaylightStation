@@ -49,19 +49,22 @@ export class SelectUPCPortion {
         state = await this.#conversationStateStore.get(conversationId);
       }
 
-      if (!state || state.flow !== 'upc_portion') {
+      if (!state || state.activeFlow !== 'upc_portion') {
+        this.#logger.warn('selectPortion.invalidState', { conversationId, activeFlow: state?.activeFlow });
         return { success: false, error: 'Not in portion selection mode' };
       }
 
-      const logUuid = state.pendingLogUuid;
+      const logUuid = state.flowState?.pendingLogUuid;
 
-      // 2. Load the log
+      // 2. Load the log (extract userId from conversationId)
+      const userId = conversationId.split('_').pop();
       let nutriLog = null;
       if (this.#nutrilogRepository) {
-        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid);
+        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid, userId);
       }
 
       if (!nutriLog || !nutriLog.items?.length) {
+        this.#logger.warn('selectPortion.logNotFound', { logUuid, userId, hasLog: !!nutriLog, itemCount: nutriLog?.items?.length });
         return { success: false, error: 'Log not found' };
       }
 
@@ -76,10 +79,9 @@ export class SelectUPCPortion {
         fat: Math.round((item.fat || 0) * portionFactor * 10) / 10,
       }));
 
-      // 4. Update log with scaled items and confirm
+      // 4. Update nutrilog status to accepted
       if (this.#nutrilogRepository) {
-        await this.#nutrilogRepository.updateItems(logUuid, scaledItems);
-        await this.#nutrilogRepository.updateStatus(logUuid, 'accepted');
+        await this.#nutrilogRepository.updateStatus(logUuid, 'accepted', userId);
       }
 
       // 5. Add to nutrilist
