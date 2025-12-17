@@ -42,9 +42,16 @@ export class SelectDateForAdjustment {
   async execute(input) {
     const { userId, conversationId, messageId, daysAgo, offset = 0 } = input;
 
-    this.#logger.debug('adjustment.selectDate', { userId, daysAgo });
+    this.#logger.debug('adjustment.selectDate', { userId, daysAgo, messageId });
 
     try {
+      // Get originMessageId from state (the report photo message)
+      let originMessageId = messageId;
+      if (this.#conversationStateStore) {
+        const state = await this.#conversationStateStore.get(conversationId);
+        originMessageId = state?.flowState?.originMessageId || messageId;
+      }
+
       // 1. Calculate date
       const date = this.#getDateFromDaysAgo(daysAgo);
 
@@ -61,8 +68,9 @@ export class SelectDateForAdjustment {
       if (items.length === 0) {
         // Build date keyboard for going back
         const keyboard = this.#buildDateKeyboard();
-        await this.#messagingGateway.updateMessage(conversationId, messageId, {
-          text: `📅 <b>No items for ${date}</b>\n\nNo food logged for this date. Select another date:`,
+        // Update photo caption with "no items" message
+        await this.#messagingGateway.updateMessage(conversationId, originMessageId, {
+          caption: `📅 <b>No items for ${date}</b>\n\nNo food logged for this date. Select another date:`,
           parseMode: 'HTML',
           choices: keyboard,
         });
@@ -83,9 +91,9 @@ export class SelectDateForAdjustment {
       // 6. Build message with items list
       const message = this.#buildItemsMessage(date, items);
 
-      // 7. Update message
-      await this.#messagingGateway.updateMessage(conversationId, messageId, {
-        text: message,
+      // 7. Update photo caption with items list (not send new message)
+      await this.#messagingGateway.updateMessage(conversationId, originMessageId, {
+        caption: message,
         parseMode: 'HTML',
         choices: keyboard,
       });
@@ -156,23 +164,35 @@ export class SelectDateForAdjustment {
    */
   #buildItemKeyboard(items, offset) {
     const keyboard = [];
-    const pageSize = 6;
+    const pageSize = 9; // 3 rows of 3 items
     // Sort by calories descending
     const sortedItems = [...items].sort((a, b) => (b.calories || 0) - (a.calories || 0));
     const pageItems = sortedItems.slice(offset, offset + pageSize);
 
-    // Item buttons (1 per row for better readability)
+    // Item buttons (3 per row)
+    let currentRow = [];
     for (const item of pageItems) {
       const emoji = NOOM_COLOR_EMOJI[item.noom_color || item.color] || '⚪';
-      const name = item.name || item.label || 'Item';
-      const cal = item.calories || 0;
-      const grams = item.grams || 0;
-      // Show full name with cal/grams
-      const label = `${emoji} ${name} (${grams}g, ${cal} cal)`;
-      keyboard.push([{
+      const name = item.name || item.label || item.item || 'Item';
+      // Truncate name if too long for button
+      const truncatedName = name.length > 12 ? name.substring(0, 10) + '…' : name;
+      const label = `${emoji} ${truncatedName}`;
+      const itemId = item.uuid || item.id;
+      
+      currentRow.push({
         text: label,
-        callback_data: `adj_item_${item.id}`,
-      }]);
+        callback_data: `adj_item_${itemId}`,
+      });
+      
+      // Every 3 items, push row and start new one
+      if (currentRow.length === 3) {
+        keyboard.push(currentRow);
+        currentRow = [];
+      }
+    }
+    // Push any remaining items in partial row
+    if (currentRow.length > 0) {
+      keyboard.push(currentRow);
     }
 
     // Navigation row

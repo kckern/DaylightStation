@@ -43,10 +43,10 @@ export class AcceptFoodLog {
     this.#logger.debug('acceptLog.start', { conversationId, logUuid });
 
     try {
-      // 1. Load the log
+      // 1. Load the log (pass conversationId for user resolution)
       let nutriLog = null;
       if (this.#nutrilogRepository) {
-        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid);
+        nutriLog = await this.#nutrilogRepository.findByUuid(logUuid, conversationId);
       }
 
       if (!nutriLog) {
@@ -62,7 +62,7 @@ export class AcceptFoodLog {
 
       // 3. Update log status to CONFIRMED
       if (this.#nutrilogRepository) {
-        await this.#nutrilogRepository.updateStatus(logUuid, 'accepted');
+        await this.#nutrilogRepository.updateStatus(logUuid, 'accepted', conversationId);
       }
 
       // 4. Add items to nutrilist
@@ -74,7 +74,8 @@ export class AcceptFoodLog {
         const logDate = nutriLog.date || fallbackDate;
         
         const listItems = nutriLog.items.map(item => ({
-          ...item,
+          // FoodItem instances need toJSON() to get plain object
+          ...(typeof item.toJSON === 'function' ? item.toJSON() : item),
           userId,
           chatId: conversationId,
           logUuid: logUuid,

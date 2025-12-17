@@ -8,6 +8,9 @@ import { updateWebhook } from './journalist/lib/telegram.mjs';
 import imageHandler from './journalist/img.mjs';
 import moment from 'moment-timezone';
 
+// Import UPC lookup function from journalist
+import { upcLookup } from './journalist/lib/upc.mjs';
+
 // New chatbots framework
 import { createNutribotRouter } from './chatbots/nutribot/server.mjs';
 import { NutribotContainer } from './chatbots/nutribot/container.mjs';
@@ -185,9 +188,7 @@ const initNutribotRouter = async () => {
         );
         
         const upcGateway = new RealUPCGateway({
-            edamamAppId: process.env.EDAMAM_APP_ID,
-            edamamAppKey: process.env.EDAMAM_APP_KEY,
-            upcitemdbApiKey: process.env.UPCITEMDB_API_KEY,
+            upcLookup,  // Pass the journalist upcLookup function
             logger
         });
         

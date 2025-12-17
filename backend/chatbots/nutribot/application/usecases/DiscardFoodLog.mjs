@@ -41,7 +41,7 @@ export class DiscardFoodLog {
     try {
       // 1. Update log status to DISCARDED
       if (this.#nutrilogRepository) {
-        await this.#nutrilogRepository.updateStatus(logUuid, 'rejected');
+        await this.#nutrilogRepository.updateStatus(logUuid, 'rejected', conversationId);
       }
 
       // 2. Clear conversation state

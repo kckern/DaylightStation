@@ -201,6 +201,15 @@ export function validateFoodItem(item) {
       unit: item.unit,
       amount: item.amount,
       color: item.color,
+      // Nutrition fields (optional, default to 0)
+      calories: item.calories ?? 0,
+      protein: item.protein ?? 0,
+      carbs: item.carbs ?? 0,
+      fat: item.fat ?? 0,
+      fiber: item.fiber ?? 0,
+      sugar: item.sugar ?? 0,
+      sodium: item.sodium ?? 0,
+      cholesterol: item.cholesterol ?? 0,
     },
   };
 }

@@ -37,6 +37,23 @@ export class FoodItem {
   #amount;
   /** @type {string} */
   #color;
+  // Nutrition fields
+  /** @type {number} */
+  #calories;
+  /** @type {number} */
+  #protein;
+  /** @type {number} */
+  #carbs;
+  /** @type {number} */
+  #fat;
+  /** @type {number} */
+  #fiber;
+  /** @type {number} */
+  #sugar;
+  /** @type {number} */
+  #sodium;
+  /** @type {number} */
+  #cholesterol;
 
   /**
    * @param {FoodItemProps} props
@@ -58,6 +75,15 @@ export class FoodItem {
     this.#unit = data.unit;
     this.#amount = data.amount;
     this.#color = data.color;
+    // Nutrition fields
+    this.#calories = data.calories ?? 0;
+    this.#protein = data.protein ?? 0;
+    this.#carbs = data.carbs ?? 0;
+    this.#fat = data.fat ?? 0;
+    this.#fiber = data.fiber ?? 0;
+    this.#sugar = data.sugar ?? 0;
+    this.#sodium = data.sodium ?? 0;
+    this.#cholesterol = data.cholesterol ?? 0;
 
     Object.freeze(this);
   }
@@ -71,6 +97,15 @@ export class FoodItem {
   get unit() { return this.#unit; }
   get amount() { return this.#amount; }
   get color() { return this.#color; }
+  // Nutrition getters
+  get calories() { return this.#calories; }
+  get protein() { return this.#protein; }
+  get carbs() { return this.#carbs; }
+  get fat() { return this.#fat; }
+  get fiber() { return this.#fiber; }
+  get sugar() { return this.#sugar; }
+  get sodium() { return this.#sodium; }
+  get cholesterol() { return this.#cholesterol; }
 
   // ==================== Computed Properties ====================
 
@@ -118,6 +153,14 @@ export class FoodItem {
       unit: this.#unit,
       amount: this.#amount,
       color: this.#color,
+      calories: this.#calories,
+      protein: this.#protein,
+      carbs: this.#carbs,
+      fat: this.#fat,
+      fiber: this.#fiber,
+      sugar: this.#sugar,
+      sodium: this.#sodium,
+      cholesterol: this.#cholesterol,
       ...updates,
     });
   }
@@ -135,6 +178,15 @@ export class FoodItem {
       unit: this.#unit,
       amount: this.#amount,
       color: this.#color,
+      // Nutrition fields
+      calories: this.#calories,
+      protein: this.#protein,
+      carbs: this.#carbs,
+      fat: this.#fat,
+      fiber: this.#fiber,
+      sugar: this.#sugar,
+      sodium: this.#sodium,
+      cholesterol: this.#cholesterol,
     };
   }
 
