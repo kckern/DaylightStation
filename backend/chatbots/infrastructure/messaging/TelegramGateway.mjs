@@ -387,6 +387,23 @@ export class TelegramGateway {
       const messageId = MessageId.from(response.data.result.message_id);
       return { messageId };
       
+    } else if (typeof imageSource === 'string') {
+      // Assume it's a Telegram file_id - pass directly to API
+      const params = {
+        ...chatParams,
+        photo: imageSource,
+      };
+      if (caption) params.caption = caption;
+      if (options.parseMode) params.parse_mode = options.parseMode;
+      if (options.choices) {
+        params.reply_markup = this.#buildKeyboard(options.choices, options.inline);
+      }
+      
+      this.#logger.debug('telegram.api.sendPhotoFileId', { fileId: imageSource.substring(0, 20) + '...' });
+      const result = await this.#callApi('sendPhoto', params);
+      const messageId = MessageId.from(result.message_id);
+      return { messageId };
+
     } else {
       throw new Error(`Invalid image source: ${typeof imageSource}`);
     }
@@ -409,8 +426,8 @@ export class TelegramGateway {
    * @param {string|Object} chatId - Chat ID (string, conversationId, or ChatId object)
    * @param {string|number|MessageId} messageId - Message ID to update
    * @param {Object} updates - Updates to apply
-   * @param {string} [updates.text] - New text content
-   * @param {string} [updates.caption] - New caption (for images)
+   * @param {string} [updates.text] - New text content (for text messages)
+   * @param {string} [updates.caption] - New caption (for photo/media messages)
    * @param {string} [updates.parseMode] - Parse mode
    * @param {Array<Array>} [updates.choices] - New keyboard
    * @returns {Promise<void>}
@@ -421,6 +438,7 @@ export class TelegramGateway {
       message_id: this.#normalizeMessageId(messageId),
     };
 
+    // Handle text messages (editMessageText)
     if (updates.text !== undefined) {
       const params = {
         ...baseParams,
@@ -433,7 +451,9 @@ export class TelegramGateway {
         params.reply_markup = this.#buildKeyboard(updates.choices, true);
       }
       await this.#callApi('editMessageText', params);
-    } else if (updates.caption !== undefined) {
+    } 
+    // Handle photo/media messages (editMessageCaption) - can include choices
+    else if (updates.caption !== undefined) {
       const params = {
         ...baseParams,
         caption: updates.caption,
@@ -441,8 +461,13 @@ export class TelegramGateway {
       if (updates.parseMode) {
         params.parse_mode = updates.parseMode;
       }
+      if (updates.choices) {
+        params.reply_markup = this.#buildKeyboard(updates.choices, true);
+      }
       await this.#callApi('editMessageCaption', params);
-    } else if (updates.choices !== undefined) {
+    } 
+    // Handle reply markup only (works for both text and photo messages)
+    else if (updates.choices !== undefined) {
       await this.updateKeyboard(chatId, messageId, updates.choices);
     }
   }

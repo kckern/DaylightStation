@@ -189,9 +189,17 @@ export class NutribotEventRouter {
       hasPendingLogUuid: !!state?.flowState?.pendingLogUuid,
     });
 
-    // Check activeFlow (not flow) and flowState.pendingLogUuid - matches what ReviseFoodLog sets
-    if (state?.activeFlow === 'revision' && state?.flowState?.pendingLogUuid) {
-      this.#logger.info('router.text.revisionDetected', { logUuid: state.flowState.pendingLogUuid, text });
+    // Check if in revision mode OR if there's a pending log (implicit revision)
+    // When user sends text while a pending log exists, treat it as a revision
+    const isRevisionMode = state?.activeFlow === 'revision' && state?.flowState?.pendingLogUuid;
+    const hasPendingLog = (state?.activeFlow === 'food_confirmation' || state?.activeFlow === 'revision') && state?.flowState?.pendingLogUuid;
+    
+    if (isRevisionMode || hasPendingLog) {
+      this.#logger.info('router.text.revisionDetected', { 
+        logUuid: state.flowState.pendingLogUuid, 
+        text,
+        implicit: !isRevisionMode && hasPendingLog,
+      });
       const useCase = this.#container.getProcessRevisionInput();
       return useCase.execute({
         userId: chatId,
@@ -232,9 +240,16 @@ export class NutribotEventRouter {
       hasPendingLogUuid: !!state?.flowState?.pendingLogUuid,
     });
 
-    // If in revision mode, transcribe first then process as revision
-    if (state?.activeFlow === 'revision' && state?.flowState?.pendingLogUuid) {
-      this.#logger.info('router.voice.revisionDetected', { logUuid: state.flowState.pendingLogUuid });
+    // Check if in revision mode OR if there's a pending log (implicit revision)
+    const isRevisionMode = state?.activeFlow === 'revision' && state?.flowState?.pendingLogUuid;
+    const hasPendingLog = (state?.activeFlow === 'food_confirmation' || state?.activeFlow === 'revision') && state?.flowState?.pendingLogUuid;
+    
+    // If in revision mode or has pending log, transcribe first then process as revision
+    if (isRevisionMode || hasPendingLog) {
+      this.#logger.info('router.voice.revisionDetected', { 
+        logUuid: state.flowState.pendingLogUuid,
+        implicit: !isRevisionMode && hasPendingLog,
+      });
       
       // Need to transcribe voice first
       const messagingGateway = this.#container.getMessagingGateway();
@@ -458,9 +473,226 @@ export class NutribotEventRouter {
         return { success: true };
       }
 
-      default:
+      case 'adj_date_0':
+      case 'adj_date_1':
+      case 'adj_date_2':
+      case 'adj_date_3':
+      case 'adj_date_4':
+      case 'adj_date_5':
+      case 'adj_date_6':
+      case 'adj_date_7': {
+        // Handle date selection from adjustment flow
+        const daysAgo = parseInt(action.split('_')[2], 10);
+        
+        const useCase = this.#container.getSelectDateForAdjustment();
+        return useCase.execute({
+          userId: chatId,
+          conversationId: this.#buildConversationId(chatId),
+          daysAgo,
+          messageId,
+        });
+      }
+
+      case 'adj_back_date': {
+        // Go back to date selection
+        const useCase = this.#container.getStartAdjustmentFlow();
+        return useCase.execute({
+          userId: chatId,
+          conversationId: this.#buildConversationId(chatId),
+          messageId,
+        });
+      }
+
+      case 'adj_done': {
+        // Done with adjustment - restore report buttons
+        const messagingGateway = this.#container.getMessagingGateway();
+        await messagingGateway.updateMessage(
+          this.#buildConversationId(chatId),
+          messageId,
+          {
+            choices: [
+              [
+                { text: '✏️ Adjust', callback_data: 'report_adjust' },
+                { text: '✅ Accept', callback_data: 'report_accept' },
+              ],
+            ],
+            inline: true,
+          }
+        );
+        
+        // Clear adjustment state
+        const conversationStateStore = this.#container.getConversationStateStore();
+        await conversationStateStore.clear(this.#buildConversationId(chatId));
+        
+        this.#logger.info('router.adjDone', { chatId, messageId });
+        return { success: true };
+      }
+
+      default: {
+        // Handle dynamic patterns that can't be matched with case statements
+        
+        // adj_item_{uuid} - Item selection in adjustment flow
+        if (action.startsWith('adj_item_')) {
+          const itemUuid = action.replace('adj_item_', '');
+          this.#logger.debug('router.adjItem', { chatId, itemUuid });
+          
+          const conversationId = this.#buildConversationId(chatId);
+          const conversationStateStore = this.#container.getConversationStateStore();
+          const state = await conversationStateStore.get(conversationId);
+          const originMessageId = state?.flowState?.originMessageId || messageId;
+          
+          // Get the item details from nutrilist
+          const nutrilistRepository = this.#container.getNutrilistRepository();
+          let itemCaption = '↕️ Adjust portion:';
+          
+          if (nutrilistRepository?.findByUuid) {
+            const item = await nutrilistRepository.findByUuid(chatId, itemUuid);
+            if (item) {
+              const emoji = item.noom_color === 'green' ? '🟢' : item.noom_color === 'yellow' ? '🟡' : item.noom_color === 'orange' ? '🟠' : '⚪';
+              const name = item.name || item.item || item.label || 'Item';
+              const grams = item.grams || item.amount || 0;
+              const calories = item.calories || 0;
+              itemCaption = `${emoji} <b>${name}</b>\n${grams}g • ${calories} cal\n\n↕️ How to adjust?`;
+            }
+          }
+          
+          // Update state with selected item
+          await conversationStateStore.update(conversationId, {
+            step: 'portion_selection',
+            data: { ...state?.flowState?.data, selectedItemUuid: itemUuid },
+          });
+          
+          // Show portion adjustment options
+          const messagingGateway = this.#container.getMessagingGateway();
+          await messagingGateway.updateMessage(conversationId, originMessageId, {
+            caption: itemCaption,
+            parseMode: 'HTML',
+            choices: [
+              [
+                { text: '¼', callback_data: `adj_portion_0.25_${itemUuid}` },
+                { text: '⅓', callback_data: `adj_portion_0.33_${itemUuid}` },
+                { text: '½', callback_data: `adj_portion_0.5_${itemUuid}` },
+                { text: '⅔', callback_data: `adj_portion_0.67_${itemUuid}` },
+                { text: '¾', callback_data: `adj_portion_0.75_${itemUuid}` },
+              ],
+              [
+                { text: '×1¼', callback_data: `adj_portion_1.25_${itemUuid}` },
+                { text: '×1½', callback_data: `adj_portion_1.5_${itemUuid}` },
+                { text: '×2', callback_data: `adj_portion_2_${itemUuid}` },
+                { text: '×3', callback_data: `adj_portion_3_${itemUuid}` },
+                { text: '×4', callback_data: `adj_portion_4_${itemUuid}` },
+              ],
+              [
+                { text: '🗑️ Delete', callback_data: `adj_delete_${itemUuid}` },
+                { text: '↩️ Back', callback_data: 'adj_back_items' },
+              ],
+            ],
+          });
+          return { success: true };
+        }
+        
+        // adj_page_{offset} - Pagination in adjustment flow
+        if (action.startsWith('adj_page_')) {
+          const offset = parseInt(action.replace('adj_page_', ''), 10);
+          const conversationId = this.#buildConversationId(chatId);
+          const conversationStateStore = this.#container.getConversationStateStore();
+          const state = await conversationStateStore.get(conversationId);
+          const daysAgo = state?.flowState?.data?.daysAgo || 0;
+          
+          const useCase = this.#container.getSelectDateForAdjustment();
+          return useCase.execute({
+            userId: chatId,
+            conversationId,
+            daysAgo,
+            offset,
+            messageId,
+          });
+        }
+        
+        // adj_portion_{factor}_{uuid} - Apply portion adjustment
+        if (action.startsWith('adj_portion_')) {
+          const parts = action.replace('adj_portion_', '').split('_');
+          const factor = parseFloat(parts[0]);
+          const itemUuid = parts[1];
+          
+          this.#logger.debug('router.adjPortion', { chatId, factor, itemUuid });
+          
+          // Apply the adjustment to the nutrilist item
+          const nutrilistRepository = this.#container.getNutrilistRepository();
+          const conversationId = this.#buildConversationId(chatId);
+          
+          if (nutrilistRepository?.updatePortion) {
+            await nutrilistRepository.updatePortion(chatId, itemUuid, factor);
+          }
+          
+          // Clear adjustment state
+          const conversationStateStore = this.#container.getConversationStateStore();
+          await conversationStateStore.clear(conversationId);
+          
+          // Trigger report regeneration
+          const generateReportUseCase = this.#container.getGenerateDailyReport();
+          if (generateReportUseCase) {
+            return generateReportUseCase.execute({
+              userId: chatId,
+              conversationId,
+              deletePreviousReport: true,
+              previousReportMessageId: messageId,
+            });
+          }
+          
+          return { success: true };
+        }
+        
+        // adj_delete_{uuid} - Delete item
+        if (action.startsWith('adj_delete_')) {
+          const itemUuid = action.replace('adj_delete_', '');
+          
+          this.#logger.debug('router.adjDelete', { chatId, itemUuid });
+          
+          const nutrilistRepository = this.#container.getNutrilistRepository();
+          const conversationId = this.#buildConversationId(chatId);
+          
+          if (nutrilistRepository?.deleteById) {
+            await nutrilistRepository.deleteById(chatId, itemUuid);
+          }
+          
+          // Clear adjustment state
+          const conversationStateStore = this.#container.getConversationStateStore();
+          await conversationStateStore.clear(conversationId);
+          
+          // Trigger report regeneration
+          const generateReportUseCase = this.#container.getGenerateDailyReport();
+          if (generateReportUseCase) {
+            return generateReportUseCase.execute({
+              userId: chatId,
+              conversationId,
+              deletePreviousReport: true,
+              previousReportMessageId: messageId,
+            });
+          }
+          
+          return { success: true };
+        }
+        
+        // adj_back_items - Go back to item list from portion selection
+        if (action === 'adj_back_items') {
+          const conversationId = this.#buildConversationId(chatId);
+          const conversationStateStore = this.#container.getConversationStateStore();
+          const state = await conversationStateStore.get(conversationId);
+          const daysAgo = state?.flowState?.data?.daysAgo || 0;
+          
+          const useCase = this.#container.getSelectDateForAdjustment();
+          return useCase.execute({
+            userId: chatId,
+            conversationId,
+            daysAgo,
+            messageId,
+          });
+        }
+        
         this.#logger.warn('router.unknownCallback', { chatId, action, data });
         return;
+      }
     }
   }
 

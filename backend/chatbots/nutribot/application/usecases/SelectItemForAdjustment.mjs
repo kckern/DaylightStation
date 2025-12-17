@@ -104,23 +104,27 @@ export class SelectItemForAdjustment {
   #buildItemDetailMessage(item, date) {
     const color = item.noom_color || item.color;
     const emoji = NOOM_COLOR_EMOJI[color] || '⚪';
-    const name = item.name || item.label || 'Unknown';
+    const name = item.name || item.label || item.item || 'Unknown';
+    const amount = item.amount || item.grams || '?';
+    const unit = item.unit || 'g';
+    const calories = item.calories || 0;
+    const fat = item.fat || 0;
+    const protein = item.protein || 0;
+    const carbs = item.carbs || 0;
 
-    return `${emoji} <b>${name}</b>\n\n` +
-      `📅 Date: ${date}\n` +
-      `⚖️ Amount: ${item.grams || '?'}g\n` +
-      `🔥 Calories: ${item.calories || '?'}\n` +
-      `🎨 Color: ${color || 'unknown'}\n\n` +
-      `Select an action:`;
+    return `${emoji} ${name} (${amount}${unit})\n` +
+      `🔥 ${Math.round(calories)} cal\n` +
+      `🧀 ${Math.round(fat)}g 🍖 ${Math.round(protein)}g 🍏 ${Math.round(carbs)}g\n\n` +
+      `↕️ How to adjust?`;
   }
 
   /**
-   * Build action keyboard
+   * Build action keyboard (matches legacy foodlog_hook.mjs format)
    * @private
    */
   #buildActionKeyboard() {
     return [
-      // Portion reduction row
+      // Fraction row
       [
         { text: '¼', callback_data: 'adj_factor_0.25' },
         { text: '⅓', callback_data: 'adj_factor_0.33' },
@@ -128,10 +132,11 @@ export class SelectItemForAdjustment {
         { text: '⅔', callback_data: 'adj_factor_0.67' },
         { text: '¾', callback_data: 'adj_factor_0.75' },
       ],
-      // Portion increase row
+      // Multiplier row
       [
         { text: '×1¼', callback_data: 'adj_factor_1.25' },
         { text: '×1½', callback_data: 'adj_factor_1.5' },
+        { text: '×1¾', callback_data: 'adj_factor_1.75' },
         { text: '×2', callback_data: 'adj_factor_2' },
         { text: '×3', callback_data: 'adj_factor_3' },
         { text: '×4', callback_data: 'adj_factor_4' },
@@ -140,7 +145,7 @@ export class SelectItemForAdjustment {
       [
         { text: '🗑️ Delete', callback_data: 'adj_delete' },
         { text: '📅 Move Day', callback_data: 'adj_move' },
-        { text: '↩️ Back', callback_data: 'adj_back_items' },
+        { text: '↩️ Done', callback_data: 'adj_back_items' },
       ],
     ];
   }
