@@ -25,6 +25,7 @@ import { GetReportAsJSON } from './application/usecases/GetReportAsJSON.mjs';
 // Coaching Use Cases
 import { GenerateThresholdCoaching } from './application/usecases/GenerateThresholdCoaching.mjs';
 import { GenerateOnDemandCoaching } from './application/usecases/GenerateOnDemandCoaching.mjs';
+import { GenerateReportCoaching } from './application/usecases/GenerateReportCoaching.mjs';
 
 // Adjustment Use Cases
 import { StartAdjustmentFlow } from './application/usecases/StartAdjustmentFlow.mjs';
@@ -53,6 +54,7 @@ export class NutribotContainer {
   #upcGateway;
   #nutrilogRepository;
   #nutrilistRepository;
+  #nutricoachRepository;
   #conversationStateStore;
   #reportRenderer;
 
@@ -70,6 +72,7 @@ export class NutribotContainer {
   #getReportAsJSON;
   #generateThresholdCoaching;
   #generateOnDemandCoaching;
+  #generateReportCoaching;
   #startAdjustmentFlow;
   #selectDateForAdjustment;
   #selectItemForAdjustment;
@@ -103,6 +106,7 @@ export class NutribotContainer {
     this.#upcGateway = options.upcGateway;
     this.#nutrilogRepository = options.nutrilogRepository;
     this.#nutrilistRepository = options.nutrilistRepository;
+    this.#nutricoachRepository = options.nutricoachRepository;
     this.#conversationStateStore = options.conversationStateStore;
     this.#reportRenderer = options.reportRenderer;
   }
@@ -143,6 +147,10 @@ export class NutribotContainer {
 
   getNutrilistRepository() {
     return this.#nutrilistRepository;
+  }
+
+  getNutricoachRepository() {
+    return this.#nutricoachRepository;
   }
 
   getConversationStateStore() {
@@ -326,6 +334,20 @@ export class NutribotContainer {
       });
     }
     return this.#generateOnDemandCoaching;
+  }
+
+  getGenerateReportCoaching() {
+    if (!this.#generateReportCoaching) {
+      this.#generateReportCoaching = new GenerateReportCoaching({
+        messagingGateway: this.getMessagingGateway(),
+        aiGateway: this.getAIGateway(),
+        nutriListRepository: this.#nutrilistRepository,
+        nutriCoachRepository: this.#nutricoachRepository,
+        config: this.#config,
+        logger: this.#logger,
+      });
+    }
+    return this.#generateReportCoaching;
   }
 
   // ==================== Adjustment Use Cases ====================

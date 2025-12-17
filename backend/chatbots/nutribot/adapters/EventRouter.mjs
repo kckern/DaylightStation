@@ -459,7 +459,7 @@ export class NutribotEventRouter {
       }
 
       case 'report_accept': {
-        // Accept report - just remove the buttons
+        // Accept report - remove the buttons
         const messagingGateway = this.#container.getMessagingGateway();
         await messagingGateway.updateMessage(
           this.#buildConversationId(chatId),
@@ -470,6 +470,22 @@ export class NutribotEventRouter {
           }
         );
         this.#logger.info('router.reportAccept', { chatId, messageId });
+        
+        // Trigger coaching after report acceptance
+        try {
+          const coachingUseCase = this.#container.getGenerateReportCoaching();
+          await coachingUseCase.execute({
+            userId: chatId,
+            conversationId: this.#buildConversationId(chatId),
+          });
+        } catch (coachingError) {
+          // Coaching failure should not fail the report acceptance
+          this.#logger.warn('router.reportAccept.coachingFailed', { 
+            chatId, 
+            error: coachingError.message 
+          });
+        }
+        
         return { success: true };
       }
 

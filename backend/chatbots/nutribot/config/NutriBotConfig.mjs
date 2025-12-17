@@ -113,6 +113,7 @@ export class NutriBotConfig {
         displayName: mapping.displayName,
         timezone: mapping.timezone,
         settings: mapping.settings,
+        goals: mapping.goals,
         telegramRef,
         conversationId,
       });
@@ -125,6 +126,7 @@ export class NutriBotConfig {
         conversationId,
         telegramRef,
         displayName: mapping.displayName,
+        goals: mapping.goals,
       });
     }
   }
@@ -268,6 +270,53 @@ export class NutriBotConfig {
     return this.#config.weather?.timezone || 'America/Los_Angeles';
   }
 
+  // ==================== User Goals ====================
+
+  /**
+   * Default nutrition goals (fallback)
+   * @private
+   */
+  static #DEFAULT_GOALS = {
+    calories: 2000,
+    protein: 150,
+    carbs: 200,
+    fat: 65,
+    fiber: 30,
+    sodium: 2300,
+  };
+
+  /**
+   * Get user's nutrition goals
+   * @param {string} userId
+   * @returns {Object} - { calories, protein, carbs, fat, fiber, sodium }
+   */
+  getUserGoals(userId) {
+    const conversations = this.#userToConversations.get(userId);
+    if (!conversations || conversations.length === 0) {
+      return this.getDefaultGoals();
+    }
+    
+    // Get from first conversation mapping
+    const goals = conversations[0].goals;
+    if (!goals) {
+      return this.getDefaultGoals();
+    }
+    
+    // Merge with defaults to ensure all fields exist
+    return {
+      ...NutriBotConfig.#DEFAULT_GOALS,
+      ...goals,
+    };
+  }
+
+  /**
+   * Get default nutrition goals
+   * @returns {Object} - { calories, protein, carbs, fat, fiber, sodium }
+   */
+  getDefaultGoals() {
+    return { ...NutriBotConfig.#DEFAULT_GOALS };
+  }
+
   // ==================== Storage Paths ====================
 
   /**
@@ -352,6 +401,15 @@ export class NutriBotConfig {
    */
   getNutridayPath(userId) {
     return this.getStoragePath('nutriday', userId);
+  }
+
+  /**
+   * Get the nutricoach path for a user
+   * @param {string} userId - Conversation ID or username
+   * @returns {string}
+   */
+  getNutricoachPath(userId) {
+    return this.getStoragePath('nutricoach', userId);
   }
 
   /**

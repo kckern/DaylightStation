@@ -23,6 +23,7 @@ export { GetReportAsJSON } from './GetReportAsJSON.mjs';
 // Coaching
 export { GenerateThresholdCoaching } from './GenerateThresholdCoaching.mjs';
 export { GenerateOnDemandCoaching } from './GenerateOnDemandCoaching.mjs';
+export { GenerateReportCoaching } from './GenerateReportCoaching.mjs';
 
 // Adjustment Flow
 export { StartAdjustmentFlow } from './StartAdjustmentFlow.mjs';
