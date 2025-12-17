@@ -122,8 +122,13 @@ export class TelegramGateway {
    * @returns {Object}
    */
   #buildKeyboard(choices, inline = false) {
-    if (!choices || choices.length === 0) {
+    if (!choices) {
       return undefined;
+    }
+
+    // If choices is an empty array, return empty keyboard to remove buttons
+    if (choices.length === 0) {
+      return inline ? { inline_keyboard: [] } : { remove_keyboard: true };
     }
 
     if (inline) {
