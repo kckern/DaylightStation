@@ -15,3 +15,9 @@ known_hosts
 *.dev
 /docs/ops
 backend/logs/
+/config
+
+# Config files (use *.example.yml as templates)
+config.app.yml
+config.secrets.yml
+config.app-local.yml

@@ -1,6 +1,8 @@
 import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile } from './io.mjs';
+import { userDataService } from './config/UserDataService.mjs';
+import { configService } from './config/ConfigService.mjs';
 import axios from './http.mjs';
 import { createLogger } from './logging/logger.js';
 import { serializeError } from './logging/utils.js';
@@ -9,6 +11,13 @@ const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 const fitsyncLogger = createLogger({ source: 'backend', app: 'fitsync' });
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
+
+// Get default username for legacy single-user access
+const getDefaultUsername = () => {
+  const profiles = configService.getAllUserProfiles();
+  if (profiles.size > 0) return Array.from(profiles.keys())[0];
+  return 'kckern';
+};
 
 
 
@@ -19,7 +28,14 @@ export const getAccessToken = async () => {
 if(process.env.FITSYNC_ACCESS_TOKEN) return process.env.FITSYNC_ACCESS_TOKEN;
 
     const { FITSYNC_CLIENT_ID, FITSYNC_CLIENT_SECRET } = process.env;
-    const {refresh} = loadFile('auth/fitnesssyncer');
+    const username = getDefaultUsername();
+    // Try user-namespaced auth first, fall back to legacy
+    const authData = userDataService.getAuthToken(username, 'fitnesssyncer') || loadFile('auth/fitnesssyncer') || {};
+    const { refresh } = authData;
+    if (!refresh) {
+        fitsyncLogger.error('fitsync.auth.missing', { message: 'No refresh token found' });
+        return false;
+    }
     const curl = `curl -X POST https://www.fitnesssyncer.com/api/oauth/access_token -H "Content-Type: application/json" -d '${JSON.stringify({
         grant_type: 'refresh_token',
         refresh_token: refresh,
@@ -38,7 +54,11 @@ try {
     );
     const accessToken = tokenResponse.data.access_token;
     const refreshToken = tokenResponse.data.refresh_token;
-    if (refreshToken) saveFile('auth/fitnesssyncer', { refresh: refreshToken });
+    if (refreshToken) {
+        // Save to both user-namespaced and legacy paths
+        userDataService.saveAuthToken(username, 'fitnesssyncer', { refresh: refreshToken });
+        saveFile('auth/fitnesssyncer', { refresh: refreshToken });
+    }
     process.env.FITSYNC_ACCESS_TOKEN = accessToken;
     return accessToken;
 } catch (error) {
@@ -105,6 +125,7 @@ export const getActivities = async () => {
 
 const harvestActivities = async () => {
 try {
+    const username = getDefaultUsername();
     const activitiesData = await getActivities();
     const activities = activitiesData.items.map(item => {
         delete item.gps;
@@ -117,7 +138,8 @@ try {
     });
 
     const harvestedDates = activities.map(activity => activity.date);
-    const onFile = loadFile('lifelog/fitness') || {};
+    // Try user-namespaced path first, fall back to legacy
+    const onFile = userDataService.getLifelogData(username, 'fitness') || loadFile('lifelog/fitness') || {};
     const onFilesDates = Object.keys(onFile || {});
     const uniqueDates = [...new Set([...harvestedDates, ...onFilesDates])].sort((b, a) => new Date(a) - new Date(b))
     .filter(date => moment(date, 'YYYY-MM-DD', true).isValid() && moment(date, 'YYYY-MM-DD').isBefore(moment().add(1, 'year')));
@@ -136,6 +158,8 @@ try {
         return acc;
     }, {});
 
+    // Save to user-namespaced location (also saves to legacy for now)
+    userDataService.saveLifelogData(username, 'fitness_long', saveMe);
     saveFile('lifelog/fitness_long', saveMe);
     //reduce
     const reducedSaveMe = Object.keys(saveMe).reduce((acc, date) => {
@@ -183,6 +207,8 @@ try {
         if(acc[date].activities.length === 0) delete acc[date].activities;
         return acc;
     }, {});
+    // Save to user-namespaced location (also saves to legacy for now)
+    userDataService.saveLifelogData(username, 'fitness', reducedSaveMe);
     saveFile('lifelog/fitness', reducedSaveMe);
 
 

@@ -185,7 +185,7 @@ const getYoutube = async () => {
   }
 
   try {
-    const youtubeData = loadFile('config/youtube');
+    const youtubeData = loadFile('state/youtube');
     const mediaPath = `${process.env.path.media}/news`;
     const deleted = [];
     const shortcodes = [];

@@ -1,9 +1,21 @@
 import express from 'express';
 import dailyHealth from './lib/health.mjs';
 import { loadFile } from './lib/io.mjs';
+import { userDataService } from './lib/config/UserDataService.mjs';
+import { configService } from './lib/config/ConfigService.mjs';
 import { getNutriDaysBack, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist } from './journalist/lib/db.mjs';
 import moment from 'moment';
 import { v4 as uuidv4 } from 'uuid';
+
+// Default user for legacy single-user data access
+// TODO: Get from request context or authentication
+const getDefaultUsername = () => {
+  const profiles = configService.getAllUserProfiles();
+  if (profiles.size > 0) {
+    return Array.from(profiles.keys())[0];
+  }
+  return 'kckern'; // Fallback
+};
 
 const healthRouter = express.Router();
 
@@ -60,7 +72,13 @@ healthRouter.get('/workouts', async (req, res, next) => {
 // Get fitness data
 healthRouter.get('/fitness', async (req, res, next) => {
     try {
-        const fitnessData = loadFile('lifelog/fitness') || {};
+        // Try new user-namespaced path first, fall back to legacy
+        const username = getDefaultUsername();
+        let fitnessData = userDataService.getLifelogData(username, 'fitness');
+        if (!fitnessData) {
+            // Fall back to legacy path (will log deprecation warning)
+            fitnessData = loadFile('lifelog/fitness') || {};
+        }
         res.json({ 
             message: 'Fitness data retrieved successfully',
             data: fitnessData

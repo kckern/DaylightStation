@@ -7,6 +7,11 @@ import request from 'request'; // Import the request module
 import { createWebsocketServer } from './websocket.js';
 import { createServer } from 'http';
 import { loadFile } from './lib/io.mjs';
+import 'dotenv/config'; // Load .env file
+
+// Config path resolver and loader
+import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolver.mjs';
+import { loadAllConfig, logConfigSummary } from './lib/config/loader.mjs';
 
 // Logging system
 import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
@@ -16,12 +21,25 @@ import { ingestFrontendLogs } from './lib/logging/ingestion.js';
 import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, hydrateProcessEnvFromConfigs, resolveLogglyToken } from './lib/logging/config.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
-
-// Load configuration from YAML files into process.env
-hydrateProcessEnvFromConfigs(path.join(__dirname, '..'));
-
-const configExists = existsSync(`${__dirname}/../config.app.yml`);
 const isDocker = existsSync('/.dockerenv');
+
+// Resolve config paths (from env vars, mount, or fallback)
+const configPaths = resolveConfigPaths({ isDocker, codebaseDir: join(__dirname, '..') });
+
+if (configPaths.error) {
+  console.error('[FATAL] Configuration error:', configPaths.error);
+  console.error('[FATAL] Set DAYLIGHT_CONFIG_PATH and DAYLIGHT_DATA_PATH environment variables');
+  process.exit(1);
+}
+
+console.log(`[Config] Source: ${configPaths.source}, Config: ${configPaths.configDir}`);
+
+// Check for config files in resolved path
+const configFiles = getConfigFilePaths(configPaths.configDir);
+const configExists = configFiles && existsSync(configFiles.app);
+
+// Load configuration from YAML files into process.env (for logging config)
+hydrateProcessEnvFromConfigs(configPaths.configDir);
 
 let loggingConfig = loadLoggingConfig();
 
@@ -77,13 +95,21 @@ async function initializeApp() {
 
   if (configExists) {
 
-    // Parse the YAML files
-    const appConfig = parse(readFileSync(join(__dirname, '../config.app.yml'), 'utf8'));
-    const secretsConfig = parse(readFileSync(join(__dirname, '../config.secrets.yml'), 'utf8'));
-    const localConfig = !isDocker ? parse(readFileSync(join(__dirname, '../config.app-local.yml'), 'utf8')) : {};
+    // Load all config using unified loader
+    const configResult = loadAllConfig({
+      configDir: configPaths.configDir,
+      dataDir: configPaths.dataDir,
+      isDocker,
+      isDev: !isDocker
+    });
 
-    // Construct the process.env object
-    process.env = { ...process.env, isDocker, ...appConfig, ...secretsConfig, ...localConfig };
+    // Populate process.env with merged config
+    process.env = { 
+      ...process.env, 
+      isDocker, 
+      ...configResult.config
+    };
+    
     loggingConfig = loadLoggingConfig();
 
     // Update dispatcher level if needed
@@ -95,6 +121,23 @@ async function initializeApp() {
       app: 'api',
       context: { env: process.env.NODE_ENV }
     });
+    
+    // Log config loading summary
+    logConfigSummary(configResult, rootLogger);
+
+    // Validate configuration and log status
+    const { validateConfig, getConfigStatusSummary } = await import('./lib/config/healthcheck.mjs');
+    const configValidation = validateConfig({ logger: rootLogger, verbose: false });
+    if (!configValidation.valid) {
+      rootLogger.error('config.startup.invalid', { 
+        issues: configValidation.issues,
+        warnings: configValidation.warnings 
+      });
+    }
+    // Log config summary in dev mode
+    if (!isDocker) {
+      console.log('\n' + getConfigStatusSummary() + '\n');
+    }
 
     // Initialize WebSocket server after config is loaded
     createWebsocketServer(server);
@@ -173,7 +216,7 @@ async function initializeApp() {
       status: 'ok', 
       uptime: process.uptime(), 
       timestamp: new Date().toISOString(),
-      serverdata: loadFile("config/cron")
+      serverdata: loadFile("state/cron")
     }));
     app.get('/api/status/nas', (_, res) => res.status(200).json({ 
       status: 'ok', 
@@ -229,10 +272,14 @@ async function initializeApp() {
   }
 
   // Start HTTP server
+  // Start HTTP server - bind to 0.0.0.0 to ensure IPv4 compatibility
+  // This prevents IPv6-only processes from intercepting localhost requests
   const port = process.env.PORT || 3112;
-  server.listen(port, () => {
+  const host = '0.0.0.0';
+  server.listen(port, host, () => {
     rootLogger.info('server.started', { 
-      port, 
+      port,
+      host,
       env: process.env.NODE_ENV || 'development',
       transports: dispatcher.getTransportNames()
     });

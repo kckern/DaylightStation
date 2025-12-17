@@ -14,15 +14,7 @@ import { configureDaylightLogger, getDaylightLogger } from './lib/logging/single
 
 const getWebSocketUrl = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
-  const port = window.location.port;
-  
-  // If running on dev port 3111, connect to backend on 3112
-  if (port === '3111') {
-    return `${protocol}//${host}:3112/ws`;
-  }
-  
-  // Otherwise use relative path (production/same-origin)
+  // With Vite proxy, WebSocket connects to same origin (proxy forwards /ws to backend)
   return `${protocol}//${window.location.host}/ws`;
 };
 

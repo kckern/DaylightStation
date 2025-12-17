@@ -69,15 +69,19 @@ export class SelectUPCPortion {
       }
 
       // 3. Apply portion factor to items
-      const scaledItems = nutriLog.items.map(item => ({
-        ...item,
-        quantity: (item.quantity || 1) * portionFactor,
-        grams: Math.round((item.grams || 100) * portionFactor),
-        calories: Math.round((item.calories || 0) * portionFactor),
-        protein: Math.round((item.protein || 0) * portionFactor * 10) / 10,
-        carbs: Math.round((item.carbs || 0) * portionFactor * 10) / 10,
-        fat: Math.round((item.fat || 0) * portionFactor * 10) / 10,
-      }));
+      // Use toJSON() to convert FoodItem instances to plain objects
+      const scaledItems = nutriLog.items.map(item => {
+        const itemData = typeof item.toJSON === 'function' ? item.toJSON() : item;
+        return {
+          ...itemData,
+          quantity: (itemData.quantity || 1) * portionFactor,
+          grams: Math.round((itemData.grams || 100) * portionFactor),
+          calories: Math.round((itemData.calories || 0) * portionFactor),
+          protein: Math.round((itemData.protein || 0) * portionFactor * 10) / 10,
+          carbs: Math.round((itemData.carbs || 0) * portionFactor * 10) / 10,
+          fat: Math.round((itemData.fat || 0) * portionFactor * 10) / 10,
+        };
+      });
 
       // 4. Update nutrilog status to accepted
       if (this.#nutrilogRepository) {

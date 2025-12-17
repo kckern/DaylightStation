@@ -1,4 +1,12 @@
 
+// In dev mode, Vite proxy handles forwarding to backend (see vite.config.js)
+// In production, frontend and backend are served from same origin
+const getBaseUrl = () => window.location.origin;
+const getWsBaseUrl = () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}`;
+};
+
 export const DaylightAPI = async (path, data = {}, method = 'GET') => {
 
     // Only auto-convert to POST if method is GET and data is provided
@@ -9,8 +17,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
    // console.log("DaylightAPI called with path:", path, "data:", data, "method:", method);
     //remove leading and trailing slashes
     path = path.replace(/^\/|\/$/g,'');
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+    const baseUrl = getBaseUrl();
 
     const options = {
         method,
@@ -39,8 +46,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
 };
 
 export const DaylightWebsocketUnsubscribe = (path) => {
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'ws://localhost:3112' : `wss://${window.location.host}`;
+    const baseUrl = getWsBaseUrl();
     const ws = new WebSocket(`${baseUrl}/ws/${path}`);
 
     return () => {
@@ -58,8 +64,7 @@ export const DaylightWebsocketSubscribe = (path, callback) => {
         return activeWebsockets.get(path).unsubscribe;
     }
 
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'ws://localhost:3112' : `wss://${window.location.host}`;
+    const baseUrl = getWsBaseUrl();
     const ws = new WebSocket(`${baseUrl}/ws/${path}`);
 
     ws.onopen = () => console.log("WebSocket connection opened for path:", path);
@@ -93,8 +98,7 @@ export const DaylightWebsocketSubscribe = (path, callback) => {
 export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
     //remove leading and trailing slashes
     path = path.replace(/^\/|\/$/g, '');
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+    const baseUrl = getBaseUrl();
     //same as DaylightAPI but only returns the status code
     const options = {
         method,
@@ -115,25 +119,26 @@ export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
 
 export const DaylightMediaPath = (path) => {
     path = path.toString().replace(/^\/|\/$/g,'');
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
-    return `${baseUrl}/${path}`;
+    return `${getBaseUrl()}/${path}`;
+}
+
+// Normalize image URLs from API responses - ensures relative paths work correctly
+// With Vite proxy in dev, relative URLs like /plex_proxy/... are proxied to backend
+export const normalizeImageUrl = (url) => {
+    if (!url) return url;
+    // Relative URLs work fine with Vite proxy - just return as-is
+    // Absolute URLs are returned unchanged
+    return url;
 }
 
 export const DaylightImagePath = (key) => {
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
-    return `${baseUrl}/data/img/${key}`;
+    return `${getBaseUrl()}/data/img/${key}`;
 }
 
 export const DaylightPlexPath = (key) => {
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
-    return `${baseUrl}/media/plex/${key}`;
+    return `${getBaseUrl()}/media/plex/${key}`;
 }
 
 export const DaylightHostPath = () => {
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
-    return baseUrl;
+    return getBaseUrl();
 }
