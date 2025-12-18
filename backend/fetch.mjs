@@ -31,6 +31,16 @@ const getMediaMemoryPath = (category, householdId = null) => {
     return `history/media_memory/${category}`;
 };
 
+// Helper for household-scoped menu memory path
+const getMenuMemoryPath = (householdId = null) => {
+    const hid = householdId || configService.getDefaultHouseholdId();
+    const householdPath = userDataService.getHouseholdDir(hid);
+    if (householdPath && fs.existsSync(path.join(householdPath, 'history'))) {
+        return `households/${hid}/history/menu_memory`;
+    }
+    return `history/menu_memory`;
+};
+
 //usejson
 apiRouter.use(express.json());
 
@@ -405,10 +415,11 @@ apiRouter.get('/budget/daytoday',  async (req, res, next) => {
 apiRouter.post('/menu_log', async (req, res) => {
     const postData = req.body;
     const { media_key } = postData;
-    const menu_log = loadFile('history/menu_memory') || {};
+    const menuPath = getMenuMemoryPath();
+    const menu_log = loadFile(menuPath) || {};
     const nowUnix = moment().unix();
     menu_log[media_key] = nowUnix;
-    saveFile('history/menu_memory', menu_log);
+    saveFile(menuPath, menu_log);
     res.json({[media_key]: nowUnix} );
 });
 
@@ -499,7 +510,7 @@ const applyParentTags = (items, parent) => {
 const sortListByMenuMemory = (items, config) => {
     const sortByMenu = /recent_on_top/i.test(config);
     if (!sortByMenu) return items;
-    const menuLog = loadFile('history/menu_memory') || {};
+    const menuLog = loadFile(getMenuMemoryPath()) || {};
     items.sort((a, b) => {
         const aKey = (() => {
             const mediaKey = a?.play || a?.queue || a?.list || a?.open;

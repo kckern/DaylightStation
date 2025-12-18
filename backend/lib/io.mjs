@@ -124,10 +124,21 @@ export const loadRandom = (folder) => {
 // Track deprecation warnings to avoid spam
 const deprecationWarnings = new Set();
 
-// DEPRECATED: Legacy paths no longer supported after restructure
-// Keeping for reference but no longer warn - code should use new paths directly
-const LEGACY_USER_PATHS = [];
-const LEGACY_HOUSEHOLD_PATHS = [];
+// Paths that should be migrated to user-namespaced locations
+const LEGACY_USER_PATHS = [
+    'lifelog/',        // Now at users/{username}/lifelog/
+];
+
+// Paths that should be migrated to household-scoped locations
+const LEGACY_HOUSEHOLD_PATHS = [
+    { pattern: 'fitness/config', suggestion: 'households/{household}/apps/fitness/config' },
+    { pattern: 'gratitude/options', suggestion: 'households/{household}/shared/gratitude/options.*' },
+    { pattern: 'gratitude/users', suggestion: 'households/{household}/shared/gratitude/users' },
+    { pattern: 'gratitude/bank', suggestion: 'households/{household}/shared/gratitude/bank' },
+    { pattern: 'gratitude/snapshots', suggestion: 'households/{household}/shared/gratitude/snapshots/' },
+    { pattern: 'history/media_memory', suggestion: 'households/{household}/history/media_memory/' },
+    { pattern: 'history/menu_memory', suggestion: 'households/{household}/history/menu_memory' },
+];
 
 const loadFile = (path) => {
     path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
@@ -317,8 +328,23 @@ const userLoadFile = (username, service) => {
         ioLogger.warn('io.userLoadFile.noUsername', { service });
         return null;
     }
-    const path = `lifelog/${username}/${service}`;
-    return loadFile(path);
+    // Try new path first: users/{username}/lifelog/{service}
+    const newPath = `users/${username}/lifelog/${service}`;
+    const newData = loadFile(newPath);
+    if (newData !== null) return newData;
+    
+    // Fall back to legacy path: lifelog/{username}/{service}
+    const legacyPath = `lifelog/${username}/${service}`;
+    const legacyData = loadFile(legacyPath);
+    if (legacyData !== null && !deprecationWarnings.has(`userLoad:${legacyPath}`)) {
+        deprecationWarnings.add(`userLoad:${legacyPath}`);
+        ioLogger.warn('io.userLoadFile.legacyPath', {
+            legacyPath,
+            newPath,
+            message: `Migrate lifelog data: lifelog/${username}/ → users/${username}/lifelog/`
+        });
+    }
+    return legacyData;
 };
 
 /**
@@ -333,8 +359,15 @@ const userSaveFile = (username, service, data) => {
         ioLogger.warn('io.userSaveFile.noUsername', { service });
         return false;
     }
-    const path = `lifelog/${username}/${service}`;
-    return saveFile(path, data);
+    // Write to new path: users/{username}/lifelog/{service}
+    const newPath = `users/${username}/lifelog/${service}`;
+    const result = saveFile(newPath, data);
+    
+    // Also write to legacy path during migration period
+    const legacyPath = `lifelog/${username}/${service}`;
+    saveFile(legacyPath, data);
+    
+    return result;
 };
 
 /**
