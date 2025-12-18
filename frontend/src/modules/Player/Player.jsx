@@ -86,7 +86,8 @@ const Player = forwardRef(function Player(props, ref) {
     mediaResilienceRef,
     maxVideoBitrate,
     maxResolution,
-    pauseDecision
+    pauseDecision,
+    plexClientSession: externalPlexClientSession
   } = props || {};
   const compositeChannel = useCompositeControllerChannel(playerType);
 
@@ -694,7 +695,9 @@ const Player = forwardRef(function Player(props, ref) {
     remountDiagnostics: remountState.context,
     wrapWithContainer: false,
     suppressLocalOverlay: !!overlayElements,
-    plexClientSession: currentMediaGuid ? `${currentMediaGuid}-r${remountState.nonce}` : null
+    // Use external session if provided (e.g., from CompositePlayer for multi-player isolation),
+    // otherwise generate based on current media GUID and remount nonce
+    plexClientSession: externalPlexClientSession || (currentMediaGuid ? `${currentMediaGuid}-r${remountState.nonce}` : null)
   };
 
   const playerShellClass = ['player', effectiveShader, props.playerType || '']
@@ -770,7 +773,9 @@ Player.propTypes = {
   onMediaRef: PropTypes.func,
   onController: PropTypes.func,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  /** External Plex client session ID for multi-player isolation (e.g., from CompositePlayer) */
+  plexClientSession: PropTypes.string
 };
 
 export default Player;

@@ -66,8 +66,31 @@ export class Plex {
   /**
    * Request a transcode decision from Plex before streaming video.
    * This authorizes the session and determines whether direct play or transcode is needed.
+   * 
+   * SESSION IDENTIFIER ARCHITECTURE:
+   * - clientIdentifier (X-Plex-Client-Identifier): Identifies the "device" or player instance.
+   *   Stays stable across seeks/reloads within the same player session. Used by Plex to track
+   *   which client is playing and to kill/replace transcodes when a new request comes from
+   *   the same client. Frontend passes this via `session` param (e.g., "composite-primary-abc123"
+   *   for video, "composite-overlay-xyz789" for audio overlay). Multiple concurrent players
+   *   MUST have different clientIdentifiers to avoid killing each other's transcodes.
+   * 
+   * - sessionIdentifier (X-Plex-Session-Identifier): Unique per transcode request/segment fetch.
+   *   Always includes a fresh random UUID to ensure Plex can distinguish between multiple
+   *   requests from the same client (e.g., seeking, quality changes, retries).
+   * 
+   * FALLBACK BEHAVIOR:
+   * - If no session is passed from frontend, we generate a unique clientIdentifier per request
+   *   to prevent collision issues when multiple direct API calls happen simultaneously.
+   * - The config default (process.env.plex.session) is only used when explicitly desired for
+   *   testing or single-client scenarios.
+   * 
    * @param {string} key - The Plex rating key for the media item
    * @param {Object} opts - Options for the decision request
+   * @param {string} [opts.session] - Client session ID from frontend (strongly recommended)
+   * @param {number} [opts.maxVideoBitrate] - Maximum video bitrate in kbps
+   * @param {string} [opts.maxResolution] - Maximum resolution (e.g., "1080p", "720p")
+   * @param {number} [opts.startOffset] - Start offset in seconds
    * @returns {Promise<Object>} Decision result with session identifiers and stream info
    */
   async requestTranscodeDecision(key, opts = {}) {
@@ -80,11 +103,17 @@ export class Plex {
 
     const { plex: { protocol, platform, session: defaultSession }, PLEX_TOKEN: token } = process.env;
 
-    // Generate session identifiers
+    // Generate a unique UUID for this request (always needed for sessionIdentifier)
     const sessionUUID = Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
-    const baseClientId = session || defaultSession || sessionUUID;
-    const clientIdentifier = baseClientId;
+    
+    // clientIdentifier: Use frontend-provided session for multi-player isolation.
+    // If no session provided, generate unique ID per request to prevent collisions
+    // from concurrent direct API calls (don't share a single defaultSession across requests).
+    const clientIdentifier = session || `api-${sessionUUID}`;
+    
+    // sessionIdentifier: Always unique per request. If we have a stable client session,
+    // append the UUID so Plex can track it's from the same client but a new segment request.
     const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
 
     // Build decision endpoint URL with URLSearchParams for proper encoding
@@ -220,15 +249,16 @@ export class Plex {
     session: optsSession = null,
     startOffset = 0
   } = opts || {};
-  const session = optsSession || defaultSession;
+  // Use frontend-provided session; generate unique ID per request if not provided
+  const session = optsSession || null;
   const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
 
     try {
       if (media_type === 'audio') {
         // Audio: Direct stream without decision (no transcode needed for audio)
+        // Use same pattern as video: unique clientIdentifier per request if no session provided
         const sessionUUID = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        const baseClientId = session || defaultSession || sessionUUID;
-        const clientIdentifier = `${baseClientId}-audio`;
+        const clientIdentifier = session ? `${session}-audio` : `api-audio-${sessionUUID}`;
         const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
 
         const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
