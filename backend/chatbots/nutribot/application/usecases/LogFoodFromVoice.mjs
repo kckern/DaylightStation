@@ -38,16 +38,7 @@ export class LogFoodFromVoice {
     this.#logger.debug('logVoice.start', { conversationId });
 
     try {
-      // 1. Delete original voice message
-      if (messageId) {
-        try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
-        } catch (e) {
-          // Ignore delete errors
-        }
-      }
-
-      // 2. Transcribe voice
+      // 1. Transcribe voice
       let transcription;
       if (this.#messagingGateway.transcribeVoice) {
         transcription = await this.#messagingGateway.transcribeVoice(voiceData.fileId);
@@ -75,13 +66,22 @@ export class LogFoodFromVoice {
         length: transcription.length,
       });
 
-      // 3. Delegate to LogFoodFromText
+      // 2. Delegate to LogFoodFromText
       const result = await this.#logFoodFromText.execute({
         userId,
         conversationId,
         text: transcription,
-        // Don't pass messageId - already deleted
+        // Don't pass messageId - we'll delete after success
       });
+
+      // 3. Delete original voice message after analysis appears
+      if (messageId && result.success) {
+        try {
+          await this.#messagingGateway.deleteMessage(conversationId, messageId);
+        } catch (e) {
+          // Ignore delete errors
+        }
+      }
 
       this.#logger.info('logVoice.complete', { 
         conversationId, 
