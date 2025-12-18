@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { DaylightAPI } from '../api.mjs';
 
 /**
- * Application-level keyboard handler for HomeApp
+ * Application-level keyboard handler for OfficeApp
  * Handles menu navigation, app functions, and hardware keypad integration
  * Media playback is now handled by the centralized keyboardManager system
  */
