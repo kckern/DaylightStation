@@ -226,7 +226,7 @@ async function initializeApp() {
     
     // Helper to get household head user
     const getHouseholdHead = () => {
-      const dataPath = process.env.dataPath;
+      const dataPath = process.env.path?.data || '/usr/src/app/data';
       const hid = process.env.household_id || 'default';
       const householdPath = `${dataPath}/households/${hid}/household.yml`;
       try {

@@ -371,10 +371,6 @@ const userSaveFile = (username, service, data) => {
     const newPath = `users/${username}/lifelog/${service}`;
     const result = saveFile(newPath, data);
     
-    // Also write to legacy path during migration period
-    const legacyPath = `lifelog/${username}/${service}`;
-    saveFile(legacyPath, data);
-    
     return result;
 };
 
