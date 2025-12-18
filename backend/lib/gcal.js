@@ -51,9 +51,9 @@ const listCalendarEvents = async (logger, job_id) => {
     allEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
 
     log.info('harvest.gcal.events', { jobId: job_id, count: allEvents.length });
-    const username = getDefaultUsername();
-    // Save to user-namespaced location
-    userSaveFile(username, 'calendar', allEvents);
+    // Save to household shared location (calendar is household-level)
+    const hid = process.env.household_id || 'default';
+    saveFile(`households/${hid}/shared/calendar`, allEvents);
     saveEvents(job_id);
     return allEvents;
 }

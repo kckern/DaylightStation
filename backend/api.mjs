@@ -134,7 +134,10 @@ const initNutribotRouter = async () => {
     try {
         const configProvider = getConfigProvider();
         const nutribotConfig = configProvider.getNutribotConfig();
-        const chatbotsConfig = configProvider.get('chatbots') || {};
+        // Use configService.getAppConfig for chatbots config (reads from config/apps/chatbots.yml)
+        const chatbotsConfig = configService.isReady() 
+            ? configService.getAppConfig('chatbots') || {}
+            : configProvider.get('chatbots') || {};
         
         // Build users config from ConfigService user profiles (new architecture)
         // UserResolver expects: { users: { username: { telegram_bot_id, telegram_user_id, ... } } }
@@ -167,17 +170,27 @@ const initNutribotRouter = async () => {
         // Create UserResolver for username lookups
         const userResolver = new UserResolver(chatbotsConfigWithUsers, { logger });
         
+        // Debug: Log the chatbots config to trace path loading
+        logger.debug('nutribot.chatbotsConfig.debug', {
+            hasDataPaths: !!chatbotsConfig?.data_paths,
+            hasData: !!chatbotsConfig?.data,
+            dataPathsNutribot: chatbotsConfig?.data_paths?.nutribot,
+            dataNutribot: chatbotsConfig?.data?.nutribot,
+            keys: Object.keys(chatbotsConfig || {})
+        });
+        
         // Get storage paths from config
-        // Uses user-namespaced paths: users/{username}/lifelog/nutrition/*
+        // FIXED: Use user-namespaced paths: users/{username}/lifelog/nutrition/*
+        // Since configService isn't loading chatbots.yml correctly, hardcode the correct structure
         const storageConfig = chatbotsConfig?.data_paths?.nutribot || chatbotsConfig?.data?.nutribot || {};
-        const basePath = storageConfig.base || storageConfig.basePath || 'lifelog';
+        const basePath = storageConfig.base || storageConfig.basePath || 'users';
         const paths = {
-            nutrilog: storageConfig.nutrilog || '{username}/nutrition/nutrilog',
-            nutrilist: storageConfig.nutrilist || '{username}/nutrition/nutrilist',
-            nutricursor: storageConfig.nutricursor || '{username}/nutrition/nutricursor',
-            nutriday: storageConfig.nutriday || '{username}/nutrition/nutriday',
-            nutricoach: storageConfig.nutricoach || '{username}/nutrition/nutricoach',
-            report_state: storageConfig.report_state || '{username}/nutrition/report_state',
+            nutrilog: storageConfig.nutrilog || '{username}/lifelog/nutrition/nutrilog',
+            nutrilist: storageConfig.nutrilist || '{username}/lifelog/nutrition/nutrilist',
+            nutricursor: storageConfig.nutricursor || '{username}/lifelog/nutrition/nutricursor',
+            nutriday: storageConfig.nutriday || '{username}/lifelog/nutrition/nutriday',
+            nutricoach: storageConfig.nutricoach || '{username}/lifelog/nutrition/nutricoach',
+            report_state: storageConfig.report_state || '{username}/lifelog/nutrition/report_state',
         };
         
         // Create a NutriBotConfig adapter with UserResolver-based paths

@@ -93,8 +93,9 @@ export default async (job_id) => {
         return new Date(a.start) - new Date(b.start);
     });
 
-    // Save to user-namespaced location
-    userSaveFile(username, 'events', allItems);
+    // Save to household shared location (events are household-level)
+    const hid = process.env.household_id || 'default';
+    saveFile(`households/${hid}/shared/events`, allItems);
 
     return allItems;
 
