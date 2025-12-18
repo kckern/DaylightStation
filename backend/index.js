@@ -224,6 +224,42 @@ async function initializeApp() {
       timestamp: new Date().toISOString()
     }));
     
+    // Helper to get household head user
+    const getHouseholdHead = () => {
+      const dataPath = process.env.dataPath;
+      const hid = process.env.household_id || 'default';
+      const householdPath = `${dataPath}/households/${hid}/household.yml`;
+      try {
+        const householdData = parse(readFileSync(householdPath, 'utf8'));
+        return householdData?.head || 'kckern';
+      } catch (err) {
+        rootLogger.warn('household.head.error', { error: err.message });
+        return 'kckern';
+      }
+    };
+    
+    // Redirect /data/lifelog/* to /data/users/{head}/lifelog/*
+    // This allows frontend to use simple paths without specifying user
+    app.get('/data/lifelog/*', (req, res) => {
+      const headUser = getHouseholdHead();
+      const remainder = req.params[0];
+      res.redirect(`/data/users/${headUser}/lifelog/${remainder}`);
+    });
+    
+    // Redirect household-level data to households/{hid}/shared/
+    app.get('/data/weather', (req, res) => {
+      const hid = process.env.household_id || 'default';
+      res.redirect(`/data/households/${hid}/shared/weather`);
+    });
+    app.get('/data/events', (req, res) => {
+      const hid = process.env.household_id || 'default';
+      res.redirect(`/data/households/${hid}/shared/events`);
+    });
+    app.get('/data/calendar', (req, res) => {
+      const hid = process.env.household_id || 'default';
+      res.redirect(`/data/households/${hid}/shared/calendar`);
+    });
+    
     app.use('/data', fetchRouter);
     
     app.use('/cron', cron);

@@ -552,10 +552,12 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
       return hymn;
     })();
 
-    console.log(`Loading hymn: raw=${hymn} normalized=${normalizedHymn} from folder: ${folder}`);
     useEffect(() => {
+        console.log(`Loading hymn: raw=${hymn} normalized=${normalizedHymn} from folder: ${folder}`);
         const path = normalizedHymn === true ? `data/${folder}` : `data/${folder}/${normalizedHymn}`;
-        DaylightAPI(path).then(({title, hymn_num, song_number, mediaUrl, verses, duration}) => {
+        DaylightAPI(path).then((response) => {
+          console.log(`Hymn API response:`, response);
+          const {title, hymn_num, song_number, mediaUrl, verses, duration} = response;
           const num = hymn_num || song_number;
           setHymnVerses(verses);
           setTitle(title);
