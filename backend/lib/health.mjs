@@ -1,21 +1,26 @@
-import { getNutriDaysBack, loadDailyNutrition } from "../journalist/lib/db.mjs";
-import { compileDailyFoodReport } from "../journalist/lib/food.mjs";
-import { loadFile, saveFile } from "./io.mjs";
+// STUBBED: journalist folder removed
+// import { getNutriDaysBack, loadDailyNutrition } from "../journalist/lib/db.mjs";
+// import { compileDailyFoodReport } from "../journalist/lib/food.mjs";
+const getNutriDaysBack = () => ({});
+const loadDailyNutrition = () => ({});
+const compileDailyFoodReport = async () => {};
+import { loadFile, saveFile, userLoadFile, userSaveFile } from "./io.mjs";
 import { userDataService } from "./config/UserDataService.mjs";
 import { configService } from "./config/ConfigService.mjs";
 import moment from "moment";
 import crypto from "crypto";
 import { load } from "js-yaml";
-import { generateCoachingMessageForDailyHealth } from "../journalist/lib/gpt_food.mjs";
+// STUBBED: journalist folder removed
+// import { generateCoachingMessageForDailyHealth } from "../journalist/lib/gpt_food.mjs";
+const generateCoachingMessageForDailyHealth = async () => {};
 import { createLogger } from "./logging/logger.js";
 
 const healthLogger = createLogger({ source: 'backend', app: 'health' });
 
 // Get default username for legacy single-user access
 const getDefaultUsername = () => {
-  const profiles = configService.getAllUserProfiles();
-  if (profiles.size > 0) return Array.from(profiles.keys())[0];
-  return 'kckern';
+  // Use head of household from config (never hardcode usernames)
+  return configService.getHeadOfHousehold();
 };
 
 function md5(string) {
@@ -35,12 +40,12 @@ const dailyHealth = async (jobId) => {
     
     await compileDailyFoodReport(nutribot_chat_id);
     
-    // Use UserDataService with fallback to legacy paths
+    // Load from user-namespaced paths
     const username = getDefaultUsername();
-    const weight = userDataService.getLifelogData(username, 'weight') || loadFile('lifelog/weight') || {};
-    const strava = userDataService.getLifelogData(username, 'strava') || loadFile('lifelog/strava') || {};
+    const weight = userLoadFile(username, 'weight') || {};
+    const strava = userLoadFile(username, 'strava') || {};
     const dailyNutrition = getNutriDaysBack(nutribot_chat_id,30);
-    const fitness = userDataService.getLifelogData(username, 'fitness') || loadFile('lifelog/fitness') || {};
+    const fitness = userLoadFile(username, 'fitness') || {};
 
     const past90Days = Array.from({length: 30}, (_, i) => 
         moment().subtract(i + 1, 'days').format('YYYY-MM-DD')
@@ -111,17 +116,20 @@ const dailyHealth = async (jobId) => {
 
         dailyHealth[day] = dayData;
     }
-     const onFileDays = loadFile('lifelog/health');
+     // Load from user-namespaced path
+     const onFileDays = userLoadFile(username, 'health');
     const saveMe = Object.keys({...onFileDays, ...dailyHealth})
         .sort().reverse()
         .reduce((acc, key) => {
             acc[key] = {...onFileDays, ...dailyHealth}[key];
             return acc;
         }, {});
-    saveFile('lifelog/health', saveMe);
+    // Save to user-namespaced location
+    userSaveFile(username, 'health', saveMe);
     await generateCoachingMessageForDailyHealth();
 
-    const healthCoaching = loadFile('lifelog/health_coaching');
+    // Load from user-namespaced path
+    const healthCoaching = userLoadFile(username, 'health_coaching');
     for(const day of Object.keys(healthCoaching).sort().reverse()) {
         if(dailyHealth[day]) {
             dailyHealth[day].coaching = healthCoaching[day];

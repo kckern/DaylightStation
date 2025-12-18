@@ -1,7 +1,11 @@
 import { google } from 'googleapis';
-import { saveFile, sanitize } from './io.mjs';
+import { saveFile, sanitize, userSaveFile } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import saveEvents from '../jobs/events.mjs';
 import { createLogger } from './logging/logger.js';
+
+// Get default username for user-scoped data
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const defaultGcalLogger = createLogger({
     source: 'backend',
@@ -47,7 +51,9 @@ const listCalendarEvents = async (logger, job_id) => {
     allEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
 
     log.info('harvest.gcal.events', { jobId: job_id, count: allEvents.length });
-    saveFile('lifelog/calendar', allEvents);
+    const username = getDefaultUsername();
+    // Save to user-namespaced location
+    userSaveFile(username, 'calendar', allEvents);
     saveEvents(job_id);
     return allEvents;
 }

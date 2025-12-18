@@ -2,6 +2,7 @@ import express from 'express';
 const harvestRouter = express.Router();
 import crypto from 'crypto';
 import { createLogger } from './lib/logging/logger.js';
+import { configService } from './lib/config/ConfigService.mjs';
 
 import todoist from './lib/todoist.js';
 import gmail from './lib/gmail.js';
@@ -57,12 +58,30 @@ const harvesters = {
 const harvestKeys = Object.keys(harvesters);
 const baseLogger = harvestRootLogger();
 
+/**
+ * Resolve the target username from request query param or default to head of household
+ * @param {Request} req - Express request object
+ * @returns {string|null} The resolved username
+ */
+const resolveUsername = (req) => {
+    // Check for explicit ?user= query parameter
+    if (req.query.user) {
+        return req.query.user;
+    }
+    // Default to head of household
+    return configService.getHeadOfHousehold();
+};
+
 harvestKeys.forEach(key => {
     harvestRouter.get(`/${key}`, async (req, res) =>{
         try {
             const guidId = crypto.randomUUID().split('-').pop();
-            const requestLogger = baseLogger.child({ harvester: key, requestId: guidId });
-            requestLogger.info('harvest.request', { path: req.originalUrl, method: req.method });
+            const username = resolveUsername(req);
+            const requestLogger = baseLogger.child({ harvester: key, requestId: guidId, username });
+            requestLogger.info('harvest.request', { path: req.originalUrl, method: req.method, username });
+
+            // Attach username to request for harvesters to use
+            req.targetUsername = username;
 
             const invokeHarvester = (fn) => {
                 if (fn.length >= 3) return fn(requestLogger, guidId, req);
@@ -83,7 +102,12 @@ harvestKeys.forEach(key => {
 
 //root
 harvestRouter.get('/', async (req, res) => {
-    return res.status(200).json({availableEndpoints: harvestKeys});
+    const username = resolveUsername(req);
+    return res.status(200).json({
+        availableEndpoints: harvestKeys,
+        defaultUser: username,
+        usage: 'Add ?user=username to specify target user (defaults to head of household)'
+    });
 });
 
 

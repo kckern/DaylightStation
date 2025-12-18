@@ -12,13 +12,15 @@ moment.tz.setDefault('America/Los_Angeles');
 
 const dataPath = `${process.env.path.data}`;
 
-const budgetPath            = `${dataPath}/budget/budget.config.yml`;
-const budgetBasePath       = `${dataPath}/budget`;
-const transactionPath       = `${dataPath}/budget/{{BUDGET_INDEX}}/transactions.yml`;
-const mortgageTransactionPath = `${dataPath}/budget/mortgage.transactions.yml`;
-const accountBalancePath = `${dataPath}/budget/account.balances.yml`;
-const financesPath          = `${dataPath}/budget/finances.yml`;
-const transactionMemoPath   = `${dataPath}/budget/transaction.memos.yml`;
+// Budget data now lives in households/default/apps/finances/
+const financesBasePath      = `${dataPath}/households/default/apps/finances`;
+const budgetPath            = `${financesBasePath}/budget.config.yml`;
+const budgetBasePath        = financesBasePath;
+const transactionPath       = `${financesBasePath}/{{BUDGET_INDEX}}/transactions.yml`;
+const mortgageTransactionPath = `${financesBasePath}/mortgage.transactions.yml`;
+const accountBalancePath    = `${financesBasePath}/account.balances.yml`;
+const financesPath          = `${financesBasePath}/finances.yml`;
+const transactionMemoPath   = `${financesBasePath}/transaction.memos.yml`;
 
 export const payrollSyncJob = async (key,req) => payrollSync(key,req);
 
