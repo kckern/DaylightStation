@@ -91,7 +91,24 @@ export class LogFoodFromVoice {
       return result;
     } catch (error) {
       this.#logger.error('logVoice.error', { conversationId, error: error.message });
-      throw error;
+      
+      // Send a user-friendly error message instead of failing silently
+      try {
+        await this.#messagingGateway.sendMessage(
+          conversationId,
+          `⚠️ Sorry, I couldn't process your voice message. Please try again or type what you ate.\n\n_Error: ${error.message || 'Connection issue'}_`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (sendError) {
+        // If we can't even send an error message, log it
+        this.#logger.error('logVoice.errorNotification.failed', { 
+          conversationId, 
+          originalError: error.message,
+          sendError: sendError.message 
+        });
+      }
+      
+      return { success: false, error: error.message };
     }
   }
 }

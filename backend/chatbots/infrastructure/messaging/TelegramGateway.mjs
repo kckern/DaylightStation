@@ -91,9 +91,18 @@ export class TelegramGateway {
         throw new RateLimitError('Telegram', retryAfter, { method });
       }
 
-      // Handle other API errors
-      const message = error.response?.data?.description || error.message;
-      this.#logger.error('telegram.api.error', { method, error: message });
+      // Handle other API errors - capture all possible error info
+      const message = error.response?.data?.description 
+        || error.message 
+        || error.code 
+        || `Unknown error (status: ${error.response?.status || 'none'})`;
+      this.#logger.error('telegram.api.error', { 
+        method, 
+        error: message,
+        status: error.response?.status,
+        code: error.code,
+        responseData: error.response?.data
+      });
       throw new ExternalServiceError('Telegram', message, {
         method,
         statusCode: error.response?.status,
@@ -556,8 +565,29 @@ export class TelegramGateway {
     const fileUrl = `https://api.telegram.org/file/bot${this.#token}/${fileInfo.file_path}`;
 
     // Download the file
-    const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-    const audioBuffer = Buffer.from(response.data);
+    let audioBuffer;
+    try {
+      const response = await axios.get(fileUrl, { 
+        responseType: 'arraybuffer',
+        timeout: 30000
+      });
+      audioBuffer = Buffer.from(response.data);
+    } catch (downloadError) {
+      const message = downloadError.response?.data?.description 
+        || downloadError.message 
+        || downloadError.code 
+        || `Download failed (status: ${downloadError.response?.status || 'none'})`;
+      this.#logger.error('telegram.voice.download.error', { 
+        voiceFileId,
+        error: message,
+        status: downloadError.response?.status,
+        code: downloadError.code
+      });
+      throw new ExternalServiceError('Telegram', `Voice download failed: ${message}`, {
+        method: 'downloadVoice',
+        statusCode: downloadError.response?.status,
+      });
+    }
 
     // Transcribe using AI gateway
     const text = await this.#aiGateway.transcribe(audioBuffer);
