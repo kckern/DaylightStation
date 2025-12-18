@@ -1,5 +1,5 @@
 /**
- * Menu selection handler for HomeApp
+ * Menu selection handler for OfficeApp
  * Manages menu selection logic and returns selection data
  */
 

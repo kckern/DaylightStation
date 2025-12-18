@@ -1,5 +1,5 @@
 /**
- * WebSocket payload handler for HomeApp
+ * WebSocket payload handler for OfficeApp
  * Handles incoming websocket messages and transforms them into menu selections
  */
 

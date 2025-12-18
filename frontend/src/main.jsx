@@ -2,7 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
+import RootApp from './Apps/RootApp.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
+import OfficeApp from './Apps/OfficeApp.jsx';
+import ConfigApp from './Apps/ConfigApp.jsx';
 import TVApp from './Apps/TVApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
@@ -43,10 +46,10 @@ configurePlaybackLogger({
   level: 'debug'
 });
 
-// Wrapper component for HomeApp with WebSocket
-const HomeAppWithWebSocket = () => (
+// Wrapper component for OfficeApp with WebSocket
+const OfficeAppWithWebSocket = () => (
   <WebSocketProvider>
-    <HomeApp />
+    <OfficeApp />
   </WebSocketProvider>
 ); 
 
@@ -59,7 +62,10 @@ const TVAppWithParams = () => {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <BrowserRouter>
     <Routes>
-      <Route path="/" element={<HomeAppWithWebSocket />} />
+      <Route path="/" element={<RootApp />} />
+      <Route path="/home" element={<HomeApp />} />
+      <Route path="/office" element={<OfficeAppWithWebSocket />} />
+      <Route path="/config" element={<ConfigApp />} />
       <Route path="/budget" element={<FinanceApp />} />
       <Route path="/finances" element={<FinanceApp />} />
       <Route path="/tv/app/:app" element={<TVAppWithParams />} />
