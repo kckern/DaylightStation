@@ -48,8 +48,8 @@ export const COMPONENT_CONFIGS = {
     enableDoubleClick: true
   },
   
-  // Home app (global navigation)
-  homeApp: {
+  // Office app (global navigation)
+  officeApp: {
     keyMappings: { ...GLOBAL_SHORTCUTS },
     enableDoubleClick: false
   }
