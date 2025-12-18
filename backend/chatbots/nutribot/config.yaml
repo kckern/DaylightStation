@@ -66,17 +66,18 @@ users:
 # ---------------------
 storage:
   # Base data directory (relative to process.env.path.data)
-  basePath: "lifelog/nutrition"
+  # Uses user-namespaced path: users/{username}/lifelog/nutrition
+  basePath: "users"
   
   # Per-user data paths (use {username} placeholder)
   paths:
-    nutrilog: "{username}/nutrilog"        # Individual meal logs
-    nutrilist: "{username}/nutrilist"      # Denormalized item list for reporting
-    nutricursor: "{username}/nutricursor"  # Conversation state
-    nutriday: "{username}/nutriday"        # Daily aggregates cache
-    nutricoach: "{username}/nutricoach"    # Coaching/tips state
-    report_state: "{username}/report_state" # Last report message ID
-    images: "{username}/images"            # Uploaded food photos
+    nutrilog: "{username}/lifelog/nutrition/nutrilog"        # Individual meal logs
+    nutrilist: "{username}/lifelog/nutrition/nutrilist"      # Denormalized item list for reporting
+    nutricursor: "{username}/lifelog/nutrition/nutricursor"  # Conversation state
+    nutriday: "{username}/lifelog/nutrition/nutriday"        # Daily aggregates cache
+    nutricoach: "{username}/lifelog/nutrition/nutricoach"    # Coaching/tips state
+    report_state: "{username}/lifelog/nutrition/report_state" # Last report message ID
+    images: "{username}/lifelog/nutrition/images"            # Uploaded food photos
 
   # Legacy path pattern (disable after migration)
   legacy:

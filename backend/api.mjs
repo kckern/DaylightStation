@@ -168,15 +168,16 @@ const initNutribotRouter = async () => {
         const userResolver = new UserResolver(chatbotsConfigWithUsers, { logger });
         
         // Get storage paths from config
-        // NEW structure: lifelog/{username}/nutrition/* instead of lifelog/nutrition/{username}/*
-        const storageConfig = chatbotsConfig?.data?.nutribot || {};
-        const basePath = storageConfig.basePath || 'lifelog';
-        const paths = storageConfig.paths || {
-            nutrilog: '{username}/nutrition/nutrilog',
-            nutrilist: '{username}/nutrition/nutrilist',
-            nutricursor: '{username}/nutrition/nutricursor',
-            nutriday: '{username}/nutrition/nutriday',
-            report_state: '{username}/nutrition/report_state',
+        // Uses user-namespaced paths: users/{username}/lifelog/nutrition/*
+        const storageConfig = chatbotsConfig?.data_paths?.nutribot || chatbotsConfig?.data?.nutribot || {};
+        const basePath = storageConfig.base || storageConfig.basePath || 'lifelog';
+        const paths = {
+            nutrilog: storageConfig.nutrilog || '{username}/nutrition/nutrilog',
+            nutrilist: storageConfig.nutrilist || '{username}/nutrition/nutrilist',
+            nutricursor: storageConfig.nutricursor || '{username}/nutrition/nutricursor',
+            nutriday: storageConfig.nutriday || '{username}/nutrition/nutriday',
+            nutricoach: storageConfig.nutricoach || '{username}/nutrition/nutricoach',
+            report_state: storageConfig.report_state || '{username}/nutrition/report_state',
         };
         
         // Create a NutriBotConfig adapter with UserResolver-based paths

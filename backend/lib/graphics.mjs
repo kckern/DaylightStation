@@ -15,7 +15,7 @@ let fontsRegistered = false;
 const ensureFontsRegistered = () => {
   if (fontsRegistered) return;
   try {
-    const fontDir = process.env.path?.font || process.env.FONT_DIR || './backend/chatbots/adapters/http/fonts';
+    const fontDir = process.env.path?.font || process.env.FONT_DIR || './data/content/fonts';
     const fontRegularPath = fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
     const fontItalicPath = fontDir + '/roboto-condensed/RobotoCondensed-Italic.ttf';
     registerFont(fontRegularPath, { family: 'Roboto Condensed', style: 'normal', weight: 'normal' });
