@@ -154,10 +154,14 @@ const loadFile = (path) => {
     const isLegacyUserPath = LEGACY_USER_PATHS.some(prefix => path.startsWith(prefix));
     if (isLegacyUserPath && !deprecationWarnings.has(path)) {
         deprecationWarnings.add(path);
+        // Parse username from legacy path like "lifelog/kckern/service" -> "kckern"
+        const pathParts = path.split('/');
+        const username = pathParts[1] || '{username}';
+        const service = pathParts.slice(2).join('/') || '{service}';
         ioLogger.warn('io.loadFile.deprecatedPath', {
             path,
             message: `Legacy path "${path}" should be migrated to user-namespaced location`,
-            suggestedPath: `users/{username}/${path}`,
+            suggestedPath: `users/${username}/lifelog/${service}`,
             migration: 'Run: node scripts/migrate-user-data.mjs'
         });
     }
@@ -276,10 +280,14 @@ const saveFile = (path, data) => {
     const isLegacyUserPath = LEGACY_USER_PATHS.some(prefix => normalizedPath.startsWith(prefix));
     if (isLegacyUserPath && !deprecationWarnings.has(`save:${normalizedPath}`)) {
         deprecationWarnings.add(`save:${normalizedPath}`);
+        // Parse username from legacy path like "lifelog/kckern/service" -> "kckern"
+        const pathParts = normalizedPath.split('/');
+        const username = pathParts[1] || '{username}';
+        const service = pathParts.slice(2).join('/') || '{service}';
         ioLogger.warn('io.saveFile.deprecatedPath', {
             path: normalizedPath,
             message: `Legacy path "${normalizedPath}" should be migrated to user-namespaced location`,
-            suggestedPath: `users/{username}/${normalizedPath}`
+            suggestedPath: `users/${username}/lifelog/${service}`
         });
     }
 

@@ -11,16 +11,46 @@ import { IReportRenderer } from '../../nutribot/application/ports/IReportRendere
 import path from 'path';
 import fs from 'fs';
 
-// Icon path - use relative path from project root
-const ICON_DIR = process.env.ICON_DIR || './backend/chatbots/_lib/icons/food';
+// Icon path - resolved at runtime when process.env.path is available
+const getIconDir = () => {
+  const icons = process.env.path?.icons || process.env.ICON_DIR || './data/content/img/icons';
+  const iconDir = path.join(icons, 'food');
+  return iconDir;
+};
 
-// Try to register fonts (deferred, uses content/fonts path)
-try {
-  const fontDir = process.env.path?.font || process.env.FONT_DIR || './backend/chatbots/adapters/http/fonts';
-  registerFont(fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf', { family: 'Roboto Condensed' });
-} catch (e) {
-  // Fonts not available, will use system defaults
-}
+// Deferred font registration (process.env.path isn't available at module load time)
+let fontsRegistered = false;
+let fontRegistrationError = null;
+const ensureFontsRegistered = () => {
+  if (fontsRegistered) return true;
+  const fontDir = process.env.path?.font || process.env.FONT_DIR || './data/content/fonts';
+  const fontPath = path.join(fontDir, 'roboto-condensed', 'RobotoCondensed-Regular.ttf');
+  
+  if (!fs.existsSync(fontPath)) {
+    fontRegistrationError = `Font file not found: ${fontPath}`;
+    console.warn('[CanvasReportRenderer] ' + fontRegistrationError);
+    return false;
+  }
+  
+  try {
+    registerFont(fontPath, { family: 'Roboto Condensed' });
+    fontsRegistered = true;
+    console.log('[CanvasReportRenderer] Font registered:', fontPath);
+    return true;
+  } catch (e) {
+    fontRegistrationError = `Font registration failed: ${e.message}`;
+    console.warn('[CanvasReportRenderer] ' + fontRegistrationError);
+    return false;
+  }
+};
+
+// Debug helper to log renderer config
+export const getRendererConfig = () => ({
+  fontDir: process.env.path?.font || process.env.FONT_DIR || './data/content/fonts',
+  iconDir: getIconDir(),
+  fontsRegistered,
+  fontRegistrationError,
+});
 
 // Font definitions
 const TITLE_FONT = '64px "Roboto Condensed"';
@@ -207,17 +237,31 @@ export class CanvasReportRenderer extends IReportRenderer {
 
     // Preload icons
     const iconCache = new Map();
+    const iconDir = getIconDir();
+    const iconLoadResults = [];
     for (const foodItem of food) {
       if (foodItem.icon && !iconCache.has(foodItem.icon)) {
+        const iconPath = path.join(iconDir, foodItem.icon + '.png');
         try {
-          const iconPath = path.join(ICON_DIR, foodItem.icon + '.png');
           if (fs.existsSync(iconPath)) {
             iconCache.set(foodItem.icon, await loadImage(iconPath));
+            iconLoadResults.push({ icon: foodItem.icon, status: 'loaded' });
+          } else {
+            iconLoadResults.push({ icon: foodItem.icon, status: 'not_found', path: iconPath });
           }
         } catch (e) {
-          // Icon not found, skip
+          iconLoadResults.push({ icon: foodItem.icon, status: 'error', error: e.message });
         }
       }
+    }
+    
+    // Log icon loading summary
+    const loaded = iconLoadResults.filter(r => r.status === 'loaded').length;
+    const notFound = iconLoadResults.filter(r => r.status === 'not_found');
+    if (notFound.length > 0) {
+      console.warn(`[CanvasReportRenderer] Icons not found (${notFound.length}/${iconLoadResults.length}):`, notFound.map(r => r.path).join(', '));
+    } else if (loaded > 0) {
+      console.log(`[CanvasReportRenderer] Loaded ${loaded} icons from ${iconDir}`);
     }
 
     // Draw each food item
@@ -291,6 +335,16 @@ export class CanvasReportRenderer extends IReportRenderer {
    * @returns {Promise<Buffer>}
    */
   async renderDailyReport(report) {
+    // Log current path configuration
+    console.log('[CanvasReportRenderer] renderDailyReport called');
+    console.log('[CanvasReportRenderer] process.env.path:', JSON.stringify(process.env.path || 'undefined'));
+    console.log('[CanvasReportRenderer] Resolved fontDir:', process.env.path?.font || process.env.FONT_DIR || './data/content/fonts');
+    console.log('[CanvasReportRenderer] Resolved iconDir:', getIconDir());
+    
+    // Ensure fonts are registered before rendering
+    const fontResult = ensureFontsRegistered();
+    console.log('[CanvasReportRenderer] Font registration result:', fontResult ? 'success' : 'failed');
+    
     const date = report.date;
     const totals = report.totals || {};
     const goals = report.goals || {};
@@ -417,7 +471,7 @@ export class CanvasReportRenderer extends IReportRenderer {
 
       // Draw icon in center
       try {
-        const iconPath = path.join(ICON_DIR, stat.icon + '.png');
+        const iconPath = path.join(getIconDir(), stat.icon + '.png');
         if (fs.existsSync(iconPath)) {
           const iconImg = await loadImage(iconPath);
           ctx.drawImage(iconImg, midPoint - 12, rowY - 24, 24, 24);
@@ -619,6 +673,9 @@ export class CanvasReportRenderer extends IReportRenderer {
    * @returns {Promise<Buffer>}
    */
   async renderFoodCard(item, imageUrl) {
+    // Ensure fonts are registered before rendering
+    ensureFontsRegistered();
+    
     const canvas = createCanvas(400, 200);
     const ctx = canvas.getContext('2d');
 

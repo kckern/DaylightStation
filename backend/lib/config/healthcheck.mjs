@@ -64,15 +64,21 @@ export function validateConfig(options = {}) {
   }
 
   // ============================================================
-  // Check 3: Fitness Config (specific app check)
+  // Check 3: Fitness Config (household-scoped)
   // ============================================================
   if (dataPath) {
-    const fitnessConfig = path.join(dataPath, 'fitness', 'config.yaml');
-    if (!fs.existsSync(fitnessConfig)) {
-      warnings.push(`fitness config missing: ${fitnessConfig}`);
-      checks.fitnessConfig = { status: 'warning', value: fitnessConfig, exists: false };
+    // Check household-scoped path first (new structure)
+    const householdFitnessConfig = path.join(dataPath, 'households', 'default', 'apps', 'fitness', 'config.yaml');
+    const legacyFitnessConfig = path.join(dataPath, 'fitness', 'config.yaml');
+    
+    if (fs.existsSync(householdFitnessConfig)) {
+      checks.fitnessConfig = { status: 'ok', value: householdFitnessConfig, exists: true, location: 'household' };
+    } else if (fs.existsSync(legacyFitnessConfig)) {
+      warnings.push(`fitness config using legacy path: ${legacyFitnessConfig} (should migrate to households/default/apps/fitness/)`);
+      checks.fitnessConfig = { status: 'warning', value: legacyFitnessConfig, exists: true, location: 'legacy' };
     } else {
-      checks.fitnessConfig = { status: 'ok', value: fitnessConfig, exists: true };
+      warnings.push(`fitness config missing: checked ${householdFitnessConfig}`);
+      checks.fitnessConfig = { status: 'warning', value: householdFitnessConfig, exists: false };
     }
   }
 
@@ -107,9 +113,9 @@ export function validateConfig(options = {}) {
   // ============================================================
   const secretKeys = [
     'OPENAI_API_KEY',
-    'TELEGRAM_BOT_TOKEN',
     'LOGGLY_TOKEN'
   ];
+  // Telegram tokens are per-bot now (TELEGRAM_NUTRIBOT_TOKEN, etc.) - checked separately
   const missingSecrets = secretKeys.filter(key => !process.env[key]);
   if (missingSecrets.length > 0) {
     warnings.push(`Optional secrets not configured: ${missingSecrets.join(', ')}`);

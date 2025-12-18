@@ -3,18 +3,17 @@
  * @module nutribot/application/constants/foodIcons
  * 
  * List of available food icons for the nutrition reports.
- * Icons are stored in backend/chatbots/_lib/icons/food/
+ * Icons are stored in data/content/img/icons/food/
  */
 
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { readdirSync } from 'fs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Path to icons/food directory
-const ICONS_DIR = join(__dirname, '../../../_lib/icons/food');
+// Path to icons/food directory - resolved at runtime
+const getIconsDir = () => {
+  const icons = process.env.path?.icons || process.env.ICON_DIR || './data/content/img/icons';
+  return join(icons, 'food');
+};
 
 /**
  * Load food icons from filesystem
@@ -22,7 +21,7 @@ const ICONS_DIR = join(__dirname, '../../../_lib/icons/food');
  */
 function loadFoodIcons() {
   try {
-    const files = readdirSync(ICONS_DIR);
+    const files = readdirSync(getIconsDir());
     return files
       .filter(f => f.endsWith('.png'))
       .map(f => f.replace('.png', ''))
