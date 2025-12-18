@@ -1,9 +1,13 @@
 import moment from 'moment-timezone';
 import crypto from 'crypto';
-import { loadFile, saveFile } from './io.mjs';
+import { loadFile, saveFile, userLoadFile, userSaveFile, userLoadAuth, userSaveAuth } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import axios from './http.mjs';
 import { createLogger } from './logging/logger.js';
 import { serializeError } from './logging/utils.js';
+
+// Get default username for user-scoped data
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 const defaultStravaLogger = createLogger({
     source: 'backend',
@@ -13,12 +17,15 @@ const asLogger = (logger) => logger || defaultStravaLogger;
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
 
-export const getAccessToken = async (logger) => {
+export const getAccessToken = async (logger, username = null) => {
     const log = asLogger(logger);
     if (process.env.STRAVA_ACCESS_TOKEN) return process.env.STRAVA_ACCESS_TOKEN;
 
     const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = process.env;
-    const { refresh } = loadFile('auth/strava');
+    const user = username || getDefaultUsername();
+    // Load from user-namespaced auth
+    const authData = userLoadAuth(user, 'strava') || {};
+    const { refresh } = authData;
 
     try {
         const tokenResponse = await axios.post('https://www.strava.com/oauth/token',
@@ -33,7 +40,9 @@ export const getAccessToken = async (logger) => {
         const accessToken = tokenResponse.data.access_token;
         const refreshToken = tokenResponse.data.refresh_token;
 
-        if (refreshToken) saveFile('auth/strava', { refresh: refreshToken });
+        if (refreshToken) {
+            userSaveAuth(user, 'strava', { refresh: refreshToken });
+        }
         process.env.STRAVA_ACCESS_TOKEN = accessToken;
         return accessToken;
     } catch (error) {
@@ -86,7 +95,9 @@ export const getActivities = async (logger) => {
         if (response.length < perPage) break; // Stop if fewer items than perPage are returned
         page++;
     }
-    const onFileActivities = loadFile('lifelog/strava_long') || {};
+    const username = getDefaultUsername();
+    // Load from user-namespaced path
+    const onFileActivities = userLoadFile(username, 'archives/strava_long') || {};
     const activitiesWithHeartRate = await Promise.all(
         activities
         .slice(0, 50)
@@ -138,7 +149,9 @@ const harvestActivities = async (logger, job_id) => {
         }).filter(Boolean);
 
         const harvestedDates = activities.map(activity => activity.date);
-        const onFile = loadFile('lifelog/strava') || {};
+        const username = getDefaultUsername();
+        // Load from user-namespaced path
+        const onFile = userLoadFile(username, 'strava') || {};
         const onFilesDates = Object.keys(onFile || {});
         const uniqueDates = [...new Set([...harvestedDates, ...onFilesDates])].sort((b, a) => new Date(a) - new Date(b))
             .filter(date => moment(date, 'YYYY-MM-DD', true).isValid() && moment(date, 'YYYY-MM-DD').isBefore(moment().add(1, 'year')));
@@ -157,7 +170,8 @@ const harvestActivities = async (logger, job_id) => {
             return acc;
         }, {});
 
-        saveFile('lifelog/strava_long', saveMe);
+        // Save to user-namespaced location
+        userSaveFile(username, 'archives/strava_long', saveMe);
 
         const reducedSaveMe = Object.keys(saveMe).reduce((acc, date) => {
             acc[date] = Object.values(saveMe[date])
@@ -175,7 +189,8 @@ const harvestActivities = async (logger, job_id) => {
             return acc;
         }, {});
 
-        saveFile('lifelog/strava', reducedSaveMe);
+        // Save to user-namespaced location
+        userSaveFile(username, 'strava', reducedSaveMe);
 
         return reducedSaveMe;
     } catch (error) {

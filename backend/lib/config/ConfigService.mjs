@@ -449,6 +449,83 @@ class ConfigService {
     if (!pathStr) return appConfig;
     return resolvePath(appConfig, pathStr);
   }
+
+  // ============================================================
+  // LIFELOG USER-AWARE HELPERS (Phase 1 of lifelog restructure)
+  // ============================================================
+
+  /**
+   * Get the head of household (default user for single-user operations)
+   * @param {string} [householdId] - Optional household ID (defaults to default household)
+   * @returns {string|null} Username of head of household
+   */
+  getHeadOfHousehold(householdId = null) {
+    const hid = householdId || this.getDefaultHouseholdId();
+    
+    // Check household config for head
+    const householdConfig = this.getHouseholdConfig(hid);
+    if (householdConfig?.head) {
+      return householdConfig.head;
+    }
+    
+    // Check system config for primary user
+    const primary = this.getSystem('household.head') || this.getSystem('primary_user');
+    if (primary) return primary;
+    
+    // Fallback: find first user with head_of_household: true in profile
+    const profiles = this.getAllUserProfiles();
+    for (const [username, profile] of profiles) {
+      if (profile.household?.role === 'head' || profile.head_of_household === true) {
+        return username;
+      }
+    }
+    
+    // Fallback: first user in household users list
+    if (householdConfig?.users?.length > 0) {
+      return householdConfig.users[0];
+    }
+    
+    // Fallback: first user alphabetically
+    const firstUser = profiles.keys().next().value;
+    return firstUser || null;
+  }
+
+  /**
+   * Get the lifelog path for a user and service
+   * @param {string} username - The username
+   * @param {string} service - The service name (e.g., 'fitness', 'nutrition/nutriday')
+   * @returns {string} The full relative path
+   */
+  getLifelogPath(username, service) {
+    if (!username) {
+      console.warn('[ConfigService] getLifelogPath called without username');
+      return `lifelog/${service}`;  // Fallback to legacy path
+    }
+    return `lifelog/${username}/${service}`;
+  }
+
+  /**
+   * Get user auth token path
+   * @param {string} username - The username
+   * @param {string} service - The auth service (e.g., 'strava', 'withings')
+   * @returns {string} The full relative path
+   */
+  getUserAuthPath(username, service) {
+    if (!username) {
+      console.warn('[ConfigService] getUserAuthPath called without username');
+      return `auth/${service}`;  // Fallback to legacy path
+    }
+    return `users/${username}/auth/${service}`;
+  }
+
+  /**
+   * List all usernames
+   * @returns {string[]} Array of usernames
+   */
+  listUsers() {
+    const profiles = this.getAllUserProfiles();
+    return Array.from(profiles.keys());
+  }
 }
 
 // Singleton instance

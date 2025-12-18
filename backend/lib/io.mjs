@@ -124,21 +124,10 @@ export const loadRandom = (folder) => {
 // Track deprecation warnings to avoid spam
 const deprecationWarnings = new Set();
 
-// Paths that should be migrated to user-namespaced locations
-const LEGACY_USER_PATHS = [
-    'auth/',           // OAuth tokens should be per-user
-    'lifelog/',        // Lifelog data should be per-user  
-    'nutribot/'        // Legacy nutribot data
-];
-
-// Paths that should be migrated to household-scoped locations
-const LEGACY_HOUSEHOLD_PATHS = [
-    { pattern: 'fitness/config', suggestion: 'households/{household}/apps/fitness/config' },
-    { pattern: 'gratitude/options', suggestion: 'households/{household}/shared/gratitude/options.*' },
-    { pattern: 'gratitude/users', suggestion: 'households/{household}/shared/gratitude/users' },
-    { pattern: 'gratitude/bank', suggestion: 'households/{household}/shared/gratitude/bank' },
-    { pattern: 'gratitude/snapshots', suggestion: 'households/{household}/shared/gratitude/snapshots/' },
-];
+// DEPRECATED: Legacy paths no longer supported after restructure
+// Keeping for reference but no longer warn - code should use new paths directly
+const LEGACY_USER_PATHS = [];
+const LEGACY_HOUSEHOLD_PATHS = [];
 
 const loadFile = (path) => {
     path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
@@ -313,5 +302,76 @@ const sanitize = (string) => {
 
 }
 
+// ============================================================
+// USER-AWARE HELPERS (Phase 1 of lifelog restructure)
+// ============================================================
 
-export { loadFile, saveFile, sanitize };
+/**
+ * Load lifelog data for a specific user
+ * @param {string} username - The username
+ * @param {string} service - The service name (e.g., 'fitness', 'strava', 'nutrition/nutriday')
+ * @returns {object|null} The loaded data or null if not found
+ */
+const userLoadFile = (username, service) => {
+    if (!username) {
+        ioLogger.warn('io.userLoadFile.noUsername', { service });
+        return null;
+    }
+    const path = `lifelog/${username}/${service}`;
+    return loadFile(path);
+};
+
+/**
+ * Save lifelog data for a specific user
+ * @param {string} username - The username
+ * @param {string} service - The service name (e.g., 'fitness', 'strava', 'nutrition/nutriday')
+ * @param {object} data - The data to save
+ * @returns {boolean} True if saved successfully
+ */
+const userSaveFile = (username, service, data) => {
+    if (!username) {
+        ioLogger.warn('io.userSaveFile.noUsername', { service });
+        return false;
+    }
+    const path = `lifelog/${username}/${service}`;
+    return saveFile(path, data);
+};
+
+/**
+ * Load auth token for a specific user
+ * @param {string} username - The username
+ * @param {string} service - The auth service name (e.g., 'strava', 'withings')
+ * @returns {object|null} The loaded auth data or null if not found
+ */
+const userLoadAuth = (username, service) => {
+    if (!username) {
+        ioLogger.warn('io.userLoadAuth.noUsername', { service });
+        return null;
+    }
+    // Try new path first, then fall back to legacy
+    const newPath = `users/${username}/auth/${service}`;
+    const newData = loadFile(newPath);
+    if (newData) return newData;
+    
+    // Fall back to legacy path (will log deprecation warning)
+    return loadFile(`auth/${service}`);
+};
+
+/**
+ * Save auth token for a specific user
+ * @param {string} username - The username
+ * @param {string} service - The auth service name (e.g., 'strava', 'withings')
+ * @param {object} data - The auth data to save
+ * @returns {boolean} True if saved successfully
+ */
+const userSaveAuth = (username, service, data) => {
+    if (!username) {
+        ioLogger.warn('io.userSaveAuth.noUsername', { service });
+        return false;
+    }
+    const path = `users/${username}/auth/${service}`;
+    return saveFile(path, data);
+};
+
+
+export { loadFile, saveFile, sanitize, userLoadFile, userSaveFile, userLoadAuth, userSaveAuth };

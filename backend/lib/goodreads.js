@@ -1,7 +1,10 @@
-import { saveFile } from './io.mjs';
+import { userSaveFile } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import Parser from 'rss-parser';
 let parser = new Parser();
- 
+
+const getDefaultUsername = () => configService.getHeadOfHousehold();
+
 const getMovies = async () => {
     const {GOODREADS_API_KEY, GOODREADS_USER} = process.env;
     let url = `https://www.goodreads.com/review/list_rss/${GOODREADS_USER}?&shelf=read`;
@@ -23,7 +26,8 @@ const getMovies = async () => {
         }
 
     }).sort((a, b) => new Date(b.readAt) - new Date(a.readAt));
-    saveFile('lifelog/goodreads', books);
+    const username = getDefaultUsername();
+    userSaveFile(username, 'goodreads', books);
     return books;
 }
 

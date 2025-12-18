@@ -1,6 +1,10 @@
 import axios from './http.mjs';
-import { saveFile, loadFile } from './io.mjs';
+import { saveFile, loadFile, userLoadAuth, userSaveAuth, userSaveFile } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import processWeight from '../jobs/weight.mjs';
+
+// Get default username for user-scoped data
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const getWeightData = async (job_id) => {
 
@@ -8,7 +12,10 @@ const getWeightData = async (job_id) => {
     if(!!process.env.dev) return processWeight(job_id);
 
     const { WITHINGS_CLIENT, WITHINGS_SECRET,WITHINGS_REDIRECT } = process.env;
-    const {refresh} = loadFile('auth/withings');
+    const username = getDefaultUsername();
+    // Load from user-namespaced auth
+    const authData = userLoadAuth(username, 'withings') || {};
+    const { refresh } = authData;
     //return {refresh};
     const params_auth = {
         action: 'requesttoken',
@@ -23,7 +30,9 @@ const getWeightData = async (job_id) => {
 
     const {access_token, refresh_token} = auth_data || {};
 
-    if(refresh_token) saveFile('auth/withings', {refresh: refresh_token});
+    if(refresh_token) {
+        userSaveAuth(username, 'withings', { refresh: refresh_token });
+    }
 
     if(!access_token){
 
@@ -68,7 +77,8 @@ const getWeightData = async (job_id) => {
 
     if(measurements.length === 0) return;
 
-    saveFile('lifelog/withings', measurements);
+    // Save to user-namespaced location
+    userSaveFile(username, 'withings', measurements);
     processWeight(job_id);
     return measurements;
 };

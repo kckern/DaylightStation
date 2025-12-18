@@ -4,7 +4,8 @@
 import express from 'express';
 import crypto from 'crypto';
 import nutribotRouter from './nutribot/server.mjs';
-import journalistRouter from './journalist/server.mjs';
+// STUBBED: journalist folder removed
+// import journalistRouter from './journalist/server.mjs';
 import { requestLogger, logger } from './_lib/logging.mjs';
 
 const router = express.Router();
@@ -18,7 +19,8 @@ router.use((req, res, next) => {
 
 // Mount bot routers
 router.use('/nutribot', nutribotRouter);
-router.use('/journalist', journalistRouter);
+// STUBBED: journalist router removed
+// router.use('/journalist', journalistRouter);
 
 // Fallback for unknown routes under /chatbots
 router.all('*', (req, res) => {

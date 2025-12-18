@@ -37,7 +37,7 @@ const getScripture = async (req) => {
     }
     const firstVerseId = Object.keys(data)[0];
     const volume = findVolume(firstVerseId);
-    saveFile(`scripture/${volume}/${version}/${firstVerseId}`, Object.values(data));
+    saveFile(`content/scripture/${volume}/${version}/${firstVerseId}`, Object.values(data));
     return data;
 }
 

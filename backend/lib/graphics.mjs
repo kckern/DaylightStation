@@ -9,15 +9,22 @@ const graphicsLogger = createLogger({
 });
 
 /**
- * Register fonts for canvas text rendering
+ * Register fonts for canvas text rendering (deferred until first use)
  */
-const fontDir = `/Users/kckern/Documents/GitHub/DaylightStation/backend/journalist/fonts/`;
-const fontRegularPath = fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
-const fontItalicPath = fontDir + '/roboto-condensed/RobotoCondensed-Italic.ttf';
-
-// Register the Roboto Condensed font
-registerFont(fontRegularPath, { family: 'Roboto Condensed', style: 'normal', weight: 'normal' });
-registerFont(fontItalicPath, { family: 'Roboto Condensed', style: 'italic', weight: 'normal' });
+let fontsRegistered = false;
+const ensureFontsRegistered = () => {
+  if (fontsRegistered) return;
+  try {
+    const fontDir = process.env.path?.font || process.env.FONT_DIR || './backend/chatbots/adapters/http/fonts';
+    const fontRegularPath = fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
+    const fontItalicPath = fontDir + '/roboto-condensed/RobotoCondensed-Italic.ttf';
+    registerFont(fontRegularPath, { family: 'Roboto Condensed', style: 'normal', weight: 'normal' });
+    registerFont(fontItalicPath, { family: 'Roboto Condensed', style: 'italic', weight: 'normal' });
+    fontsRegistered = true;
+  } catch (e) {
+    graphicsLogger.warn('graphics.font.registration.failed', { error: e.message });
+  }
+};
 
 /**
  * Generate a family card image with a circle and title text

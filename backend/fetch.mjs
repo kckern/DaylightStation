@@ -175,13 +175,13 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
 
     const getVersion = (volume) => {
         //list of versions in volumne folder
-        const versions = readdirSync(`${dataPath}/scripture/${volume}`)
-                            .filter(folder => fs.statSync(`${dataPath}/scripture/${volume}/${folder}`).isDirectory());
+        const versions = readdirSync(`${dataPath}/content/scripture/${volume}`)
+                            .filter(folder => fs.statSync(`${dataPath}/content/scripture/${volume}/${folder}`).isDirectory());
         return versions.length > 0 ? versions[0] : null;
     }
 
     const getVerseIdFromVolume = (volume, version) => {
-        const chapters = readdirSync(`${dataPath}/scripture/${volume}/${version}`)
+        const chapters = readdirSync(`${dataPath}/content/scripture/${volume}/${version}`)
             .filter(file => file.endsWith('.yaml'))
             .map(file => file.replace('.yaml', ''));
         const keys = chapters.map(chapter => `${volume}/${version}/${chapter}`);
@@ -251,7 +251,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
             });
         }
 
-        const filePath = `${dataPath}/scripture/${volume}/${version}/${verse_id}.yaml`;
+        const filePath = `${dataPath}/content/scripture/${volume}/${version}/${verse_id}.yaml`;
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({
             error: 'Scripture file not found', 
@@ -261,11 +261,11 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
         }
         const reference = generateReference(verse_id).replace(/:1$/, '');
         const host = process.env.host || "";
-        const mediaFilePath = `${mediaPath}/scripture/${volume}/${version}/${verse_id}.mp3`;
+        const mediaFilePath = `${mediaPath}/content/scripture/${volume}/${version}/${verse_id}.mp3`;
         const mediaExists = fs.existsSync(mediaFilePath);
-        const mediaUrl = mediaExists ? `${host}/media/scripture/${volume}/${version}/${verse_id}` : null;
+        const mediaUrl = mediaExists ? `${host}/media/content/scripture/${volume}/${version}/${verse_id}` : null;
 
-        const data = yaml.load(readFileSync(`${dataPath}/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
+        const data = yaml.load(readFileSync(`${dataPath}/content/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
         res.json({
             input: !!first_term && !!second_term ? `${first_term}/${second_term}` : `${first_term || second_term}`,
             reference,
@@ -325,7 +325,7 @@ apiRouter.get('/:songType(hymn|primary)/:hymn_num?', async (req, res, next) => {
 
 apiRouter.get('/budget',  async (req, res, next) => {
     try {
-        const finances = yaml.load(readFileSync(`${dataPath}/budget/finances.yml`, 'utf8'));
+        const finances = yaml.load(readFileSync(`${dataPath}/households/default/apps/finances/finances.yml`, 'utf8'));
         res.json(finances);
     } catch (err) {
         next(err);
@@ -333,7 +333,7 @@ apiRouter.get('/budget',  async (req, res, next) => {
 });
 apiRouter.get('/budget/daytoday',  async (req, res, next) => {
     try {
-        const {budgets} = yaml.load(readFileSync(`${dataPath}/budget/finances.yml`, 'utf8'));
+        const {budgets} = yaml.load(readFileSync(`${dataPath}/households/default/apps/finances/finances.yml`, 'utf8'));
         const dates = Object.keys(budgets);
         const latestDate = dates.sort((a, b) => moment(b).diff(moment(a)))[0];
         const {dayToDayBudget} = budgets[latestDate];

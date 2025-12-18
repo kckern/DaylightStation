@@ -11,12 +11,12 @@ import { IReportRenderer } from '../../nutribot/application/ports/IReportRendere
 import path from 'path';
 import fs from 'fs';
 
-// Icon path
-const ICON_DIR = process.env.ICON_DIR || '/Users/kckern/Documents/GitHub/DaylightStation/backend/chatbots/_lib/icons/food';
+// Icon path - use relative path from project root
+const ICON_DIR = process.env.ICON_DIR || './backend/chatbots/_lib/icons/food';
 
-// Try to register fonts
+// Try to register fonts (deferred, uses content/fonts path)
 try {
-  const fontDir = process.env.FONT_DIR || '/Users/kckern/Documents/GitHub/DaylightStation/backend/journalist/fonts';
+  const fontDir = process.env.path?.font || process.env.FONT_DIR || './backend/chatbots/adapters/http/fonts';
   registerFont(fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf', { family: 'Roboto Condensed' });
 } catch (e) {
   // Fonts not available, will use system defaults

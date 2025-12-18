@@ -69,7 +69,7 @@ const getWeather = async (job_id) => {
    
     };
 
-    saveFile('lifelog/weather', weatherData);
+    saveFile('state/weather', weatherData);
 
     const forecaseString = hourly
         .slice(0, 10)

@@ -1,12 +1,18 @@
-import { loadFile, saveFile } from '../lib/io.mjs';
+import { loadFile, saveFile, userLoadFile, userSaveFile } from '../lib/io.mjs';
+import { configService } from '../lib/config/ConfigService.mjs';
 import moment from 'moment';
+
+// Get default username for user-scoped data
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 //
 // Keep the structure and variable names, but re-implement the internals.
 //
 const weightProcess = async (job_id) => {
     // Load data
-    const weightPoints = (loadFile('lifelog/withings') || []).sort((a, b) => moment(a.date) - moment(b.date));
+    const username = getDefaultUsername();
+    // Load from user-namespaced path
+    const weightPoints = (userLoadFile(username, 'withings') || []).sort((a, b) => moment(a.date) - moment(b.date));
 
     // 1. Do a (re-implemented) linear interpolation over gaps for the last ~90 days
     let values = interpolateDays(weightPoints.slice(-90));
@@ -49,8 +55,8 @@ const weightProcess = async (job_id) => {
     const sortedKeys = keys.sort((a, b) => moment(b) - moment(a));
     values = sortedKeys.reduce((acc, key) => { acc[key] = values[key]; return acc; }, {});
 
-    // Save final results
-    saveFile('lifelog/weight', values);
+    // Save to user-namespaced location
+    userSaveFile(username, 'weight', values);
 
     return values;
 };
