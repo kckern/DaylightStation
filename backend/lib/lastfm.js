@@ -1,7 +1,9 @@
 import axios from './http.mjs';
 import crypto from 'crypto';
-import { saveFile } from './io.mjs';
+import { userSaveFile } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const getScrobbles = async () => {
     const {LAST_FM_API_KEY,  LAST_FM_USER} = process.env;
@@ -29,7 +31,8 @@ const getScrobbles = async () => {
         page++;
         tracks = [...tracks, ...recenttracks].sort((a, b) => b.unix - a.unix);
     }
-    saveFile('lifelog/lastfm', tracks);
+    const username = getDefaultUsername();
+    userSaveFile(username, 'lastfm', tracks);
     return tracks;
 }
 

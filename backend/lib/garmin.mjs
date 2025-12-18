@@ -2,10 +2,14 @@ import garmin from 'garmin-connect';
 const { GarminConnect } = garmin;
 import moment from 'moment-timezone';
 import crypto from 'crypto';
-import { loadFile, saveFile } from './io.mjs';
+import { loadFile, saveFile, userLoadFile, userSaveFile } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 const timezone = process.env.TZ || 'America/Los_Angeles';
+
+// Get default username for user-scoped data
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const GCClient = new GarminConnect({
   username: process.env.GARMIN_USERNAME,
@@ -66,6 +70,7 @@ export const getHeartRate = async (date = new Date()) => {
 
 const harvestActivities = async () => {
     const activities = await getActivities();
+    const username = getDefaultUsername();
 
     const allDates = activities.map(act => moment.tz(act.startTimeLocal, timezone).format('YYYY-MM-DD'));
     const uniqueDates = [...new Set(allDates)].sort().reverse();
@@ -76,7 +81,8 @@ const harvestActivities = async () => {
         return obj;
     }
     , {});
-    const existing = await loadFile('lifelog/garmin', {});
+    // Load from user-namespaced path
+    const existing = userLoadFile(username, 'garmin') || {};
     const merged = {...existing, ...saveMe1};
     const saveMe = Object.keys(merged)
         .filter(key => moment(key, 'YYYY-MM-DD', true).isValid()) // Ensure the key is a valid date
@@ -86,7 +92,8 @@ const harvestActivities = async () => {
             obj[key] = merged[key];
             return obj;
         }, {});
-    saveFile('lifelog/garmin', saveMe);
+    // Save to user-namespaced location
+    userSaveFile(username, 'garmin', saveMe);
     return saveMe;
 };
 

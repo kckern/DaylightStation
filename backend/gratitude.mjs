@@ -20,34 +20,25 @@ const isValidCategory = (c) => CATEGORIES.includes(String(c || '').toLowerCase()
 const getHouseholdId = (req) => req.query.household || configService.getDefaultHouseholdId();
 
 /**
- * Read array from household shared path with legacy fallback
+ * Read array from household shared path
  */
 const readHouseholdArray = (householdId, key) => {
-    // Try household path first
     const data = userDataService.readHouseholdSharedData(householdId, `gratitude/${key}`);
-    if (data !== null) {
-        return Array.isArray(data) ? data : [];
-    }
-    // Fallback to legacy
-    const legacyData = loadFile(`gratitude/${key}`);
-    return Array.isArray(legacyData) ? legacyData : [];
+    return Array.isArray(data) ? data : [];
 };
 
 /**
- * Write array to household shared path (also writes to legacy for now)
+ * Write array to household shared path
  */
 const writeHouseholdArray = (householdId, key, arr) => {
     const data = Array.isArray(arr) ? arr : [];
-    // Write to household path
     userDataService.writeHouseholdSharedData(householdId, `gratitude/${key}`, data);
-    // Also write to legacy path during migration
-    saveFile(`gratitude/${key}`, data);
 };
 
-// Legacy helpers (for backwards compatibility during migration)
+// Helper for loading legacy paths that don't need household context
 const readArray = (key) => {
-    const data = loadFile(key);
-    return Array.isArray(data) ? data : [];
+    const hid = configService.getDefaultHouseholdId();
+    return readHouseholdArray(hid, key.replace('gratitude/', ''));
 };
 
 const getUsers = (hid) => readHouseholdArray(hid, 'users');
@@ -56,12 +47,24 @@ const setUsers = (hid, arr) => writeHouseholdArray(hid, 'users', arr);
 const getOptions = (hid, category) => readHouseholdArray(hid, `options.${category}`);
 const setOptions = (hid, category, arr) => writeHouseholdArray(hid, `options.${category}`, arr);
 
-// Selections and discarded stay global for now (contain userId field)
-const getSelections = (category) => readArray(`gratitude/selections.${category}`);
-const setSelections = (category, arr) => saveFile(`gratitude/selections.${category}`, Array.isArray(arr) ? arr : []);
+// Selections and discarded are now household-scoped too
+const getSelections = (category, hid = null) => {
+    const householdId = hid || configService.getDefaultHouseholdId();
+    return readHouseholdArray(householdId, `selections.${category}`);
+};
+const setSelections = (category, arr, hid = null) => {
+    const householdId = hid || configService.getDefaultHouseholdId();
+    writeHouseholdArray(householdId, `selections.${category}`, Array.isArray(arr) ? arr : []);
+};
 
-const getDiscarded = (category) => readArray(`gratitude/discarded.${category}`);
-const setDiscarded = (category, arr) => saveFile(`gratitude/discarded.${category}`, Array.isArray(arr) ? arr : []);
+const getDiscarded = (category, hid = null) => {
+    const householdId = hid || configService.getDefaultHouseholdId();
+    return readHouseholdArray(householdId, `discarded.${category}`);
+};
+const setDiscarded = (category, arr, hid = null) => {
+    const householdId = hid || configService.getDefaultHouseholdId();
+    writeHouseholdArray(householdId, `discarded.${category}`, Array.isArray(arr) ? arr : []);
+};
 
 // Users - now household-scoped
 gratitudeRouter.get('/users', (req, res) => {

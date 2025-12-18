@@ -66,7 +66,7 @@ const  payrollSync = async (key,req) => {
 
     const authKey = req.query.token || PAYROLL_AUTH;
 
-    const pastPaycheckData =     loadFile('budget/payroll');
+    const pastPaycheckData =     loadFile('households/default/apps/finances/payroll');
 
     const pastDates = Object.keys(pastPaycheckData.paychecks);
 
@@ -119,12 +119,12 @@ const  payrollSync = async (key,req) => {
       }
     //  if(Object.keys(paychecks).length !== checkCount)  return payrollLogger.error('payroll.missingPaychecks');
 
-        saveFile('budget/payroll', {paychecks});
+        saveFile('households/default/apps/finances/payroll', {paychecks});
 
 
         //TODO: UPLOAD TO BUXFER
         //load dict
-        const {mapping} = loadFile('budget/payrollDict');
+        const {mapping} = loadFile('households/default/apps/finances/payrollDict');
         
         let debits = [];
         let credits = [];
@@ -159,7 +159,7 @@ const  payrollSync = async (key,req) => {
         const allTransactions = [...debits.map(i=>({...i, amount: -i.amount})), ...credits, ...transfers].sort((a,b) => new Date(a.date) - new Date(b.date));
 
         //write all transactions to file
-        saveFile('budget/tmp', {transactions: allTransactions});
+        saveFile('households/default/apps/finances/tmp', {transactions: allTransactions});
 
         // get from allTransactions
         const startDate   = allTransactions.sort((a,b) => new Date(a.date) - new Date(b.date))[0].date;

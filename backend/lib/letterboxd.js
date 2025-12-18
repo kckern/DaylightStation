@@ -1,6 +1,8 @@
-import { saveFile } from './io.mjs';
+import { userSaveFile } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import axios from './http.mjs';
- 
+
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const getMovies = async () => {
     const {LETTERBOXD_USER} = process.env;
@@ -24,7 +26,8 @@ const getMovies = async () => {
         page++;
         movies = [...movies, ...matches];
     }
-    saveFile('lifelog/letterboxd', movies);
+    const username = getDefaultUsername();
+    userSaveFile(username, 'letterboxd', movies);
     return movies;
 }
 

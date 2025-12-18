@@ -76,37 +76,7 @@ const printerLog = {
         printerLog._writeLog(logEntry);
     },
     _writeLog: (logEntry) => {
-        try {
-            const date = new Date().toISOString().split('T')[0];
-            const logPath = `logs/printer/${date}`;
-            
-            // Load existing logs for the day or create empty array
-            let dailyLogs = [];
-            try {
-                const existingFile = fs.readFileSync(`${process.env.path.data}/${logPath}.yaml`, 'utf8');
-                const existingData = yaml.load(existingFile);
-                if (Array.isArray(existingData)) {
-                    dailyLogs = existingData;
-                }
-            } catch (e) {
-                // File doesn't exist or is invalid, start fresh
-            }
-            
-            // Add new log entry
-            dailyLogs.push(logEntry);
-            
-            // Keep only last 1000 entries per day to prevent file bloat
-            if (dailyLogs.length > 1000) {
-                dailyLogs = dailyLogs.slice(-1000);
-            }
-            
-            // Save updated logs
-            saveFile(logPath, dailyLogs);
-        } catch (error) {
-            // Fallback to console if file logging fails
-            console.error('Printer log write failed:', error);
-            console.log('PRINTER_LOG:', logEntry);
-        }
+        //TODO: use our #logger utility instead of console.log
     }
 };
 

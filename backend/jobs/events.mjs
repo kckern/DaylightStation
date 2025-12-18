@@ -1,6 +1,10 @@
 
-import { loadFile, saveFile } from '../lib/io.mjs';
+import { loadFile, saveFile, userLoadFile, userSaveFile } from '../lib/io.mjs';
+import { configService } from '../lib/config/ConfigService.mjs';
 import { createLogger } from '../lib/logging/logger.js';
+
+// Get default username for user-scoped data
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const eventsLogger = createLogger({
     source: 'backend',
@@ -8,10 +12,11 @@ const eventsLogger = createLogger({
 });
 export default async (job_id) => {
 
-
-    const calendarEvents = loadFile('lifelog/calendar') || [];
-    const todoItems = loadFile('lifelog/todoist') || [];
-    const clickupData = loadFile('lifelog/clickup') || [];
+    const username = getDefaultUsername();
+    // Load from user-namespaced paths
+    const calendarEvents = userLoadFile(username, 'calendar') || [];
+    const todoItems = userLoadFile(username, 'todoist') || [];
+    const clickupData = userLoadFile(username, 'clickup') || [];
 
     const hasCalItems = !!calendarEvents.length
     const calendarItems = !hasCalItems ? [] : calendarEvents.map(event => {
@@ -88,7 +93,8 @@ export default async (job_id) => {
         return new Date(a.start) - new Date(b.start);
     });
 
-    saveFile('lifelog/events', allItems);
+    // Save to user-namespaced location
+    userSaveFile(username, 'events', allItems);
 
     return allItems;
 

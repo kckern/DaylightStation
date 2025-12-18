@@ -1,7 +1,11 @@
 import axios from './http.mjs';
 import { buildCurl } from './httpUtils.mjs';
-import { saveFile } from './io.mjs';
+import { saveFile, userSaveFile } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
+
+// Get default username for user-scoped data
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const clickupLogger = createLogger({
     source: 'backend',
@@ -89,7 +93,9 @@ const getTickets = async () => {
     });
 
     clickupLogger.info('Total tickets fetched', { count: tickets.length });
-    saveFile('lifelog/clickup', tickets);
+    const username = getDefaultUsername();
+    // Save to user-namespaced location
+    userSaveFile(username, 'clickup', tickets);
     clickupLogger.info('Tickets saved to file', { path: 'lifelog/clickup' });
 
     return tickets;

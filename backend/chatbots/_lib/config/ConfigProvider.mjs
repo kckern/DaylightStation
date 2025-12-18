@@ -423,8 +423,9 @@ export class ConfigProvider {
       }
     }
 
-    // Check new structure in legacy config
-    const defaultUser = this.#appConfig.chatbots?.users?.kckern;
+    // Check new structure in legacy config - use head of household
+    const headUsername = configService?.getHeadOfHousehold?.() || Object.keys(this.#appConfig.chatbots?.users || {})[0];
+    const defaultUser = headUsername ? this.#appConfig.chatbots?.users?.[headUsername] : null;
     if (defaultUser?.goals) {
       return {
         calories: defaultUser.goals.calories || 2000,

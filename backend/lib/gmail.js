@@ -1,6 +1,10 @@
 import { google } from 'googleapis';
-import { saveFile,sanitize } from './io.mjs';
+import { saveFile, sanitize, userSaveFile } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
+
+// Get default username for user-scoped data
+const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const defaultGmailLogger = createLogger({
     source: 'backend',
@@ -36,7 +40,9 @@ const listMails = async (logger, job_id) => {
     }));
 
     log.info('harvest.gmail.messages', { jobId: job_id, count: messages.length });
-    saveFile('lifelog/gmail', messages);
+    const username = getDefaultUsername();
+    // Save to user-namespaced location
+    userSaveFile(username, 'gmail', messages);
     return messages;
 }
 

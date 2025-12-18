@@ -1,15 +1,21 @@
 
 import express from 'express';
-import { processWebhookPayload } from './journalist/telegram_hook.mjs';
-// Legacy foodlog_hook kept as fallback, but routing through new chatbots framework
-import { processFoodLogHook } from './journalist/foodlog_hook.mjs';
-import { foodReport, scanBarcode, canvasImageEndpoint } from './journalist/food_report.mjs';
-import { updateWebhook } from './journalist/lib/telegram.mjs';
-import imageHandler from './journalist/img.mjs';
+// STUBBED: journalist folder removed
+// import { processWebhookPayload } from './journalist/telegram_hook.mjs';
+// import { processFoodLogHook } from './journalist/foodlog_hook.mjs';
+// import { foodReport, scanBarcode, canvasImageEndpoint } from './journalist/food_report.mjs';
+// import { updateWebhook } from './journalist/lib/telegram.mjs';
+// import imageHandler from './journalist/img.mjs';
+// import { upcLookup } from './journalist/lib/upc.mjs';
+const processWebhookPayload = async () => ({ success: false, message: 'journalist removed' });
+const processFoodLogHook = async () => ({ success: false });
+const foodReport = async (req, res) => res.status(503).json({ error: 'journalist module removed' });
+const scanBarcode = async (req, res) => res.status(503).json({ error: 'journalist module removed' });
+const canvasImageEndpoint = async (req, res) => res.status(503).json({ error: 'journalist module removed' });
+const updateWebhook = async () => ({});
+const imageHandler = async (req, res) => res.status(503).json({ error: 'journalist module removed' });
+const upcLookup = async () => null;
 import moment from 'moment-timezone';
-
-// Import UPC lookup function from journalist
-import { upcLookup } from './journalist/lib/upc.mjs';
 
 // New chatbots framework
 import { createNutribotRouter } from './chatbots/nutribot/server.mjs';
@@ -162,14 +168,15 @@ const initNutribotRouter = async () => {
         const userResolver = new UserResolver(chatbotsConfigWithUsers, { logger });
         
         // Get storage paths from config
+        // NEW structure: lifelog/{username}/nutrition/* instead of lifelog/nutrition/{username}/*
         const storageConfig = chatbotsConfig?.data?.nutribot || {};
-        const basePath = storageConfig.basePath || 'lifelog/nutrition';
+        const basePath = storageConfig.basePath || 'lifelog';
         const paths = storageConfig.paths || {
-            nutrilog: '{username}/nutrilog',
-            nutrilist: '{username}/nutrilist',
-            nutricursor: '{username}/nutricursor',
-            nutriday: '{username}/nutriday',
-            report_state: '{username}/report_state',
+            nutrilog: '{username}/nutrition/nutrilog',
+            nutrilist: '{username}/nutrition/nutrilist',
+            nutricursor: '{username}/nutrition/nutricursor',
+            nutriday: '{username}/nutrition/nutriday',
+            report_state: '{username}/nutrition/report_state',
         };
         
         // Create a NutriBotConfig adapter with UserResolver-based paths
@@ -195,7 +202,7 @@ const initNutribotRouter = async () => {
             },
             getNutricoachPath: (userId) => {
                 const username = userResolver.resolveUsername(userId) || userId;
-                const coachPath = paths.nutricoach || '{username}/nutricoach';
+                const coachPath = paths.nutricoach || '{username}/nutrition/nutricoach';
                 return `${basePath}/${coachPath.replace('{username}', username)}`;
             },
             getReportStatePath: (userId) => {

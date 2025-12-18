@@ -1,20 +1,24 @@
 import express from 'express';
 import dailyHealth from './lib/health.mjs';
-import { loadFile } from './lib/io.mjs';
+import { loadFile, userLoadFile } from './lib/io.mjs';
 import { userDataService } from './lib/config/UserDataService.mjs';
 import { configService } from './lib/config/ConfigService.mjs';
-import { getNutriDaysBack, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist } from './journalist/lib/db.mjs';
+// STUBBED: journalist folder removed
+// import { getNutriDaysBack, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist } from './journalist/lib/db.mjs';
+const getNutriDaysBack = () => ({});
+const getNutrilListByDate = () => [];
+const getNutrilListByID = () => null;
+const deleteNuriListById = () => ({ success: false });
+const updateNutrilist = () => null;
+const saveNutrilist = () => false;
 import moment from 'moment';
 import { v4 as uuidv4 } from 'uuid';
 
 // Default user for legacy single-user data access
 // TODO: Get from request context or authentication
 const getDefaultUsername = () => {
-  const profiles = configService.getAllUserProfiles();
-  if (profiles.size > 0) {
-    return Array.from(profiles.keys())[0];
-  }
-  return 'kckern'; // Fallback
+  // Use head of household from config (never hardcode usernames)
+  return configService.getHeadOfHousehold();
 };
 
 const healthRouter = express.Router();
@@ -46,7 +50,8 @@ healthRouter.get('/daily', async (req, res, next) => {
 // Get weight data specifically
 healthRouter.get('/weight', async (req, res, next) => {
     try {
-        const weightData = loadFile('lifelog/weight') || {};
+        const username = getDefaultUsername();
+        const weightData = userLoadFile(username, 'weight') || {};
         res.json({ 
             message: 'Weight data retrieved successfully',
             data: weightData
@@ -59,7 +64,8 @@ healthRouter.get('/weight', async (req, res, next) => {
 // Get workout data (Strava)
 healthRouter.get('/workouts', async (req, res, next) => {
     try {
-        const stravaData = loadFile('lifelog/strava') || {};
+        const username = getDefaultUsername();
+        const stravaData = userLoadFile(username, 'strava') || {};
         res.json({ 
             message: 'Workout data retrieved successfully',
             data: stravaData
@@ -72,13 +78,8 @@ healthRouter.get('/workouts', async (req, res, next) => {
 // Get fitness data
 healthRouter.get('/fitness', async (req, res, next) => {
     try {
-        // Try new user-namespaced path first, fall back to legacy
         const username = getDefaultUsername();
-        let fitnessData = userDataService.getLifelogData(username, 'fitness');
-        if (!fitnessData) {
-            // Fall back to legacy path (will log deprecation warning)
-            fitnessData = loadFile('lifelog/fitness') || {};
-        }
+        const fitnessData = userLoadFile(username, 'fitness') || {};
         res.json({ 
             message: 'Fitness data retrieved successfully',
             data: fitnessData
@@ -295,7 +296,8 @@ healthRouter.delete('/nutrilist/:uuid', async (req, res, next) => {
 // Get health coaching data
 healthRouter.get('/coaching', async (req, res, next) => {
     try {
-        const coachingData = loadFile('lifelog/health_coaching') || {};
+        const username = getDefaultUsername();
+        const coachingData = userLoadFile(username, 'health_coaching') || {};
         res.json({ 
             message: 'Health coaching data retrieved successfully',
             data: coachingData
