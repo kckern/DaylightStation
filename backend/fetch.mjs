@@ -15,8 +15,21 @@ import { Plex } from './lib/plex.mjs';
 import { parse } from 'path';
 import path from 'path';
 import { isWatched, getEffectivePercent } from './lib/utils.mjs';
+import { configService } from './lib/config/ConfigService.mjs';
+import { userDataService } from './lib/config/UserDataService.mjs';
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
+
+// Helper for household-scoped media memory paths
+const getMediaMemoryPath = (category, householdId = null) => {
+    const hid = householdId || configService.getDefaultHouseholdId();
+    // Try household path first, fall back to legacy
+    const householdPath = userDataService.getHouseholdDir(hid);
+    if (householdPath && fs.existsSync(path.join(householdPath, 'history', 'media_memory'))) {
+        return `households/${hid}/history/media_memory/${category}`;
+    }
+    return `history/media_memory/${category}`;
+};
 
 //usejson
 apiRouter.use(express.json());
@@ -28,7 +41,8 @@ apiRouter.use((err, req, res, next) => {
 });
 
 export const findUnwatchedItems = (media_keys, category = "media", shuffle = false) => {
-    const media_memory = loadFile(`history/media_memory/${category}`) || {};
+    const memoryPath = getMediaMemoryPath(category);
+    const media_memory = loadFile(memoryPath) || {};
     const unwatchedItems = media_keys.filter(key => {
         const watchedItem = media_memory[key];
         return !isWatched(watchedItem);
@@ -47,14 +61,14 @@ export const findUnwatchedItems = (media_keys, category = "media", shuffle = fal
 };
 
 export const clearWatchedItems = (media_keys, category = "media") => {
-
-    const media_memory = loadFile(`history/media_memory/${category}`) || {};
+    const memoryPath = getMediaMemoryPath(category);
+    const media_memory = loadFile(memoryPath) || {};
     for (const key of media_keys) {
         if (media_memory[key]) {
             delete media_memory[key];
         }
     }
-    saveFile(`history/media_memory/${category}`, media_memory);
+    saveFile(memoryPath, media_memory);
     return media_memory;
 }
 apiRouter.get('/img/*', async (req, res, next) => {
@@ -473,7 +487,8 @@ export const getChildrenFromWatchlist =  (watchListItems, ignoreSkips=false, ign
     let candidates = { normal: {}, urgent: {}, in_progress: {} };
     for (let item of watchListItems) {
         let {media_key, src, percent: itemProgress, watched, hold, skip_after, wait_until, title, program} = item;
-        const log = loadFile(`history/media_memory/${src}`) || {};
+        const memoryPath = getMediaMemoryPath(src);
+        const log = loadFile(memoryPath) || {};
         const percent = log[media_key]?.percent || itemProgress || 0;
         const seconds = log[media_key]?.seconds || 0;
 

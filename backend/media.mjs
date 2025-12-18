@@ -1,8 +1,11 @@
 import axios from './lib/http.mjs';
 import express from 'express';
 import fs from 'fs';
+import path from 'path';
 import {Plex} from './lib/plex.mjs';
 import { loadFile, saveFile } from './lib/io.mjs';
+import { configService } from './lib/config/ConfigService.mjs';
+import { userDataService } from './lib/config/UserDataService.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
 import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems, applyParamsToItems } from './fetch.mjs';
@@ -24,6 +27,16 @@ const mediaLogger = createLogger({
     source: 'backend',
     app: 'media'
 });
+
+// Helper for household-scoped media memory paths
+const getMediaMemoryPath = (category, householdId = null) => {
+    const hid = householdId || configService.getDefaultHouseholdId();
+    const householdDir = userDataService.getHouseholdDir(hid);
+    if (householdDir && fs.existsSync(path.join(householdDir, 'history', 'media_memory'))) {
+        return `households/${hid}/history/media_memory/${category}`;
+    }
+    return `history/media_memory/${category}`;
+};
 
 const ext = ['mp3','mp4','m4a', 'webm'];
 export const findFileFromMediaKey = media_key => {
@@ -184,13 +197,13 @@ mediaRouter.post('/log', async (req, res) => {
         let librarystring = "";
         if(seconds<10) return res.status(400).json({ error: `Invalid request: seconds < 10` });
         
-        let logPath = `history/media_memory/${type}`;
+        let logPath = getMediaMemoryPath(type);
         if (type === 'plex') {
             const plex = new Plex();
             const [meta] = await plex.loadMeta(media_key);
             librarystring = meta ? slugify(meta.librarySectionTitle) : 'media';
             if (meta && meta.librarySectionID) {
-                logPath = `history/media_memory/plex/${librarystring}`;
+                logPath = getMediaMemoryPath(`plex/${librarystring}`);
             }
         }
         const log = loadFile(logPath) || {};
@@ -249,7 +262,7 @@ mediaRouter.all(`/info/*`, async (req, res) => {
     const { fileSize,  extention } = findFileFromMediaKey(media_key);
     if(!extention) media_key = await (async () => {
         const mediakeys = media_key.split(/[|]/);
-        const watched = loadFile('history/media_memory/media') || {};
+        const watched = loadFile(getMediaMemoryPath('media')) || {};
         const sortItems = (a, b) => {
             if(!a.media_key || !b.media_key) return 0;
             const lastLeafA = a.media_key.split('/').pop();

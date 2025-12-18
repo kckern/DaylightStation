@@ -1,7 +1,10 @@
 import axios from './http.mjs';
+import path from 'path';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import { clearWatchedItems } from '../fetch.mjs';
 import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';
+import { configService } from './config/ConfigService.mjs';
+import { userDataService } from './config/UserDataService.mjs';
 import fs from 'fs';
 import { createLogger } from './logging/logger.js';
 import { serializeError } from './logging/utils.js';
@@ -10,6 +13,30 @@ const plexLogger = createLogger({
   source: 'backend',
   app: 'plex'
 });
+
+// Helper for household-scoped media memory paths
+const getMediaMemoryPath = (category, householdId = null) => {
+    const hid = householdId || configService.getDefaultHouseholdId();
+    const householdDir = userDataService.getHouseholdDir(hid);
+    if (householdDir && fs.existsSync(path.join(householdDir, 'history', 'media_memory'))) {
+        return `households/${hid}/history/media_memory/${category}`;
+    }
+    return `history/media_memory/${category}`;
+};
+
+const getMediaMemoryDir = (householdId = null) => {
+    const hid = householdId || configService.getDefaultHouseholdId();
+    const householdDir = userDataService.getHouseholdDir(hid);
+    if (householdDir) {
+        const householdMemPath = path.join(householdDir, 'history', 'media_memory');
+        if (fs.existsSync(householdMemPath)) {
+            return householdMemPath;
+        }
+    }
+    // Fall back to legacy path
+    const legacyPath = path.join(process.env.path.data, 'history', 'media_memory');
+    return legacyPath;
+};
 
 
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } }
@@ -661,7 +688,7 @@ export class Plex {
   }
 
   loadPlexViewingHistory() {
-    const plexLogDir = `${process.env.path.data}/history/media_memory/plex`;
+    const plexLogDir = path.join(getMediaMemoryDir(), 'plex');
     let log = {};
 
     if (!fs.existsSync(plexLogDir)) {
@@ -672,7 +699,7 @@ export class Plex {
     const files = fs.readdirSync(plexLogDir);
     for (const file of files) {
       if (file.endsWith('.yml') || file.endsWith('.yaml')) {
-        const libraryLog = loadFile(`history/media_memory/plex/${file.replace(/\.ya?ml$/, '')}`);
+        const libraryLog = loadFile(getMediaMemoryPath(`plex/${file.replace(/\.ya?ml$/, '')}`));
         if (libraryLog) {
           log = { ...log, ...libraryLog };
         }
@@ -712,7 +739,7 @@ export class Plex {
   }
 
   async loadSingleFromWatchlist(watchlist) {
-    let log = loadFile("history/media_memory/plex") || {};
+    let log = loadFile(getMediaMemoryPath('plex')) || {};
     let watchlists = loadFile("state/watchlists");
     let list = watchlists[watchlist];
     if (!list) return [];
