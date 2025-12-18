@@ -176,9 +176,9 @@ apiRouter.get('/talk/:talk_folder?/:talk_id?', async (req, res, next) => {
 
     const host = process.env.host || "";
     const { talk_folder, talk_id } = req.params;
-    const filesInFolder = readdirSync(`${dataPath}/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml')).map(file => file.replace('.yaml', ''));
+    const filesInFolder = readdirSync(`${dataPath}/content/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml')).map(file => file.replace('.yaml', ''));
     const [selectedFile] = findUnwatchedItems(filesInFolder, 'talk', true);
-    const filePath = `${dataPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}.yaml`;
+    const filePath = `${dataPath}/content/talks/${talk_folder || ''}/${talk_id || selectedFile}.yaml`;
     const talkData = yaml.load(readFileSync(filePath, 'utf8'));
     const mediaFilePath = `${mediaPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}.mp4`;
     const mediaExists = fs.existsSync(mediaFilePath);
@@ -322,9 +322,9 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
         }
         const reference = generateReference(verse_id).replace(/:1$/, '');
         const host = process.env.host || "";
-        const mediaFilePath = `${mediaPath}/content/scripture/${volume}/${version}/${verse_id}.mp3`;
+        const mediaFilePath = `${mediaPath}/scripture/${volume}/${version}/${verse_id}.mp3`;
         const mediaExists = fs.existsSync(mediaFilePath);
-        const mediaUrl = mediaExists ? `${host}/media/content/scripture/${volume}/${version}/${verse_id}` : null;
+        const mediaUrl = mediaExists ? `${host}/media/scripture/${volume}/${version}/${verse_id}` : null;
 
         const data = yaml.load(readFileSync(`${dataPath}/content/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
         res.json({
@@ -347,18 +347,18 @@ apiRouter.get('/:songType(hymn|primary)/:hymn_num?', async (req, res, next) => {
     try {
         const { songType, hymn_num } = req.params;
         const preferences = ["_ldsgc", ""];
-        const basePath = `songs/${songType}`;
+        const basePath = `content/songs/${songType}`;
         const hymnData = hymn_num ? loadFile(`${basePath}/${hymn_num}`) : loadRandom(basePath);
         const hymnNumStr = String(hymn_num || hymnData?.hymn_num || '').padStart(3, '0');
         const { mediaFilePath, mediaUrl } = preferences.reduce((result, prf) => {
             if (result) return result;
             prf = prf ? `${prf}/` : '';
-            const mediaFilePath = `${mediaPath}/${basePath}/${prf}${hymnNumStr}.mp3`;
+            const mediaFilePath = `${mediaPath}/songs/${songType}/${prf}${hymnNumStr}.mp3`;
             const host = process.env.host || "";
             try {
                 if (fs.existsSync(mediaFilePath)) {
                     return {
-                        mediaUrl: `${host}/media/${basePath}/${prf}${hymnNumStr}`,
+                        mediaUrl: `${host}/media/songs/${songType}/${prf}${hymnNumStr}`,
                         mediaFilePath
                     };
                 }else{
@@ -831,21 +831,31 @@ apiRouter.get('/*', async (req, res, next) => {
     try {
         const params = req.params[0].split('/');
         const filePath = path.join(dataPath, ...params) + '.yaml';
+        const contentFilePath = path.join(dataPath, 'content', ...params) + '.yaml';
         const key = params.pop(); // Last parameter could be a key
 
         const parentPath = path.join(dataPath, ...params) + '.yaml';
-        if (fs.existsSync(parentPath)) {
-            const parentData = yaml.load(readFileSync(parentPath, 'utf8'));
+        const contentParentPath = path.join(dataPath, 'content', ...params) + '.yaml';
+        
+        // Check parent path (try content/ first, then root)
+        const actualParentPath = fs.existsSync(contentParentPath) ? contentParentPath : 
+                                 fs.existsSync(parentPath) ? parentPath : null;
+        if (actualParentPath) {
+            const parentData = yaml.load(readFileSync(actualParentPath, 'utf8'));
             if (parentData?.[key]) {
-            return res.json(parentData[key]);
+                return res.json(parentData[key]);
             }
         }
 
-        if (!fs.existsSync(filePath)) {
+        // Check file path (try content/ first, then root)
+        const actualFilePath = fs.existsSync(contentFilePath) ? contentFilePath :
+                               fs.existsSync(filePath) ? filePath : null;
+        
+        if (!actualFilePath) {
             return res.status(404).json({ error: `File not found: ${filePath}` });
         }
 
-        const data = yaml.load(readFileSync(filePath, 'utf8'));
+        const data = yaml.load(readFileSync(actualFilePath, 'utf8'));
 
         // If the key exists in the data, return the specific key's value
         if (data?.[key]) {

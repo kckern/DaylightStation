@@ -232,8 +232,12 @@ export class NutriListRepository {
    * @returns {Promise<Object[]>}
    */
   async findByDate(userId, date) {
+    const path = this.#getPath(userId);
+    this.#logger.debug('nutrilist.findByDate', { userId, date, path });
     const items = await this.findAll(userId);
-    return items.filter(item => item.date === date);
+    const filtered = items.filter(item => item.date === date);
+    this.#logger.debug('nutrilist.findByDate.result', { userId, date, totalItems: items.length, filteredItems: filtered.length });
+    return filtered;
   }
 
   /**

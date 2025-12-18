@@ -69,7 +69,8 @@ const getWeather = async (job_id) => {
    
     };
 
-    saveFile('state/weather', weatherData);
+    const hid = process.env.household_id || 'default';
+    saveFile(`households/${hid}/shared/weather`, weatherData);
 
     const forecaseString = hourly
         .slice(0, 10)

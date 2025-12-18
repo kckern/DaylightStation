@@ -143,7 +143,7 @@ function HomeApp() {
 
   // Fetch weather data once
   useEffect(() => {
-    DaylightAPI('/data/lifelog/weather')
+    DaylightAPI('/data/weather')
       .then((data) => {
         setWeatherData(data)
       })
