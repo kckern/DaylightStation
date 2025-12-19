@@ -26,7 +26,7 @@ export function createWebsocketServer(server) {
         userAgent: req?.headers?.['user-agent']
       };
 
-      logger.info('WebSocket connection established', { ip: ws._clientMeta.ip });
+      //logger.info('WebSocket connection established', { ip: ws._clientMeta.ip });
       
       // Handle incoming messages from fitness controller
       ws.on('message', (message) => {
@@ -59,7 +59,7 @@ export function createWebsocketServer(server) {
       
       ws.on('close', () => {
         // Connection closed
-        logger.info('WebSocket connection closed');
+      //  logger.info('WebSocket connection closed');
       });
     });
     wssNav.on('error', (err) => {

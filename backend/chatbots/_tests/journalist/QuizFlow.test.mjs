@@ -5,11 +5,11 @@
  */
 
 import { jest } from '@jest/globals';
-import { SendQuizQuestion } from '../../journalist/application/usecases/SendQuizQuestion.mjs';
-import { RecordQuizAnswer } from '../../journalist/application/usecases/RecordQuizAnswer.mjs';
-import { AdvanceToNextQuizQuestion } from '../../journalist/application/usecases/AdvanceToNextQuizQuestion.mjs';
-import { HandleQuizAnswer } from '../../journalist/application/usecases/HandleQuizAnswer.mjs';
-import { QuizQuestion } from '../../journalist/domain/entities/QuizQuestion.mjs';
+import { SendQuizQuestion } from '../../bots/journalist/application/usecases/SendQuizQuestion.mjs';
+import { RecordQuizAnswer } from '../../bots/journalist/application/usecases/RecordQuizAnswer.mjs';
+import { AdvanceToNextQuizQuestion } from '../../bots/journalist/application/usecases/AdvanceToNextQuizQuestion.mjs';
+import { HandleQuizAnswer } from '../../bots/journalist/application/usecases/HandleQuizAnswer.mjs';
+import { QuizQuestion } from '../../bots/journalist/domain/entities/QuizQuestion.mjs';
 
 // Mock dependencies
 const createMockMessagingGateway = () => ({

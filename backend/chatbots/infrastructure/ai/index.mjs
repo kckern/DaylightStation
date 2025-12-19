@@ -4,4 +4,3 @@
  */
 
 export { OpenAIGateway } from './OpenAIGateway.mjs';
-export { MockAIGateway } from './MockAIGateway.mjs';

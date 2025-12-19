@@ -24,6 +24,7 @@ import { createLogger } from '../../_lib/logging/index.mjs';
  * @param {Object} [options] - Additional options
  * @param {Object} [options.logger] - Custom logger
  * @param {Object} [options.gateway] - TelegramGateway for callback acknowledgements
+ * @param {Function} [options.RouterClass] - Custom router class (default: UnifiedEventRouter)
  * @returns {Function} Express request handler
  */
 export function createTelegramWebhookHandler(container, config, options = {}) {
@@ -36,7 +37,11 @@ export function createTelegramWebhookHandler(container, config, options = {}) {
 
   const botName = config.botName || 'telegram';
   const logger = options.logger || createLogger({ source: 'webhook', app: botName });
-  const router = new UnifiedEventRouter(container, { logger });
+  
+  // Allow custom router injection for different bots (Journalist, etc.)
+  const RouterClass = options.RouterClass || UnifiedEventRouter;
+  const router = new RouterClass(container, { logger });
+  
   const gateway = options.gateway || null;
 
   /**

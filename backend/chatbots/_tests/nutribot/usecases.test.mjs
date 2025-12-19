@@ -5,11 +5,11 @@
  */
 
 import { jest } from '@jest/globals';
-import { GenerateDailyReport } from '../../nutribot/application/usecases/GenerateDailyReport.mjs';
-import { GetReportAsJSON } from '../../nutribot/application/usecases/GetReportAsJSON.mjs';
-import { GenerateThresholdCoaching } from '../../nutribot/application/usecases/GenerateThresholdCoaching.mjs';
-import { HandleHelpCommand } from '../../nutribot/application/usecases/HandleHelpCommand.mjs';
-import { StartAdjustmentFlow } from '../../nutribot/application/usecases/StartAdjustmentFlow.mjs';
+import { GenerateDailyReport } from '../../bots/nutribot/application/usecases/GenerateDailyReport.mjs';
+import { GetReportAsJSON } from '../../bots/nutribot/application/usecases/GetReportAsJSON.mjs';
+import { GenerateThresholdCoaching } from '../../bots/nutribot/application/usecases/GenerateThresholdCoaching.mjs';
+import { HandleHelpCommand } from '../../bots/nutribot/application/usecases/HandleHelpCommand.mjs';
+import { StartAdjustmentFlow } from '../../bots/nutribot/application/usecases/StartAdjustmentFlow.mjs';
 
 // Mock dependencies
 const createMockMessagingGateway = () => ({

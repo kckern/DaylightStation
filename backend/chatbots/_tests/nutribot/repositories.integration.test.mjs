@@ -7,10 +7,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import { NutriLogRepository } from '../../nutribot/repositories/NutriLogRepository.mjs';
-import { NutriListRepository } from '../../nutribot/repositories/NutriListRepository.mjs';
-import { NutriBotConfig } from '../../nutribot/config/NutriBotConfig.mjs';
-import { NutriLog } from '../../nutribot/domain/NutriLog.mjs';
+import { NutriLogRepository } from '../../bots/nutribot/repositories/NutriLogRepository.mjs';
+import { NutriListRepository } from '../../bots/nutribot/repositories/NutriListRepository.mjs';
+import { NutriBotConfig } from '../../bots/nutribot/config/NutriBotConfig.mjs';
+import { NutriLog } from '../../bots/nutribot/domain/NutriLog.mjs';
 import { TestContext } from '../../_lib/testing/TestContext.mjs';
 
 // Test configuration

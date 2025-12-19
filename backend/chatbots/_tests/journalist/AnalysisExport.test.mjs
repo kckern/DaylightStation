@@ -5,9 +5,9 @@
  */
 
 import { jest } from '@jest/globals';
-import { GenerateTherapistAnalysis } from '../../journalist/application/usecases/GenerateTherapistAnalysis.mjs';
-import { ReviewJournalEntries } from '../../journalist/application/usecases/ReviewJournalEntries.mjs';
-import { ExportJournalMarkdown } from '../../journalist/application/usecases/ExportJournalMarkdown.mjs';
+import { GenerateTherapistAnalysis } from '../../bots/journalist/application/usecases/GenerateTherapistAnalysis.mjs';
+import { ReviewJournalEntries } from '../../bots/journalist/application/usecases/ReviewJournalEntries.mjs';
+import { ExportJournalMarkdown } from '../../bots/journalist/application/usecases/ExportJournalMarkdown.mjs';
 
 // Mock dependencies
 const createMockMessagingGateway = () => ({

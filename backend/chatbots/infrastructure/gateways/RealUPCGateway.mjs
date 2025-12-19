@@ -2,15 +2,17 @@
  * Real UPC Gateway
  * @module infrastructure/gateways/RealUPCGateway
  * 
- * Implements IUPCGateway using the journalist/lib/upc.mjs APIs.
- * Fetches product data from OpenFoodFacts, Edamam, and provides
- * Google image search fallback.
+ * Implements IUPCGateway using Open Food Facts as primary source,
+ * with legacy upcLookup as fallback.
  */
 
 import { createLogger } from '../../_lib/logging/index.mjs';
 
 // Default barcode image fallback
 const BARCODE_IMAGE_FALLBACK = (upc) => `https://images.barcodespider.com/upcimage/${upc}.jpg`;
+
+// Open Food Facts API
+const OPEN_FOOD_FACTS_API = 'https://world.openfoodfacts.org/api/v0/product';
 
 /**
  * Real UPC Gateway - production implementation
@@ -22,7 +24,7 @@ export class RealUPCGateway {
 
   /**
    * @param {Object} deps
-   * @param {Function} deps.upcLookup - The upcLookup function from journalist/lib/upc.mjs
+   * @param {Function} [deps.upcLookup] - Legacy upcLookup function (optional fallback)
    * @param {Object} [deps.logger]
    * @param {number} [deps.responseDelay=0] - Optional delay for testing
    */
@@ -49,35 +51,167 @@ export class RealUPCGateway {
     const normalizedUpc = this.#normalizeUpc(upc);
 
     try {
-      // Call the journalist upcLookup function
-      if (!this.#upcLookupFn) {
-        this.#logger.warn('lookup.noFunction', { upc: normalizedUpc });
-        return null;
+      // Try Open Food Facts first
+      const offProduct = await this.#lookupOpenFoodFacts(normalizedUpc);
+      if (offProduct) {
+        this.#logger.info('lookup.found', { 
+          upc: normalizedUpc, 
+          source: 'openfoodfacts',
+          name: offProduct.name,
+          hasImage: !!offProduct.imageUrl,
+        });
+        return offProduct;
       }
 
-      const rawProduct = await this.#upcLookupFn(normalizedUpc);
-
-      if (!rawProduct) {
-        this.#logger.info('lookup.notFound', { upc: normalizedUpc });
-        return null;
+      // Fall back to legacy upcLookup function if available
+      if (this.#upcLookupFn) {
+        const rawProduct = await this.#upcLookupFn(normalizedUpc);
+        if (rawProduct) {
+          const product = this.#transformProduct(rawProduct, normalizedUpc);
+          this.#logger.info('lookup.found', { 
+            upc: normalizedUpc, 
+            source: 'legacy',
+            name: product.name,
+            hasImage: !!product.imageUrl,
+          });
+          return product;
+        }
       }
 
-      // Transform to expected format
-      const product = this.#transformProduct(rawProduct, normalizedUpc);
-      
-      this.#logger.info('lookup.found', { 
-        upc: normalizedUpc, 
-        name: product.name,
-        hasImage: !!product.imageUrl,
-        servingCount: product.servings?.length || 0,
-      });
-
-      return product;
+      this.#logger.info('lookup.notFound', { upc: normalizedUpc });
+      return null;
 
     } catch (error) {
       this.#logger.error('lookup.error', { upc: normalizedUpc, error: error.message });
       return null;
     }
+  }
+
+  /**
+   * Look up product from Open Food Facts
+   * @private
+   */
+  async #lookupOpenFoodFacts(upc) {
+    try {
+      const response = await fetch(`${OPEN_FOOD_FACTS_API}/${upc}.json`, {
+        headers: {
+          'User-Agent': 'DaylightStation/1.0 (nutribot)',
+        },
+      });
+
+      if (!response.ok) {
+        this.#logger.debug('lookup.off.httpError', { upc, status: response.status });
+        return null;
+      }
+
+      const data = await response.json();
+      
+      if (data.status !== 1 || !data.product) {
+        this.#logger.debug('lookup.off.notFound', { upc, status: data.status });
+        return null;
+      }
+
+      const p = data.product;
+      const nutriments = p.nutriments || {};
+      
+      // Get serving size info
+      const servingSize = p.serving_quantity || 100;
+      const servingUnit = p.serving_quantity_unit || 'g';
+      
+      // Calculate nutrition per serving (OFF gives per 100g, so scale if needed)
+      const scaleFactor = servingSize / 100;
+      
+      const nutrition = {
+        calories: Math.round((nutriments['energy-kcal_100g'] || nutriments['energy-kcal'] || 0) * scaleFactor),
+        protein: Math.round((nutriments.proteins_100g || nutriments.proteins || 0) * scaleFactor * 10) / 10,
+        carbs: Math.round((nutriments.carbohydrates_100g || nutriments.carbohydrates || 0) * scaleFactor * 10) / 10,
+        fat: Math.round((nutriments.fat_100g || nutriments.fat || 0) * scaleFactor * 10) / 10,
+        fiber: Math.round((nutriments.fiber_100g || nutriments.fiber || 0) * scaleFactor * 10) / 10,
+        sugar: Math.round((nutriments.sugars_100g || nutriments.sugars || 0) * scaleFactor * 10) / 10,
+        sodium: Math.round((nutriments.sodium_100g || nutriments.sodium || 0) * scaleFactor * 1000), // Convert to mg
+        cholesterol: Math.round((nutriments.cholesterol_100g || nutriments.cholesterol || 0) * scaleFactor * 1000), // Convert to mg
+      };
+
+      return {
+        upc,
+        name: p.product_name || p.product_name_en || 'Unknown Product',
+        brand: p.brands || null,
+        imageUrl: p.image_url || p.image_front_url || null,
+        icon: '🍽️',
+        noomColor: this.#inferNoomColor(nutrition, p.categories_tags || []),
+        
+        serving: {
+          size: servingSize,
+          unit: servingUnit,
+        },
+        
+        nutrition,
+        
+        servings: this.#buildServingsFromOFF(p, nutrition, servingSize),
+        servingsPerContainer: parseFloat(p.serving_quantity) || 1,
+        
+        raw: p,
+      };
+    } catch (error) {
+      this.#logger.debug('lookup.off.error', { upc, error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * Build servings array from Open Food Facts data
+   * @private
+   */
+  #buildServingsFromOFF(product, baseNutrition, baseGrams) {
+    const servings = [];
+    
+    // Primary serving
+    servings.push({
+      label: `${baseGrams}${product.serving_quantity_unit || 'g'}`,
+      grams: baseGrams,
+      nutrition: { ...baseNutrition },
+    });
+
+    // Add common portion multiples
+    const multipliers = [0.5, 2];
+    for (const mult of multipliers) {
+      servings.push({
+        label: mult < 1 ? `½ serving` : `${mult}× serving`,
+        grams: baseGrams * mult,
+        nutrition: {
+          calories: Math.round(baseNutrition.calories * mult),
+          protein: Math.round(baseNutrition.protein * mult * 10) / 10,
+          carbs: Math.round(baseNutrition.carbs * mult * 10) / 10,
+          fat: Math.round(baseNutrition.fat * mult * 10) / 10,
+          fiber: Math.round(baseNutrition.fiber * mult * 10) / 10,
+          sugar: Math.round(baseNutrition.sugar * mult * 10) / 10,
+          sodium: Math.round(baseNutrition.sodium * mult),
+          cholesterol: Math.round(baseNutrition.cholesterol * mult),
+        },
+      });
+    }
+
+    return servings;
+  }
+
+  /**
+   * Infer Noom color from nutrition and categories
+   * @private
+   */
+  #inferNoomColor(nutrition, categories) {
+    // Check categories for green foods
+    const greenCategories = ['vegetables', 'fruits', 'salads', 'leafy'];
+    const isGreenCategory = categories.some(cat => 
+      greenCategories.some(g => cat.toLowerCase().includes(g))
+    );
+    if (isGreenCategory) return 'green';
+
+    // Calculate calorie density (calories per gram)
+    const caloriesPerGram = nutrition.calories / 100;
+    
+    if (caloriesPerGram < 1) return 'green';      // <100 cal/100g
+    if (caloriesPerGram < 2.5) return 'yellow';   // 100-250 cal/100g
+    return 'orange';                               // >250 cal/100g
   }
 
   /**

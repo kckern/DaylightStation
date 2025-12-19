@@ -31,8 +31,8 @@ hydrateProcessEnvFromConfigs(path.join(__dirname, '../../../..'));
 import { createTelegramWebhookHandler } from '../../adapters/http/TelegramWebhookHandler.mjs';
 import { TelegramInputAdapter } from '../../adapters/telegram/TelegramInputAdapter.mjs';
 import { FileConversationStateStore } from '../../infrastructure/persistence/FileConversationStateStore.mjs';
-import { NutribotContainer } from '../../nutribot/container.mjs';
-import { NutriLogRepository } from '../../nutribot/repositories/NutriLogRepository.mjs';
+import { NutribotContainer } from '../../bots/nutribot/container.mjs';
+import { NutriLogRepository } from '../../bots/nutribot/repositories/NutriLogRepository.mjs';
 import { createLogger } from '../../_lib/logging/index.mjs';
 
 // Check if we have a real API key

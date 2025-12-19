@@ -11,14 +11,5 @@ export { CLIMessagingGateway } from './adapters/CLIMessagingGateway.mjs';
 export { CLIImageHandler } from './media/CLIImageHandler.mjs';
 export { CLISessionManager } from './session/CLISessionManager.mjs';
 
-// Mock adapters
-export {
-  MockAIGateway,
-  MockUPCGateway,
-  MockReportRenderer,
-  MemoryNutrilogRepository,
-  MemoryNutrilistRepository,
-  MemoryConversationStateStore,
-  MemoryJournalEntryRepository,
-  MemoryMessageQueueRepository,
-} from './mocks/index.mjs';
+// Adapters
+export { CLIInputAdapter } from './adapters/CLIInputAdapter.mjs';

@@ -504,10 +504,18 @@ export class ConfigProvider {
    * @returns {string|null}
    */
   getTelegramToken(botName) {
-    const tokenKey = `TELEGRAM_${botName.toUpperCase()}_TOKEN`;
+    // Try multiple key formats for backwards compatibility
+    const keys = [
+      `TELEGRAM_${botName.toUpperCase()}_TOKEN`,      // TELEGRAM_NUTRIBOT_TOKEN
+      `TELEGRAM_${botName.toUpperCase()}_BOT_TOKEN`,  // TELEGRAM_JOURNALIST_BOT_TOKEN
+    ];
     
     // Priority: environment variable > secrets file
-    return this.#env[tokenKey] || this.#secrets[tokenKey] || null;
+    for (const key of keys) {
+      if (this.#env[key]) return this.#env[key];
+      if (this.#secrets[key]) return this.#secrets[key];
+    }
+    return null;
   }
 
   /**

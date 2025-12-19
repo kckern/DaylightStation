@@ -5,8 +5,11 @@
  */
 
 import { jest } from '@jest/globals';
-import { NutribotEventRouter } from '../../nutribot/adapters/EventRouter.mjs';
-import { JournalistEventRouter } from '../../journalist/adapters/EventRouter.mjs';
+import { TelegramInputAdapter } from '../../adapters/telegram/TelegramInputAdapter.mjs';
+import { UnifiedEventRouter } from '../../application/routing/UnifiedEventRouter.mjs';
+import { JournalistInputRouter } from '../../bots/journalist/adapters/JournalistInputRouter.mjs';
+
+const BOT_ID = '6898194425';
 
 // Mock container factory for NutriBot
 const createMockNutribotContainer = () => {
@@ -55,47 +58,57 @@ const createMockJournalistContainer = () => {
   };
 };
 
-describe('NutribotEventRouter', () => {
+describe('NutriBot TelegramInputAdapter + UnifiedEventRouter', () => {
   let router;
   let mockContainer;
 
   beforeEach(() => {
     mockContainer = createMockNutribotContainer();
-    router = new NutribotEventRouter(mockContainer);
+    router = new UnifiedEventRouter(mockContainer);
   });
 
+  /**
+   * Helper to parse Telegram payload and route through UnifiedEventRouter
+   */
+  async function parseAndRoute(telegramPayload) {
+    const event = TelegramInputAdapter.parse(telegramPayload, { botId: BOT_ID });
+    if (event) {
+      await router.route(event);
+    }
+    return event;
+  }
+
   it('should require container', () => {
-    expect(() => new NutribotEventRouter()).toThrow('container');
+    expect(() => new UnifiedEventRouter()).toThrow('container');
   });
 
   describe('message routing', () => {
     it('should route photo messages', async () => {
-      const event = {
+      const telegramPayload = {
         message: {
           chat: { id: 123 },
           message_id: 456,
           from: { id: 123, first_name: 'Test' },
           photo: [
-            { file_id: 'small', width: 100 },
-            { file_id: 'large', width: 640 },
+            { file_id: 'small', width: 100, height: 100 },
+            { file_id: 'large', width: 640, height: 480 },
           ],
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getLogFoodFromImage).toHaveBeenCalled();
       const useCase = mockContainer.getLogFoodFromImage();
       expect(useCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({
-          userId: '123',
-          imageData: { fileId: 'large' },
+          imageData: expect.objectContaining({ fileId: 'large' }),
         })
       );
     });
 
     it('should route UPC codes', async () => {
-      const event = {
+      const telegramPayload = {
         message: {
           chat: { id: 123 },
           message_id: 456,
@@ -104,13 +117,13 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getLogFoodFromUPC).toHaveBeenCalled();
     });
 
     it('should route text messages', async () => {
-      const event = {
+      const telegramPayload = {
         message: {
           chat: { id: 123 },
           message_id: 456,
@@ -119,13 +132,13 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getLogFoodFromText).toHaveBeenCalled();
     });
 
     it('should route voice messages', async () => {
-      const event = {
+      const telegramPayload = {
         message: {
           chat: { id: 123 },
           message_id: 456,
@@ -134,7 +147,7 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getLogFoodFromVoice).toHaveBeenCalled();
     });
@@ -142,7 +155,7 @@ describe('NutribotEventRouter', () => {
 
   describe('command routing', () => {
     it('should route /help command', async () => {
-      const event = {
+      const telegramPayload = {
         message: {
           chat: { id: 123 },
           message_id: 456,
@@ -150,13 +163,13 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getHandleHelpCommand).toHaveBeenCalled();
     });
 
     it('should route /report command', async () => {
-      const event = {
+      const telegramPayload = {
         message: {
           chat: { id: 123 },
           message_id: 456,
@@ -164,13 +177,13 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getGenerateDailyReport).toHaveBeenCalled();
     });
 
     it('should route /coach command', async () => {
-      const event = {
+      const telegramPayload = {
         message: {
           chat: { id: 123 },
           message_id: 456,
@@ -178,7 +191,7 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getGenerateOnDemandCoaching).toHaveBeenCalled();
     });
@@ -186,7 +199,7 @@ describe('NutribotEventRouter', () => {
 
   describe('callback routing', () => {
     it('should route accept callback', async () => {
-      const event = {
+      const telegramPayload = {
         callback_query: {
           id: 'cb123',
           from: { id: 123 },
@@ -198,13 +211,13 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getAcceptFoodLog).toHaveBeenCalled();
     });
 
     it('should route discard callback', async () => {
-      const event = {
+      const telegramPayload = {
         callback_query: {
           id: 'cb123',
           from: { id: 123 },
@@ -216,13 +229,13 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getDiscardFoodLog).toHaveBeenCalled();
     });
 
     it('should route portion callback', async () => {
-      const event = {
+      const telegramPayload = {
         callback_query: {
           id: 'cb123',
           from: { id: 123 },
@@ -234,7 +247,7 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getSelectUPCPortion).toHaveBeenCalled();
     });
@@ -244,12 +257,12 @@ describe('NutribotEventRouter', () => {
     it('should route text to revision when in revision state', async () => {
       mockContainer.getConversationStateStore.mockReturnValue({
         get: jest.fn().mockResolvedValue({
-          flow: 'revision',
-          pendingLogUuid: 'log-123',
+          activeFlow: 'revision',
+          flowState: { pendingLogUuid: 'log-123' },
         }),
       });
 
-      const event = {
+      const telegramPayload = {
         message: {
           chat: { id: 123 },
           message_id: 456,
@@ -258,35 +271,35 @@ describe('NutribotEventRouter', () => {
         },
       };
 
-      await router.route(event);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getProcessRevisionInput).toHaveBeenCalled();
     });
   });
 });
 
-describe('JournalistEventRouter', () => {
+describe('JournalistInputRouter', () => {
   let router;
   let mockContainer;
 
   beforeEach(() => {
     mockContainer = createMockJournalistContainer();
-    router = new JournalistEventRouter(mockContainer);
+    router = new JournalistInputRouter(mockContainer);
   });
 
   it('should require container', () => {
-    expect(() => new JournalistEventRouter()).toThrow('container');
+    expect(() => new JournalistInputRouter()).toThrow('container');
   });
 
   describe('message routing', () => {
     it('should route text messages', async () => {
+      // IInputEvent format
       const event = {
-        message: {
-          chat: { id: 123 },
-          message_id: 456,
-          from: { id: 123, first_name: 'Test' },
-          text: 'Today was a good day.',
-        },
+        type: 'text',
+        conversationId: 'telegram:123_456',
+        messageId: '456',
+        payload: { text: 'Today was a good day.' },
+        metadata: { firstName: 'Test', senderId: '123' },
       };
 
       await router.route(event);
@@ -296,12 +309,11 @@ describe('JournalistEventRouter', () => {
 
     it('should route voice messages', async () => {
       const event = {
-        message: {
-          chat: { id: 123 },
-          message_id: 456,
-          from: { id: 123, first_name: 'Test' },
-          voice: { file_id: 'voice123', duration: 10 },
-        },
+        type: 'voice',
+        conversationId: 'telegram:123_456',
+        messageId: '456',
+        payload: { fileId: 'voice123', duration: 10 },
+        metadata: { firstName: 'Test', senderId: '123' },
       };
 
       await router.route(event);
@@ -311,12 +323,11 @@ describe('JournalistEventRouter', () => {
 
     it('should route slash commands', async () => {
       const event = {
-        message: {
-          chat: { id: 123 },
-          message_id: 456,
-          from: { id: 123 },
-          text: '/journal',
-        },
+        type: 'command',
+        conversationId: 'telegram:123_456',
+        messageId: '456',
+        payload: { command: 'journal', args: null },
+        metadata: { senderId: '123' },
       };
 
       await router.route(event);
@@ -326,12 +337,11 @@ describe('JournalistEventRouter', () => {
 
     it('should route special starts (🎲)', async () => {
       const event = {
-        message: {
-          chat: { id: 123 },
-          message_id: 456,
-          from: { id: 123 },
-          text: '🎲 Change Subject',
-        },
+        type: 'text',
+        conversationId: 'telegram:123_456',
+        messageId: '456',
+        payload: { text: '🎲 Change Subject' },
+        metadata: { senderId: '123' },
       };
 
       await router.route(event);
@@ -341,12 +351,11 @@ describe('JournalistEventRouter', () => {
 
     it('should route special starts (❌)', async () => {
       const event = {
-        message: {
-          chat: { id: 123 },
-          message_id: 456,
-          from: { id: 123 },
-          text: '❌ Cancel',
-        },
+        type: 'text',
+        conversationId: 'telegram:123_456',
+        messageId: '456',
+        payload: { text: '❌ Cancel' },
+        metadata: { senderId: '123' },
       };
 
       await router.route(event);
@@ -358,15 +367,11 @@ describe('JournalistEventRouter', () => {
   describe('callback routing', () => {
     it('should route callback queries', async () => {
       const event = {
-        callback_query: {
-          id: 'cb123',
-          from: { id: 123, first_name: 'Test' },
-          message: {
-            chat: { id: 123 },
-            message_id: 456,
-          },
-          data: 'choice_0',
-        },
+        type: 'callback',
+        conversationId: 'telegram:123_456',
+        messageId: 'cb123',
+        payload: { data: 'choice_0', sourceMessageId: '456' },
+        metadata: { firstName: 'Test', senderId: '123' },
       };
 
       await router.route(event);
@@ -375,17 +380,16 @@ describe('JournalistEventRouter', () => {
     });
   });
 
-  it('should ignore edited messages', async () => {
+  it('should ignore unknown event types', async () => {
     const event = {
-      edited_message: {
-        chat: { id: 123 },
-        message_id: 456,
-        text: 'Edited text',
-      },
+      type: 'unknown',
+      conversationId: 'telegram:123_456',
+      payload: {},
     };
 
-    await router.route(event);
+    const result = await router.route(event);
 
+    expect(result).toBeNull();
     expect(mockContainer.getProcessTextEntry).not.toHaveBeenCalled();
   });
 });

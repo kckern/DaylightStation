@@ -9,27 +9,27 @@ import {
   isValidPromptType,
   promptTypeDescription,
   ALL_PROMPT_TYPES,
-} from '../../journalist/domain/value-objects/PromptType.mjs';
+} from '../../bots/journalist/domain/value-objects/PromptType.mjs';
 
 import {
   EntrySource,
   isValidEntrySource,
   entrySourceEmoji,
   ALL_ENTRY_SOURCES,
-} from '../../journalist/domain/value-objects/EntrySource.mjs';
+} from '../../bots/journalist/domain/value-objects/EntrySource.mjs';
 
 import {
   QuizCategory,
   isValidQuizCategory,
   quizCategoryEmoji,
   ALL_QUIZ_CATEGORIES,
-} from '../../journalist/domain/value-objects/QuizCategory.mjs';
+} from '../../bots/journalist/domain/value-objects/QuizCategory.mjs';
 
-import { ConversationMessage } from '../../journalist/domain/entities/ConversationMessage.mjs';
-import { MessageQueue } from '../../journalist/domain/entities/MessageQueue.mjs';
-import { JournalEntry } from '../../journalist/domain/entities/JournalEntry.mjs';
-import { QuizQuestion } from '../../journalist/domain/entities/QuizQuestion.mjs';
-import { QuizAnswer } from '../../journalist/domain/entities/QuizAnswer.mjs';
+import { ConversationMessage } from '../../bots/journalist/domain/entities/ConversationMessage.mjs';
+import { MessageQueue } from '../../bots/journalist/domain/entities/MessageQueue.mjs';
+import { JournalEntry } from '../../bots/journalist/domain/entities/JournalEntry.mjs';
+import { QuizQuestion } from '../../bots/journalist/domain/entities/QuizQuestion.mjs';
+import { QuizAnswer } from '../../bots/journalist/domain/entities/QuizAnswer.mjs';
 
 describe('Journalist Domain', () => {
   describe('Value Objects', () => {

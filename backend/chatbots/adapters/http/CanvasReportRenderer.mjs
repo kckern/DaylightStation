@@ -7,7 +7,7 @@
  */
 
 import { createCanvas, registerFont, loadImage } from 'canvas';
-import { IReportRenderer } from '../../nutribot/application/ports/IReportRenderer.mjs';
+import { IReportRenderer } from '../../bots/nutribot/application/ports/IReportRenderer.mjs';
 import path from 'path';
 import fs from 'fs';
 
