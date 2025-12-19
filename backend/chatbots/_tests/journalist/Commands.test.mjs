@@ -5,8 +5,8 @@
  */
 
 import { jest } from '@jest/globals';
-import { HandleSlashCommand } from '../../journalist/application/usecases/HandleSlashCommand.mjs';
-import { HandleSpecialStart } from '../../journalist/application/usecases/HandleSpecialStart.mjs';
+import { HandleSlashCommand } from '../../bots/journalist/application/usecases/HandleSlashCommand.mjs';
+import { HandleSpecialStart } from '../../bots/journalist/application/usecases/HandleSpecialStart.mjs';
 
 // Mock dependencies
 const createMockMessagingGateway = () => ({

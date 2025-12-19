@@ -1,11 +1,15 @@
 /**
  * NutriBot Food Logging Flow Integration Tests
  * @module _tests/nutribot/integration/FoodLoggingFlow.test
+ * 
+ * Tests the food logging use cases directly (not via router).
+ * For router tests, see http/routers.test.mjs which uses
+ * TelegramInputAdapter + UnifiedEventRouter.
  */
 
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { NutribotContainer } from '../../../nutribot/container.mjs';
-import { NutribotEventRouter } from '../../../nutribot/adapters/EventRouter.mjs';
+import { NutribotContainer } from '../../../bots/nutribot/container.mjs';
+import { UnifiedEventRouter } from '../../../application/routing/UnifiedEventRouter.mjs';
 
 // Status constants matching domain schema
 const NutriLogStatus = {
@@ -283,7 +287,7 @@ describe('NutriBot Food Logging Flow Integration', () => {
       }
     );
 
-    router = new NutribotEventRouter(container);
+    router = new UnifiedEventRouter(container);
   });
 
   describe('Photo → Detect → Accept Flow', () => {

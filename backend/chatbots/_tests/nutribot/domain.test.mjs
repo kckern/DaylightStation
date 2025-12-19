@@ -3,8 +3,8 @@
  * @group nutribot
  */
 
-import { FoodItem } from '../../nutribot/domain/FoodItem.mjs';
-import { NutriLog } from '../../nutribot/domain/NutriLog.mjs';
+import { FoodItem } from '../../bots/nutribot/domain/FoodItem.mjs';
+import { NutriLog } from '../../bots/nutribot/domain/NutriLog.mjs';
 import {
   NoomColors,
   LogStatuses,
@@ -16,7 +16,7 @@ import {
   validateNutriLog,
   getMealTimeFromHour,
   getMealLabel,
-} from '../../nutribot/domain/schemas.mjs';
+} from '../../bots/nutribot/domain/schemas.mjs';
 import { ValidationError } from '../../_lib/errors/index.mjs';
 
 describe('NutriBot: Schemas', () => {
