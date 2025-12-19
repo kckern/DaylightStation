@@ -4,15 +4,15 @@
  */
 
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { LogFoodFromImage } from '../../../nutribot/application/usecases/LogFoodFromImage.mjs';
-import { LogFoodFromText } from '../../../nutribot/application/usecases/LogFoodFromText.mjs';
-import { LogFoodFromVoice } from '../../../nutribot/application/usecases/LogFoodFromVoice.mjs';
-import { LogFoodFromUPC } from '../../../nutribot/application/usecases/LogFoodFromUPC.mjs';
-import { AcceptFoodLog } from '../../../nutribot/application/usecases/AcceptFoodLog.mjs';
-import { DiscardFoodLog } from '../../../nutribot/application/usecases/DiscardFoodLog.mjs';
-import { ReviseFoodLog } from '../../../nutribot/application/usecases/ReviseFoodLog.mjs';
-import { ProcessRevisionInput } from '../../../nutribot/application/usecases/ProcessRevisionInput.mjs';
-import { SelectUPCPortion } from '../../../nutribot/application/usecases/SelectUPCPortion.mjs';
+import { LogFoodFromImage } from '../../../bots/nutribot/application/usecases/LogFoodFromImage.mjs';
+import { LogFoodFromText } from '../../../bots/nutribot/application/usecases/LogFoodFromText.mjs';
+import { LogFoodFromVoice } from '../../../bots/nutribot/application/usecases/LogFoodFromVoice.mjs';
+import { LogFoodFromUPC } from '../../../bots/nutribot/application/usecases/LogFoodFromUPC.mjs';
+import { AcceptFoodLog } from '../../../bots/nutribot/application/usecases/AcceptFoodLog.mjs';
+import { DiscardFoodLog } from '../../../bots/nutribot/application/usecases/DiscardFoodLog.mjs';
+import { ReviseFoodLog } from '../../../bots/nutribot/application/usecases/ReviseFoodLog.mjs';
+import { ProcessRevisionInput } from '../../../bots/nutribot/application/usecases/ProcessRevisionInput.mjs';
+import { SelectUPCPortion } from '../../../bots/nutribot/application/usecases/SelectUPCPortion.mjs';
 
 // Status constants matching domain schema
 const NutriLogStatus = {

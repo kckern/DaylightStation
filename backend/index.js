@@ -146,7 +146,7 @@ async function initializeApp() {
     const { default: cron } = await import('./cron.mjs');
     const { default: fetchRouter } = await import('./fetch.mjs');
     const { default: harvestRouter } = await import('./harvest.js');
-    const { default: JournalistRouter } = await import('./journalist.mjs');
+    // JournalistRouter now handled in api.mjs for proxy_toggle support
     const { default: homeRouter } = await import('./home.mjs');
     const { default: mediaRouter } = await import('./media.mjs');
     const { default: healthRouter } = await import('./health.mjs');
@@ -264,7 +264,7 @@ async function initializeApp() {
     
     app.use('/cron', cron);
     app.use("/harvest", harvestRouter);
-    app.use("/journalist", JournalistRouter);
+    // JournalistRouter now handled via /api/journalist in api.mjs
     app.use("/home", homeRouter);
     app.use("/media", mediaRouter);
     app.use("/api/health", healthRouter);
@@ -275,6 +275,10 @@ async function initializeApp() {
     app.use("/tts", tts);
     app.use("/api/gratitude", gratitudeRouter);
     app.use("/plex_proxy", plexRouter);
+
+    // Mount API router on main app for webhook routes (journalist, foodlog)
+    const { default: apiRouter } = await import('./api.mjs');
+    app.use("/api", apiRouter);
 
 
     // Frontend
@@ -340,7 +344,7 @@ async function initializeApiApp() {
     strict: false // Allows parsing of JSON with single-quoted property names
   }));
   api_app.use(express.urlencoded({ limit: '50mb', extended: true }));
-  api_app.use('', apiRouter);
+  api_app.use('', apiRouter);  // Mount at root - subdomain already indicates API
   
   api_app.listen(3119, () => {
     rootLogger.info('api.secondary.listen', { port: 3119 });

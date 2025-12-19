@@ -151,7 +151,7 @@ export class CLIChatSimulator {
   #running;
   #timezone;
   
-  // Mock adapters
+  // Infrastructure adapters
   #aiGateway;
   #upcGateway;
   #reportRenderer;
@@ -160,6 +160,11 @@ export class CLIChatSimulator {
   #conversationStateStore;
   #journalEntryRepository;
   #messageQueueRepository;
+
+  // Scripted testing support
+  #inputQueue = [];
+  #responses = [];
+  #scriptMode = false;
 
   /**
    * @param {Object} [options]
@@ -290,6 +295,9 @@ export class CLIChatSimulator {
       imageHandler: this.#imageHandler,
       testMode: this._testMode,
     });
+
+    // Setup response capture for scripted testing
+    this.#setupResponseCapture();
 
     // Initialize AI gateway (use real OpenAI or throw error)
     if (this._useRealAI) {
@@ -2269,6 +2277,245 @@ User revision: "${text}"`;
    */
   getInputHandler() {
     return this.#inputHandler;
+  }
+
+  // ==================== Scripted Testing API ====================
+
+  /**
+   * Queue an input for scripted execution
+   * @param {string|Object} input - Text input, or { type: 'button', id: '1' }, or { type: 'photo', url: '...' }
+   */
+  queueInput(input) {
+    this.#inputQueue.push(input);
+  }
+
+  /**
+   * Queue multiple inputs at once
+   * @param {Array<string|Object>} inputs
+   */
+  queueInputs(inputs) {
+    this.#inputQueue.push(...inputs);
+  }
+
+  /**
+   * Get all captured bot responses
+   * @returns {Array<{type: string, text: string, buttons?: Array, timestamp: string}>}
+   */
+  getResponses() {
+    return [...this.#responses];
+  }
+
+  /**
+   * Get the last bot response
+   * @returns {Object|null}
+   */
+  getLastResponse() {
+    return this.#responses[this.#responses.length - 1] || null;
+  }
+
+  /**
+   * Clear captured responses
+   */
+  clearResponses() {
+    this.#responses = [];
+  }
+
+  /**
+   * Send a text message and capture response (for scripted testing)
+   * @param {string} text - Message to send
+   * @returns {Promise<Object>} - The bot's response
+   */
+  async send(text) {
+    const botName = this.#session.getCurrentBot();
+    if (!botName) {
+      throw new Error('No bot selected. Call selectBot() first.');
+    }
+    
+    const responsesBefore = this.#responses.length;
+    await this.#handleTextMessage(botName, text);
+    await this.#session.persist();
+    
+    // Return new responses since sending
+    const newResponses = this.#responses.slice(responsesBefore);
+    return newResponses.length === 1 ? newResponses[0] : newResponses;
+  }
+
+  /**
+   * Press a button by ID or callback data (for scripted testing)
+   * @param {string} buttonIdOrCallback - Button ID (1-9, A-Z) or callback_data string
+   * @returns {Promise<Object>} - The bot's response
+   */
+  async pressButton(buttonIdOrCallback) {
+    const botName = this.#session.getCurrentBot();
+    if (!botName) {
+      throw new Error('No bot selected. Call selectBot() first.');
+    }
+    
+    const responsesBefore = this.#responses.length;
+    
+    // If it's a single character, it's a button ID
+    if (buttonIdOrCallback.length === 1) {
+      await this.#handleButtonPress(botName, buttonIdOrCallback);
+    } else {
+      // It's callback_data - simulate directly
+      await this.#simulateCallback(botName, buttonIdOrCallback);
+    }
+    
+    await this.#session.persist();
+    
+    const newResponses = this.#responses.slice(responsesBefore);
+    return newResponses.length === 1 ? newResponses[0] : newResponses;
+  }
+
+  /**
+   * Simulate a callback (for scripted testing with known callback_data)
+   * @private
+   */
+  async #simulateCallback(botName, callbackData) {
+    const container = this.#containers[botName];
+    if (!container) {
+      throw new Error(`Bot ${botName} not available`);
+    }
+
+    const conversationId = this.#session.getConversationId();
+    const userId = this.#session.getUserId();
+
+    // Handle adjustment flow callbacks
+    if (callbackData.startsWith('adj_')) {
+      await this.#handleAdjustmentCallback(container, callbackData, null);
+      return;
+    }
+
+    // Parse standard format: "action:uuid"
+    const [action, logUuid] = callbackData.split(':');
+    
+    switch (action) {
+      case 'accept':
+        const nutriLog = await this.#nutrilogRepository.findByUuid(logUuid);
+        const acceptUseCase = container.getAcceptFoodLog();
+        await acceptUseCase.execute({ userId, conversationId, logUuid });
+        this.#session.clearLastPendingLogUuid();
+        if (nutriLog?.items?.length > 0) {
+          await this.#showAcceptConfirmation(nutriLog);
+        }
+        break;
+
+      case 'revise':
+        await this.#handleRevisionPrompt(container, logUuid);
+        break;
+
+      case 'discard':
+        const discardUseCase = container.getDiscardFoodLog();
+        await discardUseCase.execute({ userId, conversationId, logUuid });
+        this.#session.clearLastPendingLogUuid();
+        this.#captureResponse('message', '🗑️ Food log discarded.');
+        break;
+
+      default:
+        throw new Error(`Unknown callback action: ${action}`);
+    }
+  }
+
+  /**
+   * Select a bot for scripted testing
+   * @param {string} botName - 'nutribot' or 'journalist'
+   */
+  async selectBot(botName) {
+    if (!BOT_CONFIG[botName]) {
+      throw new Error(`Unknown bot: ${botName}`);
+    }
+    this.#session.setCurrentBot(botName);
+    this.#logger.info('scripted.selectBot', { bot: botName });
+  }
+
+  /**
+   * Run a script of inputs and return all responses
+   * @param {Array<string|Object>} script - Array of inputs
+   * @param {Object} [options]
+   * @param {string} [options.bot='nutribot'] - Bot to use
+   * @returns {Promise<Array>} - All bot responses
+   */
+  async runScript(script, options = {}) {
+    const { bot = 'nutribot' } = options;
+    
+    this.#scriptMode = true;
+    this.clearResponses();
+    
+    // Ensure bot is selected
+    if (!this.#session.getCurrentBot()) {
+      await this.selectBot(bot);
+    }
+    
+    const botName = this.#session.getCurrentBot();
+    
+    for (const input of script) {
+      try {
+        if (typeof input === 'string') {
+          // Text input
+          await this.#handleTextMessage(botName, input);
+        } else if (input.type === 'button') {
+          // Button press
+          await this.#handleButtonPress(botName, input.id);
+        } else if (input.type === 'callback') {
+          // Direct callback
+          await this.#simulateCallback(botName, input.data);
+        } else if (input.type === 'photo') {
+          // Photo input
+          await this.#handlePhotoMessage(botName, input);
+        } else if (input.type === 'command') {
+          // Slash command
+          await this.#handleCommand(input.command, input.args);
+        } else if (input.type === 'wait') {
+          // Delay (for rate limiting, etc)
+          await new Promise(resolve => setTimeout(resolve, input.ms || 1000));
+        }
+        
+        // Persist after each step
+        await this.#session.persist();
+        
+      } catch (error) {
+        this.#captureResponse('error', error.message);
+        this.#logger.error('runScript.error', { input, error: error.message });
+      }
+    }
+    
+    this.#scriptMode = false;
+    return this.getResponses();
+  }
+
+  /**
+   * Capture a bot response (called by messaging gateway)
+   * @private
+   */
+  #captureResponse(type, text, options = {}) {
+    this.#responses.push({
+      type,
+      text,
+      buttons: options.choices || null,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Setup response capture on the messaging gateway
+   * @private
+   */
+  #setupResponseCapture() {
+    if (!this.#messagingGateway) return;
+    
+    const originalSendMessage = this.#messagingGateway.sendMessage.bind(this.#messagingGateway);
+    this.#messagingGateway.sendMessage = async (chatId, text, options = {}) => {
+      this.#captureResponse('message', text, options);
+      return originalSendMessage(chatId, text, options);
+    };
+
+    const originalSendImage = this.#messagingGateway.sendImage?.bind(this.#messagingGateway);
+    if (originalSendImage) {
+      this.#messagingGateway.sendImage = async (chatId, imageSource, caption, options = {}) => {
+        this.#captureResponse('image', caption || '[image]', options);
+        return originalSendImage(chatId, imageSource, caption, options);
+      };
+    }
   }
 }
 

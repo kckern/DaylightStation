@@ -1,11 +1,13 @@
 // Chatbots Root Router
 // Responsibility: common middleware (traceId, timing) + mount per-bot subrouters.
+// NOTE: Currently NOT used - bots are wired up directly in api.mjs.
+// This file exists for potential future refactoring.
 
 import express from 'express';
 import crypto from 'crypto';
-import nutribotRouter from './nutribot/server.mjs';
-// STUBBED: journalist folder removed
-// import journalistRouter from './journalist/server.mjs';
+// import nutribotRouter from './bots/nutribot/server.mjs';
+// import homebotRouter from './bots/homebot/server.mjs';
+// import journalistRouter from './bots/journalist/server.mjs';
 import { requestLogger, logger } from './_lib/logging.mjs';
 
 const router = express.Router();
@@ -17,9 +19,9 @@ router.use((req, res, next) => {
   next();
 });
 
-// Mount bot routers
-router.use('/nutribot', nutribotRouter);
-// STUBBED: journalist router removed
+// Mount bot routers (currently commented out - wired in api.mjs)
+// router.use('/nutribot', nutribotRouter);
+// router.use('/homebot', homebotRouter);
 // router.use('/journalist', journalistRouter);
 
 // Fallback for unknown routes under /chatbots

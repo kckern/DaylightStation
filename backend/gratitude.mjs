@@ -8,6 +8,115 @@ import { broadcastToWebsockets } from './websocket.js';
 import { v4 as uuidv4 } from 'uuid';
 import moment from 'moment-timezone';
 
+/**
+ * ============================================================================
+ * GRATITUDE MODULE - Data File Schema Documentation
+ * ============================================================================
+ * 
+ * All data files are stored in:
+ *   data/households/{householdId}/shared/gratitude/
+ * 
+ * ============================================================================
+ * FILE: options.gratitude.yml / options.hopes.yml
+ * ============================================================================
+ * Purpose: Queue of items available for selection (not yet selected or dismissed)
+ * 
+ * Schema: Array of items
+ *   - id: string (UUID)
+ *     text: string
+ * 
+ * Example:
+ *   - id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *     text: "Sunny weather"
+ *   - id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+ *     text: "Family time"
+ *   - id: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+ *     text: "Good health"
+ * 
+ * ============================================================================
+ * FILE: selections.gratitude.yml / selections.hopes.yml
+ * ============================================================================
+ * Purpose: Items that have been selected by users (with attribution)
+ * 
+ * Schema: Array of selection entries
+ *   - id: string (UUID - selection entry ID, used for DELETE)
+ *     userId: string (username from household.yml)
+ *     item:
+ *       id: string (original item UUID)
+ *       text: string
+ *     datetime: string (ISO 8601 timestamp)
+ * 
+ * Example:
+ *   - id: "sel-1234-5678-90ab-cdef12345678"
+ *     userId: "kckern"
+ *     item:
+ *       id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *       text: "Sunny weather"
+ *     datetime: "2025-12-19T08:30:00.000Z"
+ *   - id: "sel-2345-6789-01bc-def123456789"
+ *     userId: "felix"
+ *     item:
+ *       id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+ *       text: "Family time"
+ *     datetime: "2025-12-18T19:15:00.000Z"
+ * 
+ * ============================================================================
+ * FILE: discarded.gratitude.yml / discarded.hopes.yml
+ * ============================================================================
+ * Purpose: Items dismissed from the queue (not selected, removed from rotation)
+ * 
+ * Schema: Array of items (same as options)
+ *   - id: string (UUID)
+ *     text: string
+ * 
+ * Example:
+ *   - id: "d4e5f6a7-b8c9-0123-def0-234567890123"
+ *     text: "Old item no longer relevant"
+ *   - id: "e5f6a7b8-c9d0-1234-ef01-345678901234"
+ *     text: "Duplicate entry"
+ * 
+ * ============================================================================
+ * FILE: users.yml (LEGACY - prefer household.yml)
+ * ============================================================================
+ * Purpose: Legacy user list, now superseded by household.yml users
+ * 
+ * Schema: Array of user objects
+ *   - id: string (username)
+ *     name: string (display name)
+ * 
+ * Note: The bootstrap endpoint now reads users from household.yml via
+ * configService.getHouseholdUsers() and enriches with profile data.
+ * This file is only used as a fallback.
+ * 
+ * ============================================================================
+ * API ENDPOINTS
+ * ============================================================================
+ * 
+ * GET  /api/gratitude/bootstrap
+ *      Returns: { users, options, selections, discarded, _household }
+ * 
+ * GET  /api/gratitude/options/:category
+ *      Returns: { items: [...] }
+ * 
+ * GET  /api/gratitude/selections/:category
+ *      Returns: { items: [...] }
+ * 
+ * POST /api/gratitude/selections/:category
+ *      Body: { userId: string, item: { id, text } }
+ *      Returns: { selection: { id, userId, item, datetime } }
+ *      Side effect: Removes item from options (transfer semantics)
+ * 
+ * DELETE /api/gratitude/selections/:category/:selectionId
+ *      Returns: { removed: { ... } }
+ * 
+ * POST /api/gratitude/discarded/:category
+ *      Body: { item: { id, text } }
+ *      Returns: { item: { ... } }
+ *      Side effect: Removes item from options
+ * 
+ * ============================================================================
+ */
+
 const gratitudeRouter = express.Router();
 
 // Helpers for externalized YAML-backed data
@@ -41,6 +150,25 @@ const readArray = (key) => {
     return readHouseholdArray(hid, key.replace('gratitude/', ''));
 };
 
+/**
+ * Get users from household.yml instead of legacy users.yaml
+ * Returns array of user objects with username, displayName, and group_label
+ */
+const getHouseholdUsers = (householdId) => {
+  const hid = householdId || configService.getDefaultHouseholdId();
+  const usernames = configService.getHouseholdUsers(hid);
+  
+  return usernames.map(username => {
+    const profile = configService.getUserProfile(username);
+    return {
+      id: username,
+      name: profile?.display_name || profile?.name || username.charAt(0).toUpperCase() + username.slice(1),
+      group_label: profile?.group_label || null, // For display in group contexts
+    };
+  });
+};
+
+// Legacy getUsers still reads from gratitude/users.yaml for backwards compatibility
 const getUsers = (hid) => readHouseholdArray(hid, 'users');
 const setUsers = (hid, arr) => writeHouseholdArray(hid, 'users', arr);
 
@@ -127,6 +255,11 @@ gratitudeRouter.post('/selections/:category', (req, res) => {
     const newOpts = opts.filter((o) => o.id !== item.id);
     if (newOpts.length !== opts.length) setOptions(hid, category, newOpts);
 
+    // Also remove from discarded if it was there (user changed their mind)
+    const discarded = getDiscarded(category, hid);
+    const newDiscarded = discarded.filter((d) => d.id !== item.id);
+    if (newDiscarded.length !== discarded.length) setDiscarded(category, newDiscarded, hid);
+
     res.status(201).json({ selection: entry });
 });
 
@@ -175,8 +308,15 @@ gratitudeRouter.post('/discarded/:category', (req, res) => {
 // Bootstrap endpoint to fetch everything at once - now household-aware
 gratitudeRouter.get('/bootstrap', (req, res) => {
     const hid = getHouseholdId(req);
+    
+    // Use household.yml users, fall back to legacy users.yaml if empty
+    let users = getHouseholdUsers(hid);
+    if (!users || users.length === 0) {
+        users = getUsers(hid);
+    }
+    
     res.json({
-        users: getUsers(hid),
+        users,
         options: {
             gratitude: getOptions(hid, 'gratitude'),
             hopes: getOptions(hid, 'hopes'),

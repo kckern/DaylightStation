@@ -10,14 +10,14 @@ import {
   buildChatContext,
   getRecentMessages,
   extractUserText,
-} from '../../journalist/domain/services/HistoryFormatter.mjs';
+} from '../../bots/journalist/domain/services/HistoryFormatter.mjs';
 
 import {
   parseGPTResponse,
   splitMultipleQuestions,
   cleanQuestion,
   isValidQuestion,
-} from '../../journalist/domain/services/QuestionParser.mjs';
+} from '../../bots/journalist/domain/services/QuestionParser.mjs';
 
 import {
   shouldContinueQueue,
@@ -26,17 +26,17 @@ import {
   buildDefaultChoices,
   createQueueFromQuestions,
   getUnsentCount,
-} from '../../journalist/domain/services/QueueManager.mjs';
+} from '../../bots/journalist/domain/services/QueueManager.mjs';
 
 import {
   buildBiographerPrompt,
   buildAutobiographerPrompt,
   buildMultipleChoicePrompt,
   buildEvaluateResponsePrompt,
-} from '../../journalist/domain/services/PromptBuilder.mjs';
+} from '../../bots/journalist/domain/services/PromptBuilder.mjs';
 
-import { ConversationMessage } from '../../journalist/domain/entities/ConversationMessage.mjs';
-import { MessageQueue } from '../../journalist/domain/entities/MessageQueue.mjs';
+import { ConversationMessage } from '../../bots/journalist/domain/entities/ConversationMessage.mjs';
+import { MessageQueue } from '../../bots/journalist/domain/entities/MessageQueue.mjs';
 
 describe('Journalist Domain Services', () => {
   describe('HistoryFormatter', () => {

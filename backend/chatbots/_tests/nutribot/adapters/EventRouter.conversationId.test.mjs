@@ -1,14 +1,21 @@
 /**
- * EventRouter ConversationId Format Tests
+ * TelegramInputAdapter + UnifiedEventRouter ConversationId Format Tests
  * 
- * Tests that the EventRouter correctly builds conversationId
- * in the format "telegram:{botId}_{chatId}"
+ * Tests that the Telegram parsing and routing pipeline correctly builds
+ * conversationId in the format "telegram:{botId}_{chatId}"
+ * 
+ * This test validates the unified pattern used by production:
+ * TelegramInputAdapter.parse() → InputEvent → UnifiedEventRouter.route()
  */
 
 import { jest } from '@jest/globals';
-import { NutribotEventRouter } from '../../../nutribot/adapters/EventRouter.mjs';
+import { TelegramInputAdapter } from '../../../adapters/telegram/TelegramInputAdapter.mjs';
+import { UnifiedEventRouter } from '../../../application/routing/UnifiedEventRouter.mjs';
 
-describe('NutribotEventRouter - ConversationId Format', () => {
+const BOT_ID = '6898194425';
+const USER_ID = '575596036';
+
+describe('TelegramInputAdapter + UnifiedEventRouter - ConversationId Format', () => {
   let router;
   let mockContainer;
   let capturedParams;
@@ -24,9 +31,6 @@ describe('NutribotEventRouter - ConversationId Format', () => {
     });
 
     mockContainer = {
-      getConfig: jest.fn().mockReturnValue({
-        telegram: { botId: '6898194425' }
-      }),
       getLogFoodFromImage: jest.fn().mockReturnValue(mockUseCase('logImage')),
       getLogFoodFromText: jest.fn().mockReturnValue(mockUseCase('logText')),
       getLogFoodFromVoice: jest.fn().mockReturnValue(mockUseCase('logVoice')),
@@ -50,8 +54,19 @@ describe('NutribotEventRouter - ConversationId Format', () => {
       }),
     };
 
-    router = new NutribotEventRouter(mockContainer);
+    router = new UnifiedEventRouter(mockContainer);
   });
+
+  /**
+   * Helper to parse and route a Telegram payload
+   */
+  async function parseAndRoute(telegramPayload) {
+    const event = TelegramInputAdapter.parse(telegramPayload, { botId: BOT_ID });
+    if (event) {
+      await router.route(event);
+    }
+    return event;
+  }
 
   describe('conversationId format for text messages', () => {
     it('should build conversationId as "telegram:{botId}_{chatId}"', async () => {
@@ -59,19 +74,18 @@ describe('NutribotEventRouter - ConversationId Format', () => {
         update_id: 123456789,
         message: {
           message_id: 100,
-          from: { id: 575596036, is_bot: false, first_name: 'Kirk' },
-          chat: { id: 575596036, type: 'private' },
+          from: { id: parseInt(USER_ID), is_bot: false, first_name: 'Kirk' },
+          chat: { id: parseInt(USER_ID), type: 'private' },
           date: 1702656000,
           text: 'ate a sandwich',
         },
       };
 
-      await router.route(telegramPayload);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getLogFoodFromText).toHaveBeenCalled();
       expect(capturedParams.logText).toBeDefined();
-      expect(capturedParams.logText.conversationId).toBe('telegram:6898194425_575596036');
-      expect(capturedParams.logText.userId).toBe('575596036');
+      expect(capturedParams.logText.conversationId).toBe(`telegram:${BOT_ID}_${USER_ID}`);
     });
   });
 
@@ -81,21 +95,21 @@ describe('NutribotEventRouter - ConversationId Format', () => {
         update_id: 123456789,
         message: {
           message_id: 101,
-          from: { id: 575596036, is_bot: false, first_name: 'Kirk' },
-          chat: { id: 575596036, type: 'private' },
+          from: { id: parseInt(USER_ID), is_bot: false, first_name: 'Kirk' },
+          chat: { id: parseInt(USER_ID), type: 'private' },
           date: 1702656000,
           photo: [
-            { file_id: 'small_123', width: 90 },
-            { file_id: 'large_456', width: 640 },
+            { file_id: 'small_123', width: 90, height: 90 },
+            { file_id: 'large_456', width: 640, height: 480 },
           ],
         },
       };
 
-      await router.route(telegramPayload);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getLogFoodFromImage).toHaveBeenCalled();
       expect(capturedParams.logImage).toBeDefined();
-      expect(capturedParams.logImage.conversationId).toBe('telegram:6898194425_575596036');
+      expect(capturedParams.logImage.conversationId).toBe(`telegram:${BOT_ID}_${USER_ID}`);
     });
   });
 
@@ -105,18 +119,18 @@ describe('NutribotEventRouter - ConversationId Format', () => {
         update_id: 123456789,
         message: {
           message_id: 102,
-          from: { id: 575596036 },
-          chat: { id: 575596036, type: 'private' },
+          from: { id: parseInt(USER_ID) },
+          chat: { id: parseInt(USER_ID), type: 'private' },
           date: 1702656000,
           text: '012345678901',
         },
       };
 
-      await router.route(telegramPayload);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getLogFoodFromUPC).toHaveBeenCalled();
       expect(capturedParams.logUPC).toBeDefined();
-      expect(capturedParams.logUPC.conversationId).toBe('telegram:6898194425_575596036');
+      expect(capturedParams.logUPC.conversationId).toBe(`telegram:${BOT_ID}_${USER_ID}`);
     });
   });
 
@@ -126,46 +140,32 @@ describe('NutribotEventRouter - ConversationId Format', () => {
         update_id: 123456789,
         callback_query: {
           id: 'query123',
-          from: { id: 575596036 },
+          from: { id: parseInt(USER_ID) },
           message: {
             message_id: 103,
-            chat: { id: 575596036, type: 'private' },
+            chat: { id: parseInt(USER_ID), type: 'private' },
           },
           data: 'accept:log-uuid-123',
         },
       };
 
-      await router.route(telegramPayload);
+      await parseAndRoute(telegramPayload);
 
       expect(mockContainer.getAcceptFoodLog).toHaveBeenCalled();
       expect(capturedParams.accept).toBeDefined();
-      expect(capturedParams.accept.conversationId).toBe('telegram:6898194425_575596036');
+      expect(capturedParams.accept.conversationId).toBe(`telegram:${BOT_ID}_${USER_ID}`);
     });
   });
 
-  describe('fallback botId', () => {
-    it('should use fallback botId if config not available', async () => {
-      // Create router with no getConfig method
-      const containerWithoutConfig = {
-        ...mockContainer,
-        getConfig: undefined,
-      };
-      
-      const routerWithFallback = new NutribotEventRouter(containerWithoutConfig);
+  describe('TelegramInputAdapter.buildConversationId', () => {
+    it('should build correct format', () => {
+      const result = TelegramInputAdapter.buildConversationId('123456', '789');
+      expect(result).toBe('telegram:123456_789');
+    });
 
-      const telegramPayload = {
-        message: {
-          message_id: 104,
-          from: { id: 575596036 },
-          chat: { id: 575596036 },
-          text: 'test',
-        },
-      };
-
-      await routerWithFallback.route(telegramPayload);
-
-      // Should use the hardcoded fallback botId
-      expect(capturedParams.logText.conversationId).toMatch(/^telegram:\d+_575596036$/);
+    it('should parse conversationId correctly', () => {
+      const parsed = TelegramInputAdapter.parseConversationId('telegram:6898194425_575596036');
+      expect(parsed).toEqual({ botId: '6898194425', userId: '575596036' });
     });
   });
 });

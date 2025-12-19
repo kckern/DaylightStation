@@ -607,3 +607,568 @@ h2 {
     color: white;
   }
 }
+
+// ============================================================================
+// NEW REDESIGNED GRATITUDE APP STYLES
+// ============================================================================
+
+.gratitude-app-inner {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  overflow: hidden;
+}
+
+// Main layout: Left (header + queue) | Right (selected full height)
+.gratitude-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  gap: 24px;
+  padding: 24px;
+}
+
+.gratitude-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  min-width: 300px;
+}
+
+.gratitude-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 300px;
+}
+
+// Header with Category and User Cycle
+.gratitude-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background-color: #2a2a2a;
+  border: 2px solid #444;
+  border-radius: 12px;
+  flex-shrink: 0;
+  gap: 16px;
+}
+
+.category-cycle,
+.user-cycle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  background: #3a3a3a;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow: hidden;
+  
+  &:hover {
+    background: #4a4a4a;
+    
+    .cycle-arrow {
+      opacity: 0.7;
+    }
+  }
+  
+  &.focused {
+    outline: 4px solid #4da6ff;
+    outline-offset: 2px;
+    background: rgba(77, 166, 255, 0.15);
+    
+    .cycle-arrow {
+      opacity: 0.9;
+      animation: arrowBounce 0.8s ease-in-out infinite;
+      
+      &.up {
+        animation-name: arrowBounceUp;
+      }
+      
+      &.down {
+        animation-name: arrowBounceDown;
+      }
+    }
+  }
+  
+  .cycle-arrow {
+    opacity: 0.4;
+    font-size: 0.7em;
+    transition: opacity 0.2s ease;
+    flex-shrink: 0;
+    
+    &.up {
+      margin-right: -4px;
+    }
+    
+    &.down {
+      margin-left: -4px;
+    }
+  }
+  
+  .cycle-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    
+    &.slide-up {
+      animation: slideUp 0.3s ease-in-out;
+    }
+    
+    &.slide-down {
+      animation: slideDown 0.3s ease-in-out;
+    }
+  }
+  
+  .category-icon {
+    width: 28px;
+    height: 28px;
+    filter: brightness(0) invert(1);
+    flex-shrink: 0;
+  }
+  
+  .cycle-label {
+    font-size: 1.4rem;
+    font-weight: 600;
+    min-width: 80px;
+    text-align: center;
+  }
+}
+
+// Slide animations for cycling content (odometer/slot machine effect)
+// The content starts at current position, slides out, then new content appears and slides in
+@keyframes slideUp {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  49% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  50% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  49% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  50% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+// Arrow bounce animations for focused state
+@keyframes arrowBounceUp {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes arrowBounceDown {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+.user-cycle {
+  .user-avatar-small {
+    width: 52px;
+    height: 52px;
+    margin: -8px 0;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+}
+
+.gratitude-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 2px solid #444;
+  border-radius: 12px;
+  background-color: #2a2a2a;
+  overflow: hidden;
+  min-height: 0;
+  
+  &.column-focused {
+    border-color: #4da6ff;
+  }
+  
+  .column-header {
+    padding: 12px 16px;
+    background-color: #3a3a3a;
+    border-bottom: 1px solid #444;
+    flex-shrink: 0;
+    
+    h3 {
+      margin: 0;
+      font-size: 1.3rem;
+      color: #e0e0e0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+  }
+  
+  .count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.15);
+    color: #e0e0e0;
+  }
+  
+  .column-content {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+  }
+  
+  &.queue-column {
+    .column-header {
+      background-color: #2a3a4a;
+      
+      h3 {
+        color: #99ccff;
+      }
+    }
+  }
+  
+  &.selected-column {
+    .column-header.tabbed-header {
+      display: flex;
+      padding: 0;
+      gap: 0;
+      background-color: transparent;
+      border-bottom: none;
+      
+      .tab {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 16px;
+        cursor: pointer;
+        background-color: #2a2a2a;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s ease;
+        
+        &:first-child {
+          border-radius: 10px 0 0 0;
+        }
+        
+        &:last-child {
+          border-radius: 0 10px 0 0;
+        }
+        
+        .tab-icon {
+          width: 20px;
+          height: 20px;
+          filter: brightness(0) invert(0.5);
+          flex-shrink: 0;
+        }
+        
+        .tab-label {
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: #888;
+        }
+        
+        .count-badge {
+          font-size: 0.85rem;
+          background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        &:hover:not(.active) {
+          background-color: #333;
+        }
+        
+        &.active {
+          background-color: #2a4a2a;
+          
+          .tab-icon {
+            filter: brightness(0) invert(0.7) sepia(1) saturate(5) hue-rotate(85deg);
+          }
+          border-bottom-color: #4caf50;
+          
+          .tab-label {
+            color: #aaffaa;
+          }
+          
+          .count-badge {
+            background-color: rgba(170, 255, 170, 0.2);
+            color: #aaffaa;
+          }
+        }
+      }
+    }
+  }
+}
+
+// Queue items
+.queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background-color: #333;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 8px;
+  font-size: 1.3rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  
+  .item-text {
+    flex: 1;
+  }
+  
+  .queue-user-avatar {
+    width: 48px;
+    height: 48px;
+    margin: -10px 0;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+  
+  &.discarded {
+    opacity: 0.5;
+    border-style: dashed;
+    
+    .item-text {
+      font-style: italic;
+    }
+  }
+  
+  &.focused {
+    background-color: #4da6ff;
+    color: white;
+    border-color: #3399ff;
+    box-shadow: 0 0 10px rgba(77, 166, 255, 0.3);
+    transform: scale(1.02);
+    
+    .queue-user-avatar {
+      border-color: rgba(255, 255, 255, 0.6);
+    }
+    
+    &.discarded {
+      opacity: 0.85;
+    }
+  }
+  
+  &.sliding-left {
+    animation: slideLeft 0.3s ease-out forwards;
+  }
+  
+  &.sliding-right {
+    animation: slideRight 0.3s ease-out forwards;
+  }
+  
+  &.slide-in-to-queue {
+    animation: slideInToQueueFromRight 0.3s ease-out forwards;
+  }
+}
+
+// Selected items with avatar
+.selected-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: #333;
+  border: 1px solid #555;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  
+  &.focused {
+    background-color: #4da6ff;
+    border-color: #3399ff;
+    box-shadow: 0 0 10px rgba(77, 166, 255, 0.3);
+    
+    .item-text {
+      color: white;
+    }
+    
+    .date-label {
+      color: rgba(255, 255, 255, 0.7);
+    }
+  }
+  
+  &.past {
+    opacity: 0.7;
+  }
+  
+  &.webhook-highlight {
+    animation: webhookHighlight 1s ease-in-out 3;
+  }
+  
+  &.slide-in-from-right {
+    animation: slideInFromRight 0.3s ease-out forwards;
+  }
+  
+  &.sliding-left-deselect {
+    animation: slidingLeftDeselect 0.3s ease-out forwards;
+  }
+  
+  .user-avatar {
+    width: 48px;
+    height: 48px;
+    margin: -8px 0;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: #555;
+    
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+  
+  .item-text {
+    flex: 1;
+    font-size: 1.2rem;
+    font-weight: 500;
+    color: #e0e0e0;
+  }
+  
+  .date-label {
+    font-size: 0.85rem;
+    color: #888;
+    min-width: 50px;
+    text-align: right;
+  }
+}
+
+// Divider between today and past
+.past-divider {
+  height: 1px;
+  background: #555;
+  margin: 12px 0;
+  opacity: 0.5;
+}
+
+// Webhook highlight animation
+@keyframes webhookHighlight {
+  0%, 100% {
+    background-color: #333;
+    box-shadow: none;
+  }
+  50% {
+    background-color: rgba(76, 175, 80, 0.25);
+    box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+  }
+}
+
+// Deselect animation - slide left from selected back to queue
+@keyframes slidingLeftDeselect {
+  0% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(-50%) scale(0.95);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateX(-100%) scale(0.9);
+    opacity: 0;
+  }
+}
+
+// Slide in to queue from right (when item returns from selected)
+@keyframes slideInToQueueFromRight {
+  0% {
+    transform: translateX(100%) scale(0.9);
+    opacity: 0;
+  }
+  50% {
+    transform: translateX(50%) scale(0.95);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+
+// Empty column state
+.empty-column {
+  text-align: center;
+  color: #666;
+  font-style: italic;
+  padding: 40px 20px;
+  font-size: 1.2rem;
+}
+
+// Loading and error states
+.loading,
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 1.5rem;
+  color: #888;
+}

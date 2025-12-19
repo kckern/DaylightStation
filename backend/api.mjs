@@ -18,16 +18,22 @@ const upcLookup = async () => null;
 import moment from 'moment-timezone';
 
 // New chatbots framework
-import { createNutribotRouter } from './chatbots/nutribot/server.mjs';
-import { NutribotContainer } from './chatbots/nutribot/container.mjs';
+import { createNutribotRouter } from './chatbots/bots/nutribot/server.mjs';
+import { NutribotContainer } from './chatbots/bots/nutribot/container.mjs';
+import { createJournalistRouter } from './chatbots/bots/journalist/server.mjs';
+import { JournalistContainer } from './chatbots/bots/journalist/container.mjs';
+import { createHomeBotRouter } from './chatbots/bots/homebot/server.mjs';
+import { HomeBotContainer } from './chatbots/bots/homebot/container.mjs';
+import { HouseholdRepository } from './chatbots/bots/homebot/repositories/HouseholdRepository.mjs';
+import { GratitudeRepository } from './chatbots/bots/homebot/repositories/GratitudeRepository.mjs';
 import { getConfigProvider } from './chatbots/_lib/config/index.mjs';
 import { UserResolver } from './chatbots/_lib/users/UserResolver.mjs';
 import { TelegramGateway } from './chatbots/infrastructure/messaging/TelegramGateway.mjs';
 import { OpenAIGateway } from './chatbots/infrastructure/ai/OpenAIGateway.mjs';
 import { RealUPCGateway } from './chatbots/infrastructure/gateways/RealUPCGateway.mjs';
-import { NutriLogRepository } from './chatbots/nutribot/repositories/NutriLogRepository.mjs';
-import { NutriListRepository } from './chatbots/nutribot/repositories/NutriListRepository.mjs';
-import { NutriCoachRepository } from './chatbots/nutribot/repositories/NutriCoachRepository.mjs';
+import { NutriLogRepository } from './chatbots/bots/nutribot/repositories/NutriLogRepository.mjs';
+import { NutriListRepository } from './chatbots/bots/nutribot/repositories/NutriListRepository.mjs';
+import { NutriCoachRepository } from './chatbots/bots/nutribot/repositories/NutriCoachRepository.mjs';
 import { FileConversationStateStore } from './chatbots/infrastructure/persistence/FileConversationStateStore.mjs';
 import { CanvasReportRenderer } from './chatbots/adapters/http/CanvasReportRenderer.mjs';
 import { createLogger } from './chatbots/_lib/logging/index.mjs';
@@ -322,6 +328,233 @@ const initNutribotRouter = async () => {
     }
 };
 
+// Initialize Journalist container with real dependencies
+let journalistRouter = null;
+const initJournalistRouter = async () => {
+    if (journalistRouter) return journalistRouter;
+    
+    const logger = createLogger({ source: 'api', app: 'journalist' });
+    
+    try {
+        const configProvider = getConfigProvider();
+        const journalistConfig = configProvider.getJournalistConfig();
+        
+        // Get chatbots config for user mappings
+        const chatbotsConfig = configProvider.get('chatbots') || {};
+        
+        // Debug logging
+        logger.info('journalist.init.debug', {
+            hasBotToken: !!journalistConfig.telegram.token,
+            hasBotId: !!journalistConfig.telegram.botId,
+            botId: journalistConfig.telegram.botId,
+        });
+        
+        // Build users config from ConfigService user profiles
+        const usersFromProfiles = {};
+        if (configService.isReady()) {
+            const profiles = configService.getAllUserProfiles();
+            for (const [username, profile] of profiles) {
+                const telegramId = profile.identities?.telegram?.user_id;
+                if (telegramId) {
+                    usersFromProfiles[username] = {
+                        telegram_user_id: telegramId,
+                        telegram_bot_id: journalistConfig.telegram.botId,
+                        timezone: profile.preferences?.timezone,
+                    };
+                }
+            }
+        }
+        
+        const mergedUsers = { ...chatbotsConfig.users, ...usersFromProfiles };
+        const chatbotsConfigWithUsers = { ...chatbotsConfig, users: mergedUsers };
+        const userResolver = new UserResolver(chatbotsConfigWithUsers, { logger });
+        
+        // Storage paths for journalist
+        const basePath = 'users';
+        const paths = {
+            journal: '{username}/lifelog/journal',
+            conversation: '{username}/lifelog/journal/conversation',
+        };
+        
+        const config = {
+            telegram: journalistConfig.telegram,
+            storage: { basePath, paths },
+            getJournalPath: (userId) => {
+                const username = userResolver.resolveUsername(userId) || userId;
+                return `${basePath}/${paths.journal.replace('{username}', username)}`;
+            },
+            getConversationPath: (userId) => {
+                const username = userResolver.resolveUsername(userId) || userId;
+                return `${basePath}/${paths.conversation.replace('{username}', username)}`;
+            },
+            getUserTimezone: (userId) => {
+                const username = userResolver.resolveUsername(userId);
+                const users = chatbotsConfig?.users || {};
+                const user = users[username];
+                return user?.timezone || configProvider.get('weather')?.timezone || 'America/Los_Angeles';
+            },
+        };
+        
+        logger.info('journalist.config.paths', { basePath, paths, userCount: userResolver.getAllUsernames().length });
+        
+        // Create real infrastructure dependencies
+        const aiGateway = new OpenAIGateway(
+            { apiKey: configProvider.getOpenAIKey() },
+            { logger }
+        );
+        
+        const messagingGateway = new TelegramGateway(
+            journalistConfig.telegram,
+            { logger, aiGateway }
+        );
+        
+        const conversationStateStore = new FileConversationStateStore({
+            storePath: basePath,
+            userResolver,
+            logger
+        });
+        
+        // Create container with dependencies
+        const container = new JournalistContainer(config, {
+            messagingGateway,
+            aiGateway,
+            conversationStateStore,
+            logger
+        });
+        
+        // Create router
+        journalistRouter = createJournalistRouter(container, {
+            botId: journalistConfig.telegram.botId,
+            gateway: messagingGateway,
+        });
+        logger.info('journalist.router.initialized', { status: 'success' });
+        return journalistRouter;
+    } catch (error) {
+        logger.error('journalist.router.init.failed', { error: error.message, stack: error.stack });
+        return null;
+    }
+};
+
+// Initialize HomeBot container with real dependencies
+let homebotRouter = null;
+const initHomeBotRouter = async () => {
+    if (homebotRouter) return homebotRouter;
+    
+    const logger = createLogger({ source: 'api', app: 'homebot' });
+    
+    try {
+        const configProvider = getConfigProvider();
+        
+        // Get chatbots config for bot settings and user mappings
+        const chatbotsConfig = configProvider.get('chatbots') || {};
+        const homebotBotConfig = chatbotsConfig?.bots?.homebot || {};
+        
+        // Debug logging for config resolution
+        logger.info('homebot.config.debug', {
+            hasChatbotsConfig: !!chatbotsConfig,
+            hasBotsConfig: !!chatbotsConfig?.bots,
+            hasHomebotConfig: !!homebotBotConfig,
+            homebotBotConfig: JSON.stringify(homebotBotConfig),
+            telegram_bot_id_from_config: homebotBotConfig.telegram_bot_id,
+            telegram_bot_id_from_env: process.env.TELEGRAM_HOMEBOT_BOT_ID,
+        });
+        
+        // HomeBot config - token from env, botId from config file
+        const homebotConfig = {
+            telegram: {
+                token: process.env.TELEGRAM_HOMEBOT_TOKEN || '',
+                botId: String(homebotBotConfig.telegram_bot_id || process.env.TELEGRAM_HOMEBOT_BOT_ID || ''),
+            },
+        };
+        
+        logger.info('homebot.config.resolved', {
+            hasToken: !!homebotConfig.telegram.token,
+            botId: homebotConfig.telegram.botId,
+        });
+        
+        if (!homebotConfig.telegram.token) {
+            logger.warn('homebot.init.noToken', { 
+                message: 'TELEGRAM_HOMEBOT_TOKEN not set - HomeBot will not work' 
+            });
+        }
+        
+        // Build users config from ConfigService user profiles
+        const usersConfig = {};
+        if (configService.isReady()) {
+            const profiles = configService.getAllUserProfiles();
+            for (const [username, profile] of profiles) {
+                const telegramId = profile.identities?.telegram?.user_id;
+                if (telegramId) {
+                    usersConfig[username] = {
+                        telegram_user_id: telegramId,
+                        telegram_bot_id: homebotConfig.telegram.botId,
+                        timezone: profile.preferences?.timezone,
+                    };
+                }
+            }
+        }
+        
+        const userResolver = new UserResolver({ users: usersConfig });
+        
+        // Conversation state base path
+        const basePath = chatbotsConfig?.data?.homebot?.base_path || 
+                        process.env.HOMEBOT_DATA_PATH ||
+                        '/Volumes/mounts/DockerDrive/Docker/DaylightStation/data/homebot';
+        
+        // Create AI gateway
+        const aiGateway = new OpenAIGateway({
+            apiKey: process.env.OPENAI_API_KEY,
+        });
+        
+        // Create Telegram gateway (if token and botId exist)
+        let messagingGateway = null;
+        if (homebotConfig.telegram.token && homebotConfig.telegram.botId) {
+            messagingGateway = new TelegramGateway(
+                homebotConfig.telegram,
+                { logger, aiGateway }
+            );
+        } else if (homebotConfig.telegram.token && !homebotConfig.telegram.botId) {
+            logger.warn('homebot.init.noBotId', { 
+                message: 'TELEGRAM_HOMEBOT_BOT_ID not set - Telegram gateway disabled' 
+            });
+        }
+        
+        // Create conversation state store
+        const conversationStateStore = new FileConversationStateStore({
+            storePath: basePath,
+            userResolver,
+            logger
+        });
+        
+        // Create household repository
+        const householdRepository = new HouseholdRepository({ logger });
+        
+        // Create gratitude repository for persistence and WebSocket broadcasting
+        const gratitudeRepository = new GratitudeRepository({ logger });
+        
+        // Create container with dependencies
+        const container = new HomeBotContainer(homebotConfig, {
+            messagingGateway,
+            aiGateway,
+            conversationStateStore,
+            householdRepository,
+            gratitudeRepository,
+            logger
+        });
+        
+        // Create router
+        homebotRouter = createHomeBotRouter(container, {
+            botId: homebotConfig.telegram.botId,
+            gateway: messagingGateway,
+        });
+        logger.info('homebot.router.initialized', { status: 'success' });
+        return homebotRouter;
+    } catch (error) {
+        logger.error('homebot.router.init.failed', { error: error.message, stack: error.stack });
+        return null;
+    }
+};
+
 const timezone = (req, res) => {
     const timezone = process.env.TIMEZONE || 'America/Los_Angeles';
     const today = moment().tz(timezone).format('YYYY-MM-DD');
@@ -339,8 +572,51 @@ const timezone = (req, res) => {
     });
 }
 
+// Route /homebot to new chatbots framework
+apiRouter.all('/homebot', async (req, res, next) => {
+    try {
+        const router = await initHomeBotRouter();
+        if (router) {
+            // Rewrite path for the subrouter (expects /webhook)
+            req.url = '/webhook';
+            return router(req, res, next);
+        }
+    } catch (error) {
+        console.error('HomeBot router error:', error.message);
+    }
+    // No fallback - just return error
+    return res.status(503).json({ error: 'HomeBot not initialized' });
+});
 
-apiRouter.all(  '/journalist',    processWebhookPayload);
+// Route /homebot/health for health checks
+apiRouter.get('/homebot/health', async (req, res) => {
+    try {
+        const router = await initHomeBotRouter();
+        if (router) {
+            req.url = '/health';
+            return router(req, res);
+        }
+    } catch (error) {
+        console.error('HomeBot health check error:', error.message);
+    }
+    return res.status(503).json({ status: 'error', message: 'HomeBot not initialized' });
+});
+
+// Route /journalist to new chatbots framework
+apiRouter.all('/journalist', async (req, res, next) => {
+    try {
+        const router = await initJournalistRouter();
+        if (router) {
+            // Rewrite path for the subrouter (expects /webhook)
+            req.url = '/webhook';
+            return router(req, res, next);
+        }
+    } catch (error) {
+        console.error('Journalist router error:', error.message);
+    }
+    // Fallback to stub
+    return processWebhookPayload(req, res);
+});
 
 // Route /foodlog to new chatbots framework (with fallback to legacy)
 apiRouter.all('/foodlog', async (req, res, next) => {

@@ -3,7 +3,7 @@
  * @group nutribot
  */
 
-import { NutriBotConfig } from '../../nutribot/config/NutriBotConfig.mjs';
+import { NutriBotConfig } from '../../bots/nutribot/config/NutriBotConfig.mjs';
 import { TelegramChatRef } from '../../infrastructure/telegram/TelegramChatRef.mjs';
 import { ConversationId } from '../../domain/value-objects/ChatId.mjs';
 import { ValidationError } from '../../_lib/errors/index.mjs';

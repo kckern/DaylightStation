@@ -5,11 +5,11 @@
  */
 
 import { jest } from '@jest/globals';
-import { ProcessTextEntry } from '../../journalist/application/usecases/ProcessTextEntry.mjs';
-import { ProcessVoiceEntry } from '../../journalist/application/usecases/ProcessVoiceEntry.mjs';
-import { InitiateJournalPrompt } from '../../journalist/application/usecases/InitiateJournalPrompt.mjs';
-import { GenerateMultipleChoices } from '../../journalist/application/usecases/GenerateMultipleChoices.mjs';
-import { HandleCallbackResponse } from '../../journalist/application/usecases/HandleCallbackResponse.mjs';
+import { ProcessTextEntry } from '../../bots/journalist/application/usecases/ProcessTextEntry.mjs';
+import { ProcessVoiceEntry } from '../../bots/journalist/application/usecases/ProcessVoiceEntry.mjs';
+import { InitiateJournalPrompt } from '../../bots/journalist/application/usecases/InitiateJournalPrompt.mjs';
+import { GenerateMultipleChoices } from '../../bots/journalist/application/usecases/GenerateMultipleChoices.mjs';
+import { HandleCallbackResponse } from '../../bots/journalist/application/usecases/HandleCallbackResponse.mjs';
 
 // Mock dependencies
 const createMockMessagingGateway = () => ({
