@@ -580,11 +580,10 @@ export function markSelectionsAsPrinted(category, selectionIds) {
 }
 
 /**
- * Generate Prayer Card canvas image
+ * Generate Prayer Card canvas image (preview only - never marks items)
  * GET /api/gratitude/card - Returns PNG image
  * Query params:
  *   - upsidedown: 'true' to flip for mounted printer
- *   - mark: 'true' to mark items as printed (default: false)
  */
 gratitudeRouter.get('/card', async (req, res) => {
     try {
@@ -592,19 +591,7 @@ gratitudeRouter.get('/card', async (req, res) => {
         const { createCanvasTypographyDemo } = await import('./printer.mjs');
         
         const upsidedown = req.query.upsidedown === 'true';
-        const shouldMark = req.query.mark === 'true';
-        
-        const { canvas, selectedIds } = await createCanvasTypographyDemo(upsidedown);
-        
-        // Mark items as printed if requested
-        if (shouldMark && selectedIds) {
-            if (selectedIds.gratitude?.length > 0) {
-                markSelectionsAsPrinted('gratitude', selectedIds.gratitude);
-            }
-            if (selectedIds.hopes?.length > 0) {
-                markSelectionsAsPrinted('hopes', selectedIds.hopes);
-            }
-        }
+        const { canvas } = await createCanvasTypographyDemo(upsidedown);
         
         // Convert to PNG buffer
         const buffer = canvas.toBuffer('image/png');
@@ -617,6 +604,75 @@ gratitudeRouter.get('/card', async (req, res) => {
     } catch (error) {
         console.error('Prayer card generation error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Generate Prayer Card and print to thermal printer
+ * Only marks items as printed if print succeeds
+ * GET /api/gratitude/card/print
+ * Query params:
+ *   - upsidedown: 'true' to flip for mounted printer (default: true for print)
+ */
+gratitudeRouter.get('/card/print', async (req, res) => {
+    try {
+        const { createCanvasTypographyDemo } = await import('./printer.mjs');
+        const { thermalPrint, createImagePrint } = await import('./lib/thermalprint.mjs');
+        const fs = await import('fs');
+        
+        // 1. Generate canvas (default upside down for printer)
+        const upsidedown = req.query.upsidedown !== 'false'; // default true
+        const { canvas, width, height, selectedIds } = await createCanvasTypographyDemo(upsidedown);
+        
+        // 2. Save to temp file
+        const buffer = canvas.toBuffer('image/png');
+        const tempPath = `/tmp/prayer_card_${Date.now()}.png`;
+        fs.writeFileSync(tempPath, buffer);
+        
+        // 3. Create print job
+        const printJob = createImagePrint(tempPath, {
+            width,
+            height,
+            align: 'left',
+            threshold: 128
+        });
+        
+        // 4. Send to printer and wait for result
+        const success = await thermalPrint(printJob);
+        
+        // 5. Clean up temp file
+        try { fs.unlinkSync(tempPath); } catch (e) { /* ignore */ }
+        
+        // 6. Only mark as printed if print succeeded
+        const printed = { gratitude: [], hopes: [] };
+        
+        if (success && selectedIds) {
+            if (selectedIds.gratitude?.length > 0) {
+                markSelectionsAsPrinted('gratitude', selectedIds.gratitude);
+                printed.gratitude = selectedIds.gratitude;
+            }
+            if (selectedIds.hopes?.length > 0) {
+                markSelectionsAsPrinted('hopes', selectedIds.hopes);
+                printed.hopes = selectedIds.hopes;
+            }
+        }
+        
+        // 7. Return result
+        res.json({
+            success,
+            message: success ? 'Prayer card printed successfully' : 'Print failed',
+            printed,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('Prayer card print error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Print error',
+            error: error.message,
+            printed: { gratitude: [], hopes: [] }
+        });
     }
 });
 

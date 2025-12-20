@@ -1,7 +1,7 @@
 import express from 'express';
 import moment from 'moment-timezone';
 import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint, setFeedButton, queryPrinterStatus, testFeedButton } from './lib/thermalprint.mjs';
-import { getSelectionsForPrint, markSelectionsAsPrinted } from './gratitude.mjs';
+import { getSelectionsForPrint } from './gratitude.mjs';
 
 const printerRouter = express.Router();
 
@@ -430,35 +430,25 @@ printerRouter.get('/canvas/preview', async (req, res) => {
     }
 });
 
-// Canvas print - generate canvas, mark items as printed, and send to thermal printer
+// Canvas print - generate canvas and send to thermal printer (does NOT mark items)
+// For gratitude tracking, use /api/gratitude/card/print instead
 printerRouter.get('/canvas/print', async (req, res) => {
     try {
-        const { canvas, width, height, selectedIds } = await createCanvasTypographyDemo(true);
-        
-        // Mark selections as printed
-        if (selectedIds) {
-            if (selectedIds.gratitude?.length > 0) {
-                markSelectionsAsPrinted('gratitude', selectedIds.gratitude);
-            }
-            if (selectedIds.hopes?.length > 0) {
-                markSelectionsAsPrinted('hopes', selectedIds.hopes);
-            }
-        }
+        const { canvas, width, height } = await createCanvasTypographyDemo(true);
         
         // Convert canvas to buffer and save as temporary file
         const buffer = canvas.toBuffer('image/png');
         const tempPath = `/tmp/canvas_demo_${Date.now()}.png`;
         const fs = await import('fs');
-        //flip upside down
         
         fs.writeFileSync(tempPath, buffer);
         
         // Create print job using the canvas image - no resizing, send as-is
         const printJob = createImagePrint(tempPath, {
-            width: width,      // Original canvas width (550px)
-            height: height,    // Original canvas height (1000px)
-            align: 'left',     // No centering, print as-is
-            threshold: 128     // Standard threshold for black/white conversion
+            width: width,
+            height: height,
+            align: 'left',
+            threshold: 128
         });
         
         const success = await thermalPrint(printJob);
@@ -472,12 +462,8 @@ printerRouter.get('/canvas/print', async (req, res) => {
         
         res.json({
             success,
-            message: success ? 'Canvas demo printed successfully' : 'Print failed',
-            dimensions: {
-                width: width,
-                height: height
-            },
-            printJob
+            message: success ? 'Canvas printed successfully' : 'Print failed',
+            dimensions: { width, height }
         });
         
     } catch (error) {
