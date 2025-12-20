@@ -202,7 +202,7 @@ fitnessRouter.post('/save_session', (req, res) => {
     ensureDirectory(storagePaths.sessionDirFs);
     ensureDirectory(storagePaths.screenshotsDirFs);
     saveFile(storagePaths.sessionFileRelative, filePayload);
-    const filename = `${storagePaths.sessionFileRelative}.yaml`;
+    const filename = `${storagePaths.sessionFileRelative}.yml`;
     //trigger printer (TODO)
 
     res.json({ message: 'Session data saved successfully', filename, sessionData: preparedSession });
