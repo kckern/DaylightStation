@@ -1137,59 +1137,64 @@ export function setFeedButton(enabled, config = {}) {
     };
 }
 
-// Log container startup to help correlate with printer issues
-export function logContainerStartup() {
-    printerLog.info('DaylightStation container started', {
-        timestamp: new Date().toISOString(),
-        printerConfig: {
-            host: DEFAULT_CONFIG.ip,
-            port: DEFAULT_CONFIG.port,
-            timeout: DEFAULT_CONFIG.timeout
-        }
-    });
+/**
+ * Ping printer to check if it's reachable (TCP connection only, no data sent)
+ * @param {Object} config - Optional printer configuration
+ * @returns {Promise<Object>} - Ping result with success, latency, and details
+ */
+export async function pingPrinter(config = {}) {
+    const startTime = Date.now();
+    const printerConfig = { ...DEFAULT_CONFIG, ...config };
     
-    // Test printer connectivity on startup
-    testPrinterConnection();
-}
+    if (!printerConfig.ip) {
+        return {
+            success: false,
+            error: 'Printer IP not configured',
+            configured: false
+        };
+    }
+    
+    const device = new Network(printerConfig.ip, printerConfig.port);
+    
+    return new Promise((resolve) => {
+        const timeoutId = setTimeout(() => {
+            resolve({
+                success: false,
+                error: 'Connection timeout',
+                host: printerConfig.ip,
+                port: printerConfig.port,
+                latency: Date.now() - startTime,
+                configured: true
+            });
+        }, printerConfig.timeout || 3000);
 
-// Test printer connection without printing
-async function testPrinterConnection() {
-    try {
-        const config = DEFAULT_CONFIG;
-        if (!config.ip) {
-            printerLog.warn('Printer IP not configured for startup test');
-            return false;
-        }
-        
-        const device = new Network(config.ip, config.port);
-        
-        return new Promise((resolve) => {
-            const timeoutId = setTimeout(() => {
-                printerLog.warn('Startup printer test timeout');
-                resolve(false);
-            }, 3000); // Shorter timeout for startup test
+        device.open(function(error) {
+            clearTimeout(timeoutId);
+            const latency = Date.now() - startTime;
             
-            device.open(function(error) {
-                clearTimeout(timeoutId);
-                
-                if (error) {
-                    printerLog.warn('Startup printer test failed', error);
-                    resolve(false);
-                    return;
-                }
-                
-                device.close();
-                printerLog.info('Startup printer test successful');
-                resolve(true);
+            if (error) {
+                resolve({
+                    success: false,
+                    error: error.message || 'Connection failed',
+                    host: printerConfig.ip,
+                    port: printerConfig.port,
+                    latency,
+                    configured: true
+                });
+                return;
+            }
+            
+            device.close();
+            resolve({
+                success: true,
+                message: 'Printer is reachable',
+                host: printerConfig.ip,
+                port: printerConfig.port,
+                latency,
+                configured: true
             });
         });
-        
-    } catch (error) {
-        printerLog.error('Startup printer test error', error);
-        return false;
-    }
+    });
 }
 
-// Call startup logging when this module is loaded
-logContainerStartup();
 export default thermalPrint;
