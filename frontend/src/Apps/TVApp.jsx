@@ -207,6 +207,16 @@ export default function TVApp({ appParam }) {
     return <TVAppWrapper content={<PlayerOverlayLoading shouldRender isVisible />} />;
   }
 
+  // If autoplay is pending, show loading instead of menu
+  if (autoplay && !autoplayed) {
+    return <TVAppWrapper content={<PlayerOverlayLoading shouldRender isVisible />} />;
+  }
+
+  // If appParam is set but content hasn't loaded yet, show loading instead of menu
+  if (appParam && contentStack.length === 0) {
+    return <TVAppWrapper content={<PlayerOverlayLoading shouldRender isVisible />} />;
+  }
+
   if (currentContent) {
     return <TVAppWrapper content={currentContent} />;
   }
