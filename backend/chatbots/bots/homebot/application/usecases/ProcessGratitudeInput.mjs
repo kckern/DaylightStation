@@ -157,10 +157,10 @@ export class ProcessGratitudeInput {
         choices: keyboard,
       });
 
-      // 8. Save state for callback handling
+      // 8. Save state for callback handling (keyed by messageId so sessions never expire)
       if (this.#conversationStateStore) {
         const now = new Date();
-        const expiresAt = new Date(now.getTime() + 30 * 60 * 1000); // 30 min expiry
+        const expiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 year (effectively never)
         await this.#conversationStateStore.set(conversationId, {
           activeFlow: 'gratitude_input',
           flowState: {
@@ -171,7 +171,7 @@ export class ProcessGratitudeInput {
           },
           updatedAt: now,
           expiresAt: expiresAt,
-        });
+        }, statusMsg.messageId); // Pass messageId to key the session
       }
 
       this.#logger.info('processGratitudeInput.complete', { 
