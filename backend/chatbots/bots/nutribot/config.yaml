@@ -82,7 +82,7 @@ storage:
   # Legacy path pattern (disable after migration)
   legacy:
     enabled: false
-    pattern: "journalist/nutribot/nutrilogs/b{botId}_u{chatId}.yaml"
+    pattern: "journalist/nutribot/nutrilogs/b{botId}_u{chatId}.yml"
 
 # AI Configuration
 # ----------------

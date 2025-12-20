@@ -367,6 +367,8 @@ function GratitudeApp({
   const containerRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressTriggeredRef = useRef(false);
+  const keyDownActiveRef = useRef(false); // Track if keydown started in this component
+  const lastActionTimeRef = useRef(0); // Debounce protection
   const animatingRef = useRef(false); // Ref to track animation state for callbacks
   
   // WebSocket integration
@@ -830,28 +832,38 @@ function GratitudeApp({
   }, [handleKeyDown]);
 
   // Long press detection for category cycling
+  // Made robust for:
+  // 1. NVIDIA Shield / Fully Kiosk double-hit issue
+  // 2. Orphan keyup events when entering app with keyboard
   useEffect(() => {
     const LONG_PRESS_DURATION = 500; // ms
+    const ACTION_COOLDOWN = 300; // ms - prevent double execution
     
     const handleLongPressStart = (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
+        event.stopPropagation();
         
         // Ignore repeat events (key held down)
         if (event.repeat) {
           return;
         }
         
-        // Reset triggered flag on fresh keydown
-        longPressTriggeredRef.current = false;
+        // Clear any existing timer first
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
         
-        // Don't start timer if already running
-        if (longPressTimerRef.current) return;
+        // Mark that a keydown started in this component
+        keyDownActiveRef.current = true;
+        longPressTriggeredRef.current = false;
         
         longPressTimerRef.current = setTimeout(() => {
           // Long press detected - cycle category (only once)
           longPressTriggeredRef.current = true;
           longPressTimerRef.current = null;
+          lastActionTimeRef.current = Date.now();
           handleCategoryCycle('next');
         }, LONG_PRESS_DURATION);
       }
@@ -860,6 +872,13 @@ function GratitudeApp({
     const handleLongPressEnd = (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
+        event.stopPropagation();
+        
+        // CRITICAL: Only process keyup if we saw the keydown
+        // This prevents orphan keyups from triggering actions
+        if (!keyDownActiveRef.current) {
+          return;
+        }
         
         // Clear the timer if still running (short press)
         if (longPressTimerRef.current) {
@@ -868,12 +887,25 @@ function GratitudeApp({
         }
         
         // If long press was NOT triggered, execute the normal action
-        if (!longPressTriggeredRef.current) {
+        // Also check cooldown to prevent double execution
+        const now = Date.now();
+        if (!longPressTriggeredRef.current && (now - lastActionTimeRef.current) > ACTION_COOLDOWN) {
+          lastActionTimeRef.current = now;
           handleSelectAction();
         }
         
         // Reset for next press
+        keyDownActiveRef.current = false;
         longPressTriggeredRef.current = false;
+      }
+    };
+    
+    // Reset keydown state if focus leaves the container
+    const handleBlur = () => {
+      keyDownActiveRef.current = false;
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
       }
     };
     
@@ -881,15 +913,28 @@ function GratitudeApp({
     if (container) {
       container.addEventListener('keydown', handleLongPressStart);
       container.addEventListener('keyup', handleLongPressEnd);
+      container.addEventListener('blur', handleBlur);
       return () => {
         container.removeEventListener('keydown', handleLongPressStart);
         container.removeEventListener('keyup', handleLongPressEnd);
+        container.removeEventListener('blur', handleBlur);
         if (longPressTimerRef.current) {
           clearTimeout(longPressTimerRef.current);
         }
       };
     }
   }, [handleCategoryCycle, handleSelectAction]);
+
+  // Reset key tracking on mount to avoid orphan keyups from previous context
+  useEffect(() => {
+    keyDownActiveRef.current = false;
+    longPressTriggeredRef.current = false;
+    // Small delay before accepting input to let any pending events clear
+    const timer = setTimeout(() => {
+      lastActionTimeRef.current = 0;
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Note: Removed auto-focus switching - panels stay focusable even when empty
 

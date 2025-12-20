@@ -67,18 +67,25 @@ export function validateConfig(options = {}) {
   // Check 3: Fitness Config (household-scoped)
   // ============================================================
   if (dataPath) {
-    // Check household-scoped path first (new structure)
-    const householdFitnessConfig = path.join(dataPath, 'households', 'default', 'apps', 'fitness', 'config.yaml');
-    const legacyFitnessConfig = path.join(dataPath, 'fitness', 'config.yaml');
+    // Check household-scoped path first (new structure) - prefer .yml, fallback to .yaml
+    const householdFitnessConfigYml = path.join(dataPath, 'households', 'default', 'apps', 'fitness', 'config.yml');
+    const householdFitnessConfigYaml = path.join(dataPath, 'households', 'default', 'apps', 'fitness', 'config.yaml');
+    const legacyFitnessConfigYml = path.join(dataPath, 'fitness', 'config.yml');
+    const legacyFitnessConfigYaml = path.join(dataPath, 'fitness', 'config.yaml');
     
-    if (fs.existsSync(householdFitnessConfig)) {
-      checks.fitnessConfig = { status: 'ok', value: householdFitnessConfig, exists: true, location: 'household' };
-    } else if (fs.existsSync(legacyFitnessConfig)) {
-      warnings.push(`fitness config using legacy path: ${legacyFitnessConfig} (should migrate to households/default/apps/fitness/)`);
-      checks.fitnessConfig = { status: 'warning', value: legacyFitnessConfig, exists: true, location: 'legacy' };
+    if (fs.existsSync(householdFitnessConfigYml)) {
+      checks.fitnessConfig = { status: 'ok', value: householdFitnessConfigYml, exists: true, location: 'household' };
+    } else if (fs.existsSync(householdFitnessConfigYaml)) {
+      checks.fitnessConfig = { status: 'ok', value: householdFitnessConfigYaml, exists: true, location: 'household' };
+    } else if (fs.existsSync(legacyFitnessConfigYml)) {
+      warnings.push(`fitness config using legacy path: ${legacyFitnessConfigYml} (should migrate to households/default/apps/fitness/)`);
+      checks.fitnessConfig = { status: 'warning', value: legacyFitnessConfigYml, exists: true, location: 'legacy' };
+    } else if (fs.existsSync(legacyFitnessConfigYaml)) {
+      warnings.push(`fitness config using legacy path: ${legacyFitnessConfigYaml} (should migrate to households/default/apps/fitness/)`);
+      checks.fitnessConfig = { status: 'warning', value: legacyFitnessConfigYaml, exists: true, location: 'legacy' };
     } else {
-      warnings.push(`fitness config missing: checked ${householdFitnessConfig}`);
-      checks.fitnessConfig = { status: 'warning', value: householdFitnessConfig, exists: false };
+      warnings.push(`fitness config missing: checked ${householdFitnessConfigYml}`);
+      checks.fitnessConfig = { status: 'warning', value: householdFitnessConfigYml, exists: false };
     }
   }
 
