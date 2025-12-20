@@ -39,21 +39,21 @@ export class AssignItemToUser {
   async execute(input) {
     const { conversationId, callbackQueryId, messageId, selectedUserId } = input;
 
-    this.#logger.info('assignItemToUser.start', { conversationId, selectedUserId });
+    this.#logger.info('assignItemToUser.start', { conversationId, messageId, selectedUserId });
 
     try {
-      // 1. Get conversation state
+      // 1. Get conversation state (by messageId so each message has its own session)
       if (!this.#conversationStateStore) {
         this.#logger.error('assignItemToUser.noStateStore');
         await this.#sendError(conversationId, 'Session error. Please try again.');
         return;
       }
 
-      const state = await this.#conversationStateStore.get(conversationId);
+      const state = await this.#conversationStateStore.get(conversationId, messageId);
       
       if (!state || state.activeFlow !== 'gratitude_input') {
-        this.#logger.warn('assignItemToUser.noActiveFlow', { conversationId });
-        await this.#sendError(conversationId, 'Session expired. Please send your gratitude items again.');
+        this.#logger.warn('assignItemToUser.noActiveFlow', { conversationId, messageId });
+        await this.#sendError(conversationId, 'Session not found. Please send your gratitude items again.');
         return;
       }
 
@@ -108,11 +108,12 @@ export class AssignItemToUser {
         await this.#messagingGateway.sendMessage(conversationId, successText, { parseMode: 'HTML' });
       }
 
-      // 6. Clear conversation state
-      await this.#conversationStateStore.delete(conversationId);
+      // 6. Clear conversation state for this message
+      await this.#conversationStateStore.delete(conversationId, messageId);
 
       this.#logger.info('assignItemToUser.complete', { 
         conversationId, 
+        messageId,
         selectedUserId,
         category,
         itemCount: items.length,
