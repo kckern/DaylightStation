@@ -1,7 +1,7 @@
 import express from 'express';
 import moment from 'moment-timezone';
 import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint, setFeedButton, queryPrinterStatus, testFeedButton } from './lib/thermalprint.mjs';
-import { getSelectionsForPrint } from './gratitude.mjs';
+import { getSelectionsForPrint, markSelectionsAsPrinted } from './gratitude.mjs';
 
 const printerRouter = express.Router();
 
@@ -16,8 +16,9 @@ printerRouter.get('/', (req, res) => {
             'POST /image': 'Print image from path or URL',
             'POST /receipt': 'Print receipt-style document',
             'POST /table/:width?': 'Print ASCII table with statistical data',
-            'GET /canvas': 'Generate 550x1000px PNG with pixel-art text and lorem ipsum',
-            'GET /canvas/print': 'Generate canvas content and send directly to thermal printer',
+            'GET /canvas': 'Generate Prayer Card PNG preview (does not track prints)',
+            'GET /canvas/preview': 'Alias for /canvas - preview without tracking',
+            'GET /canvas/print': 'Generate Prayer Card, mark items as printed, send to printer',
             'GET /checkerboard/:width?': 'Print checkerboard pattern (width in squares, default 48)',
             'GET /img/:filename': 'Find image file, convert to B&W 575px wide and print',
             'POST /print': 'Print custom print job object',
@@ -173,6 +174,44 @@ function generateTestTableData(width) {
     }
 }
 
+/**
+ * Select items for printing using smart randomization
+ * Priority: unprinted items first (printCount === 0), then least-printed items
+ * Random selection within items of equal priority
+ * @param {Array} items - Array of selection objects with printCount property
+ * @param {number} count - Number of items to select
+ * @returns {Array} Selected items
+ */
+function selectItemsForPrint(items, count) {
+    if (!items || items.length === 0) return [];
+    if (items.length <= count) return [...items];
+    
+    const selected = [];
+    const available = [...items];
+    
+    while (selected.length < count && available.length > 0) {
+        // Find minimum printCount among available items
+        const minPrintCount = Math.min(...available.map(i => i.printCount));
+        
+        // Get all candidates with this minimum count
+        const candidates = available.filter(i => i.printCount === minPrintCount);
+        
+        // Random selection from candidates
+        const randomIndex = Math.floor(Math.random() * candidates.length);
+        const picked = candidates[randomIndex];
+        
+        selected.push(picked);
+        
+        // Remove picked item from available pool
+        const availableIndex = available.findIndex(i => i.id === picked.id);
+        if (availableIndex !== -1) {
+            available.splice(availableIndex, 1);
+        }
+    }
+    
+    return selected;
+}
+
 // Helper function to create canvas with Prayer Card layout
 async function createCanvasTypographyDemo(upsidedown=false) {
     const width = 580;
@@ -181,40 +220,47 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     const fontDir = process.env.path?.font || './backend/journalist/fonts/roboto-condensed';
     const fontPath = fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
     
-    // Get selections from gratitude data
+    // Get selections from gratitude data (enriched with displayName and printCount)
     const selections = getSelectionsForPrint();
     
-    // Fallback items if no selections
+    // Fallback items if no selections (no user attribution)
     const fallbackGratitudeItems = [
-        'Family health and happiness',
-        'Safe travels and journeys',
-        'Meaningful friendships',
-        'Daily bread and nourishment',
-        'Peaceful moments of rest'
+        { text: 'Family health and happiness', displayName: null },
+        { text: 'Safe travels and journeys', displayName: null },
+        { text: 'Meaningful friendships', displayName: null },
+        { text: 'Daily bread and nourishment', displayName: null },
+        { text: 'Peaceful moments of rest', displayName: null }
     ];
 
     const fallbackWishItems = [
-        'Peace in troubled hearts',
-        'Healing for the sick',
-        'Comfort for those who mourn',
-        'Guidance for lost souls',
-        'Unity in divided communities'
+        { text: 'Peace in troubled hearts', displayName: null },
+        { text: 'Healing for the sick', displayName: null },
+        { text: 'Comfort for those who mourn', displayName: null },
+        { text: 'Guidance for lost souls', displayName: null },
+        { text: 'Unity in divided communities', displayName: null }
     ];
 
-    // Use selections if available, otherwise use fallback items
-    const gratitudeTexts = selections.gratitude.length > 0 
-        ? selections.gratitude.map(item => item.text)
-        : fallbackGratitudeItems;
-        
-    const wishTexts = selections.hopes.length > 0 
-        ? selections.hopes.map(item => item.text)
-        : fallbackWishItems;
+    // Select 2 items per category using smart randomization (prioritizes unprinted)
+    const selectedGratitude = selections.gratitude.length > 0
+        ? selectItemsForPrint(selections.gratitude, 2).map(s => ({
+            id: s.id,
+            text: s.item.text,
+            displayName: s.displayName
+          }))
+        : fallbackGratitudeItems.slice(0, 2);
 
-    // Function to get random items or take all if fewer than requested
-    const getRandomItems = (items, count) => {
-        if (items.length <= count) return items;
-        const shuffled = [...items].sort(() => 0.5 - Math.random());
-        return shuffled.slice(0, count);
+    const selectedHopes = selections.hopes.length > 0
+        ? selectItemsForPrint(selections.hopes, 2).map(s => ({
+            id: s.id,
+            text: s.item.text,
+            displayName: s.displayName
+          }))
+        : fallbackWishItems.slice(0, 2);
+
+    // Track selected IDs for marking as printed later
+    const selectedIds = {
+        gratitude: selectedGratitude.filter(i => i.id).map(i => i.id),
+        hopes: selectedHopes.filter(i => i.id).map(i => i.id)
     };
 
     // Create canvas
@@ -282,12 +328,20 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     ctx.fillText('Gratitude', margin, gratitudeContentStartY);
     let gratitudeItemsY = gratitudeContentStartY + 68; // adjusted for larger header font
     
-    // Gratitude items
-    ctx.font = `36px "${fontFamily}"`; // 24 * 1.5 = 36
-    const selectedGratitude = getRandomItems(gratitudeTexts, 2);
+    // Gratitude items with submitter names
     for (const item of selectedGratitude) {
-        ctx.fillText(`• ${item}`, margin + 15, gratitudeItemsY);
-        gratitudeItemsY += 53; // adjusted for larger font
+        // Draw bullet and item text
+        ctx.font = `36px "${fontFamily}"`;
+        const itemText = `• ${item.text}`;
+        ctx.fillText(itemText, margin + 15, gratitudeItemsY);
+        
+        // Draw submitter name in smaller font, vertically centered with parentheses
+        if (item.displayName) {
+            const textWidth = ctx.measureText(itemText).width;
+            ctx.font = `24px "${fontFamily}"`;
+            ctx.fillText(`(${item.displayName})`, margin + 15 + textWidth + 10, gratitudeItemsY + 8);
+        }
+        gratitudeItemsY += 53;
     }
     
     // Middle divider - extends to frame borders
@@ -307,12 +361,20 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     ctx.fillText('Hopes', margin, wishesContentStartY);
     let wishesItemsY = wishesContentStartY + 68; // adjusted for larger header font
     
-    // Wishes items
-    ctx.font = `36px "${fontFamily}"`; // 24 * 1.5 = 36
-    const selectedWishes = getRandomItems(wishTexts, 2);
-    for (const item of selectedWishes) {
-        ctx.fillText(`• ${item}`, margin + 15, wishesItemsY);
-        wishesItemsY += 53; // adjusted for larger font
+    // Hopes items with submitter names
+    for (const item of selectedHopes) {
+        // Draw bullet and item text
+        ctx.font = `36px "${fontFamily}"`;
+        const itemText = `• ${item.text}`;
+        ctx.fillText(itemText, margin + 15, wishesItemsY);
+        
+        // Draw submitter name in smaller font, vertically centered with parentheses
+        if (item.displayName) {
+            const textWidth = ctx.measureText(itemText).width;
+            ctx.font = `24px "${fontFamily}"`;
+            ctx.fillText(`(${item.displayName})`, margin + 15 + textWidth + 10, wishesItemsY + 8);
+        }
+        wishesItemsY += 53;
     }
 
     // Flip canvas upside down if requested
@@ -322,33 +384,66 @@ async function createCanvasTypographyDemo(upsidedown=false) {
         flippedCtx.translate(width, height);
         flippedCtx.scale(-1, -1);
         flippedCtx.drawImage(canvas, 0, 0);
-        return { canvas: flippedCanvas, width, height };
+        return { canvas: flippedCanvas, width, height, selectedIds };
     }
     
-    return { canvas, width, height };
+    return { canvas, width, height, selectedIds };
 }
 
-// Canvas text rendering
+// Canvas preview - generate canvas image without marking items as printed
 printerRouter.get('/canvas', async (req, res) => {
     try {
-        const { canvas } = await createCanvasTypographyDemo();
+        const upsidedown = req.query.upsidedown === 'true';
+        const { canvas } = await createCanvasTypographyDemo(upsidedown);
         
         // Convert to PNG buffer
         const buffer = canvas.toBuffer('image/png');
         
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', buffer.length);
+        res.setHeader('Content-Disposition', 'inline; filename="prayer-card-preview.png"');
         res.send(buffer);
         
     } catch (error) {
+        console.error('Canvas preview error:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Canvas print - generate canvas and send to thermal printer
+// Canvas preview endpoint (alias for /canvas)
+printerRouter.get('/canvas/preview', async (req, res) => {
+    try {
+        const upsidedown = req.query.upsidedown === 'true';
+        const { canvas } = await createCanvasTypographyDemo(upsidedown);
+        
+        // Convert to PNG buffer
+        const buffer = canvas.toBuffer('image/png');
+        
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', buffer.length);
+        res.setHeader('Content-Disposition', 'inline; filename="prayer-card-preview.png"');
+        res.send(buffer);
+        
+    } catch (error) {
+        console.error('Canvas preview error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Canvas print - generate canvas, mark items as printed, and send to thermal printer
 printerRouter.get('/canvas/print', async (req, res) => {
     try {
-        const { canvas, width, height } = await createCanvasTypographyDemo(true);
+        const { canvas, width, height, selectedIds } = await createCanvasTypographyDemo(true);
+        
+        // Mark selections as printed
+        if (selectedIds) {
+            if (selectedIds.gratitude?.length > 0) {
+                markSelectionsAsPrinted('gratitude', selectedIds.gratitude);
+            }
+            if (selectedIds.hopes?.length > 0) {
+                markSelectionsAsPrinted('hopes', selectedIds.hopes);
+            }
+        }
         
         // Convert canvas to buffer and save as temporary file
         const buffer = canvas.toBuffer('image/png');
@@ -746,5 +841,8 @@ printerRouter.post('/print', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// Export canvas generation for use by other modules
+export { createCanvasTypographyDemo, selectItemsForPrint };
 
 export default printerRouter;
