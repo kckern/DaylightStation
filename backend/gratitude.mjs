@@ -194,19 +194,33 @@ const setDiscarded = (category, arr, hid = null) => {
     writeHouseholdArray(householdId, `discarded.${category}`, Array.isArray(arr) ? arr : []);
 };
 
+/**
+ * Fisher-Yates shuffle for randomizing arrays
+ * @param {Array} array - Array to shuffle
+ * @returns {Array} New shuffled array
+ */
+const shuffleArray = (array) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+};
+
 // Users - now household-scoped
 gratitudeRouter.get('/users', (req, res) => {
     const hid = getHouseholdId(req);
     res.json({ users: getUsers(hid), _household: hid });
 });
 
-// Options - now household-scoped
+// Options - now household-scoped (randomized)
 gratitudeRouter.get('/options', (req, res) => {
     const hid = getHouseholdId(req);
     res.json({ 
         options: {
-            gratitude: getOptions(hid, 'gratitude'),
-            hopes: getOptions(hid, 'hopes')
+            gratitude: shuffleArray(getOptions(hid, 'gratitude')),
+            hopes: shuffleArray(getOptions(hid, 'hopes'))
         },
         _household: hid
     });
@@ -216,7 +230,7 @@ gratitudeRouter.get('/options/:category', (req, res) => {
     const hid = getHouseholdId(req);
     const category = String(req.params.category || '').toLowerCase();
     if (!isValidCategory(category)) return res.status(400).json({ error: 'Invalid category' });
-    res.json({ items: getOptions(hid, category), _household: hid });
+    res.json({ items: shuffleArray(getOptions(hid, category)), _household: hid });
 });
 
 // Selections (CRUD) - global but will filter/write by userId
@@ -318,8 +332,8 @@ gratitudeRouter.get('/bootstrap', (req, res) => {
     res.json({
         users,
         options: {
-            gratitude: getOptions(hid, 'gratitude'),
-            hopes: getOptions(hid, 'hopes'),
+            gratitude: shuffleArray(getOptions(hid, 'gratitude')),
+            hopes: shuffleArray(getOptions(hid, 'hopes')),
         },
         selections: {
             gratitude: getSelections('gratitude'),
