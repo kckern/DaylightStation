@@ -73,29 +73,73 @@ export class FileConversationStateStore {
   /**
    * Get current conversation state
    * @param {ChatId} chatId
+   * @param {string} [messageId] - Optional message ID to get specific session
    * @returns {Promise<ConversationState | null>}
    */
-  async get(chatId) {
+  async get(chatId, messageId = null) {
     const path = this.#getPath(chatId);
     
     // CRITICAL DEBUG: Log at INFO level to see in production
     this.#logger.info('state-store.get', { 
       chatId: chatId?.toString?.() || String(chatId),
+      messageId,
       path,
       storePath: this.#storePath,
     });
 
     const data = loadFile(path);
     
-    // CRITICAL DEBUG: Log whether file was found
+    // If no data, return null
+    if (!data) {
+      this.#logger.info('state-store.get.result', {
+        chatId: chatId?.toString?.() || String(chatId),
+        path,
+        fileFound: false,
+      });
+      return null;
+    }
+    
+    // New format: sessions map keyed by messageId
+    if (data.sessions && messageId) {
+      const sessionData = data.sessions[messageId];
+      if (!sessionData) {
+        this.#logger.info('state-store.get.result', {
+          chatId: chatId?.toString?.() || String(chatId),
+          path,
+          messageId,
+          fileFound: true,
+          sessionFound: false,
+        });
+        return null;
+      }
+      
+      this.#logger.info('state-store.get.result', {
+        chatId: chatId?.toString?.() || String(chatId),
+        path,
+        messageId,
+        fileFound: true,
+        sessionFound: true,
+        activeFlow: sessionData.activeFlow,
+      });
+      
+      return ConversationState.from({
+        chatId,
+        activeFlow: sessionData.activeFlow || null,
+        flowState: sessionData.flowState || {},
+        lastMessageId: sessionData.lastMessageId || null,
+        updatedAt: sessionData.updatedAt,
+        expiresAt: sessionData.expiresAt,
+      });
+    }
+    
+    // Legacy format: single session (backwards compatibility)
     this.#logger.info('state-store.get.result', {
       chatId: chatId?.toString?.() || String(chatId),
       path,
-      fileFound: !!data,
+      fileFound: true,
       activeFlow: data?.activeFlow || 'none',
+      format: 'legacy',
     });
-    
-    if (!data) return null;
 
     // Convert to ConversationState
     const state = ConversationState.from({
@@ -120,17 +164,19 @@ export class FileConversationStateStore {
    * Set conversation state
    * @param {ChatId} chatId
    * @param {ConversationState} state
+   * @param {string} [messageId] - Optional message ID to key the session
    * @returns {Promise<void>}
    */
-  async set(chatId, state) {
+  async set(chatId, state, messageId = null) {
     const path = this.#getPath(chatId);
     
     this.#logger.debug('state-store.set', { 
       chatId: chatId.toString(),
+      messageId,
       activeFlow: state.activeFlow,
     });
 
-    const data = {
+    const sessionData = {
       activeFlow: state.activeFlow,
       flowState: state.flowState,
       lastMessageId: state.lastMessageId?.toString() || null,
@@ -138,7 +184,16 @@ export class FileConversationStateStore {
       expiresAt: state.expiresAt.toISOString(),
     };
 
-    saveFile(path, data);
+    if (messageId) {
+      // New format: store in sessions map by messageId
+      const existingData = loadFile(path) || {};
+      const sessions = existingData.sessions || {};
+      sessions[messageId] = sessionData;
+      saveFile(path, { sessions });
+    } else {
+      // Legacy format: single session
+      saveFile(path, sessionData);
+    }
   }
 
   /**
@@ -171,26 +226,37 @@ export class FileConversationStateStore {
   }
 
   /**
-   * Clear all state for a chat
+   * Clear all state for a chat (or just one session if messageId provided)
    * @param {ChatId} chatId
+   * @param {string} [messageId] - Optional message ID to clear specific session
    * @returns {Promise<void>}
    */
-  async clear(chatId) {
+  async clear(chatId, messageId = null) {
     const path = this.#getPath(chatId);
     
-    this.#logger.debug('state-store.clear', { chatId: chatId.toString() });
+    this.#logger.debug('state-store.clear', { chatId: chatId.toString(), messageId });
 
-    // Save empty object to clear
-    saveFile(path, {});
+    if (messageId) {
+      // Only clear specific session
+      const existingData = loadFile(path) || {};
+      if (existingData.sessions && existingData.sessions[messageId]) {
+        delete existingData.sessions[messageId];
+        saveFile(path, existingData);
+      }
+    } else {
+      // Save empty object to clear all
+      saveFile(path, {});
+    }
   }
 
   /**
    * Delete state for a chat (alias for clear)
    * @param {ChatId|string} chatId
+   * @param {string} [messageId] - Optional message ID to delete specific session
    * @returns {Promise<void>}
    */
-  async delete(chatId) {
-    return this.clear(chatId);
+  async delete(chatId, messageId = null) {
+    return this.clear(chatId, messageId);
   }
 
   /**
