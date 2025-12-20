@@ -20,14 +20,21 @@ Extract a list of distinct items the user is grateful for or hoping for.
 Clean up grammar and format each as Title Case (2-5 words max per item).
 If the input doesn't contain gratitude/hope items, return an empty array.
 
-Return ONLY a valid JSON object with an "items" array of strings, no explanation.
+Also determine if these are primarily:
+- "gratitude": Things they're thankful for (past/present) - e.g., "sunny weather", "good health", "family"
+- "hopes": Things they wish for (future) - e.g., "good grades", "new job", "vacation"
+
+Return ONLY a valid JSON object with "items" array and "category" string, no explanation.
 
 Example:
 Input: "sunny weather today, my morning coffee was great, and spending time with family"
-Output: {"items": ["Sunny Weather", "Morning Coffee", "Family Time"]}
+Output: {"items": ["Sunny Weather", "Morning Coffee", "Family Time"], "category": "gratitude"}
+
+Input: "I hope to get good grades and find a nice apartment"
+Output: {"items": ["Good Grades", "Nice Apartment"], "category": "hopes"}
 
 Input: "hello how are you"
-Output: {"items": []}`;
+Output: {"items": [], "category": "gratitude"}`;
 
 /**
  * Process Gratitude Input Use Case
@@ -80,9 +87,9 @@ export class ProcessGratitudeInput {
       // 2. Send processing status
       let statusMsg;
       try {
-        statusMsg = await this.#messagingGateway.sendMessage(conversationId, {
-          text: '🔄 Processing your gratitude items...',
-        });
+        statusMsg = await this.#messagingGateway.sendMessage(conversationId, 
+          '🔄 Processing your gratitude items...'
+        );
       } catch (e) {
         this.#logger.error('processGratitudeInput.sendStatus.failed', { error: e.message });
         throw e;
@@ -104,11 +111,11 @@ export class ProcessGratitudeInput {
         return;
       }
 
-      // 4. Extract items via AI
-      const items = await this.#extractItems(inputText);
+      // 4. Extract items and suggested category via AI
+      const { items, category: suggestedCategory } = await this.#extractItems(inputText);
 
       if (!items || items.length === 0) {
-        await this.#updateStatus(conversationId, statusMsg?.message_id,
+        await this.#updateStatus(conversationId, statusMsg?.messageId,
           '❌ No gratitude items found. Please describe what you\'re grateful for.\n\n' +
           '<i>Example: "sunny weather, good coffee, family time"</i>',
           'HTML');
@@ -119,35 +126,38 @@ export class ProcessGratitudeInput {
       const members = await this.#getHouseholdMembers();
 
       if (!members || members.length === 0) {
-        await this.#updateStatus(conversationId, statusMsg?.message_id,
+        await this.#updateStatus(conversationId, statusMsg?.messageId,
           '❌ No household members configured. Please check your household settings.');
         return;
       }
 
-      // 6. Build confirmation message with keyboard
-      const defaultCategory = 'gratitude';
+      // 6. Build confirmation message with keyboard (use AI-suggested category as default)
+      const defaultCategory = suggestedCategory || 'gratitude';
       const itemsWithIds = items.map(text => ({ id: uuidv4(), text }));
       const keyboard = this.#buildConfirmationKeyboard(members, defaultCategory);
       const messageText = this.#buildConfirmationMessage(items, defaultCategory);
 
       // 7. Update the processing message with the confirmation
-      await this.#messagingGateway.editMessage(conversationId, statusMsg.message_id, {
+      await this.#messagingGateway.updateMessage(conversationId, statusMsg.messageId, {
         text: messageText,
-        parse_mode: 'HTML',
-        reply_markup: keyboard,
+        parseMode: 'HTML',
+        choices: keyboard,
       });
 
       // 8. Save state for callback handling
       if (this.#conversationStateStore) {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 30 * 60 * 1000); // 30 min expiry
         await this.#conversationStateStore.set(conversationId, {
           activeFlow: 'gratitude_input',
           flowState: {
             items: itemsWithIds,
             category: defaultCategory,
-            confirmationMessageId: statusMsg.message_id,
+            confirmationMessageId: statusMsg.messageId,
             originalText: inputText,
           },
-          lastUpdated: Date.now(),
+          updatedAt: now,
+          expiresAt: expiresAt,
         });
       }
 
@@ -165,9 +175,9 @@ export class ProcessGratitudeInput {
 
       if (this.#messagingGateway) {
         try {
-          await this.#messagingGateway.sendMessage(conversationId, {
-            text: '❌ Sorry, something went wrong. Please try again.',
-          });
+          await this.#messagingGateway.sendMessage(conversationId, 
+            '❌ Sorry, something went wrong. Please try again.'
+          );
         } catch (e) {
           // Ignore send error
         }
@@ -194,38 +204,39 @@ export class ProcessGratitudeInput {
   /**
    * Extract items from text using AI
    * @private
+   * @returns {Promise<{items: string[], category: string}>}
    */
   async #extractItems(text) {
     if (!this.#aiGateway) {
       // Fallback: simple comma/and split
       this.#logger.warn('processGratitudeInput.noAI', { fallback: 'simple_split' });
-      return this.#simpleExtract(text);
+      return { items: this.#simpleExtract(text), category: 'gratitude' };
     }
 
     try {
       const prompt = EXTRACTION_PROMPT.replace('{text}', text);
       
       const response = await this.#aiGateway.chatWithJson([
-        { role: 'system', content: 'You extract gratitude items and return JSON only.' },
+        { role: 'system', content: 'You extract gratitude/hope items and classify them. Return JSON only.' },
         { role: 'user', content: prompt },
       ], { 
         model: 'gpt-4o-mini',
       });
 
-      // Handle response - could be { items: [...] } or just [...]
-      if (Array.isArray(response)) {
-        return response;
-      }
-      if (response?.items && Array.isArray(response.items)) {
-        return response.items;
-      }
+      // Handle response - expect { items: [...], category: "gratitude"|"hopes" }
+      const items = Array.isArray(response) ? response : (response?.items || []);
+      const category = response?.category === 'hopes' ? 'hopes' : 'gratitude';
       
-      this.#logger.warn('processGratitudeInput.extract.unexpectedFormat', { response });
-      return this.#simpleExtract(text);
+      this.#logger.debug('processGratitudeInput.extract.result', { 
+        itemCount: items.length, 
+        category 
+      });
+      
+      return { items, category };
       
     } catch (error) {
       this.#logger.error('processGratitudeInput.extract.failed', { error: error.message });
-      return this.#simpleExtract(text);
+      return { items: this.#simpleExtract(text), category: 'gratitude' };
     }
   }
 
@@ -276,23 +287,21 @@ export class ProcessGratitudeInput {
    */
   async #updateStatus(conversationId, messageId, text, parseMode = null) {
     if (!messageId) {
-      await this.#messagingGateway.sendMessage(conversationId, { 
-        text, 
-        parse_mode: parseMode 
+      await this.#messagingGateway.sendMessage(conversationId, text, { 
+        parseMode 
       });
       return;
     }
     
     try {
-      await this.#messagingGateway.editMessage(conversationId, messageId, {
+      await this.#messagingGateway.updateMessage(conversationId, messageId, {
         text,
-        parse_mode: parseMode,
+        parseMode,
       });
     } catch (e) {
       // If edit fails, send new message
-      await this.#messagingGateway.sendMessage(conversationId, { 
-        text, 
-        parse_mode: parseMode 
+      await this.#messagingGateway.sendMessage(conversationId, text, { 
+        parseMode 
       });
     }
   }
@@ -342,7 +351,7 @@ export class ProcessGratitudeInput {
     // Cancel row
     keyboard.push([{ text: '❌ Cancel', callback_data: 'cancel' }]);
 
-    return { inline_keyboard: keyboard };
+    return keyboard;
   }
 }
 
