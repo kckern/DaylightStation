@@ -811,11 +811,21 @@ h2 {
     border-radius: 50%;
     overflow: hidden;
     flex-shrink: 0;
+    // Anti-aliasing fixes for Fully Kiosk / Android WebView
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
     
     img {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      // Smooth edges on low-end browsers
+      image-rendering: -webkit-optimize-contrast;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      transform: translateZ(0);
     }
   }
 }
@@ -983,11 +993,20 @@ h2 {
     overflow: hidden;
     flex-shrink: 0;
     border: 2px solid rgba(255, 255, 255, 0.3);
+    // Anti-aliasing fixes for Fully Kiosk / Android WebView
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
     
     img {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      image-rendering: -webkit-optimize-contrast;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      transform: translateZ(0);
     }
   }
   
@@ -1078,11 +1097,20 @@ h2 {
     overflow: hidden;
     flex-shrink: 0;
     background-color: #555;
+    // Anti-aliasing fixes for Fully Kiosk / Android WebView
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
     
     img {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      image-rendering: -webkit-optimize-contrast;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      transform: translateZ(0);
     }
   }
   
