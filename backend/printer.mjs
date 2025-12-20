@@ -325,7 +325,6 @@ function selectItemsForPrint(items, count) {
 // Helper function to create canvas with Prayer Card layout
 async function createCanvasTypographyDemo(upsidedown=false) {
     const width = 580;
-    const height = 550;
     const fontFamily = 'Roboto Condensed';
     const fontDir = process.env.path?.font || './backend/journalist/fonts/roboto-condensed';
     const fontPath = fontDir + '/roboto-condensed/RobotoCondensed-Regular.ttf';
@@ -333,31 +332,15 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     // Get selections from gratitude data (enriched with displayName and printCount)
     const selections = getSelectionsForPrint();
     
-    // Fallback items if no selections (no user attribution)
-    const fallbackGratitudeItems = [
-        { text: 'Family health and happiness', displayName: null },
-        { text: 'Safe travels and journeys', displayName: null },
-        { text: 'Meaningful friendships', displayName: null },
-        { text: 'Daily bread and nourishment', displayName: null },
-        { text: 'Peaceful moments of rest', displayName: null }
-    ];
-
-    const fallbackWishItems = [
-        { text: 'Peace in troubled hearts', displayName: null },
-        { text: 'Healing for the sick', displayName: null },
-        { text: 'Comfort for those who mourn', displayName: null },
-        { text: 'Guidance for lost souls', displayName: null },
-        { text: 'Unity in divided communities', displayName: null }
-    ];
-
     // Select 2 items per category using smart randomization (prioritizes unprinted)
+    // If no selections available, leave empty (no fallbacks)
     const selectedGratitude = selections.gratitude.length > 0
         ? selectItemsForPrint(selections.gratitude, 2).map(s => ({
             id: s.id,
             text: s.item.text,
             displayName: s.displayName
           }))
-        : fallbackGratitudeItems.slice(0, 2);
+        : [];
 
     const selectedHopes = selections.hopes.length > 0
         ? selectItemsForPrint(selections.hopes, 2).map(s => ({
@@ -365,7 +348,7 @@ async function createCanvasTypographyDemo(upsidedown=false) {
             text: s.item.text,
             displayName: s.displayName
           }))
-        : fallbackWishItems.slice(0, 2);
+        : [];
 
     // Track selected IDs for marking as printed later
     const selectedIds = {
@@ -383,6 +366,91 @@ async function createCanvasTypographyDemo(upsidedown=false) {
         console.warn(`Could not load ${fontFamily} font:`, fontError.message);
     }
     
+    const margin = 25;
+    const lineHeight = 42;
+    const itemMaxWidth = width - margin * 2 - 40; // Available width for text
+    
+    // Helper function to wrap text - needed for height calculation
+    function wrapText(text, maxWidth, font) {
+        const tempCanvas = createCanvas(1, 1);
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.font = font;
+        
+        const words = text.split(' ');
+        const lines = [];
+        let currentLine = '';
+        
+        for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const metrics = tempCtx.measureText(testLine);
+            
+            if (metrics.width > maxWidth && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine = testLine;
+            }
+        }
+        
+        if (currentLine) {
+            lines.push(currentLine);
+        }
+        
+        return lines;
+    }
+    
+    // Calculate height needed for an item (text + optional attribution line)
+    function calculateItemHeight(item) {
+        const lines = wrapText(item.text, itemMaxWidth, `36px "${fontFamily}"`);
+        let height = lines.length * lineHeight;
+        
+        // Check if attribution needs its own line
+        if (item.displayName && lines.length > 0) {
+            const tempCanvas = createCanvas(1, 1);
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            tempCtx.font = `36px "${fontFamily}"`;
+            const lastLineWidth = tempCtx.measureText(lines[lines.length - 1]).width;
+            
+            tempCtx.font = `24px "${fontFamily}"`;
+            const attrWidth = tempCtx.measureText(`(${item.displayName})`).width;
+            
+            // If attribution doesn't fit on last line, add extra height
+            if (margin + 40 + lastLineWidth + 10 + attrWidth > width - margin) {
+                height += lineHeight * 0.7;
+            }
+        }
+        
+        return height;
+    }
+    
+    // Calculate total dynamic height
+    const headerHeight = 85 + 35 + 15; // Title + timestamp + divider
+    const sectionHeaderHeight = 65; // "Gratitude" / "Hopes" headers
+    const sectionPadding = 20;
+    const dividerHeight = 25;
+    const bottomMargin = 30;
+    
+    let gratitudeContentHeight = sectionHeaderHeight;
+    for (const item of selectedGratitude) {
+        gratitudeContentHeight += calculateItemHeight(item);
+    }
+    if (selectedGratitude.length === 0) {
+        gratitudeContentHeight += lineHeight; // Empty section placeholder
+    }
+    
+    let hopesContentHeight = sectionHeaderHeight;
+    for (const item of selectedHopes) {
+        hopesContentHeight += calculateItemHeight(item);
+    }
+    if (selectedHopes.length === 0) {
+        hopesContentHeight += lineHeight; // Empty section placeholder
+    }
+    
+    // Dynamic height with minimum
+    const calculatedHeight = headerHeight + gratitudeContentHeight + sectionPadding + dividerHeight + hopesContentHeight + sectionPadding + bottomMargin;
+    const height = Math.max(450, calculatedHeight); // Minimum 450px
+    
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
     
@@ -397,12 +465,11 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     ctx.lineWidth = 3;
     ctx.strokeRect(10, 10, width - 20, height - 20);
     
-    const margin = 25;
     let yPos = 5;
     
     // Header section
     ctx.fillStyle = '#000000';
-    ctx.font = `bold 72px "${fontFamily}"`; // 48 * 1.5 = 72
+    ctx.font = `bold 72px "${fontFamily}"`;
     const headerText = 'Prayer Card';
     const headerMetrics = ctx.measureText(headerText);
     const headerX = (width - headerMetrics.width) / 2;
@@ -421,70 +488,99 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     ctx.fillRect(10, yPos, width - 20, 2);
     yPos += 15;
     
-    // Calculate section heights
-    const remainingHeight = height - yPos - 30; // 30 for bottom margin
-    const sectionHeight = (remainingHeight - 20) / 2; // 20 for spacing between sections
-    
-    // Gratitude section
-    const gratitudeStartY = yPos;
-    const gratitudeSectionCenterY = gratitudeStartY + (sectionHeight / 2);
-    
-    // Calculate total content height for gratitude section
-    const gratitudeContentHeight = 68 + (2 * 53); // header + 2 items (adjusted for larger fonts)
-    const gratitudeContentStartY = gratitudeSectionCenterY - (gratitudeContentHeight / 2);
-    
-    // Gratitude header (vertically centered in section)
-    ctx.font = `bold 48px "${fontFamily}"`; // 32 * 1.5 = 48
-    ctx.fillText('Gratitude', margin, gratitudeContentStartY);
-    let gratitudeItemsY = gratitudeContentStartY + 68; // adjusted for larger header font
-    
-    // Gratitude items with submitter names
-    for (const item of selectedGratitude) {
-        // Draw bullet and item text
-        ctx.font = `36px "${fontFamily}"`;
-        const itemText = `• ${item.text}`;
-        ctx.fillText(itemText, margin + 15, gratitudeItemsY);
+    // Helper function to wrap text to fit within maxWidth (using main ctx)
+    // Returns array of lines
+    function wrapTextCtx(text, maxWidth) {
+        const words = text.split(' ');
+        const lines = [];
+        let currentLine = '';
         
-        // Draw submitter name in smaller font, vertically centered with parentheses
-        if (item.displayName) {
-            const textWidth = ctx.measureText(itemText).width;
-            ctx.font = `24px "${fontFamily}"`;
-            ctx.fillText(`(${item.displayName})`, margin + 15 + textWidth + 10, gratitudeItemsY + 8);
+        for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const metrics = ctx.measureText(testLine);
+            
+            if (metrics.width > maxWidth && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine = testLine;
+            }
         }
-        gratitudeItemsY += 53;
+        
+        if (currentLine) {
+            lines.push(currentLine);
+        }
+        
+        return lines;
     }
     
-    // Middle divider - extends to frame borders
-    const middleDividerY = gratitudeStartY + sectionHeight + 10;
-    ctx.fillRect(10, middleDividerY, width - 20, 2);
-    
-    // Wishes section
-    const wishesStartY = middleDividerY + 20;
-    const wishesSectionCenterY = wishesStartY + (sectionHeight / 2);
-    
-    // Calculate total content height for wishes section
-    const wishesContentHeight = 68 + (2 * 53); // header + 2 items (adjusted for larger fonts)
-    const wishesContentStartY = wishesSectionCenterY - (wishesContentHeight / 2);
-    
-    // Wishes header (vertically centered in section)
-    ctx.font = `bold 48px "${fontFamily}"`; // 32 * 1.5 = 48
-    ctx.fillText('Hopes', margin, wishesContentStartY);
-    let wishesItemsY = wishesContentStartY + 68; // adjusted for larger header font
-    
-    // Hopes items with submitter names
-    for (const item of selectedHopes) {
-        // Draw bullet and item text
-        ctx.font = `36px "${fontFamily}"`;
-        const itemText = `• ${item.text}`;
-        ctx.fillText(itemText, margin + 15, wishesItemsY);
+    // Helper function to draw an item with text wrapping and attribution
+    // Returns the Y position after drawing
+    function drawItem(item, startY, indent, maxWidth) {
+        const bulletIndent = indent;
+        const textIndent = indent + 25; // Indent for wrapped lines (after bullet)
+        const attributionGap = 10;
         
-        // Draw submitter name in smaller font, vertically centered with parentheses
-        if (item.displayName) {
-            const textWidth = ctx.measureText(itemText).width;
-            ctx.font = `24px "${fontFamily}"`;
-            ctx.fillText(`(${item.displayName})`, margin + 15 + textWidth + 10, wishesItemsY + 8);
+        // Draw bullet
+        ctx.font = `36px "${fontFamily}"`;
+        ctx.fillText('•', bulletIndent, startY);
+        
+        // Wrap the item text
+        const lines = wrapTextCtx(item.text, maxWidth - 25); // Account for bullet width
+        
+        let currentY = startY;
+        for (let i = 0; i < lines.length; i++) {
+            ctx.font = `36px "${fontFamily}"`;
+            ctx.fillText(lines[i], textIndent, currentY);
+            
+            // Add attribution on the last line if it fits, otherwise on new line
+            if (i === lines.length - 1 && item.displayName) {
+                const textWidth = ctx.measureText(lines[i]).width;
+                ctx.font = `24px "${fontFamily}"`;
+                const attrText = `(${item.displayName})`;
+                const attrWidth = ctx.measureText(attrText).width;
+                
+                if (textIndent + textWidth + attributionGap + attrWidth < width - margin) {
+                    // Fits on same line
+                    ctx.fillText(attrText, textIndent + textWidth + attributionGap, currentY + 8);
+                } else {
+                    // Put on next line
+                    currentY += lineHeight * 0.7;
+                    ctx.fillText(attrText, textIndent, currentY + 8);
+                }
+            }
+            
+            if (i < lines.length - 1) {
+                currentY += lineHeight;
+            }
         }
-        wishesItemsY += 53;
+        
+        return currentY + lineHeight;
+    }
+    
+    // Gratitude section
+    ctx.font = `bold 48px "${fontFamily}"`;
+    ctx.fillText('Gratitude', margin, yPos + 10);
+    let itemsY = yPos + 65;
+    
+    // Gratitude items with text wrapping
+    for (const item of selectedGratitude) {
+        itemsY = drawItem(item, itemsY, margin + 15, itemMaxWidth);
+    }
+    
+    // Middle divider - positioned after gratitude content
+    itemsY += 10;
+    ctx.fillRect(10, itemsY, width - 20, 2);
+    itemsY += 20;
+    
+    // Hopes section
+    ctx.font = `bold 48px "${fontFamily}"`;
+    ctx.fillText('Hopes', margin, itemsY + 10);
+    itemsY += 65;
+    
+    // Hopes items with text wrapping
+    for (const item of selectedHopes) {
+        itemsY = drawItem(item, itemsY, margin + 15, itemMaxWidth);
     }
 
     // Flip canvas upside down if requested
