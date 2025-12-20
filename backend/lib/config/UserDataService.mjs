@@ -267,14 +267,14 @@ class UserDataService {
     let fullPath = this.getHouseholdSharedPath(householdId, dataPath);
     if (!fullPath) return null;
 
-    // Add extension if not present
+    // Add extension if not present - prefer .yml, fallback to .yaml
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      if (fs.existsSync(fullPath + '.yaml')) {
-        fullPath += '.yaml';
-      } else if (fs.existsSync(fullPath + '.yml')) {
+      if (fs.existsSync(fullPath + '.yml')) {
         fullPath += '.yml';
-      } else {
+      } else if (fs.existsSync(fullPath + '.yaml')) {
         fullPath += '.yaml';
+      } else {
+        fullPath += '.yml';
       }
     }
 
@@ -293,7 +293,7 @@ class UserDataService {
     if (!fullPath) return false;
 
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      fullPath += '.yaml';
+      fullPath += '.yml';
     }
 
     return safeWriteYaml(fullPath, data);
@@ -311,12 +311,12 @@ class UserDataService {
     if (!fullPath) return null;
 
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      if (fs.existsSync(fullPath + '.yaml')) {
-        fullPath += '.yaml';
-      } else if (fs.existsSync(fullPath + '.yml')) {
+      if (fs.existsSync(fullPath + '.yml')) {
         fullPath += '.yml';
-      } else {
+      } else if (fs.existsSync(fullPath + '.yaml')) {
         fullPath += '.yaml';
+      } else {
+        fullPath += '.yml';
       }
     }
 
@@ -336,7 +336,7 @@ class UserDataService {
     if (!fullPath) return false;
 
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      fullPath += '.yaml';
+      fullPath += '.yml';
     }
 
     return safeWriteYaml(fullPath, data);
@@ -391,14 +391,14 @@ class UserDataService {
     let fullPath = this.getUserDataPath(username, dataPath);
     if (!fullPath) return null;
 
-    // Add extension if not present
+    // Add extension if not present - prefer .yml, fallback to .yaml
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      if (fs.existsSync(fullPath + '.yaml')) {
-        fullPath += '.yaml';
-      } else if (fs.existsSync(fullPath + '.yml')) {
+      if (fs.existsSync(fullPath + '.yml')) {
         fullPath += '.yml';
+      } else if (fs.existsSync(fullPath + '.yaml')) {
+        fullPath += '.yaml';
       } else {
-        fullPath += '.yaml'; // Default
+        fullPath += '.yml'; // Default
       }
     }
 
@@ -418,7 +418,7 @@ class UserDataService {
 
     // Add extension if not present
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      fullPath += '.yaml';
+      fullPath += '.yml';
     }
 
     return safeWriteYaml(fullPath, data);

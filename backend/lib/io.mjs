@@ -101,7 +101,7 @@ export const loadRandom = (folder) => {
     }
 
     const files = fs.readdirSync(path).filter(file => 
-        file.endsWith('.yaml') && !file.startsWith('._')
+        (file.endsWith('.yml') || file.endsWith('.yaml')) && !file.startsWith('._')
     );
     if (files.length === 0) {
         ioLogger.warn('io.loadRandom.noYamlFiles', { path });
@@ -178,19 +178,19 @@ const loadFile = (path) => {
         });
     }
     
-    // Try .yaml first, then .yml
-    const yamlPath = `${process.env.path.data}/${path}.yaml`;
+    // Try .yml first, then .yaml as fallback (legacy)
     const ymlPath = `${process.env.path.data}/${path}.yml`;
+    const yamlPath = `${process.env.path.data}/${path}.yaml`;
     let fileToLoad = null;
 
-    if (fs.existsSync(yamlPath)) {
-        fileToLoad = yamlPath;
-    } else if (fs.existsSync(ymlPath)) {
+    if (fs.existsSync(ymlPath)) {
         fileToLoad = ymlPath;
+    } else if (fs.existsSync(yamlPath)) {
+        fileToLoad = yamlPath;
     } else {
-        ioLogger.warn('io.loadFile.missingFile', { yamlPath, ymlPath });
+        ioLogger.warn('io.loadFile.missingFile', { ymlPath, yamlPath });
         //touch file
-        saveFile(yamlPath, {});
+        saveFile(ymlPath, {});
         return null;
     }
     let fileData = fs.readFileSync(fileToLoad, 'utf8').toString().trim();
@@ -274,7 +274,7 @@ const processQueue = (key) => {
 const saveFile = (path, data) => {
     if (typeof path !== 'string') return false;
     const normalizedPath = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
-    const yamlFile = `${normalizedPath}.yaml`;
+    const yamlFile = `${normalizedPath}.yml`;
 
     // Check for legacy user-data paths and log deprecation warning (once per path)
     const isLegacyUserPath = LEGACY_USER_PATHS.some(prefix => normalizedPath.startsWith(prefix));

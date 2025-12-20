@@ -59,14 +59,14 @@ export class PromptLoader {
     const prompts = {};
 
     // 1. Hardcoded defaults (lowest priority)
-    const hardcodedPath = join(__dirname, 'defaultPrompts', `${bot}.yaml`);
+    const hardcodedPath = join(__dirname, 'defaultPrompts', `${bot}.yml`);
     const hardcoded = await this.#loadYamlFile(hardcodedPath);
     if (hardcoded?.prompts) {
       Object.assign(prompts, hardcoded.prompts);
     }
 
     // 2. Data directory defaults
-    const defaultsPath = join(this.#dataPath, 'defaults', 'ai', bot, 'prompts.yaml');
+    const defaultsPath = join(this.#dataPath, 'defaults', 'ai', bot, 'prompts.yml');
     const defaults = await this.#loadYamlFile(defaultsPath);
     if (defaults?.prompts) {
       this.#mergePrompts(prompts, defaults.prompts);
@@ -74,7 +74,7 @@ export class PromptLoader {
 
     // 3. User-specific overrides (highest priority)
     if (username) {
-      const userPath = join(this.#dataPath, 'users', username, 'ai', bot, 'prompts.yaml');
+      const userPath = join(this.#dataPath, 'users', username, 'ai', bot, 'prompts.yml');
       const userPrompts = await this.#loadYamlFile(userPath);
       if (userPrompts?.prompts) {
         this.#mergePrompts(prompts, userPrompts.prompts);
@@ -193,9 +193,9 @@ export class PromptLoader {
    */
   getPromptPath(bot, username = null) {
     if (username) {
-      return join(this.#dataPath, 'users', username, 'ai', bot, 'prompts.yaml');
+      return join(this.#dataPath, 'users', username, 'ai', bot, 'prompts.yml');
     }
-    return join(this.#dataPath, 'defaults', 'ai', bot, 'prompts.yaml');
+    return join(this.#dataPath, 'defaults', 'ai', bot, 'prompts.yml');
   }
 }
 

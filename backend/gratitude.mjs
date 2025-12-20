@@ -377,7 +377,7 @@ gratitudeRouter.post('/snapshot/save', (req, res) => {
         }
         const snap = makeSnapshotPayload(hid);
         const stamp = moment().format('YYYYMMDD_HHmmss');
-        const filename = `${stamp}_${snap.id}.yaml`;
+        const filename = `${stamp}_${snap.id}.yml`;
         const filePath = path.join(snapshotDir, filename);
         fs.writeFileSync(filePath, require('js-yaml').dump(snap), 'utf8');
         res.status(201).json({ id: snap.id, createdAt: snap.createdAt, file: filename, _household: hid });
@@ -395,7 +395,7 @@ gratitudeRouter.get('/snapshot/list', (req, res) => {
         if (!snapshotDir || !fs.existsSync(snapshotDir)) {
             return res.json({ snapshots: [], _household: hid });
         }
-        const files = fs.readdirSync(snapshotDir).filter(f => f.endsWith('.yaml') && !f.startsWith('._'));
+        const files = fs.readdirSync(snapshotDir).filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && !f.startsWith('._'));
         const yaml = require('js-yaml');
         const snapshots = files.map(f => {
             try {
@@ -403,12 +403,12 @@ gratitudeRouter.get('/snapshot/list', (req, res) => {
                 const data = yaml.load(raw) || {};
                 return {
                     file: f,
-                    id: data.id || f.split('_').slice(1).join('_').replace(/\.yaml$/, ''),
+                    id: data.id || f.split('_').slice(1).join('_').replace(/\.(yml|yaml)$/, ''),
                     createdAt: data.createdAt || null,
-                    name: f.replace(/\.yaml$/, ''),
+                    name: f.replace(/\.(yml|yaml)$/, ''),
                 };
             } catch {
-                return { file: f, id: null, createdAt: null, name: f.replace(/\.yaml$/, '') };
+                return { file: f, id: null, createdAt: null, name: f.replace(/\.(yml|yaml)$/, '') };
             }
         }).sort((a, b) => (a.name < b.name ? 1 : -1)); // newest first by filename stamp
         res.json({ snapshots, _household: hid });
@@ -427,8 +427,7 @@ gratitudeRouter.post('/snapshot/restore', (req, res) => {
         if (!snapshotDir || !fs.existsSync(snapshotDir)) {
             return res.status(404).json({ error: 'No snapshots available' });
         }
-        const files = fs.readdirSync(snapshotDir).filter(f => f.endsWith('.yaml') && !f.startsWith('._'));
-        if (files.length === 0) return res.status(404).json({ error: 'No snapshots available' });
+        const files = fs.readdirSync(snapshotDir).filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && !f.startsWith('._'));\n        if (files.length === 0) return res.status(404).json({ error: 'No snapshots available' });
 
         let file = null;
         const { id, name } = req.body || {};
