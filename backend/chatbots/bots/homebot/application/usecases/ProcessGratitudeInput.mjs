@@ -203,15 +203,13 @@ export class ProcessGratitudeInput {
    * @private
    */
   async #transcribeVoice(fileId) {
-    if (!this.#aiGateway) {
-      throw new Error('AI gateway not configured for voice transcription');
+    // Use messaging gateway's transcribeVoice method (same as LogFoodFromVoice)
+    if (this.#messagingGateway?.transcribeVoice) {
+      return this.#messagingGateway.transcribeVoice(fileId);
     }
     
-    // Get file URL from Telegram
-    const fileUrl = await this.#messagingGateway.getFileUrl(fileId);
-    
-    // Transcribe using Whisper
-    return this.#aiGateway.transcribeAudio(fileUrl);
+    // Fallback error
+    throw new Error('Voice transcription not available');
   }
 
   /**

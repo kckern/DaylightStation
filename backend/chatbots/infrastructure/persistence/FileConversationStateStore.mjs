@@ -107,12 +107,11 @@ export class FileConversationStateStore {
       expiresAt: data.expiresAt,
     });
 
-    // Check expiration
-    if (state.isExpired) {
-      this.#logger.info('state-store.expired', { chatId: chatId?.toString?.() || String(chatId) });
-      await this.clear(chatId);
-      return null;
-    }
+    // NOTE: We no longer expire sessions based on time alone.
+    // Sessions only get cleared when:
+    // 1. User sends a new message (starts fresh flow)
+    // 2. User completes the flow (explicit clear)
+    // 3. User cancels (explicit clear)
 
     return state;
   }
