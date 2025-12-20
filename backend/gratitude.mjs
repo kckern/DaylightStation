@@ -427,7 +427,8 @@ gratitudeRouter.post('/snapshot/restore', (req, res) => {
         if (!snapshotDir || !fs.existsSync(snapshotDir)) {
             return res.status(404).json({ error: 'No snapshots available' });
         }
-        const files = fs.readdirSync(snapshotDir).filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && !f.startsWith('._'));\n        if (files.length === 0) return res.status(404).json({ error: 'No snapshots available' });
+        const files = fs.readdirSync(snapshotDir).filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && !f.startsWith('._'));
+        if (files.length === 0) return res.status(404).json({ error: 'No snapshots available' });
 
         let file = null;
         const { id, name } = req.body || {};
@@ -504,14 +505,119 @@ gratitudeRouter.get('/new', (req, res) => {
     }
 });
 
-// Placeholder function for printer integration
-export function getSelectionsForPrint() {
-    // This function is referenced by printer.mjs
-    // Return empty selections for now - can be implemented later
-    return {
-        gratitude: [],
-        hopes: []
-    };
+/**
+ * Resolve display name for a user
+ * Priority: group_label > display_name > name > capitalized username
+ * @param {string} userId - Username to resolve
+ * @returns {string} Display name
+ */
+function resolveDisplayName(userId) {
+    if (!userId) return 'Unknown';
+    const profile = configService.getUserProfile(userId);
+    return profile?.group_label 
+        || profile?.display_name 
+        || profile?.name 
+        || userId.charAt(0).toUpperCase() + userId.slice(1);
 }
+
+/**
+ * Get selections formatted for printing with user display names
+ * Returns enriched selection objects with displayName and printCount
+ * @returns {{ gratitude: SelectionForPrint[], hopes: SelectionForPrint[] }}
+ */
+export function getSelectionsForPrint() {
+    const categories = ['gratitude', 'hopes'];
+    const result = {};
+    
+    for (const category of categories) {
+        const selections = getSelections(category);
+        
+        result[category] = selections.map(selection => ({
+            id: selection.id,
+            userId: selection.userId,
+            displayName: resolveDisplayName(selection.userId),
+            item: selection.item,
+            datetime: selection.datetime,
+            printCount: Array.isArray(selection.printed) ? selection.printed.length : 0
+        }));
+    }
+    
+    return result;
+}
+
+/**
+ * Mark selections as printed by appending timestamp to their printed array
+ * @param {string} category - 'gratitude' or 'hopes'
+ * @param {string[]} selectionIds - Array of selection entry IDs to mark
+ */
+export function markSelectionsAsPrinted(category, selectionIds) {
+    if (!['gratitude', 'hopes'].includes(category)) {
+        console.warn(`Invalid category for markSelectionsAsPrinted: ${category}`);
+        return;
+    }
+    
+    if (!Array.isArray(selectionIds) || selectionIds.length === 0) {
+        return;
+    }
+    
+    const selections = getSelections(category);
+    const timestamp = new Date().toISOString();
+    let modified = false;
+    
+    for (const selection of selections) {
+        if (selectionIds.includes(selection.id)) {
+            if (!Array.isArray(selection.printed)) {
+                selection.printed = [];
+            }
+            selection.printed.push(timestamp);
+            modified = true;
+        }
+    }
+    
+    if (modified) {
+        setSelections(category, selections);
+    }
+}
+
+/**
+ * Generate Prayer Card canvas image
+ * GET /api/gratitude/card - Returns PNG image
+ * Query params:
+ *   - upsidedown: 'true' to flip for mounted printer
+ *   - mark: 'true' to mark items as printed (default: false)
+ */
+gratitudeRouter.get('/card', async (req, res) => {
+    try {
+        // Dynamically import canvas function to avoid circular dependency
+        const { createCanvasTypographyDemo } = await import('./printer.mjs');
+        
+        const upsidedown = req.query.upsidedown === 'true';
+        const shouldMark = req.query.mark === 'true';
+        
+        const { canvas, selectedIds } = await createCanvasTypographyDemo(upsidedown);
+        
+        // Mark items as printed if requested
+        if (shouldMark && selectedIds) {
+            if (selectedIds.gratitude?.length > 0) {
+                markSelectionsAsPrinted('gratitude', selectedIds.gratitude);
+            }
+            if (selectedIds.hopes?.length > 0) {
+                markSelectionsAsPrinted('hopes', selectedIds.hopes);
+            }
+        }
+        
+        // Convert to PNG buffer
+        const buffer = canvas.toBuffer('image/png');
+        
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', buffer.length);
+        res.setHeader('Content-Disposition', 'inline; filename="prayer-card.png"');
+        res.send(buffer);
+        
+    } catch (error) {
+        console.error('Prayer card generation error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 export default gratitudeRouter;
