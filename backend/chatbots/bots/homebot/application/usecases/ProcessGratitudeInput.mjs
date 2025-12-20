@@ -12,17 +12,22 @@ import { createLogger } from '../../../../_lib/logging/index.mjs';
 /**
  * AI prompt for extracting gratitude items
  */
-const EXTRACTION_PROMPT = `You are extracting gratitude or hope items from user input.
+const EXTRACTION_PROMPT = `You are extracting gratitude or hope items from user input. Be GENEROUS in interpretation.
 
 User input: "{text}"
 
-Extract a list of distinct items the user is grateful for or hoping for.
+Extract a list of distinct items. Be loose and inclusive - almost anything can be a gratitude item.
 Clean up grammar and format each as Title Case (2-5 words max per item).
-If the input doesn't contain gratitude/hope items, return an empty array.
 
-Also determine if these are primarily:
-- "gratitude": Things they're thankful for (past/present) - e.g., "sunny weather", "good health", "family"
-- "hopes": Things they wish for (future) - e.g., "good grades", "new job", "vacation"
+IMPORTANT: 
+- If the input contains ANY nouns or concepts, treat them as gratitude items
+- Single words like "coffee", "sunshine", "pizza" are valid gratitude items
+- Short phrases work too: "good day", "my dog", "warm bed"
+- Only return empty array if input is CLEARLY not about things (pure questions, commands, greetings with zero nouns)
+
+Determine category:
+- "hopes": ONLY if clearly future-focused (wish, hope, want, goal, dream, plan)
+- "gratitude": Everything else (default)
 
 Return ONLY a valid JSON object with "items" array and "category" string, no explanation.
 
@@ -30,10 +35,13 @@ Example:
 Input: "sunny weather today, my morning coffee was great, and spending time with family"
 Output: {"items": ["Sunny Weather", "Morning Coffee", "Family Time"], "category": "gratitude"}
 
-Input: "I hope to get good grades and find a nice apartment"
-Output: {"items": ["Good Grades", "Nice Apartment"], "category": "hopes"}
+Input: "pizza"
+Output: {"items": ["Pizza"], "category": "gratitude"}
 
-Input: "hello how are you"
+Input: "I hope to get good grades"
+Output: {"items": ["Good Grades"], "category": "hopes"}
+
+Input: "hi how are you"
 Output: {"items": [], "category": "gratitude"}`;
 
 /**

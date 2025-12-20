@@ -437,15 +437,17 @@ function GratitudeApp({
       });
     }, 4000);
     
-    // 6. Persist to backend
-    newItems.forEach(item => {
-      DaylightAPI(`/api/gratitude/selections/${itemCategory}`, {
-        userId,
-        item: { id: item.id, text: item.text }
-      }, 'POST').catch(err => {
-        logger.error('gratitude.websocket.persist.failed', { error: err.message });
+    // 6. Persist to backend (only if NOT from homebot - homebot already persists)
+    if (payload.source !== 'homebot') {
+      newItems.forEach(item => {
+        DaylightAPI(`/api/gratitude/selections/${itemCategory}`, {
+          userId,
+          item: { id: item.id, text: item.text }
+        }, 'POST').catch(err => {
+          logger.error('gratitude.websocket.persist.failed', { error: err.message });
+        });
       });
-    });
+    }
     
   }, [users]);
 
