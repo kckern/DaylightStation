@@ -97,13 +97,22 @@ export function restartWebsocketServer() {
 }
 
 export function broadcastToWebsockets(data) {
-  if (!wssNav) return;
+  if (!wssNav) {
+    console.warn('[WS] broadcastToWebsockets called but wssNav is null');
+    return;
+  }
   
   const msg = typeof data === 'string' ? data : JSON.stringify(data);
+  const clientCount = wssNav.clients.size;
+  let sentCount = 0;
   
   wssNav.clients.forEach((client) => {
     if (client.readyState === client.OPEN) {
       client.send(msg);
+      sentCount++;
     }
   });
+  
+  console.log(`[WS] Broadcast sent to ${sentCount}/${clientCount} clients:`, 
+    data.topic ? `topic=${data.topic}, action=${data.action}` : msg.substring(0, 100));
 }

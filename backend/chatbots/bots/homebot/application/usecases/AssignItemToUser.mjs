@@ -90,9 +90,8 @@ export class AssignItemToUser {
       }
 
       // 5. Update the confirmation message with success (same message, updated)
-      const emoji = category === 'gratitude' ? '🙏' : '✨';
-      const itemText = items.length === 1 ? 'item' : 'items';
-      const successText = `${emoji} Added ${items.length} ${category} ${itemText} for <b>${displayName}</b>!`;
+      const emoji = category === 'gratitude' ? '💛' : '☀️';
+      const successText = `${emoji} <b>${displayName}</b>: ${items.map(i => i.text).join(' • ')}`;
       
       if (messageId) {
         try {
