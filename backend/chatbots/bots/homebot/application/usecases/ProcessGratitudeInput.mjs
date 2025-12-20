@@ -96,7 +96,7 @@ export class ProcessGratitudeInput {
       let statusMsg;
       try {
         statusMsg = await this.#messagingGateway.sendMessage(conversationId, 
-          '🔄 Processing your gratitude items...'
+          '🔄 Processing your input...'
         );
       } catch (e) {
         this.#logger.error('processGratitudeInput.sendStatus.failed', { error: e.message });
