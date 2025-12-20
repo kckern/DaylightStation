@@ -1053,7 +1053,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 0.1ex 16px;
   background-color: #333;
   border: 1px solid #555;
   border-radius: 8px;
@@ -1116,7 +1116,8 @@ h2 {
   
   .item-text {
     flex: 1;
-    font-size: 1.2rem;
+    font-size: 1.8rem;
+    letter-spacing: 0.02ex;
     font-weight: 500;
     color: #e0e0e0;
   }
