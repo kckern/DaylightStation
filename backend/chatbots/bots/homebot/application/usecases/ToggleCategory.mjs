@@ -36,22 +36,22 @@ export class ToggleCategory {
   async execute(input) {
     const { conversationId, callbackQueryId, messageId, category } = input;
 
-    this.#logger.info('toggleCategory.start', { conversationId, category });
+    this.#logger.info('toggleCategory.start', { conversationId, messageId, category });
 
     try {
-      // 1. Get current state
+      // 1. Get current state (by messageId so each message has its own session)
       if (!this.#conversationStateStore) {
         this.#logger.warn('toggleCategory.noStateStore');
         return;
       }
 
-      const state = await this.#conversationStateStore.get(conversationId);
+      const state = await this.#conversationStateStore.get(conversationId, messageId);
       
       if (!state || state.activeFlow !== 'gratitude_input') {
-        this.#logger.warn('toggleCategory.noActiveFlow', { conversationId });
-        // Session expired - can't toggle
+        this.#logger.warn('toggleCategory.noActiveFlow', { conversationId, messageId });
+        // Session not found for this message - can't toggle
         await this.#messagingGateway.sendMessage(conversationId, 
-          '❌ Session expired. Please send your gratitude items again.'
+          '❌ Session not found. Please send your gratitude items again.'
         );
         return;
       }
@@ -70,9 +70,9 @@ export class ToggleCategory {
           category,
         },
         updatedAt: new Date(),
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
       };
-      await this.#conversationStateStore.set(conversationId, updatedState);
+      await this.#conversationStateStore.set(conversationId, updatedState, messageId);
 
       // 4. Get household members for keyboard
       const members = await this.#getHouseholdMembers();
