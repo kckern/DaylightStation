@@ -1053,11 +1053,13 @@ h2 {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0.1ex 16px;
+  padding: 10px 16px;
   background-color: #333;
   border: 1px solid #555;
   border-radius: 8px;
   transition: all 0.2s ease;
+  min-height: 45px;
+  box-sizing: border-box;
   
   &.focused {
     background-color: #4da6ff;
