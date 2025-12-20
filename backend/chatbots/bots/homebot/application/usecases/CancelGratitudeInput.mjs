@@ -32,7 +32,7 @@ export class CancelGratitudeInput {
   async execute(input) {
     const { conversationId, callbackQueryId, messageId } = input;
 
-    this.#logger.info('cancelGratitudeInput.start', { conversationId });
+    this.#logger.info('cancelGratitudeInput.start', { conversationId, messageId });
 
     try {
       // Delete the confirmation message
@@ -44,10 +44,10 @@ export class CancelGratitudeInput {
         }
       }
 
-      // Clear conversation state
+      // Clear conversation state for this specific message
       if (this.#conversationStateStore) {
         try {
-          await this.#conversationStateStore.delete(conversationId);
+          await this.#conversationStateStore.delete(conversationId, messageId);
         } catch (e) {
           this.#logger.debug('cancelGratitudeInput.clearState.skipped', { error: e.message });
         }
@@ -58,11 +58,12 @@ export class CancelGratitudeInput {
         text: '❌ Cancelled. Send new items whenever you\'re ready!',
       });
 
-      this.#logger.info('cancelGratitudeInput.complete', { conversationId });
+      this.#logger.info('cancelGratitudeInput.complete', { conversationId, messageId });
 
     } catch (error) {
       this.#logger.error('cancelGratitudeInput.failed', {
         conversationId,
+        messageId,
         error: error.message,
       });
     }
