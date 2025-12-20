@@ -434,7 +434,7 @@ class UserDataService {
     if (!fullPath) return false;
 
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      return fs.existsSync(fullPath + '.yaml') || fs.existsSync(fullPath + '.yml');
+      return fs.existsSync(fullPath + '.yml') || fs.existsSync(fullPath + '.yaml');
     }
     return fs.existsSync(fullPath);
   }
@@ -548,7 +548,7 @@ class UserDataService {
     const legacyFullPath = path.join(this.#dataDir, legacyPath);
     const legacyPathWithExt = legacyFullPath.match(/\.(ya?ml)$/) 
       ? legacyFullPath 
-      : (fs.existsSync(legacyFullPath + '.yaml') ? legacyFullPath + '.yaml' : legacyFullPath + '.yml');
+      : (fs.existsSync(legacyFullPath + '.yml') ? legacyFullPath + '.yml' : legacyFullPath + '.yaml');
 
     if (fs.existsSync(legacyPathWithExt)) {
       // Log deprecation warning once per path
@@ -576,7 +576,7 @@ class UserDataService {
     this.#ensureInitialized();
     
     const legacyFullPath = path.join(this.#dataDir, legacyPath);
-    const extensions = ['.yaml', '.yml', ''];
+    const extensions = ['.yml', '.yaml', ''];
     let sourcePath = null;
 
     for (const ext of extensions) {
