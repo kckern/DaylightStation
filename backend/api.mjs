@@ -445,38 +445,39 @@ const initHomeBotRouter = async () => {
     try {
         const configProvider = getConfigProvider();
         
-        // Get chatbots config for bot settings and user mappings
-        const chatbotsConfig = configProvider.get('chatbots') || {};
-        const homebotBotConfig = chatbotsConfig?.bots?.homebot || {};
+        // Use same pattern as nutribot/journalist - getBotConfig handles all the lookup
+        const botConfig = configProvider.getBotConfig('homebot');
         
-        // Debug logging for config resolution
-        logger.info('homebot.config.debug', {
-            hasChatbotsConfig: !!chatbotsConfig,
-            hasBotsConfig: !!chatbotsConfig?.bots,
-            hasHomebotConfig: !!homebotBotConfig,
-            homebotBotConfig: JSON.stringify(homebotBotConfig),
-            telegram_bot_id_from_config: homebotBotConfig.telegram_bot_id,
-            telegram_bot_id_from_env: process.env.TELEGRAM_HOMEBOT_BOT_ID,
+        logger.info('homebot.config.fromProvider', {
+            botId: botConfig.telegramBotId,
+            hasToken: !!botConfig.token,
+            webhookUrl: botConfig.webhookUrl,
         });
         
-        // HomeBot config - token from env, botId from config file
+        // HomeBot config
         const homebotConfig = {
             telegram: {
-                token: process.env.TELEGRAM_HOMEBOT_TOKEN || '',
-                botId: String(homebotBotConfig.telegram_bot_id || process.env.TELEGRAM_HOMEBOT_BOT_ID || ''),
+                token: botConfig.token || process.env.TELEGRAM_HOMEBOT_TOKEN || '',
+                botId: botConfig.telegramBotId,
             },
         };
-        
-        logger.info('homebot.config.resolved', {
-            hasToken: !!homebotConfig.telegram.token,
-            botId: homebotConfig.telegram.botId,
-        });
         
         if (!homebotConfig.telegram.token) {
             logger.warn('homebot.init.noToken', { 
                 message: 'TELEGRAM_HOMEBOT_TOKEN not set - HomeBot will not work' 
             });
         }
+        
+        if (!homebotConfig.telegram.botId) {
+            logger.warn('homebot.init.noBotId', { 
+                message: 'homebot telegram_bot_id not found in config - Telegram gateway disabled' 
+            });
+        }
+        
+        // Get chatbots config for user mappings (same pattern as nutribot)
+        const chatbotsConfig = configService.isReady() 
+            ? configService.getAppConfig('chatbots') || {}
+            : configProvider.get('chatbots') || {};
         
         // Build users config from ConfigService user profiles
         const usersConfig = {};
@@ -513,10 +514,6 @@ const initHomeBotRouter = async () => {
                 homebotConfig.telegram,
                 { logger, aiGateway }
             );
-        } else if (homebotConfig.telegram.token && !homebotConfig.telegram.botId) {
-            logger.warn('homebot.init.noBotId', { 
-                message: 'TELEGRAM_HOMEBOT_BOT_ID not set - Telegram gateway disabled' 
-            });
         }
         
         // Create conversation state store

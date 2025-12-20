@@ -50,9 +50,9 @@ export class ToggleCategory {
       if (!state || state.activeFlow !== 'gratitude_input') {
         this.#logger.warn('toggleCategory.noActiveFlow', { conversationId });
         // Session expired - can't toggle
-        await this.#messagingGateway.sendMessage(conversationId, {
-          text: '❌ Session expired. Please send your gratitude items again.',
-        });
+        await this.#messagingGateway.sendMessage(conversationId, 
+          '❌ Session expired. Please send your gratitude items again.'
+        );
         return;
       }
 
@@ -62,24 +62,31 @@ export class ToggleCategory {
         return;
       }
 
-      // 3. Update state with new category
-      state.flowState.category = category;
-      state.lastUpdated = Date.now();
-      await this.#conversationStateStore.set(conversationId, state);
+      // 3. Update state with new category (clone to avoid read-only issues)
+      const updatedState = {
+        ...state,
+        flowState: {
+          ...state.flowState,
+          category,
+        },
+        updatedAt: new Date(),
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      };
+      await this.#conversationStateStore.set(conversationId, updatedState);
 
       // 4. Get household members for keyboard
       const members = await this.#getHouseholdMembers();
 
       // 5. Rebuild message and keyboard
-      const items = state.flowState.items.map(i => i.text);
+      const items = updatedState.flowState.items.map(i => i.text);
       const messageText = this.#buildConfirmationMessage(items, category);
       const keyboard = this.#buildConfirmationKeyboard(members, category);
 
       // 6. Update the message
-      await this.#messagingGateway.editMessage(conversationId, messageId, {
+      await this.#messagingGateway.updateMessage(conversationId, messageId, {
         text: messageText,
-        parse_mode: 'HTML',
-        reply_markup: keyboard,
+        parseMode: 'HTML',
+        choices: keyboard,
       });
 
       this.#logger.info('toggleCategory.complete', { conversationId, category });
@@ -148,7 +155,7 @@ export class ToggleCategory {
     // Cancel row
     keyboard.push([{ text: '❌ Cancel', callback_data: 'cancel' }]);
 
-    return { inline_keyboard: keyboard };
+    return keyboard;
   }
 }
 

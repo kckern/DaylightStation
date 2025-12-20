@@ -72,20 +72,11 @@ export class AssignItemToUser {
         displayName = member?.displayName || selectedUserId;
       }
 
-      // 3. Delete the confirmation message first (for cleaner UX)
-      if (messageId) {
-        try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
-        } catch (e) {
-          this.#logger.debug('assignItemToUser.deleteMessage.skipped', { error: e.message });
-        }
-      }
-
-      // 4. Persist items to gratitude store
+      // 3. Persist items to gratitude store
       if (this.#gratitudeRepository) {
         await this.#gratitudeRepository.addSelections(category, selectedUserId, items);
         
-        // 5. Broadcast to WebSocket for real-time TV updates
+        // 4. Broadcast to WebSocket for real-time TV updates
         this.#gratitudeRepository.broadcastItems({
           category,
           userId: selectedUserId,
@@ -98,16 +89,27 @@ export class AssignItemToUser {
         });
       }
 
-      // 6. Send success message
+      // 5. Update the confirmation message with success (same message, updated)
       const emoji = category === 'gratitude' ? '🙏' : '✨';
       const itemText = items.length === 1 ? 'item' : 'items';
+      const successText = `${emoji} Added ${items.length} ${category} ${itemText} for <b>${displayName}</b>!`;
       
-      await this.#messagingGateway.sendMessage(conversationId, {
-        text: `${emoji} Added ${items.length} ${category} ${itemText} for <b>${displayName}</b>!`,
-        parse_mode: 'HTML',
-      });
+      if (messageId) {
+        try {
+          await this.#messagingGateway.updateMessage(conversationId, messageId, {
+            text: successText,
+            parseMode: 'HTML',
+          });
+        } catch (e) {
+          // If update fails, send new message
+          this.#logger.debug('assignItemToUser.updateMessage.failed', { error: e.message });
+          await this.#messagingGateway.sendMessage(conversationId, successText, { parseMode: 'HTML' });
+        }
+      } else {
+        await this.#messagingGateway.sendMessage(conversationId, successText, { parseMode: 'HTML' });
+      }
 
-      // 7. Clear conversation state
+      // 6. Clear conversation state
       await this.#conversationStateStore.delete(conversationId);
 
       this.#logger.info('assignItemToUser.complete', { 
@@ -134,9 +136,7 @@ export class AssignItemToUser {
    */
   async #sendError(conversationId, message) {
     try {
-      await this.#messagingGateway.sendMessage(conversationId, {
-        text: `❌ ${message}`,
-      });
+      await this.#messagingGateway.sendMessage(conversationId, `❌ ${message}`);
     } catch (e) {
       this.#logger.error('assignItemToUser.sendError.failed', { error: e.message });
     }
