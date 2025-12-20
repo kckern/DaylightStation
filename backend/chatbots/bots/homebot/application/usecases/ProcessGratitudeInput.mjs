@@ -114,8 +114,10 @@ export class ProcessGratitudeInput {
       }
 
       if (!inputText?.trim()) {
-        await this.#updateStatus(conversationId, statusMsg?.message_id, 
-          '❌ Could not understand input. Please try again with text or voice.');
+        await this.#updateStatus(conversationId, statusMsg?.messageId, 
+          '❌ Could not understand input. Please try again with text or voice.',
+          null,
+          [[{ text: '🗑 Dismiss', callback_data: 'dismiss' }]]);
         return;
       }
 
@@ -126,7 +128,8 @@ export class ProcessGratitudeInput {
         await this.#updateStatus(conversationId, statusMsg?.messageId,
           '❌ No gratitude items found. Please describe what you\'re grateful for.\n\n' +
           '<i>Example: "sunny weather, good coffee, family time"</i>',
-          'HTML');
+          'HTML',
+          [[{ text: '🗑 Dismiss', callback_data: 'dismiss' }]]);
         return;
       }
 
@@ -135,7 +138,9 @@ export class ProcessGratitudeInput {
 
       if (!members || members.length === 0) {
         await this.#updateStatus(conversationId, statusMsg?.messageId,
-          '❌ No household members configured. Please check your household settings.');
+          '❌ No household members configured. Please check your household settings.',
+          null,
+          [[{ text: '🗑 Dismiss', callback_data: 'dismiss' }]]);
         return;
       }
 
@@ -293,10 +298,12 @@ export class ProcessGratitudeInput {
    * Update status message
    * @private
    */
-  async #updateStatus(conversationId, messageId, text, parseMode = null) {
+  async #updateStatus(conversationId, messageId, text, parseMode = null, choices = null) {
     if (!messageId) {
       await this.#messagingGateway.sendMessage(conversationId, text, { 
-        parseMode 
+        parseMode,
+        choices,
+        inline: true,
       });
       return;
     }
@@ -305,11 +312,14 @@ export class ProcessGratitudeInput {
       await this.#messagingGateway.updateMessage(conversationId, messageId, {
         text,
         parseMode,
+        choices,
       });
     } catch (e) {
       // If edit fails, send new message
       await this.#messagingGateway.sendMessage(conversationId, text, { 
-        parseMode 
+        parseMode,
+        choices,
+        inline: true,
       });
     }
   }
