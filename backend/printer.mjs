@@ -1,6 +1,6 @@
 import express from 'express';
 import moment from 'moment-timezone';
-import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint, setFeedButton, queryPrinterStatus, testFeedButton } from './lib/thermalprint.mjs';
+import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint, setFeedButton, queryPrinterStatus, testFeedButton, pingPrinter } from './lib/thermalprint.mjs';
 import { getSelectionsForPrint } from './gratitude.mjs';
 
 const printerRouter = express.Router();
@@ -12,13 +12,14 @@ printerRouter.get('/', (req, res) => {
         status: 'success',
         endpoints: {
             'GET /': 'This help message',
+            'GET /ping': 'Check if printer is reachable (TCP ping)',
             'POST /text': 'Print text with optional formatting',
             'POST /image': 'Print image from path or URL',
             'POST /receipt': 'Print receipt-style document',
             'POST /table/:width?': 'Print ASCII table with statistical data',
             'GET /canvas': 'Generate Prayer Card PNG preview (does not track prints)',
             'GET /canvas/preview': 'Alias for /canvas - preview without tracking',
-            'GET /canvas/print': 'Generate Prayer Card, mark items as printed, send to printer',
+            'GET /canvas/print': 'Generate Prayer Card, send to printer (no tracking)',
             'GET /checkerboard/:width?': 'Print checkerboard pattern (width in squares, default 48)',
             'GET /img/:filename': 'Find image file, convert to B&W 575px wide and print',
             'POST /print': 'Print custom print job object',
@@ -28,6 +29,17 @@ printerRouter.get('/', (req, res) => {
             'GET /feed-button/test': 'Test feed button functionality'
         }
     });
+});
+
+// Ping printer - check if reachable without sending any print data
+printerRouter.get('/ping', async (req, res) => {
+    try {
+        const result = await pingPrinter();
+        const statusCode = result.success ? 200 : (result.configured ? 503 : 501);
+        res.status(statusCode).json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // Print simple text
