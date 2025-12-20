@@ -187,10 +187,18 @@ function generateTestTableData(width) {
 }
 
 /**
- * Select items for printing using smart randomization
- * Priority: unprinted items first (printCount === 0), then least-printed items
- * Random selection within items of equal priority
- * @param {Array} items - Array of selection objects with printCount property
+ * Select items for printing using recency-weighted randomization
+ * 
+ * Recency buckets (non-inclusive boundaries):
+ *   50% - submitted in last 7 days
+ *   20% - submitted 7-14 days ago
+ *   15% - submitted 14-30 days ago
+ *   15% - submitted over 30 days ago
+ * 
+ * Within each bucket, prioritize by printCount (lowest first)
+ * If a bucket is empty, merge to nearest available bucket
+ * 
+ * @param {Array} items - Array of selection objects with printCount and datetime
  * @param {number} count - Number of items to select
  * @returns {Array} Selected items
  */
@@ -198,26 +206,116 @@ function selectItemsForPrint(items, count) {
     if (!items || items.length === 0) return [];
     if (items.length <= count) return [...items];
     
-    const selected = [];
-    const available = [...items];
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
     
-    while (selected.length < count && available.length > 0) {
-        // Find minimum printCount among available items
-        const minPrintCount = Math.min(...available.map(i => i.printCount));
+    // Define recency buckets with weights
+    const bucketDefs = [
+        { maxDays: 7, weight: 50 },    // 0-7 days: 50%
+        { maxDays: 14, weight: 20 },   // 7-14 days: 20%
+        { maxDays: 30, weight: 15 },   // 14-30 days: 15%
+        { maxDays: Infinity, weight: 15 } // 30+ days: 15%
+    ];
+    
+    // Categorize items into buckets
+    const buckets = bucketDefs.map(() => []);
+    
+    for (const item of items) {
+        const itemDate = new Date(item.datetime).getTime();
+        const ageMs = now - itemDate;
+        const ageDays = ageMs / DAY_MS;
         
-        // Get all candidates with this minimum count
-        const candidates = available.filter(i => i.printCount === minPrintCount);
+        let prevMax = 0;
+        for (let i = 0; i < bucketDefs.length; i++) {
+            if (ageDays >= prevMax && ageDays < bucketDefs[i].maxDays) {
+                buckets[i].push(item);
+                break;
+            }
+            prevMax = bucketDefs[i].maxDays;
+        }
+    }
+    
+    // Sort each bucket by printCount (ascending - least printed first)
+    for (const bucket of buckets) {
+        bucket.sort((a, b) => a.printCount - b.printCount);
+    }
+    
+    /**
+     * Pick one item from a bucket, prioritizing lowest printCount
+     * Random selection within items of equal printCount
+     */
+    function pickFromBucket(bucket) {
+        if (bucket.length === 0) return null;
         
-        // Random selection from candidates
-        const randomIndex = Math.floor(Math.random() * candidates.length);
-        const picked = candidates[randomIndex];
+        const minPrintCount = bucket[0].printCount; // Already sorted
+        const candidates = bucket.filter(i => i.printCount === minPrintCount);
+        const idx = Math.floor(Math.random() * candidates.length);
+        const picked = candidates[idx];
         
-        selected.push(picked);
+        // Remove from bucket
+        const bucketIdx = bucket.findIndex(i => i.id === picked.id);
+        if (bucketIdx !== -1) bucket.splice(bucketIdx, 1);
         
-        // Remove picked item from available pool
-        const availableIndex = available.findIndex(i => i.id === picked.id);
-        if (availableIndex !== -1) {
-            available.splice(availableIndex, 1);
+        return picked;
+    }
+    
+    /**
+     * Get available bucket weights, merging empty buckets to nearest
+     * Returns array of { bucketIndex, weight }
+     */
+    function getAvailableBuckets() {
+        const available = [];
+        const pendingWeights = [];
+        
+        for (let i = 0; i < buckets.length; i++) {
+            if (buckets[i].length > 0) {
+                // This bucket has items - add its weight plus any pending weights
+                const totalWeight = bucketDefs[i].weight + pendingWeights.reduce((a, b) => a + b, 0);
+                available.push({ bucketIndex: i, weight: totalWeight });
+                pendingWeights.length = 0; // Clear pending
+            } else {
+                // Empty bucket - accumulate weight to merge with nearest
+                pendingWeights.push(bucketDefs[i].weight);
+            }
+        }
+        
+        // If there are remaining pending weights (all later buckets empty),
+        // add them to the last available bucket
+        if (pendingWeights.length > 0 && available.length > 0) {
+            available[available.length - 1].weight += pendingWeights.reduce((a, b) => a + b, 0);
+        }
+        
+        return available;
+    }
+    
+    /**
+     * Select a bucket based on weights
+     */
+    function selectBucketByWeight() {
+        const available = getAvailableBuckets();
+        if (available.length === 0) return -1;
+        
+        const totalWeight = available.reduce((sum, b) => sum + b.weight, 0);
+        let random = Math.random() * totalWeight;
+        
+        for (const { bucketIndex, weight } of available) {
+            random -= weight;
+            if (random <= 0) return bucketIndex;
+        }
+        
+        return available[available.length - 1].bucketIndex;
+    }
+    
+    // Select items
+    const selected = [];
+    
+    while (selected.length < count) {
+        const bucketIndex = selectBucketByWeight();
+        if (bucketIndex === -1) break; // No items left
+        
+        const picked = pickFromBucket(buckets[bucketIndex]);
+        if (picked) {
+            selected.push(picked);
         }
     }
     
