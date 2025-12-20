@@ -20,21 +20,54 @@ import { userDataService } from '../../../lib/config/UserDataService.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
+ * Get config directory from environment (same logic as pathResolver.mjs)
+ */
+function getConfigDir() {
+  // Check for explicit environment variable first
+  if (process.env.DAYLIGHT_CONFIG_PATH) {
+    return process.env.DAYLIGHT_CONFIG_PATH;
+  }
+  return null;
+}
+
+/**
  * Default search paths for config files (relative to project root)
  */
-const CONFIG_SEARCH_PATHS = [
-  // From chatbots/_lib/config/
-  path.resolve(__dirname, '../../../../config.app.yml'),
-  path.resolve(__dirname, '../../../../config.app-local.yml'),
+function getConfigSearchPaths() {
+  const paths = [];
+  
+  // Highest priority: DAYLIGHT_CONFIG_PATH env var
+  const envConfigDir = getConfigDir();
+  if (envConfigDir) {
+    paths.push(path.join(envConfigDir, 'config.app-local.yml'));
+    paths.push(path.join(envConfigDir, 'config.app.yml'));
+  }
+  
+  // From chatbots/_lib/config/ (relative paths)
+  paths.push(path.resolve(__dirname, '../../../../config.app-local.yml'));
+  paths.push(path.resolve(__dirname, '../../../../config.app.yml'));
+  
   // From project root
-  path.resolve(process.cwd(), 'config.app.yml'),
-  path.resolve(process.cwd(), 'config.app-local.yml'),
-];
+  paths.push(path.resolve(process.cwd(), 'config.app-local.yml'));
+  paths.push(path.resolve(process.cwd(), 'config.app.yml'));
+  
+  return paths;
+}
 
-const SECRETS_SEARCH_PATHS = [
-  path.resolve(__dirname, '../../../../config.secrets.yml'),
-  path.resolve(process.cwd(), 'config.secrets.yml'),
-];
+function getSecretsSearchPaths() {
+  const paths = [];
+  
+  // Highest priority: DAYLIGHT_CONFIG_PATH env var
+  const envConfigDir = getConfigDir();
+  if (envConfigDir) {
+    paths.push(path.join(envConfigDir, 'config.secrets.yml'));
+  }
+  
+  paths.push(path.resolve(__dirname, '../../../../config.secrets.yml'));
+  paths.push(path.resolve(process.cwd(), 'config.secrets.yml'));
+  
+  return paths;
+}
 
 /**
  * Configuration Provider
@@ -68,8 +101,10 @@ export class ConfigProvider {
       return this.#loadYamlFile(overridePath);
     }
 
+    const searchPaths = getConfigSearchPaths();
+    
     // Try local config first (for development overrides)
-    for (const p of CONFIG_SEARCH_PATHS) {
+    for (const p of searchPaths) {
       if (p.includes('-local.yml') && fs.existsSync(p)) {
         const localConfig = this.#loadYamlFile(p);
         // Merge with base config
@@ -83,7 +118,7 @@ export class ConfigProvider {
     }
 
     // Fall back to base config
-    for (const p of CONFIG_SEARCH_PATHS) {
+    for (const p of searchPaths) {
       if (!p.includes('-local.yml') && fs.existsSync(p)) {
         return this.#loadYamlFile(p);
       }
@@ -101,7 +136,8 @@ export class ConfigProvider {
       return this.#loadYamlFile(overridePath);
     }
 
-    for (const p of SECRETS_SEARCH_PATHS) {
+    const searchPaths = getSecretsSearchPaths();
+    for (const p of searchPaths) {
       if (fs.existsSync(p)) {
         return this.#loadYamlFile(p);
       }
