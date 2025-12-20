@@ -140,6 +140,19 @@ export class HomeBotEventRouter {
       });
     }
 
+    if (data === 'dismiss') {
+      // Simply delete the message
+      const gateway = this.#container.getMessagingGateway();
+      if (gateway) {
+        try {
+          await gateway.deleteMessage(conversationId, payload.sourceMessageId || messageId);
+        } catch (e) {
+          this.#logger.debug('homebot.router.dismiss.failed', { error: e.message });
+        }
+      }
+      return null;
+    }
+
     this.#logger.warn('homebot.router.unknownCallback', { data });
     return null;
   }
