@@ -66,7 +66,22 @@ export const findFileFromMediaKey = media_key => {
 mediaRouter.get('/img/*', async (req, res) => {
     const imgPath = req.params[0]; // Capture the full path after /img/
     const baseDir = `${process.env.path.img}`;
-    const filePathWithoutExt = `${baseDir}/${imgPath}`;
+    const fullPath = `${baseDir}/${imgPath}`;
+
+    // 1. Check exact match
+    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+        const ext = path.extname(fullPath).toLowerCase().replace('.', '');
+        const mimeType = ext === 'svg' ? 'image/svg+xml' : `image/${ext}`;
+        res.status(200).set({
+            'Content-Type': mimeType,
+            'Content-Length': fs.statSync(fullPath).size,
+            'Cache-Control': 'public, max-age=31536000',
+            'Access-Control-Allow-Origin': '*'
+        });
+        return fs.createReadStream(fullPath).pipe(res);
+    }
+
+    const filePathWithoutExt = fullPath;
     const exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
 
     // Check for image file
@@ -104,15 +119,19 @@ mediaRouter.get('/img/*', async (req, res) => {
 
     // Fallback to notfound image
     const notFoundPath = `${baseDir}/notfound.png`;
-    res.status(404).set({
-        'Content-Type': 'image/png',
-        'Content-Length': fs.statSync(notFoundPath).size,
-        'Cache-Control': 'public, max-age=31536000',
-        'Expires': new Date(Date.now() + 31536000000).toUTCString(),
-        'Content-Disposition': `inline; filename="notfound.png"`,
-        'Access-Control-Allow-Origin': '*'
-    });
-    return fs.createReadStream(notFoundPath).pipe(res);
+    if (fs.existsSync(notFoundPath)) {
+        res.status(404).set({
+            'Content-Type': 'image/png',
+            'Content-Length': fs.statSync(notFoundPath).size,
+            'Cache-Control': 'public, max-age=31536000',
+            'Expires': new Date(Date.now() + 31536000000).toUTCString(),
+            'Content-Disposition': `inline; filename="notfound.png"`,
+            'Access-Control-Allow-Origin': '*'
+        });
+        return fs.createReadStream(notFoundPath).pipe(res);
+    }
+    // No notfound.png available - return JSON 404
+    return res.status(404).json({ error: 'Image not found', path: imgPath, baseDir });
 });
 
 

@@ -13,7 +13,7 @@ import fs from 'fs';
 
 // Icon path - resolved at runtime when process.env.path is available
 const getIconDir = () => {
-  const icons = process.env.path?.icons || process.env.ICON_DIR || './data/content/img/icons';
+  const icons = process.env.path?.icons || process.env.ICON_DIR || './media/img/icons';
   const iconDir = path.join(icons, 'food');
   return iconDir;
 };

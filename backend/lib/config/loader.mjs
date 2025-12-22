@@ -183,9 +183,9 @@ export function loadAllConfig(options = {}) {
     const derivedPaths = {
       data: dataDir,
       media: path.join(dataDir, '..', 'media'),
-      img: path.join(dataDir, 'content', 'img'),
-      font: path.join(dataDir, 'content', 'fonts'),
-      icons: path.join(dataDir, 'content', 'img', 'icons')
+      img: path.join(dataDir, '..', 'media', 'img'),
+      font: path.join(dataDir, '..', 'media', 'fonts'),
+      icons: path.join(dataDir, '..', 'media', 'img', 'icons')
     };
     
     // In Docker, keep config paths if they exist; locally, always use derived paths

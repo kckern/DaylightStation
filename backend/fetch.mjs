@@ -119,41 +119,8 @@ apiRouter.get('/img/*', async (req, res, next) => {
 });
 
 // Serve static images from content/img (icons, etc.)
-apiRouter.get('/content/img/*', async (req, res, next) => {
-    try {
-        const imgPath = `${dataPath}/content/img/${req.params[0]}`;
-        if (!fs.existsSync(imgPath)) {
-            return res.status(404).json({ error: 'Image not found', path: imgPath });
-        }
-        
-        const ext = path.extname(imgPath).toLowerCase();
-        let contentType = 'image/jpeg';
-        switch (ext) {
-            case '.svg':
-                contentType = 'image/svg+xml';
-                break;
-            case '.png':
-                contentType = 'image/png';
-                break;
-            case '.gif':
-                contentType = 'image/gif';
-                break;
-            case '.webp':
-                contentType = 'image/webp';
-                break;
-            case '.jpg':
-            case '.jpeg':
-                contentType = 'image/jpeg';
-                break;
-        }
-        
-        const imgStream = fs.createReadStream(imgPath);
-        res.setHeader('Content-Type', contentType);
-        imgStream.pipe(res);
-    } catch (err) {
-        next(err);
-    }
-});
+// MOVED TO media.mjs
+// apiRouter.get('/content/img/*', async (req, res, next) => { ... });
 
 apiRouter.get('/infinity/harvest/:table_id?',  async (req, res, next) => {
     try {
