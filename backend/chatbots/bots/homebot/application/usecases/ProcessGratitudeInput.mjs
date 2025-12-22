@@ -17,7 +17,7 @@ const EXTRACTION_PROMPT = `You are extracting gratitude or hope items from user 
 User input: "{text}"
 
 Extract a list of distinct items. Be loose and inclusive - almost anything can be a gratitude item.
-Clean up grammar and format each as Title Case (2-5 words max per item).
+Clean up grammar and format each as Title Case (3-8 words max per item).
 
 IMPORTANT: 
 - If the input contains ANY nouns or concepts, treat them as gratitude items
@@ -26,7 +26,7 @@ IMPORTANT:
 - Only return empty array if input is CLEARLY not about things (pure questions, commands, greetings with zero nouns)
 
 Determine category:
-- "hopes": ONLY if clearly future-focused (wish, hope, want, goal, dream, plan)
+- "hopes": for something the user wishes for or hopes will happen, often with a "wish" or "hope" context
 - "gratitude": Everything else (default)
 
 Return ONLY a valid JSON object with "items" array and "category" string, no explanation.
@@ -40,10 +40,13 @@ Output: {"items": ["Pizza"], "category": "gratitude"}
 
 Input: "I hope to get good grades"
 Output: {"items": ["Good Grades"], "category": "hopes"}
+Input: "Mike has a cold, I wish he feels better soon"
+Output: {"items": ["Mike’s cold to improve"], "category": "hopes"}
+Input: "John and Jane are out of work"
+Output: {"items": ["John and Jane's Employment"], "category": "hopes"}
 
 Input: "hi how are you"
-Output: {"items": [], "category": "gratitude"}`;
-
+Output: {"items": []}`;
 /**
  * Process Gratitude Input Use Case
  */
