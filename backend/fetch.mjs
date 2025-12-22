@@ -829,36 +829,36 @@ apiRouter.get('/test',  async (req, res, next) => {
 // Unified endpoint to fetch data from YAML files with flexible parameters
 apiRouter.get('/*', async (req, res, next) => {
     try {
-        const params = req.params[0].split('/');
-        const filePath = path.join(dataPath, ...params) + '.yaml';
-        const contentFilePath = path.join(dataPath, 'content', ...params) + '.yaml';
-        const key = params.pop(); // Last parameter could be a key
+        const fullPath = req.params[0];
+        const parts = fullPath.split('/');
+        const key = parts.pop();
+        const parentPath = parts.join('/');
 
-        const parentPath = path.join(dataPath, ...params) + '.yaml';
-        const contentParentPath = path.join(dataPath, 'content', ...params) + '.yaml';
-        
-        // Check parent path (try content/ first, then root)
-        const actualParentPath = fs.existsSync(contentParentPath) ? contentParentPath : 
-                                 fs.existsSync(parentPath) ? parentPath : null;
-        if (actualParentPath) {
-            const parentData = yaml.load(readFileSync(actualParentPath, 'utf8'));
-            if (parentData?.[key]) {
+        // 1. Check parent path (try content/ first, then root)
+        if (parentPath) {
+            const contentParentData = loadFile(`content/${parentPath}`);
+            if (contentParentData && contentParentData[key] !== undefined) {
+                return res.json(contentParentData[key]);
+            }
+
+            const parentData = loadFile(parentPath);
+            if (parentData && parentData[key] !== undefined) {
                 return res.json(parentData[key]);
             }
         }
 
-        // Check file path (try content/ first, then root)
-        const actualFilePath = fs.existsSync(contentFilePath) ? contentFilePath :
-                               fs.existsSync(filePath) ? filePath : null;
+        // 2. Check file path (try content/ first, then root)
+        let data = loadFile(`content/${fullPath}`);
+        if (!data) {
+            data = loadFile(fullPath);
+        }
         
-        if (!actualFilePath) {
-            return res.status(404).json({ error: `File not found: ${filePath}` });
+        if (!data) {
+            return res.status(404).json({ error: `File not found: ${fullPath}` });
         }
 
-        const data = yaml.load(readFileSync(actualFilePath, 'utf8'));
-
         // If the key exists in the data, return the specific key's value
-        if (data?.[key]) {
+        if (data[key] !== undefined) {
             return res.json(data[key]);
         }
 

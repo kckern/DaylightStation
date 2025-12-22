@@ -389,7 +389,8 @@ exeRouter.get('/volume/:level', handleVolumeRequest);
 async function handleVolumeRequest(req, res) {
     const { level } = req.params;
     const cycleLevels = [70, 50, 30, 20, 10, 0];
-    const volumeStateFile = 'history/hardware/volLevel';
+    const hid = process.env.household_id || 'default';
+    const volumeStateFile = `households/${hid}/history/hardware/volLevel`;
     try {
         let stout;
         const beforeState = loadFile(volumeStateFile);
