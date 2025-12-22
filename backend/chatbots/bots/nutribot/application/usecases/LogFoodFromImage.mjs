@@ -83,19 +83,6 @@ export class LogFoodFromImage {
         {}
       );
 
-      // Store status message ID in case we need to clean it up later
-      if (this.#conversationStateStore) {
-        try {
-          const state = ConversationState.create(conversationId, {
-            activeFlow: 'analyzing_image',
-            flowState: { statusMessageId: statusMsgId },
-          });
-          await this.#conversationStateStore.set(conversationId, state);
-        } catch (e) {
-          // Non-critical, continue
-        }
-      }
-
       // 2. Get image URL/data for AI
       let imageUrl = imageData.url;
       if (imageData.fileId && this.#messagingGateway.getFileUrl) {
@@ -166,16 +153,7 @@ export class LogFoodFromImage {
         await this.#nutrilogRepository.save(nutriLog);
       }
 
-      // 7. Update conversation state
-      if (this.#conversationStateStore) {
-        const state = ConversationState.create(conversationId, {
-          activeFlow: 'food_confirmation',
-          flowState: { pendingLogUuid: nutriLog.id },
-        });
-        await this.#conversationStateStore.set(conversationId, state);
-      }
-
-      // 8. Delete status message and user's original image, then send photo response
+      // 7. Delete status message and user's original image, then send photo response
       // Delete status message first
       try {
         await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);

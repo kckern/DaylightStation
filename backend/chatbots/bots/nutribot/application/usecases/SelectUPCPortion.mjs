@@ -8,13 +8,12 @@
 import { createLogger } from '../../../../_lib/logging/index.mjs';
 
 /**
- * Select UPC portion use case
+ * Select UPC portion use case (stateless - UUID in callback data)
  */
 export class SelectUPCPortion {
   #messagingGateway;
   #nutrilogRepository;
   #nutrilistRepository;
-  #conversationStateStore;
   #generateDailyReport;
   #logger;
 
@@ -24,7 +23,6 @@ export class SelectUPCPortion {
     this.#messagingGateway = deps.messagingGateway;
     this.#nutrilogRepository = deps.nutrilogRepository;
     this.#nutrilistRepository = deps.nutrilistRepository;
-    this.#conversationStateStore = deps.conversationStateStore;
     this.#generateDailyReport = deps.generateDailyReport;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'nutribot' });
   }
@@ -34,29 +32,23 @@ export class SelectUPCPortion {
    * @param {Object} input
    * @param {string} input.userId
    * @param {string} input.conversationId
+   * @param {string} input.logUuid - UUID of the food log (from callback data)
    * @param {number} input.portionFactor - e.g., 0.5, 1, 1.5, 2
    * @param {string} [input.messageId]
    */
   async execute(input) {
-    const { userId, conversationId, portionFactor, messageId } = input;
+    const { conversationId, logUuid, portionFactor, messageId } = input;
 
-    this.#logger.debug('selectPortion.start', { conversationId, portionFactor });
+    this.#logger.debug('selectPortion.start', { conversationId, logUuid, portionFactor });
 
     try {
-      // 1. Get current state
-      let state = null;
-      if (this.#conversationStateStore) {
-        state = await this.#conversationStateStore.get(conversationId);
+      // Validate logUuid was provided (stateless - no session required)
+      if (!logUuid) {
+        this.#logger.warn('selectPortion.missingLogUuid', { conversationId });
+        return { success: false, error: 'Missing log UUID' };
       }
 
-      if (!state || state.activeFlow !== 'upc_portion') {
-        this.#logger.warn('selectPortion.invalidState', { conversationId, activeFlow: state?.activeFlow });
-        return { success: false, error: 'Not in portion selection mode' };
-      }
-
-      const logUuid = state.flowState?.pendingLogUuid;
-
-      // 2. Load the log (extract userId from conversationId)
+      // Load the log (extract userId from conversationId)
       const userId = conversationId.split('_').pop();
       let nutriLog = null;
       if (this.#nutrilogRepository) {
@@ -68,7 +60,13 @@ export class SelectUPCPortion {
         return { success: false, error: 'Log not found' };
       }
 
-      // 3. Apply portion factor to items
+      // Check if already processed
+      if (nutriLog.status !== 'pending') {
+        this.#logger.info('selectPortion.alreadyProcessed', { logUuid, status: nutriLog.status });
+        return { success: false, error: 'Log already processed' };
+      }
+
+      // Apply portion factor to items
       // Use toJSON() to convert FoodItem instances to plain objects
       const scaledItems = nutriLog.items.map(item => {
         const itemData = typeof item.toJSON === 'function' ? item.toJSON() : item;
@@ -83,12 +81,12 @@ export class SelectUPCPortion {
         };
       });
 
-      // 4. Update nutrilog status to accepted
+      // Update nutrilog status to accepted
       if (this.#nutrilogRepository) {
         await this.#nutrilogRepository.updateStatus(logUuid, 'accepted', userId);
       }
 
-      // 5. Add to nutrilist
+      // Add to nutrilist
       if (this.#nutrilistRepository) {
         // Use local date, not UTC
         const now = new Date();
@@ -102,12 +100,7 @@ export class SelectUPCPortion {
         await this.#nutrilistRepository.saveMany(listItems);
       }
 
-      // 6. Clear conversation state
-      if (this.#conversationStateStore) {
-        await this.#conversationStateStore.delete(conversationId);
-      }
-
-      // 7. Delete the portion selection message
+      // 6. Delete the portion selection message
       if (messageId) {
         try {
           await this.#messagingGateway.deleteMessage(conversationId, messageId);
