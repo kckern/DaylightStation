@@ -115,23 +115,35 @@ const deriveSessionDate = (sessionId) => {
     return `${sessionId.slice(0, 4)}-${sessionId.slice(4, 6)}-${sessionId.slice(6, 8)}`;
 };
 
+const resolveMediaRoot = () => {
+    if (process.env.path && process.env.path.media) {
+        return process.env.path.media;
+    }
+    return path.join(process.cwd(), 'media');
+};
+
 const getSessionStoragePaths = (sessionId) => {
     if (!sessionId) return null;
     const sessionDate = deriveSessionDate(sessionId);
     if (!sessionDate) return null;
     const dataRoot = resolveDataRoot();
+    const mediaRoot = resolveMediaRoot();
     const hid = configService.getDefaultHouseholdId();
-    const relativeBase = `households/${hid}/apps/fitness/sessions/${sessionDate}/${sessionId}`;
-    const sessionDirFs = path.join(dataRoot, 'households', hid, 'apps', 'fitness', 'sessions', sessionDate, sessionId);
-    const screenshotsDirFs = path.join(sessionDirFs, 'screenshots');
+    
+    // Data path: single YML file per session - data/households/{hid}/apps/fitness/sessions/YYYY-MM-DD/{sessionId}.yml
+    const sessionsDir = `households/${hid}/apps/fitness/sessions/${sessionDate}`;
+    const sessionsDirFs = path.join(dataRoot, 'households', hid, 'apps', 'fitness', 'sessions', sessionDate);
+    
+    // Media paths (screenshots) - media/households/{hid}/fitness/sessions/YYYY-MM-DD/{sessionId}/screenshots/
+    const mediaRelativeBase = `households/${hid}/fitness/sessions/${sessionDate}/${sessionId}`;
+    const screenshotsDirFs = path.join(mediaRoot, 'households', hid, 'fitness', 'sessions', sessionDate, sessionId, 'screenshots');
+    
     return {
         sessionDate,
-        relativeBase,
-        sessionDirFs,
+        sessionsDirFs,
         screenshotsDirFs,
-        sessionFileRelative: `${relativeBase}/session`,
-        screenshotsRelativeBase: `${relativeBase}/screenshots`,
-        manifestRelativePath: `${relativeBase}/screenshots/manifest`
+        sessionFileRelative: `${sessionsDir}/${sessionId}`,  // Will become {sessionId}.yml
+        screenshotsRelativeBase: `${mediaRelativeBase}/screenshots`
     };
 };
 
@@ -200,9 +212,17 @@ fitnessRouter.post('/save_session', (req, res) => {
     if (!storagePaths) {
         return res.status(500).json({ error: 'Failed to resolve session storage path' });
     }
-    ensureDirectory(storagePaths.sessionDirFs);
+    ensureDirectory(storagePaths.sessionsDirFs);
     ensureDirectory(storagePaths.screenshotsDirFs);
-    saveFile(storagePaths.sessionFileRelative, filePayload);
+    
+    // Merge with existing file to preserve snapshots
+    const existingData = loadFile(storagePaths.sessionFileRelative) || {};
+    const mergedPayload = { ...existingData, ...filePayload };
+    if (existingData.snapshots) {
+        mergedPayload.snapshots = existingData.snapshots;
+    }
+    
+    saveFile(storagePaths.sessionFileRelative, mergedPayload);
     const filename = `${storagePaths.sessionFileRelative}.yml`;
     //trigger printer (TODO)
 
@@ -257,9 +277,8 @@ fitnessRouter.post('/save_screenshot', (req, res) => {
         if (!storagePaths) {
             return res.status(500).json({ ok: false, error: 'Failed to resolve session directories' });
         }
-        ensureDirectory(storagePaths.sessionDirFs);
+        ensureDirectory(storagePaths.sessionsDirFs);
         ensureDirectory(storagePaths.screenshotsDirFs);
-        const dataRoot = resolveDataRoot();
         const filePath = path.join(storagePaths.screenshotsDirFs, filename);
         fs.writeFileSync(filePath, buffer);
 
@@ -275,26 +294,31 @@ fitnessRouter.post('/save_screenshot', (req, res) => {
             timestamp: timestamp || Date.now()
         };
 
+        // Update snapshots within the session file
         try {
-            const manifestPath = storagePaths.manifestRelativePath;
-            const manifestRaw = loadFile(manifestPath);
-            const manifest = (manifestRaw && typeof manifestRaw === 'object') ? manifestRaw : { sessionId: safeSessionId, captures: [] };
-            if (!Array.isArray(manifest.captures)) {
-                manifest.captures = [];
+            const sessionFilePath = storagePaths.sessionFileRelative;
+            const sessionData = loadFile(sessionFilePath) || { sessionId: safeSessionId };
+            
+            if (!sessionData.snapshots) {
+                sessionData.snapshots = { captures: [] };
             }
-            manifest.sessionId = safeSessionId;
-            manifest.updatedAt = Date.now();
-            manifest.captures = manifest.captures.filter((entry) => entry?.filename !== filename);
-            manifest.captures.push({
+            if (!Array.isArray(sessionData.snapshots.captures)) {
+                sessionData.snapshots.captures = [];
+            }
+            
+            sessionData.snapshots.updatedAt = Date.now();
+            sessionData.snapshots.captures = sessionData.snapshots.captures.filter((entry) => entry?.filename !== filename);
+            sessionData.snapshots.captures.push({
                 index: indexValue,
                 filename,
                 path: relativePath,
                 timestamp: captureInfo.timestamp,
                 size: buffer.length
             });
-            saveFile(manifestPath, manifest);
-        } catch (manifestErr) {
-            console.warn('save_screenshot manifest update failed', manifestErr?.message || manifestErr);
+            
+            saveFile(sessionFilePath, sessionData);
+        } catch (snapshotsErr) {
+            console.warn('save_screenshot snapshots update failed', snapshotsErr?.message || snapshotsErr);
         }
 
         return res.json(captureInfo);
