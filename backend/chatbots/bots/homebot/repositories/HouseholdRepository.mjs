@@ -36,7 +36,7 @@ export class HouseholdRepository {
 
   /**
    * Get all household members with display names
-   * @returns {Array<{username: string, displayName: string}>}
+   * @returns {Array<{username: string, displayName: string, groupLabel: string|null}>}
    */
   async getHouseholdMembers() {
     const hid = this.#getHouseholdId();
@@ -49,6 +49,7 @@ export class HouseholdRepository {
       return {
         username,
         displayName: profile?.display_name || profile?.name || this.#formatUsername(username),
+        groupLabel: profile?.group_label || null,
       };
     });
   }
@@ -56,16 +57,17 @@ export class HouseholdRepository {
   /**
    * Get a single member by username
    * @param {string} username
-   * @returns {Object|null} Member object with username and displayName
+   * @returns {Object|null} Member object with username, displayName, and groupLabel
    */
   async getMemberByUsername(username) {
     const profile = configService.getUserProfile(username);
     if (!profile) {
-      return { username, displayName: this.#formatUsername(username) };
+      return { username, displayName: this.#formatUsername(username), groupLabel: null };
     }
     return {
       username,
       displayName: profile.display_name || profile.name || this.#formatUsername(username),
+      groupLabel: profile.group_label || null,
     };
   }
 

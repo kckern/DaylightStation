@@ -429,10 +429,11 @@ class ConfigService {
   /**
    * Get users belonging to a household
    * @param {string} householdId - Household ID
+   * @param {boolean} [forceReload=false] - Force reload from disk
    * @returns {string[]} Array of usernames
    */
-  getHouseholdUsers(householdId) {
-    const config = this.getHouseholdConfig(householdId);
+  getHouseholdUsers(householdId, forceReload = false) {
+    const config = this.getHouseholdConfig(householdId, forceReload);
     return config?.users || [];
   }
 
@@ -448,6 +449,20 @@ class ConfigService {
     const appConfig = config?.apps?.[appName];
     if (!pathStr) return appConfig;
     return resolvePath(appConfig, pathStr);
+  }
+
+  /**
+   * Get timezone for a household
+   * Falls back to system config, then environment, then default
+   * @param {string} householdId - Household ID
+   * @returns {string} Timezone string (e.g., 'America/Los_Angeles')
+   */
+  getHouseholdTimezone(householdId) {
+    const config = this.getHouseholdConfig(householdId);
+    return config?.timezone 
+      || this.getSystem('timezone') 
+      || process.env.TZ 
+      || 'America/Los_Angeles';
   }
 
   // ============================================================

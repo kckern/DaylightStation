@@ -304,13 +304,15 @@ export class UnifiedEventRouter {
         });
       }
 
-      // UPC portion selection
+      // UPC portion selection (format: portion:UUID:factor)
       case 'portion': {
-        const factor = parseFloat(params[0]) || 1;
+        const logUuid = params[0];
+        const factor = parseFloat(params[1]) || 1;
         const useCase = this.#container.getSelectUPCPortion();
         return useCase.execute({
           userId: conversationId,
           conversationId,
+          logUuid,
           portionFactor: factor,
           messageId: sourceMessageId,
         });

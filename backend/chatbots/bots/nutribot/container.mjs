@@ -273,7 +273,6 @@ export class NutribotContainer {
         messagingGateway: this.getMessagingGateway(),
         nutrilogRepository: this.#nutrilogRepository,
         nutrilistRepository: this.#nutrilistRepository,
-        conversationStateStore: this.#conversationStateStore,
         generateDailyReport: this.getGenerateDailyReport(),
         logger: this.#logger,
       });

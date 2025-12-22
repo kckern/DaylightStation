@@ -84,7 +84,7 @@ export class AcceptFoodLog {
         await this.#nutrilistRepository.saveMany(listItems);
       }
 
-      // 5. Clear conversation state
+      // 5. Clear revision state if any (other flows are stateless)
       if (this.#conversationStateStore) {
         await this.#conversationStateStore.delete(conversationId);
       }

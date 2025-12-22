@@ -1,18 +1,20 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import {
-  DaylightAPI,
-  DaylightHostPath,
-  DaylightWebsocketSubscribe,
-  DaylightWebsocketUnsubscribe
-} from "../../lib/api.mjs";
+import { useEffect, useMemo } from "react";
 import "./AppContainer.scss";
-import  WebcamApp  from "../Input/Webcam.jsx";
-import Gratitude from "./Apps/Gratitude.jsx";
+import Gratitude from "./Apps/Gratitude/Gratitude.jsx";
+import WebSocketApp from "./Apps/WebSocket/WebSocket.jsx";
+import GlympseApp from "./Apps/Glympse/Glympse.jsx";
+import KeyTestApp from "./Apps/KeyTest/KeyTest.jsx";
+import ArtApp from "./Apps/Art/Art.jsx";
+import WebcamApp from "./Apps/Webcam/Webcam.jsx";
+import WrapUp from "./Apps/WrapUp/WrapUp.jsx";
+import OfficeOff from "./Apps/OfficeOff/OfficeOff.jsx";
 import { getChildLogger } from "../../lib/logging/singleton.js";
 
 export default function AppContainer({ open, clear }) {
-  const app = open?.app || open.open || open;
-  const param = open?.param || open.param || open;
+  // Parse app string - may contain param after slash (e.g., "art/nativity")
+  const rawApp = open?.app || open?.open || open;
+  const [app, paramFromApp] = typeof rawApp === 'string' ? rawApp.split('/') : [rawApp, null];
+  const param = paramFromApp || open?.param || null;
   const logger = useMemo(() => getChildLogger({ app: 'app-container' }), []);
   useEffect(() => {
     logger.info('app-container-open', { app, param });
@@ -36,7 +38,7 @@ export default function AppContainer({ open, clear }) {
   if (app === "websocket") return <WebSocketApp path={param} />;
   if (app === "glympse") return <GlympseApp id={param} />;
   if (app === "keycode") return <KeyTestApp />;
-  if (app === "art") return <ArtApp />;
+  if (app === "art") return <ArtApp path={param} />;
   if (app === "webcam") return <WebcamApp />;
   if (app === "wrapup") return <WrapUp clear={clear} />;
   if (app === "office_off") return <OfficeOff clear={clear} />;
@@ -47,138 +49,6 @@ export default function AppContainer({ open, clear }) {
       <pre>
         {JSON.stringify({ app, param, open }, null, 2)}
       </pre>
-    </div>
-  );
-}
-
-
-function WrapUp({ clear }) {
-  useEffect(() => {
-    DaylightAPI("exe/tv/off").then(()=>{
-      //trigger escape key
-      const event = new KeyboardEvent("keydown", { key: "Escape" });
-      window.dispatchEvent(event);
-      clear();
-    });
-  }, []);
-  return null;
-}
-
-function OfficeOff({ clear }) {
-  useEffect(() => {
-    DaylightAPI("exe/office_tv/off").then(()=>{
-      //trigger escape key
-      const event = new KeyboardEvent("keydown", { key: "Escape" });
-      window.dispatchEvent(event);
-      clear();
-    });
-  }, []);
-  return null;
-}
-
-
-function ArtApp() {
-
-  const url = DaylightHostPath() + "/data/img/art.jpg";
-  return <div className="art-app">
-    <img src={url} alt="Daylight Art" />
-  </div>
-
-
-}
-
-
-function KeyTestApp() {
-  const [keyCode, setKeyCode] = useState(null);
-
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === "Enter") {
-        openKeyCodeTest();
-      }
-      setKeyCode(event.keyCode);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
-  const openKeyCodeTest = () => {
-    const newWindow = window.open("https://www.toptal.com/developers/keycode", "_blank");
-    if (newWindow) {
-      newWindow.focus();
-    } else {
-      alert("Please allow popups for this website");
-    }
-  };
-
-  return (
-    <div>
-      <h2>Key Test App</h2>
-      <p>
-        This is a test app to check the key codes of the keyboard.
-        <br />
-        <span>Press any key to see the key code</span>
-        <br />
-        {keyCode && <span>Key Code: {keyCode}</span>}
-      </p>
-    </div>
-  );
-}
-
-
-function GlympseApp({id}){
-  if(!id) return <div>Invalid Glympse ID</div>;
-  const iframeRef = useRef(null);
-  useEffect(() => {
-    if (iframeRef.current) {
-      iframeRef.current.src = `https://glympse.com/${id}`;
-    }
-  }, [id]);
-  return (
-    <div style={{ width: "100%", height: "100%" }}>
-      <iframe
-        style={{ 
-          marginTop: "-50px", 
-          marginLeft: "-50px", 
-          width: "calc(100% + 100px)", 
-          height: "calc(100% + 90px)" }}
-        ref={iframeRef}
-        title="Glympse"
-        frameBorder="0"
-        scrolling="no"
-      />
-    </div>
-  );
-}
-
-function WebSocketApp({ path }) {
-  const [messages, setMessages] = useState([]);
-
-  useEffect(() => {
-    const handleNewMessage = message => {
-      setMessages(prevMessages => [...prevMessages, message]);
-    };
-
-    DaylightWebsocketSubscribe(path, handleNewMessage);
-
-    return () => {
-      DaylightWebsocketUnsubscribe(path);
-    };
-  }, []);
-
-  return (
-    <div>
-      <h3>WebSocket Messages</h3>
-      {messages.length > 0
-        ? messages.map((message, index) =>
-            <div key={index}>
-              {JSON.stringify(message)}
-            </div>
-          )
-        : <p>No messages received yet.</p>}
     </div>
   );
 }

@@ -86,17 +86,6 @@ export class LogFoodFromText {
         }
       }
 
-      // Check if we're in food_confirmation state - might be an implicit revision
-      let existingLogMessageId = null;
-      let pendingLogUuid = null;
-      if (this.#conversationStateStore) {
-        const state = await this.#conversationStateStore.get(conversationId);
-        if (state?.activeFlow === 'food_confirmation' && state?.flowState?.pendingLogUuid) {
-          pendingLogUuid = state.flowState.pendingLogUuid;
-          existingLogMessageId = state.flowState.originalMessageId;
-        }
-      }
-
       // 2. Send "Analyzing..." message (always NEW - we'll handle revision case later)
       let statusMsgId;
       if (existingMessageId) {
@@ -188,16 +177,7 @@ export class LogFoodFromText {
         await this.#nutrilogRepository.save(nutriLog);
       }
 
-      // 7. Update conversation state (include message ID for potential revisions)
-      if (this.#conversationStateStore) {
-        const state = ConversationState.create(conversationId, {
-          activeFlow: 'food_confirmation',
-          flowState: { pendingLogUuid: nutriLog.id, originalMessageId: statusMsgId },
-        });
-        await this.#conversationStateStore.set(conversationId, state);
-      }
-
-      // 8. Update message with date header, food list, and buttons
+      // 7. Update message with date header, food list, and buttons
       const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone() });
       const foodList = this.#formatFoodList(foodItems);
       const buttons = this.#buildActionButtons(nutriLog.id);
