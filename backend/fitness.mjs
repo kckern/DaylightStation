@@ -120,8 +120,9 @@ const getSessionStoragePaths = (sessionId) => {
     const sessionDate = deriveSessionDate(sessionId);
     if (!sessionDate) return null;
     const dataRoot = resolveDataRoot();
-    const relativeBase = `fitness/sessions/${sessionDate}/${sessionId}`;
-    const sessionDirFs = path.join(dataRoot, 'fitness', 'sessions', sessionDate, sessionId);
+    const hid = configService.getDefaultHouseholdId();
+    const relativeBase = `households/${hid}/apps/fitness/sessions/${sessionDate}/${sessionId}`;
+    const sessionDirFs = path.join(dataRoot, 'households', hid, 'apps', 'fitness', 'sessions', sessionDate, sessionId);
     const screenshotsDirFs = path.join(sessionDirFs, 'screenshots');
     return {
         sessionDate,
