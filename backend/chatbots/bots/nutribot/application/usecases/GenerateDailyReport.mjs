@@ -12,6 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { loadFile, saveFile } from '../../../../../lib/io.mjs';
+import { userLoadFile, userSaveFile } from '../../../../../lib/io.mjs';
 
 /**
  * @typedef {Object} GenerateDailyReportInput
@@ -78,8 +79,8 @@ export class GenerateDailyReport {
     try {
       // 0. Delete any existing report message (only one report at a time)
       try {
-        const reportStateFile = `journalist/nutribot/report_state_${userId}`;
-        const reportState = loadFile(reportStateFile) || {};
+        const reportStatePath = this.#config.getReportStatePath(userId);
+        const reportState = loadFile(reportStatePath) || {};
         const lastReportMessageId = reportState.lastReportMessageId;
         
         this.#logger.debug('report.checkPrevious', { 
@@ -219,12 +220,12 @@ export class GenerateDailyReport {
       // 13. Save report message ID for later deletion
       if (messageId) {
         try {
-          const reportStateFile = `journalist/nutribot/report_state_${userId}`;
-          saveFile(reportStateFile, { 
+          const reportStatePath = this.#config.getReportStatePath(userId);
+          saveFile(reportStatePath, { 
             lastReportMessageId: messageId.toString(),
             updatedAt: new Date().toISOString(),
           });
-          this.#logger.debug('report.saveState', { userId, messageId: messageId.toString() });
+          this.#logger.debug('report.saveState', { userId, messageId: messageId.toString(), path: reportStatePath });
         } catch (e) {
           this.#logger.warn('report.saveState.error', { error: e.message });
         }
