@@ -65,11 +65,11 @@ export class AssignItemToUser {
         return;
       }
 
-      // 2. Get user display name
+      // 2. Get user display name (prefer group_label, fallback to displayName)
       let displayName = selectedUserId;
       if (this.#householdRepository) {
         const member = await this.#householdRepository.getMemberByUsername(selectedUserId);
-        displayName = member?.displayName || selectedUserId;
+        displayName = member?.groupLabel || member?.displayName || selectedUserId;
       }
 
       // 3. Persist items to gratitude store

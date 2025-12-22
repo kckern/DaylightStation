@@ -1,12 +1,12 @@
 import { MantineProvider } from "@mantine/core";
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { WebSocketProvider, useWebSocket } from "../../../contexts/WebSocketContext.jsx";
-import { getChildLogger } from '../../../lib/logging/singleton.js';
-import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
+import { WebSocketProvider, useWebSocket } from "../../../../contexts/WebSocketContext.jsx";
+import { getChildLogger } from '../../../../lib/logging/singleton.js';
+import { DaylightAPI, DaylightMediaPath } from '../../../../lib/api.mjs';
 import { isToday, format } from 'date-fns';
 import "./Gratitude.scss";
-import thanksIcon from "../../../assets/icons/thanks.svg";
-import hopesIcon from "../../../assets/icons/hopes.svg";
+import thanksIcon from "../../../../assets/icons/thanks.svg";
+import hopesIcon from "../../../../assets/icons/hopes.svg";
 
 const logger = getChildLogger('gratitude');
 

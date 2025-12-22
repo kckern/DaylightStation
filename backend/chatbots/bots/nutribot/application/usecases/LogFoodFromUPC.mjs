@@ -126,19 +126,7 @@ export class LogFoodFromUPC {
         await this.#nutrilogRepository.save(nutriLog);
       }
 
-      // 8. Update conversation state
-      if (this.#conversationStateStore) {
-        const state = ConversationState.create(conversationId, {
-          activeFlow: 'upc_portion',
-          flowState: { 
-            pendingLogUuid: nutriLog.id,
-            productData: product,
-          },
-        });
-        await this.#conversationStateStore.set(conversationId, state);
-      }
-
-      // 9. Build portion selection message
+      // 8. Build portion selection message (stateless - UUID embedded in callbacks)
       const caption = this.#buildProductCaption(product, foodItem);
       const portionButtons = this.#buildPortionButtons(nutriLog.id);
 
@@ -251,29 +239,30 @@ If unsure, use "default" icon.`,
 
   /**
    * Build portion selection buttons (matches legacy foodlog_hook.mjs format)
+   * Includes logUuid in callback data for stateless processing
    * @private
    */
   #buildPortionButtons(logUuid) {
     return [
       // One serving row
       [
-        { text: '1 serving', callback_data: `portion:1` },
+        { text: '1 serving', callback_data: `portion:${logUuid}:1` },
       ],
       // Fraction row
       [
-        { text: '¼', callback_data: `portion:0.25` },
-        { text: '⅓', callback_data: `portion:0.33` },
-        { text: '½', callback_data: `portion:0.5` },
-        { text: '⅔', callback_data: `portion:0.67` },
-        { text: '¾', callback_data: `portion:0.75` },
+        { text: '¼', callback_data: `portion:${logUuid}:0.25` },
+        { text: '⅓', callback_data: `portion:${logUuid}:0.33` },
+        { text: '½', callback_data: `portion:${logUuid}:0.5` },
+        { text: '⅔', callback_data: `portion:${logUuid}:0.67` },
+        { text: '¾', callback_data: `portion:${logUuid}:0.75` },
       ],
       // Multiplier row
       [
-        { text: '×1¼', callback_data: `portion:1.25` },
-        { text: '×1½', callback_data: `portion:1.5` },
-        { text: '×2', callback_data: `portion:2` },
-        { text: '×3', callback_data: `portion:3` },
-        { text: '×4', callback_data: `portion:4` },
+        { text: '×1¼', callback_data: `portion:${logUuid}:1.25` },
+        { text: '×1½', callback_data: `portion:${logUuid}:1.5` },
+        { text: '×2', callback_data: `portion:${logUuid}:2` },
+        { text: '×3', callback_data: `portion:${logUuid}:3` },
+        { text: '×4', callback_data: `portion:${logUuid}:4` },
       ],
       // Cancel row
       [

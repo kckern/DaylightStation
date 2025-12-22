@@ -259,7 +259,7 @@ gratitudeRouter.post('/selections/:category', (req, res) => {
         id: uuidv4(), // selection entry id
         userId,
         item,
-        datetime: new Date().toISOString(),
+        datetime: moment().tz(configService.getHouseholdTimezone(hid)).toISOString(),
     };
     const updatedSelections = [entry, ...selections];
     setSelections(category, updatedSelections);

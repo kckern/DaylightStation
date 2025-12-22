@@ -1,0 +1,76 @@
+.art-app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+  box-sizing: border-box;
+}
+
+.art-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  
+  // Outer frame - dark wood bevel
+  background: linear-gradient(145deg, #3d3225, #2a2218);
+  box-shadow: 
+    // Inner bevel highlight
+    inset 2px 2px 4px rgba(255, 255, 255, 0.15),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.3);
+  padding: 1%;
+}
+
+.art-matte {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  
+  // Matte with paper texture
+  background: 
+    // Paper texture noise
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E"),
+    // Base matte color - beige/tan
+    linear-gradient(165deg, #e8dcc8 0%, #d9ccb8 50%, #cdc0ab 100%);
+  background-blend-mode: soft-light, normal;
+  
+  // Inner bevel for matte
+  box-shadow:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.15),
+    inset -1px -1px 3px rgba(255, 255, 255, 0.8);
+  
+  // Matte opening padding (equal on all sides)
+  padding: 5%;
+}
+
+.art-inner-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  
+  // Thin inner frame/liner
+  background: linear-gradient(145deg, #4a4035, #2d261f);
+  padding: 0.4%;
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, 0.1),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.3),
+    2px 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.art-app img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #2a2218;
+}

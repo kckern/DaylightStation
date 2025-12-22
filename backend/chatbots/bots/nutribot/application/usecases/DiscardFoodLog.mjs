@@ -44,7 +44,7 @@ export class DiscardFoodLog {
         await this.#nutrilogRepository.updateStatus(logUuid, 'rejected', conversationId);
       }
 
-      // 2. Clear conversation state
+      // 2. Clear revision state if any (other flows are stateless)
       if (this.#conversationStateStore) {
         await this.#conversationStateStore.delete(conversationId);
       }
