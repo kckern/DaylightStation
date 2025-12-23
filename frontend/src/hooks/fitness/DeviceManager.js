@@ -19,6 +19,10 @@ export class Device {
     this.removalCountdown = Number.isFinite(data.removalCountdown) ? data.removalCountdown : null;
     this.lastSignificantActivity = data.lastSignificantActivity || this.lastSeen;
 
+    // 5A: Track last occupant for detecting reassignments
+    this.lastOccupantSlug = data.lastOccupantSlug || null;
+    this._isNew = false; // Flag for newly registered devices
+
     // Sensor Data
     this.heartRate = Number.isFinite(data.heartRate) ? data.heartRate : null;
     this.cadence = Number.isFinite(data.cadence) ? data.cadence : null;
@@ -164,12 +168,16 @@ export class DeviceManager {
     if (!id) return null;
 
     let device = this.devices.get(id);
+    let isNew = false;
     if (!device) {
       device = new Device({ ...data, id });
       this.devices.set(id, device);
+      isNew = true; // 5A: Flag for newly registered devices
     } else {
       device.update(data);
     }
+    // 5A: Attach isNew flag to device object for caller to check
+    device._isNew = isNew;
     return device;
   }
 

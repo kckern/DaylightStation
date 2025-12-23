@@ -143,6 +143,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const stackEvalRef = useRef({ lastFooterAspect: null, lastComputeTs: 0, pending: false });
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
+  const pendingCloseRef = useRef(false); // Track pending close for voice memo guard (4A fix)
   const {
     fitnessPlayQueue,
     setFitnessPlayQueue,
@@ -156,7 +157,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     governedTypeSet: contextGovernedTypeSet,
     governanceState,
     plexConfig,
-    fitnessSessionInstance
+    fitnessSessionInstance,
+    voiceMemoOverlayState, // 4A: Voice memo overlay state for exit guard
+    voiceMemos, // 4B: Voice memos for 15-minute rule
+    openVoiceMemoRedo // 4B: Open voice memo prompt
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
 
@@ -693,11 +697,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const positionSeconds = Math.max(0, Math.floor(lastKnownTimeRef.current || currentTime || 0));
     const percent = durationSeconds > 0 ? Math.min(100, (positionSeconds / durationSeconds) * 100) : null;
 
+    // Check if currently stalled (3C fix)
+    const isStalled = Boolean(resilienceState?.stalled || resilienceState?.waitingToPlay);
+
     let status = 'none';
-    if (durationSeconds < 30 && naturalEnd) {
+    if (durationSeconds < 30 && naturalEnd && !isStalled) {
       status = 'completed';
-    } else if (naturalEnd || (percent != null && percent >= 90)) {
+    } else if ((naturalEnd || (percent != null && percent >= 90)) && !isStalled) {
+      // Only mark completed if not stalled (3C fix)
       status = 'completed';
+    } else if (percent != null && percent >= 90 && isStalled) {
+      // Near end but stalled - don't mark as completed (3C fix)
+      status = 'stalled_near_end';
     } else if (percent != null && percent >= 10) {
       status = 'in_progress';
     }
@@ -714,15 +725,21 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       positionSeconds,
       durationSeconds,
       naturalEnd: Boolean(naturalEnd),
+      isStalled, // Include stall state in payload (3C fix)
       title: currentItem.title || currentItem.label || 'Episode',
       type: currentItem.type || 'episode',
       showId: currentItem.showId || null
     };
-  }, [currentItem, currentTime, duration]);
+  }, [currentItem, currentTime, duration, resilienceState]);
 
   const postEpisodeStatus = useCallback(async ({ naturalEnd = false, reason = 'unknown' } = {}) => {
     const payload = computeEpisodeStatusPayload({ naturalEnd });
     if (!payload) return;
+    // Skip API call for stalled_near_end to avoid false completion logs (3C fix)
+    if (payload.status === 'stalled_near_end') {
+      console.log('[FitnessPlayer] Skipping status post - stalled near end', payload);
+      return;
+    }
     const now = Date.now();
     if (statusUpdateRef.current.inflight) return;
     if (now - statusUpdateRef.current.lastSent < 500) return;
@@ -750,7 +767,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
   }, [computeEpisodeStatusPayload]);
 
-  const handleClose = () => {
+  // Fix 2 (bugbash 4B): Removed stale useMemo - now computed fresh in handleClose
+  // The 15-minute check needs current time, not cached time from useMemo
+
+  // 4A: Execute actual close (separated for voice memo guard)
+  const executeClose = useCallback(() => {
     statusUpdateRef.current.endSent = true;
     postEpisodeStatus({ naturalEnd: false, reason: 'close' });
     if (setQueue) {
@@ -761,7 +782,61 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       window.dispatchEvent(new CustomEvent('fitness-show-refresh', { detail: { showId: currentItem.showId } }));
     }
     setCurrentItem(null);
+    pendingCloseRef.current = false;
+  }, [postEpisodeStatus, setQueue, currentItem?.showId]);
+
+  const handleClose = () => {
+    // 4A: Guard - if voice memo overlay is open, pause video but don't unmount
+    if (voiceMemoOverlayState?.open) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[FitnessPlayer] Close blocked - voice memo overlay open, pausing instead');
+      }
+      pausePlayback();
+      pendingCloseRef.current = true;
+      return;
+    }
+
+    // Fix 2 (bugbash 4B): Compute fresh elapsed time on each close attempt (not stale useMemo)
+    const sessionStartTime = fitnessSessionInstance?.startTime;
+    const threshold = plexConfig?.voice_memo_prompt_threshold_seconds ?? 900; // 15 minutes default
+    const hasMemos = Array.isArray(voiceMemos) && voiceMemos.length > 0;
+    const shouldPrompt = sessionStartTime 
+      && ((Date.now() - sessionStartTime) / 1000 > threshold) 
+      && !hasMemos;
+
+    // 4B: Check 15-minute rule - prompt for voice memo if session is long and no memos
+    if (shouldPrompt && openVoiceMemoRedo) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[FitnessPlayer] 15-minute voice memo prompt triggered');
+      }
+      pausePlayback();
+      pendingCloseRef.current = true;
+      // Pass autoAccept: true so the review will auto-accept after recording
+      // Pass onComplete callback so close happens via callback (not just effect transition)
+      openVoiceMemoRedo(null, { autoAccept: true, onComplete: executeClose });
+      return;
+    }
+
+    executeClose();
   };
+
+  // 4A: Track previous overlay state to detect true→false transition
+  const prevOverlayOpenRef = useRef(voiceMemoOverlayState?.open);
+  
+  // 4A: Effect to execute pending close when voice memo overlay closes (true→false transition only)
+  useEffect(() => {
+    const wasOpen = prevOverlayOpenRef.current;
+    const isOpen = voiceMemoOverlayState?.open;
+    prevOverlayOpenRef.current = isOpen;
+    
+    // Only trigger on true → false transition with pending close
+    if (wasOpen && !isOpen && pendingCloseRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[FitnessPlayer] Voice memo overlay closed (transition detected), executing pending close');
+      }
+      executeClose();
+    }
+  }, [voiceMemoOverlayState?.open, executeClose]);
 
   const handleNext = () => {
     const naturalEnd = currentTime >= Math.max(1, (duration || 0) * 0.98);
@@ -844,13 +919,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       title: enhancedCurrentItem.title,
       seconds: enhancedCurrentItem.seconds,
       shader: 'minimal',
-      volume: videoVolume.volume,
+      // Use volumeRef for synchronous access to avoid race condition (3B fix)
+      volume: videoVolume.volumeRef?.current ?? videoVolume.volume,
       playbackRate: currentItem?.playbackRate || 1.0,
       type: 'video',
       continuous: false,
       autoplay: canAutoplay
     };
-  }, [enhancedCurrentItem, videoVolume.volume, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
+  }, [enhancedCurrentItem, videoVolume.volume, videoVolume.volumeRef, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
 
   const autoplayEnabled = Boolean(playObject?.autoplay);
 

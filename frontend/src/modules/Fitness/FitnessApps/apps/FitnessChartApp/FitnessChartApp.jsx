@@ -18,6 +18,7 @@ const AVATAR_OVERLAP_THRESHOLD = AVATAR_RADIUS * 2;
 const ABSENT_BADGE_RADIUS = 10;
 const COIN_LABEL_GAP = 8;
 const Y_SCALE_BASE = 20;
+const MIN_GRID_LINES = 4;
 const PATH_STROKE_WIDTH = 5;
 const TICK_FONT_SIZE = 20;
 const COIN_FONT_SIZE = 20;
@@ -103,9 +104,65 @@ const findFirstFiniteAfter = (arr = [], index) => {
 	return null;
 };
 
-const useRaceChartWithHistory = (roster, getSeries, timebase) => {
+const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = []) => {
 	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase);
 	const [participantCache, setParticipantCache] = useState({});
+	// Track which historical IDs we've already processed to avoid re-processing on every render
+	const processedHistoricalRef = useRef(new Set());
+
+	// Initialize cache from historical participants (1B fix)
+	// Uses processedHistoricalRef instead of boolean flag to allow late arrivals while avoiding duplicates
+	useEffect(() => {
+		if (!historicalParticipantIds.length || typeof getSeries !== 'function') {
+			return;
+		}
+		
+		setParticipantCache((prev) => {
+			const next = { ...prev };
+			historicalParticipantIds.forEach((slug) => {
+				// Skip if already processed or already in cache
+				if (!slug || next[slug] || processedHistoricalRef.current.has(slug)) return;
+				
+				// Mark as processed to avoid re-processing on subsequent renders
+				processedHistoricalRef.current.add(slug);
+				
+				// Build data for historical participant
+				const { beats, zones } = buildBeatsSeries({ profileId: slug, name: slug }, getSeries, timebase);
+				if (!beats.length) return;
+				
+				const segments = buildSegments(beats, zones);
+				if (!segments.length) return;
+				
+				let lastIndex = -1;
+				let lastValue = null;
+				for (let i = beats.length - 1; i >= 0; i -= 1) {
+					if (Number.isFinite(beats[i])) {
+						lastIndex = i;
+						lastValue = beats[i];
+						break;
+					}
+				}
+				
+				next[slug] = {
+					id: slug,
+					name: slug,
+					profileId: slug,
+					avatarUrl: null,
+					color: ZONE_COLOR_MAP.default,
+					beats,
+					segments,
+					zones,
+					maxVal: Math.max(0, ...beats.filter((v) => Number.isFinite(v))),
+					lastIndex,
+					lastSeenTick: lastIndex,
+					lastValue,
+					isPresent: false,
+					absentSinceTick: lastIndex
+				};
+			});
+			return next;
+		});
+	}, [historicalParticipantIds, getSeries, timebase]);
 
 	useEffect(() => {
 		setParticipantCache((prev) => {
@@ -124,6 +181,7 @@ const useRaceChartWithHistory = (roster, getSeries, timebase) => {
 						const gapSegment = {
 							zone: null,
 							color: ZONE_COLOR_MAP.default,
+							isGap: true,
 							points: [
 								{ i: prevEntry.lastSeenTick, v: prevEntry.lastValue },
 								{ i: firstNewIdx, v: entry.beats[firstNewIdx] }
@@ -280,12 +338,13 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 				<path
 					key={`${path.zone || 'seg'}-${idx}`}
 					d={path.d}
-					stroke={path.color}
+					stroke={path.isGap ? ZONE_COLOR_MAP.default : path.color}
 					fill="none"
 					strokeWidth={PATH_STROKE_WIDTH}
 					opacity={path.opacity ?? 1}
-					strokeLinecap="round"
+					strokeLinecap={path.isGap ? 'butt' : 'round'}
 					strokeLinejoin="round"
+					strokeDasharray={path.isGap ? '4 4' : undefined}
 				/>
 			))}
 		</g>
@@ -359,7 +418,7 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 );
 
 const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
-	const { participants, getUserTimelineSeries, timebase, registerLifecycle } = useFitnessApp('fitness_chart');
+	const { participants, historicalParticipants, getUserTimelineSeries, timebase, registerLifecycle } = useFitnessApp('fitness_chart');
 	const containerRef = useRef(null);
 	const [chartSize, setChartSize] = useState({ width: DEFAULT_CHART_WIDTH, height: DEFAULT_CHART_HEIGHT });
 
@@ -392,12 +451,14 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		return () => resizeObserver.disconnect();
 	}, []);
 
-	const { allEntries, presentEntries, absentEntries, maxValue, maxIndex } = useRaceChartWithHistory(participants, getUserTimelineSeries, timebase);
+	const { allEntries, presentEntries, absentEntries, maxValue, maxIndex } = useRaceChartWithHistory(participants, getUserTimelineSeries, timebase, historicalParticipants);
 	const { width: chartWidth, height: chartHeight } = chartSize;
 	const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, 1);
-	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : 2;
-	const yScaleBase = allEntries.length <= 1 ? 1 : Y_SCALE_BASE;
+	// Ensure paddedMaxValue provides enough range for MIN_GRID_LINES when maxValue is 0 or small
+	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : Y_SCALE_BASE * MIN_GRID_LINES;
+	// Always use Y_SCALE_BASE regardless of entry count for consistent grid spacing
+	const yScaleBase = Y_SCALE_BASE;
 	const [persisted, setPersisted] = useState(null);
 
 	const minDataValue = useMemo(() => {
@@ -479,7 +540,8 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
 		const start = Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
-		const tickCount = 4;
+		// Use MIN_GRID_LINES to ensure consistent grid distribution
+		const tickCount = Math.max(MIN_GRID_LINES, Math.ceil(paddedMaxValue / Y_SCALE_BASE));
 		const span = Math.max(1, paddedMaxValue - start);
 		const values = Array.from({ length: tickCount }, (_, idx) => {
 			const t = idx / Math.max(1, tickCount - 1);

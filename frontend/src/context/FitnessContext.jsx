@@ -28,7 +28,8 @@ const VOICE_MEMO_OVERLAY_INITIAL = {
   mode: null,
   memoId: null,
   autoAccept: false,
-  startedAt: null
+  startedAt: null,
+  onComplete: null // Fix 5 (bugbash 4B): Callback fired when overlay closes
 };
 
 const EMPTY_USER_COLLECTIONS = Object.freeze({
@@ -588,6 +589,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [emitVoiceMemoTelemetry, logVoiceMemo]);
 
   const closeVoiceMemoOverlay = React.useCallback(() => {
+    // Fix 5 (bugbash 4B): Capture onComplete before resetting state
+    const { onComplete } = voiceMemoOverlayState;
     emitVoiceMemoTelemetry('voice_memo_overlay_close', {
       mode: voiceMemoOverlayState.mode,
       memoId: voiceMemoOverlayState.memoId
@@ -597,13 +600,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       memoId: voiceMemoOverlayState.memoId
     });
     setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
-  }, [emitVoiceMemoTelemetry, logVoiceMemo, setVoiceMemoOverlayStateGuarded, voiceMemoOverlayState.memoId, voiceMemoOverlayState.mode]);
+    // Fire onComplete callback after state reset
+    if (typeof onComplete === 'function') {
+      try {
+        onComplete();
+      } catch (_) {
+        // Swallow errors in callback
+      }
+    }
+  }, [emitVoiceMemoTelemetry, logVoiceMemo, setVoiceMemoOverlayStateGuarded, voiceMemoOverlayState]);
 
-  const openVoiceMemoReview = React.useCallback((memoOrId, { autoAccept = false } = {}) => {
+  const openVoiceMemoReview = React.useCallback((memoOrId, { autoAccept, fromRecording = false } = {}) => {
     // Allow optimistic review opens when we have the memo object, even if it hasn't landed in voiceMemos yet.
     const isObject = memoOrId && typeof memoOrId === 'object';
     const id = isObject ? memoOrId.memoId : memoOrId;
     if (!id) return;
+
+    // 4C: Default autoAccept to true for post-recording reviews (not from list)
+    const resolvedAutoAccept = autoAccept !== undefined ? autoAccept : (fromRecording || isObject);
 
     if (!isObject) {
       const existing = getVoiceMemoById(id);
@@ -627,11 +641,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       open: true,
       mode: 'review',
       memoId: id,
-      autoAccept,
+      autoAccept: resolvedAutoAccept,
       startedAt: Date.now()
     });
-    logVoiceMemo('overlay-open-review', { memoId: id, autoAccept });
-    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id, autoAccept });
+    logVoiceMemo('overlay-open-review', { memoId: id, autoAccept: resolvedAutoAccept });
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id, autoAccept: resolvedAutoAccept });
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
 
   const openVoiceMemoList = React.useCallback(() => {
@@ -646,7 +660,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'list', memoId: null });
   }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded]);
 
-  const openVoiceMemoRedo = React.useCallback((memoOrId) => {
+  const openVoiceMemoRedo = React.useCallback((memoOrId, { autoAccept = false, onComplete } = {}) => {
     const id = typeof memoOrId === 'string' ? memoOrId : memoOrId?.memoId;
     if (id) {
       const existing = getVoiceMemoById(id);
@@ -657,7 +671,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             mode: 'list',
             memoId: null,
             autoAccept: false,
-            startedAt: Date.now()
+            startedAt: Date.now(),
+            onComplete: onComplete || null
           });
         } else {
           setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
@@ -669,11 +684,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       open: true,
       mode: 'redo',
       memoId: id || null,
-      autoAccept: false,
-      startedAt: Date.now()
+      autoAccept, // 4B: Pass autoAccept option for 15-minute rule
+      startedAt: Date.now(),
+      onComplete: onComplete || null // Fix 5: Store onComplete callback
     });
-    logVoiceMemo('overlay-open-redo', { memoId: id || null });
-    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'redo', memoId: id || null });
+    logVoiceMemo('overlay-open-redo', { memoId: id || null, autoAccept });
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'redo', memoId: id || null, autoAccept });
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
 
   React.useEffect(() => {

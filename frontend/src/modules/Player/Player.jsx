@@ -645,6 +645,13 @@ const Player = forwardRef(function Player(props, ref) {
     play: () => { withTransport((api) => api.play?.()); },
     pause: () => { withTransport((api) => api.pause?.()); },
     toggle: () => { withTransport((api) => api.toggle?.()); },
+    // Fix 1 (bugbash 3A): Expose advance() for external track skip control
+    advance: (count = 1) => {
+      const advanceFn = isQueue ? advance : singleAdvance;
+      if (typeof advanceFn === 'function') {
+        for (let i = 0; i < Math.max(1, count); i++) advanceFn();
+      }
+    },
     getCurrentTime: () => withTransport((api) => api.getCurrentTime?.()) || 0,
     getDuration: () => withTransport((api) => api.getDuration?.()) || 0,
     getMediaElement: () => controllerRef.current?.transport?.getMediaEl?.() || exposedMediaRef.current,
@@ -655,7 +662,7 @@ const Player = forwardRef(function Player(props, ref) {
     forceMediaReload: (opts) => resilienceControllerRef.current?.forceReload?.(opts),
     forceMediaInfoFetch: (opts) => resilienceControllerRef.current?.forceFetchInfo?.(opts),
     getPlaybackState: () => controllerRef.current?.getPlaybackState?.() || controllerRef.current?.transport?.getPlaybackState?.() || null
-  }), []);
+  }), [isQueue, advance, singleAdvance]);
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
