@@ -1,0 +1,123 @@
+.fitness-chart-app {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
+
+  &.chart-layout-sidebar {
+      // Default styles match sidebar
+  }
+
+  &.chart-layout-full {
+      background: transparent;
+      border: none;
+  }
+
+  &.chart-layout-overlay {
+      background: transparent;
+      border: none;
+      padding: 0;
+  }
+
+  .race-chart-panel__header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+
+    h3 {
+      margin: 0;
+      font-size: 0.9rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    p {
+      margin: 0.1rem 0 0;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.6);
+    }
+  }
+
+  .race-chart-panel__empty {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 0.5rem 0;
+  }
+
+  .race-chart-panel__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .race-chart__svg {
+    width: 100%;
+    height: auto;
+    min-height: 220px;
+    /* Match viewBox ratio (420 / 390) to avoid distortion of circular avatars */
+    aspect-ratio: 14 / 13;
+    overflow: visible;
+  }
+
+  .race-chart__grid line {
+    stroke: rgba(255, 255, 255, 0.08);
+    stroke-width: 1;
+  }
+
+  .race-chart__axes {
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.25));
+
+    line {
+      stroke: rgba(255, 255, 255, 0.28);
+      stroke-width: 1.5;
+    }
+
+    text {
+      fill: rgba(255, 255, 255, 0.75);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+  }
+
+  .race-chart__avatar-fo {
+    overflow: visible;
+    pointer-events: none;
+
+    .race-chart__avatar {
+      width: 100%;
+      height: 100%;
+      aspect-ratio: 1 / 1;
+      max-width: none;
+    }
+  }
+
+  .race-chart__avatar-group {
+    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+  }
+
+  .race-chart__avatar-img {
+    pointer-events: none;
+    border-radius: 50%;
+  }
+
+  .race-chart__avatar-backdrop {
+    fill: rgba(0, 0, 0, 0.6);
+  }
+  
+  .race-chart__coin-label {
+      fill: white;
+      font-weight: bold;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  }
+}
