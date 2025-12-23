@@ -254,5 +254,5 @@ export const refreshFinancialData = async (noDL) => {
 
     budgetLogger.info('budget.compile.triggered');
     await compileBudget();
-    return { status: 'success', transactionCount: transactions?.length };
+    return { status: 'success' };
 }
