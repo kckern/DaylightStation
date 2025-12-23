@@ -4,7 +4,8 @@ import useVoiceMemoRecorder from '../FitnessSidebar/useVoiceMemoRecorder.js';
 import './VoiceMemoOverlay.scss';
 import { playbackLog } from '../../Player/lib/playbackLogger.js';
 
-const VOICE_MEMO_AUTO_ACCEPT_MS = 4000;
+// Auto-accept countdown for review mode (4C: extended to 5000ms)
+const VOICE_MEMO_AUTO_ACCEPT_MS = 5000;
 
 const Icons = {
   Review: () => (
@@ -123,6 +124,8 @@ const VoiceMemoOverlay = ({
   }, [overlayState?.memoId, voiceMemos]);
 
   const [autoAcceptProgress, setAutoAcceptProgress] = useState(0);
+  // Fix 6 (bugbash 4C.5): Track if user cancelled auto-accept via interaction
+  const [autoAcceptCancelled, setAutoAcceptCancelled] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
   const micLevelRafRef = React.useRef(null);
   const liveMessageRef = React.useRef('');
@@ -140,6 +143,17 @@ const VoiceMemoOverlay = ({
     logVoiceMemo('overlay-accept', { memoId: overlayState?.memoId || null });
     onClose?.();
   }, [logVoiceMemo, onClose, overlayState?.memoId]);
+
+  // Fix 6 (bugbash 4C.5): Cancel auto-accept countdown on any user interaction
+  const handleUserInteraction = useCallback(() => {
+    if (overlayState?.autoAccept && !autoAcceptCancelled) {
+      setAutoAcceptCancelled(true);
+      setAutoAcceptProgress(0);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[VoiceMemo] Auto-accept cancelled by user interaction');
+      }
+    }
+  }, [overlayState?.autoAccept, autoAcceptCancelled]);
 
   const handleReviewSelect = useCallback((memoRef) => {
     if (!memoRef) return;
@@ -187,7 +201,8 @@ const VoiceMemoOverlay = ({
     const stored = targetId ? (onReplaceMemo?.(targetId, memo) || memo) : (onAddMemo?.(memo) || memo);
     const nextTarget = stored || memo;
     if (nextTarget) {
-      onOpenReview?.(nextTarget, { autoAccept: false });
+      // 4C: Pass fromRecording: true to enable auto-accept for post-recording review
+      onOpenReview?.(nextTarget, { autoAccept: true, fromRecording: true });
     } else {
       onClose?.();
     }
@@ -231,7 +246,8 @@ const VoiceMemoOverlay = ({
   }, [logVoiceMemo, overlayState?.memoId, setRecorderError, setRecorderState, startRecording]);
 
   useEffect(() => {
-    if (!overlayState?.open || overlayState.mode !== 'review' || !overlayState.autoAccept) {
+    // Fix 6 (bugbash 4C.5): Don't run countdown if cancelled by user
+    if (!overlayState?.open || overlayState.mode !== 'review' || !overlayState.autoAccept || autoAcceptCancelled) {
       setAutoAcceptProgress(0);
       return undefined;
     }
@@ -254,12 +270,13 @@ const VoiceMemoOverlay = ({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [overlayState?.open, overlayState?.mode, overlayState?.autoAccept, overlayState?.startedAt, handleAccept]);
+  }, [overlayState?.open, overlayState?.mode, overlayState?.autoAccept, overlayState?.startedAt, handleAccept, autoAcceptCancelled, logVoiceMemo]);
 
   useEffect(() => {
     if (!overlayState?.open) {
       setAutoAcceptProgress(0);
       setMicLevel(0);
+      setAutoAcceptCancelled(false); // Fix 6: Reset cancelled flag when overlay closes
     }
   }, [overlayState?.open]);
 
@@ -385,7 +402,12 @@ const VoiceMemoOverlay = ({
   const micLabel = preferredMicrophoneId ? `Mic: ${preferredMicrophoneId}` : '';
 
   return (
-    <div className={`voice-memo-overlay voice-memo-overlay--${mode}`}>
+    <div 
+      className={`voice-memo-overlay voice-memo-overlay--${mode}`}
+      onMouseMove={handleUserInteraction}
+      onTouchStart={handleUserInteraction}
+      onKeyDown={handleUserInteraction}
+    >
       <div className="voice-memo-overlay__panel">
         <div className="voice-memo-overlay__header">
           <div className="voice-memo-overlay__title">{titleText}</div>

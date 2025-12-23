@@ -179,21 +179,30 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
         // Only update if track actually changed
         if (newKey && newKey !== prevKey) {
           // Find the full track data from playQueueData instead of using minimal progressData.media
+          // Search in the original queue data as it's immutable
           const fullTrackData = playQueueData?.find(track => {
             const trackKey = track.key || track.plex || track.media_key;
             return trackKey === newKey;
           });
           
           if (fullTrackData) {
-            console.log('[Track Change] Detected:', {
-              prevKey,
-              newKey,
-              prevTitle: prev?.title,
-              newTitle: fullTrackData?.title,
-              artist: fullTrackData?.artist
-            });
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Track Change] Detected via progress callback:', {
+                prevKey,
+                newKey,
+                prevTitle: prev?.title,
+                newTitle: fullTrackData?.title,
+                artist: fullTrackData?.artist
+              });
+            }
             return fullTrackData;
           }
+          // Fallback: use media data from progress if not found in queue
+          // This can happen when Player auto-advances and we don't have full metadata
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Track Change] Using progress media data (not in queue):', newKey);
+          }
+          return mediaData;
         }
         return prev;
       });
@@ -241,22 +250,24 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
   }, [sessionInstance, currentTrackIdentity, currentTrack, selectedPlaylistId, musicVolumeState.volume, musicEnabled]);
 
   const handleNext = () => {
-    console.log('[Next] Button clicked');
-    setPlayQueueData(prevQueue => {
-      if (!prevQueue || prevQueue.length <= 1) {
-        return prevQueue;
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Next] Button clicked');
+    }
+    // Use Player's advance API instead of mutating local queue state
+    // This keeps the Player's internal index in sync with our state
+    if (typeof audioPlayerRef.current?.advance === 'function') {
+      audioPlayerRef.current.advance(1);
+      // Reset progress display - currentTrack will be updated via handleProgress callback
+      setProgress(0);
+      setDuration(0);
+    } else {
+      // Log warning - Player.advance() should always be available
+      // DO NOT mutate queue here - it causes desync between Player internal state and local state
+      // Instead, let handleProgress() handle track updates when Player auto-advances
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[FitnessMusicPlayer] Player.advance() not available - track change will occur via progress callback');
       }
-
-      const nextQueue = prevQueue.slice(1);
-      const nextTrack = nextQueue[0];
-      if (nextTrack) {
-        setCurrentTrack(nextTrack);
-        setProgress(0);
-        setDuration(0);
-      }
-
-      return nextQueue;
-    });
+    }
   };
 
   const handleTogglePlayPause = () => {

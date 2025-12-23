@@ -1,10 +1,16 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import useAppStorage from './useAppStorage';
 
 const useFitnessApp = (appId) => {
   const fitnessCtx = useFitnessContext();
   const storage = useAppStorage(appId);
+  
+  // Fix 8 (bugbash 1B): Memoize historicalParticipants to prevent infinite effect loops
+  // Only recompute when session changes, not on every render
+  const historicalParticipants = useMemo(() => {
+    return fitnessCtx.fitnessSessionInstance?.getHistoricalParticipants?.() || [];
+  }, [fitnessCtx.fitnessSessionInstance?.sessionId]);
   
   // Lifecycle event handlers (registered via useEffect in app)
   const lifecycleRef = useRef({
@@ -48,6 +54,9 @@ const useFitnessApp = (appId) => {
     
     // Participants & vitals
     participants: fitnessCtx.participantRoster,
+    // Historical participants (all users who have ever been in session, including those who left)
+    // Fix 8: Use memoized value instead of calling getHistoricalParticipants() on each render
+    historicalParticipants,
     getUserVitals: fitnessCtx.getUserVitals,
     getUserTimelineSeries: fitnessCtx.getUserTimelineSeries,
     
