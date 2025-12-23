@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LoadingOverlay, Alert, Text } from '@mantine/core';
 import { DaylightAPI, normalizeImageUrl } from '../../lib/api.mjs';
+import FitnessAppMenu from './FitnessApps/FitnessAppMenu.jsx';
 import './FitnessMenu.scss';
 
 const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue }) => {
@@ -17,6 +18,11 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     const col = fitnessConfig.plex?.collections;
     return Array.isArray(col) ? col : [];
   }, [fitnessConfig]);
+
+  const activeAppMenu = useMemo(() => {
+    if (!fitnessConfig?.plex?.app_menus) return null;
+    return fitnessConfig.plex.app_menus.find(m => String(m.id) === String(activeCollection));
+  }, [fitnessConfig, activeCollection]);
 
   // Scroll helpers: find nearest scrollable container and ensure element is fully visible
   const getScrollParent = (el, axis = 'y') => {
@@ -122,6 +128,12 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   useEffect(() => {
     const loadShows = async () => {
       try {
+        if (activeAppMenu) {
+          setShows([]);
+          setShowsLoading(false);
+          return;
+        }
+
         if (!collectionsFromConfig.length) return;
 
         let normalizedSelection = collectionsFromConfig[0];
@@ -205,6 +217,16 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
       <Alert color="red">
         <Text c="white">Error loading fitness shows: {error}</Text>
       </Alert>
+    );
+  }
+
+  if (activeAppMenu) {
+    return (
+      <FitnessAppMenu 
+        activeAppMenuId={activeAppMenu.id} 
+        onAppSelect={(appId, manifest) => onContentSelect && onContentSelect('app', { id: appId, ...manifest })}
+        onBack={() => {}} 
+      />
     );
   }
 
