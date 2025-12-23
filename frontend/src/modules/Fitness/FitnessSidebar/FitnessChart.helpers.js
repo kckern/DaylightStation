@@ -44,24 +44,32 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}) => {
   if (!targetId || typeof getSeries !== 'function') return { beats: [], zones: [] };
 
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
-  const coinsRaw = getSeries(targetId, 'coins_total', { clone: true }) || null;
   const zones = getSeries(targetId, 'zone_id', { clone: true }) || [];
 
+  // Primary source: coins_total from TreasureBox (single source of truth)
+  const coinsRaw = getSeries(targetId, 'coins_total', { clone: true }) || null;
   if (Array.isArray(coinsRaw) && coinsRaw.length > 0) {
-    const beats = forwardBackwardFill(coinsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? v : null)));
+    // Apply Math.floor for consistency with TreasureBox accumulator
+    const beats = forwardBackwardFill(coinsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null)));
     return { beats, zones };
   }
 
-  // Fallback: use heart beats accumulation if coins are unavailable
+  // Secondary source: pre-computed heart_beats if available
   const beatsRaw = getSeries(targetId, 'heart_beats', { clone: true }) || null;
   if (Array.isArray(beatsRaw) && beatsRaw.length > 0) {
-    const beats = beatsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? v : null));
+    // Apply Math.floor for consistency
+    const beats = beatsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null));
     return { beats, zones };
   }
 
+  // Last resort fallback: compute from heart_rate (deprecated - should use TreasureBox)
+  // This fallback is kept for backwards compatibility but should not be primary path
   const heartRate = getSeries(targetId, 'heart_rate', { clone: true }) || [];
   if (!Array.isArray(heartRate) || heartRate.length === 0) return { beats: [], zones };
 
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(`[FitnessChart] Falling back to heart_rate calculation for ${targetId} - consider using TreasureBox coins_total`);
+  }
   const beats = [];
   let total = 0;
   const intervalSeconds = intervalMs / 1000;
@@ -70,7 +78,8 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}) => {
     if (hrVal != null && hrVal > 0) {
       total += (hrVal / 60) * intervalSeconds;
     }
-    beats[idx] = total;
+    // Apply Math.floor for consistency with TreasureBox
+    beats[idx] = Math.floor(total);
   });
   return { beats, zones };
 };
@@ -98,9 +107,11 @@ export const buildSegments = (beats = [], zones = []) => {
     const zoneRaw = zones?.[i] ?? null;
     const zone = zoneRaw || lastZone || null;
     const color = ZONE_COLOR_MAP[zone] || ZONE_COLOR_MAP.default;
+    // Mark segments as gaps when zone is null (user absent/inactive)
+    const isGap = zone === null;
     if (!current || current.zone !== zone) {
       pushCurrent();
-      current = { zone, color, points: [] };
+      current = { zone, color, isGap, points: [] };
       // Include prior point to maintain continuity across color changes
       if (lastPoint) {
         current.points.push({ ...lastPoint });
@@ -186,10 +197,13 @@ export const createPaths = (segments = [], options = {}) => {
       const y = scaleY(v).toFixed(2);
       return acc + `${idx === 0 ? 'M' : 'L'}${x},${y} `;
     }, '').trim();
+    // Gap segments (absent users) get reduced opacity and dashed stroke
+    const isGap = Boolean(seg.isGap);
     return {
       zone: seg.zone,
       color: seg.color,
-      opacity: seg.color === ZONE_COLOR_MAP.default ? 0.1 : 1,
+      opacity: isGap ? 0.5 : (seg.color === ZONE_COLOR_MAP.default ? 0.1 : 1),
+      isGap,
       d: path
     };
   });

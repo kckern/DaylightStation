@@ -13,7 +13,8 @@ import { EventJournal } from './EventJournal.js';
 const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 180000,
-  rpmZero: 12000
+  rpmZero: 12000,
+  emptySession: 60000 // 6A: Time (ms) with empty roster before auto-ending session
 };
 
 // Soft guardrail to prevent oversized payloads
@@ -26,10 +27,11 @@ const ZONE_SYMBOL_MAP = {
   hot: 'h'
 };
 
-export const setFitnessTimeouts = ({ inactive, remove, rpmZero } = {}) => {
+export const setFitnessTimeouts = ({ inactive, remove, rpmZero, emptySession } = {}) => {
   if (typeof inactive === 'number' && !Number.isNaN(inactive)) FITNESS_TIMEOUTS.inactive = inactive;
   if (typeof remove === 'number' && !Number.isNaN(remove)) FITNESS_TIMEOUTS.remove = remove;
   if (typeof rpmZero === 'number' && !Number.isNaN(rpmZero)) FITNESS_TIMEOUTS.rpmZero = rpmZero;
+  if (typeof emptySession === 'number' && !Number.isNaN(emptySession)) FITNESS_TIMEOUTS.emptySession = emptySession;
 };
 
 export const getFitnessTimeouts = () => ({ ...FITNESS_TIMEOUTS });
@@ -67,6 +69,8 @@ export class FitnessSession {
     this._tickTimer = null;
     this._tickIntervalMs = 5000;
     this._pendingSnapshotRef = null;
+    this._emptyRosterStartTime = null; // 6A: Track when roster became empty for ghost session detection
+    this._sessionEndedCallbacks = []; // 6A: Callbacks to notify on session end
 
     this.snapshot = {
       participantRoster: [],
@@ -128,11 +132,34 @@ export class FitnessSession {
     const device = this.deviceManager.registerDevice(deviceData);
     if (device) {
       this.activeDeviceIds.add(device.id);
-      this._log('device_activity', { deviceId: device.id, profile: deviceData.profile });
+      
+      // 5A: Clear cumulative state for newly registered devices to prevent state leakage
+      if (device._isNew) {
+        this._cumulativeBeats.delete(device.id);
+        this._cumulativeRotations.delete(device.id);
+        this._log('device_first_seen', { deviceId: device.id, profile: deviceData.profile });
+      } else {
+        this._log('device_activity', { deviceId: device.id, profile: deviceData.profile });
+      }
+      // Clear the flag after processing
+      device._isNew = false;
       
       // Resolve user and update their stats
       const user = this.userManager.resolveUserForDevice(device.id);
       if (user) {
+        // 5A: Check for device reassignment - clear cumulative state if occupant changed
+        const currentOccupant = user.name || user.slug;
+        if (device.lastOccupantSlug && device.lastOccupantSlug !== currentOccupant) {
+          this._cumulativeBeats.delete(device.id);
+          this._cumulativeRotations.delete(device.id);
+          this._log('device_reassigned', { 
+            deviceId: device.id, 
+            from: device.lastOccupantSlug, 
+            to: currentOccupant 
+          });
+        }
+        device.lastOccupantSlug = currentOccupant;
+        
         user.updateFromDevice(deviceData);
         // Feed TreasureBox if HR
         if (this.treasureBox && deviceData.type === 'heart_rate') {
@@ -286,6 +313,48 @@ export class FitnessSession {
     return roster;
   }
 
+  /**
+   * Returns all unique participant slugs that have historical data in the session,
+   * including users who have left. Used for chart persistence across remounts.
+   * Fix 9 (bugbash 1B): Normalizes slugs to prevent whitespace-only entries.
+   * @returns {string[]} Array of participant slug IDs
+   */
+  getHistoricalParticipants() {
+    const participants = new Set();
+    
+    // Fix 9: Helper to validate and normalize slugs
+    const addIfValid = (slug) => {
+      if (typeof slug === 'string') {
+        const normalized = slug.trim();
+        if (normalized) participants.add(normalized);
+      }
+    };
+    
+    // Get from snapshot participantSeries (legacy storage)
+    if (this.snapshot?.participantSeries instanceof Map) {
+      this.snapshot.participantSeries.forEach((_, slug) => {
+        addIfValid(slug);
+      });
+    }
+    
+    // Get from timeline if available
+    if (this.timeline?.getAllParticipantIds) {
+      const timelineIds = this.timeline.getAllParticipantIds();
+      timelineIds.forEach((id) => {
+        addIfValid(id);
+      });
+    }
+    
+    // Get from usersMeta
+    if (this.snapshot?.usersMeta instanceof Map) {
+      this.snapshot.usersMeta.forEach((_, slug) => {
+        addIfValid(slug);
+      });
+    }
+    
+    return Array.from(participants);
+  }
+
   _resolveEquipmentId(device) {
     if (!device) return null;
     const explicit = device.equipmentId || device.equipment_id || device?.metadata?.equipmentId;
@@ -342,6 +411,7 @@ export class FitnessSession {
     this._startTickTimer();
     this._cumulativeBeats = new Map();
     this._cumulativeRotations = new Map();
+    this._emptyRosterStartTime = null; // 6A: Reset empty roster tracking on session start
     this._collectTimelineTick({ timestamp: now });
     return true;
   }
@@ -694,9 +764,26 @@ export class FitnessSession {
     const now = Date.now();
     if (!this.lastActivityTime || (now - this.lastActivityTime) < remove) return false;
     
+    return this.endSession('inactivity');
+  }
+
+  /**
+   * 6A: Explicitly end the session with a reason.
+   * Clears timers, flushes data, emits events, and resets state.
+   * @param {string} reason - Why the session is ending (e.g., 'empty_roster', 'inactivity', 'manual')
+   * @returns {boolean} - True if session was ended, false if no session was active
+   */
+  endSession(reason = 'unknown') {
+    if (!this.sessionId) return false;
+    
+    const now = Date.now();
     this.endTime = now;
     this._collectTimelineTick({ timestamp: now });
-    this._log('end', { sessionId: this.sessionId, durationMs: this.endTime - this.startTime });
+    this._log('end', { 
+      sessionId: this.sessionId, 
+      durationMs: this.endTime - this.startTime,
+      reason 
+    });
     
     let sessionData = null;
     try {
@@ -705,8 +792,68 @@ export class FitnessSession {
     } catch(_){}
     
     if (sessionData) this._persistSession(sessionData, { force: true });
+    
+    // 6A: Notify listeners that session has ended
+    const endedSessionId = this.sessionId;
+    this._notifySessionEnded(endedSessionId, reason);
+    
     this.reset();
     return true;
+  }
+
+  /**
+   * 6A: Register a callback to be notified when the session ends.
+   * @param {function} callback - Function called with (sessionId, reason)
+   * @returns {function} - Unsubscribe function
+   */
+  onSessionEnded(callback) {
+    if (typeof callback !== 'function') return () => {};
+    this._sessionEndedCallbacks.push(callback);
+    return () => {
+      const idx = this._sessionEndedCallbacks.indexOf(callback);
+      if (idx >= 0) this._sessionEndedCallbacks.splice(idx, 1);
+    };
+  }
+
+  _notifySessionEnded(sessionId, reason) {
+    this._sessionEndedCallbacks.forEach((cb) => {
+      try {
+        cb(sessionId, reason);
+      } catch (_) {
+        // Swallow errors in callbacks
+      }
+    });
+  }
+
+  /**
+   * 6A: Check if roster is empty and end session after timeout.
+   * Called from _collectTimelineTick after device pruning.
+   */
+  _checkEmptyRosterTimeout() {
+    const roster = this.roster;
+    const now = Date.now();
+    const { emptySession } = this._getTimeouts();
+    
+    if (!roster || roster.length === 0) {
+      // Roster is empty - start or check timer
+      if (!this._emptyRosterStartTime) {
+        this._emptyRosterStartTime = now;
+        this._log('empty_roster_detected', { sessionId: this.sessionId });
+      } else if (now - this._emptyRosterStartTime > emptySession) {
+        // Roster has been empty too long - end session
+        this._log('empty_roster_timeout', { 
+          sessionId: this.sessionId,
+          emptyDurationMs: now - this._emptyRosterStartTime
+        });
+        this.endSession('empty_roster');
+      }
+    } else {
+      // Roster has users - reset the empty timer
+      if (this._emptyRosterStartTime) {
+        this._log('roster_recovered', { sessionId: this.sessionId });
+      }
+      this._emptyRosterStartTime = null;
+    }
   }
 
   reset() {
@@ -725,7 +872,10 @@ export class FitnessSession {
     this.userManager = new UserManager(); // Reset users? Or keep them? Usually reset for new session context.
     this.deviceManager = new DeviceManager(); // Reset devices?
     this._stopAutosaveTimer();
+    this._stopTickTimer(); // 6A: Also stop tick timer on reset
     this._lastAutosaveAt = 0;
+    this._emptyRosterStartTime = null; // 6A: Reset empty roster tracking
+    // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();
     if (this.timeline) {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
@@ -917,6 +1067,8 @@ export class FitnessSession {
     this._tickTimer = setInterval(() => {
       try {
         this._collectTimelineTick();
+        // 6A: Check for empty roster timeout after each tick
+        this._checkEmptyRosterTimeout();
       } catch (_) {
         // swallow to keep timer alive
       }

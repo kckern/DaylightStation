@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVolumeStore } from './VolumeProvider.jsx';
 
 const defaultState = { level: 0.6, muted: false, source: 'global' };
@@ -20,12 +20,20 @@ export function usePersistentVolume({ showId, seasonId, trackId, playerRef } = {
     }),
     [showId, seasonId, trackId]
   );
-  const [volume, setVolumeState] = useState(defaultState.level);
-  const [muted, setMutedState] = useState(defaultState.muted);
-  const [source, setSource] = useState(defaultState.source);
+  
+  // Synchronously initialize volume from storage on first render (3B fix)
+  // Note: Compute synchronously without memoization to avoid stale closure issues when ids change
+  const [volume, setVolumeState] = useState(() => getVolume(ids).level);
+  const [muted, setMutedState] = useState(() => getVolume(ids).muted);
+  const [source, setSource] = useState(() => getVolume(ids).source || defaultState.source);
+  
+  // Use ref to hold current volume synchronously for immediate access
+  const volumeRef = useRef(getVolume(ids).level);
 
-  useEffect(() => {
+  // Use useLayoutEffect for synchronous hydration before browser paint (3B fix)
+  useLayoutEffect(() => {
     const resolved = getVolume(ids);
+    volumeRef.current = resolved.level;
     setVolumeState(resolved.level);
     setMutedState(resolved.muted);
     setSource(resolved.source || defaultState.source);
@@ -37,6 +45,7 @@ export function usePersistentVolume({ showId, seasonId, trackId, playerRef } = {
   const persistVolume = useCallback(
     (nextLevel) => {
       const resolved = setVolume(ids, { level: nextLevel });
+      volumeRef.current = resolved.level; // Update ref synchronously (3B fix)
       setVolumeState(resolved.level);
       setMutedState(resolved.muted);
       setSource(resolved.source || 'exact');
@@ -75,6 +84,7 @@ export function usePersistentVolume({ showId, seasonId, trackId, playerRef } = {
 
   return useMemo(() => ({
     volume,
+    volumeRef, // Synchronous ref for immediate volume access (3B fix)
     muted,
     source,
     setVolume: persistVolume,

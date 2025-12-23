@@ -15,6 +15,8 @@ export class FitnessTreasureBox {
       cumulative: [],
       lastIndex: -1
     };
+    // Per-user cumulative coin timeline for chart rendering (single source of truth)
+    this._userTimelines = new Map(); // userName -> number[] (cumulative coins per tick)
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
     this._autoInterval = null; // timer id
@@ -24,6 +26,9 @@ export class FitnessTreasureBox {
   _notifyMutation() { if (this._mutationCb) { try { this._mutationCb(); } catch(_){} } }
 
   configure({ coinTimeUnitMs, zones, users }) {
+    // Fix 7 (bugbash 2): Clear existing user timelines on reconfigure to prevent stale data
+    this._userTimelines.clear();
+    
     if (typeof coinTimeUnitMs === 'number' && coinTimeUnitMs > 0) {
       this.coinTimeUnitMs = coinTimeUnitMs;
     }
@@ -234,6 +239,26 @@ export class FitnessTreasureBox {
     }
   }
 
+  /**
+   * Ensure user timeline is initialized and filled to the given index.
+   * Forward-fills with the last known cumulative value.
+   */
+  _ensureUserTimelineIndex(userName, index) {
+    if (!this._userTimelines.has(userName)) {
+      this._userTimelines.set(userName, []);
+    }
+    const userSeries = this._userTimelines.get(userName);
+    const acc = this.perUser.get(userName);
+    const currentTotal = acc?.totalCoins || 0;
+    
+    // Forward-fill to index with current cumulative value
+    while (userSeries.length <= index) {
+      // Fill gaps with the last known value (or 0 if empty)
+      const lastVal = userSeries.length > 0 ? userSeries[userSeries.length - 1] : 0;
+      userSeries.push(lastVal);
+    }
+  }
+
   _awardCoins(userName, zone) {
     if (!zone) return;
     if (!(zone.color in this.buckets)) this.buckets[zone.color] = 0;
@@ -260,6 +285,15 @@ export class FitnessTreasureBox {
       acc.totalCoins = (acc.totalCoins || 0) + zone.coins;
       acc.lastAwardedAt = now;
     }
+    
+    // Track per-user cumulative timeline (single source of truth for chart)
+    this._ensureUserTimelineIndex(userName, intervalIndex);
+    const userSeries = this._userTimelines.get(userName);
+    if (userSeries && userSeries.length > intervalIndex) {
+      // Update this tick with new cumulative total
+      userSeries[intervalIndex] = acc?.totalCoins || zone.coins;
+    }
+    
     // Log event in session if available
     try {
       this.sessionRef._log('coin_award', { user: userName, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
@@ -299,5 +333,58 @@ export class FitnessTreasureBox {
       totals.set(user, coins);
     });
     return totals;
+  }
+
+  /**
+   * Get cumulative coin time series for a specific user.
+   * Returns array of cumulative coin values indexed by timeline tick.
+   * This is the single source of truth for chart rendering.
+   * Uses actual per-tick tracking from _userTimelines (not interpolation).
+   * @param {string} userId - The user slug/id
+   * @returns {number[]} - Array of cumulative coin values
+   */
+  getUserCoinsTimeSeries(userId) {
+    if (!userId) return [];
+    const acc = this.perUser.get(userId);
+    if (!acc) return [];
+    
+    // Return actual per-tick tracked cumulative series (single source of truth)
+    const userSeries = this._userTimelines.get(userId);
+    if (userSeries && userSeries.length > 0) {
+      // Forward-fill the series to current index so chart has continuous data
+      const start = this.sessionRef?.startTime || this.sessionRef?.timebase?.startAbsMs || Date.now();
+      const intervalMs = this.coinTimeUnitMs > 0 ? this.coinTimeUnitMs : 5000;
+      const now = Date.now();
+      const currentIndex = Math.floor(Math.max(0, now - start) / intervalMs);
+      
+      // Clone and forward-fill to current tick
+      const result = [...userSeries];
+      const lastVal = result.length > 0 ? result[result.length - 1] : 0;
+      while (result.length <= currentIndex) {
+        result.push(lastVal);
+      }
+      return result;
+    }
+    
+    // Fallback: user exists but hasn't earned coins yet - return zeros up to current tick
+    const start = this.sessionRef?.startTime || this.sessionRef?.timebase?.startAbsMs || Date.now();
+    const intervalMs = this.coinTimeUnitMs > 0 ? this.coinTimeUnitMs : 5000;
+    const now = Date.now();
+    const currentIndex = Math.floor(Math.max(0, now - start) / intervalMs);
+    const userTotal = acc.totalCoins || 0;
+    
+    if (currentIndex <= 0) return [userTotal];
+    
+    // Fill with current total (if they have coins but timeline wasn't tracked, use their total)
+    const series = new Array(currentIndex + 1).fill(userTotal);
+    return series;
+  }
+
+  /**
+   * Get the cumulative total timeline (all users combined).
+   * @returns {number[]} - Array of cumulative total coin values
+   */
+  getCumulativeTimeline() {
+    return [...this._timeline.cumulative];
   }
 }
