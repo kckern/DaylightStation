@@ -155,9 +155,17 @@ export const processTransactions = async ({startDate, endDate, accounts}) => {
     const transactions = await getTransactions({startDate, endDate, accounts});
 
     const hasNoTag = (txn) => !txn.tagNames.length;
-    const hasRawDescription = (txn) => /(^Direct|Pwp|xx|as of|\*|（|Privacycom)/ig.test(txn.description); //TODO: parameterize this
+    const hasRawDescription = (txn) => /(^Direct|Pwp|^xx|as of|\*|（|Privacycom)/ig.test(txn.description); //TODO: parameterize this
 
-    const txn_to_process = transactions.filter(txn => hasNoTag(txn) || hasRawDescription(txn));
+    const txn_to_process = transactions.filter(txn => {
+        const noTag = hasNoTag(txn);
+        const rawDesc = hasRawDescription(txn);
+        if (noTag || rawDesc) {
+             //console.log(`Processing ${txn.id}: NoTag=${noTag}, RawDesc=${rawDesc} (${txn.description}) Tags=${JSON.stringify(txn.tagNames)}`);
+             return true;
+        }
+        return false;
+    });
    // console.log(`Processing ${txn_to_process.length} transactions to categorize...`);
     txn_to_process.forEach(txn => console.log(`${txn.date} - ${txn.description}`));
     const dataPath = getDataPath();
@@ -173,7 +181,7 @@ export const processTransactions = async ({startDate, endDate, accounts}) => {
         const { category, friendlyName, memo } = is_json ? JSON.parse(json_string) : { };
         if(friendlyName && validTags.includes(category)) {
             console.log(`${date} - ${id} - ${friendlyName} - ${category}`);
-            const r = await updateTransacton(id, friendlyName, category, memo);
+            const r = await updateTransaction(id, friendlyName, category, memo);
             transactions[index].tagNames = [category];
             transactions[index].description = friendlyName;
         }else console.log(`\x1b[31mFailed to categorize (${category}): ${date} - ${id} - ${description}\x1b[0m`);
@@ -195,7 +203,7 @@ export const processTransactions = async ({startDate, endDate, accounts}) => {
     return saveMe;
 }
 
-export const updateTransacton = async (id, description, tags, memo) =>{
+export const updateTransaction = async (id, description, tags, memo) =>{
     try{
         
     //console.log(`Updating transaction: ${id} with description: ${description}, tag: ${tags}, memo: ${memo}`);
@@ -203,6 +211,7 @@ export const updateTransacton = async (id, description, tags, memo) =>{
     const url = `https://www.buxfer.com/api/transaction_edit?token=${token}`;
     const params = { id, description, tags, memo };
     const {data: { response } } = await axios.post(url, params);
+    
     return response;
 
     }catch(e){
