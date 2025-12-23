@@ -10,6 +10,7 @@ import {
 import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.js';
 import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
+import { getAppManifest } from '../modules/Fitness/FitnessApps/registry.js';
 
 // Create context
 const FitnessContext = createContext(null);
@@ -85,6 +86,83 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
   const guestAssignmentServiceRef = useRef(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
+
+  // App State
+  const [activeApp, setActiveApp] = useState(null);
+  const [overlayApp, setOverlayApp] = useState(null);
+  const [appHistory, setAppHistory] = useState([]);
+  const appEventListeners = useRef(new Map());
+
+  // App launch/close methods
+  const launchApp = React.useCallback((appId, options = {}) => {
+    const manifest = getAppManifest(appId);
+    if (!manifest) return false;
+    
+    if (options.mode === 'overlay') {
+      setOverlayApp({ appId, config: options.config || {} });
+    } else {
+      setAppHistory(prev => [...prev, activeApp].filter(Boolean));
+      setActiveApp({ appId, config: options.config || {} });
+    }
+    return true;
+  }, [activeApp]);
+
+  const closeApp = React.useCallback(() => {
+    if (overlayApp) {
+      setOverlayApp(null);
+    } else if (activeApp) {
+      const previous = appHistory[appHistory.length - 1];
+      setAppHistory(prev => prev.slice(0, -1));
+      setActiveApp(previous || null);
+    }
+  }, [activeApp, overlayApp, appHistory]);
+
+  const launchOverlayApp = React.useCallback((appId, config = {}) => {
+    setOverlayApp({ appId, config });
+  }, []);
+
+  const dismissOverlayApp = React.useCallback(() => {
+    setOverlayApp(null);
+  }, []);
+
+  // App event bus
+  const emitAppEvent = React.useCallback((eventType, payload, sourceAppId) => {
+    const event = { type: eventType, payload, source: sourceAppId, timestamp: Date.now() };
+    const listeners = appEventListeners.current.get(eventType) || [];
+    listeners.forEach(cb => { try { cb(event); } catch (e) { console.error(e); } });
+    fitnessSessionRef.current?.logEvent?.('app_event', event);
+  }, []);
+
+  const subscribeToAppEvent = React.useCallback((eventType, callback) => {
+    if (!appEventListeners.current.has(eventType)) {
+      appEventListeners.current.set(eventType, []);
+    }
+    appEventListeners.current.get(eventType).push(callback);
+    return () => {
+      const listeners = appEventListeners.current.get(eventType) || [];
+      const idx = listeners.indexOf(callback);
+      if (idx > -1) listeners.splice(idx, 1);
+    };
+  }, []);
+
+  // Governance Metric Reporting
+  const reportGovernanceMetric = React.useCallback((metric) => {
+    const normalized = {
+      source: 'app',
+      appId: metric.appId,
+      type: metric.type,           // 'activity', 'completion', 'score'
+      value: metric.value,
+      userId: metric.userId || null,
+      timestamp: Date.now(),
+      metadata: metric.metadata || {}
+    };
+    
+    // Log to session
+    fitnessSessionRef.current?.logEvent?.('app_governance_metric', normalized);
+    
+    // Forward to governance engine
+    fitnessSessionRef.current?.governanceEngine?.processAppMetric?.(normalized);
+  }, []);
 
   // Session State
   const fitnessSessionRef = useRef(new FitnessSession());
@@ -1406,6 +1484,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     getDeviceUser: resolveUserByDevice,
     getDeviceAssignment,
     
+    // App State & Methods
+    activeApp,
+    overlayApp,
+    launchApp,
+    closeApp,
+    launchOverlayApp,
+    dismissOverlayApp,
+    emitAppEvent,
+    subscribeToAppEvent,
+    reportGovernanceMetric,
+
     // Legacy / Compatibility
     fitnessSession: session?.summary,
     fitnessSessionInstance: session,

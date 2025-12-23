@@ -1,0 +1,16 @@
+.fitness-app-overlay-wrapper {
+  position: absolute;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 1000;
+  pointer-events: auto;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
+  
+  // Animation
+  animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

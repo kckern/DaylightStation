@@ -1,0 +1,28 @@
+.fitness-app-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  color: var(--fitness-text-primary, #fff);
+
+  .loader-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: var(--fitness-accent-color, #00d1b2);
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 16px;
+  }
+
+  .loader-message {
+    font-size: 14px;
+    opacity: 0.8;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
