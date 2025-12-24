@@ -136,6 +136,13 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   // Get heart_rate to detect actual device activity (has nulls during dropout)
   const heartRate = getSeries(targetId, 'heart_rate', { clone: true }) || [];
   
+  // DEBUG: Check heart_rate for nulls
+  const hrNullCount = heartRate.filter(v => v == null).length;
+  const hrLen = heartRate.length;
+  if (hrNullCount > 0) {
+    console.log('[buildBeatsSeries] HR nulls:', { targetId, hrLen, hrNullCount, firstNull: heartRate.indexOf(null), lastNull: heartRate.lastIndexOf(null) });
+  }
+  
   const maxLen = Math.max(zones.length, heartRate.length);
   let active = new Array(maxLen).fill(false);
 
@@ -150,6 +157,28 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
     for (let i = 0; i < maxLen; i++) {
       const hr = heartRate[i];
       active[i] = hr != null && Number.isFinite(hr) && hr > 0;
+    }
+  }
+
+  // CRITICAL FIX: If roster says user is currently inactive (roster.isActive === false),
+  // ensure the active array reflects this. This syncs ActivityMonitor with DeviceManager.
+  // DeviceManager is the source of truth for current activity status.
+  if (rosterEntry && rosterEntry.isActive === false) {
+    // Find the last tick where user was truly active
+    let lastActiveTick = -1;
+    for (let i = active.length - 1; i >= 0; i--) {
+      if (active[i] === true) {
+        lastActiveTick = i;
+        break;
+      }
+    }
+    // If ActivityMonitor shows user as active at recent ticks but roster says inactive,
+    // mark trailing ticks as inactive to trigger gap detection
+    // This handles the case where DeviceManager detected dropout before ActivityMonitor
+    if (lastActiveTick >= 0 && lastActiveTick === active.length - 1) {
+      // ActivityMonitor thinks user is still active, but DeviceManager disagrees
+      // Force the last tick to be inactive to start gap detection
+      active[active.length - 1] = false;
     }
   }
 
@@ -259,25 +288,27 @@ export const buildSegments = (beats = [], zones = [], active = []) => {
     
     // User is active (ACTIVE status - HR data broadcasting)
     if (inGap && gapStartPoint) {
-      // Returning from dropout - create a FLAT gap segment
-      // Gap line is HORIZONTAL at the dropout value, then jumps to rejoin value
+      // Returning from dropout - create HORIZONTAL gap segment
+      // The gap is purely horizontal at the dropout value
+      // Any vertical jump is part of the COLORED segment (user earned coins after rejoining)
+      // This correctly shows: dropout value stayed flat, then jumps to current value
       const gapSegment = {
         zone: null,
         color: getZoneColor(null),
         status: ParticipantStatus.IDLE,
         isGap: true,
         points: [
-          { ...gapStartPoint },
-          // Flat horizontal line: same value as dropout, but at current tick
-          { i, v: gapStartPoint.v }
+          { ...gapStartPoint },           // Left: dropout point (tick N, value V)
+          { i, v: gapStartPoint.v }       // Right: same Y, at rejoin tick (horizontal only)
         ]
       };
       segments.push(gapSegment);
+      
+      // Set lastPoint to the gap end so colored segment connects there
+      // The colored segment will then jump to the actual current value
+      lastPoint = { i, v: gapStartPoint.v };
       gapStartPoint = null;
       inGap = false;
-      // Don't carry lastPoint continuity into new segment after gap
-      // The new segment starts fresh at the rejoin point
-      lastPoint = null;
     }
     
     const zone = zoneRaw || lastZone || null;
@@ -309,10 +340,19 @@ export const buildSegments = (beats = [], zones = [], active = []) => {
   // Gap segments are ONLY created when user REJOINS - connecting dropout point to rejoin point.
   // This matches expected behavior: colored line → stops → badge shows dropout → (rejoin) grey line → colored line resumes
   
-  // Debug: Log segments including gaps
-  const gapSegs = segments.filter(s => s.isGap);
-  if (gapSegs.length > 0 || falseCount > 0) {
-    console.log('[buildSegments] result:', { totalSegs: segments.length, gapSegs: gapSegs.length, falseInActive: falseCount });
+  // Debug: Log segments including gaps and active array status
+  const gapSegs = segments.filter(s => s.isGap === true);
+  const activeFalseCount = active.filter(a => a === false).length;
+  const activeLen = active.length;
+  if (activeFalseCount > 0 || gapSegs.length > 0) {
+    console.log('[buildSegments] DEBUG:', { 
+      totalSegs: segments.length, 
+      gapSegs: gapSegs.length,
+      activeFalseCount,
+      activeLen,
+      firstFalseIdx: active.indexOf(false),
+      lastFalseIdx: active.lastIndexOf(false)
+    });
   }
   
   return segments;
@@ -383,6 +423,16 @@ export const createPaths = (segments = [], options = {}) => {
     const frac = bottomFrac + (topFrac - bottomFrac) * mapped;
     return (margin.top || 0) + frac * innerHeight;
   };
+
+  // Debug: log gap segments being rendered
+  const gapsToRender = mergedSegments.filter(s => s.isGap);
+  if (gapsToRender.length > 0) {
+    console.log('[createPaths] Rendering gap segments:', gapsToRender.length, gapsToRender.map(g => ({
+      isGap: g.isGap,
+      points: g.points,
+      color: g.color
+    })));
+  }
 
   return mergedSegments.map((seg) => {
     const points = seg.points.length === 1 ? [...seg.points, seg.points[0]] : seg.points;
