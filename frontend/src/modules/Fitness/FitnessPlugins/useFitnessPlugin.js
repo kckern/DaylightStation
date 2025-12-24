@@ -62,7 +62,12 @@ const useFitnessPlugin = (pluginId) => {
     // Session data
     sessionId: fitnessCtx.fitnessSession?.sessionId,
     sessionActive: Boolean(fitnessCtx.fitnessSession?.sessionId),
+    isSessionActive: fitnessCtx.isSessionActive,
+    sessionStartTime: fitnessCtx.fitnessSession?.startTime
+      || fitnessCtx.fitnessSession?.startedAt
+      || fitnessCtx.fitnessSessionInstance?.startTime,
     sessionInstance: fitnessCtx.fitnessSessionInstance,
+    connected: fitnessCtx.connected,
     
     // Session actions
     registerSessionScreenshot: (capture) => fitnessCtx.registerSessionScreenshot?.(capture),
@@ -70,12 +75,21 @@ const useFitnessPlugin = (pluginId) => {
     
     // Participants & vitals
     participants: fitnessCtx.participantRoster,
+    userVitalsMap: fitnessCtx.userVitals,
+    userCurrentZones: fitnessCtx.userCurrentZones,
     // Historical participants (all users who have ever been in session, including those who left)
     // Fix 8: Use memoized value instead of calling getHistoricalParticipants() on each render
     historicalParticipants,
     getUserVitals: fitnessCtx.getUserVitals,
     getUserTimelineSeries: fitnessCtx.getUserTimelineSeries,
+    getUserZoneThreshold: fitnessCtx.getUserZoneThreshold,
     
+    // Devices
+    heartRateDevices: fitnessCtx.heartRateDevices,
+    cadenceDevices: fitnessCtx.cadenceDevices,
+    powerDevices: fitnessCtx.powerDevices,
+    allDevices: fitnessCtx.allDevices,
+
     // Activity Monitor - single source of truth for participant status (Phase 2)
     activityMonitor: fitnessCtx.activityMonitor,
     
@@ -85,7 +99,10 @@ const useFitnessPlugin = (pluginId) => {
     // Zone & governance
     zones: fitnessCtx.zones,
     governanceState: fitnessCtx.governanceState,
+    activeGovernancePolicy: fitnessCtx.activeGovernancePolicy,
+    governanceChallenge: fitnessCtx.governanceChallenge,
     reportGovernanceMetric: fitnessCtx.reportGovernanceMetric,
+    treasureBox: fitnessCtx.treasureBox,
     
     // Timeline
     timebase: fitnessCtx.timelineTimebase,
@@ -112,7 +129,11 @@ const useFitnessPlugin = (pluginId) => {
       set: storage.set,
       clear: storage.clear,
       clearAll: storage.clearAll  // Reset all plugin settings
-    }
+    },
+    
+    // Voice memos
+    openVoiceMemoRedo: fitnessCtx.openVoiceMemoRedo,
+    voiceMemos: fitnessCtx.voiceMemos,
   };
 };
 
