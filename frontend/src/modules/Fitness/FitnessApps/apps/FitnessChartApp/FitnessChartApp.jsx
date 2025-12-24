@@ -790,6 +790,11 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			});
 			return created.map((p, idx) => ({ ...p, id: entry.id, key: `${entry.id}-${globalIdx++}-${idx}` }));
 		});
+		// Debug: log gap paths
+		const gapPaths = allSegments.filter(p => p.isGap);
+		if (gapPaths.length > 0) {
+			console.log('[FitnessChart] Gap paths in render:', gapPaths.map(p => ({ isGap: p.isGap, d: p.d, opacity: p.opacity })));
+		}
 		return allSegments;
 	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase]);
 
