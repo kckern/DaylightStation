@@ -7,10 +7,10 @@ import path from 'path' // Ensure path is imported
 const BACKEND_PORT = process.env.VITE_BACKEND_PORT || 3112;
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     react(),
-    terminal({
+    command === 'serve' && terminal({
       console: 'terminal',  // Pipe console.log/warn/error to terminal
       output: ['terminal', 'console']  // Show in both places
     })
@@ -46,4 +46,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))
