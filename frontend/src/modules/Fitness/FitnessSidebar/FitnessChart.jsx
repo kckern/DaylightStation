@@ -1,5 +1,5 @@
 import React from 'react';
-import FitnessChartApp from '../FitnessApps/apps/FitnessChartApp/index.jsx';
+import FitnessChartApp from '../FitnessPlugins/plugins/FitnessChartApp/index.jsx';
 
 // Re-export helpers for backward compatibility
 export {

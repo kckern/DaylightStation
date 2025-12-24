@@ -1,11 +1,11 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
-import useAppStorage from './useAppStorage';
+import usePluginStorage from './usePluginStorage';
 import { ChartDataBuilder } from '../domain';
 
-const useFitnessApp = (appId) => {
+const useFitnessPlugin = (pluginId) => {
   const fitnessCtx = useFitnessContext();
-  const storage = useAppStorage(appId);
+  const storage = usePluginStorage(pluginId);
   
   // Fix 8 (bugbash 1B): Memoize historicalParticipants to prevent infinite effect loops
   // Only recompute when session changes, not on every render
@@ -111,9 +111,9 @@ const useFitnessApp = (appId) => {
       get: storage.get,
       set: storage.set,
       clear: storage.clear,
-      clearAll: storage.clearAll  // Reset all app settings
+      clearAll: storage.clearAll  // Reset all plugin settings
     }
   };
 };
 
-export default useFitnessApp;
+export default useFitnessPlugin;

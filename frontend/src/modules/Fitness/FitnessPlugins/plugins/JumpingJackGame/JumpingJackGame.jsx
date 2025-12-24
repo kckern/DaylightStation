@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import useFitnessApp from '../../useFitnessApp';
+import useFitnessPlugin from '../../useFitnessPlugin';
 import { Webcam } from '../../../components/FitnessWebcam.jsx';
 import './JumpingJackGame.scss';
 
@@ -7,7 +7,7 @@ const JumpingJackGame = ({ mode, onClose, config, onMount }) => {
   const {
     sessionId,
     registerLifecycle
-  } = useFitnessApp('jumping_jack_game');
+  } = useFitnessPlugin('jumping_jack_game');
 
   const [score, setScore] = useState(0);
   const [gameState, setGameState] = useState('ready'); // ready, playing, finished

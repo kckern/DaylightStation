@@ -1,19 +1,19 @@
 /**
- * @deprecated This folder is deprecated. Import from FitnessApps/shared instead.
+ * @deprecated This folder is deprecated. Import from Fitness/shared instead.
  * 
  * Migration guide:
  * 
  * OLD: import CircularUserAvatar from '../components/CircularUserAvatar';
- * NEW: import { UserAvatar } from '../FitnessApps/shared';
+ * NEW: import { UserAvatar } from '../shared';
  * 
  * OLD: import RpmDeviceAvatar from '../components/RpmDeviceAvatar';
- * NEW: import { DeviceAvatar } from '../FitnessApps/shared';
+ * NEW: import { DeviceAvatar } from '../shared';
  * 
  * OLD: import { webcamFilters } from '../components/webcamFilters';
- * NEW: import { webcamFilters } from '../FitnessApps/shared/utils/webcamFilters';
+ * NEW: import { webcamFilters } from '../shared/utils/webcamFilters';
  * 
  * OLD: import FitnessWebcam from '../components/FitnessWebcam';
- * NEW: import { WebcamView } from '../FitnessApps/shared';
+ * NEW: import { WebcamView } from '../shared';
  * 
  * These re-exports are provided for backward compatibility.
  * Please update your imports to use the new paths.

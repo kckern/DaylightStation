@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { ElapsedTimer } from '../FitnessApps/shared';
-import { ZONE_COLORS, getCoinColorRank } from '../FitnessApps/shared/constants/fitness';
+import { ElapsedTimer } from '../shared';
+import { ZONE_COLORS, getCoinColorRank } from '../shared/constants/fitness';
 import '../FitnessCam.scss';
 
 /**

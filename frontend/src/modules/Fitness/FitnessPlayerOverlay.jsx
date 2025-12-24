@@ -8,7 +8,7 @@ import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverla
 import { normalizeRequirements, compareSeverity } from '../../hooks/fitness/GovernanceEngine.js';
 import VoiceMemoOverlay from './FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
 import FullscreenVitalsOverlay from './FitnessPlayerOverlay/FullscreenVitalsOverlay.jsx';
-import FitnessAppContainer from './FitnessApps/FitnessAppContainer.jsx';
+import FitnessPluginContainer from './FitnessPlugins/FitnessPluginContainer.jsx';
 import './FitnessPlayerOverlay/FitnessAppOverlay.scss';
 
 const slugifyId = (value, fallback = 'user') => {
@@ -951,8 +951,8 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       ) : null}
       {fitnessCtx.overlayApp && (
         <div className="fitness-app-overlay-wrapper">
-          <FitnessAppContainer
-            appId={fitnessCtx.overlayApp.id}
+          <FitnessPluginContainer
+            pluginId={fitnessCtx.overlayApp.id}
             mode="overlay"
             config={fitnessCtx.overlayApp.config}
             onClose={() => fitnessCtx.closeApp(fitnessCtx.overlayApp.id)}

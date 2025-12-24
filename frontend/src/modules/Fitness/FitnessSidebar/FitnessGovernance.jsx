@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
-import { StripedProgressBar, StatusBadge } from '../FitnessApps/shared';
-import { GOVERNANCE_STATUS, GOVERNANCE_PRIORITY } from '../FitnessApps/shared/constants/fitness';
+import { StripedProgressBar, StatusBadge } from '../shared';
+import { GOVERNANCE_STATUS, GOVERNANCE_PRIORITY } from '../shared/constants/fitness';
 import './FitnessGovernance.scss';
 
 const UI_TEXT = {
