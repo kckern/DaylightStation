@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { listApps, getAppManifest } from './index';
-import useAppStorage from './useAppStorage';
-import './FitnessAppMenu.scss';
+import { listPlugins, getPluginManifest } from './index';
+import usePluginStorage from './usePluginStorage';
+import './FitnessPluginMenu.scss';
 
 const SettingsControls = ({ onClose }) => {
-  const { clearAll } = useAppStorage('_menu');
+  const { clearAll } = usePluginStorage('_menu');
   
   const handleResetAll = () => {
-      if (window.confirm('Reset all app settings? This cannot be undone.')) {
+      if (window.confirm('Reset all plugin settings? This cannot be undone.')) {
         clearAll();
         onClose();
       }
@@ -16,12 +16,12 @@ const SettingsControls = ({ onClose }) => {
 
   return (
       <button onClick={handleResetAll} className="reset-btn">
-          Reset All App Settings
+          Reset All Plugin Settings
       </button>
   );
 };
 
-const FitnessAppMenu = ({ activeAppMenuId, onAppSelect, onBack }) => {
+const FitnessPluginMenu = ({ activePluginMenuId, onPluginSelect, onBack }) => {
   const [menuConfig, setMenuConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -32,53 +32,53 @@ const FitnessAppMenu = ({ activeAppMenuId, onAppSelect, onBack }) => {
         const config = await DaylightAPI('/api/fitness');
         const fitnessConfig = config?.fitness || config;
         const menus = fitnessConfig?.plex?.app_menus || [];
-        const menu = menus.find(m => String(m.id) === String(activeAppMenuId));
+        const menu = menus.find(m => String(m.id) === String(activePluginMenuId));
         setMenuConfig(menu);
       } catch (err) {
-        console.error('Failed to load app menu:', err);
+        console.error('Failed to load plugin menu:', err);
       } finally {
         setLoading(false);
       }
     };
     loadMenu();
-  }, [activeAppMenuId]);
+  }, [activePluginMenuId]);
 
-  const availableApps = useMemo(() => {
+  const availablePlugins = useMemo(() => {
     if (!menuConfig?.items) return [];
     return menuConfig.items
-      .map(item => ({ ...item, manifest: getAppManifest(item.id) }))
+      .map(item => ({ ...item, manifest: getPluginManifest(item.id) }))
       .filter(item => item.manifest);
   }, [menuConfig]);
 
-  if (loading) return <div className="fitness-app-menu loading">Loading apps...</div>;
+  if (loading) return <div className="fitness-plugin-menu loading">Loading plugins...</div>;
 
   return (
-    <div className="fitness-app-menu">
-      <div className="app-menu-header">
-        <h2>{menuConfig?.name || 'Fitness Apps'}</h2>
+    <div className="fitness-plugin-menu">
+      <div className="plugin-menu-header">
+        <h2>{menuConfig?.name || 'Fitness Plugins'}</h2>
         <button onClick={() => setShowSettings(true)} className="settings-btn">⚙️</button>
       </div>
       
       {showSettings && (
         <div className="settings-panel-overlay">
             <div className="settings-panel">
-            <h3>App Settings</h3>
+            <h3>Plugin Settings</h3>
             <SettingsControls onClose={() => setShowSettings(false)} />
             <button onClick={() => setShowSettings(false)} className="close-settings-btn">Close</button>
             </div>
         </div>
       )}
 
-      <div className="app-grid">
-        {availableApps.map(app => (
+      <div className="plugin-grid">
+        {availablePlugins.map(plugin => (
           <button
-            key={app.id}
-            className="app-card"
-            onClick={() => onAppSelect(app.id, app.manifest)}
+            key={plugin.id}
+            className="plugin-card"
+            onClick={() => onPluginSelect(plugin.id, plugin.manifest)}
           >
-            <div className="app-icon">{app.manifest.icon || '📱'}</div>
-            <div className="app-name">{app.name}</div>
-            <div className="app-description">{app.manifest.description}</div>
+            <div className="plugin-icon">{plugin.manifest.icon || '📱'}</div>
+            <div className="plugin-name">{plugin.name}</div>
+            <div className="plugin-description">{plugin.manifest.description}</div>
           </button>
         ))}
       </div>
@@ -86,4 +86,4 @@ const FitnessAppMenu = ({ activeAppMenuId, onAppSelect, onBack }) => {
   );
 };
 
-export default FitnessAppMenu;
+export default FitnessPluginMenu;

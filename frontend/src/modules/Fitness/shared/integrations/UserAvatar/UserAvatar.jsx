@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import CircularUserAvatar from '../../../../components/CircularUserAvatar.jsx';
+import CircularUserAvatar from '../../../components/CircularUserAvatar.jsx';
 
 const UserAvatar = ({
   user,

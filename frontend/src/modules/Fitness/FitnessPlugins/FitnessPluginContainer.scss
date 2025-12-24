@@ -1,4 +1,4 @@
-.fitness-app-container {
+.fitness-plugin-container {
   display: flex;
   flex-direction: column;
   background: var(--fitness-bg-secondary, #1a1a1a);
@@ -34,7 +34,7 @@
     height: 100%;
   }
 
-  .fitness-app-header {
+  .fitness-plugin-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -42,7 +42,7 @@
     background: rgba(255, 255, 255, 0.05);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 
-    .app-title {
+    .plugin-title {
       font-weight: 600;
       font-size: 16px;
       color: var(--fitness-text-primary, #fff);

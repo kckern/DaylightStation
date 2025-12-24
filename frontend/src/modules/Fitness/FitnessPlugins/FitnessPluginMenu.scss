@@ -1,4 +1,4 @@
-.fitness-app-menu {
+.fitness-plugin-menu {
   padding: 24px;
   height: 100%;
   overflow-y: auto;
@@ -12,7 +12,7 @@
     opacity: 0.7;
   }
 
-  .app-menu-header {
+  .plugin-menu-header {
     display: flex;
     align-items: center;
     margin-bottom: 32px;
@@ -88,13 +88,13 @@
       }
   }
 
-  .app-grid {
+  .plugin-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 24px;
   }
 
-  .app-card {
+  .plugin-card {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
@@ -112,19 +112,19 @@
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
     }
 
-    .app-icon {
+    .plugin-icon {
       font-size: 48px;
       margin-bottom: 16px;
     }
 
-    .app-name {
+    .plugin-name {
       font-size: 18px;
       font-weight: 600;
       margin-bottom: 8px;
       color: var(--fitness-text-primary, #fff);
     }
 
-    .app-description {
+    .plugin-description {
       font-size: 14px;
       color: var(--fitness-text-secondary, #aaa);
       line-height: 1.4;

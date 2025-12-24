@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import useFitnessApp from '../../useFitnessApp';
+import useFitnessPlugin from '../../useFitnessPlugin';
 import { Webcam as FitnessWebcam } from '../../../components/FitnessWebcam.jsx';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import './CameraViewApp.scss';
@@ -13,7 +13,7 @@ const CameraViewApp = ({ mode, onClose, config, onMount }) => {
     registerSessionScreenshot,
     configureSessionScreenshotPlan,
     registerLifecycle
-  } = useFitnessApp('camera_view');
+  } = useFitnessPlugin('camera_view');
 
   const webcamRef = useRef(null);
   const [streamReady, setStreamReady] = useState(false);

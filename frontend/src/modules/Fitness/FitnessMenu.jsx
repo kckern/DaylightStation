@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LoadingOverlay, Alert, Text } from '@mantine/core';
 import { DaylightAPI, normalizeImageUrl } from '../../lib/api.mjs';
-import FitnessAppMenu from './FitnessApps/FitnessAppMenu.jsx';
+import FitnessPluginMenu from './FitnessPlugins/FitnessPluginMenu.jsx';
 import './FitnessMenu.scss';
 
 const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue }) => {
@@ -222,9 +222,9 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
   if (activeAppMenu) {
     return (
-      <FitnessAppMenu 
-        activeAppMenuId={activeAppMenu.id} 
-        onAppSelect={(appId, manifest) => onContentSelect && onContentSelect('app', { id: appId, ...manifest })}
+      <FitnessPluginMenu 
+        activePluginMenuId={activeAppMenu.id} 
+        onPluginSelect={(pluginId, manifest) => onContentSelect && onContentSelect('plugin', { id: pluginId, ...manifest })}
         onBack={() => {}} 
       />
     );

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
-import useFitnessApp from '../../useFitnessApp';
+import useFitnessPlugin from '../../useFitnessPlugin';
 import { DaylightMediaPath } from '../../../../../lib/api.mjs';
 import './FitnessChartApp.scss';
 import {
@@ -648,7 +648,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		timebase, 
 		registerLifecycle,
 		activityMonitor  // Phase 2 - centralized activity tracking
-	} = useFitnessApp('fitness_chart');
+	} = useFitnessPlugin('fitness_chart');
 	const containerRef = useRef(null);
 	const [chartSize, setChartSize] = useState({ width: DEFAULT_CHART_WIDTH, height: DEFAULT_CHART_HEIGHT });
 

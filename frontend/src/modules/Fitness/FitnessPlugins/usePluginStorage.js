@@ -1,9 +1,9 @@
 import { useCallback } from 'react';
 
-const APP_STORAGE_PREFIX = 'fitness_app_';
+const PLUGIN_STORAGE_PREFIX = 'fitness_plugin_';
 
-const useAppStorage = (appId) => {
-  const storageKey = `${APP_STORAGE_PREFIX}${appId}`;
+const usePluginStorage = (pluginId) => {
+  const storageKey = `${PLUGIN_STORAGE_PREFIX}${pluginId}`;
   
   const get = useCallback((key, defaultValue = null) => {
     try {
@@ -23,7 +23,7 @@ const useAppStorage = (appId) => {
       data[key] = value;
       localStorage.setItem(storageKey, JSON.stringify(data));
     } catch (e) {
-      console.error(`Failed to save app setting: ${key}`, e);
+      console.error(`Failed to save plugin setting: ${key}`, e);
     }
   }, [storageKey]);
   
@@ -32,13 +32,13 @@ const useAppStorage = (appId) => {
   }, [storageKey]);
   
   const clearAll = useCallback(() => {
-    // Clear all fitness app storage
+    // Clear all fitness plugin storage
     Object.keys(localStorage)
-      .filter(key => key.startsWith(APP_STORAGE_PREFIX))
+      .filter(key => key.startsWith(PLUGIN_STORAGE_PREFIX))
       .forEach(key => localStorage.removeItem(key));
   }, []);
   
   return { get, set, clear, clearAll };
 };
 
-export default useAppStorage;
+export default usePluginStorage;
