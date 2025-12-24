@@ -21,12 +21,6 @@ const FitnessPluginContainer = ({ pluginId, mode = 'standalone', onClose, config
 
   return (
     <div className={`fitness-plugin-container mode-${mode}`}>
-      {mode !== 'sidebar' && mode !== 'mini' && (
-        <div className="fitness-plugin-header">
-          <span className="plugin-title">{manifest?.name || pluginId}</span>
-          <button className="plugin-close-btn" onClick={onClose}>×</button>
-        </div>
-      )}
       <FitnessPluginErrorBoundary
         pluginId={pluginId}
         manifest={manifest}
