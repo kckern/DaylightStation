@@ -1,0 +1,15 @@
+@import '../../styles/variables';
+
+.heart-rate-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  &__zone {
+    margin-top: var(--app-spacing-xs);
+    font-size: var(--app-font-size-sm);
+    font-weight: bold;
+    color: var(--app-text-secondary);
+    text-transform: uppercase;
+  }
+}

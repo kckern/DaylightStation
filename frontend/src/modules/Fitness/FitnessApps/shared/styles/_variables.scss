@@ -1,0 +1,68 @@
+// Import zone colors (centralized definitions)
+@import './zones';
+
+:root {
+  // Colors - Base
+  --app-bg-primary: #0f0f0f;
+  --app-bg-secondary: #1a1a1a;
+  --app-bg-tertiary: #252525;
+  --app-bg-elevated: #2a2a2a;
+  
+  // Colors - Text
+  --app-text-primary: #ffffff;
+  --app-text-secondary: #aaaaaa;
+  --app-text-muted: #666666;
+  --app-text-accent: #4fc3f7;
+  
+  // Colors - Actions
+  --app-action-primary: #4fc3f7;
+  --app-action-primary-hover: #81d4fa;
+  --app-action-success: #51cf66;
+  --app-action-warning: #ffd43b;
+  --app-action-danger: #ff6b6b;
+  
+  // Colors - Zones (Heart Rate) - imported from _zones.scss
+  // --zone-* variables are defined in _zones.scss
+  
+  // Spacing
+  --app-spacing-xs: 4px;
+  --app-spacing-sm: 8px;
+  --app-spacing-md: 16px;
+  --app-spacing-lg: 24px;
+  --app-spacing-xl: 32px;
+  
+  // Typography
+  --app-font-family: system-ui, -apple-system, sans-serif;
+  --app-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --app-font-size-xs: 10px;
+  --app-font-size-sm: 12px;
+  --app-font-size-md: 14px;
+  --app-font-size-lg: 18px;
+  --app-font-size-xl: 24px;
+  --app-font-size-2xl: 32px;
+  --app-font-size-3xl: 48px;
+  
+  // Borders & Radius
+  --app-border-color: rgba(255, 255, 255, 0.1);
+  --app-radius-sm: 4px;
+  --app-radius-md: 8px;
+  --app-radius-lg: 12px;
+  --app-radius-xl: 16px;
+  --app-radius-full: 9999px;
+  
+  // Shadows
+  --app-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --app-shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+  --app-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
+  
+  // Transitions
+  --app-transition-fast: 150ms ease;
+  --app-transition-normal: 250ms ease;
+  --app-transition-slow: 400ms ease;
+  
+  // Z-Index Layers
+  --app-z-base: 1;
+  --app-z-overlay: 100;
+  --app-z-modal: 200;
+  --app-z-toast: 300;
+}

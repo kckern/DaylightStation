@@ -1,0 +1,116 @@
+@import '../../styles/variables';
+
+.device-avatar {
+  --device-size: 64px;
+  --spinner-width: 3px;
+  --spinner-color: var(--app-action-primary);
+  
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &__wrapper {
+    position: relative;
+    width: var(--device-size);
+    height: var(--device-size);
+    border-radius: 50%;
+  }
+
+  &__spinner {
+    position: absolute;
+    inset: calc(var(--spinner-width) * -0.5);
+    width: calc(100% + var(--spinner-width));
+    height: calc(100% + var(--spinner-width));
+    border-radius: 50%;
+    border: var(--spinner-width) solid transparent;
+    border-top-color: var(--spinner-color);
+    border-right-color: var(--spinner-color);
+    animation: device-spin var(--spin-duration, 1s) linear infinite;
+    pointer-events: none;
+  }
+
+  &__content {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--app-bg-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &__value-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  &__value {
+    font-family: var(--app-font-mono);
+    font-weight: bold;
+    color: var(--app-text-primary);
+  }
+
+  // Sizes
+  &--sm {
+    --device-size: 40px;
+    --spinner-width: 2px;
+    
+    .device-avatar__value { font-size: var(--app-font-size-xs); }
+  }
+
+  &--md {
+    --device-size: 64px;
+    --spinner-width: 3px;
+    
+    .device-avatar__value { font-size: var(--app-font-size-sm); }
+  }
+
+  &--lg {
+    --device-size: 96px;
+    --spinner-width: 4px;
+    
+    .device-avatar__value { font-size: var(--app-font-size-lg); }
+  }
+
+  &--xl {
+    --device-size: 128px;
+    --spinner-width: 5px;
+    
+    .device-avatar__value { font-size: var(--app-font-size-xl); }
+  }
+
+  // States
+  &--idle {
+    .device-avatar__spinner {
+      opacity: 0;
+    }
+    
+    .device-avatar__value {
+      color: var(--app-text-muted);
+    }
+  }
+
+  &--active {
+    .device-avatar__spinner {
+      opacity: 1;
+    }
+  }
+}
+
+@keyframes device-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

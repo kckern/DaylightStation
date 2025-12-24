@@ -1,0 +1,103 @@
+@import '../../styles/variables';
+
+.app-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+
+  &__loading,
+  &__empty {
+    padding: var(--app-spacing-xl);
+    text-align: center;
+    color: var(--app-text-secondary);
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    padding: var(--app-spacing-md);
+    border-bottom: 1px solid var(--app-border-color);
+    background: var(--app-bg-elevated);
+    transition: background-color var(--app-transition-fast);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &--interactive {
+      cursor: pointer;
+      
+      &:hover {
+        background-color: var(--app-bg-tertiary);
+      }
+      
+      &:active {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+    }
+  }
+
+  &__item-icon {
+    margin-right: var(--app-spacing-md);
+    font-size: 24px;
+    color: var(--app-text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+  }
+
+  &__item-content {
+    flex: 1;
+    min-width: 0; /* Truncate text */
+  }
+
+  &__item-title {
+    font-size: var(--app-font-size-md);
+    font-weight: 600;
+    color: var(--app-text-primary);
+    margin-bottom: 2px;
+  }
+
+  &__item-subtitle {
+    font-size: var(--app-font-size-sm);
+    color: var(--app-text-secondary);
+  }
+
+  &__item-action {
+    margin-left: var(--app-spacing-md);
+  }
+
+  &__item-arrow {
+    margin-left: var(--app-spacing-md);
+    color: var(--app-text-muted);
+    font-size: 20px;
+  }
+
+  /* Variants */
+  &--inset {
+    padding: 0 var(--app-spacing-md);
+    
+    .app-list__item {
+      border-radius: var(--app-radius-md);
+      margin-bottom: var(--app-spacing-xs);
+      border: 1px solid transparent;
+      
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+  }
+
+  &--cards {
+    gap: var(--app-spacing-md);
+    background: transparent;
+    
+    .app-list__item {
+      border-radius: var(--app-radius-lg);
+      border: 1px solid var(--app-border-color);
+      margin-bottom: 0;
+      box-shadow: var(--app-shadow-sm);
+    }
+  }
+}

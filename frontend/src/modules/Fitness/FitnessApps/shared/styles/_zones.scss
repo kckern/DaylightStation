@@ -1,0 +1,193 @@
+// =============================================================================
+// ZONE COLORS
+// =============================================================================
+// Centralized zone color definitions for heart rate intensity levels.
+// Use these in components via CSS variables or SCSS variables.
+// =============================================================================
+
+// Zone color map (SCSS)
+$zone-colors: (
+  'rest':   #888888,
+  'gray':   #888888,
+  'cool':   #6ab8ff,
+  'blue':   #6ab8ff,
+  'active': #51cf66,
+  'green':  #51cf66,
+  'warm':   #ffd43b,
+  'yellow': #ffd43b,
+  'hot':    #ff922b,
+  'orange': #ff922b,
+  'fire':   #ff6b6b,
+  'red':    #ff6b6b
+);
+
+// Individual zone variables (for direct use)
+$zone-rest:   #888888;
+$zone-gray:   #888888;
+$zone-cool:   #6ab8ff;
+$zone-blue:   #6ab8ff;
+$zone-active: #51cf66;
+$zone-green:  #51cf66;
+$zone-warm:   #ffd43b;
+$zone-yellow: #ffd43b;
+$zone-hot:    #ff922b;
+$zone-orange: #ff922b;
+$zone-fire:   #ff6b6b;
+$zone-red:    #ff6b6b;
+
+// =============================================================================
+// ZONE HELPER FUNCTIONS
+// =============================================================================
+
+/// Get zone color by name
+/// @param {string} $zone - Zone name (rest, cool, active, warm, hot, fire) or color alias
+/// @param {color} $fallback - Fallback color if zone not found
+/// @return {color} The zone color
+@function zone-color($zone, $fallback: $zone-gray) {
+  @if map-has-key($zone-colors, $zone) {
+    @return map-get($zone-colors, $zone);
+  }
+  @return $fallback;
+}
+
+// =============================================================================
+// ZONE MIXINS
+// =============================================================================
+
+/// Apply zone-based background color
+/// @param {string} $zone - Zone name
+/// @param {number} $opacity - Background opacity (0-1)
+@mixin zone-background($zone, $opacity: 1) {
+  $color: zone-color($zone);
+  @if $opacity < 1 {
+    background-color: rgba($color, $opacity);
+  } @else {
+    background-color: $color;
+  }
+}
+
+/// Apply zone-based text color
+/// @param {string} $zone - Zone name
+@mixin zone-text($zone) {
+  color: zone-color($zone);
+}
+
+/// Apply zone-based border
+/// @param {string} $zone - Zone name
+/// @param {number} $width - Border width
+/// @param {string} $style - Border style
+@mixin zone-border($zone, $width: 2px, $style: solid) {
+  border: $width $style zone-color($zone);
+}
+
+/// Apply zone-based glow/shadow
+/// @param {string} $zone - Zone name
+/// @param {number} $blur - Shadow blur radius
+/// @param {number} $spread - Shadow spread
+/// @param {number} $opacity - Shadow opacity
+@mixin zone-glow($zone, $blur: 10px, $spread: 0, $opacity: 0.5) {
+  $color: zone-color($zone);
+  box-shadow: 0 0 $blur $spread rgba($color, $opacity);
+}
+
+// =============================================================================
+// GOVERNANCE STATUS COLORS
+// =============================================================================
+
+$governance-colors: (
+  'green':  #51cf66,
+  'yellow': #ffd43b,
+  'red':    #ff6b6b,
+  'gray':   #888888,
+  'grey':   #888888
+);
+
+$governance-green:  #51cf66;
+$governance-yellow: #ffd43b;
+$governance-red:    #ff6b6b;
+$governance-gray:   #888888;
+
+/// Get governance status color
+/// @param {string} $status - Status name (green, yellow, red, gray)
+/// @return {color} The status color
+@function governance-color($status) {
+  @if map-has-key($governance-colors, $status) {
+    @return map-get($governance-colors, $status);
+  }
+  @return $governance-gray;
+}
+
+// =============================================================================
+// STRIPE ANIMATION PATTERNS
+// =============================================================================
+
+/// Generate animated stripe pattern for progress bars
+/// @param {color} $color1 - Primary stripe color
+/// @param {color} $color2 - Secondary stripe color
+/// @param {number} $size - Stripe size in pixels
+/// @param {number} $speed - Animation duration in seconds
+/// @param {string} $direction - Animation direction (left, right)
+@mixin striped-animation($color1, $color2, $size: 20px, $speed: 2s, $direction: left) {
+  background: repeating-linear-gradient(
+    45deg,
+    $color1,
+    $color1 $size / 2,
+    $color2 $size / 2,
+    $color2 $size
+  );
+  background-size: $size * 1.414 100%; // √2 for 45° stripes
+  
+  @if $direction == left {
+    animation: stripe-scroll-left $speed linear infinite;
+  } @else {
+    animation: stripe-scroll-right $speed linear infinite;
+  }
+}
+
+/// Zone-based striped animation
+/// @param {string} $zone - Zone name for colors
+/// @param {number} $speed - Animation duration in seconds
+/// @param {string} $direction - Animation direction
+@mixin zone-stripes($zone, $speed: 2s, $direction: left) {
+  $color: zone-color($zone);
+  $color1: rgba($color, 0.3);
+  $color2: rgba($color, 0.1);
+  @include striped-animation($color1, $color2, 20px, $speed, $direction);
+}
+
+// Stripe animation keyframes
+@keyframes stripe-scroll-left {
+  from { background-position: 0 0; }
+  to { background-position: -28.28px 0; } // √2 * 20px
+}
+
+@keyframes stripe-scroll-right {
+  from { background-position: 0 0; }
+  to { background-position: 28.28px 0; }
+}
+
+// =============================================================================
+// CSS CUSTOM PROPERTIES (for runtime JS access)
+// =============================================================================
+
+:root {
+  // Zone colors as CSS variables (already in _variables.scss, but ensuring consistency)
+  --zone-rest: #{$zone-rest};
+  --zone-gray: #{$zone-gray};
+  --zone-cool: #{$zone-cool};
+  --zone-blue: #{$zone-blue};
+  --zone-active: #{$zone-active};
+  --zone-green: #{$zone-green};
+  --zone-warm: #{$zone-warm};
+  --zone-yellow: #{$zone-yellow};
+  --zone-hot: #{$zone-hot};
+  --zone-orange: #{$zone-orange};
+  --zone-fire: #{$zone-fire};
+  --zone-red: #{$zone-red};
+  
+  // Governance status colors
+  --governance-green: #{$governance-green};
+  --governance-yellow: #{$governance-yellow};
+  --governance-red: #{$governance-red};
+  --governance-gray: #{$governance-gray};
+}

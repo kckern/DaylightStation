@@ -1,0 +1,100 @@
+@import '../../styles/variables';
+
+.striped-progress-bar {
+  --stripe-speed: 2s;
+  --bar-height: 8px;
+  
+  display: flex;
+  align-items: center;
+  gap: var(--app-spacing-sm);
+  width: 100%;
+
+  &__track {
+    flex: 1;
+    height: var(--bar-height);
+    background-color: var(--app-bg-tertiary);
+    border-radius: var(--app-radius-full);
+    overflow: hidden;
+  }
+
+  &__fill {
+    height: 100%;
+    border-radius: var(--app-radius-full);
+    transition: width var(--app-transition-normal);
+    background-size: 28.28px 100%; // √2 * 20px for 45° stripes
+  }
+
+  &__value {
+    font-size: var(--app-font-size-xs);
+    font-family: var(--app-font-mono);
+    color: var(--app-text-secondary);
+    min-width: 3ch;
+    text-align: right;
+  }
+
+  // Animation
+  &--animated &__fill {
+    animation-duration: var(--stripe-speed);
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+
+  &--left.striped-progress-bar--animated &__fill {
+    animation-name: stripe-left;
+  }
+
+  &--right.striped-progress-bar--animated &__fill {
+    animation-name: stripe-right;
+  }
+
+  // Color variants with stripes
+  @mixin stripe-colors($color1, $color2) {
+    background: repeating-linear-gradient(
+      45deg,
+      $color1,
+      $color1 10px,
+      $color2 10px,
+      $color2 20px
+    );
+  }
+
+  &--gray &__fill,
+  &--rest &__fill {
+    @include stripe-colors(rgba(#888888, 0.4), rgba(#888888, 0.2));
+  }
+
+  &--blue &__fill,
+  &--cool &__fill {
+    @include stripe-colors(rgba(#6ab8ff, 0.4), rgba(#6ab8ff, 0.2));
+  }
+
+  &--green &__fill,
+  &--active &__fill {
+    @include stripe-colors(rgba(#51cf66, 0.4), rgba(#51cf66, 0.2));
+  }
+
+  &--yellow &__fill,
+  &--warm &__fill {
+    @include stripe-colors(rgba(#ffd43b, 0.4), rgba(#ffd43b, 0.2));
+  }
+
+  &--orange &__fill,
+  &--hot &__fill {
+    @include stripe-colors(rgba(#ff922b, 0.4), rgba(#ff922b, 0.2));
+  }
+
+  &--red &__fill,
+  &--fire &__fill {
+    @include stripe-colors(rgba(#ff6b6b, 0.4), rgba(#ff6b6b, 0.2));
+  }
+}
+
+@keyframes stripe-left {
+  from { background-position: 0 0; }
+  to { background-position: -28.28px 0; }
+}
+
+@keyframes stripe-right {
+  from { background-position: 0 0; }
+  to { background-position: 28.28px 0; }
+}

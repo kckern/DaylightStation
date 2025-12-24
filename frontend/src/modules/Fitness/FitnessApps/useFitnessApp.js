@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import useAppStorage from './useAppStorage';
+import { ChartDataBuilder } from '../domain';
 
 const useFitnessApp = (appId) => {
   const fitnessCtx = useFitnessContext();
@@ -11,6 +12,21 @@ const useFitnessApp = (appId) => {
   const historicalParticipants = useMemo(() => {
     return fitnessCtx.fitnessSessionInstance?.getHistoricalParticipants?.() || [];
   }, [fitnessCtx.fitnessSessionInstance?.sessionId]);
+  
+  // Phase 3: Memoized ChartDataBuilder for clean chart data interface
+  const chartDataBuilder = useMemo(() => {
+    const getSeries = fitnessCtx.getUserTimelineSeries;
+    const timebase = fitnessCtx.timelineTimebase;
+    const activityMonitor = fitnessCtx.activityMonitor;
+    
+    if (typeof getSeries !== 'function') return null;
+    
+    return new ChartDataBuilder({
+      getSeries,
+      timebase,
+      activityMonitor
+    });
+  }, [fitnessCtx.getUserTimelineSeries, fitnessCtx.timelineTimebase, fitnessCtx.activityMonitor]);
   
   // Lifecycle event handlers (registered via useEffect in app)
   const lifecycleRef = useRef({
@@ -59,6 +75,12 @@ const useFitnessApp = (appId) => {
     historicalParticipants,
     getUserVitals: fitnessCtx.getUserVitals,
     getUserTimelineSeries: fitnessCtx.getUserTimelineSeries,
+    
+    // Activity Monitor - single source of truth for participant status (Phase 2)
+    activityMonitor: fitnessCtx.activityMonitor,
+    
+    // Chart Data Builder - clean interface for chart data (Phase 3)
+    chartDataBuilder,
     
     // Zone & governance
     zones: fitnessCtx.zones,

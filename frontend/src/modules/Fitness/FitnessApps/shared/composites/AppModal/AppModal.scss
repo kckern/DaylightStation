@@ -1,0 +1,128 @@
+@import '../../styles/variables';
+@import '../../styles/mixins';
+@import '../../styles/animations';
+
+.app-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--app-z-modal);
+  display: flex;
+  padding: var(--app-spacing-md);
+  animation: app-fade-in var(--app-transition-normal);
+
+  // Backdrop variants
+  &--dim {
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  &--blur {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+  }
+
+  &--none {
+    background: transparent;
+    pointer-events: none;
+    
+    .app-modal {
+      pointer-events: auto;
+      box-shadow: var(--app-shadow-lg);
+    }
+  }
+
+  // Position variants
+  &--center {
+    align-items: center;
+    justify-content: center;
+  }
+
+  &--top {
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 10vh;
+  }
+
+  &--bottom {
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 0; // Sheet-like behavior
+  }
+}
+
+.app-modal {
+  background: var(--app-bg-elevated);
+  border-radius: var(--app-radius-lg);
+  border: 1px solid var(--app-border-color);
+  box-shadow: var(--app-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  overflow: hidden;
+  position: relative;
+
+  // Sizes
+  &--sm { width: 100%; max-width: 400px; }
+  &--md { width: 100%; max-width: 600px; }
+  &--lg { width: 100%; max-width: 800px; }
+  &--xl { width: 100%; max-width: 1000px; }
+  &--fullscreen { 
+    width: 100%; 
+    height: 100%; 
+    max-width: none; 
+    border-radius: 0;
+  }
+
+  // Animations
+  &--scale { animation: app-scale-in var(--app-transition-normal); }
+  &--slide-up { animation: app-slide-up var(--app-transition-normal); }
+  &--fade { animation: app-fade-in var(--app-transition-normal); }
+
+  &__header {
+    padding: var(--app-spacing-md) var(--app-spacing-lg);
+    border-bottom: 1px solid var(--app-border-color);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  &__title-group {
+    flex: 1;
+    margin-right: var(--app-spacing-md);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: var(--app-font-size-lg);
+    font-weight: 600;
+    color: var(--app-text-primary);
+  }
+
+  &__subtitle {
+    margin: 4px 0 0;
+    font-size: var(--app-font-size-sm);
+    color: var(--app-text-secondary);
+  }
+
+  &__body {
+    padding: var(--app-spacing-lg);
+    overflow-y: auto;
+    flex: 1;
+    @include scrollbar-hide;
+  }
+
+  &__footer {
+    padding: var(--app-spacing-md) var(--app-spacing-lg);
+    border-top: 1px solid var(--app-border-color);
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--app-spacing-sm);
+  }
+}

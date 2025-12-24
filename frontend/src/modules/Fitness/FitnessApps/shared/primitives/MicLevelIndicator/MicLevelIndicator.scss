@@ -1,0 +1,132 @@
+@import '../../styles/variables';
+
+.mic-level-indicator {
+  --mic-active-color: #ff6b6b;
+  --mic-inactive-color: var(--app-bg-tertiary);
+  
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &__bars {
+    display: flex;
+    align-items: flex-end;
+  }
+
+  &__bar {
+    background-color: var(--mic-inactive-color);
+    border-radius: 2px;
+    transition: background-color 0.1s ease, height 0.1s ease;
+
+    &--active {
+      background-color: var(--mic-active-color);
+    }
+  }
+
+  &__waveform {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__wave-bar {
+    background-color: var(--mic-active-color);
+    border-radius: 2px;
+    animation: mic-wave 0.5s ease-in-out infinite alternate;
+    transform-origin: bottom;
+  }
+
+  // Orientation
+  &--horizontal {
+    .mic-level-indicator__bars {
+      flex-direction: row;
+      gap: 2px;
+    }
+  }
+
+  &--vertical {
+    .mic-level-indicator__bars {
+      flex-direction: column-reverse;
+      gap: 2px;
+    }
+  }
+
+  // Sizes
+  &--sm {
+    .mic-level-indicator__bar {
+      width: 3px;
+      height: 12px;
+    }
+
+    &.mic-level-indicator--vertical .mic-level-indicator__bar {
+      width: 12px;
+      height: 3px;
+    }
+
+    .mic-level-indicator__wave-bar {
+      width: 2px;
+      margin: 0 1px;
+    }
+  }
+
+  &--md {
+    .mic-level-indicator__bar {
+      width: 4px;
+      height: 20px;
+    }
+
+    &.mic-level-indicator--vertical .mic-level-indicator__bar {
+      width: 20px;
+      height: 4px;
+    }
+
+    .mic-level-indicator__wave-bar {
+      width: 3px;
+      margin: 0 2px;
+    }
+  }
+
+  &--lg {
+    .mic-level-indicator__bar {
+      width: 6px;
+      height: 32px;
+    }
+
+    &.mic-level-indicator--vertical .mic-level-indicator__bar {
+      width: 32px;
+      height: 6px;
+    }
+
+    .mic-level-indicator__wave-bar {
+      width: 4px;
+      margin: 0 2px;
+    }
+  }
+
+  // Waveform variant
+  &--waveform {
+    .mic-level-indicator__waveform {
+      height: 100%;
+      min-height: 24px;
+    }
+
+    &.mic-level-indicator--sm .mic-level-indicator__waveform {
+      min-height: 16px;
+    }
+
+    &.mic-level-indicator--lg .mic-level-indicator__waveform {
+      min-height: 40px;
+    }
+  }
+}
+
+@keyframes mic-wave {
+  from {
+    transform: scaleY(0.3);
+    opacity: 0.5;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
