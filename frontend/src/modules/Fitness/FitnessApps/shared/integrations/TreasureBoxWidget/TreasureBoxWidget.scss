@@ -1,0 +1,135 @@
+@import '../../styles/variables';
+
+.treasure-box-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--app-spacing-xl);
+  background: var(--app-bg-elevated);
+  border-radius: var(--app-radius-lg);
+  border: 1px solid var(--app-border-color);
+
+  &__chest-container {
+    position: relative;
+    width: 120px;
+    height: 100px;
+    margin-bottom: var(--app-spacing-lg);
+    cursor: pointer;
+    transition: transform 0.3s ease;
+
+    &:hover {
+      transform: scale(1.05);
+    }
+  }
+
+  &__chest {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+  }
+
+  &__chest-base {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 60%;
+    background: #8d6e63;
+    border: 4px solid #5d4037;
+    border-radius: 0 0 8px 8px;
+  }
+
+  &__chest-lid {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    height: 40%;
+    background: #a1887f;
+    border: 4px solid #5d4037;
+    border-radius: 8px 8px 0 0;
+    transform-origin: bottom;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  &__chest-lock {
+    position: absolute;
+    top: 35%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px;
+    height: 20px;
+    background: #ffca28;
+    border: 2px solid #f57f17;
+    border-radius: 4px;
+    z-index: 3;
+  }
+
+  &__glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(255, 215, 0, 0.6) 0%, transparent 70%);
+    z-index: 1;
+    animation: treasure-glow 2s infinite alternate;
+  }
+
+  &.open {
+    .treasure-box-widget__chest-lid {
+      transform: rotateX(110deg);
+    }
+    
+    .treasure-box-widget__chest-lock {
+      opacity: 0;
+    }
+  }
+
+  &__title {
+    margin: 0 0 var(--app-spacing-sm);
+    font-size: var(--app-font-size-xl);
+    color: var(--app-text-primary);
+  }
+
+  &__description {
+    margin: 0 0 var(--app-spacing-md);
+    color: var(--app-text-secondary);
+  }
+
+  &__rewards {
+    display: flex;
+    gap: var(--app-spacing-md);
+    justify-content: center;
+    margin-top: var(--app-spacing-md);
+  }
+
+  &__reward {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: reward-pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) backwards;
+  }
+
+  &__reward-icon {
+    font-size: 32px;
+    margin-bottom: 4px;
+  }
+
+  &__reward-label {
+    font-size: var(--app-font-size-sm);
+    font-weight: bold;
+    color: var(--app-action-warning);
+  }
+}
+
+@keyframes treasure-glow {
+  from { opacity: 0.5; transform: translate(-50%, -50%) scale(0.8); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+}
+
+@keyframes reward-pop {
+  from { opacity: 0; transform: translateY(20px) scale(0.5); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

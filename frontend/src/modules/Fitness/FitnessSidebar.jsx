@@ -172,9 +172,7 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
   return (
     <div className={`fitness-sidebar-container fitness-sidebar-mode-${mode}`}>
       {/* Mini cam slot when chart is in main view */}
-      <div className="fitness-sidebar-controls">
-        {visibility.sidebarCam ? miniCamContent : null}
-      </div>
+
 
       {/* Treasure Box */}
       {visibility.treasureBox && (

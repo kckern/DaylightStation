@@ -1,0 +1,45 @@
+@import '../../styles/variables';
+
+.user-avatar-grid {
+  display: flex;
+  gap: var(--app-spacing-sm);
+  align-items: center;
+
+  &--row {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  &--grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  }
+
+  &--stack {
+    .user-avatar-wrapper {
+      margin-right: -12px;
+      transition: transform var(--app-transition-fast);
+      
+      &:hover {
+        transform: translateY(-4px);
+        z-index: 1;
+      }
+    }
+  }
+}
+
+.user-avatar-overflow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--app-bg-elevated);
+  border: 1px solid var(--app-border-color);
+  border-radius: 50%;
+  color: var(--app-text-secondary);
+  font-weight: bold;
+
+  &--sm { width: 32px; height: 32px; font-size: 10px; }
+  &--md { width: 48px; height: 48px; font-size: 14px; }
+  &--lg { width: 64px; height: 64px; font-size: 18px; }
+  &--xl { width: 96px; height: 96px; font-size: 24px; }
+}

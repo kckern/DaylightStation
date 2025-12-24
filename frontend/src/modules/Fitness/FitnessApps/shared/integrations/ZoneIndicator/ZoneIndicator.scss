@@ -1,0 +1,49 @@
+@import '../../styles/variables';
+
+.zone-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-spacing-sm);
+
+  &__badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--zone-color);
+    color: #fff;
+    font-weight: bold;
+    border-radius: var(--app-radius-sm);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+
+  &__label {
+    font-size: var(--app-font-size-sm);
+    color: var(--app-text-secondary);
+  }
+
+  /* Sizes */
+  &--sm {
+    .zone-indicator__badge {
+      width: 24px;
+      height: 24px;
+      font-size: 12px;
+    }
+  }
+
+  &--md {
+    .zone-indicator__badge {
+      width: 32px;
+      height: 32px;
+      font-size: 14px;
+    }
+  }
+
+  &--lg {
+    .zone-indicator__badge {
+      width: 48px;
+      height: 48px;
+      font-size: 18px;
+      border-radius: var(--app-radius-md);
+    }
+  }
+}

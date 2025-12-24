@@ -1,0 +1,44 @@
+@import '../../styles/variables';
+
+.app-timer {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: var(--app-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--app-text-primary);
+
+  &__display {
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  &__controls {
+    display: flex;
+    gap: var(--app-spacing-xs);
+    margin-top: var(--app-spacing-xs);
+  }
+
+  // Sizes
+  &--sm {
+    .app-timer__display { font-size: var(--app-font-size-md); }
+  }
+
+  &--md {
+    .app-timer__display { font-size: var(--app-font-size-xl); }
+  }
+
+  &--lg {
+    .app-timer__display { font-size: var(--app-font-size-3xl); }
+  }
+
+  &--xl {
+    .app-timer__display { font-size: 64px; }
+  }
+
+  // States
+  &--warning {
+    color: var(--app-action-danger);
+    animation: app-pulse 1s infinite;
+  }
+}

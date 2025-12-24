@@ -1,0 +1,122 @@
+@import '../../styles/variables';
+
+.app-touch-slider {
+  width: 100%;
+  user-select: none;
+  touch-action: none;
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: var(--app-spacing-sm);
+    font-size: var(--app-font-size-sm);
+    color: var(--app-text-secondary);
+  }
+
+  &__value {
+    font-family: var(--app-font-mono);
+    color: var(--app-text-primary);
+  }
+
+  &__track-container {
+    position: relative;
+    cursor: pointer;
+    padding: 10px 0; /* Hit area */
+  }
+
+  &__track {
+    background-color: var(--app-bg-tertiary);
+    border-radius: var(--app-radius-full);
+    position: relative;
+  }
+
+  &__fill {
+    background-color: var(--app-action-primary);
+    border-radius: var(--app-radius-full);
+    position: absolute;
+  }
+
+  &__thumb {
+    width: 24px;
+    height: 24px;
+    background-color: #fff;
+    border-radius: 50%;
+    box-shadow: var(--app-shadow-md);
+    position: absolute;
+    transform: translate(-50%, -50%);
+    transition: transform 0.1s;
+    
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 40px;
+      height: 40px; /* Larger touch target */
+    }
+  }
+
+  &--dragging {
+    .app-touch-slider__thumb {
+      transform: translate(-50%, -50%) scale(1.2);
+      background-color: var(--app-action-primary-hover);
+    }
+  }
+
+  &--disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  /* Orientation */
+  &--horizontal {
+    .app-touch-slider__track {
+      height: 6px;
+      width: 100%;
+    }
+    
+    .app-touch-slider__fill {
+      height: 100%;
+      top: 0;
+      left: 0;
+    }
+
+    .app-touch-slider__thumb {
+      top: 50%;
+    }
+  }
+
+  &--vertical {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .app-touch-slider__header {
+      width: 100%;
+      margin-bottom: var(--app-spacing-md);
+    }
+
+    .app-touch-slider__track-container {
+      height: 100%;
+      padding: 0 10px;
+      flex: 1;
+    }
+
+    .app-touch-slider__track {
+      width: 6px;
+      height: 100%;
+    }
+
+    .app-touch-slider__fill {
+      width: 100%;
+      bottom: 0;
+      left: 0;
+    }
+
+    .app-touch-slider__thumb {
+      left: 50%;
+    }
+  }
+}

@@ -1,0 +1,78 @@
+@import '../../styles/variables';
+
+.music-player-widget {
+  display: flex;
+  align-items: center;
+  background: var(--app-bg-elevated);
+  border-radius: var(--app-radius-lg);
+  padding: var(--app-spacing-md);
+  border: 1px solid var(--app-border-color);
+  gap: var(--app-spacing-md);
+
+  &__cover {
+    width: 80px;
+    height: 80px;
+    border-radius: var(--app-radius-md);
+    overflow: hidden;
+    flex-shrink: 0;
+    background: var(--app-bg-tertiary);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  &__cover-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    color: var(--app-text-secondary);
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    font-weight: 600;
+    color: var(--app-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+  }
+
+  &__artist {
+    font-size: var(--app-font-size-sm);
+    color: var(--app-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: var(--app-spacing-sm);
+  }
+
+  &__progress-container {
+    margin-bottom: var(--app-spacing-sm);
+  }
+
+  &__time {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--app-text-muted);
+    margin-top: 2px;
+  }
+
+  &__controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--app-spacing-md);
+  }
+}

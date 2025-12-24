@@ -22,3 +22,5 @@ config.app.yml
 config.secrets.yml
 config.app-local.yml
 /scripts
+/docs/notes
+*.log

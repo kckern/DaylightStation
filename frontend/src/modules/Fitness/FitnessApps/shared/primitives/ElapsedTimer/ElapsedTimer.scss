@@ -1,0 +1,63 @@
+@import '../../styles/variables';
+
+.elapsed-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-spacing-xs);
+  font-family: var(--app-font-mono);
+  color: var(--app-text-primary);
+
+  &__prefix,
+  &__suffix {
+    font-family: var(--app-font-family);
+    color: var(--app-text-secondary);
+  }
+
+  &__time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Paused state
+  &--paused {
+    opacity: 0.6;
+    
+    .elapsed-timer__time {
+      animation: timer-blink 1s ease-in-out infinite;
+    }
+  }
+
+  // Sizes
+  &--sm {
+    font-size: var(--app-font-size-sm);
+  }
+
+  &--md {
+    font-size: var(--app-font-size-md);
+  }
+
+  &--lg {
+    font-size: var(--app-font-size-xl);
+  }
+
+  &--xl {
+    font-size: var(--app-font-size-2xl);
+  }
+
+  // Variants
+  &--mono {
+    font-family: var(--app-font-mono);
+    letter-spacing: 0.05em;
+  }
+
+  &--badge {
+    background-color: var(--app-bg-tertiary);
+    padding: var(--app-spacing-xs) var(--app-spacing-sm);
+    border-radius: var(--app-radius-md);
+    border: 1px solid var(--app-border-color);
+  }
+}
+
+@keyframes timer-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

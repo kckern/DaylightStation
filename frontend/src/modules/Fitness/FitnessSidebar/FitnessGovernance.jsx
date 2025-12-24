@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
+import { StripedProgressBar, StatusBadge } from '../FitnessApps/shared';
+import { GOVERNANCE_STATUS, GOVERNANCE_PRIORITY } from '../FitnessApps/shared/constants/fitness';
 import './FitnessGovernance.scss';
 
 const UI_TEXT = {
@@ -10,35 +12,12 @@ const UI_TEXT = {
 
 const STATUS_PRIORITY = ['red', 'yellow', 'green', 'init', 'idle', 'off'];
 
-const STRIPE_CONFIG = {
-  green: {
-    color1: 'rgba(34, 197, 94, 0.3)',
-    color2: 'rgba(34, 197, 94, 0.1)',
-    speed: 0.5, // seconds
-    distance: 28.28,
-    direction: 1 // 1 for left-to-right, -1 for right-to-left
-  },
-  yellow: {
-    color1: 'rgba(234, 179, 8, 0.3)',
-    color2: 'rgba(234, 179, 8, 0.1)',
-    speed: 2,
-    distance: 28.28,
-    direction: -1
-  },
-  red: {
-    color1: 'rgba(239, 68, 68, 0.3)',
-    color2: 'rgba(239, 68, 68, 0.1)',
-    speed: 5,
-    distance: 28.28,
-    direction: -1
-  },
-  grey: {
-    color1: 'rgba(156, 163, 175, 0.3)',
-    color2: 'rgba(156, 163, 175, 0.1)',
-    speed: 10,
-    distance: 28.28,
-    direction: 1
-  }
+// Map status to stripe animation speeds
+const STRIPE_SPEEDS = {
+  green: 0.5,
+  yellow: 2,
+  red: 5,
+  grey: 10
 };
 
 const FitnessGovernance = () => {
@@ -113,18 +92,19 @@ const FitnessGovernance = () => {
 
   const statusClass = `fg-status-${summary.status}`;
 
-  // Map status to display color
+  // Map status to display color for shared primitives
   const statusColors = {
-    idle: 'grey',
-    off: 'grey',
-    init: 'grey',
+    idle: 'gray',
+    off: 'gray',
+    init: 'gray',
     green: 'green',
     yellow: 'yellow',
     red: 'red'
   };
 
-  const statusColor = statusColors[summary.status] || 'grey';
-  const stripeConfig = STRIPE_CONFIG[statusColor] || STRIPE_CONFIG.grey;
+  const statusColor = statusColors[summary.status] || 'gray';
+  const stripeSpeed = STRIPE_SPEEDS[statusColor] || STRIPE_SPEEDS.grey;
+  const stripeDirection = statusColor === 'green' ? 'right' : 'left';
 
   const toggleExpanded = useCallback(() => {
     setIsExpanded((prev) => !prev);
@@ -174,30 +154,29 @@ const FitnessGovernance = () => {
         </div>
         
         <div className={`fg-status-pill fg-${statusColor}`}>
+          {/* Use shared StripedProgressBar for animated status indicator */}
           {(summary.status === 'green' || summary.status === 'yellow' || summary.status === 'red' || summary.status === 'init') && (
-            <svg className="fg-stripes" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <pattern id={`diagonalStripes-${statusColor}`} x="0" y="0" width="28.28" height="28.28" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                  <rect x="0" y="0" width="14.14" height="28.28" fill={stripeConfig.color1} />
-                  <rect x="14.14" y="0" width="14.14" height="28.28" fill={stripeConfig.color2} />
-                  <animateTransform
-                    attributeName="patternTransform"
-                    type="translate"
-                    from="0 0"
-                    to={`${stripeConfig.distance * stripeConfig.direction} 0`}
-                    dur={`${stripeConfig.speed}s`}
-                    repeatCount="indefinite"
-                    additive="sum"
-                  />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill={`url(#diagonalStripes-${statusColor})`} />
-            </svg>
-          )}
-          {summary.status === 'yellow' && (
-            <div className="fg-grace-progress" style={{ width: `${summary.graceProgress}%` }}></div>
+            <StripedProgressBar
+              value={summary.status === 'yellow' ? summary.graceProgress : 100}
+              max={100}
+              color={statusColor}
+              speed={stripeSpeed}
+              direction={stripeDirection}
+              height="100%"
+              animated={true}
+              className="fg-stripe-bar"
+            />
           )}
         </div>
+        
+        {/* Status badge for quick reference */}
+        <StatusBadge 
+          status={statusColor}
+          pulse={summary.status === 'yellow' || summary.status === 'red'}
+          size="sm"
+          variant="dot-only"
+          className="fg-status-badge"
+        />
       </div>
 
       {isExpanded && (
@@ -231,13 +210,11 @@ const FitnessGovernance = () => {
                 {summary.challenge.selectionLabel ? (
                   <span className="fg-challenge__tag">{summary.challenge.selectionLabel}</span>
                 ) : null}
-                <span className={`fg-challenge__status fg-challenge__status--${summary.challenge.status || 'pending'}`}>
-                  {summary.challenge.status === 'pending'
-                    ? 'In progress'
-                    : summary.challenge.status === 'success'
-                      ? 'Completed'
-                      : 'Failed'}
-                </span>
+                <StatusBadge
+                  status={summary.challenge.status === 'success' ? 'green' : summary.challenge.status === 'failed' ? 'red' : 'yellow'}
+                  label={summary.challenge.status === 'pending' ? 'In progress' : summary.challenge.status === 'success' ? 'Completed' : 'Failed'}
+                  size="sm"
+                />
               </div>
               <div className="fg-challenge__zone">{summary.challenge.zoneLabel || summary.challenge.zone || 'Target zone'}</div>
               <div className="fg-challenge__counts">
@@ -246,9 +223,16 @@ const FitnessGovernance = () => {
                 <span className="fg-challenge__count fg-challenge__count--target">{summary.challenge.requiredCount ?? 0}</span>
                 <span className="fg-challenge__count-label">participants</span>
               </div>
-              <div className="fg-challenge__progress">
-                <div className="fg-challenge__progress-fill" style={{ width: `${Math.round(summary.challengeProgress * 100)}%` }} />
-              </div>
+              <StripedProgressBar
+                value={summary.challengeProgress * 100}
+                max={100}
+                color={summary.challenge.status === 'success' ? 'green' : summary.challenge.status === 'failed' ? 'red' : 'yellow'}
+                speed={1}
+                direction="right"
+                height={6}
+                animated={summary.challenge.status === 'pending'}
+                className="fg-challenge__progress-bar"
+              />
               <div className="fg-challenge__meta-row">
                 <span className="fg-challenge__time">
                   {summary.challengeRemaining != null && summary.challengeTotal
