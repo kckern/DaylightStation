@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import PropTypes from 'prop-types';
 import useVoiceMemoRecorder from '../FitnessSidebar/useVoiceMemoRecorder.js';
+import { MicLevelIndicator, CountdownRing } from '../FitnessApps/shared';
+import { formatTime } from '../FitnessApps/shared/utils/time';
 import './VoiceMemoOverlay.scss';
 import { playbackLog } from '../../Player/lib/playbackLogger.js';
 
@@ -50,24 +52,16 @@ const Icons = {
   )
 };
 
-const formatTime = (seconds) => {
+// Legacy formatTime wrapper for backward compatibility
+const formatTimeLocal = (seconds) => {
   if (!seconds || isNaN(seconds)) return '00:00';
-
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hrs > 0) {
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  return formatTime(seconds, { format: 'auto' });
 };
 
 const formatMemoTimestamp = (memo) => {
   if (!memo) return '';
   if (memo.sessionElapsedSeconds != null) {
-    return formatTime(Math.max(0, Math.round(memo.sessionElapsedSeconds)));
+    return formatTimeLocal(Math.max(0, Math.round(memo.sessionElapsedSeconds)));
   }
   if (memo.createdAt) {
     try {
@@ -391,9 +385,9 @@ const VoiceMemoOverlay = ({
   const transcript = currentMemo?.transcriptClean || currentMemo?.transcriptRaw || 'Transcription in progress…';
   const memoTimestamp = currentMemo ? formatMemoTimestamp(currentMemo) : '';
   const memoVideoTimestamp = currentMemo?.videoTimeSeconds != null
-    ? formatTime(Math.max(0, Math.round(currentMemo.videoTimeSeconds)))
+    ? formatTimeLocal(Math.max(0, Math.round(currentMemo.videoTimeSeconds)))
     : '';
-  const recordingTimeLabel = formatTime(Math.max(0, Math.floor(recordingDuration / 1000)));
+  const recordingTimeLabel = formatTimeLocal(Math.max(0, Math.floor(recordingDuration / 1000)));
   const displayTranscript = showRedo
     ? (isRecording || (!isProcessing && !isRecording) ? 'Recording…' : 'Processing voice memo…')
     : (showReview && !currentMemo ? 'Finalizing memo…' : transcript);
@@ -450,22 +444,25 @@ const VoiceMemoOverlay = ({
         ) : null}
 
         {showReview ? (
-          <div className="voice-memo-overlay__content">
-            <div className="voice-memo-overlay__meta-large">
-              {memoTitle ? <span className="voice-memo-overlay__meta-heading">{memoTitle}</span> : null}
+          <div className="voice-memo-overlay__content voice-memo-overlay__content--review">
+            <div className="voice-memo-overlay__review-header">
               {memoTimestamp && <span className="voice-memo-overlay__timestamp">{memoTimestamp}</span>}
-              {micLabel ? <span className="voice-memo-overlay__meta mic">{micLabel}</span> : null}
             </div>
             <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--large">{displayTranscript}</div>
-            {overlayState.autoAccept ? (
-              <div className="voice-memo-overlay__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(autoAcceptProgress * 100)}>
-                <div className="voice-memo-overlay__progress-fill" style={{ transform: `scaleX(${autoAcceptProgress})` }} />
-                <span className="voice-memo-overlay__progress-label">Auto saving…</span>
-              </div>
-            ) : null}
             <div className="voice-memo-overlay__actions">
-              <button type="button" className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--keep" onClick={handleAccept} title="Keep">
+              <button 
+                type="button" 
+                className={`voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--keep ${overlayState.autoAccept ? 'voice-memo-overlay__icon-btn--auto-accept' : ''}`}
+                onClick={handleAccept} 
+                title={overlayState.autoAccept ? `Auto-saving in ${Math.ceil((1 - autoAcceptProgress) * VOICE_MEMO_AUTO_ACCEPT_MS / 1000)}s` : 'Keep'}
+              >
                 <Icons.Keep />
+                {overlayState.autoAccept && (
+                  <div 
+                    className="voice-memo-overlay__auto-accept-bar" 
+                    style={{ transform: `scaleX(${autoAcceptProgress})` }}
+                  />
+                )}
               </button>
               <button
                 type="button"
@@ -498,9 +495,15 @@ const VoiceMemoOverlay = ({
             </div>
             <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--faded">{displayTranscript}</div>
             {!isProcessing ? (
-              <div className="voice-memo-overlay__meter" aria-hidden="true">
-                <div className="voice-memo-overlay__meter-fill" style={{ transform: `scaleX(${Math.max(0, Math.min(1, micLevel || 0))})` }} />
-              </div>
+              <MicLevelIndicator
+                level={(micLevel || 0) * 100}
+                bars={7}
+                orientation="horizontal"
+                size="lg"
+                variant="waveform"
+                activeColor="#ff6b6b"
+                className="voice-memo-overlay__mic-level"
+              />
             ) : (
               <div className="voice-memo-overlay__spinner" aria-hidden="true" />
             )}

@@ -1,0 +1,13 @@
+@import './variables';
+@import './mixins';
+@import './animations';
+
+.fitness-app-shared {
+  font-family: var(--app-font-family);
+  color: var(--app-text-primary);
+  box-sizing: border-box;
+
+  * {
+    box-sizing: border-box;
+  }
+}

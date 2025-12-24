@@ -1,0 +1,21 @@
+@import '../../styles/variables';
+
+.chart-widget {
+  width: 100%;
+  background: var(--app-bg-elevated);
+  border-radius: var(--app-radius-md);
+  padding: var(--app-spacing-md);
+  border: 1px solid var(--app-border-color);
+
+  &__title {
+    font-size: var(--app-font-size-sm);
+    color: var(--app-text-secondary);
+    margin-bottom: var(--app-spacing-md);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  &__container {
+    width: 100%;
+  }
+}

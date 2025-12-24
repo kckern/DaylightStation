@@ -1,22 +1,35 @@
+import { 
+  ParticipantStatus, 
+  ZoneColors, 
+  isDropout, 
+  createChartSegment,
+  getZoneColor 
+} from '../domain';
+
 export const MIN_VISIBLE_TICKS = 30;
 
-export const ZONE_COLOR_MAP = {
-  cool: '#4fb1ff',
-  active: '#4ade80',
-  warm: '#facc15',
-  hot: '#fb923c',
-  fire: '#f87171',
-  default: '#9ca3af'
-};
+// Re-export for backward compatibility - prefer importing from domain
+export const ZONE_COLOR_MAP = ZoneColors;
 
 const toNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 };
 
+const slugifyId = (value, fallback = null) => {
+  if (!value) return fallback;
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || fallback;
+};
+
 const normalizeId = (entry) => {
   if (!entry) return null;
-  return entry.name || entry.profileId || entry.hrDeviceId || null;
+  const raw = entry.name || entry.profileId || entry.hrDeviceId || null;
+  return slugifyId(raw);
 };
 
 const forwardFill = (arr = []) => {
@@ -39,33 +52,127 @@ const forwardBackwardFill = (arr = []) => {
   return fwd.map((v) => (v == null ? firstFinite : v));
 };
 
-export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}) => {
+/**
+ * Preserves interior nulls (dropouts) while filling only leading/trailing edges.
+ * This allows buildSegments to detect actual user dropouts.
+ * 
+ * @param {Array} arr - Array of values
+ * @param {Object} [options] - Options
+ * @param {boolean} [options.startAtZero=false] - If true, ensure index 0 is always 0 (for race chart origin)
+ */
+const fillEdgesOnly = (arr = [], options = {}) => {
+  if (!Array.isArray(arr) || arr.length === 0) return arr;
+  const { startAtZero = false } = options;
+  
+  // Find first and last finite indices
+  let firstFiniteIdx = -1;
+  let lastFiniteIdx = -1;
+  for (let i = 0; i < arr.length; i++) {
+    if (Number.isFinite(arr[i])) {
+      if (firstFiniteIdx === -1) firstFiniteIdx = i;
+      lastFiniteIdx = i;
+    }
+  }
+  
+  if (firstFiniteIdx === -1) return arr; // All nulls
+  
+  const result = [...arr];
+  const firstValue = arr[firstFiniteIdx];
+  const lastValue = arr[lastFiniteIdx];
+  
+  // For cumulative metrics (startAtZero=true):
+  // - Force index 0 to be 0 so all lines start at origin
+  // - Back-fill any other leading nulls with 0
+  if (startAtZero) {
+    result[0] = 0; // Anchor to origin - everyone starts at 0
+    for (let i = 1; i < firstFiniteIdx; i++) {
+      result[i] = 0;
+    }
+  } else {
+    // Original behavior: back-fill with first value
+    for (let i = 0; i < firstFiniteIdx; i++) {
+      result[i] = firstValue;
+    }
+  }
+  
+  // Forward-fill trailing nulls only  
+  for (let i = lastFiniteIdx + 1; i < arr.length; i++) {
+    result[i] = lastValue;
+  }
+  
+  // Interior nulls are preserved to indicate dropout periods
+  return result;
+};
+
+/**
+ * Build activity mask from heart rate series.
+ * This is extracted as a utility for use with or without ActivityMonitor.
+ * 
+ * @param {Array} heartRateSeries 
+ * @returns {boolean[]}
+ */
+export const buildActivityMaskFromHeartRate = (heartRateSeries) => {
+  if (!Array.isArray(heartRateSeries)) return [];
+  return heartRateSeries.map(hr => hr != null && Number.isFinite(hr) && hr > 0);
+};
+
+/**
+ * Build beats series data for chart rendering.
+ * 
+ * @param {Object} rosterEntry - Participant entry with profileId/name
+ * @param {Function} getSeries - Function to retrieve timeline series
+ * @param {Object} [timebase] - Timebase configuration
+ * @param {Object} [options] - Additional options
+ * @param {import('../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor for centralized activity tracking
+ * @returns {{ beats: number[], zones: (string|null)[], active: boolean[] }}
+ */
+export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options = {}) => {
   const targetId = normalizeId(rosterEntry);
-  if (!targetId || typeof getSeries !== 'function') return { beats: [], zones: [] };
+  if (!targetId || typeof getSeries !== 'function') return { beats: [], zones: [], active: [] };
 
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
   const zones = getSeries(targetId, 'zone_id', { clone: true }) || [];
+  
+  // Get heart_rate to detect actual device activity (has nulls during dropout)
+  const heartRate = getSeries(targetId, 'heart_rate', { clone: true }) || [];
+  
+  const maxLen = Math.max(zones.length, heartRate.length);
+  let active = new Array(maxLen).fill(false);
+
+  // Preferred source: ActivityMonitor (single source of truth for inactivity/dropout)
+  if (options.activityMonitor && targetId) {
+    const mask = options.activityMonitor.getActivityMask(targetId, maxLen - 1) || [];
+    for (let i = 0; i < maxLen; i++) {
+      active[i] = mask[i] === true;
+    }
+  } else {
+    // Fallback: derive activity from heart_rate nulls
+    for (let i = 0; i < maxLen; i++) {
+      const hr = heartRate[i];
+      active[i] = hr != null && Number.isFinite(hr) && hr > 0;
+    }
+  }
 
   // Primary source: coins_total from TreasureBox (single source of truth)
   const coinsRaw = getSeries(targetId, 'coins_total', { clone: true }) || null;
   if (Array.isArray(coinsRaw) && coinsRaw.length > 0) {
     // Apply Math.floor for consistency with TreasureBox accumulator
-    const beats = forwardBackwardFill(coinsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null)));
-    return { beats, zones };
+    // Use startAtZero to anchor cumulative values to origin (0,0)
+    const beats = fillEdgesOnly(coinsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null)), { startAtZero: true });
+    return { beats, zones, active };
   }
 
   // Secondary source: pre-computed heart_beats if available
   const beatsRaw = getSeries(targetId, 'heart_beats', { clone: true }) || null;
   if (Array.isArray(beatsRaw) && beatsRaw.length > 0) {
     // Apply Math.floor for consistency
-    const beats = beatsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null));
-    return { beats, zones };
+    // Use startAtZero to anchor cumulative values to origin (0,0)
+    const beats = fillEdgesOnly(beatsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null)), { startAtZero: true });
+    return { beats, zones, active };
   }
 
-  // Last resort fallback: compute from heart_rate (deprecated - should use TreasureBox)
-  // This fallback is kept for backwards compatibility but should not be primary path
-  const heartRate = getSeries(targetId, 'heart_rate', { clone: true }) || [];
-  if (!Array.isArray(heartRate) || heartRate.length === 0) return { beats: [], zones };
+  // Last resort fallback: compute from heart_rate (deprecated)
+  if (!Array.isArray(heartRate) || heartRate.length === 0) return { beats: [], zones: [], active: [] };
 
   if (process.env.NODE_ENV === 'development') {
     console.warn(`[FitnessChart] Falling back to heart_rate calculation for ${targetId} - consider using TreasureBox coins_total`);
@@ -78,17 +185,30 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}) => {
     if (hrVal != null && hrVal > 0) {
       total += (hrVal / 60) * intervalSeconds;
     }
-    // Apply Math.floor for consistency with TreasureBox
     beats[idx] = Math.floor(total);
   });
-  return { beats, zones };
+  return { beats, zones, active };
 };
 
-export const buildSegments = (beats = [], zones = []) => {
+export const buildSegments = (beats = [], zones = [], active = []) => {
   const segments = [];
   let current = null;
   let lastZone = null;
   let lastPoint = null;
+  let gapStartPoint = null; // Track where a dropout started
+  let inGap = false; // Track if we're currently in a dropout period
+
+  // DEBUG: Check if active array has any false values
+  const falseCount = active.filter((a, i) => i > 0 && a === false).length;
+  
+  // Find first ACTIVE tick (when user actually started broadcasting)
+  let firstActiveTick = -1;
+  for (let i = 0; i < active.length; i++) {
+    if (active[i] === true) {
+      firstActiveTick = i;
+      break;
+    }
+  }
 
   const pushCurrent = () => {
     if (current && current.points.length > 0) {
@@ -99,20 +219,81 @@ export const buildSegments = (beats = [], zones = []) => {
 
   for (let i = 0; i < beats.length; i += 1) {
     const value = toNumber(beats[i]);
-    if (value == null) {
+    const zoneRaw = zones?.[i] ?? null;
+    // Dropout detection: ONLY based on heart_rate presence (active array)
+    // active[i] is false when heart_rate was null at tick i
+    const isActiveAtTick = active[i] === true;
+    
+    // LATE JOIN HANDLING: Leading zeros (before first active tick) should be drawn
+    // to anchor the line at origin, NOT treated as dropout
+    const isLeadingZero = i < firstActiveTick && value === 0;
+    
+    // Determine participant status at this tick
+    // ONLY consider it dropout if active[i] is false (no HR data recorded)
+    // EXCEPT for leading zeros which are synthetic anchors
+    const tickStatus = value == null 
+      ? ParticipantStatus.ABSENT 
+      : (isActiveAtTick || isLeadingZero ? ParticipantStatus.ACTIVE : ParticipantStatus.IDLE);
+    
+    if (tickStatus === ParticipantStatus.ABSENT) {
+      // No beats data at all - start tracking dropout gap if we have a last known point
+      if (lastPoint && !gapStartPoint) {
+        gapStartPoint = { ...lastPoint };
+        inGap = true;
+      }
       pushCurrent();
-      lastPoint = null;
       continue;
     }
-    const zoneRaw = zones?.[i] ?? null;
+    
+    // User has beats data - check if they're in dropout (IDLE status = no HR)
+    if (isDropout(tickStatus)) {
+      // User dropped out (no HR) but beats data continues (cumulative value frozen)
+      // Start gap tracking at the point where they dropped
+      if (!gapStartPoint && lastPoint) {
+        gapStartPoint = { ...lastPoint };
+      }
+      inGap = true;
+      // Don't add to current segment - skip this point as it's during dropout
+      continue;
+    }
+    
+    // User is active (ACTIVE status - HR data broadcasting)
+    if (inGap && gapStartPoint) {
+      // Returning from dropout - create a FLAT gap segment
+      // Gap line is HORIZONTAL at the dropout value, then jumps to rejoin value
+      const gapSegment = {
+        zone: null,
+        color: getZoneColor(null),
+        status: ParticipantStatus.IDLE,
+        isGap: true,
+        points: [
+          { ...gapStartPoint },
+          // Flat horizontal line: same value as dropout, but at current tick
+          { i, v: gapStartPoint.v }
+        ]
+      };
+      segments.push(gapSegment);
+      gapStartPoint = null;
+      inGap = false;
+      // Don't carry lastPoint continuity into new segment after gap
+      // The new segment starts fresh at the rejoin point
+      lastPoint = null;
+    }
+    
     const zone = zoneRaw || lastZone || null;
-    const color = ZONE_COLOR_MAP[zone] || ZONE_COLOR_MAP.default;
-    // Mark segments as gaps when zone is null (user absent/inactive)
-    const isGap = zone === null;
+    const color = getZoneColor(zone);
+    
     if (!current || current.zone !== zone) {
       pushCurrent();
-      current = { zone, color, isGap, points: [] };
-      // Include prior point to maintain continuity across color changes
+      // Create segment with explicit status
+      current = { 
+        zone, 
+        color, 
+        status: ParticipantStatus.ACTIVE,
+        isGap: false, 
+        points: [] 
+      };
+      // Include prior point to maintain continuity across color changes (but not after gaps)
       if (lastPoint) {
         current.points.push({ ...lastPoint });
       }
@@ -122,6 +303,18 @@ export const buildSegments = (beats = [], zones = []) => {
     lastPoint = { i, v: value };
   }
   pushCurrent();
+  
+  // NOTE: When user is STILL in dropout (hasn't rejoined), we do NOT create a trailing gap segment.
+  // The line simply STOPS at the dropout point. The dropout badge will mark where they left.
+  // Gap segments are ONLY created when user REJOINS - connecting dropout point to rejoin point.
+  // This matches expected behavior: colored line → stops → badge shows dropout → (rejoin) grey line → colored line resumes
+  
+  // Debug: Log segments including gaps
+  const gapSegs = segments.filter(s => s.isGap);
+  if (gapSegs.length > 0 || falseCount > 0) {
+    console.log('[buildSegments] result:', { totalSegs: segments.length, gapSegs: gapSegs.length, falseInActive: falseCount });
+  }
+  
   return segments;
 };
 
@@ -146,7 +339,8 @@ export const createPaths = (segments = [], options = {}) => {
     segments.forEach((seg) => {
       if (!seg || !Array.isArray(seg.points) || seg.points.length === 0) return;
       const prev = merged[merged.length - 1];
-      if (prev && prev.color === seg.color) {
+      // Only merge if same color AND same gap status (don't merge gap with non-gap)
+      if (prev && prev.color === seg.color && prev.isGap === seg.isGap) {
         prev.points.push(...seg.points);
       } else {
         merged.push({ ...seg, points: [...seg.points] });
@@ -197,13 +391,15 @@ export const createPaths = (segments = [], options = {}) => {
       const y = scaleY(v).toFixed(2);
       return acc + `${idx === 0 ? 'M' : 'L'}${x},${y} `;
     }, '').trim();
-    // Gap segments (absent users) get reduced opacity and dashed stroke
-    const isGap = Boolean(seg.isGap);
+    // Gap segments (dropout) get reduced opacity and dashed stroke
+    const segIsGap = Boolean(seg.isGap) || isDropout(seg.status);
+    const defaultColor = getZoneColor(null);
     return {
       zone: seg.zone,
       color: seg.color,
-      opacity: isGap ? 0.5 : (seg.color === ZONE_COLOR_MAP.default ? 0.1 : 1),
-      isGap,
+      status: seg.status || (segIsGap ? ParticipantStatus.IDLE : ParticipantStatus.ACTIVE),
+      opacity: segIsGap ? 0.5 : (seg.color === defaultColor ? 0.1 : 1),
+      isGap: segIsGap,
       d: path
     };
   });

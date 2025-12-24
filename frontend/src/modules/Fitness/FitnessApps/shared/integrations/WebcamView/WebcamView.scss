@@ -1,0 +1,42 @@
+.webcam-view {
+  position: relative;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  background: #000;
+  border-radius: var(--app-radius-md);
+
+  &__content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  &__camera {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &--mirror {
+    .webcam-view__camera video {
+      transform: scaleX(-1);
+    }
+  }
+
+  &__overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+
+    * {
+      pointer-events: auto;
+    }
+  }
+}

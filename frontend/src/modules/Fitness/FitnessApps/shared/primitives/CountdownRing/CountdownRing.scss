@@ -1,0 +1,84 @@
+@import '../../styles/variables';
+
+.countdown-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &__svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  &__track {
+    stroke: var(--app-bg-tertiary);
+  }
+
+  &__progress {
+    stroke: var(--ring-color, var(--app-action-primary));
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.1s linear;
+  }
+
+  &__content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__time {
+    font-family: var(--app-font-mono);
+    font-size: 1.5em;
+    font-weight: bold;
+    color: var(--app-text-primary);
+  }
+
+  // Color variants
+  &--primary {
+    --ring-color: var(--app-action-primary);
+  }
+
+  &--success {
+    --ring-color: var(--app-action-success);
+  }
+
+  &--warning {
+    --ring-color: var(--app-action-warning);
+  }
+
+  &--danger {
+    --ring-color: var(--app-action-danger);
+  }
+
+  &--gray {
+    --ring-color: #888888;
+  }
+
+  // States
+  &--paused {
+    .countdown-ring__progress {
+      opacity: 0.5;
+    }
+    
+    .countdown-ring__time {
+      animation: countdown-blink 1s ease-in-out infinite;
+    }
+  }
+
+  &--running {
+    .countdown-ring__progress {
+      filter: drop-shadow(0 0 4px var(--ring-color));
+    }
+  }
+}
+
+@keyframes countdown-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

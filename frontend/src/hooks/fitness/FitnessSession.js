@@ -8,6 +8,12 @@ import { FitnessTimeline } from './FitnessTimeline.js';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { ZoneProfileStore } from './ZoneProfileStore.js';
 import { EventJournal } from './EventJournal.js';
+import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
+
+// Phase 4: Extracted modules for decomposed session management
+import { SessionLifecycle } from './SessionLifecycle.js';
+import { MetricsRecorder } from './MetricsRecorder.js';
+import { ParticipantRoster } from './ParticipantRoster.js';
 
 // -------------------- Timeout Configuration --------------------
 const FITNESS_TIMEOUTS = {
@@ -55,22 +61,52 @@ export class FitnessSession {
     this.zoneProfileStore = new ZoneProfileStore();
     this.eventJournal = new EventJournal();
     this.treasureBox = null; // Instantiated on start
+    
+    // Activity Monitor - single source of truth for participant status (Phase 2)
+    this.activityMonitor = new ActivityMonitor();
+    
+    // Phase 4: Extracted modules for cleaner separation of concerns
+    // These provide focused interfaces while FitnessSession maintains backward compatibility
+    this._lifecycle = new SessionLifecycle({
+      autosaveIntervalMs: 15000,
+      tickIntervalMs: 5000,
+      emptySessionTimeoutMs: FITNESS_TIMEOUTS.emptySession
+    });
+    this._metricsRecorder = new MetricsRecorder({ intervalMs: 5000 });
+    this._participantRoster = new ParticipantRoster();
+    
+    // Configure lifecycle callbacks
+    this._lifecycle.setCallbacks({
+      onTick: (timestamp) => this._collectTimelineTick({ timestamp }),
+      onAutosave: () => this._autosave()
+    });
+    
     this._userCollectionsCache = null;
     this._deviceOwnershipCache = null;
     this._guestCandidatesCache = null;
     this._userZoneProfilesCache = null;
     this._equipmentIdByCadence = new Map();
+    
+    // Legacy: these are now managed by MetricsRecorder but kept for backward compatibility
+    // TODO: Remove after full migration to MetricsRecorder
     this._cumulativeBeats = new Map();
     this._cumulativeRotations = new Map();
+    
+    // Note: Dropout detection now uses ActivityMonitor.getPreviousTickActive() (Priority 6)
+    // The _lastTickActiveHR Set has been removed
 
+    // Timer state (legacy - now delegated to SessionLifecycle)
+    // Still needed because _collectTimelineTick/_maybeAutosave haven't been fully migrated
     this._autosaveIntervalMs = 15000;
     this._lastAutosaveAt = 0;
     this._autosaveTimer = null;
     this._tickTimer = null;
     this._tickIntervalMs = 5000;
     this._pendingSnapshotRef = null;
-    this._emptyRosterStartTime = null; // 6A: Track when roster became empty for ghost session detection
-    this._sessionEndedCallbacks = []; // 6A: Callbacks to notify on session end
+    
+    // Ghost session detection - now also in SessionLifecycle but keeping for compatibility
+    this._emptyRosterStartTime = null;
+    this._sessionEndedCallbacks = [];
 
     this.snapshot = {
       participantRoster: [],
@@ -245,7 +281,65 @@ export class FitnessSession {
     });
   }
 
+  // Phase 4: Expose extracted module interfaces for direct access
+  // These provide focused, testable interfaces while maintaining backward compatibility
+  
+  /**
+   * Get the SessionLifecycle module
+   * @returns {SessionLifecycle}
+   */
+  get lifecycle() {
+    return this._lifecycle;
+  }
+
+  /**
+   * Get the MetricsRecorder module
+   * @returns {MetricsRecorder}
+   */
+  get metricsRecorder() {
+    return this._metricsRecorder;
+  }
+
+  /**
+   * Get the ParticipantRoster module
+   * @returns {ParticipantRoster}
+   */
+  get participantRoster() {
+    return this._participantRoster;
+  }
+
+  /**
+   * Get active participants (uses ParticipantRoster)
+   * @returns {import('./ParticipantRoster.js').RosterEntry[]}
+   */
+  getActiveParticipants() {
+    return this._participantRoster.getActive();
+  }
+
+  /**
+   * Get inactive participants (uses ParticipantRoster)
+   * @returns {import('./ParticipantRoster.js').RosterEntry[]}
+   */
+  getInactiveParticipants() {
+    return this._participantRoster.getInactive();
+  }
+
+  /**
+   * Get all participants with status (uses ParticipantRoster)
+   * @returns {import('./ParticipantRoster.js').RosterEntry[]}
+   */
+  getAllParticipantsWithStatus() {
+    return this._participantRoster.getAllWithStatus();
+  }
+
   get roster() {
+    // Delegate to ParticipantRoster but maintain backward compatibility
+    // If ParticipantRoster is configured, use it; otherwise fall back to original logic
+    if (this._participantRoster && this._participantRoster._deviceManager) {
+      return this._participantRoster.getRoster();
+    }
+    
+    // Original roster implementation (backward compatibility during migration)
     const roster = [];
     const heartRateDevices = this.deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
     const zoneLookup = new Map();
@@ -389,6 +483,29 @@ export class FitnessSession {
     this.timebase.startAbsMs = this.timeline.timebase.startTime;
     this._pendingSnapshotRef = null;
     
+    // Reset ActivityMonitor for new session (Phase 2 - centralized activity tracking)
+    this.activityMonitor.reset(now);
+    this.activityMonitor.configure({
+      tickIntervalMs: this.timebase.intervalMs,
+      // Convert ms timeouts to tick counts
+      idleThresholdTicks: 2, // ~10 seconds at 5s intervals
+      removeThresholdTicks: Math.ceil((this._getTimeouts().remove || 180000) / this.timebase.intervalMs)
+    });
+    
+    // Phase 4: Configure extracted modules for new session
+    this._metricsRecorder.setInterval(this.timebase.intervalMs);
+    this._metricsRecorder.reset();
+    this._metricsRecorder.setLogCallback((type, data) => this._log(type, data));
+    
+    this._participantRoster.reset();
+    this._participantRoster.configure({
+      deviceManager: this.deviceManager,
+      userManager: this.userManager,
+      treasureBox: this.treasureBox,
+      activityMonitor: this.activityMonitor,
+      timeline: this.timeline
+    });
+    
     // Reset snapshot structures
     this.snapshot.participantSeries = new Map();
     this.snapshot.deviceSeries = new Map();
@@ -402,9 +519,14 @@ export class FitnessSession {
     
     if (!this.treasureBox) {
       this.treasureBox = new FitnessTreasureBox(this);
+      // Inject ActivityMonitor for activity-aware coin processing (Priority 2)
+      this.treasureBox.setActivityMonitor(this.activityMonitor);
       // Configure treasure box if we have config available
       // (Usually configured via updateSnapshot or external call)
     }
+    
+    // Update ParticipantRoster with treasureBox reference after creation
+    this._participantRoster.configure({ treasureBox: this.treasureBox });
     
     this._lastAutosaveAt = 0;
     this._startAutosaveTimer();
@@ -567,7 +689,10 @@ export class FitnessSession {
 
     const tickPayload = {};
     const assignMetric = (key, value) => {
-      if (value == null || (typeof value === 'number' && Number.isNaN(value))) return;
+      // Allow explicit nulls for heart_rate to mark dropouts on the chart
+      const isHeartRateKey = typeof key === 'string' && key.endsWith(':heart_rate');
+      if (value == null && !isHeartRateKey) return;
+      if (typeof value === 'number' && Number.isNaN(value)) return;
       tickPayload[key] = value;
     };
     const sanitizeHeartRate = (value) => (Number.isFinite(value) && value > 0 ? Math.round(value) : null);
@@ -627,10 +752,35 @@ export class FitnessSession {
       }
     });
 
+    // Track users whose devices are inactive (for syncing chart dropout with sidebar)
+    const deviceInactiveUsers = new Set();
+
     const devices = this.deviceManager.getAllDevices();
     devices.forEach((device) => {
       if (!device) return;
       const deviceId = slugifyId(device.id || device.deviceId || device.name);
+      
+      // OPTION A FIX: Check DeviceManager's inactiveSince as source of truth
+      // This aligns chart dropout with sidebar's inactive state (transparent + countdown)
+      if (device.inactiveSince) {
+        // Device is inactive according to DeviceManager - don't count user as active
+        const mappedUser = this.userManager.resolveUserForDevice(device.id || device.deviceId);
+        if (mappedUser) {
+          const slug = slugifyId(mappedUser.name);
+          if (slug) {
+            deviceInactiveUsers.add(slug);
+            // Ensure user is in userMetricMap so we record null HR
+            if (!userMetricMap.has(slug)) {
+              const staged = stageUserEntry(mappedUser);
+              if (staged) {
+                userMetricMap.set(slug, staged);
+              }
+            }
+          }
+        }
+        // Skip active device processing but still record device metrics
+      }
+      
       const metrics = typeof device.getMetricsSnapshot === 'function'
         ? device.getMetricsSnapshot()
         : null;
@@ -662,6 +812,9 @@ export class FitnessSession {
         assignMetric(`device:${equipmentKey}:rotations`, nextRotations);
       }
 
+      // Skip user metric assignment if device is inactive
+      if (device.inactiveSince) return;
+
       if (!deviceId) return;
       const mappedUser = this.userManager.resolveUserForDevice(device.id || device.deviceId);
       if (!mappedUser) return;
@@ -675,31 +828,124 @@ export class FitnessSession {
       }
       const entry = userMetricMap.get(slug);
       if (!entry) return;
+      // Mark that this user received FRESH device data this tick
+      entry._hasDeviceDataThisTick = true;
       entry.metrics.heartRate = entry.metrics.heartRate ?? sanitizedDeviceMetrics.heartRate;
       entry.metrics.rpm = entry.metrics.rpm ?? sanitizedDeviceMetrics.rpm;
       entry.metrics.power = entry.metrics.power ?? sanitizedDeviceMetrics.power;
       entry.metrics.distance = entry.metrics.distance ?? sanitizedDeviceMetrics.distance;
     });
+    
+    // Collect active participant IDs for ActivityMonitor (Phase 2)
+    const activeParticipantIds = new Set();
+    
+    // PHASE 1 FIX: Track users who have valid HR data THIS tick
+    // CRITICAL: Only count users who received FRESH device data this tick
+    // User.getMetricsSnapshot() returns cached/stale heartRate which causes false positives
+    const currentTickActiveHR = new Set();
+    
+    // First pass: identify who has valid HR data this tick FROM DEVICE
+    userMetricMap.forEach((entry, slug) => {
+      if (!entry) return;
+      // Only trust heartRate if we got FRESH device data this tick
+      // Otherwise the user's cached heartRate (from User.getMetricsSnapshot) is stale
+      if (!entry._hasDeviceDataThisTick) return;
+      
+      // OPTION A FIX: Don't count user as active if their device is inactive
+      // This syncs chart dropout with sidebar's inactive state
+      if (deviceInactiveUsers.has(slug)) return;
+      
+      const hr = entry.metrics?.heartRate;
+      const hasValidHR = hr != null && Number.isFinite(hr) && hr > 0;
+      if (hasValidHR) {
+        currentTickActiveHR.add(slug);
+      }
+    });
+    
+    // Record null for users who HAD active HR last tick but DON'T this tick
+    // This creates the "holes" that allow dropout detection in the chart
+    // Priority 6: Use ActivityMonitor.getPreviousTickActive() instead of _lastTickActiveHR
+    const droppedUsers = [];
+    const previousTickActive = this.activityMonitor?.getPreviousTickActive() || new Set();
+    previousTickActive.forEach((slug) => {
+      if (!currentTickActiveHR.has(slug)) {
+        // User's device stopped broadcasting - record null to mark dropout
+        droppedUsers.push(slug);
+        
+        // Note: TreasureBox coin accumulation is now handled by:
+        // 1. processTick() which only processes active participants (Priority 1)
+        // 2. _awardCoins() which checks ActivityMonitor.isActive() (Priority 2)
+        // So we don't need to manually clear highestZone or freeze coins here anymore
+      }
+    });
+    if (droppedUsers.length > 0) {
+      console.log('[FitnessSession] DROPOUT DETECTED for:', droppedUsers);
+    }
+    
+    // CRITICAL: Record null HR for ALL roster users who are not currently active
+    // This ensures the chart shows dropout (dotted line) immediately when broadcast stops,
+    // not when the user is removed from roster. This aligns with the sidebar's "inactive" state.
+    const inactiveUsers = [];
+    userMetricMap.forEach((entry, slug) => {
+      if (!currentTickActiveHR.has(slug)) {
+        // User is in roster but NOT actively broadcasting - record null
+        assignMetric(`user:${slug}:heart_rate`, null);
+        inactiveUsers.push(slug);
+      }
+    });
+    
+    // Note: Previous tick tracking now handled by ActivityMonitor.recordTick() (Priority 6)
+    
+    // Second pass: process metrics for all users
     userMetricMap.forEach((entry, slug) => {
       if (!entry) return;
       const prevBeats = this._cumulativeBeats.get(slug) || 0;
       const hr = entry.metrics.heartRate;
-      const deltaBeats = Number.isFinite(hr) && hr > 0
+      const hasValidHR = currentTickActiveHR.has(slug);
+      const deltaBeats = hasValidHR
         ? (hr / 60) * intervalSeconds
         : 0;
       const nextBeats = prevBeats + deltaBeats;
       this._cumulativeBeats.set(slug, nextBeats);
       assignMetric(`user:${slug}:heart_beats`, nextBeats);
 
-      if (!hasNumericSample(entry.metrics)) return;
+      // Only record heart_rate if device is actively broadcasting valid HR
+      // Null was already recorded above for users who stopped broadcasting
+      if (!hasValidHR) {
+        // No valid HR data - skip recording other metrics too
+        return;
+      }
+      
+      // Track this participant as active (has valid HR data)
+      activeParticipantIds.add(slug);
+      
       assignMetric(`user:${slug}:heart_rate`, entry.metrics.heartRate);
       assignMetric(`user:${slug}:zone_id`, entry.metrics.zoneId);
       assignMetric(`user:${slug}:rpm`, entry.metrics.rpm);
       assignMetric(`user:${slug}:power`, entry.metrics.power);
       assignMetric(`user:${slug}:distance`, entry.metrics.distance);
     });
+    
+    // Update ActivityMonitor with current tick's activity (Phase 2 - single source of truth)
+    if (this.activityMonitor) {
+      this.activityMonitor.recordTick(currentTickIndex, activeParticipantIds, { timestamp });
+    }
 
+    // Ensure every roster user gets a baseline coins_total=0 once (even if inactive)
+    // so the chart has a series to render and can show dropout immediately.
+    if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
+    userMetricMap.forEach((_, slug) => {
+      if (!this._usersWithCoinsRecorded.has(slug)) {
+        assignMetric(`user:${slug}:coins_total`, 0);
+        this._usersWithCoinsRecorded.add(slug);
+      }
+    });
+
+    // Process TreasureBox coin intervals SYNCHRONOUSLY during session tick
+    // This ensures coin awards are aligned with activity detection (no race conditions)
     if (this.treasureBox) {
+      this.treasureBox.processTick(currentTickIndex, currentTickActiveHR, { slugifyId });
+      
       const treasureSummary = this.treasureBox.summary;
       if (treasureSummary) {
         assignMetric('global:coins_total', treasureSummary.totalCoins);
@@ -708,11 +954,34 @@ export class FitnessSession {
         ? this.treasureBox.getPerUserTotals()
         : null;
       if (perUserCoinTotals && typeof perUserCoinTotals.forEach === 'function') {
+        // Track users who have had their first coin value recorded (to ensure all start at 0)
+        if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
+        
         perUserCoinTotals.forEach((coins, userName) => {
           if (!userName) return;
           const slug = slugifyId(userName);
           if (!slug) return;
-          assignMetric(`user:${slug}:coins_total`, Number.isFinite(coins) ? coins : null);
+          // Only record coins_total if user's device is actively broadcasting HR
+          // During dropout, we DON'T want to record new coin values - the chart should stay flat
+          if (currentTickActiveHR.has(slug)) {
+            // GUARDRAIL: For each user's first tick, ensure coins start at 0
+            // This anchors all race chart lines to origin (0, 0)
+            if (!this._usersWithCoinsRecorded.has(slug)) {
+              // First time recording this user's coins: always 0
+              assignMetric(`user:${slug}:coins_total`, 0);
+              this._usersWithCoinsRecorded.add(slug);
+            } else {
+              // Subsequent ticks: record actual coin value from TreasureBox
+              // Note: Frozen coins hack removed (Priority 3)
+              // TreasureBox no longer awards coins during dropout because:
+              // 1. processTick() only processes active participants (Priority 1)
+              // 2. _awardCoins() checks ActivityMonitor.isActive() (Priority 2)
+              const coinValue = Number.isFinite(coins) ? coins : null;
+              assignMetric(`user:${slug}:coins_total`, coinValue);
+            }
+          }
+          // Note: NOT recording coins during dropout means the timeline won't have a value
+          // This is intentional - the chart will use the last known value (flat line)
         });
       }
     }
@@ -729,7 +998,68 @@ export class FitnessSession {
     this.timebase.startAbsMs = this.timeline.timebase.startTime;
     this.timebase.lastTickTimestamp = this.timeline.timebase.lastTickTimestamp;
     this._maybeLogTimelineTelemetry();
+    
+    // DEBUG: Log timeline series state for dropout debugging
+    // Log every 5 ticks to reduce spam but still capture state over time
+    if (currentTickIndex % 5 === 0 || currentTickIndex < 3) {
+      this._logTimelineDebug(currentTickIndex, currentTickActiveHR);
+    }
+    
     return tickResult;
+  }
+  
+  /**
+   * DEBUG: Log timeline series for dropout detection debugging
+   * Logs to both console AND emits a debug event for backend visibility
+   */
+  _logTimelineDebug(tickIndex, activeHRSet) {
+    if (!this.timeline?.series) return;
+    
+    const userSeries = {};
+    const seriesKeys = Object.keys(this.timeline.series);
+    
+    // Find all user heart_rate series
+    seriesKeys.forEach(key => {
+      if (key.startsWith('user:') && key.endsWith(':heart_rate')) {
+        const slug = key.replace('user:', '').replace(':heart_rate', '');
+        const hrSeries = this.timeline.series[key] || [];
+        const beatsSeries = this.timeline.series[`user:${slug}:heart_beats`] || [];
+        const coinsSeries = this.timeline.series[`user:${slug}:coins_total`] || [];
+        
+        // Count nulls in heart_rate
+        const nullCount = hrSeries.filter(v => v === null).length;
+        const validCount = hrSeries.filter(v => v !== null && Number.isFinite(v) && v > 0).length;
+        
+        // Get last 10 values for inspection
+        const lastHR = hrSeries.slice(-10);
+        const lastBeats = beatsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v);
+        const lastCoins = coinsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v);
+        
+        userSeries[slug] = {
+          hrLength: hrSeries.length,
+          nullCount,
+          validCount,
+          lastHR,
+          lastBeats,
+          lastCoins, // Add coins_total for debugging
+          isActiveNow: activeHRSet.has(slug)
+        };
+      }
+    });
+    
+    const debugData = {
+      tick: tickIndex,
+      totalSeries: seriesKeys.length,
+      lastTickActiveHR: [...(this.activityMonitor?.getPreviousTickActive() || [])],
+      currentTickActiveHR: [...activeHRSet],
+      userSeries
+    };
+    
+    // Log to console
+    console.log(`[Timeline DEBUG] Tick ${tickIndex}`, debugData);
+    
+    // Also emit as event for backend visibility (will show in dev.log)
+    this._log('timeline-debug', debugData);
   }
 
   // ... (Rest of methods: updateActiveDevices, maybeEnd, _persistSession, autosave, voice memos, summary)

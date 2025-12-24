@@ -1,0 +1,42 @@
+@import '../../styles/variables';
+
+.confirm-dialog {
+  &__content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--app-spacing-sm) 0;
+  }
+
+  &__icon {
+    font-size: 48px;
+    margin-bottom: var(--app-spacing-md);
+    color: var(--app-text-secondary);
+  }
+
+  &__title {
+    margin: 0 0 var(--app-spacing-sm);
+    font-size: var(--app-font-size-lg);
+    color: var(--app-text-primary);
+  }
+
+  &__message {
+    margin: 0;
+    color: var(--app-text-secondary);
+    line-height: 1.5;
+  }
+
+  // Variants
+  &--danger {
+    .confirm-dialog__icon {
+      color: var(--app-action-danger);
+    }
+  }
+
+  &--warning {
+    .confirm-dialog__icon {
+      color: var(--app-action-warning);
+    }
+  }
+}

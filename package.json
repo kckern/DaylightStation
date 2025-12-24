@@ -30,11 +30,12 @@
   },
   "scripts": {
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
-    "start:dev": "concurrently \"npm run backend:dev\" \"npm run frontend\"",
+    "start:dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
     "backend": "node backend/index.js",
-    "backend:dev": "nodemon --watch backend --ext js,mjs,json,yml backend/index.js 2>&1 | tee backend/logs/dev.log",
-    "backend:log": "node backend/index.js 2>&1 | tee backend/logs/dev.log",
+    "backend:dev": "nodemon --watch backend --ext js,mjs,json,yml backend/index.js 2>&1 | tee -a dev.log",
+    "backend:log": "node backend/index.js 2>&1 | tee dev.log",
     "frontend": "npm run dev --prefix frontend",
+    "frontend:dev": "npm run dev --prefix frontend 2>&1 | tee -a dev.log",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:nutribot": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/chatbots/nutribot/_test"
   }

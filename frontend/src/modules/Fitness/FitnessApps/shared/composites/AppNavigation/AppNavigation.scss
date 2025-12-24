@@ -1,0 +1,118 @@
+@import '../../styles/variables';
+
+.app-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--app-spacing-md);
+  width: 100%;
+
+  &__content {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+
+  // Dots variant
+  &__dots {
+    display: flex;
+    gap: var(--app-spacing-sm);
+  }
+
+  &__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: all var(--app-transition-fast);
+
+    &.active {
+      background: var(--app-action-primary);
+      transform: scale(1.2);
+    }
+
+    &:hover:not(.active) {
+      background: rgba(255, 255, 255, 0.4);
+    }
+  }
+
+  // Stepper variant
+  &--stepper {
+    justify-content: center;
+    
+    .app-navigation__steps {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    .app-navigation__step {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      position: relative;
+      cursor: pointer;
+      opacity: 0.5;
+      transition: opacity var(--app-transition-fast);
+
+      &:last-child {
+        flex: 0 0 auto;
+        .app-navigation__step-line { display: none; }
+      }
+
+      &.active, &.completed {
+        opacity: 1;
+      }
+
+      &:hover {
+        opacity: 0.8;
+      }
+    }
+
+    .app-navigation__step-indicator {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--app-bg-elevated);
+      border: 2px solid var(--app-border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      margin-right: 8px;
+      z-index: 1;
+    }
+
+    .app-navigation__step.active .app-navigation__step-indicator {
+      border-color: var(--app-action-primary);
+      color: var(--app-action-primary);
+    }
+
+    .app-navigation__step.completed .app-navigation__step-indicator {
+      background: var(--app-action-success);
+      border-color: var(--app-action-success);
+      color: #000;
+    }
+
+    .app-navigation__step-label {
+      font-size: var(--app-font-size-sm);
+      white-space: nowrap;
+    }
+
+    .app-navigation__step-line {
+      flex: 1;
+      height: 2px;
+      background: var(--app-border-color);
+      margin: 0 8px;
+    }
+
+    .app-navigation__step.completed .app-navigation__step-line {
+      background: var(--app-action-success);
+    }
+  }
+}

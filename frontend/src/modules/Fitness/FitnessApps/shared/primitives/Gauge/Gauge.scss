@@ -1,0 +1,95 @@
+@import '../../styles/variables';
+
+.app-gauge {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+
+  &__body {
+    width: 100%;
+    height: 50%; /* Half circle */
+    background-color: var(--app-bg-tertiary);
+    border-top-left-radius: 1000px; /* Large enough radius */
+    border-top-right-radius: 1000px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  &__fill {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--app-action-primary);
+    transform-origin: center top;
+    transition: transform 0.5s ease-out, background-color 0.3s ease;
+  }
+
+  &__cover {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%; /* Thickness of the gauge */
+    height: 160%; /* Double the height to make a circle */
+    background-color: var(--app-bg-primary);
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 10%;
+    z-index: 1;
+  }
+
+  &__content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+  }
+
+  &__value {
+    font-weight: bold;
+    font-family: var(--app-font-mono);
+  }
+
+  &__units {
+    font-size: 0.4em;
+    color: var(--app-text-secondary);
+    margin-top: 2px;
+  }
+
+  &__label {
+    font-size: 0.3em;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Sizes */
+  &--sm {
+    width: 80px;
+    height: 40px;
+    .app-gauge__value { font-size: 18px; }
+  }
+
+  &--md {
+    width: 120px;
+    height: 60px;
+    .app-gauge__value { font-size: 28px; }
+  }
+
+  &--lg {
+    width: 180px;
+    height: 90px;
+    .app-gauge__value { font-size: 42px; }
+  }
+
+  &--xl {
+    width: 240px;
+    height: 120px;
+    .app-gauge__value { font-size: 56px; }
+  }
+}

@@ -73,7 +73,8 @@
     position: relative;
     overflow: hidden;
 
-    &.fg-grey {
+    &.fg-grey,
+    &.fg-gray {
       background: rgba(156, 163, 175, 0.2);
       color: #9ca3af;
       box-shadow: 0 0 0 rgba(156, 163, 175, 0);
@@ -93,6 +94,27 @@
       bottom: 0;
       pointer-events: none;
       z-index: 0;
+    }
+
+    // Shared StripedProgressBar integration
+    .fg-stripe-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      z-index: 0;
+
+      .striped-progress-bar__track {
+        height: 100%;
+        background: transparent;
+        border-radius: 0;
+      }
+
+      .striped-progress-bar__fill {
+        border-radius: 0;
+      }
     }
 
     &.fg-yellow {

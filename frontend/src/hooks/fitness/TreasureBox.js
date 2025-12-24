@@ -1,8 +1,15 @@
 const NO_ZONE_LABEL = 'No Zone';
 
+// Helper to convert userName to slug for ActivityMonitor lookup
+const slugifyId = (value) => {
+  if (!value) return '';
+  return String(value).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+};
+
 export class FitnessTreasureBox {
   constructor(sessionRef) {
     this.sessionRef = sessionRef; // reference to owning FitnessSession
+    this.activityMonitor = null;  // ActivityMonitor for checking if user is active
     this.coinTimeUnitMs = 5000; // default; will be overridden by configuration injection
     this.globalZones = []; // array of {id,name,min,color,coins}
     this.usersConfigOverrides = new Map(); // userName -> overrides object {active,warm,hot,fire}
@@ -15,19 +22,27 @@ export class FitnessTreasureBox {
       cumulative: [],
       lastIndex: -1
     };
-    // Per-user cumulative coin timeline for chart rendering (single source of truth)
-    this._userTimelines = new Map(); // userName -> number[] (cumulative coins per tick)
+    // Note: Per-user coin timelines removed (Priority 5)
+    // Coins are now written directly to main timeline via assignMetric('user:X:coins_total')
+    // Chart uses getSeries() to read from main timeline
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
     this._autoInterval = null; // timer id
+  }
+
+  /**
+   * Set the ActivityMonitor for activity-aware coin processing
+   * @param {import('../../modules/Fitness/domain/ActivityMonitor.js').ActivityMonitor} monitor
+   */
+  setActivityMonitor(monitor) {
+    this.activityMonitor = monitor;
   }
 
   setMutationCallback(cb) { this._mutationCb = typeof cb === 'function' ? cb : null; }
   _notifyMutation() { if (this._mutationCb) { try { this._mutationCb(); } catch(_){} } }
 
   configure({ coinTimeUnitMs, zones, users }) {
-    // Fix 7 (bugbash 2): Clear existing user timelines on reconfigure to prevent stale data
-    this._userTimelines.clear();
+    // Note: _userTimelines removed (Priority 5) - coins written to main timeline
     
     if (typeof coinTimeUnitMs === 'number' && coinTimeUnitMs > 0) {
       this.coinTimeUnitMs = coinTimeUnitMs;
@@ -67,18 +82,18 @@ export class FitnessTreasureBox {
         Object.values(users).forEach((value) => collectOverrides(value));
       }
     }
-    // Start / restart autonomous interval processing so awards happen even without continuous HR samples
+    // Backfill existing users with zone data
     this._backfillExistingUsers();
-    this._startAutoTicker();
+    // NOTE: Timer removed - TreasureBox is now tick-driven via processTick()
+    // This eliminates race conditions between coin awards and dropout detection
   }
 
+  // DEPRECATED: Timer-based processing removed to fix race conditions
+  // TreasureBox is now driven by FitnessSession._collectTimelineTick() via processTick()
   _startAutoTicker() {
-    if (this._autoInterval) clearInterval(this._autoInterval);
-    // Run at half the coin unit granularity to be responsive but not heavy
-    const tickMs = Math.max(1000, Math.min( this.coinTimeUnitMs / 2, 5000));
-    this._autoInterval = setInterval(() => {
-      try { this._processIntervals(); } catch(_){}
-    }, tickMs);
+    // No-op: timer-based processing has been removed
+    // Coin processing now happens synchronously during session tick
+    console.log('[TreasureBox] _startAutoTicker called but timer disabled - using tick-driven processing');
   }
 
   stop() { if (this._autoInterval) { clearInterval(this._autoInterval); this._autoInterval = null; } }
@@ -114,11 +129,34 @@ export class FitnessTreasureBox {
     }
   }
 
-  // Walk each user accumulator and see if its interval window is complete even if no new HR sample arrived
-  _processIntervals() {
+  /**
+   * Process coin intervals for active participants only.
+   * Called synchronously from FitnessSession._collectTimelineTick() to ensure
+   * coin processing is aligned with session ticks and dropout detection.
+   * 
+   * @param {number} tick - Current tick index
+   * @param {Set<string>} activeParticipants - Set of slugs for users with active HR this tick
+   * @param {Object} options - Additional options
+   * @param {Function} options.slugifyId - Function to convert userName to slug
+   */
+  processTick(tick, activeParticipants, options = {}) {
     if (!this.perUser.size) return;
     const now = Date.now();
+    const { slugifyId } = options;
+    
     for (const [userName, acc] of this.perUser.entries()) {
+      // Convert userName to slug for comparison with activeParticipants
+      const slug = typeof slugifyId === 'function' ? slugifyId(userName) : userName.toLowerCase();
+      
+      // CRITICAL: Only process intervals for ACTIVE participants
+      // This prevents coin accumulation during dropout
+      if (!activeParticipants.has(slug)) {
+        // User not active - clear their highestZone to prevent stale awards
+        acc.highestZone = null;
+        acc.currentColor = null;
+        continue;
+      }
+      
       if (!acc.currentIntervalStart) { acc.currentIntervalStart = now; continue; }
       const elapsed = now - acc.currentIntervalStart;
       if (elapsed >= this.coinTimeUnitMs) {
@@ -130,6 +168,15 @@ export class FitnessTreasureBox {
         acc.currentColor = null;
       }
     }
+  }
+  
+  // Legacy method - kept for backward compatibility but delegates to processTick
+  _processIntervals() {
+    // This should not be called anymore - TreasureBox is tick-driven
+    // If called, process all users (legacy behavior) but log warning
+    console.warn('[TreasureBox] _processIntervals called directly - should use processTick() instead');
+    const allUsers = new Set([...this.perUser.keys()].map(n => n.toLowerCase()));
+    this.processTick(-1, allUsers, { slugifyId: n => n.toLowerCase() });
   }
 
   _ensureTimelineIndex(index, color) {
@@ -239,28 +286,22 @@ export class FitnessTreasureBox {
     }
   }
 
-  /**
-   * Ensure user timeline is initialized and filled to the given index.
-   * Forward-fills with the last known cumulative value.
-   */
-  _ensureUserTimelineIndex(userName, index) {
-    if (!this._userTimelines.has(userName)) {
-      this._userTimelines.set(userName, []);
-    }
-    const userSeries = this._userTimelines.get(userName);
-    const acc = this.perUser.get(userName);
-    const currentTotal = acc?.totalCoins || 0;
-    
-    // Forward-fill to index with current cumulative value
-    while (userSeries.length <= index) {
-      // Fill gaps with the last known value (or 0 if empty)
-      const lastVal = userSeries.length > 0 ? userSeries[userSeries.length - 1] : 0;
-      userSeries.push(lastVal);
-    }
-  }
+  // Note: _ensureUserTimelineIndex removed (Priority 5)
+  // Per-user coin timelines are now in main timeline via user:X:coins_total
 
   _awardCoins(userName, zone) {
     if (!zone) return;
+    
+    // PRIORITY 2: Safety check - don't award coins if user is not active
+    // This is a backup to processTick() which also checks activity
+    if (this.activityMonitor) {
+      const slug = slugifyId(userName);
+      if (!this.activityMonitor.isActive(slug)) {
+        // User is not actively broadcasting - skip award
+        return;
+      }
+    }
+    
     if (!(zone.color in this.buckets)) this.buckets[zone.color] = 0;
     this.buckets[zone.color] += zone.coins;
     this.totalCoins += zone.coins;
@@ -286,13 +327,8 @@ export class FitnessTreasureBox {
       acc.lastAwardedAt = now;
     }
     
-    // Track per-user cumulative timeline (single source of truth for chart)
-    this._ensureUserTimelineIndex(userName, intervalIndex);
-    const userSeries = this._userTimelines.get(userName);
-    if (userSeries && userSeries.length > intervalIndex) {
-      // Update this tick with new cumulative total
-      userSeries[intervalIndex] = acc?.totalCoins || zone.coins;
-    }
+    // Note: Per-user timeline tracking removed (Priority 5)
+    // Coins are written to main timeline via FitnessSession.assignMetric('user:X:coins_total')
     
     // Log event in session if available
     try {
@@ -336,48 +372,16 @@ export class FitnessTreasureBox {
   }
 
   /**
-   * Get cumulative coin time series for a specific user.
-   * Returns array of cumulative coin values indexed by timeline tick.
-   * This is the single source of truth for chart rendering.
-   * Uses actual per-tick tracking from _userTimelines (not interpolation).
+   * DEPRECATED: getUserCoinsTimeSeries removed (Priority 5)
+   * Chart now uses main timeline directly via getSeries('user:X:coins_total')
+   * This method is kept for backward compatibility but returns empty array.
+   * @deprecated Use getSeries('user:X:coins_total') from FitnessTimeline instead
    * @param {string} userId - The user slug/id
-   * @returns {number[]} - Array of cumulative coin values
+   * @returns {number[]} - Empty array (deprecated)
    */
   getUserCoinsTimeSeries(userId) {
-    if (!userId) return [];
-    const acc = this.perUser.get(userId);
-    if (!acc) return [];
-    
-    // Return actual per-tick tracked cumulative series (single source of truth)
-    const userSeries = this._userTimelines.get(userId);
-    if (userSeries && userSeries.length > 0) {
-      // Forward-fill the series to current index so chart has continuous data
-      const start = this.sessionRef?.startTime || this.sessionRef?.timebase?.startAbsMs || Date.now();
-      const intervalMs = this.coinTimeUnitMs > 0 ? this.coinTimeUnitMs : 5000;
-      const now = Date.now();
-      const currentIndex = Math.floor(Math.max(0, now - start) / intervalMs);
-      
-      // Clone and forward-fill to current tick
-      const result = [...userSeries];
-      const lastVal = result.length > 0 ? result[result.length - 1] : 0;
-      while (result.length <= currentIndex) {
-        result.push(lastVal);
-      }
-      return result;
-    }
-    
-    // Fallback: user exists but hasn't earned coins yet - return zeros up to current tick
-    const start = this.sessionRef?.startTime || this.sessionRef?.timebase?.startAbsMs || Date.now();
-    const intervalMs = this.coinTimeUnitMs > 0 ? this.coinTimeUnitMs : 5000;
-    const now = Date.now();
-    const currentIndex = Math.floor(Math.max(0, now - start) / intervalMs);
-    const userTotal = acc.totalCoins || 0;
-    
-    if (currentIndex <= 0) return [userTotal];
-    
-    // Fill with current total (if they have coins but timeline wasn't tracked, use their total)
-    const series = new Array(currentIndex + 1).fill(userTotal);
-    return series;
+    console.warn('[TreasureBox] getUserCoinsTimeSeries is deprecated - use getSeries() from timeline');
+    return [];
   }
 
   /**

@@ -9,6 +9,7 @@ import {
 	buildSegments,
 	createPaths
 } from '../../../FitnessSidebar/FitnessChart.helpers.js';
+import { ParticipantStatus, getZoneColor, isBroadcasting } from '../../../domain';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
@@ -48,46 +49,159 @@ const formatDuration = (ms) => {
 	return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const useRaceChartData = (roster, getSeries, timebase) => {
+/**
+ * Hook to build race chart data from roster and timeline series.
+ * @param {Array} roster - Current participant roster
+ * @param {Function} getSeries - Timeline series getter
+ * @param {Object} timebase - Timeline timebase config
+ * @param {Object} [options] - Additional options
+ * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor for centralized activity tracking
+ */
+const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
+	const { activityMonitor } = options;
+	
 	return useMemo(() => {
 		if (!Array.isArray(roster) || roster.length === 0 || typeof getSeries !== 'function') {
 			return { entries: [], maxValue: 0, maxIndex: 0 };
 		}
 
-		const shaped = roster
-			.map((entry, idx) => {
-				const { beats, zones } = buildBeatsSeries(entry, getSeries, timebase);
-				const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
-				const segments = buildSegments(beats, zones);
-				const profileId = entry.profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || entry.id || idx);
-				const entryId = entry.id || profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || idx, `anon-${idx}`);
-				let lastIndex = -1;
+		// Build chart entries from roster
+		const debugItems = roster.map((entry, idx) => {
+			const { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor });
+			const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
+			const segments = buildSegments(beats, zones, active);
+			const profileId = entry.profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || entry.id || idx);
+			const entryId = entry.id || profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || idx, `anon-${idx}`);
+			
+			// Find last ACTIVE tick (when user was actually broadcasting)
+			// This is where the colored line ends and where dropout badge should appear
+			// We use the `active` array, NOT beats (which has forward-filled values)
+			let lastActiveIndex = -1;
+			for (let i = active.length - 1; i >= 0; i -= 1) {
+				if (active[i] === true) {
+					lastActiveIndex = i;
+					break;
+				}
+			}
+			// Fall back to last finite beat if no active ticks (for edge cases)
+			let lastIndex = lastActiveIndex;
+			if (lastIndex < 0) {
 				for (let i = beats.length - 1; i >= 0; i -= 1) {
 					if (Number.isFinite(beats[i])) {
 						lastIndex = i;
 						break;
 					}
 				}
-				const resolvedAvatar = entry.avatarUrl || DaylightMediaPath(`/media/img/users/${profileId || 'user'}`);
+			}
+			
+			const resolvedAvatar = entry.avatarUrl || DaylightMediaPath(`/media/img/users/${profileId || 'user'}`);
+			
+			// SINGLE SOURCE OF TRUTH: Use roster's isActive field directly from DeviceManager
+			// This is set in ParticipantRoster._buildRosterEntry() from device.inactiveSince
+			// Segments are for RENDERING only - they determine line style, NOT avatar visibility
+			const isActiveFromRoster = entry.isActive !== false; // Default to true if not set
+			const status = isActiveFromRoster ? ParticipantStatus.ACTIVE : ParticipantStatus.IDLE;
+			
+			return {
+				id: entryId,
+				name: entry.displayLabel || entry.name || 'Unknown',
+				profileId,
+				avatarUrl: resolvedAvatar,
+				color: entry.zoneColor || ZONE_COLOR_MAP.default,
+				beats,
+				zones,
+				active,
+				segments,
+				maxVal,
+				lastIndex, // Last ACTIVE tick (for dropout badge position)
+				status, // From roster's isActive - SINGLE SOURCE OF TRUTH
+				isActive: isActiveFromRoster, // Pass through for consumers
+				filterReason: segments.length === 0 ? 'no_segments' : (maxVal <= 0 ? 'no_beats' : null)
+			};
+		});
+
+		const shaped = debugItems.filter((item) => item.segments.length > 0 && item.maxVal > 0);
+
+		// Debug guardrail: log when roster/active/chart counts diverge
+		const rosterIds = roster.map((r, i) => slugifyId(r.profileId || r.hrDeviceId || r.name || r.displayLabel || i, `anon-${i}`));
+		const chartIds = shaped.map((s) => s.id);
+		let activeRosterCount = rosterIds.length;
+		if (activityMonitor) {
+			activeRosterCount = rosterIds.filter((id) => activityMonitor.isActive(id)).length;
+		}
+		const rosterCount = rosterIds.length;
+		const chartCount = chartIds.length;
+		if (rosterCount !== chartCount || activeRosterCount !== chartCount) {
+			const missing = debugItems
+				.filter((item) => !chartIds.includes(item.id))
+				.map((item) => ({ id: item.id, reason: item.filterReason || 'unknown' }));
+			const extra = chartIds.filter((id) => !rosterIds.includes(id));
+			// Collect richer diagnostics
+			const details = debugItems.map((item) => {
+				const hrSeries = typeof getSeries === 'function' ? getSeries(item.id, 'heart_rate', { clone: true }) || [] : [];
+				const coinsSeries = typeof getSeries === 'function' ? getSeries(item.id, 'coins_total', { clone: true }) || [] : [];
+				const lastHr = hrSeries.length ? hrSeries[hrSeries.length - 1] : null;
+				const lastCoins = coinsSeries.length ? coinsSeries[coinsSeries.length - 1] : null;
+				const hrLen = hrSeries.length;
+				const coinsLen = coinsSeries.length;
+				const lastFiniteHr = (() => {
+					for (let i = hrSeries.length - 1; i >= 0; i -= 1) {
+						if (Number.isFinite(hrSeries[i])) return hrSeries[i];
+					}
+					return null;
+				})();
 				return {
-					id: entryId,
-					name: entry.displayLabel || entry.name || 'Unknown',
-					profileId,
-					avatarUrl: resolvedAvatar,
-					color: entry.zoneColor || ZONE_COLOR_MAP.default,
-					beats,
-					segments,
-					maxVal,
-					lastIndex
+					id: item.id,
+					filterReason: item.filterReason,
+					beatsLen: item.beats?.length ?? 0,
+					segmentsLen: item.segments?.length ?? 0,
+					maxVal: item.maxVal,
+					lastIndex: item.lastIndex,
+					hrLen,
+					lastHr,
+					lastFiniteHr,
+					coinsLen,
+					lastCoins,
+					activityStatus: activityMonitor ? activityMonitor.getStatus?.(item.id) ?? null : null,
+					isActiveFromMonitor: activityMonitor ? activityMonitor.isActive?.(item.id) ?? null : null,
 				};
-			})
-			.filter((item) => item.segments.length > 0);
+			});
+			console.warn('[FitnessChart] Avatar mismatch', {
+				rosterCount,
+				activeRosterCount,
+				chartCount,
+				missingFromChart: missing,
+				extraOnChart: extra,
+				details
+			});
+		}
+
+		// GUARDRAIL: Log when roster.isActive differs from segment state (for debugging)
+		// We trust roster.isActive as source of truth, but want to see divergences
+		shaped.forEach((item) => {
+			const lastSeg = item.segments[item.segments.length - 1];
+			const endsWithGap = lastSeg?.isGap === true;
+			const isActiveFromRoster = item.isActive !== false;
+			// Note: We expect endsWithGap when !isActive, but isActive is authoritative
+			if (endsWithGap && isActiveFromRoster) {
+				console.warn('[FitnessChart] Segment shows gap but roster says active', {
+					id: item.id,
+					endsWithGap,
+					isActive: item.isActive,
+					lastSegment: lastSeg ? { isGap: lastSeg.isGap, status: lastSeg.status } : null
+				});
+			}
+		});
 
 		const maxValue = Math.max(0, ...shaped.map((e) => e.maxVal));
 		const maxIndex = Math.max(0, ...shaped.map((e) => e.lastIndex));
 		return { entries: shaped, maxValue, maxIndex };
-	}, [roster, getSeries, timebase]);
+	}, [roster, getSeries, timebase, activityMonitor]);
 };
+
+// NOTE: Clean ChartDataBuilder interface is available via useFitnessApp().chartDataBuilder
+// for future migration. Current implementation uses buildBeatsSeries/buildSegments helpers
+// for backward compatibility during the Phase 3 transition.
 
 const getLastFiniteValue = (arr = []) => {
 	for (let i = arr.length - 1; i >= 0; i -= 1) {
@@ -104,8 +218,18 @@ const findFirstFiniteAfter = (arr = [], index) => {
 	return null;
 };
 
-const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = []) => {
-	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase);
+/**
+ * Hook to build race chart data with historical participant support.
+ * @param {Array} roster - Current participant roster
+ * @param {Function} getSeries - Timeline series getter
+ * @param {Object} timebase - Timeline timebase config
+ * @param {string[]} historicalParticipantIds - IDs of historical participants
+ * @param {Object} [options] - Additional options
+ * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor
+ */
+const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = [], options = {}) => {
+	const { activityMonitor } = options;
+	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor });
 	const [participantCache, setParticipantCache] = useState({});
 	// Track which historical IDs we've already processed to avoid re-processing on every render
 	const processedHistoricalRef = useRef(new Set());
@@ -120,18 +244,22 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 		setParticipantCache((prev) => {
 			const next = { ...prev };
 			historicalParticipantIds.forEach((slug) => {
-				// Skip if already processed or already in cache
+				// Skip if already processed or already in cache (including from presentEntries)
 				if (!slug || next[slug] || processedHistoricalRef.current.has(slug)) return;
 				
 				// Mark as processed to avoid re-processing on subsequent renders
 				processedHistoricalRef.current.add(slug);
 				
-				// Build data for historical participant
-				const { beats, zones } = buildBeatsSeries({ profileId: slug, name: slug }, getSeries, timebase);
+				// Build data for historical participant (pass activityMonitor for Phase 2)
+				const { beats, zones, active } = buildBeatsSeries({ profileId: slug, name: slug }, getSeries, timebase, { activityMonitor });
 				if (!beats.length) return;
 				
-				const segments = buildSegments(beats, zones);
+				const segments = buildSegments(beats, zones, active);
 				if (!segments.length) return;
+				
+				// Skip non-HR devices (no accumulated beats)
+				const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
+				if (maxVal <= 0) return;
 				
 				let lastIndex = -1;
 				let lastValue = null;
@@ -148,67 +276,88 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 					name: slug,
 					profileId: slug,
 					avatarUrl: null,
-					color: ZONE_COLOR_MAP.default,
+					color: getZoneColor(null),
 					beats,
 					segments,
 					zones,
-					maxVal: Math.max(0, ...beats.filter((v) => Number.isFinite(v))),
+					active,
+					maxVal,
 					lastIndex,
 					lastSeenTick: lastIndex,
 					lastValue,
-					isPresent: false,
+					status: ParticipantStatus.REMOVED,
 					absentSinceTick: lastIndex
 				};
 			});
 			return next;
 		});
-	}, [historicalParticipantIds, getSeries, timebase]);
+	// Note: timebase excluded from deps intentionally - historical entries only need to be added once
+	// processedHistoricalRef prevents duplicate processing, and presentEntries will update live data
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [historicalParticipantIds, getSeries]);
 
 	useEffect(() => {
 		setParticipantCache((prev) => {
 			const next = { ...prev };
 			const presentIds = new Set();
 			presentEntries.forEach((entry) => {
-				const id = entry.id;
+				// Use profileId for cache key to match historical entries (which use slug)
+				const id = entry.profileId || entry.id;
 				presentIds.add(id);
 				const lastValue = getLastFiniteValue(entry.beats || []);
 				const lastSeenTick = entry.lastIndex;
 				const prevEntry = prev[id];
-				let segments = entry.segments;
-				if (prevEntry && !prevEntry.isPresent && prevEntry.lastValue != null && (prevEntry.lastSeenTick ?? -1) > 0) {
+				
+				// Preserve existing dropout markers (IMMUTABLE) for badge rendering
+				// CRITICAL: Create a NEW array to avoid mutating previous state
+				let dropoutMarkers = [...(prevEntry?.dropoutMarkers || [])];
+				
+				// Create dropout marker ONLY when returning from dropout (was inactive, now active again)
+				// This is the REJOIN event - we mark where they LEFT
+				const wasInactive = prevEntry && (prevEntry.isActive === false || !isBroadcasting(prevEntry.status));
+				const nowActive = entry.isActive !== false;
+				const isRejoining = wasInactive && nowActive;
+				
+				if (isRejoining && prevEntry.lastValue != null && (prevEntry.lastSeenTick ?? -1) >= 0) {
 					const firstNewIdx = findFirstFiniteAfter(entry.beats || [], prevEntry.lastSeenTick ?? -1);
 					if (firstNewIdx != null) {
-						const gapSegment = {
-							zone: null,
-							color: ZONE_COLOR_MAP.default,
-							isGap: true,
-							points: [
-								{ i: prevEntry.lastSeenTick, v: prevEntry.lastValue },
-								{ i: firstNewIdx, v: entry.beats[firstNewIdx] }
-							]
+						// Create IMMUTABLE dropout marker at the point where they left
+						const newMarker = {
+							tick: prevEntry.lastSeenTick,
+							value: prevEntry.lastValue,
+							timestamp: Date.now()
 						};
-						segments = [gapSegment, ...segments];
+						// Only add if not duplicate
+						const isDuplicate = dropoutMarkers.some(m => m.tick === newMarker.tick);
+						if (!isDuplicate) {
+							dropoutMarkers = [...dropoutMarkers, newMarker];
+						}
 					}
 				}
 				next[id] = {
 					...prevEntry,
 					...entry,
-					segments,
+					segments: entry.segments, // Use segments as-is from buildSegments (includes gaps)
 					beats: entry.beats,
 					zones: entry.zones,
 					lastSeenTick,
 					lastValue,
-					isPresent: true,
-					absentSinceTick: null
+					status: entry.status, // SINGLE SOURCE OF TRUTH: From roster's isActive
+					isActive: entry.isActive, // Pass through for avatar rendering
+					dropoutMarkers, // Preserve immutable markers for badge rendering
+					absentSinceTick: entry.status === ParticipantStatus.IDLE ? (prevEntry?.absentSinceTick ?? lastSeenTick) : null
 				};
 			});
 			Object.keys(next).forEach((id) => {
 				if (!presentIds.has(id)) {
 					const ent = next[id];
 					if (ent) {
+						// User just dropped out - record this as a potential dropout marker
+						// The marker becomes IMMUTABLE when they rejoin
 						next[id] = {
 							...ent,
-							isPresent: false,
+							status: ParticipantStatus.REMOVED,
+							isActive: false, // Explicitly false for removed users
 							absentSinceTick: ent.absentSinceTick ?? ent.lastSeenTick ?? 0
 						};
 					}
@@ -219,8 +368,82 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 	}, [presentEntries]);
 
 	const allEntries = useMemo(() => Object.values(participantCache).filter((e) => e && (e.segments?.length || 0) > 0), [participantCache]);
-	const present = useMemo(() => allEntries.filter((e) => e.isPresent), [allEntries]);
-	const absent = useMemo(() => allEntries.filter((e) => !e.isPresent), [allEntries]);
+	
+	// SINGLE SOURCE OF TRUTH: Use isActive from roster (set by DeviceManager.inactiveSince)
+	// Segments are for RENDERING only - they control line style (solid/dotted)
+	// isActive controls avatar visibility (present vs absent)
+	const validatedEntries = useMemo(() => {
+		return allEntries.map((entry) => {
+			// isActive comes directly from DeviceManager via roster
+			// If isActive is false, user should be in absent (show badge, not avatar)
+			const isActiveFromRoster = entry.isActive !== false;
+			const correctStatus = isActiveFromRoster ? ParticipantStatus.ACTIVE : ParticipantStatus.IDLE;
+			
+			// Log if there's a mismatch (for debugging, but we trust isActive)
+			if (entry.status !== correctStatus) {
+				console.warn('[FitnessChart] Status corrected from roster.isActive', {
+					id: entry.id,
+					wasStatus: entry.status,
+					nowStatus: correctStatus,
+					isActive: entry.isActive
+				});
+			}
+			
+			return { ...entry, status: correctStatus };
+		});
+	}, [allEntries]);
+	
+	// Use isActive (from roster) for present/absent split - SINGLE SOURCE OF TRUTH
+	const present = useMemo(() => validatedEntries.filter((e) => e.isActive !== false), [validatedEntries]);
+	const absent = useMemo(() => validatedEntries.filter((e) => e.isActive === false), [validatedEntries]);
+	
+	// Collect ALL dropout markers from ALL entries (both present and absent)
+	// These markers are IMMUTABLE - once created, they never move or disappear
+	const dropoutMarkers = useMemo(() => {
+		const markers = [];
+		const seenParticipants = new Set(); // Track which participants we've already added a marker for
+		
+		validatedEntries.forEach((entry) => {
+			const participantId = entry.profileId || entry.id;
+			
+			// Add markers from dropoutMarkers array (persisted from rejoins)
+			if (entry.dropoutMarkers?.length) {
+				entry.dropoutMarkers.forEach((marker) => {
+					const markerId = `${participantId}-dropout-${marker.tick}`;
+					// Avoid duplicates
+					if (!markers.some(m => m.id === markerId)) {
+						markers.push({
+							id: markerId,
+							participantId,
+							name: entry.name,
+							tick: marker.tick,
+							value: marker.value
+						});
+					}
+				});
+			}
+			
+			// Add current dropout position for users who are currently absent (isActive === false)
+			// Only ONE marker per participant - at their lastSeenTick
+			if (entry.isActive === false && !seenParticipants.has(participantId)) {
+				if (entry.lastSeenTick >= 0 && entry.lastValue != null) {
+					const markerId = `${participantId}-dropout-current`;
+					if (!markers.some(m => m.id === markerId)) {
+						markers.push({
+							id: markerId,
+							participantId,
+							name: entry.name,
+							tick: entry.lastSeenTick,
+							value: entry.lastValue
+						});
+						seenParticipants.add(participantId);
+					}
+				}
+			}
+		});
+		return markers;
+	}, [validatedEntries]);
+	
 	const maxValue = useMemo(() => {
 		const vals = allEntries.flatMap((e) => (e.beats || []).filter((v) => Number.isFinite(v)));
 		return vals.length ? Math.max(...vals, 0) : 0;
@@ -230,7 +453,7 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 		return idxs.length ? Math.max(...idxs, 0) : 0;
 	}, [allEntries]);
 
-	return { allEntries, presentEntries: present, absentEntries: absent, maxValue, maxIndex };
+	return { allEntries, presentEntries: present, absentEntries: absent, dropoutMarkers, maxValue, maxIndex };
 };
 
 const computeAvatarPositions = (entries, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
@@ -287,19 +510,19 @@ const resolveAvatarOffsets = (avatars) => {
 	return placed;
 };
 
-const computeBadgePositions = (entries, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
+const computeBadgePositions = (dropoutMarkers, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
 	const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
 	const ticks = Math.max(minVisibleTicks, effectiveTicks || 1, 1);
-	return entries
-		.map((entry) => {
-			const lastIndex = Number.isFinite(entry.lastSeenTick) ? entry.lastSeenTick : -1;
-			const lastValue = Number.isFinite(entry.lastValue) ? entry.lastValue : null;
-			if (lastIndex < 0 || lastValue == null) return null;
-			const x = ticks <= 1 ? margin.left || 0 : (margin.left || 0) + (lastIndex / (ticks - 1)) * innerWidth;
-			const y = scaleY(lastValue);
-			const label = (entry.name || '?').trim();
+	return dropoutMarkers
+		.map((marker) => {
+			const tick = Number.isFinite(marker.tick) ? marker.tick : -1;
+			const value = Number.isFinite(marker.value) ? marker.value : null;
+			if (tick < 0 || value == null) return null;
+			const x = ticks <= 1 ? margin.left || 0 : (margin.left || 0) + (tick / (ticks - 1)) * innerWidth;
+			const y = scaleY(value);
+			const label = (marker.name || '?').trim();
 			const initial = label ? label[0].toUpperCase() : '?';
-			return { id: entry.id, x, y, initial };
+			return { id: marker.id, x, y, initial };
 		})
 		.filter(Boolean);
 };
@@ -418,7 +641,14 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 );
 
 const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
-	const { participants, historicalParticipants, getUserTimelineSeries, timebase, registerLifecycle } = useFitnessApp('fitness_chart');
+	const { 
+		participants, 
+		historicalParticipants, 
+		getUserTimelineSeries, 
+		timebase, 
+		registerLifecycle,
+		activityMonitor  // Phase 2 - centralized activity tracking
+	} = useFitnessApp('fitness_chart');
 	const containerRef = useRef(null);
 	const [chartSize, setChartSize] = useState({ width: DEFAULT_CHART_WIDTH, height: DEFAULT_CHART_HEIGHT });
 
@@ -451,7 +681,44 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		return () => resizeObserver.disconnect();
 	}, []);
 
-	const { allEntries, presentEntries, absentEntries, maxValue, maxIndex } = useRaceChartWithHistory(participants, getUserTimelineSeries, timebase, historicalParticipants);
+	// Pass activityMonitor for centralized activity tracking (Phase 2)
+	const { allEntries, presentEntries, absentEntries, dropoutMarkers, maxValue, maxIndex } = useRaceChartWithHistory(
+		participants, 
+		getUserTimelineSeries, 
+		timebase, 
+		historicalParticipants,
+		{ activityMonitor }
+	);
+	
+	// Guardrail: Verify chart present count matches roster count
+	// If mismatch, dump debug info to help diagnose state synchronization issues
+	useEffect(() => {
+		const rosterCount = Array.isArray(participants) ? participants.length : 0;
+		const chartPresentCount = presentEntries.length;
+		
+		if (rosterCount > 0 && chartPresentCount !== rosterCount) {
+			const rosterIds = (participants || []).map(p => p.profileId || p.id || p.name);
+			const chartPresentIds = presentEntries.map(e => e.profileId || e.id);
+			const chartAbsentIds = absentEntries.map(e => e.profileId || e.id);
+			const allChartIds = allEntries.map(e => ({ id: e.profileId || e.id, status: e.status }));
+			
+			console.warn('[FitnessChart] Participant count mismatch!', {
+				rosterCount,
+				chartPresentCount,
+				chartAbsentCount: absentEntries.length,
+				chartTotalCount: allEntries.length,
+				rosterIds,
+				chartPresentIds,
+				chartAbsentIds,
+				allChartEntries: allChartIds,
+				// Show which roster IDs are missing from chart present
+				missingFromChart: rosterIds.filter(id => !chartPresentIds.includes(id)),
+				// Show which chart present IDs are not in roster
+				extraInChart: chartPresentIds.filter(id => !rosterIds.includes(id))
+			});
+		}
+	}, [participants, presentEntries, absentEntries, allEntries]);
+	
 	const { width: chartWidth, height: chartHeight } = chartSize;
 	const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, 1);
@@ -532,10 +799,12 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		return resolveAvatarOffsets(base);
 	}, [presentEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
 
+	// Badges are IMMUTABLE dropout markers - they show where users dropped out
+	// and persist even after the user rejoins
 	const badges = useMemo(() => {
-		if (!absentEntries.length || !(paddedMaxValue > 0)) return [];
-		return computeBadgePositions(absentEntries, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
-	}, [absentEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
+		if (!dropoutMarkers.length || !(paddedMaxValue > 0)) return [];
+		return computeBadgePositions(dropoutMarkers, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
+	}, [dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];

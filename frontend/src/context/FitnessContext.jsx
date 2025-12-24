@@ -938,7 +938,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         deviceId: entry?.deviceId || null,
         heartRate: Number.isFinite(entry?.heartRate) ? Math.round(entry.heartRate) : null,
         zoneId: entry?.zoneId || null,
-        zoneColor: entry?.zoneColor || null
+        zoneColor: entry?.zoneColor || null,
+        isActive: entry?.isActive ?? true // SINGLE SOURCE OF TRUTH - include in signature
       }))
     );
 
@@ -1490,6 +1491,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     getTimelineLatestValue: timelineSelectors.getLatestValue,
     getTimelineSeriesKey: timelineSelectors.getSeriesKey,
     timelineSeriesKeys: timelineSelectors.seriesKeys,
+    
+    // Activity Monitor - single source of truth for participant status (Phase 2)
+    activityMonitor: session?.activityMonitor,
     
     getDisplayLabel,
     zoneRankMap,
