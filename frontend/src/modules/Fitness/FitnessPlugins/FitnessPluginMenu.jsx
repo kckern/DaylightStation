@@ -44,8 +44,16 @@ const FitnessPluginMenu = ({ activePluginMenuId, onPluginSelect, onBack }) => {
   }, [activePluginMenuId]);
 
   const availablePlugins = useMemo(() => {
-    if (!menuConfig?.items) return [];
-    return menuConfig.items
+    const items = [...(menuConfig?.items || [])];
+
+    // Ensure Component Showcase appears even if not yet in config
+    const showcaseManifest = getPluginManifest('component_showcase');
+    const hasShowcase = items.some((item) => String(item.id) === 'component_showcase');
+    if (showcaseManifest && !hasShowcase) {
+      items.push({ id: 'component_showcase', name: showcaseManifest.name || 'UX Showcase' });
+    }
+
+    return items
       .map(item => ({ ...item, manifest: getPluginManifest(item.id) }))
       .filter(item => item.manifest);
   }, [menuConfig]);
