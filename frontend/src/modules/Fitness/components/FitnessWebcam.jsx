@@ -161,7 +161,16 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
 
   const activeFilter = getWebcamFilter(activeFilterId);
   const mergedVideoStyle = useMemo(() => {
-    const base = { filter: activeFilter.css || 'none', ...(videoStyle || {}) };
+    const base = {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      filter: activeFilter.css || 'none',
+      ...(videoStyle || {})
+    };
     if (!base.transform && activeFilter.transform) {
       base.transform = activeFilter.transform;
     }
@@ -169,7 +178,7 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
   }, [activeFilter, videoStyle]);
 
   return (
-    <div className={wrapperClass} style={style}>
+    <div className={wrapperClass} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', ...style }}>
       <video
         ref={videoRef}
         autoPlay
