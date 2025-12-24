@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import PropTypes from 'prop-types';
 import useVoiceMemoRecorder from '../FitnessSidebar/useVoiceMemoRecorder.js';
-import { MicLevelIndicator, CountdownRing } from '../FitnessApps/shared';
-import { formatTime } from '../FitnessApps/shared/utils/time';
+import { MicLevelIndicator, CountdownRing } from '../shared';
+import { formatTime } from '../shared/utils/time';
 import './VoiceMemoOverlay.scss';
 import { playbackLog } from '../../Player/lib/playbackLogger.js';
 

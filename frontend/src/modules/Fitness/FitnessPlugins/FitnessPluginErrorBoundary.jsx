@@ -1,6 +1,6 @@
 import React from 'react';
 
-class FitnessAppErrorBoundary extends React.Component {
+class FitnessPluginErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
   
   static getDerivedStateFromError(error) {
@@ -8,17 +8,17 @@ class FitnessAppErrorBoundary extends React.Component {
   }
   
   componentDidCatch(error, errorInfo) {
-    const { appId, sessionInstance } = this.props;
+    const { pluginId, sessionInstance } = this.props;
     
     // Log to session
-    sessionInstance?.logEvent?.('app_error', {
-      appId,
+    sessionInstance?.logEvent?.('plugin_error', {
+      pluginId,
       error: error.message,
       stack: error.stack,
       componentStack: errorInfo.componentStack
     });
     
-    console.error(`Fitness App Error [${appId}]:`, error, errorInfo);
+    console.error(`Fitness Plugin Error [${pluginId}]:`, error, errorInfo);
   }
   
   handleRetry = () => {
@@ -28,7 +28,7 @@ class FitnessAppErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="fitness-app-error" style={{ 
+        <div className="fitness-plugin-error" style={{ 
           padding: '20px', 
           textAlign: 'center', 
           color: 'white',
@@ -41,9 +41,9 @@ class FitnessAppErrorBoundary extends React.Component {
           alignItems: 'center'
         }}>
           <div className="error-icon" style={{ fontSize: '32px', marginBottom: '16px' }}>⚠️</div>
-          <div className="error-title" style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>App Error</div>
+          <div className="error-title" style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>Plugin Error</div>
           <div className="error-message" style={{ marginBottom: '24px', opacity: 0.8 }}>
-            {this.props.manifest?.name || 'This app'} encountered an error.
+            {this.props.manifest?.name || 'This plugin'} encountered an error.
           </div>
           <div className="error-actions" style={{ display: 'flex', gap: '12px' }}>
             <button onClick={this.handleRetry} style={{
@@ -71,4 +71,4 @@ class FitnessAppErrorBoundary extends React.Component {
   }
 }
 
-export default FitnessAppErrorBoundary;
+export default FitnessPluginErrorBoundary;

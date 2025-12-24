@@ -8,7 +8,7 @@ import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessNavbar from '../modules/Fitness/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
-import FitnessAppContainer from '../modules/Fitness/FitnessApps/FitnessAppContainer.jsx';
+import FitnessPluginContainer from '../modules/Fitness/FitnessPlugins/FitnessPluginContainer.jsx';
 import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import { getChildLogger } from '../lib/logging/singleton.js';
@@ -23,10 +23,10 @@ const FitnessApp = () => {
   const [fitnessConfiguration, setFitnessConfiguration] = useState({});
   const [fetchError, setFetchError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show', 'app'
+  const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show', 'plugin'
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
-  const [activeApp, setActiveApp] = useState(null); // { id, ...manifest }
+  const [activePlugin, setActivePlugin] = useState(null); // { id, ...manifest }
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
   const [kioskUI, setKioskUI] = useState(() => {
     // Check if Firefox on initial load - use more robust detection
@@ -291,9 +291,9 @@ const FitnessApp = () => {
         setCurrentView('users');
         break;
       }
-      case 'app': {
-        setActiveApp(value);
-        setCurrentView('app');
+      case 'plugin': {
+        setActivePlugin(value);
+        setCurrentView('plugin');
         break;
       }
       default: {
@@ -510,12 +510,12 @@ const FitnessApp = () => {
                     onContentSelect={handleContentSelect}
                   />
                 )}
-                {currentView === 'app' && activeApp && (
-                  <FitnessAppContainer
-                    appId={activeApp.id}
+                {currentView === 'plugin' && activePlugin && (
+                  <FitnessPluginContainer
+                    pluginId={activePlugin.id}
                     mode="standalone"
                     onClose={() => {
-                      setActiveApp(null);
+                      setActivePlugin(null);
                       setCurrentView('menu');
                     }}
                   />

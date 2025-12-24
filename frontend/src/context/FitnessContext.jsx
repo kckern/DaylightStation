@@ -10,7 +10,7 @@ import {
 import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.js';
 import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
-import { getAppManifest } from '../modules/Fitness/FitnessApps/registry.js';
+import { getPluginManifest } from '../modules/Fitness/FitnessPlugins/registry.js';
 
 // Create context
 const FitnessContext = createContext(null);
@@ -96,7 +96,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // App launch/close methods
   const launchApp = React.useCallback((appId, options = {}) => {
-    const manifest = getAppManifest(appId);
+    const manifest = getPluginManifest(appId);
     if (!manifest) return false;
     
     if (options.mode === 'overlay') {

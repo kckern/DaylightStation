@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Webcam as FitnessWebcam } from '../../../../components/FitnessWebcam.jsx';
+import { Webcam as FitnessWebcam } from '../../../components/FitnessWebcam.jsx';
 import './WebcamView.scss';
 
 const WebcamView = ({
