@@ -1056,7 +1056,7 @@ export class FitnessSession {
     };
     
     // Log to console
-    console.log(`[Timeline DEBUG] Tick ${tickIndex}`, debugData);
+ //   console.log(`[Timeline DEBUG] Tick ${tickIndex}`, debugData);
     
     // Also emit as event for backend visibility (will show in dev.log)
     this._log('timeline-debug', debugData);

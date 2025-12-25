@@ -6,6 +6,10 @@ import OpenAI from 'openai';
 import { userService } from './lib/config/UserService.mjs';
 import { configService } from './lib/config/ConfigService.mjs';
 import { userDataService } from './lib/config/UserDataService.mjs';
+import { activateScene } from './lib/homeassistant.mjs';
+import { createLogger } from './lib/logging/logger.js';
+
+const fitnessLogger = createLogger({ source: 'backend', app: 'fitness' });
 
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -170,6 +174,24 @@ const loadFitnessConfig = (householdId) => {
     // Try household-scoped path first
     const householdConfig = userDataService.readHouseholdAppData(hid, 'fitness', 'config');
     if (householdConfig) {
+        // Log ambient_led config status
+        const ambientLed = householdConfig?.ambient_led;
+        if (ambientLed?.scenes) {
+            const sceneKeys = Object.keys(ambientLed.scenes);
+            fitnessLogger.info('fitness.config.ambient_led', {
+                enabled: true,
+                householdId: hid,
+                scenes: sceneKeys,
+                throttleMs: ambientLed.throttle_ms || 2000,
+                hasOffScene: !!ambientLed.scenes.off
+            });
+        } else {
+            fitnessLogger.debug('fitness.config.ambient_led', {
+                enabled: false,
+                householdId: hid,
+                reason: ambientLed ? 'no scenes configured' : 'ambient_led section missing'
+            });
+        }
         return householdConfig;
     }
     
@@ -392,6 +414,413 @@ fitnessRouter.post('/voice_memo', async (req, res) => {
         console.error('voice_memo error', e);
         return res.status(500).json({ ok:false, error: e.message || 'voice memo failure' });
     }
+});
+
+
+// =============================================================================
+// Ambient LED Zone Sync (Home Assistant Integration)
+// =============================================================================
+
+// Rate limiting, circuit breaker, and metrics state (module-scoped singleton)
+const zoneLedState = {
+    // Rate limiting
+    lastScene: null,
+    lastActivatedAt: 0,
+    
+    // Circuit breaker
+    failureCount: 0,
+    maxFailures: 5,
+    backoffUntil: 0,
+    
+    // Metrics (for observability)
+    metrics: {
+        totalRequests: 0,
+        activatedCount: 0,
+        skippedDuplicate: 0,
+        skippedRateLimited: 0,
+        skippedBackoff: 0,
+        skippedDisabled: 0,
+        failureCount: 0,
+        lastActivatedScene: null,
+        lastActivatedTime: null,
+        sceneHistogram: {},  // scene -> activation count
+        sessionStartCount: 0,
+        sessionEndCount: 0,
+        uptimeStart: Date.now()
+    }
+};
+
+// Zone priority defines ordering (lower = cooler)
+const ZONE_PRIORITY = { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 };
+const ZONE_ORDER = ['cool', 'active', 'warm', 'hot', 'fire'];
+
+/**
+ * Normalize zone ID to canonical form
+ * @param {string} zoneId - Raw zone ID
+ * @returns {string|null} Normalized zone ID or null if invalid
+ */
+function normalizeZoneId(zoneId) {
+    if (!zoneId) return null;
+    const lower = String(zoneId).toLowerCase().trim();
+    return ZONE_ORDER.includes(lower) ? lower : null;
+}
+
+/**
+ * Check if ambient LED feature is enabled based on config
+ * @param {object} fitnessConfig - The full fitness config
+ * @returns {boolean}
+ */
+function isAmbientLedEnabled(fitnessConfig) {
+    const ambientLed = fitnessConfig?.ambient_led;
+    if (!ambientLed) return false;
+    
+    const scenes = ambientLed.scenes;
+    if (!scenes || typeof scenes !== 'object') return false;
+    if (!scenes.off) return false; // 'off' scene is required
+    
+    return true;
+}
+
+/**
+ * Resolve the target HA scene name from config with fallback chain
+ * @param {object} sceneConfig - The ambient_led.scenes config object
+ * @param {string} zoneKey - Zone key: 'off', 'cool', 'active', 'warm', 'hot', 'fire', 'fire_all'
+ * @returns {string|null} Scene name or null if not configured
+ */
+function resolveSceneFromConfig(sceneConfig, zoneKey) {
+    if (!sceneConfig || typeof sceneConfig !== 'object') return null;
+    
+    // Direct lookup
+    if (sceneConfig[zoneKey]) return sceneConfig[zoneKey];
+    
+    // Fallback chain for missing zone scenes
+    if (zoneKey === 'fire_all') return sceneConfig.fire || sceneConfig.off || null;
+    
+    const zoneIndex = ZONE_ORDER.indexOf(zoneKey);
+    if (zoneIndex > 0) {
+        // Fall back to next lower zone
+        for (let i = zoneIndex - 1; i >= 0; i--) {
+            if (sceneConfig[ZONE_ORDER[i]]) return sceneConfig[ZONE_ORDER[i]];
+        }
+    }
+    
+    return sceneConfig.off || null;
+}
+
+/**
+ * Resolve target scene based on active zones
+ * @param {Array<{zoneId: string, isActive: boolean}>} zones - Zone data for all participants
+ * @param {boolean} sessionEnded - Whether session has ended
+ * @param {object} sceneConfig - The ambient_led.scenes config object
+ * @returns {string|null} Scene name to activate or null
+ */
+function resolveTargetScene(zones, sessionEnded, sceneConfig) {
+    if (!sceneConfig) return null;
+    
+    if (sessionEnded) return resolveSceneFromConfig(sceneConfig, 'off');
+    
+    const activeZones = zones
+        .filter(z => z && z.isActive !== false)
+        .map(z => normalizeZoneId(z.zoneId))
+        .filter(Boolean);
+    
+    if (activeZones.length === 0) return resolveSceneFromConfig(sceneConfig, 'off');
+    
+    const maxZone = activeZones.reduce((max, zone) =>
+        ZONE_PRIORITY[zone] > ZONE_PRIORITY[max] ? zone : max
+    , 'cool');
+    
+    // Special case: ALL users in fire zone → breathing effect
+    if (maxZone === 'fire' && activeZones.every(z => z === 'fire')) {
+        return resolveSceneFromConfig(sceneConfig, 'fire_all');
+    }
+    
+    return resolveSceneFromConfig(sceneConfig, maxZone);
+}
+
+/**
+ * POST /fitness/zone_led
+ * Sync ambient LED scene with current fitness zone state
+ * Body: { zones: [{zoneId, isActive}], sessionEnded: boolean, householdId?: string }
+ */
+fitnessRouter.post('/zone_led', async (req, res) => {
+    zoneLedState.metrics.totalRequests++;
+    
+    try {
+        const { zones = [], sessionEnded = false, householdId } = req.body;
+        const now = Date.now();
+        
+        // Track session events
+        if (sessionEnded) {
+            zoneLedState.metrics.sessionEndCount++;
+        }
+        
+        // Load fitness config for this household
+        const fitnessConfig = loadFitnessConfig(householdId);
+        
+        // Check if feature is enabled
+        if (!isAmbientLedEnabled(fitnessConfig)) {
+            zoneLedState.metrics.skippedDisabled++;
+            fitnessLogger.debug('fitness.zone_led.skipped', {
+                reason: 'feature_disabled',
+                householdId
+            });
+            return res.json({ 
+                ok: true, 
+                skipped: true, 
+                reason: 'feature_disabled',
+                message: 'ambient_led not configured or missing required scenes'
+            });
+        }
+        
+        const sceneConfig = fitnessConfig.ambient_led.scenes;
+        const throttleMs = fitnessConfig.ambient_led.throttle_ms || 2000;
+        
+        // Circuit breaker: if too many failures, wait before retrying
+        if (zoneLedState.backoffUntil > now) {
+            zoneLedState.metrics.skippedBackoff++;
+            fitnessLogger.warn('fitness.zone_led.backoff', {
+                remainingMs: zoneLedState.backoffUntil - now,
+                failureCount: zoneLedState.failureCount
+            });
+            return res.json({ 
+                ok: true, 
+                skipped: true, 
+                reason: 'backoff',
+                scene: zoneLedState.lastScene 
+            });
+        }
+        
+        const targetScene = resolveTargetScene(zones, sessionEnded, sceneConfig);
+        
+        if (!targetScene) {
+            fitnessLogger.debug('fitness.zone_led.skipped', {
+                reason: 'no_scene_configured',
+                zones: zones.map(z => z.zoneId)
+            });
+            return res.json({ 
+                ok: true, 
+                skipped: true, 
+                reason: 'no_scene_configured',
+                message: 'No scene configured for resolved zone'
+            });
+        }
+        
+        // Deduplication: skip if same scene (unless session ended - always send off)
+        if (targetScene === zoneLedState.lastScene && !sessionEnded) {
+            zoneLedState.metrics.skippedDuplicate++;
+            fitnessLogger.debug('fitness.zone_led.skipped', {
+                reason: 'duplicate',
+                scene: targetScene
+            });
+            return res.json({ 
+                ok: true, 
+                skipped: true, 
+                reason: 'duplicate',
+                scene: targetScene 
+            });
+        }
+        
+        // Rate limiting: minimum interval between calls (session-end bypasses throttle)
+        const elapsed = now - zoneLedState.lastActivatedAt;
+        if (elapsed < throttleMs && !sessionEnded) {
+            zoneLedState.metrics.skippedRateLimited++;
+            fitnessLogger.debug('fitness.zone_led.skipped', {
+                reason: 'rate_limited',
+                elapsed,
+                throttleMs
+            });
+            return res.json({ 
+                ok: true, 
+                skipped: true, 
+                reason: 'rate_limited',
+                scene: zoneLedState.lastScene 
+            });
+        }
+        
+        // Activate scene via Home Assistant
+        const activationStart = Date.now();
+        const result = await activateScene(targetScene);
+        const activationDuration = Date.now() - activationStart;
+        
+        if (result.ok) {
+            // Update state
+            const previousScene = zoneLedState.lastScene;
+            zoneLedState.lastScene = targetScene;
+            zoneLedState.lastActivatedAt = now;
+            zoneLedState.failureCount = 0;
+            
+            // Update metrics
+            zoneLedState.metrics.activatedCount++;
+            zoneLedState.metrics.lastActivatedScene = targetScene;
+            zoneLedState.metrics.lastActivatedTime = new Date().toISOString();
+            zoneLedState.metrics.sceneHistogram[targetScene] = 
+                (zoneLedState.metrics.sceneHistogram[targetScene] || 0) + 1;
+            
+            // Track session start (first non-off activation)
+            if (!previousScene && targetScene !== sceneConfig.off) {
+                zoneLedState.metrics.sessionStartCount++;
+            }
+            
+            fitnessLogger.info('fitness.zone_led.activated', {
+                scene: targetScene,
+                previousScene,
+                activeCount: zones.filter(z => z && z.isActive !== false).length,
+                sessionEnded,
+                durationMs: activationDuration,
+                householdId
+            });
+            
+            return res.json({ ok: true, scene: targetScene });
+        } else {
+            throw new Error(result.error || 'HA activation failed');
+        }
+        
+    } catch (error) {
+        zoneLedState.failureCount++;
+        zoneLedState.metrics.failureCount++;
+        
+        // Exponential backoff after repeated failures
+        if (zoneLedState.failureCount >= zoneLedState.maxFailures) {
+            const backoffMs = Math.min(60000, 1000 * Math.pow(2, zoneLedState.failureCount - zoneLedState.maxFailures));
+            zoneLedState.backoffUntil = Date.now() + backoffMs;
+            
+            fitnessLogger.error('fitness.zone_led.circuit_open', {
+                failureCount: zoneLedState.failureCount,
+                backoffMs,
+                error: error.message
+            });
+        } else {
+            fitnessLogger.error('fitness.zone_led.failed', {
+                error: error.message,
+                failureCount: zoneLedState.failureCount,
+                totalFailures: zoneLedState.metrics.failureCount
+            });
+        }
+        
+        return res.status(500).json({ 
+            ok: false, 
+            error: error.message,
+            failureCount: zoneLedState.failureCount 
+        });
+    }
+});
+
+/**
+ * GET /fitness/zone_led/status
+ * Get current ambient LED state (for debugging)
+ */
+fitnessRouter.get('/zone_led/status', (req, res) => {
+    const { householdId } = req.query;
+    const fitnessConfig = loadFitnessConfig(householdId);
+    const enabled = isAmbientLedEnabled(fitnessConfig);
+    
+    res.json({
+        enabled,
+        scenes: enabled ? fitnessConfig.ambient_led.scenes : null,
+        throttleMs: enabled ? (fitnessConfig.ambient_led.throttle_ms || 2000) : null,
+        state: {
+            lastScene: zoneLedState.lastScene,
+            lastActivatedAt: zoneLedState.lastActivatedAt,
+            failureCount: zoneLedState.failureCount,
+            backoffUntil: zoneLedState.backoffUntil,
+            isInBackoff: zoneLedState.backoffUntil > Date.now()
+        }
+    });
+});
+
+/**
+ * GET /fitness/zone_led/metrics
+ * Get detailed metrics for observability
+ */
+fitnessRouter.get('/zone_led/metrics', (req, res) => {
+    const now = Date.now();
+    const uptimeMs = now - zoneLedState.metrics.uptimeStart;
+    const metrics = zoneLedState.metrics;
+    
+    res.json({
+        uptime: {
+            ms: uptimeMs,
+            formatted: formatDuration(uptimeMs),
+            startedAt: new Date(metrics.uptimeStart).toISOString()
+        },
+        totals: {
+            requests: metrics.totalRequests,
+            activated: metrics.activatedCount,
+            failures: metrics.failureCount,
+            sessionStarts: metrics.sessionStartCount,
+            sessionEnds: metrics.sessionEndCount
+        },
+        skipped: {
+            duplicate: metrics.skippedDuplicate,
+            rateLimited: metrics.skippedRateLimited,
+            backoff: metrics.skippedBackoff,
+            disabled: metrics.skippedDisabled
+        },
+        rates: {
+            successRate: metrics.totalRequests > 0 
+                ? ((metrics.activatedCount / metrics.totalRequests) * 100).toFixed(2) + '%'
+                : 'N/A',
+            skipRate: metrics.totalRequests > 0
+                ? (((metrics.skippedDuplicate + metrics.skippedRateLimited) / metrics.totalRequests) * 100).toFixed(2) + '%'
+                : 'N/A',
+            requestsPerMinute: uptimeMs > 60000
+                ? (metrics.totalRequests / (uptimeMs / 60000)).toFixed(2)
+                : 'N/A (uptime < 1min)'
+        },
+        sceneHistogram: metrics.sceneHistogram,
+        lastActivation: {
+            scene: metrics.lastActivatedScene,
+            time: metrics.lastActivatedTime
+        },
+        circuitBreaker: {
+            failureCount: zoneLedState.failureCount,
+            maxFailures: zoneLedState.maxFailures,
+            isOpen: zoneLedState.backoffUntil > now,
+            backoffRemaining: zoneLedState.backoffUntil > now 
+                ? zoneLedState.backoffUntil - now 
+                : 0
+        }
+    });
+});
+
+/**
+ * Format duration in human-readable format
+ */
+function formatDuration(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+}
+
+/**
+ * POST /fitness/zone_led/reset
+ * Reset circuit breaker state (for recovery after HA comes back online)
+ */
+fitnessRouter.post('/zone_led/reset', (req, res) => {
+    const previousState = {
+        failureCount: zoneLedState.failureCount,
+        backoffUntil: zoneLedState.backoffUntil,
+        lastScene: zoneLedState.lastScene
+    };
+    
+    zoneLedState.failureCount = 0;
+    zoneLedState.backoffUntil = 0;
+    zoneLedState.lastScene = null;
+    zoneLedState.lastActivatedAt = 0;
+    
+    fitnessLogger.info('fitness.zone_led.reset', {
+        previousState,
+        resetBy: req.ip || 'unknown'
+    });
+    
+    res.json({ ok: true, message: 'Zone LED state reset', previousState });
 });
 
 
