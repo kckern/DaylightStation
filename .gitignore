@@ -24,3 +24,4 @@ config.app-local.yml
 /scripts
 /docs/notes
 *.log
+/docs

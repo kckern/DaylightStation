@@ -9,6 +9,7 @@ import {
 } from '../hooks/useFitnessSession.js';
 import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.js';
 import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.js';
+import { useZoneLedSync } from '../hooks/fitness/useZoneLedSync.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 import { getPluginManifest } from '../modules/Fitness/FitnessPlugins/registry.js';
 
@@ -955,6 +956,33 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return participantRoster.map(p => p.name).filter(Boolean);
   }, [participantRoster]);
 
+  // ==========================================================================
+  // Ambient LED Zone Sync (Home Assistant Integration)
+  // ==========================================================================
+  // Syncs max participant zone to configured HA scenes for ambient lighting
+  
+  const ambientLedEnabled = React.useMemo(() => {
+    const scenes = fitnessRoot?.ambient_led?.scenes;
+    return scenes && typeof scenes === 'object' && !!scenes.off;
+  }, [fitnessRoot]);
+
+  const zoneLedPayload = React.useMemo(() => {
+    if (!ambientLedEnabled) return [];
+    return participantRoster.map(p => ({
+      zoneId: p.zoneId || null,
+      isActive: p.isActive !== false
+    }));
+  }, [participantRoster, ambientLedEnabled]);
+
+  useZoneLedSync({
+    participantRoster: zoneLedPayload,
+    sessionActive: !!session.sessionId,
+    enabled: ambientLedEnabled,
+    householdId: fitnessRoot?._household || null
+  });
+
+  // ==========================================================================
+
   const deviceAssignments = React.useMemo(() => {
     return guestAssignmentLedgerRef.current.snapshot();
   }, [ledgerVersion]);
@@ -1494,6 +1522,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     
     // Activity Monitor - single source of truth for participant status (Phase 2)
     activityMonitor: session?.activityMonitor,
+    
+    // Ambient LED sync status
+    ambientLedEnabled,
     
     getDisplayLabel,
     zoneRankMap,
