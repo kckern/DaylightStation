@@ -194,55 +194,77 @@ export class UnifiedEventRouter {
   async #handleCommand(conversationId, command, messageId) {
     this.#logger.debug('router.command', { conversationId, command });
 
+    let result;
+
     switch (command) {
       case 'help':
       case 'start': {
         const useCase = this.#container.getHandleHelpCommand();
-        return useCase.execute({ conversationId, messageId });
+        result = await useCase.execute({ conversationId, messageId });
+        break;
       }
 
       case 'report': {
         const useCase = this.#container.getGenerateDailyReport();
-        return useCase.execute({
+        result = await useCase.execute({
           userId: conversationId,
           conversationId,
           messageId,
           autoAcceptPending: true, // Auto-confirm all pending items when user requests report
         });
+        break;
       }
 
       case 'review':
       case 'adjust': {
         const useCase = this.#container.getStartAdjustmentFlow();
-        return useCase.execute({
+        result = await useCase.execute({
           userId: conversationId,
           conversationId,
           messageId,
         });
+        break;
       }
 
       case 'coach': {
         const useCase = this.#container.getGenerateOnDemandCoaching();
-        return useCase.execute({
+        result = await useCase.execute({
           userId: conversationId,
           conversationId,
           messageId,
         });
+        break;
       }
 
       case 'confirm': {
         const useCase = this.#container.getConfirmAllPending();
-        return useCase.execute({
+        result = await useCase.execute({
           userId: conversationId,
           conversationId,
           messageId,
         });
+        break;
       }
 
       default:
         // Unknown command - treat as text
         this.#logger.debug('router.command.unknown', { command });
-        return this.#handleText(conversationId, `/${command}`, messageId);
+        result = await this.#handleText(conversationId, `/${command}`, messageId);
+    }
+
+    await this.#deleteIncomingMessage(conversationId, messageId);
+    return result;
+  }
+
+  async #deleteIncomingMessage(conversationId, messageId) {
+    if (!messageId) return;
+    try {
+      const gateway = this.#container.getMessagingGateway?.();
+      if (!gateway?.deleteMessage) return;
+      await gateway.deleteMessage(conversationId, messageId);
+      this.#logger.debug('router.command.deletedSource', { conversationId, messageId });
+    } catch (err) {
+      this.#logger.warn('router.command.deleteFailed', { conversationId, messageId, error: err.message });
     }
   }
 

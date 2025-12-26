@@ -395,7 +395,7 @@ export class CanvasReportRenderer extends IReportRenderer {
     totalCals = Math.round(totalCals);
     
     const dateFormatted = this._formatDate(date);
-    const title = dateFormatted + ' | Calories: ' + totalCals;
+    const title = dateFormatted ;
 
     ctx.font = TITLE_FONT;
     ctx.fillStyle = COLORS.text;
@@ -481,13 +481,80 @@ export class CanvasReportRenderer extends IReportRenderer {
       }
     }
 
-    // === 7-DAY BAR CHART ===
-    const barChartWidth = width * 0.9;
-    const barChartHeight = 280;
-    const barChartX = (width - barChartWidth) / 2;
-    const barChartY = topPageMargin + contentEffectiveHeight / 2 + 150;
     const goalCalories = goals.calories || 2000;
     const minRecommended = 1200; // dotted line
+
+    // === CALORIE PROGRESS BAR (now above bar chart) ===
+    const progressBarWidth = width * 0.9;
+    const progressBarHeight = 48;
+    const progressBarX = (width - progressBarWidth) / 2;
+    const progressBarY = statsY + 200; // below micronutrients, above bar chart
+    const overGoalColor = '#b00020';
+    const underGoalColor = '#7da87a';
+    const cautionColor = '#f6bd60';
+
+    // Determine max scale: cap at current if over goal so bar fills horizontally
+    const progressMax = Math.max(goalCalories, minRecommended, totalCals);
+
+    // Background
+    this._drawRect(ctx, progressBarX, progressBarY, progressBarWidth, progressBarHeight, COLORS.chartBg);
+
+    // Filled portion with color states: green <=1200, yellow between 1200 and goal, red beyond goal
+    const clampedCurrent = Math.min(totalCals, progressMax);
+    const goalPortion = Math.min(goalCalories, clampedCurrent);
+    const goalWidth = (goalPortion / progressMax) * progressBarWidth;
+    const baseColor = totalCals > minRecommended ? cautionColor : underGoalColor;
+    if (goalWidth > 0) {
+      this._drawRect(ctx, progressBarX, progressBarY, goalWidth, progressBarHeight, baseColor);
+    }
+
+    if (totalCals > goalCalories) {
+      const overWidth = ((totalCals - goalCalories) / progressMax) * progressBarWidth;
+      this._drawRect(ctx, progressBarX + goalWidth, progressBarY, overWidth, progressBarHeight, overGoalColor);
+    }
+
+    // Tick at 1200
+    const tick1200X = progressBarX + (minRecommended / progressMax) * progressBarWidth;
+    ctx.save();
+    ctx.strokeStyle = COLORS.gridLine;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tick1200X, progressBarY);
+    ctx.lineTo(tick1200X, progressBarY + progressBarHeight);
+    ctx.stroke();
+    ctx.font = SMALL_FONT;
+    ctx.fillStyle = COLORS.text;
+    const tick1200Label = '1200';
+    ctx.fillText(tick1200Label, tick1200X - this._getTextWidth(ctx, tick1200Label) / 2, progressBarY - 6);
+    ctx.restore();
+
+    // Goal marker
+    const goalX = progressBarX + (goalCalories / progressMax) * progressBarWidth;
+    ctx.save();
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(goalX, progressBarY - 4);
+    ctx.lineTo(goalX, progressBarY + progressBarHeight + 4);
+    ctx.stroke();
+    ctx.font = SMALL_FONT;
+    const goalLabel = `${goalCalories} goal`;
+    ctx.fillText(goalLabel, goalX - this._getTextWidth(ctx, goalLabel) / 2, progressBarY + progressBarHeight + 26);
+    ctx.restore();
+
+    // Labels and percentages
+    ctx.font = SUBTITLE_FONT;
+    ctx.fillStyle = COLORS.text;
+    const pctOfGoal = goalCalories ? Math.round((totalCals / goalCalories) * 100) : 0;
+    const progressLabel = `${totalCals} cal (${pctOfGoal}% of goal)`;
+    const progressLabelW = this._getTextWidth(ctx, progressLabel);
+    ctx.fillText(progressLabel, width / 2 - progressLabelW / 2, progressBarY - 18);
+
+    // === 7-DAY BAR CHART (moved below progress bar) ===
+    const barChartWidth = width * 0.9;
+    const barChartHeight = 460; // slightly shorter to leave bottom margin
+    const barChartX = (width - barChartWidth) / 2;
+    const barChartY = progressBarY + progressBarHeight + 80; // give gap below progress bar
     
     // Calculate max from all data (history + today) so no bars get cut off
     let historyMax = 0;
@@ -499,19 +566,6 @@ export class CanvasReportRenderer extends IReportRenderer {
     const barMaxVal = Math.max(goalCalories, minRecommended, totalCals, historyMax, 2000) * 1.1; // 10% headroom
 
     this._drawDailyChart(ctx, history, items, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal, date);
-
-    // === SUMMARY ===
-    ctx.font = SUBTITLE_FONT;
-    const deficit = goalCalories - totalCals;
-    let summary;
-    if (deficit > 0) {
-      summary = deficit + ' cal deficit today';
-    } else {
-      summary = Math.abs(deficit) + ' cal surplus today';
-    }
-    const summaryW = this._getTextWidth(ctx, summary);
-    ctx.fillStyle = COLORS.text;
-    ctx.fillText(summary, width / 2 - summaryW / 2, newCanvasHeight - 60);
 
     // Scale up 1.2x like food_report.mjs
     const scaledWidth = Math.round(width * 1.2);
