@@ -80,33 +80,45 @@ export class LogFoodFromUPC {
         return { success: false, error: 'Product not found' };
       }
 
-      // 4. Classify product (icon, noom color) if AI available
-      let classification = { icon: '🍽️', noomColor: 'yellow' };
+      // 4. Classify product (icon, noom color) if AI available; otherwise defaults
+      let classification = { icon: 'default', noomColor: 'yellow' };
       if (this.#aiGateway) {
         try {
           classification = await this.#classifyProduct(product);
         } catch (e) {
-          // Use defaults
+          // Keep defaults on failure
+        }
+
+        // If classification did not pick an icon, run a lightweight icon-only prompt
+        if (!classification?.icon || classification.icon === 'default') {
+          try {
+            const icon = await this.#selectIconFromList(product);
+            classification.icon = icon || 'default';
+          } catch (e) {
+            // Keep default
+          }
         }
       }
 
       // 5. Create food item from product (using FoodItem expected field names)
+      // Ensure numeric values for validation (API may return strings)
+      const grams = Number(product.serving?.size) || 100;
       const foodItem = {
         label: product.name,           // FoodItem uses 'label' not 'name'
         icon: classification.icon,
-        grams: product.serving?.size || 100,
+        grams: grams > 0 ? grams : 100,
         unit: product.serving?.unit || 'serving',
         amount: 1,
         color: classification.noomColor, // FoodItem uses 'color' not 'noomColor'
         // Nutrition fields
-        calories: product.nutrition?.calories ?? 0,
-        protein: product.nutrition?.protein ?? 0,
-        carbs: product.nutrition?.carbs ?? 0,
-        fat: product.nutrition?.fat ?? 0,
-        fiber: product.nutrition?.fiber ?? 0,
-        sugar: product.nutrition?.sugar ?? 0,
-        sodium: product.nutrition?.sodium ?? 0,
-        cholesterol: product.nutrition?.cholesterol ?? 0,
+        calories: Number(product.nutrition?.calories) || 0,
+        protein: Number(product.nutrition?.protein) || 0,
+        carbs: Number(product.nutrition?.carbs) || 0,
+        fat: Number(product.nutrition?.fat) || 0,
+        fiber: Number(product.nutrition?.fiber) || 0,
+        sugar: Number(product.nutrition?.sugar) || 0,
+        sodium: Number(product.nutrition?.sodium) || 0,
+        cholesterol: Number(product.nutrition?.cholesterol) || 0,
       };
 
       // 6. Create NutriLog entity
@@ -152,11 +164,19 @@ export class LogFoodFromUPC {
       }
       
       // Always send photo (barcode fallback guarantees we have an image)
-      await this.#messagingGateway.sendPhoto(conversationId, imagePath, {
+      const { messageId: photoMsgId } = await this.#messagingGateway.sendPhoto(conversationId, imagePath, {
         caption,
         choices: portionButtons,
         inline: true,
       });
+
+      // Update NutriLog with the messageId for later UI updates (e.g., auto-accept)
+      if (this.#nutrilogRepository && photoMsgId) {
+        const updatedLog = nutriLog.with({
+          metadata: { ...nutriLog.metadata, messageId: String(photoMsgId) },
+        });
+        await this.#nutrilogRepository.save(updatedLog);
+      }
 
       this.#logger.info('logUPC.complete', { 
         conversationId, 
@@ -174,6 +194,39 @@ export class LogFoodFromUPC {
       this.#logger.error('logUPC.error', { conversationId, upc, error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Lightweight GPT prompt to choose an icon from our known list
+   * @private
+   */
+  async #selectIconFromList(product) {
+    if (!this.#aiGateway) return 'default';
+
+    const { FOOD_ICONS_STRING } = await import('../constants/foodIcons.mjs');
+    const availableIcons = FOOD_ICONS_STRING.split(' ');
+
+    const prompt = [
+      {
+        role: 'system',
+        content: `Pick the best matching icon filename for the product from this list:
+${FOOD_ICONS_STRING}
+
+Respond ONLY as JSON: { "icon": "<filename>" }` },
+      {
+        role: 'user',
+        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}
+Calories: ${product.nutrition?.calories ?? 'unknown'}`,
+      },
+    ];
+
+    const response = await this.#aiGateway.chat(prompt, { maxTokens: 40 });
+    const match = response.match(/\{[\s\S]*\}/);
+    if (!match) return 'default';
+    const parsed = JSON.parse(match[0]);
+    const icon = parsed.icon;
+    if (availableIcons.includes(icon)) return icon;
+    return 'default';
   }
 
   /**
@@ -224,10 +277,15 @@ If unsure, use "default" icon.`,
   #buildProductCaption(product, foodItem) {
     const servingSize = product.serving?.size || 100;
     const servingUnit = product.serving?.unit || 'g';
-    const brandSuffix = product.brand ? ` (${product.brand})` : '';
+    // Only add brand suffix if brand exists and isn't already in the product name
+    const brandAlreadyInName = product.brand && product.name.toLowerCase().includes(product.brand.toLowerCase());
+    const brandSuffix = (product.brand && !brandAlreadyInName) ? ` (${product.brand})` : '';
+    
+    // Noom color emoji
+    const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' }[foodItem.color] || '🟡';
     
     const lines = [
-      `${servingSize}${servingUnit} ${product.name}${brandSuffix}`,
+      `${colorEmoji} ${servingSize}${servingUnit} ${product.name}${brandSuffix}`,
       '',
       `🔥 Calories: ${foodItem.calories}`,
       `🍖 Protein: ${foodItem.protein}g`,

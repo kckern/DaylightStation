@@ -188,6 +188,14 @@ export class LogFoodFromText {
         inline: true,
       });
 
+      // 8. Update NutriLog with the messageId for later UI updates (e.g., auto-accept)
+      if (this.#nutrilogRepository) {
+        const updatedLog = nutriLog.with({
+          metadata: { ...nutriLog.metadata, messageId: String(statusMsgId) },
+        });
+        await this.#nutrilogRepository.save(updatedLog);
+      }
+
       this.#logger.info('logText.complete', { 
         conversationId, 
         itemCount: foodItems.length,

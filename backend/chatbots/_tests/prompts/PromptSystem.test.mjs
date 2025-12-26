@@ -10,6 +10,7 @@ import { render, renderMessages } from '../../_lib/prompts/PromptRenderer.mjs';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { TEST_GOALS } from '../fixtures/nutritionGoals.mjs';
 
 // ==================== PromptRenderer Tests ====================
 
@@ -24,7 +25,7 @@ describe('PromptRenderer', () => {
     it('should handle nested object properties', () => {
       const template = 'Goals: {{goals.calories}} cal, {{goals.protein}}g protein';
       const result = render(template, { 
-        goals: { calories: 2000, protein: 150 } 
+        goals: TEST_GOALS,
       });
       expect(result).toBe('Goals: 2000 cal, 150g protein');
     });

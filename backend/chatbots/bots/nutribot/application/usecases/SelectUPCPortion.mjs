@@ -88,14 +88,18 @@ export class SelectUPCPortion {
 
       // Add to nutrilist
       if (this.#nutrilistRepository) {
-        // Use local date, not UTC
+        // Use the date from the nutriLog.meal, fall back to today (local date)
         const now = new Date();
-        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const fallbackDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const logDate = nutriLog.meal?.date || nutriLog.date || fallbackDate;
+        
+        this.#logger.debug('selectPortion.savingToNutrilist', { logUuid, logDate, mealDate: nutriLog.meal?.date });
+        
         const listItems = scaledItems.map(item => ({
           ...item,
           chatId: conversationId,
           logUuid: logUuid,
-          date: today,
+          date: logDate,
         }));
         await this.#nutrilistRepository.saveMany(listItems);
       }
@@ -110,7 +114,26 @@ export class SelectUPCPortion {
       }
 
       // 8. Generate daily report (if available, skipped in CLI mode)
-      if (this.#generateDailyReport) {
+      // Check for other pending items first
+      if (this.#generateDailyReport && this.#nutrilogRepository) {
+        try {
+          const pending = await this.#nutrilogRepository.findPending(userId);
+          this.#logger.debug('selectPortion.autoreport.pendingCheck', { userId, pendingCount: pending.length });
+          if (pending.length === 0) {
+            // Small delay to allow concurrent events to settle
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await this.#generateDailyReport.execute({
+              userId,
+              conversationId,
+            });
+          } else {
+            this.#logger.debug('selectPortion.autoreport.skipped', { userId, pendingCount: pending.length });
+          }
+        } catch (e) {
+          this.#logger.warn('selectPortion.autoreport.error', { error: e.message });
+        }
+      } else if (this.#generateDailyReport) {
+        // Fallback if no repository available
         await this.#generateDailyReport.execute({
           userId,
           conversationId,

@@ -16,6 +16,7 @@ import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 import { configService } from '../../../lib/config/ConfigService.mjs';
 import { userDataService } from '../../../lib/config/UserDataService.mjs';
+import { DEFAULT_NUTRITION_GOALS } from '../bots/nutribot/config/NutriBotConfig.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -450,12 +451,7 @@ export class ConfigProvider {
     if (configService.isReady()) {
       const defaults = configService.getAppConfig('chatbots', 'defaults.nutrition_goals');
       if (defaults) {
-        return {
-          calories: defaults.calories || 2000,
-          protein: defaults.protein || 150,
-          carbs: defaults.carbs || 200,
-          fat: defaults.fat || 65,
-        };
+        return { ...DEFAULT_NUTRITION_GOALS, ...defaults };
       }
     }
 
@@ -463,22 +459,12 @@ export class ConfigProvider {
     const headUsername = configService?.getHeadOfHousehold?.() || Object.keys(this.#appConfig.chatbots?.users || {})[0];
     const defaultUser = headUsername ? this.#appConfig.chatbots?.users?.[headUsername] : null;
     if (defaultUser?.goals) {
-      return {
-        calories: defaultUser.goals.calories || 2000,
-        protein: defaultUser.goals.protein || 150,
-        carbs: defaultUser.goals.carbs || 200,
-        fat: defaultUser.goals.fat || 65,
-      };
+      return { ...DEFAULT_NUTRITION_GOALS, ...defaultUser.goals };
     }
     
     // Legacy fallback
     const nutribot = this.#appConfig.nutribot || {};
-    return {
-      calories: nutribot.goals?.calories || 2000,
-      protein: nutribot.goals?.protein || 150,
-      carbs: nutribot.goals?.carbs || 200,
-      fat: nutribot.goals?.fat || 65,
-    };
+    return { ...DEFAULT_NUTRITION_GOALS, ...(nutribot.goals || {}) };
   }
 
   /**

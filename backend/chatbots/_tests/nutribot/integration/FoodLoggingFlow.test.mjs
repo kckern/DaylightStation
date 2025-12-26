@@ -10,6 +10,7 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { NutribotContainer } from '../../../bots/nutribot/container.mjs';
 import { UnifiedEventRouter } from '../../../application/routing/UnifiedEventRouter.mjs';
+import { TEST_GOALS } from '../../fixtures/nutritionGoals.mjs';
 
 // Status constants matching domain schema
 const NutriLogStatus = {
@@ -268,12 +269,12 @@ describe('NutriBot Food Logging Flow Integration', () => {
     conversationStateStore = new MockConversationStateStore();
     upcGateway = new MockUPCGateway();
     
-    // Create proper config mock
-    config = {
-      goals: { calories: 2000, protein: 150, carbs: 200, fat: 65 },
-      getUserTimezone: () => 'America/Los_Angeles',
-      getGoalsForUser: () => ({ calories: 2000, protein: 150, carbs: 200, fat: 65 }),
-    };
+      // Create proper config mock
+      config = {
+        goals: TEST_GOALS,
+        getUserTimezone: () => 'America/Los_Angeles',
+        getGoalsForUser: () => TEST_GOALS,
+      };
 
     container = new NutribotContainer(
       config,

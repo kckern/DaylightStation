@@ -12,6 +12,17 @@ import { loadConfig } from '../../../_lib/config/ConfigLoader.mjs';
 import { ValidationError, NotFoundError } from '../../../_lib/errors/index.mjs';
 import { TestContext } from '../../../_lib/testing/TestContext.mjs';
 import { UserResolver } from '../../../_lib/users/UserResolver.mjs';
+import { configService } from '../../../../lib/config/ConfigService.mjs';
+
+// Single source of truth for default nutrition goals
+export const DEFAULT_NUTRITION_GOALS = {
+  calories: 2000,
+  protein: 150,
+  carbs: 200,
+  fat: 65,
+  fiber: 30,
+  sodium: 2300,
+};
 
 /**
  * Validate NutriBot configuration
@@ -276,14 +287,7 @@ export class NutriBotConfig {
    * Default nutrition goals (fallback)
    * @private
    */
-  static #DEFAULT_GOALS = {
-    calories: 2000,
-    protein: 150,
-    carbs: 200,
-    fat: 65,
-    fiber: 30,
-    sodium: 2300,
-  };
+  static #DEFAULT_GOALS = DEFAULT_NUTRITION_GOALS;
 
   /**
    * Get user's nutrition goals
@@ -291,14 +295,34 @@ export class NutriBotConfig {
    * @returns {Object} - { calories, protein, carbs, fat, fiber, sodium }
    */
   getUserGoals(userId) {
-    const conversations = this.#userToConversations.get(userId);
+    const username = this.#resolveUsername(userId);
+
+    // Prefer goals from user profile if available
+    try {
+      if (configService?.isReady?.()) {
+        const profile = configService.getUserProfile(username);
+        const profileGoals = profile?.apps?.nutribot?.goals;
+        if (profileGoals) {
+          return {
+            ...NutriBotConfig.#DEFAULT_GOALS,
+            ...profileGoals,
+          };
+        }
+      }
+    } catch (e) {
+      // Ignore and fall back to config mappings
+    }
+
+    const conversations = this.#userToConversations.get(username);
     if (!conversations || conversations.length === 0) {
+      console.warn('nutribot.goals.fallback.default', { userId: username });
       return this.getDefaultGoals();
     }
     
     // Get from first conversation mapping
     const goals = conversations[0].goals;
     if (!goals) {
+      console.warn('nutribot.goals.fallback.mapping', { userId: username });
       return this.getDefaultGoals();
     }
     

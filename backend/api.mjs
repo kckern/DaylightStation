@@ -37,6 +37,7 @@ import { NutriCoachRepository } from './chatbots/bots/nutribot/repositories/Nutr
 import { FileConversationStateStore } from './chatbots/infrastructure/persistence/FileConversationStateStore.mjs';
 import { CanvasReportRenderer } from './chatbots/adapters/http/CanvasReportRenderer.mjs';
 import { createLogger } from './chatbots/_lib/logging/index.mjs';
+import { DEFAULT_NUTRITION_GOALS } from './chatbots/bots/nutribot/config/NutriBotConfig.mjs';
 import { configService } from './lib/config/ConfigService.mjs';
 
 const apiRouter = express.Router();
@@ -245,17 +246,26 @@ const initNutribotRouter = async () => {
             getUserGoals: (userId) => {
                 // Get goals from user config or defaults
                 const username = userResolver.resolveUsername(userId);
+                try {
+                    if (configService.isReady()) {
+                        const profile = configService.getUserProfile(username);
+                        const profileGoals = profile?.apps?.nutribot?.goals;
+                        if (profileGoals) {
+                            return { ...DEFAULT_NUTRITION_GOALS, ...profileGoals };
+                        }
+                    }
+                } catch (e) {
+                    // fall through to other fallbacks
+                }
+
                 const users = chatbotsConfig?.users || {};
                 const user = users[username];
-                const defaults = {
-                    calories: 2000,
-                    protein: 150,
-                    carbs: 200,
-                    fat: 65,
-                    fiber: 30,
-                    sodium: 2300,
-                };
-                return { ...defaults, ...(user?.goals || {}) };
+                if (user?.goals) {
+                    return { ...DEFAULT_NUTRITION_GOALS, ...user.goals };
+                }
+
+                console.warn('api.nutribot.goals.fallback.default', { userId: username });
+                return { ...DEFAULT_NUTRITION_GOALS };
             },
         };
         
