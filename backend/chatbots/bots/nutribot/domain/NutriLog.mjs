@@ -7,11 +7,13 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { validateNutriLog, getMealTimeFromHour, LogStatuses } from './schemas.mjs';
+import { shortId, shortIdFromUuid, isUuid } from '../../../_lib/shortId.mjs';
+import { formatLocalTimestamp } from '../../../_lib/time.mjs';
 import { FoodItem } from './FoodItem.mjs';
+import { getMealTimeFromHour } from './schemas.mjs';
+import { validateNutriLog, LogStatuses } from './schemas.mjs';
 import { ValidationError } from '../../../_lib/errors/index.mjs';
 import { Timestamp } from '../../../domain/value-objects/Timestamp.mjs';
-import { shortId, shortIdFromUuid, isUuid } from '../../../_lib/shortId.mjs';
 
 /**
  * NutriLog entity - aggregate root for food logging
@@ -39,6 +41,8 @@ export class NutriLog {
   #nutrition;
   /** @type {object} */
   #metadata;
+  /** @type {string} */
+  #timezone;
   /** @type {string} */
   #createdAt;
   /** @type {string} */
@@ -79,6 +83,7 @@ export class NutriLog {
     this.#questions = Object.freeze([...data.questions]);
     this.#nutrition = Object.freeze({ ...data.nutrition });
     this.#metadata = Object.freeze({ ...data.metadata });
+    this.#timezone = data.timezone || data.metadata?.timezone || 'America/Los_Angeles';
     this.#createdAt = data.createdAt;
     this.#updatedAt = data.updatedAt;
     this.#acceptedAt = data.acceptedAt;
@@ -99,6 +104,7 @@ export class NutriLog {
   get questions() { return [...this.#questions]; }
   get nutrition() { return { ...this.#nutrition }; }
   get metadata() { return { ...this.#metadata }; }
+  get timezone() { return this.#timezone; }
   get createdAt() { return this.#createdAt; }
   get updatedAt() { return this.#updatedAt; }
   get acceptedAt() { return this.#acceptedAt; }
@@ -110,6 +116,10 @@ export class NutriLog {
    */
   get isPending() {
     return this.#status === 'pending';
+  }
+
+  #now() {
+    return formatLocalTimestamp(new Date(), this.#timezone);
   }
 
   /**
@@ -195,8 +205,8 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       status: 'accepted',
-      acceptedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      acceptedAt: this.#now(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -212,7 +222,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       status: 'rejected',
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -228,7 +238,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       status: 'deleted',
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -245,7 +255,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       items: [...this.#items.map(i => i.toJSON()), foodItem.toJSON()],
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -258,7 +268,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       items: this.#items.filter(i => i.id !== itemId).map(i => i.toJSON()),
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -279,7 +289,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       items,
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -296,7 +306,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       items: itemsAsJson,
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -325,7 +335,7 @@ export class NutriLog {
         date,
         ...(time ? { time } : {}),
       },
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -340,7 +350,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       nutrition: { ...this.#nutrition, ...nutrition },
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -354,7 +364,7 @@ export class NutriLog {
       ...this.toJSON(),
       text,
       metadata: { ...this.#metadata, originalText: this.#text },
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -367,7 +377,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       ...updates,
-      updatedAt: new Date().toISOString(),
+      updatedAt: this.#now(),
     });
   }
 
@@ -390,6 +400,7 @@ export class NutriLog {
       questions: [...this.#questions],
       nutrition: { ...this.#nutrition },
       metadata: { ...this.#metadata },
+      timezone: this.#timezone,
       createdAt: this.#createdAt,
       updatedAt: this.#updatedAt,
       acceptedAt: this.#acceptedAt,
@@ -423,11 +434,12 @@ export class NutriLog {
    * @returns {NutriLog}
    */
   static create(props) {
+    const timezone = props.timezone || 'America/Los_Angeles';
     const now = new Date();
     const logUuid = uuidv4();
     const logId = shortId();
     const meal = props.meal || {
-      date: now.toISOString().split('T')[0],
+      date: formatLocalTimestamp(now, timezone).split(' ')[0],
       time: getMealTimeFromHour(now.getHours()),
     };
 
@@ -457,10 +469,12 @@ export class NutriLog {
       nutrition: props.nutrition || {},
       metadata: {
         source: 'telegram',
+        timezone,
         ...props.metadata,
       },
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
+      timezone,
+      createdAt: formatLocalTimestamp(now, timezone),
+      updatedAt: formatLocalTimestamp(now, timezone),
       acceptedAt: null,
     });
   }
@@ -470,9 +484,9 @@ export class NutriLog {
    * @param {object} obj
    * @returns {NutriLog}
    */
-  static from(obj) {
+  static from(obj, timezone = 'America/Los_Angeles') {
     if (obj instanceof NutriLog) return obj;
-    return new NutriLog(obj);
+    return new NutriLog({ timezone, ...obj });
   }
 
   /**
@@ -482,7 +496,7 @@ export class NutriLog {
    * @param {string} conversationId - Channel:identifier format
    * @returns {NutriLog}
    */
-  static fromLegacy(legacy, userId, conversationId) {
+  static fromLegacy(legacy, userId, conversationId, timezone = 'America/Los_Angeles') {
     const items = (legacy.food_data?.food || []).map((item) => {
       const itemUuid = item.uuid || uuidv4();
       return {
@@ -505,7 +519,7 @@ export class NutriLog {
       status: legacy.status,
       text: legacy.food_data?.text || '',
       meal: {
-        date: legacy.food_data?.date || new Date().toISOString().split('T')[0],
+        date: legacy.food_data?.date || formatLocalTimestamp(new Date(), timezone).split(' ')[0],
         time: legacy.food_data?.time || 'morning',
       },
       items,
@@ -514,10 +528,12 @@ export class NutriLog {
       metadata: {
         messageId: String(legacy.message_id),
         source: 'migration',
+        timezone,
       },
-      createdAt: legacy.createdAt || new Date().toISOString(),
-      updatedAt: legacy.updatedAt || new Date().toISOString(),
-      acceptedAt: legacy.status === 'accepted' ? (legacy.acceptedAt || legacy.updatedAt || new Date().toISOString()) : null,
+      timezone,
+      createdAt: legacy.createdAt || formatLocalTimestamp(new Date(), timezone),
+      updatedAt: legacy.updatedAt || formatLocalTimestamp(new Date(), timezone),
+      acceptedAt: legacy.status === 'accepted' ? (legacy.acceptedAt || legacy.updatedAt || formatLocalTimestamp(new Date(), timezone)) : null,
     });
   }
 }

@@ -147,6 +147,7 @@ export class LogFoodFromImage {
           source: 'image',
           imageUrl: imageUrl,
         },
+        timezone,
       });
 
       // 6. Save NutriLog
