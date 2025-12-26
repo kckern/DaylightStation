@@ -80,7 +80,12 @@ export class NutriLogRepository {
       return null;
     }
 
-    return NutriLog.from(entity);
+    try {
+      return NutriLog.from(entity);
+    } catch (err) {
+      console.warn('nutrilog.findById.corruptRecord', { userId, id, error: err.message });
+      return null;
+    }
   }
 
   /**

@@ -448,11 +448,19 @@ export class UnifiedEventRouter {
       });
     }
 
-    // Portion adjustment: adj_factor or adj_factor_X
+    // Portion adjustment: adj_factor_X_uuid
     if (action === 'adj_factor' || action.startsWith('adj_factor_')) {
-      const factor = action === 'adj_factor'
-        ? parseFloat(params[0]) || 1
-        : parseFloat(action.replace('adj_factor_', '')) || 1;
+      // Parse factor and optional itemId: adj_factor_0.5_uuid or adj_factor_0.5
+      const factorPart = action.replace('adj_factor_', '');
+      const underscoreIdx = factorPart.indexOf('_');
+      let factor, itemId;
+      if (underscoreIdx > 0) {
+        factor = parseFloat(factorPart.substring(0, underscoreIdx)) || 1;
+        itemId = factorPart.substring(underscoreIdx + 1);
+      } else {
+        factor = parseFloat(factorPart) || parseFloat(params[0]) || 1;
+        itemId = params[1] || undefined;
+      }
       
       const useCase = this.#container.getApplyPortionAdjustment();
       return useCase.execute({
@@ -460,6 +468,7 @@ export class UnifiedEventRouter {
         conversationId,
         messageId,
         factor,
+        itemId,
       });
     }
 
@@ -477,14 +486,36 @@ export class UnifiedEventRouter {
       });
     }
 
-    // Pagination: adj_page_X
+    // Move day - show date picker: adj_move_uuid
+    if (action.startsWith('adj_move_') && !action.startsWith('adj_move_date_')) {
+      const itemId = action.replace('adj_move_', '');
+      // Show date selection for moving this item
+      // For now, just send a message that this feature is coming
+      await this.#container.getMessagingGateway().sendMessage(
+        conversationId,
+        '📅 Move to another day is coming soon!',
+        { choices: [[{ text: '↩️ Back', callback_data: `adj_item_${itemId}` }]] }
+      );
+      return { success: true, pending: true };
+    }
+
+    // Pagination: adj_page_daysAgo_offset or adj_page_offset (legacy)
     if (action.startsWith('adj_page_')) {
-      const offset = parseInt(action.replace('adj_page_', ''), 10) || 0;
+      const pagePart = action.replace('adj_page_', '');
+      const parts = pagePart.split('_');
+      let daysAgo, offset;
       
-      // Re-fetch items with new offset
-      const conversationStateStore = this.#container.getConversationStateStore();
-      const state = await conversationStateStore?.get(conversationId);
-      const daysAgo = state?.flowState?.daysAgo ?? 0;
+      if (parts.length >= 2) {
+        // New format: adj_page_daysAgo_offset
+        daysAgo = parseInt(parts[0], 10) || 0;
+        offset = parseInt(parts[1], 10) || 0;
+      } else {
+        // Legacy format: adj_page_offset - fall back to state for daysAgo
+        offset = parseInt(parts[0], 10) || 0;
+        const conversationStateStore = this.#container.getConversationStateStore();
+        const state = await conversationStateStore?.get(conversationId);
+        daysAgo = state?.flowState?.daysAgo ?? 0;
+      }
       
       const useCase = this.#container.getSelectDateForAdjustment();
       return useCase.execute({
