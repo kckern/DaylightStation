@@ -208,6 +208,7 @@ export class NutribotContainer {
         aiGateway: this.#aiGateway,
         nutrilogRepository: this.#nutrilogRepository,
         conversationStateStore: this.#conversationStateStore,
+        config: this.#config,
         logger: this.#logger,
       });
     }

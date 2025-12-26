@@ -455,6 +455,12 @@ export class UnifiedEventRouter {
           const messagingGateway = this.#container.getMessagingGateway();
           await messagingGateway.updateMessage(conversationId, sourceMessageId, { choices: [] });
           this.#logger.info('report.accepted', { conversationId, sourceMessageId });
+
+          // Trigger post-report coaching
+          const coachingUseCase = this.#container.getGenerateReportCoaching?.();
+          if (coachingUseCase) {
+            await coachingUseCase.execute({ userId: conversationId, conversationId });
+          }
         } catch (e) {
           this.#logger.warn('report.accept.error', { error: e.message });
         }

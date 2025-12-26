@@ -74,6 +74,7 @@ export class GenerateDailyReport {
   async execute(input) {
     const { userId, conversationId, forceRegenerate = false } = input;
     const date = input.date || this.#getTodayDate(userId);
+    const anchorDateForHistory = this.#getTodayDate(userId); // Always end chart at "today" even if report is backdated
 
     this.#logger.debug('report.generate.start', { userId, date, forceRegenerate });
 
@@ -180,10 +181,11 @@ export class GenerateDailyReport {
       }
 
       // 7. Build history for chart (last 7 days)
-      const history = await this.#buildHistory(userId, date);
+      const history = await this.#buildHistory(userId, anchorDateForHistory);
       this.#logger.debug('report.history', { 
         userId, 
         date, 
+        anchorDate: anchorDateForHistory,
         historyLength: history.length,
         historySummary: history.map(h => ({ date: h.date, cal: h.totalCalories, items: h.itemCount })),
       });
@@ -224,7 +226,8 @@ export class GenerateDailyReport {
       const budgetStatus = remaining >= 0 
         ? `${remaining} cal remaining`
         : `${Math.abs(remaining)} cal over budget`;
-      const caption = `🔥 ${totals.calories} / ${goals.calories} cal • ${budgetStatus}`;
+      const caloriePercent = Math.round((totals.calories / goals.calories) * 100);
+      const caption = `🔥 ${totals.calories} / ${goals.calories} cal (${caloriePercent}%) • ${budgetStatus}`;
 
       // 11. Build action buttons
       const buttons = [
@@ -290,10 +293,10 @@ export class GenerateDailyReport {
    * Build history data for the weekly chart
    * @private
    */
-  async #buildHistory(userId, today) {
+  async #buildHistory(userId, anchorDate) {
     const history = [];
-    // Parse today's date components to avoid UTC conversion issues
-    const [year, month, day] = today.split('-').map(Number);
+    // Parse anchor date components to avoid UTC conversion issues
+    const [year, month, day] = anchorDate.split('-').map(Number);
     
     for (let i = 6; i >= 1; i--) {
       // Create date using local components, then subtract days

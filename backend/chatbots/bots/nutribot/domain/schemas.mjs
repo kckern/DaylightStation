@@ -331,10 +331,10 @@ export function validateNutriLog(log) {
 
   // Timestamps validation
   if (!log.createdAt || typeof log.createdAt !== 'string') {
-    errors.push('createdAt must be an ISO timestamp string');
+    errors.push('createdAt must be a timestamp string (local time)');
   }
   if (!log.updatedAt || typeof log.updatedAt !== 'string') {
-    errors.push('updatedAt must be an ISO timestamp string');
+    errors.push('updatedAt must be a timestamp string (local time)');
   }
 
   if (errors.length > 0) {
@@ -364,6 +364,7 @@ export function validateNutriLog(log) {
         aiModel: log.metadata?.aiModel,
         processingTimeMs: log.metadata?.processingTimeMs,
       },
+      timezone: log.timezone || log.metadata?.timezone || 'America/Los_Angeles',
       createdAt: log.createdAt,
       updatedAt: log.updatedAt,
       acceptedAt: log.acceptedAt || null,

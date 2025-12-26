@@ -158,6 +158,7 @@ export class LogFoodFromText {
       }
 
       // 5. Create NutriLog entity using domain factory
+      const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
       const nutriLog = NutriLog.create({
         userId,
         conversationId,
@@ -171,6 +172,7 @@ export class LogFoodFromText {
           source: 'text',
           sourceText: text,
         },
+        timezone,
       });
 
       // 6. Save NutriLog
