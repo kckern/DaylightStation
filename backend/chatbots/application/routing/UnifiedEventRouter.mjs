@@ -207,6 +207,7 @@ export class UnifiedEventRouter {
           userId: conversationId,
           conversationId,
           messageId,
+          autoAcceptPending: true, // Auto-confirm all pending items when user requests report
         });
       }
 
@@ -258,6 +259,11 @@ export class UnifiedEventRouter {
     // Handle adjustment flow callbacks (adj_*)
     if (action.startsWith('adj_')) {
       return this.#handleAdjustmentCallback(conversationId, action, params, sourceMessageId);
+    }
+
+    // Handle report callbacks (report_*)
+    if (action.startsWith('report_')) {
+      return this.#handleReportCallback(conversationId, action, params, sourceMessageId);
     }
 
     // Handle standard actions
@@ -436,8 +442,10 @@ export class UnifiedEventRouter {
     }
 
     // Delete item
-    if (action === 'adj_delete') {
-      const itemId = params[0];
+    if (action === 'adj_delete' || action.startsWith('adj_delete_')) {
+      const itemId = action === 'adj_delete'
+        ? params[0]
+        : action.replace('adj_delete_', '');
       const useCase = this.#container.getDeleteListItem();
       return useCase.execute({
         userId: conversationId,
@@ -482,6 +490,44 @@ export class UnifiedEventRouter {
 
     this.#logger.warn('router.adjustment.unknown', { action, params });
     return null;
+  }
+
+  /**
+   * Handle report callbacks (report_adjust, report_accept)
+   * @private
+   */
+  async #handleReportCallback(conversationId, action, params, messageId) {
+    this.#logger.debug('router.report', { action, params, messageId });
+
+    switch (action) {
+      case 'report_adjust': {
+        // Start adjustment flow for the report's date
+        const useCase = this.#container.getStartAdjustmentFlow();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          messageId,
+        });
+      }
+
+      case 'report_accept': {
+        // Accept the report - just remove the buttons
+        try {
+          const messagingGateway = this.#container.getMessagingGateway();
+          await messagingGateway.updateMessage(conversationId, messageId, {
+            choices: [], // Remove buttons
+          });
+          this.#logger.info('report.accepted', { conversationId, messageId });
+        } catch (e) {
+          this.#logger.warn('report.accept.error', { error: e.message });
+        }
+        return { success: true };
+      }
+
+      default:
+        this.#logger.warn('router.report.unknown', { action, params });
+        return null;
+    }
   }
 
   // ==================== Utility Methods ====================

@@ -7,6 +7,7 @@
 
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { CLIChatSimulator } from '../CLIChatSimulator.mjs';
+import { DEFAULT_NUTRITION_GOALS } from '../../bots/nutribot/config/NutriBotConfig.mjs';
 
 // Mock inquirer prompts since we can't use interactive input in tests
 jest.unstable_mockModule('@inquirer/prompts', () => ({
@@ -147,7 +148,7 @@ describe('CLIChatSimulator Integration', () => {
       const report = await renderer.renderDailyReport({
         date: '2024-12-14',
         totals: { calories: 1500, protein: 100, carbs: 150, fat: 50 },
-        goals: { calories: 2000, protein: 150, carbs: 200, fat: 65 },
+          goals: DEFAULT_NUTRITION_GOALS,
         items: [
           { name: 'Chicken Salad', calories: 350, color: 'green' },
           { name: 'Apple', calories: 95, color: 'green' },

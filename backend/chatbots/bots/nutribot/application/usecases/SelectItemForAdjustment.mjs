@@ -47,14 +47,14 @@ export class SelectItemForAdjustment {
       // 2. Find the item in nutrilist
       let foundItem = null;
       if (this.#nutrilistRepository) {
-        // Try to find by ID directly
-        if (this.#nutrilistRepository.findById) {
-          foundItem = await this.#nutrilistRepository.findById(itemId);
+        // Items in nutrilist use 'uuid' field, try findByUuid first
+        if (this.#nutrilistRepository.findByUuid) {
+          foundItem = await this.#nutrilistRepository.findByUuid(userId, itemId);
         }
-        // Fall back to getAll and filter
-        if (!foundItem && this.#nutrilistRepository.getAll) {
-          const allItems = this.#nutrilistRepository.getAll();
-          foundItem = allItems.find(item => item.id === itemId);
+        // Fall back to findAll and filter by uuid or id
+        if (!foundItem && this.#nutrilistRepository.findAll) {
+          const allItems = await this.#nutrilistRepository.findAll(userId);
+          foundItem = allItems.find(item => item.uuid === itemId || item.id === itemId);
         }
       }
 
@@ -75,7 +75,7 @@ export class SelectItemForAdjustment {
       }
 
       // 4. Build action keyboard
-      const keyboard = this.#buildActionKeyboard();
+      const keyboard = this.#buildActionKeyboard(itemId);
 
       // 5. Build item detail message
       const message = this.#buildItemDetailMessage(foundItem, date);
@@ -122,7 +122,7 @@ export class SelectItemForAdjustment {
    * Build action keyboard (matches legacy foodlog_hook.mjs format)
    * @private
    */
-  #buildActionKeyboard() {
+  #buildActionKeyboard(itemId) {
     return [
       // Fraction row
       [
@@ -143,7 +143,7 @@ export class SelectItemForAdjustment {
       ],
       // Actions row
       [
-        { text: '🗑️ Delete', callback_data: 'adj_delete' },
+        { text: '🗑️ Delete', callback_data: `adj_delete_${itemId}` },
         { text: '📅 Move Day', callback_data: 'adj_move' },
         { text: '↩️ Done', callback_data: 'adj_back_items' },
       ],

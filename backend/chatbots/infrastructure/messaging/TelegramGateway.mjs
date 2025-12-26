@@ -464,7 +464,27 @@ export class TelegramGateway {
       if (updates.choices) {
         params.reply_markup = this.#buildKeyboard(updates.choices, true);
       }
-      await this.#callApi('editMessageText', params);
+      try {
+        await this.#callApi('editMessageText', params);
+      } catch (e) {
+        // If editMessageText fails because it's a photo message, try editMessageCaption
+        if (e.message?.includes('no text in the message')) {
+          this.#logger.debug('telegram.fallbackToCaption', { messageId });
+          const captionParams = {
+            ...baseParams,
+            caption: updates.text,
+          };
+          if (updates.parseMode) {
+            captionParams.parse_mode = updates.parseMode;
+          }
+          if (updates.choices) {
+            captionParams.reply_markup = this.#buildKeyboard(updates.choices, true);
+          }
+          await this.#callApi('editMessageCaption', captionParams);
+        } else {
+          throw e;
+        }
+      }
     } 
     // Handle photo/media messages (editMessageCaption) - can include choices
     else if (updates.caption !== undefined) {

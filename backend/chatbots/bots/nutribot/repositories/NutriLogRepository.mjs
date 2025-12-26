@@ -146,8 +146,8 @@ export class NutriLogRepository {
           }
           return NutriLog.from(entity);
         } catch (e) {
-          // Skip invalid entries
-          this.#logger.warn('nutrilog.skipInvalid', { id: entity.id || entity.uuid, error: e.message });
+          // Skip invalid entries (debug level - these are expected for old legacy data)
+        //  this.#logger.debug('nutrilog.skipInvalid', { id: entity.id || entity.uuid, error: e.message });
           return null;
         }
       })

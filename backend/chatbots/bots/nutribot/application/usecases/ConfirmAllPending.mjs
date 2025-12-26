@@ -48,7 +48,7 @@ export class ConfirmAllPending {
         return { success: true, confirmed: 0 };
       }
 
-      // 2. Accept each log
+      // 2. Accept each log and update UI
       const confirmedDates = new Set();
       for (const log of pendingLogs) {
         const acceptedLog = log.accept();
@@ -57,6 +57,21 @@ export class ConfirmAllPending {
         
         if (acceptedLog.meal?.date) {
           confirmedDates.add(acceptedLog.meal.date);
+        }
+
+        // Update UI: remove inline keyboard from the pending message
+        // This works for both text and photo messages
+        const msgId = log.metadata?.messageId;
+        if (msgId) {
+          try {
+            // Just remove the keyboard - works for both text and photo messages
+            await this.#messagingGateway.updateMessage(conversationId, msgId, {
+              choices: [], // Remove inline keyboard
+            });
+            this.#logger.debug('confirmAll.uiUpdated', { logId: log.id, messageId: msgId });
+          } catch (e) {
+            this.#logger.debug('confirmAll.uiUpdateFailed', { logId: log.id, messageId: msgId, error: e.message });
+          }
         }
       }
 

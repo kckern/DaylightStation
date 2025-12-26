@@ -16,7 +16,6 @@
 **/charts
 **/docker-compose*
 **/compose*
-**/data*
 **/node_modules
 **/npm-debug.log
 **/obj
@@ -25,6 +24,7 @@
 **/build
 **/dist
 *.yml
+./data
 ./data/*
 ./frontend/dist
 ./frontend/dist/*

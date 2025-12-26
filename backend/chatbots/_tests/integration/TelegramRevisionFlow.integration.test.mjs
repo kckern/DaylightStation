@@ -34,6 +34,7 @@ import { FileConversationStateStore } from '../../infrastructure/persistence/Fil
 import { NutribotContainer } from '../../bots/nutribot/container.mjs';
 import { NutriLogRepository } from '../../bots/nutribot/repositories/NutriLogRepository.mjs';
 import { createLogger } from '../../_lib/logging/index.mjs';
+import { TEST_GOALS } from '../fixtures/nutritionGoals.mjs';
 
 // Check if we have a real API key
 const secretsPath = path.join(__dirname, '../../../../config.secrets.yml');
@@ -276,9 +277,9 @@ describeIfRealAI('Telegram Revision Flow Integration (Production-like)', () => {
     
     // Create config object (simple version, like CLI simulator uses)
     const config = {
-      goals: { calories: 2000, protein: 150, carbs: 200, fat: 65 },
+      goals: TEST_GOALS,
       getUserTimezone: () => 'America/Los_Angeles',
-      getGoalsForUser: () => ({ calories: 2000, protein: 150, carbs: 200, fat: 65 }),
+      getGoalsForUser: () => TEST_GOALS,
       // Required by NutriLogRepository
       getNutrilogPath: (userId) => `${TEST_DATA_PATH}/${userId || 'test-user'}`,
       // Required by NutriListRepository if used

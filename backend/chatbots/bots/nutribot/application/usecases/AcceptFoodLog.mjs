@@ -67,11 +67,13 @@ export class AcceptFoodLog {
 
       // 4. Add items to nutrilist
       if (this.#nutrilistRepository && nutriLog.items?.length > 0) {
-        // Use the date from the nutriLog (parsed from user input like "yesterday")
+        // Use the date from the nutriLog.meal (parsed from user input like "yesterday")
         // Fall back to today (local date) if no date was specified
         const now = new Date();
         const fallbackDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const logDate = nutriLog.date || fallbackDate;
+        const logDate = nutriLog.meal?.date || nutriLog.date || fallbackDate;
+        
+        this.#logger.debug('acceptLog.savingToNutrilist', { logUuid, logDate, mealDate: nutriLog.meal?.date, fallbackDate });
         
         const listItems = nutriLog.items.map(item => ({
           // FoodItem instances need toJSON() to get plain object
@@ -118,18 +120,25 @@ export class AcceptFoodLog {
       });
 
       // 7. If no pending logs remain, auto-generate today's report
+      // Note: We do NOT use forceRegenerate here - let the report's own pending check run
+      // This provides a double-check in case of race conditions with concurrent events
       if (this.#nutrilogRepository?.findPending && this.#generateDailyReport) {
         try {
           const pending = await this.#nutrilogRepository.findPending(userId);
+          this.#logger.debug('acceptLog.autoreport.pendingCheck', { userId, pendingCount: pending.length });
           if (pending.length === 0) {
             this.#logger.debug('acceptLog.autoreport.start', { userId, conversationId });
+            // Small delay to ensure any concurrent webhook events have settled
+            await new Promise(resolve => setTimeout(resolve, 300));
             await this.#generateDailyReport.execute({
               userId,
               conversationId,
               date: nutriLog.meal?.date || nutriLog.date,
-              forceRegenerate: true,
+              // forceRegenerate: true - removed to allow pending check in report
             });
             this.#logger.debug('acceptLog.autoreport.done', { userId, conversationId });
+          } else {
+            this.#logger.debug('acceptLog.autoreport.skipped', { userId, pendingCount: pending.length });
           }
         } catch (e) {
           this.#logger.warn('acceptLog.autoreport.error', { error: e.message });
