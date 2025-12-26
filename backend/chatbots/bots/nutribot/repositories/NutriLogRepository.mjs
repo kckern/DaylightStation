@@ -8,6 +8,7 @@
 
 import { loadFile, saveFile } from '../../../../lib/io.mjs';
 import { NutriLog } from '../domain/NutriLog.mjs';
+import { formatLocalTimestamp } from '../../../_lib/time.mjs';
 import { NotFoundError } from '../../../_lib/errors/index.mjs';
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { TestContext } from '../../../_lib/testing/TestContext.mjs';
@@ -18,6 +19,7 @@ import { TestContext } from '../../../_lib/testing/TestContext.mjs';
 export class NutriLogRepository {
   #config;
   #logger;
+  #invalidSeen = new Set();
 
   /**
    * @param {Object} options
@@ -48,12 +50,25 @@ export class NutriLogRepository {
 
   #hydrate(userId, entity) {
     try {
+      const timezone = this.#config.getUserTimezone(userId);
       if (entity.food_data && !entity.meal) {
-        return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId);
+        return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId, timezone);
       }
-      return NutriLog.from(entity);
+      return NutriLog.from(entity, timezone);
     } catch (err) {
-      this.#logger.warn('nutrilog.hydrate.failed', { userId, error: err.message });
+      const key = entity?.id || entity?.uuid || 'unknown';
+      if (!this.#invalidSeen.has(key)) {
+        this.#invalidSeen.add(key);
+        this.#logger.warn('nutrilog.hydrate.failed', {
+          userId,
+          id: entity?.id,
+          uuid: entity?.uuid,
+          status: entity?.status,
+          meal: entity?.meal || entity?.food_data?.date,
+          error: err.message,
+          details: err?.errors || undefined
+        });
+      }
       return null;
     }
   }
@@ -290,10 +305,11 @@ export class NutriLogRepository {
         break;
       default:
         // For other statuses, create a new log with updated status
+        const timezone = this.#config.getUserTimezone(userId);
         updated = NutriLog.from({
           ...nutriLog.toJSON(),
           status: newStatus,
-          updatedAt: new Date().toISOString(),
+          updatedAt: formatLocalTimestamp(new Date(), timezone),
         });
     }
 

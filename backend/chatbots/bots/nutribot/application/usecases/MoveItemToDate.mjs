@@ -97,12 +97,14 @@ export class MoveItemToDate {
       }
 
       // 6. Create new log for the new date with the item
+      const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
       const newLog = NutriLog.create({
         userId,
         conversationId,
         text: `Moved: ${item.label}`,
         meal: { date: newDate, time: originalLog.meal?.time || 'afternoon' },
         items: [item],
+        timezone,
       }).accept();
 
       await this.#nutriLogRepository.save(newLog);

@@ -26,6 +26,7 @@ export class LogFoodFromUPC {
   #aiGateway;
   #nutrilogRepository;
   #conversationStateStore;
+  #config;
   #logger;
 
   constructor(deps) {
@@ -36,6 +37,7 @@ export class LogFoodFromUPC {
     this.#aiGateway = deps.aiGateway;
     this.#nutrilogRepository = deps.nutrilogRepository;
     this.#conversationStateStore = deps.conversationStateStore;
+    this.#config = deps.config;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'nutribot' });
   }
 
@@ -124,6 +126,7 @@ export class LogFoodFromUPC {
 
       // 6. Create NutriLog entity
       const userId = conversationId.split('_').pop(); // Extract user ID from conversationId
+      const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
       const nutriLog = NutriLog.create({
         userId,
         conversationId,
@@ -132,6 +135,7 @@ export class LogFoodFromUPC {
           source: 'upc',
           sourceUpc: upc,
         },
+        timezone,
       });
 
       // 7. Save NutriLog
