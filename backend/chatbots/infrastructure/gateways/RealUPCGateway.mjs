@@ -114,8 +114,8 @@ export class RealUPCGateway {
       const p = data.product;
       const nutriments = p.nutriments || {};
       
-      // Get serving size info
-      const servingSize = p.serving_quantity || 100;
+      // Get serving size info (ensure numeric)
+      const servingSize = Number(p.serving_quantity) || 100;
       const servingUnit = p.serving_quantity_unit || 'g';
       
       // Calculate nutrition per serving (OFF gives per 100g, so scale if needed)
@@ -138,7 +138,7 @@ export class RealUPCGateway {
         brand: p.brands || null,
         imageUrl: p.image_url || p.image_front_url || null,
         icon: '🍽️',
-        noomColor: this.#inferNoomColor(nutrition, p.categories_tags || []),
+        noomColor: this.#inferNoomColor(nutrition, p.categories_tags || [], servingSize),
         
         serving: {
           size: servingSize,
@@ -195,11 +195,15 @@ export class RealUPCGateway {
   }
 
   /**
-   * Infer Noom color from nutrition and categories
+   * Infer Noom color from nutrition, serving size, and categories
+   * Uses calorie density (cal/g) based on Noom's system:
+   * - Green: < 1.0 cal/g (fruits, veggies, broth soups)
+   * - Yellow: 1.0-2.4 cal/g (lean proteins, grains, legumes)
+   * - Orange: > 2.4 cal/g (processed foods, sweets, fats)
    * @private
    */
-  #inferNoomColor(nutrition, categories) {
-    // Check categories for green foods
+  #inferNoomColor(nutrition, categories, servingGrams = 100) {
+    // Check categories for green foods (override density calculation)
     const greenCategories = ['vegetables', 'fruits', 'salads', 'leafy'];
     const isGreenCategory = categories.some(cat => 
       greenCategories.some(g => cat.toLowerCase().includes(g))
@@ -207,11 +211,13 @@ export class RealUPCGateway {
     if (isGreenCategory) return 'green';
 
     // Calculate calorie density (calories per gram)
-    const caloriesPerGram = nutrition.calories / 100;
+    const grams = Number(servingGrams) || 100;
+    const calories = Number(nutrition.calories) || 0;
+    const caloriesPerGram = grams > 0 ? calories / grams : 0;
     
-    if (caloriesPerGram < 1) return 'green';      // <100 cal/100g
-    if (caloriesPerGram < 2.5) return 'yellow';   // 100-250 cal/100g
-    return 'orange';                               // >250 cal/100g
+    if (caloriesPerGram < 1.0) return 'green';    // < 1.0 cal/g
+    if (caloriesPerGram <= 2.4) return 'yellow';  // 1.0-2.4 cal/g
+    return 'orange';                               // > 2.4 cal/g
   }
 
   /**

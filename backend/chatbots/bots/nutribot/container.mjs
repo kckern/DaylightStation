@@ -402,11 +402,12 @@ export class NutribotContainer {
 
   getDeleteListItem() {
     if (!this.#deleteListItem) {
-      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#deleteListItem = new DeleteListItem({
         messagingGateway: this.getMessagingGateway(),
-        nutrilistRepository: this.#nutrilistRepository,
+        nutriLogRepository: this.#nutrilogRepository,
+        nutriListRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
+        config: this.#config,
         logger: this.#logger,
       });
     }
@@ -415,11 +416,12 @@ export class NutribotContainer {
 
   getMoveItemToDate() {
     if (!this.#moveItemToDate) {
-      // Note: generateDailyReport not injected - callers handle their own report generation
       this.#moveItemToDate = new MoveItemToDate({
         messagingGateway: this.getMessagingGateway(),
-        nutrilistRepository: this.#nutrilistRepository,
+        nutriLogRepository: this.#nutrilogRepository,
+        nutriListRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
+        config: this.#config,
         logger: this.#logger,
       });
     }

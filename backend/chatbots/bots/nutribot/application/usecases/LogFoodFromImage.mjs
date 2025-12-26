@@ -185,6 +185,14 @@ export class LogFoodFromImage {
         }
       }
 
+      // Update NutriLog with the messageId for later UI updates (e.g., auto-accept)
+      if (this.#nutrilogRepository && photoMsgId) {
+        const updatedLog = nutriLog.with({
+          metadata: { ...nutriLog.metadata, messageId: String(photoMsgId) },
+        });
+        await this.#nutrilogRepository.save(updatedLog);
+      }
+
       this.#logger.info('logImage.complete', { 
         conversationId, 
         itemCount: foodItems.length,

@@ -22,6 +22,7 @@ import { FileRepository } from '../infrastructure/persistence/FileRepository.mjs
 import { OpenAIGateway } from '../infrastructure/ai/OpenAIGateway.mjs';
 import { RealUPCGateway } from '../infrastructure/gateways/RealUPCGateway.mjs';
 import { CanvasReportRenderer } from '../adapters/http/CanvasReportRenderer.mjs';
+import { DEFAULT_NUTRITION_GOALS } from '../bots/nutribot/config/NutriBotConfig.mjs';
 
 import fs from 'fs';
 import path from 'path';
@@ -329,9 +330,9 @@ export class CLIChatSimulator {
     
     // Create config object with required methods
     const config = {
-      goals: { calories: 2000, protein: 150, carbs: 200, fat: 65 },
+      goals: DEFAULT_NUTRITION_GOALS,
       getUserTimezone: () => this.#timezone,
-      getGoalsForUser: () => ({ calories: 2000, protein: 150, carbs: 200, fat: 65 }),
+      getGoalsForUser: () => DEFAULT_NUTRITION_GOALS,
     };
 
     // Create silent logger for containers (unless debug mode)
@@ -726,7 +727,7 @@ export class CLIChatSimulator {
         return acc;
       }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
-      const goals = { calories: 2000, protein: 150 };
+      const goals = DEFAULT_NUTRITION_GOALS;
       const pctCal = Math.round((totals.calories / goals.calories) * 100);
       const pctPro = Math.round((totals.protein / goals.protein) * 100);
 
@@ -1028,7 +1029,7 @@ export class CLIChatSimulator {
         return acc;
       }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
-      const goals = { calories: 2000, protein: 150, carbs: 200, fat: 65 };
+      const goals = DEFAULT_NUTRITION_GOALS;
       const pctCal = Math.round((totals.calories / goals.calories) * 100);
       const pctPro = Math.round((totals.protein / goals.protein) * 100);
 
@@ -1133,7 +1134,7 @@ export class CLIChatSimulator {
         return acc;
       }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
-      const goals = { calories: 2000, protein: 150, carbs: 200, fat: 65 };
+      const goals = DEFAULT_NUTRITION_GOALS;
       const pctCal = Math.round((totals.calories / goals.calories) * 100);
 
       // Generate PNG report
@@ -1225,7 +1226,7 @@ export class CLIChatSimulator {
       }, { calories: 0, protein: 0 });
 
       // Build report message
-      const goals = { calories: 2000, protein: 150 };
+      const goals = DEFAULT_NUTRITION_GOALS;
       const pctCal = todayTotals.calories > 0 ? Math.round((todayTotals.calories / goals.calories) * 100) : 0;
 
       // Generate PNG if there are items today

@@ -294,8 +294,8 @@ export class CanvasReportRenderer extends IReportRenderer {
       ctx.fillText(displayName, iconSize + 10 + calColumnWidth + 10, y);
 
       // Macro boxes on right side
-      const rectWidth = 40;
-      const rectHeight = 28;
+      const rectWidth = 46;
+      const rectHeight = 30;
       const macroColors = { protein: COLORS.protein, carbs: COLORS.carbs, fat: COLORS.fat };
       const macros = [
         { key: 'protein', value: protein },
@@ -316,7 +316,7 @@ export class CanvasReportRenderer extends IReportRenderer {
             rectHeight,
             macroColors[macro.key],
             String(val),
-            '16px "Roboto Condensed"',
+            '18px "Roboto Condensed"',
             'center',
             '#000'
           );
@@ -486,8 +486,8 @@ export class CanvasReportRenderer extends IReportRenderer {
     const barChartHeight = 280;
     const barChartX = (width - barChartWidth) / 2;
     const barChartY = topPageMargin + contentEffectiveHeight / 2 + 150;
-    const bmr = goals.calories || 2000;
-    const calGoal = bmr - 500;
+    const goalCalories = goals.calories || 2000;
+    const minRecommended = 1200; // dotted line
     
     // Calculate max from all data (history + today) so no bars get cut off
     let historyMax = 0;
@@ -496,13 +496,13 @@ export class CanvasReportRenderer extends IReportRenderer {
         if (day.calories > historyMax) historyMax = day.calories;
       }
     }
-    const barMaxVal = Math.max(bmr, totalCals, historyMax, 2000) * 1.1; // 10% headroom
+    const barMaxVal = Math.max(goalCalories, minRecommended, totalCals, historyMax, 2000) * 1.1; // 10% headroom
 
-    this._drawDailyChart(ctx, history, items, barChartWidth, barChartHeight, barChartX, barChartY, bmr, calGoal, barMaxVal, date);
+    this._drawDailyChart(ctx, history, items, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal, date);
 
     // === SUMMARY ===
     ctx.font = SUBTITLE_FONT;
-    const deficit = bmr - totalCals;
+    const deficit = goalCalories - totalCals;
     let summary;
     if (deficit > 0) {
       summary = deficit + ' cal deficit today';
@@ -527,23 +527,23 @@ export class CanvasReportRenderer extends IReportRenderer {
    * Draw daily stacked bar chart
    * @private
    */
-  _drawDailyChart(ctx, history, todayItems, barChartWidth, barChartHeight, barChartX, barChartY, bmr, calGoal, barMaxVal, todayDate) {
+  _drawDailyChart(ctx, history, todayItems, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal, todayDate) {
     // Background
     this._drawRect(ctx, barChartX, barChartY, barChartWidth, barChartHeight, COLORS.chartBg);
 
-    // BMR line
-    const bmrY = barChartY + barChartHeight - (bmr / barMaxVal) * barChartHeight;
+    // Dotted minimum recommended line
+    const minY = barChartY + barChartHeight - (minRecommended / barMaxVal) * barChartHeight;
     ctx.strokeStyle = COLORS.gridLine;
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
-    ctx.moveTo(barChartX, bmrY);
-    ctx.lineTo(barChartX + barChartWidth, bmrY);
+    ctx.moveTo(barChartX, minY);
+    ctx.lineTo(barChartX + barChartWidth, minY);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Goal line
-    const goalY = barChartY + barChartHeight - (calGoal / barMaxVal) * barChartHeight;
+    // Solid user goal line
+    const goalY = barChartY + barChartHeight - (goalCalories / barMaxVal) * barChartHeight;
     ctx.beginPath();
     ctx.moveTo(barChartX, goalY);
     ctx.lineTo(barChartX + barChartWidth, goalY);

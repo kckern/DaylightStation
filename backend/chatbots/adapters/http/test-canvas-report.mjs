@@ -8,6 +8,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { CanvasReportRenderer } from './CanvasReportRenderer.mjs';
+import { DEFAULT_NUTRITION_GOALS } from '../../bots/nutribot/config/NutriBotConfig.mjs';
 
 async function main() {
   // Load nutrilist data
@@ -138,7 +139,7 @@ async function main() {
   const reportData = {
     date: today,
     totals,
-    goals: { calories: 2000 },
+    goals: { ...DEFAULT_NUTRITION_GOALS },
     items: data,
     history: [
       // Mock 7-day history for bar chart

@@ -96,15 +96,49 @@ export class GenerateDailyReport {
         this.#logger.warn('report.deletePrevious.error', { error: e.message });
       }
 
-      // 1. Check for pending logs (unless force regenerate)
-      if (!forceRegenerate) {
+      // 1. Check for pending logs (always check unless skipPendingCheck is explicitly true)
+      // forceRegenerate only forces regeneration of existing report, not bypassing pending check
+      const skipPendingCheck = input.skipPendingCheck === true;
+      const autoAcceptPending = input.autoAcceptPending === true;
+      
+      if (!skipPendingCheck) {
+        // Small delay to allow concurrent webhook events to settle (e.g., portion selection + accept)
+        if (forceRegenerate) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
         const pendingLogs = await this.#nutriLogRepository.findPending(userId);
+        this.#logger.debug('report.generate.pendingCheck', { 
+          userId, 
+          pendingCount: pendingLogs.length,
+          pendingIds: pendingLogs.slice(0, 5).map(l => l.id), // Log first 5 IDs
+          forceRegenerate,
+          autoAcceptPending,
+        });
+        
         if (pendingLogs.length > 0) {
-          this.#logger.debug('report.generate.skipped', { userId, reason: 'pending_logs', count: pendingLogs.length });
-          return {
-            success: false,
-            skippedReason: `${pendingLogs.length} pending log(s) need confirmation first`,
-          };
+          if (autoAcceptPending) {
+            // Auto-accept all pending logs and update their UI
+            this.#logger.info('report.autoAccept.start', { userId, count: pendingLogs.length });
+            await this.#autoAcceptPendingLogs(pendingLogs, conversationId);
+            this.#logger.info('report.autoAccept.done', { userId, count: pendingLogs.length });
+          } else {
+            this.#logger.info('report.generate.skipped', { userId, reason: 'pending_logs', count: pendingLogs.length });
+            // Send user feedback that pending items exist
+            try {
+              await this.#messagingGateway.sendMessage(
+                conversationId,
+                `⏳ ${pendingLogs.length} item(s) still need confirmation before generating report.`,
+                {}
+              );
+            } catch (e) {
+              // Ignore messaging errors
+            }
+            return {
+              success: false,
+              skippedReason: `${pendingLogs.length} pending log(s) need confirmation first`,
+            };
+          }
         }
       }
 
@@ -139,7 +173,10 @@ export class GenerateDailyReport {
         return acc;
       }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
-      const goals = { calories: 2000, protein: 150, carbs: 200, fat: 65 };
+      let goals = this.#config.getUserGoals?.(userId);
+      if (!goals) {
+        throw new Error(`Failed to load nutrition goals for user ${userId}`);
+      }
 
       // 7. Build history for chart (last 7 days)
       const history = await this.#buildHistory(userId, date);
@@ -153,7 +190,7 @@ export class GenerateDailyReport {
       // 8. Generate PNG report
       let pngPath = null;
       try {
-        const { CanvasReportRenderer } = await import('../../../adapters/http/CanvasReportRenderer.mjs');
+        const { CanvasReportRenderer } = await import('../../../../adapters/http/CanvasReportRenderer.mjs');
         const canvasRenderer = new CanvasReportRenderer();
         const pngBuffer = await canvasRenderer.renderDailyReport({
           date,
@@ -371,6 +408,48 @@ export class GenerateDailyReport {
       (gramsByColor.yellow || 0) * 1.5 +
       (gramsByColor.orange || 0) * 3
     );
+  }
+
+  /**
+   * Auto-accept pending logs and update their UI (remove keyboards)
+   * @private
+   * @param {Array} pendingLogs - Array of pending NutriLog instances
+   * @param {string} conversationId - Conversation ID for messaging
+   */
+  async #autoAcceptPendingLogs(pendingLogs, conversationId) {
+    const { formatFoodList, formatDateHeader } = await import('../../domain/formatters.mjs');
+    
+    for (const log of pendingLogs) {
+      try {
+        // Accept the log
+        const acceptedLog = log.accept();
+        await this.#nutriLogRepository.save(acceptedLog);
+        
+        // Sync to nutrilist
+        if (this.#nutriListRepository?.syncFromLog) {
+          await this.#nutriListRepository.syncFromLog(acceptedLog);
+        }
+        
+        // Update UI: remove inline keyboard from the pending message
+        // This works for both text and photo messages
+        const msgId = log.metadata?.messageId;
+        if (msgId) {
+          try {
+            // Just remove the keyboard - works for both text and photo messages
+            await this.#messagingGateway.updateMessage(conversationId, msgId, {
+              choices: [], // Remove inline keyboard
+            });
+            this.#logger.debug('autoAccept.uiUpdated', { logId: log.id, messageId: msgId });
+          } catch (e) {
+            this.#logger.debug('autoAccept.uiUpdateFailed', { logId: log.id, messageId: msgId, error: e.message });
+          }
+        } else {
+          this.#logger.debug('autoAccept.noMessageId', { logId: log.id });
+        }
+      } catch (e) {
+        this.#logger.warn('autoAccept.logFailed', { logId: log.id, error: e.message });
+      }
+    }
   }
 }
 
