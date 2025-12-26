@@ -42,6 +42,30 @@ export class NutriLogRepository {
     return this.#config.getNutrilogPath(userId);
   }
 
+  #loadData(path) {
+    return loadFile(path) || {};
+  }
+
+  #hydrate(userId, entity) {
+    try {
+      if (entity.food_data && !entity.meal) {
+        return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId);
+      }
+      return NutriLog.from(entity);
+    } catch (err) {
+      this.#logger.warn('nutrilog.hydrate.failed', { userId, error: err.message });
+      return null;
+    }
+  }
+
+  #findEntity(data, idOrUuid) {
+    if (!idOrUuid) return null;
+    if (data[idOrUuid]) return data[idOrUuid];
+
+    const match = Object.values(data).find((entry) => entry?.uuid === idOrUuid || entry?.id === idOrUuid);
+    return match || null;
+  }
+
   /**
    * Save a NutriLog entity
    * @param {NutriLog} nutriLog
@@ -54,7 +78,7 @@ export class NutriLogRepository {
     this.#logger.debug('nutrilog.save', { path, id, status: nutriLog.status });
 
     // Load existing data
-    const data = loadFile(path) || {};
+    const data = this.#loadData(path);
 
     // Add/update entity
     data[id] = nutriLog.toJSON();
@@ -73,19 +97,12 @@ export class NutriLogRepository {
    */
   async findById(userId, id) {
     const path = this.#getPath(userId);
-    const data = loadFile(path) || {};
-    
-    const entity = data[id];
-    if (!entity) {
-      return null;
-    }
+    const data = this.#loadData(path);
+    const entity = this.#findEntity(data, id);
 
-    try {
-      return NutriLog.from(entity);
-    } catch (err) {
-      console.warn('nutrilog.findById.corruptRecord', { userId, id, error: err.message });
-      return null;
-    }
+    if (!entity) return null;
+
+    return this.#hydrate(userId, entity);
   }
 
   /**
@@ -103,14 +120,11 @@ export class NutriLogRepository {
     // Otherwise search all - for CLI this is fine since there's typically one user
     // In production, userId should always be provided
     const path = this.#getPath('cli-user');
-    const data = loadFile(path) || {};
-    
-    const entity = data[uuid];
-    if (!entity) {
-      return null;
-    }
+    const data = this.#loadData(path);
+    const entity = this.#findEntity(data, uuid);
+    if (!entity) return null;
 
-    return NutriLog.from(entity);
+    return this.#hydrate(entity.userId || userId || 'cli-user', entity);
   }
 
   /**
@@ -140,23 +154,11 @@ export class NutriLogRepository {
    */
   async findAll(userId, options = {}) {
     const path = this.#getPath(userId);
-    const data = loadFile(path) || {};
+    const data = this.#loadData(path);
 
     let logs = Object.values(data)
-      .map(entity => {
-        try {
-          // Check if it's legacy format (has food_data) or new format (has meal)
-          if (entity.food_data && !entity.meal) {
-            return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId);
-          }
-          return NutriLog.from(entity);
-        } catch (e) {
-          // Skip invalid entries (debug level - these are expected for old legacy data)
-        //  this.#logger.debug('nutrilog.skipInvalid', { id: entity.id || entity.uuid, error: e.message });
-          return null;
-        }
-      })
-      .filter(Boolean) // Remove nulls
+      .map(entity => this.#hydrate(userId, entity))
+      .filter(Boolean)
       .filter(log => {
         // Filter to only logs matching this userId or conversationId
         // This handles legacy data with old userId formats

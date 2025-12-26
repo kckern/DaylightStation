@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { ConversationState } from '../../../../domain/entities/ConversationState.mjs';
 
 /**
@@ -109,8 +110,8 @@ export class StartAdjustmentFlow {
 
     // First row: Today and Yesterday
     keyboard.push([
-      { text: '☀️ Today', callback_data: 'adj_date_0' },
-      { text: '📆 Yesterday', callback_data: 'adj_date_1' },
+      { text: '☀️ Today', callback_data: encodeCallback('dt', { d: 0 }) },
+      { text: '📆 Yesterday', callback_data: encodeCallback('dt', { d: 1 }) },
     ]);
 
     // Second row: 2-4 days ago
@@ -119,7 +120,7 @@ export class StartAdjustmentFlow {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-      row2.push({ text: `${dayName}`, callback_data: `adj_date_${i}` });
+      row2.push({ text: `${dayName}`, callback_data: encodeCallback('dt', { d: i }) });
     }
     keyboard.push(row2);
 
@@ -129,12 +130,12 @@ export class StartAdjustmentFlow {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-      row3.push({ text: `${dayName}`, callback_data: `adj_date_${i}` });
+      row3.push({ text: `${dayName}`, callback_data: encodeCallback('dt', { d: i }) });
     }
     keyboard.push(row3);
 
     // Done button
-    keyboard.push([{ text: '↩️ Done', callback_data: 'adj_done' }]);
+    keyboard.push([{ text: '↩️ Done', callback_data: encodeCallback('dn') }]);
 
     return keyboard;
   }

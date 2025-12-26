@@ -13,6 +13,7 @@
  */
 
 import { createLogger } from '../../_lib/logging/index.mjs';
+import { decodeCallback } from '../../_lib/callback.mjs';
 import { InputEventType } from '../ports/IInputEvent.mjs';
 
 /**
@@ -275,302 +276,185 @@ export class UnifiedEventRouter {
   async #handleCallback(conversationId, callbackData, sourceMessageId) {
     this.#logger.debug('router.callback', { conversationId, callbackData, sourceMessageId });
 
-    // Parse callback data (format: "action" or "action:param1:param2")
-    const [action, ...params] = callbackData.split(':');
-
-    // Handle adjustment flow callbacks (adj_*)
-    if (action.startsWith('adj_')) {
-      return this.#handleAdjustmentCallback(conversationId, action, params, sourceMessageId);
+    const payload = decodeCallback(callbackData);
+    if (!payload || payload.legacy) {
+      this.#logger.warn('router.callback.unparsed', { conversationId, callbackData });
+      return null;
     }
 
-    // Handle report callbacks (report_*)
-    if (action.startsWith('report_')) {
-      return this.#handleReportCallback(conversationId, action, params, sourceMessageId);
+    const action = payload.a || payload.action;
+    if (!action) {
+      this.#logger.warn('router.callback.missingAction', { conversationId, callbackData });
+      return null;
     }
 
-    // Handle standard actions
+    // Adjustment + report routes use short action keys
     switch (action) {
-      // Accept variants
-      case 'accept':
-      case '✅':
-      case 'Accept': {
-        const logUuid = params[0];
-        const useCase = this.#container.getAcceptFoodLog();
+      case 'dt': {
+        const useCase = this.#container.getSelectDateForAdjustment();
         return useCase.execute({
           userId: conversationId,
           conversationId,
-          logUuid,
           messageId: sourceMessageId,
+          daysAgo: payload.d ?? 0,
+          offset: payload.o ?? 0,
         });
       }
 
-      // Discard variants
-      case 'discard':
-      case '🗑️':
-      case 'Discard': {
-        const logUuid = params[0];
-        const useCase = this.#container.getDiscardFoodLog();
+      case 'pg': {
+        const useCase = this.#container.getSelectDateForAdjustment();
         return useCase.execute({
           userId: conversationId,
           conversationId,
-          logUuid,
           messageId: sourceMessageId,
+          daysAgo: payload.d ?? 0,
+          offset: payload.o ?? 0,
         });
       }
 
-      // Revise variants
-      case 'revise':
-      case '✏️':
-      case 'Revise': {
-        const logUuid = params[0];
-        const useCase = this.#container.getReviseFoodLog();
-        return useCase.execute({
-          userId: conversationId,
-          conversationId,
-          logUuid,
-          messageId: sourceMessageId,
-        });
-      }
-
-      // UPC portion selection (format: portion:UUID:factor)
-      case 'portion': {
-        const logUuid = params[0];
-        const factor = parseFloat(params[1]) || 1;
-        const useCase = this.#container.getSelectUPCPortion();
-        return useCase.execute({
-          userId: conversationId,
-          conversationId,
-          logUuid,
-          portionFactor: factor,
-          messageId: sourceMessageId,
-        });
-      }
-
-      // Legacy numeric portion selection (for UPC items)
-      default: {
-        const factor = parseFloat(action);
-        if (!isNaN(factor) && factor > 0) {
-          const useCase = this.#container.getSelectUPCPortion();
-          return useCase.execute({
-            userId: conversationId,
-            conversationId,
-            portionFactor: factor,
-            messageId: sourceMessageId,
-          });
-        }
-        
-        this.#logger.warn('router.callback.unknown', { action, callbackData });
-        return null;
-      }
-    }
-  }
-
-  /**
-   * Handle adjustment flow callbacks
-   * @private
-   */
-  async #handleAdjustmentCallback(conversationId, action, params, messageId) {
-    this.#logger.debug('router.adjustment', { action, params, messageId });
-
-    // Start adjustment flow
-    if (action === 'adj_start') {
-      const useCase = this.#container.getStartAdjustmentFlow();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-        messageId,
-      });
-    }
-
-    // Done - exit adjustment flow
-    if (action === 'adj_done') {
-      // Generate report to show final state
-      const useCase = this.#container.getGenerateDailyReport();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-      });
-    }
-
-    // Date selection: adj_date or adj_date_X (days ago)
-    if (action === 'adj_date' || action.startsWith('adj_date_')) {
-      const daysAgo = action === 'adj_date' 
-        ? parseInt(params[0], 10) || 0
-        : parseInt(action.replace('adj_date_', ''), 10) || 0;
-      
-      const useCase = this.#container.getSelectDateForAdjustment();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-        messageId,
-        daysAgo,
-      });
-    }
-
-    // Back to date selection
-    if (action === 'adj_back_date') {
-      const useCase = this.#container.getStartAdjustmentFlow();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-        messageId,
-      });
-    }
-
-    // Item selection: adj_item or adj_item_X
-    if (action === 'adj_item' || action.startsWith('adj_item_')) {
-      const itemId = action === 'adj_item'
-        ? params[0]
-        : action.replace('adj_item_', '');
-      
-      const useCase = this.#container.getSelectItemForAdjustment();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-        messageId,
-        itemId,
-      });
-    }
-
-    // Back to items list
-    if (action === 'adj_back_items') {
-      // Re-select the current date to show items
-      const conversationStateStore = this.#container.getConversationStateStore();
-      const state = await conversationStateStore?.get(conversationId);
-      const daysAgo = state?.flowState?.daysAgo ?? 0;
-      
-      const useCase = this.#container.getSelectDateForAdjustment();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-        messageId,
-        daysAgo,
-      });
-    }
-
-    // Portion adjustment: adj_factor_X_uuid
-    if (action === 'adj_factor' || action.startsWith('adj_factor_')) {
-      // Parse factor and optional itemId: adj_factor_0.5_uuid or adj_factor_0.5
-      const factorPart = action.replace('adj_factor_', '');
-      const underscoreIdx = factorPart.indexOf('_');
-      let factor, itemId;
-      if (underscoreIdx > 0) {
-        factor = parseFloat(factorPart.substring(0, underscoreIdx)) || 1;
-        itemId = factorPart.substring(underscoreIdx + 1);
-      } else {
-        factor = parseFloat(factorPart) || parseFloat(params[0]) || 1;
-        itemId = params[1] || undefined;
-      }
-      
-      const useCase = this.#container.getApplyPortionAdjustment();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-        messageId,
-        factor,
-        itemId,
-      });
-    }
-
-    // Delete item
-    if (action === 'adj_delete' || action.startsWith('adj_delete_')) {
-      const itemId = action === 'adj_delete'
-        ? params[0]
-        : action.replace('adj_delete_', '');
-      const useCase = this.#container.getDeleteListItem();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-        messageId,
-        itemId,
-      });
-    }
-
-    // Move day - show date picker: adj_move_uuid
-    if (action.startsWith('adj_move_') && !action.startsWith('adj_move_date_')) {
-      const itemId = action.replace('adj_move_', '');
-      // Show date selection for moving this item
-      // For now, just send a message that this feature is coming
-      await this.#container.getMessagingGateway().sendMessage(
-        conversationId,
-        '📅 Move to another day is coming soon!',
-        { choices: [[{ text: '↩️ Back', callback_data: `adj_item_${itemId}` }]] }
-      );
-      return { success: true, pending: true };
-    }
-
-    // Pagination: adj_page_daysAgo_offset or adj_page_offset (legacy)
-    if (action.startsWith('adj_page_')) {
-      const pagePart = action.replace('adj_page_', '');
-      const parts = pagePart.split('_');
-      let daysAgo, offset;
-      
-      if (parts.length >= 2) {
-        // New format: adj_page_daysAgo_offset
-        daysAgo = parseInt(parts[0], 10) || 0;
-        offset = parseInt(parts[1], 10) || 0;
-      } else {
-        // Legacy format: adj_page_offset - fall back to state for daysAgo
-        offset = parseInt(parts[0], 10) || 0;
-        const conversationStateStore = this.#container.getConversationStateStore();
-        const state = await conversationStateStore?.get(conversationId);
-        daysAgo = state?.flowState?.daysAgo ?? 0;
-      }
-      
-      const useCase = this.#container.getSelectDateForAdjustment();
-      return useCase.execute({
-        userId: conversationId,
-        conversationId,
-        messageId,
-        daysAgo,
-        offset,
-      });
-    }
-
-    // Move to date
-    if (action === 'adj_move_date') {
-      const date = params[0];
-      const useCase = this.#container.getMoveItemToDate?.();
-      if (useCase) {
-        return useCase.execute({
-          userId: conversationId,
-          conversationId,
-          messageId,
-          date,
-        });
-      }
-    }
-
-    this.#logger.warn('router.adjustment.unknown', { action, params });
-    return null;
-  }
-
-  /**
-   * Handle report callbacks (report_adjust, report_accept)
-   * @private
-   */
-  async #handleReportCallback(conversationId, action, params, messageId) {
-    this.#logger.debug('router.report', { action, params, messageId });
-
-    switch (action) {
-      case 'report_adjust': {
-        // Start adjustment flow for the report's date
+      case 'bd': {
         const useCase = this.#container.getStartAdjustmentFlow();
         return useCase.execute({
           userId: conversationId,
           conversationId,
-          messageId,
+          messageId: sourceMessageId,
         });
       }
 
-      case 'report_accept': {
-        // Accept the report - just remove the buttons
+      case 'i': {
+        const useCase = this.#container.getSelectItemForAdjustment();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          messageId: sourceMessageId,
+          itemId: payload.id,
+        });
+      }
+
+      case 'bi': {
+        const conversationStateStore = this.#container.getConversationStateStore();
+        const state = await conversationStateStore?.get(conversationId);
+        const daysAgo = state?.flowState?.daysAgo ?? 0;
+        const offset = state?.flowState?.offset ?? 0;
+        const useCase = this.#container.getSelectDateForAdjustment();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          messageId: sourceMessageId,
+          daysAgo,
+          offset,
+        });
+      }
+
+      case 'f': {
+        const useCase = this.#container.getApplyPortionAdjustment();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          messageId: sourceMessageId,
+          factor: payload.f ?? 1,
+          itemId: payload.id,
+        });
+      }
+
+      case 'd': {
+        const useCase = this.#container.getDeleteListItem();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          messageId: sourceMessageId,
+          itemId: payload.id,
+        });
+      }
+
+      case 'm': {
+        const messagingGateway = this.#container.getMessagingGateway();
+        await messagingGateway.sendMessage(
+          conversationId,
+          '📅 Move to another day is coming soon!',
+          { choices: [[{ text: '↩️ Back', callback_data: callbackData }]] }
+        );
+        return { success: true, pending: true };
+      }
+
+      case 'dn': {
+        const useCase = this.#container.getGenerateDailyReport();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          messageId: sourceMessageId,
+        });
+      }
+
+      case 'p': {
+        const useCase = this.#container.getSelectUPCPortion();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          logUuid: payload.id,
+          portionFactor: payload.f ?? 1,
+          messageId: sourceMessageId,
+        });
+      }
+
+      case 'a': {
+        const useCase = this.#container.getAcceptFoodLog();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          logUuid: payload.id,
+          messageId: sourceMessageId,
+        });
+      }
+
+      case 'x': {
+        const useCase = this.#container.getDiscardFoodLog();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          logUuid: payload.id,
+          messageId: sourceMessageId,
+        });
+      }
+
+      case 'r': {
+        const useCase = this.#container.getReviseFoodLog();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          logUuid: payload.id,
+          messageId: sourceMessageId,
+        });
+      }
+
+      case 'cr': {
+        const conversationStateStore = this.#container.getConversationStateStore();
+        await conversationStateStore?.clearFlow?.(conversationId, 'revision');
+        if (sourceMessageId) {
+          try {
+            const messagingGateway = this.#container.getMessagingGateway();
+            await messagingGateway.updateMessage(conversationId, sourceMessageId, { choices: [] });
+          } catch (e) {
+            this.#logger.warn('router.revision.cancelUpdateFailed', { error: e.message });
+          }
+        }
+        return { success: true, cancelled: true };
+      }
+
+      case 'ra': {
+        const useCase = this.#container.getStartAdjustmentFlow();
+        return useCase.execute({
+          userId: conversationId,
+          conversationId,
+          messageId: sourceMessageId,
+        });
+      }
+
+      case 'rx': {
         try {
           const messagingGateway = this.#container.getMessagingGateway();
-          await messagingGateway.updateMessage(conversationId, messageId, {
-            choices: [], // Remove buttons
-          });
-          this.#logger.info('report.accepted', { conversationId, messageId });
+          await messagingGateway.updateMessage(conversationId, sourceMessageId, { choices: [] });
+          this.#logger.info('report.accepted', { conversationId, sourceMessageId });
         } catch (e) {
           this.#logger.warn('report.accept.error', { error: e.message });
         }
@@ -578,7 +462,7 @@ export class UnifiedEventRouter {
       }
 
       default:
-        this.#logger.warn('router.report.unknown', { action, params });
+        this.#logger.warn('router.callback.unknown', { action, payload });
         return null;
     }
   }

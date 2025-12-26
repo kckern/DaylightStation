@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { NOOM_COLOR_EMOJI } from '../../domain/formatters.mjs';
 
 /**
@@ -127,8 +128,8 @@ export class SelectDateForAdjustment {
     const today = new Date();
 
     keyboard.push([
-      { text: '☀️ Today', callback_data: 'adj_date_0' },
-      { text: '📆 Yesterday', callback_data: 'adj_date_1' },
+      { text: '☀️ Today', callback_data: encodeCallback('dt', { d: 0 }) },
+      { text: '📆 Yesterday', callback_data: encodeCallback('dt', { d: 1 }) },
     ]);
 
     const row2 = [];
@@ -136,11 +137,11 @@ export class SelectDateForAdjustment {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-      row2.push({ text: dayName, callback_data: `adj_date_${i}` });
+      row2.push({ text: dayName, callback_data: encodeCallback('dt', { d: i }) });
     }
     keyboard.push(row2);
 
-    keyboard.push([{ text: '↩️ Done', callback_data: 'adj_done' }]);
+    keyboard.push([{ text: '↩️ Done', callback_data: encodeCallback('dn') }]);
 
     return keyboard;
   }
@@ -177,12 +178,11 @@ export class SelectDateForAdjustment {
       // Truncate name if too long for button
       const truncatedName = name.length > 12 ? name.substring(0, 10) + '…' : name;
       const label = `${emoji} ${truncatedName}`;
-      // Use uuid, id, or fall back to log_uuid (for legacy items without uuid)
-      const itemId = item.uuid || item.id || item.log_uuid;
+      const itemId = item.id || item.uuid;
       
       currentRow.push({
         text: label,
-        callback_data: `adj_item_${itemId}`,
+        callback_data: encodeCallback('i', { id: itemId }),
       });
       
       // Every 3 items, push row and start new one
@@ -199,10 +199,10 @@ export class SelectDateForAdjustment {
     // Navigation row
     const navRow = [];
     if (offset > 0) {
-      navRow.push({ text: '⬆️ Prev', callback_data: `adj_page_${daysAgo}_${offset - pageSize}` });
+      navRow.push({ text: '⬆️ Prev', callback_data: encodeCallback('pg', { d: daysAgo, o: offset - pageSize }) });
     }
     if (offset + pageSize < sortedItems.length) {
-      navRow.push({ text: '⬇️ More', callback_data: `adj_page_${daysAgo}_${offset + pageSize}` });
+      navRow.push({ text: '⬇️ More', callback_data: encodeCallback('pg', { d: daysAgo, o: offset + pageSize }) });
     }
     if (navRow.length > 0) {
       keyboard.push(navRow);
@@ -210,8 +210,8 @@ export class SelectDateForAdjustment {
 
     // Action row
     keyboard.push([
-      { text: '📅 Other Day', callback_data: 'adj_back_date' },
-      { text: '✅ Done', callback_data: 'adj_done' },
+      { text: '📅 Other Day', callback_data: encodeCallback('bd') },
+      { text: '✅ Done', callback_data: encodeCallback('dn') },
     ]);
 
     return keyboard;

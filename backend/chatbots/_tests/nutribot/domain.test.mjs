@@ -19,6 +19,9 @@ import {
 } from '../../bots/nutribot/domain/schemas.mjs';
 import { ValidationError } from '../../_lib/errors/index.mjs';
 
+const SHORT_ID_REGEX = /^[A-Za-z0-9]{10}$/;
+const UUID_REGEX = /^[0-9a-f-]{36}$/i;
+
 describe('NutriBot: Schemas', () => {
   describe('NoomColors', () => {
     it('should contain valid colors', () => {
@@ -98,7 +101,8 @@ describe('NutriBot: Schemas', () => {
 
 describe('NutriBot: FoodItem', () => {
   const validProps = {
-    id: '123e4567-e89b-12d3-a456-426614174000',
+    id: 'Xk9mZ2pLqN',
+    uuid: '123e4567-e89b-12d3-a456-426614174000',
     label: 'Oatmeal',
     icon: 'oatmeal',
     grams: 100,
@@ -176,7 +180,8 @@ describe('NutriBot: FoodItem', () => {
         color: 'green',
       });
       
-      expect(item.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(item.id).toMatch(SHORT_ID_REGEX);
+      expect(item.uuid).toMatch(UUID_REGEX);
       expect(item.label).toBe('Apple');
     });
 
@@ -194,14 +199,16 @@ describe('NutriBot: FoodItem', () => {
       expect(item.label).toBe('Grilled Salmon');
       expect(item.icon).toBe('salmon');
       expect(item.color).toBe('yellow');
-      expect(item.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(item.id).toMatch(SHORT_ID_REGEX);
+      expect(item.uuid).toMatch(UUID_REGEX);
     });
   });
 });
 
 describe('NutriBot: NutriLog', () => {
   const validProps = {
-    id: '337c9ec4-3afd-48f2-9960-1c4662b0f1f5',
+    id: 'Xk9mZ2pLqN',
+    uuid: '337c9ec4-3afd-48f2-9960-1c4662b0f1f5',
     userId: 'kirk',
     conversationId: 'telegram:b6898194425_c575596036',
     status: 'pending',
@@ -212,7 +219,8 @@ describe('NutriBot: NutriLog', () => {
     },
     items: [
       {
-        id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        id: 'Abc123Def4',
+        uuid: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         label: 'Oatmeal',
         icon: 'oatmeal',
         grams: 100,
@@ -221,7 +229,8 @@ describe('NutriBot: NutriLog', () => {
         color: 'green',
       },
       {
-        id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
+        id: 'Ghi789Jkl0',
+        uuid: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
         label: 'Greek Yogurt',
         icon: 'yogurt',
         grams: 200,
@@ -350,7 +359,7 @@ describe('NutriBot: NutriLog', () => {
 
     it('removeItem should remove item by ID', () => {
       const log = new NutriLog(validProps);
-      const updated = log.removeItem('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      const updated = log.removeItem('Abc123Def4');
       
       expect(updated.itemCount).toBe(1);
       expect(updated.items[0].label).toBe('Greek Yogurt');
@@ -358,7 +367,7 @@ describe('NutriBot: NutriLog', () => {
 
     it('updateItem should modify item', () => {
       const log = new NutriLog(validProps);
-      const updated = log.updateItem('a1b2c3d4-e5f6-7890-abcd-ef1234567890', { grams: 150 });
+      const updated = log.updateItem('Abc123Def4', { grams: 150 });
       
       expect(updated.items[0].grams).toBe(150);
     });
@@ -382,7 +391,10 @@ describe('NutriBot: NutriLog', () => {
       
       expect(listItems).toHaveLength(2);
       expect(listItems[0]).toEqual({
+        id: validProps.items[0].id,
+        uuid: validProps.items[0].uuid,
         logId: validProps.id,
+        log_uuid: validProps.uuid,
         label: 'Oatmeal',
         grams: 100,
         color: 'green',
@@ -404,10 +416,12 @@ describe('NutriBot: NutriLog', () => {
         ],
       });
       
-      expect(log.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(log.id).toMatch(SHORT_ID_REGEX);
+      expect(log.uuid).toMatch(UUID_REGEX);
       expect(log.status).toBe('pending');
       expect(log.itemCount).toBe(1);
-      expect(log.items[0].id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(log.items[0].id).toMatch(SHORT_ID_REGEX);
+      expect(log.items[0].uuid).toMatch(UUID_REGEX);
     });
 
     it('create should auto-detect meal time', () => {
@@ -442,10 +456,13 @@ describe('NutriBot: NutriLog', () => {
       const log = NutriLog.fromLegacy(legacy, 'kirk', 'telegram:b6898194425_c575596036');
       
       expect(log.id).toBe(legacy.uuid);
+      expect(log.uuid).toBe(legacy.uuid);
       expect(log.userId).toBe('kirk');
       expect(log.status).toBe('accepted');
       expect(log.items[0].label).toBe('Oatmeal');
       expect(log.metadata.source).toBe('migration');
+      expect(log.items[0].id).toMatch(SHORT_ID_REGEX);
+      expect(log.items[0].uuid).toMatch(UUID_REGEX);
     });
   });
 });

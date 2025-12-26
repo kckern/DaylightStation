@@ -10,6 +10,7 @@ import { loadFile, saveFile } from '../../../../lib/io.mjs';
 import { NotFoundError } from '../../../_lib/errors/index.mjs';
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { TestContext } from '../../../_lib/testing/TestContext.mjs';
+import { shortIdFromUuid } from '../../../_lib/shortId.mjs';
 
 /**
  * NutriList repository for denormalized food item data
@@ -50,6 +51,7 @@ export class NutriListRepository {
   async syncFromLog(nutriLog) {
     const path = this.#getPath(nutriLog.userId);
     const logId = nutriLog.id;
+    const logUuid = nutriLog.uuid || nutriLog.id;
 
     this.#logger.debug('nutrilist.sync', { path, logId, status: nutriLog.status });
 
@@ -64,12 +66,18 @@ export class NutriListRepository {
       items = Object.values(rawData);
     }
 
-    // Remove existing items for this log
-    items = items.filter(item => item.logId !== logId && item.log_uuid !== logId);
+    // Remove existing items for this log (both short id and uuid)
+    items = items.filter(item => item.logId !== logId && item.logId !== logUuid && item.log_uuid !== logId && item.log_uuid !== logUuid);
 
     // Add new items if log is accepted
     if (nutriLog.isAccepted) {
-      const newItems = nutriLog.toNutriListItems();
+      const newItems = nutriLog.toNutriListItems().map((item) => ({
+        ...item,
+        id: item.id || (item.uuid ? shortIdFromUuid(item.uuid) : shortIdFromUuid(logUuid)),
+        uuid: item.uuid || item.id,
+        logId,
+        log_uuid: item.log_uuid || logUuid,
+      }));
       items.push(...newItems);
     }
 
@@ -120,26 +128,31 @@ export class NutriListRepository {
     // Transform new items to legacy format for consistency
     // Generate UUID if not present to ensure all items are identifiable
     const { v4: uuidv4 } = await import('uuid');
-    const transformedItems = newItems.map(item => ({
-      uuid: item.id || item.uuid || uuidv4(),
-      icon: item.icon || 'default',
-      item: item.label || item.item || item.name || 'Unknown',
-      unit: item.unit || 'g',
-      amount: item.grams || item.amount || 0,
-      noom_color: item.color || item.noom_color || 'yellow',
-      // Nutrition fields
-      calories: item.calories ?? 0,
-      fat: item.fat ?? 0,
-      carbs: item.carbs ?? 0,
-      protein: item.protein ?? 0,
-      fiber: item.fiber ?? 0,
-      sugar: item.sugar ?? 0,
-      sodium: item.sodium ?? 0,
-      cholesterol: item.cholesterol ?? 0,
-      // Metadata
-      date: item.date,
-      log_uuid: item.logUuid || item.log_uuid,
-    }));
+    const transformedItems = newItems.map(item => {
+      const baseUuid = item.uuid || item.id || uuidv4();
+      return {
+        id: item.id || shortIdFromUuid(baseUuid),
+        uuid: baseUuid,
+        icon: item.icon || 'default',
+        item: item.label || item.item || item.name || 'Unknown',
+        unit: item.unit || 'g',
+        amount: item.grams || item.amount || 0,
+        noom_color: item.color || item.noom_color || 'yellow',
+        // Nutrition fields
+        calories: item.calories ?? 0,
+        fat: item.fat ?? 0,
+        carbs: item.carbs ?? 0,
+        protein: item.protein ?? 0,
+        fiber: item.fiber ?? 0,
+        sugar: item.sugar ?? 0,
+        sodium: item.sodium ?? 0,
+        cholesterol: item.cholesterol ?? 0,
+        // Metadata
+        date: item.date,
+        logId: item.logId || item.log_uuid || item.logUuid,
+        log_uuid: item.log_uuid || item.logUuid,
+      };
+    });
 
     // Add new items
     items.push(...transformedItems);
@@ -186,6 +199,8 @@ export class NutriListRepository {
     items = items.map(item => ({
       ...item,
       // Map legacy fields to expected names
+      id: item.id || (item.uuid ? shortIdFromUuid(item.uuid) : item.id),
+      uuid: item.uuid || (typeof item.id === 'string' && item.id.includes('-') ? item.id : item.uuid),
       name: item.name || item.item || item.label || 'Unknown',
       color: item.color || item.noom_color || 'yellow',
       grams: item.grams || item.amount || 0,
@@ -211,7 +226,7 @@ export class NutriListRepository {
    */
   async findByLogId(userId, logId) {
     const items = await this.findAll(userId);
-    return items.filter(item => item.logId === logId);
+    return items.filter(item => item.logId === logId || item.log_uuid === logId);
   }
 
   /**
@@ -222,7 +237,7 @@ export class NutriListRepository {
    */
   async findByUuid(userId, uuid) {
     const items = await this.findAll(userId);
-    return items.find(item => item.uuid === uuid) || null;
+    return items.find(item => item.uuid === uuid || item.id === uuid) || null;
   }
 
   /**
@@ -348,7 +363,7 @@ export class NutriListRepository {
     let rawData = loadFile(path);
     let items = Array.isArray(rawData) ? rawData : Object.values(rawData || {});
     
-    const itemIndex = items.findIndex(item => item.uuid === uuid);
+    const itemIndex = items.findIndex(item => item.uuid === uuid || item.id === uuid);
     if (itemIndex === -1) {
       this.#logger.warn('nutrilist.updatePortion.notFound', { userId, uuid });
       return false;
@@ -396,11 +411,11 @@ export class NutriListRepository {
     let items = Array.isArray(rawData) ? rawData : Object.values(rawData || {});
     
     // Find the item to get its date before deleting
-    const itemToDelete = items.find(item => item.uuid === uuid);
+    const itemToDelete = items.find(item => item.uuid === uuid || item.id === uuid);
     const affectedDate = itemToDelete?.date;
     
     const before = items.length;
-    items = items.filter(item => item.uuid !== uuid);
+    items = items.filter(item => item.uuid !== uuid && item.id !== uuid);
     
     if (items.length < before) {
       saveFile(path, items);

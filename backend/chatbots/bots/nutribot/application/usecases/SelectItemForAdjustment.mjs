@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { NOOM_COLOR_EMOJI } from '../../domain/formatters.mjs';
 
 /**
@@ -126,26 +127,26 @@ export class SelectItemForAdjustment {
     return [
       // Fraction row
       [
-        { text: '¼', callback_data: `adj_factor_0.25_${itemId}` },
-        { text: '⅓', callback_data: `adj_factor_0.33_${itemId}` },
-        { text: '½', callback_data: `adj_factor_0.5_${itemId}` },
-        { text: '⅔', callback_data: `adj_factor_0.67_${itemId}` },
-        { text: '¾', callback_data: `adj_factor_0.75_${itemId}` },
+        { text: '¼', callback_data: encodeCallback('f', { id: itemId, f: 0.25 }) },
+        { text: '⅓', callback_data: encodeCallback('f', { id: itemId, f: 0.33 }) },
+        { text: '½', callback_data: encodeCallback('f', { id: itemId, f: 0.5 }) },
+        { text: '⅔', callback_data: encodeCallback('f', { id: itemId, f: 0.67 }) },
+        { text: '¾', callback_data: encodeCallback('f', { id: itemId, f: 0.75 }) },
       ],
       // Multiplier row
       [
-        { text: '×1¼', callback_data: `adj_factor_1.25_${itemId}` },
-        { text: '×1½', callback_data: `adj_factor_1.5_${itemId}` },
-        { text: '×1¾', callback_data: `adj_factor_1.75_${itemId}` },
-        { text: '×2', callback_data: `adj_factor_2_${itemId}` },
-        { text: '×3', callback_data: `adj_factor_3_${itemId}` },
-        { text: '×4', callback_data: `adj_factor_4_${itemId}` },
+        { text: '×1¼', callback_data: encodeCallback('f', { id: itemId, f: 1.25 }) },
+        { text: '×1½', callback_data: encodeCallback('f', { id: itemId, f: 1.5 }) },
+        { text: '×1¾', callback_data: encodeCallback('f', { id: itemId, f: 1.75 }) },
+        { text: '×2', callback_data: encodeCallback('f', { id: itemId, f: 2 }) },
+        { text: '×3', callback_data: encodeCallback('f', { id: itemId, f: 3 }) },
+        { text: '×4', callback_data: encodeCallback('f', { id: itemId, f: 4 }) },
       ],
       // Actions row
       [
-        { text: '🗑️ Delete', callback_data: `adj_delete_${itemId}` },
-        { text: '📅 Move Day', callback_data: `adj_move_${itemId}` },
-        { text: '↩️ Done', callback_data: 'adj_back_items' },
+        { text: '🗑️ Delete', callback_data: encodeCallback('d', { id: itemId }) },
+        { text: '📅 Move Day', callback_data: encodeCallback('m', { id: itemId }) },
+        { text: '↩️ Done', callback_data: encodeCallback('bi') },
       ],
     ];
   }
