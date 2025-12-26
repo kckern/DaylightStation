@@ -80,13 +80,13 @@ export class SelectDateForAdjustment {
       // 4. Update state (if store available)
       if (this.#conversationStateStore?.update) {
         await this.#conversationStateStore.update(conversationId, {
-          step: 'item_selection',
-          data: { level: 1, date, daysAgo, items: items.map(i => i.id), offset },
+          activeFlow: 'adjustment',
+          flowState: { level: 1, date, daysAgo, items: items.map(i => i.id), offset },
         });
       }
 
       // 5. Build item selection keyboard
-      const keyboard = this.#buildItemKeyboard(items, offset);
+      const keyboard = this.#buildItemKeyboard(items, offset, daysAgo);
 
       // 6. Build message with items list
       const message = this.#buildItemsMessage(date, items);
@@ -162,7 +162,7 @@ export class SelectDateForAdjustment {
    * Build item selection keyboard
    * @private
    */
-  #buildItemKeyboard(items, offset) {
+  #buildItemKeyboard(items, offset, daysAgo = 0) {
     const keyboard = [];
     const pageSize = 9; // 3 rows of 3 items
     // Sort by calories descending
@@ -199,10 +199,10 @@ export class SelectDateForAdjustment {
     // Navigation row
     const navRow = [];
     if (offset > 0) {
-      navRow.push({ text: '⬆️ Prev', callback_data: `adj_page_${offset - pageSize}` });
+      navRow.push({ text: '⬆️ Prev', callback_data: `adj_page_${daysAgo}_${offset - pageSize}` });
     }
     if (offset + pageSize < sortedItems.length) {
-      navRow.push({ text: '⬇️ More', callback_data: `adj_page_${offset + pageSize}` });
+      navRow.push({ text: '⬇️ More', callback_data: `adj_page_${daysAgo}_${offset + pageSize}` });
     }
     if (navRow.length > 0) {
       keyboard.push(navRow);

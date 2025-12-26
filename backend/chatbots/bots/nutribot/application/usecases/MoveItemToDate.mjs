@@ -40,17 +40,37 @@ export class MoveItemToDate {
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, messageId, newDate } = input;
+    const { userId, conversationId, messageId, newDate, itemId: inputItemId } = input;
 
-    this.#logger.debug('adjustment.move', { userId, newDate });
+    this.#logger.debug('adjustment.move', { userId, newDate, itemId: inputItemId });
 
     try {
-      // 1. Get current state
-      const state = await this.#conversationStateStore.get(conversationId);
-      const { date: oldDate, itemId, logId } = state?.flowState || {};
+      // 1. Get itemId from input or fallback to state
+      let itemId = inputItemId;
+      let oldDate = null;
+      let logId = null;
+      
+      if (!itemId) {
+        const state = await this.#conversationStateStore.get(conversationId);
+        const flowState = state?.flowState || {};
+        itemId = flowState.itemId;
+        oldDate = flowState.date;
+        logId = flowState.logId;
+      }
 
-      if (!itemId || !logId) {
+      if (!itemId) {
         throw new Error('No item selected in adjustment state');
+      }
+
+      // If we don't have logId, look it up from nutrilist
+      if (!logId) {
+        const listItem = await this.#nutriListRepository.findByUuid(userId, itemId);
+        logId = listItem?.logId || listItem?.log_uuid;
+        oldDate = oldDate || listItem?.date;
+      }
+
+      if (!logId) {
+        throw new Error('Log not found for item');
       }
 
       // 2. Load the original log
