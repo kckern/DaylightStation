@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 
 export class DeleteListItem {
   #messagingGateway;
@@ -104,8 +105,8 @@ export class DeleteListItem {
           parseMode: 'HTML',
           choices: [
             [
-              { text: '↩️ Back to items', callback_data: 'adj_back_items' },
-              { text: '✅ Done', callback_data: 'adj_done' },
+              { text: '↩️ Back to items', callback_data: encodeCallback('bi') },
+              { text: '✅ Done', callback_data: encodeCallback('dn') },
             ],
           ],
         });
@@ -117,8 +118,8 @@ export class DeleteListItem {
             parseMode: 'HTML',
             choices: [
               [
-                { text: '↩️ Back to items', callback_data: 'adj_back_items' },
-                { text: '✅ Done', callback_data: 'adj_done' },
+                { text: '↩️ Back to items', callback_data: encodeCallback('bi') },
+                { text: '✅ Done', callback_data: encodeCallback('dn') },
               ],
             ],
           }

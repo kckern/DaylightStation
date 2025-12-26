@@ -7,6 +7,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { NOOM_COLOR_EMOJI } from '../../domain/formatters.mjs';
 import fs from 'fs/promises';
 import path from 'path';
@@ -228,8 +229,8 @@ export class GenerateDailyReport {
       // 11. Build action buttons
       const buttons = [
         [
-          { text: '✏️ Adjust', callback_data: 'report_adjust' },
-          { text: '✅ Accept', callback_data: 'report_accept' },
+          { text: '✏️ Adjust', callback_data: encodeCallback('ra') },
+          { text: '✅ Accept', callback_data: encodeCallback('rx') },
         ],
       ];
 
