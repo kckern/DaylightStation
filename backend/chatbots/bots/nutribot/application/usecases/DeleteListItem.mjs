@@ -59,38 +59,44 @@ export class DeleteListItem {
       // Find item in nutrilist to get logId
       const listItem = await this.#nutriListRepository.findByUuid(userId, itemId);
       const logId = listItem?.logId || listItem?.log_uuid || state?.flowState?.logId;
-      if (!logId) {
-        throw new Error('Log not found for item');
-      }
-
-      // Load log
-      const log = await this.#nutriLogRepository.findById(userId, logId);
-      if (!log) {
-        throw new Error('Log not found');
-      }
-
-      // Find the item in the log
-      const item = log.items.find(i => i.id === itemId || i.uuid === itemId);
-      if (!item) {
-        throw new Error('Item not found in log');
-      }
-
-      // Remove item from log
-      const removeId = item.id || item.uuid || itemId;
-      const updatedLog = log.removeItem(removeId);
       
-      // If log is now empty, delete it; otherwise save updated
-      if (updatedLog.items.length === 0) {
-        await this.#nutriLogRepository.hardDelete(userId, logId);
-      } else {
-        await this.#nutriLogRepository.save(updatedLog);
-      }
+      // Track item label for confirmation message
+      let itemLabel = listItem?.label || listItem?.name || 'item';
 
-      // Sync to nutrilist (will remove items for this log)
-      await this.#nutriListRepository.syncFromLog(updatedLog);
+      // Load log if available
+      const log = logId ? await this.#nutriLogRepository.findById(userId, logId) : null;
+
+      if (log) {
+        // Find the item in the log
+        const item = log.items.find(i => i.id === itemId || i.uuid === itemId);
+        if (item) {
+          itemLabel = item.label || item.name || itemLabel;
+          // Remove item from log
+          const removeId = item.id || item.uuid || itemId;
+          const updatedLog = log.removeItem(removeId);
+          
+          // If log is now empty, delete it; otherwise save updated
+          if (updatedLog.items.length === 0) {
+            await this.#nutriLogRepository.hardDelete(userId, logId);
+          } else {
+            await this.#nutriLogRepository.save(updatedLog);
+          }
+
+          // Sync to nutrilist (will remove items for this log)
+          await this.#nutriListRepository.syncFromLog(updatedLog);
+        } else {
+          // Item not in log, just delete from list directly
+          this.#logger.debug('adjustment.delete.itemNotInLog', { userId, itemId, logId });
+          await this.#nutriListRepository.deleteById(userId, itemId);
+        }
+      } else {
+        // No log found (backfilled data), delete directly from nutrilist
+        this.#logger.debug('adjustment.delete.noLog', { userId, itemId, logId });
+        await this.#nutriListRepository.deleteById(userId, itemId);
+      }
 
       // Update message with confirmation and follow-up options
-      const confirmationText = `🗑️ <b>${item.label || item.name || 'item'}</b> deleted`;
+      const confirmationText = `🗑️ <b>${itemLabel}</b> deleted`;
       
       if (messageId) {
         await this.#messagingGateway.updateMessage(conversationId, messageId, {

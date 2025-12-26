@@ -69,8 +69,8 @@ export class SelectItemForAdjustment {
       // 3. Update state (if store available)
       if (this.#conversationStateStore?.update) {
         await this.#conversationStateStore.update(conversationId, {
-          step: 'action_selection',
-          data: { level: 2, date, itemId },
+          activeFlow: 'adjustment',
+          flowState: { level: 2, date, itemId },
         });
       }
 
@@ -126,25 +126,25 @@ export class SelectItemForAdjustment {
     return [
       // Fraction row
       [
-        { text: '¼', callback_data: 'adj_factor_0.25' },
-        { text: '⅓', callback_data: 'adj_factor_0.33' },
-        { text: '½', callback_data: 'adj_factor_0.5' },
-        { text: '⅔', callback_data: 'adj_factor_0.67' },
-        { text: '¾', callback_data: 'adj_factor_0.75' },
+        { text: '¼', callback_data: `adj_factor_0.25_${itemId}` },
+        { text: '⅓', callback_data: `adj_factor_0.33_${itemId}` },
+        { text: '½', callback_data: `adj_factor_0.5_${itemId}` },
+        { text: '⅔', callback_data: `adj_factor_0.67_${itemId}` },
+        { text: '¾', callback_data: `adj_factor_0.75_${itemId}` },
       ],
       // Multiplier row
       [
-        { text: '×1¼', callback_data: 'adj_factor_1.25' },
-        { text: '×1½', callback_data: 'adj_factor_1.5' },
-        { text: '×1¾', callback_data: 'adj_factor_1.75' },
-        { text: '×2', callback_data: 'adj_factor_2' },
-        { text: '×3', callback_data: 'adj_factor_3' },
-        { text: '×4', callback_data: 'adj_factor_4' },
+        { text: '×1¼', callback_data: `adj_factor_1.25_${itemId}` },
+        { text: '×1½', callback_data: `adj_factor_1.5_${itemId}` },
+        { text: '×1¾', callback_data: `adj_factor_1.75_${itemId}` },
+        { text: '×2', callback_data: `adj_factor_2_${itemId}` },
+        { text: '×3', callback_data: `adj_factor_3_${itemId}` },
+        { text: '×4', callback_data: `adj_factor_4_${itemId}` },
       ],
       // Actions row
       [
         { text: '🗑️ Delete', callback_data: `adj_delete_${itemId}` },
-        { text: '📅 Move Day', callback_data: 'adj_move' },
+        { text: '📅 Move Day', callback_data: `adj_move_${itemId}` },
         { text: '↩️ Done', callback_data: 'adj_back_items' },
       ],
     ];

@@ -31,15 +31,15 @@ export class ApplyPortionAdjustment {
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, messageId, factor } = input;
+    const { userId, conversationId, messageId, factor, itemId: inputItemId } = input;
 
-    this.#logger.debug('adjustment.applyFactor', { userId, factor });
+    this.#logger.debug('adjustment.applyFactor', { userId, factor, itemId: inputItemId });
 
     try {
-      // 1. Get current state to find the itemId
-      let itemId = null;
+      // 1. Get itemId from input or fallback to state
+      let itemId = inputItemId;
       let date = null;
-      if (this.#conversationStateStore?.get) {
+      if (!itemId && this.#conversationStateStore?.get) {
         const state = await this.#conversationStateStore.get(conversationId);
         itemId = state?.flowState?.itemId;
         date = state?.flowState?.date;
@@ -51,12 +51,12 @@ export class ApplyPortionAdjustment {
 
       // 2. Find the item in nutrilist
       let item = null;
-      if (this.#nutrilistRepository?.findById) {
-        item = await this.#nutrilistRepository.findById(itemId);
+      if (this.#nutrilistRepository?.findByUuid) {
+        item = await this.#nutrilistRepository.findByUuid(userId, itemId);
       }
       if (!item && this.#nutrilistRepository?.getAll) {
         const allItems = this.#nutrilistRepository.getAll();
-        item = allItems.find(i => i.id === itemId);
+        item = allItems.find(i => i.id === itemId || i.uuid === itemId);
       }
 
       if (!item) {
