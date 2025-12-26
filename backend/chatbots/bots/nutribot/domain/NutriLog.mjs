@@ -11,6 +11,7 @@ import { validateNutriLog, getMealTimeFromHour, LogStatuses } from './schemas.mj
 import { FoodItem } from './FoodItem.mjs';
 import { ValidationError } from '../../../_lib/errors/index.mjs';
 import { Timestamp } from '../../../domain/value-objects/Timestamp.mjs';
+import { shortId, shortIdFromUuid, isUuid } from '../../../_lib/shortId.mjs';
 
 /**
  * NutriLog entity - aggregate root for food logging
@@ -18,6 +19,8 @@ import { Timestamp } from '../../../domain/value-objects/Timestamp.mjs';
 export class NutriLog {
   /** @type {string} */
   #id;
+  /** @type {string|null|undefined} */
+  #uuid;
   /** @type {string} */
   #userId;
   /** @type {string} */
@@ -66,6 +69,7 @@ export class NutriLog {
 
     const data = result.value;
     this.#id = data.id;
+    this.#uuid = data.uuid ?? null;
     this.#userId = data.userId;
     this.#conversationId = data.conversationId;
     this.#status = data.status;
@@ -85,6 +89,7 @@ export class NutriLog {
   // ==================== Getters ====================
 
   get id() { return this.#id; }
+  get uuid() { return this.#uuid; }
   get userId() { return this.#userId; }
   get conversationId() { return this.#conversationId; }
   get status() { return this.#status; }
@@ -375,6 +380,7 @@ export class NutriLog {
   toJSON() {
     return {
       id: this.#id,
+      uuid: this.#uuid,
       userId: this.#userId,
       conversationId: this.#conversationId,
       status: this.#status,
@@ -396,7 +402,10 @@ export class NutriLog {
    */
   toNutriListItems() {
     return this.#items.map(item => ({
+      id: item.id,
+      uuid: item.uuid,
       logId: this.#id,
+      log_uuid: this.#uuid,
       label: item.label,
       grams: item.grams,
       color: item.color,
@@ -415,6 +424,8 @@ export class NutriLog {
    */
   static create(props) {
     const now = new Date();
+    const logUuid = uuidv4();
+    const logId = shortId();
     const meal = props.meal || {
       date: now.toISOString().split('T')[0],
       time: getMealTimeFromHour(now.getHours()),
@@ -422,14 +433,20 @@ export class NutriLog {
 
     // Generate IDs for items if needed
     const items = (props.items || []).map(item => {
-      if (!item.id) {
-        return FoodItem.create(item).toJSON();
+      const baseItem = item instanceof FoodItem ? item.toJSON() : item;
+      if (!baseItem.id) {
+        return FoodItem.create(baseItem).toJSON();
       }
-      return item;
+      if (!baseItem.uuid) {
+        const generatedUuid = isUuid(baseItem.id) ? baseItem.id : uuidv4();
+        return { ...baseItem, uuid: generatedUuid };
+      }
+      return baseItem;
     });
 
     return new NutriLog({
-      id: uuidv4(),
+      id: logId,
+      uuid: logUuid,
       userId: props.userId,
       conversationId: props.conversationId,
       status: 'pending',
@@ -466,18 +483,23 @@ export class NutriLog {
    * @returns {NutriLog}
    */
   static fromLegacy(legacy, userId, conversationId) {
-    const items = (legacy.food_data?.food || []).map((item) => ({
-      id: uuidv4(), // Generate new UUID for each item
-      label: item.item,
-      icon: item.icon || 'default',
-      grams: item.amount, // Assume same for now
-      unit: item.unit,
-      amount: item.amount,
-      color: item.noom_color,
-    }));
+    const items = (legacy.food_data?.food || []).map((item) => {
+      const itemUuid = item.uuid || uuidv4();
+      return {
+        id: shortIdFromUuid(itemUuid),
+        uuid: itemUuid,
+        label: item.item,
+        icon: item.icon || 'default',
+        grams: item.amount, // Assume same for now
+        unit: item.unit,
+        amount: item.amount,
+        color: item.noom_color,
+      };
+    });
 
     return new NutriLog({
-      id: legacy.uuid,
+      id: legacy.uuid || legacy.id,
+      uuid: legacy.uuid || legacy.id,
       userId,
       conversationId,
       status: legacy.status,

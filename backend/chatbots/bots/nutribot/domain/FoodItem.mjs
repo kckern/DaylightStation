@@ -9,6 +9,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { validateFoodItem } from './schemas.mjs';
 import { ValidationError } from '../../../_lib/errors/index.mjs';
+import { shortId, shortIdFromUuid } from '../../../_lib/shortId.mjs';
 
 /**
  * FoodItem value object
@@ -25,6 +26,8 @@ import { ValidationError } from '../../../_lib/errors/index.mjs';
 export class FoodItem {
   /** @type {string} */
   #id;
+  /** @type {string|undefined} */
+  #uuid;
   /** @type {string} */
   #label;
   /** @type {string} */
@@ -69,6 +72,7 @@ export class FoodItem {
 
     const data = result.value;
     this.#id = data.id;
+    this.#uuid = data.uuid ?? null;
     this.#label = data.label;
     this.#icon = data.icon;
     this.#grams = data.grams;
@@ -91,6 +95,7 @@ export class FoodItem {
   // ==================== Getters ====================
 
   get id() { return this.#id; }
+  get uuid() { return this.#uuid; }
   get label() { return this.#label; }
   get icon() { return this.#icon; }
   get grams() { return this.#grams; }
@@ -153,6 +158,7 @@ export class FoodItem {
       unit: this.#unit,
       amount: this.#amount,
       color: this.#color,
+      uuid: this.#uuid,
       calories: this.#calories,
       protein: this.#protein,
       carbs: this.#carbs,
@@ -172,6 +178,7 @@ export class FoodItem {
   toJSON() {
     return {
       id: this.#id,
+      uuid: this.#uuid,
       label: this.#label,
       icon: this.#icon,
       grams: this.#grams,
@@ -209,7 +216,8 @@ export class FoodItem {
    */
   static create(props) {
     return new FoodItem({
-      id: uuidv4(),
+      id: shortId(),
+      uuid: uuidv4(),
       ...props,
     });
   }
@@ -231,8 +239,10 @@ export class FoodItem {
    * @returns {FoodItem}
    */
   static fromLegacy(legacy, id) {
+    const itemUuid = legacy.uuid || legacy.id || uuidv4();
     return new FoodItem({
-      id: id || uuidv4(),
+      id: id || shortIdFromUuid(itemUuid),
+      uuid: itemUuid,
       label: legacy.item,
       icon: legacy.icon || 'default',
       grams: legacy.amount, // Assume same as amount for now

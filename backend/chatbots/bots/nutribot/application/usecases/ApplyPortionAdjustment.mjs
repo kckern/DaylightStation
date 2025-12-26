@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 
 /**
  * Apply portion adjustment use case
@@ -100,8 +101,8 @@ export class ApplyPortionAdjustment {
           parseMode: 'HTML',
           choices: [
             [
-              { text: '✏️ More Adjustments', callback_data: 'adj_back_items' },
-              { text: '✅ Done', callback_data: 'adj_done' },
+              { text: '✏️ More Adjustments', callback_data: encodeCallback('bi') },
+              { text: '✅ Done', callback_data: encodeCallback('dn') },
             ],
           ],
           inline: true,
@@ -115,8 +116,8 @@ export class ApplyPortionAdjustment {
             parseMode: 'HTML',
             choices: [
               [
-                { text: '✏️ More Adjustments', callback_data: 'adj_back_items' },
-                { text: '✅ Done', callback_data: 'adj_done' },
+                { text: '✏️ More Adjustments', callback_data: encodeCallback('bi') },
+                { text: '✅ Done', callback_data: encodeCallback('dn') },
               ],
             ],
             inline: true,

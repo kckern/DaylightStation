@@ -7,6 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { ConversationState } from '../../../../domain/entities/ConversationState.mjs';
 import { NutriLog } from '../../domain/NutriLog.mjs';
 import { createCanvas } from 'canvas';
@@ -302,29 +303,25 @@ If unsure, use "default" icon.`,
    */
   #buildPortionButtons(logUuid) {
     return [
-      // One serving row
       [
-        { text: '1 serving', callback_data: `portion:${logUuid}:1` },
+        { text: '1 serving', callback_data: encodeCallback('p', { id: logUuid, f: 1 }) },
       ],
-      // Fraction row
       [
-        { text: '¼', callback_data: `portion:${logUuid}:0.25` },
-        { text: '⅓', callback_data: `portion:${logUuid}:0.33` },
-        { text: '½', callback_data: `portion:${logUuid}:0.5` },
-        { text: '⅔', callback_data: `portion:${logUuid}:0.67` },
-        { text: '¾', callback_data: `portion:${logUuid}:0.75` },
+        { text: '¼', callback_data: encodeCallback('p', { id: logUuid, f: 0.25 }) },
+        { text: '⅓', callback_data: encodeCallback('p', { id: logUuid, f: 0.33 }) },
+        { text: '½', callback_data: encodeCallback('p', { id: logUuid, f: 0.5 }) },
+        { text: '⅔', callback_data: encodeCallback('p', { id: logUuid, f: 0.67 }) },
+        { text: '¾', callback_data: encodeCallback('p', { id: logUuid, f: 0.75 }) },
       ],
-      // Multiplier row
       [
-        { text: '×1¼', callback_data: `portion:${logUuid}:1.25` },
-        { text: '×1½', callback_data: `portion:${logUuid}:1.5` },
-        { text: '×2', callback_data: `portion:${logUuid}:2` },
-        { text: '×3', callback_data: `portion:${logUuid}:3` },
-        { text: '×4', callback_data: `portion:${logUuid}:4` },
+        { text: '×1¼', callback_data: encodeCallback('p', { id: logUuid, f: 1.25 }) },
+        { text: '×1½', callback_data: encodeCallback('p', { id: logUuid, f: 1.5 }) },
+        { text: '×2', callback_data: encodeCallback('p', { id: logUuid, f: 2 }) },
+        { text: '×3', callback_data: encodeCallback('p', { id: logUuid, f: 3 }) },
+        { text: '×4', callback_data: encodeCallback('p', { id: logUuid, f: 4 }) },
       ],
-      // Cancel row
       [
-        { text: '❌ Cancel', callback_data: `discard:${logUuid}` },
+        { text: '❌ Cancel', callback_data: encodeCallback('x', { id: logUuid }) },
       ],
     ];
   }

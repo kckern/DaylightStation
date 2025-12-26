@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { ConversationState } from '../../../../domain/entities/ConversationState.mjs';
 import { formatFoodList, formatDateHeader } from '../../domain/formatters.mjs';
 
@@ -80,14 +81,14 @@ export class ReviseFoodLog {
         await this.#messagingGateway.updateMessage(conversationId, messageId, {
           text: message,
           choices: [
-            [{ text: '❌ Cancel', callback_data: `cancel_revision:${logUuid}` }],
+            [{ text: '❌ Cancel', callback_data: encodeCallback('cr', { id: logUuid }) }],
           ],
           inline: true,
         });
       } else {
         await this.#messagingGateway.sendMessage(conversationId, message, {
           choices: [
-            [{ text: '❌ Cancel', callback_data: `cancel_revision:${logUuid}` }],
+            [{ text: '❌ Cancel', callback_data: encodeCallback('cr', { id: logUuid }) }],
           ],
           inline: true,
         });

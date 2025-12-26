@@ -6,6 +6,8 @@
  * Uses plain JavaScript validation to avoid ESM compatibility issues.
  */
 
+import { isShortId, isUuid } from '../../../_lib/shortId.mjs';
+
 // ==================== Enums ====================
 
 /**
@@ -48,7 +50,8 @@ export const SourceTypes = ['telegram', 'api', 'import', 'migration'];
 
 /**
  * @typedef {Object} FoodItem
- * @property {string} id - UUID
+ * @property {string} id - Short ID (Base62) or UUID (legacy)
+ * @property {string} [uuid] - Full UUID for data integrity
  * @property {string} label - Display name
  * @property {string} icon - Icon identifier
  * @property {number} grams - Weight in grams
@@ -86,7 +89,8 @@ export const SourceTypes = ['telegram', 'api', 'import', 'migration'];
 
 /**
  * @typedef {Object} NutriLog
- * @property {string} id - UUID
+ * @property {string} id - Short ID (Base62) or UUID (legacy)
+ * @property {string} [uuid] - Full UUID for data integrity
  * @property {string} userId - System user ID
  * @property {string} conversationId - Channel:identifier format
  * @property {LogStatus} status - Current status
@@ -151,9 +155,16 @@ export function validateFoodItem(item) {
     return { valid: false, errors: ['FoodItem must be an object'] };
   }
 
-  // UUID validation
-  if (!item.id || typeof item.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(item.id)) {
-    errors.push('id must be a valid UUID');
+  // ID validation (short ID or UUID)
+  const isIdShort = isShortId(item.id);
+  const isIdUuid = isUuid(item.id);
+  if (!item.id || typeof item.id !== 'string' || (!isIdShort && !isIdUuid)) {
+    errors.push('id must be a valid short ID (10 base62) or UUID');
+  }
+
+  // UUID validation (optional but recommended)
+  if (item.uuid && !isUuid(item.uuid)) {
+    errors.push('uuid must be a valid UUID');
   }
 
   // Label validation
@@ -191,10 +202,13 @@ export function validateFoodItem(item) {
     return { valid: false, errors };
   }
 
+  const normalizedUuid = item.uuid || (isIdUuid ? item.id : undefined);
+
   return {
     valid: true,
     value: {
       id: item.id,
+      uuid: normalizedUuid,
       label: item.label,
       icon: item.icon || 'default',
       grams: item.grams,
@@ -262,9 +276,16 @@ export function validateNutriLog(log) {
     return { valid: false, errors: ['NutriLog must be an object'] };
   }
 
-  // ID validation
-  if (!log.id || typeof log.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(log.id)) {
-    errors.push('id must be a valid UUID');
+  // ID validation (short ID or UUID)
+  const isLogIdShort = isShortId(log.id);
+  const isLogIdUuid = isUuid(log.id);
+  if (!log.id || typeof log.id !== 'string' || (!isLogIdShort && !isLogIdUuid)) {
+    errors.push('id must be a valid short ID (10 base62) or UUID');
+  }
+
+  // UUID validation
+  if (log.uuid && !isUuid(log.uuid)) {
+    errors.push('uuid must be a valid UUID');
   }
 
   // UserId validation
@@ -320,10 +341,13 @@ export function validateNutriLog(log) {
     return { valid: false, errors };
   }
 
+  const normalizedUuid = log.uuid || (isLogIdUuid ? log.id : undefined) || null;
+
   return {
     valid: true,
     value: {
       id: log.id,
+      uuid: normalizedUuid,
       userId: log.userId,
       conversationId: log.conversationId,
       status: log.status,

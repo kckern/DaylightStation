@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { createCanvas, loadImage } from 'canvas';
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { FOOD_ICONS_STRING } from '../constants/foodIcons.mjs';
 import { ConversationState } from '../../../../domain/entities/ConversationState.mjs';
 import NutriLog from '../../domain/NutriLog.mjs';
@@ -364,9 +365,9 @@ Be conservative with estimates. If uncertain, give ranges or note uncertainty.`,
   #buildActionButtons(logUuid) {
     return [
       [
-        { text: '✅ Accept', callback_data: `accept:${logUuid}` },
-        { text: '✏️ Revise', callback_data: `revise:${logUuid}` },
-        { text: '🗑️ Discard', callback_data: `discard:${logUuid}` },
+        { text: '✅ Accept', callback_data: encodeCallback('a', { id: logUuid }) },
+        { text: '✏️ Revise', callback_data: encodeCallback('r', { id: logUuid }) },
+        { text: '🗑️ Discard', callback_data: encodeCallback('x', { id: logUuid }) },
       ],
     ];
   }
