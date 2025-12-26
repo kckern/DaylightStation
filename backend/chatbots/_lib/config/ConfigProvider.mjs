@@ -16,7 +16,7 @@ import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 import { configService } from '../../../lib/config/ConfigService.mjs';
 import { userDataService } from '../../../lib/config/UserDataService.mjs';
-import { DEFAULT_NUTRITION_GOALS } from '../bots/nutribot/config/NutriBotConfig.mjs';
+import { DEFAULT_NUTRITION_GOALS } from '../../bots/nutribot/config/NutriBotConfig.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
