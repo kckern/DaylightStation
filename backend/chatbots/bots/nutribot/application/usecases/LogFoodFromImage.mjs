@@ -222,12 +222,13 @@ export class LogFoodFromImage {
       {
         role: 'system',
         content: `You are a nutrition analyzer. Given an image of food:
-1. Identify each food item visible
-2. Estimate portion sizes in grams or common measures
-3. Estimate macros (calories, protein, carbs, fat) and micronutrients (fiber, sugar, sodium, cholesterol) for each item
-4. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density)
-5. Select the best matching icon from this list: ${FOOD_ICONS_STRING}
-6. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes")
+1. Identify each food item visible.
+2. **Break down composite foods** into individual ingredients where reasonable (e.g., instead of just "Chicken Wrap", list "Flour Tortilla", "Grilled Chicken", "Lettuce", "Ranch Dressing" as separate items).
+3. Estimate portion sizes in grams or common measures for each component.
+4. Estimate macros (calories, protein, carbs, fat) and micronutrients (fiber, sugar, sodium, cholesterol) for each item.
+5. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density).
+6. Select the best matching icon from this list: ${FOOD_ICONS_STRING}
+7. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes").
 
 Respond in JSON format:
 {
