@@ -23,7 +23,6 @@ export class ConversationState {
    * @param {ConversationId|object} props.conversationId - Conversation identifier
    * @param {string} [props.activeFlow] - Currently active flow name
    * @param {object} [props.flowState] - Flow-specific state
-   * @param {MessageId|string|number} [props.lastMessageId] - Last message ID
    * @param {MessageId|string|number} [props.lastReportMessageId] - Last report message ID
    * @param {Timestamp|Date|string} [props.updatedAt] - Last update timestamp
    * @param {Timestamp|Date|string} [props.expiresAt] - Expiration timestamp
@@ -40,9 +39,6 @@ export class ConversationState {
     this.chatId = this.conversationId;
     this.activeFlow = props.activeFlow || null;
     this.flowState = Object.freeze({ ...props.flowState });
-    this.lastMessageId = props.lastMessageId 
-      ? (props.lastMessageId instanceof MessageId ? props.lastMessageId : MessageId.from(props.lastMessageId))
-      : null;
     this.lastReportMessageId = props.lastReportMessageId
       ? (props.lastReportMessageId instanceof MessageId ? props.lastReportMessageId : MessageId.from(props.lastReportMessageId))
       : null;
@@ -99,7 +95,6 @@ export class ConversationState {
       chatId: this.conversationId.toJSON(),
       activeFlow: this.activeFlow,
       flowState: this.flowState,
-      lastMessageId: this.lastMessageId?.toJSON() || null,
       lastReportMessageId: this.lastReportMessageId?.toJSON() || null,
       updatedAt: this.updatedAt.toJSON(),
       expiresAt: this.expiresAt.toJSON(),
@@ -116,7 +111,6 @@ export class ConversationState {
       conversationId: this.conversationId,
       activeFlow: this.activeFlow,
       flowState: this.flowState,
-      lastMessageId: this.lastMessageId,
       lastReportMessageId: this.lastReportMessageId,
       updatedAt: Timestamp.now(),
       expiresAt: Timestamp.now().add(DEFAULT_TTL_MS, 'ms'),
@@ -183,17 +177,6 @@ export class ConversationState {
   }
 
   /**
-   * Set the last message ID
-   * @param {MessageId|string|number} messageId
-   * @returns {ConversationState}
-   */
-  setLastMessage(messageId) {
-    return this.with({
-      lastMessageId: messageId instanceof MessageId ? messageId : MessageId.from(messageId),
-    });
-  }
-
-  /**
    * Set the last report message ID
    * @param {MessageId|string|number} messageId
    * @returns {ConversationState}
@@ -214,7 +197,6 @@ export class ConversationState {
       conversationId,
       activeFlow: null,
       flowState: {},
-      lastMessageId: null,
       lastReportMessageId: null,
     });
   }
@@ -232,7 +214,6 @@ export class ConversationState {
       conversationId,
       activeFlow: props.activeFlow || null,
       flowState: props.flowState || {},
-      lastMessageId: props.lastMessageId || null,
       lastReportMessageId: props.lastReportMessageId || null,
     });
   }
