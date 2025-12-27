@@ -301,6 +301,16 @@ const FitnessApp = () => {
         setCurrentView(target.view);
         setSelectedShow(null);
         break;
+
+      case 'show':
+        setSelectedShow(target.plex || target.id);
+        setCurrentView('show');
+        break;
+
+      case 'movie':
+        //send directly to player queue
+        setFitnessPlayQueue(prev => [...prev, target]);
+        break;
         
       case 'custom_action':
         logger.warn('custom_action not implemented', { action: target.action });
