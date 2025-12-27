@@ -84,16 +84,16 @@ const baseAPI = async (endpoint, logger) => {
     }
 };
 
-export const getActivities = async (logger) => {
+export const getActivities = async (logger, daysBack = 90) => {
     const log = asLogger(logger);
     await getAccessToken(logger);
 
     const activities = [];
     let page = 1;
     const perPage = 100; // Adjust perPage as needed
-    const oneYearAgo = moment().subtract(2, 'week').startOf('day');
+    const startTime = moment().subtract(daysBack, 'days').startOf('day');
     const before = moment().startOf('day').unix();
-    const after = oneYearAgo.unix();
+    const after = startTime.unix();
 
     while (true) {
         const response = await baseAPI(`athlete/activities?before=${before}&after=${after}&page=${page}&per_page=${perPage}`, logger);
@@ -108,7 +108,7 @@ export const getActivities = async (logger) => {
     const onFileActivities = userLoadFile(username, 'archives/strava_long') || {};
     const activitiesWithHeartRate = await Promise.all(
         activities
-        .slice(0, 50)
+        //.slice(0, 50) // Removed limit to process all fetched activities
         .map(async (activity) => {
             if(!activity?.id) return null;
             if (activity.type === 'VirtualRide' || activity.type === 'VirtualRun') {
@@ -140,16 +140,19 @@ export const getActivities = async (logger) => {
     return { items: activitiesWithHeartRate };
 };
 
-const harvestActivities = async (logger, job_id) => {
+const harvestActivities = async (logger, job_id, daysBack = 90) => {
     const log = asLogger(logger);
     try {
-        const activitiesData = await getActivities(logger);
+        const activitiesData = await getActivities(logger, daysBack);
         if(!activitiesData) return await reauthSequence();
         
         // Filter out any nulls from getActivities
         const validItems = (activitiesData.items || []).filter(Boolean);
         
         log.info('harvest.strava.activities', { jobId: job_id, count: validItems.length });
+        if (validItems.length > 0) {
+            log.info('harvest.strava.sample', { sample: validItems[0] });
+        }
         
         const activities = validItems.map(item => {
             const src = "strava";
@@ -164,61 +167,80 @@ const harvestActivities = async (logger, job_id) => {
         const harvestedDates = activities.map(activity => activity.date);
         const username = getDefaultUsername();
         
-        // Load existing FULL data to preserve history
-        const existingLongData = userLoadFile(username, 'archives/strava_long') || {};
-        const onFilesDates = Object.keys(existingLongData);
+        // Save individual activity files
+        activities.forEach(activity => {
+            if (activity.data && activity.data.id) {
+                userSaveFile(username, `strava/${activity.date}_${activity.data.id}`, activity);
+            }
+        });
+
+        // Load existing FULL data to preserve history (deprecated but kept for now if needed, or we can just rely on individual files + summary)
+        // For the summary, we should ideally load the existing summary and merge, or rebuild from individual files if we want to be pure.
+        // But since we are "re-harvesting from scratch" or at least the user asked to, we might just want to update the summary with what we have.
+        // However, to preserve history not in the current fetch window, we need to load existing summary.
         
-        const uniqueDates = [...new Set([...harvestedDates, ...onFilesDates])].sort((b, a) => new Date(a) - new Date(b))
-            .filter(date => moment(date, 'YYYY-MM-DD', true).isValid() && moment(date, 'YYYY-MM-DD').isBefore(moment().add(1, 'year')));
+        const existingSummary = userLoadFile(username, 'strava') || {};
+        
+        // Merge new activities into summary structure
+        const newSummary = { ...existingSummary };
 
-        const saveMe = uniqueDates.reduce((acc, date) => {
-            // Start with existing data for this date
-            const existingForDate = existingLongData[date] || {};
+        // Clean up legacy data: remove entries without IDs or with heartRateOverTime
+        Object.keys(newSummary).forEach(date => {
+            if (Array.isArray(newSummary[date])) {
+                newSummary[date] = newSummary[date].filter(a => a.id && !a.heartRateOverTime);
+                if (newSummary[date].length === 0) delete newSummary[date];
+            }
+        });
+
+        log.info('harvest.strava.summary.start', { activityCount: activities.length });
+        activities.forEach(activity => {
+            const date = activity.date;
+            if (!newSummary[date]) newSummary[date] = [];
             
-            // Process new activities for this date
-            const newForDate = activities
-                .filter(activity => activity.date === date)
-                .reduce((dateAcc, activity) => {
-                    const keys = Object.keys(activity.data || {});
-                    keys.forEach(key => {
-                        if (!activity.data[key]) delete activity.data[key];
-                    });
-                    dateAcc[activity.id] = activity;
-                    return dateAcc;
-                }, {});
-            
-            // Merge: new data overwrites existing data for same activity IDs
-            acc[date] = { ...existingForDate, ...newForDate };
-            
-            // If date becomes empty (shouldn't happen if it was in uniqueDates), remove it
-            if (Object.keys(acc[date]).length === 0) delete acc[date];
-            
-            return acc;
-        }, {});
+            // Create lightweight summary object
+            const summaryObj = {
+                id: activity.data.id,
+                title: activity.data.name || '',
+                type: activity.type,
+                startTime: activity.data.start_date ? moment(activity.data.start_date).tz(timezone).format('hh:mm a') : '',
+                distance: parseFloat((activity.data.distance || 0).toFixed(2)),
+                minutes: parseFloat((activity.data.moving_time / 60 || 0).toFixed(2)),
+                calories: activity.data.calories || activity.data.kilojoules || 0,
+                avgHeartrate: parseFloat((activity.data.average_heartrate || 0).toFixed(2)),
+                maxHeartrate: parseFloat((activity.data.max_heartrate || 0).toFixed(2)),
+                suffer_score: parseFloat((activity.data.suffer_score || 0).toFixed(2)),
+                device_name: activity.data.device_name || ''
+            };
+
+            // Remove zero/empty/null values
+            Object.keys(summaryObj).forEach(key => {
+                if (summaryObj[key] === 0 || summaryObj[key] === '' || summaryObj[key] === null) {
+                    delete summaryObj[key];
+                }
+            });
+
+            // Check if activity already exists in summary for this date
+            const existingIndex = newSummary[date].findIndex(a => a.id === summaryObj.id);
+            if (existingIndex >= 0) {
+                newSummary[date][existingIndex] = summaryObj;
+            } else {
+                newSummary[date].push(summaryObj);
+            }
+        });
+
+        // Sort dates
+        const sortedDates = Object.keys(newSummary).sort((a, b) => new Date(b) - new Date(a));
+        const finalSummary = {};
+        sortedDates.forEach(date => {
+            if (newSummary[date].length > 0) {
+                finalSummary[date] = newSummary[date];
+            }
+        });
 
         // Save to user-namespaced location
-        userSaveFile(username, 'archives/strava_long', saveMe);
+        userSaveFile(username, 'strava', finalSummary);
 
-        const reducedSaveMe = Object.keys(saveMe).reduce((acc, date) => {
-            acc[date] = Object.values(saveMe[date])
-                .map(activity => ({
-                    title: activity.data.name || '',
-                    distance: parseFloat((activity.data.distance || 0).toFixed(2)),
-                    minutes: parseFloat((activity.data.moving_time / 60 || 0).toFixed(2)),
-                    startTime: activity.data.start_date ? moment(activity.data.start_date).tz(timezone).format('hh:mm a') : '',
-                    suffer_score:  parseFloat((activity.data.suffer_score || 0).toFixed(2)),
-                    avgHeartrate: parseFloat((activity.data.average_heartrate || 0).toFixed(2)),
-                    maxHeartrate: parseFloat((activity.data.max_heartrate || 0).toFixed(2)),
-                    heartRateOverTime: activity.data.heartRateOverTime || [],
-                }));
-            if (acc[date].length === 0) delete acc[date];
-            return acc;
-        }, {});
-
-        // Save to user-namespaced location
-        userSaveFile(username, 'strava', reducedSaveMe);
-
-        return reducedSaveMe;
+        return finalSummary;
     } catch (error) {
         log.error('harvest.strava.failure', { jobId: job_id, error: serializeError(error) });
         return { success: false, error: error.message };
