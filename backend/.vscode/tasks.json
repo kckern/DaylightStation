@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Garmin Live Test",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"test:garmin:live"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		}
+	]
+}

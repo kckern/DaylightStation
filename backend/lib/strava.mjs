@@ -39,9 +39,17 @@ export const getAccessToken = async (logger, username = null) => {
         );
         const accessToken = tokenResponse.data.access_token;
         const refreshToken = tokenResponse.data.refresh_token;
+        const expiresAt = tokenResponse.data.expires_at;
 
         if (refreshToken) {
-            userSaveAuth(user, 'strava', { refresh: refreshToken });
+            // Merge with existing auth data to preserve other fields
+            const newAuthData = { 
+                ...authData,
+                refresh: refreshToken,
+                access_token: accessToken,
+                expires_at: expiresAt
+            };
+            userSaveAuth(user, 'strava', newAuthData);
         }
         process.env.STRAVA_ACCESS_TOKEN = accessToken;
         return accessToken;
@@ -51,11 +59,11 @@ export const getAccessToken = async (logger, username = null) => {
     }
 };
 
-const reauthSequence = async () => {
+export const reauthSequence = async () => {
     const { STRAVA_CLIENT_ID, STRAVA_URL } = process.env;
-    //http://www.strava.com/oauth/authorize?client_id=[REPLACE_WITH_YOUR_CLIENT_ID]&response_type=code&redirect_uri=http://localhost/exchange_token&approval_prompt=force&scope=read
+    const redirectUri = STRAVA_URL || 'http://localhost:3000/api/auth/strava/callback';
     return {
-        url: `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&response_type=code&redirect_uri=${STRAVA_URL}&approval_prompt=force&scope=read,activity:read_all`
+        url: `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&response_type=code&redirect_uri=${redirectUri}&approval_prompt=force&scope=read,activity:read_all`
     };
 }
 
@@ -137,8 +145,13 @@ const harvestActivities = async (logger, job_id) => {
     try {
         const activitiesData = await getActivities(logger);
         if(!activitiesData) return await reauthSequence();
-        log.info('harvest.strava.activities', { jobId: job_id, count: activitiesData.items.length });
-        const activities = activitiesData.items.map(item => {
+        
+        // Filter out any nulls from getActivities
+        const validItems = (activitiesData.items || []).filter(Boolean);
+        
+        log.info('harvest.strava.activities', { jobId: job_id, count: validItems.length });
+        
+        const activities = validItems.map(item => {
             const src = "strava";
             const { start_date: timestamp, type, id: itemId } = item;
             if(!itemId) return false;
@@ -150,14 +163,20 @@ const harvestActivities = async (logger, job_id) => {
 
         const harvestedDates = activities.map(activity => activity.date);
         const username = getDefaultUsername();
-        // Load from user-namespaced path
-        const onFile = userLoadFile(username, 'strava') || {};
-        const onFilesDates = Object.keys(onFile || {});
+        
+        // Load existing FULL data to preserve history
+        const existingLongData = userLoadFile(username, 'archives/strava_long') || {};
+        const onFilesDates = Object.keys(existingLongData);
+        
         const uniqueDates = [...new Set([...harvestedDates, ...onFilesDates])].sort((b, a) => new Date(a) - new Date(b))
             .filter(date => moment(date, 'YYYY-MM-DD', true).isValid() && moment(date, 'YYYY-MM-DD').isBefore(moment().add(1, 'year')));
 
         const saveMe = uniqueDates.reduce((acc, date) => {
-            acc[date] = activities
+            // Start with existing data for this date
+            const existingForDate = existingLongData[date] || {};
+            
+            // Process new activities for this date
+            const newForDate = activities
                 .filter(activity => activity.date === date)
                 .reduce((dateAcc, activity) => {
                     const keys = Object.keys(activity.data || {});
@@ -167,6 +186,13 @@ const harvestActivities = async (logger, job_id) => {
                     dateAcc[activity.id] = activity;
                     return dateAcc;
                 }, {});
+            
+            // Merge: new data overwrites existing data for same activity IDs
+            acc[date] = { ...existingForDate, ...newForDate };
+            
+            // If date becomes empty (shouldn't happen if it was in uniqueDates), remove it
+            if (Object.keys(acc[date]).length === 0) delete acc[date];
+            
             return acc;
         }, {});
 
