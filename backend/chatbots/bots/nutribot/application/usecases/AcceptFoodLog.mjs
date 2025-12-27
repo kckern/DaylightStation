@@ -88,7 +88,10 @@ export class AcceptFoodLog {
 
       // 5. Clear revision state if any (other flows are stateless)
       if (this.#conversationStateStore) {
-        await this.#conversationStateStore.delete(conversationId);
+        const state = await this.#conversationStateStore.get(conversationId);
+        if (state) {
+          await this.#conversationStateStore.set(conversationId, state.clearFlow());
+        }
       }
 
       // 6. Update message to show accepted status (remove buttons, replace clock with checkmark)

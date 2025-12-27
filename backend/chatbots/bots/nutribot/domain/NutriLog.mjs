@@ -54,14 +54,31 @@ export class NutriLog {
    * @param {object} props - NutriLog properties
    */
   constructor(props) {
+    // Normalize meal date if it's a full timestamp (legacy data fix)
+    const normalizedProps = { ...props };
+    
+    // Handle legacy meal format (string instead of object)
+    if (normalizedProps.meal && typeof normalizedProps.meal === 'string') {
+      const dateStr = normalizedProps.meal;
+      normalizedProps.meal = {
+        date: dateStr.includes('T') ? dateStr.split('T')[0] : dateStr,
+        time: 'morning' // Default fallback
+      };
+    } else if (normalizedProps.meal?.date && typeof normalizedProps.meal.date === 'string' && normalizedProps.meal.date.includes('T')) {
+      normalizedProps.meal = { 
+        ...normalizedProps.meal, 
+        date: normalizedProps.meal.date.split('T')[0] 
+      };
+    }
+
     // Convert FoodItem arrays if needed
-    const itemsAsObjects = (props.items || []).map(item => 
+    const itemsAsObjects = (normalizedProps.items || []).map(item => 
       item instanceof FoodItem ? item.toJSON() : item
     );
 
     // Validate
     const result = validateNutriLog({
-      ...props,
+      ...normalizedProps,
       items: itemsAsObjects,
     });
     

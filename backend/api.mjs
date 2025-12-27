@@ -305,7 +305,8 @@ const initNutribotRouter = async () => {
         const conversationStateStore = new FileConversationStateStore({
             storePath: basePath,
             userResolver,
-            logger
+            logger,
+            pathResolver: (chatId) => config.getNutricursorPath(chatId)
         });
         
         const reportRenderer = new CanvasReportRenderer({
