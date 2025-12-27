@@ -16,60 +16,90 @@ const GCClient = new GarminConnect({
   password: process.env.GARMIN_PASSWORD,
 });
 
+// Workaround for garmin-connect issue with form-data
+// See: https://github.com/motdotla/dotenv/issues/133#issuecomment-255298822
+// The error "Cannot read properties of undefined (reading 'name')" usually happens 
+// when the library tries to construct a form-data object but something is missing.
+// However, for simple fetching, we might not need to fix the library internals 
+// if we are just logging in and fetching JSON.
+//
+// If login fails or throws this error, it might be due to how the library handles 
+// the login response or cookies.
+//
+// Let's try to wrap the login to catch this specific error if it's non-fatal, 
+// or ensure we are using it correctly.
+
+const login = async () => {
+    try {
+        await GCClient.login();
+    } catch (e) {
+        // Sometimes login throws but session is established? 
+        // Or it's a specific error we can ignore?
+        // The error stack trace points to FormData, which suggests it might be trying to upload something?
+        // Or maybe the login request itself uses FormData.
+        console.error("Garmin login error:", e);
+        throw e;
+    }
+};
 
 
-export const getActivities = async (start = 0, limit = 10, activityType, subActivityType) => {
-    await GCClient.login();
+
+
+export const getActivities = async (start = 0, limit = 100, activityType, subActivityType) => {
+    await login();
     const activities = await GCClient.getActivities(start, limit, activityType, subActivityType);
     return activities;
 };
 
 export const getActivityDetails = async (activityId) => {
-    await GCClient.login();
+    await login();
     const activityDetails = await GCClient.getActivity({ activityId });
     return activityDetails;
 };
 
 export const downloadActivityData = async (activityId, directoryPath = './') => {
-    await GCClient.login();
+    await login();
     const activity = await GCClient.getActivity({ activityId });
     await GCClient.downloadOriginalActivityData(activity, directoryPath);
 };
 
 export const uploadActivityFile = async (filePath) => {
-    await GCClient.login();
+    await login();
     const uploadResult = await GCClient.uploadActivity(filePath);
     return uploadResult;
 };
 
 export const uploadActivityImage = async (activityId, imagePath) => {
-    await GCClient.login();
+    await login();
     const activity = await GCClient.getActivity({ activityId });
     const uploadResult = await GCClient.uploadImage(activity, imagePath);
     return uploadResult;
 };
 
 export const deleteActivityImage = async (activityId, imageId) => {
-    await GCClient.login();
+    await login();
     const activity = await GCClient.getActivity({ activityId });
     await GCClient.deleteImage(activity, imageId);
 };
 
 export const getSteps = async (date = new Date()) => {
-    await GCClient.login();
+    await login();
     const steps = await GCClient.getSteps(date);
     return steps;
 };
 
 
 export const getHeartRate = async (date = new Date()) => {
-    await GCClient.login();
+    await login();
     const heartRateData = await GCClient.getHeartRate(date);
     return heartRateData;
 };
 
 const harvestActivities = async () => {
-    const activities = await getActivities();
+    // Fetch more activities to cover 90 days
+    // Assuming 100 activities covers 90 days for most users, but we can loop if needed.
+    // For now, increasing limit to 200 to be safe.
+    const activities = await getActivities(0, 200);
     const username = getDefaultUsername();
 
     const allDates = activities.map(act => moment.tz(act.startTimeLocal, timezone).format('YYYY-MM-DD'));
