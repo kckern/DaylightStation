@@ -27,7 +27,6 @@ const FitnessPluginContainer = ({ pluginId, mode = 'standalone', onClose, config
         sessionInstance={fitnessCtx.fitnessSessionInstance}
         onClose={onClose}
       >
-        {loading && <LoaderComponent />}
         <PluginComponent
           mode={mode}
           onClose={onClose}

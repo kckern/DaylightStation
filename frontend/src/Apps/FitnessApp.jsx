@@ -257,49 +257,57 @@ const FitnessApp = () => {
     };
   }, []);
   
-  // Derive collections from the API response
-  const collections = useMemo(() => {
+  // Derive navItems from the API response
+  const navItems = useMemo(() => {
     const src =
-      fitnessConfiguration?.fitness?.plex?.collections ||
-      fitnessConfiguration?.plex?.collections ||
+      fitnessConfiguration?.fitness?.plex?.nav_items ||
+      fitnessConfiguration?.plex?.nav_items ||
       [];
     return Array.isArray(src) ? src : [];
   }, [fitnessConfiguration]);
 
-  const handleContentSelect = (category, value) => {
-    logger.info('fitness-content-select', { category });
-    switch (category) {
-      case 'collection': {
-        const id = typeof value === 'object' && value !== null ? value.id : value;
-        const normalizedId = Array.isArray(id) ? [...id] : id;
-        setActiveCollection(normalizedId);
+  const handleNavigate = (type, target, item) => {
+    logger.info('fitness-navigate', { type, target });
+    
+    switch (type) {
+      case 'plex_collection':
+        setActiveCollection(target.collection_id);
         setCurrentView('menu');
         setSelectedShow(null);
         break;
-      }
-      case 'show': {
-        setSelectedShow(value.plex);
-        setCurrentView('show');
+        
+      case 'plex_collection_group':
+        setActiveCollection(target.collection_ids);
+        setCurrentView('menu');
+        setSelectedShow(null);
         break;
-      }
-      case 'movie': {
-        //send directly to player queue
-        setFitnessPlayQueue(prev => [...prev, value]);
+        
+      case 'plugin_menu':
+        setActiveCollection(target.menu_id);
+        setCurrentView('menu');
+        setSelectedShow(null);
         break;
-      }
-      case 'users': {
-        setCurrentView('users');
-        break;
-      }
-      case 'plugin': {
-        setActivePlugin(value);
+        
+      case 'plugin_direct':
+        setActivePlugin({ 
+          id: target.plugin_id, 
+          ...(target.config || {}) 
+        });
         setCurrentView('plugin');
+        setSelectedShow(null);
         break;
-      }
-      default: {
-        // unknown content category (suppressed)
+        
+      case 'view_direct':
+        setCurrentView(target.view);
+        setSelectedShow(null);
         break;
-      }
+        
+      case 'custom_action':
+        logger.warn('custom_action not implemented', { action: target.action });
+        break;
+        
+      default:
+        logger.warn('fitness-navigate-unknown', { type });
     }
   };
 
@@ -338,7 +346,7 @@ const FitnessApp = () => {
         // Provide the normalized config to provider
         setFitnessConfiguration(response);
         logger.info('fitness-config-loaded', {
-          collections: (response?.fitness?.plex?.collections || []).length || 0,
+          navItems: (response?.fitness?.plex?.nav_items || []).length || 0,
           users: (response?.fitness?.users?.primary || []).length || 0,
           sensors: Array.isArray(response?.fitness?.ant_devices) ? response.fitness.ant_devices.length : 0
         });
@@ -365,13 +373,25 @@ const FitnessApp = () => {
     return () => clearTimeout(timeoutId);
   }, [logger]);
 
-  // Initialize the active collection once collections arrive
+  // Initialize the active collection once navItems arrive
   useEffect(() => {
-    if (activeCollection == null && collections.length > 0) {
-      const initialId = collections[0].id;
-      setActiveCollection(Array.isArray(initialId) ? [...initialId] : initialId);
+    if (activeCollection == null && navItems.length > 0) {
+      // Find first collection-like item
+      const firstCollection = navItems.find(item => 
+        ['plex_collection', 'plex_collection_group', 'plugin_menu'].includes(item.type)
+      );
+      
+      if (firstCollection) {
+        if (firstCollection.type === 'plex_collection') {
+          setActiveCollection(firstCollection.target.collection_id);
+        } else if (firstCollection.type === 'plex_collection_group') {
+          setActiveCollection(firstCollection.target.collection_ids);
+        } else if (firstCollection.type === 'plugin_menu') {
+          setActiveCollection(firstCollection.target.menu_id);
+        }
+      }
     }
-  }, [collections, activeCollection]);
+  }, [navItems, activeCollection]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
@@ -487,9 +507,13 @@ const FitnessApp = () => {
               visibility: fitnessPlayQueue.length > 0 || loading ? 'hidden' : 'visible'
             }}>
               <FitnessNavbar 
-                collections={collections}
-                activeCollection={activeCollection}
-                onContentSelect={handleContentSelect}
+                navItems={navItems}
+                currentState={{
+                  currentView,
+                  activeCollection,
+                  activePlugin
+                }}
+                onNavigate={handleNavigate}
               />
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
                 {currentView === 'users' && (
@@ -505,9 +529,8 @@ const FitnessApp = () => {
                 )}
                 {currentView === 'menu' && (
                   <FitnessMenu 
-                    collections={collections} 
                     activeCollection={activeCollection} 
-                    onContentSelect={handleContentSelect}
+                    onContentSelect={handleNavigate}
                   />
                 )}
                 {currentView === 'plugin' && activePlugin && (

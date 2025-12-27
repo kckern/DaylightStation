@@ -347,7 +347,7 @@ const SidebarFooter = ({ onContentSelect }) => {
                 <CircularUserAvatar
                   name={ownerName || deviceKey}
                   avatarSrc={DaylightMediaPath(`/media/img/users/${profileId}`)}
-                  fallbackSrc={DaylightMediaPath('/media/img/users/user.png')}
+                  fallbackSrc={DaylightMediaPath('/media/img/users/user')}
                   heartRate={heartRate}
                   zoneId={zoneId}
                   zoneColor={zoneColor}
