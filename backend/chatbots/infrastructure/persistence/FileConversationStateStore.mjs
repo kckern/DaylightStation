@@ -58,14 +58,6 @@ export class FileConversationStateStore {
       return this.#pathResolver(id);
     }
     
-    // Use UserResolver to get username-based path
-    if (this.#userResolver) {
-      const username = this.#userResolver.resolveUsername(id);
-      if (username) {
-        return `${this.#storePath}/${username}/nutricursor`;
-      }
-    }
-    
     // Fallback to chat ID based path
     return `${this.#storePath}/${id}`;
   }
@@ -127,6 +119,7 @@ export class FileConversationStateStore {
         activeFlow: sessionData.activeFlow || null,
         flowState: sessionData.flowState || {},
         lastMessageId: sessionData.lastMessageId || null,
+        lastReportMessageId: sessionData.lastReportMessageId || null,
         updatedAt: sessionData.updatedAt,
         expiresAt: sessionData.expiresAt,
       });
@@ -147,6 +140,7 @@ export class FileConversationStateStore {
       activeFlow: data.activeFlow || null,
       flowState: data.flowState || {},
       lastMessageId: data.lastMessageId || null,
+      lastReportMessageId: data.lastReportMessageId || null,
       updatedAt: data.updatedAt,
       expiresAt: data.expiresAt,
     });
@@ -180,6 +174,7 @@ export class FileConversationStateStore {
       activeFlow: state.activeFlow,
       flowState: state.flowState,
       lastMessageId: state.lastMessageId?.toString() || null,
+      lastReportMessageId: state.lastReportMessageId?.toString() || null,
       updatedAt: state.updatedAt.toISOString(),
       expiresAt: state.expiresAt.toISOString(),
     };

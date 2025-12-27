@@ -51,6 +51,11 @@ export class ReviseFoodLog {
 
     this.#logger.debug('reviseLog.start', { conversationId, logUuid });
 
+    if (!logUuid) {
+      this.#logger.error('reviseLog.missingLogUuid', { conversationId });
+      throw new Error('logUuid is required');
+    }
+
     try {
       // 1. Load the log to show current items
       let nutriLog = null;
@@ -68,6 +73,9 @@ export class ReviseFoodLog {
           },
         });
         await this.#conversationStateStore.set(conversationId, state);
+        this.#logger.info('reviseLog.stateSet', { conversationId, activeFlow: state.activeFlow, pendingLogUuid: state.flowState.pendingLogUuid });
+      } else {
+        this.#logger.warn('reviseLog.noStateStore', { conversationId });
       }
 
       // 3. Build revision prompt with same format as initial response

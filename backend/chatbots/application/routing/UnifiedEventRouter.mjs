@@ -13,7 +13,7 @@
  */
 
 import { createLogger } from '../../_lib/logging/index.mjs';
-import { decodeCallback } from '../../_lib/callback.mjs';
+import { decodeCallback, encodeCallback } from '../../_lib/callback.mjs';
 import { InputEventType } from '../ports/IInputEvent.mjs';
 
 /**
@@ -120,6 +120,11 @@ export class UnifiedEventRouter {
           conversationId,
           text,
           messageId,
+        });
+      } else if (state?.activeFlow === 'revision') {
+        this.#logger.warn('router.text.revisionDetectedButInvalid', { 
+          conversationId, 
+          pendingLogUuid: state?.flowState?.pendingLogUuid 
         });
       }
     }
@@ -433,7 +438,15 @@ export class UnifiedEventRouter {
         if (sourceMessageId) {
           try {
             const messagingGateway = this.#container.getMessagingGateway();
-            await messagingGateway.updateMessage(conversationId, sourceMessageId, { choices: [] });
+            // Restore original buttons
+            const buttons = [
+              [
+                { text: '✅ Accept', callback_data: encodeCallback('a', { id: payload.id }) },
+                { text: '✏️ Revise', callback_data: encodeCallback('r', { id: payload.id }) },
+                { text: '🗑️ Discard', callback_data: encodeCallback('x', { id: payload.id }) },
+              ],
+            ];
+            await messagingGateway.updateMessage(conversationId, sourceMessageId, { choices: buttons });
           } catch (e) {
             this.#logger.warn('router.revision.cancelUpdateFailed', { error: e.message });
           }

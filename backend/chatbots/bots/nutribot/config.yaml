@@ -76,13 +76,6 @@ storage:
     nutricursor: "{username}/lifelog/nutrition/nutricursor"  # Conversation state
     nutriday: "{username}/lifelog/nutrition/nutriday"        # Daily aggregates cache
     nutricoach: "{username}/lifelog/nutrition/nutricoach"    # Coaching/tips state
-    report_state: "{username}/lifelog/nutrition/report_state" # Last report message ID
-    images: "{username}/lifelog/nutrition/images"            # Uploaded food photos
-
-  # Legacy path pattern (disable after migration)
-  legacy:
-    enabled: false
-    pattern: "journalist/nutribot/nutrilogs/b{botId}_u{chatId}.yml"
 
 # AI Configuration
 # ----------------
