@@ -89,8 +89,7 @@ export const SourceTypes = ['telegram', 'api', 'import', 'migration'];
 
 /**
  * @typedef {Object} NutriLog
- * @property {string} id - Short ID (Base62) or UUID (legacy)
- * @property {string} [uuid] - Full UUID for data integrity
+ * @property {string} id - Short ID (Base62)
  * @property {string} userId - System user ID
  * @property {string} conversationId - Channel:identifier format
  * @property {LogStatus} status - Current status
@@ -283,18 +282,15 @@ export function validateNutriLog(log) {
     errors.push('id must be a valid short ID (10 base62) or UUID');
   }
 
-  // UUID validation
-  if (log.uuid && !isUuid(log.uuid)) {
-    errors.push('uuid must be a valid UUID');
-  }
+  // UUID validation removed
 
   // UserId validation
   if (!log.userId || typeof log.userId !== 'string' || log.userId.length < 1 || log.userId.length > 100) {
     errors.push('userId must be a string between 1 and 100 characters');
   }
 
-  // ConversationId validation
-  if (!log.conversationId || typeof log.conversationId !== 'string' || log.conversationId.length < 1) {
+  // ConversationId validation (optional, defaults to userId)
+  if (log.conversationId && (typeof log.conversationId !== 'string' || log.conversationId.length < 1)) {
     errors.push('conversationId must be a non-empty string');
   }
 
@@ -341,15 +337,13 @@ export function validateNutriLog(log) {
     return { valid: false, errors };
   }
 
-  const normalizedUuid = log.uuid || (isLogIdUuid ? log.id : undefined) || null;
-
   return {
     valid: true,
     value: {
       id: log.id,
-      uuid: normalizedUuid,
+      // uuid removed
       userId: log.userId,
-      conversationId: log.conversationId,
+      conversationId: log.conversationId || log.userId,
       status: log.status,
       text: log.text || '',
       meal: mealResult.value,

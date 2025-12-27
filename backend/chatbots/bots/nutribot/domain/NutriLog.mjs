@@ -90,7 +90,8 @@ export class NutriLog {
 
     const data = result.value;
     this.#id = data.id;
-    this.#uuid = data.uuid ?? null;
+    // UUID is no longer stored or used
+    this.#uuid = null;
     this.#userId = data.userId;
     this.#conversationId = data.conversationId;
     this.#status = data.status;
@@ -111,7 +112,7 @@ export class NutriLog {
   // ==================== Getters ====================
 
   get id() { return this.#id; }
-  get uuid() { return this.#uuid; }
+  // UUID getter removed
   get userId() { return this.#userId; }
   get conversationId() { return this.#conversationId; }
   get status() { return this.#status; }
@@ -405,11 +406,10 @@ export class NutriLog {
    * @returns {object}
    */
   toJSON() {
-    return {
+    const json = {
       id: this.#id,
-      uuid: this.#uuid,
+      // uuid removed
       userId: this.#userId,
-      conversationId: this.#conversationId,
       status: this.#status,
       text: this.#text,
       meal: { ...this.#meal },
@@ -422,6 +422,13 @@ export class NutriLog {
       updatedAt: this.#updatedAt,
       acceptedAt: this.#acceptedAt,
     };
+
+    // Only include conversationId if it differs from userId
+    if (this.#conversationId !== this.#userId) {
+      json.conversationId = this.#conversationId;
+    }
+
+    return json;
   }
 
   /**
@@ -433,7 +440,7 @@ export class NutriLog {
       id: item.id,
       uuid: item.uuid,
       logId: this.#id,
-      log_uuid: this.#uuid,
+      // log_uuid removed
       label: item.label,
       grams: item.grams,
       color: item.color,
@@ -453,7 +460,7 @@ export class NutriLog {
   static create(props) {
     const timezone = props.timezone || 'America/Los_Angeles';
     const now = new Date();
-    const logUuid = uuidv4();
+    // logUuid removed
     const logId = shortId();
     const meal = props.meal || {
       date: formatLocalTimestamp(now, timezone).split(' ')[0],
@@ -475,7 +482,7 @@ export class NutriLog {
 
     return new NutriLog({
       id: logId,
-      uuid: logUuid,
+      // uuid removed
       userId: props.userId,
       conversationId: props.conversationId,
       status: 'pending',
@@ -529,8 +536,8 @@ export class NutriLog {
     });
 
     return new NutriLog({
-      id: legacy.uuid || legacy.id,
-      uuid: legacy.uuid || legacy.id,
+      id: legacy.id || legacy.uuid, // Fallback to uuid if id missing during migration
+      // uuid removed
       userId,
       conversationId,
       status: legacy.status,

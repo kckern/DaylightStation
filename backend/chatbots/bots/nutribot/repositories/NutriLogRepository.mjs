@@ -56,13 +56,12 @@ export class NutriLogRepository {
       }
       return NutriLog.from(entity, timezone);
     } catch (err) {
-      const key = entity?.id || entity?.uuid || 'unknown';
+      const key = entity?.id || 'unknown';
       if (!this.#invalidSeen.has(key)) {
         this.#invalidSeen.add(key);
         this.#logger.warn('nutrilog.hydrate.failed', {
           userId,
           id: entity?.id,
-          uuid: entity?.uuid,
           status: entity?.status,
           meal: entity?.meal || entity?.food_data?.date,
           error: err.message,
@@ -77,7 +76,7 @@ export class NutriLogRepository {
     if (!idOrUuid) return null;
     if (data[idOrUuid]) return data[idOrUuid];
 
-    const match = Object.values(data).find((entry) => entry?.uuid === idOrUuid || entry?.id === idOrUuid);
+    const match = Object.values(data).find((entry) => entry?.id === idOrUuid);
     return match || null;
   }
 
