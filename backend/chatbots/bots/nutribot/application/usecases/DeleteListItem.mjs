@@ -126,7 +126,7 @@ export class DeleteListItem {
         );
       }
 
-      this.#logger.info('adjustment.deleted', { userId, logId, itemId: removeId });
+      this.#logger.info('adjustment.deleted', { userId, logId, itemId });
       return { success: true };
     } catch (error) {
       this.#logger.error('adjustment.delete.error', { userId, error: error.message });
