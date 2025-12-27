@@ -398,7 +398,6 @@ const FitnessSidebarMenu = ({
               alt={`${option.name} avatar`}
               data-generic={option.isGeneric ? '1' : undefined}
               onLoad={(e) => {
-                if (e.target.dataset.generic === '1') return;
                 const parent = e.target.closest('.guest-option-avatar');
                 if (parent) parent.classList.remove('placeholder');
               }}

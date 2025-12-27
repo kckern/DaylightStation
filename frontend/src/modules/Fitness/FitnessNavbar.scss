@@ -124,3 +124,48 @@
   25% { transform: scale(1.1); }
   75% { transform: scale(1.05); }
 }
+
+// New Navigation Classes
+.nav-item {
+  // Base styles are already defined above, adding modifiers
+  
+  &--active {
+    background: rgba(255, 255, 255, 0.1);
+    border-left: 3px solid var(--accent-color, #00d2ff);
+    
+    .nav-icon {
+      color: var(--accent-color, #00d2ff);
+      transform: scale(1.1);
+    }
+  }
+  
+  // Type-specific styles
+  &--plugin_direct {
+    // Optional: Style direct plugin links differently
+  }
+  
+  &--view_direct {
+    // Optional: Style view links differently
+  }
+  
+  &--plex_collection,
+  &--plex_collection_group {
+    // Collection styles
+  }
+  
+  &--plugin_menu {
+    // Plugin menu styles
+  }
+}
+
+// Custom class examples
+.nav-home {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 8px;
+}
+
+.nav-camera-view {
+  margin-top: auto !important; // Push to bottom
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}

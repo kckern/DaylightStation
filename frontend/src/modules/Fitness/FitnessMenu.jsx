@@ -15,8 +15,22 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
   const collectionsFromConfig = useMemo(() => {
     if (!fitnessConfig) return [];
-    const col = fitnessConfig.plex?.collections;
-    return Array.isArray(col) ? col : [];
+    const navItems = fitnessConfig.plex?.nav_items || [];
+    
+    // Convert nav_items back to collection-like objects for internal use
+    return navItems
+      .filter(item => ['plex_collection', 'plex_collection_group', 'plugin_menu'].includes(item.type))
+      .map(item => {
+        if (item.type === 'plex_collection') {
+          return { id: item.target.collection_id, name: item.name, icon: item.icon };
+        } else if (item.type === 'plex_collection_group') {
+          return { id: item.target.collection_ids, name: item.name, icon: item.icon };
+        } else if (item.type === 'plugin_menu') {
+          return { id: item.target.menu_id, name: item.name, icon: item.icon };
+        }
+        return null;
+      })
+      .filter(Boolean);
   }, [fitnessConfig]);
 
   const activeAppMenu = useMemo(() => {
