@@ -46,7 +46,10 @@ export class DiscardFoodLog {
 
       // 2. Clear revision state if any (other flows are stateless)
       if (this.#conversationStateStore) {
-        await this.#conversationStateStore.delete(conversationId);
+        const state = await this.#conversationStateStore.get(conversationId);
+        if (state) {
+          await this.#conversationStateStore.set(conversationId, state.clearFlow());
+        }
       }
 
       // 3. Delete the confirmation message (serves as visual confirmation of discard)

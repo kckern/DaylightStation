@@ -9,6 +9,7 @@
 import { createLogger } from '../../../../_lib/logging/index.mjs';
 import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { NOOM_COLOR_EMOJI } from '../../domain/formatters.mjs';
+import { ConversationState } from '../../../../domain/entities/ConversationState.mjs';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -81,9 +82,23 @@ export class GenerateDailyReport {
     try {
       // 0. Delete any existing report message (only one report at a time)
       try {
-        const reportStatePath = this.#config.getReportStatePath(userId);
-        const reportState = loadFile(reportStatePath) || {};
-        const lastReportMessageId = reportState.lastReportMessageId;
+        let lastReportMessageId = null;
+        
+        if (this.#conversationStateStore) {
+          const state = await this.#conversationStateStore.get(conversationId);
+          lastReportMessageId = state?.lastReportMessageId;
+        }
+        
+        // Fallback: Check legacy file if not found in state
+        if (!lastReportMessageId) {
+          try {
+            const reportStatePath = this.#config.getReportStatePath(userId);
+            const reportState = loadFile(reportStatePath) || {};
+            lastReportMessageId = reportState.lastReportMessageId;
+          } catch (e) {
+            // Ignore legacy file errors
+          }
+        }
         
         this.#logger.debug('report.checkPrevious', { 
           userId,
@@ -259,14 +274,17 @@ export class GenerateDailyReport {
       }
 
       // 13. Save report message ID for later deletion
-      if (messageId) {
+      if (messageId && this.#conversationStateStore) {
         try {
-          const reportStatePath = this.#config.getReportStatePath(userId);
-          saveFile(reportStatePath, { 
-            lastReportMessageId: messageId.toString(),
-            updatedAt: new Date().toISOString(),
-          });
-          this.#logger.debug('report.saveState', { userId, messageId: messageId.toString(), path: reportStatePath });
+          let state = await this.#conversationStateStore.get(conversationId);
+          if (!state) {
+             state = ConversationState.empty(conversationId);
+          }
+          
+          const updatedState = state.setLastReportMessage(messageId);
+          await this.#conversationStateStore.set(conversationId, updatedState);
+          
+          this.#logger.debug('report.saveState', { userId, messageId: messageId.toString() });
         } catch (e) {
           this.#logger.warn('report.saveState.error', { error: e.message });
         }
