@@ -12,8 +12,8 @@ const timezone = process.env.TZ || 'America/Los_Angeles';
 const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const GCClient = new GarminConnect({
-  username: process.env.GARMIN_USERNAME,
-  password: process.env.GARMIN_PASSWORD,
+  username: configService.getSecret('GARMIN_USERNAME'),
+  password: configService.getSecret('GARMIN_PASSWORD'),
 });
 
 // Workaround for garmin-connect issue with form-data
