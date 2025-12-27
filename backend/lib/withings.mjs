@@ -11,7 +11,9 @@ const getWeightData = async (job_id) => {
     //In Dev, the api is not called, and previous api data is sent to the processWeight function
     if(!!process.env.dev) return processWeight(job_id);
 
-    const { WITHINGS_CLIENT, WITHINGS_SECRET,WITHINGS_REDIRECT } = process.env;
+    const WITHINGS_CLIENT = configService.getSecret('WITHINGS_CLIENT');
+    const WITHINGS_SECRET = configService.getSecret('WITHINGS_SECRET');
+    const WITHINGS_REDIRECT = configService.getSecret('WITHINGS_REDIRECT');
     const username = getDefaultUsername();
     // Load from user-namespaced auth
     const authData = userLoadAuth(username, 'withings') || {};
