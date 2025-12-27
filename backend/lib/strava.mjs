@@ -79,6 +79,9 @@ const baseAPI = async (endpoint, logger) => {
         const dataResponse = await axios.get(url, { headers });
         return dataResponse.data;
     } catch (error) {
+        if (error.response && error.response.status === 429) {
+            throw error;
+        }
         log.warn('harvest.strava.fetch.error', { endpoint, error: serializeError(error), responseData: error.response?.data });
         return false;
     }
@@ -104,38 +107,63 @@ export const getActivities = async (logger, daysBack = 90) => {
         page++;
     }
     const username = getDefaultUsername();
-    // Load from user-namespaced path
-    const onFileActivities = userLoadFile(username, 'archives/strava_long') || {};
-    const activitiesWithHeartRate = await Promise.all(
-        activities
-        //.slice(0, 50) // Removed limit to process all fetched activities
-        .map(async (activity) => {
-            if(!activity?.id) return null;
-            if (activity.type === 'VirtualRide' || activity.type === 'VirtualRun') {
-                activity.heartRateOverTime = [9];
-                return activity; // Skip virtual activities
-            }
-            const onFileActivity = onFileActivities[moment(activity.start_date).tz(timezone).format('YYYY-MM-DD')] || {};
-            const alreadyHasHR = onFileActivity[md5(activity.id?.toString())]?.data?.heartRateOverTime || null;
-            if(alreadyHasHR) return alreadyHasHR
-            try {
-                const heartRateResponse = await baseAPI(`activities/${activity.id}/streams?keys=heartrate&key_by_type=true`, logger);
-                if (heartRateResponse && heartRateResponse.heartrate) {
-                    activity.heartRateOverTime = heartRateResponse.heartrate.data.map((value, index) => {
-                        //const time = moment(activity.start_date).add(index, 'seconds').tz(timezone).format('HH:mm:ss');
-                        return value;
-                    });
-                } else {
-                    activity.heartRateOverTime = [0];
-                }
-            } catch (error) {
-                log.warn('harvest.strava.heartrate.error', { activityId: activity.id, error: serializeError(error) });
-                activity.heartRateOverTime = [1];
-            }
+    
+    const activitiesWithHeartRate = [];
+    
+    // Process sequentially to avoid rate limits
+    for (const activity of activities) {
+        if(!activity?.id) continue;
+        
+        if (activity.type === 'VirtualRide' || activity.type === 'VirtualRun') {
+            activity.heartRateOverTime = [9];
+            activitiesWithHeartRate.push(activity);
+            continue;
+        }
 
-            return activity;
-        })
-    );
+        // Check if we already have this activity on file (new structure)
+        const date = moment(activity.start_date).tz(timezone).format('YYYY-MM-DD');
+        const existingFile = userLoadFile(username, `strava/${date}_${activity.id}`);
+        
+        if (existingFile && existingFile.data && existingFile.data.heartRateOverTime) {
+            activitiesWithHeartRate.push(existingFile.data);
+            continue;
+        }
+
+        // Fallback to checking legacy archive (optional, but good for transition)
+        const onFileActivities = userLoadFile(username, 'archives/strava_long') || {};
+        const onFileActivity = onFileActivities[date] || {};
+        const alreadyHasHR = onFileActivity[md5(activity.id?.toString())]?.data?.heartRateOverTime || null;
+        
+        if(alreadyHasHR) {
+            activity.heartRateOverTime = alreadyHasHR;
+            activitiesWithHeartRate.push(activity);
+            continue;
+        }
+
+        try {
+            // Rate limit meter: Sleep 5 seconds before fetching streams
+            // 200 requests / 15 mins = ~1 request every 4.5 seconds.
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            const heartRateResponse = await baseAPI(`activities/${activity.id}/streams?keys=heartrate&key_by_type=true`, logger);
+            if (heartRateResponse && heartRateResponse.heartrate) {
+                activity.heartRateOverTime = heartRateResponse.heartrate.data.map((value, index) => {
+                    return value;
+                });
+            } else {
+                activity.heartRateOverTime = [0];
+            }
+        } catch (error) {
+            log.warn('harvest.strava.heartrate.error', { activityId: activity.id, error: serializeError(error) });
+            activity.heartRateOverTime = [1];
+            
+            // If rate limit hit, re-throw to let caller handle it (or just let it fail and script will catch)
+            if (error.response && error.response.status === 429) {
+                throw error;
+            }
+        }
+        activitiesWithHeartRate.push(activity);
+    }
 
     return { items: activitiesWithHeartRate };
 };
@@ -242,6 +270,9 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
 
         return finalSummary;
     } catch (error) {
+        if (error.response && error.response.status === 429) {
+            throw error;
+        }
         log.error('harvest.strava.failure', { jobId: job_id, error: serializeError(error) });
         return { success: false, error: error.message };
     }
