@@ -38,6 +38,11 @@
     "frontend": "npm run dev --prefix frontend",
     "frontend:dev": "npm run dev --prefix frontend 2>&1 | tee -a dev.log",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test:harvest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/harvest.test.mjs",
+    "test:harvest:integration": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/harvest.integration.test.mjs",
+    "test:all:harvest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/harvest*.test.mjs",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "test:nutribot": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/chatbots/nutribot/_test"
   }
 }
