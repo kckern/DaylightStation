@@ -438,6 +438,7 @@ export class NutriBotConfig {
 
   /**
    * Get the report state path for a user
+   * @deprecated Use ConversationState instead
    * @param {string} userId - Conversation ID or username
    * @returns {string}
    */

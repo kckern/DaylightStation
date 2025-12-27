@@ -89,16 +89,7 @@ export class GenerateDailyReport {
           lastReportMessageId = state?.lastReportMessageId;
         }
         
-        // Fallback: Check legacy file if not found in state
-        if (!lastReportMessageId) {
-          try {
-            const reportStatePath = this.#config.getReportStatePath(userId);
-            const reportState = loadFile(reportStatePath) || {};
-            lastReportMessageId = reportState.lastReportMessageId;
-          } catch (e) {
-            // Ignore legacy file errors
-          }
-        }
+        // Legacy file fallback removed
         
         this.#logger.debug('report.checkPrevious', { 
           userId,
