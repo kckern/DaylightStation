@@ -27,9 +27,9 @@ const cron = {
   cronHourly: [
      "./lib/withings.mjs",
  //    "./lib/fitsync.mjs",
- //    "./lib/strava.mjs",
+     "./lib/strava.mjs",
    //  "./lib/health.mjs",
-   //  "./lib/garmin.mjs",
+     "./lib/garmin.mjs",
     // ...Infinity.keys.map(key => (req) => Infinity.loadData(key, req)),
   ],
   cronDaily: [
