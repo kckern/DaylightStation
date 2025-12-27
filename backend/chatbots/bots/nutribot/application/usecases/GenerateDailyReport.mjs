@@ -73,11 +73,11 @@ export class GenerateDailyReport {
    * @returns {Promise<GenerateDailyReportResult>}
    */
   async execute(input) {
-    const { userId, conversationId, forceRegenerate = false } = input;
+    const { userId, conversationId, forceRegenerate = false, messageId: triggerMessageId } = input;
     const date = input.date || this.#getTodayDate(userId);
     const anchorDateForHistory = this.#getTodayDate(userId); // Always end chart at "today" even if report is backdated
 
-    this.#logger.debug('report.generate.start', { userId, date, forceRegenerate });
+    this.#logger.debug('report.generate.start', { userId, date, forceRegenerate, triggerMessageId });
 
     try {
       // 0. Delete any existing report message (only one report at a time)
@@ -94,11 +94,23 @@ export class GenerateDailyReport {
         this.#logger.debug('report.checkPrevious', { 
           userId,
           lastReportMessageId,
+          triggerMessageId,
         });
         
-        if (lastReportMessageId) {
-          this.#logger.debug('report.deletePrevious', { messageId: lastReportMessageId });
-          await this.#messagingGateway.deleteMessage(conversationId, lastReportMessageId);
+        // Delete both the last known report AND the message that triggered this (e.g. "Done" button)
+        // This ensures we don't leave stale menus behind
+        const messagesToDelete = new Set();
+        if (lastReportMessageId) messagesToDelete.add(String(lastReportMessageId));
+        if (triggerMessageId) messagesToDelete.add(String(triggerMessageId));
+
+        for (const msgId of messagesToDelete) {
+          this.#logger.debug('report.deletePrevious', { messageId: msgId });
+          try {
+            await this.#messagingGateway.deleteMessage(conversationId, msgId);
+          } catch (e) {
+            // Ignore individual delete errors (message might be same or already deleted)
+            this.#logger.warn('report.deletePrevious.failed', { messageId: msgId, error: e.message });
+          }
         }
       } catch (e) {
         this.#logger.warn('report.deletePrevious.error', { error: e.message });

@@ -118,7 +118,6 @@ export class FileConversationStateStore {
         chatId,
         activeFlow: sessionData.activeFlow || null,
         flowState: sessionData.flowState || {},
-        lastMessageId: sessionData.lastMessageId || null,
         lastReportMessageId: sessionData.lastReportMessageId || null,
         updatedAt: sessionData.updatedAt,
         expiresAt: sessionData.expiresAt,
@@ -139,7 +138,6 @@ export class FileConversationStateStore {
       chatId,
       activeFlow: data.activeFlow || null,
       flowState: data.flowState || {},
-      lastMessageId: data.lastMessageId || null,
       lastReportMessageId: data.lastReportMessageId || null,
       updatedAt: data.updatedAt,
       expiresAt: data.expiresAt,
@@ -173,7 +171,6 @@ export class FileConversationStateStore {
     const sessionData = {
       activeFlow: state.activeFlow,
       flowState: state.flowState,
-      lastMessageId: state.lastMessageId?.toString() || null,
       lastReportMessageId: state.lastReportMessageId?.toString() || null,
       updatedAt: state.updatedAt.toISOString(),
       expiresAt: state.expiresAt.toISOString(),
