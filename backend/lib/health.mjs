@@ -1,8 +1,4 @@
-// STUBBED: journalist folder removed
-// import { getNutriDaysBack, loadDailyNutrition } from "../journalist/lib/db.mjs";
-// import { compileDailyFoodReport } from "../journalist/lib/food.mjs";
-const getNutriDaysBack = () => ({});
-const loadDailyNutrition = () => ({});
+
 const compileDailyFoodReport = async () => {};
 import { loadFile, saveFile, userLoadFile, userSaveFile } from "./io.mjs";
 import { userDataService } from "./config/UserDataService.mjs";
@@ -10,14 +6,11 @@ import { configService } from "./config/ConfigService.mjs";
 import moment from "moment";
 import crypto from "crypto";
 import { load } from "js-yaml";
-// STUBBED: journalist folder removed
-// import { generateCoachingMessageForDailyHealth } from "../journalist/lib/gpt_food.mjs";
 const generateCoachingMessageForDailyHealth = async () => {};
 import { createLogger } from "./logging/logger.js";
 
 const healthLogger = createLogger({ source: 'backend', app: 'health' });
 
-// Get default username for legacy single-user access
 const getDefaultUsername = () => {
   // Use head of household from config (never hardcode usernames)
   return configService.getHeadOfHousehold();
@@ -28,9 +21,7 @@ function md5(string) {
   return crypto.createHash("md5").update(string).digest("hex");
 }
 
-
-
-const dailyHealth = async (jobId) => {
+const dailyHealth = async (jobId, daysBack = 15) => {
     const {nutribot_chat_id} = process.env;
     
     if (!nutribot_chat_id) {
@@ -42,105 +33,140 @@ const dailyHealth = async (jobId) => {
     
     // Load from user-namespaced paths
     const username = getDefaultUsername();
-    const weight = userLoadFile(username, 'weight') || {};
-    const strava = userLoadFile(username, 'strava') || {};
-    const dailyNutrition = getNutriDaysBack(nutribot_chat_id,30);
-    const fitness = userLoadFile(username, 'fitness') || {};
+    const weightData = userLoadFile(username, 'weight') || {};
+    const stravaData = userLoadFile(username, 'strava') || {};
+    const garminData = userLoadFile(username, 'garmin') || {};
+    const nutritionData = userLoadFile(username, 'nutrition/nutriday') || {};
 
-    const past90Days = Array.from({length: 30}, (_, i) => 
-        moment().subtract(i + 1, 'days').format('YYYY-MM-DD')
+    const pastDays = Array.from({length: daysBack}, (_, i) => 
+        moment().subtract(i, 'days').format('YYYY-MM-DD')
     );
-    const dailyHealth = {};
-    for(const day of past90Days) {
-        const dayRawData = {
-            date: day,
-            weight: weight[day] || null,
-            strava: strava[day] || [],
-            nutrition: dailyNutrition[day] || null,
-            fitness: fitness[day] || []
-        };
 
-        const mergeWorkouts = (strava, activities) => {
-            strava = strava || [];
-            activities = activities || [];
-            strava = strava.map(s => ({...s, uuid: md5(`${s.startTime}`)}));
-            activities = activities.map(a => ({...a, uuid: md5(`${a.startTime}`)}));
-            const all = [...strava, ...activities].map(a=>a.uuid);
-            const unique = [...new Set(all)];
-            const uniqueWorkouts = unique.map(uuid => {
-                const fromStrava = strava.find(s => s.uuid === uuid);
-                const fromActivities = activities.find(a => a.uuid === uuid);
-                const merged = {
-                    title: fromStrava?.title || fromActivities?.title,
-                    distance: (fromStrava?.distance || 0) + (fromActivities?.distance || 0),
-                    minutes: (fromStrava?.minutes || 0) + (fromActivities?.duration || 0),
-                    startTime: fromStrava?.startTime || fromActivities?.startTime,
-                    suffer_score: fromStrava?.suffer_score || fromActivities?.suffer_score,
-                    avgHeartrate: fromStrava?.avgHeartrate || fromActivities?.avgHeartrate,
-                    maxHeartrate: fromStrava?.maxHeartrate || fromActivities?.maxHeartrate,
-                    calories: (fromStrava?.calories || 0) + (fromActivities?.calories || 0)
-                };
-                const stringParts = [
-                    merged.startTime ? `[${merged.startTime.replace(/^0/,'')}]` : false,
-                    merged.minutes ? `${parseInt(merged.minutes)}min` : false,
-                    merged.title || false,
-                    merged.calories ? `(${merged.calories} cal,` : false,
-                    merged.avgHeartrate ? `Avg HR: ${merged.avgHeartrate}` : false,
-                    merged.maxHeartrate ? `Max HR: ${merged.maxHeartrate}` : false,
-                    merged.suffer_score ? `Suffer Score: ${merged.suffer_score}` : false
-                ].filter(Boolean); // Remove empty parts
-                const string = stringParts.join(' ') + ')';
-                return string;
+    const metrics = pastDays.map(date => {
+        const dayWeight = weightData[date];
+        const dayStrava = stravaData[date] || [];
+        const dayGarmin = garminData[date] || [];
+        const dayNutrition = nutritionData[date];
+
+        // Merge Workouts
+        const mergedWorkouts = [];
+        const usedGarminIds = new Set();
+
+        // Process Strava activities and try to match with Garmin
+        dayStrava.forEach(s => {
+            if (Array.isArray(s.heartRateOverTime)) {
+                s.heartRateOverTime = s.heartRateOverTime.join('|');
+            }
+
+            // Find match in Garmin
+            // Match criteria: Similar duration (+/- 5 mins)
+            const match = dayGarmin.find(g => {
+                if (usedGarminIds.has(g.activityId)) return false;
+                const durationDiff = Math.abs((s.minutes || 0) - (g.duration || 0));
+                return durationDiff < 5; // 5 minute tolerance
             });
-            return uniqueWorkouts;
 
+            if (match) {
+                usedGarminIds.add(match.activityId);
+                mergedWorkouts.push({
+                    source: 'merged',
+                    title: s.title,
+                    type: s.type || match.activityName,
+                    duration: s.minutes,
+                    calories: Math.max(s.calories || 0, match.calories || 0),
+                    avgHr: s.avgHeartrate || match.averageHR,
+                    maxHr: s.maxHeartrate || match.maxHR,
+                    strava: s,
+                    garmin: match
+                });
+            } else {
+                mergedWorkouts.push({
+                    source: 'strava',
+                    title: s.title,
+                    type: s.type,
+                    duration: s.minutes,
+                    calories: s.calories,
+                    avgHr: s.avgHeartrate,
+                    maxHr: s.maxHeartrate,
+                    strava: s
+                });
+            }
+        });
+
+        // Add remaining Garmin activities
+        dayGarmin.forEach(g => {
+            if (!usedGarminIds.has(g.activityId)) {
+                mergedWorkouts.push({
+                    source: 'garmin',
+                    title: g.activityName,
+                    type: g.activityName,
+                    duration: g.duration,
+                    calories: g.calories,
+                    avgHr: g.averageHR,
+                    maxHr: g.maxHR,
+                    garmin: g
+                });
+            }
+        });
+
+        return {
+            date,
+            weight: dayWeight ? {
+                lbs: dayWeight.lbs,
+                fat_percent: dayWeight.fat_percent,
+                lean_lbs: dayWeight.lean_lbs,
+                water_weight: dayWeight.water_weight,
+                trend: dayWeight.lbs_adjusted_average_7day_trend
+            } : null,
+            nutrition: dayNutrition ? {
+                calories: dayNutrition.calories,
+                protein: dayNutrition.protein,
+                carbs: dayNutrition.carbs,
+                fat: dayNutrition.fat,
+                food_count: dayNutrition.food_items ? dayNutrition.food_items.length : 0
+            } : null,
+            workouts: mergedWorkouts,
+            summary: {
+                total_workout_calories: mergedWorkouts.reduce((sum, w) => sum + (w.calories || 0), 0),
+                total_workout_duration: mergedWorkouts.reduce((sum, w) => sum + (w.duration || 0), 0)
+            }
         };
+    });
 
-        const dayData = {
-            date: day,
-            // weight
-            lbs: dayRawData.weight.lbs_adjusted_average,
-            fat_percent: dayRawData.weight.fat_percent_average,
-            weekly_delta: dayRawData.weight.lbs_adjusted_average_7day_trend,
-            calorie_balance: dayRawData.weight.calorie_balance,
-            // nutrition
-            ...dailyNutrition[day] || {},
+    // Convert array to object keyed by date for saving/merging
+    const newDailyHealth = {};
+    metrics.forEach(m => {
+        newDailyHealth[m.date] = m;
+    });
 
-            // activities
-            steps: dayRawData.fitness.steps ? dayRawData.fitness.steps.steps_count : 0,
-            workouts: mergeWorkouts(dayRawData.strava, dayRawData.fitness.activities)
-        };
-        //remove empty
-        if(!dayData.steps) delete dayData.steps;
-        if(!dayData.workouts.length) delete dayData.workouts;
-
-        dailyHealth[day] = dayData;
-    }
-     // Load from user-namespaced path
-     const onFileDays = userLoadFile(username, 'health');
-    const saveMe = Object.keys({...onFileDays, ...dailyHealth})
+    // Load existing health data
+    const onFileDays = userLoadFile(username, 'health') || {};
+    
+    // Merge and Sort
+    const saveMe = Object.keys({...onFileDays, ...newDailyHealth})
         .sort().reverse()
         .reduce((acc, key) => {
-            acc[key] = {...onFileDays, ...dailyHealth}[key];
+            acc[key] = {...onFileDays, ...newDailyHealth}[key];
             return acc;
         }, {});
-    // Save to user-namespaced location
+
+    // Save
     userSaveFile(username, 'health', saveMe);
+    
     await generateCoachingMessageForDailyHealth();
 
-    // Load from user-namespaced path
-    const healthCoaching = userLoadFile(username, 'health_coaching');
-    for(const day of Object.keys(healthCoaching).sort().reverse()) {
-        if(dailyHealth[day]) {
-            dailyHealth[day].coaching = healthCoaching[day];
+    // Load coaching
+    const healthCoaching = userLoadFile(username, 'health_coaching') || {};
+    
+    const result = {};
+    metrics.forEach(m => {
+        result[m.date] = m;
+        if (healthCoaching[m.date]) {
+            result[m.date].coaching = healthCoaching[m.date];
         }
-    }
+    });
 
-    return dailyHealth;
-}
-
-
-
-
+    return result;
+};
 
 export default dailyHealth;
