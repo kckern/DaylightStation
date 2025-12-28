@@ -9,6 +9,37 @@ import { createLogger } from './logging/logger.js';
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 const timezone = process.env.TZ || 'America/Los_Angeles';
 
+/**
+ * Extract clean error message from HTML error responses
+ * @param {Error} error
+ * @returns {string} Clean error message
+ */
+const cleanErrorMessage = (error) => {
+    const errorStr = error?.message || String(error);
+    
+    // Check for HTML in error message
+    if (errorStr.includes('<!DOCTYPE') || errorStr.includes('<html')) {
+        // Extract error code and type
+        const codeMatch = errorStr.match(/ERROR:\s*\((\d+)\),\s*([^,"]+)/);
+        if (codeMatch) {
+            const [, code, type] = codeMatch;
+            // Try to extract meaningful message from HTML
+            const titleMatch = errorStr.match(/<title>([^<]+)<\/title>/);
+            const messageMatch = errorStr.match(/<b>Message<\/b>\s*([^<]+)/);
+            const h2Match = errorStr.match(/<h2[^>]*>([^<]+)<\/h2>/);
+            
+            const parts = [`HTTP ${code} ${type}`];
+            if (h2Match && h2Match[1]) parts.push(h2Match[1]);
+            if (messageMatch && messageMatch[1]) parts.push(messageMatch[1]);
+            
+            return parts.join(' - ');
+        }
+    }
+    
+    // Return original if not HTML or couldn't extract
+    return errorStr.length > 200 ? errorStr.substring(0, 200) + '...' : errorStr;
+};
+
 // Circuit breaker state for rate limiting resilience
 const circuitBreaker = {
   failures: 0,
@@ -78,7 +109,7 @@ const recordFailure = (error) => {
     garminLogger.warn('garmin.circuit.open', {
       failures: circuitBreaker.failures,
       cooldownMins,
-      reason: error?.message || 'Unknown error',
+      reason: cleanErrorMessage(error),
       resumeAt: new Date(circuitBreaker.cooldownUntil).toISOString()
     });
   }
@@ -99,11 +130,9 @@ const login = async () => {
     try {
         await GCClient.login();
     } catch (e) {
-        // Sometimes login throws but session is established? 
-        // Or it's a specific error we can ignore?
-        // The error stack trace points to FormData, which suggests it might be trying to upload something?
-        // Or maybe the login request itself uses FormData.
-        garminLogger.error('garmin.login.error', { error: e.message });
+        // Log clean error message without HTML dumps
+        const cleanError = cleanErrorMessage(e);
+        garminLogger.error('garmin.login.error', { error: cleanError });
         throw e;
     }
 };

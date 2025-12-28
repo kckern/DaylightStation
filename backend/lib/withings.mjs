@@ -2,14 +2,115 @@ import axios from './http.mjs';
 import { saveFile, loadFile, userLoadAuth, userSaveAuth, userSaveFile } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import processWeight from '../jobs/weight.mjs';
+import { createLogger } from './logging/logger.js';
 
 // Get default username for user-scoped data
 const getDefaultUsername = () => configService.getHeadOfHousehold();
+
+const withingsLogger = createLogger({ source: 'backend', app: 'withings' });
+
+// Circuit breaker state for rate limiting resilience
+const circuitBreaker = {
+  failures: 0,
+  cooldownUntil: null,
+  maxFailures: 3,
+  baseCooldownMs: 5 * 60 * 1000, // 5 minutes
+  maxCooldownMs: 2 * 60 * 60 * 1000, // 2 hours max
+};
+
+/**
+ * Extract clean error message from HTML error responses
+ * @param {Error} error
+ * @returns {string} Clean error message
+ */
+const cleanErrorMessage = (error) => {
+    const errorStr = error?.message || String(error);
+    
+    // Check for HTML in error message
+    if (errorStr.includes('<!DOCTYPE') || errorStr.includes('<html')) {
+        // Extract error code and type
+        const codeMatch = errorStr.match(/ERROR:\s*\((\d+)\),\s*([^,"]+)/);
+        if (codeMatch) {
+            const [, code, type] = codeMatch;
+            const titleMatch = errorStr.match(/<title>([^<]+)<\/title>/);
+            const messageMatch = errorStr.match(/<b>Message<\/b>\s*([^<]+)/);
+            const h2Match = errorStr.match(/<h2[^>]*>([^<]+)<\/h2>/);
+            
+            const parts = [`HTTP ${code} ${type}`];
+            if (h2Match && h2Match[1]) parts.push(h2Match[1]);
+            if (messageMatch && messageMatch[1]) parts.push(messageMatch[1]);
+            
+            return parts.join(' - ');
+        }
+    }
+    
+    return errorStr.length > 200 ? errorStr.substring(0, 200) + '...' : errorStr;
+};
+
+/**
+ * Check if circuit breaker is open (in cooldown)
+ * @returns {boolean|Object} false if OK to proceed, or cooldown info object
+ */
+const isInCooldown = () => {
+  if (!circuitBreaker.cooldownUntil) return false;
+  if (Date.now() >= circuitBreaker.cooldownUntil) {
+    circuitBreaker.cooldownUntil = null;
+    circuitBreaker.failures = 0;
+    withingsLogger.info('withings.circuit.reset', { message: 'Cooldown expired, circuit reset' });
+    return false;
+  }
+  const remainingMs = circuitBreaker.cooldownUntil - Date.now();
+  return { inCooldown: true, remainingMs, remainingMins: Math.ceil(remainingMs / 60000) };
+};
+
+/**
+ * Record a failure and potentially open the circuit
+ */
+const recordFailure = (error) => {
+  circuitBreaker.failures++;
+  
+  if (circuitBreaker.failures >= circuitBreaker.maxFailures) {
+    const backoffMultiplier = Math.min(Math.pow(2, circuitBreaker.failures - circuitBreaker.maxFailures), 24);
+    const cooldownMs = Math.min(
+      circuitBreaker.baseCooldownMs * backoffMultiplier,
+      circuitBreaker.maxCooldownMs
+    );
+    circuitBreaker.cooldownUntil = Date.now() + cooldownMs;
+    const cooldownMins = Math.ceil(cooldownMs / 60000);
+    withingsLogger.warn('withings.circuit.open', {
+      failures: circuitBreaker.failures,
+      cooldownMins,
+      reason: cleanErrorMessage(error),
+      resumeAt: new Date(circuitBreaker.cooldownUntil).toISOString()
+    });
+  }
+};
+
+/**
+ * Record a success and reset the circuit breaker
+ */
+const recordSuccess = () => {
+  if (circuitBreaker.failures > 0) {
+    withingsLogger.info('withings.circuit.success', { previousFailures: circuitBreaker.failures });
+  }
+  circuitBreaker.failures = 0;
+  circuitBreaker.cooldownUntil = null;
+};
 
 const getWeightData = async (job_id) => {
 
     //In Dev, the api is not called, and previous api data is sent to the processWeight function
     if(!!process.env.dev) return processWeight(job_id);
+
+    // Check circuit breaker before attempting harvest
+    const cooldownStatus = isInCooldown();
+    if (cooldownStatus) {
+        withingsLogger.debug('withings.harvest.skipped', {
+            reason: 'Circuit breaker active',
+            remainingMins: cooldownStatus.remainingMins
+        });
+        return { skipped: true, reason: 'cooldown', remainingMins: cooldownStatus.remainingMins };
+    }
 
     const WITHINGS_CLIENT = configService.getSecret('WITHINGS_CLIENT');
     const WITHINGS_SECRET = configService.getSecret('WITHINGS_SECRET');
@@ -18,17 +119,18 @@ const getWeightData = async (job_id) => {
     // Load from user-namespaced auth
     const authData = userLoadAuth(username, 'withings') || {};
     const { refresh } = authData;
-    //return {refresh};
-    const params_auth = {
-        action: 'requesttoken',
-        grant_type: 'refresh_token',
-        client_id: WITHINGS_CLIENT,
-        client_secret: WITHINGS_SECRET,
-        refresh_token: refresh,
-        redirect_uri:  WITHINGS_REDIRECT
-    };
-    const response = await axios.post('https://wbsapi.withings.net/v2/oauth2',params_auth);
-    let {body:auth_data} =response?.data || {};
+    
+    try {
+        const params_auth = {
+            action: 'requesttoken',
+            grant_type: 'refresh_token',
+            client_id: WITHINGS_CLIENT,
+            client_secret: WITHINGS_SECRET,
+            refresh_token: refresh,
+            redirect_uri:  WITHINGS_REDIRECT
+        };
+        const response = await axios.post('https://wbsapi.withings.net/v2/oauth2',params_auth);
+        let {body:auth_data} =response?.data || {};
 
     const {access_token, refresh_token} = auth_data || {};
 
@@ -82,9 +184,38 @@ const getWeightData = async (job_id) => {
     // Save to user-namespaced location
     userSaveFile(username, 'withings', measurements);
     processWeight(job_id);
+    
+    // Success! Reset circuit breaker
+    recordSuccess();
     return measurements;
+    
+    } catch (error) {
+        // Check if it's a rate limit error
+        const isRateLimit = error.response?.status === 429 || 
+                          error.message?.includes('429') || 
+                          error.message?.includes('Too Many Requests') ||
+                          error.message?.includes('rate limit');
+        
+        if (isRateLimit) {
+            recordFailure(error);
+            withingsLogger.warn('withings.rate_limit', {
+                message: 'Rate limit exceeded',
+                statusCode: error.response?.status
+            });
+        } else {
+            withingsLogger.error('withings.fetch.error', {
+                error: cleanErrorMessage(error),
+                statusCode: error.response?.status
+            });
+        }
+        
+        // Still run processWeight with cached data if available
+        processWeight(job_id);
+        throw error;
+    }
 };
 
+export { isInCooldown as isWithingsInCooldown };
 export default getWeightData;
 
 function round(value, decimals) {
