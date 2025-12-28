@@ -46,7 +46,6 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     confidenceThreshold: 0.3,
     mirrorHorizontal: true,
     hipCentered: true,
-    autoScaleMargin: 0.05,
   });
   
   // Consume pose provider
