@@ -17,6 +17,19 @@ const MODEL_TYPES = [
   { id: 'heavy', label: 'Heavy (Accurate)', description: 'Highest accuracy, slower' },
 ];
 
+const RESOLUTIONS = [
+  { id: '240p', label: '240p', width: 320, height: 240 },
+  { id: '480p', label: '480p', width: 640, height: 480 },
+  { id: '720p', label: '720p', width: 1280, height: 720 },
+  { id: '1080p', label: '1080p', width: 1920, height: 1080 },
+];
+
+const BACKENDS = [
+  { id: 'webgl', label: 'WebGL' },
+  { id: 'wasm', label: 'WASM' },
+  { id: 'cpu', label: 'CPU' },
+];
+
 const PoseControls = ({
   displayMode = 'overlay',
   onDisplayModeChange,
@@ -24,6 +37,10 @@ const PoseControls = ({
   onRenderOptionsChange,
   modelType = 'full',
   onModelTypeChange,
+  resolution = '480p',
+  onResolutionChange,
+  backend = 'webgl',
+  onBackendChange,
   isDetecting = false,
   onToggleDetection,
   isLoading = false,
@@ -92,10 +109,54 @@ const PoseControls = ({
           ))}
         </div>
       </div>
+
+      {/* Camera Resolution */}
+      <div className="control-group">
+        <label className="control-label">Camera Resolution</label>
+        <div className="button-group">
+          {RESOLUTIONS.map(res => (
+            <button
+              key={res.id}
+              className={`mode-btn ${resolution === res.id ? 'active' : ''}`}
+              onClick={() => onResolutionChange?.(res.id)}
+              title={res.label}
+            >
+              <span className="label">{res.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Backend */}
+      <div className="control-group">
+        <label className="control-label">Backend</label>
+        <div className="button-group">
+          {BACKENDS.map(b => (
+            <button
+              key={b.id}
+              className={`mode-btn ${backend === b.id ? 'active' : ''}`}
+              onClick={() => onBackendChange?.(b.id)}
+              title={b.label}
+            >
+              <span className="label">{b.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       
       {/* Render Options */}
       <div className="control-group">
         <label className="control-label">Skeleton</label>
+        <div className="toggle-row">
+          <label className="toggle-option">
+            <input
+              type="checkbox"
+              checked={renderOptions.hipCentered === true}
+              onChange={e => handleOptionChange('hipCentered', e.target.checked)}
+            />
+            <span>Hip Centered</span>
+          </label>
+        </div>
         <div className="toggle-row">
           <label className="toggle-option">
             <input

@@ -6,19 +6,16 @@
  */
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { getPoseDetectorService, disposePoseDetectorService } from '../domain/pose/PoseDetectorService.js';
+import { getPoseDetectorService, disposePoseDetectorService, DEFAULT_CONFIG as SERVICE_DEFAULTS } from '../domain/pose/PoseDetectorService.js';
 
 const PoseContext = createContext(null);
 
 /**
  * Default configuration for pose detection
+ * Extends service defaults with React-specific options
  */
 const DEFAULT_CONFIG = {
-  modelType: 'full',
-  enableSmoothing: true,
-  minPoseConfidence: 0.5,
-  minKeypointConfidence: 0.3,
-  maxPoses: 1,
+  ...SERVICE_DEFAULTS,
   targetFps: 30,
 };
 
