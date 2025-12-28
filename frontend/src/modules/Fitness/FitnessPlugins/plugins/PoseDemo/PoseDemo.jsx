@@ -3,8 +3,8 @@
  * 
  * Features:
  * - Real-time BlazePose skeleton visualization
- * - Multiple display modes (overlay, side-by-side, skeleton-only)
- * - Configurable rendering options
+ * - Fullscreen skeleton view with optional PIP camera
+ * - Configurable rendering options via settings panel
  * - Performance metrics display
  */
 
@@ -14,9 +14,7 @@ import { PoseProvider } from '../../../context/PoseContext.jsx';
 import { usePoseProvider } from '../../../hooks/usePoseProvider.js';
 import { Webcam as FitnessWebcam } from '../../../components/FitnessWebcam.jsx';
 import SkeletonCanvas from './components/SkeletonCanvas.jsx';
-import PoseControls from './components/PoseControls.jsx';
-import PerformanceStats from './components/PerformanceStats.jsx';
-import MoveEventLog from './components/MoveEventLog.jsx';
+import PoseSettings from './components/PoseSettings.jsx';
 import PoseInspector from './components/PoseInspector.jsx';
 import './PoseDemo.scss';
 
@@ -29,14 +27,15 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
   // Refs
   const webcamRef = useRef(null);
   const containerRef = useRef(null);
-  const skeletonPanelRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 640, height: 480 });
-  const [skeletonDimensions, setSkeletonDimensions] = useState({ width: 640, height: 480 });
   
-  // Display state
-  const [displayMode, setDisplayMode] = useState('side-by-side');
+  // UI State
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPip, setShowPip] = useState(true);
+  const [pipCollapsed, setPipCollapsed] = useState(false);
   const [resolution, setResolution] = useState('480p');
-  const [controlsCollapsed, setControlsCollapsed] = useState(false);
+  
+  // Render Options
   const [renderOptions, setRenderOptions] = useState({
     showKeypoints: true,
     showSkeleton: true,
@@ -46,6 +45,8 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     colorScheme: 'rainbow',
     confidenceThreshold: 0.3,
     mirrorHorizontal: true,
+    hipCentered: true,
+    autoScaleMargin: 0.05,
   });
   
   // Consume pose provider
@@ -65,7 +66,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     start,
     stop,
     setVideoSource,
-    moveEvents,
+    videoSource,
   } = usePoseProvider({ autoStart: false });
   
   // Lifecycle
@@ -75,21 +76,15 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
   
   useEffect(() => {
     registerLifecycle({
-      onPause: () => {
-        stop();
-      },
+      onPause: () => stop(),
       onResume: () => {
-        if (webcamRef.current) {
-          start();
-        }
+        if (webcamRef.current && videoSource) start();
       },
-      onSessionEnd: () => {
-        stop();
-      },
+      onSessionEnd: () => stop(),
     });
-  }, [registerLifecycle, start, stop]);
+  }, [registerLifecycle, start, stop, videoSource]);
   
-  // Track container dimensions for both camera panel and skeleton panel
+  // Track container dimensions
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -103,97 +98,46 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     };
     
     updateDimensions();
-    
     const observer = new ResizeObserver(updateDimensions);
     observer.observe(container);
     
     return () => observer.disconnect();
-  }, [displayMode]); // Re-attach when display mode changes
-  
-  // Track skeleton panel dimensions separately for standalone modes
-  useEffect(() => {
-    const panel = skeletonPanelRef.current;
-    if (!panel) return;
-    
-    const updateSkeletonDimensions = () => {
-      const rect = panel.getBoundingClientRect();
-      setSkeletonDimensions({
-        width: Math.round(rect.width) || 640,
-        height: Math.round(rect.height) || 480,
-      });
-    };
-    
-    updateSkeletonDimensions();
-    
-    const observer = new ResizeObserver(updateSkeletonDimensions);
-    observer.observe(panel);
-    
-    return () => observer.disconnect();
-  }, [displayMode]);
+  }, []);
   
   // Handle webcam stream ready
   const handleStreamReady = useCallback(() => {
-    // Get the video element from webcam
-    const videoEl = webcamRef.current?.getVideoElement?.() 
-      || document.querySelector('.pose-demo-app .fitness-webcam-video');
-    
+    const videoEl = webcamRef.current?.getVideoElement?.();
     if (videoEl) {
       setVideoSource(videoEl);
-      // Auto-start detection
       setTimeout(() => start(), 200);
     }
   }, [setVideoSource, start]);
   
-  // Handle model type change
-  const handleModelTypeChange = useCallback(async (newType) => {
+  // Handle resume - ensure video source is set
+  const handleResume = useCallback(() => {
+    const videoEl = webcamRef.current?.getVideoElement?.();
+    if (videoEl) {
+      setVideoSource(videoEl);
+      setTimeout(() => start(), 100);
+    } else {
+      // Video not ready yet, will auto-start when onStreamReady fires
+      console.warn('[PoseDemo] Video element not ready');
+    }
+  }, [setVideoSource, start]);
+  
+  // Handle model/backend changes (requires restart)
+  const handleConfigChange = useCallback(async (changes) => {
     const wasDetecting = isDetecting;
     if (wasDetecting) stop();
     
-    await updateConfig({ modelType: newType });
+    await updateConfig(changes);
     
     if (wasDetecting) {
       setTimeout(() => start(), 500);
     }
   }, [isDetecting, stop, updateConfig, start]);
 
-  // Handle backend change
-  const handleBackendChange = useCallback(async (newBackend) => {
-    // Backend switch is handled internally by service, but we might want to pause/resume if needed
-    // The service's updateConfig now handles backend switching dynamically
-    await updateConfig({ backend: newBackend });
-  }, [updateConfig]);
-  
-  // Toggle detection
-  const handleToggleDetection = useCallback(() => {
-    if (isDetecting) {
-      stop();
-    } else {
-      start();
-    }
-  }, [isDetecting, start, stop]);
-  
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stop();
-    };
-  }, [stop]);
-  
-  // Compute layout class
-  const layoutClass = useMemo(() => {
-    const classes = ['pose-demo-app', `mode-${mode}`, `display-${displayMode}`];
-    if (controlsCollapsed) classes.push('controls-collapsed');
-    return classes.join(' ');
-  }, [mode, displayMode, controlsCollapsed]);
-  
-  // Should show camera in current display mode?
-  // Note: Camera always renders to keep stream active, but may be visually hidden
-  const showCamera = true;
-  const hideCamera = displayMode === 'skeleton-only';
-  const showOverlaySkeleton = displayMode === 'overlay';
-  const showSideSkeleton = displayMode === 'side-by-side' || displayMode === 'skeleton-only';
-  
-  // Memoize video constraints to prevent camera restarts on re-renders
+  // Memoize video constraints
   const videoConstraints = useMemo(() => {
     const resMap = {
       '240p': { width: 320, height: 240 },
@@ -211,141 +155,116 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     };
   }, [resolution]);
 
-  // Memoize skeleton options to prevent re-render loops
-  const overlaySkeletonOptions = useMemo(() => ({
+  // Skeleton options
+  const skeletonOptions = useMemo(() => ({
     ...renderOptions,
-    displayMode: 'overlay',
-    showGrid: false,
-  }), [renderOptions]);
-
-  const standaloneSkeletonOptions = useMemo(() => ({
-    ...renderOptions,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000', // Black background for standalone
     displayMode: 'standalone',
-    sourceWidth: 1280,
-    sourceHeight: 720,
+    sourceWidth: videoConstraints.width.ideal,
+    sourceHeight: videoConstraints.height.ideal,
     showGrid: true,
-  }), [renderOptions]);
+  }), [renderOptions, videoConstraints]);
 
   return (
-    <div className={layoutClass}>
-      {/* Main Content Area */}
-      <div className="pose-content">
-        {/* Camera Panel - always rendered to keep stream active */}
-        {showCamera && (
-          <div className={`camera-panel ${hideCamera ? 'camera-hidden' : ''}`} ref={containerRef}>
-            <FitnessWebcam
-              ref={webcamRef}
-              onStreamReady={handleStreamReady}
-              className="pose-webcam"
-              videoConstraints={videoConstraints}
-            />
-            
-            {/* Debug Overlay */}
-            <div style={{
-              position: 'absolute',
-              top: 10,
-              left: 10,
-              background: 'rgba(0,0,0,0.7)',
-              color: '#0f0',
-              padding: '5px 10px',
-              borderRadius: '4px',
-              fontFamily: 'monospace',
-              fontSize: '14px',
-              zIndex: 1000,
-              pointerEvents: 'none'
-            }}>
-              FPS: {fps} | {backend} | {poseConfig?.modelType || modelType} | {videoConstraints.width.ideal}x{videoConstraints.height.ideal}
+    <div className="pose-demo-app fullscreen-mode">
+      {/* Main Skeleton View */}
+      <div className="skeleton-fullscreen" ref={containerRef}>
+        <SkeletonCanvas
+          poses={poses}
+          width={dimensions.width}
+          height={dimensions.height}
+          options={skeletonOptions}
+        />
+        
+        {/* Loading / Warmup State */}
+        {(isLoading || !isDetecting) && (
+          <div className="loading-overlay">
+            <div className="loading-content">
+              <div className="spinner"></div>
+              <h3>{isLoading ? 'Starting Vision Engine...' : 'Paused'}</h3>
+              <p>{backend} backend • {poseConfig?.modelType || modelType} model</p>
+              {!isDetecting && !isLoading && (
+                <button className="start-btn" onClick={handleResume}>Resume</button>
+              )}
             </div>
-            
-            {/* Overlay skeleton */}
-            {showOverlaySkeleton && (
-              <SkeletonCanvas
-                poses={poses}
-                width={dimensions.width}
-                height={dimensions.height}
-                options={overlaySkeletonOptions}
-                className="skeleton-overlay"
-              />
-            )}
           </div>
-        )}
-        
-        {/* Side Skeleton Panel (for side-by-side and skeleton-only modes) */}
-        {showSideSkeleton && (
-          <div className="skeleton-panel" ref={skeletonPanelRef}>
-            <SkeletonCanvas
-              poses={poses}
-              width={skeletonDimensions.width}
-              height={skeletonDimensions.height}
-              options={standaloneSkeletonOptions}
-              className="skeleton-standalone"
-            />
-          </div>
-        )}
-        
-        {/* Pose Inspector Overlay */}
-        {renderOptions.showInspector && (
-          <PoseInspector 
-            pose={primaryPose} 
-            onClose={() => setRenderOptions(prev => ({ ...prev, showInspector: false }))} 
-          />
         )}
       </div>
+
+      {/* PIP Camera View */}
+      <div 
+        className={`pip-camera ${showPip ? 'visible' : 'hidden'} ${pipCollapsed ? 'collapsed' : ''}`}
+        onClick={() => setPipCollapsed(!pipCollapsed)}
+        title={pipCollapsed ? 'Expand camera' : 'Collapse camera'}
+      >
+        {pipCollapsed && <div className="pip-icon">📷</div>}
+        <div className={`pip-video-wrapper ${pipCollapsed ? 'pip-hidden' : ''}`}>
+          <FitnessWebcam
+            ref={webcamRef}
+            onStreamReady={handleStreamReady}
+            className="pip-video"
+            videoConstraints={videoConstraints}
+          />
+        </div>
+      </div>
+
+      {/* UI Controls */}
+      <div className="ui-layer">
+        {/* Top Right: Settings Toggle */}
+        <button 
+          className="settings-toggle-btn"
+          onClick={() => setShowSettings(true)}
+          title="Settings"
+        >
+          ⚙️
+        </button>
+
+        {/* Bottom Left: Stats */}
+        <div className="stats-overlay">
+          <div className="stat-item">
+            <span className="label">FPS</span>
+            <span className="value">{fps}</span>
+          </div>
+          <div className="stat-item">
+            <span className="label">LATENCY</span>
+            <span className="value">{latency}ms</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Settings Panel */}
+      <PoseSettings
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        renderOptions={renderOptions}
+        onRenderOptionsChange={setRenderOptions}
+        modelType={poseConfig?.modelType || modelType}
+        onModelTypeChange={type => handleConfigChange({ modelType: type })}
+        resolution={resolution}
+        onResolutionChange={setResolution}
+        backend={backend}
+        onBackendChange={b => handleConfigChange({ backend: b })}
+        poseConfig={poseConfig}
+        onPoseConfigChange={updateConfig}
+        showPip={showPip}
+        onTogglePip={setShowPip}
+      />
       
-      {/* Controls Bar */}
-      <div className="controls-bar">
-        <div className="controls-left">
-          <PoseControls
-            displayMode={displayMode}
-            onDisplayModeChange={setDisplayMode}
-            renderOptions={renderOptions}
-            onRenderOptionsChange={setRenderOptions}
-            modelType={poseConfig?.modelType || modelType}
-            onModelTypeChange={handleModelTypeChange}
-            resolution={resolution}
-            onResolutionChange={setResolution}
-            backend={backend}
-            onBackendChange={handleBackendChange}
-            isDetecting={isDetecting}
-            onToggleDetection={handleToggleDetection}
-            isLoading={isLoading}
-            collapsed={controlsCollapsed}
-            onToggleCollapse={() => setControlsCollapsed(!controlsCollapsed)}
-          />
-        </div>
-        
-        <div className="controls-right">
-          <PerformanceStats
-            fps={fps}
-            latency={latency}
-            backend={backend}
-            modelType={poseConfig?.modelType || modelType}
-            isLoading={isLoading}
-            isDetecting={isDetecting}
-            error={error}
-            hasPose={hasPose}
-            compact={controlsCollapsed}
-          />
-          
-          {!controlsCollapsed && moveEvents && moveEvents.length > 0 && (
-            <MoveEventLog events={moveEvents} />
-          )}
-        </div>
-      </div>
+      {/* Inspector */}
+      {renderOptions.showInspector && (
+        <PoseInspector 
+          pose={primaryPose} 
+          onClose={() => setRenderOptions(prev => ({ ...prev, showInspector: false }))} 
+        />
+      )}
     </div>
   );
 };
 
-/**
- * Main PoseDemo component - wraps inner component with PoseProvider
- */
-const PoseDemo = (props) => {
-  return (
-    <PoseProvider autoStart={false}>
-      <PoseDemoInner {...props} />
-    </PoseProvider>
-  );
-};
+const PoseDemo = (props) => (
+  <PoseProvider autoStart={false}>
+    <PoseDemoInner {...props} />
+  </PoseProvider>
+);
 
 export default PoseDemo;

@@ -411,70 +411,46 @@ const SkeletonCanvas = ({
   }, [width, height]);
   
   /**
-   * Render on pose updates - use ref to avoid dependency cascade
+   * Render on pose updates - triggered by pose changes, not continuous loop
    */
-  const posesRef = useRef(poses);
-  posesRef.current = poses;
-  
   useEffect(() => {
-    let frameId = null;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     
-    const renderFrame = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      
-      const w = canvas.width;
-      const h = canvas.height;
-      
-      // Clear canvas
-      clearCanvas(ctx, w, h);
-      
-      // Calculate transform for standalone mode
-      const isStandalone = opts.displayMode === 'standalone';
-      const transform = isStandalone ? calculateStandaloneTransform(w, h) : null;
-      
-      // Draw frame boundary for standalone mode
-      if (isStandalone && transform) {
-        ctx.save();
-        ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(transform.offsetX, transform.offsetY, transform.scaledW, transform.scaledH);
-        ctx.setLineDash([]);
-        ctx.restore();
-      }
-      
-      // Draw grid
-      drawGrid(ctx, w, h);
-      
-      // Draw all poses from ref
-      const currentPoses = posesRef.current;
-      if (currentPoses && currentPoses.length > 0) {
-        currentPoses.forEach(pose => {
-          drawPose(ctx, pose, w, h, transform);
-        });
-      }
-    };
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     
-    // Initial render
-    renderFrame();
+    const w = canvas.width;
+    const h = canvas.height;
     
-    // Set up continuous render loop for smooth updates
-    const loop = () => {
-      renderFrame();
-      frameId = requestAnimationFrame(loop);
-    };
-    frameId = requestAnimationFrame(loop);
+    // Clear canvas
+    clearCanvas(ctx, w, h);
     
-    return () => {
-      if (frameId) {
-        cancelAnimationFrame(frameId);
-      }
-    };
-  }, [clearCanvas, drawPose, drawGrid, opts.displayMode, calculateStandaloneTransform]);
+    // Calculate transform for standalone mode
+    const isStandalone = opts.displayMode === 'standalone';
+    const transform = isStandalone ? calculateStandaloneTransform(w, h) : null;
+    
+    // Draw frame boundary for standalone mode
+    if (isStandalone && transform) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeRect(transform.offsetX, transform.offsetY, transform.scaledW, transform.scaledH);
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+    
+    // Draw grid
+    drawGrid(ctx, w, h);
+    
+    // Draw all poses
+    if (poses && poses.length > 0) {
+      poses.forEach(pose => {
+        drawPose(ctx, pose, w, h, transform);
+      });
+    }
+  }, [poses, clearCanvas, drawPose, drawGrid, opts.displayMode, calculateStandaloneTransform, width, height]);
   
   // Compute canvas style
   const canvasStyle = useMemo(() => ({
