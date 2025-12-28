@@ -17,6 +17,37 @@ const asLogger = (logger) => logger || defaultStravaLogger;
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
 
+/**
+ * Extract clean error message from HTML error responses
+ * @param {Error} error
+ * @returns {string} Clean error message
+ */
+const cleanErrorMessage = (error) => {
+    const errorStr = error?.message || String(error);
+    
+    // Check for HTML in error message
+    if (errorStr.includes('<!DOCTYPE') || errorStr.includes('<html')) {
+        // Extract error code and type
+        const codeMatch = errorStr.match(/ERROR:\s*\((\d+)\),\s*([^,"]+)/);
+        if (codeMatch) {
+            const [, code, type] = codeMatch;
+            // Try to extract meaningful message from HTML
+            const titleMatch = errorStr.match(/<title>([^<]+)<\/title>/);
+            const messageMatch = errorStr.match(/<b>Message<\/b>\s*([^<]+)/);
+            const h2Match = errorStr.match(/<h2[^>]*>([^<]+)<\/h2>/);
+            
+            const parts = [`HTTP ${code} ${type}`];
+            if (h2Match && h2Match[1]) parts.push(h2Match[1]);
+            if (messageMatch && messageMatch[1]) parts.push(messageMatch[1]);
+            
+            return parts.join(' - ');
+        }
+    }
+    
+    // Return original if not HTML or couldn't extract
+    return errorStr.length > 200 ? errorStr.substring(0, 200) + '...' : errorStr;
+};
+
 // Circuit breaker state for rate limiting resilience
 const circuitBreaker = {
   failures: 0,
@@ -63,7 +94,7 @@ const recordFailure = (error) => {
     defaultStravaLogger.warn('strava.circuit.open', {
       failures: circuitBreaker.failures,
       cooldownMins,
-      reason: error?.message || 'Unknown error',
+      reason: cleanErrorMessage(error),
       resumeAt: new Date(circuitBreaker.cooldownUntil).toISOString()
     });
   }
@@ -117,7 +148,10 @@ export const getAccessToken = async (logger, username = null) => {
         process.env.STRAVA_ACCESS_TOKEN = accessToken;
         return accessToken;
     } catch (error) {
-        log.error('harvest.strava.access_token.error', { error: serializeError(error) });
+        log.error('harvest.strava.access_token.error', { 
+            error: cleanErrorMessage(error),
+            statusCode: error.response?.status 
+        });
         return false;
     }
 };
@@ -143,9 +177,20 @@ const baseAPI = async (endpoint, logger) => {
         return dataResponse.data;
     } catch (error) {
         if (error.response && error.response.status === 429) {
+            recordFailure(error);
+            log.warn('strava.rate_limit', { 
+                endpoint, 
+                statusCode: 429,
+                message: 'Rate limit exceeded'
+            });
             throw error;
         }
-        log.warn('harvest.strava.fetch.error', { endpoint, error: serializeError(error), responseData: error.response?.data });
+        log.warn('harvest.strava.fetch.error', { 
+            endpoint, 
+            error: cleanErrorMessage(error),
+            statusCode: error.response?.status,
+            responseData: error.response?.data 
+        });
         return false;
     }
 };
@@ -217,7 +262,11 @@ export const getActivities = async (logger, daysBack = 90) => {
                 activity.heartRateOverTime = [0];
             }
         } catch (error) {
-            log.warn('harvest.strava.heartrate.error', { activityId: activity.id, error: serializeError(error) });
+            log.warn('harvest.strava.heartrate.error', { 
+                activityId: activity.id, 
+                error: cleanErrorMessage(error),
+                statusCode: error.response?.status 
+            });
             activity.heartRateOverTime = [1];
             
             // If rate limit hit, re-throw to let caller handle it (or just let it fail and script will catch)
@@ -352,8 +401,12 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
             recordFailure(error);
             throw error;
         }
-        log.error('harvest.strava.failure', { jobId: job_id, error: serializeError(error) });
-        return { success: false, error: error.message };
+        log.error('harvest.strava.failure', { 
+            jobId: job_id, 
+            error: cleanErrorMessage(error),
+            statusCode: error.response?.status
+        });
+        return { success: false, error: cleanErrorMessage(error) };
     }
 };
 
