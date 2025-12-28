@@ -12,6 +12,7 @@ import 'dotenv/config'; // Load .env file
 // Config path resolver and loader
 import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolver.mjs';
 import { loadAllConfig, logConfigSummary } from './lib/config/loader.mjs';
+import { configService } from './lib/config/ConfigService.mjs';
 
 // Logging system
 import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
@@ -40,6 +41,11 @@ const configExists = configFiles && existsSync(configFiles.app);
 
 // Load configuration from YAML files into process.env (for logging config)
 hydrateProcessEnvFromConfigs(configPaths.configDir);
+
+// Initialize ConfigService so it can load config files for harvesters
+const baseDir = join(__dirname, '..');
+configService.init(baseDir);
+console.log('[Config] ConfigService initialized with baseDir:', baseDir);
 
 let loggingConfig = loadLoggingConfig();
 
