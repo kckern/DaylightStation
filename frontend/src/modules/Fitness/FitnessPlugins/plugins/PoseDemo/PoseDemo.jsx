@@ -35,6 +35,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
   
   // Display state
   const [displayMode, setDisplayMode] = useState('side-by-side');
+  const [resolution, setResolution] = useState('480p');
   const [controlsCollapsed, setControlsCollapsed] = useState(false);
   const [renderOptions, setRenderOptions] = useState({
     showKeypoints: true,
@@ -154,6 +155,13 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
       setTimeout(() => start(), 500);
     }
   }, [isDetecting, stop, updateConfig, start]);
+
+  // Handle backend change
+  const handleBackendChange = useCallback(async (newBackend) => {
+    // Backend switch is handled internally by service, but we might want to pause/resume if needed
+    // The service's updateConfig now handles backend switching dynamically
+    await updateConfig({ backend: newBackend });
+  }, [updateConfig]);
   
   // Toggle detection
   const handleToggleDetection = useCallback(() => {
@@ -186,11 +194,22 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
   const showSideSkeleton = displayMode === 'side-by-side' || displayMode === 'skeleton-only';
   
   // Memoize video constraints to prevent camera restarts on re-renders
-  const videoConstraints = useMemo(() => ({
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
-    facingMode: 'user',
-  }), []);
+  const videoConstraints = useMemo(() => {
+    const resMap = {
+      '240p': { width: 320, height: 240 },
+      '480p': { width: 640, height: 480 },
+      '720p': { width: 1280, height: 720 },
+      '1080p': { width: 1920, height: 1080 },
+    };
+    const { width, height } = resMap[resolution] || resMap['480p'];
+    
+    return {
+      width: { ideal: width },
+      height: { ideal: height },
+      frameRate: { ideal: 30 },
+      facingMode: 'user',
+    };
+  }, [resolution]);
 
   // Memoize skeleton options to prevent re-render loops
   const overlaySkeletonOptions = useMemo(() => ({
@@ -222,6 +241,23 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
               videoConstraints={videoConstraints}
             />
             
+            {/* Debug Overlay */}
+            <div style={{
+              position: 'absolute',
+              top: 10,
+              left: 10,
+              background: 'rgba(0,0,0,0.7)',
+              color: '#0f0',
+              padding: '5px 10px',
+              borderRadius: '4px',
+              fontFamily: 'monospace',
+              fontSize: '14px',
+              zIndex: 1000,
+              pointerEvents: 'none'
+            }}>
+              FPS: {fps} | {backend} | {poseConfig?.modelType || modelType} | {videoConstraints.width.ideal}x{videoConstraints.height.ideal}
+            </div>
+            
             {/* Overlay skeleton */}
             {showOverlaySkeleton && (
               <SkeletonCanvas
@@ -231,7 +267,6 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
                 options={overlaySkeletonOptions}
                 className="skeleton-overlay"
               />
-            )}
             )}
           </div>
         )}
@@ -268,6 +303,10 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
             onRenderOptionsChange={setRenderOptions}
             modelType={poseConfig?.modelType || modelType}
             onModelTypeChange={handleModelTypeChange}
+            resolution={resolution}
+            onResolutionChange={setResolution}
+            backend={backend}
+            onBackendChange={handleBackendChange}
             isDetecting={isDetecting}
             onToggleDetection={handleToggleDetection}
             isLoading={isLoading}

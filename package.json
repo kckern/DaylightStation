@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0",
     "axios": "^1.7.2",
     "cron-parser": "^4.9.0",
     "highcharts-more": "^0.1.7",

@@ -197,6 +197,73 @@ export const mirrorKeypoints = (keypoints, width) => {
 };
 
 /**
+ * Calculate hip center (midpoint between left and right hip)
+ */
+export const getHipCenter = (keypoints) => {
+  const leftHip = keypoints[23]; // LEFT_HIP
+  const rightHip = keypoints[24]; // RIGHT_HIP
+  
+  if (!leftHip || !rightHip) return null;
+  
+  return {
+    x: (leftHip.x + rightHip.x) / 2,
+    y: (leftHip.y + rightHip.y) / 2,
+    z: ((leftHip.z || 0) + (rightHip.z || 0)) / 2,
+    score: Math.min(leftHip.score, rightHip.score),
+  };
+};
+
+/**
+ * Convert keypoints to hip-centered (root-relative) coordinates
+ * 
+ * @param {Array} keypoints - Raw keypoints from pose detection
+ * @param {Object} options - Configuration options
+ * @returns {Object} - { keypoints: transformed keypoints, hipCenter }
+ */
+export const toHipCenteredCoordinates = (keypoints, options = {}) => {
+  const hipCenter = getHipCenter(keypoints);
+  if (!hipCenter) {
+    return { keypoints, hipCenter: null };
+  }
+  
+  const centeredKeypoints = keypoints.map(kp => {
+    if (!kp) return kp;
+    
+    return {
+      ...kp,
+      x: kp.x - hipCenter.x,
+      y: kp.y - hipCenter.y,
+      z: (kp.z || 0) - hipCenter.z,
+    };
+  });
+  
+  return {
+    keypoints: centeredKeypoints,
+    hipCenter,
+  };
+};
+
+/**
+ * Convert hip-centered coordinates back to absolute coordinates
+ * (for rendering at a specific position)
+ * 
+ * @param {Array} centeredKeypoints - Hip-centered keypoints
+ * @param {Object} position - Where to place the hip center { x, y, z }
+ */
+export const fromHipCenteredCoordinates = (centeredKeypoints, position) => {
+  return centeredKeypoints.map(kp => {
+    if (!kp) return kp;
+    
+    return {
+      ...kp,
+      x: kp.x + position.x,
+      y: kp.y + position.y,
+      z: (kp.z || 0) + (position.z || 0),
+    };
+  });
+};
+
+/**
  * Smooth keypoints over time using exponential moving average
  * @param {Keypoint[]} current - Current frame keypoints
  * @param {Keypoint[]} previous - Previous frame keypoints
@@ -235,4 +302,7 @@ export default {
   denormalizeKeypoints,
   mirrorKeypoints,
   smoothKeypoints,
+  getHipCenter,
+  toHipCenteredCoordinates,
+  fromHipCenteredCoordinates,
 };

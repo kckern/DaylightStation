@@ -55,7 +55,12 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
     if (videoConstraints === false) return false;
     const base = typeof videoConstraints === 'object' && videoConstraints !== null
       ? { ...videoConstraints }
-      : { facingMode: 'user' };
+      : { 
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 30 }
+        };
     if (activeVideoId) {
       base.deviceId = { exact: activeVideoId };
     }

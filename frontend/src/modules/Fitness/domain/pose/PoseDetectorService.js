@@ -17,7 +17,7 @@ const MODEL_TYPES = {
 const BACKENDS = ['webgl', 'wasm', 'cpu'];
 
 const DEFAULT_CONFIG = {
-  modelType: MODEL_TYPES.full,
+  modelType: MODEL_TYPES.lite,
   enableSmoothing: true,
   minPoseConfidence: 0.5,
   minKeypointConfidence: 0.2,
@@ -75,10 +75,11 @@ class PoseDetectorService {
     
     try {
       // Dynamic import TensorFlow.js modules
-      const [tfCore, tfBackendWebgl, tfBackendWasm, poseDetection] = await Promise.all([
+      const [tfCore, tfBackendWebgl, tfBackendWasm, tfBackendCpu, poseDetection] = await Promise.all([
         import('@tensorflow/tfjs-core'),
         import('@tensorflow/tfjs-backend-webgl'),
         import('@tensorflow/tfjs-backend-wasm'),
+        import('@tensorflow/tfjs-backend-cpu'),
         import('@tensorflow-models/pose-detection'),
       ]);
       
@@ -351,9 +352,14 @@ class PoseDetectorService {
    */
   async updateConfig(newConfig) {
     const needsRecreate = newConfig.modelType && newConfig.modelType !== this.config.modelType;
+    const needsBackendSwitch = newConfig.backend && newConfig.backend !== this.backend;
     
     this.config = { ...this.config, ...newConfig };
     
+    if (needsBackendSwitch && this.isInitialized) {
+      await this._switchBackend(newConfig.backend);
+    }
+
     if (needsRecreate && this.isInitialized) {
       const wasRunning = this.isRunning;
       this.stop();
@@ -520,5 +526,5 @@ export const disposePoseDetectorService = () => {
   }
 };
 
-export { PoseDetectorService, MODEL_TYPES, BACKENDS };
+export { PoseDetectorService, MODEL_TYPES, BACKENDS, DEFAULT_CONFIG };
 export default PoseDetectorService;
