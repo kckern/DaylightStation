@@ -4,9 +4,21 @@ import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile, userLoadFile, userSaveFile } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
+import { createLogger } from './logging/logger.js';
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 const timezone = process.env.TZ || 'America/Los_Angeles';
+
+// Circuit breaker state for rate limiting resilience
+const circuitBreaker = {
+  failures: 0,
+  cooldownUntil: null,
+  maxFailures: 3,
+  baseCooldownMs: 5 * 60 * 1000, // 5 minutes
+  maxCooldownMs: 2 * 60 * 60 * 1000, // 2 hours max
+};
+
+const garminLogger = createLogger({ source: 'backend', app: 'garmin' });
 
 // Get default username for user-scoped data
 const getDefaultUsername = () => configService.getHeadOfHousehold();
@@ -29,6 +41,60 @@ const GCClient = new GarminConnect({
 // Let's try to wrap the login to catch this specific error if it's non-fatal, 
 // or ensure we are using it correctly.
 
+/**
+ * Check if circuit breaker is open (in cooldown)
+ * @returns {boolean|Object} false if OK to proceed, or cooldown info object
+ */
+const isInCooldown = () => {
+  if (!circuitBreaker.cooldownUntil) return false;
+  if (Date.now() >= circuitBreaker.cooldownUntil) {
+    // Cooldown expired, reset
+    circuitBreaker.cooldownUntil = null;
+    circuitBreaker.failures = 0;
+    garminLogger.info('garmin.circuit.reset', { message: 'Cooldown expired, circuit reset' });
+    return false;
+  }
+  const remainingMs = circuitBreaker.cooldownUntil - Date.now();
+  return { inCooldown: true, remainingMs, remainingMins: Math.ceil(remainingMs / 60000) };
+};
+
+/**
+ * Record a failure and potentially open the circuit
+ * @param {Error} error
+ */
+const recordFailure = (error) => {
+  circuitBreaker.failures++;
+  
+  // Check if we should enter cooldown
+  if (circuitBreaker.failures >= circuitBreaker.maxFailures) {
+    // Exponential backoff: 5min, 10min, 20min, 40min... up to 2 hours
+    const backoffMultiplier = Math.min(Math.pow(2, circuitBreaker.failures - circuitBreaker.maxFailures), 24);
+    const cooldownMs = Math.min(
+      circuitBreaker.baseCooldownMs * backoffMultiplier,
+      circuitBreaker.maxCooldownMs
+    );
+    circuitBreaker.cooldownUntil = Date.now() + cooldownMs;
+    const cooldownMins = Math.ceil(cooldownMs / 60000);
+    garminLogger.warn('garmin.circuit.open', {
+      failures: circuitBreaker.failures,
+      cooldownMins,
+      reason: error?.message || 'Unknown error',
+      resumeAt: new Date(circuitBreaker.cooldownUntil).toISOString()
+    });
+  }
+};
+
+/**
+ * Record a success and reset the circuit breaker
+ */
+const recordSuccess = () => {
+  if (circuitBreaker.failures > 0) {
+    garminLogger.info('garmin.circuit.success', { previousFailures: circuitBreaker.failures });
+  }
+  circuitBreaker.failures = 0;
+  circuitBreaker.cooldownUntil = null;
+};
+
 const login = async () => {
     try {
         await GCClient.login();
@@ -37,7 +103,7 @@ const login = async () => {
         // Or it's a specific error we can ignore?
         // The error stack trace points to FormData, which suggests it might be trying to upload something?
         // Or maybe the login request itself uses FormData.
-        console.error("Garmin login error:", e);
+        garminLogger.error('garmin.login.error', { error: e.message });
         throw e;
     }
 };
@@ -96,35 +162,54 @@ export const getHeartRate = async (date = new Date()) => {
 };
 
 const harvestActivities = async () => {
-    // Fetch more activities to cover 90 days
-    // Assuming 100 activities covers 90 days for most users, but we can loop if needed.
-    // For now, increasing limit to 200 to be safe.
-    const activities = await getActivities(0, 200);
-    const username = getDefaultUsername();
-
-    const allDates = activities.map(act => moment.tz(act.startTimeLocal, timezone).format('YYYY-MM-DD'));
-    const uniqueDates = [...new Set(allDates)].sort().reverse();
-    const saveMe1 = uniqueDates.reduce((obj, date) => {
-        obj[date] = obj[date] || [];
-        const activitiesForDate = activities.filter(act => moment.tz(act.startTimeLocal, timezone).format('YYYY-MM-DD') === date).map(simplifyActivity);
-        obj[date].push(...activitiesForDate);
-        return obj;
+    // Check circuit breaker before attempting harvest
+    const cooldownStatus = isInCooldown();
+    if (cooldownStatus) {
+        garminLogger.debug('garmin.harvest.skipped', {
+            reason: 'Circuit breaker active',
+            remainingMins: cooldownStatus.remainingMins
+        });
+        return { skipped: true, reason: 'cooldown', remainingMins: cooldownStatus.remainingMins };
     }
-    , {});
-    // Load from user-namespaced path
-    const existing = userLoadFile(username, 'garmin') || {};
-    const merged = {...existing, ...saveMe1};
-    const saveMe = Object.keys(merged)
-        .filter(key => moment(key, 'YYYY-MM-DD', true).isValid()) // Ensure the key is a valid date
-        .sort()
-        .reverse()
-        .reduce((obj, key) => {
-            obj[key] = merged[key];
+
+    try {
+        // Fetch more activities to cover 90 days
+        // Assuming 100 activities covers 90 days for most users, but we can loop if needed.
+        // For now, increasing limit to 200 to be safe.
+        const activities = await getActivities(0, 200);
+        const username = getDefaultUsername();
+
+        const allDates = activities.map(act => moment.tz(act.startTimeLocal, timezone).format('YYYY-MM-DD'));
+        const uniqueDates = [...new Set(allDates)].sort().reverse();
+        const saveMe1 = uniqueDates.reduce((obj, date) => {
+            obj[date] = obj[date] || [];
+            const activitiesForDate = activities.filter(act => moment.tz(act.startTimeLocal, timezone).format('YYYY-MM-DD') === date).map(simplifyActivity);
+            obj[date].push(...activitiesForDate);
             return obj;
-        }, {});
-    // Save to user-namespaced location
-    userSaveFile(username, 'garmin', saveMe);
-    return saveMe;
+        }
+        , {});
+        // Load from user-namespaced path
+        const existing = userLoadFile(username, 'garmin') || {};
+        const merged = {...existing, ...saveMe1};
+        const saveMe = Object.keys(merged)
+            .filter(key => moment(key, 'YYYY-MM-DD', true).isValid()) // Ensure the key is a valid date
+            .sort()
+            .reverse()
+            .reduce((obj, key) => {
+                obj[key] = merged[key];
+                return obj;
+            }, {});
+        // Save to user-namespaced location
+        userSaveFile(username, 'garmin', saveMe);
+        
+        // Success! Reset circuit breaker
+        recordSuccess();
+        return saveMe;
+    } catch (error) {
+        // Record failure for circuit breaker
+        recordFailure(error);
+        throw error;
+    }
 };
 
 //simplifyActivity
@@ -160,4 +245,5 @@ const simplifyActivity = (activity) => {
     };
 };
 
+export { isInCooldown as isGarminInCooldown };
 export default harvestActivities;
