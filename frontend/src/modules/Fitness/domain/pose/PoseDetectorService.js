@@ -18,7 +18,8 @@ const BACKENDS = ['webgl', 'wasm', 'cpu'];
 
 const DEFAULT_CONFIG = {
   modelType: MODEL_TYPES.full,
-  backend: 'wasm',
+  backend: 'webgl',
+  targetResolution: 240,
   enableSmoothing: true,
   minPoseConfidence: 0.5,
   minKeypointConfidence: 0.2,
@@ -26,7 +27,7 @@ const DEFAULT_CONFIG = {
   scoreThreshold: 0.3,
   // Temporal smoothing (EMA)
   temporalSmoothing: true,
-  smoothingFactor: 0.3, // 0 = no smoothing, 1 = max smoothing (0.5-0.8 recommended)
+  smoothingFactor: 0.5, // 0 = no smoothing, 1 = max smoothing (0.5-0.8 recommended)
   velocityDamping: 0.3, // Limit sudden jumps
   maxVelocity: 300, // Max pixels/frame a keypoint can move
 };

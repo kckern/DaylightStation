@@ -27,8 +27,8 @@ const DEFAULT_OPTIONS = {
   // Display mode: 'overlay' positions directly on video, 'standalone' centers in canvas
   displayMode: 'overlay',
   // Hip-centered mode: anchors skeleton to hip, all points relative
-  hipCentered: true,  // Margin for auto-scaling in hip-centered mode (0.1 = 10%)
-  autoScaleMargin: 0.05,};
+  hipCentered: true,
+};
 
 const SkeletonCanvas = ({
   poses = [],
@@ -227,86 +227,9 @@ const SkeletonCanvas = ({
           ? transform.offsetY + transform.scaledH / 2 
           : canvasHeight / 2;
         
-        // Auto-scale to fit body within safe zone (margins)
-        let scale = 1;
-        const margin = opts.autoScaleMargin ?? 0.1;
-        
-        // 1. Vertical Constraints
-        const leftEye = result.keypoints[2];
-        const rightEye = result.keypoints[5];
-        const nose = result.keypoints[0];
-        
-        // Find head Y (top) relative to hip (0)
-        let headY = null;
-        if (leftEye && rightEye && leftEye.score > 0.3 && rightEye.score > 0.3) {
-          headY = (leftEye.y + rightEye.y) / 2;
-        } else if (nose && nose.score > 0.3) {
-          headY = nose.y;
-        }
-
-        // Find feet Y (bottom) relative to hip (0)
-        let feetY = null;
-        const feetIndices = [27, 28, 29, 30, 31, 32]; // Ankles, Heels, Foot Indices
-        let maxFeetY = -Infinity;
-        
-        feetIndices.forEach(idx => {
-          const kp = result.keypoints[idx];
-          if (kp && kp.score > 0.3) {
-            if (kp.y > maxFeetY) maxFeetY = kp.y;
-          }
-        });
-        
-        if (maxFeetY > -Infinity) feetY = maxFeetY;
-        
-        // 2. Horizontal Constraints
-        let minX = Infinity;
-        let maxX = -Infinity;
-        
-        result.keypoints.forEach(kp => {
-          if (kp && kp.score > 0.3) {
-            if (kp.x < minX) minX = kp.x;
-            if (kp.x > maxX) maxX = kp.x;
-          }
-        });
-
-        // Calculate Scales
-        let verticalScale = Infinity;
-        let horizontalScale = Infinity;
-        
-        // Vertical calculation
-        if (headY !== null) {
-          const height = transform ? transform.scaledH : canvasHeight;
-          const safeZoneH = height * (0.5 - margin);
-          const headDist = Math.abs(headY);
-          
-          if (headDist > 20) {
-             verticalScale = safeZoneH / headDist;
-             
-             if (feetY !== null && feetY > 20) {
-               const feetDist = Math.abs(feetY);
-               const feetScale = safeZoneH / feetDist;
-               verticalScale = Math.min(verticalScale, feetScale);
-             }
-          }
-        }
-        
-        // Horizontal calculation
-        if (minX !== Infinity && maxX !== -Infinity) {
-          const width = transform ? transform.scaledW : canvasWidth;
-          const safeZoneW = width * (0.5 - margin);
-          const maxDistX = Math.max(Math.abs(minX), Math.abs(maxX));
-          
-          if (maxDistX > 20) {
-            horizontalScale = safeZoneW / maxDistX;
-          }
-        }
-        
-        // Apply minimum valid scale
-        if (verticalScale !== Infinity || horizontalScale !== Infinity) {
-           scale = Math.min(verticalScale, horizontalScale);
-           // Sanity check to prevent explosion on single point
-           if (scale > 5) scale = 5; 
-        }
+        // Use fixed scale from transform if available, otherwise 1
+        // This prevents the skeleton from resizing during squats/jumps
+        let scale = transform ? transform.scale : 1;
 
         // Apply scale
         const scaledKeypoints = result.keypoints.map(kp => ({
