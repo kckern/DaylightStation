@@ -170,6 +170,30 @@ const PoseSettings = ({
                 Show Camera (PIP)
               </label>
             </div>
+            
+            <div className="setting-row checkbox-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={renderOptions.showConfidenceMeter !== false}
+                  onChange={e => handleRenderOptionChange('showConfidenceMeter', e.target.checked)}
+                />
+                Show Confidence Meter
+              </label>
+            </div>
+            
+            <div className="setting-row range-row">
+              <label>Render Threshold ({renderOptions.renderThreshold ?? 40}%)</label>
+              <input
+                type="range"
+                min="0"
+                max="80"
+                step="5"
+                value={renderOptions.renderThreshold ?? 40}
+                onChange={e => handleRenderOptionChange('renderThreshold', parseInt(e.target.value, 10))}
+              />
+              <span className="range-hint">Hide skeleton below this confidence</span>
+            </div>
 
             <div className="setting-row">
               <label>Color Scheme</label>

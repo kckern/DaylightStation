@@ -289,6 +289,89 @@ export const smoothKeypoints = (current, previous, smoothingFactor = 0.5) => {
   });
 };
 
+/**
+ * Clamp keypoints to boundaries to prevent visual spillover
+ * 
+ * @param {Keypoint[]} keypoints - Array of keypoints
+ * @param {Object} bounds - { minX, maxX, minY, maxY } (default 0-1)
+ * @returns {Keypoint[]} Clamped keypoints
+ */
+export const clampKeypoints = (keypoints, bounds = { minX: 0, maxX: 1, minY: 0, maxY: 1 }) => {
+  if (!keypoints) return keypoints;
+  const { minX, maxX, minY, maxY } = bounds;
+  
+  return keypoints.map(kp => {
+    if (!kp) return kp;
+    return {
+      ...kp,
+      x: Math.max(minX, Math.min(maxX, kp.x)),
+      y: Math.max(minY, Math.min(maxY, kp.y)),
+      z: kp.z, // Preserve Z
+      score: kp.score
+    };
+  });
+};
+
+/**
+ * Check if the core body (hips/shoulders) is within the frame
+ * 
+ * @param {Pose} pose - The pose object
+ * @param {Object} bounds - { minX, maxX, minY, maxY } (default 0-1)
+ * @returns {boolean} True if core points are within bounds
+ */
+export const isPoseInFrame = (pose, bounds = { minX: 0, maxX: 1, minY: 0, maxY: 1 }) => {
+  if (!pose?.keypoints) return false;
+  
+  // Check hips and shoulders (core body)
+  // 11: left_shoulder, 12: right_shoulder, 23: left_hip, 24: right_hip
+  const coreIndices = [11, 12, 23, 24]; 
+  const { minX, maxX, minY, maxY } = bounds;
+  
+  // Count how many core points are valid and in frame
+  let validCorePoints = 0;
+  let inFramePoints = 0;
+  
+  coreIndices.forEach(idx => {
+    const kp = pose.keypoints[idx];
+    if (kp && kp.score >= 0.3) {
+      validCorePoints++;
+      if (kp.x >= minX && kp.x <= maxX && kp.y >= minY && kp.y <= maxY) {
+        inFramePoints++;
+      }
+    }
+  });
+  
+  // If no core points detected, not in frame
+  if (validCorePoints === 0) return false;
+  
+  // Require at least 50% of detected core points to be in frame
+  return (inFramePoints / validCorePoints) >= 0.5;
+};
+
+/**
+ * Calculate scale factor to fit pose within a target box
+ * Useful for initialization views to ensure skeleton is visible
+ * 
+ * @param {Pose} pose - The pose to fit
+ * @param {number} targetWidth - Width of container
+ * @param {number} targetHeight - Height of container
+ * @param {number} padding - Padding around skeleton
+ * @returns {number} Scale factor
+ */
+export const getPoseScaleToFit = (pose, targetWidth, targetHeight, padding = 20) => {
+  const bbox = getPoseBoundingBox(pose);
+  if (!bbox || bbox.width === 0 || bbox.height === 0) return 1;
+  
+  const availableWidth = Math.max(1, targetWidth - (padding * 2));
+  const availableHeight = Math.max(1, targetHeight - (padding * 2));
+  
+  const scaleX = availableWidth / bbox.width;
+  const scaleY = availableHeight / bbox.height;
+  
+  // Return the smaller scale to ensure it fits in both dimensions
+  return Math.min(scaleX, scaleY);
+};
+
 export default {
   calculateAngle,
   getKeypointDistance,
@@ -305,4 +388,7 @@ export default {
   getHipCenter,
   toHipCenteredCoordinates,
   fromHipCenteredCoordinates,
+  clampKeypoints,
+  isPoseInFrame,
+  getPoseScaleToFit,
 };

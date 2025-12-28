@@ -1,0 +1,237 @@
+/**
+ * ConfidenceMeter Styles
+ * 
+ * Visual meter bar for pose detection confidence
+ */
+
+.confidence-meter {
+  --transition-speed: 0.3s;
+  --meter-height: 8px;
+  --meter-width: 120px;
+  --border-radius: 4px;
+  --track-color: rgba(255, 255, 255, 0.15);
+  --threshold-color: rgba(255, 255, 255, 0.4);
+  
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 12px;
+  z-index: 100;
+  
+  // Position variants
+  &.position-top-right {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+  }
+  
+  &.position-top-left {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+  }
+  
+  &.position-bottom-right {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+  }
+  
+  &.position-bottom-left {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+  }
+  
+  // Animated transitions
+  &.animated {
+    .fill {
+      transition: width var(--transition-speed) ease-out,
+                  background-color var(--transition-speed) ease;
+    }
+    
+    .percentage,
+    .status {
+      transition: color var(--transition-speed) ease;
+    }
+  }
+  
+  // Below threshold state
+  &.below-threshold {
+    border-color: rgba(239, 68, 68, 0.4);
+    
+    .meter-bar .track {
+      background: rgba(239, 68, 68, 0.2);
+    }
+  }
+  
+  // No detection state
+  &.no-detection {
+    opacity: 0.7;
+    
+    .meter-bar .fill {
+      opacity: 0;
+    }
+  }
+  
+  // Meter container
+  .meter-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  // Meter bar
+  .meter-bar {
+    position: relative;
+    width: var(--meter-width);
+    height: var(--meter-height);
+    
+    .track {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--track-color);
+      border-radius: var(--border-radius);
+    }
+    
+    .fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: var(--confidence, 0%);
+      height: 100%;
+      background: var(--color, #22c55e);
+      border-radius: var(--border-radius);
+      box-shadow: 0 0 8px var(--color);
+    }
+    
+    .threshold-marker {
+      position: absolute;
+      top: -2px;
+      left: var(--threshold, 40%);
+      width: 2px;
+      height: calc(100% + 4px);
+      background: var(--threshold-color);
+      border-radius: 1px;
+      
+      &::after {
+        content: '';
+        position: absolute;
+        top: -3px;
+        left: -2px;
+        width: 6px;
+        height: 6px;
+        background: var(--threshold-color);
+        border-radius: 50%;
+      }
+    }
+  }
+  
+  // Meter info
+  .meter-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    
+    .percentage {
+      font-weight: 600;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+    
+    .status {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.8;
+    }
+  }
+  
+  // Threshold warning
+  .threshold-warning {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ef4444;
+    font-size: 10px;
+    
+    .warning-icon {
+      font-size: 12px;
+    }
+    
+    .warning-text {
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  }
+  
+  // ===== Compact variant =====
+  &.compact {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    
+    --meter-width: 60px;
+    --meter-height: 6px;
+    
+    .meter-bar-compact {
+      position: relative;
+      width: var(--meter-width);
+      height: var(--meter-height);
+      background: var(--track-color);
+      border-radius: var(--border-radius);
+      overflow: hidden;
+      
+      .fill {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: var(--confidence, 0%);
+        height: 100%;
+        background: var(--color, #22c55e);
+        border-radius: var(--border-radius);
+      }
+    }
+    
+    .label {
+      font-weight: 600;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      min-width: 32px;
+    }
+    
+    // Hide warning in compact mode
+    .threshold-warning {
+      display: none;
+    }
+  }
+}
+
+// Animation for pulse effect when below threshold
+@keyframes pulse-warning {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.confidence-meter.below-threshold.animated {
+  .threshold-warning {
+    animation: pulse-warning 1.5s ease-in-out infinite;
+  }
+}
