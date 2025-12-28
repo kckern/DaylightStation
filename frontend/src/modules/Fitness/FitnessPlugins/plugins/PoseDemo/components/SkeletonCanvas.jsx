@@ -330,35 +330,6 @@ const SkeletonCanvas = ({
       }));
     }
     
-    // Draw hip center marker if in hip-centered mode
-    if (opts.hipCentered && hipCenterInfo) {
-      const centerX = transform 
-        ? transform.offsetX + transform.scaledW / 2 
-        : canvasWidth / 2;
-      const centerY = transform 
-        ? transform.offsetY + transform.scaledH / 2 
-        : canvasHeight / 2;
-      
-      ctx.save();
-      // Draw crosshair at hip center
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(centerX - 20, centerY);
-      ctx.lineTo(centerX + 20, centerY);
-      ctx.moveTo(centerX, centerY - 20);
-      ctx.lineTo(centerX, centerY + 20);
-      ctx.stroke();
-      
-      // Draw circle at origin
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, 8, 0, 2 * Math.PI);
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.restore();
-    }
-    
     // Draw skeleton lines first (so keypoints appear on top)
     if (opts.showSkeleton) {
       connections.forEach(([startIdx, endIdx]) => {

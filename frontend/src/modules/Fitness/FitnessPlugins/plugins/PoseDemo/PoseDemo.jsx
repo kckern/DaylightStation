@@ -32,7 +32,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
   // UI State
   const [showSettings, setShowSettings] = useState(false);
   const [showPip, setShowPip] = useState(true);
-  const [pipCollapsed, setPipCollapsed] = useState(false);
+  const [pipCollapsed, setPipCollapsed] = useState(true);
   const [resolution, setResolution] = useState('480p');
   
   // Render Options
