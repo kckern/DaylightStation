@@ -357,7 +357,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governedTypes
   }), [ant_devices, usersConfig, zoneConfig, governanceConfig, coinTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes]);
 
-  const configurationSignature = React.useMemo(() => JSON.stringify(configurationInputs), [configurationInputs]);
+  const configurationSignature = React.useMemo(() => JSON.stringify({
+    ...configurationInputs,
+    sessionId: session?.sessionId || 'none'
+  }), [configurationInputs, session?.sessionId]);
   
   useEffect(() => {
     if (configuredSignatureRef.current === configurationSignature) {

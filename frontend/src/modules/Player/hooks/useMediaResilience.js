@@ -1692,10 +1692,7 @@ export function useMediaResilience({
             : null
         }, { level: 'debug' });
       }
-      const startupStartTs = startupWatchdogStartRef.current
-        || startupSignalsRef.current?.attachedAt
-        || startupSignalsRef.current?.lastTimestamp
-        || null;
+      const startupStartTs = startupWatchdogStartRef.current;
       if (startupStartTs) {
         const durationMs = Math.max(0, Date.now() - startupStartTs);
         logMetric('startup_duration_ms', {

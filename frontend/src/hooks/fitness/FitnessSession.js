@@ -1199,6 +1199,7 @@ export class FitnessSession {
     this.treasureBox = null;
     this._saveTriggered = false;
     this.voiceMemoManager.reset();
+    if (this._participantRoster) this._participantRoster.reset();
     this.userManager = new UserManager(); // Reset users? Or keep them? Usually reset for new session context.
     this.deviceManager = new DeviceManager(); // Reset devices?
     this._stopAutosaveTimer();
