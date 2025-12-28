@@ -17,6 +17,69 @@ const asLogger = (logger) => logger || defaultStravaLogger;
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
 
+// Circuit breaker state for rate limiting resilience
+const circuitBreaker = {
+  failures: 0,
+  cooldownUntil: null,
+  maxFailures: 3,
+  baseCooldownMs: 5 * 60 * 1000, // 5 minutes
+  maxCooldownMs: 2 * 60 * 60 * 1000, // 2 hours max
+};
+
+/**
+ * Check if circuit breaker is open (in cooldown)
+ * @returns {boolean|Object} false if OK to proceed, or cooldown info object
+ */
+const isInCooldown = () => {
+  if (!circuitBreaker.cooldownUntil) return false;
+  if (Date.now() >= circuitBreaker.cooldownUntil) {
+    // Cooldown expired, reset
+    circuitBreaker.cooldownUntil = null;
+    circuitBreaker.failures = 0;
+    defaultStravaLogger.info('strava.circuit.reset', { message: 'Cooldown expired, circuit reset' });
+    return false;
+  }
+  const remainingMs = circuitBreaker.cooldownUntil - Date.now();
+  return { inCooldown: true, remainingMs, remainingMins: Math.ceil(remainingMs / 60000) };
+};
+
+/**
+ * Record a failure and potentially open the circuit
+ * @param {Error} error
+ */
+const recordFailure = (error) => {
+  circuitBreaker.failures++;
+  
+  // Check if we should enter cooldown
+  if (circuitBreaker.failures >= circuitBreaker.maxFailures) {
+    // Exponential backoff: 5min, 10min, 20min, 40min... up to 2 hours
+    const backoffMultiplier = Math.min(Math.pow(2, circuitBreaker.failures - circuitBreaker.maxFailures), 24);
+    const cooldownMs = Math.min(
+      circuitBreaker.baseCooldownMs * backoffMultiplier,
+      circuitBreaker.maxCooldownMs
+    );
+    circuitBreaker.cooldownUntil = Date.now() + cooldownMs;
+    const cooldownMins = Math.ceil(cooldownMs / 60000);
+    defaultStravaLogger.warn('strava.circuit.open', {
+      failures: circuitBreaker.failures,
+      cooldownMins,
+      reason: error?.message || 'Unknown error',
+      resumeAt: new Date(circuitBreaker.cooldownUntil).toISOString()
+    });
+  }
+};
+
+/**
+ * Record a success and reset the circuit breaker
+ */
+const recordSuccess = () => {
+  if (circuitBreaker.failures > 0) {
+    defaultStravaLogger.info('strava.circuit.success', { previousFailures: circuitBreaker.failures });
+  }
+  circuitBreaker.failures = 0;
+  circuitBreaker.cooldownUntil = null;
+};
+
 export const getAccessToken = async (logger, username = null) => {
     const log = asLogger(logger);
     if (process.env.STRAVA_ACCESS_TOKEN) return process.env.STRAVA_ACCESS_TOKEN;
@@ -170,6 +233,18 @@ export const getActivities = async (logger, daysBack = 90) => {
 
 const harvestActivities = async (logger, job_id, daysBack = 90) => {
     const log = asLogger(logger);
+    
+    // Check circuit breaker before attempting harvest
+    const cooldownStatus = isInCooldown();
+    if (cooldownStatus) {
+        log.debug('strava.harvest.skipped', {
+            jobId: job_id,
+            reason: 'Circuit breaker active',
+            remainingMins: cooldownStatus.remainingMins
+        });
+        return { skipped: true, reason: 'cooldown', remainingMins: cooldownStatus.remainingMins };
+    }
+
     try {
         const activitiesData = await getActivities(logger, daysBack);
         if(!activitiesData) return await reauthSequence();
@@ -268,9 +343,13 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
         // Save to user-namespaced location
         userSaveFile(username, 'strava', finalSummary);
 
+        // Success! Reset circuit breaker
+        recordSuccess();
         return finalSummary;
     } catch (error) {
-        if (error.response && error.response.status === 429) {
+        // Record failure for circuit breaker on rate limit errors
+        if (error.response && (error.response.status === 429 || error.response.status === 401)) {
+            recordFailure(error);
             throw error;
         }
         log.error('harvest.strava.failure', { jobId: job_id, error: serializeError(error) });
@@ -278,4 +357,5 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
     }
 };
 
+export { isInCooldown as isStravaInCooldown };
 export default harvestActivities;
