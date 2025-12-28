@@ -36,6 +36,7 @@ const dailyHealth = async (jobId, daysBack = 15) => {
     const weightData = userLoadFile(username, 'weight') || {};
     const stravaData = userLoadFile(username, 'strava') || {};
     const garminData = userLoadFile(username, 'garmin') || {};
+    const fitnessData = userLoadFile(username, 'fitness') || {}; // FitnessSyncer
     const nutritionData = userLoadFile(username, 'nutrition/nutriday') || {};
 
     const pastDays = Array.from({length: daysBack}, (_, i) => 
@@ -46,50 +47,76 @@ const dailyHealth = async (jobId, daysBack = 15) => {
         const dayWeight = weightData[date];
         const dayStrava = stravaData[date] || [];
         const dayGarmin = garminData[date] || [];
+        const dayFitness = fitnessData[date]; // FitnessSyncer data
         const dayNutrition = nutritionData[date];
 
         // Merge Workouts
         const mergedWorkouts = [];
         const usedGarminIds = new Set();
+        const usedFitnessIds = new Set();
+        const fitnessActivities = dayFitness?.activities || [];
 
-        // Process Strava activities and try to match with Garmin
+        // Process Strava activities and try to match with Garmin or FitnessSyncer
         dayStrava.forEach(s => {
             if (Array.isArray(s.heartRateOverTime)) {
                 s.heartRateOverTime = s.heartRateOverTime.join('|');
             }
 
-            // Find match in Garmin
-            // Match criteria: Similar duration (+/- 5 mins)
-            const match = dayGarmin.find(g => {
+            // Find match in Garmin first
+            const garminMatch = dayGarmin.find(g => {
                 if (usedGarminIds.has(g.activityId)) return false;
                 const durationDiff = Math.abs((s.minutes || 0) - (g.duration || 0));
                 return durationDiff < 5; // 5 minute tolerance
             });
 
-            if (match) {
-                usedGarminIds.add(match.activityId);
+            if (garminMatch) {
+                usedGarminIds.add(garminMatch.activityId);
                 mergedWorkouts.push({
-                    source: 'merged',
+                    source: 'strava+garmin',
                     title: s.title,
-                    type: s.type || match.activityName,
+                    type: s.type || garminMatch.activityName,
                     duration: s.minutes,
-                    calories: Math.max(s.calories || 0, match.calories || 0),
-                    avgHr: s.avgHeartrate || match.averageHR,
-                    maxHr: s.maxHeartrate || match.maxHR,
+                    calories: Math.max(s.calories || 0, garminMatch.calories || 0),
+                    avgHr: s.avgHeartrate || garminMatch.averageHR,
+                    maxHr: s.maxHeartrate || garminMatch.maxHR,
                     strava: s,
-                    garmin: match
+                    garmin: garminMatch
                 });
             } else {
-                mergedWorkouts.push({
-                    source: 'strava',
-                    title: s.title,
-                    type: s.type,
-                    duration: s.minutes,
-                    calories: s.calories,
-                    avgHr: s.avgHeartrate,
-                    maxHr: s.maxHeartrate,
-                    strava: s
+                // No Garmin match, try FitnessSyncer
+                const fitnessMatch = fitnessActivities.find((f, idx) => {
+                    if (usedFitnessIds.has(idx)) return false;
+                    const durationDiff = Math.abs((s.minutes || 0) - (f.minutes || 0));
+                    return durationDiff < 5;
                 });
+
+                if (fitnessMatch) {
+                    const idx = fitnessActivities.indexOf(fitnessMatch);
+                    usedFitnessIds.add(idx);
+                    mergedWorkouts.push({
+                        source: 'strava+fitness',
+                        title: s.title || fitnessMatch.title,
+                        type: s.type,
+                        duration: s.minutes,
+                        calories: Math.max(s.calories || 0, fitnessMatch.calories || 0),
+                        avgHr: s.avgHeartrate || fitnessMatch.avgHeartrate,
+                        maxHr: s.maxHeartrate,
+                        strava: s,
+                        fitness: fitnessMatch
+                    });
+                } else {
+                    // No match, just Strava
+                    mergedWorkouts.push({
+                        source: 'strava',
+                        title: s.title,
+                        type: s.type,
+                        duration: s.minutes,
+                        calories: s.calories,
+                        avgHr: s.avgHeartrate,
+                        maxHr: s.maxHeartrate,
+                        strava: s
+                    });
+                }
             }
         });
 
@@ -109,6 +136,24 @@ const dailyHealth = async (jobId, daysBack = 15) => {
             }
         });
 
+        // Add remaining FitnessSyncer activities
+        fitnessActivities.forEach((f, idx) => {
+            if (!usedFitnessIds.has(idx)) {
+                mergedWorkouts.push({
+                    source: 'fitness',
+                    title: f.title,
+                    type: 'Activity',
+                    duration: f.minutes,
+                    calories: f.calories,
+                    avgHr: f.avgHeartrate,
+                    distance: f.distance,
+                    startTime: f.startTime,
+                    endTime: f.endTime,
+                    fitness: f
+                });
+            }
+        });
+
         return {
             date,
             weight: dayWeight ? {
@@ -124,6 +169,14 @@ const dailyHealth = async (jobId, daysBack = 15) => {
                 carbs: dayNutrition.carbs,
                 fat: dayNutrition.fat,
                 food_count: dayNutrition.food_items ? dayNutrition.food_items.length : 0
+            } : null,
+            steps: dayFitness?.steps ? {
+                count: dayFitness.steps.steps_count,
+                bmr: dayFitness.steps.bmr,
+                duration: dayFitness.steps.duration,
+                calories: dayFitness.steps.calories,
+                maxHr: dayFitness.steps.maxHeartRate,
+                avgHr: dayFitness.steps.avgHeartRate
             } : null,
             workouts: mergedWorkouts,
             summary: {
