@@ -17,7 +17,8 @@ const MODEL_TYPES = {
 const BACKENDS = ['webgl', 'wasm', 'cpu'];
 
 const DEFAULT_CONFIG = {
-  modelType: MODEL_TYPES.lite,
+  modelType: MODEL_TYPES.full,
+  backend: 'wasm',
   enableSmoothing: true,
   minPoseConfidence: 0.5,
   minKeypointConfidence: 0.2,
@@ -109,7 +110,21 @@ class PoseDetectorService {
    * Initialize TensorFlow backend with fallback chain
    */
   async _initializeBackend() {
+    // Try configured backend first
+    const preferredBackend = this.config.backend;
+    if (preferredBackend && BACKENDS.includes(preferredBackend)) {
+      try {
+        await this.tf.setBackend(preferredBackend);
+        await this.tf.ready();
+        return preferredBackend;
+      } catch (e) {
+        console.warn(`[PoseDetectorService] Preferred backend ${preferredBackend} failed:`, e.message);
+      }
+    }
+
+    // Fallback chain
     for (const backend of BACKENDS) {
+      if (backend === preferredBackend) continue; // Skip if already tried
       try {
         await this.tf.setBackend(backend);
         await this.tf.ready();

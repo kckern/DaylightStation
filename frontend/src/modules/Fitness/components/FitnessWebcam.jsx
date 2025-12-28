@@ -150,6 +150,7 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
     setMic: setActiveAudioId,
     takeSnapshot: makeSnapshot,
     getStream: () => stream,
+    getVideoElement: () => videoRef.current,
     applyFilter: (next) => {
       if (!next) return;
       if (typeof next === 'string') {
