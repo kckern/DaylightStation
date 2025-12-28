@@ -7,11 +7,13 @@ import * as CameraViewApp from './plugins/CameraViewApp/index.jsx';
 import * as JumpingJackGame from './plugins/JumpingJackGame/index.jsx';
 import * as ComponentShowcase from './plugins/ComponentShowcase/index.jsx';
 import * as HomeApp from './plugins/HomeApp/index.jsx';
+import * as PoseDemo from './plugins/PoseDemo/index.jsx';
 
 registerPlugin(FitnessChartApp);
 registerPlugin(CameraViewApp);
 registerPlugin(JumpingJackGame);
 registerPlugin(ComponentShowcase);
 registerPlugin(HomeApp);
+registerPlugin(PoseDemo);
 
 
