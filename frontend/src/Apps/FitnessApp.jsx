@@ -12,6 +12,7 @@ import FitnessPluginContainer from '../modules/Fitness/FitnessPlugins/FitnessPlu
 import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import { getChildLogger } from '../lib/logging/singleton.js';
+import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
 
 const FitnessApp = () => {
   // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
@@ -272,18 +273,21 @@ const FitnessApp = () => {
     switch (type) {
       case 'plex_collection':
         setActiveCollection(target.collection_id);
+        setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
         break;
         
       case 'plex_collection_group':
         setActiveCollection(target.collection_ids);
+        setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
         break;
         
       case 'plugin_menu':
         setActiveCollection(target.menu_id);
+        setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
         break;
@@ -293,11 +297,14 @@ const FitnessApp = () => {
           id: target.plugin_id, 
           ...(target.config || {}) 
         });
+        setActiveCollection(null);
         setCurrentView('plugin');
         setSelectedShow(null);
         break;
         
       case 'view_direct':
+        setActiveCollection(null);
+        setActivePlugin(null);
         setCurrentView(target.view);
         setSelectedShow(null);
         break;
@@ -383,25 +390,23 @@ const FitnessApp = () => {
     return () => clearTimeout(timeoutId);
   }, [logger]);
 
-  // Initialize the active collection once navItems arrive
+  // Initialize to the first nav item once navItems arrive
   useEffect(() => {
-    if (activeCollection == null && navItems.length > 0) {
-      // Find first collection-like item
-      const firstCollection = navItems.find(item => 
-        ['plex_collection', 'plex_collection_group', 'plugin_menu'].includes(item.type)
-      );
+    if (activeCollection == null && activePlugin == null && navItems.length > 0) {
+      // Sort items to match navbar display order
+      const sortedItems = sortNavItems(navItems);
+      const firstItem = sortedItems[0];
       
-      if (firstCollection) {
-        if (firstCollection.type === 'plex_collection') {
-          setActiveCollection(firstCollection.target.collection_id);
-        } else if (firstCollection.type === 'plex_collection_group') {
-          setActiveCollection(firstCollection.target.collection_ids);
-        } else if (firstCollection.type === 'plugin_menu') {
-          setActiveCollection(firstCollection.target.menu_id);
-        }
+      if (firstItem) {
+        logger.info('fitness-nav-init', { 
+          type: firstItem.type, 
+          name: firstItem.name,
+          target: firstItem.target 
+        });
+        handleNavigate(firstItem.type, firstItem.target, firstItem);
       }
     }
-  }, [navItems, activeCollection]);
+  }, [navItems, activeCollection, activePlugin]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {

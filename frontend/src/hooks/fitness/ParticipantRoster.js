@@ -76,6 +76,14 @@ export class ParticipantRoster {
   reset() {
     this._historicalParticipants.clear();
     this._invalidateCache();
+    
+    // Clear external references to force reconfiguration
+    // This prevents using stale managers after a session reset
+    this._deviceManager = null;
+    this._userManager = null;
+    this._treasureBox = null;
+    this._activityMonitor = null;
+    this._timeline = null;
   }
 
   /**

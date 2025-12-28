@@ -18,7 +18,7 @@ export function getNavItemClasses(item, isActive = false) {
     'nav-item',
     `nav-item--${item.type}`,
     item.className,
-    isActive && 'nav-item--active'
+    isActive && 'active'
   ].filter(Boolean).join(' ');
 }
 
