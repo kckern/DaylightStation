@@ -301,6 +301,17 @@ const FitnessApp = () => {
         setCurrentView('plugin');
         setSelectedShow(null);
         break;
+
+      case 'plugin':
+        // Launched from FitnessPluginMenu
+        setActivePlugin({ 
+          id: target.id, 
+          ...(target || {}) 
+        });
+        setActiveCollection(null);
+        setCurrentView('plugin');
+        setSelectedShow(null);
+        break;
         
       case 'view_direct':
         setActiveCollection(null);

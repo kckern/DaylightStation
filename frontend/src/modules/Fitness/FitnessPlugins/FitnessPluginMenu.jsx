@@ -53,6 +53,13 @@ const FitnessPluginMenu = ({ activePluginMenuId, onPluginSelect, onBack }) => {
       items.push({ id: 'component_showcase', name: showcaseManifest.name || 'UX Showcase' });
     }
 
+    // Ensure Pose Demo appears even if not yet in config
+    const poseDemoManifest = getPluginManifest('pose_demo');
+    const hasPoseDemo = items.some((item) => String(item.id) === 'pose_demo');
+    if (poseDemoManifest && !hasPoseDemo) {
+      items.push({ id: 'pose_demo', name: poseDemoManifest.name || 'Pose Demo' });
+    }
+
     return items
       .map(item => ({ ...item, manifest: getPluginManifest(item.id) }))
       .filter(item => item.manifest);
