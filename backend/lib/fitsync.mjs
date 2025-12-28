@@ -12,6 +12,94 @@ const fitsyncLogger = createLogger({ source: 'backend', app: 'fitsync' });
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
 
+/**
+ * Extract clean error message from HTML error responses
+ * @param {Error} error
+ * @returns {string} Clean error message
+ */
+const cleanErrorMessage = (error) => {
+    const errorStr = error?.message || String(error);
+    
+    // Check for HTML in error message
+    if (errorStr.includes('<!DOCTYPE') || errorStr.includes('<html')) {
+        // Extract error code and type
+        const codeMatch = errorStr.match(/ERROR:\s*\((\d+)\),\s*([^,"]+)/);
+        if (codeMatch) {
+            const [, code, type] = codeMatch;
+            const titleMatch = errorStr.match(/<title>([^<]+)<\/title>/);
+            const messageMatch = errorStr.match(/<b>Message<\/b>\s*([^<]+)/);
+            const h2Match = errorStr.match(/<h2[^>]*>([^<]+)<\/h2>/);
+            
+            const parts = [`HTTP ${code} ${type}`];
+            if (h2Match && h2Match[1]) parts.push(h2Match[1]);
+            if (messageMatch && messageMatch[1]) parts.push(messageMatch[1]);
+            
+            return parts.join(' - ');
+        }
+    }
+    
+    return errorStr.length > 200 ? errorStr.substring(0, 200) + '...' : errorStr;
+};
+
+// Circuit breaker state for rate limiting resilience
+const circuitBreaker = {
+  failures: 0,
+  cooldownUntil: null,
+  maxFailures: 3,
+  baseCooldownMs: 5 * 60 * 1000, // 5 minutes
+  maxCooldownMs: 2 * 60 * 60 * 1000, // 2 hours max
+};
+
+/**
+ * Check if circuit breaker is open (in cooldown)
+ * @returns {boolean|Object} false if OK to proceed, or cooldown info object
+ */
+const isInCooldown = () => {
+  if (!circuitBreaker.cooldownUntil) return false;
+  if (Date.now() >= circuitBreaker.cooldownUntil) {
+    circuitBreaker.cooldownUntil = null;
+    circuitBreaker.failures = 0;
+    fitsyncLogger.info('fitsync.circuit.reset', { message: 'Cooldown expired, circuit reset' });
+    return false;
+  }
+  const remainingMs = circuitBreaker.cooldownUntil - Date.now();
+  return { inCooldown: true, remainingMs, remainingMins: Math.ceil(remainingMs / 60000) };
+};
+
+/**
+ * Record a failure and potentially open the circuit
+ */
+const recordFailure = (error) => {
+  circuitBreaker.failures++;
+  
+  if (circuitBreaker.failures >= circuitBreaker.maxFailures) {
+    const backoffMultiplier = Math.min(Math.pow(2, circuitBreaker.failures - circuitBreaker.maxFailures), 24);
+    const cooldownMs = Math.min(
+      circuitBreaker.baseCooldownMs * backoffMultiplier,
+      circuitBreaker.maxCooldownMs
+    );
+    circuitBreaker.cooldownUntil = Date.now() + cooldownMs;
+    const cooldownMins = Math.ceil(cooldownMs / 60000);
+    fitsyncLogger.warn('fitsync.circuit.open', {
+      failures: circuitBreaker.failures,
+      cooldownMins,
+      reason: cleanErrorMessage(error),
+      resumeAt: new Date(circuitBreaker.cooldownUntil).toISOString()
+    });
+  }
+};
+
+/**
+ * Record a success and reset the circuit breaker
+ */
+const recordSuccess = () => {
+  if (circuitBreaker.failures > 0) {
+    fitsyncLogger.info('fitsync.circuit.success', { previousFailures: circuitBreaker.failures });
+  }
+  circuitBreaker.failures = 0;
+  circuitBreaker.cooldownUntil = null;
+};
+
 // Get default username for legacy single-user access
 const getDefaultUsername = () => {
   // Use head of household from config (never hardcode usernames)
@@ -22,61 +110,100 @@ const getDefaultUsername = () => {
 
 
 export const getAccessToken = async () => {
+    // Check for cached token
+    if(process.env.FITSYNC_ACCESS_TOKEN) return process.env.FITSYNC_ACCESS_TOKEN;
 
-//assumes refresh token is stored in a file named 'fitnesssyncer' in the tmp directory
-if(process.env.FITSYNC_ACCESS_TOKEN) return process.env.FITSYNC_ACCESS_TOKEN;
-
-    const { FITSYNC_CLIENT_ID, FITSYNC_CLIENT_SECRET } = process.env;
-    const username = getDefaultUsername();
-    // Load from user-namespaced auth
-    const authData = userLoadAuth(username, 'fitnesssyncer') || {};
-    const { refresh } = authData;
-    if (!refresh) {
-        fitsyncLogger.error('fitsync.auth.missing', { message: 'No refresh token found' });
+    // Get credentials from ConfigService
+    const FITSYNC_CLIENT_ID = configService.getSecret('FITSYNC_CLIENT_ID') || process.env.FITSYNC_CLIENT_ID;
+    const FITSYNC_CLIENT_SECRET = configService.getSecret('FITSYNC_CLIENT_SECRET') || process.env.FITSYNC_CLIENT_SECRET;
+    
+    if (!FITSYNC_CLIENT_ID || !FITSYNC_CLIENT_SECRET) {
+        fitsyncLogger.error('fitsync.auth.credentials_missing', { 
+            message: 'FITSYNC_CLIENT_ID or FITSYNC_CLIENT_SECRET not configured' 
+        });
         return false;
     }
-    const curl = `curl -X POST https://www.fitnesssyncer.com/api/oauth/access_token -H "Content-Type: application/json" -d '${JSON.stringify({
-        grant_type: 'refresh_token',
-        refresh_token: refresh,
-        client_id: FITSYNC_CLIENT_ID,
-        client_secret: FITSYNC_CLIENT_SECRET
-    })}'`;
-try {
-    const tokenResponse = await axios.post('https://www.fitnesssyncer.com/api/oauth/access_token', 
-        new URLSearchParams({
-            grant_type: 'refresh_token',
-            refresh_token: refresh,
-            client_id: FITSYNC_CLIENT_ID,
-            client_secret: FITSYNC_CLIENT_SECRET
-        }),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    );
-    const accessToken = tokenResponse.data.access_token;
-    const refreshToken = tokenResponse.data.refresh_token;
-    if (refreshToken) {
-        // Save to user-namespaced location
-        userSaveAuth(username, 'fitnesssyncer', { refresh: refreshToken });
+
+    const username = getDefaultUsername();
+    const authData = userLoadAuth(username, 'fitnesssyncer') || {};
+    const { refresh } = authData;
+    
+    if (!refresh) {
+        fitsyncLogger.error('fitsync.auth.missing', { 
+            message: 'No refresh token found',
+            username,
+            suggestion: 'Run OAuth flow to obtain refresh token'
+        });
+        return false;
     }
-    process.env.FITSYNC_ACCESS_TOKEN = accessToken;
-    return accessToken;
-} catch (error) {
-    //process.exit(console.error(curl));
-    return false;
-}
+
+    try {
+        const tokenResponse = await axios.post('https://www.fitnesssyncer.com/api/oauth/access_token', 
+            new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: refresh,
+                client_id: FITSYNC_CLIENT_ID,
+                client_secret: FITSYNC_CLIENT_SECRET
+            }),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+        
+        const accessToken = tokenResponse.data.access_token;
+        const refreshToken = tokenResponse.data.refresh_token;
+        
+        if (refreshToken) {
+            userSaveAuth(username, 'fitnesssyncer', { refresh: refreshToken });
+        }
+        
+        process.env.FITSYNC_ACCESS_TOKEN = accessToken;
+        fitsyncLogger.info('fitsync.auth.token_refreshed', { username });
+        return accessToken;
+    } catch (error) {
+        const cleanError = cleanErrorMessage(error);
+        fitsyncLogger.error('fitsync.auth.token_refresh_failed', { 
+            error: cleanError,
+            statusCode: error.response?.status,
+            username
+        });
+        
+        // Record failure for rate limiting
+        if (error.response?.status === 429) {
+            recordFailure(error);
+        }
+        
+        return false;
+    }
 };
 
 const baseAPI = async (endpoint) => {
-const base_url = `https://api.fitnesssyncer.com/api/providers`;
-const {FITSYNC_ACCESS_TOKEN} = process.env;
-try {
-    const url = `${base_url}/${endpoint}`;
-    const headers = { 'Authorization': `Bearer ${FITSYNC_ACCESS_TOKEN}` };
-    const dataResponse = await axios.get(url, { headers });
-    return dataResponse.data;
-} catch (error) {
-    fitsyncLogger.error('fitsync.fetch.failed', { endpoint, error: serializeError(error) });
-    throw error;
-}
+    const base_url = `https://api.fitnesssyncer.com/api/providers`;
+    const {FITSYNC_ACCESS_TOKEN} = process.env;
+    
+    try {
+        const url = `${base_url}/${endpoint}`;
+        const headers = { 'Authorization': `Bearer ${FITSYNC_ACCESS_TOKEN}` };
+        const dataResponse = await axios.get(url, { headers });
+        return dataResponse.data;
+    } catch (error) {
+        const isRateLimit = error.response?.status === 429;
+        
+        if (isRateLimit) {
+            recordFailure(error);
+            fitsyncLogger.warn('fitsync.rate_limit', { 
+                endpoint,
+                statusCode: 429,
+                message: 'Rate limit exceeded'
+            });
+        } else {
+            fitsyncLogger.error('fitsync.fetch.failed', { 
+                endpoint,
+                error: cleanErrorMessage(error),
+                statusCode: error.response?.status
+            });
+        }
+        
+        throw error;
+    }
 };
 
 
@@ -121,10 +248,30 @@ export const getActivities = async () => {
     return { items: activities };
 };
 
-const harvestActivities = async () => {
-try {
-    const username = getDefaultUsername();
-    const activitiesData = await getActivities();
+const harvestActivities = async (job_id) => {
+    // Check circuit breaker before attempting harvest
+    const cooldownStatus = isInCooldown();
+    if (cooldownStatus) {
+        fitsyncLogger.debug('fitsync.harvest.skipped', {
+            jobId: job_id,
+            reason: 'Circuit breaker active',
+            remainingMins: cooldownStatus.remainingMins
+        });
+        return { skipped: true, reason: 'cooldown', remainingMins: cooldownStatus.remainingMins };
+    }
+
+    try {
+        const username = getDefaultUsername();
+        const activitiesData = await getActivities();
+        
+        if (!activitiesData || !activitiesData.items) {
+            throw new Error('No activity data returned from FitnessSyncer API');
+        }
+        
+        fitsyncLogger.info('fitsync.harvest.activities', { 
+            jobId: job_id, 
+            count: activitiesData.items.length 
+        });
     const activities = activitiesData.items.map(item => {
         delete item.gps;
         const src = "garmin";
@@ -206,15 +353,36 @@ try {
     }, {});
     // Save to user-namespaced location
     userSaveFile(username, 'fitness', reducedSaveMe);
-
-
-
+    
+    // Success! Reset circuit breaker
+    recordSuccess();
+    fitsyncLogger.info('fitsync.harvest.complete', { 
+        jobId: job_id,
+        dates: Object.keys(reducedSaveMe).length,
+        username 
+    });
+    
     return reducedSaveMe;
 } catch (error) {
-    fitsyncLogger.error('fitsync.harvest.failed', { error: serializeError(error) });
-    return { success: false, error: error.message };
+    // Record failure for circuit breaker on rate limit errors
+    const isRateLimit = error.response?.status === 429 || 
+                       error.message?.includes('429') || 
+                       error.message?.includes('Rate limit');
+    const isAuthError = error.response?.status === 401 || error.response?.status === 403;
+    
+    if (isRateLimit || isAuthError) {
+        recordFailure(error);
+    }
+    
+    fitsyncLogger.error('fitsync.harvest.failed', { 
+        jobId: job_id,
+        error: cleanErrorMessage(error),
+        statusCode: error.response?.status
+    });
+    
+    return { success: false, error: cleanErrorMessage(error) };
 }
 };
 
-
+export { isInCooldown as isFitsyncInCooldown };
 export default harvestActivities;
