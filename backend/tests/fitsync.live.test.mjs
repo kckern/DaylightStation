@@ -43,7 +43,7 @@ describe('FitnessSyncer Live API', () => {
         
         try {
             // Use harvestActivities (default export) to trigger saving to disk
-            const result = await fitsync.default();
+            const result = await fitsync.default('test-job-123');
 
             if (result.success === false) {
                 throw new Error(result.error || 'FitnessSyncer harvest failed');
