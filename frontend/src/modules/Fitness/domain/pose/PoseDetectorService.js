@@ -20,14 +20,14 @@ const DEFAULT_CONFIG = {
   modelType: MODEL_TYPES.full,
   enableSmoothing: true,
   minPoseConfidence: 0.5,
-  minKeypointConfidence: 0.3,
+  minKeypointConfidence: 0.2,
   maxPoses: 1,
   scoreThreshold: 0.3,
   // Temporal smoothing (EMA)
   temporalSmoothing: true,
-  smoothingFactor: 0.8, // 0 = no smoothing, 1 = max smoothing (0.5-0.8 recommended)
+  smoothingFactor: 0.3, // 0 = no smoothing, 1 = max smoothing (0.5-0.8 recommended)
   velocityDamping: 0.3, // Limit sudden jumps
-  maxVelocity: 100, // Max pixels/frame a keypoint can move
+  maxVelocity: 300, // Max pixels/frame a keypoint can move
 };
 
 class PoseDetectorService {
@@ -279,7 +279,10 @@ class PoseDetectorService {
     
     // Skip if video not ready
     if (this.videoSource.readyState < 2) {
-      console.warn('[PoseDetectorService] Video not ready:', this.videoSource.readyState);
+      // Throttle warning
+      if (this.metrics.frameCount % 100 === 0) {
+        console.warn('[PoseDetectorService] Video not ready:', this.videoSource.readyState);
+      }
       return;
     }
     if (document.hidden) return;
@@ -304,10 +307,14 @@ class PoseDetectorService {
       if (poses && poses.length > 0) {
         const firstKp = poses[0].keypoints[0];
         if (isNaN(firstKp.x) || isNaN(firstKp.y)) {
-          console.error('[PoseDetectorService] NaN detected in pose output:', JSON.stringify(poses[0].keypoints.slice(0, 5)));
-          
           // Auto-switch to WASM if WebGL is failing
           this.metrics.nanCount = (this.metrics.nanCount || 0) + 1;
+          
+          // Log only on first occurrence and then every 60 frames
+          if (this.metrics.nanCount === 1 || this.metrics.nanCount % 60 === 0) {
+             console.error('[PoseDetectorService] NaN detected in pose output:', JSON.stringify(poses[0].keypoints.slice(0, 5)));
+          }
+
           if (this.metrics.nanCount > 10 && this.backend === 'webgl') {
              console.warn('[PoseDetectorService] Too many NaN frames, switching to WASM');
              this.metrics.nanCount = 0;
