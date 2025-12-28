@@ -161,11 +161,13 @@ class ConfigService {
    * Resolve the data directory path
    */
   #resolveDataDir() {
-    // Priority: system config > legacy config > default
+    // Priority: system config > process.env > legacy config > default
+    // We prefer process.env because it's populated by index.js which handles 
+    // external config directories and local overrides correctly.
     this.#dataDir = 
       this.#systemConfig?.paths?.data ||
-      this.#legacyConfig?.path?.data ||
       process.env.path?.data ||
+      this.#legacyConfig?.path?.data ||
       path.join(this.#baseDir, 'data');
   }
 

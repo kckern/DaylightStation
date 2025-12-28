@@ -16,13 +16,16 @@ import { Webcam as FitnessWebcam } from '../../../components/FitnessWebcam.jsx';
 import SkeletonCanvas from './components/SkeletonCanvas.jsx';
 import PoseSettings from './components/PoseSettings.jsx';
 import PoseInspector from './components/PoseInspector.jsx';
+import ConfidenceMeter from './components/ConfidenceMeter.jsx';
+import { calculatePoseConfidence, createConfidenceSmoother } from '../../../lib/pose/poseConfidence.js';
 import './PoseDemo.scss';
 
 /**
  * Inner component that consumes PoseProvider
  */
 const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
-  const { registerLifecycle } = useFitnessPlugin('pose_demo');
+  const plugin = useFitnessPlugin('pose_demo');
+  const { registerLifecycle } = plugin || {};
   
   // Refs
   const webcamRef = useRef(null);
@@ -46,7 +49,20 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     confidenceThreshold: 0.3,
     mirrorHorizontal: true,
     hipCentered: true,
+    renderThreshold: 40,
+    showConfidenceMeter: true,
   });
+  
+  // Confidence meter state
+  const [poseConfidence, setPoseConfidence] = useState(0);
+  const confidenceSmootherRef = useRef(null);
+
+  // Initialize smoother safely
+  useEffect(() => {
+    if (!confidenceSmootherRef.current && typeof createConfidenceSmoother === 'function') {
+      confidenceSmootherRef.current = createConfidenceSmoother(0.3);
+    }
+  }, []);
   
   // Consume pose provider
   const {
@@ -67,6 +83,25 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     setVideoSource,
     videoSource,
   } = usePoseProvider({ autoStart: false });
+
+  // Calculate confidence when pose changes
+  useEffect(() => {
+    if (!confidenceSmootherRef.current) return;
+
+    try {
+      if (primaryPose) {
+        const result = calculatePoseConfidence(primaryPose);
+        const smoothed = confidenceSmootherRef.current(result.overall);
+        setPoseConfidence(smoothed);
+      } else {
+        // Decay confidence when no pose
+        const smoothed = confidenceSmootherRef.current(0);
+        setPoseConfidence(smoothed);
+      }
+    } catch (err) {
+      console.warn('[PoseDemo] Error calculating confidence:', err);
+    }
+  }, [primaryPose]);
   
   // Lifecycle
   useEffect(() => {
@@ -162,6 +197,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     sourceWidth: videoConstraints.width.ideal,
     sourceHeight: videoConstraints.height.ideal,
     showGrid: true,
+    renderThreshold: renderOptions.renderThreshold,
   }), [renderOptions, videoConstraints]);
 
   return (
@@ -174,6 +210,19 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
           height={dimensions.height}
           options={skeletonOptions}
         />
+        
+        {/* Confidence Meter */}
+        {renderOptions.showConfidenceMeter && isDetecting && (
+          <ConfidenceMeter
+            confidence={poseConfidence}
+            threshold={renderOptions.renderThreshold}
+            showLabel
+            showStatus
+            showThresholdWarning
+            position="top-right"
+            animated
+          />
+        )}
         
         {/* Loading / Warmup State */}
         {(isLoading || !isDetecting) && (

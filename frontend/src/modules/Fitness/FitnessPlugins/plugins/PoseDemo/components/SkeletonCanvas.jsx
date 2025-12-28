@@ -7,7 +7,8 @@
 import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 import { BLAZEPOSE_CONNECTIONS, SIMPLIFIED_CONNECTIONS, getBodyPart, isLeftSide, isRightSide } from '../../../../lib/pose/poseConnections.js';
 import { getColorScheme, COLOR_SCHEMES } from '../../../../lib/pose/poseColors.js';
-import { mirrorKeypoints, toHipCenteredCoordinates, fromHipCenteredCoordinates } from '../../../../lib/pose/poseGeometry.js';
+import { mirrorKeypoints, toHipCenteredCoordinates, fromHipCenteredCoordinates, getPoseBoundingBox } from '../../../../lib/pose/poseGeometry.js';
+import { calculatePoseConfidence } from '../../../../lib/pose/poseConfidence.js';
 
 const DEFAULT_OPTIONS = {
   showKeypoints: true,
@@ -28,6 +29,8 @@ const DEFAULT_OPTIONS = {
   displayMode: 'overlay',
   // Hip-centered mode: anchors skeleton to hip, all points relative
   hipCentered: true,
+  // Confidence threshold - skip rendering poses below this confidence
+  renderThreshold: 40,
 };
 
 const SkeletonCanvas = ({
@@ -203,6 +206,14 @@ const SkeletonCanvas = ({
   const drawPose = useCallback((ctx, pose, canvasWidth, canvasHeight, transform = null) => {
     if (!pose?.keypoints) return;
     
+    // Check confidence threshold - skip rendering if below threshold
+    if (opts.renderThreshold > 0) {
+      const confidence = calculatePoseConfidence(pose);
+      if (confidence.overall < opts.renderThreshold) {
+        return; // Skip rendering this pose
+      }
+    }
+    
     let keypoints = pose.keypoints;
     
     // Mirror horizontally if needed (for webcam) - use source width for mirroring
@@ -220,16 +231,42 @@ const SkeletonCanvas = ({
         hipCenterInfo = result;
         
         // Place hip at center of canvas (or transform area)
+        // Shift down slightly (60%) to give more headroom for standing poses
         const centerX = transform 
           ? transform.offsetX + transform.scaledW / 2 
           : canvasWidth / 2;
         const centerY = transform 
-          ? transform.offsetY + transform.scaledH / 2 
-          : canvasHeight / 2;
+          ? transform.offsetY + transform.scaledH * 0.6 
+          : canvasHeight * 0.6;
         
         // Use fixed scale from transform if available, otherwise 1
-        // This prevents the skeleton from resizing during squats/jumps
         let scale = transform ? transform.scale : 1;
+
+        // Guardrail: Auto-scale if pose is too large for canvas
+        // This prevents "head cutoff" on init when user is close to camera
+        const bbox = getPoseBoundingBox({ keypoints: result.keypoints });
+        if (bbox) {
+          const padding = 40;
+          const availableHeight = canvasHeight - (padding * 2);
+          const poseHeight = bbox.height * scale;
+          
+          // If pose is taller than available space, scale down
+          if (poseHeight > availableHeight) {
+            scale = scale * (availableHeight / poseHeight);
+          }
+          
+          // Also check if head goes off top despite scaling
+          // bbox.y is negative (distance from hip to head)
+          const headY = centerY + (bbox.y * scale);
+          if (headY < padding) {
+            // Shift down or scale more? Let's scale more to be safe
+            // We want centerY + bbox.y * newScale = padding
+            // bbox.y * newScale = padding - centerY
+            // newScale = (padding - centerY) / bbox.y
+            const safeScale = (padding - centerY) / bbox.y;
+            if (safeScale < scale) scale = safeScale;
+          }
+        }
 
         // Apply scale
         const scaledKeypoints = result.keypoints.map(kp => ({
@@ -281,6 +318,7 @@ const SkeletonCanvas = ({
     opts.showLabels,
     opts.sourceWidth,
     opts.hipCentered,
+    opts.renderThreshold,
     connections,
     drawConnection,
     drawKeypoint,

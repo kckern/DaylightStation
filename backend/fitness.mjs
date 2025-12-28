@@ -171,33 +171,37 @@ const fitnessRouter = express.Router();
 const loadFitnessConfig = (householdId) => {
     const hid = householdId || configService.getDefaultHouseholdId();
     
-    // Try household-scoped path first
+    // Load household-scoped config
     const householdConfig = userDataService.readHouseholdAppData(hid, 'fitness', 'config');
-    if (householdConfig) {
-        // Log ambient_led config status
-        const ambientLed = householdConfig?.ambient_led;
-        if (ambientLed?.scenes) {
-            const sceneKeys = Object.keys(ambientLed.scenes);
-            fitnessLogger.info('fitness.config.ambient_led', {
-                enabled: true,
-                householdId: hid,
-                scenes: sceneKeys,
-                throttleMs: ambientLed.throttle_ms || 2000,
-                hasOffScene: !!ambientLed.scenes.off
-            });
-        } else {
-            fitnessLogger.debug('fitness.config.ambient_led', {
-                enabled: false,
-                householdId: hid,
-                reason: ambientLed ? 'no scenes configured' : 'ambient_led section missing'
-            });
-        }
-        return householdConfig;
+    
+    if (!householdConfig) {
+        fitnessLogger.error('fitness.config.not-found', {
+            householdId: hid,
+            expectedPath: `households/${hid}/apps/fitness/config.yml`
+        });
+        return null;
     }
     
-    // Fall back to legacy global path
-    console.warn(`[fitness] Household config not found for '${hid}', falling back to legacy fitness/config`);
-    return loadFile('fitness/config');
+    // Log ambient_led config status
+    const ambientLed = householdConfig?.ambient_led;
+    if (ambientLed?.scenes) {
+        const sceneKeys = Object.keys(ambientLed.scenes);
+        fitnessLogger.info('fitness.config.ambient_led', {
+            enabled: true,
+            householdId: hid,
+            scenes: sceneKeys,
+            throttleMs: ambientLed.throttle_ms || 2000,
+            hasOffScene: !!ambientLed.scenes.off
+        });
+    } else {
+        fitnessLogger.debug('fitness.config.ambient_led', {
+            enabled: false,
+            householdId: hid,
+            reason: ambientLed ? 'no scenes configured' : 'ambient_led section missing'
+        });
+    }
+    
+    return householdConfig;
 };
 
 // Fitness config endpoint - hydrates primary users from profiles
