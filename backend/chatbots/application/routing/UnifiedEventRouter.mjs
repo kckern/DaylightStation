@@ -464,9 +464,16 @@ export class UnifiedEventRouter {
       }
 
       case 'rx': {
+        const messagingGateway = this.#container.getMessagingGateway();
+
+        // Attempt to update UI (remove buttons), but don't block if it fails
         try {
-          const messagingGateway = this.#container.getMessagingGateway();
           await messagingGateway.updateMessage(conversationId, sourceMessageId, { choices: [] });
+        } catch (e) {
+          this.#logger.warn('report.accept.ui_update_failed', { error: e.message });
+        }
+
+        try {
           this.#logger.info('report.accepted', { conversationId, sourceMessageId });
 
           // Trigger post-report coaching
