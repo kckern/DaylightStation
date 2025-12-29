@@ -64,6 +64,12 @@ export default function TVApp({ appParam }) {
   // Stack to track current menu/content components
   // (Each element is a React element representing a menu level)
   const [contentStack, setContentStack] = useState([]);
+  
+  // State to persist menu selection across navigation
+  // Array per depth: { index, key }
+  const [menuSelections, setMenuSelections] = useState([{ index: 0, key: null }]);
+  // Tokens to force menu data refresh per depth
+  const [menuRefreshTokens, setMenuRefreshTokens] = useState([0]);
 
   // Derived current content from the stack
   const currentContent = contentStack[contentStack.length - 1] || null;
@@ -122,8 +128,32 @@ export default function TVApp({ appParam }) {
     delete safeSelection.ref;
     delete safeSelection.key;
     const clear = () => setCurrentContent(null);
-    const props = { ...safeSelection, clear, onSelect: handleSelection, onEscape: handleEscape };
-    logger.debug('tvapp-selection', { selectionKeys: Object.keys(selection || {}), props: Object.keys(props || {}) });
+
+    // Calculate depth for nested menus (root depth = 0, first submenu = 1, etc.)
+    const depth = contentStack.length + 1;
+    
+    // Create a callback to update the index at this specific depth
+    const updateSelectionAtDepth = (newIndex, key) => {
+      setMenuSelections((oldSelections) => {
+        const next = [...oldSelections];
+        next[depth] = { index: newIndex, key: key ?? null };
+        return next;
+      });
+    };
+    
+    const props = {
+      ...safeSelection,
+      clear,
+      onSelect: handleSelection,
+      onEscape: handleEscape,
+      // Pass depth-specific props for menus
+      menuDepth: depth,
+      selectedIndex: menuSelections[depth]?.index ?? 0,
+      selectedKey: menuSelections[depth]?.key ?? null,
+      onSelectedIndexChange: updateSelectionAtDepth,
+      refreshToken: menuRefreshTokens[depth] ?? 0,
+    };
+    logger.debug('tvapp-selection', { selectionKeys: Object.keys(selection || {}), props: Object.keys(props || {}), depth });
     const options = {
       play:      <Player {...props} />,
       queue:     <Player {...props} />,
@@ -145,12 +175,37 @@ export default function TVApp({ appParam }) {
     if (!newContent) {
       setContentStack((oldStack) => {
         if (oldStack.length > 0) {
-          return oldStack.slice(0, -1);
+          const newStack = oldStack.slice(0, -1);
+          // Pop indices/refresh tokens and bump the token for the newly exposed menu
+          setMenuSelections((oldSelections) => oldSelections.slice(0, -1));
+          setMenuRefreshTokens((oldTokens) => {
+            const trimmed = oldTokens.slice(0, -1);
+            const target = Math.max(0, trimmed.length - 1);
+            trimmed[target] = (trimmed[target] || 0) + 1;
+            return trimmed;
+          });
+          return newStack;
         }
         return [];
       });
     } else {
-      setContentStack((oldStack) => [...oldStack, newContent]);
+      setContentStack((oldStack) => {
+        // When pushing new content, ensure arrays have enough entries
+        const newDepth = oldStack.length + 1;
+        setMenuSelections((oldSelections) => {
+          if (newDepth >= oldSelections.length) {
+            return [...oldSelections, { index: 0, key: null }];
+          }
+          return oldSelections;
+        });
+        setMenuRefreshTokens((oldTokens) => {
+          if (newDepth >= oldTokens.length) {
+            return [...oldTokens, 0];
+          }
+          return oldTokens;
+        });
+        return [...oldStack, newContent];
+      });
     }
   }, []);
 
@@ -196,6 +251,46 @@ export default function TVApp({ appParam }) {
     }
   }, [autoplay, autoplayed, setCurrentContent, logger]);
 
+  // Keep TVMenu instances in the stack synced with the latest selected indices
+  useEffect(() => {
+    setContentStack((prev) => {
+      const updated = prev.map((element, idx) => {
+        if (!element?.type || element.type !== TVMenu) return element;
+        const depth = idx + 1; // stack index 0 corresponds to depth 1 (first submenu)
+        const selectedIndex = menuSelections[depth]?.index ?? 0;
+        const selectedKey = menuSelections[depth]?.key ?? null;
+        const refreshToken = menuRefreshTokens[depth] ?? 0;
+        const onSelectedIndexChange = (newIndex, key) => {
+          setMenuSelections((old) => {
+            const next = [...old];
+            next[depth] = { index: newIndex, key: key ?? null };
+            return next;
+          });
+        };
+        const props = element.props || {};
+        const shouldUpdate =
+          props.selectedIndex !== selectedIndex ||
+          props.selectedKey !== selectedKey ||
+          props.refreshToken !== refreshToken;
+
+        if (!shouldUpdate) {
+          return element; // preserve reference to avoid unnecessary renders/loops
+        }
+
+        return React.cloneElement(element, {
+          menuDepth: depth,
+          selectedIndex,
+          selectedKey,
+          onSelectedIndexChange,
+          refreshToken,
+        });
+      });
+
+      const hasChanges = updated.some((el, i) => el !== prev[i]);
+      return hasChanges ? updated : prev;
+    });
+  }, [menuSelections, menuRefreshTokens]);
+
   useEffect(() => {
     if (appParam) {
       setContentStack([<AppContainer open={{ app: appParam }} clear={() => setContentStack([])} />]);
@@ -226,6 +321,17 @@ export default function TVApp({ appParam }) {
       content={
         <TVMenu
           list={list}
+          menuDepth={0}
+          selectedIndex={menuSelections[0]?.index ?? 0}
+          selectedKey={menuSelections[0]?.key ?? null}
+          refreshToken={menuRefreshTokens[0] ?? 0}
+          onSelectedIndexChange={(newIndex, key) => {
+            setMenuSelections((oldSelections) => {
+              const next = [...oldSelections];
+              next[0] = { index: newIndex, key: key ?? null };
+              return next;
+            });
+          }}
           onSelect={handleSelection}
           onEscape={handleEscape}
         />
