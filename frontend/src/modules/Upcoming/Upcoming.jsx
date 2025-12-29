@@ -179,12 +179,11 @@ function ListItem({ item, className }) {
 
   return (
     <div className={className + ` list-item ${item.color || "grey"}`}>
-      <h2>
+    
         <span className="chip">
         {chipLabel}
         </span> 
         {item.title}
-      </h2>
     </div>
   );
 }
