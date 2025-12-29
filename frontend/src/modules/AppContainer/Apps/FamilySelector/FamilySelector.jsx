@@ -280,17 +280,22 @@ function FamilySelectorInner({ members, winner, title, exclude }) {
   /**
    * Keyboard event handler
    */
-  useEffect(() => {
+useEffect(() => {
     const handleKeyDown = (e) => {
-      if ((e.code === 'Space' || e.code === 'Enter') && wheelState === WHEEL_STATE.IDLE) {
-        e.preventDefault();
-        spin();
-      }
+        // Space, Enter, or NVIDIA Shield Play/Center button
+        const isPlayButton = e.code === 'Space' || e.code === 'Enter' || e.code === 'MediaPlayPause' || e.keyCode === 13;
+        // Arrow keys (left/right)
+        const isArrowKey = e.code === 'ArrowLeft' || e.code === 'ArrowRight';
+        
+        if ((isPlayButton || isArrowKey) && wheelState === WHEEL_STATE.IDLE) {
+            e.preventDefault();
+            spin();
+        }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [wheelState, spin]);
+}, [wheelState, spin]);
 
   // Disable if < 2 members
   if (activeMembers.length < 2) {
