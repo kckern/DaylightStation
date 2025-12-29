@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatTime } from '../../lib/helpers.js';
 import { useOverlayPresentation } from '../useOverlayPresentation.js';
 import { RESILIENCE_STATUS } from '../useResilienceState.js';
@@ -32,6 +32,8 @@ function createOverlayProps({
   overlayCountdownSeconds,
   playerPositionDisplay,
   intentPositionDisplay,
+  playerPositionUpdatedAt,
+  intentPositionUpdatedAt,
   playbackHealth,
   mediaDetails,
   startupWatchdogState
@@ -65,6 +67,8 @@ function createOverlayProps({
     countdownSeconds: overlayCountdownSeconds,
     playerPositionDisplay,
     intentPositionDisplay,
+    playerPositionUpdatedAt,
+    intentPositionUpdatedAt,
     playbackHealth,
     mediaDetails,
     startupWatchdogState
@@ -106,6 +110,28 @@ export function useResiliencePresentation({
   intentMsForDisplay
 }) {
   const [showDebug, setShowDebug] = useState(false);
+
+  // Track timestamps for position freshness (Fix 3: position display audit)
+  const playerPositionUpdatedAtRef = useRef(Date.now());
+  const intentPositionUpdatedAtRef = useRef(null);
+  const lastSecondsRef = useRef(seconds);
+  const lastIntentMsRef = useRef(intentMsForDisplay);
+
+  // Update player position timestamp when seconds changes
+  useEffect(() => {
+    if (seconds !== lastSecondsRef.current) {
+      lastSecondsRef.current = seconds;
+      playerPositionUpdatedAtRef.current = Date.now();
+    }
+  }, [seconds]);
+
+  // Update intent position timestamp when intentMsForDisplay changes
+  useEffect(() => {
+    if (intentMsForDisplay !== lastIntentMsRef.current) {
+      lastIntentMsRef.current = intentMsForDisplay;
+      intentPositionUpdatedAtRef.current = Number.isFinite(intentMsForDisplay) ? Date.now() : null;
+    }
+  }, [intentMsForDisplay]);
 
   useEffect(() => {
     const waiting = status === RESILIENCE_STATUS.pending || status === RESILIENCE_STATUS.recovering;
@@ -184,6 +210,8 @@ export function useResiliencePresentation({
       overlayCountdownSeconds: overlayInputs.overlayCountdownSeconds,
       playerPositionDisplay,
       intentPositionDisplay,
+      playerPositionUpdatedAt: playerPositionUpdatedAtRef.current,
+      intentPositionUpdatedAt: intentPositionUpdatedAtRef.current,
       playbackHealth,
       mediaDetails: overlayInputs.mediaDetails,
       startupWatchdogState
