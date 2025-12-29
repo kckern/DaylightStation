@@ -9,6 +9,7 @@ import Weather from '../modules/Weather/Weather'
 import Upcoming from '../modules/Upcoming/Upcoming'
 import Health from '../modules/Health/Health'
 import { FinanceChart } from '../modules/Finance/Finance'
+import EntropyPanel from '../modules/Entropy/EntropyPanel'
 
 import Player from '../modules/Player/Player'
 import {KeypadMenu} from '../modules/Menu/Menu'
@@ -262,23 +263,11 @@ function OfficeApp() {
             flexDirection: 'column',
             justifyContent: 'center',
             alignItems: 'center',
-            padding: '1rem'
+            padding: '1rem',
+            width: 'calc(100% - 2rem)'
           }}
           >
-            <div>Entropy Dashboard coming soon</div>
-            {lastPayloadMessage && (
-              <div style={{ 
-                marginTop: '1rem', 
-                fontSize: '0.8rem', 
-                color: '#FFFFFF66',
-                textAlign: 'center' 
-              }}>
-                <div>Last WebSocket Message:</div>
-                <div style={{ fontSize: '0.7rem' }}>
-                  {JSON.stringify(lastPayloadMessage, null, 2)}
-                </div>
-              </div>
-            )}
+            <EntropyPanel />
           </div>
         </div>
         <div className='content'>
