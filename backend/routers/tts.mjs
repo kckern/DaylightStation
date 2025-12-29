@@ -1,12 +1,12 @@
-import axios from './lib/http.mjs';
+import axios from '../lib/http.mjs';
 import express from 'express';
-import { generateSpeech } from './lib/gpt.js';
+import { generateSpeech } from '../lib/gpt.mjs';
 import fs from 'fs';
 import { storyTeller } from './story/story.mjs';
 import { v4 as uuidv4 } from 'uuid';
-import { loadFile, saveFile } from './lib/io.mjs';
+import { loadFile, saveFile } from '../lib/io.mjs';
 import cookieParser from 'cookie-parser';
-import { createLogger } from './lib/logging/logger.js';
+import { createLogger } from '../lib/logging/logger.js';
 
 const ttsLogger = createLogger({
     source: 'backend',

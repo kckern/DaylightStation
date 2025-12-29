@@ -1,13 +1,13 @@
 import express from 'express';
-import { loadFile, saveFile } from './lib/io.mjs';
+import { loadFile, saveFile } from '../lib/io.mjs';
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
-import { userService } from './lib/config/UserService.mjs';
-import { configService } from './lib/config/ConfigService.mjs';
-import { userDataService } from './lib/config/UserDataService.mjs';
-import { activateScene } from './lib/homeassistant.mjs';
-import { createLogger } from './lib/logging/logger.js';
+import { userService } from '../lib/config/UserService.mjs';
+import { configService } from '../lib/config/ConfigService.mjs';
+import { userDataService } from '../lib/config/UserDataService.mjs';
+import { activateScene } from '../lib/homeassistant.mjs';
+import { createLogger } from '../lib/logging/logger.js';
 
 const fitnessLogger = createLogger({ source: 'backend', app: 'fitness' });
 

@@ -4,7 +4,7 @@ import { parse } from 'yaml';
 import path, { join } from 'path';
 import cors from 'cors'; // Step 2: Import cors
 import request from 'request'; // Import the request module
-import { createWebsocketServer } from './websocket.js';
+import { createWebsocketServer } from './routers/websocket.mjs';
 import { createServer } from 'http';
 import { loadFile } from './lib/io.mjs';
 import 'dotenv/config'; // Load .env file
@@ -149,22 +149,22 @@ async function initializeApp() {
     createWebsocketServer(server);
 
     // Import routers dynamically after configuration is set
-    const { default: cron } = await import('./cron.mjs');
-    const { default: fetchRouter } = await import('./fetch.mjs');
-    const { default: harvestRouter } = await import('./harvest.js');
+    const { default: cron } = await import('./routers/cron.mjs');
+    const { default: fetchRouter } = await import('./routers/fetch.mjs');
+    const { default: harvestRouter } = await import('./routers/harvest.mjs');
     // JournalistRouter now handled in api.mjs for proxy_toggle support
-    const { default: homeRouter } = await import('./home.mjs');
-    const { default: mediaRouter } = await import('./media.mjs');
-    const { default: healthRouter } = await import('./health.mjs');
-    const { default: lifelogRouter } = await import('./lifelog.mjs');
-    const { default: fitnessRouter } = await import('./fitness.mjs');
-    const { default: printerRouter } = await import('./printer.mjs');
-    const { default: gratitudeRouter } = await import('./gratitude.mjs');
-    const { default: plexRouter } = await import('./plex.mjs');
+    const { default: homeRouter } = await import('./routers/home.mjs');
+    const { default: mediaRouter } = await import('./routers/media.mjs');
+    const { default: healthRouter } = await import('./routers/health.mjs');
+    const { default: lifelogRouter } = await import('./routers/lifelog.mjs');
+    const { default: fitnessRouter } = await import('./routers/fitness.mjs');
+    const { default: printerRouter } = await import('./routers/printer.mjs');
+    const { default: gratitudeRouter } = await import('./routers/gratitude.mjs');
+    const { default: plexProxyRouter } = await import('./routers/plexProxy.mjs');
 
 
-    const { default: exe } = await import('./exe.js');
-    const { default: tts } = await import('./tts.mjs');
+    const { default: exe } = await import('./routers/exe.mjs');
+    const { default: tts } = await import('./routers/tts.mjs');
 
     // Backend API
     app.post('/api/logs', (req, res) => {
@@ -280,7 +280,7 @@ async function initializeApp() {
     app.use("/print", printerRouter);
     app.use("/tts", tts);
     app.use("/api/gratitude", gratitudeRouter);
-    app.use("/plex_proxy", plexRouter);
+    app.use("/plex_proxy", plexProxyRouter);
 
     // Mount API router on main app for webhook routes (journalist, foodlog)
     const { default: apiRouter } = await import('./api.mjs');

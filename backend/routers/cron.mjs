@@ -4,9 +4,9 @@ import express from "express";
 import crypto from "crypto";
 import moment from "moment-timezone";
 import { CronExpressionParser } from "cron-parser";
-import Infinity from "./lib/infinity.js";
-import { loadFile, saveFile } from "./lib/io.mjs";
-import { createLogger } from './lib/logging/logger.js';
+import Infinity from "../lib/infinity.mjs";
+import { loadFile, saveFile } from "../lib/io.mjs";
+import { createLogger } from '../lib/logging/logger.js';
 
 const apiRouter = express.Router();
 const timeZone = "America/Los_Angeles";
@@ -19,10 +19,10 @@ const cronLogger = createLogger({
 
 const cron = {
   cron10Mins: [
-    "./lib/weather.js",
-     "./lib/gcal.js",
-     "./lib/todoist.js",
-     "./lib/gmail.js",
+    "./lib/weather.mjs",
+     "./lib/gcal.mjs",
+     "./lib/todoist.mjs",
+     "./lib/gmail.mjs",
   ],
   cronHourly: [
      "./lib/withings.mjs",
@@ -33,7 +33,7 @@ const cron = {
     // ...Infinity.keys.map(key => (req) => Infinity.loadData(key, req)),
   ],
   cronDaily: [
-     "./lib/clickup.js",
+     "./lib/clickup.mjs",
      "./lib/youtube.mjs",
   ]
 };

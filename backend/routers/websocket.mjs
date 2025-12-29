@@ -2,10 +2,10 @@
 // WebSocket server
 
 import { WebSocketServer } from 'ws';
-import { createLogger } from './lib/logging/logger.js';
-import { serializeError } from './lib/logging/utils.js';
-import { ingestFrontendLogs } from './lib/logging/ingestion.js';
-import { isLoggingInitialized } from './lib/logging/dispatcher.js';
+import { createLogger } from '../lib/logging/logger.js';
+import { serializeError } from '../lib/logging/utils.js';
+import { ingestFrontendLogs } from '../lib/logging/ingestion.js';
+import { isLoggingInitialized } from '../lib/logging/dispatcher.js';
 
 // Logger for websocket module itself (not for frontend events)
 const logger = createLogger({ source: 'websocket', app: 'api' });

@@ -1,6 +1,6 @@
 import express from 'express';
 import moment from 'moment-timezone';
-import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint, setFeedButton, queryPrinterStatus, testFeedButton, pingPrinter } from './lib/thermalprint.mjs';
+import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint, setFeedButton, queryPrinterStatus, testFeedButton, pingPrinter } from '../lib/thermalprint.mjs';
 import { getSelectionsForPrint } from './gratitude.mjs';
 
 const printerRouter = express.Router();

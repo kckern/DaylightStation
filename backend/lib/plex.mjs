@@ -8,35 +8,12 @@ import { userDataService } from './config/UserDataService.mjs';
 import fs from 'fs';
 import { createLogger } from './logging/logger.js';
 import { serializeError } from './logging/utils.js';
+import { getMediaMemoryPath, getMediaMemoryDir } from './mediaMemory.mjs';
 
 const plexLogger = createLogger({
   source: 'backend',
   app: 'plex'
 });
-
-// Helper for household-scoped media memory paths
-const getMediaMemoryPath = (category, householdId = null) => {
-    const hid = householdId || configService.getDefaultHouseholdId();
-    const householdDir = userDataService.getHouseholdDir(hid);
-    if (householdDir && fs.existsSync(path.join(householdDir, 'history', 'media_memory'))) {
-        return `households/${hid}/history/media_memory/${category}`;
-    }
-    return `history/media_memory/${category}`;
-};
-
-const getMediaMemoryDir = (householdId = null) => {
-    const hid = householdId || configService.getDefaultHouseholdId();
-    const householdDir = userDataService.getHouseholdDir(hid);
-    if (householdDir) {
-        const householdMemPath = path.join(householdDir, 'history', 'media_memory');
-        if (fs.existsSync(householdMemPath)) {
-            return householdMemPath;
-        }
-    }
-    // Fall back to legacy path
-    const legacyPath = path.join(process.env.path.data, 'history', 'media_memory');
-    return legacyPath;
-};
 
 
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } }
