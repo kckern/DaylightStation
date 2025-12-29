@@ -119,7 +119,7 @@ function getSegmentCenter(index, total, radius, cx, cy) {
 /**
  * Wheel Segment Component
  */
-function WheelSegment({ member, index, total, radius, cx, cy, isWinner }) {
+function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation, isSpinning }) {
   const path = getSegmentPath(index, total, radius, cx, cy);
   const center = getSegmentCenter(index, total, radius, cx, cy);
   const initials = getInitials(member.name);
@@ -131,10 +131,18 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner }) {
     setImgError(true);
   };
 
+  const avatarStyle = {
+    transformOrigin: `${center.x}px ${center.y}px`,
+    transform: `rotate(${-rotation}deg)`,
+    transition: isSpinning
+      ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
+      : 'none',
+  };
+
   return (
     <g className={`wheel-segment ${isWinner ? 'winner' : ''}`}>
       <path d={path} fill={member.color} stroke="#fff" strokeWidth="2" />
-      <g className="avatar-wrapper" style={{ transformOrigin: `${center.x}px ${center.y}px` }}>
+      <g className="avatar-wrapper" style={avatarStyle}>
         {/* Border circle */}
         <circle
           cx={center.x}
@@ -192,14 +200,22 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult 
       : 'none',
   };
 
+  // Calculate flick timing: time for one segment to pass
+  const segmentPassDuration = (SPIN_CONFIG.durationMs / ((rotation || 1) / 360)) * (360 / members.length);
+  const pointerStyle = {
+    '--flick-duration': `${segmentPassDuration}ms`,
+  };
+
   return (
-    <svg
-      viewBox={`0 0 ${size} ${size}`}
-      className={`roulette-wheel ${isSpinning ? 'spinning' : ''} ${showResult ? 'show-result' : ''}`}
-      width={size}
-      height={size}
-    >
-      <g className="wheel-segments" style={wheelStyle}>
+    <>
+      <div className={`wheel-pointer ${isSpinning ? 'flicking' : ''}`} style={pointerStyle}>▼</div>
+      <svg
+        viewBox={`0 0 ${size} ${size}`}
+        className={`roulette-wheel ${isSpinning ? 'spinning' : ''} ${showResult ? 'show-result' : ''}`}
+        width={size}
+        height={size}
+      >
+        <g className="wheel-segments" style={wheelStyle}>
         {members.map((member, index) => (
           <WheelSegment
             key={member.id}
@@ -210,11 +226,14 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult 
             cx={cx}
             cy={cy}
             isWinner={showResult && index === winnerIndex}
+            rotation={rotation}
+            isSpinning={isSpinning}
           />
         ))}
         <circle cx={cx} cy={cy} r={30} fill="#333" stroke="#fff" strokeWidth="3" />
       </g>
     </svg>
+    </>
   );
 }
 
@@ -326,7 +345,6 @@ useEffect(() => {
         <h1 className="wheel-title">{displayTitle}</h1>
 
         <div className="wheel-wrapper">
-          <div className="wheel-pointer">▼</div>
           <RouletteWheel
             members={activeMembers}
             rotation={rotation}

@@ -45,6 +45,22 @@
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
   z-index: 10;
   line-height: 1;
+  
+  &.flicking {
+    animation: pointer-flick var(--flick-duration) linear infinite;
+  }
+}
+
+@keyframes pointer-flick {
+  0%, 90% {
+    transform: translateX(-50%) rotate(0deg);
+  }
+  95% {
+    transform: translateX(-50%) rotate(15deg);
+  }
+  100% {
+    transform: translateX(-50%) rotate(0deg);
+  }
 }
 
 .roulette-wheel {
