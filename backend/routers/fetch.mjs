@@ -71,6 +71,12 @@ export const findUnwatchedItems = (media_keys, category = "media", shuffle = fal
 };
 
 export const clearWatchedItems = (media_keys, category = "media") => {
+    // Special handling for "plex" category - need to clear from library-specific files
+    if (category === "plex") {
+        return clearWatchedItemsFromPlexLibraries(media_keys);
+    }
+    
+    // Standard behavior for non-plex categories
     const memoryPath = getMediaMemoryPath(category);
     const media_memory = loadFile(memoryPath) || {};
     for (const key of media_keys) {
@@ -80,6 +86,62 @@ export const clearWatchedItems = (media_keys, category = "media") => {
     }
     saveFile(memoryPath, media_memory);
     return media_memory;
+}
+
+/**
+ * Clear watched items from all Plex library-specific files
+ * Handles the fact that plex history is stored in subdirectories like plex/fitness, plex/movies, etc.
+ * @param {Array<string>} media_keys - Array of plex IDs to clear
+ * @returns {Object} Combined result of all cleared items
+ */
+const clearWatchedItemsFromPlexLibraries = (media_keys) => {
+    const hid = configService.getDefaultHouseholdId();
+    const householdDir = userDataService.getHouseholdDir(hid);
+    
+    // Determine the base directory for plex history files
+    let plexDir;
+    if (householdDir && fs.existsSync(path.join(householdDir, 'history', 'media_memory', 'plex'))) {
+        plexDir = path.join(householdDir, 'history', 'media_memory', 'plex');
+    } else {
+        plexDir = path.join(dataPath, 'history', 'media_memory', 'plex');
+    }
+    
+    if (!fs.existsSync(plexDir)) {
+        console.warn('Plex history directory not found:', plexDir);
+        return {};
+    }
+    
+    let clearedCount = 0;
+    const files = fs.readdirSync(plexDir);
+    
+    // Iterate through all .yml/.yaml files in the plex directory
+    for (const file of files) {
+        if (!file.endsWith('.yml') && !file.endsWith('.yaml')) {
+            continue;
+        }
+        
+        const libraryName = file.replace(/\.ya?ml$/, '');
+        const memoryPath = getMediaMemoryPath(`plex/${libraryName}`);
+        const media_memory = loadFile(memoryPath) || {};
+        
+        let modified = false;
+        for (const key of media_keys) {
+            if (media_memory[key]) {
+                delete media_memory[key];
+                modified = true;
+                clearedCount++;
+            }
+        }
+        
+        // Only save if we actually modified this file
+        if (modified) {
+            saveFile(memoryPath, media_memory);
+            console.log(`Cleared ${media_keys.length} items from plex/${libraryName}`);
+        }
+    }
+    
+    console.log(`Total cleared: ${clearedCount} items from plex libraries`);
+    return { cleared: clearedCount, keys: media_keys };
 }
 apiRouter.get('/img/*', async (req, res, next) => {
     try {
