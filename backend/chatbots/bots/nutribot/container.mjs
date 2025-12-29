@@ -357,6 +357,7 @@ export class NutribotContainer {
     if (!this.#startAdjustmentFlow) {
       this.#startAdjustmentFlow = new StartAdjustmentFlow({
         messagingGateway: this.getMessagingGateway(),
+        selectDateForAdjustment: this.getSelectDateForAdjustment(),
         nutrilistRepository: this.#nutrilistRepository,
         conversationStateStore: this.#conversationStateStore,
         logger: this.#logger,

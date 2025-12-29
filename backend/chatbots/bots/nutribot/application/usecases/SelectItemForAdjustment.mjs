@@ -81,15 +81,15 @@ export class SelectItemForAdjustment {
       // 5. Build item detail message
       const message = this.#buildItemDetailMessage(foundItem, date);
 
-      // 6. Update message
+      // 6. Update message (using caption for photo message)
       await this.#messagingGateway.updateMessage(conversationId, messageId, {
-        text: message,
+        caption: message,
         parseMode: 'HTML',
         choices: keyboard,
       });
 
       const label = foundItem.name || foundItem.label || 'item';
-      this.#logger.info('adjustment.itemSelected', { userId, itemId, label });
+      this.#logger.info('adjustment.itemSelected', { userId, itemId, label, message });
 
       return { success: true, item: foundItem };
     } catch (error) {
