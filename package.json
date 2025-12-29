@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "axios": "^1.7.2",
+    "clickup.js": "^4.0.1",
     "cron-parser": "^4.9.0",
     "highcharts-more": "^0.1.7",
     "is-json": "^2.0.1",
