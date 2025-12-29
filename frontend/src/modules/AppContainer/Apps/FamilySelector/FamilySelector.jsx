@@ -16,7 +16,7 @@ import './FamilySelector.scss';
 const SPIN_CONFIG = {
   minSpins: 3,
   maxSpins: 6,
-  durationMs: 4000,
+  durationMs: 8000,
 };
 
 // Wheel states
@@ -38,7 +38,7 @@ const SEGMENT_COLORS = [
   '#F39C12', // Yellow
 ];
 
-const DEFAULT_TITLE = "Who's turn is it?";
+const DEFAULT_TITLE = "Whose turn is it?";
 
 /**
  * Get avatar URL for a user
