@@ -14,7 +14,7 @@ import Infinity from '../lib/infinity.mjs';
 import { isWatched } from '../lib/utils.mjs';
 import { slugify } from '../lib/utils.mjs';
 import { createLogger } from '../lib/logging/logger.js';
-import { getMediaMemoryPath } from '../lib/mediaMemory.mjs';
+import { getMediaMemoryPath, sanitizeForYAML } from '../lib/mediaMemory.mjs';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -223,15 +223,22 @@ mediaRouter.post('/log', async (req, res) => {
         const watchedDurationValue = Number.isFinite(normalizedWatched) && normalizedWatched >= 0
             ? Number(normalizedWatched.toFixed(3))
             : null;
+        
+        // Get existing lifetime duration and accumulate
+        const existingEntry = log[media_key] || {};
+        const existingLifetime = Number.parseFloat(existingEntry.watched_duration_lifetime) || 0;
+        const newLifetime = existingLifetime + (watchedDurationValue || 0);
+        
         const entry = {
             time: moment().format('YYYY-MM-DD hh:mm:ssa'),
-            title,
+            title: sanitizeForYAML(title),
             media_key,
             seconds: normalizedSeconds,
             percent: normalizedPercent
         };
         if (watchedDurationValue != null) {
-            entry.watched_duration = watchedDurationValue;
+            entry.watched_duration_last_session = watchedDurationValue;
+            entry.watched_duration_lifetime = Number(newLifetime.toFixed(3));
         }
         log[media_key] = entry;
         if(!log[media_key].title) delete log[media_key].title;
@@ -521,9 +528,15 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
             item.watchProgress = parseFloat(watchData.percent) || 0;
             item.watchSeconds = parseInt(watchData.seconds) || 0;
             item.watchedDate = watchData.time;
-            const watchedDurationValue = parseFloat(watchData.watched_duration);
-            if (!Number.isNaN(watchedDurationValue) && watchedDurationValue >= 0) {
-                item.watchDurationSeconds = watchedDurationValue;
+            // Last session duration (resets each play session)
+            const lastSessionValue = parseFloat(watchData.watched_duration_last_session);
+            if (!Number.isNaN(lastSessionValue) && lastSessionValue >= 0) {
+                item.watchDurationSecondsLastSession = lastSessionValue;
+            }
+            // Lifetime duration (cumulative, never resets)
+            const lifetimeValue = parseFloat(watchData.watched_duration_lifetime);
+            if (!Number.isNaN(lifetimeValue) && lifetimeValue >= 0) {
+                item.watchDurationSecondsLifetime = lifetimeValue;
             }
         } else {
              // console.log(`No history for ${item.plex} (type: ${typeof item.plex})`);

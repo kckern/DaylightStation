@@ -49,14 +49,11 @@ const DECODER_NUDGE_MIN_BUFFER_MS = 8000;
 const DECODER_NUDGE_COOLDOWN_MS = 3000;
 // Default: allow Shaka a longer startup window before we consider nudging the decoder
 const DECODER_NUDGE_GRACE_MS = 8000;
-const BITRATE_REDUCTION_FACTOR = 0.9;
-const DEFAULT_FALLBACK_MAX_VIDEO_BITRATE = 2000;
 const RECOVERY_WATCHDOG_FACTOR = 1.5;
 const RECOVERY_WATCHDOG_BASE_MS = 4000;
 const RECOVERY_WATCHDOG_MAX_MS = 60000;
 const STARTUP_WATCHDOG_TIERS = [
   { atMs: 8000, action: 'warn' },
-  { atMs: 15000, action: 'reduce-bitrate' },
   { atMs: 20000, action: 'remount' },
   { atMs: 30000, action: 'hard-reload' }
 ];
@@ -131,7 +128,6 @@ function useUserIntentControls({ isPaused, isSeeking, pauseIntent }) {
 export function useMediaResilience({
   getMediaEl,
   meta = {},
-  maxVideoBitrate: maxVideoBitrateProp = null,
   seconds = 0,
   isPaused = false,
   isSeeking = false,
@@ -331,7 +327,6 @@ export function useMediaResilience({
       ? debugConfig.overlaySummarySampleRate
       : 0.25
   });
-  const bitrateBaselineLogRef = useRef(null);
   const seekIntentNoiseThresholdSeconds = useMemo(
     () => Math.max(0.5, epsilonSeconds * 2),
     [epsilonSeconds]
@@ -409,193 +404,13 @@ export function useMediaResilience({
     });
   }, [logContextRef]);
 
-  const resolveInitialMaxVideoBitrate = useCallback(() => {
-    const explicit = Number(maxVideoBitrateProp);
-    if (Number.isFinite(explicit) && explicit > 0) {
-      const normalized = Math.round(explicit);
-      if (bitrateBaselineLogRef.current !== normalized) {
-        logResilienceEvent('bitrate-baseline', {
-          source: 'prop',
-          baselineKbps: normalized
-        }, { level: 'info', tags: ['bitrate'] });
-        bitrateBaselineLogRef.current = normalized;
-      }
-      return normalized;
-    }
-    const metaValue = Number(meta?.maxVideoBitrate);
-    if (Number.isFinite(metaValue) && metaValue > 0) {
-      const normalized = Math.round(metaValue);
-      if (bitrateBaselineLogRef.current !== normalized) {
-        logResilienceEvent('bitrate-baseline', {
-          source: 'meta',
-          baselineKbps: normalized
-        }, { level: 'info', tags: ['bitrate'] });
-        bitrateBaselineLogRef.current = normalized;
-      }
-      return normalized;
-    }
-    if (bitrateBaselineLogRef.current !== DEFAULT_FALLBACK_MAX_VIDEO_BITRATE) {
-      logResilienceEvent('bitrate-baseline', {
-        source: 'fallback-default',
-        baselineKbps: DEFAULT_FALLBACK_MAX_VIDEO_BITRATE
-      }, { level: 'info', tags: ['bitrate'] });
-      bitrateBaselineLogRef.current = DEFAULT_FALLBACK_MAX_VIDEO_BITRATE;
-    }
-    return DEFAULT_FALLBACK_MAX_VIDEO_BITRATE;
-  }, [logResilienceEvent, maxVideoBitrateProp, meta?.maxVideoBitrate]);
-
-  const [bitrateState, setBitrateState] = useState(() => {
-    const baseline = resolveInitialMaxVideoBitrate();
-    return {
-      waitKeySnapshot: waitKey,
-      current: baseline,
-      lastSyncedBaseline: baseline,
-      lastOverrideTag: null,
-      lastOverrideReason: null,
-      lastOverrideSource: null,
-      lastOverrideAt: null
-    };
-  });
-  const bitrateStateRef = useLatest(bitrateState);
   const metricsRef = useRef({
     stallCount: 0,
     stallDurationMs: 0,
     recoveryAttempts: 0,
     decoderNudges: 0,
-    bitrateOverrides: 0,
     startupInterventions: 0
   });
-
-  useEffect(() => {
-    const baseline = resolveInitialMaxVideoBitrate();
-    setBitrateState((prev) => {
-      const waitKeyChanged = prev.waitKeySnapshot !== waitKey;
-      const baselineChanged = Math.abs((prev.lastSyncedBaseline ?? baseline) - baseline) >= 1;
-      if (!waitKeyChanged && !baselineChanged) {
-        return prev;
-      }
-      return {
-        waitKeySnapshot: waitKey,
-        current: baseline,
-        lastSyncedBaseline: baseline,
-        lastOverrideTag: null,
-        lastOverrideReason: null,
-        lastOverrideSource: null,
-        lastOverrideAt: null
-      };
-    });
-  }, [waitKey, resolveInitialMaxVideoBitrate]);
-
-  const applyBitrateOverride = useCallback((nextValue, options = {}) => {
-    if (!Number.isFinite(nextValue) || nextValue <= 0) {
-      return null;
-    }
-    const normalized = Math.max(1, Math.round(nextValue));
-    const {
-      reason = 'resilience-bitrate-adjustment',
-      source = 'resilience',
-      fetchReason = reason,
-      overrideTag = null
-    } = options || {};
-
-    let stateChanged = false;
-    setBitrateState((prev) => {
-      const nextState = {
-        ...prev,
-        current: normalized,
-        lastOverrideTag: overrideTag || null,
-        lastOverrideReason: reason || null,
-        lastOverrideSource: source || null,
-        lastOverrideAt: Date.now()
-      };
-      if (
-        prev.current === nextState.current
-        && prev.lastOverrideTag === nextState.lastOverrideTag
-        && prev.lastOverrideReason === nextState.lastOverrideReason
-        && prev.lastOverrideSource === nextState.lastOverrideSource
-      ) {
-        return prev;
-      }
-      stateChanged = true;
-      return nextState;
-    });
-
-    if (stateChanged) {
-      metricsRef.current.bitrateOverrides += 1;
-      logMetric('bitrate_override', {
-        targetKbps: normalized,
-        reason,
-        source,
-        bitrateOverrides: metricsRef.current.bitrateOverrides
-      }, { level: 'info', tags: ['metric', 'bitrate'] });
-      logResilienceEvent('bitrate-target-updated', {
-        targetKbps: normalized,
-        reason,
-        source
-      }, { level: 'info' });
-    }
-
-    const fetchFn = fetchVideoInfoRef.current;
-    if (typeof fetchFn === 'function') {
-      Promise.resolve(fetchFn({
-        reason: fetchReason,
-        maxVideoBitrateOverride: normalized
-      }))
-        .then(() => {
-          setLastFetchAt(Date.now());
-        })
-        .catch((error) => {
-          logResilienceEvent('bitrate-target-update-error', {
-            reason: fetchReason,
-            error: error?.message || String(error)
-          }, { level: 'error' });
-        });
-    }
-
-    return normalized;
-  }, [fetchVideoInfoRef, logResilienceEvent, setBitrateState, setLastFetchAt]);
-
-  const reduceBitrateAfterHardReset = useCallback((context = {}) => {
-    const previous = bitrateStateRef.current;
-    const currentValue = Number.isFinite(previous?.current) && previous.current > 0
-      ? previous.current
-      : resolveInitialMaxVideoBitrate();
-    const reducedValue = Math.max(1, Math.round(currentValue * BITRATE_REDUCTION_FACTOR));
-    if (reducedValue >= currentValue) {
-      return;
-    }
-
-    logResilienceEvent('bitrate-reduction-applied', {
-      previousKbps: currentValue,
-      nextKbps: reducedValue,
-      reason: context?.reason || 'hard-reset'
-    }, { level: 'info' });
-
-    applyBitrateOverride(reducedValue, {
-      reason: context?.reason || 'hard-reset',
-      source: context?.source || 'resilience',
-      fetchReason: 'resilience-hard-reset-bitrate',
-      overrideTag: 'hard-recovery'
-    });
-  }, [applyBitrateOverride, bitrateStateRef, logResilienceEvent, resolveInitialMaxVideoBitrate]);
-
-  const restoreBitrateTarget = useCallback((options = {}) => {
-    const baseline = bitrateStateRef.current?.lastSyncedBaseline ?? resolveInitialMaxVideoBitrate();
-    if (!Number.isFinite(baseline) || baseline <= 0) {
-      return null;
-    }
-    const currentValue = bitrateStateRef.current?.current;
-    const overrideTag = bitrateStateRef.current?.lastOverrideTag;
-    if (Math.abs((currentValue ?? baseline) - baseline) < 1 && !overrideTag) {
-      return baseline;
-    }
-    return applyBitrateOverride(baseline, {
-      reason: options?.reason || 'manual-bitrate-restore',
-      source: options?.source || 'ui',
-      fetchReason: 'manual-bitrate-restore',
-      overrideTag: null
-    });
-  }, [applyBitrateOverride, bitrateStateRef, resolveInitialMaxVideoBitrate]);
 
   const requestDecoderNudge = useCallback((reason = 'decoder-stall', extraDetails = {}) => {
     const nudgeFn = nudgePlaybackRef.current;
@@ -978,7 +793,6 @@ export function useMediaResilience({
       stallCount: metrics.stallCount,
       totalStallDurationMs: metrics.stallDurationMs,
       decoderNudges: metrics.decoderNudges,
-      bitrateOverrides: metrics.bitrateOverrides,
       recoveryAttempts: metrics.recoveryAttempts,
       // Include Shaka player diagnostics for DASH streams
       shaka: fullDiagnostics?.shaka ?? null,
@@ -1127,8 +941,7 @@ export function useMediaResilience({
 
   const handleHardResetCycle = useCallback((payload = {}) => {
     setHardResetLoopCount((count) => count + 1);
-    reduceBitrateAfterHardReset(payload);
-  }, [reduceBitrateAfterHardReset]);
+  }, []);
 
   const recordSeekIntentMs = useCallback((valueMs, reason = 'seek-intent') => {
     if (!Number.isFinite(valueMs) || valueMs < 0) return;
@@ -1386,7 +1199,6 @@ export function useMediaResilience({
     playbackHealth,
     isStartupPhase: status === STATUS.startup || status === STATUS.pending,
     readDiagnostics: readPolicyDiagnostics,
-    reduceBitrateAfterHardReset,
     requestDecoderNudge,
     logResilienceEvent
   });
@@ -1756,20 +1568,6 @@ export function useMediaResilience({
           return;
         }
 
-        if (action === 'reduce-bitrate') {
-          reduceBitrateAfterHardReset({ reason: 'startup-watchdog', source: 'startup' });
-          logResilienceEvent('startup-watchdog-bitrate-reduction', {
-            atMs,
-            attempts: startupAttemptsRef.current
-          }, { level: 'info' });
-          metricsRef.current.startupInterventions += 1;
-          logMetric('startup_intervention_count', {
-            count: metricsRef.current.startupInterventions,
-            action
-          }, { level: 'info', tags: ['metric', 'startup'] });
-          return;
-        }
-
         if (action === 'remount') {
           logResilienceEvent('startup-timeout', {
             attempt: startupAttemptsRef.current + 1,
@@ -1849,8 +1647,7 @@ export function useMediaResilience({
     triggerRecovery,
     resolveSeekIntentMs,
     publishStartupWatchdogState,
-    startupSignalVersion,
-    reduceBitrateAfterHardReset
+    startupSignalVersion
   ]);
 
   useEffect(() => {
@@ -2058,13 +1855,7 @@ export function useMediaResilience({
     shouldRenderOverlay,
     playbackHealth,
     hardRecoverAfterStalledForMs: effectiveHardRecoverAfterStalledForMs,
-    hardRecoverLoadingGraceMs: effectiveLoadingGraceMs,
-    currentMaxVideoBitrate: bitrateState.current ?? null,
-    baselineMaxVideoBitrate: bitrateState.lastSyncedBaseline ?? null,
-    bitrateOverrideTag: bitrateState.lastOverrideTag || null,
-    bitrateOverrideReason: bitrateState.lastOverrideReason || null,
-    bitrateOverrideSource: bitrateState.lastOverrideSource || null,
-    bitrateOverrideAt: bitrateState.lastOverrideAt || null
+    hardRecoverLoadingGraceMs: effectiveLoadingGraceMs
   }), [
     status,
     policyState,
@@ -2086,13 +1877,7 @@ export function useMediaResilience({
     shouldRenderOverlay,
     playbackHealth,
     effectiveHardRecoverAfterStalledForMs,
-    effectiveLoadingGraceMs,
-    bitrateState.current,
-    bitrateState.lastSyncedBaseline,
-    bitrateState.lastOverrideTag,
-    bitrateState.lastOverrideReason,
-    bitrateState.lastOverrideSource,
-    bitrateState.lastOverrideAt
+    effectiveLoadingGraceMs
   ]);
   const stateRef = useLatest(state);
 
@@ -2125,8 +1910,6 @@ export function useMediaResilience({
     waitingToPlay,
     stallClassification,
     resilienceState.recoveryAttempts,
-    bitrateState.current,
-    bitrateState.lastSyncedBaseline,
     internalStartupWatchdogState.state,
     internalStartupWatchdogState.active,
     internalStartupWatchdogState.attempts
@@ -2241,9 +2024,7 @@ export function useMediaResilience({
     togglePauseOverlay,
     recordSeekIntentSeconds,
     recordSeekIntentMs,
-    getSeekIntentMs: () => resolveSeekIntentMs(),
-    getMaxVideoBitrate: () => bitrateStateRef.current?.current ?? null,
-    restoreMaxVideoBitrate: (options) => restoreBitrateTarget(options)
+    getSeekIntentMs: () => resolveSeekIntentMs()
   }), [
     fetchVideoInfoRef,
     markHealthy,
@@ -2261,9 +2042,7 @@ export function useMediaResilience({
     resilienceActions,
     setOverlayPausePreference,
     setHardResetLoopCount,
-    markLoadingIntentActive,
-    bitrateStateRef,
-    restoreBitrateTarget
+    markLoadingIntentActive
   ]);
 
   useEffect(() => {

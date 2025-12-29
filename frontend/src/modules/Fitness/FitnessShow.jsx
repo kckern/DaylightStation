@@ -463,15 +463,10 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
 
   const isEpisodeWatched = useCallback((episode) => {
     const watchProgress = normalizeNumber(episode?.watchProgress) ?? 0;
-    const watchDurationSeconds = normalizeNumber(
-      episode?.watchDurationSeconds ?? episode?.watchedDuration ?? episode?.watched_duration
-    );
-    const episodeDurationSeconds = normalizeNumber(episode?.duration);
-    const hasDurationSignal = Number.isFinite(watchDurationSeconds) && Number.isFinite(episodeDurationSeconds) && episodeDurationSeconds > 0;
-    const watchedByDurationPercent = hasDurationSignal
-      ? (watchDurationSeconds / episodeDurationSeconds) * 100
-      : null;
-    return hasDurationSignal ? watchedByDurationPercent >= 50 : watchProgress >= 50;
+    const durationSeconds = normalizeNumber(episode?.duration) ?? 0;
+    // For long items (>45 min), require 95% progress; otherwise 50%
+    const threshold = durationSeconds > 45 * 60 ? 95 : 50;
+    return watchProgress >= threshold;
   }, []);
 
   const handlePlayEpisode = async (episode, sourceEl = null) => {
@@ -995,23 +990,12 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                         {seasonEpisodes.map((episode, index) => {
                           const watchProgress = normalizeNumber(episode.watchProgress) ?? 0;
                           const watchedDate = episode.watchedDate;
-                          const watchDurationSeconds = normalizeNumber(
-                            episode.watchDurationSeconds ?? episode.watchedDuration ?? episode.watched_duration
-                          );
-                          const episodeDurationSeconds = normalizeNumber(episode.duration);
-                          const hasDurationSignal = Number.isFinite(watchDurationSeconds) && Number.isFinite(episodeDurationSeconds) && episodeDurationSeconds > 0;
-                          const watchedByDurationPercent = hasDurationSignal
-                            ? (watchDurationSeconds / episodeDurationSeconds) * 100
-                            : null;
-                          const isWatched = hasDurationSignal
-                            ? watchedByDurationPercent >= 50
-                            : watchProgress >= 50;
-                          const hasProgress = hasDurationSignal
-                            ? watchDurationSeconds > 0
-                            : watchProgress > 15;
-                          const progressPercent = hasDurationSignal
-                            ? Math.max(0, Math.min(100, watchedByDurationPercent ?? 0))
-                            : Math.max(0, Math.min(100, watchProgress));
+                          const durationSeconds = normalizeNumber(episode.duration) ?? 0;
+                          // For long items (>45 min), require 95% progress; otherwise 50%
+                          const watchedThreshold = durationSeconds > 45 * 60 ? 95 : 50;
+                          const isWatched = watchProgress >= watchedThreshold;
+                          const hasProgress = watchProgress > 15;
+                          const progressPercent = Math.max(0, Math.min(100, watchProgress));
                           const showProgressBar = isResumable && hasProgress && !isWatched;
                           const episodeNumber = Number.isFinite(episode?.episodeNumber)
                             ? episode.episodeNumber

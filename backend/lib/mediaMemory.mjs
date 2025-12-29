@@ -12,6 +12,57 @@ import { configService } from './config/ConfigService.mjs';
 import { userDataService } from './config/UserDataService.mjs';
 
 /**
+ * Sanitize string data to prevent YAML parsing issues
+ * - Normalizes unicode to NFC form (combining diacritics -> precomposed)
+ * - Removes control characters and problematic unicode
+ * - Handles null/undefined gracefully
+ * @param {string|null|undefined} str - String to sanitize
+ * @returns {string} Sanitized string safe for YAML
+ */
+export const sanitizeForYAML = (str) => {
+    if (str == null || typeof str !== 'string') return '';
+    
+    // Normalize unicode to NFC (precomposed form) to avoid combining diacritics issues
+    let sanitized = str.normalize('NFC');
+    
+    // Remove control characters except newline/tab
+    sanitized = sanitized.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
+    
+    // Remove zero-width characters and other problematic unicode
+    sanitized = sanitized.replace(/[\u200B-\u200D\uFEFF]/g, '');
+    
+    // Trim whitespace
+    sanitized = sanitized.trim();
+    
+    return sanitized;
+};
+
+/**
+ * Recursively sanitize all string values in an object for YAML safety
+ * @param {Object} obj - Object to sanitize
+ * @returns {Object} New object with sanitized strings
+ */
+export const sanitizeObjectForYAML = (obj) => {
+    if (obj == null || typeof obj !== 'object') {
+        return typeof obj === 'string' ? sanitizeForYAML(obj) : obj;
+    }
+    
+    if (Array.isArray(obj)) {
+        return obj.map(sanitizeObjectForYAML);
+    }
+    
+    const sanitized = {};
+    for (const [key, value] of Object.entries(obj)) {
+        const sanitizedKey = sanitizeForYAML(key);
+        sanitized[sanitizedKey] = typeof value === 'string' 
+            ? sanitizeForYAML(value)
+            : sanitizeObjectForYAML(value);
+    }
+    
+    return sanitized;
+};
+
+/**
  * Get the relative path for media memory storage
  * @param {string} category - The category/subfolder (e.g., 'plex', 'plex/movies')
  * @param {string|null} householdId - Optional household ID, defaults to default household
