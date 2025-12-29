@@ -27,7 +27,6 @@ const EntropyPanel = () => {
   if (loading) {
     return (
       <div className="entropy-panel">
-        <h3>Daily Tracker</h3>
         <div style={{ textAlign: 'center', opacity: 0.5, fontSize: '0.8rem' }}>Loading...</div>
       </div>
     );
@@ -36,7 +35,6 @@ const EntropyPanel = () => {
   if (!report) {
     return (
       <div className="entropy-panel">
-        <h3>Daily Tracker</h3>
         <div style={{ textAlign: 'center', color: '#ff6b6b', fontSize: '0.8rem' }}>Failed to load</div>
       </div>
     );
@@ -45,7 +43,6 @@ const EntropyPanel = () => {
   if (!report.items || report.items.length === 0) {
     return (
       <div className="entropy-panel">
-        <h3>Daily Tracker</h3>
         <div style={{ textAlign: 'center', opacity: 0.5, fontSize: '0.8rem' }}>
           No trackers configured.<br/>
           <span style={{ fontSize: '0.7rem' }}>Check config/apps/entropy.yml</span>
@@ -63,7 +60,6 @@ const EntropyPanel = () => {
 
   return (
     <div className="entropy-panel">
-      <h3>Daily Tracker</h3>
       <div className="entropy-grid">
         {report.items.map(item => (
           <div key={item.id} className={`entropy-item status-${item.status}`}>
