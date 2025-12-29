@@ -18,6 +18,8 @@ export function PlayerOverlayLoading({
   togglePauseOverlay,
   playerPositionDisplay,
   intentPositionDisplay,
+  playerPositionUpdatedAt = null,
+  intentPositionUpdatedAt = null,
   countdownSeconds = null,
   onRequestHardReset,
   overlayLoggingActive = true,
@@ -104,7 +106,28 @@ export function PlayerOverlayLoading({
     };
   }, [mediaDetailsProp]);
 
-  const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
+  // Determine position display using freshness-based priority (Fix 3: position display audit)
+  // If actively seeking, prefer intent; otherwise use freshness to pick the most recent value
+  const STALE_THRESHOLD_MS = 5000; // Consider intent stale after 5 seconds
+  const isSeekInProgress = status === 'seeking';
+  const positionDisplay = useMemo(() => {
+    if (isSeekInProgress) {
+      // During active seek, always prefer intent position
+      return intentPositionDisplay || playerPositionDisplay || null;
+    }
+    // Use freshness-based selection when not actively seeking
+    const now = Date.now();
+    const intentAge = intentPositionUpdatedAt ? now - intentPositionUpdatedAt : Infinity;
+    const playerAge = playerPositionUpdatedAt ? now - playerPositionUpdatedAt : Infinity;
+    // Prefer intent only if it's fresher AND not stale
+    const preferIntent = intentPositionDisplay
+      && intentAge < playerAge
+      && intentAge < STALE_THRESHOLD_MS;
+    if (preferIntent) {
+      return intentPositionDisplay;
+    }
+    return playerPositionDisplay || intentPositionDisplay || null;
+  }, [isSeekInProgress, intentPositionDisplay, playerPositionDisplay, intentPositionUpdatedAt, playerPositionUpdatedAt]);
   const hasValidPosition = positionDisplay && positionDisplay !== '0:00';
   const isStartupPhase = status === 'startup';
   const statusLabel = (() => {
@@ -249,6 +272,8 @@ PlayerOverlayLoading.propTypes = {
   status: PropTypes.string,
   playerPositionDisplay: PropTypes.string,
   intentPositionDisplay: PropTypes.string,
+  playerPositionUpdatedAt: PropTypes.number,
+  intentPositionUpdatedAt: PropTypes.number,
   countdownSeconds: PropTypes.number,
   onRequestHardReset: PropTypes.func,
   overlayLoggingActive: PropTypes.bool,

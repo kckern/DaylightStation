@@ -199,6 +199,8 @@ export function LoadingOverlay({
   countUpSeconds = null,
   playerPositionDisplay,
   intentPositionDisplay,
+  playerPositionUpdatedAt = null,
+  intentPositionUpdatedAt = null,
   overlayTimerActive = false,
   hardResetDeadlineMs = 0,
   onRequestHardReset,
@@ -348,7 +350,28 @@ export function LoadingOverlay({
     };
   }, [getMediaEl, isVisible, overlayLogContext]);
 
-  const positionDisplay = intentPositionDisplay || playerPositionDisplay || null;
+  // Determine position display using freshness-based priority (Fix 3: position display audit)
+  // If in startup/seeking phase, prefer intent; otherwise use freshness to pick the most recent value
+  const STALE_THRESHOLD_MS = 5000; // Consider intent stale after 5 seconds
+  const isSeekOrStartupPhase = waitingToPlay;
+  const positionDisplay = useMemo(() => {
+    if (isSeekOrStartupPhase) {
+      // During startup/seeking, always prefer intent position
+      return intentPositionDisplay || playerPositionDisplay || null;
+    }
+    // Use freshness-based selection when not in startup/seeking phase
+    const now = Date.now();
+    const intentAge = intentPositionUpdatedAt ? now - intentPositionUpdatedAt : Infinity;
+    const playerAge = playerPositionUpdatedAt ? now - playerPositionUpdatedAt : Infinity;
+    // Prefer intent only if it's fresher AND not stale
+    const preferIntent = intentPositionDisplay
+      && intentAge < playerAge
+      && intentAge < STALE_THRESHOLD_MS;
+    if (preferIntent) {
+      return intentPositionDisplay;
+    }
+    return playerPositionDisplay || intentPositionDisplay || null;
+  }, [isSeekOrStartupPhase, intentPositionDisplay, playerPositionDisplay, intentPositionUpdatedAt, playerPositionUpdatedAt]);
 
   const blockFullscreenToggle = useCallback((event) => {
     event?.preventDefault?.();
@@ -513,8 +536,9 @@ LoadingOverlay.propTypes = {
   countUpDisplay: PropTypes.string,
   playerPositionDisplay: PropTypes.string,
   intentPositionDisplay: PropTypes.string,
+  playerPositionUpdatedAt: PropTypes.number,
+  intentPositionUpdatedAt: PropTypes.number,
   overlayTimerActive: PropTypes.bool,
   hardResetDeadlineMs: PropTypes.number,
-  onRequestHardReset: PropTypes.func,
-  getMediaEl: PropTypes.func
+  onRequestHardReset: PropTypes.func
 };
