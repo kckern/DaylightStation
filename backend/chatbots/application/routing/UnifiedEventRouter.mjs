@@ -126,27 +126,8 @@ export class UnifiedEventRouter {
           conversationId, 
           pendingLogUuid: state?.flowState?.pendingLogUuid 
         });
-      } else if (state?.activeFlow === 'adjustment') {
-        // User sent text while in review flow - cancel review and accept the text
-        this.#logger.info('router.text.adjustmentFlowCancelled', { conversationId, text });
-        
-        // Reset to base date selection state if we have the message ID
-        const originMessageId = state?.flowState?.originMessageId;
-        if (originMessageId) {
-          try {
-            // Re-invoke the adjustment flow to reset UI to level 0
-            const useCase = this.#container.getStartAdjustmentFlow();
-            await useCase.execute({
-              userId: conversationId,
-              conversationId,
-              messageId: originMessageId,
-            });
-          } catch (e) {
-            this.#logger.warn('router.text.adjustmentResetFailed', { error: e.message });
-          }
-        }
-        // Fall through to regular food logging below
       }
+      // Note: adjustment flow does NOT block text - buttons use sourceMessageId, not state
     }
 
     // Regular food logging
