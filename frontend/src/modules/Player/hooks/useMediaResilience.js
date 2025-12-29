@@ -1893,8 +1893,6 @@ export function useMediaResilience({
     waitingToPlay,
     stallClassification,
     recoveryAttempts: resilienceState.recoveryAttempts,
-    currentMaxVideoBitrate: bitrateState.current ?? null,
-    baselineMaxVideoBitrate: bitrateState.lastSyncedBaseline ?? null,
     startupWatchdogState: internalStartupWatchdogState.state,
     startupWatchdogActive: internalStartupWatchdogState.active,
     startupWatchdogAttempts: internalStartupWatchdogState.attempts
