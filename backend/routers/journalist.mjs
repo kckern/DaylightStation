@@ -8,9 +8,9 @@
  */
 
 import express from 'express';
-import { createJournalistRouter } from './chatbots/bots/journalist/server.mjs';
-import { JournalistContainer } from './chatbots/bots/journalist/container.mjs';
-import { createLogger } from './chatbots/_lib/logging/index.mjs';
+import { createJournalistRouter } from '../chatbots/bots/journalist/server.mjs';
+import { JournalistContainer } from '../chatbots/bots/journalist/container.mjs';
+import { createLogger } from '../chatbots/_lib/logging/index.mjs';
 
 const logger = createLogger({ source: 'journalist', app: 'journalist' });
 const JournalistRouter = express.Router();

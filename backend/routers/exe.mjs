@@ -3,11 +3,11 @@ import util from 'util';
 import path from 'path';
 import express from 'express';
 import { exec } from 'child_process';
-import axios from './lib/http.mjs';
-import { loadFile, saveFile } from './lib/io.mjs';
-import { broadcastToWebsockets, restartWebsocketServer } from './websocket.js';
-import { createLogger } from './lib/logging/logger.js';
-import { serializeError } from './lib/logging/utils.js';
+import axios from '../lib/http.mjs';
+import { loadFile, saveFile } from '../lib/io.mjs';
+import { broadcastToWebsockets, restartWebsocketServer } from './websocket.mjs';
+import { createLogger } from '../lib/logging/logger.js';
+import { serializeError } from '../lib/logging/utils.js';
 
 const exeLogger = createLogger({ source: 'backend', app: 'exe' });
 

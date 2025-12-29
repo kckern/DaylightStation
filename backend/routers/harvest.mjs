@@ -1,27 +1,27 @@
 import express from 'express';
 const harvestRouter = express.Router();
 import crypto from 'crypto';
-import { createLogger } from './lib/logging/logger.js';
-import { configService } from './lib/config/ConfigService.mjs';
+import { createLogger } from '../lib/logging/logger.js';
+import { configService } from '../lib/config/ConfigService.mjs';
 
-import todoist from './lib/todoist.js';
-import gmail from './lib/gmail.js';
-import gcal from './lib/gcal.js';
-import withings from './lib/withings.mjs';
-import weather from './lib/weather.js';
-import clickup from './lib/clickup.js';
-import lastfm from './lib/lastfm.js';
-import letterboxd from './lib/letterboxd.js';
-import goodreads from './lib/goodreads.js';
-import Infinity from './lib/infinity.js';
-import scripture from './lib/scriptureguide.mjs';
-import ldsgc from './lib/ldsgc.mjs';
-import youtube_dl from './lib/youtube.mjs';
-import health from './lib/health.mjs';
-import fitness from './lib/fitsync.mjs';
-import strava from './lib/strava.mjs';
-import garmin from './lib/garmin.mjs';
-import { refreshFinancialData as budget, payrollSyncJob } from './lib/budget.mjs';
+import todoist from '../lib/todoist.mjs';
+import gmail from '../lib/gmail.mjs';
+import gcal from '../lib/gcal.mjs';
+import withings from '../lib/withings.mjs';
+import weather from '../lib/weather.mjs';
+import clickup from '../lib/clickup.mjs';
+import lastfm from '../lib/lastfm.mjs';
+import letterboxd from '../lib/letterboxd.mjs';
+import goodreads from '../lib/goodreads.mjs';
+import Infinity from '../lib/infinity.mjs';
+import scripture from '../lib/scriptureguide.mjs';
+import ldsgc from '../lib/ldsgc.mjs';
+import youtube_dl from '../lib/youtube.mjs';
+import health from '../lib/health.mjs';
+import fitness from '../lib/fitsync.mjs';
+import strava from '../lib/strava.mjs';
+import garmin from '../lib/garmin.mjs';
+import { refreshFinancialData as budget, payrollSyncJob } from '../lib/budget.mjs';
 
 const harvestRootLogger = () => createLogger({
     source: 'backend',

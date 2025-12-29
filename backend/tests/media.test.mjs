@@ -1,4 +1,4 @@
-import { findFileFromMediaKey } from './media.mjs';
+import { findFileFromMediaKey } from '../routers/media.mjs';
 import fs from 'fs';
 import path from 'path';
 import { jest } from '@jest/globals';

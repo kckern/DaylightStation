@@ -1,4 +1,4 @@
-import {  askGPTWithJSONOutput } from "../lib/gpt.js";
+import {  askGPTWithJSONOutput } from "../lib/gpt.mjs";
 
 import { loadFile, saveFile } from "../lib/io.mjs";
 

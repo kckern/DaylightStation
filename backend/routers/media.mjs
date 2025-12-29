@@ -1,19 +1,20 @@
-import axios from './lib/http.mjs';
+import axios from '../lib/http.mjs';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import {Plex} from './lib/plex.mjs';
-import { loadFile, saveFile } from './lib/io.mjs';
-import { configService } from './lib/config/ConfigService.mjs';
-import { userDataService } from './lib/config/UserDataService.mjs';
+import {Plex} from '../lib/plex.mjs';
+import { loadFile, saveFile } from '../lib/io.mjs';
+import { configService } from '../lib/config/ConfigService.mjs';
+import { userDataService } from '../lib/config/UserDataService.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
-import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems, applyParamsToItems } from './fetch.mjs';
-import { getChildrenFromMediaKey } from './fetch.mjs';
-import Infinity from './lib/infinity.js';
-import { isWatched } from './lib/utils.mjs';
-import { slugify } from './lib/utils.mjs';
-import { createLogger } from './lib/logging/logger.js';
+import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems, applyParamsToItems } from '../fetch.mjs';
+import { getChildrenFromMediaKey } from '../fetch.mjs';
+import Infinity from '../lib/infinity.mjs';
+import { isWatched } from '../lib/utils.mjs';
+import { slugify } from '../lib/utils.mjs';
+import { createLogger } from '../lib/logging/logger.js';
+import { getMediaMemoryPath } from '../lib/mediaMemory.mjs';
 const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
@@ -27,16 +28,6 @@ const mediaLogger = createLogger({
     source: 'backend',
     app: 'media'
 });
-
-// Helper for household-scoped media memory paths
-const getMediaMemoryPath = (category, householdId = null) => {
-    const hid = householdId || configService.getDefaultHouseholdId();
-    const householdDir = userDataService.getHouseholdDir(hid);
-    if (householdDir && fs.existsSync(path.join(householdDir, 'history', 'media_memory'))) {
-        return `households/${hid}/history/media_memory/${category}`;
-    }
-    return `history/media_memory/${category}`;
-};
 
 const ext = ['mp3','mp4','m4a', 'webm'];
 export const findFileFromMediaKey = media_key => {

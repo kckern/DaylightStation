@@ -1,6 +1,6 @@
 import express from 'express';
-import { turnOnTVPlug } from './lib/homeassistant.mjs';
-import { createLogger } from './lib/logging/logger.js';
+import { turnOnTVPlug } from '../lib/homeassistant.mjs';
+import { createLogger } from '../lib/logging/logger.js';
 const apiRouter = express.Router();
 
 const homeLogger = createLogger({

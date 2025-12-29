@@ -1,8 +1,8 @@
 import express from 'express';
-import dailyHealth from './lib/health.mjs';
-import { loadFile, userLoadFile } from './lib/io.mjs';
-import { userDataService } from './lib/config/UserDataService.mjs';
-import { configService } from './lib/config/ConfigService.mjs';
+import dailyHealth from '../lib/health.mjs';
+import { loadFile, userLoadFile } from '../lib/io.mjs';
+import { userDataService } from '../lib/config/UserDataService.mjs';
+import { configService } from '../lib/config/ConfigService.mjs';
 // STUBBED: journalist folder removed
 // import { getNutriDaysBack, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist } from './journalist/lib/db.mjs';
 const getNutriDaysBack = () => ({});

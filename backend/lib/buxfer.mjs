@@ -3,7 +3,7 @@ import { URLSearchParams } from 'url';
 import yaml from 'js-yaml';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import isJSON from 'is-json';
-import { askGPT } from './gpt.js';
+import { askGPT } from './gpt.mjs';
 import moment from 'moment';
 
 

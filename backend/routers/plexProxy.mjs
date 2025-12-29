@@ -1,6 +1,6 @@
 import express from 'express';
 import request from 'request';
-import { createLogger } from './lib/logging/logger.js';
+import { createLogger } from '../lib/logging/logger.js';
 
 const router = express.Router();
 const logger = createLogger({ source: 'backend', app: 'plex-proxy' });

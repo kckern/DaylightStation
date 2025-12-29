@@ -1,10 +1,10 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { loadFile, saveFile } from './lib/io.mjs';
-import { configService } from './lib/config/ConfigService.mjs';
-import { userDataService } from './lib/config/UserDataService.mjs';
-import { broadcastToWebsockets } from './websocket.js';
+import { loadFile, saveFile } from '../lib/io.mjs';
+import { configService } from '../lib/config/ConfigService.mjs';
+import { userDataService } from '../lib/config/UserDataService.mjs';
+import { broadcastToWebsockets } from './websocket.mjs';
 import { v4 as uuidv4 } from 'uuid';
 import moment from 'moment-timezone';
 
