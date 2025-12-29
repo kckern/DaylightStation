@@ -375,7 +375,7 @@ export default function FamilySelector({ winner, title, exclude, autoSpin }) {
       const users = data.users || [];
       const transformedMembers = users.map((user, index) => ({
         id: user.id,
-        name: user.group_label || user.name || user.id,
+        name: user.group_label || user.display_name || user.name || user.id,
         color: SEGMENT_COLORS[index % SEGMENT_COLORS.length],
         avatar: getAvatarSrc(user.id),
       }));
