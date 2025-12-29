@@ -1,7 +1,7 @@
 import axios from './http.mjs';
 import path from 'path';
 import { loadFile, saveFile } from '../lib/io.mjs';
-import { clearWatchedItems } from '../fetch.mjs';
+import { clearWatchedItems } from '../routers/fetch.mjs';
 import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { userDataService } from './config/UserDataService.mjs';

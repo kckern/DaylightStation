@@ -8,7 +8,7 @@ import yaml, { load } from 'js-yaml';
 import moment from 'moment-timezone';
 import fs from 'fs';
 import { parseFile } from 'music-metadata';
-import { findFileFromMediaKey, handleDevImage } from './routers/media.mjs';
+import { findFileFromMediaKey, handleDevImage } from './media.mjs';
 import { processListItem } from '../jobs/nav.mjs';
 import {lookupReference, generateReference} from 'scripture-guide';
 import { Plex } from '../lib/plex.mjs';

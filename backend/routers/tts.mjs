@@ -2,7 +2,7 @@ import axios from '../lib/http.mjs';
 import express from 'express';
 import { generateSpeech } from '../lib/gpt.mjs';
 import fs from 'fs';
-import { storyTeller } from './story/story.mjs';
+import { storyTeller } from '../story/story.mjs';
 import { v4 as uuidv4 } from 'uuid';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import cookieParser from 'cookie-parser';

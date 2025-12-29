@@ -30,6 +30,7 @@
     "supertest": "^6.3.4"
   },
   "scripts": {
+    "dev": "npm run start:dev",
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
     "start:dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
     "backend": "node backend/index.js",
