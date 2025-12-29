@@ -54,8 +54,8 @@ function useSelectAndLog(onSelectCallback) {
 /**
  * TVMenu: Main menu component.
  */
-export function TVMenu({ list, onSelect, onEscape }) {
-  const { menuItems, menuMeta, loaded } = useFetchMenuData(list);
+export function TVMenu({ list, selectedIndex = 0, selectedKey = null, onSelectedIndexChange, onSelect, onEscape, refreshToken = 0 }) {
+  const { menuItems, menuMeta, loaded } = useFetchMenuData(list, refreshToken);
   const containerRef = useRef(null);
   const handleSelect = useSelectAndLog(onSelect);
 
@@ -69,6 +69,9 @@ export function TVMenu({ list, onSelect, onEscape }) {
       <MenuItems
         items={menuItems}
         columns={5}
+        selectedKey={selectedKey}
+        selectedIndex={selectedIndex}
+        onSelectedIndexChange={onSelectedIndexChange}
         onSelect={handleSelect}
         onClose={onEscape}
         containerRef={containerRef}
@@ -166,7 +169,7 @@ function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
 /**
  * Fetches menu data (either from a local object, server API, or a string path).
  */
-function useFetchMenuData(listInput) {
+function useFetchMenuData(listInput, refreshToken = 0) {
   const [menuItems, setMenuItems] = useState([]);
   const [menuMeta, setMenuMeta] = useState({
     title: "Loading...",
@@ -263,7 +266,7 @@ function useFetchMenuData(listInput) {
     return () => {
       canceled = true;
     };
-  }, [listInput]);
+  }, [listInput, refreshToken]);
 
   return { menuItems, menuMeta, loaded };
 }
@@ -307,12 +310,45 @@ function MenuIMG({ img, label }) {
 function MenuItems({
   items = [],
   columns = 1,
+  selectedIndex: selectedIndexProp = 0,
+  selectedKey = null,
+  onSelectedIndexChange,
   onSelect,
   onClose,
   MENU_TIMEOUT = 0,
   containerRef,
 }) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // Use controlled component pattern if onSelectedIndexChange is provided
+  const [internalSelectedIndex, setInternalSelectedIndex] = useState(0);
+  const [internalSelectedKey, setInternalSelectedKey] = useState(null);
+  const isControlled = onSelectedIndexChange !== undefined;
+  const selectedIndex = isControlled ? selectedIndexProp : internalSelectedIndex;
+  const currentKey = isControlled ? selectedKey : internalSelectedKey;
+
+  const findKeyForItem = useCallback((item) => {
+    const action = item?.play || item?.queue || item?.list || item?.open;
+    const actionVal = action && (Array.isArray(action) ? action[0] : Object.values(action)[0]);
+    return item?.id ?? item?.key ?? actionVal ?? item?.label ?? null;
+  }, []);
+  
+  const setSelectedIndex = useCallback((value, key = null) => {
+    const resolve = (v) => (typeof v === 'function' ? v(selectedIndexProp) : v);
+    const nextIndex = resolve(value);
+    const nextKey = key ?? null;
+
+    if (isControlled) {
+      if (nextIndex === selectedIndexProp && nextKey === selectedKey) {
+        return; // no-op to avoid update loops
+      }
+      onSelectedIndexChange(nextIndex, nextKey);
+    } else {
+      if (nextIndex === internalSelectedIndex && nextKey === internalSelectedKey) {
+        return; // no-op
+      }
+      setInternalSelectedIndex(nextIndex);
+      setInternalSelectedKey(nextKey);
+    }
+  }, [isControlled, selectedIndexProp, selectedKey, internalSelectedIndex, internalSelectedKey, onSelectedIndexChange]);
 
   /**
    * Reset scroll position at component mount: always start at the top.
@@ -338,28 +374,34 @@ function MenuItems({
 
         case "ArrowUp":
           e.preventDefault();
-          setSelectedIndex(
-            (prev) => (prev - columns + items.length) % items.length
-          );
+          {
+            const next = (selectedIndex - columns + items.length) % items.length;
+            setSelectedIndex(next, findKeyForItem(items[next]));
+          }
           break;
 
         case "ArrowDown":
           e.preventDefault();
-          setSelectedIndex(
-            (prev) => (prev + columns) % items.length
-          );
+          {
+            const next = (selectedIndex + columns) % items.length;
+            setSelectedIndex(next, findKeyForItem(items[next]));
+          }
           break;
 
         case "ArrowLeft":
           e.preventDefault();
-          setSelectedIndex(
-            (prev) => (prev - 1 + items.length) % items.length
-          );
+          {
+            const next = (selectedIndex - 1 + items.length) % items.length;
+            setSelectedIndex(next, findKeyForItem(items[next]));
+          }
           break;
 
         case "ArrowRight":
           e.preventDefault();
-          setSelectedIndex((prev) => (prev + 1) % items.length);
+          {
+            const next = (selectedIndex + 1) % items.length;
+            setSelectedIndex(next, findKeyForItem(items[next]));
+          }
           break;
 
         case "Escape":
@@ -373,13 +415,14 @@ function MenuItems({
             const key = e.key.toLowerCase();
             if (/[a-z0-9]/.test(key)) {
               e.preventDefault();
-              setSelectedIndex((prev) => (prev + 1) % items.length);
+              const next = (selectedIndex + 1) % items.length;
+              setSelectedIndex(next, findKeyForItem(items[next]));
             }
           }
           break;
       }
     },
-    [items, selectedIndex, onSelect, onClose, columns]
+    [items, selectedIndex, onSelect, onClose, columns, setSelectedIndex]
   );
 
   /**
@@ -435,15 +478,43 @@ function MenuItems({
     );
   };
 
+  // Clamp the selected index when items change (instead of always resetting to 0)
+  // When items change, prefer to restore by key; if not found, clamp by index
   useEffect(() => {
-    setSelectedIndex(0);
-  }, [items]);
+    if (!items.length) return;
+
+    const matchIndex = currentKey
+      ? items.findIndex((item) => findKeyForItem(item) === currentKey)
+      : -1;
+
+    if (matchIndex >= 0) {
+      if (matchIndex !== selectedIndex || currentKey !== findKeyForItem(items[matchIndex])) {
+        setSelectedIndex(matchIndex, currentKey);
+      }
+      return;
+    }
+
+    // Fallback to clamped index
+    if (selectedIndex >= items.length) {
+      const clamped = Math.max(0, items.length - 1);
+      const key = findKeyForItem(items[clamped]);
+      if (clamped !== selectedIndex || key !== currentKey) {
+        setSelectedIndex(clamped, key);
+      }
+    } else {
+      const key = findKeyForItem(items[selectedIndex]);
+      if (key !== currentKey) {
+        setSelectedIndex(selectedIndex, key);
+      }
+    }
+  }, [items, selectedIndex, currentKey, setSelectedIndex]);
 
   return (
     <div className={`menu-items count_${items.length}`}>
       {items.map((item, index) => {
         const { plex } = item?.play || item?.queue || item?.list || item?.open || {};
         const isActive = index === selectedIndex;
+        const itemKey = findKeyForItem(item) || `${index}-${item.label}`;
         let image = item.image;
 
         // If there's a Plex ID but no image, build one
@@ -454,7 +525,7 @@ function MenuItems({
 
         return (
           <div
-            key={`${index}-${item.label}`}
+            key={itemKey}
             className={`menu-item ${item.type || ""} ${isActive ? "active" : ""}`}
           >
             {!!MENU_TIMEOUT && isActive && (
