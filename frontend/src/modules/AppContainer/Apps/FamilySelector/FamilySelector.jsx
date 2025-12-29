@@ -342,7 +342,6 @@ useEffect(() => {
   return (
     <div className="family-selector" data-state={wheelState}>
       <div className="family-selector-container">
-        <h1 className="wheel-title">{displayTitle}</h1>
 
         <div className="wheel-wrapper">
           <RouletteWheel
@@ -354,9 +353,6 @@ useEffect(() => {
           />
         </div>
 
-        <p className="wheel-instructions">
-          {getInstructionText()}
-        </p>
       </div>
 
       {/* Winner Modal */}
@@ -371,8 +367,7 @@ useEffect(() => {
               />
               <span className="winner-initials">{getInitials(selectedMember.name)}</span>
             </div>
-            <h2 className="winner-name">{selectedMember.name}!</h2>
-            <p className="winner-subtitle">has been selected</p>
+            <h2 className="winner-name">{selectedMember.name}</h2>
           </div>
         </div>
       )}
