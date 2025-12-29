@@ -8,6 +8,7 @@ import ArtApp from "./Apps/Art/Art.jsx";
 import WebcamApp from "./Apps/Webcam/Webcam.jsx";
 import WrapUp from "./Apps/WrapUp/WrapUp.jsx";
 import OfficeOff from "./Apps/OfficeOff/OfficeOff.jsx";
+import FamilySelector from "./Apps/FamilySelector/FamilySelector.jsx";
 import { getChildLogger } from "../../lib/logging/singleton.js";
 
 export default function AppContainer({ open, clear }) {
@@ -42,7 +43,8 @@ export default function AppContainer({ open, clear }) {
   if (app === "webcam") return <WebcamApp />;
   if (app === "wrapup") return <WrapUp clear={clear} />;
   if (app === "office_off") return <OfficeOff clear={clear} />;
-  if( app === "gratitude" ) return <Gratitude clear={clear} />;
+  if (app === "gratitude") return <Gratitude clear={clear} />;
+  if (app === "family-selector") return <FamilySelector winner={param} />;
   return (
     <div>
       <h2>App Container</h2>

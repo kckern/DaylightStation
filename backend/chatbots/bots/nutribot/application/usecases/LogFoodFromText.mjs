@@ -129,18 +129,18 @@ export class LogFoodFromText {
       if (foodItems.length === 0) {
         this.#logger.debug('logText.noFood', { conversationId, text, response: response?.substring?.(0, 200) });
         // FALLBACK: Check if this might be a revision attempt on most recent unaccepted log
-        // Pass existingLogMessageId so fallback can update original message instead of new one
+        // Pass existingMessageId so fallback can update original message instead of new one
         const fallbackResult = await this.#tryRevisionFallback(
           userId, 
           conversationId, 
           text, 
           statusMsgId,
-          existingLogMessageId
+          existingMessageId
         );
         
         if (fallbackResult.handled) {
           // Delete the new analyzing message if we used the existing one for revision
-          if (existingLogMessageId && statusMsgId !== existingLogMessageId) {
+          if (existingMessageId && statusMsgId !== existingMessageId) {
             try {
               await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
             } catch (e) {
