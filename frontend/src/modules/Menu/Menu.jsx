@@ -52,6 +52,46 @@ function useSelectAndLog(onSelectCallback) {
 }
 
 /**
+ * MenuHeader: Displays the menu title with item count and current time.
+ */
+function MenuHeader({ title, itemCount, image }) {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+
+  const formatDate = (date) => {
+    return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <header className="menu-header">
+      <div className="menu-header-left">
+        {image && <img src={image} alt="" className="menu-header-thumb" />}
+        <h2>{title}</h2>
+      </div>
+      <div className="menu-header-center">
+        <div className="menu-header-datetime">
+          <span className="menu-header-time">{formatTime(time)}</span>
+          <span className="menu-header-date">{formatDate(time)}</span>
+        </div>
+      </div>
+      <div className="menu-header-right">
+        {itemCount > 0 && (
+          <span className="menu-header-count">{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
+        )}
+      </div>
+    </header>
+  );
+}
+
+/**
  * TVMenu: Main menu component.
  */
 export function TVMenu({ list, selectedIndex = 0, selectedKey = null, onSelectedIndexChange, onSelect, onEscape, refreshToken = 0 }) {
@@ -65,7 +105,11 @@ export function TVMenu({ list, selectedIndex = 0, selectedKey = null, onSelected
 
   return (
     <div className="menu-items-container" ref={containerRef}>
-      <h2>{menuMeta.title || menuMeta.label}</h2>
+      <MenuHeader 
+        title={menuMeta.title || menuMeta.label} 
+        itemCount={menuItems.length}
+        image={menuMeta.image}
+      />
       <MenuItems
         items={menuItems}
         columns={5}
@@ -272,11 +316,35 @@ function useFetchMenuData(listInput, refreshToken = 0) {
 }
 
 /**
+ * Generate a consistent gradient based on a string (label).
+ * Same label always produces the same colors.
+ */
+function generateGradientFromLabel(label) {
+  // Simple hash function
+  let hash = 0;
+  const str = label || 'default';
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Generate two hues from the hash (offset by 30-60 degrees for harmony)
+  const hue1 = Math.abs(hash) % 360;
+  const hue2 = (hue1 + 30 + (Math.abs(hash >> 8) % 30)) % 360;
+  
+  // Use muted saturation and medium lightness for pleasant colors
+  const sat = 50 + (Math.abs(hash >> 4) % 20); // 50-70%
+  const light = 35 + (Math.abs(hash >> 6) % 15); // 35-50%
+  
+  return `linear-gradient(135deg, hsl(${hue1}, ${sat}%, ${light}%) 0%, hsl(${hue2}, ${sat - 10}%, ${light - 10}%) 100%)`;
+}
+
+/**
  * MenuIMG: A helper component to display the menu image (and its orientation).
  */
 function MenuIMG({ img, label }) {
   const [orientation, setOrientation] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [aspectRatio, setAspectRatio] = useState(1);
 
   const handleImageLoad = (e) => {
     const { naturalWidth, naturalHeight } = e.target;
@@ -285,15 +353,67 @@ function MenuIMG({ img, label }) {
       ratio > 1 ? "landscape" : ratio < 1 ? "portrait" : "square";
 
     setOrientation(newOrientation);
+    setAspectRatio(ratio);
     setLoading(false);
   };
 
-  if (!img) return null;
+  // Calculate zoom and pan values based on actual aspect ratio
+  // Container is 1:1, so we need to zoom until the image fills it
+  const getZoomStyles = () => {
+    if (!orientation || orientation === 'square') return {};
+    
+    if (orientation === 'portrait') {
+      // Portrait: zoom = 1 / aspectRatio (e.g., 2:3 = 0.667, zoom = 1.5)
+      const zoom = 1 / aspectRatio;
+      // Pan range: how much we can move vertically after zoom
+      // After zoom, image height = 100% * zoom, visible = 100%
+      // Max pan = (zoom - 1) / zoom * 50% (as percentage of image)
+      const panRange = ((zoom - 1) / zoom) * 50;
+      return {
+        '--img-zoom': zoom.toFixed(3),
+        '--img-pan': `${panRange.toFixed(1)}%`,
+      };
+    } else {
+      // Landscape: zoom = aspectRatio (e.g., 16:9 = 1.78, zoom = 1.78)
+      const zoom = aspectRatio;
+      // Pan range: how much we can move horizontally after zoom
+      const panRange = ((zoom - 1) / zoom) * 50;
+      return {
+        '--img-zoom': zoom.toFixed(3),
+        '--img-pan': `${panRange.toFixed(1)}%`,
+      };
+    }
+  };
+
+  // If no image, show a gradient placeholder
+  if (!img) {
+    const gradient = generateGradientFromLabel(label);
+    return (
+      <div className="menu-item-img no-image" style={{ background: gradient }}>
+        <div className="menu-item-img-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48" opacity="0.3">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-3 3.72L9 13l-3 4h12l-4-5z"/>
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
+  // Show blurred background for non-square images (letterboxing/pillarboxing)
+  const needsBlurBg = orientation && orientation !== 'square';
+  const zoomStyles = getZoomStyles();
 
   return (
     <div
       className={`menu-item-img ${loading ? "loading" : ""} ${orientation}`}
+      style={zoomStyles}
     >
+      {needsBlurBg && (
+        <div 
+          className="menu-item-img-blur-bg"
+          style={{ backgroundImage: `url(${img})` }}
+        />
+      )}
       <img
         src={img}
         alt={label}
@@ -523,6 +643,9 @@ function MenuItems({
           image = DaylightMediaPath(`/media/plex/img/${val}`);
         }
 
+        // Create a unique key for the image to force remount when navigating menus
+        const imageKey = image ? `img-${image}` : `no-img-${itemKey}`;
+
         return (
           <div
             key={itemKey}
@@ -531,7 +654,7 @@ function MenuItems({
             {!!MENU_TIMEOUT && isActive && (
               <ProgressTimeoutBar timeLeft={timeLeft} totalTime={MENU_TIMEOUT} />
             )}
-            <MenuIMG img={image} label={item.label} />
+            <MenuIMG key={imageKey} img={image} label={item.label} />
             <h3 className="menu-item-label">{item.label}</h3>
           </div>
         );
