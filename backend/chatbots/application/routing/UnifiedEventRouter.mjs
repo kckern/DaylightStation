@@ -127,15 +127,25 @@ export class UnifiedEventRouter {
           pendingLogUuid: state?.flowState?.pendingLogUuid 
         });
       } else if (state?.activeFlow === 'adjustment') {
-        // User is in adjustment/review flow - ignore text input
-        this.#logger.info('router.text.adjustmentFlowIgnored', { conversationId });
-        const messagingGateway = this.#container.getMessagingGateway();
-        await messagingGateway.sendMessage(
-          conversationId,
-          '⚠️ You\'re in review mode. Use the buttons above or press Done to exit.',
-          { inline: true }
-        );
-        return { success: true, ignored: true };
+        // User sent text while in review flow - cancel review and accept the text
+        this.#logger.info('router.text.adjustmentFlowCancelled', { conversationId, text });
+        
+        // Reset to base date selection state if we have the message ID
+        const originMessageId = state?.flowState?.originMessageId;
+        if (originMessageId) {
+          try {
+            // Re-invoke the adjustment flow to reset UI to level 0
+            const useCase = this.#container.getStartAdjustmentFlow();
+            await useCase.execute({
+              userId: conversationId,
+              conversationId,
+              messageId: originMessageId,
+            });
+          } catch (e) {
+            this.#logger.warn('router.text.adjustmentResetFailed', { error: e.message });
+          }
+        }
+        // Fall through to regular food logging below
       }
     }
 
