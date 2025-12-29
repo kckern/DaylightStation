@@ -1,16 +1,20 @@
 $font-primary: 'Roboto', sans-serif;
 $font-secondary: 'Open Sans', sans-serif;
 
-$color-primary: #0055ff;
-$color-secondary: #2f2d2b;
-$color-dark: #222;
-$color-light: #fafafa;
-$color-bg: #f0f0f0;
+$color-primary: #3b82f6;
+$color-primary-glow: rgba(59, 130, 246, 0.5);
+$color-secondary: #374151;
+$color-dark: #0a0a0a;
+$color-light: #f8fafc;
+$color-bg: #111111;
+$color-border: rgba(255, 255, 255, 0.08);
+$color-border-hover: rgba(255, 255, 255, 0.15);
 
-$spacing-unit: 1rem;
+$spacing-unit: 0.75rem;
+$item-radius: 0.75rem;
 
 /* 2. Mixins & Functions */
-@mixin transition($property: all, $duration: 0.3s, $timing: ease-in-out) {
+@mixin transition($property: all, $duration: 0.3s, $timing: ease-out) {
   transition: #{$property} #{$duration} #{$timing};
 }
 
@@ -20,153 +24,449 @@ $spacing-unit: 1rem;
   justify-content: center;
 }
 
+@mixin glass-surface {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+@mixin smooth-shadow($intensity: 1) {
+  box-shadow: 
+    0 1px 2px rgba(0, 0, 0, 0.1 * $intensity),
+    0 4px 8px rgba(0, 0, 0, 0.1 * $intensity),
+    0 8px 16px rgba(0, 0, 0, 0.08 * $intensity);
+}
+
 .menu-items-container {
   height: 100%;
   width: 100%;
   display: flex;
   flex-direction: column;
-  padding: 2 * $spacing-unit;
+  padding: 1.5 * $spacing-unit;
   position: relative;
-  @include transition(transform, 0.3s, ease-in-out);
+  @include transition(transform, 0.35s, cubic-bezier(0.4, 0, 0.2, 1));
 
-  h2 {
-    margin-bottom: 2 * $spacing-unit;
-    text-align: center;
-    background-color: #333;
-    border-radius: 1rem;
+  .menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(
+      135deg,
+      rgba(30, 30, 30, 0.85) 0%,
+      rgba(20, 20, 20, 0.9) 100%
+    );
+    border-radius: $item-radius;
+    border: 1px solid $color-border;
+    @include smooth-shadow(0.3);
+
+    .menu-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .menu-header-thumb {
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      object-fit: cover;
+      border: 1px solid $color-border;
+      flex-shrink: 0;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.95);
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .menu-header-center {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      padding: 0 1.5rem;
+    }
+
+    .menu-header-datetime {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.2;
+    }
+
+    .menu-header-time {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.9);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+    }
+
+    .menu-header-date {
+      font-size: 0.65rem;
+      color: rgba(255, 255, 255, 0.45);
+      font-weight: 400;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .menu-header-right {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex: 1;
+    }
+
+    .menu-header-count {
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.4);
+      font-weight: 400;
+      white-space: nowrap;
+      padding: 0.15rem 0.5rem;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 4px;
+    }
   }
-
-
 
 .menu-items {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
   justify-content: left;
-
-  align-items: center;
-  gap: 2 * $spacing-unit;
+  align-items: flex-start;
+  gap: $spacing-unit;
   flex-grow: 1;
   padding-bottom: 30%;
-  
 }
+
 .menu-items.count_1,
 .menu-items.count_2,
 .menu-items.count_3,
 .menu-items.count_4,
-.menu-items.count_5{
-  justify-content: space-around;
+.menu-items.count_5 {
+  justify-content: center;
 }
-
 
   .menu-item {
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
-    width: calc(20% - 1.6 * $spacing-unit);
+    width: calc(20% - 0.8 * $spacing-unit);
     aspect-ratio: 1 / 1.19;
-    outline: 1px solid $color-secondary;
-    border-radius: 1rem;
-    background-color: rgba($color-light, 0.13);
-    font-size: 16px;
-    font-weight: bold;
-    color: $color-secondary;
+    border-radius: $item-radius;
+    background: linear-gradient(
+      165deg,
+      rgba(40, 40, 40, 0.6) 0%,
+      rgba(25, 25, 25, 0.8) 100%
+    );
+    border: 1px solid $color-border;
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
     cursor: pointer;
     position: relative;
-    @include transition(background-color 0.3s, transform 0.2s);
     flex-direction: column;
     overflow: hidden;
+    @include smooth-shadow(0.6);
+    
+    // Smooth transitions for all interactive states
+    transition: 
+      transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.2s ease,
+      box-shadow 0.25s ease,
+      background 0.2s ease;
+
+    // Subtle hover state for non-active items
+    &:not(.active):hover {
+      border-color: $color-border-hover;
+      transform: translateY(-2px);
+      @include smooth-shadow(1);
+    }
+
     &.active {
       .menu-item-label {
-        color: #000;
+        color: #111;
+        font-weight: 600;
       }
-      .menu-item-img, 
-      .menu-item-img img{
-        background-color: #FFF;
+      .menu-item-img {
+        background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+      }
+      .menu-item-img img {
+        filter: brightness(1.05) contrast(1.02);
       }
     }
 
-      .menu-item-label {
-        color: #AAA;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-
+    .menu-item-label {
+      color: rgba(255, 255, 255, 0.75);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: color 0.2s ease;
+    }
 
     .menu-item-img {
       flex-grow: 1;
       width: 100%;
       aspect-ratio: 1;
-      background-color: $color-dark;
+      background: linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%);
       overflow: hidden;
       display: flex;
       justify-content: center;
-      background-color: #111;
+      align-items: center;
+      position: relative;
 
+      // Blurred background for letterboxing/pillarboxing
+      .menu-item-img-blur-bg {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        filter: blur(8px) saturate(1.1);
+        transform: scale(1.1); // Prevent blur edge artifacts
+        opacity: 0.5;
+        z-index: 0;
+      }
+
+      // Subtle inner shadow for depth
+      &::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4);
+        pointer-events: none;
+        border-radius: $item-radius $item-radius 0 0;
+        opacity: 0.7;
+        z-index: 2;
+      }
+
+      // No-image placeholder styling
+      &.no-image {
+        .menu-item-img-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+          color: rgba(255, 255, 255, 0.5);
+          
+          svg {
+            width: 40%;
+            height: 40%;
+            max-width: 64px;
+            max-height: 64px;
+          }
+        }
+      }
     }
+
     .menu-item-img img {
-      background-color: #111;
+      background-color: transparent;
+      object-fit: cover;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      z-index: 1;
+      transition: 
+        transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+        filter 0.25s ease;
+    }
+
+    .menu-item-img.landscape img {
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+      transform: scale(1);
+    }
+
+    .menu-item-img.portrait img {
+      width: auto;
+      height: 100%;
+      object-fit: contain;
+      transform: scale(1);
+      transform-origin: top center;
+    }
+
+    .menu-item-img.square img {
       object-fit: cover;
     }
 
-    .menu-item-img.landscape img{
-      width: 100%;
-      object-fit: contain;
-      scale: 1.2;
+    // Active state zoom for portrait images - eliminates pillarboxing
+    &.active .menu-item-img.portrait {
+      .menu-item-img-blur-bg {
+        opacity: 0; // Hide blur bg when zoomed
+        transition: opacity 0.4s ease;
+      }
+      
+      img {
+        // Use CSS variable for dynamic zoom based on actual aspect ratio
+        transform: scale(var(--img-zoom, 1.5));
+        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        // Start pan animation after zoom completes
+        animation: portraitPan 8s ease-in-out 0.5s infinite;
+        animation-fill-mode: forwards;
+      }
     }
-    .menu-item-img.portrait img{
-      object-fit: contain;
-      scale: 1.2;
 
+    @keyframes portraitPan {
+      0% {
+        transform: scale(var(--img-zoom, 1.5)) translateY(0);
+      }
+      40% {
+        transform: scale(var(--img-zoom, 1.5)) translateY(calc(-1 * var(--img-pan, 22%)));
+      }
+      60% {
+        transform: scale(var(--img-zoom, 1.5)) translateY(calc(-1 * var(--img-pan, 22%)));
+      }
+      100% {
+        transform: scale(var(--img-zoom, 1.5)) translateY(0);
+      }
     }
-    .menu-item-img.square img {
-      background-color: $color-secondary;
+
+    // Active state zoom for landscape images - eliminates letterboxing
+    &.active .menu-item-img.landscape {
+      .menu-item-img-blur-bg {
+        opacity: 0; // Hide blur bg when zoomed
+        transition: opacity 0.4s ease;
+      }
+      
+      img {
+        // Use CSS variable for dynamic zoom based on actual aspect ratio
+        transform: scale(var(--img-zoom, 1.78));
+        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        // Start pan animation after zoom completes
+        animation: landscapePan 10s ease-in-out 0.5s infinite;
+        animation-fill-mode: forwards;
+      }
+    }
+
+    @keyframes landscapePan {
+      0% {
+        transform: scale(var(--img-zoom, 1.78)) translateX(0);
+      }
+      25% {
+        transform: scale(var(--img-zoom, 1.78)) translateX(calc(-1 * var(--img-pan, 22%)));
+      }
+      50% {
+        transform: scale(var(--img-zoom, 1.78)) translateX(0);
+      }
+      75% {
+        transform: scale(var(--img-zoom, 1.78)) translateX(var(--img-pan, 22%));
+      }
+      100% {
+        transform: scale(var(--img-zoom, 1.78)) translateX(0);
+      }
+    }
+
+    // Loading shimmer animation
+    .menu-item-img.loading {
+      background: linear-gradient(
+        90deg,
+        rgba(30, 30, 30, 1) 0%,
+        rgba(50, 50, 50, 1) 50%,
+        rgba(30, 30, 30, 1) 100%
+      );
+      background-size: 200% 100%;
+      animation: shimmer 1.5s ease-in-out infinite;
     }
 
     h3 {
       flex-shrink: 0;
       flex-grow: 0;
-      padding: 0.5ex;
+      padding: 0.5rem 0.75rem;
       margin: 0;
       text-align: center;
-      line-height: 1;
+      line-height: 1.2;
       width: 100%;
       z-index: 99;
+      font-size: 0.85rem;
+      letter-spacing: 0.01em;
     }
   }
 
+  // Active state with modern glow effect
   .menu-item.active {
-    background-color: $color-light;
-    outline: 3px solid $color-primary;
-    transform: scale(1.05);
+    background: linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(245, 245, 245, 1) 100%
+    );
+    border: 2px solid $color-primary;
+    transform: scale(1.04);
     color: $color-dark;
-    box-shadow: 0 0 1rem $color-light;
+    box-shadow: 
+      0 0 0 3px $color-primary-glow,
+      0 8px 24px rgba(0, 0, 0, 0.4),
+      0 4px 12px rgba(59, 130, 246, 0.2);
+    z-index: 10;
+
+    // Animated glow pulse
+    &::before {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: calc($item-radius + 3px);
+      background: linear-gradient(
+        135deg,
+        rgba(59, 130, 246, 0.4) 0%,
+        rgba(59, 130, 246, 0.1) 50%,
+        rgba(59, 130, 246, 0.4) 100%
+      );
+      z-index: -1;
+      opacity: 0;
+      animation: glowPulse 2s ease-in-out infinite;
+    }
   }
 
   .menu-item.active img {
-    filter: brightness(1.1);
+    filter: brightness(1.02);
   }
 
+  // Animations
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  @keyframes glowPulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
 
   .progress-bar {
-    height: 10px;
+    height: 4px;
     width: 100%;
-    background-color: #00000066;
+    background: rgba(0, 0, 0, 0.5);
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    z-index: 1;
-}
+    z-index: 10;
+    border-radius: $item-radius $item-radius 0 0;
+    overflow: hidden;
+  }
 
-.progress {
+  .progress {
     height: 100%;
-    background-color: #c1dad8;
+    background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 100%);
     transition: width 0.1s linear;
-    border-right: 2px solid #000;
-}
+    border-radius: 0 2px 2px 0;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  }
 
 
 }
