@@ -293,7 +293,14 @@ export class GenerateDailyReport {
         }
       }
 
-      this.#logger.info('report.generate.success', { userId, date, messageId, itemCount: summary.itemCount });
+      this.#logger.info('report.generate.success', { 
+        userId, 
+        date, 
+        messageId, 
+        itemCount: summary.itemCount,
+        totalCalories: summary.totals.calories,
+        caption: caption.substring(0, 200) + (caption.length > 200 ? '...' : '')
+      });
 
       // 14. Check thresholds and trigger coaching if needed
       const coachingTriggered = await this.#checkAndTriggerCoaching(userId, conversationId, summary);

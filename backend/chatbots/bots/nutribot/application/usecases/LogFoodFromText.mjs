@@ -75,7 +75,7 @@ export class LogFoodFromText {
   async execute(input) {
     const { userId, conversationId, text, messageId, date: overrideDate, existingMessageId } = input;
 
-    this.#logger.debug('logText.start', { conversationId, textLength: text.length });
+    this.#logger.info('logText.start', { conversationId, text, textLength: text.length });
 
     try {
       // 1. Delete original user message
@@ -203,6 +203,7 @@ export class LogFoodFromText {
         conversationId, 
         itemCount: foodItems.length,
         logUuid: nutriLog.id,
+        items: foodItems.map(i => `${i.name} ${i.grams}g`).join(', ')
       });
 
       return {

@@ -87,7 +87,7 @@ export class UnifiedEventRouter {
    * @private
    */
   async #handleText(conversationId, text, messageId) {
-    this.#logger.debug('router.text', { conversationId, textLength: text?.length });
+    this.#logger.info('router.text', { conversationId, text, textLength: text?.length });
 
     // Check conversation state for revision flow
     const conversationStateStore = this.#container.getConversationStateStore();
@@ -126,6 +126,16 @@ export class UnifiedEventRouter {
           conversationId, 
           pendingLogUuid: state?.flowState?.pendingLogUuid 
         });
+      } else if (state?.activeFlow === 'adjustment') {
+        // User is in adjustment/review flow - ignore text input
+        this.#logger.info('router.text.adjustmentFlowIgnored', { conversationId });
+        const messagingGateway = this.#container.getMessagingGateway();
+        await messagingGateway.sendMessage(
+          conversationId,
+          '⚠️ You\'re in review mode. Use the buttons above or press Done to exit.',
+          { inline: true }
+        );
+        return { success: true, ignored: true };
       }
     }
 
@@ -279,7 +289,7 @@ export class UnifiedEventRouter {
    * @private
    */
   async #handleCallback(conversationId, callbackData, sourceMessageId) {
-    this.#logger.debug('router.callback', { conversationId, callbackData, sourceMessageId });
+    this.#logger.info('router.callback', { conversationId, callbackData, sourceMessageId });
 
     const payload = decodeCallback(callbackData);
     if (!payload || payload.legacy) {

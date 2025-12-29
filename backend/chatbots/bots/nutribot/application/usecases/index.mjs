@@ -27,6 +27,7 @@ export { GenerateReportCoaching } from './GenerateReportCoaching.mjs';
 
 // Adjustment Flow
 export { StartAdjustmentFlow } from './StartAdjustmentFlow.mjs';
+export { ShowDateSelection } from './ShowDateSelection.mjs';
 export { SelectDateForAdjustment } from './SelectDateForAdjustment.mjs';
 export { SelectItemForAdjustment } from './SelectItemForAdjustment.mjs';
 export { ApplyPortionAdjustment } from './ApplyPortionAdjustment.mjs';

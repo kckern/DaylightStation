@@ -82,9 +82,47 @@ export class ApplyPortionAdjustment {
 
       // 4. Update the item in nutrilist
       if (this.#nutrilistRepository?.update) {
-        await this.#nutrilistRepository.update(itemId, scaledItem);
+        this.#logger.debug('adjustment.callingRepositoryUpdate', {
+          userId,
+          itemId,
+          factor,
+          scaledValues: {
+            grams: scaledItem.grams,
+            calories: scaledItem.calories,
+            protein: scaledItem.protein,
+            carbs: scaledItem.carbs,
+            fat: scaledItem.fat
+          }
+        });
+        
+        const updatedItem = await this.#nutrilistRepository.update(userId, itemId, scaledItem);
+        
+        this.#logger.info('adjustment.repositoryUpdateComplete', {
+          userId,
+          itemId,
+          updatedValues: {
+            grams: updatedItem.grams,
+            calories: updatedItem.calories,
+            protein: updatedItem.protein
+          }
+        });
+        
+        // Verify the update was successful
+        if (updatedItem.grams !== scaledItem.grams || updatedItem.calories !== scaledItem.calories) {
+          this.#logger.error('adjustment.updateVerificationFailed', {
+            userId,
+            itemId,
+            expected: { grams: scaledItem.grams, calories: scaledItem.calories },
+            actual: { grams: updatedItem.grams, calories: updatedItem.calories }
+          });
+          throw new Error('Repository update verification failed - values do not match');
+        }
       } else if (this.#nutrilistRepository?.save) {
+        this.#logger.warn('adjustment.usingLegacySave', { userId, itemId });
         await this.#nutrilistRepository.save(scaledItem);
+      } else {
+        this.#logger.error('adjustment.noRepositoryMethod', { userId, itemId });
+        throw new Error('No repository update or save method available');
       }
 
       // 5. Don't clear state yet - user might want to make more adjustments
@@ -97,7 +135,7 @@ export class ApplyPortionAdjustment {
       
       if (messageId) {
         await this.#messagingGateway.updateMessage(conversationId, messageId, {
-          text: confirmationText,
+          caption: confirmationText,
           parseMode: 'HTML',
           choices: [
             [
@@ -132,7 +170,8 @@ export class ApplyPortionAdjustment {
         itemId, 
         factor, 
         oldGrams: originalGrams, 
-        newGrams: scaledItem.grams 
+        newGrams: scaledItem.grams,
+        confirmationMessage: confirmationText
       });
 
       return { success: true, scaledGrams: scaledItem.grams, originalGrams };

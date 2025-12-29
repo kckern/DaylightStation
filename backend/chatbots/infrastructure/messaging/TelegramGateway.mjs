@@ -116,9 +116,12 @@ export class TelegramGateway {
    */
   #redactParams(params) {
     const safe = { ...params };
-    // Don't log full message text (could be sensitive)
-    if (safe.text && safe.text.length > 100) {
-      safe.text = safe.text.substring(0, 100) + '...';
+    // Keep full message text for debugging flows (truncate at 500 chars)
+    if (safe.text && safe.text.length > 500) {
+      safe.text = safe.text.substring(0, 500) + '...';
+    }
+    if (safe.caption && safe.caption.length > 500) {
+      safe.caption = safe.caption.substring(0, 500) + '...';
     }
     return safe;
   }

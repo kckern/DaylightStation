@@ -99,7 +99,7 @@ export class SelectDateForAdjustment {
         choices: keyboard,
       });
 
-      this.#logger.info('adjustment.dateSelected', { userId, date, itemCount: items.length });
+      this.#logger.info('adjustment.dateSelected', { userId, date, itemCount: items.length, message });
 
       return { success: true, date, itemCount: items.length };
     } catch (error) {

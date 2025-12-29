@@ -241,6 +241,96 @@ export class NutriListRepository {
   }
 
   /**
+   * Update a single item
+   * @param {string} userId
+   * @param {string} itemId - Item UUID or ID to update
+   * @param {Object} updates - Fields to update
+   * @returns {Promise<Object>} - Updated item
+   */
+  async update(userId, itemId, updates) {
+    const path = this.#getPath(userId);
+    
+    this.#logger.debug('nutrilist.update', { userId, itemId, updates });
+
+    // Load existing data
+    let rawData = loadFile(path);
+    let items = [];
+    
+    if (Array.isArray(rawData)) {
+      items = rawData;
+    } else if (rawData && typeof rawData === 'object') {
+      items = Object.values(rawData);
+    }
+
+    // Find and update the item
+    const index = items.findIndex(item => item.uuid === itemId || item.id === itemId);
+    
+    if (index === -1) {
+      this.#logger.error('nutrilist.update.notFound', { userId, itemId, totalItems: items.length });
+      throw new NotFoundError(`Item not found: ${itemId}`);
+    }
+
+    const oldItem = { ...items[index] };
+    
+    // Update the item
+    items[index] = {
+      ...items[index],
+      ...updates,
+    };
+
+    const newItem = items[index];
+    
+    this.#logger.info('nutrilist.update.beforeSave', {
+      userId,
+      itemId,
+      before: { grams: oldItem.grams, calories: oldItem.calories, protein: oldItem.protein, carbs: oldItem.carbs, fat: oldItem.fat },
+      after: { grams: newItem.grams, calories: newItem.calories, protein: newItem.protein, carbs: newItem.carbs, fat: newItem.fat }
+    });
+
+    // Save back
+    saveFile(path, items);
+    
+    this.#logger.info('nutrilist.update.savedToDisk', { userId, itemId, path });
+
+    // Verify the save by reading back
+    const verifyData = loadFile(path);
+    const verifyItems = Array.isArray(verifyData) ? verifyData : Object.values(verifyData);
+    const verifyItem = verifyItems.find(item => item.uuid === itemId || item.id === itemId);
+    
+    if (!verifyItem) {
+      this.#logger.error('nutrilist.update.verifyFailed', { userId, itemId, message: 'Item not found after save' });
+      throw new Error('Item not found after save - verify failed');
+    }
+    
+    if (verifyItem.grams !== newItem.grams || verifyItem.calories !== newItem.calories) {
+      this.#logger.error('nutrilist.update.verifyMismatch', {
+        userId,
+        itemId,
+        expected: { grams: newItem.grams, calories: newItem.calories },
+        actual: { grams: verifyItem.grams, calories: verifyItem.calories }
+      });
+      throw new Error('Saved data does not match expected values - verify failed');
+    }
+    
+    this.#logger.info('nutrilist.update.verified', {
+      userId,
+      itemId,
+      verified: { grams: verifyItem.grams, calories: verifyItem.calories }
+    });
+
+    // Sync nutriday for the item's date
+    const itemDate = items[index].date;
+    if (itemDate) {
+      await this.syncNutriday(userId, [itemDate]);
+      this.#logger.info('nutrilist.update.nutridaySynced', { userId, itemId, date: itemDate });
+    }
+
+    this.#logger.info('nutrilist.updated', { userId, itemId });
+
+    return items[index];
+  }
+
+  /**
    * Get items by date
    * @param {string} userId
    * @param {string} date - Date in YYYY-MM-DD format
