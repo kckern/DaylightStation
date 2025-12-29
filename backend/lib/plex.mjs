@@ -736,9 +736,9 @@ export class Plex {
     if (watched.length > 0) {
       clearWatchedItems(watched, "plex");
       const selected = watched[0];
-      const { seconds = 0, percent = 0 } = log[selected] || {};
+      // After clearing, start fresh with no progress (don't use stale log data)
       plexLogger.info('selectKeyToPlay restarting watched sequence', { selected });
-      return [selected, seconds, percent];
+      return [selected, 0, 0];
     }
 
     plexLogger.warn('selectKeyToPlay no episodes found');
