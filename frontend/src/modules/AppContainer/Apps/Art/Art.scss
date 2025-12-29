@@ -37,8 +37,8 @@
   background: 
     // Paper texture noise
     url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E"),
-    // Base matte color - beige/tan
-    linear-gradient(165deg, #e8dcc8 0%, #d9ccb8 50%, #cdc0ab 100%);
+    // Base matte color - beige/tan (darkened)
+    linear-gradient(165deg, #a89c84 0%, #998c74 50%, #8d7a6b 100%);
   background-blend-mode: soft-light, normal;
   
   // Inner bevel for matte
@@ -55,7 +55,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
   height: 100%;
   
   // Thin inner frame/liner
@@ -68,8 +67,8 @@
 }
 
 .art-app img {
-  width: 100%;
   height: 100%;
+  width: auto;
   object-fit: contain;
   display: block;
   background: #2a2218;
