@@ -55,9 +55,11 @@ const TIMESERIES_SAMPLE_INTERVAL = 250; // sample every 250ms
 
 /**
  * Real-time timeseries chart showing X, Y, Z values over the past 2 minutes.
+ * True timeseries: X-axis is fixed 2-minute window, points positioned at actual timestamps.
  */
 const AxisTimeseries = ({ sensor }) => {
   const [history, setHistory] = useState([]);
+  const [timeWindow, setTimeWindow] = useState({ start: Date.now() - TIMESERIES_WINDOW_MS, end: Date.now() });
   const historyRef = useRef([]);
 
   useEffect(() => {
@@ -71,13 +73,33 @@ const AxisTimeseries = ({ sensor }) => {
     const cutoff = now - TIMESERIES_WINDOW_MS;
     historyRef.current = historyRef.current.filter(pt => pt.t >= cutoff);
     
+    // Update time window to always show last 2 minutes ending at now
+    setTimeWindow({ start: cutoff, end: now });
     setHistory([...historyRef.current]);
   }, [sensor.axes?.x, sensor.axes?.y, sensor.axes?.z, sensor.lastEvent]);
 
+  // Update time window periodically even without new data
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setTimeWindow({ start: now - TIMESERIES_WINDOW_MS, end: now });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Format time for X axis (relative seconds ago)
   const formatTime = (timestamp) => {
-    const secsAgo = Math.round((Date.now() - timestamp) / 1000);
+    const secsAgo = Math.round((timeWindow.end - timestamp) / 1000);
     return `-${secsAgo}s`;
+  };
+
+  // Generate fixed tick values for the X axis (every 30 seconds)
+  const generateTicks = () => {
+    const ticks = [];
+    for (let i = 0; i <= 120; i += 30) {
+      ticks.push(timeWindow.end - (i * 1000));
+    }
+    return ticks.reverse();
   };
 
   if (history.length < 2) {
@@ -101,13 +123,16 @@ const AxisTimeseries = ({ sensor }) => {
       <ResponsiveContainer width="100%" height={400}>
         <LineChart data={history} margin={{ top: 5, right: 5, bottom: 5, left: -20 }}>
           <XAxis 
-            dataKey="t" 
+            dataKey="t"
+            type="number"
+            domain={[timeWindow.start, timeWindow.end]}
+            scale="time"
+            ticks={generateTicks()}
             tickFormatter={formatTime}
             tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }}
             axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
             tickLine={false}
-            interval="preserveStartEnd"
-            minTickGap={40}
+            allowDataOverflow={false}
           />
           <YAxis 
             domain={[-30, 30]}
