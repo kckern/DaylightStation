@@ -75,6 +75,26 @@ export const createWebSocketHandler = (callbacks) => {
   } = callbacks;
 
   return (data) => {
+    // GUARDRAIL: Reject sensor telemetry and non-office messages that may have leaked through
+    const BLOCKED_TOPICS = ['vibration', 'fitness', 'sensor', 'telemetry', 'logging'];
+    if (data.topic && BLOCKED_TOPICS.includes(data.topic)) {
+      console.debug('[WebSocket] Blocked non-office topic:', data.topic);
+      return;
+    }
+    
+    // GUARDRAIL: Reject messages from known non-office sources
+    const BLOCKED_SOURCES = ['mqtt', 'fitness', 'fitness-simulator', 'playback-logger'];
+    if (data.source && BLOCKED_SOURCES.includes(data.source)) {
+      console.debug('[WebSocket] Blocked non-office source:', data.source);
+      return;
+    }
+    
+    // GUARDRAIL: Reject messages that look like sensor data
+    if (data.equipmentId || data.deviceId || data.data?.vibration !== undefined) {
+      console.debug('[WebSocket] Blocked sensor-like payload');
+      return;
+    }
+
     setLastPayloadMessage(data);
     delete data.timestamp;
 

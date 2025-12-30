@@ -16,7 +16,17 @@ export const useWebSocket = () => {
  * This whitelist approach ensures only relevant commands are processed.
  */
 const isOfficeMessage = (msg) => {
-  // Explicit command messages
+  // BLACKLIST: Explicitly reject known non-office message types FIRST
+  const BLOCKED_TOPICS = ['vibration', 'fitness', 'sensor', 'telemetry', 'logging'];
+  if (msg.topic && BLOCKED_TOPICS.includes(msg.topic)) return false;
+  
+  const BLOCKED_SOURCES = ['mqtt', 'fitness', 'fitness-simulator', 'playback-logger'];
+  if (msg.source && BLOCKED_SOURCES.includes(msg.source)) return false;
+  
+  // Reject sensor-like payloads
+  if (msg.equipmentId || msg.deviceId || msg.data?.vibration !== undefined) return false;
+  
+  // WHITELIST: Explicit command messages
   if (msg.menu || msg.playback || msg.action) return true;
   // Content playback messages  
   if (msg.hymn || msg.scripture || msg.talk || msg.primary || msg.plex) return true;
