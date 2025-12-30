@@ -631,7 +631,7 @@ gratitudeRouter.get('/card', async (req, res) => {
 gratitudeRouter.get('/card/print', async (req, res) => {
     try {
         const { createCanvasTypographyDemo } = await import('./printer.mjs');
-        const { thermalPrint, createImagePrint } = await import('./lib/thermalprint.mjs');
+        const { thermalPrint, createImagePrint } = await import('../lib/thermalprint.mjs');
         const fs = await import('fs');
         
         // 1. Generate canvas (default upside down for printer)
