@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import './VibrationApp.scss';
 import { useFitnessContext } from '../../../../../context/FitnessContext.jsx';
 import VIBRATION_CONSTANTS from './constants.js';
@@ -45,6 +46,115 @@ const AxisBar = ({ label, value }) => {
         />
       </div>
       <span className="axis-bar__value">{formatAxis(value)}</span>
+    </div>
+  );
+};
+
+const TIMESERIES_WINDOW_MS = 2 * 60 * 1000; // 2 minutes
+const TIMESERIES_SAMPLE_INTERVAL = 250; // sample every 250ms
+
+/**
+ * Real-time timeseries chart showing X, Y, Z values over the past 2 minutes.
+ */
+const AxisTimeseries = ({ sensor }) => {
+  const [history, setHistory] = useState([]);
+  const historyRef = useRef([]);
+
+  useEffect(() => {
+    const now = Date.now();
+    const { x = 0, y = 0, z = 0 } = sensor.axes || {};
+    
+    // Add new data point
+    historyRef.current.push({ t: now, x, y, z });
+    
+    // Prune old data beyond 2 minutes
+    const cutoff = now - TIMESERIES_WINDOW_MS;
+    historyRef.current = historyRef.current.filter(pt => pt.t >= cutoff);
+    
+    setHistory([...historyRef.current]);
+  }, [sensor.axes?.x, sensor.axes?.y, sensor.axes?.z, sensor.lastEvent]);
+
+  // Format time for X axis (relative seconds ago)
+  const formatTime = (timestamp) => {
+    const secsAgo = Math.round((Date.now() - timestamp) / 1000);
+    return `-${secsAgo}s`;
+  };
+
+  if (history.length < 2) {
+    return (
+      <div className="axis-timeseries axis-timeseries--empty">
+        <span>Collecting data...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="axis-timeseries">
+      <div className="axis-timeseries__header">
+        <span className="axis-timeseries__title">2min History</span>
+        <div className="axis-timeseries__legend">
+          <span className="legend-item legend-item--x">X</span>
+          <span className="legend-item legend-item--y">Y</span>
+          <span className="legend-item legend-item--z">Z</span>
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={400}>
+        <LineChart data={history} margin={{ top: 5, right: 5, bottom: 5, left: -20 }}>
+          <XAxis 
+            dataKey="t" 
+            tickFormatter={formatTime}
+            tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }}
+            axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+            tickLine={false}
+            interval="preserveStartEnd"
+            minTickGap={40}
+          />
+          <YAxis 
+            domain={[-30, 30]}
+            tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }}
+            axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+            tickLine={false}
+            tickCount={7}
+          />
+          <Tooltip 
+            contentStyle={{ 
+              background: 'rgba(0,0,0,0.85)', 
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 6,
+              fontSize: 11
+            }}
+            labelFormatter={(t) => formatTime(t)}
+            formatter={(value, name) => [value?.toFixed(1), name.toUpperCase()]}
+          />
+          <Line 
+            type="monotone" 
+            dataKey="x" 
+            stroke="#ff6b6b" 
+            strokeWidth={1.5}
+            dot={{ r: 2, fill: '#ff6b6b', strokeWidth: 0 }}
+            activeDot={{ r: 4, fill: '#ff6b6b' }}
+            isAnimationActive={false}
+          />
+          <Line 
+            type="monotone" 
+            dataKey="y" 
+            stroke="#4ecdc4" 
+            strokeWidth={1.5}
+            dot={{ r: 2, fill: '#4ecdc4', strokeWidth: 0 }}
+            activeDot={{ r: 4, fill: '#4ecdc4' }}
+            isAnimationActive={false}
+          />
+          <Line 
+            type="monotone" 
+            dataKey="z" 
+            stroke="#ffe66d" 
+            strokeWidth={1.5}
+            dot={{ r: 2, fill: '#ffe66d', strokeWidth: 0 }}
+            activeDot={{ r: 4, fill: '#ffe66d' }}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 };
@@ -101,6 +211,7 @@ const VibrationCard = ({ sensor }) => {
         <AxisBar label="Y" value={sensor.axes?.y} />
         <AxisBar label="Z" value={sensor.axes?.z} />
       </div>
+      <AxisTimeseries sensor={sensor} />
     </div>
   );
 };

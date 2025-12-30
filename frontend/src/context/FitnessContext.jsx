@@ -843,71 +843,40 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     }
   }, []);
   
-  
-  const wsRef = useRef(null);
-  const reconnectTimeoutRef = useRef(null);
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
-  const baseReconnectDelay = 1000;
-
-  const connectWebSocket = React.useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
-
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
-    const wsUrl = baseUrl.replace(/^http/, 'ws') + '/ws';
-    
-    const ws = new window.WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setConnected(true);
-      reconnectAttemptsRef.current = 0;
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data?.topic === 'vibration') {
-          handleVibrationEvent(data);
-          return;
-        }
-        const session = fitnessSessionRef.current;
-        if (session) {
-          session.ingestData(data);
-          forceUpdate();
-        }
-      } catch (e) {
-        // ignore
-      }
-    };
-
-    ws.onclose = () => {
-      setConnected(false);
-      wsRef.current = null;
-      if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-        const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttemptsRef.current), 30000);
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnectAttemptsRef.current++;
-          connectWebSocket();
-        }, delay);
-      }
-    };
-
-    ws.onerror = () => {
-      setConnected(false);
-    };
-  }, [forceUpdate]);
-
+  // WebSocket subscription using centralized WebSocketService
   useEffect(() => {
-    connectWebSocket();
-    return () => {
-      if (wsRef.current) wsRef.current.close();
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
-      vibrationTimeoutRefs.current = {};
-    };
-  }, [connectWebSocket]);
+    // Import dynamically to avoid circular dependencies
+    import('../services/WebSocketService').then(({ wsService }) => {
+      // Subscribe to fitness and vibration topics
+      const unsubscribe = wsService.subscribe(
+        ['fitness', 'vibration'],
+        (data) => {
+          if (data?.topic === 'vibration') {
+            handleVibrationEvent(data);
+            return;
+          }
+          const session = fitnessSessionRef.current;
+          if (session) {
+            session.ingestData(data);
+            forceUpdate();
+          }
+        }
+      );
+
+      // Subscribe to connection status
+      const unsubscribeStatus = wsService.onStatusChange(({ connected: isConnected }) => {
+        setConnected(isConnected);
+      });
+
+      // Cleanup subscriptions and vibration timeouts on unmount
+      return () => {
+        unsubscribe();
+        unsubscribeStatus();
+        Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
+        vibrationTimeoutRefs.current = {};
+      };
+    });
+  }, [forceUpdate, handleVibrationEvent]);
 
   useEffect(() => {
     const interval = setInterval(() => {

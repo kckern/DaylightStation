@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { wsService } from '../services/WebSocketService';
 
 const WebSocketContext = createContext();
 
@@ -10,17 +11,29 @@ export const useWebSocket = () => {
   return context;
 };
 
+/**
+ * Predicate function to filter messages intended for OfficeApp
+ * This whitelist approach ensures only relevant commands are processed.
+ */
+const isOfficeMessage = (msg) => {
+  // Explicit command messages
+  if (msg.menu || msg.playback || msg.action) return true;
+  // Content playback messages  
+  if (msg.hymn || msg.scripture || msg.talk || msg.primary || msg.plex) return true;
+  // Queue/play commands
+  if (msg.play || msg.queue) return true;
+  // Gratitude messages
+  if (msg.type === 'gratitude_item' || msg.type === 'gratitude') return true;
+  // Reject everything else (sensor telemetry, fitness data, etc.)
+  return false;
+};
+
 export const WebSocketProvider = ({ children }) => {
   const [websocketConnected, setWebsocketConnected] = useState(false);
   const [messageReceived, setMessageReceived] = useState(false);
   
   // Use ref to store callback directly, no state needed
   const payloadCallbackRef = useRef(null);
-  const wsRef = useRef(null);
-  const reconnectTimeoutRef = useRef(null);
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
-  const baseReconnectDelay = 1000; // Start with 1 second
 
   // Function to register payload callback
   const registerPayloadCallback = useCallback((callback) => {
@@ -59,99 +72,33 @@ export const WebSocketProvider = ({ children }) => {
     }
   }, []);
 
-  // Function to create WebSocket connection
-  const connectWebSocket = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
-      console.log('WebSocket connection already in progress');
-      return;
-    }
+  // Subscribe to WebSocket using centralized service
+  useEffect(() => {
+    // Subscribe to connection status changes
+    const unsubscribeStatus = wsService.onStatusChange(({ connected }) => {
+      setWebsocketConnected(connected);
+    });
 
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
-    const wsUrl = baseUrl.replace(/^http/, 'ws') + '/ws';
-    
-    console.log(`Connecting to WebSocket: ${wsUrl} (attempt ${reconnectAttemptsRef.current + 1})`);
-    
-    const ws = new window.WebSocket(wsUrl);
-    wsRef.current = ws;
+    // Subscribe to messages using the OfficeApp whitelist filter
+    const unsubscribeMessages = wsService.subscribe(
+      isOfficeMessage,
+      (data) => {
+        // Flash indicator for 300ms when message is received
+        setMessageReceived(true);
+        setTimeout(() => setMessageReceived(false), 300);
 
-    ws.onopen = () => {
-      console.log('WebSocket connected successfully');
-      setWebsocketConnected(true);
-      reconnectAttemptsRef.current = 0; // Reset attempts on successful connection
-    };
-
-    ws.onmessage = (event) => {
-      // Flash yellow for 300ms when any message is received
-      setMessageReceived(true);
-      setTimeout(() => setMessageReceived(false), 300);
-      
-      try {
-        const data = JSON.parse(event.data);
-        
-        // Filter out fitness messages - they'll be handled by FitnessApp separately
-        if (data.topic === 'fitness') {
-          //console.debug('Filtering out fitness message for HomeApp');
-          return;
-        }
-        
-        // Call the callback with the raw data (non-fitness messages only)
+        // Call the registered callback
         if (payloadCallbackRef.current && typeof payloadCallbackRef.current === 'function') {
           payloadCallbackRef.current(data);
         }
-      } catch (e) {
-        // ignore non-JSON or irrelevant messages
       }
-    };
-
-    ws.onclose = (event) => {
-      console.log('WebSocket disconnected:', event.code, event.reason);
-      setWebsocketConnected(false);
-      wsRef.current = null;
-      
-      // Attempt to reconnect
-      if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-        const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttemptsRef.current), 30000); // Max 30 seconds
-        console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
-        
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnectAttemptsRef.current++;
-          connectWebSocket();
-        }, delay);
-      } else {
-        console.log('Max reconnection attempts reached. Trying to restart WebSocket server...');
-        restartWebSocketServer().then((success) => {
-          if (success) {
-            // Wait a bit for server to restart, then try connecting again
-            setTimeout(() => {
-              reconnectAttemptsRef.current = 0; // Reset attempts after server restart
-              connectWebSocket();
-            }, 2000);
-          } else {
-            console.error('Failed to restart WebSocket server. Manual intervention may be required.');
-          }
-        });
-      }
-    };
-
-    ws.onerror = (err) => {
-      console.error('WebSocket error:', err);
-      setWebsocketConnected(false);
-    };
-  }, [restartWebSocketServer]);
-
-  useEffect(() => {
-    connectWebSocket();
+    );
 
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      unsubscribeStatus();
+      unsubscribeMessages();
     };
-  }, [connectWebSocket]);
+  }, []);
 
   const value = {
     websocketConnected,
