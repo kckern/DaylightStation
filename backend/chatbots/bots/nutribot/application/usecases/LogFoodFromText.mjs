@@ -78,16 +78,7 @@ export class LogFoodFromText {
     this.#logger.info('logText.start', { conversationId, text, textLength: text.length });
 
     try {
-      // 1. Delete original user message
-      if (messageId) {
-        try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
-        } catch (e) {
-          // Ignore delete errors
-        }
-      }
-
-      // 2. Send "Analyzing..." message (always NEW - we'll handle revision case later)
+      // 1. Send "Analyzing..." message (always NEW - we'll handle revision case later)
       let statusMsgId;
       if (existingMessageId) {
         // Reuse existing message (voice flow already showed transcription)
@@ -191,7 +182,12 @@ export class LogFoodFromText {
         inline: true,
       });
 
-      // 8. Update NutriLog with the messageId for later UI updates (e.g., auto-accept)
+      // 8. Delete original user message after analysis is complete (with retry)
+      if (messageId) {
+        await this.#deleteMessageWithRetry(conversationId, messageId);
+      }
+
+      // 9. Update NutriLog with the messageId for later UI updates (e.g., auto-accept)
       if (this.#nutrilogRepository) {
         const updatedLog = nutriLog.with({
           metadata: { ...nutriLog.metadata, messageId: String(statusMsgId) },
@@ -228,6 +224,49 @@ export class LogFoodFromText {
     if (hour >= 12 && hour < 17) return 'afternoon';
     if (hour >= 17 && hour < 21) return 'evening';
     return 'night';
+  }
+
+  /**
+   * Delete a message with retry logic for transient network failures
+   * @private
+   * @param {string} conversationId
+   * @param {string} messageId
+   * @param {number} maxRetries - Maximum number of retry attempts
+   */
+  async #deleteMessageWithRetry(conversationId, messageId, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.#messagingGateway.deleteMessage(conversationId, messageId);
+        this.#logger.debug('logText.deleteMessage.success', { conversationId, messageId, attempt });
+        return;
+      } catch (error) {
+        const isRetryable = error.code === 'EAI_AGAIN' || error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET';
+        
+        if (isRetryable && attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s (capped at 5s)
+          this.#logger.warn('logText.deleteMessage.retry', { 
+            conversationId, 
+            messageId, 
+            attempt, 
+            maxRetries, 
+            delay,
+            error: error.message,
+            code: error.code 
+          });
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          this.#logger.warn('logText.deleteMessage.failed', { 
+            conversationId, 
+            messageId, 
+            attempts: attempt,
+            error: error.message,
+            code: error.code 
+          });
+          // Don't throw - message deletion is not critical
+          return;
+        }
+      }
+    }
   }
 
   /**
