@@ -1,0 +1,239 @@
+.vibration-app {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  height: 100%;
+  min-height: 220px;
+}
+
+.vibration-app__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+
+  h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  span {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.65);
+  }
+}
+
+.vibration-app__status {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.95rem;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.vibration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.vibration-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow: hidden;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.vibration-card--active {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  transform: translateY(-2px);
+}
+
+.vibration-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vibration-card__title {
+  margin: 0;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.vibration-card__type {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.vibration-chip {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.vibration-chip--high {
+  background: rgba(255, 87, 51, 0.15);
+  border-color: rgba(255, 87, 51, 0.35);
+  color: #ffac99;
+}
+
+.vibration-chip--medium {
+  background: rgba(255, 165, 0, 0.12);
+  border-color: rgba(255, 165, 0, 0.3);
+  color: #ffc68a;
+}
+
+.vibration-chip--low {
+  background: rgba(0, 200, 83, 0.12);
+  border-color: rgba(0, 200, 83, 0.3);
+  color: #8de6ae;
+}
+
+.vibration-metrics {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.vibration-metrics__intensity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.vibration-battery {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.vibration-battery--low {
+  color: #ffb3a1;
+}
+
+.vibration-axes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.axis-bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.axis-bar__label {
+  width: 1.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.axis-bar__track {
+  position: relative;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.axis-bar__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--axis-fill, 50%);
+  background: linear-gradient(90deg, rgba(0, 200, 83, 0.4), rgba(255, 165, 0, 0.4), rgba(255, 87, 51, 0.5));
+  transition: width 120ms ease;
+}
+
+.axis-bar__value {
+  min-width: 3rem;
+  text-align: right;
+}
+
+.direction-chip {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.direction-chip--positive { background: rgba(0, 200, 83, 0.12); color: #8de6ae; }
+.direction-chip--warning { background: rgba(255, 165, 0, 0.12); color: #ffc68a; }
+.direction-chip--info { background: rgba(86, 156, 214, 0.12); color: #b6d8ff; }
+.direction-chip--neutral { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.8); }
+
+.vibration-pulse {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  border-radius: 20px;
+  background: radial-gradient(circle, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 60%);
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.vibration-card--active .vibration-pulse {
+  opacity: 1;
+  transform: scale(1.02);
+}
+
+.activity-timeline {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.35rem 0.1rem 0.1rem;
+}
+
+.activity-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.2));
+  opacity: calc(1 - var(--dot-age, 0));
+  transform: scale(calc(1 - (var(--dot-age, 0) * 0.4)));
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vibration-card,
+  .vibration-pulse,
+  .axis-bar__fill,
+  .activity-dot {
+    transition: none;
+    animation: none;
+  }
+}

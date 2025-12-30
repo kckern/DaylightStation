@@ -1,0 +1,176 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import './VibrationApp.scss';
+import { useFitnessContext } from '../../../../../context/FitnessContext.jsx';
+import VIBRATION_CONSTANTS from './constants.js';
+
+const resolveLevel = (intensity = 0, thresholds = VIBRATION_CONSTANTS.DEFAULT_THRESHOLDS) => {
+  if (!thresholds) return 'low';
+  const { high = 30, medium = 15 } = thresholds;
+  if (intensity >= high) return 'high';
+  if (intensity >= medium) return 'medium';
+  return 'low';
+};
+
+const formatAxis = (value) => {
+  if (value === null || value === undefined) return '—';
+  return Math.round(value * 10) / 10;
+};
+
+const resolveDirection = (axes = {}) => {
+  const { x = 0, y = 0, z = 0 } = axes;
+  const values = [Math.abs(x), Math.abs(y), Math.abs(z)];
+  const max = Math.max(...values);
+  if (max === 0) return { label: 'Idle', tone: 'neutral' };
+
+  if (max === Math.abs(x)) {
+    return x > 0 ? { label: 'Right strike', tone: 'positive' } : { label: 'Left strike', tone: 'positive' };
+  }
+  if (max === Math.abs(y)) {
+    return y > 0 ? { label: 'Upward motion', tone: 'warning' } : { label: 'Downward motion', tone: 'warning' };
+  }
+  return z > 0 ? { label: 'Forward push', tone: 'info' } : { label: 'Pull back', tone: 'info' };
+};
+
+const AxisBar = ({ label, value }) => {
+  const clamped = Math.max(-30, Math.min(30, value || 0));
+  const percent = (clamped / 30) * 50; // -50 to 50 visual span
+  return (
+    <div className="axis-bar">
+      <span className="axis-bar__label">{label}</span>
+      <div className="axis-bar__track">
+        <div
+          className="axis-bar__fill"
+          style={{ '--axis-fill': `${50 + percent}%` }}
+          aria-hidden="true"
+        />
+      </div>
+      <span className="axis-bar__value">{formatAxis(value)}</span>
+    </div>
+  );
+};
+
+const ActivityTimeline = ({ events }) => {
+  if (!events.length) return null;
+  const recent = events.slice(-14).reverse();
+  return (
+    <div className="activity-timeline">
+      {recent.map((evt) => (
+        <div
+          key={`${evt.id}-${evt.ts}`}
+          className="activity-dot"
+          title={`${evt.name || evt.id} • ${Math.round(evt.intensity)}`}
+          style={{ '--dot-age': evt.ageRatio }}
+        />
+      ))}
+    </div>
+  );
+};
+
+const VibrationCard = ({ sensor }) => {
+  const level = resolveLevel(sensor.intensity, sensor.thresholds);
+  const chipClass = `vibration-chip vibration-chip--${level}`;
+  const cardClass = sensor.vibration ? 'vibration-card vibration-card--active' : 'vibration-card';
+  const batteryLow = sensor.batteryLow || (typeof sensor.battery === 'number' && sensor.battery < 20);
+  const direction = resolveDirection(sensor.axes);
+  return (
+    <div className={cardClass}>
+      <div className="vibration-pulse" aria-hidden="true" />
+      <div className="vibration-card__header">
+        <div>
+          <p className="vibration-card__title">{sensor.name || sensor.id}</p>
+          {sensor.type && <p className="vibration-card__type">{sensor.type}</p>}
+        </div>
+        <div className={chipClass}>{sensor.vibration ? 'Active' : 'Idle'}</div>
+      </div>
+      <div className="vibration-metrics">
+        <div className="vibration-metrics__intensity">
+          <strong>Intensity:</strong> {Math.round(sensor.intensity || 0)}
+        </div>
+        <div className={`direction-chip direction-chip--${direction.tone}`}>{direction.label}</div>
+        {sensor.battery !== null && sensor.battery !== undefined && (
+          <div className={batteryLow ? 'vibration-battery vibration-battery--low' : 'vibration-battery'}>
+            🔋 {Math.round(sensor.battery)}%
+          </div>
+        )}
+        {sensor.linkquality !== null && sensor.linkquality !== undefined && (
+          <div className="vibration-battery">📶 {sensor.linkquality}</div>
+        )}
+      </div>
+      <div className="vibration-axes">
+        <AxisBar label="X" value={sensor.axes?.x} />
+        <AxisBar label="Y" value={sensor.axes?.y} />
+        <AxisBar label="Z" value={sensor.axes?.z} />
+      </div>
+    </div>
+  );
+};
+
+const VibrationApp = () => {
+  const { vibrationState = {}, connected } = useFitnessContext();
+  const sensors = useMemo(() => Object.values(vibrationState || {}), [vibrationState]);
+  const lastSeenRef = useRef({});
+  const eventsRef = useRef([]);
+  const [events, setEvents] = useState([]);
+
+  useEffect(() => {
+    if (!sensors.length) {
+      eventsRef.current = [];
+      setEvents([]);
+      return;
+    }
+    const now = Date.now();
+    let mutated = false;
+    const nextEvents = [...eventsRef.current];
+
+    sensors.forEach((sensor) => {
+      if (!sensor?.vibration) return;
+      const lastSeen = lastSeenRef.current[sensor.id];
+      if (lastSeen === sensor.lastEvent) return;
+      lastSeenRef.current[sensor.id] = sensor.lastEvent;
+      mutated = true;
+      nextEvents.push({
+        id: sensor.id,
+        name: sensor.name,
+        ts: sensor.lastEvent || now,
+        intensity: sensor.intensity || 0
+      });
+    });
+
+    if (mutated) {
+      const windowMs = 30_000;
+      const cutoff = now - windowMs;
+      const pruned = nextEvents.filter((evt) => evt.ts >= cutoff);
+      const withAges = pruned.map((evt) => ({
+        ...evt,
+        ageRatio: Math.max(0, Math.min(1, (now - evt.ts) / windowMs))
+      }));
+      eventsRef.current = withAges;
+      setEvents(withAges);
+    }
+  }, [sensors]);
+
+  if (!connected) {
+    return <div className="vibration-app vibration-app__status">Connecting to sensor network...</div>;
+  }
+
+  if (!sensors.length) {
+    return <div className="vibration-app vibration-app__status">No vibration sensors configured</div>;
+  }
+
+  return (
+    <div className="vibration-app">
+      <div className="vibration-app__header">
+        <h3>Vibration Monitor</h3>
+        <span>{sensors.length} sensor{ sensors.length === 1 ? '' : 's' }</span>
+      </div>
+      <ActivityTimeline events={events} />
+      <div className="vibration-grid">
+        {sensors.map((sensor) => (
+          <VibrationCard key={sensor.id} sensor={sensor} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default VibrationApp;

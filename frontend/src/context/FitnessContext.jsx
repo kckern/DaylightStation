@@ -12,6 +12,7 @@ import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.
 import { useZoneLedSync } from '../hooks/fitness/useZoneLedSync.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 import { getPluginManifest } from '../modules/Fitness/FitnessPlugins/registry.js';
+import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessPlugins/plugins/VibrationApp/constants.js';
 
 // Create context
 const FitnessContext = createContext(null);
@@ -46,6 +47,11 @@ const createEmptyOwnership = () => ({
   heartRate: new Map(),
   cadence: new Map()
 });
+
+export const calculateIntensity = (x, y, z) => {
+  if (x == null || y == null || z == null) return 0;
+  return Math.sqrt(x * x + y * y + z * z);
+};
 
 // Custom hook for using the context
 export const useFitnessContext = () => {
@@ -85,6 +91,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [connected, setConnected] = useState(false);
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
   const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
+  const [vibrationState, setVibrationState] = useState({});
+  const vibrationTimeoutRefs = useRef({});
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
   const guestAssignmentServiceRef = useRef(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
@@ -770,6 +778,71 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // No-op, handled by engine callbacks
   }, []);
   
+  // Vibration utilities
+  const handleVibrationEvent = React.useCallback((payload) => {
+    const {
+      equipmentId,
+      equipmentName,
+      equipmentType,
+      thresholds = VIBRATION_CONSTANTS.DEFAULT_THRESHOLDS,
+      data = {},
+      timestamp = Date.now()
+    } = payload || {};
+
+    if (!equipmentId) return;
+
+    const {
+      vibration = false,
+      x_axis = null,
+      y_axis = null,
+      z_axis = null,
+      battery = null,
+      battery_low = false,
+      linkquality = null
+    } = data;
+
+    const axes = { x: x_axis ?? null, y: y_axis ?? null, z: z_axis ?? null };
+    const intensity = calculateIntensity(axes.x, axes.y, axes.z);
+    const normalizedThresholds = thresholds || VIBRATION_CONSTANTS.DEFAULT_THRESHOLDS;
+
+    setVibrationState((prev) => ({
+      ...prev,
+      [equipmentId]: {
+        id: equipmentId,
+        name: equipmentName || equipmentId,
+        type: equipmentType || null,
+        vibration: Boolean(vibration),
+        intensity,
+        axes,
+        thresholds: normalizedThresholds,
+        battery: battery ?? prev[equipmentId]?.battery ?? null,
+        batteryLow: Boolean(battery_low),
+        linkquality: linkquality ?? null,
+        lastEvent: timestamp
+      }
+    }));
+
+    if (vibrationTimeoutRefs.current[equipmentId]) {
+      clearTimeout(vibrationTimeoutRefs.current[equipmentId]);
+    }
+
+    if (vibration) {
+      vibrationTimeoutRefs.current[equipmentId] = setTimeout(() => {
+        setVibrationState((prev) => {
+          const existing = prev[equipmentId];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [equipmentId]: {
+              ...existing,
+              vibration: false
+            }
+          };
+        });
+      }, VIBRATION_CONSTANTS.ACTIVE_STATE_MS);
+    }
+  }, []);
+  
   
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -795,6 +868,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        if (data?.topic === 'vibration') {
+          handleVibrationEvent(data);
+          return;
+        }
         const session = fitnessSessionRef.current;
         if (session) {
           session.ingestData(data);
@@ -827,6 +904,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return () => {
       if (wsRef.current) wsRef.current.close();
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
+      vibrationTimeoutRefs.current = {};
     };
   }, [connectWebSocket]);
 
@@ -1236,6 +1315,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return Number.isFinite(vitals.heartRate) ? vitals.heartRate : null;
   }, [getUserVitals]);
 
+  const getEquipmentVibration = React.useCallback((equipmentId) => {
+    if (!equipmentId) return null;
+    return vibrationState[equipmentId] || null;
+  }, [vibrationState]);
+
   const resolveUserByDevice = React.useCallback((key) => {
     if (key === undefined || key === null) return null;
     const manager = session?.userManager;
@@ -1462,6 +1546,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governedTypeSet,
     
     connected,
+    vibrationState,
     fitnessDevices,
     users,
     deviceAssignments,
@@ -1570,6 +1655,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     getUserZoneThreshold,
     userHeartRates: new Map(), // TODO
     getUserHeartRate,
+    getEquipmentVibration,
     replacedPrimaryPool,
     primaryUsers: [],
     secondaryUsers: [],

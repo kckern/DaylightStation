@@ -8,6 +8,8 @@ import { createWebsocketServer } from './routers/websocket.mjs';
 import { createServer } from 'http';
 import { loadFile } from './lib/io.mjs';
 import 'dotenv/config'; // Load .env file
+import { initMqttSubscriber } from './lib/mqtt.mjs';
+import { userDataService } from './lib/config/UserDataService.mjs';
 
 // Config path resolver and loader
 import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolver.mjs';
@@ -147,6 +149,28 @@ async function initializeApp() {
 
     // Initialize WebSocket server after config is loaded
     createWebsocketServer(server);
+
+    // Initialize MQTT subscriber for vibration sensors (fitness)
+    try {
+      const householdId = configService.getDefaultHouseholdId();
+      const householdConfig = userDataService.readHouseholdAppData(householdId, 'fitness', 'config');
+      let legacyFitnessConfig = {};
+      const dataRoot = process.env.path?.data;
+      const legacyYml = dataRoot && path.join(dataRoot, 'config/apps/fitness.yml');
+      const legacyYaml = dataRoot && path.join(dataRoot, 'config/apps/fitness.yaml');
+      if ((legacyYml && existsSync(legacyYml)) || (legacyYaml && existsSync(legacyYaml))) {
+        legacyFitnessConfig = loadFile('config/apps/fitness') || {};
+      }
+      const equipmentConfig = householdConfig?.equipment || legacyFitnessConfig.equipment || [];
+
+      if (process.env.mqtt) {
+        initMqttSubscriber(equipmentConfig);
+      } else {
+        rootLogger.warn('mqtt.not_configured', { message: 'process.env.mqtt missing; skipping MQTT init' });
+      }
+    } catch (err) {
+      rootLogger.error('mqtt.init.failed', { error: err?.message });
+    }
 
     // Import routers dynamically after configuration is set
     const { default: cron } = await import('./routers/cron.mjs');
