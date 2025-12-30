@@ -88,10 +88,10 @@ describe('ConfigProvider', () => {
   describe('getUser()', () => {
     it('should return user by internal ID', () => {
       const config = new ConfigProvider();
-      const user = config.getUser('kckern');
+      const user = config.getUser('{username}');
       
       expect(user).toBeDefined();
-      expect(user.internalId).toBe('kckern');
+      expect(user.internalId).toBe('{username}');
       expect(user.telegramUserId).toBe('575596036');
       expect(user.defaultBot).toBe('nutribot');
       expect(user.goals).toBeDefined();
@@ -110,14 +110,14 @@ describe('ConfigProvider', () => {
       const config = new ConfigProvider();
       const internalId = config.getInternalUserId('575596036');
       
-      expect(internalId).toBe('kckern');
+      expect(internalId).toBe('{username}');
     });
 
     it('should handle numeric telegram ID', () => {
       const config = new ConfigProvider();
       const internalId = config.getInternalUserId(575596036);
       
-      expect(internalId).toBe('kckern');
+      expect(internalId).toBe('{username}');
     });
 
     it('should return null for unknown telegram ID', () => {
@@ -143,7 +143,7 @@ describe('ConfigProvider', () => {
   describe('getUserGoals()', () => {
     it('should return goals for specific user', () => {
       const config = new ConfigProvider();
-      const goals = config.getUserGoals('kckern');
+      const goals = config.getUserGoals('{username}');
       
       expect(goals.calories).toBe(2000);
       expect(goals.protein).toBe(150);

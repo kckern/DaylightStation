@@ -576,9 +576,9 @@ export const DEBRIEF_CATEGORIES = {
 ```yaml
 # state/cron.yml
 
-# User kckern: Morning journaler (8:00 AM)
-- name: journalist_morning_kckern
-  url: http://localhost:3000/journalist/morning?user=kckern
+# User {username}: Morning journaler (8:00 AM)
+- name: journalist_morning_{username}
+  url: http://localhost:3000/journalist/morning?user={username}
   cron_tab: "0 8 * * *"
   window: 15
   nextRun: null
@@ -604,8 +604,8 @@ export const DEBRIEF_CATEGORIES = {
 ### 5.3 User Profile Configuration
 
 ```yaml
-# data/users/kckern/profile.yml
-username: kckern
+# data/users/{username}/profile.yml
+username: {username}
 preferences:
   timezone: America/Los_Angeles
   morningDebriefTime: "08:00"  # HH:MM format
@@ -844,7 +844,7 @@ sequenceDiagram
 ```javascript
 // User profile
 {
-  username: "kckern",
+  username: "{username}",
   preferences: {
     timezone: "America/Los_Angeles",  // Home timezone
     morningDebriefTime: "08:00"
@@ -945,7 +945,7 @@ async function getEffectiveTimezone(username) {
 **Note:** All paths are user-namespaced at `users/{username}/lifelog/`
 
 ### events.yml (Calendar)
-**Path:** `users/kckern/lifelog/events.yml`
+**Path:** `users/{username}/lifelog/events.yml`
 
 ```yaml
 - id: 3j8go6he0dbs4s7q9u23fd1qfl_20251221T200000Z
@@ -959,7 +959,7 @@ async function getEffectiveTimezone(username) {
 ```
 
 ### garmin.yml (Fitness)
-**Path:** `users/kckern/lifelog/garmin.yml`
+**Path:** `users/{username}/lifelog/garmin.yml`
 
 ```yaml
 2025-12-25:
@@ -973,7 +973,7 @@ async function getEffectiveTimezone(username) {
 ```
 
 ### todoist.yml (Tasks)
-**Path:** `users/kckern/lifelog/todoist.yml`
+**Path:** `users/{username}/lifelog/todoist.yml`
 
 ```yaml
 - id: '9338612970'

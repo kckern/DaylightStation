@@ -330,7 +330,7 @@ cli/
 Run all CLI tests:
 
 ```bash
-cd /Users/kckern/Documents/GitHub/DaylightStation
+cd /path/to/DaylightStation
 NODE_OPTIONS=--experimental-vm-modules npm test -- --testPathPattern="backend/chatbots/cli/__tests__"
 ```
 

@@ -15,7 +15,7 @@
  * - Session persistence
  * 
  * Run with:
- * cd /Users/kckern/Documents/GitHub/DaylightStation
+ * cd /path/to/DaylightStation
  * NODE_OPTIONS=--experimental-vm-modules npm test -- --testPathPattern="NutriBot.integration"
  */
 
@@ -35,7 +35,7 @@ import { CLIChatSimulator } from '../CLIChatSimulator.mjs';
 
 // Test resources
 const TEST_IMAGE_URL = 'https://i.imgur.com/j9h14NA.jpeg';
-const TEST_AUDIO_PATH = '/Users/kckern/ogg/food.ogg';
+const TEST_AUDIO_PATH = '/path/to/test-audio/food.ogg';
 
 // Check if we have a real API key
 const secretsPath = path.join(__dirname, '../../../../config.secrets.yml');

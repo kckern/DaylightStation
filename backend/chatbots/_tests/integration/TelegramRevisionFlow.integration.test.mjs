@@ -12,7 +12,7 @@
  * 5. Tests the full container → router → use case → state store chain
  * 
  * Run with:
- * cd /Users/kckern/Documents/GitHub/DaylightStation
+ * cd /path/to/DaylightStation
  * NODE_OPTIONS=--experimental-vm-modules npm test -- --testPathPattern="TelegramRevisionFlow.integration"
  */
 

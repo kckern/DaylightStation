@@ -261,10 +261,10 @@ async function initializeApp() {
       const householdPath = `${dataPath}/households/${hid}/household.yml`;
       try {
         const householdData = parse(readFileSync(householdPath, 'utf8'));
-        return householdData?.head || 'kckern';
+        return householdData?.head || '{username}';
       } catch (err) {
         rootLogger.warn('household.head.error', { error: err.message });
-        return 'kckern';
+        return '{username}';
       }
     };
     

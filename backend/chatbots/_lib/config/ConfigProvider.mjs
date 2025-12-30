@@ -218,7 +218,7 @@ export class ConfigProvider {
   /**
    * Get user config by internal user ID
    * Uses ConfigService + UserDataService for new architecture
-   * @param {string} internalUserId - Internal user ID (e.g., 'kckern')
+   * @param {string} internalUserId - Internal user ID (e.g., '{username}')
    * @returns {Object|null}
    */
   getUser(internalUserId) {
@@ -393,12 +393,12 @@ export class ConfigProvider {
     switch (botName) {
       case 'nutribot':
         return isProd 
-          ? journalist.nutribot_prod_hook || 'https://daylightstation-api.kckern.net/foodlog'
-          : journalist.nutribot_dev_hook || 'https://api-dev.kckern.net/foodlog';
+          ? journalist.nutribot_prod_hook || 'https://{prod-api-domain}/foodlog'
+          : journalist.nutribot_dev_hook || 'https://{dev-api-domain}/foodlog';
       case 'journalist':
         return isProd
-          ? journalist.journalist_prod_hook || 'https://daylightstation-api.kckern.net/journalist'
-          : journalist.journalist_dev_hook || 'https://api-dev.kckern.net/journalist';
+          ? journalist.journalist_prod_hook || 'https://{prod-api-domain}/journalist'
+          : journalist.journalist_dev_hook || 'https://{dev-api-domain}/journalist';
       default:
         return '';
     }
@@ -434,7 +434,7 @@ export class ConfigProvider {
       },
       goals: this.getNutritionGoals(),
       report: {
-        host: bot.reportHost || this.#appConfig.nutribot_report_host || 'https://daylightstation-api.kckern.net',
+        host: bot.reportHost || this.#appConfig.nutribot_report_host || 'https://{prod-api-domain}',
         timezone: this.getTimezone(),
       },
       legacyChatId: this.#appConfig.nutribot_chat_id || 'b6898194425_u575596036',
