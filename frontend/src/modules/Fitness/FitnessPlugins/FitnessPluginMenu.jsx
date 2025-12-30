@@ -60,6 +60,13 @@ const FitnessPluginMenu = ({ activePluginMenuId, onPluginSelect, onBack }) => {
       items.push({ id: 'pose_demo', name: poseDemoManifest.name || 'Pose Demo' });
     }
 
+    // Ensure Vibration Monitor appears even if not yet in config
+    const vibrationManifest = getPluginManifest('vibration_monitor');
+    const hasVibration = items.some((item) => String(item.id) === 'vibration_monitor');
+    if (vibrationManifest && !hasVibration) {
+      items.push({ id: 'vibration_monitor', name: vibrationManifest.name || 'Vibration Monitor' });
+    }
+
     return items
       .map(item => ({ ...item, manifest: getPluginManifest(item.id) }))
       .filter(item => item.manifest);

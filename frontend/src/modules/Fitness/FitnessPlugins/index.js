@@ -8,6 +8,7 @@ import * as JumpingJackGame from './plugins/JumpingJackGame/index.jsx';
 import * as ComponentShowcase from './plugins/ComponentShowcase/index.jsx';
 import * as HomeApp from './plugins/HomeApp/index.jsx';
 import * as PoseDemo from './plugins/PoseDemo/index.jsx';
+import * as VibrationApp from './plugins/VibrationApp/index.jsx';
 
 registerPlugin(FitnessChartApp);
 registerPlugin(CameraViewApp);
@@ -15,5 +16,6 @@ registerPlugin(JumpingJackGame);
 registerPlugin(ComponentShowcase);
 registerPlugin(HomeApp);
 registerPlugin(PoseDemo);
+registerPlugin(VibrationApp);
 
 
