@@ -184,6 +184,63 @@
   text-align: right;
 }
 
+.axis-timeseries {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.axis-timeseries--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 80px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.axis-timeseries__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.axis-timeseries__title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.axis-timeseries__legend {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.legend-item {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+.legend-item--x {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+}
+
+.legend-item--y {
+  background: rgba(78, 205, 196, 0.2);
+  color: #4ecdc4;
+}
+
+.legend-item--z {
+  background: rgba(255, 230, 109, 0.2);
+  color: #ffe66d;
+}
+
 .direction-chip {
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
