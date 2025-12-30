@@ -490,8 +490,8 @@ chatbots:
       bot_id: 6898194425
       # Token loaded from secrets: TELEGRAM_NUTRIBOT_TOKEN
       webhook:
-        dev: https://api-dev.kckern.net/chatbots/nutribot/webhook
-        prod: https://daylightstation-api.kckern.net/chatbots/nutribot/webhook
+        dev: https://{dev-api-domain}/chatbots/nutribot/webhook
+        prod: https://{prod-api-domain}/chatbots/nutribot/webhook
     
     # User mappings (internal → telegram)
     users:
@@ -511,7 +511,7 @@ chatbots:
     
     # Report settings
     report:
-      host: https://daylightstation-api.kckern.net
+      host: https://{prod-api-domain}
       timezone: America/Los_Angeles
 
   # Journalist configuration (for reference)
@@ -519,8 +519,8 @@ chatbots:
     telegram:
       bot_id: 580626020
       webhook:
-        dev: https://api-dev.kckern.net/chatbots/journalist/webhook
-        prod: https://daylightstation-api.kckern.net/chatbots/journalist/webhook
+        dev: https://{dev-api-domain}/chatbots/journalist/webhook
+        prod: https://{prod-api-domain}/chatbots/journalist/webhook
 ```
 
 ### 5.2 Configuration Provider

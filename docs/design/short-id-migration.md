@@ -200,7 +200,7 @@ export function decodeCallback(data) {
 /**
  * Migrate nutrilog and nutrilist from UUIDs to short IDs
  * 
- * Usage: node scripts/migrate-to-short-ids.mjs --user kckern [--dry-run]
+ * Usage: node scripts/migrate-to-short-ids.mjs --user {username} [--dry-run]
  */
 
 import { shortIdFromUuid } from '../backend/chatbots/_lib/shortId.mjs';
@@ -330,7 +330,7 @@ async findById(userId, idOrUuid) {
    - Support legacy fallback
 
 5. **Phase 5: Migration**
-   - Run migration script for `kckern`
+   - Run migration script for `{username}`
    - Verify data integrity
    - Monitor for errors
 

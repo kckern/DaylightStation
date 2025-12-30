@@ -48,7 +48,7 @@ import moment from 'moment-timezone';
  * 
  * Example:
  *   - id: "sel-1234-5678-90ab-cdef12345678"
- *     userId: "kckern"
+ *     userId: "{username}"
  *     item:
  *       id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
  *       text: "Sunny weather"

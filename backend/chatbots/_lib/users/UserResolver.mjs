@@ -57,9 +57,9 @@ export class UserResolver {
    * Resolve a conversation ID to a username
    * 
    * Supports multiple formats:
-   * - "telegram:6898194425_575596036" -> "kckern"
-   * - "575596036" (chat ID only) -> "kckern"
-   * - "kckern" (already a username) -> "kckern"
+   * - "telegram:6898194425_575596036" -> "{username}"
+   * - "575596036" (chat ID only) -> "{username}"
+   * - "{username}" (already a username) -> "{username}"
    * 
    * @param {string} conversationId - Platform-specific conversation identifier
    * @returns {string|null} - Username or null if not found

@@ -258,7 +258,7 @@ Gratitude users will be derived directly from `household.yml`:
 ```yaml
 # data/households/default/household.yml
 users:
-  - kckern    # Display name from user profile
+  - {username}    # Display name from user profile
   - felix
   - milo
   - alan
@@ -281,7 +281,7 @@ The `gratitude.mjs` backend will be updated to:
     { "id": 123, "text": "Sunny Weather" },
     { "id": 124, "text": "Good Coffee" }
   ],
-  "userId": "kckern",
+  "userId": "{username}",
   "userName": "Dad",
   "category": "gratitude",
   "source": "homebot",

@@ -529,9 +529,9 @@ New harvesters needed in [harvest.js](harvest.js):
 **Morning Debrief Cron Jobs (added to `state/cron.yml`):**
 
 ```yaml
-# Example for user kckern with 8:00 AM preference
-- name: journalist_morning_kckern
-  url: http://localhost:3000/journalist/morning?user=kckern
+# Example for user {username} with 8:00 AM preference
+- name: journalist_morning_{username}
+  url: http://localhost:3000/journalist/morning?user={username}
   cron_tab: "0 8 * * *"
   window: 15  # ±15 minute window for MD5 offset
   nextRun: null
@@ -969,7 +969,7 @@ This is a more realistic timeline than the original 7-week estimate, accounting 
 
 ✅ **A: Yes, via manual trigger:**
 ```
-GET /journalist/morning?user=kckern&date=2025-12-25
+GET /journalist/morning?user={username}&date=2025-12-25
 ```
 
 Use cases:
@@ -1020,7 +1020,7 @@ Implementation:
 ```javascript
 // User profile (ConfigService)
 {
-  username: "kckern",
+  username: "{username}",
   preferences: {
     timezone: "America/Los_Angeles",  // Home timezone
     morningDebriefTime: "08:00"
@@ -1158,7 +1158,7 @@ All critical architectural concerns from the initial review have been addressed:
 **Note:** All paths are user-namespaced at `users/{username}/lifelog/`
 
 ### events.yml (Calendar)
-**Path:** `users/kckern/lifelog/events.yml`
+**Path:** `users/{username}/lifelog/events.yml`
 
 ```yaml
 - id: 3j8go6he0dbs4s7q9u23fd1qfl_20251221T200000Z
@@ -1172,7 +1172,7 @@ All critical architectural concerns from the initial review have been addressed:
 ```
 
 ### garmin.yml (Fitness)
-**Path:** `users/kckern/lifelog/garmin.yml`
+**Path:** `users/{username}/lifelog/garmin.yml`
 
 ```yaml
 2025-12-25:
@@ -1186,7 +1186,7 @@ All critical architectural concerns from the initial review have been addressed:
 ```
 
 ### todoist.yml (Tasks)
-**Path:** `users/kckern/lifelog/todoist.yml`
+**Path:** `users/{username}/lifelog/todoist.yml`
 
 ```yaml
 - id: '9338612970'

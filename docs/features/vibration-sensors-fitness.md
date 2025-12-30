@@ -119,13 +119,13 @@ export const MQTT_CONSTANTS = {
 
 ### Container Networking
 
-Both `daylight-station` and `mosquitto` containers run on the same Docker network (`kckern-net`), allowing direct container-to-container communication.
+Both `daylight-station` and `mosquitto` containers run on the same Docker network (`{local-network}`), allowing direct container-to-container communication.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  homeserver.local (Docker Host)                                 │
 │                                                                 │
-│  ┌─────────────────────── kckern-net ─────────────────────────┐ │
+│  ┌─────────────────────── {local-network} ─────────────────────────┐ │
 │  │                                                             │ │
 │  │  ┌─────────────────┐         ┌─────────────────┐           │ │
 │  │  │ daylight-station│         │    mosquitto    │           │ │
@@ -145,7 +145,7 @@ Both `daylight-station` and `mosquitto` containers run on the same Docker networ
 
 | Environment | MQTT Host | How it Works |
 |-------------|-----------|--------------|
-| **Production** | `mosquitto` | Container name resolution on `kckern-net` |
+| **Production** | `mosquitto` | Container name resolution on `{local-network}` |
 | **Development** | `homeserver.local` | External access via exposed port 1883 |
 
 - **Production**: `daylight-station` connects to `mosquitto:1883` using Docker DNS
@@ -1317,7 +1317,7 @@ Add MQTT broker settings to the main application config:
 ```yaml
 # In config/config.app.yml (production)
 mqtt:
-  host: mosquitto      # Container name on kckern-net
+  host: mosquitto      # Container name on {local-network}
   port: 1883
 ```
 
@@ -2198,12 +2198,12 @@ ssh homeserver.local 'docker exec mosquitto mosquitto_pub -h localhost -t "zigbe
 | Assumption | Risk if Violated | Mitigation |
 |------------|------------------|------------|
 | MQTT broker is on internal network | Unauthorized sensor data injection | Add MQTT auth, TLS |
-| Docker network `kckern-net` is isolated | Container escape could access MQTT | Network policies, firewall |
+| Docker network `{local-network}` is isolated | Container escape could access MQTT | Network policies, firewall |
 | Dev machine is trusted | Dev config exposes homeserver.local | VPN for remote dev |
 
 ### What's NOT Protected
 
-- **No MQTT authentication**: Anyone on `kckern-net` can publish to sensor topics
+- **No MQTT authentication**: Anyone on `{local-network}` can publish to sensor topics
 - **No TLS encryption**: MQTT traffic is plaintext
 - **No message signing**: Cannot verify messages are from real sensors
 

@@ -12,7 +12,7 @@
  * CRITICAL: This test must go through UnifiedEventRouter to catch routing bugs!
  * 
  * Run with:
- * cd /Users/kckern/Documents/GitHub/DaylightStation
+ * cd /path/to/DaylightStation
  * NODE_OPTIONS=--experimental-vm-modules npm test -- --testPathPattern="RevisionBug.integration"
  */
 

@@ -154,7 +154,7 @@ const loadFile = (path) => {
     const isLegacyUserPath = LEGACY_USER_PATHS.some(prefix => path.startsWith(prefix));
     if (isLegacyUserPath && !deprecationWarnings.has(path)) {
         deprecationWarnings.add(path);
-        // Parse username from legacy path like "lifelog/kckern/service" -> "kckern"
+        // Parse username from legacy path like "lifelog/{username}/service" -> "{username}"
         const pathParts = path.split('/');
         const username = pathParts[1] || '{username}';
         const service = pathParts.slice(2).join('/') || '{service}';
@@ -280,7 +280,7 @@ const saveFile = (path, data) => {
     const isLegacyUserPath = LEGACY_USER_PATHS.some(prefix => normalizedPath.startsWith(prefix));
     if (isLegacyUserPath && !deprecationWarnings.has(`save:${normalizedPath}`)) {
         deprecationWarnings.add(`save:${normalizedPath}`);
-        // Parse username from legacy path like "lifelog/kckern/service" -> "kckern"
+        // Parse username from legacy path like "lifelog/{username}/service" -> "{username}"
         const pathParts = normalizedPath.split('/');
         const username = pathParts[1] || '{username}';
         const service = pathParts.slice(2).join('/') || '{service}';
