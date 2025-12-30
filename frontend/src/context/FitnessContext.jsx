@@ -891,11 +891,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [forceUpdate]);
 
   const reconnectFitnessWebSocket = React.useCallback(() => {
-    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-    reconnectAttemptsRef.current = 0;
-    if (wsRef.current) wsRef.current.close();
-    connectWebSocket();
-  }, [connectWebSocket]);
+    // Use the centralized WebSocketService to reconnect
+    import('../services/WebSocketService').then(({ wsService }) => {
+      wsService.disconnect();
+      wsService.connect();
+    });
+  }, []);
 
 
   // Prepare data for context value
