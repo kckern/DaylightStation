@@ -63,6 +63,18 @@ export class SelectUPCPortion {
       // Check if already processed
       if (nutriLog.status !== 'pending') {
         this.#logger.info('selectPortion.alreadyProcessed', { logUuid, status: nutriLog.status });
+        // Clean up UI if user re-presses the portion buttons
+        if (messageId) {
+          try {
+            await this.#messagingGateway.updateMessage(conversationId, messageId, { choices: [] });
+          } catch (e) {
+            try {
+              await this.#messagingGateway.deleteMessage(conversationId, messageId);
+            } catch (err) {
+              this.#logger.warn('selectPortion.alreadyProcessed.uiCleanupFailed', { error: err.message });
+            }
+          }
+        }
         return { success: false, error: 'Log already processed' };
       }
 
