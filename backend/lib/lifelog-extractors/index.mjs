@@ -18,6 +18,7 @@ import { redditExtractor } from './reddit.mjs';
 import { nutritionExtractor } from './nutrition.mjs';
 import { lastfmExtractor } from './lastfm.mjs';
 import { shoppingExtractor } from './shopping.mjs';
+import { journalistExtractor } from './journalist.mjs';
 
 // Export individual extractors
 export {
@@ -31,7 +32,8 @@ export {
   redditExtractor,
   nutritionExtractor,
   lastfmExtractor,
-  shoppingExtractor
+  shoppingExtractor,
+  journalistExtractor
 };
 
 /**
@@ -48,6 +50,7 @@ export const extractors = [
   githubExtractor,    // Code activity
   nutritionExtractor, // Nutrition tracking from NutriBot
   shoppingExtractor,  // Shopping receipts and spending
+  journalistExtractor, // User's own journal entries and voice notes
   
   // Tier 2: Supplementary
   lastfmExtractor,    // Music listening

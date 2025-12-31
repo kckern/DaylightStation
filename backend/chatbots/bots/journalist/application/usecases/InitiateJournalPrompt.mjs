@@ -63,9 +63,9 @@ export class InitiateJournalPrompt {
         await this.#messageQueueRepository.clearQueue(chatId);
       }
 
-      // 2. Load history (skip if change_subject)
+      // 2. Load history (always include for context)
       let history = '';
-      if (instructions !== 'change_subject' && this.#journalEntryRepository?.getMessageHistory) {
+      if (this.#journalEntryRepository?.getMessageHistory) {
         const messages = await this.#journalEntryRepository.getMessageHistory(chatId, 10);
         history = formatAsChat(messages);
       }
