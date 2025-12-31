@@ -132,29 +132,34 @@ export class GenerateMorningDebrief {
    * Generate natural language summary using AI
    */
   async #generateSummary(lifelog, username) {
-    const systemPrompt = `You are a personal life recorder reconstructing yesterday from data. Be matter-of-fact and concise - no fluff or filler phrases.
+    const systemPrompt = `You are a personal life recorder reconstructing a day from data. Write a detailed, narrative account of the day's activities.
 
 Style guidelines:
-- Write like a terse journal entry, not a formal report
-- Use natural time references: "around lunchtime", "in the morning", "late evening"
-- For workouts: "lifted weights around lunchtime (12:36pm) for about 45 mins (255 cal, 99 avg HR)" - stats in parentheses, not elaborated
-- For code work: estimate time spans, describe WHAT was worked on thematically, not commit counts
-- Weave calendar events naturally into the narrative
-- No phrases like "served as your primary", "engaged in", "transitioned into" - just say what happened
+- Write like a detailed journal entry with natural flow between activities
+- Use specific time references and create a chronological narrative
+- For workouts: describe the session with full context - "hit the gym at 12:36pm for a 45-minute weight training session, burning 255 calories with an average heart rate of 99 and peaking at 156"
+- For code work: describe WHAT was worked on thematically, mention significant features or areas (2-3 examples), note the volume of work
+- For music: weave listening habits naturally - mention top artists, total tracks, describe the musical arc of the day
+- For food: describe meals naturally with some detail - "breakfast included Greek yogurt and buttered toast", note calorie totals and macro balance
+- For calendar events: integrate naturally with full context and timing
+- For location check-ins: weave into the narrative with context
+- For weight/fitness metrics: include current status and trends naturally
 - Second person ("you") throughout
-- DO NOT include the date or "Yesterday" at the start - that's already in the header
-- Jump right into the activities
-- 3-4 sentences max, dense with information`;
+- DO NOT include the date or "Yesterday" at the start
+- Jump right into the day's flow
+- Aim for 8-12 sentences with rich detail
+- Connect activities logically (e.g., "After the morning workout, you..." or "While working on code...")
+- No corporate speak or filler phrases like "served as", "engaged in", "transitioned into"`;
 
     const dataPrompt = this.#buildDataPrompt(lifelog);
     
     try {
       const response = await this.#aiGateway.chat([
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}\n\nReconstruct this day concisely. Put stats in parentheses. No filler phrases.` }
+        { role: 'user', content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}\n\nReconstruct this day with rich detail and natural flow. Create a cohesive narrative that captures the full scope of the day.` }
       ], {
-        temperature: 0.5,
-        maxTokens: 250
+        temperature: 0.6,
+        maxTokens: 800
       });
 
       this.#logger.info('debrief.summary-generated', {

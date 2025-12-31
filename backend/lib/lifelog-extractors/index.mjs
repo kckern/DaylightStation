@@ -16,6 +16,7 @@ import { githubExtractor } from './github.mjs';
 import { checkinsExtractor } from './checkins.mjs';
 import { redditExtractor } from './reddit.mjs';
 import { nutritionExtractor } from './nutrition.mjs';
+import { lastfmExtractor } from './lastfm.mjs';
 
 // Export individual extractors
 export {
@@ -27,7 +28,8 @@ export {
   githubExtractor,
   checkinsExtractor,
   redditExtractor,
-  nutritionExtractor
+  nutritionExtractor,
+  lastfmExtractor
 };
 
 /**
@@ -45,6 +47,7 @@ export const extractors = [
   nutritionExtractor, // Nutrition tracking from NutriBot
   
   // Tier 2: Supplementary
+  lastfmExtractor,    // Music listening
   redditExtractor,    // Social activity
   weightExtractor,    // Weight trends (may overlap with garmin)
   fitnessExtractor,   // Fitness fallback (may overlap with strava)
