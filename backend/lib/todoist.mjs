@@ -21,7 +21,6 @@ const getTasks = async (logger, job_id, targetUsername = null) => {
         const api = new TodoistApi(apiKey);
         const tasks = await api.getTasks();
         log.info('harvest.todoist.tasks', { jobId: job_id, count: tasks.length });
-        const username = getDefaultUsername();
         // Save to user-namespaced location
         userSaveFile(username, 'todoist', tasks);
         saveEvents(job_id);

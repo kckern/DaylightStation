@@ -75,7 +75,6 @@ const getWeather = async (job_id) => {
    
     };
 
-    const hid = process.env.household_id || 'default';
     saveFile(`households/${hid}/shared/weather`, weatherData);
 
     const forecaseString = hourly
