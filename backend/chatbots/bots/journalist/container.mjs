@@ -39,6 +39,7 @@ import { InitiateDebriefInterview } from './application/usecases/InitiateDebrief
 
 // Adapters
 import { LifelogAggregator } from './adapters/LifelogAggregator.mjs';
+import { LoggingAIGateway } from './adapters/LoggingAIGateway.mjs';
 
 // Infrastructure
 import { DebriefRepository } from './infrastructure/DebriefRepository.mjs';
@@ -57,6 +58,7 @@ export class JournalistContainer {
   // Infrastructure
   #messagingGateway;
   #aiGateway;
+  #wrappedAIGateway;
   #journalEntryRepository;
   #messageQueueRepository;
   #conversationStateStore;
@@ -142,7 +144,17 @@ export class JournalistContainer {
     if (!this.#aiGateway) {
       throw new Error('aiGateway not configured');
     }
-    return this.#aiGateway;
+    
+    // Wrap AI gateway with logging wrapper (lazy initialization)
+    if (!this.#wrappedAIGateway) {
+      this.#wrappedAIGateway = new LoggingAIGateway({
+        aiGateway: this.#aiGateway,
+        username: this.#config.username || 'kckern',
+        logger: this.#logger
+      });
+    }
+    
+    return this.#wrappedAIGateway;
   }
 
   getJournalEntryRepository() {
@@ -303,6 +315,7 @@ export class JournalistContainer {
         aiGateway: this.getAIGateway(),
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
+        debriefRepository: this.getDebriefRepository(),
         logger: this.#logger,
       });
     }
@@ -377,6 +390,7 @@ export class JournalistContainer {
       this.#generateMorningDebrief = new GenerateMorningDebrief({
         lifelogAggregator: this.getLifelogAggregator(),
         aiGateway: this.getAIGateway(),
+        debriefRepository: this.getDebriefRepository(),
         logger: this.#logger,
       });
     }

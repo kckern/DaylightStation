@@ -17,6 +17,7 @@ export class HandleDebriefResponse {
   #messagingGateway;
   #conversationStateStore;
   #debriefRepository;
+  #journalEntryRepository;
   #userResolver;
   #logger;
 
@@ -32,6 +33,7 @@ export class HandleDebriefResponse {
     this.#messagingGateway = deps.messagingGateway;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#debriefRepository = deps.debriefRepository;
+    this.#journalEntryRepository = deps.journalEntryRepository;
     this.#userResolver = deps.userResolver;
     this.#logger = deps.logger;
   }
@@ -113,6 +115,8 @@ export class HandleDebriefResponse {
     const keyboardMarkup = SendMorningDebrief.buildSourcePickerKeyboard(sources);
 
     // Update existing message keyboard if messageId provided, otherwise send new message
+    let detailsMessageId = messageId;
+    
     if (messageId) {
       // updateKeyboard expects the choices array for inline keyboard
       await this.#messagingGateway.updateKeyboard(
@@ -121,18 +125,32 @@ export class HandleDebriefResponse {
         keyboardMarkup.inline_keyboard
       );
     } else {
-      await this.#messagingGateway.sendMessage(
+      const result = await this.#messagingGateway.sendMessage(
         conversationId,
         "Select a data source to view details:",
         { reply_markup: keyboardMarkup }
       );
+      
+      detailsMessageId = result?.messageId;
+
+      if (this.#journalEntryRepository && detailsMessageId) {
+        await this.#journalEntryRepository.saveMessage({
+          id: detailsMessageId,
+          chatId: conversationId,
+          role: 'assistant',
+          content: "Select a data source to view details:",
+          senderId: 'bot',
+          senderName: 'Journalist'
+        });
+      }
     }
 
     // Update state to source picker mode, store debrief date
     await this.#conversationStateStore.set(conversationId, {
       ...state,
       subFlow: 'source_picker',
-      debriefDate: debrief.date
+      debriefDate: debrief.date,
+      detailsMessageId
     });
 
     this.#logger.info('debrief.show-details', {
@@ -183,7 +201,7 @@ export class HandleDebriefResponse {
     // Ask the first question
     const question = selectedQuestions[0];
     
-    await this.#messagingGateway.sendMessage(
+    const result = await this.#messagingGateway.sendMessage(
       conversationId,
       `${selectedCategory.icon} ${question}`,
       {
@@ -196,6 +214,17 @@ export class HandleDebriefResponse {
         }
       }
     );
+
+    if (this.#journalEntryRepository && result?.messageId) {
+      await this.#journalEntryRepository.saveMessage({
+        id: result.messageId,
+        chatId: conversationId,
+        role: 'assistant',
+        content: `${selectedCategory.icon} ${question}`,
+        senderId: 'bot',
+        senderName: 'Journalist'
+      });
+    }
 
     // Update state to interview mode
     await this.#conversationStateStore.set(conversationId, {
@@ -227,6 +256,16 @@ export class HandleDebriefResponse {
         reply_markup: { remove_keyboard: true }
       }
     );
+
+    // Delete the debrief message from history if repository exists
+    if (this.#journalEntryRepository) {
+      if (state.messageId) {
+        await this.#journalEntryRepository.deleteMessage(conversationId, state.messageId);
+      }
+      if (state.detailsMessageId) {
+        await this.#journalEntryRepository.deleteMessage(conversationId, state.detailsMessageId);
+      }
+    }
 
     // Update state - debrief accepted but conversation still open
     await this.#conversationStateStore.set(conversationId, {

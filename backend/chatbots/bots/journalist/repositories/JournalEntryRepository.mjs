@@ -113,13 +113,50 @@ export class JournalEntryRepository {
       message.timestamp = new Date().toISOString();
     }
 
-    // Add message at the beginning (newest first)
-    data.messages.unshift(message);
+    // Add message
+    data.messages.push(message);
+
+    // Sort messages by timestamp descending (newest first)
+    data.messages.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA; // Descending order
+    });
 
     // Save back
     saveFile(path, data);
     
     return message;
+  }
+
+  /**
+   * Delete a message from the journal
+   * @param {string} conversationId
+   * @param {string} messageId
+   * @returns {Promise<boolean>} True if deleted
+   */
+  async deleteMessage(conversationId, messageId) {
+    const path = this.#getPath(conversationId);
+    const data = this.#loadData(path);
+    
+    if (!data.messages || data.messages.length === 0) {
+      return false;
+    }
+
+    const initialLength = data.messages.length;
+    // Filter out message by id or messageId
+    data.messages = data.messages.filter(msg => {
+      const id = msg.id || msg.messageId;
+      return id.toString() !== messageId.toString();
+    });
+
+    if (data.messages.length !== initialLength) {
+      saveFile(path, data);
+      this.#logger.debug('journal.delete', { conversationId, messageId });
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -155,7 +192,7 @@ export class JournalEntryRepository {
    * Get recent message history for context
    * @param {string} conversationId
    * @param {number} [limit=20] - Max messages to return
-   * @returns {Promise<Array>}
+   * @returns {Promise<Array>} Messages in chronological order (oldest first)
    */
   async getMessageHistory(conversationId, limit = 20) {
     const path = this.#getPath(conversationId);
@@ -165,7 +202,7 @@ export class JournalEntryRepository {
     const data = this.#loadData(path);
     const messages = data.messages || [];
 
-    // File is stored newest-first, so take first N and reverse for chronological order
+    // File is stored newest-first (descending), so take first N and reverse for chronological order
     return messages.slice(0, limit).reverse().map(msg => ({
       ...msg,
       text: msg.content || msg.text,  // Normalize content -> text

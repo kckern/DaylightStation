@@ -17,17 +17,20 @@ import moment from 'moment-timezone';
 export class GenerateMorningDebrief {
   #lifelogAggregator;
   #aiGateway;
+  #debriefRepository;
   #logger;
 
   /**
    * @param {Object} deps
    * @param {Object} deps.lifelogAggregator - Lifelog aggregation service
    * @param {Object} deps.aiGateway - AI gateway for summaries
+   * @param {Object} deps.debriefRepository - Repository to check for existing debriefs
    * @param {Object} deps.logger - Logger instance
    */
   constructor(deps) {
     this.#lifelogAggregator = deps.lifelogAggregator;
     this.#aiGateway = deps.aiGateway;
+    this.#debriefRepository = deps.debriefRepository;
     this.#logger = deps.logger;
   }
 
@@ -49,6 +52,31 @@ export class GenerateMorningDebrief {
       // Step 1: Aggregate lifelog data
       const lifelog = await this.#lifelogAggregator.aggregate(username, date);
       
+      // Step 1.5: Check if debrief already exists for this date
+      if (this.#debriefRepository) {
+        const existingDebrief = await this.#debriefRepository.getDebriefByDate(lifelog._meta.date);
+        if (existingDebrief) {
+          this.#logger.info('debrief.found-existing', { 
+            username, 
+            date: lifelog._meta.date 
+          });
+
+          return {
+            success: true,
+            date: existingDebrief.date,
+            summary: existingDebrief.summary,
+            lifelog: {
+              _meta: { 
+                date: existingDebrief.date,
+                sources: existingDebrief.summaries?.map(s => s.source) || [],
+                hasEnoughData: true
+              },
+              summaries: existingDebrief.summaries || []
+            }
+          };
+        }
+      }
+
       // Step 2: Check if we have enough data
       if (!lifelog._meta.hasEnoughData) {
         this.#logger.info('debrief.insufficient-data', {
