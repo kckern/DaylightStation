@@ -211,15 +211,15 @@ Pick a COMPLETELY DIFFERENT aspect of the debrief data - different activity, dif
       }
     }
 
+    const historyContext = history ? `\nRECENT CONVERSATION:\n${truncateToLength(history, 2000)}\n` : '';
+    
     return `You are an autobiographer helping someone journal about their life.
 
 You have access to their morning debrief with detailed data about their previous day:
 
-${debriefContext}
-
-${history ? `Recent conversation history:\n${truncateToLength(history, 2000)}\n\n` : ''}
+${debriefContext}${historyContext}
 ${changeSubjectInstructions}
-Based on the debrief data above, generate ONE thoughtful follow-up question that:
+Based on the debrief data and recent conversation above, generate ONE thoughtful follow-up question that:
 - References specific details from the debrief (activities, metrics, events, commits, etc.)
 - Encourages reflection or elaboration on something interesting
 - Is conversational and personal
