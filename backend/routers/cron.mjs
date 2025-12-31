@@ -18,23 +18,40 @@ const cronLogger = createLogger({
 });
 
 const cron = {
+  // Every 10 minutes: Time-sensitive data (tasks, calendar, email, weather)
   cron10Mins: [
     "../lib/weather.mjs",
-     "../lib/gcal.mjs",
-     "../lib/todoist.mjs",
-     "../lib/gmail.mjs",
+    "../lib/gcal.mjs",
+    "../lib/todoist.mjs",
+    "../lib/gmail.mjs",
   ],
+  
+  // Hourly: Health and fitness, music, task management, budgeting
   cronHourly: [
-     "../lib/withings.mjs",
-     "../lib/fitsync.mjs",
-     "../lib/strava.mjs",
-     "../lib/health.mjs",
-   //  "../lib/garmin.mjs",
-    // ...Infinity.keys.map(key => (req) => Infinity.loadData(key, req)),
+    "../lib/withings.mjs",      // Weight/body measurements
+    "../lib/strava.mjs",         // Strava activities
+    "../lib/lastfm.mjs",         // Music listening history
+    "../lib/clickup.mjs",        // Task management
+    "../lib/foursquare.mjs",        // Foursquare/Swarm check-ins
+    "../lib/budget.mjs",         // Budget compilation and financial sync
   ],
+  
+  // Daily: Media consumption, religious content, task management, social activity
   cronDaily: [
-     "../lib/clickup.mjs",
-     "../lib/youtube.mjs",
+    "../lib/youtube.mjs",        // YouTube downloads
+    "../lib/fitsync.mjs",        // FitnessSyncer aggregation
+    "../lib/garmin.mjs",         // Garmin data
+    "../lib/health.mjs",         // Health data aggregation (combines strava/garmin/fitsync)
+    "../lib/letterboxd.mjs",     // Movie watching history
+    "../lib/goodreads.mjs",      // Reading activity
+    "../lib/github.mjs",         // GitHub commit history
+    "../lib/reddit.mjs",         // Reddit posts and comments
+   // "../lib/ldsgc.mjs",          // LDS General Conference
+   // "../lib/scriptureguide.mjs", // Scripture of the day
+  ],
+  
+  // Weekly: Financial data (expensive operations)
+  cronWeekly: [
   ]
 };
 

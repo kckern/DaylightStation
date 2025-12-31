@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import isJSON from 'is-json';
 import { askGPT } from './gpt.mjs';
 import moment from 'moment';
+import { householdLoadAuth, getCurrentHouseholdId } from './io.mjs';
 
 
 
@@ -12,9 +13,19 @@ const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(
 
 const getDataPath = () => process.env.path?.data || `${__appDirectory}/data`;
 
-// Lazy-load credentials from process.env (populated by config loader)
+// Lazy-load credentials from household auth, then env, then local file
 const getCredentials = () => {
-  // Use process.env first (set by config loader)
+  // Try household auth first (three-tier architecture)
+  const hid = getCurrentHouseholdId();
+  const auth = householdLoadAuth(hid, 'buxfer');
+  if (auth?.email && auth?.password) {
+    return {
+      BUXFER_EMAIL: auth.email,
+      BUXFER_PW: auth.password
+    };
+  }
+  
+  // Use process.env fallback (set by config loader during migration)
   if (process.env.BUXFER_EMAIL && process.env.BUXFER_PW) {
     return {
       BUXFER_EMAIL: process.env.BUXFER_EMAIL,

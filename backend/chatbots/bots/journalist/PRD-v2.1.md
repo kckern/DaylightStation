@@ -877,7 +877,7 @@ async function getEffectiveTimezone(username) {
 ### 9.1 Events & People (Calendar/Check-ins)
 
 **Data-driven examples:**
-- "How was Korean School yesterday? Anything memorable happen?"
+- "How was School yesterday? Anything memorable happen?"
 - "Church was from 3-5pm. What stood out from the service?"
 - "I see you were at Starbucks on Main Street. Who were you with?"
 - "You had a meeting with Dr. Smith. How did it go?"
@@ -955,7 +955,7 @@ async function getEffectiveTimezone(username) {
   summary: Church
   type: calendar
   calendarName: Family Calendar
-  location: The Church of Jesus Christ of Latter-day Saints
+  location: Church
 ```
 
 ### garmin.yml (Fitness)

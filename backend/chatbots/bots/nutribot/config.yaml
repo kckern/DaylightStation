@@ -25,8 +25,8 @@ telegram:
   # Webhook configuration
   webhook:
     path: "/foodlog"
-    devUrl: "https://api-dev.kckern.net/foodlog"
-    prodUrl: "https://daylightstation-api.kckern.net/foodlog"
+    devUrl: "https://api-dev.mydomain.net/foodlog"
+    prodUrl: "https://daylightstation-api.mydomain.net/foodlog"
 
 # User Mappings
 # -------------
@@ -283,5 +283,5 @@ services:
     
   # Report generation endpoint
   reports:
-    host: "https://daylightstation-api.kckern.net"
+    host: "https://daylightstation-api.mydomain.net"
     path: "/nutribot/report"

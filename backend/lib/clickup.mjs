@@ -1,6 +1,6 @@
 import axios from './http.mjs';
 import { buildCurl } from './httpUtils.mjs';
-import { saveFile, userSaveFile } from './io.mjs';
+import { saveFile, userSaveFile, householdLoadAuth, getCurrentHouseholdId } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
@@ -12,13 +12,27 @@ const clickupLogger = createLogger({
     app: 'clickup'
 });
 
+/**
+ * Get ClickUp auth from household config
+ * Falls back to env during migration
+ */
+const getClickUpAuth = () => {
+    const hid = getCurrentHouseholdId();
+    const auth = householdLoadAuth(hid, 'clickup') || {};
+    return {
+        apiKey: auth.api_key || process.env.CLICKUP_PK,
+        workspaceId: auth.workspace_id || process.env.clickup?.team_id
+    };
+};
+
 const getTickets = async () => {
-    const { CLICKUP_PK, clickup: { statuses, team_id } } = process.env;
+    const { apiKey } = getClickUpAuth();
+    const { clickup: { statuses, team_id } } = process.env;
 
     // Fetch spaces
     const { data: { spaces } } = await axios.get(
         `https://api.clickup.com/api/v2/team/${team_id}/space`,
-        { headers: { Authorization: CLICKUP_PK } }
+        { headers: { Authorization: apiKey } }
     );
 
     const spacesDict = spaces.reduce((acc, space) => {
@@ -39,14 +53,14 @@ const getTickets = async () => {
     while (!lastPage) {
         const url = `https://api.clickup.com/api/v2/team/${team_id}/task?${new URLSearchParams({ ...params, page })}`;
         try {
-            const { data: team_tickets } = await axios.get(url, { headers: { Authorization: CLICKUP_PK } });
+            const { data: team_tickets } = await axios.get(url, { headers: { Authorization: apiKey } });
             tickets = [...tickets, ...team_tickets.tasks];
             lastPage = team_tickets.last_page;
             page++;
         } catch (error) {
             clickupLogger.error('Error fetching tickets', { message: error?.shortMessage || error.message, url });
             if (process.env.DEBUG_CURL === '1') {
-                const curlString = buildCurl({ method: 'GET', url, headers: { Authorization: CLICKUP_PK } });
+                const curlString = buildCurl({ method: 'GET', url, headers: { Authorization: apiKey } });
                 clickupLogger.warn('Debug CURL', { curl: curlString });
             }
             break; // Exit the loop on error

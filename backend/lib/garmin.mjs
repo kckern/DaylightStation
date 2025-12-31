@@ -2,7 +2,7 @@ import garmin from 'garmin-connect';
 const { GarminConnect } = garmin;
 import moment from 'moment-timezone';
 import crypto from 'crypto';
-import { loadFile, saveFile, userLoadFile, userSaveFile } from './io.mjs';
+import { loadFile, saveFile, userLoadFile, userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
@@ -51,13 +51,40 @@ const circuitBreaker = {
 
 const garminLogger = createLogger({ source: 'backend', app: 'garmin' });
 
-// Get default username for user-scoped data
-const getDefaultUsername = () => configService.getHeadOfHousehold();
+// Lazy-loaded Garmin client (per user)
+let _garminClient = null;
+let _garminUsername = null;
 
-const GCClient = new GarminConnect({
-  username: configService.getSecret('GARMIN_USERNAME'),
-  password: configService.getSecret('GARMIN_PASSWORD'),
-});
+/**
+ * Get Garmin client, lazy-initialized with user credentials
+ * @param {string} [targetUsername] - Optional username override
+ * @returns {GarminConnect}
+ */
+const getGarminClient = (targetUsername = null) => {
+    const username = targetUsername || getDefaultUsername();
+    
+    // If client exists for same user, reuse it
+    if (_garminClient && _garminUsername === username) {
+        return _garminClient;
+    }
+    
+    // Load credentials from user auth file (with env fallback)
+    const auth = userLoadAuth(username, 'garmin') || {};
+    const garminUser = auth.username || configService.getSecret('GARMIN_USERNAME');
+    const garminPass = auth.password || configService.getSecret('GARMIN_PASSWORD');
+    
+    if (!garminUser || !garminPass) {
+        throw new Error(`Garmin credentials not found for user: ${username}`);
+    }
+    
+    _garminClient = new GarminConnect({
+        username: garminUser,
+        password: garminPass,
+    });
+    _garminUsername = username;
+    
+    return _garminClient;
+};
 
 // Workaround for garmin-connect issue with form-data
 // See: https://github.com/motdotla/dotenv/issues/133#issuecomment-255298822
@@ -128,7 +155,7 @@ const recordSuccess = () => {
 
 const login = async () => {
     try {
-        await GCClient.login();
+        await getGarminClient().login();
     } catch (e) {
         // Log clean error message without HTML dumps
         const cleanError = cleanErrorMessage(e);
@@ -142,51 +169,51 @@ const login = async () => {
 
 export const getActivities = async (start = 0, limit = 100, activityType, subActivityType) => {
     await login();
-    const activities = await GCClient.getActivities(start, limit, activityType, subActivityType);
+    const activities = await getGarminClient().getActivities(start, limit, activityType, subActivityType);
     return activities;
 };
 
 export const getActivityDetails = async (activityId) => {
     await login();
-    const activityDetails = await GCClient.getActivity({ activityId });
+    const activityDetails = await getGarminClient().getActivity({ activityId });
     return activityDetails;
 };
 
 export const downloadActivityData = async (activityId, directoryPath = './') => {
     await login();
-    const activity = await GCClient.getActivity({ activityId });
-    await GCClient.downloadOriginalActivityData(activity, directoryPath);
+    const activity = await getGarminClient().getActivity({ activityId });
+    await getGarminClient().downloadOriginalActivityData(activity, directoryPath);
 };
 
 export const uploadActivityFile = async (filePath) => {
     await login();
-    const uploadResult = await GCClient.uploadActivity(filePath);
+    const uploadResult = await getGarminClient().uploadActivity(filePath);
     return uploadResult;
 };
 
 export const uploadActivityImage = async (activityId, imagePath) => {
     await login();
-    const activity = await GCClient.getActivity({ activityId });
-    const uploadResult = await GCClient.uploadImage(activity, imagePath);
+    const activity = await getGarminClient().getActivity({ activityId });
+    const uploadResult = await getGarminClient().uploadImage(activity, imagePath);
     return uploadResult;
 };
 
 export const deleteActivityImage = async (activityId, imageId) => {
     await login();
-    const activity = await GCClient.getActivity({ activityId });
-    await GCClient.deleteImage(activity, imageId);
+    const activity = await getGarminClient().getActivity({ activityId });
+    await getGarminClient().deleteImage(activity, imageId);
 };
 
 export const getSteps = async (date = new Date()) => {
     await login();
-    const steps = await GCClient.getSteps(date);
+    const steps = await getGarminClient().getSteps(date);
     return steps;
 };
 
 
 export const getHeartRate = async (date = new Date()) => {
     await login();
-    const heartRateData = await GCClient.getHeartRate(date);
+    const heartRateData = await getGarminClient().getHeartRate(date);
     return heartRateData;
 };
 

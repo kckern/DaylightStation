@@ -113,20 +113,21 @@ export const getAccessToken = async () => {
     // Check for cached token
     if(process.env.FITSYNC_ACCESS_TOKEN) return process.env.FITSYNC_ACCESS_TOKEN;
 
-    // Get credentials from ConfigService
-    const FITSYNC_CLIENT_ID = configService.getSecret('FITSYNC_CLIENT_ID') || process.env.FITSYNC_CLIENT_ID;
-    const FITSYNC_CLIENT_SECRET = configService.getSecret('FITSYNC_CLIENT_SECRET') || process.env.FITSYNC_CLIENT_SECRET;
+    const username = getDefaultUsername();
+    const authData = userLoadAuth(username, 'fitnesssyncer') || {};
+    const { refresh, client_id, client_secret } = authData;
+    
+    // Get credentials from user auth file (personal OAuth app)
+    const FITSYNC_CLIENT_ID = client_id || configService.getSecret('FITSYNC_CLIENT_ID') || process.env.FITSYNC_CLIENT_ID;
+    const FITSYNC_CLIENT_SECRET = client_secret || configService.getSecret('FITSYNC_CLIENT_SECRET') || process.env.FITSYNC_CLIENT_SECRET;
     
     if (!FITSYNC_CLIENT_ID || !FITSYNC_CLIENT_SECRET) {
         fitsyncLogger.error('fitsync.auth.credentials_missing', { 
-            message: 'FITSYNC_CLIENT_ID or FITSYNC_CLIENT_SECRET not configured' 
+            message: 'FITSYNC_CLIENT_ID or FITSYNC_CLIENT_SECRET not configured in user auth file',
+            username 
         });
         return false;
     }
-
-    const username = getDefaultUsername();
-    const authData = userLoadAuth(username, 'fitnesssyncer') || {};
-    const { refresh } = authData;
     
     if (!refresh) {
         fitsyncLogger.error('fitsync.auth.missing', { 
@@ -152,7 +153,12 @@ export const getAccessToken = async () => {
         const refreshToken = tokenResponse.data.refresh_token;
         
         if (refreshToken) {
-            userSaveAuth(username, 'fitnesssyncer', { refresh: refreshToken });
+            // Preserve client credentials when saving new refresh token
+            userSaveAuth(username, 'fitnesssyncer', { 
+                refresh: refreshToken,
+                client_id: FITSYNC_CLIENT_ID,
+                client_secret: FITSYNC_CLIENT_SECRET
+            });
         }
         
         process.env.FITSYNC_ACCESS_TOKEN = accessToken;
@@ -231,17 +237,55 @@ export const getActivities = async () => {
     const activities = [];
     let offset = 0;
     const limit = 100; // Adjust limit as needed
-    const oneYearAgo = moment().subtract(1, 'year').startOf('day');
+    const username = getDefaultUsername();
+    let totalFetched = 0;
+
+    // Load existing file for incremental merge
+    let onFile = userLoadFile(username, 'archives/fitness_long') || {};
+
+    // Find latest date on file
+    let latestDate = null;
+    const allDates = Object.keys(onFile).filter(d => moment(d, 'YYYY-MM-DD', true).isValid());
+    if (allDates.length > 0) {
+        latestDate = allDates.sort((a, b) => moment(b).diff(moment(a)))[0];
+    }
+    // Anchor fetch to 7 days before latest
+    const anchorDate = latestDate ? moment(latestDate).subtract(7, 'days').startOf('day') : moment().subtract(1, 'year').startOf('day');
 
     while (true) {
         const response = await baseAPI(`sources/${garminSourceId}/items?offset=${offset}&limit=${limit}`);
         const items = response.items || [];
         if (items.length === 0) break;
 
-        const filteredItems = items.filter(item => moment(item.date).isAfter(oneYearAgo));
+        const filteredItems = items.filter(item => moment(item.date).isAfter(anchorDate));
         activities.push(...filteredItems);
+        totalFetched += filteredItems.length;
 
-        if (filteredItems.length < items.length) break; // Stop if items are outside the 1-year range
+        // Merge new items into onFile and write incrementally
+        const newActivities = filteredItems.map(item => {
+            delete item.gps;
+            const src = "garmin";
+            const { date: timestamp, activity: type, itemId } = item;
+            const id = md5(itemId);
+            const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
+            // Only accept valid dates in range
+            if (!moment(date, 'YYYY-MM-DD', true).isValid() || moment(date).isBefore('2000-01-01') || moment(date).isAfter(moment().add(1, 'day'))) {
+                // eslint-disable-next-line no-console
+                console.warn(`[fitsync] Skipping invalid date: ${date} (itemId: ${itemId})`);
+                return null;
+            }
+            return { src, id, date, type, data: item };
+        }).filter(Boolean);
+        for (const activity of newActivities) {
+            if (!onFile[activity.date]) onFile[activity.date] = {};
+            onFile[activity.date][activity.id] = activity;
+        }
+        userSaveFile(username, 'archives/fitness_long', onFile);
+        // CLI feedback
+        // eslint-disable-next-line no-console
+        console.log(`[fitsync] Page offset ${offset}: +${newActivities.length} (total: ${totalFetched})`);
+
+        if (filteredItems.length < items.length) break; // Stop if items are outside the anchor range
         offset += limit;
     }
 
@@ -263,106 +307,51 @@ const harvestActivities = async (job_id) => {
     try {
         const username = getDefaultUsername();
         const activitiesData = await getActivities();
-        
         if (!activitiesData || !activitiesData.items) {
             throw new Error('No activity data returned from FitnessSyncer API');
         }
-        
-        fitsyncLogger.info('fitsync.harvest.activities', { 
-            jobId: job_id, 
-            count: activitiesData.items.length 
+        fitsyncLogger.info('fitsync.harvest.activities', { jobId: job_id, count: activitiesData.items.length });
+
+        // Incremental summary writing
+        let onFile = userLoadFile(username, 'fitness') || {};
+        for (const activity of activitiesData.items) {
+            const date = moment(activity.date).tz(timezone).format('YYYY-MM-DD');
+            if (!onFile[date]) onFile[date] = { steps: {}, activities: [] };
+            // Steps summary
+            if (activity.activity === 'Steps') {
+                onFile[date].steps.steps_count = (onFile[date].steps.steps_count || 0) + (activity.steps || 0);
+                onFile[date].steps.bmr = (onFile[date].steps.bmr || 0) + (activity.bmr || 0);
+                onFile[date].steps.duration = parseFloat(((onFile[date].steps.duration || 0) + ((activity.duration || 0)/60)).toFixed(2));
+                onFile[date].steps.calories = parseFloat(((onFile[date].steps.calories || 0) + (activity.calories || 0)).toFixed(2));
+                onFile[date].steps.maxHeartRate = Math.max(onFile[date].steps.maxHeartRate || 0, activity.maxHeartrate || 0);
+                onFile[date].steps.avgHeartRate = parseFloat(((onFile[date].steps.avgHeartRate || 0) + (activity.avgHeartrate || 0)).toFixed(2));
+            } else {
+                // Activities
+                onFile[date].activities = onFile[date].activities || [];
+                onFile[date].activities.push({
+                    title: activity.title || activity.type || '',
+                    calories: parseFloat((activity.calories || 0).toFixed(2)),
+                    distance: parseFloat((activity.distance || 0).toFixed(2)),
+                    minutes: parseFloat((activity.duration/60 || 0).toFixed(2)),
+                    startTime: activity.date ? moment(activity.date).tz(timezone).format('hh:mm a') : '',
+                    endTime: activity.endDate ? moment(activity.endDate).tz(timezone).format('hh:mm a') : '',
+                    avgHeartrate: parseFloat((activity.avgHeartrate || 0).toFixed(2)),
+                });
+            }
+            // Write after each activity (safe for small batches)
+            userSaveFile(username, 'fitness', onFile);
+            // eslint-disable-next-line no-console
+            console.log(`[fitsync] Wrote summary for ${date}`);
+        }
+
+        // Success! Reset circuit breaker
+        recordSuccess();
+        fitsyncLogger.info('fitsync.harvest.complete', { 
+            jobId: job_id,
+            dates: Object.keys(onFile).length,
+            username 
         });
-    const activities = activitiesData.items.map(item => {
-        delete item.gps;
-        const src = "garmin";
-        const { date: timestamp, activity: type, itemId } = item;
-        const id = md5(itemId);
-        const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
-        const saveMe = { src, id, date, type, data: item };
-        return saveMe;
-    });
-
-    const harvestedDates = activities.map(activity => activity.date);
-    // Load from user-namespaced path
-    const onFile = userLoadFile(username, 'fitness') || {};
-    const onFilesDates = Object.keys(onFile || {});
-    const uniqueDates = [...new Set([...harvestedDates, ...onFilesDates])].sort((b, a) => new Date(a) - new Date(b))
-    .filter(date => moment(date, 'YYYY-MM-DD', true).isValid() && moment(date, 'YYYY-MM-DD').isBefore(moment().add(1, 'year')));
-
-    const saveMe = uniqueDates.reduce((acc, date) => {
-        acc[date] = activities
-            .filter(activity => activity.date === date)
-            .reduce((dateAcc, activity) => {
-            const keys = Object.keys(activity.data || {});
-            keys.forEach(key => {
-                if (!activity.data[key]) delete activity.data[key];
-            });
-            dateAcc[activity.id] = activity;
-            return dateAcc;
-            }, {});
-        return acc;
-    }, {});
-
-    // Save to user-namespaced location
-    userSaveFile(username, 'archives/fitness_long', saveMe);
-    //reduce
-    const reducedSaveMe = Object.keys(saveMe).reduce((acc, date) => {
-        acc[date] = {
-            steps: {
-            steps_count: Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps')
-            .reduce((sum, activity) => sum + (activity.data.steps || 0), 0),
-            bmr: Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps')
-            .reduce((sum, activity) => sum + (activity.data.bmr || 0), 0),
-            duration: parseFloat(Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps')
-            .reduce((sum, activity) => sum + (activity.data.duration/60 || 0), 0)
-            .toFixed(2)),
-            calories: parseFloat(Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps')
-            .reduce((sum, activity) => sum + (activity.data.calories || 0), 0)
-            .toFixed(2)),
-            maxHeartRate: Math.max(
-            ...Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps')
-            .map(activity => activity.data.maxHeartrate || 0)
-            ),
-            avgHeartRate: parseFloat(Math.round(
-            Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps')
-            .reduce((sum, activity) => sum + (activity.data.avgHeartrate || 0), 0) /
-            Object.values(saveMe[date])
-            .filter(activity => activity.type === 'Steps').length || 1
-            ).toFixed(2)),
-            },
-            activities: Object.values(saveMe[date])
-            .filter(activity => activity.type !== 'Steps')
-            .map(activity => ({
-            title: activity.data.title || '',
-            calories: parseFloat((activity.data.calories || 0).toFixed(2)),
-            distance: parseFloat((activity.data.distance || 0).toFixed(2)),
-            minutes: parseFloat((activity.data.duration/60 || 0).toFixed(2)),
-            startTime: activity.data.date ? moment(activity.data.date).tz(timezone).format('hh:mm a') : '',
-            endTime: activity.data.endDate ? moment(activity.data.endDate).tz(timezone).format('hh:mm a') : '',
-            avgHeartrate: parseFloat((activity.data.avgHeartrate || 0).toFixed(2)),
-            })),
-        };
-        if(acc[date].activities.length === 0) delete acc[date].activities;
-        return acc;
-    }, {});
-    // Save to user-namespaced location
-    userSaveFile(username, 'fitness', reducedSaveMe);
-    
-    // Success! Reset circuit breaker
-    recordSuccess();
-    fitsyncLogger.info('fitsync.harvest.complete', { 
-        jobId: job_id,
-        dates: Object.keys(reducedSaveMe).length,
-        username 
-    });
-    
-    return reducedSaveMe;
+        return onFile;
 } catch (error) {
     // Record failure for circuit breaker on rate limit errors
     const isRateLimit = error.response?.status === 429 || 

@@ -1,17 +1,31 @@
 import axios from "./http.mjs";
 import { buildCurl } from './httpUtils.mjs';
 import { createLogger } from './logging/logger.js';
+import { householdLoadAuth, getCurrentHouseholdId } from './io.mjs';
 
 const haLogger = createLogger({ source: 'backend', app: 'homeassistant' });
 
+/**
+ * Get Home Assistant auth token from household config
+ * Falls back to env during migration
+ */
+const getHomeAssistantAuth = () => {
+    const hid = getCurrentHouseholdId();
+    const auth = householdLoadAuth(hid, 'home_assistant') || {};
+    return {
+        token: auth.token || process.env.HOME_ASSISTANT_TOKEN,
+        baseUrl: auth.base_url || `${process.env.home_assistant?.host}:${process.env.home_assistant?.port}`
+    };
+};
+
 const HomeAPI = async (path, data) => {
-    const { HOME_ASSISTANT_TOKEN, home_assistant: { host, port } } = process.env;
-    const url = `${host}:${port}/api/${path}`;
+    const { token, baseUrl } = getHomeAssistantAuth();
+    const url = `${baseUrl}/api/${path}`;
     const headers = {
-        'Authorization': `Bearer ${HOME_ASSISTANT_TOKEN}`,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
     };
-    const curlCommand = `curl -X POST ${url} -H "Authorization: Bearer ${HOME_ASSISTANT_TOKEN}" -H "Content-Type: application/json" -d '${JSON.stringify(data)}'`;
+    const curlCommand = `curl -X POST ${url} -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -d '${JSON.stringify(data)}'`;
 
     try {
         const response = await axios.post(url, data, { headers });
