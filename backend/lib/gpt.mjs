@@ -1,3 +1,22 @@
+/**
+ * Legacy GPT Module
+ * 
+ * @deprecated This module is deprecated. Use the new AI gateway instead:
+ * 
+ *   import { getAIGateway, systemMessage, userMessage } from './ai/index.mjs';
+ *   
+ *   const ai = getAIGateway();
+ *   const response = await ai.chat([
+ *     systemMessage('You are a helpful assistant'),
+ *     userMessage('Hello!')
+ *   ]);
+ * 
+ * For JSON output:
+ *   const json = await ai.chatWithJson([...messages]);
+ * 
+ * This file is kept for backward compatibility only.
+ */
+
 import fetch from './httpFetch.mjs';
 import { appendFile } from 'fs';
 import yaml from 'js-yaml';
@@ -9,6 +28,18 @@ import { createLogger } from './logging/logger.js';
 import { serializeError } from './logging/utils.js';
 
 const gptLogger = createLogger({ source: 'backend', app: 'gpt' });
+
+// Log deprecation warning once per process
+let deprecationWarned = false;
+const warnDeprecation = (fn) => {
+  if (!deprecationWarned) {
+    gptLogger.warn('gpt.deprecated', { 
+      message: 'gpt.mjs is deprecated. Use lib/ai/index.mjs instead.',
+      function: fn
+    });
+    deprecationWarned = true;
+  }
+};
 
 const writeStderr = (message) => {
   try {
@@ -88,7 +119,11 @@ const logGPT = (model, promptTokens, completionTokens, generated_text) => {
   });
 };
 
+/**
+ * @deprecated Use getAIGateway().chat() instead
+ */
 export const askGPT = async (messages, model = 'gpt-4o', extraconfig) => {
+  warnDeprecation('askGPT');
 
   const msgIsString = typeof messages === 'string'; 
   if(msgIsString) messages = [
@@ -169,8 +204,11 @@ export async function generateSpeech(text, voice, instructions) {
 }
 
 
-
+/**
+ * @deprecated Use getAIGateway().chatWithJson() instead
+ */
 export const askGPTWithJSONOutput = async (messages, model = 'gpt-4o', extraconfig) => {
+  warnDeprecation('askGPTWithJSONOutput');
 
   messages[0].content += '\n\nPlease respond with a valid JSON object.';
   const response = await askGPT(messages, model, extraconfig);

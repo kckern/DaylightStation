@@ -47,6 +47,7 @@ import fitness from '../lib/fitsync.mjs';
 import strava from '../lib/strava.mjs';
 import garmin from '../lib/garmin.mjs';
 import foursquare from '../lib/foursquare.mjs';
+import shopping from '../lib/shopping.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from '../lib/budget.mjs';
 
 const harvestRootLogger = () => createLogger({
@@ -80,8 +81,8 @@ const harvesters = {
     health: (_logger, guidId, req) => health(guidId, req),
     garmin: (_logger, guidId, req) => garmin(guidId, req),
     foursquare: (_logger, guidId, req) => foursquare(guidId, req),
-    payroll: (_logger, guidId, req) => payrollSyncJob(guidId, req)
-    
+    payroll: (_logger, guidId, req) => payrollSyncJob(guidId, req),
+    shopping: (logger, guidId, req) => shopping(logger, guidId, req)
 }
 
 const harvestKeys = Object.keys(harvesters);
@@ -98,6 +99,7 @@ const HARVEST_TIMEOUTS = {
     gmail: 180000,      // 3 minutes for gmail
     gcal: 120000,       // 2 minutes for calendar
     withings: 120000,   // 2 minutes for withings
+    shopping: 300000,   // 5 minutes for shopping (AI extraction)
 };
 
 /**
