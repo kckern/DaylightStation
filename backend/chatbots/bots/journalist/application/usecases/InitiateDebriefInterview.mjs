@@ -122,6 +122,18 @@ export class InitiateDebriefInterview {
         { choices }
       );
 
+      // Save to journal history
+      if (this.#journalEntryRepository) {
+        await this.#journalEntryRepository.saveMessage({
+          id: messageId,
+          chatId: conversationId,
+          role: 'assistant',
+          content: formattedQuestion,
+          senderId: 'bot',
+          senderName: 'Journalist'
+        });
+      }
+
       // 9. Update state with asked question for future "Change Subject" requests
       if (this.#conversationStateStore) {
         const currentState = await this.#conversationStateStore.get(conversationId);

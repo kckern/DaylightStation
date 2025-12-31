@@ -24,6 +24,7 @@ export class SendMorningDebrief {
   #messagingGateway;
   #conversationStateStore;
   #debriefRepository;
+  #journalEntryRepository;
   #logger;
 
   /**
@@ -37,6 +38,7 @@ export class SendMorningDebrief {
     this.#messagingGateway = deps.messagingGateway;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#debriefRepository = deps.debriefRepository;
+    this.#journalEntryRepository = deps.journalEntryRepository;
     this.#logger = deps.logger;
   }
 
@@ -102,6 +104,18 @@ ${debrief.summary}`;
       // Validate result before proceeding
       if (!result || !result.messageId) {
         throw new Error('Failed to send message - no message ID returned');
+      }
+
+      // Save to journal history
+      if (this.#journalEntryRepository) {
+        await this.#journalEntryRepository.saveMessage({
+          id: result.messageId,
+          chatId: conversationId,
+          role: 'assistant',
+          content: message,
+          senderId: 'bot',
+          senderName: 'Journalist'
+        });
       }
 
       // Store debrief state for later retrieval (including lifelog for source dumps)

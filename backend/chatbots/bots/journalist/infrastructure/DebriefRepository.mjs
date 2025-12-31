@@ -32,9 +32,7 @@ export class DebriefRepository {
    * @param {Object} debrief - Debrief data to append
    * @param {string} debrief.date - Date of the debrief (YYYY-MM-DD)
    * @param {string} debrief.summary - Generated summary text
-   * @param {Object} debrief.questions - Category questions
-   * @param {Array} debrief.categories - Available categories
-   * @param {Array} debrief.sources - Data sources used
+   * @param {Array} debrief.summaries - Source summaries with category/source info
    * @param {string} debrief.timestamp - When debrief was generated (ISO format)
    * @returns {Promise<void>}
    */
@@ -55,14 +53,12 @@ export class DebriefRepository {
         debriefs.debriefs = [];
       }
 
-      // Build debrief entry (questions are generated on-demand, not stored)
+      // Build debrief entry
       const entry = {
         date: debrief.date,
         timestamp: debrief.timestamp || new Date().toISOString(),
         summary: debrief.summary,
-        categories: debrief.categories?.map(c => c.key) || [],
-        sources: debrief.sources || [],
-        summaries: debrief.summaries || {} // Include source summaries for Details button
+        summaries: debrief.summaries || []
       };
 
       // Append to beginning (newest first)

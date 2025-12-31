@@ -15,6 +15,7 @@ import { eventsExtractor } from './events.mjs';
 import { githubExtractor } from './github.mjs';
 import { checkinsExtractor } from './checkins.mjs';
 import { redditExtractor } from './reddit.mjs';
+import { nutritionExtractor } from './nutrition.mjs';
 
 // Export individual extractors
 export {
@@ -25,7 +26,8 @@ export {
   eventsExtractor,
   githubExtractor,
   checkinsExtractor,
-  redditExtractor
+  redditExtractor,
+  nutritionExtractor
 };
 
 /**
@@ -40,6 +42,7 @@ export const extractors = [
   eventsExtractor,    // Calendar
   checkinsExtractor,  // Locations
   githubExtractor,    // Code activity
+  nutritionExtractor, // Nutrition tracking from NutriBot
   
   // Tier 2: Supplementary
   redditExtractor,    // Social activity
