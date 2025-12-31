@@ -17,6 +17,7 @@ import { checkinsExtractor } from './checkins.mjs';
 import { redditExtractor } from './reddit.mjs';
 import { nutritionExtractor } from './nutrition.mjs';
 import { lastfmExtractor } from './lastfm.mjs';
+import { shoppingExtractor } from './shopping.mjs';
 
 // Export individual extractors
 export {
@@ -29,7 +30,8 @@ export {
   checkinsExtractor,
   redditExtractor,
   nutritionExtractor,
-  lastfmExtractor
+  lastfmExtractor,
+  shoppingExtractor
 };
 
 /**
@@ -45,6 +47,7 @@ export const extractors = [
   checkinsExtractor,  // Locations
   githubExtractor,    // Code activity
   nutritionExtractor, // Nutrition tracking from NutriBot
+  shoppingExtractor,  // Shopping receipts and spending
   
   // Tier 2: Supplementary
   lastfmExtractor,    // Music listening

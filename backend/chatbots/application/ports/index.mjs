@@ -8,13 +8,14 @@ export {
   assertMessagingGateway,
 } from './IMessagingGateway.mjs';
 
+// Re-export from shared lib/ai module (canonical location)
 export {
   isAIGateway,
   assertAIGateway,
   systemMessage,
   userMessage,
   assistantMessage,
-} from './IAIGateway.mjs';
+} from '../../../lib/ai/index.mjs';
 
 export {
   isRepository,

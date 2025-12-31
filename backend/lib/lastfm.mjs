@@ -80,31 +80,48 @@ const getScrobbles = async (guidId = null, req = null) => {
     
     // Check for full sync vs incremental
     const fullSync = req?.query?.full === 'true';
+    const backfillTo2009 = req?.query?.backfill2009 === 'true';
     
     // Load existing data for incremental merge
     let existingScrobbles = [];
-    if (!fullSync) {
-        try {
-            existingScrobbles = userLoadFile(username, 'lastfm') || [];
-            if (!Array.isArray(existingScrobbles)) existingScrobbles = [];
-        } catch (e) {
-            // No existing data, will do full sync
-            lastfmLogger.info('lastfm.no_existing_data', { username });
+    let oldestTimestamp = null;
+    try {
+        existingScrobbles = userLoadFile(username, 'lastfm') || [];
+        if (!Array.isArray(existingScrobbles)) existingScrobbles = [];
+        
+        // Find oldest timestamp for backfill mode
+        if (backfillTo2009 && existingScrobbles.length > 0) {
+            const oldest = existingScrobbles[existingScrobbles.length - 1]; // Last in array (sorted newest first)
+            oldestTimestamp = oldest.timestamp;
+            const oldestDate = moment.unix(oldestTimestamp).format('YYYY-MM-DD HH:mm:ss');
+            lastfmLogger.info('lastfm.found_oldest', { 
+                username,
+                oldestDate,
+                timestamp: oldestTimestamp,
+                totalExisting: existingScrobbles.length
+            });
         }
+    } catch (e) {
+        // No existing data, will do full sync
+        lastfmLogger.info('lastfm.no_existing_data', { username });
     }
     
     try {
         const newScrobbles = [];
         let page = 1;
-        const maxPages = fullSync ? 50 : 10; // Limit pages for incremental
+        const maxPages = backfillTo2009 ? 100000 : (fullSync ? 50 : 10); // No limit for 2009 backfill
         let hasMore = true;
         
         lastfmLogger.info('lastfm.harvest.start', { 
             username: LAST_FM_USER,
             guidId,
-            mode: fullSync ? 'full' : 'incremental',
+            mode: backfillTo2009 ? 'backfill-2009' : (fullSync ? 'full' : 'incremental'),
             existingCount: existingScrobbles.length
         });
+        
+        // Track for incremental saves
+        let scrobblesSinceLastSave = 0;
+        const SAVE_INTERVAL = backfillTo2009 ? 1000 : 2000; // Save every 1000 scrobbles for 2009 backfill
         
         // Paginate through scrobbles
         while (hasMore && page <= maxPages) {
@@ -117,15 +134,42 @@ const getScrobbles = async (guidId = null, req = null) => {
                 'format': 'json'
             };
             
-            const response = await axios.get(
-                `https://ws.audioscrobbler.com/2.0/?${new URLSearchParams(params).toString()}`,
-                {
-                    headers: {
-                        'User-Agent': 'DaylightStation-Harvester/1.0',
-                        'Accept': 'application/json'
-                    }
+            // For backfill mode, fetch older tracks using 'to' parameter
+            if (backfillTo2009 && oldestTimestamp) {
+                params.to = oldestTimestamp - 1; // Fetch tracks older than our oldest
+            }
+            
+            let retries = 3;
+            let response = null;
+            
+            // Retry logic for API failures
+            while (retries > 0) {
+                try {
+                    response = await axios.get(
+                        `https://ws.audioscrobbler.com/2.0/?${new URLSearchParams(params).toString()}`,
+                        {
+                            headers: {
+                                'User-Agent': 'DaylightStation-Harvester/1.0',
+                                'Accept': 'application/json'
+                            }
+                        }
+                    );
+                    break; // Success, exit retry loop
+                } catch (err) {
+                    retries--;
+                    if (retries === 0) throw err; // Out of retries
+                    
+                    const waitTime = (4 - retries) * 2000; // 2s, 4s, 6s
+                    lastfmLogger.warn('lastfm.api_error.retrying', {
+                        username: LAST_FM_USER,
+                        page,
+                        retriesLeft: retries,
+                        waitTime,
+                        error: err.message
+                    });
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
                 }
-            );
+            }
             
             const tracks = response.data?.recenttracks?.track;
             if (!tracks || tracks.length === 0) {
@@ -139,6 +183,62 @@ const getScrobbles = async (guidId = null, req = null) => {
                 .filter(t => t !== null);
             
             newScrobbles.push(...parsedTracks);
+            scrobblesSinceLastSave += parsedTracks.length;
+            
+            // Log progress
+            if (page % 10 === 0) {
+                const oldestTrack = parsedTracks[parsedTracks.length - 1];
+                const oldestDate = oldestTrack ? moment.unix(oldestTrack.timestamp).format('YYYY-MM-DD') : 'unknown';
+                lastfmLogger.info('lastfm.harvest.progress', {
+                    username: LAST_FM_USER,
+                    page,
+                    totalPages: response.data?.recenttracks?.['@attr']?.totalPages || '?',
+                    fetchedSoFar: newScrobbles.length,
+                    oldestDate
+                });
+            }
+            
+            // Incremental save for 2009 backfill
+            if (backfillTo2009 && scrobblesSinceLastSave >= SAVE_INTERVAL) {
+                // Merge with existing
+                const existingById = new Map(existingScrobbles.map(s => [s.id, s]));
+                for (const scrobble of newScrobbles) {
+                    existingById.set(scrobble.id, scrobble);
+                }
+                
+                const mergedSoFar = Array.from(existingById.values())
+                    .sort((a, b) => b.timestamp - a.timestamp);
+                
+                userSaveFile(username, 'lastfm', mergedSoFar);
+                existingScrobbles = mergedSoFar;
+                newScrobbles.length = 0; // Clear new scrobbles array
+                scrobblesSinceLastSave = 0;
+                
+                const oldestTrack = mergedSoFar[mergedSoFar.length - 1];
+                const oldestDate = oldestTrack ? moment.unix(oldestTrack.timestamp).format('YYYY-MM-DD') : 'unknown';
+                
+                lastfmLogger.info('lastfm.incremental_save', {
+                    username: LAST_FM_USER,
+                    page,
+                    totalScrobbles: mergedSoFar.length,
+                    oldestDate
+                });
+            }
+            
+            // Check for 2009 cutoff
+            if (backfillTo2009 && parsedTracks.length > 0) {
+                const oldestInBatch = parsedTracks[parsedTracks.length - 1];
+                const oldestYear = moment.unix(oldestInBatch.timestamp).year();
+                if (oldestYear < 2009) {
+                    lastfmLogger.info('lastfm.reached_2009', {
+                        username: LAST_FM_USER,
+                        page,
+                        date: moment.unix(oldestInBatch.timestamp).format('YYYY-MM-DD')
+                    });
+                    hasMore = false;
+                    break;
+                }
+            }
             
             // Check if we've reached the end
             const totalPages = parseInt(response.data?.recenttracks?.['@attr']?.totalPages || 1);
@@ -147,9 +247,12 @@ const getScrobbles = async (guidId = null, req = null) => {
             }
             
             page++;
+            
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         
-        // Merge and dedupe: newer scrobbles take precedence
+        // Final merge and dedupe: newer scrobbles take precedence
         const existingById = new Map(existingScrobbles.map(s => [s.id, s]));
         for (const scrobble of newScrobbles) {
             existingById.set(scrobble.id, scrobble);
