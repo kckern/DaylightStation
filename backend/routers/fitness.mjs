@@ -28,6 +28,34 @@ const normalizeNumber = (value) => {
     return Number.isFinite(numeric) ? numeric : null;
 };
 
+/**
+ * Summarize series keys and value types for logging during serialization.
+ * @param {object} series
+ * @returns {{ keyCount: number, arrayCount: number, stringCount: number, otherCount: number, sampleKeys: string[] }}
+ */
+const summarizeSeriesKeys = (series = {}) => {
+    if (!isPlainObject(series)) {
+        return { keyCount: 0, arrayCount: 0, stringCount: 0, otherCount: 0, sampleKeys: [] };
+    }
+    const keys = Object.keys(series);
+    let arrayCount = 0;
+    let stringCount = 0;
+    let otherCount = 0;
+    keys.forEach((key) => {
+        const value = series[key];
+        if (Array.isArray(value)) arrayCount += 1;
+        else if (typeof value === 'string') stringCount += 1;
+        else otherCount += 1;
+    });
+    return {
+        keyCount: keys.length,
+        arrayCount,
+        stringCount,
+        otherCount,
+        sampleKeys: keys.slice(0, 5)
+    };
+};
+
 const normalizeTimelineForPersistence = (timeline = {}) => {
     if (!isPlainObject(timeline)) return null;
     const normalizedSeries = {};
@@ -97,9 +125,14 @@ const stringifyTimelineSeriesForFile = (sessionData = {}) => {
     const clone = { ...sessionData, timeline: { ...sessionData.timeline } };
     const sourceSeries = sessionData.timeline.series;
     if (!isPlainObject(sourceSeries)) return clone;
+    const preStats = summarizeSeriesKeys(sourceSeries);
     const serializedSeries = {};
+    const droppedKeys = [];
     Object.entries(sourceSeries).forEach(([key, values]) => {
-        if (!Array.isArray(values) && typeof values !== 'string') return;
+        if (!Array.isArray(values) && typeof values !== 'string') {
+            droppedKeys.push(key);
+            return;
+        }
         if (typeof values === 'string') {
             serializedSeries[key] = values;
             return;
@@ -111,6 +144,30 @@ const stringifyTimelineSeriesForFile = (sessionData = {}) => {
         }
     });
     clone.timeline.series = serializedSeries;
+
+    const postStats = summarizeSeriesKeys(serializedSeries);
+    if (preStats.keyCount && postStats.keyCount === 0) {
+        fitnessLogger.error('fitness.series.serialize.empty', {
+            sessionId: sessionData.sessionId,
+            preStats,
+            postStats,
+            droppedKeys: droppedKeys.slice(0, 10)
+        });
+    } else if (droppedKeys.length) {
+        fitnessLogger.warn('fitness.series.serialize.dropped', {
+            sessionId: sessionData.sessionId,
+            droppedKeys: droppedKeys.slice(0, 10),
+            droppedCount: droppedKeys.length,
+            preStats,
+            postStats
+        });
+    } else {
+        fitnessLogger.debug('fitness.series.serialize.stats', {
+            sessionId: sessionData.sessionId,
+            preStats,
+            postStats
+        });
+    }
     return clone;
 };
 
@@ -124,6 +181,82 @@ const resolveMediaRoot = () => {
         return process.env.path.media;
     }
     return path.join(process.cwd(), 'media');
+};
+
+const resolveHouseholdId = (explicit) => explicit || configService.getDefaultHouseholdId();
+
+const decodeSeries = (series = {}) => {
+    if (!isPlainObject(series)) return {};
+    const decoded = {};
+    Object.entries(series).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+            try {
+                const rle = JSON.parse(value);
+                const arr = [];
+                rle.forEach((entry) => {
+                    if (!Array.isArray(entry) || entry.length < 2) return;
+                    const [val, count] = entry;
+                    const reps = Number.isFinite(count) && count > 0 ? count : 0;
+                    for (let i = 0; i < reps; i += 1) arr.push(val === undefined ? null : val);
+                });
+                decoded[key] = arr;
+                return;
+            } catch (_) {
+                decoded[key] = value;
+                return;
+            }
+        }
+        decoded[key] = value;
+    });
+    return decoded;
+};
+
+const listSessionsForDate = (date, householdId) => {
+    const hid = resolveHouseholdId(householdId);
+    const dataRoot = resolveDataRoot();
+    const sessionsDir = path.join(dataRoot, 'households', hid, 'apps', 'fitness', 'sessions', date);
+    if (!fs.existsSync(sessionsDir)) return [];
+    const files = fs.readdirSync(sessionsDir).filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'));
+    return files.map((name) => {
+        const fullPath = path.join(sessionsDir, name);
+        const data = loadFile(fullPath.replace(`${dataRoot}/`, '').replace(/\.ya?ml$/, '')) || {};
+        return {
+            sessionId: data.sessionId || name.replace(/\.ya?ml$/, ''),
+            startTime: data.startTime || null,
+            endTime: data.endTime || null,
+            durationMs: data.durationMs || null,
+            rosterCount: Array.isArray(data.roster) ? data.roster.length : 0,
+            path: fullPath
+        };
+    }).sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
+};
+
+const loadSessionDetail = (sessionId, householdId) => {
+    const safeId = sanitizeSessionId(sessionId);
+    const sessionDate = deriveSessionDate(safeId);
+    if (!sessionDate) return null;
+    const hid = resolveHouseholdId(householdId);
+    const dataRoot = resolveDataRoot();
+    const sessionsDir = path.join(dataRoot, 'households', hid, 'apps', 'fitness', 'sessions', sessionDate);
+    const candidates = [
+        path.join(sessionsDir, `${safeId}.yml`),
+        path.join(sessionsDir, `${safeId}.yaml`)
+    ];
+    const filePath = candidates.find((p) => fs.existsSync(p));
+    if (!filePath) return null;
+    const data = loadFile(filePath.replace(`${dataRoot}/`, '').replace(/\.ya?ml$/, ''));
+    if (data?.timeline?.series) {
+        data.timeline.series = decodeSeries(data.timeline.series);
+    }
+    return data;
+};
+
+const listSessionDates = (householdId) => {
+    const hid = resolveHouseholdId(householdId);
+    const dataRoot = resolveDataRoot();
+    const sessionsRoot = path.join(dataRoot, 'households', hid, 'apps', 'fitness', 'sessions');
+    if (!fs.existsSync(sessionsRoot)) return [];
+    return fs.readdirSync(sessionsRoot).filter(name => /^\d{4}-\d{2}-\d{2}$/.test(name));
 };
 
 const getSessionStoragePaths = (sessionId) => {
@@ -218,6 +351,46 @@ fitnessRouter.get('/', (req, res) => {
     hydratedData._household = householdId;
     
     res.json(hydratedData);
+});
+
+// List all dates that have sessions
+fitnessRouter.get('/sessions/dates', (req, res) => {
+    const { household } = req.query;
+    try {
+        const dates = listSessionDates(household);
+        return res.json({ dates, household: resolveHouseholdId(household) });
+    } catch (err) {
+        fitnessLogger.error('fitness.sessions.dates.error', { error: err?.message });
+        return res.status(500).json({ error: 'Failed to list session dates' });
+    }
+});
+
+// List sessions for a specific date (YYYY-MM-DD)
+fitnessRouter.get('/sessions', (req, res) => {
+    const { date, household } = req.query;
+    if (!date) return res.status(400).json({ error: 'date query param required (YYYY-MM-DD)' });
+    try {
+        const sessions = listSessionsForDate(date, household);
+        return res.json({ sessions, date, household: resolveHouseholdId(household) });
+    } catch (err) {
+        fitnessLogger.error('fitness.sessions.list.error', { date, error: err?.message });
+        return res.status(500).json({ error: 'Failed to list sessions' });
+    }
+});
+
+// Get a single session detail, decoding series for client consumption
+fitnessRouter.get('/sessions/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+    const { household } = req.query;
+    if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
+    try {
+        const session = loadSessionDetail(sessionId, household);
+        if (!session) return res.status(404).json({ error: 'Session not found' });
+        return res.json({ session });
+    } catch (err) {
+        fitnessLogger.error('fitness.sessions.detail.error', { sessionId, error: err?.message });
+        return res.status(500).json({ error: 'Failed to load session' });
+    }
 });
 
 

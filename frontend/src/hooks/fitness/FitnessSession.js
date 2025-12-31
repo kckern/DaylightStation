@@ -74,6 +74,11 @@ export class FitnessSession {
     });
     this._metricsRecorder = new MetricsRecorder({ intervalMs: 5000 });
     this._participantRoster = new ParticipantRoster();
+
+    // Pre-session buffer to avoid ghost sessions from spurious single pings
+    this._preSessionBuffer = [];
+    this._preSessionThreshold = 3; // Require N valid HR samples before starting
+    this._lastPreSessionLogAt = 0;
     
     // Configure lifecycle callbacks
     this._lifecycle.setCallbacks({
@@ -161,7 +166,6 @@ export class FitnessSession {
 
   recordDeviceActivity(deviceData) {
     const now = Date.now();
-    const started = this.ensureStarted();
     this.lastActivityTime = now;
     
     // Register/Update device in manager
@@ -224,7 +228,9 @@ export class FitnessSession {
       }
     }
 
-    if (started) this._log('session_started', { sessionId: this.sessionId });
+    const startedNow = this._maybeStartSessionFromBuffer(deviceData, now);
+    if (!this.sessionId) return;
+    if (startedNow) this._log('session_started', { sessionId: this.sessionId, reason: 'buffer_threshold_met' });
     this._maybeTickTimeline(deviceData?.timestamp || now);
   }
 
@@ -279,6 +285,43 @@ export class FitnessSession {
         this._equipmentIdByCadence.set(key, val);
       }
     });
+  }
+
+  _isValidPreSessionSample(deviceData) {
+    if (!deviceData) return false;
+    const profile = deviceData.profile || deviceData.type;
+    const hrValue = Number(deviceData.heartRate ?? deviceData.heart_rate ?? deviceData.data?.heartRate ?? deviceData.data?.heart_rate);
+    const isHeartRate = (profile === 'heart_rate' || deviceData.type === 'heart_rate');
+    return isHeartRate && Number.isFinite(hrValue) && hrValue > 0;
+  }
+
+  _maybeStartSessionFromBuffer(deviceData, timestamp) {
+    if (this.sessionId) return false;
+    const eligible = this._isValidPreSessionSample(deviceData);
+    if (eligible) {
+      this._preSessionBuffer.push({ ...deviceData, timestamp });
+    }
+    const count = this._preSessionBuffer.length;
+    const remaining = Math.max(0, (this._preSessionThreshold || 3) - count);
+    const shouldStart = count >= (this._preSessionThreshold || 3);
+
+    // Throttle logging to avoid spam while waiting for threshold
+    if (!shouldStart) {
+      if (timestamp - this._lastPreSessionLogAt > 5000) {
+        this._log('pre_session_buffer', {
+          eligible,
+          bufferedCount: count,
+          remaining,
+          threshold: this._preSessionThreshold || 3
+        });
+        this._lastPreSessionLogAt = timestamp;
+      }
+      return false;
+    }
+
+    const started = this.ensureStarted();
+    this._preSessionBuffer = [];
+    return started;
   }
 
   // Phase 4: Expose extracted module interfaces for direct access
@@ -1300,6 +1343,19 @@ export class FitnessSession {
       return { ok: false, reason: 'device-assignments-required' };
     }
 
+    // 6A: Spam prevention - reject short, empty sessions
+    const hasVoiceMemos = Array.isArray(sessionData.voiceMemos) && sessionData.voiceMemos.length > 0;
+    const hasEvents = Array.isArray(sessionData.timeline?.events) && sessionData.timeline.events.length > 0;
+    
+    // If session is under 10 seconds and has no user data, voice memos, or events, it's spam.
+    if (sessionData.durationMs < 10000 && !hasUserSeries && !hasVoiceMemos && !hasEvents) {
+       // If roster is also empty, definitely spam.
+       // If roster has people but duration is < 1s (like the 1ms sessions), also spam.
+       if (roster.length === 0 || sessionData.durationMs < 1000) {
+         return { ok: false, reason: 'session-too-short-and-empty' };
+       }
+    }
+
     // Deduplicate challenge events (e.g., repeated challenge_end at same tick)
     if (Array.isArray(sessionData.timeline?.events)) {
       const seen = new Set();
@@ -1373,7 +1429,24 @@ export class FitnessSession {
     // Encode series for compact, deterministic storage while keeping readability (stringified RLE)
     if (sessionData.timeline && sessionData.timeline.series) {
       const tickCount = Number(sessionData.timeline?.timebase?.tickCount);
+      const rawSeries = sessionData.timeline.series;
+      const rawKeys = rawSeries && typeof rawSeries === 'object' ? Object.keys(rawSeries) : [];
+      this._log('persist_series_encode_before', {
+        sessionId: sessionData.sessionId || this.sessionId,
+        seriesCount: rawKeys.length,
+        tickCount,
+        sampleKeys: rawKeys.slice(0, 5)
+      });
       const { encodedSeries, seriesMeta } = this._encodeSeries(sessionData.timeline.series, tickCount);
+      const encodedKeys = Object.keys(encodedSeries || {});
+      const droppedKeys = rawKeys.filter((key) => !Object.prototype.hasOwnProperty.call(encodedSeries || {}, key));
+      this._log('persist_series_encode_after', {
+        sessionId: sessionData.sessionId || this.sessionId,
+        encodedCount: encodedKeys.length,
+        droppedKeys: droppedKeys.slice(0, 5),
+        wasEmpty: encodedKeys.length === 0,
+        tickCount
+      });
       sessionData.timeline.series = encodedSeries;
       sessionData.timeline.seriesMeta = seriesMeta;
     }
@@ -1516,7 +1589,8 @@ export class FitnessSession {
         || this.timebase?.lastTickTimestamp
         || this.lastActivityTime
         || Date.now();
-      this.endTime = derivedEndTime;
+      // Fix: Do not mutate this.endTime during summary generation (autosave)
+      // this.endTime = derivedEndTime;
       const durationMs = Number.isFinite(startTime) ? Math.max(0, derivedEndTime - startTime) : null;
       const deviceAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
         return {
@@ -1546,9 +1620,22 @@ export class FitnessSession {
   }
 
   // Voice Memo Delegation
-  addVoiceMemo(memo) { return this.voiceMemoManager.addMemo(memo); }
-  removeVoiceMemo(memoId) { return this.voiceMemoManager.removeMemo(memoId); }
-  replaceVoiceMemo(memoId, memo) { return this.voiceMemoManager.replaceMemo(memoId, memo); }
+  addVoiceMemo(memo) {
+    const result = this.voiceMemoManager.addMemo(memo);
+    this._maybeAutosave();
+    return result;
+  }
+
+  removeVoiceMemo(memoId) {
+    this.voiceMemoManager.removeMemo(memoId);
+    this._maybeAutosave();
+  }
+
+  replaceVoiceMemo(memoId, memo) {
+    const result = this.voiceMemoManager.replaceMemo(memoId, memo);
+    this._maybeAutosave();
+    return result;
+  }
 
   get userCollections() {
     if (!this._userCollectionsCache) {
