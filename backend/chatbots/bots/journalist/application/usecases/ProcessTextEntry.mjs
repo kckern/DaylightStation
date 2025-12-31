@@ -23,6 +23,7 @@ import {
   getNextUnsent,
   formatQuestion,
   buildDefaultChoices,
+  formatChoicesAsKeyboard,
 } from '../../domain/services/QueueManager.mjs';
 import { 
   buildBiographerPrompt, 
