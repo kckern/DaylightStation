@@ -36,6 +36,7 @@ export default defineConfig(({ command }) => ({
     proxy: {
       // Proxy API and media requests to backend
       '/api': `http://localhost:${BACKEND_PORT}`,
+      '/harvest': `http://localhost:${BACKEND_PORT}`,
       '/home': `http://localhost:${BACKEND_PORT}`,
       '/print': `http://localhost:${BACKEND_PORT}`,
       '/plex_proxy': `http://localhost:${BACKEND_PORT}`,

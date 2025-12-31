@@ -1,5 +1,5 @@
 import moment from 'moment';
-import { userLoadFile } from './io.mjs';
+import { userLoadFile, userLoadCurrent } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
@@ -23,6 +23,22 @@ const calculateStatus = (value, thresholds) => {
 };
 
 /**
+ * Load data from appropriate source (lifelog or current)
+ * @param {string} username - The username
+ * @param {Object} sourceConfig - Source configuration with dataSource and dataPath
+ * @returns {Object|Array|null} The loaded data
+ */
+const loadDataForSource = (username, sourceConfig) => {
+    const { dataSource, dataPath } = sourceConfig;
+    
+    if (dataSource === 'current') {
+        return userLoadCurrent(username, dataPath);
+    }
+    // Default to lifelog for 'lifelog' or unspecified (backward compat)
+    return userLoadFile(username, dataPath);
+};
+
+/**
  * Get entropy report for all configured sources
  * @returns {Promise<Object>} Entropy report
  */
@@ -40,15 +56,14 @@ export const getEntropyReport = async () => {
 
     for (const [id, sourceConfig] of Object.entries(config.sources)) {
         try {
-            const data = userLoadFile(username, sourceConfig.dataPath);
+            const data = loadDataForSource(username, sourceConfig);
             let value = 0;
             let label = '';
             let lastUpdate = null;
 
             if (sourceConfig.metric === 'days_since') {
-                // For weight, data is an object with date keys
-                // We need to find the most recent date
-                if (data && typeof data === 'object') {
+                // LIFELOG: For date-keyed data, find the most recent date
+                if (data && typeof data === 'object' && !Array.isArray(data)) {
                     let dates = Object.keys(data);
 
                     // Special handling for weight data which forward-fills entries
@@ -75,15 +90,24 @@ export const getEntropyReport = async () => {
                     label = 'No data';
                 }
             } else if (sourceConfig.metric === 'count') {
-                // For gmail, data is an array of messages
-                if (Array.isArray(data)) {
+                // CURRENT: Check count from current/ data
+                // Support both new structure (object with countField) and old structure (array)
+                if (data && typeof data === 'object' && !Array.isArray(data)) {
+                    // New structure: { lastUpdated, taskCount/unreadCount, tasks/messages }
+                    const countField = sourceConfig.countField || 'count';
+                    value = data[countField] ?? 0;
+                    lastUpdate = data.lastUpdated ? moment(data.lastUpdated).format('YYYY-MM-DD') : null;
+                } else if (Array.isArray(data)) {
+                    // Legacy: array of items
                     value = data.length;
-                    label = `${value} email${value === 1 ? '' : 's'}`;
-                    lastUpdate = moment().format('YYYY-MM-DD'); // Assumed fresh if file exists
+                    lastUpdate = moment().format('YYYY-MM-DD');
                 } else {
                     value = 0;
-                    label = '0 emails';
                 }
+                
+                // Generate label based on source type
+                const itemName = sourceConfig.itemName || id;
+                label = `${value} ${itemName}${value === 1 ? '' : 's'}`;
             }
 
             const status = calculateStatus(value, sourceConfig.thresholds);

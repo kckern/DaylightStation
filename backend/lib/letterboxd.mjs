@@ -5,6 +5,7 @@ import axios from './http.mjs';
 const getMovies = async (targetUsername = null) => {
     // User-level auth (personal Letterboxd username)
     const username = targetUsername || getDefaultUsername();
+    console.log('[letterboxd] targetUsername:', targetUsername, 'resolved username:', username, 'type:', typeof username);
     const auth = userLoadAuth(username, 'letterboxd') || {};
     const LETTERBOXD_USER = auth.username || process.env.LETTERBOXD_USER;
     let page = 1;

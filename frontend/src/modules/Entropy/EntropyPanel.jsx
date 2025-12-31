@@ -51,26 +51,17 @@ const EntropyPanel = () => {
     );
   }
 
-  const getStatusIcon = (status, value) => {
-    if (status === 'green' && value === 0) return '☀️'; // Sunshine for perfect score
-    if (status === 'green') return '✓';
-    if (status === 'yellow') return '⚠️';
-    return '❗';
-  };
+  // Calculate grid dimensions to be as square as possible
+  const numItems = report.items.length;
+  const cols = Math.ceil(Math.sqrt(numItems));
 
   return (
     <div className="entropy-panel">
-      <div className="entropy-grid">
+      <div className="entropy-grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
         {report.items.map(item => (
-          <div key={item.id} className={`entropy-item status-${item.status}`}>
+          <div key={item.id} className={`entropy-item status-${item.status}`} title={item.label}>
             <div className="item-icon">{item.icon}</div>
-            <div className="item-details">
-              <span className="item-name">{item.name}</span>
-              <span className="item-label">{item.label}</span>
-            </div>
-            <div className="status-indicator">
-              {getStatusIcon(item.status, item.value)}
-            </div>
+            <div className="item-value">{item.value}</div>
           </div>
         ))}
       </div>

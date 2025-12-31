@@ -58,31 +58,31 @@ const harvestRootLogger = () => createLogger({
 
 const harvesters = {
     ...Infinity.keys.reduce((fn, i) => {
-        fn[i] = (_logger, _guidId, req) => Infinity.loadData(i, req);
+        fn[i] = (_logger, _guidId, username) => Infinity.loadData(i, { targetUsername: username });
         return fn;
     }, {}),
-    todoist: (logger, guidId, req) => todoist(logger, guidId, req),
-    gmail: (logger, guidId, req) => gmail(logger, guidId, req),
-    gcal: (logger, guidId, req) => gcal(logger, guidId, req),
-    withings: (_logger, guidId, req) => withings(guidId, req),
-    ldsgc: (_logger, guidId, req) => ldsgc(guidId, req),
-    weather: (_logger, guidId, req) => weather(guidId, req),
-    scripture: (_logger, guidId, req) => scripture(guidId, req),
-    clickup: (_logger, guidId, req) => clickup(guidId, req),
-    lastfm: (_logger, guidId, req) => lastfm(guidId, req),
-    letterboxd: (_logger, guidId, req) => letterboxd(guidId, req),
-    goodreads: (_logger, guidId, req) => goodreads(guidId, req),
-    github: (_logger, guidId, req) => github(guidId, req),
-    reddit: (_logger, guidId, req) => reddit(guidId, req),
-    budget: (_logger, guidId, req) => budget(guidId, req),
-    youtube_dl: (_logger, guidId, req) => youtube_dl(guidId, req),
-    fitness: (_logger, guidId, req) => fitness(guidId, req),
-    strava: (logger, guidId, req) => strava(logger, guidId, req),
-    health: (_logger, guidId, req) => health(guidId, req),
-    garmin: (_logger, guidId, req) => garmin(guidId, req),
-    foursquare: (_logger, guidId, req) => foursquare(guidId, req),
-    payroll: (_logger, guidId, req) => payrollSyncJob(guidId, req),
-    shopping: (logger, guidId, req) => shopping(logger, guidId, req)
+    todoist: (logger, guidId, username) => todoist(logger, guidId, username),
+    gmail: (logger, guidId, username) => gmail(logger, guidId, username),
+    gcal: (logger, guidId, username) => gcal(logger, guidId, username),
+    withings: (_logger, guidId, username) => withings(guidId, { targetUsername: username }),
+    ldsgc: (_logger, guidId, username) => ldsgc(guidId, { targetUsername: username }),
+    weather: (_logger, guidId, username) => weather(guidId, { targetUsername: username }),
+    scripture: (_logger, guidId, username) => scripture(guidId, { targetUsername: username }),
+    clickup: (_logger, guidId, username) => clickup(guidId, { targetUsername: username }),
+    lastfm: (_logger, guidId, username) => lastfm(guidId, { targetUsername: username }),
+    letterboxd: (_logger, guidId, username) => letterboxd(username),
+    goodreads: (_logger, guidId, username) => goodreads(username),
+    github: (_logger, guidId, username) => github(guidId, { targetUsername: username }),
+    reddit: (_logger, guidId, username) => reddit(guidId, { targetUsername: username }),
+    budget: (_logger, guidId, username) => budget(guidId, { targetUsername: username }),
+    youtube_dl: (_logger, guidId, username) => youtube_dl(guidId, { targetUsername: username }),
+    fitness: (_logger, guidId, username) => fitness(guidId, { targetUsername: username }),
+    strava: (logger, guidId, username) => strava(logger, guidId, username),
+    health: (_logger, guidId, username) => health(guidId, { targetUsername: username }),
+    garmin: (_logger, guidId, username) => garmin(guidId, { targetUsername: username }),
+    foursquare: (_logger, guidId, username) => foursquare(guidId, { targetUsername: username }),
+    payroll: (_logger, guidId, username) => payrollSyncJob(guidId, { targetUsername: username }),
+    shopping: (logger, guidId, username) => shopping(logger, guidId, username)
 }
 
 const harvestKeys = Object.keys(harvesters);
@@ -179,9 +179,10 @@ harvestKeys.forEach(key => {
             req.targetUsername = username;
 
             const invokeHarvester = (fn) => {
-                if (fn.length >= 3) return fn(requestLogger, guidId, req);
+                if (fn.length >= 3) return fn(requestLogger, guidId, username); // Pass username string, not req object
                 if (fn.length === 2) return fn(requestLogger, guidId);
-                return fn(guidId, req);
+                if (fn.length === 1) return fn(username); // Single-param harvesters (goodreads, letterboxd) get username
+                return fn(guidId, req); // Legacy harvesters with no params
             };
 
             // Apply timeout protection

@@ -91,6 +91,7 @@ $item-radius: 0.75rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      text-transform: capitalize;
     }
 
     .menu-header-center {
@@ -448,7 +449,7 @@ $item-radius: 0.75rem;
   }
 
   .progress-bar {
-    height: 4px;
+    height: 8px;
     width: 100%;
     background: rgba(0, 0, 0, 0.5);
     position: absolute;

@@ -1,5 +1,5 @@
 
-import { loadFile, saveFile, userLoadFile, userSaveFile } from '../lib/io.mjs';
+import { loadFile, saveFile, userLoadFile, userLoadCurrent, userSaveFile } from '../lib/io.mjs';
 import { configService } from '../lib/config/ConfigService.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 
@@ -13,10 +13,16 @@ const eventsLogger = createLogger({
 export default async (job_id) => {
 
     const username = getDefaultUsername();
-    // Load from user-namespaced paths
-    const calendarEvents = userLoadFile(username, 'calendar') || [];
-    const todoItems = userLoadFile(username, 'todoist') || [];
-    const clickupData = userLoadFile(username, 'clickup') || [];
+    
+    // Prefer current/ sources if available, fall back to lifelog/ (Phase 1: bifurcation)
+    const currentCalendar = userLoadCurrent(username, 'calendar');
+    const currentTodoist = userLoadCurrent(username, 'todoist');
+    const currentClickup = userLoadCurrent(username, 'clickup');
+    
+    // Use current/ data if available, otherwise fall back to lifelog/ paths
+    const calendarEvents = currentCalendar || userLoadFile(username, 'calendar') || [];
+    const todoItems = currentTodoist?.tasks || userLoadFile(username, 'todoist') || [];
+    const clickupData = currentClickup?.tasks || userLoadFile(username, 'clickup') || [];
 
     const hasCalItems = !!calendarEvents.length
     const calendarItems = !hasCalItems ? [] : calendarEvents.map(event => {

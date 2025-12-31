@@ -424,6 +424,42 @@ const userLoadProfile = (username) => {
 };
 
 // ============================================================
+// USER CURRENT DATA HELPERS (ephemeral/active state)
+// ============================================================
+
+/**
+ * Load current (ephemeral) data for a specific user
+ * Current data represents active/pending state (inbox, open tasks, upcoming events)
+ * as opposed to lifelog which is historical/completed data
+ * @param {string} username - The username
+ * @param {string} service - The service name (e.g., 'gmail', 'todoist', 'calendar')
+ * @returns {object|null} The loaded data or null if not found
+ */
+const userLoadCurrent = (username, service) => {
+    if (!username) {
+        ioLogger.warn('io.userLoadCurrent.noUsername', { service });
+        return null;
+    }
+    return loadFile(`users/${username}/current/${service}`);
+};
+
+/**
+ * Save current (ephemeral) data for a specific user
+ * Current data represents active/pending state (inbox, open tasks, upcoming events)
+ * @param {string} username - The username
+ * @param {string} service - The service name (e.g., 'gmail', 'todoist', 'calendar')
+ * @param {object} data - The data to save
+ * @returns {boolean} True if saved successfully
+ */
+const userSaveCurrent = (username, service, data) => {
+    if (!username) {
+        ioLogger.warn('io.userSaveCurrent.noUsername', { service });
+        return false;
+    }
+    return saveFile(`users/${username}/current/${service}`, data);
+};
+
+// ============================================================
 // HOUSEHOLD-AWARE HELPERS (Phase 0 of three-tier architecture)
 // ============================================================
 
@@ -568,6 +604,8 @@ export {
     userLoadAuth, 
     userSaveAuth,
     userLoadProfile,
+    userLoadCurrent,
+    userSaveCurrent,
     getDefaultUsername,
     // Household-level helpers
     householdLoadFile,
