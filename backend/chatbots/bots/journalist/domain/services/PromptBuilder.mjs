@@ -39,13 +39,15 @@ Respond with just the question(s), no preamble.`;
 /**
  * Build autobiographer prompt (initiate journaling)
  * @param {string} history - Recent conversation history
+ * @param {string} lifelogContext - Today's lifelog data (optional)
  * @returns {Array<{role: string, content: string}>}
  */
-export function buildAutobiographerPrompt(history) {
+export function buildAutobiographerPrompt(history, lifelogContext = '') {
   const systemPrompt = `You are a thoughtful journaling companion helping someone reflect on their day and life. Generate an opening question to start a journaling session.
 
 Guidelines:
 - Be warm and inviting
+- If lifelog data is available, reference specific activities or details
 - Connect to the time of day when appropriate
 - Vary topics: feelings, events, gratitude, goals, relationships
 - Keep it simple and easy to answer
@@ -55,9 +57,14 @@ If there's recent history, you may reference it lightly but don't force continui
 
 Respond with just the question, no preamble.`;
 
-  const userContent = history 
-    ? `Recent conversation:\n${history}\n\nGenerate an opening question:`
-    : 'Generate an opening question for a new journaling session:';
+  let userContent = '';
+  if (lifelogContext) {
+    userContent += `TODAY'S ACTIVITIES:\n${lifelogContext}\n\n`;
+  }
+  if (history) {
+    userContent += `RECENT CONVERSATION:\n${history}\n\n`;
+  }
+  userContent += 'Generate an opening journaling question based on the context above:';
 
   return [
     { role: 'system', content: systemPrompt },

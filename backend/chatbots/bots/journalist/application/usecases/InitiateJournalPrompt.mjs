@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import moment from 'moment-timezone';
 import { 
   formatAsChat, 
   truncateToLength 
@@ -35,6 +36,7 @@ export class InitiateJournalPrompt {
   #aiGateway;
   #journalEntryRepository;
   #messageQueueRepository;
+  #lifelogAggregator;
   #logger;
 
   constructor(deps) {
@@ -45,6 +47,7 @@ export class InitiateJournalPrompt {
     this.#aiGateway = deps.aiGateway;
     this.#journalEntryRepository = deps.journalEntryRepository;
     this.#messageQueueRepository = deps.messageQueueRepository;
+    this.#lifelogAggregator = deps.lifelogAggregator;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'journalist' });
   }
 
@@ -70,8 +73,27 @@ export class InitiateJournalPrompt {
         history = formatAsChat(messages);
       }
 
-      // 3. Generate opening question
-      const prompt = buildAutobiographerPrompt(truncateToLength(history, 2000));
+      // 3. Load today's lifelog data for context
+      let lifelogContext = '';
+      if (this.#lifelogAggregator) {
+        try {
+          const username = this.#journalEntryRepository?.getUsername?.(chatId) || 'kckern';
+          const today = moment().format('YYYY-MM-DD');
+          const lifelog = await this.#lifelogAggregator.aggregate(username, today);
+          
+          if (lifelog.summaryText) {
+            lifelogContext = lifelog.summaryText;
+          }
+        } catch (err) {
+          this.#logger.debug('journalPrompt.lifelog.skip', { chatId, error: err.message });
+        }
+      }
+
+      // 4. Generate opening question
+      const prompt = buildAutobiographerPrompt(
+        truncateToLength(history, 1500),
+        truncateToLength(lifelogContext, 1500)
+      );
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 150 });
       
       const questions = parseGPTResponse(response);
