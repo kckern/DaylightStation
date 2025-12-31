@@ -120,7 +120,9 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 			};
 		});
 
-		const shaped = debugItems.filter((item) => item.segments.length > 0 && item.maxVal > 0);
+		// Allow entries with zero beats to display - they'll accumulate over time
+		// Only filter out entries with no segments (no HR data at all)
+		const shaped = debugItems.filter((item) => item.segments.length > 0);
 
 		// Debug guardrail: log when roster/active/chart counts diverge
 		const rosterIds = roster.map((r, i) => slugifyId(r.profileId || r.hrDeviceId || r.name || r.displayLabel || i, `anon-${i}`));
@@ -651,6 +653,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	} = useFitnessPlugin('fitness_chart');
 	const containerRef = useRef(null);
 	const [chartSize, setChartSize] = useState({ width: DEFAULT_CHART_WIDTH, height: DEFAULT_CHART_HEIGHT });
+	const lastWarmupLogRef = useRef(null);
 
     useEffect(() => {
         onMount?.();
@@ -689,6 +692,42 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		historicalParticipants,
 		{ activityMonitor }
 	);
+
+	// Diagnostic logging to dev.log to understand warmup failures without spamming
+	useEffect(() => {
+		const rosterCount = Array.isArray(participants) ? participants.length : 0;
+		const hasSeries = allEntries.length > 0;
+		const tickCount = Number(timebase?.tickCount || timebase?.intervalCount || 0) || 0;
+		if (hasSeries || rosterCount === 0) {
+			lastWarmupLogRef.current = null;
+			return;
+		}
+
+		const snapshot = {
+			rosterCount,
+			tickCount,
+			seriesPerUser: (participants || []).map((p) => {
+				const id = p.profileId || p.hrDeviceId || p.name || p.id;
+				const slug = id ? String(id).toLowerCase() : 'unknown';
+				const hr = typeof getUserTimelineSeries === 'function' ? (getUserTimelineSeries(slug, 'heart_rate', { clone: true }) || []) : [];
+				const beats = typeof getUserTimelineSeries === 'function' ? (getUserTimelineSeries(slug, 'heart_beats', { clone: true }) || []) : [];
+				const coins = typeof getUserTimelineSeries === 'function' ? (getUserTimelineSeries(slug, 'coins_total', { clone: true }) || []) : [];
+				return {
+					id: slug,
+					heartRateSamples: hr.length,
+					heartBeatsSamples: beats.length,
+					coinsSamples: coins.length,
+					isActive: p.isActive !== false
+				};
+			})
+		};
+
+		const signature = JSON.stringify(snapshot);
+		if (signature !== lastWarmupLogRef.current) {
+			lastWarmupLogRef.current = signature;
+			console.warn('[FitnessChart][warmup]', snapshot);
+		}
+	}, [participants, allEntries, timebase, getUserTimelineSeries]);
 	
 	// Guardrail: Verify chart present count matches roster count
 	// If mismatch, dump debug info to help diagnose state synchronization issues
@@ -753,24 +792,63 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		return Math.max(0, min);
 	}, [presentEntries, minDataValue]);
 
+	const lowestValue = useMemo(() => {
+		let min = Number.POSITIVE_INFINITY;
+		allEntries.forEach((entry) => {
+			if (Number.isFinite(entry.lastValue)) {
+				if (entry.lastValue < min) min = entry.lastValue;
+			}
+		});
+		if (min === Number.POSITIVE_INFINITY) return Math.max(0, minDataValue);
+		return Math.max(0, min);
+	}, [allEntries, minDataValue]);
+
 	const scaleY = useMemo(() => {
 		const domainMin = Math.min(minAxisValue, paddedMaxValue);
 		const domainSpan = Math.max(1, paddedMaxValue - domainMin);
 		const topFrac = 0.06;
 		const bottomFrac = 1;
 		const innerHeight = Math.max(1, chartHeight - CHART_MARGIN.top - CHART_MARGIN.bottom);
-		const logBase = yScaleBase;
+		const userCount = allEntries.length;
+
 		return (value) => {
 			const clamped = Math.max(domainMin, Math.min(paddedMaxValue, value));
 			const norm = (clamped - domainMin) / domainSpan;
 			let mapped = norm;
-			if (logBase > 1) {
-				mapped = 1 - Math.log(1 + (1 - norm) * (logBase - 1)) / Math.log(logBase);
+
+			if (userCount === 1) {
+				// Linear scale for single user
+				mapped = norm;
+			} else if (userCount === 2) {
+				// Standard log scale for 2 users
+				const logBase = yScaleBase;
+				if (logBase > 1) {
+					mapped = 1 - Math.log(1 + (1 - norm) * (logBase - 1)) / Math.log(logBase);
+				}
+			} else {
+				// 3+ users: Clamp bottom user to 25% height
+				// Calculate normalized value of the lowest user
+				const normLow = (lowestValue - domainMin) / domainSpan;
+				
+				if (normLow > 0 && normLow < 1) {
+					// Calculate k for power curve: normLow^k = 0.25
+					// k = log(0.25) / log(normLow)
+					const k = Math.log(0.25) / Math.log(normLow);
+					// Apply power curve
+					mapped = Math.pow(norm, k);
+				} else {
+					// Fallback to standard log if normLow is extreme
+					const logBase = yScaleBase;
+					if (logBase > 1) {
+						mapped = 1 - Math.log(1 + (1 - norm) * (logBase - 1)) / Math.log(logBase);
+					}
+				}
 			}
+
 			const frac = bottomFrac + (topFrac - bottomFrac) * mapped;
 			return CHART_MARGIN.top + frac * innerHeight;
 		};
-	}, [minDataValue, paddedMaxValue, chartHeight, yScaleBase]);
+	}, [minAxisValue, paddedMaxValue, chartHeight, yScaleBase, allEntries.length, lowestValue]);
 
 	const paths = useMemo(() => {
 		if (!allEntries.length || !(paddedMaxValue > 0)) return [];
@@ -815,7 +893,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		if (!(paddedMaxValue > 0)) return [];
 		const start = Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
 		// Use MIN_GRID_LINES to ensure consistent grid distribution
-		const tickCount = Math.max(MIN_GRID_LINES, Math.ceil(paddedMaxValue / Y_SCALE_BASE));
+		const tickCount = MIN_GRID_LINES;
 		const span = Math.max(1, paddedMaxValue - start);
 		const values = Array.from({ length: tickCount }, (_, idx) => {
 			const t = idx / Math.max(1, tickCount - 1);

@@ -83,7 +83,10 @@ describe('FitnessSession Audit', () => {
     
     const key = seriesKeys[0];
     expect(typeof payload.timeline.series[key]).toBe('string'); // Should be stringified RLE
-    expect(payload.timeline.seriesMeta[key]).toBeDefined();
-    expect(payload.timeline.seriesMeta[key].encoding).toBe('rle');
+
+    // Compact RLE: JSON array (bare values and/or [value,count] pairs)
+    const parsed = JSON.parse(payload.timeline.series[key]);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed.length).toBeGreaterThan(0);
   });
 });

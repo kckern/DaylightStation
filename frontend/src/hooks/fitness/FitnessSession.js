@@ -9,6 +9,7 @@ import { DaylightAPI } from '../../lib/api.mjs';
 import { ZoneProfileStore } from './ZoneProfileStore.js';
 import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
+import moment from 'moment-timezone';
 
 // Phase 4: Extracted modules for decomposed session management
 import { SessionLifecycle } from './SessionLifecycle.js';
@@ -33,6 +34,123 @@ const ZONE_SYMBOL_MAP = {
   hot: 'h'
 };
 
+/**
+ * Format a unix-ms timestamp into a human-readable string in a specific timezone.
+ *
+ * @param {number} unixMs
+ * @param {string} timezone
+ * @returns {string|null}
+ */
+const toReadable = (unixMs, timezone) => {
+  if (!Number.isFinite(unixMs)) return null;
+  const tz = timezone || moment.tz.guess() || 'UTC';
+  return moment(unixMs).tz(tz).format('YYYY-MM-DD h:mm:ss a');
+};
+
+/**
+ * Resolve the timezone used for persistence.
+ * @returns {string}
+ */
+const resolvePersistTimezone = () => {
+  const intl = Intl?.DateTimeFormat?.()?.resolvedOptions?.()?.timeZone;
+  return intl || moment.tz.guess() || 'UTC';
+};
+
+/**
+ * Derive the numeric session id used in v2 payloads.
+ * @param {string|null} sessionId
+ * @returns {string|null}
+ */
+const deriveNumericSessionId = (sessionId) => {
+  if (!sessionId) return null;
+  const raw = String(sessionId).trim();
+  if (!raw) return null;
+  return raw.startsWith('fs_') ? raw.slice(3) : raw;
+};
+
+/**
+ * Derive YYYY-MM-DD from a numeric session id (YYYYMMDDHHmmss).
+ * @param {string|null} numericSessionId
+ * @returns {string|null}
+ */
+const deriveSessionDate = (numericSessionId) => {
+  if (!numericSessionId || numericSessionId.length < 8) return null;
+  const y = numericSessionId.slice(0, 4);
+  const m = numericSessionId.slice(4, 6);
+  const d = numericSessionId.slice(6, 8);
+  if (!y || !m || !d) return null;
+  return `${y}-${m}-${d}`;
+};
+
+/**
+ * Convert roster + assignment snapshots into a keyed participant object.
+ * @param {Array<any>} roster
+ * @param {Array<any>} deviceAssignments
+ * @returns {Record<string, {display_name?: string, hr_device?: string, is_primary?: boolean, is_guest?: boolean, base_user?: string}>}
+ */
+const buildParticipantsForPersist = (roster, deviceAssignments) => {
+  const participants = {};
+
+  const assignmentBySlug = new Map();
+  if (Array.isArray(deviceAssignments)) {
+    deviceAssignments.forEach((entry) => {
+      const slug = entry?.occupantSlug ? String(entry.occupantSlug) : null;
+      if (!slug) return;
+      assignmentBySlug.set(slug, entry);
+    });
+  }
+
+  const safeRoster = Array.isArray(roster) ? roster : [];
+  safeRoster.forEach((entry, idx) => {
+    if (!entry || typeof entry !== 'object') return;
+    const name = typeof entry.name === 'string' ? entry.name : null;
+    const slug = slugifyId(name || entry.profileId || entry.hrDeviceId || `anon-${idx}`);
+    if (!slug) return;
+
+    const assignment = assignmentBySlug.get(slug) || null;
+    const hrDevice = entry.hrDeviceId ?? assignment?.deviceId ?? null;
+
+    participants[slug] = {
+      ...(name ? { display_name: name } : {}),
+      ...(hrDevice != null ? { hr_device: String(hrDevice) } : {}),
+      ...(entry.isPrimary === true ? { is_primary: true } : {}),
+      ...(entry.isGuest === true ? { is_guest: true } : {}),
+      ...(entry.baseUserName ? { base_user: String(entry.baseUserName) } : {})
+    };
+  });
+
+  return participants;
+};
+
+/**
+ * Normalize numeric values for persistence.
+ * - Cumulative series (beats/rotations): round to 1 decimal to avoid float noise
+ * - HR/RPM/Power series: round to nearest integer
+ *
+ * @param {string} key
+ * @param {unknown} value
+ * @returns {number|null|unknown}
+ */
+const roundValue = (key, value) => {
+  if (value == null) return null;
+  if (typeof value !== 'number') return value;
+  if (!Number.isFinite(value)) return null;
+
+  const k = String(key || '').toLowerCase();
+
+  // Cumulative series
+  if (k.includes('beats') || k.includes('rotations')) {
+    return Math.round(value * 10) / 10;
+  }
+
+  // Integer metrics
+  if (k.includes('heart_rate') || k.includes(':hr') || k.includes('rpm') || k.includes('power')) {
+    return Math.round(value);
+  }
+
+  return value;
+};
+
 export const setFitnessTimeouts = ({ inactive, remove, rpmZero, emptySession } = {}) => {
   if (typeof inactive === 'number' && !Number.isNaN(inactive)) FITNESS_TIMEOUTS.inactive = inactive;
   if (typeof remove === 'number' && !Number.isNaN(remove)) FITNESS_TIMEOUTS.remove = remove;
@@ -41,6 +159,102 @@ export const setFitnessTimeouts = ({ inactive, remove, rpmZero, emptySession } =
 };
 
 export const getFitnessTimeouts = () => ({ ...FITNESS_TIMEOUTS });
+
+/**
+ * Convert legacy v1 series keys to the compact v2-style keys.
+ *
+ * Examples:
+ * - user:alan:heart_rate   -> alan:hr
+ * - user:alan:zone_id      -> alan:zone
+ * - user:alan:heart_beats  -> alan:beats
+ * - user:alan:coins_total  -> alan:coins
+ * - device:7138:rpm        -> bike:7138:rpm
+ * - device:device_7138:rpm -> bike:7138:rpm
+ * - device:device_28676:heart_rate -> device:28676:heart_rate
+ *
+ * @param {string} key
+ * @returns {string}
+ */
+const mapSeriesKeyForPersist = (key) => {
+  if (!key || typeof key !== 'string') return key;
+  const parts = key.split(':');
+  if (parts.length < 2) return key;
+
+  const kind = parts[0];
+
+  if (kind === 'user' && parts.length >= 3) {
+    const slug = parts[1];
+    const metric = parts.slice(2).join(':');
+    const mappedMetric = (() => {
+      if (metric === 'heart_rate') return 'hr';
+      if (metric === 'zone_id') return 'zone';
+      if (metric === 'heart_beats') return 'beats';
+      if (metric === 'coins_total') return 'coins';
+      return metric;
+    })();
+    return `${slug}:${mappedMetric}`;
+  }
+
+  if (kind === 'device' && parts.length >= 3) {
+    const rawId = parts[1];
+    const id = rawId && rawId.startsWith('device_') ? rawId.slice('device_'.length) : rawId;
+    const metric = parts.slice(2).join(':');
+
+    // Equipment metrics use bike:* namespace in persisted data.
+    if (metric === 'rpm' || metric === 'rotations' || metric === 'power' || metric === 'distance') {
+      return `bike:${id}:${metric}`;
+    }
+
+    // Keep wearable metrics as device:* but fix double-prefix bug.
+    return `device:${id}:${metric}`;
+  }
+
+  return key;
+};
+
+/**
+ * Map and copy a series dictionary for persistence.
+ * @param {Record<string, unknown>} series
+ * @returns {Record<string, unknown>}
+ */
+const mapSeriesKeysForPersist = (series = {}) => {
+  const mapped = {};
+  if (!series || typeof series !== 'object') return mapped;
+  Object.entries(series).forEach(([key, value]) => {
+    const nextKey = mapSeriesKeyForPersist(key);
+    mapped[nextKey] = value;
+  });
+  return mapped;
+};
+
+/**
+ * Strip runtime/UI fields from roster entries before persistence.
+ * @param {unknown[]} roster
+ * @returns {Array<{name?: string, profileId?: string, hrDeviceId?: string, isPrimary?: boolean, isGuest?: boolean, baseUserName?: string|null}>}
+ */
+const sanitizeRosterForPersist = (roster) => {
+  if (!Array.isArray(roster)) return [];
+  return roster
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const name = typeof entry.name === 'string' ? entry.name : null;
+      const profileId = entry.profileId != null ? String(entry.profileId) : null;
+      const hrDeviceId = entry.hrDeviceId != null ? String(entry.hrDeviceId) : null;
+      const isPrimary = entry.isPrimary === true;
+      const isGuest = entry.isGuest === true;
+      const baseUserName = entry.baseUserName != null ? String(entry.baseUserName) : null;
+      if (!name && !profileId && !hrDeviceId) return null;
+      return {
+        ...(name ? { name } : {}),
+        ...(profileId ? { profileId } : {}),
+        ...(hrDeviceId ? { hrDeviceId } : {}),
+        ...(isPrimary ? { isPrimary } : {}),
+        ...(isGuest ? { isGuest } : {}),
+        ...(baseUserName ? { baseUserName } : {})
+      };
+    })
+    .filter(Boolean);
+};
 
 export class FitnessSession {
   constructor(getTimeoutsFn = getFitnessTimeouts) {
@@ -77,6 +291,7 @@ export class FitnessSession {
 
     // Pre-session buffer to avoid ghost sessions from spurious single pings
     this._preSessionBuffer = [];
+    this._bufferThresholdMet = false;
     this._preSessionThreshold = 3; // Require N valid HR samples before starting
     this._lastPreSessionLogAt = 0;
     
@@ -108,6 +323,11 @@ export class FitnessSession {
     this._tickTimer = null;
     this._tickIntervalMs = 5000;
     this._pendingSnapshotRef = null;
+    this._chartDebugLogged = { noSeries: false };
+    this._ingestDebug = {
+      firstAntSeen: false,
+      lastAntLogTs: 0
+    };
     
     // Ghost session detection - now also in SessionLifecycle but keeping for compatibility
     this._emptyRosterStartTime = null;
@@ -145,15 +365,35 @@ export class FitnessSession {
 
     // Handle ANT+ Data
     if (payload.topic === 'fitness' && payload.type === 'ant' && payload.deviceId && payload.data) {
+      // One-time diagnostic to confirm ANT payloads are flowing into the session layer
+      if (!this._ingestDebug.firstAntSeen || (Date.now() - this._ingestDebug.lastAntLogTs) > 5000) {
+        this._ingestDebug.firstAntSeen = true;
+        this._ingestDebug.lastAntLogTs = Date.now();
+        const profile = payload.profile || payload.type || payload.data?.profile;
+        const hrSample = payload.data?.heartRate ?? payload.data?.heart_rate ?? payload.data?.ComputedHeartRate ?? payload.data?.computedHeartRate ?? null;
+        console.warn('[FitnessSession][ingest]', {
+          deviceId: payload.deviceId,
+          profile,
+          hasHeartRate: hrSample != null,
+          heartRate: hrSample,
+          keys: Object.keys(payload?.data || {})
+        });
+      }
       const device = this.deviceManager.updateDevice(
         String(payload.deviceId),
         payload.profile,
         { ...payload.data, dongleIndex: payload.dongleIndex, timestamp: payload.timestamp }
       );
       if (device) {
-        this.recordDeviceActivity(device);
+        // Pass raw payload for accurate HR detection in pre-session buffer
+        this.recordDeviceActivity(device, { rawPayload: payload });
       }
       return device;
+    }
+    
+    // For other payload types, still try to process
+    if (payload.deviceId) {
+      this.recordDeviceActivity(payload, { rawPayload: payload });
     }
   }
 
@@ -164,7 +404,7 @@ export class FitnessSession {
     }
   }
 
-  recordDeviceActivity(deviceData) {
+  recordDeviceActivity(deviceData, { rawPayload = null } = {}) {
     const now = Date.now();
     this.lastActivityTime = now;
     
@@ -210,6 +450,22 @@ export class FitnessSession {
       if (ledger) {
         const ledgerEntry = ledger.get(device.id);
         const resolvedSlug = user ? slugifyId(user.name) : null;
+        
+        // Auto-assign device to user if not already assigned (for simulator/auto-mapping)
+        if (!ledgerEntry && user && resolvedSlug) {
+          console.warn('[FitnessSession][auto-assign]', { deviceId: device.id, userName: user.name, slug: resolvedSlug });
+          this.userManager.assignGuest(device.id, user.name, {
+            name: user.name,
+            profileId: user.profileId || resolvedSlug,
+            source: user.source || 'auto'
+          });
+          this._log('device_auto_assigned', { deviceId: device.id, userName: user.name, slug: resolvedSlug });
+        } else if (ledgerEntry) {
+          // Already assigned
+        } else {
+          console.warn('[FitnessSession][auto-assign-skip]', { deviceId: device.id, hasUser: !!user, hasSlug: !!resolvedSlug, hasLedgerEntry: !!ledgerEntry });
+        }
+        
         if (ledgerEntry) {
           if (ledgerEntry.occupantSlug && resolvedSlug && ledgerEntry.occupantSlug !== resolvedSlug) {
             this.eventJournal?.log('LEDGER_DEVICE_MISMATCH', {
@@ -228,7 +484,9 @@ export class FitnessSession {
       }
     }
 
-    const startedNow = this._maybeStartSessionFromBuffer(deviceData, now);
+    // Use rawPayload for HR detection (deviceData is transformed Device object)
+    const bufferCheckPayload = rawPayload || deviceData;
+    const startedNow = this._maybeStartSessionFromBuffer(bufferCheckPayload, now);
     if (!this.sessionId) return;
     if (startedNow) this._log('session_started', { sessionId: this.sessionId, reason: 'buffer_threshold_met' });
     this._maybeTickTimeline(deviceData?.timestamp || now);
@@ -287,12 +545,36 @@ export class FitnessSession {
     });
   }
 
-  _isValidPreSessionSample(deviceData) {
-    if (!deviceData) return false;
-    const profile = deviceData.profile || deviceData.type;
-    const hrValue = Number(deviceData.heartRate ?? deviceData.heart_rate ?? deviceData.data?.heartRate ?? deviceData.data?.heart_rate);
-    const isHeartRate = (profile === 'heart_rate' || deviceData.type === 'heart_rate');
-    return isHeartRate && Number.isFinite(hrValue) && hrValue > 0;
+  _isValidPreSessionSample(payload) {
+    if (!payload) return false;
+    // Check profile from multiple possible locations
+    const profileRaw = payload.profile || payload.type || payload.data?.profile;
+    const profile = typeof profileRaw === 'string' ? profileRaw.trim().toLowerCase() : profileRaw;
+    const isHeartRate = profile === 'heart_rate' || profile === 'hr';
+    if (!isHeartRate) return false;
+    // Extract HR from raw ANT+ payload structure or device object
+    const hrValue = Number(
+      payload.data?.heartRate ??
+      payload.data?.heart_rate ??
+      payload.data?.ComputedHeartRate ??
+      payload.data?.computedHeartRate ??
+      payload.heartRate ??
+      payload.heart_rate ??
+      payload.currentHeartRate ??
+      0
+    );
+    const isValid = Number.isFinite(hrValue) && hrValue > 0;
+    if (!isValid && this._preSessionBuffer.length === 0) {
+      this._log('pre_session_sample_invalid', {
+        profile,
+        hrValue,
+        payloadKeys: Object.keys(payload || {}),
+        dataKeys: Object.keys(payload?.data || {}),
+        hasComputedHR: payload?.data?.ComputedHeartRate != null || payload?.data?.computedHeartRate != null,
+        hasRawHR: payload?.data?.heartRate != null || payload?.data?.heart_rate != null
+      });
+    }
+    return isValid;
   }
 
   _maybeStartSessionFromBuffer(deviceData, timestamp) {
@@ -300,6 +582,19 @@ export class FitnessSession {
     const eligible = this._isValidPreSessionSample(deviceData);
     if (eligible) {
       this._preSessionBuffer.push({ ...deviceData, timestamp });
+    } else if (!eligible && this._preSessionBuffer.length === 0) {
+      // Log why sample was rejected (throttled to avoid spam)
+      if (!this._lastRejectionLogAt || (timestamp - this._lastRejectionLogAt) > 3000) {
+        this._lastRejectionLogAt = timestamp;
+        console.warn('[FitnessSession][buffer_rejected]', {
+          deviceId: deviceData?.deviceId || deviceData?.id,
+          profile: deviceData?.profile || deviceData?.type,
+          hasData: !!deviceData?.data,
+          dataKeys: deviceData?.data ? Object.keys(deviceData.data) : [],
+          hasComputedHR: deviceData?.data?.ComputedHeartRate != null,
+          hasHeartRate: deviceData?.heartRate != null || deviceData?.heart_rate != null
+        });
+      }
     }
     const count = this._preSessionBuffer.length;
     const remaining = Math.max(0, (this._preSessionThreshold || 3) - count);
@@ -312,14 +607,28 @@ export class FitnessSession {
           eligible,
           bufferedCount: count,
           remaining,
-          threshold: this._preSessionThreshold || 3
+          threshold: this._preSessionThreshold || 3,
+          lastHr: deviceData?.heartRate
+            || deviceData?.heart_rate
+            || deviceData?.data?.heartRate
+            || deviceData?.data?.heart_rate
+            || deviceData?.data?.ComputedHeartRate
+            || null,
+          profile: deviceData?.profile || deviceData?.type || deviceData?.data?.profile || null
         });
         this._lastPreSessionLogAt = timestamp;
       }
       return false;
     }
 
-    const started = this.ensureStarted();
+    this._bufferThresholdMet = true;
+    console.warn('[FitnessSession][buffer_threshold_met]', {
+      bufferedCount: count,
+      threshold: this._preSessionThreshold || 3,
+      firstIds: this._preSessionBuffer.slice(0, 3).map((s) => s?.deviceId || s?.id || null)
+    });
+    const started = this.ensureStarted({ reason: 'buffer_threshold_met' });
+    this._bufferThresholdMet = false;
     this._preSessionBuffer = [];
     return started;
   }
@@ -507,8 +816,13 @@ export class FitnessSession {
     return null;
   }
 
-  ensureStarted() {
+  ensureStarted(options = {}) {
+    const { force = false, reason = 'unknown' } = options;
     if (this.sessionId) return false;
+    if (!force && !this._bufferThresholdMet) {
+      this._log('ensure_started_blocked', { reason: 'pre_session_threshold_not_met', requestReason: reason });
+      return false;
+    }
     const nowDate = new Date();
     const now = nowDate.getTime();
     this.sessionTimestamp = formatSessionId(nowDate);
@@ -516,6 +830,12 @@ export class FitnessSession {
     this.startTime = now;
     this.lastActivityTime = now;
     this.endTime = null;
+    
+    console.warn('[FitnessSession][session_started]', {
+      sessionId: this.sessionId,
+      reason,
+      timestamp: now
+    });
     this.timebase.startAbsMs = now;
     this.timebase.intervalCount = 0;
     this.timebase.intervalMs = this.timebase.intervalMs || 5000;
@@ -558,7 +878,7 @@ export class FitnessSession {
     this.snapshot.zoneConfig = null;
     this.screenshots.captures = [];
     
-    this._log('start', { sessionId: this.sessionId });
+    this._log('start', { sessionId: this.sessionId, reason });
     
     if (!this.treasureBox) {
       this.treasureBox = new FitnessTreasureBox(this);
@@ -787,13 +1107,12 @@ export class FitnessSession {
     const intervalSeconds = intervalMs / 1000;
 
     const currentTickIndex = this.timeline.timebase?.tickCount ?? 0;
-    const users = this.userManager.getAllUsers();
-    users.forEach((user) => {
-      const staged = stageUserEntry(user);
-      if (staged) {
-        userMetricMap.set(staged.slug, staged);
-      }
-    });
+    
+    // CRITICAL FIX: Don't pre-populate userMetricMap with ALL users
+    // Only add users when their devices are processed below
+    // This prevents creating 15 users with null HR when only 3 have devices
+    // The old approach: const users = this.userManager.getAllUsers(); users.forEach(...)
+    // New approach: users are added on-demand when devices map to them
 
     // Track users whose devices are inactive (for syncing chart dropout with sidebar)
     const deviceInactiveUsers = new Set();
@@ -886,6 +1205,21 @@ export class FitnessSession {
     // CRITICAL: Only count users who received FRESH device data this tick
     // User.getMetricsSnapshot() returns cached/stale heartRate which causes false positives
     const currentTickActiveHR = new Set();
+    
+    // DEBUG: Log device-to-user mapping state
+    if (currentTickIndex < 3 || currentTickIndex % 10 === 0) {
+      const usersWithData = Array.from(userMetricMap.entries())
+        .filter(([_, e]) => e?._hasDeviceDataThisTick)
+        .map(([slug, e]) => ({ slug, hr: e?.metrics?.heartRate }));
+      console.warn('[FitnessSession][tick]', {
+        tick: currentTickIndex,
+        devices: devices.length,
+        activeDevices: devices.filter(d => !d.inactiveSince).length,
+        userMapSize: userMetricMap.size,
+        usersWithDeviceData: usersWithData.length,
+        users: usersWithData
+      });
+    }
     
     // First pass: identify who has valid HR data this tick FROM DEVICE
     userMetricMap.forEach((entry, slug) => {
@@ -990,6 +1324,23 @@ export class FitnessSession {
       this.treasureBox.processTick(currentTickIndex, currentTickActiveHR, { slugifyId });
       
       const treasureSummary = this.treasureBox.summary;
+
+    // Chart diagnostics: log once if roster exists but no timeline series present after ticks
+    if (!this._chartDebugLogged.noSeries) {
+      const rosterCount = Array.isArray(this.roster) ? this.roster.length : 0;
+      const tickCount = Number(this.timeline?.timebase?.tickCount) || 0;
+      const seriesCount = this.timeline && this.timeline.series ? Object.keys(this.timeline.series).length : 0;
+      if (rosterCount > 0 && tickCount >= 1 && seriesCount === 0) {
+        this._chartDebugLogged.noSeries = true;
+        this._log('chart_no_series', {
+          rosterCount,
+          tickCount,
+          seriesCount,
+          timebaseIntervalMs: this.timeline?.timebase?.intervalMs,
+          sessionId: this.sessionId
+        });
+      }
+    }
       if (treasureSummary) {
         assignMetric('global:coins_total', treasureSummary.totalCoins);
       }
@@ -1271,6 +1622,9 @@ export class FitnessSession {
   _encodeSeries(series = {}, tickCount = null) {
     const encodeValue = (key, value) => {
       if (value == null) return null;
+      if (typeof value === 'number') {
+        return roundValue(key, value);
+      }
       const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
       if (key.includes('zone')) {
         if (typeof normalized === 'string') {
@@ -1286,32 +1640,37 @@ export class FitnessSession {
       for (let i = 0; i < arr.length; i += 1) {
         const value = encodeValue(key, arr[i]);
         const last = encoded[encoded.length - 1];
-        if (last && last[0] === value) {
+
+        // Compact RLE:
+        // - bare value for count=1
+        // - [value, count] for repeats
+        if (Array.isArray(last) && last[0] === value) {
           last[1] += 1;
+        } else if (last === value) {
+          encoded[encoded.length - 1] = [value, 2];
         } else {
-          encoded.push([value, 1]);
+          encoded.push(value);
         }
       }
       return encoded;
     };
 
     const encodedSeries = {};
-    const seriesMeta = {};
     Object.entries(series).forEach(([key, arr]) => {
       if (!Array.isArray(arr)) {
         encodedSeries[key] = arr;
         return;
       }
+
+      // Empty-series filtering: do not persist all-null/empty series.
+      if (!arr.length || arr.every((v) => v == null)) {
+        return;
+      }
+
       const rle = runLengthEncode(key, arr);
       encodedSeries[key] = JSON.stringify(rle);
-      seriesMeta[key] = {
-        encoding: 'rle',
-        originalLength: arr.length,
-        encodedLength: rle.length,
-        tickCount
-      };
     });
-    return { encodedSeries, seriesMeta };
+    return { encodedSeries };
   }
 
   _validateSessionPayload(sessionData) {
@@ -1331,7 +1690,7 @@ export class FitnessSession {
 
     const roster = Array.isArray(sessionData.roster) ? sessionData.roster : [];
     const series = sessionData.timeline?.series || {};
-    const tickCount = Number(sessionData.timeline?.timebase?.tickCount);
+    const tickCount = Number(sessionData.timeline?.timebase?.tickCount) || 0;
     const hasUserSeries = Object.keys(series).some((key) => typeof key === 'string' && key.startsWith('user:'));
     const deviceAssignments = Array.isArray(sessionData.deviceAssignments)
       ? sessionData.deviceAssignments
@@ -1378,21 +1737,9 @@ export class FitnessSession {
       });
     }
 
-    // Drop completely empty signals (all null/zero) per series and warn instead of failing the whole session
-    const emptySeriesEntries = [];
-    Object.entries(series).forEach(([key, arr]) => {
-      if (!Array.isArray(arr) || arr.length === 0) return;
-      const allEmpty = arr.every((v) => v == null || v === 0);
-      if (allEmpty) {
-        emptySeriesEntries.push({ key, length: arr.length });
-        delete series[key];
-      }
-    });
-    if (emptySeriesEntries.length) {
-      sessionData._persistWarnings = sessionData._persistWarnings || [];
-      emptySeriesEntries.forEach((entry) => {
-        sessionData._persistWarnings.push({ reason: 'series-empty-signal', ...entry });
-      });
+    // CRITICAL: Require minimum ticks to prevent useless 1-tick ghost sessions
+    if (tickCount < 3) {
+      return { ok: false, reason: 'insufficient-ticks', tickCount };
     }
 
     const { ok: lengthsOk, issues } = FitnessTimeline.validateSeriesLengths(sessionData.timeline?.timebase || {}, series);
@@ -1414,46 +1761,154 @@ export class FitnessSession {
   }
 
   _persistSession(sessionData, { force = false } = {}) {
-    if (!sessionData) return;
-    if (this._saveTriggered && !force) return;
+    if (!sessionData) {
+      console.warn('[FitnessSession][persist] No session data');
+      return false;
+    }
+    if (this._saveTriggered && !force) {
+      console.warn('[FitnessSession][persist] Save already triggered');
+      return false;
+    }
     const validation = this._validateSessionPayload(sessionData);
+    console.warn('[FitnessSession][persist] Validation:', validation);
     if (!validation?.ok) {
       this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
       return false;
     }
-    if (Array.isArray(sessionData._persistWarnings) && sessionData._persistWarnings.length) {
-      sessionData._persistWarnings.forEach((warn) => {
-        this._log('persist_validation_warn', warn);
+
+    // Build a persistence payload without mutating live session state.
+    const timezone = resolvePersistTimezone();
+    const numericSessionId = deriveNumericSessionId(sessionData.sessionId);
+    const sessionDate = deriveSessionDate(numericSessionId);
+    const startReadable = toReadable(sessionData.startTime, timezone);
+    const endReadable = toReadable(sessionData.endTime, timezone);
+    const durationSeconds = Number.isFinite(sessionData.durationMs)
+      ? Math.round(sessionData.durationMs / 1000)
+      : null;
+
+    const sanitizedRoster = sanitizeRosterForPersist(sessionData.roster);
+    const participants = buildParticipantsForPersist(sanitizedRoster, sessionData.deviceAssignments);
+
+    const persistSessionData = {
+      ...sessionData,
+      version: 2,
+      timezone,
+      startTime: startReadable,
+      endTime: endReadable,
+
+      // v2 structural block
+      session: {
+        ...(numericSessionId ? { id: String(numericSessionId) } : {}),
+        ...(sessionDate ? { date: sessionDate } : {}),
+        ...(startReadable ? { start: startReadable } : {}),
+        ...(endReadable ? { end: endReadable } : {}),
+        ...(durationSeconds != null ? { duration_seconds: durationSeconds } : {})
+      },
+
+      // v2 participants keyed object
+      participants
+    };
+    if (persistSessionData.timeline && typeof persistSessionData.timeline === 'object') {
+      persistSessionData.timeline = { ...persistSessionData.timeline };
+    }
+
+    // Convert event timestamps to human-readable strings and build a v2 events array.
+    const v2Events = [];
+    if (persistSessionData.timeline && Array.isArray(persistSessionData.timeline.events)) {
+      persistSessionData.timeline.events = persistSessionData.timeline.events.map((evt) => {
+        if (!evt || typeof evt !== 'object') return evt;
+        const rawTs = Number(evt.timestamp);
+        const readableTs = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : (typeof evt.timestamp === 'string' ? evt.timestamp : null);
+        if (readableTs) {
+          v2Events.push({
+            at: readableTs,
+            type: evt.type,
+            data: evt.data ?? null
+          });
+        }
+        return {
+          ...evt,
+          timestamp: readableTs || evt.timestamp
+        };
       });
     }
+
+    // Move voice memos into events and remove top-level voiceMemos from persisted payload.
+    const voiceMemos = Array.isArray(sessionData.voiceMemos) ? sessionData.voiceMemos : [];
+    voiceMemos.forEach((memo) => {
+      if (!memo || typeof memo !== 'object') return;
+      const rawTs = Number(memo.createdAt ?? memo.startedAt ?? memo.endedAt);
+      const at = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : null;
+      v2Events.push({
+        ...(at ? { at } : {}),
+        type: 'voice_memo',
+        data: {
+          id: memo.memoId ?? null,
+          duration_seconds: Number.isFinite(memo.durationSeconds) ? memo.durationSeconds : null,
+          transcript: memo.transcriptClean ?? memo.transcript ?? null
+        }
+      });
+    });
+
+    if (v2Events.length) {
+      persistSessionData.events = v2Events;
+    }
+
+    // Restructure timeline with v2 fields (keep legacy timebase for compatibility).
+    if (persistSessionData.timeline && typeof persistSessionData.timeline === 'object') {
+      const intervalMs = Number(persistSessionData.timeline?.timebase?.intervalMs);
+      const tickCount = Number(persistSessionData.timeline?.timebase?.tickCount);
+      persistSessionData.timeline.interval_seconds = Number.isFinite(intervalMs) ? Math.round(intervalMs / 1000) : null;
+      persistSessionData.timeline.tick_count = Number.isFinite(tickCount) ? tickCount : null;
+      persistSessionData.timeline.encoding = 'rle';
+    }
+
+    // Remove legacy duplicates / noisy sections from persisted payload.
+    delete persistSessionData.roster;
+    delete persistSessionData.voiceMemos;
+    delete persistSessionData.deviceAssignments;
+    delete persistSessionData.timebase;
+    delete persistSessionData.events; // legacy top-level events (timeline.events is the source of truth)
+    if (v2Events.length) {
+      persistSessionData.events = v2Events;
+    }
+
     // Encode series for compact, deterministic storage while keeping readability (stringified RLE)
-    if (sessionData.timeline && sessionData.timeline.series) {
-      const tickCount = Number(sessionData.timeline?.timebase?.tickCount);
-      const rawSeries = sessionData.timeline.series;
+    if (persistSessionData.timeline && persistSessionData.timeline.series) {
+      const tickCount = Number(persistSessionData.timeline?.timebase?.tickCount);
+      const rawSeries = persistSessionData.timeline.series;
       const rawKeys = rawSeries && typeof rawSeries === 'object' ? Object.keys(rawSeries) : [];
       this._log('persist_series_encode_before', {
-        sessionId: sessionData.sessionId || this.sessionId,
+        sessionId: persistSessionData.sessionId || this.sessionId,
         seriesCount: rawKeys.length,
         tickCount,
         sampleKeys: rawKeys.slice(0, 5)
       });
-      const { encodedSeries, seriesMeta } = this._encodeSeries(sessionData.timeline.series, tickCount);
-      const encodedKeys = Object.keys(encodedSeries || {});
+      const { encodedSeries } = this._encodeSeries(persistSessionData.timeline.series, tickCount);
+
+      const mappedSeries = mapSeriesKeysForPersist(encodedSeries);
+      const encodedKeys = Object.keys(mappedSeries || {});
       const droppedKeys = rawKeys.filter((key) => !Object.prototype.hasOwnProperty.call(encodedSeries || {}, key));
       this._log('persist_series_encode_after', {
-        sessionId: sessionData.sessionId || this.sessionId,
+        sessionId: persistSessionData.sessionId || this.sessionId,
         encodedCount: encodedKeys.length,
         droppedKeys: droppedKeys.slice(0, 5),
         wasEmpty: encodedKeys.length === 0,
         tickCount
       });
-      sessionData.timeline.series = encodedSeries;
-      sessionData.timeline.seriesMeta = seriesMeta;
+      persistSessionData.timeline.series = mappedSeries;
     }
+    const seriesSample = persistSessionData.timeline?.series ? Object.entries(persistSessionData.timeline.series).slice(0, 2) : [];
+    console.warn('[FitnessSession][persist-pre-api]', {
+      sessionId: persistSessionData.sessionId,
+      hasTimeline: !!persistSessionData.timeline,
+      seriesKeys: persistSessionData.timeline?.series ? Object.keys(persistSessionData.timeline.series).length : 0,
+      seriesSample: seriesSample.map(([k, v]) => [k, typeof v, v?.substring?.(0, 50)])
+    });
     this._lastAutosaveAt = Date.now();
     this._saveTriggered = true;
     const persistFn = this._persistApi || DaylightAPI;
-    persistFn('api/fitness/save_session', { sessionData }, 'POST')
+    persistFn('api/fitness/save_session', { sessionData: persistSessionData }, 'POST')
     .then(resp => {
       // console.log('Fitness session saved', resp);
     }).catch(err => {
@@ -1534,6 +1989,7 @@ export class FitnessSession {
       const now = Date.now();
       if (this._lastAutosaveAt && (now - this._lastAutosaveAt) < this._autosaveIntervalMs) return;
     }
+    console.warn('[FitnessSession][autosave]', { sessionId: this.sessionId, force });
     this._maybeTickTimeline();
     const snapshot = this.summary;
     if (!snapshot) return;

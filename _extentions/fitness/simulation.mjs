@@ -37,7 +37,7 @@ import { loadFile } from '../../backend/lib/io.mjs';
 // Configuration
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
 const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
-const SIMULATION_DURATION = 180 * 1000; // 3 minutes in milliseconds
+const SIMULATION_DURATION = 30 * 60 * 1000; // 3 minutes in milliseconds
 const UPDATE_INTERVAL = 2000; // Send data every 2 seconds
 
 // Initialize config using the new framework
