@@ -3,6 +3,10 @@
  * @module journalist/application/usecases/HandleSlashCommand
  * 
  * Routes slash commands to appropriate use cases.
+ * Supported commands:
+ *   /prompt - Start a new conversation topic
+ *   /yesterday - Trigger morning debrief for yesterday
+ *   /counsel - Get therapist-style analysis and insights
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
@@ -13,15 +17,17 @@ import { createLogger } from '../../../../_lib/logging/index.mjs';
 export class HandleSlashCommand {
   #initiateJournalPrompt;
   #generateTherapistAnalysis;
-  #reviewJournalEntries;
-  #sendQuizQuestion;
+  #generateMorningDebrief;
+  #sendMorningDebrief;
+  #messagingGateway;
   #logger;
 
   constructor(deps) {
     this.#initiateJournalPrompt = deps.initiateJournalPrompt;
     this.#generateTherapistAnalysis = deps.generateTherapistAnalysis;
-    this.#reviewJournalEntries = deps.reviewJournalEntries;
-    this.#sendQuizQuestion = deps.sendQuizQuestion;
+    this.#generateMorningDebrief = deps.generateMorningDebrief;
+    this.#sendMorningDebrief = deps.sendMorningDebrief;
+    this.#messagingGateway = deps.messagingGateway;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'journalist' });
   }
 
@@ -30,13 +36,14 @@ export class HandleSlashCommand {
    * @param {Object} input
    * @param {string} input.chatId
    * @param {string} input.command - Command with or without leading /
+   * @param {string} [input.userId] - User ID for debrief
    */
   async execute(input) {
-    const { chatId, command } = input;
+    const { chatId, command, userId } = input;
 
     // Parse command (strip leading /)
     const cmd = command.replace(/^\//, '').toLowerCase().trim();
-    const [baseCmd, ...args] = cmd.split(/\s+/);
+    const [baseCmd] = cmd.split(/\s+/);
 
     this.#logger.debug('command.slash.start', { chatId, command: baseCmd });
 
@@ -44,50 +51,66 @@ export class HandleSlashCommand {
       let result;
 
       switch (baseCmd) {
-        case 'journal':
         case 'prompt':
         case 'start':
+          // Start a new conversation topic
           if (this.#initiateJournalPrompt) {
-            result = await this.#initiateJournalPrompt.execute({ chatId });
+            result = await this.#initiateJournalPrompt.execute({ 
+              chatId,
+              instructions: 'change_subject',
+            });
           }
           break;
 
-        case 'analyze':
-        case 'analysis':
+        case 'yesterday':
+          // Trigger morning debrief - need to generate first, then send
+          if (this.#generateMorningDebrief && this.#sendMorningDebrief) {
+            // Step 1: Generate the debrief
+            const debrief = await this.#generateMorningDebrief.execute({
+              username: userId || 'kckern', // TODO: proper user resolution
+              date: null // defaults to yesterday
+            });
+            
+            // Step 2: Send to Telegram
+            result = await this.#sendMorningDebrief.execute({ 
+              conversationId: chatId,
+              debrief
+            });
+          } else {
+            // Fallback message if debrief not available
+            if (this.#messagingGateway) {
+              await this.#messagingGateway.sendMessage(
+                chatId,
+                '📅 Morning debrief is not configured yet.',
+                {}
+              );
+            }
+            result = { success: false, error: 'Debrief not available' };
+          }
+          break;
+
+        case 'counsel':
         case 'therapist':
+        case 'analyze':
+          // Therapist-style analysis
           if (this.#generateTherapistAnalysis) {
             result = await this.#generateTherapistAnalysis.execute({ chatId });
           }
           break;
 
-        case 'review':
-        case 'history':
-          if (this.#reviewJournalEntries) {
-            result = await this.#reviewJournalEntries.execute({ chatId });
-          }
-          break;
-
-        case 'quiz':
-          if (this.#sendQuizQuestion) {
-            const category = args[0]; // Optional category
-            result = await this.#sendQuizQuestion.execute({ chatId, category });
-          }
-          break;
-
-        case 'yesterday':
-          if (this.#initiateJournalPrompt) {
-            result = await this.#initiateJournalPrompt.execute({ 
-              chatId, 
-              instructions: 'yesterday',
-            });
-          }
-          break;
-
         default:
-          // Default to journal prompt
-          if (this.#initiateJournalPrompt) {
-            result = await this.#initiateJournalPrompt.execute({ chatId });
+          // Unknown command - show help
+          if (this.#messagingGateway) {
+            await this.#messagingGateway.sendMessage(
+              chatId,
+              '📝 Available commands:\n' +
+              '/prompt - Start a new conversation topic\n' +
+              '/yesterday - Review yesterday\'s activities\n' +
+              '/counsel - Get insights and observations',
+              {}
+            );
           }
+          result = { success: true, action: 'help' };
           break;
       }
 

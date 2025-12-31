@@ -14,6 +14,8 @@ export const PromptType = Object.freeze({
   MULTIPLE_CHOICE: 'multiple_choice',
   EVALUATE_RESPONSE: 'evaluate_response',
   THERAPIST_ANALYSIS: 'therapist_analysis',
+  CONVERSATIONAL: 'conversational',
+  CONVERSATIONAL_CHOICES: 'conversational_choices',
 });
 
 /**

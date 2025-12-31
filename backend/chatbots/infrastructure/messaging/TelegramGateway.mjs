@@ -81,7 +81,12 @@ export class TelegramGateway {
         throw new Error(response.data.description || 'Unknown Telegram error');
       }
 
-      this.#logger.debug('telegram.api.response', { method, success: true });
+      this.#logger.debug('telegram.api.response', { 
+        method, 
+        success: true,
+        hasResult: !!response.data.result,
+        resultKeys: response.data.result ? Object.keys(response.data.result).slice(0, 10) : []
+      });
       return response.data.result;
     } catch (error) {
       // Handle rate limiting
@@ -304,22 +309,60 @@ export class TelegramGateway {
       text,
     };
 
-    if (options.parseMode) {
-      params.parse_mode = options.parseMode;
+    if (options.parseMode || options.parse_mode) {
+      params.parse_mode = options.parseMode || options.parse_mode;
     }
 
     if (options.choices) {
       params.reply_markup = this.#buildKeyboard(options.choices, options.inline);
+    } else if (options.reply_markup) {
+      // Allow direct reply_markup passthrough
+      params.reply_markup = options.reply_markup;
     } else if (options.removeKeyboard) {
       params.reply_markup = { remove_keyboard: true };
     }
 
     const result = await this.#callApi('sendMessage', params);
-    const messageId = MessageId.from(result.message_id);
+    
+    // Validate Telegram response has message_id
+    if (!result || !result.message_id) {
+      this.#logger.error('telegram.sendMessage.invalid-response', { 
+        hasResult: !!result,
+        resultKeys: result ? Object.keys(result) : [],
+        result 
+      });
+      throw new Error('Telegram API did not return message_id');
+    }
+    
+    // Convert to MessageId domain object (or use raw value if conversion fails)
+    let messageId;
+    try {
+      messageId = MessageId.from(result.message_id);
+      // MessageId.from might return null/undefined, use raw value as fallback
+      if (!messageId) {
+        this.#logger.warn('telegram.messageId.conversion-failed', { 
+          rawMessageId: result.message_id 
+        });
+        messageId = String(result.message_id);
+      }
+    } catch (error) {
+      this.#logger.warn('telegram.messageId.conversion-error', { 
+        rawMessageId: result.message_id,
+        error: error.message 
+      });
+      // Fallback to raw string value
+      messageId = String(result.message_id);
+    }
 
     if (options.saveMessage !== false) {
       await this.#saveToHistory(chatId, messageId, text, options.foreignKey);
     }
+
+    this.#logger.debug('telegram.sendMessage.returning', { 
+      messageId,
+      messageIdType: typeof messageId,
+      messageIdValue: messageId?.value || messageId
+    });
 
     return { messageId };
   }

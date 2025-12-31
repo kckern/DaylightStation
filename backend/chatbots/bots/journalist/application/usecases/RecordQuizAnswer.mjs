@@ -17,9 +17,10 @@ export class RecordQuizAnswer {
   #logger;
 
   constructor(deps) {
-    if (!deps.quizRepository) throw new Error('quizRepository is required');
+    // TODO: Make quizRepository required once it's implemented
+    // if (!deps.quizRepository) throw new Error('quizRepository is required');
 
-    this.#quizRepository = deps.quizRepository;
+    this.#quizRepository = deps.quizRepository || null;
     this.#messageQueueRepository = deps.messageQueueRepository;
     this.#logger = deps.logger || createLogger({ source: 'usecase', app: 'journalist' });
   }
@@ -36,6 +37,15 @@ export class RecordQuizAnswer {
     const { chatId, questionUuid, answer, date } = input;
 
     this.#logger.debug('quiz.recordAnswer.start', { chatId, questionUuid });
+
+    // If quizRepository is not available, log warning and skip
+    if (!this.#quizRepository) {
+      this.#logger.warn('quiz.recordAnswer.repository-not-available', { chatId, questionUuid });
+      return {
+        success: false,
+        error: 'Quiz repository not implemented yet',
+      };
+    }
 
     try {
       // 1. Create QuizAnswer entity

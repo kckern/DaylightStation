@@ -56,13 +56,15 @@ export class HandleCallbackResponse {
         return { success: true, action: 'change_subject' };
       }
 
-      if (callbackData === '❌ Cancel') {
-        // Cancel - just acknowledge
+      if (callbackData === '❌ Cancel' || callbackData === '❌ Close') {
+        // Cancel/Close - remove keyboard and acknowledge
         await this.#messagingGateway.updateMessage(chatId, messageId, {
-          text: '❌ Cancelled',
+          text: callbackData === '❌ Close' 
+            ? '✓ Session closed. Feel free to write anytime.'
+            : '❌ Cancelled',
           choices: null,
         });
-        return { success: true, action: 'cancelled' };
+        return { success: true, action: 'closed' };
       }
 
       // 2. Check if this is a quiz callback

@@ -58,7 +58,7 @@ export class ProcessVoiceEntry {
       // 2. Send transcription confirmation
       await this.#messagingGateway.sendMessage(
         chatId,
-        `🎤 I heard: "${transcription}"`,
+        `�️ Transcription:\n\n${transcription}`,
         {}
       );
 

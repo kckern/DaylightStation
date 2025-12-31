@@ -63,6 +63,27 @@ export function formatQuestion(text, prefix = '⏩') {
 }
 
 /**
+ * Format choices as keyboard with number emojis
+ * @param {string[]} choices - Array of choice strings
+ * @param {boolean} [addControls=true] - Add Change Subject and Cancel buttons
+ * @returns {string[][]} Keyboard layout
+ */
+export function formatChoicesAsKeyboard(choices, addControls = true) {
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return buildDefaultChoices();
+  }
+
+  const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+  const keyboard = choices.slice(0, 5).map((c, i) => [`${numberEmojis[i]} ${c}`]);
+  
+  if (addControls) {
+    keyboard.push(['🎲 Change Subject', '❌ Cancel']);
+  }
+  
+  return keyboard;
+}
+
+/**
  * Build default choices for questions
  * @returns {string[][]}
  */
@@ -126,6 +147,7 @@ export default {
   getNextUnsent,
   prepareNextQueueItem,
   formatQuestion,
+  formatChoicesAsKeyboard,
   buildDefaultChoices,
   createQueueFromQuestions,
   getUnsentCount,

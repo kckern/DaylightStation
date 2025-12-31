@@ -29,6 +29,23 @@ import { ExportJournalMarkdown } from './application/usecases/ExportJournalMarkd
 import { HandleSlashCommand } from './application/usecases/HandleSlashCommand.mjs';
 import { HandleSpecialStart } from './application/usecases/HandleSpecialStart.mjs';
 
+// Morning Debrief Use Cases (MVP)
+import { GenerateMorningDebrief } from './application/usecases/GenerateMorningDebrief.mjs';
+import { SendMorningDebrief } from './application/usecases/SendMorningDebrief.mjs';
+import { HandleCategorySelection } from './application/usecases/HandleCategorySelection.mjs';
+import { HandleDebriefResponse } from './application/usecases/HandleDebriefResponse.mjs';
+import { HandleSourceSelection } from './application/usecases/HandleSourceSelection.mjs';
+import { InitiateDebriefInterview } from './application/usecases/InitiateDebriefInterview.mjs';
+
+// Adapters
+import { LifelogAggregator } from './adapters/LifelogAggregator.mjs';
+
+// Infrastructure
+import { DebriefRepository } from './infrastructure/DebriefRepository.mjs';
+
+// Multi-user support
+import { UserResolver } from '../../_lib/users/UserResolver.mjs';
+
 /**
  * Journalist Container
  */
@@ -66,6 +83,23 @@ export class JournalistContainer {
   #handleSlashCommand;
   #handleSpecialStart;
   
+  // Morning Debrief Use Cases (MVP)
+  #generateMorningDebrief;
+  #sendMorningDebrief;
+  #handleCategorySelection;
+  #handleDebriefResponse;
+  #handleSourceSelection;
+  #initiateDebriefInterview;
+  
+  // Adapters
+  #lifelogAggregator;
+  
+  // Infrastructure Repositories
+  #debriefRepository;
+  
+  // Multi-user support
+  #userResolver;
+  
   // Repositories
   #quizRepository;
 
@@ -78,6 +112,7 @@ export class JournalistContainer {
    * @param {Object} [options.messageQueueRepository] - Message queue repository
    * @param {Object} [options.conversationStateStore] - Conversation state store
    * @param {Object} [options.quizRepository] - Quiz repository
+   * @param {Object} [options.userResolver] - UserResolver for multi-user support
    */
   constructor(config, options = {}) {
     this.#config = config;
@@ -91,6 +126,7 @@ export class JournalistContainer {
     this.#messageQueueRepository = options.messageQueueRepository;
     this.#conversationStateStore = options.conversationStateStore;
     this.#quizRepository = options.quizRepository;
+    this.#userResolver = options.userResolver;
   }
 
   // ==================== Infrastructure Getters ====================
@@ -123,6 +159,25 @@ export class JournalistContainer {
 
   getQuizRepository() {
     return this.#quizRepository;
+  }
+
+  getUserResolver() {
+    return this.#userResolver;
+  }
+
+  getDebriefRepository() {
+    if (!this.#debriefRepository) {
+      // Get data path from config or environment
+      const dataPath = process.env.path?.data 
+        ? `${process.env.path.data}/users/${this.#config.username || 'kckern'}/lifelog/journalist`
+        : '/Volumes/mounts/DockerDrive/Docker/DaylightStation/data/users/kckern/lifelog/journalist';
+      
+      this.#debriefRepository = new DebriefRepository({
+        logger: this.#logger,
+        dataPath
+      });
+    }
+    return this.#debriefRepository;
   }
 
   // ==================== Use Case Getters ====================
@@ -282,8 +337,9 @@ export class JournalistContainer {
       this.#handleSlashCommand = new HandleSlashCommand({
         initiateJournalPrompt: this.getInitiateJournalPrompt(),
         generateTherapistAnalysis: this.getGenerateTherapistAnalysis(),
-        reviewJournalEntries: this.getReviewJournalEntries(),
-        sendQuizQuestion: this.getSendQuizQuestion(),
+        generateMorningDebrief: this.getGenerateMorningDebrief(),
+        sendMorningDebrief: this.getSendMorningDebrief(),
+        messagingGateway: this.getMessagingGateway(),
         logger: this.#logger,
       });
     }
@@ -296,11 +352,98 @@ export class JournalistContainer {
         messagingGateway: this.getMessagingGateway(),
         messageQueueRepository: this.#messageQueueRepository,
         journalEntryRepository: this.#journalEntryRepository,
+        conversationStateStore: this.#conversationStateStore,
         initiateJournalPrompt: this.getInitiateJournalPrompt(),
+        initiateDebriefInterview: this.getInitiateDebriefInterview(),
         logger: this.#logger,
       });
     }
     return this.#handleSpecialStart;
+  }
+
+  // ==================== Morning Debrief Use Cases (MVP) ====================
+
+  getLifelogAggregator() {
+    if (!this.#lifelogAggregator) {
+      this.#lifelogAggregator = new LifelogAggregator({
+        logger: this.#logger,
+      });
+    }
+    return this.#lifelogAggregator;
+  }
+
+  getGenerateMorningDebrief() {
+    if (!this.#generateMorningDebrief) {
+      this.#generateMorningDebrief = new GenerateMorningDebrief({
+        lifelogAggregator: this.getLifelogAggregator(),
+        aiGateway: this.getAIGateway(),
+        logger: this.#logger,
+      });
+    }
+    return this.#generateMorningDebrief;
+  }
+
+  getSendMorningDebrief() {
+    if (!this.#sendMorningDebrief) {
+      this.#sendMorningDebrief = new SendMorningDebrief({
+        messagingGateway: this.getMessagingGateway(),
+        conversationStateStore: this.#conversationStateStore,
+        debriefRepository: this.getDebriefRepository(),
+        logger: this.#logger,
+      });
+    }
+    return this.#sendMorningDebrief;
+  }
+
+  getHandleCategorySelection() {
+    if (!this.#handleCategorySelection) {
+      this.#handleCategorySelection = new HandleCategorySelection({
+        messagingGateway: this.getMessagingGateway(),
+        conversationStateStore: this.#conversationStateStore,
+        logger: this.#logger,
+      });
+    }
+    return this.#handleCategorySelection;
+  }
+
+  getHandleDebriefResponse() {
+    if (!this.#handleDebriefResponse) {
+      this.#handleDebriefResponse = new HandleDebriefResponse({
+        messagingGateway: this.getMessagingGateway(),
+        conversationStateStore: this.#conversationStateStore,
+        debriefRepository: this.getDebriefRepository(),
+        userResolver: this.getUserResolver(),
+        logger: this.#logger,
+      });
+    }
+    return this.#handleDebriefResponse;
+  }
+
+  getHandleSourceSelection() {
+    if (!this.#handleSourceSelection) {
+      this.#handleSourceSelection = new HandleSourceSelection({
+        messagingGateway: this.getMessagingGateway(),
+        conversationStateStore: this.#conversationStateStore,
+        logger: this.#logger,
+      });
+    }
+    return this.#handleSourceSelection;
+  }
+
+  getInitiateDebriefInterview() {
+    if (!this.#initiateDebriefInterview) {
+      this.#initiateDebriefInterview = new InitiateDebriefInterview({
+        messagingGateway: this.getMessagingGateway(),
+        aiGateway: this.getAIGateway(),
+        journalEntryRepository: this.#journalEntryRepository,
+        messageQueueRepository: this.#messageQueueRepository,
+        debriefRepository: this.getDebriefRepository(),
+        conversationStateStore: this.#conversationStateStore,
+        userResolver: this.getUserResolver(),
+        logger: this.#logger,
+      });
+    }
+    return this.#initiateDebriefInterview;
   }
 
   // ==================== Lifecycle ====================

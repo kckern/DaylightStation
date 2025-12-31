@@ -24,3 +24,10 @@ export { ExportJournalMarkdown } from './ExportJournalMarkdown.mjs';
 // Command use cases
 export { HandleSlashCommand } from './HandleSlashCommand.mjs';
 export { HandleSpecialStart } from './HandleSpecialStart.mjs';
+
+// Morning debrief use cases
+export { GenerateMorningDebrief } from './GenerateMorningDebrief.mjs';
+export { SendMorningDebrief, SOURCE_ICONS } from './SendMorningDebrief.mjs';
+export { HandleCategorySelection } from './HandleCategorySelection.mjs';
+export { HandleDebriefResponse } from './HandleDebriefResponse.mjs';
+export { HandleSourceSelection } from './HandleSourceSelection.mjs';

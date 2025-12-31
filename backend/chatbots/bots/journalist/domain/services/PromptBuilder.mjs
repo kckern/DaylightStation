@@ -94,15 +94,23 @@ Be compassionate and constructive. Write 2-3 paragraphs.`;
  * @returns {Array<{role: string, content: string}>}
  */
 export function buildMultipleChoicePrompt(history, comment, question) {
-  const systemPrompt = `Generate 4-6 possible answers for the given journaling question. The answers should:
+  const systemPrompt = `Generate 4-5 short answer options for a journaling question.
 
-1. Cover a range of likely responses
-2. Include both positive and challenging options
-3. Be specific and relatable
-4. Allow for nuance (not just extremes)
+CRITICAL: Keep each option to 5-12 words MAX. No full sentences.
 
-Respond with ONLY a JSON array of strings, like:
-["Option 1", "Option 2", "Option 3", "Option 4"]`;
+Guidelines:
+- Be concise and casual
+- Cover a range of likely responses  
+- Include specific and vague options
+- One "other/none" type escape option
+
+Good examples (SHORT):
+["Had a nice walk", "Coffee with a friend", "Finally finished a project", "Nothing special", "Quality family time"]
+
+Bad examples (TOO LONG - don't do this):
+["I enjoyed a beautiful walk during my lunch break where I could soak up the sun"] ← way too long!
+
+Respond with ONLY a JSON array of 4-5 short strings.`;
 
   let userContent = `Question: ${question}`;
   if (comment) {
@@ -114,7 +122,7 @@ Respond with ONLY a JSON array of strings, like:
 
   return [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: userContent + '\n\nGenerate answer options:' },
+    { role: 'user', content: userContent + '\n\nGenerate SHORT answer options:' },
   ];
 }
 
@@ -153,8 +161,89 @@ export function getPromptBuilder(promptType) {
     [PromptType.THERAPIST_ANALYSIS]: buildTherapistPrompt,
     [PromptType.MULTIPLE_CHOICE]: buildMultipleChoicePrompt,
     [PromptType.EVALUATE_RESPONSE]: buildEvaluateResponsePrompt,
+    [PromptType.CONVERSATIONAL]: buildConversationalPrompt,
   };
   return builders[promptType] || null;
+}
+
+/**
+ * Build conversational journaling prompt
+ * Generates a natural follow-up response in one call
+ * @param {string} history - Conversation history
+ * @param {string} entry - User's latest entry
+ * @returns {Array<{role: string, content: string}>}
+ */
+export function buildConversationalPrompt(history, entry) {
+  const systemPrompt = `You are a curious friend helping someone reflect on their life through casual conversation. You have access to your recent conversation history.
+
+IMPORTANT: If the user asks about something from the conversation history (like "what did I have for lunch?"), ANSWER from the history! Don't deflect or ask them to recall - you should recall it for them.
+
+When the user shares something NEW, respond naturally with a follow-up that invites them to share more.
+
+Guidelines:
+- If user asks a recall question → Answer from history if available, or say "I don't see that in our recent chat"
+- If user shares something new → Ask a natural follow-up question
+- Be conversational and warm, but not over-the-top enthusiastic
+- Keep it brief - 1-2 sentences max
+- NO exclamation marks or cheerleading phrases
+
+Examples of RECALL questions (answer from history):
+- "What did I have for lunch?" → Look in history and answer: "You mentioned having sushi!"
+- "When did I go to the gym?" → Look in history and answer: "You said you went yesterday afternoon"
+
+Examples of NEW sharing (ask follow-up):
+- "Had lunch" → "Nice, what was on the menu?"
+- "Going camping this weekend" → "Sounds fun! Who's going with you?"
+
+Respond in this exact JSON format:
+{
+  "acknowledgment": "",
+  "question": "Your response here"
+}
+
+Put your ENTIRE response in the "question" field.`;
+
+  return [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `${history ? `Recent conversation:\n${history}\n\n` : ''}User just wrote:\n"${entry}"\n\nRespond naturally:` },
+  ];
+}
+
+/**
+ * Build multiple choice options for conversational follow-up
+ * @param {string} question - The follow-up question
+ * @param {string} context - User's recent entry for context
+ * @returns {Array<{role: string, content: string}>}
+ */
+export function buildConversationalChoicesPrompt(question, context) {
+  const systemPrompt = `Generate 4 short, PLAUSIBLE answers to a journaling follow-up question.
+
+CRITICAL RULES:
+- Each option MUST directly answer the specific question asked
+- Options should be things the user might actually say
+- Be specific to the topic (food, places, times, activities, etc.)
+- Keep options 2-6 words each
+- Include variety: specific answers, vague answers, "neither/other" type options
+
+EXAMPLES:
+
+Question: "What did you have for lunch?"
+Good: ["A sandwich", "Leftover pasta", "Just grabbed a coffee", "Skipped it actually"]
+Bad: ["Feeling reflective", "No interest today", "Torn between choices"] ← too abstract
+
+Question: "Where did you go?"
+Good: ["Downtown", "The usual coffee shop", "Just stayed home", "Nowhere special"]
+Bad: ["Contemplating options", "Mixed feelings"] ← doesn't answer WHERE
+
+Question: "How was the meeting?"
+Good: ["Pretty productive", "Dragged on forever", "Got cancelled", "Mixed bag"]
+
+Respond with ONLY a JSON array of 4 strings.`;
+
+  return [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `User said: "${context}"\n\nFollow-up question: "${question}"\n\nGenerate 4 plausible answers:` },
+  ];
 }
 
 export default {
@@ -163,5 +252,7 @@ export default {
   buildTherapistPrompt,
   buildMultipleChoicePrompt,
   buildEvaluateResponsePrompt,
+  buildConversationalPrompt,
+  buildConversationalChoicesPrompt,
   getPromptBuilder,
 };

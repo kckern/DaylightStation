@@ -22,6 +22,7 @@ import { createNutribotRouter } from './chatbots/bots/nutribot/server.mjs';
 import { NutribotContainer } from './chatbots/bots/nutribot/container.mjs';
 import { createJournalistRouter } from './chatbots/bots/journalist/server.mjs';
 import { JournalistContainer } from './chatbots/bots/journalist/container.mjs';
+import { JournalEntryRepository } from './chatbots/bots/journalist/repositories/JournalEntryRepository.mjs';
 import { createHomeBotRouter } from './chatbots/bots/homebot/server.mjs';
 import { HomeBotContainer } from './chatbots/bots/homebot/container.mjs';
 import { HouseholdRepository } from './chatbots/bots/homebot/repositories/HouseholdRepository.mjs';
@@ -35,6 +36,7 @@ import { NutriLogRepository } from './chatbots/bots/nutribot/repositories/NutriL
 import { NutriListRepository } from './chatbots/bots/nutribot/repositories/NutriListRepository.mjs';
 import { NutriCoachRepository } from './chatbots/bots/nutribot/repositories/NutriCoachRepository.mjs';
 import { FileConversationStateStore } from './chatbots/infrastructure/persistence/FileConversationStateStore.mjs';
+import { FileRepository } from './chatbots/infrastructure/persistence/FileRepository.mjs';
 import { CanvasReportRenderer } from './chatbots/adapters/http/CanvasReportRenderer.mjs';
 import { createLogger } from './chatbots/_lib/logging/index.mjs';
 import { DEFAULT_NUTRITION_GOALS } from './chatbots/bots/nutribot/config/NutriBotConfig.mjs';
@@ -425,11 +427,20 @@ const initJournalistRouter = async () => {
             logger
         });
         
+        // Create journal entry repository for message persistence
+        const journalEntryRepository = new JournalEntryRepository({
+            config,
+            userResolver,
+            logger
+        });
+        
         // Create container with dependencies
         const container = new JournalistContainer(config, {
             messagingGateway,
             aiGateway,
             conversationStateStore,
+            journalEntryRepository,
+            userResolver,
             logger
         });
         
@@ -610,19 +621,33 @@ apiRouter.get('/homebot/health', async (req, res) => {
     return res.status(503).json({ status: 'error', message: 'HomeBot not initialized' });
 });
 
-// Route /journalist to new chatbots framework
-apiRouter.all('/journalist', async (req, res, next) => {
+// Route /journalist/* to new chatbots framework
+apiRouter.all('/journalist/*', async (req, res, next) => {
     try {
         const router = await initJournalistRouter();
         if (router) {
-            // Rewrite path for the subrouter (expects /webhook)
-            req.url = '/webhook';
+            // Strip /journalist prefix for subrouter
+            req.url = req.url.replace('/journalist', '') || '/';
             return router(req, res, next);
         }
     } catch (error) {
         console.error('Journalist router error:', error.message);
     }
     // Fallback to stub
+    return processWebhookPayload(req, res);
+});
+
+// Route /journalist (no trailing path) to webhook
+apiRouter.all('/journalist', async (req, res, next) => {
+    try {
+        const router = await initJournalistRouter();
+        if (router) {
+            req.url = '/webhook';
+            return router(req, res, next);
+        }
+    } catch (error) {
+        console.error('Journalist router error:', error.message);
+    }
     return processWebhookPayload(req, res);
 });
 
