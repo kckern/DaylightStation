@@ -8,6 +8,7 @@ import { configService } from '../lib/config/ConfigService.mjs';
 import { userDataService } from '../lib/config/UserDataService.mjs';
 import { activateScene } from '../lib/homeassistant.mjs';
 import { createLogger } from '../lib/logging/logger.js';
+import moment from 'moment-timezone';
 
 const fitnessLogger = createLogger({ source: 'backend', app: 'fitness' });
 
@@ -26,6 +27,38 @@ const trimTrailingNulls = (series = []) => {
 const normalizeNumber = (value) => {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : null;
+};
+
+/**
+ * Normalize a timestamp field for persistence.
+ * Accepts either unix-ms numbers or human-readable strings.
+ *
+ * @param {unknown} value
+ * @returns {number|string|null}
+ */
+const normalizeTimestamp = (value) => {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed ? trimmed : null;
+    }
+    return normalizeNumber(value);
+};
+
+/**
+ * Parse a human-readable timestamp string (or pass through unix numbers).
+ * Used to maintain API compatibility while storing readable timestamps on disk.
+ *
+ * @param {unknown} value
+ * @param {string} timezone
+ * @returns {number|null}
+ */
+const parseToUnixMs = (value, timezone) => {
+    if (Number.isFinite(Number(value))) return Number(value);
+    if (typeof value !== 'string') return null;
+    const tz = timezone || moment.tz.guess() || 'UTC';
+    const parsed = moment.tz(value, 'YYYY-MM-DD h:mm:ss a', tz);
+    const ms = parsed?.valueOf?.();
+    return Number.isFinite(ms) ? ms : null;
 };
 
 /**
@@ -61,8 +94,10 @@ const normalizeTimelineForPersistence = (timeline = {}) => {
     const normalizedSeries = {};
     const sourceSeries = timeline.series && isPlainObject(timeline.series) ? timeline.series : {};
     Object.entries(sourceSeries).forEach(([key, values]) => {
-        if (!Array.isArray(values)) return;
-        normalizedSeries[key] = trimTrailingNulls(values);
+        // Accept both arrays (raw data) and strings (encoded RLE from frontend)
+        if (!Array.isArray(values) && typeof values !== 'string') return;
+        // If it's an array, trim trailing nulls; if string, pass through (already encoded)
+        normalizedSeries[key] = Array.isArray(values) ? trimTrailingNulls(values) : values;
     });
 
     const normalizedEvents = Array.isArray(timeline.events)
@@ -72,7 +107,7 @@ const normalizeTimelineForPersistence = (timeline = {}) => {
                 const type = typeof event.type === 'string' ? event.type.trim() : null;
                 if (!type) return null;
                 return {
-                    timestamp: normalizeNumber(event.timestamp),
+                    timestamp: normalizeTimestamp(event.timestamp),
                     offsetMs: normalizeNumber(event.offsetMs),
                     tickIndex: Number.isFinite(event.tickIndex) ? event.tickIndex : null,
                     type,
@@ -102,20 +137,37 @@ const normalizeTimelineForPersistence = (timeline = {}) => {
         events: normalizedEvents
     };
 
+    // Legacy noise fields should not be persisted.
+    delete normalizedTimeline.seriesMeta;
+
     return normalizedTimeline;
 };
 
 export const prepareSessionForPersistence = (sessionData = {}) => {
     if (!isPlainObject(sessionData)) return sessionData;
     const prepared = { ...sessionData };
+
+    // Legacy fields that should never be persisted.
+    delete prepared._persistWarnings;
+    delete prepared.seriesMeta;
+    delete prepared.voiceMemos;
+    delete prepared.deviceAssignments;
+
+    const hasTopLevelEvents = Array.isArray(prepared.events) && prepared.events.length > 0;
     if (prepared.timeline) {
         const normalizedTimeline = normalizeTimelineForPersistence(prepared.timeline);
         if (normalizedTimeline) {
             prepared.timeline = normalizedTimeline;
             prepared.timebase = normalizedTimeline.timebase;
-            prepared.events = normalizedTimeline.events;
+            if (!hasTopLevelEvents) {
+                prepared.events = normalizedTimeline.events;
+            }
         }
     }
+
+    // Roster is ephemeral; keep it only if explicitly needed by callers.
+    // If a client sends roster anyway, allow it through, but never persist warnings.
+
     return prepared;
 };
 
@@ -134,7 +186,35 @@ const stringifyTimelineSeriesForFile = (sessionData = {}) => {
             return;
         }
         if (typeof values === 'string') {
+            // Empty-series filtering: if the encoded string represents an all-null series, drop it.
+            try {
+                const parsed = JSON.parse(values);
+                if (!Array.isArray(parsed) || parsed.length === 0) {
+                    droppedKeys.push(key);
+                    return;
+                }
+                const hasAnyNonNull = parsed.some((entry) => {
+                    if (Array.isArray(entry) && entry.length >= 2) {
+                        const [val, count] = entry;
+                        const reps = Number.isFinite(count) && count > 0 ? count : 0;
+                        return reps > 0 && val != null;
+                    }
+                    return entry != null;
+                });
+                if (!hasAnyNonNull) {
+                    droppedKeys.push(key);
+                    return;
+                }
+            } catch (_) {
+                // Not JSON; keep as-is.
+            }
             serializedSeries[key] = values;
+            return;
+        }
+
+        // Empty-series filtering: drop empty/all-null series.
+        if (!values.length || values.every((v) => v == null)) {
+            droppedKeys.push(key);
             return;
         }
         try {
@@ -185,26 +265,73 @@ const resolveMediaRoot = () => {
 
 const resolveHouseholdId = (explicit) => explicit || configService.getDefaultHouseholdId();
 
+/**
+ * Returns true if a JSON-parsed series array contains no non-null values.
+ * Supports:
+ * - Compact RLE: [131,124,[146,14],[null,6],...]
+ * - Classic RLE: [[131,1],[124,1],[146,14],...]
+ * - Raw arrays:  [131,124,146,null,...]
+ *
+ * @param {unknown} parsed
+ * @returns {boolean}
+ */
+const isAllNullSeriesJson = (parsed) => {
+    if (!Array.isArray(parsed) || parsed.length === 0) return true;
+    for (const entry of parsed) {
+        if (Array.isArray(entry) && entry.length >= 2) {
+            const [val, count] = entry;
+            const reps = Number.isFinite(count) && count > 0 ? count : 0;
+            if (reps > 0 && val != null) return false;
+        } else {
+            if (entry != null) return false;
+        }
+    }
+    return true;
+};
+
 const decodeSeries = (series = {}) => {
     if (!isPlainObject(series)) return {};
     const decoded = {};
     Object.entries(series).forEach(([key, value]) => {
         if (typeof value === 'string') {
             try {
-                const rle = JSON.parse(value);
+                const parsed = JSON.parse(value);
+                if (!Array.isArray(parsed)) {
+                    decoded[key] = value;
+                    return;
+                }
+                if (isAllNullSeriesJson(parsed)) {
+                    return;
+                }
+
                 const arr = [];
-                rle.forEach((entry) => {
-                    if (!Array.isArray(entry) || entry.length < 2) return;
-                    const [val, count] = entry;
-                    const reps = Number.isFinite(count) && count > 0 ? count : 0;
-                    for (let i = 0; i < reps; i += 1) arr.push(val === undefined ? null : val);
+                parsed.forEach((entry) => {
+                    // [value, count] (classic or compact repeats)
+                    if (Array.isArray(entry) && entry.length >= 2) {
+                        const [val, count] = entry;
+                        const reps = Number.isFinite(count) && count > 0 ? count : 0;
+                        for (let i = 0; i < reps; i += 1) arr.push(val === undefined ? null : val);
+                        return;
+                    }
+
+                    // bare value (compact RLE singles OR raw arrays)
+                    arr.push(entry === undefined ? null : entry);
                 });
+
+                if (!arr.length || arr.every((v) => v == null)) {
+                    return;
+                }
+
                 decoded[key] = arr;
                 return;
             } catch (_) {
                 decoded[key] = value;
                 return;
             }
+        }
+
+        if (Array.isArray(value)) {
+            if (!value.length || value.every((v) => v == null)) return;
         }
         decoded[key] = value;
     });
@@ -220,12 +347,17 @@ const listSessionsForDate = (date, householdId) => {
     return files.map((name) => {
         const fullPath = path.join(sessionsDir, name);
         const data = loadFile(fullPath.replace(`${dataRoot}/`, '').replace(/\.ya?ml$/, '')) || {};
+        const tz = typeof data.timezone === 'string' ? data.timezone : (moment.tz.guess() || 'UTC');
+        const startTime = parseToUnixMs(data.startTime, tz);
+        const endTime = parseToUnixMs(data.endTime, tz);
         return {
             sessionId: data.sessionId || name.replace(/\.ya?ml$/, ''),
-            startTime: data.startTime || null,
-            endTime: data.endTime || null,
-            durationMs: data.durationMs || null,
-            rosterCount: Array.isArray(data.roster) ? data.roster.length : 0,
+            startTime: startTime || null,
+            endTime: endTime || null,
+            durationMs: Number.isFinite(Number(data.durationMs)) ? Number(data.durationMs) : (startTime && endTime ? Math.max(0, endTime - startTime) : null),
+            rosterCount: Array.isArray(data.roster) && data.roster.length
+                ? data.roster.length
+                : (data.participants && typeof data.participants === 'object' ? Object.keys(data.participants).length : 0),
             path: fullPath
         };
     }).sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
@@ -245,8 +377,41 @@ const loadSessionDetail = (sessionId, householdId) => {
     const filePath = candidates.find((p) => fs.existsSync(p));
     if (!filePath) return null;
     const data = loadFile(filePath.replace(`${dataRoot}/`, '').replace(/\.ya?ml$/, ''));
+
+    // Parse readable timestamps back to unix-ms for API responses.
+    if (data && typeof data === 'object') {
+        const tz = typeof data.timezone === 'string' ? data.timezone : (moment.tz.guess() || 'UTC');
+        const startMs = parseToUnixMs(data.startTime, tz);
+        const endMs = parseToUnixMs(data.endTime, tz);
+        if (startMs != null) data.startTime = startMs;
+        if (endMs != null) data.endTime = endMs;
+
+        if (data.timeline && typeof data.timeline === 'object' && Array.isArray(data.timeline.events)) {
+            data.timeline.events = data.timeline.events.map((evt) => {
+                if (!evt || typeof evt !== 'object') return evt;
+                const ts = parseToUnixMs(evt.timestamp, tz);
+                if (ts == null) return evt;
+                return { ...evt, timestamp: ts };
+            });
+        }
+    }
     if (data?.timeline?.series) {
         data.timeline.series = decodeSeries(data.timeline.series);
+    }
+
+    // Compatibility: synthesize roster array from v2 participants when roster missing.
+    if ((!Array.isArray(data?.roster) || data.roster.length === 0) && data?.participants && typeof data.participants === 'object') {
+        data.roster = Object.entries(data.participants)
+            .map(([slug, entry]) => {
+                if (!entry || typeof entry !== 'object') return null;
+                return {
+                    name: entry.display_name || slug,
+                    hrDeviceId: entry.hr_device || null,
+                    isGuest: entry.is_guest === true,
+                    isPrimary: entry.is_primary === true
+                };
+            })
+            .filter(Boolean);
     }
     return data;
 };

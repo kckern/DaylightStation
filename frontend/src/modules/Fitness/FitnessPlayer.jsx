@@ -960,6 +960,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       source: 'video_player',
       mediaId: currentMediaIdentity,
       title: media.title || media.label || null,
+      show: media.show || null,
+      season: media.season || null,
       plexId: media.plex || media.id || null,
       mediaKey: media.media_key || null,
       durationSeconds,

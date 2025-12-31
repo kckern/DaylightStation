@@ -14,7 +14,7 @@ export default defineConfig(({ command }) => ({
       console: 'terminal',  // Pipe console.log/warn/error to terminal
       output: ['terminal', 'console']  // Show in both places
     })
-  ],
+  ].filter(Boolean),
   css: {
     preprocessorOptions: {
       scss: {
