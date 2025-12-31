@@ -1,85 +1,51 @@
 .entropy-panel {
   width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  
-  h3 {
-    font-size: 0.9rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    opacity: 0.7;
-    margin: 0 0 0.5rem 0;
-    text-align: center;
-  }
 
   .entropy-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.75rem;
+    gap: 0.5rem;
+    height: 100%;
+    width: 100%;
   }
 
   .entropy-item {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
-    padding: 0.75rem;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
+    justify-content: center;
+    border-radius: 8px;
+    border: 2px solid transparent;
     transition: all 0.2s ease;
-    border: 1px solid transparent;
+    cursor: default;
+    min-height: 80px;
 
     &.status-green {
-      border-color: rgba(76, 175, 80, 0.3);
-      background: rgba(76, 175, 80, 0.1);
-      
-      .status-indicator {
-        color: #4caf50;
-      }
+      border-color: #40916c;
+      background: rgba(64, 145, 108, 0.15);
     }
 
     &.status-yellow {
-      border-color: rgba(255, 193, 7, 0.3);
-      background: rgba(255, 193, 7, 0.1);
-      
-      .status-indicator {
-        color: #ffc107;
-      }
+      border-color: #f4d35e;
+      background: rgba(244, 211, 94, 0.15);
     }
 
     &.status-red {
-      border-color: rgba(244, 67, 54, 0.3);
-      background: rgba(244, 67, 54, 0.1);
-      
-      .status-indicator {
-        color: #f44336;
-      }
+      border-color: #d90429;
+      background: rgba(217, 4, 41, 0.15);
     }
 
     .item-icon {
+      font-size: 2rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .item-value {
       font-size: 1.5rem;
-    }
-
-    .item-details {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-
-      .item-name {
-        font-size: 0.85rem;
-        font-weight: 600;
-        opacity: 0.9;
-      }
-
-      .item-label {
-        font-size: 0.75rem;
-        opacity: 0.7;
-      }
-    }
-
-    .status-indicator {
-      font-size: 1.2rem;
+      font-weight: 700;
+      opacity: 0.9;
     }
   }
 }

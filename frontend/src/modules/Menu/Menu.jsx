@@ -150,7 +150,11 @@ export function KeypadMenu({
 
   return (
     <div className="menu-items-container" ref={containerRef}>
-      <h2>{menuMeta.title || menuMeta.label || "Menu"}</h2>
+      <MenuHeader 
+        title={menuMeta.title || menuMeta.label || "Menu"} 
+        itemCount={menuItems.length}
+        image={menuMeta.image}
+      />
       <MenuItems
         items={menuItems}
         columns={5}
@@ -235,11 +239,16 @@ function useFetchMenuData(listInput, refreshToken = 0) {
           items: [],
         };
       }
-      const { title, image, kind, items } = await DaylightAPI(
+      const data = await DaylightAPI(
         `data/list/${target}${config ? `/${config}` : ""}`
       );
       if (canceled) return null;
-      return { title, image, kind, items };
+      return { 
+        title: data.title || data.label, 
+        image: data.image, 
+        kind: data.kind, 
+        items: data.items 
+      };
     }
 
     async function loadListData(input) {

@@ -3,6 +3,33 @@ import { DaylightAPI } from "../../lib/api.mjs";
 import "./Upcoming.scss";
 import moment from "moment";
 
+// Simple markdown parser for **bold** text
+function parseMarkdown(text) {
+  if (!text) return text;
+  
+  const parts = [];
+  let lastIndex = 0;
+  const regex = /\*\*(.*?)\*\*/g;
+  let match;
+  
+  while ((match = regex.exec(text)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    // Add bold text
+    parts.push(<strong key={match.index}>{match[1]}</strong>);
+    lastIndex = regex.lastIndex;
+  }
+  
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : text;
+}
+
 export default function Upcoming() {
   const cycleTimeMs = 5000;
   const animationDuration = 1000;
@@ -153,9 +180,9 @@ function MainItem({ item, className }) {
       {!!timeLabel && <h2>{timeLabel}</h2>}
       {!!locationLabel && <h3>{locationLabel}</h3>}
       {!!inXDays && <h4>{inXDays}</h4>}
-      {!!titleLabel && <p>{titleLabel} {!!subTitleLabel && <span><small
+      {!!titleLabel && <p>{parseMarkdown(titleLabel)} {!!subTitleLabel && <span><small
         style={{ opacity: 0.5, fontSize: "2rem", lineHeight: "2rem" }}
-      >{subTitleLabel}</small></span>}</p>}
+      >{parseMarkdown(subTitleLabel)}</small></span>}</p>}
      
     </div>
   );
@@ -183,7 +210,7 @@ function ListItem({ item, className }) {
         <span className="chip">
         {chipLabel}
         </span> 
-        {item.title}
+        {parseMarkdown(item.title)}
     </div>
   );
 }
