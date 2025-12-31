@@ -8,7 +8,7 @@
 export const nutritionExtractor = {
   source: 'nutrition',
   category: 'health',
-  filename: 'nutriday',
+  filename: 'nutrition/nutriday',
   
   /**
    * Extract nutrition data for a specific date
