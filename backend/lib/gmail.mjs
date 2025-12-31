@@ -44,7 +44,6 @@ const listMails = async (logger, job_id, targetUsername = null) => {
     }));
 
     log.info('harvest.gmail.messages', { jobId: job_id, count: messages.length });
-    const username = getDefaultUsername();
     // Save to user-namespaced location
     userSaveFile(username, 'gmail', messages);
     return messages;
