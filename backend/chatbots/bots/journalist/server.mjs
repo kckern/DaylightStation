@@ -18,6 +18,8 @@ import { createTelegramWebhookHandler } from '../../adapters/http/TelegramWebhoo
 import { JournalistInputRouter } from './adapters/JournalistInputRouter.mjs';
 import { journalistJournalHandler } from './handlers/journal.mjs';
 import { journalistTriggerHandler } from './handlers/trigger.mjs';
+import { handleMorningDebrief } from './handlers/morning.mjs';
+import { configService } from '../../../lib/config/ConfigService.mjs';
 
 /**
  * Create Journalist Express Router
@@ -63,6 +65,34 @@ export function createJournalistRouter(container, options = {}) {
 
   // Trigger endpoint
   router.get('/trigger', asyncHandler(journalistTriggerHandler(container)));
+
+  // Morning debrief endpoint (triggered by cron or manual)
+  router.get('/morning', asyncHandler(async (req, res) => {
+    const username = req.query.user || configService.getHeadOfHousehold();
+    const date = req.query.date || null; // Optional: specific date (YYYY-MM-DD)
+
+    if (!username) {
+      return res.status(400).json({
+        success: false,
+        error: 'No username specified and no default user configured'
+      });
+    }
+
+    // Get UserResolver from container (if available)
+    const userResolver = container.getUserResolver?.() || null;
+
+    const result = await handleMorningDebrief(
+      {
+        generateMorningDebrief: container.getGenerateMorningDebrief(),
+        sendMorningDebrief: container.getSendMorningDebrief(),
+        userResolver
+      },
+      username,
+      date
+    );
+
+    return res.status(result.success ? 200 : 500).json(result);
+  }));
 
   // Apply error handler
   router.use(errorHandlerMiddleware({ isWebhook: false }));

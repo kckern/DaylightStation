@@ -3,6 +3,7 @@
  * @module journalist/application/usecases/ProcessTextEntry
  * 
  * Main use case for processing text journal entries.
+ * Implements conversational journaling loop with active listening.
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
@@ -27,6 +28,8 @@ import {
   buildBiographerPrompt, 
   buildEvaluateResponsePrompt,
   buildMultipleChoicePrompt,
+  buildConversationalPrompt,
+  buildConversationalChoicesPrompt,
 } from '../../domain/services/PromptBuilder.mjs';
 
 /**
@@ -88,69 +91,138 @@ export class ProcessTextEntry {
       const history = await this.#loadHistory(chatId);
       const historyText = formatAsChat(history);
 
-      // 3. Check for existing queue
-      const queue = this.#messageQueueRepository 
-        ? await this.#messageQueueRepository.loadUnsentQueue(chatId)
-        : [];
+      // 3. Generate conversational response (acknowledgment + follow-up)
+      const response = await this.#generateConversationalResponse(historyText, text);
 
-      // 4. If queue exists, evaluate if we should continue
-      if (queue.length > 0) {
-        const shouldContinue = await this.#evaluateResponsePath(historyText, text, queue);
-        
-        if (shouldContinue) {
-          // Continue with queued questions
-          return this.#sendNextQueued(chatId, queue);
-        } else {
-          // Clear queue and generate new follow-up
-          if (this.#messageQueueRepository) {
-            await this.#messageQueueRepository.clearQueue(chatId);
-          }
-        }
-      }
-
-      // 5. Generate follow-up questions
-      const questions = await this.#generateFollowUp(historyText, text);
-
-      if (questions.length === 0) {
-        // No questions generated - send acknowledgment
+      if (!response) {
+        // Fallback: just acknowledge
         const { messageId: sentId } = await this.#messagingGateway.sendMessage(
           chatId,
-          '📝 Thanks for sharing.',
+          '📝 Noted.',
           {}
         );
+        
+        // Save bot response
+        if (this.#journalEntryRepository) {
+          const botMessage = ConversationMessage.createBotMessage({
+            messageId: sentId,
+            chatId,
+            text: '📝 Noted.',
+          });
+          await this.#journalEntryRepository.saveMessage?.(botMessage);
+        }
+        
         return { success: true, messageId: sentId };
       }
 
-      // 6. If multiple questions, queue them
-      if (questions.length > 1 && this.#messageQueueRepository) {
-        const queueItems = createQueueFromQuestions(chatId, questions.slice(1));
-        await this.#messageQueueRepository.saveToQueue(chatId, queueItems);
-      }
+      // 4. Generate multiple choice options for the follow-up question
+      const choices = await this.#generateConversationalChoices(response.question, text);
 
-      // 7. Generate choices for first question
-      const firstQuestion = questions[0];
-      const choices = await this.#generateMultipleChoices(historyText, text, firstQuestion);
+      // 5. Build message - use question as the full response (acknowledgment may be empty)
+      const message = response.acknowledgment 
+        ? `${response.acknowledgment}\n\n${response.question}`
+        : response.question;
 
-      // 8. Send question
-      const formattedQuestion = formatQuestion(firstQuestion, '📖');
+      // 6. Send with reply keyboard (attached to chat input)
       const { messageId: sentId } = await this.#messagingGateway.sendMessage(
         chatId,
-        formattedQuestion,
-        { choices, inline: true }
+        message,
+        { choices }
       );
 
-      this.#logger.info('textEntry.process.complete', { chatId, questionCount: questions.length });
+      // 7. Save bot response to history
+      if (this.#journalEntryRepository) {
+        const botMessage = ConversationMessage.createBotMessage({
+          messageId: sentId,
+          chatId,
+          text: message,
+        });
+        await this.#journalEntryRepository.saveMessage?.(botMessage);
+      }
+
+      this.#logger.info('textEntry.process.complete', { chatId });
 
       return {
         success: true,
         messageId: sentId,
-        prompt: firstQuestion,
-        queuedCount: questions.length - 1,
+        acknowledgment: response.acknowledgment,
+        question: response.question,
       };
     } catch (error) {
       this.#logger.error('textEntry.process.error', { chatId, error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Generate conversational response (acknowledgment + follow-up question)
+   * @private
+   */
+  async #generateConversationalResponse(history, entry) {
+    const prompt = buildConversationalPrompt(
+      truncateToLength(history, 2000),
+      entry
+    );
+
+    try {
+      const response = await this.#aiGateway.chat(prompt, { maxTokens: 150 });
+      
+      // Parse JSON response - extract from markdown code blocks if needed
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        this.#logger.warn('textEntry.conversational.noJsonFound', { response });
+        return null;
+      }
+      
+      const parsed = JSON.parse(jsonMatch[0]);
+      
+      // Accept response if question exists (acknowledgment may be empty)
+      if (parsed.question) {
+        return {
+          acknowledgment: parsed.acknowledgment || '',
+          question: parsed.question
+        };
+      }
+    } catch (error) {
+      this.#logger.warn('textEntry.conversational.parseFailed', { 
+        error: error.message 
+      });
+    }
+
+    return null;
+  }
+
+  /**
+   * Generate multiple choice options for conversational follow-up
+   * @private
+   */
+  async #generateConversationalChoices(question, context) {
+    const prompt = buildConversationalChoicesPrompt(question, context);
+
+    try {
+      const response = await this.#aiGateway.chat(prompt, { maxTokens: 100 });
+      
+      // Try to parse as JSON array
+      let choices = [];
+      try {
+        choices = JSON.parse(response);
+      } catch {
+        // Try to extract from markdown code block
+        const match = response.match(/\[[\s\S]*\]/);
+        if (match) {
+          choices = JSON.parse(match[0]);
+        }
+      }
+
+      if (Array.isArray(choices) && choices.length >= 2) {
+        return formatChoicesAsKeyboard(choices.slice(0, 4));
+      }
+    } catch (error) {
+      this.#logger.warn('textEntry.choices.parseFailed', { error: error.message });
+    }
+
+    // Fallback: generic options + close
+    return formatChoicesAsKeyboard(['Yes', 'No', 'Tell me more']);
   }
 
   /**
@@ -161,110 +233,8 @@ export class ProcessTextEntry {
     if (!this.#journalEntryRepository?.getMessageHistory) {
       return [];
     }
-    return this.#journalEntryRepository.getMessageHistory(chatId, 20);
-  }
-
-  /**
-   * Evaluate if response allows continuing queue
-   * @private
-   */
-  async #evaluateResponsePath(history, response, queue) {
-    const plannedQuestions = queue.map(q => q.queuedMessage);
-    const prompt = buildEvaluateResponsePrompt(
-      truncateToLength(history, 2000),
-      response,
-      plannedQuestions
-    );
-
-    const result = await this.#aiGateway.chat(prompt, { maxTokens: 10 });
-    return shouldContinueQueue(result);
-  }
-
-  /**
-   * Generate follow-up questions
-   * @private
-   */
-  async #generateFollowUp(history, entry) {
-    const prompt = buildBiographerPrompt(
-      truncateToLength(history, 3000),
-      entry
-    );
-
-    const response = await this.#aiGateway.chat(prompt, { maxTokens: 300 });
-    const questions = parseGPTResponse(response);
-
-    // Split compound questions
-    const allQuestions = [];
-    for (const q of questions) {
-      allQuestions.push(...splitMultipleQuestions(q));
-    }
-
-    return allQuestions.slice(0, 3); // Max 3 questions
-  }
-
-  /**
-   * Generate multiple choice options
-   * @private
-   */
-  async #generateMultipleChoices(history, comment, question) {
-    const prompt = buildMultipleChoicePrompt(
-      truncateToLength(history, 1500),
-      comment,
-      question
-    );
-
-    try {
-      const response = await this.#aiGateway.chat(prompt, { maxTokens: 200 });
-      const choices = parseGPTResponse(response);
-
-      if (choices.length >= 2) {
-        // Format as keyboard rows (one choice per row)
-        const keyboard = choices.slice(0, 5).map(c => [c]);
-        // Add default buttons
-        keyboard.push(...buildDefaultChoices());
-        return keyboard;
-      }
-    } catch (error) {
-      this.#logger.warn('textEntry.choiceGeneration.failed', { error: error.message });
-    }
-
-    // Fall back to default choices
-    return buildDefaultChoices();
-  }
-
-  /**
-   * Send next queued question
-   * @private
-   */
-  async #sendNextQueued(chatId, queue) {
-    const nextItem = getNextUnsent(queue);
-    if (!nextItem) {
-      return { success: true, queueEmpty: true };
-    }
-
-    // Generate choices
-    const history = await this.#loadHistory(chatId);
-    const historyText = formatAsChat(history);
-    const choices = await this.#generateMultipleChoices(historyText, '', nextItem.queuedMessage);
-
-    // Send
-    const formattedQuestion = formatQuestion(nextItem.queuedMessage, '⏩');
-    const { messageId } = await this.#messagingGateway.sendMessage(
-      chatId,
-      formattedQuestion,
-      { choices, inline: true }
-    );
-
-    // Mark as sent
-    if (this.#messageQueueRepository) {
-      await this.#messageQueueRepository.markSent(nextItem.uuid, messageId);
-    }
-
-    return {
-      success: true,
-      messageId,
-      fromQueue: true,
-    };
+    // Load up to 100 messages (roughly covers 7 days of active conversation)
+    return this.#journalEntryRepository.getMessageHistory(chatId, 100);
   }
 }
 

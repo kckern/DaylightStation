@@ -1,0 +1,209 @@
+/**
+ * Send Morning Debrief Use Case
+ * @module journalist/usecases/SendMorningDebrief
+ * 
+ * Sends the generated debrief to the user via Telegram with reply keyboard
+ */
+
+// Source icon mapping
+const SOURCE_ICONS = {
+  garmin: '⌚',
+  strava: '🏋️',
+  fitness: '🏃',
+  weight: '⚖️',
+  events: '📆',
+  github: '💻',
+  checkins: '📍',
+  reddit: '💬',
+};
+
+/**
+ * Send morning debrief to user
+ */
+export class SendMorningDebrief {
+  #messagingGateway;
+  #conversationStateStore;
+  #debriefRepository;
+  #logger;
+
+  /**
+   * @param {Object} deps
+   * @param {Object} deps.messagingGateway - Telegram gateway
+   * @param {Object} deps.conversationStateStore - State persistence
+   * @param {Object} deps.debriefRepository - Debrief persistence
+   * @param {Object} deps.logger - Logger instance
+   */
+  constructor(deps) {
+    this.#messagingGateway = deps.messagingGateway;
+    this.#conversationStateStore = deps.conversationStateStore;
+    this.#debriefRepository = deps.debriefRepository;
+    this.#logger = deps.logger;
+  }
+
+  /**
+   * Execute sending the debrief
+   * 
+   * @param {Object} input
+   * @param {string} input.conversationId - Telegram conversation ID
+   * @param {Object} input.debrief - Generated debrief data
+   * @returns {Object} Result with message ID
+   */
+  async execute(input) {
+    const { conversationId, debrief } = input;
+
+    this.#logger.info('debrief.send.start', {
+      conversationId,
+      success: debrief.success,
+      date: debrief.date
+    });
+
+    try {
+      // Handle fallback case (insufficient data or error)
+      if (!debrief.success) {
+        const message = debrief.fallbackPrompt;
+        const result = await this.#messagingGateway.sendMessage(conversationId, message);
+        
+        this.#logger.info('debrief.sent-fallback', {
+          conversationId,
+          reason: debrief.reason,
+          messageId: result.messageId
+        });
+
+        return {
+          success: true,
+          messageId: result.messageId,
+          fallback: true
+        };
+      }
+
+      // Build full message with summary (no "What would you like..." - buttons are self-explanatory)
+      // Format date as "Mon, 1 Jan 2025"
+      const dateObj = new Date(debrief.date + 'T00:00:00');
+      const formattedDate = dateObj.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        day: 'numeric', 
+        month: 'short', 
+        year: 'numeric' 
+      });
+      
+      const message = `📅 Yesterday (${formattedDate})
+
+${debrief.summary}`;
+
+      // Build main 3-button keyboard
+      const keyboard = this.#buildMainKeyboard();
+
+      // Send message with keyboard
+      const result = await this.#messagingGateway.sendMessage(conversationId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+
+      // Validate result before proceeding
+      if (!result || !result.messageId) {
+        throw new Error('Failed to send message - no message ID returned');
+      }
+
+      // Store debrief state for later retrieval (including lifelog for source dumps)
+      await this.#conversationStateStore.set(conversationId, {
+        activeFlow: 'morning_debrief',
+        debrief: {
+          date: debrief.date,
+          summary: debrief.summary,
+          questions: debrief.questions,
+          categories: debrief.categories,
+          sources: debrief.lifelog?._meta?.sources || [],
+          summaries: debrief.lifelog?.summaries || []
+        },
+        messageId: result.messageId
+      });
+
+      // Persist debrief to debriefs.yml (without questions - generated on-demand)
+      if (this.#debriefRepository) {
+        try {
+          await this.#debriefRepository.appendDebrief({
+            date: debrief.date,
+            timestamp: new Date().toISOString(),
+            summary: debrief.summary,
+            categories: debrief.categories,
+            sources: debrief.lifelog?._meta?.sources || [],
+            summaries: debrief.lifelog?.summaries || {} // Save source summaries for Details view
+          });
+        } catch (error) {
+          // Log but don't fail the whole operation
+          this.#logger.error('debrief.persist-error', {
+            date: debrief.date,
+            error: error.message
+          });
+        }
+      }
+
+      this.#logger.info('debrief.sent', {
+        conversationId,
+        date: debrief.date,
+        messageId: result.messageId,
+        sources: debrief.lifelog?._meta?.sources?.length || 0
+      });
+
+      return {
+        success: true,
+        messageId: result.messageId,
+        fallback: false
+      };
+
+    } catch (error) {
+      this.#logger.error('debrief.send.failed', {
+        conversationId,
+        error: error.message,
+        stack: error.stack
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Build main 3-button inline keyboard (attached to message)
+   */
+  #buildMainKeyboard() {
+    return {
+      inline_keyboard: [
+        [
+          { text: '📊 Details', callback_data: 'debrief:details' },
+          { text: '💬 Ask', callback_data: 'debrief:ask' },
+          { text: '✅ OK', callback_data: 'debrief:accept' }
+        ]
+      ]
+    };
+  }
+
+  /**
+   * Build source picker keyboard (used by HandleDebriefResponse)
+   * @param {Array} sources - Available source names
+   * @returns {Object} Telegram inline keyboard markup
+   */
+  static buildSourcePickerKeyboard(sources) {
+    const keyboard = [];
+    
+    // Build rows of 3 buttons each with callback data
+    for (let i = 0; i < sources.length; i += 3) {
+      const row = sources.slice(i, i + 3).map(source => ({
+        text: `${SOURCE_ICONS[source] || '📄'} ${source}`,
+        callback_data: `debrief:source:${source}`
+      }));
+      keyboard.push(row);
+    }
+    
+    // Add back button
+    keyboard.push([{ 
+      text: '← Back',
+      callback_data: 'debrief:back'
+    }]);
+    
+    return {
+      inline_keyboard: keyboard
+    };
+  }
+}
+
+export { SOURCE_ICONS };

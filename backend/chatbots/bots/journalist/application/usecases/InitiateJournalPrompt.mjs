@@ -12,7 +12,8 @@ import {
 } from '../../domain/services/HistoryFormatter.mjs';
 import { parseGPTResponse } from '../../domain/services/QuestionParser.mjs';
 import { 
-  formatQuestion, 
+  formatQuestion,
+  formatChoicesAsKeyboard,
   buildDefaultChoices 
 } from '../../domain/services/QueueManager.mjs';
 import { 
@@ -79,12 +80,12 @@ export class InitiateJournalPrompt {
       // 4. Generate multiple choices
       const choices = await this.#generateChoices(history, question);
 
-      // 5. Send question
+      // 5. Send question with reply keyboard (attached to chat input)
       const formattedQuestion = formatQuestion(question, '📘');
       const { messageId } = await this.#messagingGateway.sendMessage(
         chatId,
         formattedQuestion,
-        { choices, inline: true }
+        { choices }
       );
 
       this.#logger.info('journalPrompt.initiate.complete', { chatId, messageId });
@@ -116,7 +117,9 @@ export class InitiateJournalPrompt {
       const choices = parseGPTResponse(response);
 
       if (choices.length >= 2) {
-        const keyboard = choices.slice(0, 5).map(c => [c]);
+        // Add number emojis to distinguish canned responses
+        const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+        const keyboard = choices.slice(0, 5).map((c, i) => [`${numberEmojis[i]} ${c}`]);
         keyboard.push(...buildDefaultChoices());
         return keyboard;
       }

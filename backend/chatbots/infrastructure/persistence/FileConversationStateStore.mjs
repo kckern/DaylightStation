@@ -172,8 +172,8 @@ export class FileConversationStateStore {
       activeFlow: state.activeFlow,
       flowState: state.flowState,
       lastReportMessageId: state.lastReportMessageId?.toString() || null,
-      updatedAt: state.updatedAt.toISOString(),
-      expiresAt: state.expiresAt.toISOString(),
+      updatedAt: state.updatedAt?.toISOString?.() || new Date().toISOString(),
+      expiresAt: state.expiresAt?.toISOString?.() || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Default 24h expiry
     };
 
     if (messageId) {

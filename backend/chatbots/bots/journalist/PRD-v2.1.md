@@ -369,28 +369,174 @@ async function generateAllCategoryQuestions(
 
 ### 3.4 Telegram Keyboard Strategy
 
-**Reply Keyboards for Main Interactions:**
-- User responses appear in chat history (provides journaling context)
-- One-time keyboards auto-hide after selection
-- Persistent, discoverable UI without requiring command memorization
+**Morning Debrief Daily Flow:**
 
+```mermaid
+flowchart TD
+    subgraph CRON["⏰ Scheduled Trigger"]
+        A[Cron Job Fires] --> B[Generate Debrief]
+    end
+    
+    B --> C{Enough Data?}
+    C -->|No| D[Send Fallback Prompt]
+    C -->|Yes| E[AI Generates Summary]
+    
+    E --> F[📱 Send Debrief Message<br/>with 3-button keyboard]
+    
+    F --> G{User Response}
+    
+    G -->|📊 Show Details| H[Show Source Picker]
+    G -->|💬 Ask Me| I[Start Interview]
+    G -->|✅ Accept| J[Remove Keyboard]
+    G -->|Types freely| CONV
+    G -->|Ignores| L[No action needed]
+    
+    subgraph DETAILS["📊 Show Details Flow"]
+        H --> M{Select Source}
+        M -->|🏋️ Strava| N[Dump Strava Summary]
+        M -->|💻 GitHub| O[Dump GitHub Summary]
+        M -->|⚖️ Weight| P[Dump Weight Summary]
+        M -->|📆 Calendar| Q[Dump Calendar Summary]
+        M -->|← Back| F
+        N --> M
+        O --> M
+        P --> M
+        Q --> M
+    end
+    
+    subgraph INTERVIEW["💬 Ask Me Flow"]
+        I --> R[Ask First Question<br/>+ inline buttons]
+        R --> S{User Response}
+        S -->|Answers| CONV
+        S -->|🎲 Different| U[Ask Different Question]
+        S -->|⏭️ Skip| V[Skip to Next Category]
+        S -->|✅ Done| J
+        U --> R
+        V --> W{More Categories?}
+        W -->|Yes| R
+        W -->|No| J
+    end
+    
+    D --> J
+    J --> IDLE[Idle - User can type anytime]
+    L --> IDLE
+    
+    IDLE -->|User types| CONV
+```
+
+**Conversational Journaling Flow (Independent of Debrief):**
+
+This flow activates whenever the user writes freely - whether after a debrief, in response to a question, or unprompted at any time.
+
+```mermaid
+flowchart TD
+    subgraph CONVERSATION["💬 Conversational Journaling Loop"]
+        CONV[User writes freely] --> SAVE[Save as Journal Entry]
+        SAVE --> AI[AI generates:<br/>1. Active listening response<br/>2. Follow-up question]
+        AI --> MSG[Send response + question<br/>with inline MC keyboard]
+        
+        MSG --> RESP{User Response}
+        
+        RESP -->|Picks MC option| CONV
+        RESP -->|Types freely| CONV
+        RESP -->|❌ Close| EXIT[Remove keyboard<br/>End conversation]
+        RESP -->|Ignores| TIMEOUT[Session idle]
+        
+        TIMEOUT -->|User types later| CONV
+        TIMEOUT -->|Long silence| EXIT
+    end
+    
+    style CONV fill:#e1f5fe
+    style AI fill:#fff3e0
+    style MSG fill:#f3e5f5
+```
+
+**Active Listening Response Style:**
+- Matter-of-fact acknowledgment, not cheerleading
+- Reflect back what user said without judgment
+- Ask a specific follow-up to deepen reflection
+- NO: "That's amazing!" "Great job!" "I love that!"
+- YES: "So you spent most of the afternoon on that." "Sounds like the meeting left you unsettled."
+
+**Inline Keyboard for Follow-up Questions:**
 ```javascript
-// Morning debrief category selection
+{
+  inline_keyboard: [
+    [{ text: 'Yes', callback_data: 'journal:mc:yes' }, 
+     { text: 'No', callback_data: 'journal:mc:no' },
+     { text: 'Not sure', callback_data: 'journal:mc:unsure' }],
+    [{ text: '❌ Close', callback_data: 'journal:close' }]
+  ]
+}
+```
+- MC options are contextual to the question asked
+- User can always type freely instead of picking an option
+- Close button ends the conversation loop gracefully
+
+---
+
+**Morning Debrief Response Flow:**
+
+After the AI-generated summary is sent, the user sees a simple 3-button keyboard:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  [📊 Show Details]  [💬 Ask Me]  [✅ Accept]            │
+└─────────────────────────────────────────────────────────┘
+```
+
+| Button | Action |
+|--------|--------|
+| **📊 Show Details** | Opens source picker (2nd-level keyboard) |
+| **💬 Ask Me** | Triggers journalist interview sequence with follow-up questions |
+| **✅ Accept** | Removes keyboard, user is free to type/free-write or skip |
+
+**Show Details - Source Picker (2nd Level):**
+
+When user taps "Show Details", they see a dynamically-generated keyboard with one button per available data source for that day:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  [🏋️ Strava]        [💻 GitHub]        [⚖️ Weight]     │
+│  [📆 Calendar]      [🏃 Fitness]                        │
+│  [← Back]                                               │
+└─────────────────────────────────────────────────────────┘
+```
+
+- Buttons are generated from `lifelog._meta.sources` array
+- Each button dumps the raw extracted summary for that source
+- "← Back" returns to the main 3-button keyboard
+
+**Reply Keyboards (visible in chat history):**
+```javascript
+// Main debrief response keyboard
 {
   keyboard: [
-    [{ text: '📆 Events & People' }, { text: '🏃 Health & Fitness' }],
-    [{ text: '🎬 Media & Culture' }, { text: '✅ Work & Tasks' }],
-    [{ text: '💭 Thoughts & Reflections' }, { text: '✍️ Free Write' }]
+    [{ text: '📊 Show Details' }, { text: '💬 Ask Me' }, { text: '✅ Accept' }]
   ],
   resize_keyboard: true,
-  one_time_keyboard: true,
-  input_field_placeholder: "Choose a category or type freely..."
+  one_time_keyboard: false,
+  input_field_placeholder: "Choose an action or type freely..."
+}
+
+// Source picker keyboard (dynamic based on available sources)
+{
+  keyboard: [
+    // Row 1: first 3 sources
+    [{ text: '🏋️ Strava' }, { text: '💻 GitHub' }, { text: '⚖️ Weight' }],
+    // Row 2: remaining sources
+    [{ text: '📆 Calendar' }, { text: '🏃 Fitness' }],
+    // Back button
+    [{ text: '← Back' }]
+  ],
+  resize_keyboard: true,
+  one_time_keyboard: true
 }
 ```
 
-**Inline Keyboards for Meta-Actions:**
+**Inline Keyboards for Meta-Actions (during interview sequence):**
 - Only for actions that shouldn't pollute chat history
-- Examples: "change subject", "skip this", "done for now"
+- Used during the "Ask Me" follow-up question flow
 
 ```javascript
 {
@@ -400,6 +546,20 @@ async function generateAllCategoryQuestions(
     [{ text: '✅ Done for now', callback_data: 'journal:done' }]
   ]
 }
+```
+
+**Source Icon Mapping:**
+```javascript
+const SOURCE_ICONS = {
+  garmin: '⌚',
+  strava: '🏋️',
+  fitness: '🏃',
+  weight: '⚖️',
+  events: '📆',
+  github: '💻',
+  checkins: '📍',
+  reddit: '💬',
+};
 ```
 
 ### 3.5 Comprehensive Error Handling
@@ -633,30 +793,35 @@ preferences:
 
 ## Part 6: Implementation Roadmap
 
-### Phase 1: Multi-User Foundation & Lifelog Aggregation (Weeks 1-3)
-- [ ] Add UserResolver dependency to JournalistContainer
-- [ ] Update all use cases to accept username parameter
-- [ ] Create DailyLifelog entity with user field
-- [ ] Create LifelogFileRepository using userLoadFile(username, service)
-- [ ] Create LifelogAggregator adapter with per-user data fetching
-- [ ] Add ILifelogRepository port
-- [ ] Implement source-specific summarizers (Calendar, Fitness, Media, Email)
-- [ ] Design harvester extensibility pattern (config-driven)
+### Phase 1: Multi-User Foundation & Lifelog Aggregation (Weeks 1-3) - **MVP COMPLETE**
+- [x] Add UserResolver dependency to JournalistContainer
+- [x] Create DailyLifelog aggregation (simplified as object)
+- [x] Create LifelogFileRepository using userLoadFile(username, service)
+- [x] Create LifelogAggregator adapter with per-user data fetching
+- [x] Implement source-specific filtering (Calendar, Fitness, Media, Email, Tasks, Locations)
 - [ ] Unit tests for aggregation and summarization logic
 - [ ] Integration tests with real lifelog file samples
 
-### Phase 2: Morning Debrief Core (Weeks 4-6)
-- [ ] Create MorningDebrief entity
-- [ ] Implement GenerateMorningDebrief use case
-- [ ] Implement SendMorningReport use case
-- [ ] Build hierarchical AI summarization (3 stages)
-- [ ] Implement single-call structured question generation
-- [ ] Create morning.mjs handler endpoint
-- [ ] Add reply keyboard support for category selection
-- [ ] Add inline keyboard for meta-actions
-- [ ] Implement HandleCategorySelection use case
+### Phase 2: Morning Debrief Core (Weeks 4-6) - **MVP COMPLETE**
+- [x] Implement GenerateMorningDebrief use case
+- [x] Implement SendMorningDebrief use case (new 3-button keyboard)
+- [x] Build AI summarization with stoic/factual style
+- [x] Implement single-call structured question generation with fallback
+- [x] Create morning.mjs handler endpoint
+- [x] Implement HandleDebriefResponse (Show Details, Ask Me, Accept)
+- [x] Implement HandleSourceSelection (source picker + back)
+- [x] Wire up to container and router
 - [ ] Unit tests for all new use cases
 - [ ] Integration tests with mocked AI responses
+
+### Phase 2.5: Conversational Journaling Loop - **IMPLEMENTED**
+- [x] Update PromptBuilder with stoic active listening prompt
+- [x] Add buildConversationalPrompt (acknowledgment + follow-up)
+- [x] Add buildConversationalChoicesPrompt (contextual MC options)
+- [x] Update ProcessTextEntry for new conversational flow
+- [x] Add ❌ Close button handling in HandleCallbackResponse
+- [x] Document flow in PRD flowchart
+- [ ] Test with real Telegram
 
 ### Phase 3: Cron Integration & User Profiles (Weeks 7-8)
 - [ ] Add preferences.morningDebriefTime to user profile schema
