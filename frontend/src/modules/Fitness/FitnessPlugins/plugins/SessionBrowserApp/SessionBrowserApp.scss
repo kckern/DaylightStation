@@ -1,0 +1,224 @@
+.session-browser-app {
+  height: 100%;
+  color: white;
+  display: flex;
+  flex-direction: column;
+
+  .browser-layout {
+    display: flex;
+    height: 100%;
+    gap: 20px;
+    padding: 20px;
+  }
+
+  .sidebar {
+    width: 350px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    padding-right: 20px;
+  }
+
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    padding: 20px;
+  }
+
+  .calendar {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 10px;
+
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-weight: bold;
+
+      button {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 1.2em;
+        padding: 5px 10px;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+        }
+      }
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 5px;
+      text-align: center;
+
+      .day-label {
+        font-size: 0.8em;
+        opacity: 0.6;
+        padding-bottom: 5px;
+      }
+
+      .calendar-day {
+        aspect-ratio: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border-radius: 50%;
+        font-size: 0.9em;
+        position: relative;
+
+        &:hover:not(.empty) {
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        &.selected {
+          background: #4caf50;
+          color: white;
+        }
+
+        &.empty {
+          cursor: default;
+        }
+
+        .dot {
+          width: 4px;
+          height: 4px;
+          background: #2196f3;
+          border-radius: 50%;
+          position: absolute;
+          bottom: 4px;
+        }
+        
+        &.selected .dot {
+            background: white;
+        }
+      }
+    }
+  }
+
+  .session-list-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    h3 {
+      margin-top: 0;
+      font-size: 1.1em;
+      opacity: 0.8;
+    }
+  }
+
+  .session-list {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 5px;
+  }
+
+  .session-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    &.selected {
+      border-color: #4caf50;
+      background: rgba(76, 175, 80, 0.1);
+    }
+
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .participants {
+      font-size: 0.85em;
+      opacity: 0.7;
+    }
+  }
+
+  .session-detail {
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 10px;
+      margin-bottom: 20px;
+
+      h2 { margin: 0; }
+      .session-id { opacity: 0.5; font-family: monospace; }
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+
+      .detail-item {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 15px;
+        border-radius: 6px;
+        
+        label {
+          display: block;
+          font-size: 0.8em;
+          opacity: 0.6;
+          margin-bottom: 5px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .value {
+          font-size: 1.2em;
+          font-weight: bold;
+        }
+      }
+    }
+
+    pre {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 15px;
+      border-radius: 6px;
+      overflow: auto;
+      font-size: 0.85em;
+      color: #a5d6a7;
+    }
+  }
+
+  .placeholder, .empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    opacity: 0.5;
+    font-style: italic;
+  }
+  
+  .empty-state {
+      height: 100px;
+      background: rgba(255,255,255,0.02);
+      border-radius: 6px;
+  }
+}

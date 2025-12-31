@@ -76,9 +76,15 @@ const MIN_VISIBLE_TICKS = 30;
  * @property {(string|null)[]} zones - Zone array
  * @property {boolean[]} active - Activity mask
  * @property {ChartSegment[]} segments - Chart segments
+ * @property {number} firstActiveTick - First tick where HR was present
  * @property {number} maxVal - Maximum beats value
  * @property {number} lastIndex - Last valid tick index
  * @property {import('./types.js').ParticipantStatusValue} status - Current status
+ */
+
+/**
+ * @typedef {ParticipantChartData} ChartParticipant
+ * Alias used for clarity when returning chart-ready participant data.
  */
 
 /**
@@ -132,7 +138,7 @@ export class ChartDataBuilder {
     if (!targetId) return null;
 
     // Build series data
-    const { beats, zones, active } = this._buildBeatsSeries(targetId);
+    const { beats, zones, active, firstActiveTick } = this._buildBeatsSeries(targetId);
     if (!beats.length) return null;
 
     // Build segments
@@ -168,6 +174,7 @@ export class ChartDataBuilder {
       zones,
       active,
       segments,
+      firstActiveTick: Number.isInteger(firstActiveTick) ? firstActiveTick : -1,
       maxVal,
       lastIndex,
       status
@@ -351,97 +358,90 @@ export class ChartDataBuilder {
     return Number.isFinite(n) ? n : null;
   }
 
-  _fillEdgesOnly(arr) {
-    if (!Array.isArray(arr) || arr.length === 0) return [];
+  _padArray(arr, targetLength) {
+    if (!Array.isArray(arr)) return new Array(targetLength).fill(null);
     const result = [...arr];
-
-    // Fill leading nulls with first valid value
-    let firstValid = null;
-    for (let i = 0; i < result.length; i++) {
-      if (result[i] != null && Number.isFinite(result[i])) {
-        firstValid = result[i];
-        break;
-      }
-    }
-    if (firstValid != null) {
-      for (let i = 0; i < result.length; i++) {
-        if (result[i] != null && Number.isFinite(result[i])) break;
-        result[i] = firstValid;
-      }
-    }
-
-    // Fill trailing nulls with last valid value
-    let lastValid = null;
-    for (let i = result.length - 1; i >= 0; i--) {
-      if (result[i] != null && Number.isFinite(result[i])) {
-        lastValid = result[i];
-        break;
-      }
-    }
-    if (lastValid != null) {
-      for (let i = result.length - 1; i >= 0; i--) {
-        if (result[i] != null && Number.isFinite(result[i])) break;
-        result[i] = lastValid;
-      }
-    }
-
+    while (result.length < targetLength) result.push(null);
     return result;
+  }
+
+  _normalizeNumericSeries(arr, targetLength) {
+    if (!Array.isArray(arr)) return new Array(targetLength).fill(null);
+    const result = arr.map((v) => {
+      const n = this._toNumber(v);
+      return n != null && n >= 0 ? Math.floor(n) : null;
+    });
+    return this._padArray(result, Math.max(targetLength, result.length));
+  }
+
+  _rebaseBeats(beats, firstActiveTick) {
+    if (!Array.isArray(beats) || beats.length === 0) return [];
+    if (!Number.isInteger(firstActiveTick) || firstActiveTick < 0) return beats;
+    const baseline = beats[firstActiveTick] ?? 0;
+    return beats.map((v, idx) => {
+      if (idx < firstActiveTick) return null;
+      if (v == null) return null;
+      const rebased = v - baseline;
+      return rebased >= 0 ? rebased : 0;
+    });
   }
 
   _buildBeatsSeries(targetId) {
     const zones = this._getSeries(targetId, 'zone_id', { clone: true }) || [];
     const heartRate = this._getSeries(targetId, 'heart_rate', { clone: true }) || [];
 
-    // Build activity mask
-    let active;
-    if (this._activityMonitor && typeof this._activityMonitor.getActivityMask === 'function') {
-      active = this._activityMonitor.getActivityMask(targetId);
-      const maxLen = Math.max(zones.length, heartRate.length, active.length);
-      while (active.length < maxLen) active.push(false);
-    } else {
-      const maxLen = Math.max(zones.length, heartRate.length);
-      active = [];
-      for (let i = 0; i < maxLen; i++) {
-        const hr = heartRate[i];
-        active[i] = hr != null && Number.isFinite(hr) && hr > 0;
-      }
+    // Build activity mask purely from heart_rate (single source of truth)
+    const maxLen = Math.max(zones.length, heartRate.length);
+    const active = new Array(maxLen).fill(false);
+    for (let i = 0; i < maxLen; i++) {
+      const hr = this._toNumber(heartRate[i]);
+      active[i] = hr != null && hr > 0;
     }
+
+    const firstActiveTick = active.findIndex((v) => v === true);
 
     // Primary: coins_total
     const coinsRaw = this._getSeries(targetId, 'coins_total', { clone: true }) || null;
     if (Array.isArray(coinsRaw) && coinsRaw.length > 0) {
-      const beats = this._fillEdgesOnly(
-        coinsRaw.map(v => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null))
+      const beats = this._rebaseBeats(
+        this._normalizeNumericSeries(coinsRaw, maxLen),
+        firstActiveTick
       );
-      return { beats, zones, active };
+      return { beats, zones: this._padArray(zones, maxLen), active, firstActiveTick };
     }
 
     // Secondary: heart_beats
     const beatsRaw = this._getSeries(targetId, 'heart_beats', { clone: true }) || null;
     if (Array.isArray(beatsRaw) && beatsRaw.length > 0) {
-      const beats = this._fillEdgesOnly(
-        beatsRaw.map(v => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null))
+      const beats = this._rebaseBeats(
+        this._normalizeNumericSeries(beatsRaw, maxLen),
+        firstActiveTick
       );
-      return { beats, zones, active };
+      return { beats, zones: this._padArray(zones, maxLen), active, firstActiveTick };
     }
 
     // Fallback: compute from heart_rate
     if (!Array.isArray(heartRate) || heartRate.length === 0) {
-      return { beats: [], zones: [], active: [] };
+      return { beats: [], zones: [], active: [], firstActiveTick: -1 };
     }
 
-    const beats = [];
+    const beats = new Array(maxLen).fill(null);
     let total = 0;
     const intervalSeconds = this._intervalMs / 1000;
-    heartRate.forEach((hr, idx) => {
-      const hrVal = this._toNumber(hr);
+    for (let idx = 0; idx < maxLen; idx++) {
+      const hrVal = this._toNumber(heartRate[idx]);
       if (hrVal != null && hrVal > 0) {
         total += (hrVal / 60) * intervalSeconds;
       }
       beats[idx] = Math.floor(total);
-    });
+    }
 
-    return { beats, zones, active };
+    return {
+      beats: this._rebaseBeats(beats, firstActiveTick),
+      zones: this._padArray(zones, maxLen),
+      active,
+      firstActiveTick
+    };
   }
 
   _buildSegments(beats, zones, active) {

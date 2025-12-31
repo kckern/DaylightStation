@@ -67,6 +67,13 @@ const FitnessPluginMenu = ({ activePluginMenuId, onPluginSelect, onBack }) => {
       items.push({ id: 'vibration_monitor', name: vibrationManifest.name || 'Vibration Monitor' });
     }
 
+    // Ensure Session Browser appears even if not yet in config
+    const sessionBrowserManifest = getPluginManifest('session-browser');
+    const hasSessionBrowser = items.some((item) => String(item.id) === 'session-browser');
+    if (sessionBrowserManifest && !hasSessionBrowser) {
+      items.push({ id: 'session-browser', name: sessionBrowserManifest.name || 'History' });
+    }
+
     return items
       .map(item => ({ ...item, manifest: getPluginManifest(item.id) }))
       .filter(item => item.manifest);

@@ -9,6 +9,7 @@ import * as ComponentShowcase from './plugins/ComponentShowcase/index.jsx';
 import * as HomeApp from './plugins/HomeApp/index.jsx';
 import * as PoseDemo from './plugins/PoseDemo/index.jsx';
 import * as VibrationApp from './plugins/VibrationApp/index.jsx';
+import * as SessionBrowserApp from './plugins/SessionBrowserApp/index.jsx';
 
 registerPlugin(FitnessChartApp);
 registerPlugin(CameraViewApp);
@@ -17,5 +18,6 @@ registerPlugin(ComponentShowcase);
 registerPlugin(HomeApp);
 registerPlugin(PoseDemo);
 registerPlugin(VibrationApp);
+registerPlugin(SessionBrowserApp);
 
 
