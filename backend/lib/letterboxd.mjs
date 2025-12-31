@@ -1,11 +1,12 @@
-import { userSaveFile } from './io.mjs';
+import { userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import axios from './http.mjs';
 
-const getDefaultUsername = () => configService.getHeadOfHousehold();
-
-const getMovies = async () => {
-    const {LETTERBOXD_USER} = process.env;
+const getMovies = async (targetUsername = null) => {
+    // User-level auth (personal Letterboxd username)
+    const username = targetUsername || getDefaultUsername();
+    const auth = userLoadAuth(username, 'letterboxd') || {};
+    const LETTERBOXD_USER = auth.username || process.env.LETTERBOXD_USER;
     let page = 1;
     let movies = [];
     while (page < 10) {
@@ -26,7 +27,6 @@ const getMovies = async () => {
         page++;
         movies = [...movies, ...matches];
     }
-    const username = getDefaultUsername();
     userSaveFile(username, 'letterboxd', movies);
     return movies;
 }

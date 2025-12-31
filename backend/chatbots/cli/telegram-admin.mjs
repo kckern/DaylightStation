@@ -84,8 +84,8 @@ function getWebhookUrls(botName) {
   
   // Fallback URLs
   const defaultUrls = {
-    nutribot: { dev: 'https://api-dev.kckern.net/foodlog', prod: 'https://daylightstation-api.kckern.net/foodlog' },
-    journalist: { dev: 'https://api-dev.kckern.net/journalist', prod: 'https://daylightstation-api.kckern.net/journalist' },
+    nutribot: { dev: 'https://api-dev.mydomain.net/foodlog', prod: 'https://daylightstation-api.mydomain.net/foodlog' },
+    journalist: { dev: 'https://api-dev.mydomain.net/journalist', prod: 'https://daylightstation-api.mydomain.net/journalist' },
   };
   
   return {

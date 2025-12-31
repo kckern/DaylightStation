@@ -1,4 +1,4 @@
-import { saveFile, loadFile } from './io.mjs';
+import { saveFile, loadFile, householdLoadAuth, getCurrentHouseholdId } from './io.mjs';
 import { fetchWeatherApi } from 'openmeteo';
 import moment from 'moment';
 import 'moment-timezone';
@@ -6,7 +6,13 @@ moment.tz.setDefault('UTC');
 
 
 const getWeather = async (job_id) => {
-    const { OPEN_WEATHER_API_KEY, weather: { lat, lng, timezone} } = process.env;
+    const { weather: { lat, lng, timezone} } = process.env;
+    
+    // Load weather API key from household auth (for future paid tier/OpenWeatherMap)
+    // Currently using Open-Meteo which is free and doesn't require API key
+    const hid = getCurrentHouseholdId();
+    const auth = householdLoadAuth(hid, 'weather') || {};
+    // const apiKey = auth.api_key || process.env.OPEN_WEATHER_API_KEY;
 
     const weatherParams = {
         "latitude": lat,

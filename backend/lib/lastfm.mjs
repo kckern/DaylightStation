@@ -1,12 +1,16 @@
 import axios from './http.mjs';
 import crypto from 'crypto';
-import { userSaveFile } from './io.mjs';
+import { userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 
-const getDefaultUsername = () => configService.getHeadOfHousehold();
-
-const getScrobbles = async () => {
-    const {LAST_FM_API_KEY,  LAST_FM_USER} = process.env;
+const getScrobbles = async (targetUsername = null) => {
+    // System-level API key (shared app key)
+    const { LAST_FM_API_KEY } = process.env;
+    
+    // User-level auth (personal username)
+    const username = targetUsername || getDefaultUsername();
+    const auth = userLoadAuth(username, 'lastfm') || {};
+    const LAST_FM_USER = auth.username || process.env.LAST_FM_USER;
     let page = 1;
     let tracks = [];
     while (page < 10) {
@@ -31,7 +35,6 @@ const getScrobbles = async () => {
         page++;
         tracks = [...tracks, ...recenttracks].sort((a, b) => b.unix - a.unix);
     }
-    const username = getDefaultUsername();
     userSaveFile(username, 'lastfm', tracks);
     return tracks;
 }

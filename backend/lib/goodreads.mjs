@@ -1,12 +1,13 @@
-import { userSaveFile } from './io.mjs';
+import { userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import Parser from 'rss-parser';
 let parser = new Parser();
 
-const getDefaultUsername = () => configService.getHeadOfHousehold();
-
-const getMovies = async () => {
-    const {GOODREADS_API_KEY, GOODREADS_USER} = process.env;
+const getBooks = async (targetUsername = null) => {
+    // User-level auth (personal Goodreads user ID)
+    const username = targetUsername || getDefaultUsername();
+    const auth = userLoadAuth(username, 'goodreads') || {};
+    const GOODREADS_USER = auth.user_id || process.env.GOODREADS_USER;
     let url = `https://www.goodreads.com/review/list_rss/${GOODREADS_USER}?&shelf=read`;
     const feed = await parser.parseURL(url);
     let books = feed.items.map(item => {
@@ -26,9 +27,8 @@ const getMovies = async () => {
         }
 
     }).sort((a, b) => new Date(b.readAt) - new Date(a.readAt));
-    const username = getDefaultUsername();
     userSaveFile(username, 'goodreads', books);
     return books;
 }
 
-export default getMovies
+export default getBooks

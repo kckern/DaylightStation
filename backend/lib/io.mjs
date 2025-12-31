@@ -410,5 +410,170 @@ const userSaveAuth = (username, service, data) => {
     return saveFile(path, data);
 };
 
+/**
+ * Load user profile
+ * @param {string} username - The username
+ * @returns {object|null} The user profile or null if not found
+ */
+const userLoadProfile = (username) => {
+    if (!username) {
+        ioLogger.warn('io.userLoadProfile.noUsername', {});
+        return null;
+    }
+    return loadFile(`users/${username}/profile`);
+};
 
-export { loadFile, saveFile, sanitize, userLoadFile, userSaveFile, userLoadAuth, userSaveAuth };
+// ============================================================
+// HOUSEHOLD-AWARE HELPERS (Phase 0 of three-tier architecture)
+// ============================================================
+
+/**
+ * Get current household ID from environment or default
+ * @returns {string} The current household ID
+ */
+const getCurrentHouseholdId = () => {
+    return process.env.HOUSEHOLD_ID || process.env.household_id || 'default';
+};
+
+/**
+ * Load data file for a specific household
+ * @param {string} householdId - The household ID (e.g., 'default')
+ * @param {string} path - The relative path within the household (e.g., 'shared/calendar', 'apps/fitness/config')
+ * @returns {object|null} The loaded data or null if not found
+ */
+const householdLoadFile = (householdId, filePath) => {
+    if (!householdId) {
+        ioLogger.warn('io.householdLoadFile.noHouseholdId', { path: filePath });
+        return null;
+    }
+    if (!filePath) {
+        ioLogger.warn('io.householdLoadFile.noPath', { householdId });
+        return null;
+    }
+    const fullPath = `households/${householdId}/${filePath}`;
+    return loadFile(fullPath);
+};
+
+/**
+ * Save data file for a specific household
+ * @param {string} householdId - The household ID (e.g., 'default')
+ * @param {string} path - The relative path within the household (e.g., 'shared/calendar', 'apps/fitness/config')
+ * @param {object} data - The data to save
+ * @returns {boolean} True if saved successfully
+ */
+const householdSaveFile = (householdId, filePath, data) => {
+    if (!householdId) {
+        ioLogger.warn('io.householdSaveFile.noHouseholdId', { path: filePath });
+        return false;
+    }
+    if (!filePath) {
+        ioLogger.warn('io.householdSaveFile.noPath', { householdId });
+        return false;
+    }
+    const fullPath = `households/${householdId}/${filePath}`;
+    return saveFile(fullPath, data);
+};
+
+/**
+ * Load auth credentials for a specific household
+ * @param {string} householdId - The household ID (e.g., 'default')
+ * @param {string} service - The service name (e.g., 'plex', 'home_assistant', 'clickup')
+ * @returns {object|null} The auth data or null if not found
+ */
+const householdLoadAuth = (householdId, service) => {
+    if (!householdId) {
+        ioLogger.warn('io.householdLoadAuth.noHouseholdId', { service });
+        return null;
+    }
+    if (!service) {
+        ioLogger.warn('io.householdLoadAuth.noService', { householdId });
+        return null;
+    }
+    const authPath = `households/${householdId}/auth/${service}`;
+    const data = loadFile(authPath);
+    
+    // Fallback to env var during migration period
+    if (!data) {
+        const envKey = service.toUpperCase().replace(/-/g, '_');
+        const envToken = process.env[`${envKey}_TOKEN`] || process.env[`${envKey}_PK`] || process.env[envKey];
+        if (envToken) {
+            ioLogger.debug('io.householdLoadAuth.envFallback', { 
+                service, 
+                householdId,
+                message: `Using env fallback for ${service}, migrate to households/${householdId}/auth/${service}.yml`
+            });
+            return { token: envToken };
+        }
+    }
+    
+    return data;
+};
+
+/**
+ * Save auth credentials for a specific household
+ * @param {string} householdId - The household ID (e.g., 'default')
+ * @param {string} service - The service name (e.g., 'plex', 'home_assistant', 'clickup')
+ * @param {object} data - The auth data to save
+ * @returns {boolean} True if saved successfully
+ */
+const householdSaveAuth = (householdId, service, data) => {
+    if (!householdId) {
+        ioLogger.warn('io.householdSaveAuth.noHouseholdId', { service });
+        return false;
+    }
+    if (!service) {
+        ioLogger.warn('io.householdSaveAuth.noService', { householdId });
+        return false;
+    }
+    const authPath = `households/${householdId}/auth/${service}`;
+    return saveFile(authPath, data);
+};
+
+/**
+ * Load household configuration (household.yml)
+ * @param {string} householdId - The household ID (e.g., 'default')
+ * @returns {object|null} The household config or null if not found
+ */
+const householdLoadConfig = (householdId) => {
+    if (!householdId) {
+        ioLogger.warn('io.householdLoadConfig.noHouseholdId', {});
+        return null;
+    }
+    return loadFile(`households/${householdId}/household`);
+};
+
+/**
+ * Get default username (head of household)
+ * Uses household config or falls back to env
+ * @param {string} [householdId] - Optional household ID
+ * @returns {string|null} The default username
+ */
+const getDefaultUsername = (householdId = null) => {
+    const hid = householdId || getCurrentHouseholdId();
+    const config = householdLoadConfig(hid);
+    if (config?.head) return config.head;
+    
+    // Fallback to env
+    return process.env.default_username || process.env.DEFAULT_USERNAME || null;
+};
+
+
+export { 
+    loadFile, 
+    saveFile, 
+    sanitize, 
+    // User-level helpers
+    userLoadFile, 
+    userSaveFile, 
+    userLoadAuth, 
+    userSaveAuth,
+    userLoadProfile,
+    getDefaultUsername,
+    // Household-level helpers
+    householdLoadFile,
+    householdSaveFile,
+    householdLoadAuth,
+    householdSaveAuth,
+    householdLoadConfig,
+    getCurrentHouseholdId
+};

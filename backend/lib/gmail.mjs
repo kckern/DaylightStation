@@ -1,26 +1,30 @@
 import { google } from 'googleapis';
-import { saveFile, sanitize, userSaveFile } from './io.mjs';
+import { saveFile, sanitize, userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
-
-// Get default username for user-scoped data
-const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const defaultGmailLogger = createLogger({
     source: 'backend',
     app: 'gmail'
 });
 
-const listMails = async (logger, job_id) => {
+const listMails = async (logger, job_id, targetUsername = null) => {
     const log = logger || defaultGmailLogger;
-    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;
+    
+    // System-level OAuth app credentials (shared across all users)
+    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
+    
+    // User-level auth (personal refresh token)
+    const username = targetUsername || getDefaultUsername();
+    const auth = userLoadAuth(username, 'google') || {};
+    const refreshToken = auth.refresh_token || process.env.GOOGLE_REFRESH_TOKEN;
 
-    if(!(GOOGLE_CLIENT_ID || GOOGLE_CLIENT_SECRET || GOOGLE_REDIRECT_URI || GOOGLE_REFRESH_TOKEN)) {
-        Error('Gmail credentials not found');
+    if(!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
+        throw new Error('Gmail credentials not found');
     }
 
     const oAuth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
-    oAuth2Client.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
+    oAuth2Client.setCredentials({ refresh_token: refreshToken });
 
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     const { data } = await gmail.users.messages.list({ userId: 'me', q: 'is:inbox' });

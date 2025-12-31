@@ -1,27 +1,31 @@
 import { google } from 'googleapis';
-import { saveFile, sanitize, userSaveFile } from './io.mjs';
+import { saveFile, sanitize, userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import saveEvents from '../jobs/events.mjs';
 import { createLogger } from './logging/logger.js';
-
-// Get default username for user-scoped data
-const getDefaultUsername = () => configService.getHeadOfHousehold();
 
 const defaultGcalLogger = createLogger({
     source: 'backend',
     app: 'gcal'
 });
 
-const listCalendarEvents = async (logger, job_id) => {
+const listCalendarEvents = async (logger, job_id, targetUsername = null) => {
     const log = logger || defaultGcalLogger;
-    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN } = process.env;
+    
+    // System-level OAuth app credentials (shared across all users)
+    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
+    
+    // User-level auth (personal refresh token)
+    const username = targetUsername || getDefaultUsername();
+    const auth = userLoadAuth(username, 'google') || {};
+    const refreshToken = auth.refresh_token || process.env.GOOGLE_REFRESH_TOKEN;
 
-    if(!(GOOGLE_CLIENT_ID || GOOGLE_CLIENT_SECRET || GOOGLE_REDIRECT_URI || GOOGLE_REFRESH_TOKEN)) {
+    if(!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
         throw new Error('Google Calendar credentials not found');
     }
 
     const oAuth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
-    oAuth2Client.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
+    oAuth2Client.setCredentials({ refresh_token: refreshToken });
 
     const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
 
