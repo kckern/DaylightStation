@@ -124,7 +124,34 @@ const DEFAULT_CONFIG = {
  *   }
  * }
  */
+// Queue for print jobs to prevent concurrency issues
+let printQueue = Promise.resolve();
+
+/**
+ * Main thermal print function - Wrapper with Queue
+ * @param {Object} printObject - Configuration object for printing
+ * @returns {Promise<boolean>} - Success or failure
+ */
 export async function thermalPrint(printObject) {
+    // Add job to queue
+    const result = await new Promise((resolve) => {
+        printQueue = printQueue.then(async () => {
+            try {
+                // Add a small delay between jobs to let printer settle
+                await new Promise(r => setTimeout(r, 500));
+                
+                const res = await executePrintJob(printObject);
+                resolve(res);
+            } catch (e) {
+                printerLog.error('Queue execution error', e);
+                resolve(false);
+            }
+        });
+    });
+    return result;
+}
+
+async function executePrintJob(printObject) {
     const startTime = Date.now();
     
     try {
