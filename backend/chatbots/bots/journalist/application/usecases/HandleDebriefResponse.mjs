@@ -101,7 +101,7 @@ export class HandleDebriefResponse {
     }
     
     const debrief = recentDebriefs[0];
-    const sources = debrief.sources || [];
+    const sources = debrief.summaries || [];
     
     if (sources.length === 0) {
       await this.#messagingGateway.sendMessage(
