@@ -86,6 +86,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [lastPlaylistId, setLastPlaylistId] = useState(null);
   const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
   const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
   const [voiceMemoVersion, setVoiceMemoVersion] = useState(0);
   const [connected, setConnected] = useState(false);
@@ -444,6 +445,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const toggleSidebarSizeMode = React.useCallback(() => {
     setSidebarSizeMode((m) => (m === 'regular' ? 'large' : 'regular'));
   }, []);
+
+  // Sidebar collapse/expand control (for plugins)
+  const collapseSidebar = React.useCallback(() => setSidebarCollapsed(true), []);
+  const expandSidebar = React.useCallback(() => setSidebarCollapsed(false), []);
+  const toggleSidebarCollapsed = React.useCallback(() => setSidebarCollapsed((c) => !c), []);
 
 
   // Guest Assignment
@@ -1544,6 +1550,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     setVideoPlayerPaused,
     sidebarSizeMode,
     toggleSidebarSizeMode,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    collapseSidebar,
+    expandSidebar,
+    toggleSidebarCollapsed,
     voiceMemoOverlayState,
     
     forceUpdate,

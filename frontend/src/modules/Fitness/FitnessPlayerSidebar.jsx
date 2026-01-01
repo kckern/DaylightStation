@@ -1,5 +1,5 @@
 import React from 'react';
-import FitnessCam from './FitnessCam.jsx';
+import FitnessPluginContainer from './FitnessPlugins/FitnessPluginContainer.jsx';
 
 const FitnessPlayerSidebar = ({
   currentItem,
@@ -39,7 +39,7 @@ const FitnessPlayerSidebar = ({
 
       {!minimized && (
         <div className="sidebar-content">
-          <FitnessCam />
+          <FitnessPluginContainer pluginId="fitness_cam" mode="standalone" />
         </div>
       )}
 

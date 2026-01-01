@@ -14,7 +14,7 @@ const slugifyId = (value, fallback = 'user') => {
   return slug || fallback;
 };
 
-const SidebarFooter = ({ onContentSelect }) => {
+const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   const { 
     connected, 
     heartRateDevices, 
@@ -26,7 +26,8 @@ const SidebarFooter = ({ onContentSelect }) => {
     userCurrentZones,
     zones,
     userZoneProgress,
-    getUserByDevice
+    getUserByDevice,
+    launchApp
   } = useFitnessContext();
   const inactiveTimeout = deviceConfiguration?.timeout?.inactive ?? 60000;
 
@@ -336,6 +337,16 @@ const SidebarFooter = ({ onContentSelect }) => {
           const cardClasses = ['device-card', cardZoneClass, isActive ? 'active' : 'inactive']
             .filter(Boolean)
             .join(' ');
+
+          const handleAvatarClick = (e) => {
+            e.stopPropagation();
+            if (onAvatarClick) {
+              onAvatarClick({ deviceKey, ownerName, profileId });
+            } else {
+              // Default: launch fitness_cam plugin
+              launchApp?.('fitness_cam', { mode: 'standalone' });
+            }
+          };
           
           return (
             <div
@@ -357,6 +368,8 @@ const SidebarFooter = ({ onContentSelect }) => {
                   ringWidth={8}
                   showIndicator={false}
                   ariaLabel={ownerName ? `${ownerName} heart rate` : undefined}
+                  onClick={handleAvatarClick}
+                  role="button"
                 />
               ) : (
                 <div className="device-icon-fallback">

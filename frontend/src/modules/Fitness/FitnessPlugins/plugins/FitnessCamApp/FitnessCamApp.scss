@@ -1,0 +1,126 @@
+// FitnessCamApp Plugin Styles
+// Derived from FitnessCam.scss with plugin-specific class names
+
+.fitness-cam-app {
+  display: flex;
+  gap: 0;
+  height: 100%;
+  max-height: 100%;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: #fff;
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    margin-left: -1.5rem;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: relative;
+
+    &.chart-mode {
+      margin-left: 0;
+      padding: 0;
+    }
+  }
+
+  &__stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    position: relative;
+    overflow: hidden;
+  }
+
+  &__chart {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    margin-left: 1.5rem;
+  }
+
+  &__sidebar {
+    flex: 0 0 30%;
+    width: 30%;
+    max-width: 30%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.2s ease, opacity 0.2s ease, flex 0.2s ease;
+
+    &.hidden {
+      flex: 0 0 0;
+      width: 0;
+      max-width: 0;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+  }
+
+  &__mini-cam {
+    width: 100%;
+    height: 200px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+  }
+
+  // Fullscreen mode
+  &.fullscreen-mode {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2000;
+    background: #000;
+    padding: 0;
+    gap: 0;
+
+    .fitness-cam-app__main {
+      flex: 1 1 100%;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+
+      .fitness-cam-app__stage {
+        border-radius: 0;
+        border: none;
+        box-shadow: none;
+        height: 100%;
+        width: 100%;
+        padding: 0;
+        background: #000;
+        
+        // Ensure controls are accessible in fullscreen
+        .controls-overlay {
+          z-index: 2001; 
+        }
+
+        .fitness-cam-settings-btn {
+          display: none;
+        }
+      }
+    }
+
+    .fitness-cam-app__sidebar {
+      flex: 0 0 0;
+      width: 0;
+      max-width: 0;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+  }
+}

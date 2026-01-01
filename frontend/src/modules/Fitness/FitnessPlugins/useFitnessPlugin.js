@@ -134,6 +134,12 @@ const useFitnessPlugin = (pluginId) => {
     // Voice memos
     openVoiceMemoRedo: fitnessCtx.openVoiceMemoRedo,
     voiceMemos: fitnessCtx.voiceMemos,
+
+    // Sidebar control
+    sidebarCollapsed: fitnessCtx.sidebarCollapsed,
+    collapseSidebar: fitnessCtx.collapseSidebar,
+    expandSidebar: fitnessCtx.expandSidebar,
+    toggleSidebarCollapsed: fitnessCtx.toggleSidebarCollapsed,
   };
 };
 
