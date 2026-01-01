@@ -255,16 +255,14 @@ function OfficeApp() {
         <div
           style={{
             flexGrow: 1,
-            outline: '1px solid #FFFFFF33',
-            margin: '1ex',
-            marginTop: '-0.5rem',
-            borderRadius: '1ex',
+            margin: '0',
+            marginTop: '-1rem',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
             alignItems: 'center',
             padding: '1rem',
-            width: 'calc(100% - 2rem)'
+            width: 'calc(100% - 0rem)'
           }}
           >
             <EntropyPanel />

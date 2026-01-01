@@ -1,5 +1,5 @@
 import moment from 'moment';
-import { userLoadFile, userLoadCurrent } from './io.mjs';
+import { userLoadFile, userLoadCurrent, userLoadProfile } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
@@ -43,8 +43,9 @@ const loadDataForSource = (username, sourceConfig) => {
  * @returns {Promise<Object>} Entropy report
  */
 export const getEntropyReport = async () => {
-    const config = configService.getAppConfig('entropy');
     const username = getDefaultUsername();
+    const profile = userLoadProfile(username);
+    const config = profile?.apps?.entropy || configService.getAppConfig('entropy');
     
     if (!config || !config.sources) {
         entropyLogger.warn('entropy.config.missing');
@@ -60,33 +61,103 @@ export const getEntropyReport = async () => {
             let value = 0;
             let label = '';
             let lastUpdate = null;
+            let lastItem = null;
 
             if (sourceConfig.metric === 'days_since') {
                 // LIFELOG: For date-keyed data, find the most recent date
-                if (data && typeof data === 'object' && !Array.isArray(data)) {
-                    let dates = Object.keys(data);
+                let lastDate = null;
+                let itemsToProcess = data;
 
-                    // Special handling for weight data which forward-fills entries
-                    // Real entries have a 'measurement' property
-                    const hasMeasurements = dates.some(d => data[d] && data[d].measurement !== undefined);
-                    if (hasMeasurements) {
-                        dates = dates.filter(d => data[d] && data[d].measurement !== undefined);
-                    }
+                // Handle nested list property (e.g. { messages: [...] })
+                if (sourceConfig.listProperty && data && data[sourceConfig.listProperty]) {
+                    itemsToProcess = data[sourceConfig.listProperty];
+                }
 
-                    dates.sort((a, b) => moment(b).diff(moment(a)));
-                    const lastDate = dates[0];
+                // Handle filtering
+                if (sourceConfig.filter && Array.isArray(itemsToProcess)) {
+                    itemsToProcess = itemsToProcess.filter(item => {
+                        const { field, operator, value } = sourceConfig.filter;
+                        const itemValue = item[field];
+                        if (operator === 'ne') return itemValue !== value;
+                        if (operator === 'eq') return itemValue === value;
+                        return true;
+                    });
+                }
+
+                if (Array.isArray(itemsToProcess)) {
+                    // Array of objects - find max date in specified field
+                    const dateField = sourceConfig.dateField || 'date';
+                    const validItems = itemsToProcess.filter(item => item && item[dateField]);
                     
-                    if (lastDate) {
-                        lastUpdate = lastDate;
-                        const daysDiff = moment().diff(moment(lastDate), 'days');
-                        value = Math.max(0, daysDiff);
-                        label = value === 0 ? 'Today' : `${value} day${value === 1 ? '' : 's'} ago`;
-                    } else {
-                        value = 999; // No data
-                        label = 'No data';
+                    if (validItems.length > 0) {
+                        // Sort by date descending
+                        validItems.sort((a, b) => moment(b[dateField]).diff(moment(a[dateField])));
+                        lastDate = validItems[0][dateField];
+                        lastItem = validItems[0];
                     }
+                } else if (itemsToProcess && typeof itemsToProcess === 'object') {
+                    let dates = Object.keys(itemsToProcess);
+                    dates.sort((a, b) => moment(b).diff(moment(a)));
+
+                    // Iterate sorted dates to find the first one that matches criteria
+                    for (const date of dates) {
+
+                        const dayData = itemsToProcess[date];
+                        if (!dayData) continue;
+
+                        if (Array.isArray(dayData)) {
+                            // Array of items for this day (e.g. todoist, clickup)
+                            if (sourceConfig.filter) {
+                                const match = dayData.find(item => {
+                                    const { field, operator, value } = sourceConfig.filter;
+                                    const itemValue = item[field];
+                                    if (operator === 'ne') return itemValue !== value;
+                                    if (operator === 'eq') return itemValue === value;
+                                    return true;
+                                });
+                                if (match) {
+                                    lastDate = date;
+                                    lastItem = match;
+                                    break;
+                                }
+                            } else {
+                                // No filter, just existence - take the last one (assuming chronological order in array or just taking one)
+                                lastDate = date;
+                                lastItem = dayData[dayData.length - 1];
+                                break;
+                            }
+                        } else {
+                            // Object data (e.g. weight, fitness)
+                            // If checkField is specified, ensure it exists
+                            if (sourceConfig.checkField) {
+                                if (dayData[sourceConfig.checkField] !== undefined) {
+                                    lastDate = date;
+                                    lastItem = dayData;
+                                    break;
+                                }
+                            } else if (dayData.measurement !== undefined) {
+                                // Legacy support for weight
+                                lastDate = date;
+                                lastItem = dayData;
+                                break;
+                            } else {
+                                // Default: just existence of key is enough
+                                lastDate = date;
+                                lastItem = dayData;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (lastDate) {
+                    lastUpdate = lastDate;
+                    const daysDiff = moment().diff(moment(lastDate), 'days');
+                    value = Math.max(0, daysDiff);
+                    label = value === 0 ? 'Today' : `${value} day${value === 1 ? '' : 's'} ago`;
+
                 } else {
-                    value = 999;
+                    value = 999; // No data
                     label = 'No data';
                 }
             } else if (sourceConfig.metric === 'count') {
@@ -110,6 +181,16 @@ export const getEntropyReport = async () => {
                 label = `${value} ${itemName}${value === 1 ? '' : 's'}`;
             }
 
+            let url = null;
+            if (sourceConfig.url) {
+                url = sourceConfig.url;
+                if (lastItem) {
+                    url = url.replace(/{(\w+)}/g, (_, key) => lastItem[key] || '');
+                }
+            } else if (lastItem && lastItem.url) {
+                url = lastItem.url;
+            }
+
             const status = calculateStatus(value, sourceConfig.thresholds);
             summary[status]++;
 
@@ -120,7 +201,8 @@ export const getEntropyReport = async () => {
                 status,
                 value,
                 label,
-                lastUpdate
+                lastUpdate,
+                url
             });
         } catch (error) {
             entropyLogger.error('entropy.calculation.error', { source: id, error: error.message });
