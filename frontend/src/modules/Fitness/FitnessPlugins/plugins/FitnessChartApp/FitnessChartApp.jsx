@@ -24,14 +24,14 @@ const PATH_STROKE_WIDTH = 5;
 const TICK_FONT_SIZE = 20;
 const COIN_FONT_SIZE = 20;
 
-const slugifyId = (value, fallback = 'user') => {
+// Note: slugifyId has been removed - we now use explicit IDs from config
+
+// Simple sanitizer for SVG clip-path IDs (must be valid XML identifiers)
+const sanitizeIdForSvg = (value, fallback = 'user') => {
 	if (!value) return fallback;
-	const slug = String(value)
-		.trim()
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '_')
-		.replace(/^_+|_+$/g, '');
-	return slug || fallback;
+	// Replace invalid chars with underscore, ensure doesn't start with number
+	const safe = String(value).replace(/[^a-zA-Z0-9_-]/g, '_');
+	return safe.length > 0 && !/^[0-9]/.test(safe) ? safe : `id_${safe}`;
 };
 
 const formatCompactNumber = (value) => {
@@ -70,8 +70,8 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 			const { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor });
 			const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
 			const segments = buildSegments(beats, zones, active);
-			const profileId = entry.profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || entry.id || idx);
-			const entryId = entry.id || profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || idx, `anon-${idx}`);
+			const profileId = entry.profileId || entry.id || entry.hrDeviceId || String(idx);
+			const entryId = entry.id || entry.profileId || entry.hrDeviceId || String(idx);
 			
 			// Find last ACTIVE tick (when user was actually broadcasting)
 			// This is where the colored line ends and where dropout badge should appear
@@ -125,7 +125,7 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		const shaped = debugItems.filter((item) => item.segments.length > 0);
 
 		// Debug guardrail: log when roster/active/chart counts diverge
-		const rosterIds = roster.map((r, i) => slugifyId(r.profileId || r.hrDeviceId || r.name || r.displayLabel || i, `anon-${i}`));
+		const rosterIds = roster.map((r, i) => r.id || r.profileId || r.hrDeviceId || String(i));
 		const chartIds = shaped.map((s) => s.id);
 		let activeRosterCount = rosterIds.length;
 		if (activityMonitor) {
@@ -381,16 +381,6 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 			const isActiveFromRoster = entry.isActive !== false;
 			const correctStatus = isActiveFromRoster ? ParticipantStatus.ACTIVE : ParticipantStatus.IDLE;
 			
-			// Log if there's a mismatch (for debugging, but we trust isActive)
-			if (entry.status !== correctStatus) {
-				console.warn('[FitnessChart] Status corrected from roster.isActive', {
-					id: entry.id,
-					wasStatus: entry.status,
-					nowStatus: correctStatus,
-					isActive: entry.isActive
-				});
-			}
-			
 			return { ...entry, status: correctStatus };
 		});
 	}, [allEntries]);
@@ -595,7 +585,7 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 				const size = AVATAR_RADIUS * 2;
 				const labelX = AVATAR_RADIUS + COIN_LABEL_GAP;
 				const labelY = 0;
-				const clipSafeId = slugifyId(avatar.id, 'user');
+				const clipSafeId = sanitizeIdForSvg(avatar.id, 'user');
 				const clipId = `race-clip-${clipSafeId}-${idx}`;
 				return (
 					<g
@@ -725,12 +715,18 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		const signature = JSON.stringify(snapshot);
 		if (signature !== lastWarmupLogRef.current) {
 			lastWarmupLogRef.current = signature;
-			console.warn('[FitnessChart][warmup]', snapshot);
+			// Only log warmup diagnostics during actual warmup phase
+			if (tickCount < 5) {
+				console.debug('[FitnessChart][warmup]', snapshot);
+			}
 		}
 	}, [participants, allEntries, timebase, getUserTimelineSeries]);
 	
+	// Track last mismatch signature to avoid duplicate warnings
+	const lastMismatchSignatureRef = useRef(null);
+	
 	// Guardrail: Verify chart present count matches roster count
-	// If mismatch, dump debug info to help diagnose state synchronization issues
+	// If mismatch, dump debug info (only once per unique state)
 	useEffect(() => {
 		const rosterCount = Array.isArray(participants) ? participants.length : 0;
 		const chartPresentCount = presentEntries.length;
@@ -741,20 +737,28 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			const chartAbsentIds = absentEntries.map(e => e.profileId || e.id);
 			const allChartIds = allEntries.map(e => ({ id: e.profileId || e.id, status: e.status }));
 			
-			console.warn('[FitnessChart] Participant count mismatch!', {
-				rosterCount,
-				chartPresentCount,
-				chartAbsentCount: absentEntries.length,
-				chartTotalCount: allEntries.length,
-				rosterIds,
-				chartPresentIds,
-				chartAbsentIds,
-				allChartEntries: allChartIds,
-				// Show which roster IDs are missing from chart present
-				missingFromChart: rosterIds.filter(id => !chartPresentIds.includes(id)),
-				// Show which chart present IDs are not in roster
-				extraInChart: chartPresentIds.filter(id => !rosterIds.includes(id))
-			});
+			// Only log once per unique mismatch state
+			const mismatchSignature = JSON.stringify({ rosterIds, chartPresentIds, chartAbsentIds });
+			if (mismatchSignature !== lastMismatchSignatureRef.current) {
+				lastMismatchSignatureRef.current = mismatchSignature;
+				console.warn('[FitnessChart] Participant count mismatch!', {
+					rosterCount,
+					chartPresentCount,
+					chartAbsentCount: absentEntries.length,
+					chartTotalCount: allEntries.length,
+					rosterIds,
+					chartPresentIds,
+					chartAbsentIds,
+					allChartEntries: allChartIds,
+					// Show which roster IDs are missing from chart present
+					missingFromChart: rosterIds.filter(id => !chartPresentIds.includes(id)),
+					// Show which chart present IDs are not in roster
+					extraInChart: chartPresentIds.filter(id => !rosterIds.includes(id))
+				});
+			}
+		} else {
+			// Clear signature when match is restored
+			lastMismatchSignatureRef.current = null;
 		}
 	}, [participants, presentEntries, absentEntries, allEntries]);
 	

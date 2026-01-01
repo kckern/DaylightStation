@@ -1,4 +1,4 @@
-import { formatSessionId, slugifyId, ensureSeriesCapacity, deepClone, resolveDisplayLabel } from './types.js';
+import { formatSessionId, ensureSeriesCapacity, deepClone, resolveDisplayLabel } from './types.js';
 import { DeviceManager } from './DeviceManager.js';
 import { UserManager } from './UserManager.js';
 import { GovernanceEngine } from './GovernanceEngine.js';
@@ -94,9 +94,10 @@ const buildParticipantsForPersist = (roster, deviceAssignments) => {
   const assignmentBySlug = new Map();
   if (Array.isArray(deviceAssignments)) {
     deviceAssignments.forEach((entry) => {
-      const slug = entry?.occupantSlug ? String(entry.occupantSlug) : null;
-      if (!slug) return;
-      assignmentBySlug.set(slug, entry);
+      // Use occupantId (new) or occupantSlug (legacy) as key
+      const key = entry?.occupantId || entry?.occupantSlug;
+      if (!key) return;
+      assignmentBySlug.set(String(key), entry);
     });
   }
 
@@ -104,13 +105,14 @@ const buildParticipantsForPersist = (roster, deviceAssignments) => {
   safeRoster.forEach((entry, idx) => {
     if (!entry || typeof entry !== 'object') return;
     const name = typeof entry.name === 'string' ? entry.name : null;
-    const slug = slugifyId(name || entry.profileId || entry.hrDeviceId || `anon-${idx}`);
-    if (!slug) return;
+    // Use explicit ID from roster entry
+    const participantId = entry.id || entry.profileId || entry.hrDeviceId || `anon-${idx}`;
+    if (!participantId) return;
 
-    const assignment = assignmentBySlug.get(slug) || null;
+    const assignment = assignmentBySlug.get(participantId) || null;
     const hrDevice = entry.hrDeviceId ?? assignment?.deviceId ?? null;
 
-    participants[slug] = {
+    participants[participantId] = {
       ...(name ? { display_name: name } : {}),
       ...(hrDevice != null ? { hr_device: String(hrDevice) } : {}),
       ...(entry.isPrimary === true ? { is_primary: true } : {}),
@@ -443,27 +445,27 @@ export class FitnessSession {
         user.updateFromDevice(deviceData);
         // Feed TreasureBox if HR
         if (this.treasureBox && deviceData.type === 'heart_rate') {
-           this.treasureBox.recordUserHeartRate(user.name, deviceData.heartRate);
+           this.treasureBox.recordUserHeartRate(user.id || user.name, deviceData.heartRate);
         }
       }
       const ledger = this.userManager?.assignmentLedger;
       if (ledger) {
         const ledgerEntry = ledger.get(device.id);
-        const resolvedSlug = user ? slugifyId(user.name) : null;
+        const userId = user?.id || null;
         
         // Auto-assign device to user if not already assigned (for simulator/auto-mapping)
-        if (!ledgerEntry && user && resolvedSlug) {
-          console.warn('[FitnessSession][auto-assign]', { deviceId: device.id, userName: user.name, slug: resolvedSlug });
+        if (!ledgerEntry && user && userId) {
+          console.warn('[FitnessSession][auto-assign]', { deviceId: device.id, userName: user.name, userId });
           this.userManager.assignGuest(device.id, user.name, {
             name: user.name,
-            profileId: user.profileId || resolvedSlug,
+            profileId: user.id,
             source: user.source || 'auto'
           });
-          this._log('device_auto_assigned', { deviceId: device.id, userName: user.name, slug: resolvedSlug });
+          this._log('device_auto_assigned', { deviceId: device.id, userName: user.name, userId });
         } else if (ledgerEntry) {
           // Already assigned
         } else {
-          console.warn('[FitnessSession][auto-assign-skip]', { deviceId: device.id, hasUser: !!user, hasSlug: !!resolvedSlug, hasLedgerEntry: !!ledgerEntry });
+          console.warn('[FitnessSession][auto-assign-skip]', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry });
         }
         
         if (ledgerEntry) {
@@ -699,10 +701,9 @@ export class FitnessSession {
       ? this.treasureBox.getUserZoneSnapshot()
       : [];
     zoneSnapshot.forEach((entry) => {
-      if (!entry || !entry.user) return;
-      const key = slugifyId(entry.user);
-      if (!key) return;
-      zoneLookup.set(key, {
+      if (!entry || !entry.userId) return;
+      // Use userId as the key
+      zoneLookup.set(entry.userId, {
         zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
         color: entry.color || null
       });
@@ -718,8 +719,9 @@ export class FitnessSession {
       const participantName = ledgerName || mappedUser?.name;
       if (!participantName) return;
 
-      const key = slugifyId(participantName);
-      const zoneInfo = zoneLookup.get(key) || null;
+      // Use user ID for zone lookup
+      const userId = mappedUser?.id || guestEntry?.occupantId || guestEntry?.metadata?.profileId;
+      const zoneInfo = zoneLookup.get(userId) || null;
       const fallbackZoneId = mappedUser?.currentData?.zone || null;
       const fallbackZoneColor = mappedUser?.currentData?.color || null;
 
@@ -810,9 +812,11 @@ export class FitnessSession {
     if (cadenceKey && this._equipmentIdByCadence?.has(cadenceKey)) {
       return this._equipmentIdByCadence.get(cadenceKey);
     }
+    // Use device id directly if available, otherwise fall back to name
     const name = device.name || device.label || null;
-    if (name) return slugifyId(name);
-    if (cadenceKey) return slugifyId(cadenceKey);
+    if (device.id) return String(device.id);
+    if (name) return String(name);
+    if (cadenceKey) return cadenceKey;
     return null;
   }
 
@@ -944,8 +948,8 @@ export class FitnessSession {
     // Process Users (from UserManager)
     const allUsers = this.userManager.getAllUsers();
     allUsers.forEach(user => {
-        const slug = slugifyId(user.name);
-        this.snapshot.usersMeta.set(slug, {
+        const userId = user.id;
+        this.snapshot.usersMeta.set(userId, {
           name: user.name,
           displayName: user.name, // Could resolve display label
           age: user.age,
@@ -961,10 +965,10 @@ export class FitnessSession {
         const hrValue = Math.max(0, Math.round(hrValueRaw || 0));
         user.currentHeartRate = hrValue; // legacy compatibility
 
-        const series = this.snapshot.participantSeries.get(slug) || [];
+        const series = this.snapshot.participantSeries.get(userId) || [];
         ensureSeriesCapacity(series, intervalIndex);
         series[intervalIndex] = hrValue > 0 ? hrValue : null;
-        this.snapshot.participantSeries.set(slug, series);
+        this.snapshot.participantSeries.set(userId, series);
       });
       this.zoneProfileStore?.syncFromUsers(allUsers);
 
@@ -1063,12 +1067,11 @@ export class FitnessSession {
     const sanitizeDistance = (value) => (Number.isFinite(value) && value > 0 ? value : null);
     const hasNumericSample = (metrics = {}) => ['heartRate', 'rpm', 'power', 'distance'].some((key) => metrics[key] != null);
     const stageUserEntry = (user) => {
-      if (!user?.name) return null;
-      const slug = slugifyId(user.name);
-      if (!slug) return null;
+      if (!user?.id) return null;
+      const userId = user.id;
       const snapshot = typeof user.getMetricsSnapshot === 'function' ? user.getMetricsSnapshot() : {};
       const staged = {
-        slug,
+        userId,
         metadata: {
           name: user.name,
           groupLabel: user.groupLabel || null,
@@ -1120,22 +1123,23 @@ export class FitnessSession {
     const devices = this.deviceManager.getAllDevices();
     devices.forEach((device) => {
       if (!device) return;
-      const deviceId = slugifyId(device.id || device.deviceId || device.name);
+      const deviceId = device.id ? String(device.id) : null;
+      if (!deviceId) return;
       
       // OPTION A FIX: Check DeviceManager's inactiveSince as source of truth
       // This aligns chart dropout with sidebar's inactive state (transparent + countdown)
       if (device.inactiveSince) {
         // Device is inactive according to DeviceManager - don't count user as active
-        const mappedUser = this.userManager.resolveUserForDevice(device.id || device.deviceId);
+        const mappedUser = this.userManager.resolveUserForDevice(deviceId);
         if (mappedUser) {
-          const slug = slugifyId(mappedUser.name);
-          if (slug) {
-            deviceInactiveUsers.add(slug);
+          const userId = mappedUser.id;
+          if (userId) {
+            deviceInactiveUsers.add(userId);
             // Ensure user is in userMetricMap so we record null HR
-            if (!userMetricMap.has(slug)) {
+            if (!userMetricMap.has(userId)) {
               const staged = stageUserEntry(mappedUser);
               if (staged) {
-                userMetricMap.set(slug, staged);
+                userMetricMap.set(userId, staged);
               }
             }
           }
@@ -1178,17 +1182,17 @@ export class FitnessSession {
       if (device.inactiveSince) return;
 
       if (!deviceId) return;
-      const mappedUser = this.userManager.resolveUserForDevice(device.id || device.deviceId);
+      const mappedUser = this.userManager.resolveUserForDevice(deviceId);
       if (!mappedUser) return;
-      const slug = slugifyId(mappedUser.name);
-      if (!slug) return;
-      if (!userMetricMap.has(slug)) {
+      const userId = mappedUser.id;
+      if (!userId) return;
+      if (!userMetricMap.has(userId)) {
         const staged = stageUserEntry(mappedUser);
         if (staged) {
-          userMetricMap.set(slug, staged);
+          userMetricMap.set(userId, staged);
         }
       }
-      const entry = userMetricMap.get(slug);
+      const entry = userMetricMap.get(userId);
       if (!entry) return;
       // Mark that this user received FRESH device data this tick
       entry._hasDeviceDataThisTick = true;
@@ -1222,7 +1226,7 @@ export class FitnessSession {
     }
     
     // First pass: identify who has valid HR data this tick FROM DEVICE
-    userMetricMap.forEach((entry, slug) => {
+    userMetricMap.forEach((entry, userId) => {
       if (!entry) return;
       // Only trust heartRate if we got FRESH device data this tick
       // Otherwise the user's cached heartRate (from User.getMetricsSnapshot) is stale
@@ -1230,12 +1234,12 @@ export class FitnessSession {
       
       // OPTION A FIX: Don't count user as active if their device is inactive
       // This syncs chart dropout with sidebar's inactive state
-      if (deviceInactiveUsers.has(slug)) return;
+      if (deviceInactiveUsers.has(userId)) return;
       
       const hr = entry.metrics?.heartRate;
       const hasValidHR = hr != null && Number.isFinite(hr) && hr > 0;
       if (hasValidHR) {
-        currentTickActiveHR.add(slug);
+        currentTickActiveHR.add(userId);
       }
     });
     
@@ -1244,10 +1248,10 @@ export class FitnessSession {
     // Priority 6: Use ActivityMonitor.getPreviousTickActive() instead of _lastTickActiveHR
     const droppedUsers = [];
     const previousTickActive = this.activityMonitor?.getPreviousTickActive() || new Set();
-    previousTickActive.forEach((slug) => {
-      if (!currentTickActiveHR.has(slug)) {
+    previousTickActive.forEach((userId) => {
+      if (!currentTickActiveHR.has(userId)) {
         // User's device stopped broadcasting - record null to mark dropout
-        droppedUsers.push(slug);
+        droppedUsers.push(userId);
         
         // Note: TreasureBox coin accumulation is now handled by:
         // 1. processTick() which only processes active participants (Priority 1)
@@ -1263,28 +1267,28 @@ export class FitnessSession {
     // This ensures the chart shows dropout (dotted line) immediately when broadcast stops,
     // not when the user is removed from roster. This aligns with the sidebar's "inactive" state.
     const inactiveUsers = [];
-    userMetricMap.forEach((entry, slug) => {
-      if (!currentTickActiveHR.has(slug)) {
+    userMetricMap.forEach((entry, userId) => {
+      if (!currentTickActiveHR.has(userId)) {
         // User is in roster but NOT actively broadcasting - record null
-        assignMetric(`user:${slug}:heart_rate`, null);
-        inactiveUsers.push(slug);
+        assignMetric(`user:${userId}:heart_rate`, null);
+        inactiveUsers.push(userId);
       }
     });
     
     // Note: Previous tick tracking now handled by ActivityMonitor.recordTick() (Priority 6)
     
     // Second pass: process metrics for all users
-    userMetricMap.forEach((entry, slug) => {
+    userMetricMap.forEach((entry, userId) => {
       if (!entry) return;
-      const prevBeats = this._cumulativeBeats.get(slug) || 0;
+      const prevBeats = this._cumulativeBeats.get(userId) || 0;
       const hr = entry.metrics.heartRate;
-      const hasValidHR = currentTickActiveHR.has(slug);
+      const hasValidHR = currentTickActiveHR.has(userId);
       const deltaBeats = hasValidHR
         ? (hr / 60) * intervalSeconds
         : 0;
       const nextBeats = prevBeats + deltaBeats;
-      this._cumulativeBeats.set(slug, nextBeats);
-      assignMetric(`user:${slug}:heart_beats`, nextBeats);
+      this._cumulativeBeats.set(userId, nextBeats);
+      assignMetric(`user:${userId}:heart_beats`, nextBeats);
 
       // Only record heart_rate if device is actively broadcasting valid HR
       // Null was already recorded above for users who stopped broadcasting
@@ -1294,13 +1298,13 @@ export class FitnessSession {
       }
       
       // Track this participant as active (has valid HR data)
-      activeParticipantIds.add(slug);
+      activeParticipantIds.add(userId);
       
-      assignMetric(`user:${slug}:heart_rate`, entry.metrics.heartRate);
-      assignMetric(`user:${slug}:zone_id`, entry.metrics.zoneId);
-      assignMetric(`user:${slug}:rpm`, entry.metrics.rpm);
-      assignMetric(`user:${slug}:power`, entry.metrics.power);
-      assignMetric(`user:${slug}:distance`, entry.metrics.distance);
+      assignMetric(`user:${userId}:heart_rate`, entry.metrics.heartRate);
+      assignMetric(`user:${userId}:zone_id`, entry.metrics.zoneId);
+      assignMetric(`user:${userId}:rpm`, entry.metrics.rpm);
+      assignMetric(`user:${userId}:power`, entry.metrics.power);
+      assignMetric(`user:${userId}:distance`, entry.metrics.distance);
     });
     
     // Update ActivityMonitor with current tick's activity (Phase 2 - single source of truth)
@@ -1311,17 +1315,18 @@ export class FitnessSession {
     // Ensure every roster user gets a baseline coins_total=0 once (even if inactive)
     // so the chart has a series to render and can show dropout immediately.
     if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
-    userMetricMap.forEach((_, slug) => {
-      if (!this._usersWithCoinsRecorded.has(slug)) {
-        assignMetric(`user:${slug}:coins_total`, 0);
-        this._usersWithCoinsRecorded.add(slug);
+    userMetricMap.forEach((_, userId) => {
+      if (!this._usersWithCoinsRecorded.has(userId)) {
+        assignMetric(`user:${userId}:coins_total`, 0);
+        this._usersWithCoinsRecorded.add(userId);
       }
     });
 
     // Process TreasureBox coin intervals SYNCHRONOUSLY during session tick
     // This ensures coin awards are aligned with activity detection (no race conditions)
     if (this.treasureBox) {
-      this.treasureBox.processTick(currentTickIndex, currentTickActiveHR, { slugifyId });
+      // Pass user IDs to processTick
+      this.treasureBox.processTick(currentTickIndex, currentTickActiveHR, {});
       
       const treasureSummary = this.treasureBox.summary;
 
@@ -1351,19 +1356,17 @@ export class FitnessSession {
         // Track users who have had their first coin value recorded (to ensure all start at 0)
         if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
         
-        perUserCoinTotals.forEach((coins, userName) => {
-          if (!userName) return;
-          const slug = slugifyId(userName);
-          if (!slug) return;
+        perUserCoinTotals.forEach((coins, userId) => {
+          if (!userId) return;
           // Only record coins_total if user's device is actively broadcasting HR
           // During dropout, we DON'T want to record new coin values - the chart should stay flat
-          if (currentTickActiveHR.has(slug)) {
+          if (currentTickActiveHR.has(userId)) {
             // GUARDRAIL: For each user's first tick, ensure coins start at 0
             // This anchors all race chart lines to origin (0, 0)
-            if (!this._usersWithCoinsRecorded.has(slug)) {
+            if (!this._usersWithCoinsRecorded.has(userId)) {
               // First time recording this user's coins: always 0
-              assignMetric(`user:${slug}:coins_total`, 0);
-              this._usersWithCoinsRecorded.add(slug);
+              assignMetric(`user:${userId}:coins_total`, 0);
+              this._usersWithCoinsRecorded.add(userId);
             } else {
               // Subsequent ticks: record actual coin value from TreasureBox
               // Note: Frozen coins hack removed (Priority 3)
@@ -1371,7 +1374,7 @@ export class FitnessSession {
               // 1. processTick() only processes active participants (Priority 1)
               // 2. _awardCoins() checks ActivityMonitor.isActive() (Priority 2)
               const coinValue = Number.isFinite(coins) ? coins : null;
-              assignMetric(`user:${slug}:coins_total`, coinValue);
+              assignMetric(`user:${userId}:coins_total`, coinValue);
             }
           }
           // Note: NOT recording coins during dropout means the timeline won't have a value

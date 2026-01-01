@@ -4,7 +4,7 @@ import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
-import '../FitnessCam.scss';
+import '../FitnessSidebar.scss';
 import { usePersistentVolume } from '../usePersistentVolume.js';
 import { normalizeDuration } from '../../Player/utils/mediaIdentity.js';
 import { guid } from '../../Player/lib/helpers.js';

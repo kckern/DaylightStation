@@ -1,6 +1,6 @@
 import React from 'react';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import '../FitnessCam.scss';
+import '../FitnessSidebar.scss';
 
 const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onClose }) => {
   const handleSelect = (playlistId) => {

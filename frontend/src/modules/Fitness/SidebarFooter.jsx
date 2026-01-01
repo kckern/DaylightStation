@@ -4,15 +4,7 @@ import CircularUserAvatar from './components/CircularUserAvatar.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import './SidebarFooter.scss';
 
-const slugifyId = (value, fallback = 'user') => {
-  if (!value) return fallback;
-  const slug = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return slug || fallback;
-};
+// Note: slugifyId has been removed - we now use explicit IDs from config
 
 const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   const { 
@@ -26,8 +18,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     userCurrentZones,
     zones,
     userZoneProgress,
-    getUserByDevice,
-    launchApp
+    getUserByDevice
   } = useFitnessContext();
   const inactiveTimeout = deviceConfiguration?.timeout?.inactive ?? 60000;
 
@@ -45,7 +36,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
       if (!Array.isArray(arr)) return;
       arr.forEach((cfg) => {
         if (!cfg?.name) return;
-        const profileId = cfg.id || slugifyId(cfg.name);
+        const profileId = cfg.profileId || cfg.id;
+        if (!profileId) return; // Skip if no valid profile ID
         addKey(cfg.name, profileId);
         if (cfg.group_label) {
           addKey(cfg.group_label, profileId);
@@ -117,8 +109,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     const map = {};
     participantRoster.forEach((participant) => {
       const profileId = participant.profileId
-        || getConfiguredProfileId(participant?.name)
-        || (participant?.name ? slugifyId(participant.name) : null);
+        || participant.id
+        || getConfiguredProfileId(participant?.name);
       if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
         const normalized = String(participant.hrDeviceId);
         map[normalized] = profileId || 'user';
@@ -134,8 +126,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
         }
         if (!map[normalized]) {
           const profileId = participant.profileId
-            || getConfiguredProfileId(participant?.name)
-            || (participant?.name ? slugifyId(participant.name) : null);
+            || participant.id
+            || getConfiguredProfileId(participant?.name);
           map[normalized] = profileId || 'user';
         }
       });
@@ -145,7 +137,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
         if (cfg?.hr === undefined || cfg.hr === null) return;
         const normalized = String(cfg.hr);
         if (!map[normalized]) {
-          const profileId = cfg.id || slugifyId(cfg.name);
+          const profileId = cfg.profileId || cfg.id;
           map[normalized] = profileId || 'user';
         }
       });
@@ -300,9 +292,37 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     return hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
   }, [heartRateDevices, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive]);
 
+  const handleContainerClick = React.useCallback(() => {
+    console.log('[SidebarFooter] device-container clicked', { 
+      hasOnAvatarClick: Boolean(onAvatarClick), 
+      hasOnContentSelect: Boolean(onContentSelect),
+      deviceCount: sortedDevices.length 
+    });
+    if (onAvatarClick) {
+      // Pass first device info if available
+      const device = sortedDevices[0];
+      if (device) {
+        const deviceKey = resolveDeviceKey(device);
+        const ownerName = hrOwnerMap[deviceKey] || null;
+        const profileId = userIdMap[deviceKey] || 'user';
+        onAvatarClick({ deviceKey, ownerName, profileId });
+      }
+    } else if (onContentSelect) {
+      console.log('[SidebarFooter] navigating to users view (fitness_session plugin)');
+      // Use view_direct type to navigate to users view
+      onContentSelect('view_direct', { view: 'users' });
+    }
+  }, [onAvatarClick, onContentSelect, sortedDevices, resolveDeviceKey, hrOwnerMap, userIdMap]);
+
   return (
     <div className="sidebar-footer">
-      <div className="device-container">
+      <div 
+        className="device-container" 
+        onPointerDown={handleContainerClick}
+        role="button"
+        tabIndex={0}
+        style={{ cursor: 'pointer' }}
+      >
         {sortedDevices.map((device, index) => {
           const deviceKey = resolveDeviceKey(device) || `device-${index}`;
           let ownerName = device.type === 'heart_rate' ? hrOwnerMap[deviceKey] : null;
@@ -313,9 +333,6 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
           let profileId = device.type === 'heart_rate' 
             ? (userIdMap[deviceKey] || getConfiguredProfileId(ownerName) || 'user')
             : 'user';
-          if (device.type === 'heart_rate' && profileId === 'user' && ownerName) {
-            profileId = getConfiguredProfileId(ownerName) || slugifyId(ownerName, 'user');
-          }
           if (device.type === 'heart_rate' && (!ownerName || profileId === 'user')) {
             console.warn('[SidebarFooter] Missing avatar data', {
               deviceKey,
@@ -337,22 +354,11 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
           const cardClasses = ['device-card', cardZoneClass, isActive ? 'active' : 'inactive']
             .filter(Boolean)
             .join(' ');
-
-          const handleAvatarClick = (e) => {
-            e.stopPropagation();
-            if (onAvatarClick) {
-              onAvatarClick({ deviceKey, ownerName, profileId });
-            } else {
-              // Default: launch fitness_cam plugin
-              launchApp?.('fitness_cam', { mode: 'standalone' });
-            }
-          };
           
           return (
             <div
               key={deviceKey}
               className={cardClasses}
-              onPointerDown={() => onContentSelect && onContentSelect('users')}
             >
               {device.type === 'heart_rate' ? (
                 <CircularUserAvatar
@@ -368,8 +374,6 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
                   ringWidth={8}
                   showIndicator={false}
                   ariaLabel={ownerName ? `${ownerName} heart rate` : undefined}
-                  onClick={handleAvatarClick}
-                  role="button"
                 />
               ) : (
                 <div className="device-icon-fallback">

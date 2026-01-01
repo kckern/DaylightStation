@@ -79,10 +79,20 @@ class UserService {
       // Build hydrated user object
       const hydrated = {
         id: profile.username || username,
+        profileId: profile.username || username, // Explicit profile ID for avatar paths
         name: profile.display_name || profile.username || username,
         birthyear: profile.birthyear,
         group_label: profile.group_label,
       };
+
+      console.log('[UserService] Hydrated user:', {
+        username,
+        'hydrated.id': hydrated.id,
+        'hydrated.profileId': hydrated.profileId,
+        'hydrated.name': hydrated.name,
+        'profile.username': profile.username,
+        'profile.display_name': profile.display_name
+      });
 
       // Add fitness-specific data if available
       const fitnessConfig = profile.apps?.fitness;

@@ -1,3 +1,8 @@
+/**
+ * @deprecated Use user.id or entity.id directly instead of deriving IDs from names.
+ * This function will be removed in a future version.
+ * All users/devices/participants have explicit `id` fields that should be used.
+ */
 export const slugifyId = (value, fallback = 'user') => {
   if (!value) return fallback;
   const slug = String(value)
@@ -6,6 +11,33 @@ export const slugifyId = (value, fallback = 'user') => {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
   return slug || fallback;
+};
+
+/**
+ * Normalize a zone ID for lookups. Zone IDs are known, finite values like
+ * 'cool', 'active', 'warm', 'hot', 'fire' from configuration.
+ * This is ONLY for zone configuration matching, not for user identity.
+ * 
+ * @param {string} zoneId - The zone ID to normalize
+ * @returns {string|null} - Normalized zone ID or null if invalid
+ */
+export const normalizeZoneId = (zoneId) => {
+  if (!zoneId) return null;
+  return String(zoneId).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || null;
+};
+
+/**
+ * Sanitize an ID for use in SVG clip-path or other HTML id attributes.
+ * Only use this for DOM element IDs, not for data lookups.
+ * 
+ * @param {string} id - The ID to sanitize
+ * @param {string} fallback - Fallback if id is empty
+ * @returns {string} - Sanitized ID safe for DOM use
+ */
+export const sanitizeIdForDom = (id, fallback = 'element') => {
+  if (!id) return fallback;
+  const sanitized = String(id).replace(/[^a-zA-Z0-9-_]/g, '_');
+  return sanitized || fallback;
 };
 
 export const resolveDisplayLabel = ({
@@ -95,7 +127,7 @@ const DEFAULT_ZONE_LOOKUP = DEFAULT_ZONE_CONFIG.reduce((acc, zone) => {
 const normalizeZoneOverrides = (overrides = {}) => {
   if (!overrides || typeof overrides !== 'object') return {};
   return Object.entries(overrides).reduce((acc, [key, value]) => {
-    const normalizedKey = slugifyId(key).toLowerCase();
+    const normalizedKey = normalizeZoneId(key);
     const numeric = Number(value);
     if (normalizedKey && Number.isFinite(numeric)) {
       acc[normalizedKey] = numeric;
@@ -173,7 +205,8 @@ export const deriveZoneProgressSnapshot = ({
   const hrValue = Number.isFinite(heartRate) ? Math.max(0, heartRate) : 0;
   const sortedZones = zones.slice().sort((a, b) => (a?.min ?? 0) - (b?.min ?? 0));
   const zoneSequence = sortedZones.map((zone, index) => {
-    const zoneId = slugifyId(zone?.id || zone?.name || `zone-${index}`);
+    const rawId = zone?.id || zone?.name || `zone-${index}`;
+    const zoneId = normalizeZoneId(rawId) || `zone-${index}`;
     const threshold = getZoneMin(zone, { isFirst: index === 0 });
     return {
       id: zoneId,
@@ -201,7 +234,7 @@ export const deriveZoneProgressSnapshot = ({
   const nextZone = sortedZones[currentZoneIndex + 1] || null;
   const currentZoneMeta = zoneSequence[currentZoneIndex] || null;
   const nextZoneMeta = zoneSequence[currentZoneIndex + 1] || null;
-  const currentZoneId = currentZoneMeta?.id || currentZone?.id || (currentZone?.name ? slugifyId(currentZone.name) : null);
+  const currentZoneId = currentZoneMeta?.id || currentZone?.id || (currentZone?.name ? normalizeZoneId(currentZone.name) : null);
   const currentZoneName = currentZone?.name || currentZoneId;
   const currentZoneColor = currentZone?.color || null;
   const currentThreshold = Number.isFinite(currentZoneMeta?.threshold)
@@ -296,10 +329,10 @@ export const calculateZoneProgressTowardsTarget = ({
     };
   }
 
-  const normalizedTarget = targetZoneId ? slugifyId(targetZoneId).toLowerCase() : null;
+  const normalizedTarget = targetZoneId ? normalizeZoneId(targetZoneId) : null;
   let targetIndex = null;
   if (normalizedTarget) {
-    targetIndex = zoneSequence.findIndex((zone) => slugifyId(zone.id).toLowerCase() === normalizedTarget);
+    targetIndex = zoneSequence.findIndex((zone) => normalizeZoneId(zone.id) === normalizedTarget);
   }
   if (targetIndex == null || targetIndex === -1) {
     targetIndex = Math.min(currentZoneIndex + 1, zoneSequence.length - 1);
@@ -380,8 +413,8 @@ export const resolveZoneThreshold = (zoneConfig, zoneId) => {
   if (!zoneId) return null;
   const zones = ensureZoneList(zoneConfig);
   if (!zones.length) return null;
-  const normalizedId = slugifyId(zoneId).toLowerCase();
-  const found = zones.find((zone) => slugifyId(zone.id || zone.name).toLowerCase() === normalizedId);
+  const normalizedId = normalizeZoneId(zoneId);
+  const found = zones.find((zone) => normalizeZoneId(zone.id || zone.name) === normalizedId);
   if (!found) return null;
   const index = zones.findIndex((zone) => zone === found);
   const minValue = getZoneMin(found, { isFirst: index === 0 });

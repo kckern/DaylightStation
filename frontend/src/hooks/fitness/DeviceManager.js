@@ -1,8 +1,13 @@
-import { slugifyId, resolveDisplayLabel, deepClone } from './types.js';
+import { resolveDisplayLabel, deepClone } from './types.js';
 
 export class Device {
   constructor(data = {}) {
-    this.id = slugifyId(data.id || data.deviceId || `device-${Date.now()}`);
+    // Device ID must be explicitly provided - usually from ANT+ device ID
+    const rawId = data.id || data.deviceId;
+    if (!rawId) {
+      console.warn('[Device] No id/deviceId provided, generating fallback');
+    }
+    this.id = rawId ? String(rawId) : `device-${Date.now()}`;
     this.name = data.name || `Device ${this.id}`;
     this.type = data.type || 'unknown';
     this.profile = data.profile || null;
@@ -126,7 +131,8 @@ export class DeviceManager {
   }
 
   updateDevice(deviceId, profile, rawData) {
-    const id = slugifyId(deviceId);
+    // Use device ID directly - no transformation
+    const id = deviceId ? String(deviceId) : null;
     if (!id) return null;
 
     // Normalize raw ANT+ data
@@ -164,14 +170,16 @@ export class DeviceManager {
   }
 
   registerDevice(data) {
-    const id = slugifyId(data.id || data.deviceId);
-    if (!id) return null;
+    // Use device ID directly - no transformation
+    const id = data.id || data.deviceId;
+    const idStr = id ? String(id) : null;
+    if (!idStr) return null;
 
-    let device = this.devices.get(id);
+    let device = this.devices.get(idStr);
     let isNew = false;
     if (!device) {
-      device = new Device({ ...data, id });
-      this.devices.set(id, device);
+      device = new Device({ ...data, id: idStr });
+      this.devices.set(idStr, device);
       isNew = true; // 5A: Flag for newly registered devices
     } else {
       device.update(data);
@@ -182,13 +190,15 @@ export class DeviceManager {
   }
 
   removeDevice(deviceId) {
-    const id = slugifyId(deviceId);
+    // Use device ID directly
+    const id = deviceId ? String(deviceId) : null;
     if (!id) return false;
     return this.devices.delete(id);
   }
 
   getDevice(id) {
-    return this.devices.get(slugifyId(id));
+    // Direct lookup - no transformation
+    return id ? this.devices.get(String(id)) : null;
   }
 
   getAllDevices() {

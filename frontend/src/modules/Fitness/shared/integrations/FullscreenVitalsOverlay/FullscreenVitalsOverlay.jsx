@@ -2,7 +2,6 @@ import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../../../lib/api.mjs';
-import { slugifyId } from '../../../../../hooks/useFitnessSession.js';
 import CircularUserAvatar from '../../../components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '../../../components/RpmDeviceAvatar.jsx';
 import './FullscreenVitalsOverlay.scss';
@@ -120,18 +119,18 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     if (Array.isArray(equipment)) {
       equipment.forEach((item) => {
         if (!item) return;
-        const slugSource = item.id || item.name || null;
-        const equipmentSlug = slugSource ? slugifyId(slugSource, 'equipment') : null;
+        // Use explicit ID from equipment config
+        const equipmentId = item.id || String(item.cadence || item.speed || '');
         if (item.cadence != null) {
           map[String(item.cadence)] = {
             name: item.name || String(item.cadence),
-            slug: equipmentSlug || String(item.cadence)
+            id: equipmentId
           };
         }
         if (item.speed != null) {
           map[String(item.speed)] = {
             name: item.name || String(item.speed),
-            slug: equipmentSlug || String(item.speed)
+            id: equipmentId
           };
         }
       });
@@ -187,10 +186,13 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           ? getUserByDevice(device.deviceId)
           : allUsers.find((u) => String(u.cadenceDeviceId) === String(device.deviceId));
         const equipmentInfo = equipmentMap[String(device.deviceId)] || {};
-        const equipmentSlug = equipmentInfo.slug
-          || (assignment?.metadata?.equipmentId ? slugifyId(assignment.metadata.equipmentId, 'equipment') : null)
-          || slugifyId(assignment?.occupantName || assignment?.metadata?.name || baseUser?.name || device.deviceId, 'equipment');
-        const avatarSrc = DaylightMediaPath(`/media/img/equipment/${equipmentSlug}`);
+        // Use explicit equipment ID
+        const equipmentId = equipmentInfo.id
+          || assignment?.metadata?.equipmentId
+          || assignment?.occupantId
+          || baseUser?.id
+          || String(device.deviceId);
+        const avatarSrc = DaylightMediaPath(`/media/img/equipment/${equipmentId}`);
         const rpm = Math.max(0, Math.round(device.cadence || 0));
         const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
         const colorKey = cadenceConfig[String(device.deviceId)];

@@ -1,2 +1,2 @@
-export { default } from './FitnessCamApp';
+export { default } from './FitnessSessionApp';
 export { default as manifest } from './manifest';

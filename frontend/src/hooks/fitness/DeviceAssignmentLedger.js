@@ -1,4 +1,4 @@
-import { slugifyId } from './types.js';
+// Note: slugifyId removed - we now use explicit IDs
 
 const normalizeDeviceId = (deviceId) => {
   if (deviceId === undefined || deviceId === null) return null;
@@ -141,9 +141,10 @@ export class DeviceAssignmentLedger {
       ? assignment
       : assignment?.occupantName || assignment?.name || assignment?.guestName;
     const occupantName = (typeof nameSource === 'string' && nameSource.trim()) ? nameSource.trim() : 'Guest';
-    const occupantSlug = slugifyId(occupantName);
+    // Use explicit ID if available, otherwise generate a guest ID
+    const occupantId = assignment?.occupantId || assignment?.metadata?.profileId || `guest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const baseUserName = typeof assignment?.baseUserName === 'string' ? assignment.baseUserName : null;
-    const displacedSlug = baseUserName ? slugifyId(baseUserName) : null;
+    const baseUserId = assignment?.baseUserId || assignment?.metadata?.baseUserId || null;
     const overridesHash = Array.isArray(assignment?.zones) ? JSON.stringify(assignment.zones) : null;
     const occupantType = assignment?.occupantType || assignment?.metadata?.occupantType || 'guest';
     const timestamp = Number.isFinite(assignment?.updatedAt)
@@ -152,12 +153,12 @@ export class DeviceAssignmentLedger {
 
     return {
       deviceId,
-      occupantSlug,
+      occupantId,
       occupantName,
       occupantType,
-      displacedSlug,
+      displacedUserId: baseUserId,
       overridesHash,
-      metadata: cloneAssignment(assignment),
+      metadata: { ...cloneAssignment(assignment), profileId: occupantId },
       updatedAt: timestamp
     };
   }

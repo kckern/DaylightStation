@@ -1,6 +1,5 @@
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
-import { slugifyId } from '../../hooks/useFitnessSession.js';
 import FitnessTreasureBox from './FitnessSidebar/FitnessTreasureBox.jsx';
 import FitnessUsersList from './FitnessSidebar/FitnessUsers.jsx';
 import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
@@ -8,7 +7,7 @@ import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
 import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
 import FitnessMusicPlayer from './FitnessSidebar/FitnessMusicPlayer.jsx';
 import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
-import './FitnessCam.scss';
+import './FitnessSidebar.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
 const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true, boostLevel, setBoost }, ref) => {
@@ -68,11 +67,16 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
         if (!assignment?.occupantName) return;
         const match = primaryByName.get(assignment.occupantName);
         if (!match) return;
-        const id = match.id || slugifyId(match.name);
+        // Use explicit ID from match config
+        const id = match.id || match.profileId;
+        if (!id) {
+          console.warn('[FitnessSidebar] primaryGuestPool: match missing id for', match.name);
+          return;
+        }
         primaryGuestPool.push({
           ...match,
           id,
-          profileId: match.profileId || id,
+          profileId: id,
           category: 'Family',
           source: match.source || 'Family',
           allowWhileAssigned: true
@@ -84,13 +88,18 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     const seenIds = new Set();
     return combined.reduce((acc, candidate) => {
       if (!candidate || !candidate.name) return acc;
-      const id = candidate.id || slugifyId(candidate.name);
-      if (!id || seenIds.has(id)) return acc;
+      // Use explicit ID from candidate
+      const id = candidate.id || candidate.profileId;
+      if (!id) {
+        console.warn('[FitnessSidebar] guestCandidates: candidate missing id for', candidate.name);
+        return acc;
+      }
+      if (seenIds.has(id)) return acc;
       seenIds.add(id);
       acc.push({
         ...candidate,
         id,
-        profileId: candidate.profileId || id,
+        profileId: id,
         category: candidate.category || 'Family',
         source: candidate.source || candidate.category || null,
         allowWhileAssigned: Boolean(candidate.allowWhileAssigned)

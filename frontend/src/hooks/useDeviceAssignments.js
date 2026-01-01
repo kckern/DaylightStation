@@ -1,6 +1,5 @@
 import React from 'react';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
-import { slugifyId } from './fitness/types.js';
 
 const cloneMetadata = (metadata) => {
   if (metadata && typeof metadata === 'object') {
@@ -26,13 +25,15 @@ export const useDeviceAssignments = () => {
       const displayLabel = typeof getDisplayLabel === 'function'
         ? getDisplayLabel(occupantName, { preferGroupLabel: false })
         : occupantName;
+      // Use explicit ID from entry or metadata
+      const occupantId = entry.occupantId || metadata.profileId || entry.occupantSlug;
       return {
         deviceId: entry.deviceId,
-        occupantSlug: entry.occupantSlug || slugifyId(occupantName),
+        occupantId,
         occupantName,
         occupantLabel: displayLabel,
         occupantType: entry.occupantType || 'guest',
-        displacedSlug: entry.displacedSlug || null,
+        displacedUserId: entry.displacedUserId || entry.displacedSlug || null,
         updatedAt: entry.updatedAt || metadata.updatedAt || null,
         metadata,
         participantSnapshot: participant ? { ...participant } : null

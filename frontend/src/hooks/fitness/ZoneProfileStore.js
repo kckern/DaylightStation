@@ -1,4 +1,4 @@
-import { slugifyId, deriveZoneProgressSnapshot, getZoneMin } from './types.js';
+import { deriveZoneProgressSnapshot, getZoneMin } from './types.js';
 
 const cloneZoneConfig = (config = []) => {
   if (!Array.isArray(config)) return [];
@@ -60,7 +60,7 @@ export class ZoneProfileStore {
       for (const user of usersIterable) {
         const profile = this.#buildProfileFromUser(user);
         if (profile) {
-          nextMap.set(profile.slug, profile);
+          nextMap.set(profile.id, profile);
         }
       }
     }
@@ -112,20 +112,18 @@ export class ZoneProfileStore {
   #resolveProfile(identifier) {
     if (!identifier) return null;
     if (typeof identifier === 'string') {
-      const slug = slugifyId(identifier);
-      if (!slug) return null;
-      return this._profiles.get(slug) || null;
+      // Direct lookup by ID
+      return this._profiles.get(identifier) || null;
     }
-    if (identifier?.slug) {
-      return this._profiles.get(identifier.slug) || null;
+    if (identifier?.id) {
+      return this._profiles.get(identifier.id) || null;
     }
     return null;
   }
 
   #buildProfileFromUser(user) {
-    if (!user?.name) return null;
-    const slug = slugifyId(user.name);
-    if (!slug) return null;
+    if (!user?.id) return null;
+    const userId = user.id;
 
     const hasCustomZones = Array.isArray(user.zoneConfig) && user.zoneConfig.length > 0;
     const sourceZoneConfig = hasCustomZones ? user.zoneConfig : this._baseZoneConfig;
@@ -142,11 +140,11 @@ export class ZoneProfileStore {
     const zoneSequence = normalizedSnapshot?.zoneSequence || this.#buildZoneSequence(normalizedZoneConfig);
 
     return {
-      slug,
+      id: userId,
       name: user.name,
       displayName: user.displayName || user.name,
       groupLabel: user.groupLabel || null,
-      profileId: user.id || slug,
+      profileId: userId,
       zoneConfig: normalizedZoneConfig,
       zoneSequence,
       zoneSnapshot: normalizedSnapshot,
