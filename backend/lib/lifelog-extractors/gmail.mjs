@@ -63,12 +63,13 @@ export const gmailExtractor = {
     
     if (entry.received.length) {
       lines.push(`  Received ${entry.received.length} important email${entry.received.length > 1 ? 's' : ''} (still in inbox):`);
-      entry.received.slice(0, 3).forEach(m => {
+      entry.received.slice(0, 5).forEach(m => {
         const sender = m.from?.split('<')[0]?.trim() || m.from || 'Unknown';
-        lines.push(`    - From: ${sender} - "${m.subject}"`);
+        const snippet = m.snippet ? ` - ${m.snippet.substring(0, 80)}${m.snippet.length > 80 ? '...' : ''}` : '';
+        lines.push(`    - From: ${sender} - "${m.subject}"${snippet}`);
       });
-      if (entry.received.length > 3) {
-        lines.push(`    ... and ${entry.received.length - 3} more`);
+      if (entry.received.length > 5) {
+        lines.push(`    ... and ${entry.received.length - 5} more`);
       }
     }
     

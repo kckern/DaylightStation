@@ -54,7 +54,7 @@ export const extractors = [
   garminExtractor,    // Best aggregated health data
   stravaExtractor,    // Detailed workouts
   calendarExtractor,  // Calendar events (date-keyed lifelog)
-  eventsExtractor,    // Legacy calendar fallback
+  // eventsExtractor removed - was duplicate of calendarExtractor, both output "CALENDAR EVENTS"
   checkinsExtractor,  // Locations
   githubExtractor,    // Code activity
   nutritionExtractor, // Nutrition tracking from NutriBot

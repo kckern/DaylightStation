@@ -73,6 +73,17 @@ export const lastfmExtractor = {
         
         lines.push(`  Session ${sessionNum} (${timeOfDay}, ${session.tracks.length} tracks, ${duration} min):`);
         lines.push(`    Started: ${session.firstTrack.time} - ${session.firstTrack.artist} - "${session.firstTrack.title}"`);
+        
+        // Add ~3 middle tracks (randomly sampled) if session has more than 2 tracks
+        if (session.tracks.length > 2) {
+          const middleTracks = session.tracks.slice(1, -1); // Exclude first and last
+          const sampleCount = Math.min(3, middleTracks.length);
+          const sampled = sampleRandom(middleTracks, sampleCount);
+          sampled.forEach(track => {
+            lines.push(`    Middle: ${track.time} - ${track.artist} - "${track.title}"`);
+          });
+        }
+        
         lines.push(`    Ended: ${session.lastTrack.time} - ${session.lastTrack.artist} - "${session.lastTrack.title}"`);
         
         // Session top artists
@@ -197,6 +208,15 @@ function getTopAlbums(entries, limit = 3) {
     })
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
+}
+
+/**
+ * Randomly sample N items from an array
+ */
+function sampleRandom(arr, count) {
+  if (arr.length <= count) return arr;
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
 }
 
 /**

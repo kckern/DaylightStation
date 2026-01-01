@@ -156,7 +156,7 @@ Style guidelines:
     try {
       const response = await this.#aiGateway.chat([
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}\n\nReconstruct this day with rich detail and natural flow. Create a cohesive narrative that captures the full scope of the day.` }
+        { role: 'user', content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}\n\nReconstruct this day with detail and natural flow. Create a cohesive daily debrief that captures the full scope of the day, and asks what may not be clear from the data.` }
       ], {
         temperature: 0.6,
         maxTokens: 800
