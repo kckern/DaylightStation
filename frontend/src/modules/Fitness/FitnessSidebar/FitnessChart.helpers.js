@@ -16,20 +16,12 @@ const toNumber = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
-const slugifyId = (value, fallback = null) => {
-  if (!value) return fallback;
-  const slug = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return slug || fallback;
-};
+// Note: slugifyId has been removed - we now use explicit IDs from config
 
 const normalizeId = (entry) => {
   if (!entry) return null;
-  const raw = entry.name || entry.profileId || entry.hrDeviceId || null;
-  return slugifyId(raw);
+  // Use explicit ID if available, otherwise fall back to name/hrDeviceId
+  return entry.id || entry.profileId || entry.name || entry.hrDeviceId || null;
 };
 
 const forwardFill = (arr = []) => {
@@ -136,12 +128,8 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   // Get heart_rate to detect actual device activity (has nulls during dropout)
   const heartRate = getSeries(targetId, 'heart_rate', { clone: true }) || [];
   
-  // DEBUG: Check heart_rate for nulls
+  // HR nulls tracking (silent - only log at debug level if needed)
   const hrNullCount = heartRate.filter(v => v == null).length;
-  const hrLen = heartRate.length;
-  if (hrNullCount > 0) {
-    console.log('[buildBeatsSeries] HR nulls:', { targetId, hrLen, hrNullCount, firstNull: heartRate.indexOf(null), lastNull: heartRate.lastIndexOf(null) });
-  }
   
   const maxLen = Math.max(zones.length, heartRate.length);
   let active = new Array(maxLen).fill(false);

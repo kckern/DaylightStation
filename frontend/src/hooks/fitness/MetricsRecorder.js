@@ -12,7 +12,7 @@
  * @see /docs/notes/fitness-architecture-review.md Phase 4
  */
 
-import { slugifyId } from './types.js';
+// Note: slugifyId has been removed - we now use user.id directly
 
 /**
  * @typedef {Object} MetricsRecorderConfig
@@ -145,7 +145,7 @@ export class MetricsRecorder {
     users.forEach((user) => {
       const staged = this._stageUserEntry(user);
       if (staged) {
-        userMetricMap.set(staged.slug, staged);
+        userMetricMap.set(staged.userId, staged);
       }
     });
 
@@ -155,7 +155,10 @@ export class MetricsRecorder {
     devices.forEach((device) => {
       if (!device) return;
       
-      const deviceId = slugifyId(device.id || device.deviceId || device.name);
+      // Use device ID directly
+      const deviceId = device.id ? String(device.id) : null;
+      if (!deviceId) return;
+      
       const metrics = typeof device.getMetricsSnapshot === 'function'
         ? device.getMetricsSnapshot()
         : null;
@@ -192,23 +195,22 @@ export class MetricsRecorder {
       }
 
       // Map device to user
-      if (!deviceId) return;
-      const mappedUser = userManager.resolveUserForDevice(device.id || device.deviceId);
+      const mappedUser = userManager.resolveUserForDevice(deviceId);
       if (!mappedUser) return;
       
-      const slug = slugifyId(mappedUser.name);
-      if (!slug) return;
+      const userId = mappedUser.id;
+      if (!userId) return;
       
       // Ensure user is in map
-      if (!userMetricMap.has(slug)) {
+      if (!userMetricMap.has(userId)) {
         const staged = this._stageUserEntry(mappedUser);
         if (staged) {
-          userMetricMap.set(slug, staged);
+          userMetricMap.set(userId, staged);
         }
       }
       
       // Merge device metrics into user entry
-      const entry = userMetricMap.get(slug);
+      const entry = userMetricMap.get(userId);
       if (!entry) return;
       entry.metrics.heartRate = entry.metrics.heartRate ?? sanitizedDeviceMetrics.heartRate;
       entry.metrics.rpm = entry.metrics.rpm ?? sanitizedDeviceMetrics.rpm;
@@ -217,30 +219,30 @@ export class MetricsRecorder {
     });
 
     // Process user metrics
-    userMetricMap.forEach((entry, slug) => {
+    userMetricMap.forEach((entry, userId) => {
       if (!entry) return;
       
       // Cumulative heart beats
-      const prevBeats = this._cumulativeBeats.get(slug) || 0;
+      const prevBeats = this._cumulativeBeats.get(userId) || 0;
       const hr = entry.metrics.heartRate;
       const deltaBeats = Number.isFinite(hr) && hr > 0
         ? (hr / 60) * intervalSeconds
         : 0;
       const nextBeats = prevBeats + deltaBeats;
-      this._cumulativeBeats.set(slug, nextBeats);
-      assignMetric(`user:${slug}:heart_beats`, nextBeats);
+      this._cumulativeBeats.set(userId, nextBeats);
+      assignMetric(`user:${userId}:heart_beats`, nextBeats);
 
       // Only record other metrics if we have numeric sample
       if (!hasNumericSample(entry.metrics)) return;
       
       // Track as active participant
-      activeParticipants.add(slug);
+      activeParticipants.add(userId);
       
-      assignMetric(`user:${slug}:heart_rate`, entry.metrics.heartRate);
-      assignMetric(`user:${slug}:zone_id`, entry.metrics.zoneId);
-      assignMetric(`user:${slug}:rpm`, entry.metrics.rpm);
-      assignMetric(`user:${slug}:power`, entry.metrics.power);
-      assignMetric(`user:${slug}:distance`, entry.metrics.distance);
+      assignMetric(`user:${userId}:heart_rate`, entry.metrics.heartRate);
+      assignMetric(`user:${userId}:zone_id`, entry.metrics.zoneId);
+      assignMetric(`user:${userId}:rpm`, entry.metrics.rpm);
+      assignMetric(`user:${userId}:power`, entry.metrics.power);
+      assignMetric(`user:${userId}:distance`, entry.metrics.distance);
     });
 
     // TreasureBox metrics
@@ -255,11 +257,9 @@ export class MetricsRecorder {
         : null;
       
       if (perUserCoinTotals && typeof perUserCoinTotals.forEach === 'function') {
-        perUserCoinTotals.forEach((coins, userName) => {
-          if (!userName) return;
-          const slug = slugifyId(userName);
-          if (!slug) return;
-          assignMetric(`user:${slug}:coins_total`, Number.isFinite(coins) ? coins : null);
+        perUserCoinTotals.forEach((coins, userId) => {
+          if (!userId) return;
+          assignMetric(`user:${userId}:coins_total`, Number.isFinite(coins) ? coins : null);
         });
       }
     }
@@ -308,14 +308,13 @@ export class MetricsRecorder {
   // Private helpers
 
   _stageUserEntry(user) {
-    if (!user?.name) return null;
-    const slug = slugifyId(user.name);
-    if (!slug) return null;
+    if (!user?.id) return null;
+    const userId = user.id;
     
     const snapshot = typeof user.getMetricsSnapshot === 'function' ? user.getMetricsSnapshot() : {};
     
     return {
-      slug,
+      userId,
       metadata: {
         name: user.name,
         groupLabel: user.groupLabel || null,

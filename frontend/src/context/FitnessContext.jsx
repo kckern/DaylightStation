@@ -4,7 +4,6 @@ import {
   setFitnessTimeouts,
   getFitnessTimeouts,
   resolveDisplayLabel,
-  slugifyId,
   resolveZoneThreshold
 } from '../hooks/useFitnessSession.js';
 import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.js';
@@ -321,10 +320,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (!Array.isArray(list)) return;
       list.forEach((entry) => {
         if (!entry?.name) return;
-        const slug = slugifyId(entry.name);
+        // Use explicit ID or profileId
+        const id = entry.id || entry.profileId || entry.name;
         const label = entry.group_label ?? entry.groupLabel ?? null;
-        if (slug && label && !map.has(slug)) {
-          map.set(slug, label);
+        if (id && label && !map.has(id)) {
+          map.set(id, label);
         }
       });
     };
@@ -346,9 +346,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     list.forEach((entry) => {
       if (!entry?.name) return;
       map.set(entry.name, entry);
-      const slug = slugifyId(entry.name);
-      if (slug) {
-        map.set(slug, entry);
+      // Also set by ID for direct lookup
+      if (entry.id) {
+        map.set(entry.id, entry);
       }
     });
     return map;
@@ -477,29 +477,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const session = fitnessSessionRef.current;
     if (!session) return false;
 
+    // Use device ID directly - no slug transformation needed
     const rawId = String(deviceId);
-    const slugId = slugifyId(deviceId);
-    const candidateIds = Array.from(new Set([rawId, slugId].filter(Boolean)));
 
     let mutated = false;
 
     if (session.deviceManager?.removeDevice) {
       mutated = session.deviceManager.removeDevice(rawId) || mutated;
     } else if (session.deviceManager?.devices instanceof Map) {
-      candidateIds.forEach((key) => {
-        if (session.deviceManager.devices.delete(key)) {
-          mutated = true;
-        }
-      });
+      if (session.deviceManager.devices.delete(rawId)) {
+        mutated = true;
+      }
     }
 
     const activeIds = session.activeDeviceIds;
     if (activeIds instanceof Set) {
-      candidateIds.forEach((key) => {
-        if (activeIds.delete(key)) {
-          mutated = true;
-        }
-      });
+      if (activeIds.delete(rawId)) {
+        mutated = true;
+      }
     }
 
     if (mutated) {
@@ -918,12 +913,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const preferGroupLabels = React.useMemo(() => heartRateDevices.length > 1, [heartRateDevices.length]);
 
-  const getDisplayLabel = React.useCallback((name, { groupLabelOverride, preferGroupLabel } = {}) => {
+  const getDisplayLabel = React.useCallback((name, { groupLabelOverride, preferGroupLabel, userId } = {}) => {
     if (!name) return null;
-    const slug = slugifyId(name);
+    // Use userId for group label lookup if provided, otherwise use name
+    const lookupKey = userId || name;
     const baseGroupLabel = groupLabelOverride !== undefined
       ? groupLabelOverride
-      : (slug ? userGroupLabelMap.get(slug) : null);
+      : (lookupKey ? userGroupLabelMap.get(lookupKey) : null);
     const shouldPrefer = typeof preferGroupLabel === 'boolean'
       ? preferGroupLabel
       : (preferGroupLabels && Boolean(baseGroupLabel));
@@ -1068,13 +1064,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (!baseUserName) return;
       const config = primaryConfigByName.get(baseUserName);
       if (!config) return;
-      const id = config.id || slugifyId(config.name);
+      // Use explicit ID from config
+      const id = config.id || config.profileId;
+      if (!id) {
+        console.warn('[FitnessContext] replacedPrimaryPool: config missing id for', config.name);
+        return;
+      }
       if (seen.has(id)) return;
       seen.add(id);
       pool.push({
         id,
         name: config.name,
-        profileId: config.id || slugifyId(config.name),
+        profileId: id,
         category: 'Family',
         source: 'Family',
         isPrimary: true
@@ -1117,15 +1118,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const userVitalsMap = React.useMemo(() => {
     const map = new Map();
     allUsers.forEach((user) => {
-      if (!user || !user.name) return;
-      const key = slugifyId(user.name);
+      if (!user || !user.id) return;
+      const key = user.id;
       const data = user.currentData || {};
       
       const deviceId = user.hrDeviceId ? String(user.hrDeviceId) : null;
       const ledgerEntry = deviceId ? deviceAssignmentMap.get(deviceId) : null;
       const isGuest = Boolean(ledgerEntry);
       const source = isGuest ? 'Guest' : 'Primary';
-      const displayLabel = getDisplayLabel(user.name);
+      const displayLabel = getDisplayLabel(user.name, { userId: user.id });
 
       map.set(key, {
         name: user.name,
@@ -1194,13 +1195,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const zoneProfileLookup = React.useMemo(() => {
     const map = new Map();
     zoneProfiles.forEach((profile) => {
-      if (!profile?.slug) return;
-      map.set(profile.slug, profile);
+      // Use profile ID directly
+      const profileId = profile?.id || profile?.profileId;
+      if (!profileId) return;
+      map.set(profileId, profile);
+      // Also index by name for backwards compat
       if (profile.name) {
-        const nameKey = slugifyId(profile.name);
-        if (nameKey) {
-          map.set(nameKey, profile);
-        }
+        map.set(profile.name, profile);
       }
     });
     return map;
@@ -1208,9 +1209,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const getZoneProfile = React.useCallback((identifier) => {
     if (!identifier) return null;
-    const slug = slugifyId(identifier);
-    if (!slug) return null;
-    return zoneProfileLookup.get(slug) || null;
+    // Direct lookup - no slug transformation
+    return zoneProfileLookup.get(identifier) || null;
   }, [zoneProfileLookup]);
 
   const userHeartRateMap = React.useMemo(() => {
@@ -1223,12 +1223,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return map;
   }, [userVitalsMap]);
 
-  const getUserVitals = React.useCallback((name) => {
-    if (!name) return null;
-    const slug = slugifyId(name);
-    if (!slug) return null;
-    const existing = userVitalsMap.get(slug) || null;
-    const normalized = typeof name === 'string' ? name.trim().toLowerCase() : '';
+  const getUserVitals = React.useCallback((nameOrId) => {
+    if (!nameOrId) return null;
+    // Try direct lookup by ID first, then by name
+    const existing = userVitalsMap.get(nameOrId) || null;
+    const normalized = typeof nameOrId === 'string' ? nameOrId.trim().toLowerCase() : '';
     const participant = normalized ? participantLookupByName.get(normalized) : null;
 
     if (!participant) {
@@ -1244,12 +1243,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const mergedZoneId = existing?.zoneId
       || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
     const mergedZoneColor = existing?.zoneColor || participant?.zoneColor || null;
-    const mergedProfileId = existing?.profileId || participant?.profileId || participant?.userId || slug;
+    const mergedProfileId = existing?.profileId || participant?.profileId || participant?.id || nameOrId;
     const mergedDeviceId = existing?.deviceId || participant?.hrDeviceId || null;
     const mergedSource = existing?.source || (participant?.isGuest ? 'Guest' : null);
     const mergedDisplayLabel = existing?.displayLabel
       || participant?.displayLabel
-      || getDisplayLabel(participant?.name || name, { preferGroupLabel: false });
+      || getDisplayLabel(participant?.name || nameOrId, { preferGroupLabel: false });
 
     if (!existing) {
       return {
@@ -1395,10 +1394,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (normalizedKind === 'global') {
         return `global:${metricToken}`;
       }
-      const rawId = descriptor.id ?? descriptor.slug ?? descriptor.name ?? null;
+      const rawId = descriptor.id ?? descriptor.userId ?? descriptor.name ?? null;
       if (rawId == null) return null;
+      // Use ID directly for users (they already have canonical IDs)
+      // Only normalize for devices which might have special characters
       const normalizedId = normalizedKind === 'user'
-        ? (slugifyId(rawId) || String(rawId).trim().toLowerCase())
+        ? String(rawId)
         : String(rawId).trim().toLowerCase();
       if (!normalizedId) return null;
       return `${normalizedKind}:${normalizedId}:${metricToken}`;
@@ -1651,10 +1652,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     zones: zoneConfig || [],
     userCurrentZones,
     heartRate: heartRateDevices[0] || null,
-    getUserByName: (name) => {
-      if (!name) return null;
-      const slug = slugifyId(name);
-      return users.get(slug) || users.get(name) || null;
+    getUserByName: (nameOrId) => {
+      if (!nameOrId) return null;
+      // Direct lookup by ID or name
+      return users.get(nameOrId) || null;
     },
     getUserByDevice: resolveUserByDevice
   };

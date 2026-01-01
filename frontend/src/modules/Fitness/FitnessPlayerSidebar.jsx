@@ -39,7 +39,7 @@ const FitnessPlayerSidebar = ({
 
       {!minimized && (
         <div className="sidebar-content">
-          <FitnessPluginContainer pluginId="fitness_cam" mode="standalone" />
+          <FitnessPluginContainer pluginId="fitness_session" mode="standalone" />
         </div>
       )}
 

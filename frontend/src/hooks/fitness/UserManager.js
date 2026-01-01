@@ -1,9 +1,13 @@
-import { slugifyId, resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnapshot } from './types.js';
+import { resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnapshot } from './types.js';
 
 export class User {
   constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
     const { id: configuredId, globalZones, zoneOverrides, groupLabel, source, category, avatarUrl } = options;
-    this.id = configuredId ? String(configuredId) : slugifyId(name);
+    // ID must be explicitly provided - never derive from name
+    if (!configuredId) {
+      console.warn('[User] No id provided for user, using name as fallback:', name);
+    }
+    this.id = configuredId ? String(configuredId) : String(name).toLowerCase().replace(/\s+/g, '_');
     this.name = name;
     this.birthyear = birthyear;
     this.hrDeviceId = hrDeviceId;
@@ -215,7 +219,7 @@ export class User {
       ? Math.max(0, Math.round(this.currentData.heartRate))
       : null;
     return {
-      userId: this.id || slugifyId(this.name),
+      userId: this.id,
       name: this.name,
       heartRate,
       zoneId: this.currentData?.zone || null,
@@ -275,7 +279,18 @@ export class UserManager {
   }
 
   registerUser(config) {
-    const id = slugifyId(config.name);
+    // Use the actual ID from config - must be explicitly provided
+    const userId = config.id || config.profileId;
+    if (!userId) {
+      console.warn('[UserManager] registerUser called without id/profileId, using name fallback:', config.name);
+    }
+    const resolvedUserId = userId || String(config.name).toLowerCase().replace(/\\s+/g, '_');
+    console.log('[UserManager] registerUser', { 
+      name: config.name, 
+      resolvedUserId,
+      'config.id': config.id,
+      'config.profileId': config.profileId
+    });
     const birthYear = config.birth_year ?? config.birthyear ?? config.birthYear ?? null;
     const hrDeviceId = config.hr_device_id ?? config.hr ?? config.hrDeviceId ?? config.deviceId ?? null;
     const cadenceDeviceId = config.cadence_device_id ?? config.cadence ?? config.cadenceDeviceId ?? null;
@@ -284,9 +299,9 @@ export class UserManager {
     const category = config.category ?? null;
     const avatarUrl = config.avatar_url ?? config.avatarUrl ?? null;
     
-    if (!this.users.has(id)) {
+    if (!this.users.has(resolvedUserId)) {
       const user = new User(config.name, birthYear, hrDeviceId, cadenceDeviceId, {
-        id: config.id,
+        id: resolvedUserId,
         globalZones: config.globalZones || this._defaultZones,
         zoneOverrides: config.zones,
         groupLabel,
@@ -294,41 +309,40 @@ export class UserManager {
         category,
         avatarUrl
       });
-      this.users.set(id, user);
+      console.log('[UserManager] Created new user:', {
+        'config.name': config.name,
+        'user.id': user.id,
+        'user.name': user.name,
+        resolvedUserId
+      });
+      this.users.set(resolvedUserId, user);
     } else {
       // Update existing user config if needed
-      const user = this.users.get(id);
+      const user = this.users.get(resolvedUserId);
       user.hrDeviceId = hrDeviceId ?? user.hrDeviceId;
       user.cadenceDeviceId = cadenceDeviceId ?? user.cadenceDeviceId;
       user.groupLabel = groupLabel ?? user.groupLabel;
       user.source = source ?? user.source;
       user.category = category ?? user.category;
       user.avatarUrl = avatarUrl ?? user.avatarUrl;
-      if (config.id) {
-        user.id = String(config.id);
-      }
       if (birthYear && user.birthyear !== birthYear) {
         user.birthyear = birthYear;
         user.age = new Date().getFullYear() - birthYear;
       }
       // Could update zones here too
     }
-    return this.users.get(id);
+    return this.users.get(resolvedUserId);
   }
 
   getUser(id) {
-    return this.users.get(slugifyId(id));
+    // Direct lookup by ID only - no slug conversion
+    return this.users.get(id) || null;
   }
 
   getUserById(userId) {
     if (!userId) return null;
-    const normalizedId = String(userId);
-    for (const user of this.users.values()) {
-      if (String(user.id) === normalizedId) {
-        return user;
-      }
-    }
-    return null;
+    // Direct lookup by ID
+    return this.users.get(userId) || null;
   }
 
   getAllUsers() {
@@ -357,18 +371,22 @@ export class UserManager {
     const normalizedMetadata = this.#normalizeMetadata(metadata);
     const zones = Array.isArray(normalizedMetadata?.zones) ? normalizedMetadata.zones : null;
     const timestamp = Number.isFinite(normalizedMetadata?.updatedAt) ? normalizedMetadata.updatedAt : Date.now();
-    const displacedSlug = normalizedMetadata?.baseUserName ? slugifyId(normalizedMetadata.baseUserName) : null;
+    // Use explicit IDs from metadata if available, generate guest ID otherwise
+    const baseUserId = normalizedMetadata?.baseUserId || normalizedMetadata?.baseUserName || null;
     const occupantType = normalizedMetadata?.occupantType || 'guest';
+    // Generate a guest ID if profileId not provided
+    const guestId = normalizedMetadata?.profileId || `guest-${Date.now()}`;
     const payload = {
       deviceId: key,
-      occupantSlug: slugifyId(guestName),
+      occupantId: guestId,
       occupantName: guestName,
       occupantType,
-      displacedSlug,
+      displacedUserId: baseUserId,
       overridesHash: zones ? JSON.stringify(zones) : null,
       metadata: {
         ...normalizedMetadata,
         name: guestName,
+        profileId: guestId,
         updatedAt: timestamp
       },
       updatedAt: timestamp
@@ -468,7 +486,9 @@ export class UserManager {
 
   #ensureUserFromAssignment({ name, deviceId, zones, profileId, occupantType = 'guest' }) {
     if (!name) return null;
-    const slug = slugifyId(name);
+    
+    // Use profileId if available, otherwise generate a guest ID
+    const userId = profileId || `guest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     let user = null;
 
     if (profileId != null) {
@@ -476,18 +496,18 @@ export class UserManager {
     }
 
     if (!user) {
-      user = this.users.get(slug) || null;
+      user = this.users.get(userId) || null;
     }
 
     if (!user) {
       user = new User(name, null, deviceId, null, {
-        id: profileId || undefined,
+        id: userId,
         globalZones: this._defaultZones,
         zoneOverrides: zones || null,
         source: occupantType === 'guest' ? 'Guest' : null,
         category: occupantType === 'guest' ? 'Guest' : null
       });
-      this.users.set(slug, user);
+      this.users.set(userId, user);
       return user;
     }
 
@@ -502,12 +522,10 @@ export class UserManager {
 
   #buildUserDescriptor(user) {
     if (!user) return null;
-    const slug = slugifyId(user.name);
     return {
-      id: user.id || slug,
+      id: user.id,
       name: user.name,
-      slug,
-      profileId: user.id || slug,
+      profileId: user.id,
       groupLabel: user.groupLabel || null,
       source: user.source || null,
       category: user.category || user.source || null,
@@ -586,8 +604,8 @@ export class UserManager {
   getUserZoneProfiles() {
     const profiles = new Map();
     this.users.forEach((user) => {
-      if (!user?.name) return;
-      profiles.set(slugifyId(user.name), {
+      if (!user?.id) return;
+      profiles.set(user.id, {
         name: user.name,
         zoneConfig: user.zoneConfig,
         zoneSnapshot: user.zoneSnapshot

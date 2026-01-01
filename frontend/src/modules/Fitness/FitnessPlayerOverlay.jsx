@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
-import { COOL_ZONE_PROGRESS_MARGIN, calculateZoneProgressTowardsTarget } from '../../hooks/useFitnessSession.js';
+import { COOL_ZONE_PROGRESS_MARGIN, calculateZoneProgressTowardsTarget, normalizeZoneId as normalizeZoneIdForOverlay } from '../../hooks/useFitnessSession.js';
 import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlay/ChallengeOverlay.jsx';
 import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverlay.jsx';
 import { normalizeRequirements, compareSeverity } from '../../hooks/fitness/GovernanceEngine.js';
@@ -11,15 +11,7 @@ import FullscreenVitalsOverlay from './FitnessPlayerOverlay/FullscreenVitalsOver
 import FitnessPluginContainer from './FitnessPlugins/FitnessPluginContainer.jsx';
 import './FitnessPlayerOverlay/FitnessAppOverlay.scss';
 
-const slugifyId = (value, fallback = 'user') => {
-  if (!value) return fallback;
-  const slug = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return slug || fallback;
-};
+// Note: slugifyId has been removed - we now use explicit IDs from config
 
 const normalizeChallengeStatusForLogging = (status) => {
   const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
@@ -415,7 +407,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     const zoneId = normalizeZoneId(canonicalVitals?.zoneId) || normalizeZoneId(participant?.zoneId) || null;
     const zoneColor = canonicalVitals?.zoneColor || participant?.zoneColor || null;
     const zoneName = canonicalVitals?.zoneName || participant?.zoneLabel || null;
-    const profileId = canonicalVitals?.profileId || participant?.profileId || (preferredName ? slugifyId(preferredName) : null);
+    const profileId = canonicalVitals?.profileId || participant?.profileId || participant?.id;
     const displayLabel = canonicalVitals?.displayLabel
       || participant?.displayLabel
       || preferredName
@@ -476,7 +468,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     const zoneLabel = resolvedVitals?.zoneName || participant?.zoneLabel;
     if (zoneLabel) {
       const fallback = findZoneByLabel(zoneLabel) || {
-        id: zoneId || slugifyId(zoneLabel),
+        id: zoneId || normalizeZoneIdForOverlay(zoneLabel),
         name: zoneLabel,
         color: resolvedVitals?.zoneColor || null,
         min: null
@@ -522,7 +514,9 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           ? DaylightMediaPath(`/media/img/users/${vitals.profileId}`)
           : participant?.profileId
             ? DaylightMediaPath(`/media/img/users/${participant.profileId}`)
-            : DaylightMediaPath(`/media/img/users/${slugifyId(canonicalName)}`);
+            : participant?.id
+              ? DaylightMediaPath(`/media/img/users/${participant.id}`)
+              : DaylightMediaPath(`/media/img/users/user`);
       const heartRate = vitals?.heartRate ?? null;
       const zoneInfo = getParticipantZone(participant, vitals);
       const displayLabel = vitals?.displayLabel || participant?.displayLabel || canonicalName;
@@ -673,7 +667,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       if (!zoneInfo && requirement?.zoneLabel) {
         zoneInfo = findZoneByLabel(requirement.zoneLabel)
           || {
-            id: zoneId || slugifyId(requirement.zoneLabel),
+            id: zoneId || normalizeZoneIdForOverlay(requirement.zoneLabel),
             name: requirement.zoneLabel,
             color: null,
             min: null
@@ -701,7 +695,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
 
     const ensureAvatarSrc = (name, participant, vitals) => {
       if (participant?.avatarUrl) return participant.avatarUrl;
-      const profileId = vitals?.profileId || participant?.profileId || (name ? slugifyId(name) : 'user');
+      const profileId = vitals?.profileId || participant?.profileId || participant?.id || 'user';
       return DaylightMediaPath(`/media/img/users/${profileId}`);
     };
 

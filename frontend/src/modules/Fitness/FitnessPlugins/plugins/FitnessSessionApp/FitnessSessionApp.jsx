@@ -3,30 +3,29 @@ import PropTypes from 'prop-types';
 import useFitnessPlugin from '../../useFitnessPlugin';
 import FitnessSidebar from '../../../FitnessSidebar.jsx';
 import CameraViewApp from '../CameraViewApp/index.jsx';
+import FitnessChartApp from '../FitnessChartApp/index.jsx';
 import { FullscreenVitalsOverlay } from '../../../shared/integrations';
-import { ChartWidget } from '../../../shared/integrations';
-import './FitnessCamApp.scss';
+import './FitnessSessionApp.scss';
 
 /**
- * FitnessCamApp - Full camera experience plugin with sidebar, chart mode, and fullscreen overlay
+ * FitnessSessionApp - Full session experience plugin with chart, sidebar with camera, and fullscreen overlay
  * 
  * Features:
- * - Camera view with fullscreen toggle (click main area)
- * - Chart mode toggle (swap camera for chart view)
+ * - Chart view as main content with fullscreen toggle
+ * - Camera in sidebar (mini mode)
  * - Sidebar with controls and user management
  * - Fullscreen vitals overlay when in fullscreen mode
  * - Music override during active use
  */
-const FitnessCamApp = ({ mode = 'standalone', onClose, config = {}, onMount }) => {
+const FitnessSessionApp = ({ mode = 'standalone', onClose, config = {}, onMount }) => {
   const {
     collapseSidebar,
     expandSidebar,
     sidebarCollapsed,
     registerLifecycle
-  } = useFitnessPlugin('fitness_cam');
+  } = useFitnessPlugin('fitness_session');
   
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [viewMode, setViewMode] = useState('cam'); // 'cam' | 'chart'
   const sidebarRef = useRef(null);
 
   // Notify container when mounted
@@ -63,10 +62,6 @@ const FitnessCamApp = ({ mode = 'standalone', onClose, config = {}, onMount }) =
     setIsFullscreen(prev => !prev);
   }, []);
 
-  const toggleViewMode = useCallback(() => {
-    setViewMode((prev) => (prev === 'cam' ? 'chart' : 'cam'));
-  }, []);
-
   const handleOpenSettings = useCallback(() => {
     if (isFullscreen) {
       setIsFullscreen(false);
@@ -78,48 +73,37 @@ const FitnessCamApp = ({ mode = 'standalone', onClose, config = {}, onMount }) =
   }, [isFullscreen]);
 
   return (
-    <div className={`fitness-cam-app ${isFullscreen ? 'fullscreen-mode' : ''}`}>
+    <div className={`fitness-session-app ${isFullscreen ? 'fullscreen-mode' : ''}`}>
       <div 
-        className={`fitness-cam-app__main ${viewMode === 'chart' ? 'chart-mode' : ''}`} 
+        className="fitness-session-app__main"
         onClick={toggleFullscreen}
       >
-        {viewMode === 'cam' && (
-          <>
-            <div className="fitness-cam-app__stage">
-              <CameraViewApp mode="sidebar" onClose={() => {}} />
-            </div>
-            <FullscreenVitalsOverlay visible={isFullscreen} />
-          </>
-        )}
-        {viewMode === 'chart' && (
-          <div className="fitness-cam-app__chart">
-            <ChartWidget />
-          </div>
-        )}
+        <div className="fitness-session-app__chart">
+          <FitnessChartApp mode="standalone" onClose={() => {}} />
+        </div>
+        <FullscreenVitalsOverlay visible={isFullscreen} />
       </div>
-      <div className={`fitness-cam-app__sidebar ${sidebarCollapsed ? 'hidden' : ''}`}>
+      <div className={`fitness-session-app__sidebar ${sidebarCollapsed ? 'hidden' : ''}`}>
         <FitnessSidebar
           ref={sidebarRef}
           mode="cam"
           governanceDisabled
-          viewMode={viewMode}
-          onToggleViewMode={toggleViewMode}
-          miniCamContent={viewMode === 'chart' ? (
-            <div className="fitness-cam-app__mini-cam">
+          miniCamContent={(
+            <div className="fitness-session-app__mini-cam">
               <CameraViewApp mode="mini" onClose={() => {}} />
             </div>
-          ) : null}
+          )}
         />
       </div>
     </div>
   );
 };
 
-FitnessCamApp.propTypes = {
+FitnessSessionApp.propTypes = {
   mode: PropTypes.oneOf(['standalone', 'overlay', 'sidebar', 'mini']),
   onClose: PropTypes.func,
   config: PropTypes.object,
   onMount: PropTypes.func
 };
 
-export default FitnessCamApp;
+export default FitnessSessionApp;

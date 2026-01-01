@@ -1,7 +1,6 @@
-// FitnessCamApp Plugin Styles
-// Derived from FitnessCam.scss with plugin-specific class names
+// FitnessSessionApp Plugin Styles
 
-.fitness-cam-app {
+.fitness-session-app {
   display: flex;
   gap: 0;
   height: 100%;
@@ -15,36 +14,17 @@
     flex: 1;
     min-width: 0;
     margin: 0;
-    margin-left: -1.5rem;
     display: flex;
     flex-direction: column;
     height: 100%;
     position: relative;
-
-    &.chart-mode {
-      margin-left: 0;
-      padding: 0;
-    }
-  }
-
-  &__stage {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background: #000;
-    border: none;
-    border-radius: 0;
-    padding: 0;
-    box-shadow: none;
-    position: relative;
-    overflow: hidden;
   }
 
   &__chart {
     flex: 1;
     min-height: 0;
     display: flex;
-    margin-left: 1.5rem;
+    background: #0a0a0f;
   }
 
   &__sidebar {
@@ -86,7 +66,7 @@
     padding: 0;
     gap: 0;
 
-    .fitness-cam-app__main {
+    .fitness-session-app__main {
       flex: 1 1 100%;
       width: 100%;
       height: 100%;
@@ -94,27 +74,13 @@
       display: flex;
       flex-direction: column;
 
-      .fitness-cam-app__stage {
-        border-radius: 0;
-        border: none;
-        box-shadow: none;
+      .fitness-session-app__chart {
         height: 100%;
         width: 100%;
-        padding: 0;
-        background: #000;
-        
-        // Ensure controls are accessible in fullscreen
-        .controls-overlay {
-          z-index: 2001; 
-        }
-
-        .fitness-cam-settings-btn {
-          display: none;
-        }
       }
     }
 
-    .fitness-cam-app__sidebar {
+    .fitness-session-app__sidebar {
       flex: 0 0 0;
       width: 0;
       max-width: 0;

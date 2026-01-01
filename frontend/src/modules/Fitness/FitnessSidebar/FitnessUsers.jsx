@@ -2,20 +2,12 @@ import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Badge } from '@mantine/core';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import FlipMove from 'react-flip-move';
-import '../FitnessCam.scss';
+import '../FitnessSidebar.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
 import { useZoneProfiles } from '../../../hooks/useZoneProfiles.js';
 
-const slugifyId = (value, fallback = 'user') => {
-  if (!value) return fallback;
-  const slug = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return slug || fallback;
-};
+// Note: slugifyId has been removed - we now use explicit IDs from config
 
 // Config-driven constants (single source of truth for UI & heuristics)
 const CONFIG = {
@@ -182,7 +174,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const map = new Map();
     const addEntry = (descriptor) => {
       if (!descriptor?.name) return;
-      const profileId = descriptor.profileId || descriptor.id || slugifyId(descriptor.name);
+      // Use profileId or id directly - never slugify the display name
+      const profileId = descriptor.profileId || descriptor.id;
+      if (!profileId) {
+        console.warn('[FitnessUsers] User missing profileId/id, avatar may fail:', descriptor.name);
+        return;
+      }
       const addKey = (value) => {
         if (!value) return;
         const normalized = String(value).trim().toLowerCase();
@@ -193,6 +190,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       addKey(descriptor.name);
       addKey(descriptor.slug);
       addKey(descriptor.groupLabel);
+      addKey(descriptor.id); // Also map the id itself
     };
     configuredUsers.forEach(addEntry);
     return map;
@@ -221,23 +219,22 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   const zoneProfileLookup = React.useMemo(() => {
     const map = new Map();
     zoneProfiles.forEach((profile) => {
-      if (!profile?.slug) return;
-      map.set(profile.slug, profile);
+      // Use profile.id as primary key
+      const profileId = profile?.id || profile?.profileId;
+      if (!profileId) return;
+      map.set(profileId, profile);
+      // Also set by name for backward compatibility
       if (profile.name) {
-        const nameKey = slugifyId(profile.name);
-        if (nameKey) {
-          map.set(nameKey, profile);
-        }
+        map.set(profile.name, profile);
       }
     });
     return map;
   }, [zoneProfiles]);
 
-  const resolveZoneProfile = React.useCallback((name) => {
-    if (!name) return null;
-    const slug = slugifyId(name);
-    if (!slug) return null;
-    return zoneProfileLookup.get(slug) || null;
+  const resolveZoneProfile = React.useCallback((idOrName) => {
+    if (!idOrName) return null;
+    // Direct lookup
+    return zoneProfileLookup.get(idOrName) || null;
   }, [zoneProfileLookup]);
 
   const deriveZoneFromProfile = React.useCallback((profile, heartRate) => {
@@ -289,8 +286,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       }
       if (!map[normalized]) {
         const profileId = participant.profileId
-          || getConfiguredProfileId(participant.name)
-          || (participant.name ? slugifyId(participant.name) : null);
+          || participant.id
+          || getConfiguredProfileId(participant.name);
         if (profileId) map[normalized] = profileId;
       }
     };
@@ -306,22 +303,21 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     });
 
     heartRateOwners.forEach((descriptor, deviceId) => {
-      const profileId = descriptor?.profileId || descriptor?.id || slugifyId(descriptor?.name);
-      assignProfile(deviceId, profileId);
+      const profileId = descriptor?.profileId || descriptor?.id;
+      if (profileId) assignProfile(deviceId, profileId);
     });
 
     guestAssignmentEntries.forEach(([deviceId, assignment]) => {
       if (!assignment) return;
       const profileId = assignment.metadata?.profileId
         || assignment.metadata?.candidateId
-        || assignment.occupantSlug
-        || slugifyId(assignment.occupantName || assignment.metadata?.name || deviceId);
-      assignProfile(deviceId, profileId);
+        || assignment.occupantId;
+      if (profileId) assignProfile(deviceId, profileId);
     });
 
     registeredUsers.forEach((user) => {
-      if (user?.hrDeviceId !== undefined && user?.hrDeviceId !== null) {
-        assignProfile(user.hrDeviceId, user.id || slugifyId(user.name));
+      if (user?.hrDeviceId !== undefined && user?.hrDeviceId !== null && user?.id) {
+        assignProfile(user.hrDeviceId, user.id);
       }
     });
 
@@ -334,16 +330,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const addEntry = (key, value) => {
       if (!key || !value) return;
       map.set(key, value);
-      const slug = slugifyId(key);
-      if (slug && slug !== key) {
-        map.set(slug, value);
-      }
+      // Also set by name for backward compatibility
       if (value?.name) {
         const nameKey = String(value.name).trim();
-        if (nameKey) {
+        if (nameKey && nameKey !== key) {
           map.set(nameKey, value);
-          const nameSlug = slugifyId(nameKey);
-          if (nameSlug && nameSlug !== nameKey) map.set(nameSlug, value);
         }
       }
     };
@@ -357,9 +348,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [userZoneProgress]);
 
-  const lookupZoneProgress = React.useCallback((name) => {
-    if (!name) return null;
-    return zoneProgressMap.get(name) || zoneProgressMap.get(slugifyId(name)) || null;
+  const lookupZoneProgress = React.useCallback((idOrName) => {
+    if (!idOrName) return null;
+    return zoneProgressMap.get(idOrName) || null;
   }, [zoneProgressMap]);
 
   // State for sorted devices
@@ -860,19 +851,20 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     || guestAssignment?.metadata?.candidateId
                     || guestAssignment?.occupantSlug
                     || participantEntry?.profileId
+                    || participantEntry?.id
                     || userIdMap[deviceIdStr]
                     || getConfiguredProfileId(guestAssignment?.occupantName || guestAssignment?.metadata?.name)
                     || getConfiguredProfileId(participantEntry?.name)
                     || getConfiguredProfileId(ownerName)
                     || resolvedUser?.id
-                    || slugifyId(participantEntry?.name || ownerName || deviceIdStr))
+                    || 'user') // Fallback to generic avatar instead of slugifying
                 : (equipmentInfo?.id || 'equipment');
               const progressInfo = isHeartRate
                 ? (lookupZoneProgress(participantEntry?.name)
                     || lookupZoneProgress(ownerName)
                     || lookupZoneProgress(canonicalUserName)
                     || (participantEntry?.displayLabel ? lookupZoneProgress(participantEntry.displayLabel) : null)
-                    || (ownerName ? lookupZoneProgress(slugifyId(ownerName)) : null)
+                    || (participantEntry?.id ? lookupZoneProgress(participantEntry.id) : null)
                     || (userVitalsEntry
                       ? {
                           progress: userVitalsEntry.progress ?? null,

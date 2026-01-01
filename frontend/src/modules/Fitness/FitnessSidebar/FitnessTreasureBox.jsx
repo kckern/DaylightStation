@@ -2,7 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { ElapsedTimer } from '../shared';
 import { ZONE_COLORS, getCoinColorRank } from '../shared/constants/fitness';
-import '../FitnessCam.scss';
+import '../FitnessSidebar.scss';
 
 /**
  * FitnessTreasureBox - Gamification rewards display panel

@@ -1,14 +1,11 @@
 const NO_ZONE_LABEL = 'No Zone';
 
-// Helper to convert userName to slug for ActivityMonitor lookup
-const slugifyId = (value) => {
-  if (!value) return '';
-  return String(value).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-};
+// Note: slugifyId has been removed - we now use user.id directly
 
 export class FitnessTreasureBox {
   constructor(sessionRef) {
     this.sessionRef = sessionRef; // reference to owning FitnessSession
+    this._log('constructor', { hasSessionRef: !!sessionRef });
     this.activityMonitor = null;  // ActivityMonitor for checking if user is active
     this.coinTimeUnitMs = 5000; // default; will be overridden by configuration injection
     this.globalZones = []; // array of {id,name,min,color,coins}
@@ -28,6 +25,15 @@ export class FitnessTreasureBox {
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
     this._autoInterval = null; // timer id
+  }
+
+  _log(event, data = {}) {
+    console.warn(`[TreasureBox][${event}]`, data);
+    try {
+      if (this.sessionRef?._log) {
+        this.sessionRef._log(`treasurebox_${event}`, data);
+      }
+    } catch (_) { /* ignore */ }
   }
 
   /**
@@ -93,7 +99,7 @@ export class FitnessTreasureBox {
   _startAutoTicker() {
     // No-op: timer-based processing has been removed
     // Coin processing now happens synchronously during session tick
-    console.log('[TreasureBox] _startAutoTicker called but timer disabled - using tick-driven processing');
+    this._log('auto_ticker_disabled', { usingTickDriven: true });
   }
 
   stop() { if (this._autoInterval) { clearInterval(this._autoInterval); this._autoInterval = null; } }
@@ -115,10 +121,10 @@ export class FitnessTreasureBox {
   _backfillExistingUsers() {
     if (!this.perUser.size || !this.globalZones.length) return;
     const now = Date.now();
-    for (const [userName, acc] of this.perUser.entries()) {
+    for (const [userId, acc] of this.perUser.entries()) {
       if (!acc.currentIntervalStart) acc.currentIntervalStart = now;
       if (acc.lastHR && acc.lastHR > 0 && !acc.highestZone) {
-        const zone = this.resolveZone(userName, acc.lastHR);
+        const zone = this.resolveZone(userId, acc.lastHR);
         if (zone) {
           acc.highestZone = zone;
           acc.currentColor = zone.color;
@@ -135,22 +141,26 @@ export class FitnessTreasureBox {
    * coin processing is aligned with session ticks and dropout detection.
    * 
    * @param {number} tick - Current tick index
-   * @param {Set<string>} activeParticipants - Set of slugs for users with active HR this tick
-   * @param {Object} options - Additional options
-   * @param {Function} options.slugifyId - Function to convert userName to slug
+   * @param {Set<string>} activeParticipants - Set of user IDs for users with active HR this tick
+   * @param {Object} options - Additional options (legacy, no longer used)
    */
   processTick(tick, activeParticipants, options = {}) {
+    this._log('process_tick', {
+      tick,
+      perUserSize: this.perUser.size,
+      activeParticipants: Array.from(activeParticipants),
+      coinTimeUnitMs: this.coinTimeUnitMs,
+      perUserKeys: Array.from(this.perUser.keys())
+    });
     if (!this.perUser.size) return;
     const now = Date.now();
-    const { slugifyId } = options;
     
-    for (const [userName, acc] of this.perUser.entries()) {
-      // Convert userName to slug for comparison with activeParticipants
-      const slug = typeof slugifyId === 'function' ? slugifyId(userName) : userName.toLowerCase();
-      
+    for (const [userId, acc] of this.perUser.entries()) {
+      // Use userId directly - activeParticipants now contains user IDs
       // CRITICAL: Only process intervals for ACTIVE participants
       // This prevents coin accumulation during dropout
-      if (!activeParticipants.has(slug)) {
+      if (!activeParticipants.has(userId)) {
+        this._log('user_not_active', { userId });
         // User not active - clear their highestZone to prevent stale awards
         acc.highestZone = null;
         acc.currentColor = null;
@@ -159,9 +169,13 @@ export class FitnessTreasureBox {
       
       if (!acc.currentIntervalStart) { acc.currentIntervalStart = now; continue; }
       const elapsed = now - acc.currentIntervalStart;
+      this._log('interval_check', { userId, elapsed, coinTimeUnitMs: this.coinTimeUnitMs, hasHighestZone: !!acc.highestZone });
       if (elapsed >= this.coinTimeUnitMs) {
         if (acc.highestZone) {
-          this._awardCoins(userName, acc.highestZone);
+          this._log('awarding_coins', { userId, zone: { id: acc.highestZone.id, name: acc.highestZone.name, coins: acc.highestZone.coins } });
+          this._awardCoins(userId, acc.highestZone);
+        } else {
+          this._log('no_highest_zone', { userId });
         }
         acc.currentIntervalStart = now;
         acc.highestZone = null;
@@ -174,9 +188,9 @@ export class FitnessTreasureBox {
   _processIntervals() {
     // This should not be called anymore - TreasureBox is tick-driven
     // If called, process all users (legacy behavior) but log warning
-    console.warn('[TreasureBox] _processIntervals called directly - should use processTick() instead');
-    const allUsers = new Set([...this.perUser.keys()].map(n => n.toLowerCase()));
-    this.processTick(-1, allUsers, { slugifyId: n => n.toLowerCase() });
+    this._log('legacy_process_intervals_called', { shouldUseProcessTick: true });
+    const allUsers = new Set([...this.perUser.keys()]);
+    this.processTick(-1, allUsers, {});
   }
 
   _ensureTimelineIndex(index, color) {
@@ -218,10 +232,10 @@ export class FitnessTreasureBox {
   }
 
   // Determine zone for HR for a given user, returns zone object or null
-  resolveZone(userName, hr) {
+  resolveZone(userId, hr) {
     if (!hr || hr <= 0 || this.globalZones.length === 0) return null;
     // Build effective thresholds using overrides where present
-    const overrides = this.usersConfigOverrides.get(userName) || {};
+    const overrides = this.usersConfigOverrides.get(userId) || {};
     // Map of zone.id -> threshold min override (matching id by name semantics: active/warm/hot/fire)
     // We'll evaluate global zones but swap min if override present (by zone.id OR zone.name lowercased)
     const zonesDescending = [...this.globalZones].sort((a,b) => b.min - a.min);
@@ -235,10 +249,11 @@ export class FitnessTreasureBox {
   }
 
   // Record raw HR sample for a user
-  recordUserHeartRate(userName, hr) {
+  recordUserHeartRate(userId, hr) {
+    this._log('record_heart_rate', { userId, hr, hasGlobalZones: this.globalZones.length > 0 });
     if (!this.globalZones.length) return; // disabled gracefully if no zones
     const now = Date.now();
-    let acc = this.perUser.get(userName);
+    let acc = this.perUser.get(userId);
     if (!acc) {
       acc = {
         currentIntervalStart: now,
@@ -249,7 +264,7 @@ export class FitnessTreasureBox {
         lastZoneId: null,
         totalCoins: 0
       };
-      this.perUser.set(userName, acc);
+      this.perUser.set(userId, acc);
     }
     // HR dropout (<=0) resets interval without award
     if (!hr || hr <= 0 || Number.isNaN(hr)) {
@@ -262,9 +277,11 @@ export class FitnessTreasureBox {
       return;
     }
     // Determine zone for this reading
-    const zone = this.resolveZone(userName, hr);
+    const zone = this.resolveZone(userId, hr);
+    this._log('zone_resolved', { userId, hr, zone: zone ? { id: zone.id, name: zone.name, min: zone.min, coins: zone.coins } : null });
     if (zone) {
       if (!acc.highestZone || zone.min > acc.highestZone.min) {
+        this._log('update_highest_zone', { userId, zone: { id: zone.id, name: zone.name } });
         acc.highestZone = zone;
         acc.currentColor = zone.color;
         acc.lastColor = zone.color; // update persistent last color
@@ -275,8 +292,9 @@ export class FitnessTreasureBox {
     // Check interval completion
     const elapsed = now - acc.currentIntervalStart;
     if (elapsed >= this.coinTimeUnitMs) {
+      this._log('interval_complete', { userId, elapsed, hasHighestZone: !!acc.highestZone });
       if (acc.highestZone) {
-        this._awardCoins(userName, acc.highestZone);
+        this._awardCoins(userId, acc.highestZone);
       }
       // Start new interval after awarding (or discard if none)
       acc.currentIntervalStart = now;
@@ -289,15 +307,18 @@ export class FitnessTreasureBox {
   // Note: _ensureUserTimelineIndex removed (Priority 5)
   // Per-user coin timelines are now in main timeline via user:X:coins_total
 
-  _awardCoins(userName, zone) {
+  _awardCoins(userId, zone) {
+    this._log('award_coins_called', { userId, zone: zone ? { id: zone.id, name: zone.name, coins: zone.coins } : null, hasActivityMonitor: !!this.activityMonitor });
     if (!zone) return;
     
     // PRIORITY 2: Safety check - don't award coins if user is not active
     // This is a backup to processTick() which also checks activity
     if (this.activityMonitor) {
-      const slug = slugifyId(userName);
-      if (!this.activityMonitor.isActive(slug)) {
+      const isActive = this.activityMonitor.isActive(userId);
+      this._log('activity_check', { userId, isActive });
+      if (!isActive) {
         // User is not actively broadcasting - skip award
+        this._log('skip_award_inactive', { userId });
         return;
       }
     }
@@ -321,10 +342,19 @@ export class FitnessTreasureBox {
     if (this.sessionRef?.timebase && intervalIndex + 1 > this.sessionRef.timebase.intervalCount) {
       this.sessionRef.timebase.intervalCount = intervalIndex + 1;
     }
-    const acc = this.perUser.get(userName);
+    const acc = this.perUser.get(userId);
     if (acc) {
       acc.totalCoins = (acc.totalCoins || 0) + zone.coins;
       acc.lastAwardedAt = now;
+      this._log('coins_awarded', {
+        userId,
+        zone: zone.id || zone.name,
+        coinsAwarded: zone.coins,
+        newTotal: acc.totalCoins,
+        globalTotal: this.totalCoins
+      });
+    } else {
+      this._log('no_accumulator', { userId });
     }
     
     // Note: Per-user timeline tracking removed (Priority 5)
@@ -332,7 +362,7 @@ export class FitnessTreasureBox {
     
     // Log event in session if available
     try {
-      this.sessionRef._log('coin_award', { user: userName, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
+      this.sessionRef._log('coin_award', { user: userId, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
     } catch (_) { /* ignore */ }
     this._notifyMutation();
   }

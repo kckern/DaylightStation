@@ -267,6 +267,7 @@ const FitnessApp = () => {
   }, [fitnessConfiguration]);
 
   const handleNavigate = (type, target, item) => {
+    console.log('[FitnessApp] handleNavigate called', { type, target, item, currentView });
     logger.info('fitness-navigate', { type, target });
     
     switch (type) {
@@ -313,6 +314,7 @@ const FitnessApp = () => {
         break;
         
       case 'view_direct':
+        console.log('[FitnessApp] view_direct: setting currentView to', target.view);
         setActiveCollection(null);
         setActivePlugin(null);
         setCurrentView(target.view);
@@ -402,6 +404,10 @@ const FitnessApp = () => {
 
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {
+    // Don't auto-navigate if we're on a special view like 'users' or 'show'
+    if (currentView === 'users' || currentView === 'show') {
+      return;
+    }
     if (activeCollection == null && activePlugin == null && navItems.length > 0) {
       // Sort items to match navbar display order
       const sortedItems = sortNavItems(navItems);
@@ -416,7 +422,7 @@ const FitnessApp = () => {
         handleNavigate(firstItem.type, firstItem.target, firstItem);
       }
     }
-  }, [navItems, activeCollection, activePlugin]);
+  }, [navItems, activeCollection, activePlugin, currentView]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
@@ -541,8 +547,9 @@ const FitnessApp = () => {
                 onNavigate={handleNavigate}
               />
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
+                {console.log('[FitnessApp] rendering main content', { currentView, activePlugin: activePlugin?.id })}
                 {currentView === 'users' && (
-                  <FitnessPluginContainer pluginId="fitness_cam" mode="standalone" />
+                  <FitnessPluginContainer pluginId="fitness_session" mode="standalone" />
                 )}
                 {currentView === 'show' && selectedShow && (
                   <FitnessShow 

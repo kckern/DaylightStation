@@ -11,7 +11,7 @@
  * @see /docs/notes/fitness-architecture-review.md Phase 4
  */
 
-import { slugifyId, resolveDisplayLabel } from './types.js';
+import { resolveDisplayLabel } from './types.js';
 import { ParticipantStatus } from '../../modules/Fitness/domain/types.js';
 
 /**
@@ -115,9 +115,8 @@ export class ParticipantRoster {
       const entry = this._buildRosterEntry(device, zoneLookup);
       if (entry) {
         roster.push(entry);
-        // Track historical participant
-        const slug = slugifyId(entry.name);
-        if (slug) this._historicalParticipants.add(slug);
+        // Track historical participant by ID
+        if (entry.id) this._historicalParticipants.add(entry.id);
       }
     });
 
@@ -133,8 +132,7 @@ export class ParticipantRoster {
     if (!this._activityMonitor) return roster;
     
     return roster.filter(entry => {
-      const slug = slugifyId(entry.name);
-      return this._activityMonitor.isActive(slug);
+      return this._activityMonitor.isActive(entry.id);
     });
   }
 
@@ -147,8 +145,7 @@ export class ParticipantRoster {
     if (!this._activityMonitor) return [];
     
     return roster.filter(entry => {
-      const slug = slugifyId(entry.name);
-      return this._activityMonitor.isInDropout(slug);
+      return this._activityMonitor.isInDropout(entry.id);
     });
   }
 
@@ -161,10 +158,9 @@ export class ParticipantRoster {
     if (!this._activityMonitor) return roster;
     
     return roster.map(entry => {
-      const slug = slugifyId(entry.name);
       return {
         ...entry,
-        status: this._activityMonitor.getStatus(slug)
+        status: this._activityMonitor.getStatus(entry.id)
       };
     });
   }
@@ -180,8 +176,7 @@ export class ParticipantRoster {
     if (this._timeline?.getAllParticipantIds) {
       const timelineIds = this._timeline.getAllParticipantIds();
       timelineIds.forEach((id) => {
-        const normalized = this._normalizeSlug(id);
-        if (normalized) participants.add(normalized);
+        if (id) participants.add(id);
       });
     }
     
@@ -211,10 +206,9 @@ export class ParticipantRoster {
    */
   findParticipant(nameOrId) {
     const roster = this.getRoster();
-    const slug = slugifyId(nameOrId);
+    // Direct lookup by id, profileId, or hrDeviceId
     return roster.find(entry => {
-      const entrySlug = slugifyId(entry.name);
-      return entrySlug === slug || entry.profileId === nameOrId || entry.hrDeviceId === nameOrId;
+      return entry.id === nameOrId || entry.profileId === nameOrId || entry.hrDeviceId === nameOrId || entry.name === nameOrId;
     }) || null;
   }
 
@@ -230,10 +224,9 @@ export class ParticipantRoster {
       : [];
     
     zoneSnapshot.forEach((entry) => {
-      if (!entry || !entry.user) return;
-      const key = slugifyId(entry.user);
-      if (!key) return;
-      zoneLookup.set(key, {
+      if (!entry || !entry.userId) return;
+      // Use userId as the key for zone lookup
+      zoneLookup.set(entry.userId, {
         zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
         color: entry.color || null
       });
@@ -256,8 +249,12 @@ export class ParticipantRoster {
     
     if (!participantName) return null;
 
-    const key = slugifyId(participantName);
-    const zoneInfo = zoneLookup.get(key) || null;
+    // Use the actual user ID - must be explicitly set
+    const userId = mappedUser?.id || guestEntry?.occupantId || guestEntry?.metadata?.profileId;
+    if (!userId) {
+      console.warn('[ParticipantRoster] No user ID found for participant:', participantName);
+    }
+    const zoneInfo = zoneLookup.get(userId) || null;
     const fallbackZoneId = mappedUser?.currentData?.zone || null;
     const fallbackZoneColor = mappedUser?.currentData?.color || null;
 
@@ -283,18 +280,19 @@ export class ParticipantRoster {
 
     // Get status from ActivityMonitor if available
     const status = this._activityMonitor 
-      ? this._activityMonitor.getStatus(key)
+      ? this._activityMonitor.getStatus(userId)
       : ParticipantStatus.ACTIVE;
 
     // SINGLE SOURCE OF TRUTH: isActive comes directly from DeviceManager's inactiveSince
     // This is the authoritative field that ALL consumers should use for avatar visibility
     const isActive = !device.inactiveSince;
 
-    return {
+    const rosterEntry = {
       name: participantName,
       displayLabel,
       groupLabel: isGuest ? null : mappedUser?.groupLabel || null,
-      profileId: mappedUser?.id || key,
+      profileId: userId,
+      id: userId,
       baseUserName,
       isGuest,
       hrDeviceId: deviceId,
@@ -306,6 +304,8 @@ export class ParticipantRoster {
       isActive, // SINGLE SOURCE OF TRUTH for avatar visibility
       inactiveSince: device.inactiveSince || null // Pass through for debugging
     };
+
+    return rosterEntry;
   }
 
   _normalizeSlug(slug) {

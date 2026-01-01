@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import '../FitnessCam.scss';
+import '../FitnessSidebar.scss';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import FitnessVideo from './FitnessVideo.jsx';
 

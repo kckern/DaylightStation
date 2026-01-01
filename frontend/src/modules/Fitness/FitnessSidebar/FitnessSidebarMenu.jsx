@@ -2,17 +2,9 @@ import React from 'react';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
-import '../FitnessCam.scss';
+import '../FitnessSidebar.scss';
 
-const slugifyId = (value, fallback = 'user') => {
-  if (!value) return fallback;
-  const slug = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return slug || fallback;
-};
+// Note: slugifyId has been removed - we now use explicit IDs from config
 
 const FitnessSidebarMenu = ({
   onClose,
@@ -133,13 +125,12 @@ const FitnessSidebarMenu = ({
       if (!candidate?.allowWhileAssigned) return;
       if (candidate.id) multiAssignableKeys.add(String(candidate.id));
       if (candidate.profileId) multiAssignableKeys.add(String(candidate.profileId));
-      if (candidate.name) multiAssignableKeys.add(slugifyId(candidate.name));
     });
     
     // Track the currently selected user to exclude them from the list
     const currentlySelectedId = activeAssignment?.metadata?.candidateId
       || activeAssignment?.metadata?.profileId
-      || activeAssignment?.occupantSlug;
+      || activeAssignment?.occupantId;
     if (currentlySelectedId) {
       seen.add(currentlySelectedId);
     }
@@ -152,8 +143,7 @@ const FitnessSidebarMenu = ({
       const metadata = assignment?.metadata || {};
       if (metadata.candidateId) blockKeys.push(String(metadata.candidateId));
       if (metadata.profileId) blockKeys.push(String(metadata.profileId));
-      const occupantName = assignment?.occupantName || metadata.name;
-      if (occupantName) blockKeys.push(slugifyId(occupantName));
+      if (assignment?.occupantId) blockKeys.push(String(assignment.occupantId));
       const allowReuse = blockKeys.some((key) => multiAssignableKeys.has(key));
       if (allowReuse) return;
       blockKeys.forEach((key) => seen.add(key));
@@ -161,13 +151,14 @@ const FitnessSidebarMenu = ({
     
     // Add original owner as first option if a guest is currently assigned
     if (activeAssignment && baseName && (activeAssignment.occupantName || activeAssignment.metadata?.name) !== baseName) {
-      const baseId = slugifyId(baseName);
-      if (!seen.has(baseId)) {
-        seen.add(baseId);
+      // Use explicit ID from the base user
+      const baseUserId = fitnessContext?.getUserByName?.(baseName)?.id;
+      if (baseUserId && !seen.has(baseUserId)) {
+        seen.add(baseUserId);
         topOptions.push({
-          id: baseId,
+          id: baseUserId,
           name: baseName,
-          profileId: slugifyId(baseName),
+          profileId: baseUserId,
           source: 'Original',
           isOriginal: true
         });
@@ -197,14 +188,14 @@ const FitnessSidebarMenu = ({
     const withoutAvatars = [];
     
     filteredCandidates.forEach((candidate) => {
-      const id = candidate.id || slugifyId(candidate.name);
-      if (seen.has(id)) return;
+      const id = candidate.id || candidate.profileId;
+      if (!id || seen.has(id)) return;
       seen.add(id);
       
       const option = {
         id,
         name: candidate.name,
-        profileId: candidate.id || slugifyId(candidate.name),
+        profileId: id,
         source: candidate.source || candidate.category || candidate.group || candidate.group_label || candidate.type || null,
         hasAvatar: true // We'll determine this during render
       };

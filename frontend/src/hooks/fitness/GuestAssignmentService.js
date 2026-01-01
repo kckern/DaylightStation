@@ -1,4 +1,4 @@
-import { slugifyId } from './types.js';
+// Note: slugifyId removed - we now use explicit IDs
 import { DeviceAssignmentLedger } from './DeviceAssignmentLedger.js';
 
 export const validateGuestAssignmentPayload = (rawInput) => {
@@ -84,18 +84,19 @@ export class GuestAssignmentService {
     };
 
     session.userManager.assignGuest(key, value.name, metadata);
-    const occupantSlug = slugifyId(value.name);
+    // Use profileId from the assignment, which is now explicitly set
+    const occupantId = metadata.profileId || value.profileId;
     this.#logEvent('ASSIGN_GUEST', {
       deviceId: key,
       occupantName: value.name,
-      occupantSlug,
+      occupantId,
       baseUserName: value.baseUserName || null,
       hasZoneOverrides: Array.isArray(metadata.zones) && metadata.zones.length > 0
     });
     if (Array.isArray(metadata.zones) && metadata.zones.length > 0) {
       this.#logEvent('ZONE_OVERRIDE_APPLIED', {
         deviceId: key,
-        occupantSlug,
+        occupantId,
         zones: metadata.zones
       });
     }
