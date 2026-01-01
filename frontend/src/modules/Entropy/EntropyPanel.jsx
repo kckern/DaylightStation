@@ -58,12 +58,47 @@ const EntropyPanel = () => {
   return (
     <div className="entropy-panel">
       <div className="entropy-grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-        {report.items.map(item => (
-          <div key={item.id} className={`entropy-item status-${item.status}`} title={item.label}>
-            <div className="item-icon">{item.icon}</div>
-            <div className="item-value">{item.value}</div>
-          </div>
-        ))}
+        {report.items.map(item => {
+          const isSvg = item.icon && item.icon.endsWith('.svg');
+          const content = (
+            <>
+              <div className="item-icon">
+                {isSvg ? (
+                  <img 
+                    src={`/media/img/entropy/${item.icon}`} 
+                    alt={item.name} 
+                    style={{ width: '1.2em', height: '1.2em', display: 'block' }} 
+                  />
+                ) : (
+                  item.icon
+                )}
+              </div>
+              <div className="item-value">{item.value === 0 ? '☀' : item.value}</div>
+            </>
+          );
+
+
+          if (item.url) {
+            return (
+              <a 
+                key={item.id} 
+                href={item.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className={`entropy-item status-${item.status}`} 
+                title={item.label}
+              >
+                {content}
+              </a>
+            );
+          }
+
+          return (
+            <div key={item.id} className={`entropy-item status-${item.status}`} title={item.label}>
+              {content}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
