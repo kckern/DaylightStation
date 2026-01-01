@@ -4,6 +4,7 @@ import { registerPlugin } from './registry.js';
 // Auto-register plugins
 import * as FitnessChartApp from './plugins/FitnessChartApp/index.jsx';
 import * as CameraViewApp from './plugins/CameraViewApp/index.jsx';
+import * as FitnessCamApp from './plugins/FitnessCamApp/index.jsx';
 import * as JumpingJackGame from './plugins/JumpingJackGame/index.jsx';
 import * as ComponentShowcase from './plugins/ComponentShowcase/index.jsx';
 import * as HomeApp from './plugins/HomeApp/index.jsx';
@@ -13,6 +14,7 @@ import * as SessionBrowserApp from './plugins/SessionBrowserApp/index.jsx';
 
 registerPlugin(FitnessChartApp);
 registerPlugin(CameraViewApp);
+registerPlugin(FitnessCamApp);
 registerPlugin(JumpingJackGame);
 registerPlugin(ComponentShowcase);
 registerPlugin(HomeApp);
