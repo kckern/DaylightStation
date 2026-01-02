@@ -21,6 +21,17 @@ const cloneValue = (value) => {
   return value;
 };
 
+/**
+ * Phase 3: Key prefix constants for entity-based tracking
+ * @see /docs/design/guest-switch-session-transition.md
+ */
+const KEY_PREFIX = {
+  USER: 'user:',     // Legacy: user:{userId}:{metric}
+  ENTITY: 'entity:', // Phase 3: entity:{entityId}:{metric}
+  DEVICE: 'device:', // device:{deviceId}:{metric}
+  GLOBAL: 'global:'  // global:{metric}
+};
+
 export class FitnessTimeline {
   constructor(startTime = Date.now(), intervalMs = DEFAULT_INTERVAL_MS) {
     this.timebase = {
@@ -94,6 +105,158 @@ export class FitnessTimeline {
     const interval = this.timebase.intervalMs || DEFAULT_INTERVAL_MS;
     if (!(interval > 0)) return 0;
     return Math.floor(offsetMs / interval);
+  }
+
+  /**
+   * Get all unique participant IDs from timeline series.
+   * Parses series keys like "user:alice:heart_rate" to extract "alice".
+   * Used by FitnessSession.getHistoricalParticipants() to include dropped-out users.
+   * @returns {string[]} Array of participant IDs (user IDs)
+   */
+  getAllParticipantIds() {
+    const ids = new Set();
+    
+    Object.keys(this.series).forEach((key) => {
+      if (key.startsWith(KEY_PREFIX.USER)) {
+        // Parse "user:alice:heart_rate" -> "alice"
+        const rest = key.slice(KEY_PREFIX.USER.length);
+        const colonIdx = rest.indexOf(':');
+        if (colonIdx > 0) {
+          const userId = rest.slice(0, colonIdx);
+          if (userId) ids.add(userId);
+        }
+      }
+    });
+    
+    return Array.from(ids);
+  }
+
+  /**
+   * Phase 3: Get all unique entity IDs from timeline series.
+   * Parses series keys like "entity:entity-123-abc:heart_rate" to extract "entity-123-abc".
+   * @returns {string[]} Array of entity IDs
+   * @see /docs/design/guest-switch-session-transition.md
+   */
+  getAllEntityIds() {
+    const ids = new Set();
+    
+    Object.keys(this.series).forEach((key) => {
+      if (key.startsWith(KEY_PREFIX.ENTITY)) {
+        // Parse "entity:entity-123-abc:heart_rate" -> "entity-123-abc"
+        const rest = key.slice(KEY_PREFIX.ENTITY.length);
+        const colonIdx = rest.indexOf(':');
+        if (colonIdx > 0) {
+          const entityId = rest.slice(0, colonIdx);
+          if (entityId) ids.add(entityId);
+        }
+      }
+    });
+    
+    return Array.from(ids);
+  }
+
+  /**
+   * Phase 3: Get a series for an entity by entityId and metric.
+   * @param {string} entityId - Entity ID (e.g., "entity-1735689600000-abc12")
+   * @param {string} metric - Metric name (e.g., "heart_rate", "coins_total")
+   * @returns {Array} Series data or empty array
+   */
+  getEntitySeries(entityId, metric) {
+    if (!entityId || !metric) return [];
+    const key = `${KEY_PREFIX.ENTITY}${entityId}:${metric}`;
+    const series = this.series[key];
+    return Array.isArray(series) ? series : [];
+  }
+
+  /**
+   * Phase 3: Get latest value for an entity metric.
+   * @param {string} entityId
+   * @param {string} metric
+   * @returns {*} Latest non-null value or null
+   */
+  getEntityLatestValue(entityId, metric) {
+    const series = this.getEntitySeries(entityId, metric);
+    for (let i = series.length - 1; i >= 0; i--) {
+      if (series[i] != null) return series[i];
+    }
+    return null;
+  }
+
+  /**
+   * Phase 3: Transfer series data from one entity to another.
+   * Used during grace period transfers when a brief session is merged into successor.
+   * 
+   * @param {string} fromEntityId - Source entity ID
+   * @param {string} toEntityId - Destination entity ID
+   * @returns {string[]} - List of transferred series keys
+   */
+  transferEntitySeries(fromEntityId, toEntityId) {
+    if (!fromEntityId || !toEntityId || fromEntityId === toEntityId) return [];
+    
+    const transferred = [];
+    const fromPrefix = `${KEY_PREFIX.ENTITY}${fromEntityId}:`;
+    const toPrefix = `${KEY_PREFIX.ENTITY}${toEntityId}:`;
+    
+    Object.keys(this.series).forEach((key) => {
+      if (key.startsWith(fromPrefix)) {
+        const metric = key.slice(fromPrefix.length);
+        const newKey = `${toPrefix}${metric}`;
+        
+        // Copy series to new key
+        this.series[newKey] = [...this.series[key]];
+        // Clear original (but keep empty array for historical reference)
+        this.series[key] = this.series[key].map(() => null);
+        
+        transferred.push({ from: key, to: newKey, metric });
+      }
+    });
+    
+    console.log('[FitnessTimeline] Transferred entity series:', {
+      fromEntityId,
+      toEntityId,
+      count: transferred.length
+    });
+    
+    return transferred;
+  }
+
+  /**
+   * Transfer USER series from one user to another (e.g., user:soren → user:jin).
+   * Used during guest assignment to move history to the new identity.
+   * The original user's series is cleared (nulled out) so they don't appear in the chart.
+   * 
+   * @param {string} fromUserId - Source user ID (e.g., 'soren')
+   * @param {string} toUserId - Destination user ID (e.g., 'jin')
+   * @returns {string[]} - List of transferred series keys
+   */
+  transferUserSeries(fromUserId, toUserId) {
+    if (!fromUserId || !toUserId || fromUserId === toUserId) return [];
+    
+    const transferred = [];
+    const fromPrefix = `${KEY_PREFIX.USER}${fromUserId}:`;
+    const toPrefix = `${KEY_PREFIX.USER}${toUserId}:`;
+    
+    Object.keys(this.series).forEach((key) => {
+      if (key.startsWith(fromPrefix)) {
+        const metric = key.slice(fromPrefix.length);
+        const newKey = `${toPrefix}${metric}`;
+        
+        // Copy entire series to new key (full backfill)
+        this.series[newKey] = [...this.series[key]];
+        // Clear original completely (nulls make it disappear from chart)
+        this.series[key] = this.series[key].map(() => null);
+        
+        transferred.push({ from: key, to: newKey, metric });
+      }
+    });
+    
+    console.log('[FitnessTimeline] Transferred user series:', {
+      fromUserId,
+      toUserId,
+      count: transferred.length
+    });
+    
+    return transferred;
   }
 
   get summary() {

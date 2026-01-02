@@ -184,6 +184,48 @@ export class ParticipantRoster {
   }
 
   /**
+   * Get full roster including inactive participants from ledger
+   * This reconciles device roster with ledger assignments to include
+   * participants whose devices are offline but assignment is still active.
+   * 
+   * @returns {RosterEntry[]}
+   * @see /docs/reviews/guest-assignment-service-audit.md Issue #4
+   */
+  getFullRoster() {
+    const deviceRoster = this.getRoster(); // Current behavior - active devices only
+    const deviceIds = new Set(deviceRoster.map(e => e.hrDeviceId));
+    
+    // Add ledger entries for devices not currently broadcasting
+    const ledgerEntries = this._userManager?.assignmentLedger?.snapshot?.() || [];
+    ledgerEntries.forEach(entry => {
+      if (!entry.deviceId || deviceIds.has(entry.deviceId)) return;
+      
+      // Create "inactive" roster entry from ledger
+      const ghostEntry = {
+        name: entry.occupantName || entry.metadata?.name || 'Unknown',
+        displayLabel: entry.occupantName || entry.metadata?.name || 'Unknown',
+        groupLabel: null,
+        profileId: entry.metadata?.profileId || entry.occupantId,
+        id: entry.metadata?.profileId || entry.occupantId,
+        baseUserName: entry.metadata?.baseUserName || null,
+        isGuest: (entry.occupantType || 'guest') === 'guest',
+        hrDeviceId: entry.deviceId,
+        heartRate: null,
+        zoneId: null,
+        zoneColor: null,
+        avatarUrl: null,
+        status: ParticipantStatus.REMOVED,
+        isActive: false,
+        inactiveSince: entry.updatedAt || null,
+        _source: 'ledger' // For debugging
+      };
+      deviceRoster.push(ghostEntry);
+    });
+    
+    return deviceRoster;
+  }
+
+  /**
    * Check if roster is empty
    * @returns {boolean}
    */
@@ -254,7 +296,19 @@ export class ParticipantRoster {
     if (!userId) {
       console.warn('[ParticipantRoster] No user ID found for participant:', participantName);
     }
+    
+    // Phase 5: Include entityId from ledger for entity-aware tracking
+    const entityId = guestEntry?.entityId || null;
+    
+    // For grace period transfers: include timelineUserId so chart reads original user's data
+    // (Note: The Transfer Path approach moves data, but this provides a fallback or metadata-driven path)
+    const timelineUserId = guestEntry?.metadata?.timelineUserId || null;
     const zoneInfo = zoneLookup.get(userId) || null;
+
+    // Phase 5: Get entity-specific data (start time) if available
+    // Use registry start time if available, otherwise guestEntry update time
+    const registryStartTime = entityId ? this._session?.entityRegistry?.get?.(entityId)?.startTime : null;
+    let entityStartTime = registryStartTime || guestEntry?.updatedAt || null;
     const fallbackZoneId = mappedUser?.currentData?.zone || null;
     const fallbackZoneColor = mappedUser?.currentData?.color || null;
 
@@ -267,7 +321,10 @@ export class ParticipantRoster {
       }
     }
 
-    const isGuest = (guestEntry?.occupantType || 'guest') === 'guest';
+    const isGuest = guestEntry
+      ? (guestEntry.occupantType === 'guest')
+      : (mappedUser ? mappedUser.source === 'Guest' : true);
+
     const baseUserName = isGuest
       ? (guestEntry?.metadata?.baseUserName || guestEntry?.metadata?.base_user_name || null)
       : participantName;
@@ -286,6 +343,8 @@ export class ParticipantRoster {
     // SINGLE SOURCE OF TRUTH: isActive comes directly from DeviceManager's inactiveSince
     // This is the authoritative field that ALL consumers should use for avatar visibility
     const isActive = !device.inactiveSince;
+    
+    // (Consolidated above)
 
     const rosterEntry = {
       name: participantName,
@@ -293,6 +352,9 @@ export class ParticipantRoster {
       groupLabel: isGuest ? null : mappedUser?.groupLabel || null,
       profileId: userId,
       id: userId,
+      entityId, // Phase 5: Session entity ID for entity-aware tracking
+      timelineUserId, // Grace period transfer: ID of user whose series to display
+      entityStartTime, // Phase 5: When this entity started (for session duration display)
       baseUserName,
       isGuest,
       hrDeviceId: deviceId,

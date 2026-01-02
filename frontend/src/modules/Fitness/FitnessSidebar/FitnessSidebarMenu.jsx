@@ -132,7 +132,7 @@ const FitnessSidebarMenu = ({
       || activeAssignment?.metadata?.profileId
       || activeAssignment?.occupantId;
     if (currentlySelectedId) {
-      seen.add(currentlySelectedId);
+      seen.add(String(currentlySelectedId));
     }
     
     // Exclude users already assigned to OTHER devices (not the current one)
@@ -208,7 +208,7 @@ const FitnessSidebarMenu = ({
       topOptions,
       filteredOptions: [...withAvatars, ...withoutAvatars]
     };
-    }, [guestCandidates, activeAssignment, baseName, deviceIdStr, selectedTab, deviceAssignments]);
+    }, [guestCandidates, activeAssignment, baseName, deviceIdStr, selectedTab, deviceAssignments, fitnessContext]);
 
   // Auto-switch to Family tab if Friends tab is empty or all used up
   React.useEffect(() => {

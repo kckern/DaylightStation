@@ -75,6 +75,9 @@ export class ActivityMonitor {
     
     /** @type {Map<string, import('./types.js').ActivityPeriod[]>} */
     this._activityHistory = new Map();
+
+    /** @type {Map<string, Array<{tick: number, value: any, timestamp: number, id: string}>>} */
+    this._dropoutEvents = new Map();
     
     /** @type {Set<function(ActivityChangeEvent): void>} */
     this._subscribers = new Set();
@@ -96,12 +99,143 @@ export class ActivityMonitor {
   reset(startTimestamp = Date.now()) {
     this._participants.clear();
     this._activityHistory.clear();
+    this._dropoutEvents.clear();
     this._currentTick = 0;
     this._startTimestamp = startTimestamp;
     this._previousTickActive = new Set();
   }
 
+  /**Record a dropout event for a participant
+   * @param {string} participantId
+   * @param {number} tick
+   * @param {any} value - The value at the dropout point (e.g. total coins or distance)
+   * @param {number} [timestamp]
+   */
+  recordDropout(participantId, tick, value, timestamp) {
+    if (!this._dropoutEvents.has(participantId)) {
+      this._dropoutEvents.set(participantId, []);
+    }
+    const events = this._dropoutEvents.get(participantId);
+    // Avoid duplicates at same tick
+    if (!events.some(e => e.tick === tick)) {
+      events.push({
+        tick,
+        value,
+        timestamp: timestamp ?? this._tickToTimestamp(tick),
+        id: `${participantId}-dropout-${tick}`
+      });
+      // Keep sorted by tick
+      events.sort((a, b) => a.tick - b.tick);
+    }
+  }
+
   /**
+   * Get dropout events for a participant
+   * @param {string} participantId
+   * @returns {Array<{tick: number, value: any, timestamp: number, id: string}>}
+   */
+  getDropoutEvents(participantId) {
+    return this._dropoutEvents.get(participantId) || [];
+  }
+
+  /**
+   * Get all dropout events for all participants
+   * @returns {Map<string, Array<{tick: number, value: any, timestamp: number, id: string}>>}
+   */
+  getAllDropoutEvents() {
+    return new Map(this._dropoutEvents);
+  }
+
+  /**
+   * Reconstruct dropout events from timeline series data.
+   * Scans heart_rate series for gaps (nulls) that indicate dropouts.
+   * 
+   * @param {Function} getSeries - Function(userId, metric) returning array
+   * @param {string[]} participantIds - List of participants to scan
+   * @param {Object} timebase - Timebase object for timestamp conversion
+   */
+  reconstructFromTimeline(getSeries, participantIds, timebase) {
+    this._dropoutEvents.clear();
+    
+    participantIds.forEach(userId => {
+      const hrSeries = getSeries(userId, 'heart_rate') || [];
+      const coinSeries = getSeries(userId, 'coins_total') || [];
+      
+      let isTracking = false;
+      let lastActiveTick = -1;
+      
+      hrSeries.forEach((hr, tick) => {
+        const hasData = hr !== null && hr !== undefined;
+        
+        if (hasData) {
+          if (!isTracking) {
+            // Started or resumed tracking
+            isTracking = true;
+          }
+          lastActiveTick = tick;
+        } else {
+          if (isTracking) {
+            // Detected dropout (transition from active to inactive)
+            // The dropout marker belongs at the last active tick
+            const value = coinSeries[lastActiveTick] || 0;
+            const timestamp = timebase ? (timebase.startTime + (lastActiveTick * 1000)) : this._tickToTimestamp(lastActiveTick);
+            
+            this.recordDropout(userId, lastActiveTick, value, timestamp);
+            isTracking = false;
+          }
+        }
+      });
+    });
+  }
+
+  /**
+   * Transfer activity history from one participant to another.
+   * Used during grace period transfers to maintain a continuous line on the chart.
+   * 
+   * @param {string} fromId - Source participant ID
+   * @param {string} toId - Destination participant ID
+   */
+  transferActivity(fromId, toId) {
+    if (!fromId || !toId || fromId === toId) return;
+
+    // 1. Transfer activity history
+    const fromHistory = this._activityHistory.get(fromId);
+    if (fromHistory) {
+      const toHistory = this._activityHistory.get(toId) || [];
+      // Merge and sort by startTick
+      const merged = [...toHistory, ...fromHistory].sort((a, b) => a.startTick - b.startTick);
+      this._activityHistory.set(toId, merged);
+      // Clear source history
+      this._activityHistory.delete(fromId);
+    }
+
+    // 2. Transfer dropout events
+    const fromDropouts = this._dropoutEvents.get(fromId);
+    if (fromDropouts) {
+      const toDropouts = this._dropoutEvents.get(toId) || [];
+      const merged = [...toDropouts, ...fromDropouts].sort((a, b) => a.tick - b.tick);
+      this._dropoutEvents.set(toId, merged);
+      this._dropoutEvents.delete(fromId);
+    }
+
+    // 3. Update participant state
+    const fromState = this._participants.get(fromId);
+    const toState = this._participants.get(toId);
+    if (fromState) {
+      if (!toState || fromState.lastActiveTick > (toState.lastActiveTick || -1)) {
+        this._participants.set(toId, {
+          ...fromState,
+          participantId: toId
+        });
+      }
+      this._participants.delete(fromId);
+    }
+
+    console.log('[ActivityMonitor] Transferred activity:', { fromId, toId });
+  }
+
+  /**
+   * 
    * Update configuration
    * @param {Object} config 
    */

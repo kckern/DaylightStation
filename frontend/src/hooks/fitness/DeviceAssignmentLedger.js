@@ -32,8 +32,11 @@ export class DeviceAssignmentLedger {
       deviceId,
       occupantSlug: entry.occupantSlug || null,
       occupantName: entry.occupantName || null,
+      occupantId: entry.occupantId || null,
       occupantType: entry.occupantType || 'guest',
+      entityId: entry.entityId || null, // Session entity ID for this assignment
       displacedSlug: entry.displacedSlug || null,
+      displacedEntityId: entry.displacedEntityId || null, // Previous entity that was displaced
       overridesHash: entry.overridesHash || null,
       metadata: cloneAssignment(entry.metadata),
       updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now()
@@ -150,15 +153,20 @@ export class DeviceAssignmentLedger {
     const timestamp = Number.isFinite(assignment?.updatedAt)
       ? assignment.updatedAt
       : (Number.isFinite(assignment?.timestamp) ? assignment.timestamp : 0);
+    // Preserve entityId if provided, otherwise leave null (created by GuestAssignmentService)
+    const entityId = assignment?.entityId || assignment?.metadata?.entityId || null;
+    const displacedEntityId = assignment?.displacedEntityId || assignment?.metadata?.displacedEntityId || null;
 
     return {
       deviceId,
       occupantId,
       occupantName,
       occupantType,
+      entityId,
+      displacedEntityId,
       displacedUserId: baseUserId,
       overridesHash,
-      metadata: { ...cloneAssignment(assignment), profileId: occupantId },
+      metadata: { ...cloneAssignment(assignment), profileId: occupantId, entityId },
       updatedAt: timestamp
     };
   }

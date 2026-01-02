@@ -18,10 +18,32 @@ const toNumber = (value) => {
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
+/**
+ * Normalize participant ID from roster entry
+ * Prefers explicit canonical IDs (id, profileId) over fallbacks (name, hrDeviceId)
+ * Logs warnings when falling back to non-canonical IDs for debugging
+ * 
+ * @param {Object} entry - Roster entry
+ * @returns {string | null} - Canonical ID or null
+ * @see /docs/reviews/guest-assignment-service-audit.md Issue #3
+ */
 const normalizeId = (entry) => {
   if (!entry) return null;
-  // Use explicit ID if available, otherwise fall back to name/hrDeviceId
-  return entry.id || entry.profileId || entry.name || entry.hrDeviceId || null;
+  
+  // Prefer explicit canonical ID
+  const canonicalId = entry.id || entry.profileId;
+  if (canonicalId) return canonicalId;
+  
+  // Log fallback usage for debugging (Issue #3 remediation)
+  const fallbackId = entry.name || entry.hrDeviceId || null;
+  if (fallbackId) {
+    console.warn('[FitnessChart.helpers] No canonical ID, using fallback:', {
+      name: entry.name,
+      hrDeviceId: entry.hrDeviceId,
+      resolvedId: fallbackId
+    });
+  }
+  return fallbackId;
 };
 
 const forwardFill = (arr = []) => {
@@ -111,22 +133,47 @@ export const buildActivityMaskFromHeartRate = (heartRateSeries) => {
 /**
  * Build beats series data for chart rendering.
  * 
- * @param {Object} rosterEntry - Participant entry with profileId/name
- * @param {Function} getSeries - Function to retrieve timeline series
+ * Phase 5: Now supports entity-based series lookup when rosterEntry has entityId.
+ * Falls back to user-based series for backward compatibility.
+ * 
+ * @param {Object} rosterEntry - Participant entry with profileId/name and optional entityId
+ * @param {Function} getSeries - Function to retrieve timeline series (userId, metric, options)
  * @param {Object} [timebase] - Timebase configuration
  * @param {Object} [options] - Additional options
  * @param {import('../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor for centralized activity tracking
+ * @param {Function} [options.getEntitySeries] - Optional function to get entity series directly
  * @returns {{ beats: number[], zones: (string|null)[], active: boolean[] }}
  */
 export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options = {}) => {
   const targetId = normalizeId(rosterEntry);
   if (!targetId || typeof getSeries !== 'function') return { beats: [], zones: [], active: [] };
 
+  // For grace period transfer: use original user's timeline data (Jin displays Soren's line)
+  const timelineUserId = rosterEntry?.timelineUserId || rosterEntry?.metadata?.timelineUserId || targetId;
+  
+  // Phase 5: Check if roster entry has entityId for entity-based lookup
+  const entityId = rosterEntry?.entityId || null;
+  const { getEntitySeries } = options;
+  
+  // Helper to get series - tries entity series first if available
+  const getSeriesForParticipant = (metric, seriesOptions = {}) => {
+    // If we have entityId and getEntitySeries function, prefer entity series
+    if (entityId && typeof getEntitySeries === 'function') {
+      const entitySeries = getEntitySeries(entityId, metric, seriesOptions);
+      if (Array.isArray(entitySeries) && entitySeries.length > 0) {
+        return entitySeries;
+      }
+    }
+    // Fall back to user-based series (use timelineUserId for grace period transfers)
+    const userSeries = getSeries(timelineUserId, metric, seriesOptions) || [];
+    return userSeries;
+  };
+
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
-  const zones = getSeries(targetId, 'zone_id', { clone: true }) || [];
+  const zones = getSeriesForParticipant('zone_id', { clone: true });
   
   // Get heart_rate to detect actual device activity (has nulls during dropout)
-  const heartRate = getSeries(targetId, 'heart_rate', { clone: true }) || [];
+  const heartRate = getSeriesForParticipant('heart_rate', { clone: true });
   
   // HR nulls tracking (silent - only log at debug level if needed)
   const hrNullCount = heartRate.filter(v => v == null).length;
@@ -171,7 +218,9 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   }
 
   // Primary source: coins_total from TreasureBox (single source of truth)
-  const coinsRaw = getSeries(targetId, 'coins_total', { clone: true }) || null;
+  // Phase 5: Uses entity series when available
+  const coinsRaw = getSeriesForParticipant('coins_total', { clone: true });
+  
   if (Array.isArray(coinsRaw) && coinsRaw.length > 0) {
     // Apply Math.floor for consistency with TreasureBox accumulator
     // Use startAtZero to anchor cumulative values to origin (0,0)
@@ -180,7 +229,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   }
 
   // Secondary source: pre-computed heart_beats if available
-  const beatsRaw = getSeries(targetId, 'heart_beats', { clone: true }) || null;
+  const beatsRaw = getSeriesForParticipant('heart_beats', { clone: true });
   if (Array.isArray(beatsRaw) && beatsRaw.length > 0) {
     // Apply Math.floor for consistency
     // Use startAtZero to anchor cumulative values to origin (0,0)
@@ -188,9 +237,21 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
     return { beats, zones, active };
   }
 
-  // Last resort fallback: compute from heart_rate (deprecated)
-  if (!Array.isArray(heartRate) || heartRate.length === 0) return { beats: [], zones: [], active: [] };
+  // Defensive logging: no series data found (Issue #3 remediation)
+  // This indicates ID mismatch between timeline recording and chart lookup
+  if (!Array.isArray(heartRate) || heartRate.length === 0) {
+    console.warn('[FitnessChart.helpers] No series data found for participant:', {
+      targetId,
+      name: rosterEntry?.name || rosterEntry?.displayLabel,
+      hrDeviceId: rosterEntry?.hrDeviceId,
+      coinsRaw: coinsRaw?.length ?? 0,
+      beatsRaw: beatsRaw?.length ?? 0,
+      heartRateLen: heartRate?.length ?? 0
+    });
+    return { beats: [], zones: [], active: [] };
+  }
 
+  // Last resort fallback: compute from heart_rate (deprecated)
   if (process.env.NODE_ENV === 'development') {
     console.warn(`[FitnessChart] Falling back to heart_rate calculation for ${targetId} - consider using TreasureBox coins_total`);
   }
@@ -207,7 +268,19 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   return { beats, zones, active };
 };
 
-export const buildSegments = (beats = [], zones = [], active = []) => {
+/**
+ * Build chart segments from beats/zones/active arrays.
+ * 
+ * @param {number[]} beats - Cumulative beat values per tick
+ * @param {(string|null)[]} zones - Zone IDs per tick
+ * @param {boolean[]} active - Activity status per tick (true = broadcasting)
+ * @param {Object} [options] - Additional options
+ * @param {boolean} [options.isCurrentlyActive] - Whether user is currently active according to roster (for immediate gap extension on rejoin)
+ * @param {number} [options.currentTick] - Current tick index for extending gap to present
+ * @returns {Object[]} Array of segment objects
+ */
+export const buildSegments = (beats = [], zones = [], active = [], options = {}) => {
+  const { isCurrentlyActive, currentTick } = options;
   const segments = [];
   let current = null;
   let lastZone = null;
@@ -323,10 +396,27 @@ export const buildSegments = (beats = [], zones = [], active = []) => {
   }
   pushCurrent();
   
-  // NOTE: When user is STILL in dropout (hasn't rejoined), we do NOT create a trailing gap segment.
-  // The line simply STOPS at the dropout point. The dropout badge will mark where they left.
-  // Gap segments are ONLY created when user REJOINS - connecting dropout point to rejoin point.
-  // This matches expected behavior: colored line → stops → badge shows dropout → (rejoin) grey line → colored line resumes
+  // IMMEDIATE GAP EXTENSION ON REJOIN:
+  // If roster says user is currently active but we're still in a gap (timeline hasn't caught up),
+  // extend the gap segment to the current tick so the grey line appears immediately
+  if (inGap && gapStartPoint && isCurrentlyActive === true) {
+    const extendToTick = currentTick ?? beats.length - 1;
+    if (extendToTick > gapStartPoint.i) {
+      const gapSegment = {
+        zone: null,
+        color: getZoneColor(null),
+        status: ParticipantStatus.IDLE,
+        isGap: true,
+        points: [
+          { ...gapStartPoint },           // Left: dropout point
+          { i: extendToTick, v: gapStartPoint.v }  // Right: extend to current tick (horizontal)
+        ]
+      };
+      segments.push(gapSegment);
+      inGap = false;
+      gapStartPoint = null;
+    }
+  }
   
   // Debug: Log segments including gaps and active array status
   const gapSegs = segments.filter(s => s.isGap === true);
@@ -401,7 +491,7 @@ export const createPaths = (segments = [], options = {}) => {
   const topFrac = Math.max(0, Math.min(1, topFraction));
   const bottomFrac = Math.max(topFrac, Math.min(1, bottomFraction));
 
-  const scaleY = (v) => {
+  const defaultScaleY = (v) => {
     const clamped = Math.max(domainMin, Math.min(maxValue, v));
     const norm = (clamped - domainMin) / domainSpan;
     let mapped = norm;
@@ -411,6 +501,8 @@ export const createPaths = (segments = [], options = {}) => {
     const frac = bottomFrac + (topFrac - bottomFrac) * mapped;
     return (margin.top || 0) + frac * innerHeight;
   };
+
+  const scaleY = options.scaleY || defaultScaleY;
 
   // Debug: log gap segments being rendered
   const gapsToRender = mergedSegments.filter(s => s.isGap);

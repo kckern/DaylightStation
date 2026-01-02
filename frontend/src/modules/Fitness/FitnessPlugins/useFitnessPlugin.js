@@ -8,10 +8,26 @@ const useFitnessPlugin = (pluginId) => {
   const storage = usePluginStorage(pluginId);
   
   // Fix 8 (bugbash 1B): Memoize historicalParticipants to prevent infinite effect loops
-  // Only recompute when session changes, not on every render
+  // Recompute when session changes OR when timeline series keys change (new participants added)
+  // This ensures dropped-out users are included when chart remounts
   const historicalParticipants = useMemo(() => {
     return fitnessCtx.fitnessSessionInstance?.getHistoricalParticipants?.() || [];
-  }, [fitnessCtx.fitnessSessionInstance?.sessionId]);
+  }, [fitnessCtx.fitnessSessionInstance?.sessionId, fitnessCtx.timelineSeriesKeys?.length]);
+  
+  // Get transfer version from context (triggers re-render when users are transferred)
+  const transferVersion = fitnessCtx.transferVersion || 0;
+  
+  // Memoize transferred users - convert Set to array for stable reference
+  // Recalculate when session changes, timeline keys change, or transfer version changes
+  const transferredUsersArray = useMemo(() => {
+    const set = fitnessCtx.fitnessSessionInstance?.getTransferredUsers?.();
+    return set ? Array.from(set) : [];
+  }, [fitnessCtx.fitnessSessionInstance?.sessionId, fitnessCtx.timelineSeriesKeys?.length, transferVersion]);
+  
+  // Convert back to Set with stable reference (only changes when array content changes)
+  const transferredUsers = useMemo(() => {
+    return new Set(transferredUsersArray);
+  }, [transferredUsersArray.join(',')]);
   
   // Phase 3: Memoized ChartDataBuilder for clean chart data interface
   const chartDataBuilder = useMemo(() => {
@@ -80,9 +96,18 @@ const useFitnessPlugin = (pluginId) => {
     // Historical participants (all users who have ever been in session, including those who left)
     // Fix 8: Use memoized value instead of calling getHistoricalParticipants() on each render
     historicalParticipants,
+    // Transferred users (users whose data was moved to another identity - should be excluded from UI)
+    transferredUsers,
     getUserVitals: fitnessCtx.getUserVitals,
     getUserTimelineSeries: fitnessCtx.getUserTimelineSeries,
+    getEntityTimelineSeries: fitnessCtx.getEntityTimelineSeries, // Phase 5: Entity series access
+    getParticipantTimelineSeries: fitnessCtx.getParticipantTimelineSeries, // Phase 5: Smart entity/user lookup
     getUserZoneThreshold: fitnessCtx.getUserZoneThreshold,
+    
+    // Phase 5: Entity registry access
+    entityRegistry: fitnessCtx.entityRegistry,
+    getEntitiesForProfile: fitnessCtx.getEntitiesForProfile,
+    getProfileCoinsTotal: fitnessCtx.getProfileCoinsTotal,
     
     // Devices
     heartRateDevices: fitnessCtx.heartRateDevices,

@@ -42,6 +42,11 @@ const CircularUserAvatar = ({
   onClick,
   role
 }) => {
+  const isFireZone = zoneId === 'fire';
+  //if fire, showIndicator is false
+  if (isFireZone) {
+    showIndicator = false;
+  }
   const normalizedProgress = clamp(progress, 0, 1);
   const indicatorAngle = normalizedProgress !== null
     ? 180 + normalizedProgress * 180
@@ -98,6 +103,19 @@ const CircularUserAvatar = ({
       role={role}
       onClick={onClick}
     >
+      {/* Fire sunbeams effect */}
+      {isFireZone && (
+        <div className="fire-sunbeams" aria-hidden="true">
+          {[...Array(12)].map((_, i) => (
+            <div
+              key={i}
+              className="sunbeam"
+              style={{ '--beam-index': i }}
+            />
+          ))}
+        </div>
+      )}
+
       {showGauge && (
         <svg
           className="zone-progress-gauge"

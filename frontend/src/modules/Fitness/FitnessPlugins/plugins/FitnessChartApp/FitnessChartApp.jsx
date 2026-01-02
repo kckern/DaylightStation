@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import useFitnessPlugin from '../../useFitnessPlugin';
 import { DaylightMediaPath } from '../../../../../lib/api.mjs';
+import { LayoutManager, useAnimatedLayout, ConnectorGenerator } from './layout/index.js';
 import './FitnessChartApp.scss';
 import {
 	MIN_VISIBLE_TICKS,
@@ -52,13 +53,14 @@ const formatDuration = (ms) => {
 /**
  * Hook to build race chart data from roster and timeline series.
  * @param {Array} roster - Current participant roster
- * @param {Function} getSeries - Timeline series getter
+ * @param {Function} getSeries - Timeline series getter (user series)
  * @param {Object} timebase - Timeline timebase config
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor for centralized activity tracking
+ * @param {Function} [options.getEntitySeries] - Phase 5: Entity series getter for entity-aware rendering
  */
 const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
-	const { activityMonitor } = options;
+	const { activityMonitor, getEntitySeries } = options;
 	
 	return useMemo(() => {
 		if (!Array.isArray(roster) || roster.length === 0 || typeof getSeries !== 'function') {
@@ -67,9 +69,13 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 
 		// Build chart entries from roster
 		const debugItems = roster.map((entry, idx) => {
-			const { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor });
+			// Phase 5: Pass getEntitySeries for entity-aware chart data
+			const { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor, getEntitySeries });
 			const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
-			const segments = buildSegments(beats, zones, active);
+			// Pass roster's isActive status to enable immediate gap rendering when user rejoins
+			const isCurrentlyActive = entry.isActive !== false;
+			const currentTick = timebase?.tickCount ?? beats.length - 1;
+			const segments = buildSegments(beats, zones, active, { isCurrentlyActive, currentTick });
 			const profileId = entry.profileId || entry.id || entry.hrDeviceId || String(idx);
 			const entryId = entry.id || entry.profileId || entry.hrDeviceId || String(idx);
 			
@@ -198,7 +204,8 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		const maxValue = Math.max(0, ...shaped.map((e) => e.maxVal));
 		const maxIndex = Math.max(0, ...shaped.map((e) => e.lastIndex));
 		return { entries: shaped, maxValue, maxIndex };
-	}, [roster, getSeries, timebase, activityMonitor]);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [roster, getSeries, timebase?.tickCount, timebase?.intervalCount, activityMonitor]);
 };
 
 // NOTE: Clean ChartDataBuilder interface is available via useFitnessApp().chartDataBuilder
@@ -228,16 +235,42 @@ const findFirstFiniteAfter = (arr = [], index) => {
  * @param {string[]} historicalParticipantIds - IDs of historical participants
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor
+ * @param {Function} [options.getEntitySeries] - Phase 5: Entity series getter
  */
 const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = [], options = {}) => {
-	const { activityMonitor } = options;
-	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor });
+	const { activityMonitor, getEntitySeries, transferredUsers } = options;
+	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor, getEntitySeries });
 	const [participantCache, setParticipantCache] = useState({});
 	// Track which historical IDs we've already processed to avoid re-processing on every render
 	const processedHistoricalRef = useRef(new Set());
 
+	// Clear transferred users from cache when transfers happen
+	// This ensures their old data is removed and the new user's data is fresh
+	useEffect(() => {
+		if (!transferredUsers?.size) return;
+		
+		setParticipantCache((prev) => {
+			const next = { ...prev };
+			let changed = false;
+			transferredUsers.forEach((userId) => {
+				if (next[userId]) {
+					delete next[userId];
+					changed = true;
+					console.log('[useRaceChartWithHistory] Cleared transferred user from cache:', userId);
+				}
+			});
+			return changed ? next : prev;
+		});
+		
+		// Also clear from processed set so they don't get re-added from historical
+		transferredUsers.forEach((userId) => {
+			processedHistoricalRef.current.delete(userId);
+		});
+	}, [transferredUsers]);
+
 	// Initialize cache from historical participants (1B fix)
 	// Uses processedHistoricalRef instead of boolean flag to allow late arrivals while avoiding duplicates
+	// Filter out transferred users (their data was moved to another identity)
 	useEffect(() => {
 		if (!historicalParticipantIds.length || typeof getSeries !== 'function') {
 			return;
@@ -248,6 +281,12 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 			historicalParticipantIds.forEach((slug) => {
 				// Skip if already processed or already in cache (including from presentEntries)
 				if (!slug || next[slug] || processedHistoricalRef.current.has(slug)) return;
+				
+				// Skip transferred users - their data was moved to another identity
+				if (transferredUsers?.has?.(slug)) {
+					console.log('[useRaceChartWithHistory] Skipping transferred user:', slug);
+					return;
+				}
 				
 				// Mark as processed to avoid re-processing on subsequent renders
 				processedHistoricalRef.current.add(slug);
@@ -296,9 +335,29 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 	// Note: timebase excluded from deps intentionally - historical entries only need to be added once
 	// processedHistoricalRef prevents duplicate processing, and presentEntries will update live data
 	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [historicalParticipantIds, getSeries]);
+	}, [historicalParticipantIds, getSeries, transferredUsers]);
 
+	// Phase 2: Reconstruct dropout events from timeline on mount
 	useEffect(() => {
+		if (activityMonitor && typeof getSeries === 'function' && timebase) {
+			// Get all known participant IDs (present + historical)
+			const allIds = new Set([...presentEntries.map(e => e.profileId || e.id), ...historicalParticipantIds]);
+			activityMonitor.reconstructFromTimeline(getSeries, Array.from(allIds), timebase);
+		}
+	}, [activityMonitor, getSeries, timebase, historicalParticipantIds.length]);
+
+	// Track presentEntries signature to prevent infinite loop
+	// Only update cache when entries actually change (by comparing IDs + key metrics)
+	const lastPresentSignatureRef = useRef(null);
+	
+	useEffect(() => {
+		// Create signature from entry IDs and their key values to detect actual changes
+		const signature = presentEntries.map(e => `${e.profileId || e.id}:${e.lastIndex}:${e.isActive}`).sort().join('|');
+		if (signature === lastPresentSignatureRef.current) {
+			return; // No actual change, skip update
+		}
+		lastPresentSignatureRef.current = signature;
+		
 		setParticipantCache((prev) => {
 			const next = { ...prev };
 			const presentIds = new Set();
@@ -310,31 +369,20 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				const lastSeenTick = entry.lastIndex;
 				const prevEntry = prev[id];
 				
-				// Preserve existing dropout markers (IMMUTABLE) for badge rendering
-				// CRITICAL: Create a NEW array to avoid mutating previous state
-				let dropoutMarkers = [...(prevEntry?.dropoutMarkers || [])];
+				// SINGLE SOURCE OF TRUTH: ActivityMonitor owns all dropout events
+				// Record dropout IMMEDIATELY when transition from active to inactive
+				const wasActive = prevEntry && (prevEntry.isActive !== false && isBroadcasting(prevEntry.status));
+				const nowInactive = entry.isActive === false;
+				const isDropping = wasActive && nowInactive;
 				
-				// Create dropout marker ONLY when returning from dropout (was inactive, now active again)
-				// This is the REJOIN event - we mark where they LEFT
-				const wasInactive = prevEntry && (prevEntry.isActive === false || !isBroadcasting(prevEntry.status));
-				const nowActive = entry.isActive !== false;
-				const isRejoining = wasInactive && nowActive;
-				
-				if (isRejoining && prevEntry.lastValue != null && (prevEntry.lastSeenTick ?? -1) >= 0) {
-					const firstNewIdx = findFirstFiniteAfter(entry.beats || [], prevEntry.lastSeenTick ?? -1);
-					if (firstNewIdx != null) {
-						// Create IMMUTABLE dropout marker at the point where they left
-						const newMarker = {
-							tick: prevEntry.lastSeenTick,
-							value: prevEntry.lastValue,
-							timestamp: Date.now()
-						};
-						// Only add if not duplicate
-						const isDuplicate = dropoutMarkers.some(m => m.tick === newMarker.tick);
-						if (!isDuplicate) {
-							dropoutMarkers = [...dropoutMarkers, newMarker];
-						}
-					}
+				if (isDropping && activityMonitor && prevEntry.lastValue != null && (prevEntry.lastSeenTick ?? -1) >= 0) {
+					// Record dropout immediately (not on rejoin)
+					activityMonitor.recordDropout(
+						id, 
+						prevEntry.lastSeenTick, 
+						prevEntry.lastValue, 
+						Date.now()
+					);
 				}
 				next[id] = {
 					...prevEntry,
@@ -346,7 +394,7 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 					lastValue,
 					status: entry.status, // SINGLE SOURCE OF TRUTH: From roster's isActive
 					isActive: entry.isActive, // Pass through for avatar rendering
-					dropoutMarkers, // Preserve immutable markers for badge rendering
+					// dropoutMarkers removed in Phase 2
 					absentSinceTick: entry.status === ParticipantStatus.IDLE ? (prevEntry?.absentSinceTick ?? lastSeenTick) : null
 				};
 			});
@@ -354,8 +402,11 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				if (!presentIds.has(id)) {
 					const ent = next[id];
 					if (ent) {
-						// User just dropped out - record this as a potential dropout marker
-						// The marker becomes IMMUTABLE when they rejoin
+						// User just dropped out - record dropout IMMEDIATELY to ActivityMonitor
+						const wasActive = ent.isActive !== false && isBroadcasting(ent.status);
+						if (wasActive && activityMonitor && ent.lastValue != null && (ent.lastSeenTick ?? -1) >= 0) {
+							activityMonitor.recordDropout(id, ent.lastSeenTick, ent.lastValue, Date.now());
+						}
 						next[id] = {
 							...ent,
 							status: ParticipantStatus.REMOVED,
@@ -369,7 +420,31 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 		});
 	}, [presentEntries]);
 
-	const allEntries = useMemo(() => Object.values(participantCache).filter((e) => e && (e.segments?.length || 0) > 0), [participantCache]);
+	// Filter out entries with no valid data (transferred users have all-null beats)
+	// Also exclude users explicitly marked as transferred
+	// Note: We convert transferredUsers Set to a joined string for stable dependency
+	const transferredUsersKey = transferredUsers ? Array.from(transferredUsers).sort().join(',') : '';
+	const allEntries = useMemo(() => {
+		return Object.values(participantCache).filter((e) => {
+			if (!e) return false;
+			if ((e.segments?.length || 0) === 0) return false;
+			
+			// Exclude transferred users by ID (check both profileId, id, and name)
+			const id = e.profileId || e.id;
+			const name = e.name?.toLowerCase?.();
+			if (transferredUsers?.size > 0) {
+				if ((id && transferredUsers.has(id)) || 
+				    (name && transferredUsers.has(name))) {
+					return false;
+				}
+			}
+			
+			// Check if beats has any valid (non-null, positive) values
+			// If all nulls/zeros, the user was transferred and should be hidden
+			const hasValidBeats = Array.isArray(e.beats) && e.beats.some(v => Number.isFinite(v) && v > 0);
+			return hasValidBeats;
+		});
+	}, [participantCache, transferredUsersKey]);
 	
 	// SINGLE SOURCE OF TRUTH: Use isActive from roster (set by DeviceManager.inactiveSince)
 	// Segments are for RENDERING only - they control line style (solid/dotted)
@@ -389,52 +464,80 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 	const present = useMemo(() => validatedEntries.filter((e) => e.isActive !== false), [validatedEntries]);
 	const absent = useMemo(() => validatedEntries.filter((e) => e.isActive === false), [validatedEntries]);
 	
-	// Collect ALL dropout markers from ALL entries (both present and absent)
-	// These markers are IMMUTABLE - once created, they never move or disappear
+	// SINGLE SOURCE OF TRUTH: ActivityMonitor owns ALL dropout markers
+	// Dropout marker rules:
+	// 1. Max 1 marker per participant (at their most recent dropout position)
+	// 2. If participant rejoins (isActive), clear their marker (grey dashed line shows history)
+	// 3. If they dropout again, update marker to new last-seen position
+	// 4. IMMEDIATE: Badge appears same frame as avatar vanishes (no delay)
+	// 5. Transferred users (grace period substitution) should NOT show dropout markers
 	const dropoutMarkers = useMemo(() => {
 		const markers = [];
-		const seenParticipants = new Set(); // Track which participants we've already added a marker for
 		
-		validatedEntries.forEach((entry) => {
+		// Build a set of currently active participant IDs
+		const activeParticipantIds = new Set(
+			Object.values(participantCache)
+				.filter(entry => entry && entry.isActive !== false)
+				.map(entry => entry.profileId || entry.id)
+		);
+		
+		// First: Add markers from ActivityMonitor for historical dropouts
+		if (activityMonitor) {
+			const allEvents = activityMonitor.getAllDropoutEvents();
+			allEvents.forEach((events, participantId) => {
+				// Skip transferred users - they were substituted, not dropped out
+				if (transferredUsers?.has?.(participantId)) {
+					return;
+				}
+				
+				// Rule 2: Skip markers for participants who have rejoined (are currently active)
+				if (activeParticipantIds.has(participantId)) {
+					return;
+				}
+				
+				// Rule 1 & 3: Only show the most recent dropout marker (last event in array)
+				if (events.length > 0) {
+					const lastEvent = events[events.length - 1];
+					markers.push({
+						id: lastEvent.id || `${participantId}-dropout-${lastEvent.tick}`,
+						participantId,
+						name: participantCache[participantId]?.name || participantId,
+						tick: lastEvent.tick,
+						value: lastEvent.value
+					});
+				}
+			});
+		}
+		
+		// Second: IMMEDIATE dropout markers for users who are inactive but don't have ActivityMonitor event yet
+		// This ensures badge appears same frame as avatar vanishes
+		// Skip transferred users (they were substituted, not dropped out)
+		const markersParticipantIds = new Set(markers.map(m => m.participantId));
+		Object.values(participantCache).forEach(entry => {
+			if (!entry) return;
 			const participantId = entry.profileId || entry.id;
 			
-			// Add markers from dropoutMarkers array (persisted from rejoins)
-			if (entry.dropoutMarkers?.length) {
-				entry.dropoutMarkers.forEach((marker) => {
-					const markerId = `${participantId}-dropout-${marker.tick}`;
-					// Avoid duplicates
-					if (!markers.some(m => m.id === markerId)) {
-						markers.push({
-							id: markerId,
-							participantId,
-							name: entry.name,
-							tick: marker.tick,
-							value: marker.value
-						});
-					}
-				});
+			// Skip transferred users - they were substituted, not dropped out
+			if (transferredUsers?.has?.(participantId)) {
+				return;
 			}
 			
-			// Add current dropout position for users who are currently absent (isActive === false)
-			// Only ONE marker per participant - at their lastSeenTick
-			if (entry.isActive === false && !seenParticipants.has(participantId)) {
-				if (entry.lastSeenTick >= 0 && entry.lastValue != null) {
-					const markerId = `${participantId}-dropout-current`;
-					if (!markers.some(m => m.id === markerId)) {
-						markers.push({
-							id: markerId,
-							participantId,
-							name: entry.name,
-							tick: entry.lastSeenTick,
-							value: entry.lastValue
-						});
-						seenParticipants.add(participantId);
-					}
-				}
+			// User is inactive but doesn't have a marker yet - create immediate marker
+			if (entry.isActive === false && !markersParticipantIds.has(participantId)) {
+				const tick = entry.lastSeenTick ?? entry.lastIndex ?? 0;
+				const value = entry.lastValue ?? 0;
+				markers.push({
+					id: `${participantId}-dropout-immediate`,
+					participantId,
+					name: entry.name || participantId,
+					tick,
+					value
+				});
 			}
 		});
+		
 		return markers;
-	}, [validatedEntries]);
+	}, [activityMonitor, participantCache, transferredUsersKey]);
 	
 	const maxValue = useMemo(() => {
 		const vals = allEntries.flatMap((e) => (e.beats || []).filter((v) => Number.isFinite(v)));
@@ -474,34 +577,6 @@ const computeAvatarPositions = (entries, scaleY, width, height, minVisibleTicks,
 		.filter(Boolean);
 };
 
-const resolveAvatarOffsets = (avatars) => {
-	const sorted = [...avatars].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
-	const placed = [];
-	const step = AVATAR_RADIUS * 2 + 6;
-
-	const collides = (candidate, offset) => {
-		const cy = candidate.y + offset;
-		return placed.some((p) => {
-			const dy = cy - (p.y + p.offsetY);
-			const dx = candidate.x - p.x;
-			const distance = Math.hypot(dx, dy);
-			return distance < AVATAR_OVERLAP_THRESHOLD;
-		});
-	};
-
-	sorted.forEach((item) => {
-		let offset = 0;
-		let iterations = 0;
-		while (collides(item, offset) && iterations < 10) {
-			offset += step;
-			iterations += 1;
-		}
-		placed.push({ ...item, offsetY: offset });
-	});
-
-	return placed;
-};
-
 const computeBadgePositions = (dropoutMarkers, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
 	const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
 	const ticks = Math.max(minVisibleTicks, effectiveTicks || 1, 1);
@@ -519,7 +594,7 @@ const computeBadgePositions = (dropoutMarkers, scaleY, width, height, minVisible
 		.filter(Boolean);
 };
 
-const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height }) => (
+const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks, width, height }) => (
 	<svg
 		className="race-chart__svg"
 		viewBox={`0 0 ${width} ${height}`}
@@ -563,9 +638,24 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 				/>
 			))}
 		</g>
+		<g className="race-chart__connectors">
+			{connectors.map((c) => (
+				<line 
+					key={c.id}
+					x1={c.x1} y1={c.y1}
+					x2={c.x2} y2={c.y2}
+					stroke="#ffffff"
+					strokeWidth={3}
+				/>
+			))}
+		</g>
 		<g className="race-chart__absent-badges">
 			{badges.map((badge) => (
-				<g key={`absent-${badge.id}`} transform={`translate(${badge.x}, ${badge.y})`}>
+				<g 
+					key={`absent-${badge.id}`} 
+					transform={`translate(${badge.x + (badge.offsetX || 0)}, ${badge.y + (badge.offsetY || 0)})`}
+					opacity={badge.opacity ?? 1}
+				>
 					<circle r={ABSENT_BADGE_RADIUS} fill="#f3f4f6" stroke="#9ca3af" strokeWidth="1.5" />
 					<text
 						x="0"
@@ -583,15 +673,32 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 		<g className="race-chart__avatars">
 			{avatars.map((avatar, idx) => {
 				const size = AVATAR_RADIUS * 2;
-				const labelX = AVATAR_RADIUS + COIN_LABEL_GAP;
-				const labelY = 0;
 				const clipSafeId = sanitizeIdForSvg(avatar.id, 'user');
 				const clipId = `race-clip-${clipSafeId}-${idx}`;
+				
+				// Dynamic label positioning
+				let labelX = AVATAR_RADIUS + COIN_LABEL_GAP;
+				let labelY = 0;
+				let textAnchor = "start";
+				
+				if (avatar.labelPosition === 'left') {
+					labelX = -(AVATAR_RADIUS + COIN_LABEL_GAP);
+					textAnchor = "end";
+				} else if (avatar.labelPosition === 'top') {
+					labelX = 0;
+					labelY = -(AVATAR_RADIUS + COIN_LABEL_GAP);
+					textAnchor = "middle";
+				} else if (avatar.labelPosition === 'bottom') {
+					labelX = 0;
+					labelY = AVATAR_RADIUS + COIN_LABEL_GAP + 10; // +10 for font height approx
+					textAnchor = "middle";
+				}
+
 				return (
 					<g
 						key={clipId}
 						className="race-chart__avatar-group"
-						transform={`translate(${avatar.x}, ${avatar.y + avatar.offsetY})`}
+						transform={`translate(${avatar.x + (avatar.offsetX || 0)}, ${avatar.y + (avatar.offsetY || 0)})`}
 					>
 						<defs>
 							<clipPath id={clipId}>
@@ -602,7 +709,7 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 							x={labelX}
 							y={labelY}
 							className="race-chart__coin-label"
-							textAnchor="start"
+							textAnchor={textAnchor}
 							dominantBaseline="middle"
 							fontSize={COIN_FONT_SIZE}
 							aria-hidden="true"
@@ -635,8 +742,10 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	const { 
 		participants, 
-		historicalParticipants, 
-		getUserTimelineSeries, 
+		historicalParticipants,
+		transferredUsers, // Users whose data was moved to another identity
+		getUserTimelineSeries,
+		getEntityTimelineSeries, // Phase 5: Entity series access
 		timebase, 
 		registerLifecycle,
 		activityMonitor  // Phase 2 - centralized activity tracking
@@ -675,12 +784,13 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	}, []);
 
 	// Pass activityMonitor for centralized activity tracking (Phase 2)
+	// Phase 5: Pass getEntitySeries for entity-aware chart rendering
 	const { allEntries, presentEntries, absentEntries, dropoutMarkers, maxValue, maxIndex } = useRaceChartWithHistory(
 		participants, 
 		getUserTimelineSeries, 
 		timebase, 
 		historicalParticipants,
-		{ activityMonitor }
+		{ activityMonitor, getEntitySeries: getEntityTimelineSeries, transferredUsers }
 	);
 
 	// Diagnostic logging to dev.log to understand warmup failures without spamming
@@ -796,16 +906,18 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		return Math.max(0, min);
 	}, [presentEntries, minDataValue]);
 
+	// Include both active AND dropout users when determining lowest gridline binding
 	const lowestValue = useMemo(() => {
 		let min = Number.POSITIVE_INFINITY;
-		allEntries.forEach((entry) => {
+		// Consider both present (active) and absent (dropout) entries
+		[...presentEntries, ...absentEntries].forEach((entry) => {
 			if (Number.isFinite(entry.lastValue)) {
 				if (entry.lastValue < min) min = entry.lastValue;
 			}
 		});
 		if (min === Number.POSITIVE_INFINITY) return Math.max(0, minDataValue);
 		return Math.max(0, min);
-	}, [allEntries, minDataValue]);
+	}, [presentEntries, absentEntries, minDataValue]);
 
 	const scaleY = useMemo(() => {
 		const domainMin = Math.min(minAxisValue, paddedMaxValue);
@@ -823,14 +935,8 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			if (userCount === 1) {
 				// Linear scale for single user
 				mapped = norm;
-			} else if (userCount === 2) {
-				// Standard log scale for 2 users
-				const logBase = yScaleBase;
-				if (logBase > 1) {
-					mapped = 1 - Math.log(1 + (1 - norm) * (logBase - 1)) / Math.log(logBase);
-				}
 			} else {
-				// 3+ users: Clamp bottom user to 25% height
+				// 2+ users: Clamp bottom user to 25% height to avoid bunching
 				// Calculate normalized value of the lowest user
 				const normLow = (lowestValue - domainMin) / domainSpan;
 				
@@ -868,7 +974,8 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 				bottomFraction: 1,
 				topFraction: 0.06,
 				effectiveTicks,
-				yScaleBase
+				yScaleBase,
+				scaleY // Pass the exact same scale function used for avatars
 			});
 			return created.map((p, idx) => ({ ...p, id: entry.id, key: `${entry.id}-${globalIdx++}-${idx}` }));
 		});
@@ -880,25 +987,113 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		return allSegments;
 	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase]);
 
-	const avatars = useMemo(() => {
-		if (!presentEntries.length || !(paddedMaxValue > 0)) return [];
-		const base = computeAvatarPositions(presentEntries, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
-		return resolveAvatarOffsets(base);
-	}, [presentEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
-
 	// Badges are IMMUTABLE dropout markers - they show where users dropped out
 	// and persist even after the user rejoins
-	const badges = useMemo(() => {
+	const rawBadges = useMemo(() => {
 		if (!dropoutMarkers.length || !(paddedMaxValue > 0)) return [];
 		return computeBadgePositions(dropoutMarkers, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
 	}, [dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
 
+	const rawAvatars = useMemo(() => {
+		return (presentEntries.length && paddedMaxValue > 0) 
+			? computeAvatarPositions(presentEntries, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks)
+			: [];
+	}, [presentEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
+
+	const targetLayout = useMemo(() => {
+		try {
+			const layoutManager = new LayoutManager({
+				bounds: { width: chartWidth, height: chartHeight, margin: CHART_MARGIN },
+				avatarRadius: AVATAR_RADIUS,
+				badgeRadius: ABSENT_BADGE_RADIUS,
+				options: { enableConnectors: true }
+			});
+			const elements = [
+				...rawAvatars.map(a => ({ ...a, type: 'avatar' })),
+				...rawBadges.map(b => ({ ...b, type: 'badge' }))
+			];
+			const result = layoutManager.layout(elements);
+			return { elements: result.elements };
+		} catch (e) {
+			console.error('LayoutManager error:', e);
+			// Fallback to simple pass-through if layout fails
+			const resolvedAvatars = rawAvatars.map(a => ({ ...a, type: 'avatar', offsetY: 0 }));
+			const resolvedBadges = rawBadges.map(b => ({ ...b, type: 'badge', offsetY: 0 }));
+			return { elements: [...resolvedAvatars, ...resolvedBadges] };
+		}
+	}, [rawAvatars, rawBadges, chartWidth, chartHeight]);
+
+	const animatedElements = useAnimatedLayout(targetLayout.elements, { enabled: true, animateBasePosition: false });
+
+	const avatars = animatedElements.filter(e => e.type === 'avatar');
+	const badges = animatedElements.filter(e => e.type === 'badge');
+
+	// Debug: Compare avatar positions with raw line tips
+	useEffect(() => {
+		if (avatars.length === 0) return;
+		
+		// Log positions for verification (throttled or just once per significant change?)
+		// For debugging, we'll log every update where positions differ from raw
+		const positions = avatars.map(a => {
+			const raw = rawAvatars.find(r => r.id === a.id);
+			return { 
+				id: a.id, 
+				render: { x: a.x.toFixed(2), y: a.y.toFixed(2) },
+				raw: raw ? { x: raw.x.toFixed(2), y: raw.y.toFixed(2) } : 'missing'
+			};
+		});
+		// Log to console (visible in browser devtools)
+		//console.log('[FitnessChart] Positions:', positions);
+
+		const discrepancies = avatars.map(avatar => {
+			const raw = rawAvatars.find(r => r.id === avatar.id);
+			if (!raw) return null;
+			
+			const dx = Math.abs(avatar.x - raw.x);
+			const dy = Math.abs(avatar.y - raw.y);
+			
+			// We expect x/y to match exactly (base position), 
+			// while offsetX/offsetY handle the displacement.
+			if (dx > 0.1 || dy > 0.1) {
+				return {
+					id: avatar.id,
+					raw: { x: raw.x.toFixed(2), y: raw.y.toFixed(2) },
+					rendered: { x: avatar.x.toFixed(2), y: avatar.y.toFixed(2) },
+					diff: { dx: dx.toFixed(2), dy: dy.toFixed(2) }
+				};
+			}
+			return null;
+		}).filter(Boolean);
+
+		if (discrepancies.length > 0) {
+			console.warn('[FitnessChart] Avatar/Line misalignment detected:', discrepancies);
+		}
+	}, [avatars, rawAvatars]);
+
+	const connectors = useMemo(() => {
+		const generator = new ConnectorGenerator({ threshold: AVATAR_RADIUS * 1.5, avatarRadius: AVATAR_RADIUS });
+		return generator.generate(avatars);
+	}, [avatars]);
+
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
-		const start = Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
+		const userCount = allEntries.length;
 		// Use MIN_GRID_LINES to ensure consistent grid distribution
 		const tickCount = MIN_GRID_LINES;
-		const span = Math.max(1, paddedMaxValue - start);
+		
+		let start, end;
+		if (userCount === 1) {
+			// Single user: position them at top gridline, distribute remaining gridlines from 0 to their value
+			// This prevents bunching at the top when there's only one participant
+			start = 0;
+			end = maxValue > 0 ? maxValue : paddedMaxValue;
+		} else {
+			// Multiple users: use lowestValue (includes both active and dropout users) for gridline binding
+			start = Math.max(0, Math.min(paddedMaxValue, lowestValue));
+			end = paddedMaxValue;
+		}
+		
+		const span = Math.max(1, end - start);
 		const values = Array.from({ length: tickCount }, (_, idx) => {
 			const t = idx / Math.max(1, tickCount - 1);
 			return start + span * t;
@@ -910,7 +1105,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			x1: 0,
 			x2: chartWidth
 		}));
-	}, [paddedMaxValue, lowestAvatarValue, chartWidth, scaleY]);
+	}, [paddedMaxValue, lowestValue, chartWidth, scaleY, allEntries.length, maxValue]);
 
 	const xTicks = useMemo(() => {
 		const totalMs = effectiveTicks * intervalMs;
@@ -932,13 +1127,17 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 
 	useEffect(() => {
 		if (hasData) {
-			setPersisted({ paths, avatars, badges, xTicks, yTicks, leaderValue });
+			setPersisted({ paths, avatars, badges, connectors, xTicks, yTicks, leaderValue });
 		}
-	}, [hasData, paths, avatars, badges, xTicks, yTicks, leaderValue]);
+		// We exclude avatars, badges, connectors, and leaderValue from dependencies because they 
+		// either animate or are derived from animating elements, which would cause an infinite update loop.
+		// We only need to update the persisted state when the underlying data (paths, ticks, etc.) changes.
+	}, [hasData, paths, xTicks, yTicks]);
 
 	const displayPaths = hasData ? paths : persisted?.paths || [];
 	const displayAvatars = hasData ? avatars : persisted?.avatars || [];
 	const displayBadges = hasData ? badges : persisted?.badges || [];
+	const displayConnectors = hasData ? connectors : persisted?.connectors || [];
 	const displayXTicks = (hasData ? xTicks : persisted?.xTicks || xTicks) || [];
 	const displayYTicks = (hasData ? yTicks : persisted?.yTicks || yTicks) || [];
 
@@ -958,6 +1157,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 						paths={displayPaths}
 						avatars={displayAvatars}
 						badges={displayBadges}
+						connectors={displayConnectors}
 						xTicks={displayXTicks}
 						yTicks={displayYTicks}
 						width={chartWidth}

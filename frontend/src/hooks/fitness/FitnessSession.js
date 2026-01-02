@@ -9,6 +9,7 @@ import { DaylightAPI } from '../../lib/api.mjs';
 import { ZoneProfileStore } from './ZoneProfileStore.js';
 import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
+import { SessionEntityRegistry } from './SessionEntity.js';
 import moment from 'moment-timezone';
 
 // Phase 4: Extracted modules for decomposed session management
@@ -269,6 +270,10 @@ export class FitnessSession {
     this.eventLog = [];
     this._saveTriggered = false;
     
+    // Track users whose data was transferred to another identity (should be excluded from charts)
+    this._transferredUsers = new Set();
+    this._transferVersion = 0; // Incremented on each transfer to trigger re-renders
+    
     // Sub-managers
     this.deviceManager = new DeviceManager();
     this.userManager = new UserManager();
@@ -277,6 +282,11 @@ export class FitnessSession {
     this.zoneProfileStore = new ZoneProfileStore();
     this.eventJournal = new EventJournal();
     this.treasureBox = null; // Instantiated on start
+    
+    // Session Entity Registry - tracks participation segments per device assignment
+    // Each device assignment creates a new entity with fresh metrics (coins, start time)
+    // @see /docs/design/guest-switch-session-transition.md
+    this.entityRegistry = new SessionEntityRegistry();
     
     // Activity Monitor - single source of truth for participant status (Phase 2)
     this.activityMonitor = new ActivityMonitor();
@@ -428,9 +438,10 @@ export class FitnessSession {
       
       // Resolve user and update their stats
       const user = this.userManager.resolveUserForDevice(device.id);
+      const resolvedSlug = user?.id || null;
       if (user) {
         // 5A: Check for device reassignment - clear cumulative state if occupant changed
-        const currentOccupant = user.name || user.slug;
+        const currentOccupant = resolvedSlug;
         if (device.lastOccupantSlug && device.lastOccupantSlug !== currentOccupant) {
           this._cumulativeBeats.delete(device.id);
           this._cumulativeRotations.delete(device.id);
@@ -443,9 +454,17 @@ export class FitnessSession {
         device.lastOccupantSlug = currentOccupant;
         
         user.updateFromDevice(deviceData);
-        // Feed TreasureBox if HR
+        // Feed TreasureBox if HR - Phase 2: Use entity-based routing
         if (this.treasureBox && deviceData.type === 'heart_rate') {
-           this.treasureBox.recordUserHeartRate(user.id || user.name, deviceData.heartRate);
+          // Check ledger for current occupant (guest may have taken over)
+          const ledgerEntry = this.userManager?.assignmentLedger?.get(device.id);
+          const currentOccupantId = ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId || user.id;
+          
+          // Try to route via entity first (Phase 2), fall back to current occupant
+          this.treasureBox.recordHeartRateForDevice(device.id, deviceData.heartRate, {
+            profileId: currentOccupantId,
+            fallbackUserId: currentOccupantId
+          });
         }
       }
       const ledger = this.userManager?.assignmentLedger;
@@ -532,6 +551,327 @@ export class FitnessSession {
     }
 
     Object.entries(deviceAssignments).forEach(([deviceId, assignment]) => assign(deviceId, assignment));
+  }
+
+  /**
+   * Create a new session entity for a device assignment.
+   * Called when a device is assigned to a user (guest switch, initial assignment, etc.)
+   * 
+   * @param {Object} options
+   * @param {string} options.profileId - User profile ID
+   * @param {string} options.name - Display name
+   * @param {string} options.deviceId - Heart rate device ID
+   * @param {number} [options.startTime] - Optional start time (defaults to now)
+   * @returns {import('./SessionEntity.js').SessionEntity}
+   * @see /docs/design/guest-switch-session-transition.md
+   */
+  createSessionEntity({ profileId, name, deviceId, startTime }) {
+    const now = startTime || Date.now();
+    const entity = this.entityRegistry.create({
+      profileId,
+      name,
+      deviceId,
+      startTime: now
+    });
+    
+    console.warn('[FitnessSession] ===== CREATE SESSION ENTITY =====');
+    console.warn('[FitnessSession] Entity created:', entity.entityId);
+    console.warn('[FitnessSession] For profile:', profileId);
+    console.warn('[FitnessSession] Device:', deviceId);
+    console.warn('[FitnessSession] Has TreasureBox:', !!this.treasureBox);
+    console.warn('[FitnessSession] Session active:', this.isActive);
+    
+    if (this.treasureBox) {
+      console.warn('[FitnessSession] TreasureBox perUser BEFORE:', [...this.treasureBox.perUser.keys()]);
+      this.treasureBox.initializeEntity(entity.entityId, now);
+      console.warn('[FitnessSession] TreasureBox perUser AFTER init:', [...this.treasureBox.perUser.keys()]);
+      // Set this entity as active for the device
+      if (deviceId) {
+        this.treasureBox.setActiveEntity(deviceId, entity.entityId);
+        console.warn('[FitnessSession] Entity mapping set:', { deviceId, entityId: entity.entityId });
+        console.warn('[FitnessSession] Device-entity map:', [...this.treasureBox._deviceEntityMap.entries()]);
+      }
+    } else {
+      console.warn('[FitnessSession] ❌ TreasureBox not available!');
+    }
+    
+    // Log entity creation
+    this.eventJournal?.log('ENTITY_CREATED', {
+      entityId: entity.entityId,
+      profileId,
+      name,
+      deviceId,
+      startTime: now
+    });
+    
+    return entity;
+  }
+
+  /**
+   * Get the active session entity for a device
+   * @param {string} deviceId
+   * @returns {import('./SessionEntity.js').SessionEntity|null}
+   */
+  getEntityForDevice(deviceId) {
+    return this.entityRegistry.getByDevice(deviceId);
+  }
+
+  /**
+   * End a session entity (mark as dropped/ended)
+   * @param {string} entityId
+   * @param {Object} options
+   * @param {'dropped' | 'ended' | 'transferred'} [options.status='dropped']
+   * @param {number} [options.timestamp]
+   * @param {string} [options.transferredTo]
+   * @param {string} [options.reason]
+   */
+  endSessionEntity(entityId, options = {}) {
+    const entity = this.entityRegistry.get(entityId);
+    if (!entity) return;
+    
+    this.entityRegistry.endEntity(entityId, options);
+    
+    // Log entity end
+    this.eventJournal?.log(options.status === 'transferred' ? 'ENTITY_TRANSFERRED' : 'ENTITY_DROPPED', {
+      entityId,
+      profileId: entity.profileId,
+      name: entity.name,
+      deviceId: entity.deviceId,
+      durationMs: entity.durationMs,
+      finalCoins: entity.coins,
+      status: entity.status,
+      transferredTo: options.transferredTo || null
+    });
+  }
+
+  /**
+   * Phase 4: Transfer session data from one entity to another.
+   * Used during grace period transfers when a brief session is merged into successor.
+   * 
+   * Transfers:
+   * - TreasureBox accumulator (coins, zone state)
+   * - Timeline series data (heart_rate, coins_total, zone_id)
+   * - Marks source entity as 'transferred'
+   * 
+   * @param {string} fromEntityId - Source entity ID (being transferred)
+   * @param {string} toEntityId - Destination entity ID (receiving transfer)
+   * @returns {{ ok: boolean, coinsTransferred?: number, seriesTransferred?: Array, error?: string }}
+   * @see /docs/design/guest-switch-session-transition.md
+   */
+  transferSessionEntity(fromEntityId, toEntityId) {
+    if (!fromEntityId || !toEntityId || fromEntityId === toEntityId) {
+      return { ok: false, error: 'Invalid entity IDs for transfer' };
+    }
+    
+    const fromEntity = this.entityRegistry.get(fromEntityId);
+    const toEntity = this.entityRegistry.get(toEntityId);
+    
+    if (!fromEntity) {
+      return { ok: false, error: `Source entity not found: ${fromEntityId}` };
+    }
+    if (!toEntity) {
+      return { ok: false, error: `Destination entity not found: ${toEntityId}` };
+    }
+    
+    const now = Date.now();
+    let coinsTransferred = 0;
+    let seriesTransferred = [];
+    
+    // 1. Transfer TreasureBox accumulator (coins, zone state)
+    if (this.treasureBox) {
+      const transferred = this.treasureBox.transferAccumulator(fromEntityId, toEntityId);
+      if (transferred) {
+        coinsTransferred = fromEntity.coins || 0;
+        // Update destination entity's coin count
+        const toAcc = this.treasureBox.perUser.get(toEntityId);
+        if (toAcc) {
+          toEntity.setCoins(toAcc.totalCoins || 0);
+        }
+      }
+    }
+    
+    // 2. Transfer timeline series (heart_rate, coins_total, zone_id, etc.)
+    if (this.timeline) {
+      const transferred = this.timeline.transferEntitySeries(fromEntityId, toEntityId);
+      seriesTransferred = transferred;
+    }
+
+    // 2.1 Transfer activity history (Phase 2)
+    if (this.activityMonitor) {
+      this.activityMonitor.transferActivity(fromEntityId, toEntityId);
+    }
+
+    // 2.2 Transfer cumulative metrics (Phase 4)
+    if (this._metricsRecorder) {
+      this._metricsRecorder.transferCumulativeMetrics(fromEntityId, toEntityId);
+    }
+    
+    // 3. Mark source entity as transferred (with reference to destination)
+    this.entityRegistry.endEntity(fromEntityId, {
+      status: 'transferred',
+      timestamp: now,
+      transferredTo: toEntityId,
+      reason: 'grace_period_transfer'
+    });
+
+    // Also mark as transferred for chart filtering
+    this.markUserAsTransferred(fromEntityId);
+    
+    // 4. Update destination entity's start time to match source (already done in createSessionEntity)
+    // This ensures the new participant "inherits" the session start time
+    
+    // 5. Log the transfer event
+    this.eventJournal?.log('ENTITY_TRANSFERRED', {
+      fromEntityId,
+      toEntityId,
+      fromProfileId: fromEntity.profileId,
+      toProfileId: toEntity.profileId,
+      coinsTransferred,
+      seriesTransferred: seriesTransferred.length,
+      durationMs: fromEntity.durationMs,
+      timestamp: now
+    });
+    
+    console.log('[FitnessSession] Entity transfer complete:', {
+      from: fromEntityId,
+      to: toEntityId,
+      coinsTransferred,
+      seriesCount: seriesTransferred.length
+    });
+    
+    return {
+      ok: true,
+      coinsTransferred,
+      seriesTransferred
+    };
+  }
+
+  /**
+   * Transfer all session data from one user ID to another.
+   * Used during grace period transfers when a user is replaced by a guest (or vice versa)
+   * and we want to maintain a continuous line on the chart.
+   * 
+   * @param {string} fromUserId - Source user ID
+   * @param {string} toUserId - Destination user ID
+   * @returns {Object} Transfer results
+   */
+  transferUserSeries(fromUserId, toUserId) {
+    if (!fromUserId || !toUserId || fromUserId === toUserId) {
+      return { ok: false, error: 'Invalid user IDs for transfer' };
+    }
+
+    console.log('[FitnessSession] Orchestrating user series transfer:', { fromUserId, toUserId });
+
+    // 1. Transfer timeline history
+    let seriesTransferred = [];
+    if (this.timeline) {
+      seriesTransferred = this.timeline.transferUserSeries(fromUserId, toUserId);
+    }
+
+    // 2. Transfer TreasureBox accumulator
+    let coinsTransferred = 0;
+    if (this.treasureBox) {
+      const transferred = this.treasureBox.transferAccumulator(fromUserId, toUserId);
+      if (transferred) {
+        const toAcc = this.treasureBox.perUser.get(toUserId);
+        coinsTransferred = toAcc?.totalCoins || 0;
+      }
+    }
+
+    // 3. Transfer activity history
+    if (this.activityMonitor) {
+      this.activityMonitor.transferActivity(fromUserId, toUserId);
+    }
+
+    // 4. Transfer cumulative metrics
+    if (this._metricsRecorder) {
+      this._metricsRecorder.transferCumulativeMetrics(fromUserId, toUserId);
+    }
+
+    // 5. Mark source user as transferred
+    this.markUserAsTransferred(fromUserId);
+
+    return {
+      ok: true,
+      coinsTransferred,
+      seriesTransferred: seriesTransferred.length
+    };
+  }
+
+  /**
+   * Phase 3: Get all entities for a profile ID.
+   * A profile can have multiple entities (if they leave and rejoin, or use different devices).
+   * 
+   * @param {string} profileId - Profile ID to query
+   * @returns {Array<import('./SessionEntity.js').SessionEntity>}
+   */
+  getEntitiesForProfile(profileId) {
+    if (!profileId) return [];
+    return this.entityRegistry.getByProfile(profileId);
+  }
+
+  /**
+   * Phase 3: Get aggregated coin total for a profile across all their entities.
+   * Excludes transferred entities (their coins were merged into successor).
+   * 
+   * @param {string} profileId - Profile ID to aggregate
+   * @returns {number} Total coins across all non-transferred entities
+   */
+  getProfileCoinsTotal(profileId) {
+    if (!profileId) return 0;
+    const entities = this.getEntitiesForProfile(profileId);
+    return entities.reduce((total, entity) => {
+      // Exclude transferred entities - their coins went to successor
+      if (entity.status === 'transferred') return total;
+      return total + (entity.coins || 0);
+    }, 0);
+  }
+
+  /**
+   * Phase 3: Get aggregated timeline series for a profile.
+   * Combines entity series data for profile-level display.
+   * 
+   * @param {string} profileId - Profile ID
+   * @param {string} metric - Metric name (e.g., 'coins_total')
+   * @returns {number[]} Aggregated series
+   */
+  getProfileTimelineSeries(profileId, metric) {
+    if (!profileId || !metric || !this.timeline) return [];
+    
+    const entities = this.getEntitiesForProfile(profileId);
+    if (entities.length === 0) return [];
+    
+    // For a single entity, just return its series
+    if (entities.length === 1) {
+      const entity = entities[0];
+      return this.timeline.getEntitySeries(entity.entityId, metric);
+    }
+    
+    // For multiple entities, aggregate based on metric type
+    // For coins_total, sum across active entities at each tick
+    // Note: This is a simplified aggregation - more complex logic may be needed
+    const allSeries = entities
+      .filter(e => e.status !== 'transferred')
+      .map(e => this.timeline.getEntitySeries(e.entityId, metric));
+    
+    if (allSeries.length === 0) return [];
+    if (allSeries.length === 1) return allSeries[0];
+    
+    // Find max length
+    const maxLen = Math.max(...allSeries.map(s => s.length));
+    const aggregated = new Array(maxLen).fill(0);
+    
+    // Sum values at each tick (for coins_total) or use latest (for heart_rate)
+    for (let i = 0; i < maxLen; i++) {
+      for (const series of allSeries) {
+        const val = series[i];
+        if (Number.isFinite(val)) {
+          aggregated[i] += val;
+        }
+      }
+    }
+    
+    return aggregated;
   }
 
   setEquipmentCatalog(equipmentList = []) {
@@ -771,10 +1111,13 @@ export class FitnessSession {
     const participants = new Set();
     
     // Fix 9: Helper to validate and normalize slugs
+    // Also exclude transferred users (their data was moved to another identity)
     const addIfValid = (slug) => {
       if (typeof slug === 'string') {
         const normalized = slug.trim();
-        if (normalized) participants.add(normalized);
+        if (normalized && !this._transferredUsers?.has(normalized)) {
+          participants.add(normalized);
+        }
       }
     };
     
@@ -801,6 +1144,36 @@ export class FitnessSession {
     }
     
     return Array.from(participants);
+  }
+
+  /**
+   * Get the set of user IDs whose data was transferred to another identity.
+   * These users should be excluded from charts/UI as their data now belongs to someone else.
+   * @returns {Set<string>}
+   */
+  getTransferredUsers() {
+    return this._transferredUsers || new Set();
+  }
+
+  /**
+   * Mark a user as transferred (grace period substitution).
+   * Increments transferVersion to trigger re-renders in UI.
+   * @param {string} userId - ID of the user who was replaced
+   */
+  markUserAsTransferred(userId) {
+    if (!userId) return;
+    if (!this._transferredUsers) this._transferredUsers = new Set();
+    this._transferredUsers.add(userId);
+    this._transferVersion = (this._transferVersion || 0) + 1;
+    this._log('user_transferred', { userId, version: this._transferVersion });
+  }
+
+  /**
+   * Get the transfer version counter. Used to trigger re-renders when transfers happen.
+   * @returns {number}
+   */
+  getTransferVersion() {
+    return this._transferVersion || 0;
   }
 
   _resolveEquipmentId(device) {
@@ -1062,16 +1435,53 @@ export class FitnessSession {
       if (typeof value === 'number' && Number.isNaN(value)) return;
       tickPayload[key] = value;
     };
+    
+    /**
+     * Phase 3: Assign metric to both user and entity series.
+     * This enables gradual migration to entity-based tracking while maintaining
+     * backward compatibility with user-based chart components.
+     * 
+     * @param {string} userId - User/profile ID
+     * @param {string} entityId - Entity ID (optional, from ledger)
+     * @param {string} metric - Metric name (e.g., 'heart_rate')
+     * @param {*} value - Metric value
+     */
+    const assignUserMetric = (userId, entityId, metric, value) => {
+      // Always write to user series (legacy/backward compatibility)
+      assignMetric(`user:${userId}:${metric}`, value);
+      
+      // Phase 3: Also write to entity series if entityId is available
+      if (entityId) {
+        assignMetric(`entity:${entityId}:${metric}`, value);
+      }
+    };
+    
+    /**
+     * Phase 3: Resolve entityId for a device from the assignment ledger
+     * @param {string} deviceId
+     * @returns {string|null}
+     */
+    const resolveEntityIdForDevice = (deviceId) => {
+      if (!deviceId) return null;
+      const ledger = this.userManager?.assignmentLedger;
+      const entry = ledger?.get?.(deviceId);
+      return entry?.entityId || null;
+    };
+    
     const sanitizeHeartRate = (value) => (Number.isFinite(value) && value > 0 ? Math.round(value) : null);
     const sanitizeNumber = (value) => (Number.isFinite(value) ? value : null);
     const sanitizeDistance = (value) => (Number.isFinite(value) && value > 0 ? value : null);
     const hasNumericSample = (metrics = {}) => ['heartRate', 'rpm', 'power', 'distance'].some((key) => metrics[key] != null);
-    const stageUserEntry = (user) => {
+    const stageUserEntry = (user, deviceId) => {
       if (!user?.id) return null;
       const userId = user.id;
       const snapshot = typeof user.getMetricsSnapshot === 'function' ? user.getMetricsSnapshot() : {};
+      // Phase 3: Include entityId in staged entry
+      const entityId = resolveEntityIdForDevice(deviceId);
       const staged = {
         userId,
+        entityId, // Phase 3: Track entity for this user
+        deviceId, // Track device for entity resolution
         metadata: {
           name: user.name,
           groupLabel: user.groupLabel || null,
@@ -1120,6 +1530,22 @@ export class FitnessSession {
     // Track users whose devices are inactive (for syncing chart dropout with sidebar)
     const deviceInactiveUsers = new Set();
 
+    // ID Consistency validation helper (see /docs/reviews/guest-assignment-service-audit.md Issue #3)
+    const validateIdConsistency = (userId, deviceId, ledgerEntry) => {
+      const ledgerId = ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId;
+      if (ledgerId && userId && ledgerId !== userId) {
+        console.error('[FitnessSession] ID MISMATCH:', {
+          userId,
+          ledgerId,
+          deviceId,
+          ledgerOccupantName: ledgerEntry?.occupantName
+        });
+        this.eventJournal?.log('ID_MISMATCH', { userId, ledgerId, deviceId }, { severity: 'error' });
+        return false;
+      }
+      return true;
+    };
+
     const devices = this.deviceManager.getAllDevices();
     devices.forEach((device) => {
       if (!device) return;
@@ -1137,7 +1563,7 @@ export class FitnessSession {
             deviceInactiveUsers.add(userId);
             // Ensure user is in userMetricMap so we record null HR
             if (!userMetricMap.has(userId)) {
-              const staged = stageUserEntry(mappedUser);
+              const staged = stageUserEntry(mappedUser, deviceId);
               if (staged) {
                 userMetricMap.set(userId, staged);
               }
@@ -1186,8 +1612,13 @@ export class FitnessSession {
       if (!mappedUser) return;
       const userId = mappedUser.id;
       if (!userId) return;
+      
+      // Validate ID consistency between user and ledger (Issue #3 remediation)
+      const ledgerEntry = this.userManager?.assignmentLedger?.get?.(deviceId);
+      validateIdConsistency(userId, deviceId, ledgerEntry);
+      
       if (!userMetricMap.has(userId)) {
-        const staged = stageUserEntry(mappedUser);
+        const staged = stageUserEntry(mappedUser, deviceId);
         if (staged) {
           userMetricMap.set(userId, staged);
         }
@@ -1270,7 +1701,9 @@ export class FitnessSession {
     userMetricMap.forEach((entry, userId) => {
       if (!currentTickActiveHR.has(userId)) {
         // User is in roster but NOT actively broadcasting - record null
-        assignMetric(`user:${userId}:heart_rate`, null);
+        // Phase 3: Write to both user and entity series
+        const entityId = entry?.entityId || null;
+        assignUserMetric(userId, entityId, 'heart_rate', null);
         inactiveUsers.push(userId);
       }
     });
@@ -1280,6 +1713,7 @@ export class FitnessSession {
     // Second pass: process metrics for all users
     userMetricMap.forEach((entry, userId) => {
       if (!entry) return;
+      const entityId = entry.entityId || null; // Phase 3: Get entityId for dual-write
       const prevBeats = this._cumulativeBeats.get(userId) || 0;
       const hr = entry.metrics.heartRate;
       const hasValidHR = currentTickActiveHR.has(userId);
@@ -1288,7 +1722,8 @@ export class FitnessSession {
         : 0;
       const nextBeats = prevBeats + deltaBeats;
       this._cumulativeBeats.set(userId, nextBeats);
-      assignMetric(`user:${userId}:heart_beats`, nextBeats);
+      // Phase 3: Write heart_beats to both user and entity series
+      assignUserMetric(userId, entityId, 'heart_beats', nextBeats);
 
       // Only record heart_rate if device is actively broadcasting valid HR
       // Null was already recorded above for users who stopped broadcasting
@@ -1300,11 +1735,12 @@ export class FitnessSession {
       // Track this participant as active (has valid HR data)
       activeParticipantIds.add(userId);
       
-      assignMetric(`user:${userId}:heart_rate`, entry.metrics.heartRate);
-      assignMetric(`user:${userId}:zone_id`, entry.metrics.zoneId);
-      assignMetric(`user:${userId}:rpm`, entry.metrics.rpm);
-      assignMetric(`user:${userId}:power`, entry.metrics.power);
-      assignMetric(`user:${userId}:distance`, entry.metrics.distance);
+      // Phase 3: Write all metrics to both user and entity series
+      assignUserMetric(userId, entityId, 'heart_rate', entry.metrics.heartRate);
+      assignUserMetric(userId, entityId, 'zone_id', entry.metrics.zoneId);
+      assignUserMetric(userId, entityId, 'rpm', entry.metrics.rpm);
+      assignUserMetric(userId, entityId, 'power', entry.metrics.power);
+      assignUserMetric(userId, entityId, 'distance', entry.metrics.distance);
     });
     
     // Update ActivityMonitor with current tick's activity (Phase 2 - single source of truth)
@@ -1314,11 +1750,19 @@ export class FitnessSession {
 
     // Ensure every roster user gets a baseline coins_total=0 once (even if inactive)
     // so the chart has a series to render and can show dropout immediately.
+    // Phase 3: Also initialize entity series with 0
     if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
-    userMetricMap.forEach((_, userId) => {
+    if (!this._entitiesWithCoinsRecorded) this._entitiesWithCoinsRecorded = new Set();
+    userMetricMap.forEach((entry, userId) => {
+      const entityId = entry?.entityId || null;
       if (!this._usersWithCoinsRecorded.has(userId)) {
         assignMetric(`user:${userId}:coins_total`, 0);
         this._usersWithCoinsRecorded.add(userId);
+      }
+      // Phase 3: Initialize entity coins_total too
+      if (entityId && !this._entitiesWithCoinsRecorded.has(entityId)) {
+        assignMetric(`entity:${entityId}:coins_total`, 0);
+        this._entitiesWithCoinsRecorded.add(entityId);
       }
     });
 
@@ -1349,36 +1793,41 @@ export class FitnessSession {
       if (treasureSummary) {
         assignMetric('global:coins_total', treasureSummary.totalCoins);
       }
+      // Phase 3: Get coins per entity/user from TreasureBox
+      // TreasureBox now tracks by entityId (Phase 2), but also supports legacy userId
       const perUserCoinTotals = typeof this.treasureBox.getPerUserTotals === 'function'
         ? this.treasureBox.getPerUserTotals()
         : null;
       if (perUserCoinTotals && typeof perUserCoinTotals.forEach === 'function') {
-        // Track users who have had their first coin value recorded (to ensure all start at 0)
+        // Track users/entities who have had their first coin value recorded (to ensure all start at 0)
         if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
+        if (!this._entitiesWithCoinsRecorded) this._entitiesWithCoinsRecorded = new Set();
         
-        perUserCoinTotals.forEach((coins, userId) => {
-          if (!userId) return;
-          // Only record coins_total if user's device is actively broadcasting HR
-          // During dropout, we DON'T want to record new coin values - the chart should stay flat
-          if (currentTickActiveHR.has(userId)) {
-            // GUARDRAIL: For each user's first tick, ensure coins start at 0
-            // This anchors all race chart lines to origin (0, 0)
-            if (!this._usersWithCoinsRecorded.has(userId)) {
-              // First time recording this user's coins: always 0
-              assignMetric(`user:${userId}:coins_total`, 0);
-              this._usersWithCoinsRecorded.add(userId);
-            } else {
-              // Subsequent ticks: record actual coin value from TreasureBox
-              // Note: Frozen coins hack removed (Priority 3)
-              // TreasureBox no longer awards coins during dropout because:
-              // 1. processTick() only processes active participants (Priority 1)
-              // 2. _awardCoins() checks ActivityMonitor.isActive() (Priority 2)
-              const coinValue = Number.isFinite(coins) ? coins : null;
-              assignMetric(`user:${userId}:coins_total`, coinValue);
+        // VERSION: 2026-01-01-B - force cache bust
+        perUserCoinTotals.forEach((coins, key) => {
+          if (!key) return;
+          
+          // Phase 3: Determine if this is an entityId or userId
+          const isEntity = typeof key === 'string' && key.startsWith('entity-');
+          
+          const coinValue = Number.isFinite(coins) ? coins : 0;
+          
+          if (isEntity) {
+            // For entities: write to BOTH entity series AND user series
+            // Entity series: entity:entity-xxx:coins_total
+            // User series: user:jin:coins_total (using profileId from accumulator)
+            assignMetric(`entity:${key}:coins_total`, coinValue);
+            
+            // Also write to user series using profileId for chart backward compatibility
+            const acc = this.treasureBox?.perUser?.get(key);
+            const profileId = acc?.profileId;
+            if (profileId) {
+              assignMetric(`user:${profileId}:coins_total`, coinValue);
             }
+          } else {
+            // Regular user: write to user series only
+            assignMetric(`user:${key}:coins_total`, coinValue);
           }
-          // Note: NOT recording coins during dropout means the timeline won't have a value
-          // This is intentional - the chart will use the last known value (flat line)
         });
       }
     }
@@ -1529,6 +1978,36 @@ export class FitnessSession {
   }
 
   /**
+   * Phase 3: Check if an entity is active (has user with active HR this tick).
+   * Used for determining whether to record entity coins_total.
+   * 
+   * @param {string} entityId - Entity ID to check
+   * @param {Set<string>} activeHRSet - Set of user IDs with active HR this tick
+   * @param {Map<string, Object>} userMetricMap - Map of userId -> staged entry
+   * @returns {boolean}
+   */
+  _isEntityActive(entityId, activeHRSet, userMetricMap) {
+    if (!entityId) return false;
+    
+    // Check userMetricMap for any user with this entityId
+    for (const [userId, entry] of userMetricMap) {
+      if (entry?.entityId === entityId && activeHRSet.has(userId)) {
+        console.log('[FitnessSession] Entity is active:', { entityId, userId, hasActiveHR: true });
+        return true;
+      }
+    }
+    // Debug: log why entity wasn't found active
+    const entriesWithEntity = [...userMetricMap.entries()].filter(([_, e]) => e?.entityId);
+    const activeUsers = [...activeHRSet];
+    console.log('[FitnessSession] Entity NOT active:', { 
+      entityId, 
+      entriesWithEntity: entriesWithEntity.map(([u, e]) => ({ userId: u, entityId: e.entityId })),
+      activeUsers 
+    });
+    return false;
+  }
+
+  /**
    * 6A: Register a callback to be notified when the session ends.
    * @param {function} callback - Function called with (sessionId, reason)
    * @returns {function} - Unsubscribe function
@@ -1599,6 +2078,7 @@ export class FitnessSession {
     if (this._participantRoster) this._participantRoster.reset();
     this.userManager = new UserManager(); // Reset users? Or keep them? Usually reset for new session context.
     this.deviceManager = new DeviceManager(); // Reset devices?
+    this.entityRegistry.reset(); // Clear session entities for new session
     this._stopAutosaveTimer();
     this._stopTickTimer(); // 6A: Also stop tick timer on reset
     this._lastAutosaveAt = 0;
@@ -2052,6 +2532,7 @@ export class FitnessSession {
       // this.endTime = derivedEndTime;
       const durationMs = Number.isFinite(startTime) ? Math.max(0, derivedEndTime - startTime) : null;
       const deviceAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+      const entities = this.entityRegistry?.snapshot?.() || [];
         return {
           sessionId: this.sessionId,
           startTime,
@@ -2059,6 +2540,7 @@ export class FitnessSession {
           durationMs,
           roster: this.roster,
           deviceAssignments,
+          entities,
           voiceMemos: this.voiceMemoManager.summary,
           treasureBox: this.treasureBox ? this.treasureBox.summary : null,
           timeline: timelineSummary,
