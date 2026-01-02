@@ -351,6 +351,35 @@ export class MetricsRecorder {
       this._onLog('timeline_tick_invalid_key', { keys: invalidKeys });
     }
   }
+
+  /**
+   * Transfer cumulative metrics from one user to another.
+   * Used during grace period transfers.
+   * 
+   * @param {string} fromUserId - Source user ID
+   * @param {string} toUserId - Destination user ID
+   */
+  transferCumulativeMetrics(fromUserId, toUserId) {
+    if (!fromUserId || !toUserId || fromUserId === toUserId) return;
+
+    // Transfer heart beats
+    const fromBeats = this._cumulativeBeats.get(fromUserId);
+    if (fromBeats != null) {
+      const toBeats = this._cumulativeBeats.get(toUserId) || 0;
+      this._cumulativeBeats.set(toUserId, toBeats + fromBeats);
+      this._cumulativeBeats.delete(fromUserId);
+    }
+
+    // Transfer rotations (if fromUserId was used as equipment key)
+    const fromRotations = this._cumulativeRotations.get(fromUserId);
+    if (fromRotations != null) {
+      const toRotations = this._cumulativeRotations.get(toUserId) || 0;
+      this._cumulativeRotations.set(toUserId, toRotations + fromRotations);
+      this._cumulativeRotations.delete(fromUserId);
+    }
+
+    console.log('[MetricsRecorder] Transferred cumulative metrics:', { fromUserId, toUserId });
+  }
 }
 
 /**

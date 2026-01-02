@@ -1,6 +1,8 @@
 const NO_ZONE_LABEL = 'No Zone';
 
 // Note: slugifyId has been removed - we now use user.id directly
+// Phase 2: TreasureBox now tracks by entityId (session entity) instead of userId
+// This enables fresh coin counts when devices are reassigned
 
 export class FitnessTreasureBox {
   constructor(sessionRef) {
@@ -12,13 +14,16 @@ export class FitnessTreasureBox {
     this.usersConfigOverrides = new Map(); // userName -> overrides object {active,warm,hot,fire}
     this.buckets = {}; // color -> coin total
     this.totalCoins = 0;
-    this.perUser = new Map(); // userName -> accumulator
+    this.perUser = new Map(); // entityId -> accumulator (Phase 2: now keyed by entityId)
     this.lastTick = Date.now(); // for elapsed computation if needed
     this._timeline = {
       perColor: new Map(),
       cumulative: [],
       lastIndex: -1
     };
+    // Phase 2: Device -> Entity mapping for HR routing
+    // When HR comes in for a device, we look up the active entityId here
+    this._deviceEntityMap = new Map(); // deviceId -> entityId
     // Note: Per-user coin timelines removed (Priority 5)
     // Coins are now written directly to main timeline via assignMetric('user:X:coins_total')
     // Chart uses getSeries() to read from main timeline
@@ -104,7 +109,151 @@ export class FitnessTreasureBox {
 
   stop() { if (this._autoInterval) { clearInterval(this._autoInterval); this._autoInterval = null; } }
 
+  /**
+   * Phase 2: Set the active session entity for a device.
+   * When HR data comes in for this device, it will be routed to this entity.
+   * 
+   * @param {string} deviceId - Heart rate device ID
+   * @param {string} entityId - Session entity ID to receive HR data
+   */
+  setActiveEntity(deviceId, entityId) {
+    const key = String(deviceId);
+    console.warn('[TreasureBox] ===== SET ACTIVE ENTITY =====');
+    console.warn('[TreasureBox] Device:', key);
+    console.warn('[TreasureBox] Entity:', entityId);
+    console.warn('[TreasureBox] Map BEFORE:', [...this._deviceEntityMap.entries()]);
+    if (entityId) {
+      this._deviceEntityMap.set(key, entityId);
+      this._log('set_active_entity', { deviceId: key, entityId });
+    } else {
+      this._deviceEntityMap.delete(key);
+      this._log('clear_active_entity', { deviceId: key });
+    }
+    console.warn('[TreasureBox] Map AFTER:', [...this._deviceEntityMap.entries()]);
+  }
+
+  /**
+   * Phase 2: Get the active entity ID for a device
+   * @param {string} deviceId
+   * @returns {string|null}
+   */
+  getActiveEntity(deviceId) {
+    return this._deviceEntityMap.get(String(deviceId)) || null;
+  }
+
+  /**
+   * Phase 5: Check if an entity is actively receiving HR data
+   * An entity is considered active if it received HR data within the last 10 seconds
+   * @param {string} entityId - Entity ID to check
+   * @returns {boolean} - True if entity is active
+   */
+  isEntityActive(entityId) {
+    if (!entityId || !entityId.startsWith('entity-')) return false;
+    const acc = this.perUser.get(entityId);
+    if (!acc) return false;
+    
+    // Check if we have a recent HR timestamp
+    const now = Date.now();
+    const lastHRTime = acc._lastHRTimestamp || 0;
+    const threshold = 10000; // 10 seconds
+    const isActive = (now - lastHRTime) < threshold;
+    
+    console.warn('[TreasureBox] isEntityActive check:', { entityId, lastHRTime, now, diff: now - lastHRTime, threshold, isActive });
+    return isActive;
+  }
+
+  /**
+   * Phase 2: Transfer accumulator data from one entity to another.
+   * Used during grace period transfers when a brief session is merged into successor.
+   * 
+   * @param {string} fromEntityId - Source entity ID
+   * @param {string} toEntityId - Destination entity ID
+   * @returns {boolean} - True if transfer occurred
+   */
+  transferAccumulator(fromEntityId, toEntityId) {
+    if (!fromEntityId || !toEntityId || fromEntityId === toEntityId) {
+      this._log('transfer_skip', { fromEntityId, toEntityId, reason: 'invalid_args' });
+      return false;
+    }
+    
+    const fromAcc = this.perUser.get(fromEntityId);
+    if (!fromAcc) {
+      this._log('transfer_skip', { fromEntityId, toEntityId, reason: 'no_source_acc' });
+      return false;
+    }
+    
+    // Get or create destination accumulator
+    let toAcc = this.perUser.get(toEntityId);
+    if (!toAcc) {
+      toAcc = this._createAccumulator();
+      this.perUser.set(toEntityId, toAcc);
+    }
+    
+    // Transfer data: add source coins to destination
+    toAcc.totalCoins = (toAcc.totalCoins || 0) + (fromAcc.totalCoins || 0);
+    toAcc.currentIntervalStart = fromAcc.currentIntervalStart || toAcc.currentIntervalStart;
+    toAcc.highestZone = fromAcc.highestZone || toAcc.highestZone;
+    toAcc.lastHR = fromAcc.lastHR || toAcc.lastHR;
+    toAcc.currentColor = fromAcc.currentColor || toAcc.currentColor;
+    toAcc.lastColor = fromAcc.lastColor || toAcc.lastColor;
+    toAcc.lastZoneId = fromAcc.lastZoneId || toAcc.lastZoneId;
+    
+    // Clear source accumulator (but keep entry for historical reference)
+    const transferredCoins = fromAcc.totalCoins || 0;
+    fromAcc.totalCoins = 0;
+    fromAcc.highestZone = null;
+    fromAcc.currentColor = NO_ZONE_LABEL;
+    fromAcc.transferred = true;
+    fromAcc.transferredTo = toEntityId;
+    
+    this._log('transfer_complete', {
+      fromEntityId,
+      toEntityId,
+      coinsTransferred: transferredCoins,
+      newTotal: toAcc.totalCoins
+    });
+    
+    this._notifyMutation();
+    return true;
+  }
+
+  /**
+   * Phase 2: Create a fresh accumulator for a new entity
+   * @param {number} [startTime] - Optional start time (defaults to now)
+   * @returns {Object} Fresh accumulator object
+   */
+  _createAccumulator(startTime) {
+    const now = startTime || Date.now();
+    return {
+      currentIntervalStart: now,
+      highestZone: null,
+      lastHR: null,
+      currentColor: NO_ZONE_LABEL,
+      lastColor: NO_ZONE_LABEL,
+      lastZoneId: null,
+      totalCoins: 0
+    };
+  }
+
+  /**
+   * Phase 2: Initialize accumulator for a new session entity
+   * Called when a new entity is created to ensure it starts with fresh state
+   * 
+   * @param {string} entityId - Session entity ID
+   * @param {number} [startTime] - Optional start time
+   */
+  initializeEntity(entityId, startTime) {
+    if (!entityId) return;
+    if (this.perUser.has(entityId)) {
+      this._log('entity_already_exists', { entityId });
+      return;
+    }
+    this.perUser.set(entityId, this._createAccumulator(startTime));
+    this._log('entity_initialized', { entityId, startTime: startTime || Date.now() });
+  }
+
   // Rename a user in the perUser map (used when guest assigned to preserve zone state)
+  // DEPRECATED: Use entity-based tracking instead
   renameUser(oldName, newName) {
     if (!oldName || !newName || oldName === newName) return false;
     const acc = this.perUser.get(oldName);
@@ -155,12 +304,17 @@ export class FitnessTreasureBox {
     if (!this.perUser.size) return;
     const now = Date.now();
     
-    for (const [userId, acc] of this.perUser.entries()) {
-      // Use userId directly - activeParticipants now contains user IDs
+    for (const [accKey, acc] of this.perUser.entries()) {
+      // accKey can be either a userId (for regular users) or entityId (for guests)
+      // For entity IDs, we need to check activity by the profile ID
+      const profileId = acc.profileId || accKey;
+      const isEntityKey = accKey.startsWith('entity-');
+      
       // CRITICAL: Only process intervals for ACTIVE participants
       // This prevents coin accumulation during dropout
-      if (!activeParticipants.has(userId)) {
-        this._log('user_not_active', { userId });
+      // Check activity by profileId (which is what activeParticipants contains)
+      if (!activeParticipants.has(isEntityKey ? profileId : accKey)) {
+        this._log('user_not_active', { accKey, profileId, isEntity: isEntityKey });
         // User not active - clear their highestZone to prevent stale awards
         acc.highestZone = null;
         acc.currentColor = null;
@@ -169,13 +323,13 @@ export class FitnessTreasureBox {
       
       if (!acc.currentIntervalStart) { acc.currentIntervalStart = now; continue; }
       const elapsed = now - acc.currentIntervalStart;
-      this._log('interval_check', { userId, elapsed, coinTimeUnitMs: this.coinTimeUnitMs, hasHighestZone: !!acc.highestZone });
+      this._log('interval_check', { accKey, elapsed, coinTimeUnitMs: this.coinTimeUnitMs, hasHighestZone: !!acc.highestZone });
       if (elapsed >= this.coinTimeUnitMs) {
         if (acc.highestZone) {
-          this._log('awarding_coins', { userId, zone: { id: acc.highestZone.id, name: acc.highestZone.name, coins: acc.highestZone.coins } });
-          this._awardCoins(userId, acc.highestZone);
+          this._log('awarding_coins', { accKey, zone: { id: acc.highestZone.id, name: acc.highestZone.name, coins: acc.highestZone.coins } });
+          this._awardCoins(accKey, acc.highestZone);
         } else {
-          this._log('no_highest_zone', { userId });
+          this._log('no_highest_zone', { accKey });
         }
         acc.currentIntervalStart = now;
         acc.highestZone = null;
@@ -248,24 +402,46 @@ export class FitnessTreasureBox {
     return null;
   }
 
-  // Record raw HR sample for a user
-  recordUserHeartRate(userId, hr) {
-    this._log('record_heart_rate', { userId, hr, hasGlobalZones: this.globalZones.length > 0 });
+  /**
+   * Record raw HR sample for an entity (Phase 2) or user (legacy).
+   * 
+   * Phase 2 behavior: If entityId is provided, uses entity-based tracking.
+   * Legacy behavior: Falls back to userId-based tracking for backward compatibility.
+   * 
+   * @param {string} entityOrUserId - Entity ID (Phase 2) or user ID (legacy)
+   * @param {number} hr - Heart rate value
+   * @param {Object} [options] - Additional options
+   * @param {string} [options.profileId] - Profile ID for zone overrides lookup
+   */
+  recordUserHeartRate(entityOrUserId, hr, options = {}) {
+    const profileId = options.profileId || entityOrUserId;
+    this._log('record_heart_rate', { 
+      entityOrUserId, 
+      hr, 
+      profileId,
+      hasGlobalZones: this.globalZones.length > 0,
+      isEntityId: entityOrUserId?.startsWith?.('entity-')
+    });
     if (!this.globalZones.length) return; // disabled gracefully if no zones
     const now = Date.now();
-    let acc = this.perUser.get(userId);
+    
+    // Use the entityId (or userId for legacy) as the accumulator key
+    const accKey = entityOrUserId;
+    let acc = this.perUser.get(accKey);
     if (!acc) {
-      acc = {
-        currentIntervalStart: now,
-        highestZone: null, // zone object of highest seen this interval
-        lastHR: null,
-        currentColor: NO_ZONE_LABEL,
-        lastColor: NO_ZONE_LABEL,
-        lastZoneId: null,
-        totalCoins: 0
-      };
-      this.perUser.set(userId, acc);
+      acc = this._createAccumulator(now);
+      // Store profileId for activity checking in processTick()
+      acc.profileId = profileId;
+      this.perUser.set(accKey, acc);
+      this._log('created_accumulator', { accKey, profileId, isNew: true });
+    } else if (!acc.profileId) {
+      // Ensure profileId is set even on existing accumulators
+      acc.profileId = profileId;
     }
+    
+    // Phase 5: Track last HR timestamp for activity checking
+    acc._lastHRTimestamp = now;
+    
     // HR dropout (<=0) resets interval without award
     if (!hr || hr <= 0 || Number.isNaN(hr)) {
       acc.currentIntervalStart = now;
@@ -276,12 +452,18 @@ export class FitnessTreasureBox {
       acc.lastZoneId = null;
       return;
     }
-    // Determine zone for this reading
-    const zone = this.resolveZone(userId, hr);
-    this._log('zone_resolved', { userId, hr, zone: zone ? { id: zone.id, name: zone.name, min: zone.min, coins: zone.coins } : null });
+    
+    // Determine zone for this reading (use profileId for zone overrides)
+    const zone = this.resolveZone(profileId, hr);
+    this._log('zone_resolved', { 
+      accKey, 
+      profileId,
+      hr, 
+      zone: zone ? { id: zone.id, name: zone.name, min: zone.min, coins: zone.coins } : null 
+    });
     if (zone) {
       if (!acc.highestZone || zone.min > acc.highestZone.min) {
-        this._log('update_highest_zone', { userId, zone: { id: zone.id, name: zone.name } });
+        this._log('update_highest_zone', { accKey, zone: { id: zone.id, name: zone.name } });
         acc.highestZone = zone;
         acc.currentColor = zone.color;
         acc.lastColor = zone.color; // update persistent last color
@@ -289,12 +471,13 @@ export class FitnessTreasureBox {
       }
     }
     acc.lastHR = hr;
+    
     // Check interval completion
     const elapsed = now - acc.currentIntervalStart;
     if (elapsed >= this.coinTimeUnitMs) {
-      this._log('interval_complete', { userId, elapsed, hasHighestZone: !!acc.highestZone });
+      this._log('interval_complete', { accKey, elapsed, hasHighestZone: !!acc.highestZone });
       if (acc.highestZone) {
-        this._awardCoins(userId, acc.highestZone);
+        this._awardCoins(accKey, acc.highestZone);
       }
       // Start new interval after awarding (or discard if none)
       acc.currentIntervalStart = now;
@@ -304,21 +487,64 @@ export class FitnessTreasureBox {
     }
   }
 
+  /**
+   * Phase 2: Record HR sample for a device, routing to the active entity.
+   * This is the preferred method when entity tracking is enabled.
+   * 
+   * @param {string} deviceId - Heart rate device ID
+   * @param {number} hr - Heart rate value
+   * @param {Object} [options] - Additional options
+   * @param {string} [options.profileId] - Profile ID for zone overrides lookup
+   * @param {string} [options.fallbackUserId] - User ID to use if no entity is mapped
+   */
+  recordHeartRateForDevice(deviceId, hr, options = {}) {
+    const key = String(deviceId);
+    const entityId = this._deviceEntityMap.get(key);
+    
+    // Debug: Log the entity mapping state
+    if (!entityId && options.fallbackUserId) {
+      console.warn('[TreasureBox] No entity mapped for device, using fallback:', {
+        deviceId: key,
+        fallbackUserId: options.fallbackUserId,
+        mapSize: this._deviceEntityMap.size,
+        mappedDevices: Array.from(this._deviceEntityMap.keys())
+      });
+    }
+    
+    if (entityId) {
+      // Route to entity
+      this.recordUserHeartRate(entityId, hr, options);
+    } else if (options.fallbackUserId) {
+      // Fall back to user-based tracking (legacy)
+      this._log('device_no_entity_fallback', { deviceId: key, fallbackUserId: options.fallbackUserId });
+      this.recordUserHeartRate(options.fallbackUserId, hr, options);
+    } else {
+      this._log('device_no_entity_skip', { deviceId: key });
+    }
+  }
+
   // Note: _ensureUserTimelineIndex removed (Priority 5)
   // Per-user coin timelines are now in main timeline via user:X:coins_total
 
-  _awardCoins(userId, zone) {
-    this._log('award_coins_called', { userId, zone: zone ? { id: zone.id, name: zone.name, coins: zone.coins } : null, hasActivityMonitor: !!this.activityMonitor });
+  _awardCoins(accKey, zone) {
+    this._log('award_coins_called', { accKey, zone: zone ? { id: zone.id, name: zone.name, coins: zone.coins } : null, hasActivityMonitor: !!this.activityMonitor });
     if (!zone) return;
+    
+    // Get the accumulator to check profileId
+    const acc = this.perUser.get(accKey);
+    const isEntityKey = accKey.startsWith('entity-');
+    const profileId = acc?.profileId || accKey;
     
     // PRIORITY 2: Safety check - don't award coins if user is not active
     // This is a backup to processTick() which also checks activity
+    // For entity keys, check activity by profileId (not entityId)
     if (this.activityMonitor) {
-      const isActive = this.activityMonitor.isActive(userId);
-      this._log('activity_check', { userId, isActive });
+      const checkId = isEntityKey ? profileId : accKey;
+      const isActive = this.activityMonitor.isActive(checkId);
+      this._log('activity_check', { accKey, checkId, isActive });
       if (!isActive) {
         // User is not actively broadcasting - skip award
-        this._log('skip_award_inactive', { userId });
+        this._log('skip_award_inactive', { accKey, profileId });
         return;
       }
     }
@@ -342,19 +568,20 @@ export class FitnessTreasureBox {
     if (this.sessionRef?.timebase && intervalIndex + 1 > this.sessionRef.timebase.intervalCount) {
       this.sessionRef.timebase.intervalCount = intervalIndex + 1;
     }
-    const acc = this.perUser.get(userId);
+    // acc already retrieved above for profileId lookup
     if (acc) {
       acc.totalCoins = (acc.totalCoins || 0) + zone.coins;
       acc.lastAwardedAt = now;
       this._log('coins_awarded', {
-        userId,
+        accKey,
+        profileId,
         zone: zone.id || zone.name,
         coinsAwarded: zone.coins,
         newTotal: acc.totalCoins,
         globalTotal: this.totalCoins
       });
     } else {
-      this._log('no_accumulator', { userId });
+      this._log('no_accumulator', { accKey });
     }
     
     // Note: Per-user timeline tracking removed (Priority 5)
@@ -362,7 +589,7 @@ export class FitnessTreasureBox {
     
     // Log event in session if available
     try {
-      this.sessionRef._log('coin_award', { user: userId, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
+      this.sessionRef._log('coin_award', { user: accKey, profileId, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
     } catch (_) { /* ignore */ }
     this._notifyMutation();
   }
@@ -378,25 +605,50 @@ export class FitnessTreasureBox {
 
   getUserZoneSnapshot() {
     const snapshot = [];
-    this.perUser.forEach((data, user) => {
-      if (!user || !data) return;
+    this.perUser.forEach((data, key) => {
+      if (!key || !data) return;
       const currentColor = data.currentColor && data.currentColor !== NO_ZONE_LABEL ? data.currentColor : null;
       const lastColor = data.lastColor && data.lastColor !== NO_ZONE_LABEL ? data.lastColor : null;
+      // Phase 2: key can be entityId or userId
+      const isEntity = key.startsWith?.('entity-');
       snapshot.push({
-        user,
+        user: key, // Legacy field name - actually entityId or userId
+        userId: isEntity ? null : key,
+        entityId: isEntity ? key : null,
         color: currentColor || lastColor || null,
-        zoneId: data.lastZoneId || null
+        zoneId: data.lastZoneId || null,
+        totalCoins: data.totalCoins || 0
       });
     });
     return snapshot;
   }
 
+  /**
+   * Get per-user/entity coin totals.
+   * Phase 2: Keys can be entityId or userId
+   * @returns {Map<string, number>} Map of entityId/userId -> total coins
+   */
   getPerUserTotals() {
     const totals = new Map();
-    this.perUser.forEach((data, user) => {
-      if (!user || !data) return;
+    this.perUser.forEach((data, key) => {
+      if (!key || !data) return;
       const coins = Number.isFinite(data.totalCoins) ? data.totalCoins : 0;
-      totals.set(user, coins);
+      totals.set(key, coins);
+    });
+    return totals;
+  }
+
+  /**
+   * Phase 2: Get totals by entity ID only (excludes legacy userId entries)
+   * @returns {Map<string, number>} Map of entityId -> total coins
+   */
+  getEntityTotals() {
+    const totals = new Map();
+    this.perUser.forEach((data, key) => {
+      if (!key || !data) return;
+      if (!key.startsWith?.('entity-')) return; // Skip legacy userId entries
+      const coins = Number.isFinite(data.totalCoins) ? data.totalCoins : 0;
+      totals.set(key, coins);
     });
     return totals;
   }

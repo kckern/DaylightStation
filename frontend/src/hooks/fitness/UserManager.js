@@ -376,17 +376,23 @@ export class UserManager {
     const occupantType = normalizedMetadata?.occupantType || 'guest';
     // Generate a guest ID if profileId not provided
     const guestId = normalizedMetadata?.profileId || `guest-${Date.now()}`;
+    // Entity ID from GuestAssignmentService (Phase 1 session entity tracking)
+    const entityId = normalizedMetadata?.entityId || null;
     const payload = {
       deviceId: key,
       occupantId: guestId,
+      occupantSlug: guestId, // Required for cleanupOrphanGuests
       occupantName: guestName,
       occupantType,
+      entityId, // Session entity for this assignment
       displacedUserId: baseUserId,
+      displacedSlug: baseUserId, // Consistent naming
       overridesHash: zones ? JSON.stringify(zones) : null,
       metadata: {
         ...normalizedMetadata,
         name: guestName,
         profileId: guestId,
+        entityId,
         updatedAt: timestamp
       },
       updatedAt: timestamp
@@ -395,6 +401,18 @@ export class UserManager {
     if (this.assignmentLedger) {
       this.assignmentLedger.upsert(payload);
       this.#emitLedgerChange();
+    }
+
+    // Ensure no other user claims this device (fix for flickering/ghost users)
+    for (const user of this.users.values()) {
+      if (String(user.hrDeviceId) === key && user.id !== guestId) {
+        console.log('[UserManager] Unclaiming device from previous user:', {
+          deviceId: key,
+          previousUser: user.name,
+          newUser: guestName
+        });
+        user.hrDeviceId = null;
+      }
     }
 
     const guestUser = this.#ensureUserFromAssignment({

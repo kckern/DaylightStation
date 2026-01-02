@@ -96,6 +96,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
   const guestAssignmentServiceRef = useRef(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
+  const [transferVersion, setTransferVersion] = useState(0);
 
   // App State
   const [activeApp, setActiveApp] = useState(null);
@@ -459,6 +460,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (!result?.ok && FITNESS_DEBUG) {
       logFitnessContext('assign-guest-failed', { deviceId, message: result?.message }, { level: 'warn' });
     }
+    // Trigger re-render for transferred users (grace period substitution)
+    setTransferVersion(v => v + 1);
     forceUpdate();
   }, [forceUpdate]);
 
@@ -1375,6 +1378,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (token === 'users' || token === 'user') return 'user';
       if (token === 'devices' || token === 'device') return 'device';
       if (token === 'globals' || token === 'global') return 'global';
+      if (token === 'entities' || token === 'entity') return 'entity'; // Phase 3
       return token;
     };
 
@@ -1394,11 +1398,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (normalizedKind === 'global') {
         return `global:${metricToken}`;
       }
-      const rawId = descriptor.id ?? descriptor.userId ?? descriptor.name ?? null;
+      const rawId = descriptor.id ?? descriptor.userId ?? descriptor.entityId ?? descriptor.name ?? null;
       if (rawId == null) return null;
-      // Use ID directly for users (they already have canonical IDs)
+      // Use ID directly for users and entities (they already have canonical IDs)
       // Only normalize for devices which might have special characters
-      const normalizedId = normalizedKind === 'user'
+      const normalizedId = (normalizedKind === 'user' || normalizedKind === 'entity')
         ? String(rawId)
         : String(rawId).trim().toLowerCase();
       if (!normalizedId) return null;
@@ -1434,6 +1438,48 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return getSeries(key, options);
     };
 
+    /**
+     * Phase 3: Get series for an entity ID
+     * @param {string} entityId - Entity ID (e.g., "entity-1735689600000-abc12")
+     * @param {string} metric - Metric name (e.g., "heart_rate", "coins_total")
+     * @param {Object} [options] - Options for windowing/cloning
+     * @returns {Array}
+     */
+    const getEntitySeries = (entityId, metric = 'heart_rate', options = {}) => {
+      if (!entityId) return [];
+      const key = buildSeriesKey({ kind: 'entity', entityId, metric });
+      if (!key) return [];
+      return getSeries(key, options);
+    };
+
+    /**
+     * Phase 3: Get series for a user OR their active entity (prefers entity if available)
+     * This allows chart components to transparently use entity data when available
+     * @param {string} identifier - User ID or profile ID
+     * @param {string} metric - Metric name
+     * @param {Object} [options]
+     * @returns {Array}
+     */
+    const getParticipantSeries = (identifier, metric = 'heart_rate', options = {}) => {
+      if (!identifier) return [];
+      
+      // First check if this identifier IS an entity ID
+      if (typeof identifier === 'string' && identifier.startsWith('entity-')) {
+        return getEntitySeries(identifier, metric, options);
+      }
+      
+      // Otherwise try to find entity for this user via session
+      // Fall back to user series for backward compatibility
+      const entityId = session?.userManager?.assignmentLedger?.getEntityIdForUser?.(identifier);
+      if (entityId) {
+        const entitySeries = getEntitySeries(entityId, metric, options);
+        if (entitySeries.length > 0) return entitySeries;
+      }
+      
+      // Fall back to user series
+      return getUserSeries(identifier, metric, options);
+    };
+
     const getLatestValue = (descriptor) => {
       const key = buildSeriesKey(descriptor);
       if (!key) return null;
@@ -1453,6 +1499,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       events: eventsRef,
       getSeries,
       getUserSeries,
+      getEntitySeries, // Phase 3
+      getParticipantSeries, // Phase 3
       getLatestValue,
       getSeriesKey: buildSeriesKey,
       seriesKeys: Object.keys(seriesRef)
@@ -1586,9 +1634,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     timelineEvents: timelineSelectors.events,
     getTimelineSeries: timelineSelectors.getSeries,
     getUserTimelineSeries: timelineSelectors.getUserSeries,
+    getEntityTimelineSeries: timelineSelectors.getEntitySeries, // Phase 3
+    getParticipantTimelineSeries: timelineSelectors.getParticipantSeries, // Phase 3
     getTimelineLatestValue: timelineSelectors.getLatestValue,
     getTimelineSeriesKey: timelineSelectors.getSeriesKey,
     timelineSeriesKeys: timelineSelectors.seriesKeys,
+    
+    // Transfer version - triggers re-render when users are transferred (grace period substitution)
+    transferVersion,
+    
+    // Phase 3: Entity registry access
+    entityRegistry: session?.entityRegistry,
+    getEntitiesForProfile: session?.getEntitiesForProfile?.bind(session),
+    getProfileCoinsTotal: session?.getProfileCoinsTotal?.bind(session),
+    getProfileTimelineSeries: session?.getProfileTimelineSeries?.bind(session),
     
     // Activity Monitor - single source of truth for participant status (Phase 2)
     activityMonitor: session?.activityMonitor,
@@ -1654,8 +1713,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     heartRate: heartRateDevices[0] || null,
     getUserByName: (nameOrId) => {
       if (!nameOrId) return null;
-      // Direct lookup by ID or name
-      return users.get(nameOrId) || null;
+      // Direct lookup by ID
+      if (users.has(nameOrId)) return users.get(nameOrId);
+      
+      // Fallback: search by name (case-insensitive)
+      const lowerName = String(nameOrId).toLowerCase();
+      for (const user of users.values()) {
+        if (user.name?.toLowerCase() === lowerName || user.id === lowerName) {
+          return user;
+        }
+      }
+      return null;
     },
     getUserByDevice: resolveUserByDevice
   };

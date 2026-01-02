@@ -162,9 +162,14 @@
     .zone-progress-gauge {
       animation: fire-ring-glow 1.5s ease-in-out infinite;
 
+      .gauge-arc-track {
+        stroke: rgba(220, 38, 38, 0.7); // Make track red too
+      }
+
       .gauge-arc-progress {
         animation: fire-breathe 1.5s ease-in-out infinite;
         stroke-width: calc(var(--vital-ring-width) * 1.4);
+        stroke: #ef4444; // Bright red progress
       }
     }
 
@@ -177,6 +182,59 @@
 
     &::after {
       border-color: rgba(248, 113, 113, 0.8);
+    }
+  }
+
+  // Fire sunbeams effect
+  @keyframes spin-sunbeams {
+    0% { transform: translate(-50%, -50%) rotate(0deg); }
+    100% { transform: translate(-50%, -50%) rotate(360deg); }
+  }
+
+  @keyframes flicker-beam {
+    0%, 100% { opacity: 0.6; transform: scaleY(1); }
+    25% { opacity: 0.9; transform: scaleY(1.1); }
+    50% { opacity: 0.5; transform: scaleY(0.95); }
+    75% { opacity: 0.85; transform: scaleY(1.05); }
+  }
+
+  .fire-sunbeams {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: calc(var(--vital-avatar-size, 76px) * 1.8);
+    height: calc(var(--vital-avatar-size, 76px) * 1.8);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 0;
+    animation: spin-sunbeams 8s linear infinite;
+
+    .sunbeam {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      // Triangular sunbeam using borders
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-bottom: calc(var(--vital-avatar-size, 76px) * 0.5) solid;
+      border-bottom-color: rgba(239, 68, 68, 0.7);
+      transform-origin: center bottom;
+      transform: 
+        translate(-50%, -100%)
+        rotate(calc(var(--beam-index) * 30deg))
+        translateY(calc(var(--vital-avatar-size, 76px) * -0.55));
+      animation: flicker-beam 0.8s ease-in-out infinite;
+      animation-delay: calc(var(--beam-index) * 0.1s);
+      filter: blur(1px);
+
+      &:nth-child(odd) {
+        border-left-width: 6px;
+        border-right-width: 6px;
+        border-bottom-width: calc(var(--vital-avatar-size, 76px) * 0.4);
+        border-bottom-color: rgba(251, 146, 60, 0.6);
+      }
     }
   }
 }
