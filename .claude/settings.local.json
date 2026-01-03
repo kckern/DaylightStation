@@ -6,7 +6,8 @@
       "Bash(node --check:*)",
       "Bash(grep:*)",
       "Bash(test:*)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(ssh:*)"
     ]
   }
 }
