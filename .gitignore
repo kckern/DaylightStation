@@ -24,3 +24,5 @@ config.app-local.yml
 /scripts
 *.log
 .github/copilot-instructions.md
+# Skill local configs
+.claude/skills/*/config.local.json
