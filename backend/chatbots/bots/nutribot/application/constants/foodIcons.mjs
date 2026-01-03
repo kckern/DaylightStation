@@ -27,7 +27,7 @@ function loadFoodIcons() {
       .map(f => f.replace('.png', ''))
       .sort();
   } catch (error) {
-    console.warn('Failed to load food icons from directory:', error.message);
+    logger.warn('nutribot.icons.load_failed', { error: error.message });
     return ['default'];
   }
 }

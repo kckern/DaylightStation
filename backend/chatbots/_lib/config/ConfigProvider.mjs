@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
+import { defaultLogger as logger } from '../logging/Logger.mjs';
 import { configService } from '../../../lib/config/ConfigService.mjs';
 import { userDataService } from '../../../lib/config/UserDataService.mjs';
 import { DEFAULT_NUTRITION_GOALS } from '../../bots/nutribot/config/NutriBotConfig.mjs';
@@ -156,7 +157,7 @@ export class ConfigProvider {
       const content = fs.readFileSync(filePath, 'utf8');
       return yaml.load(content) || {};
     } catch (error) {
-      console.warn(`ConfigProvider: Failed to load ${filePath}: ${error.message}`);
+      logger.warn('chatbots.config.load_failed', { filePath, error: error.message });
       return {};
     }
   }

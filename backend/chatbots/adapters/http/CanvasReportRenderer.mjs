@@ -11,6 +11,8 @@ import { IReportRenderer } from '../../bots/nutribot/application/ports/IReportRe
 import path from 'path';
 import fs from 'fs';
 
+import { defaultLogger as logger } from '../../_lib/logging/Logger.mjs';
+
 // Icon path - resolved at runtime when process.env.path is available
 const getIconDir = () => {
   const icons = process.env.path?.icons || process.env.ICON_DIR || './media/img/icons';
@@ -28,7 +30,7 @@ const ensureFontsRegistered = () => {
   
   if (!fs.existsSync(fontPath)) {
     fontRegistrationError = `Font file not found: ${fontPath}`;
-    console.warn('[CanvasReportRenderer] ' + fontRegistrationError);
+    logger.warn('nutrition.renderer.font_not_found', { error: fontRegistrationError });
     return false;
   }
   
@@ -39,7 +41,7 @@ const ensureFontsRegistered = () => {
     return true;
   } catch (e) {
     fontRegistrationError = `Font registration failed: ${e.message}`;
-    console.warn('[CanvasReportRenderer] ' + fontRegistrationError);
+    logger.warn('nutrition.renderer.font_registration_failed', { error: fontRegistrationError });
     return false;
   }
 };
@@ -259,7 +261,7 @@ export class CanvasReportRenderer extends IReportRenderer {
     const loaded = iconLoadResults.filter(r => r.status === 'loaded').length;
     const notFound = iconLoadResults.filter(r => r.status === 'not_found');
     if (notFound.length > 0) {
-      console.warn(`[CanvasReportRenderer] Icons not found (${notFound.length}/${iconLoadResults.length}):`, notFound.map(r => r.path).join(', '));
+      logger.warn('nutrition.renderer.icons_not_found', { count: notFound.length, total: iconLoadResults.length, paths: notFound.map(r => r.path) });
     } else if (loaded > 0) {
       console.log(`[CanvasReportRenderer] Loaded ${loaded} icons from ${iconDir}`);
     }

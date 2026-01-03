@@ -1,11 +1,12 @@
 import { resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnapshot } from './types.js';
+import getLogger from '../../lib/logging/Logger.js';
 
 export class User {
   constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
     const { id: configuredId, globalZones, zoneOverrides, groupLabel, source, category, avatarUrl } = options;
     // ID must be explicitly provided - never derive from name
     if (!configuredId) {
-      console.warn('[User] No id provided for user, using name as fallback:', name);
+      getLogger().warn('user.missing_id', { name });
     }
     this.id = configuredId ? String(configuredId) : String(name).toLowerCase().replace(/\s+/g, '_');
     this.name = name;
@@ -282,7 +283,7 @@ export class UserManager {
     // Use the actual ID from config - must be explicitly provided
     const userId = config.id || config.profileId;
     if (!userId) {
-      console.warn('[UserManager] registerUser called without id/profileId, using name fallback:', config.name);
+      getLogger().warn('user_manager.register_user_missing_id', { name: config.name });
     }
     const resolvedUserId = userId || String(config.name).toLowerCase().replace(/\\s+/g, '_');
     console.log('[UserManager] registerUser', { 
@@ -454,15 +455,17 @@ export class UserManager {
         profileId,
         occupantType
       });
-      if (user && !user.hrDeviceId) {
+      if (user) {
+        // Always ensure the device mapping is set on the user object
         user.hrDeviceId = idStr;
+        return user;
       }
-      return user;
     }
 
-    // Check registered users
+    // Check registered users for direct device ID match
     for (const user of this.users.values()) {
-      if (String(user.hrDeviceId) === idStr || String(user.cadenceDeviceId) === idStr) {
+      if ((user.hrDeviceId && String(user.hrDeviceId) === idStr) || 
+          (user.cadenceDeviceId && String(user.cadenceDeviceId) === idStr)) {
         return user;
       }
     }

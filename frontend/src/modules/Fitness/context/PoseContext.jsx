@@ -7,6 +7,7 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { getPoseDetectorService, disposePoseDetectorService, DEFAULT_CONFIG as SERVICE_DEFAULTS } from '../domain/pose/PoseDetectorService.js';
+import getLogger from '../../../lib/logging/Logger.js';
 
 const PoseContext = createContext(null);
 
@@ -62,7 +63,7 @@ export const PoseProvider = ({
           setMoveEvents(prev => [...prev.slice(-99), event]);
         }
       } catch (e) {
-        console.warn(`[PoseProvider] Move detector ${detector.id} error:`, e);
+        getLogger().warn('fitness.pose.move_detector_error', { detectorId: detector.id, error: e.message || e });
       }
     });
   }, []);
@@ -117,7 +118,7 @@ export const PoseProvider = ({
     }
     
     if (!videoSourceRef.current) {
-      console.warn('[PoseProvider] No video source set');
+      getLogger().warn('fitness.pose.no_video_source');
       return;
     }
     
@@ -165,7 +166,7 @@ export const PoseProvider = ({
    */
   const registerMoveDetector = useCallback((detector) => {
     if (!detector?.id) {
-      console.warn('[PoseProvider] Invalid move detector (missing id)');
+      getLogger().warn('fitness.pose.invalid_move_detector_id');
       return;
     }
     moveDetectorsRef.current.set(detector.id, detector);

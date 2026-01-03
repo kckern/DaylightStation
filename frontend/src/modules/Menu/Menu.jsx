@@ -3,10 +3,12 @@ import React, {
   useEffect,
   useRef,
   useCallback,
+  useContext,
 } from "react";
 import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
 import "./Menu.scss";
 import { PlayerOverlayLoading } from "../Player/Player";
+import MenuNavigationContext from "../../context/MenuNavigationContext";
 
 /**
  * Logs a menu selection to the server.
@@ -93,8 +95,21 @@ function MenuHeader({ title, itemCount, image }) {
 
 /**
  * TVMenu: Main menu component.
+ * Supports both legacy controlled mode and new context-based mode.
+ * 
+ * When depth is provided and MenuNavigationContext is available, uses context for state.
+ * Otherwise falls back to controlled/uncontrolled pattern with props.
  */
-export function TVMenu({ list, selectedIndex = 0, selectedKey = null, onSelectedIndexChange, onSelect, onEscape, refreshToken = 0 }) {
+export function TVMenu({ 
+  list, 
+  depth,
+  selectedIndex: selectedIndexProp = 0, 
+  selectedKey: selectedKeyProp = null, 
+  onSelectedIndexChange, 
+  onSelect, 
+  onEscape, 
+  refreshToken = 0 
+}) {
   const { menuItems, menuMeta, loaded } = useFetchMenuData(list, refreshToken);
   const containerRef = useRef(null);
   const handleSelect = useSelectAndLog(onSelect);
@@ -113,8 +128,9 @@ export function TVMenu({ list, selectedIndex = 0, selectedKey = null, onSelected
       <MenuItems
         items={menuItems}
         columns={5}
-        selectedKey={selectedKey}
-        selectedIndex={selectedIndex}
+        depth={depth}
+        selectedKey={selectedKeyProp}
+        selectedIndex={selectedIndexProp}
         onSelectedIndexChange={onSelectedIndexChange}
         onSelect={handleSelect}
         onClose={onEscape}
@@ -435,10 +451,14 @@ function MenuIMG({ img, label }) {
 
 /**
  * MenuItems: Renders the menu items, handles arrow keys, and manages optional timeout.
+ * 
+ * When depth is provided, uses MenuNavigationContext for state management.
+ * Otherwise falls back to controlled/uncontrolled pattern with props.
  */
 function MenuItems({
   items = [],
   columns = 1,
+  depth,
   selectedIndex: selectedIndexProp = 0,
   selectedKey = null,
   onSelectedIndexChange,
@@ -447,12 +467,28 @@ function MenuItems({
   MENU_TIMEOUT = 0,
   containerRef,
 }) {
-  // Use controlled component pattern if onSelectedIndexChange is provided
+  // Try to get context (may be null if not within provider)
+  const navContext = useContext(MenuNavigationContext);
+  const useContextMode = depth !== undefined && navContext !== null;
+  
+  // Use controlled component pattern if onSelectedIndexChange is provided (legacy mode)
   const [internalSelectedIndex, setInternalSelectedIndex] = useState(0);
   const [internalSelectedKey, setInternalSelectedKey] = useState(null);
   const isControlled = onSelectedIndexChange !== undefined;
-  const selectedIndex = isControlled ? selectedIndexProp : internalSelectedIndex;
-  const currentKey = isControlled ? selectedKey : internalSelectedKey;
+  
+  // Determine selected index and key based on mode
+  let selectedIndex, currentKey;
+  if (useContextMode) {
+    const selection = navContext.getSelection(depth);
+    selectedIndex = selection.index;
+    currentKey = selection.key;
+  } else if (isControlled) {
+    selectedIndex = selectedIndexProp;
+    currentKey = selectedKey;
+  } else {
+    selectedIndex = internalSelectedIndex;
+    currentKey = internalSelectedKey;
+  }
 
   const findKeyForItem = useCallback((item) => {
     const action = item?.play || item?.queue || item?.list || item?.open;
@@ -461,11 +497,13 @@ function MenuItems({
   }, []);
   
   const setSelectedIndex = useCallback((value, key = null) => {
-    const resolve = (v) => (typeof v === 'function' ? v(selectedIndexProp) : v);
+    const resolve = (v) => (typeof v === 'function' ? v(selectedIndex) : v);
     const nextIndex = resolve(value);
     const nextKey = key ?? null;
 
-    if (isControlled) {
+    if (useContextMode) {
+      navContext.setSelectionAtDepth(depth, nextIndex, nextKey);
+    } else if (isControlled) {
       if (nextIndex === selectedIndexProp && nextKey === selectedKey) {
         return; // no-op to avoid update loops
       }
@@ -477,7 +515,16 @@ function MenuItems({
       setInternalSelectedIndex(nextIndex);
       setInternalSelectedKey(nextKey);
     }
-  }, [isControlled, selectedIndexProp, selectedKey, internalSelectedIndex, internalSelectedKey, onSelectedIndexChange]);
+  }, [useContextMode, navContext, depth, isControlled, selectedIndex, selectedIndexProp, selectedKey, internalSelectedIndex, internalSelectedKey, onSelectedIndexChange]);
+
+  // Handle escape/back navigation
+  const handleClose = useCallback(() => {
+    if (useContextMode) {
+      navContext.pop();
+    } else {
+      onClose?.();
+    }
+  }, [useContextMode, navContext, onClose]);
 
   /**
    * Reset scroll position at component mount: always start at the top.
@@ -535,7 +582,7 @@ function MenuItems({
 
         case "Escape":
           e.preventDefault();
-          onClose?.();
+          handleClose();
           break;
 
         default:
@@ -551,7 +598,7 @@ function MenuItems({
           break;
       }
     },
-    [items, selectedIndex, onSelect, onClose, columns, setSelectedIndex]
+    [items, selectedIndex, onSelect, handleClose, columns, setSelectedIndex, findKeyForItem]
   );
 
   /**

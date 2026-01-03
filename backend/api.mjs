@@ -38,9 +38,12 @@ import { NutriCoachRepository } from './chatbots/bots/nutribot/repositories/Nutr
 import { FileConversationStateStore } from './chatbots/infrastructure/persistence/FileConversationStateStore.mjs';
 import { FileRepository } from './chatbots/infrastructure/persistence/FileRepository.mjs';
 import { CanvasReportRenderer } from './chatbots/adapters/http/CanvasReportRenderer.mjs';
-import { createLogger } from './chatbots/_lib/logging/index.mjs';
+import { createLogger as createChatbotLogger } from './chatbots/_lib/logging/index.mjs';
 import { DEFAULT_NUTRITION_GOALS } from './chatbots/bots/nutribot/config/NutriBotConfig.mjs';
 import { configService } from './lib/config/ConfigService.mjs';
+import { createLogger } from './lib/logging/logger.js';
+
+const apiLogger = createLogger({ app: 'api' });
 
 const apiRouter = express.Router();
 apiRouter.use(express.json({
@@ -138,7 +141,7 @@ let nutribotRouter = null;
 const initNutribotRouter = async () => {
     if (nutribotRouter) return nutribotRouter;
     
-    const logger = createLogger({ source: 'api', app: 'nutribot' });
+    const logger = createChatbotLogger({ source: 'api', app: 'nutribot' });
     
     try {
         const configProvider = getConfigProvider();
@@ -266,7 +269,7 @@ const initNutribotRouter = async () => {
                     return { ...DEFAULT_NUTRITION_GOALS, ...user.goals };
                 }
 
-                console.warn('api.nutribot.goals.fallback.default', { userId: username });
+                apiLogger.warn('api.nutribot.goals.fallback.default', { userId: username });
                 return { ...DEFAULT_NUTRITION_GOALS };
             },
         };
@@ -346,7 +349,7 @@ let journalistRouter = null;
 const initJournalistRouter = async () => {
     if (journalistRouter) return journalistRouter;
     
-    const logger = createLogger({ source: 'api', app: 'journalist' });
+    const logger = createChatbotLogger({ source: 'api', app: 'journalist' });
     
     try {
         const configProvider = getConfigProvider();
@@ -462,7 +465,7 @@ let homebotRouter = null;
 const initHomeBotRouter = async () => {
     if (homebotRouter) return homebotRouter;
     
-    const logger = createLogger({ source: 'api', app: 'homebot' });
+    const logger = createChatbotLogger({ source: 'api', app: 'homebot' });
     
     try {
         const configProvider = getConfigProvider();

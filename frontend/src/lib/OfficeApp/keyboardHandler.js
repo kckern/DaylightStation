@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { DaylightAPI } from '../api.mjs';
+import getLogger from '../logging/Logger.js';
 
 /**
  * Application-level keyboard handler for OfficeApp
@@ -104,7 +104,7 @@ export const createKeyboardHandler = (dependencies) => {
         console.log(`Active player detected, letting it handle ${params} directly`);
       } else if (action?.secondary) {
         if (!executeSecondaryAction(action.secondary)) {
-          console.warn('Failed to execute secondary action:', action.secondary);
+          getLogger().warn('office.keyboard.secondary_action_failed', { secondary: action.secondary });
         }
       } else {
         console.log('No active player and no secondary function defined');

@@ -12,6 +12,9 @@
 import fs from 'fs';
 import path from 'path';
 import { parse } from 'yaml';
+import createLogger from '../logging/logger.js';
+
+const logger = createLogger({ app: 'config' });
 
 // Safe YAML reader with error handling
 const safeReadYaml = (filePath) => {
@@ -85,8 +88,8 @@ class ConfigService {
     
     // Log warning once
     if (!this.#initWarningLogged) {
-      console.warn('[ConfigService] WARNING: Not initialized - process.env.path.data not set');
-      console.warn('[ConfigService] User profile lookups will return null');
+      logger.warn('config.not_initialized_process_env_missing');
+      logger.warn('config.user_profile_lookups_disabled');
       this.#initWarningLogged = true;
     }
     return false;
@@ -515,7 +518,7 @@ class ConfigService {
    */
   getLifelogPath(username, service) {
     if (!username) {
-      console.warn('[ConfigService] getLifelogPath called without username');
+      logger.warn('config.get_lifelog_path_missing_username', { service });
       return `lifelog/${service}`;  // Fallback to legacy path
     }
     return `lifelog/${username}/${service}`;
@@ -529,7 +532,7 @@ class ConfigService {
    */
   getUserAuthPath(username, service) {
     if (!username) {
-      console.warn('[ConfigService] getUserAuthPath called without username');
+      logger.warn('config.get_user_auth_path_missing_username', { service });
       return `auth/${service}`;  // Fallback to legacy path
     }
     return `users/${username}/auth/${service}`;

@@ -3,6 +3,8 @@ const normalizeLabel = (value) => {
   return value.trim().toLowerCase();
 };
 
+import getLogger from '../../lib/logging/Logger.js';
+
 const normalizeLabelList = (labels) => {
   if (!Array.isArray(labels)) return [];
   return labels
@@ -133,7 +135,8 @@ export const normalizeRequirements = (rawReqs, comparator = compareSeverity, opt
 };
 
 export class GovernanceEngine {
-  constructor() {
+  constructor(session = null) {
+    this.session = session;  // Reference to FitnessSession for direct roster access
     this.config = {};
     this.policies = [];
     this.media = null;
@@ -318,6 +321,9 @@ export class GovernanceEngine {
       ? this.config.governed_types
       : [];
     this._governedTypeSet = new Set(normalizeLabelList(governedTypeSource));
+
+    // Start self-evaluation pulse
+    this._schedulePulse(1000);
   }
 
   _normalizePolicies(policiesRaw) {
@@ -447,6 +453,12 @@ export class GovernanceEngine {
 
   _triggerPulse() {
     this.pulse += 1;
+
+    // SIMPLIFIED: Self-evaluate on each pulse using session.roster
+    if (this.session?.roster) {
+      this.evaluate();  // No params needed - reads from session.roster directly
+    }
+
     if (this.callbacks.onPulse) {
       this.callbacks.onPulse(this.pulse);
     }
@@ -595,8 +607,8 @@ export class GovernanceEngine {
           deduped.push({ ...row, missingUsers: remaining });
         }
       });
-      if (dropped.length && typeof console !== 'undefined' && console.warn) {
-        console.warn('[GovernanceEngine] Dropped duplicate participant requirements', dropped);
+      if (dropped.length) {
+        getLogger().warn('governance.dropped_duplicate_requirements', { dropped });
       }
       return deduped;
     };
@@ -631,12 +643,66 @@ export class GovernanceEngine {
   }
 
   // Main evaluation loop, called periodically or on data change
-  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount }) {
+  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount } = {}) {
     const now = Date.now();
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
-    
+
+    // SIMPLIFIED: If no data passed in, read directly from session.roster
+    getLogger().error('🔍 GOVERNANCE_DEBUG', {
+      hasSession: !!this.session,
+      hasRoster: !!this.session?.roster,
+      rosterLength: this.session?.roster?.length || 0,
+      rosterSample: this.session?.roster?.[0]
+    });
+
+    if (!activeParticipants && this.session?.roster) {
+      const roster = this.session.roster || [];
+      activeParticipants = roster
+        .filter(entry => entry.isActive !== false && entry.name)
+        .map(entry => entry.name);
+
+      userZoneMap = {};
+      roster.forEach(entry => {
+        if (entry.name) {
+          userZoneMap[entry.name] = entry.zoneId || null;
+        }
+      });
+
+      totalCount = activeParticipants.length;
+
+      getLogger().error('governance.evaluate.built_from_roster', {
+        participantCount: activeParticipants.length,
+        participants: activeParticipants
+      });
+    }
+
+    // Ensure defaults
+    activeParticipants = activeParticipants || [];
+    userZoneMap = userZoneMap || {};
+    zoneRankMap = zoneRankMap || {};
+    zoneInfoMap = zoneInfoMap || {};
+    totalCount = totalCount || activeParticipants.length;
+
+    // Phase 4: Debug logging for governance evaluation
+    getLogger().warn('governance.evaluate.called', {
+      hasMedia: !!(this.media && this.media.id),
+      mediaId: this.media?.id,
+      hasGovernanceRules,
+      governedLabelSetSize: this._governedLabelSet.size,
+      governedTypeSetSize: this._governedTypeSet.size,
+      activeParticipantsCount: activeParticipants.length,
+      activeParticipants,
+      userZoneMapKeys: Object.keys(userZoneMap),
+      userZoneMap,
+      totalCount
+    });
+
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {
+      getLogger().warn('governance.evaluate.no_media_or_rules', {
+        hasMedia: !!(this.media && this.media.id),
+        hasGovernanceRules
+      });
       this.reset();
       this._setPhase(null);
       return;
@@ -644,6 +710,9 @@ export class GovernanceEngine {
 
     const hasGovernedMedia = this._mediaIsGoverned();
     if (!hasGovernedMedia) {
+      getLogger().warn('governance.evaluate.media_not_governed', {
+        mediaId: this.media?.id
+      });
       this.reset();
       this._setPhase(null);
       return;
@@ -651,8 +720,10 @@ export class GovernanceEngine {
 
     // 2. Check participants
     if (activeParticipants.length === 0) {
+      getLogger().warn('governance.evaluate.no_participants');
       this.reset(); // Or keep history? Context cleared history on empty participants
       this._setPhase('init');
+      this._schedulePulse(1000); // Ensure UI keeps checking even if engine is reset
       return;
     }
 
@@ -663,6 +734,13 @@ export class GovernanceEngine {
       this._setPhase('init');
       return;
     }
+
+    getLogger().error('🔧 POLICY_CHOSEN', {
+      policyId: activePolicy.id,
+      policyName: activePolicy.name,
+      baseRequirement: activePolicy.baseRequirement,
+      minParticipants: activePolicy.minParticipants
+    });
 
     // 4. Update Challenge State Context
     if (this.challengeState.activePolicyId !== activePolicy.id) {
@@ -680,7 +758,13 @@ export class GovernanceEngine {
     // 5. Evaluate Base Requirements
     const baseRequirement = activePolicy.baseRequirement || {};
     const { summaries, allSatisfied } = this._evaluateRequirementSet(baseRequirement, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount);
-    
+
+    getLogger().error('🔧 REQUIREMENTS_EVALUATED', {
+      allSatisfied,
+      summaries,
+      baseRequirement
+    });
+
     this.requirementSummary = {
       policyId: activePolicy.id,
       targetUserCount: activePolicy.minParticipants,
@@ -806,7 +890,10 @@ export class GovernanceEngine {
 
     const metUsers = [];
     activeParticipants.forEach((name) => {
-      const participantZoneId = userZoneMap[name]; // Assuming userZoneMap already resolves to zoneId
+      // Input 'name' and 'userZoneMap' keys are now consistently normalized (lowercase)
+      // from FitnessSession.updateSnapshot to ensure matching.
+      const key = normalizeName(name);
+      const participantZoneId = userZoneMap[key];
       const participantRank = participantZoneId && Number.isFinite(zoneRankMap[participantZoneId])
         ? zoneRankMap[participantZoneId]
         : 0;

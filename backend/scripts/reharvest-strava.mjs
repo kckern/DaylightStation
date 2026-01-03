@@ -33,7 +33,7 @@ const runReharvest = async () => {
             
         } catch (error) {
             if (error.response && error.response.status === 429) {
-                console.warn('Rate limit exceeded. Waiting 16 minutes before retrying...');
+                logger.warn('strava.reharvest.rate_limit_exceeded', { wait_minutes: 16 });
                 await new Promise(resolve => setTimeout(resolve, 16 * 60 * 1000));
                 console.log('Resuming harvest...');
             } else {

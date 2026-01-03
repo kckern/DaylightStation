@@ -2,6 +2,9 @@ import express from 'express';
 import moment from 'moment-timezone';
 import { thermalPrint, createTextPrint, createImagePrint, createReceiptPrint, createTablePrint, setFeedButton, queryPrinterStatus, testFeedButton, pingPrinter } from '../lib/thermalprint.mjs';
 import { getSelectionsForPrint } from './gratitude.mjs';
+import { createLogger } from '../lib/logging/logger.js';
+
+const printerLogger = createLogger({ app: 'printer' });
 
 const printerRouter = express.Router();
 
@@ -363,7 +366,7 @@ async function createCanvasTypographyDemo(upsidedown=false) {
     try {
         registerFont(fontPath, { family: "Roboto Condensed" });
     } catch (fontError) {
-        console.warn(`Could not load ${fontFamily} font:`, fontError.message);
+        printerLogger.warn('printer.font_load_failed', { fontFamily, error: fontError.message });
     }
     
     const margin = 25;
@@ -663,7 +666,7 @@ printerRouter.get('/canvas/print', async (req, res) => {
         try {
             fs.unlinkSync(tempPath);
         } catch (err) {
-            console.warn('Could not delete temp file:', err.message);
+            printerLogger.warn('printer.temp_file_delete_failed', { error: err.message });
         }
         
         res.json({
@@ -730,7 +733,7 @@ printerRouter.get('/checkerboard/:width?', async (req, res) => {
         try {
             fs.unlinkSync(tempPath);
         } catch (err) {
-            console.warn('Could not delete temp file:', err.message);
+            printerLogger.warn('printer.temp_file_delete_failed', { error: err.message });
         }
         
         res.json({
@@ -876,7 +879,7 @@ printerRouter.get('/img/:filename', async (req, res) => {
         try {
             fs.unlinkSync(tempPath);
         } catch (err) {
-            console.warn('Could not delete temp file:', err.message);
+            printerLogger.warn('printer.temp_file_delete_failed', { error: err.message });
         }
         
         res.json({

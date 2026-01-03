@@ -18,7 +18,7 @@ import { configService } from './lib/config/ConfigService.mjs';
 
 // Logging system
 import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
-import { createConsoleTransport, createLogglyTransport } from './lib/logging/transports/index.js';
+import { createConsoleTransport, createLogglyTransport, createFileTransport } from './lib/logging/transports/index.js';
 import { createLogger } from './lib/logging/logger.js';
 import { ingestFrontendLogs } from './lib/logging/ingestion.js';
 import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, hydrateProcessEnvFromConfigs, resolveLogglyToken } from './lib/logging/config.js';
@@ -57,10 +57,22 @@ const dispatcher = initializeLogging({
 });
 
 // Add console transport
-dispatcher.addTransport(createConsoleTransport({ 
+dispatcher.addTransport(createConsoleTransport({
   colorize: !isDocker,
   format: isDocker ? 'json' : 'pretty'
 }));
+
+// Add file transport in development mode (with log rotation)
+if (!isDocker) {
+  dispatcher.addTransport(createFileTransport({
+    filename: join(__dirname, '..', 'dev.log'),
+    format: 'json', // JSON format for easier parsing
+    maxSize: 50 * 1024 * 1024, // 50 MB before rotation
+    maxFiles: 3, // Keep 3 rotated files (dev.log, dev.log.1, dev.log.2)
+    colorize: false
+  }));
+  console.log('[Logging] File transport enabled: dev.log (max 50MB, 3 files)');
+}
 
 // Add Loggly transport if configured
 const logglyToken = resolveLogglyToken();

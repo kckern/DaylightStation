@@ -7,6 +7,7 @@
 
 // Note: These imports assume @tensorflow/tfjs and @tensorflow-models/pose-detection are installed
 // Run: npm install @tensorflow/tfjs-core @tensorflow/tfjs-converter @tensorflow/tfjs-backend-webgl @tensorflow-models/pose-detection
+import getLogger from '../../../../lib/logging/Logger.js';
 
 const MODEL_TYPES = {
   lite: 'lite',
@@ -119,7 +120,7 @@ class PoseDetectorService {
         await this.tf.ready();
         return preferredBackend;
       } catch (e) {
-        console.warn(`[PoseDetectorService] Preferred backend ${preferredBackend} failed:`, e.message);
+        getLogger().warn('pose_detector.backend_preference_failed', { backend: preferredBackend, error: e.message });
       }
     }
 
@@ -131,7 +132,7 @@ class PoseDetectorService {
         await this.tf.ready();
         return backend;
       } catch (e) {
-        console.warn(`[PoseDetectorService] Backend ${backend} not available:`, e.message);
+        getLogger().warn('pose_detector.backend_not_available', { backend, error: e.message });
       }
     }
     throw new Error('No suitable TensorFlow backend available');
@@ -173,7 +174,7 @@ class PoseDetectorService {
       });
       console.log('[PoseDetectorService] Model warmed up');
     } catch (e) {
-      console.warn('[PoseDetectorService] Warmup failed:', e);
+      getLogger().warn('pose_detector.warmup_failed', { error: e.message || e });
     }
   }
   
@@ -298,7 +299,7 @@ class PoseDetectorService {
     if (this.videoSource.readyState < 2) {
       // Throttle warning
       if (this.metrics.frameCount % 100 === 0) {
-        console.warn('[PoseDetectorService] Video not ready:', this.videoSource.readyState);
+        getLogger().warn('pose_detector.video_not_ready', { readyState: this.videoSource.readyState });
       }
       return;
     }
@@ -333,7 +334,7 @@ class PoseDetectorService {
           }
 
           if (this.metrics.nanCount > 10 && this.backend === 'webgl') {
-             console.warn('[PoseDetectorService] Too many NaN frames, switching to WASM');
+             getLogger().warn('pose_detector.nan_frames_switching_backend', { count: this.metrics.nanCount, targetBackend: 'wasm' });
              this.metrics.nanCount = 0;
              this._switchBackend('wasm');
              return;

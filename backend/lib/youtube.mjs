@@ -15,6 +15,9 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import moment from 'moment';
+import { createLogger } from './logging/logger.js';
+
+const logger = createLogger({ app: 'youtube' });
 
 const exec = promisify(child_process.exec);
 
@@ -40,7 +43,7 @@ const acquireLock = () => {
         const stat = fs.statSync(LOCK_FILE);
         const ageMs = Date.now() - stat.mtimeMs;
         if (ageMs > LOCK_STALE_MS) {
-          console.warn(`[YTCRON] Stale lock detected (age ${Math.round(ageMs/60000)}m). Removing ${LOCK_FILE}`);
+          logger.warn('youtube.stale_lock_detected', { ageMins: Math.round(ageMs/60000), lockFile: LOCK_FILE });
           fs.unlinkSync(LOCK_FILE);
         }
       } catch (_) {
@@ -180,7 +183,7 @@ const getYoutube = async () => {
   // Single instance guard
   const releaseLock = acquireLock();
   if (!releaseLock) {
-    console.warn(`[YTCRON] Another instance is running. Skipping this run. (${LOCK_FILE})`);
+    logger.warn('youtube.another_instance_running', { lockFile: LOCK_FILE });
     return { deleted: [], shortcodes: [], files: [], skipped: true };
   }
 

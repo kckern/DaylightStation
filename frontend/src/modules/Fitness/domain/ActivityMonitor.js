@@ -228,10 +228,7 @@ export class ActivityMonitor {
           participantId: toId
         });
       }
-      this._participants.delete(fromId);
     }
-
-    console.log('[ActivityMonitor] Transferred activity:', { fromId, toId });
   }
 
   /**

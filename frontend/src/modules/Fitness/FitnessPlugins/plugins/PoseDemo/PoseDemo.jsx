@@ -10,6 +10,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import useFitnessPlugin from '../../useFitnessPlugin';
+import getLogger from '../../../../../lib/logging/Logger.js';
 import { PoseProvider } from '../../../context/PoseContext.jsx';
 import { usePoseProvider } from '../../../hooks/usePoseProvider.js';
 import { Webcam as FitnessWebcam } from '../../../components/FitnessWebcam.jsx';
@@ -99,7 +100,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
         setPoseConfidence(smoothed);
       }
     } catch (err) {
-      console.warn('[PoseDemo] Error calculating confidence:', err);
+      getLogger().warn('fitness.pose_demo.confidence_calc_error', { error: err.message || err });
     }
   }, [primaryPose]);
   
@@ -155,7 +156,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
       setTimeout(() => start(), 100);
     } else {
       // Video not ready yet, will auto-start when onStreamReady fires
-      console.warn('[PoseDemo] Video element not ready');
+      getLogger().warn('fitness.pose_demo.video_not_ready');
     }
   }, [setVideoSource, start]);
   

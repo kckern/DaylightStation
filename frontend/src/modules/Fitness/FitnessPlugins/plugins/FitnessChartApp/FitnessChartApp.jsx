@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import useFitnessPlugin from '../../useFitnessPlugin';
 import { DaylightMediaPath } from '../../../../../lib/api.mjs';
+import getLogger from '../../../../../lib/logging/Logger.js';
 import { LayoutManager, useAnimatedLayout, ConnectorGenerator } from './layout/index.js';
 import './FitnessChartApp.scss';
 import {
@@ -174,7 +175,7 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 					isActiveFromMonitor: activityMonitor ? activityMonitor.isActive?.(item.id) ?? null : null,
 				};
 			});
-			console.warn('[FitnessChart] Avatar mismatch', {
+			getLogger().warn('fitness.chart.avatar_mismatch', {
 				rosterCount,
 				activeRosterCount,
 				chartCount,
@@ -187,18 +188,7 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		// GUARDRAIL: Log when roster.isActive differs from segment state (for debugging)
 		// We trust roster.isActive as source of truth, but want to see divergences
 		shaped.forEach((item) => {
-			const lastSeg = item.segments[item.segments.length - 1];
-			const endsWithGap = lastSeg?.isGap === true;
-			const isActiveFromRoster = item.isActive !== false;
 			// Note: We expect endsWithGap when !isActive, but isActive is authoritative
-			if (endsWithGap && isActiveFromRoster) {
-				console.warn('[FitnessChart] Segment shows gap but roster says active', {
-					id: item.id,
-					endsWithGap,
-					isActive: item.isActive,
-					lastSegment: lastSeg ? { isGap: lastSeg.isGap, status: lastSeg.status } : null
-				});
-			}
 		});
 
 		const maxValue = Math.max(0, ...shaped.map((e) => e.maxVal));
@@ -256,7 +246,6 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				if (next[userId]) {
 					delete next[userId];
 					changed = true;
-					console.log('[useRaceChartWithHistory] Cleared transferred user from cache:', userId);
 				}
 			});
 			return changed ? next : prev;
@@ -284,7 +273,6 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				
 				// Skip transferred users - their data was moved to another identity
 				if (transferredUsers?.has?.(slug)) {
-					console.log('[useRaceChartWithHistory] Skipping transferred user:', slug);
 					return;
 				}
 				
@@ -846,28 +834,25 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			const chartPresentIds = presentEntries.map(e => e.profileId || e.id);
 			const chartAbsentIds = absentEntries.map(e => e.profileId || e.id);
 			const allChartIds = allEntries.map(e => ({ id: e.profileId || e.id, status: e.status }));
-			
-			// Only log once per unique mismatch state
-			const mismatchSignature = JSON.stringify({ rosterIds, chartPresentIds, chartAbsentIds });
-			if (mismatchSignature !== lastMismatchSignatureRef.current) {
-				lastMismatchSignatureRef.current = mismatchSignature;
-				console.warn('[FitnessChart] Participant count mismatch!', {
-					rosterCount,
-					chartPresentCount,
-					chartAbsentCount: absentEntries.length,
-					chartTotalCount: allEntries.length,
-					rosterIds,
-					chartPresentIds,
-					chartAbsentIds,
-					allChartEntries: allChartIds,
-					// Show which roster IDs are missing from chart present
-					missingFromChart: rosterIds.filter(id => !chartPresentIds.includes(id)),
-					// Show which chart present IDs are not in roster
-					extraInChart: chartPresentIds.filter(id => !rosterIds.includes(id))
-				});
+			const mismatchSnapshot = {
+				rosterCount,
+				chartPresentCount,
+				chartAbsentCount: absentEntries.length,
+				chartTotalCount: allEntries.length,
+				rosterIds,
+				chartPresentIds,
+				chartAbsentIds,
+				allChartEntries: allChartIds,
+				missingFromChart: rosterIds.filter(id => !chartPresentIds.includes(id)),
+				extraInChart: chartPresentIds.filter(id => !rosterIds.includes(id))
+			};
+
+			const signature = JSON.stringify(mismatchSnapshot);
+			if (signature !== lastMismatchSignatureRef.current) {
+				lastMismatchSignatureRef.current = signature;
+				getLogger().warn('fitness.chart.participant_count_mismatch', mismatchSnapshot);
 			}
 		} else {
-			// Clear signature when match is restored
 			lastMismatchSignatureRef.current = null;
 		}
 	}, [participants, presentEntries, absentEntries, allEntries]);
@@ -1066,7 +1051,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		}).filter(Boolean);
 
 		if (discrepancies.length > 0) {
-			console.warn('[FitnessChart] Avatar/Line misalignment detected:', discrepancies);
+			getLogger().warn('fitness.chart.avatar_misalignment', { discrepancies });
 		}
 	}, [avatars, rawAvatars]);
 

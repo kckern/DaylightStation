@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import getLogger from '../../../../lib/logging/Logger.js';
 
 const useAudioFeedback = ({
   volume = 0.5,
@@ -19,7 +20,7 @@ const useAudioFeedback = ({
 
     audio.volume = volume;
     audio.currentTime = 0;
-    audio.play().catch(err => console.warn('Audio playback failed:', err));
+    audio.play().catch(err => getLogger().warn('audio_feedback.playback_failed', { error: err.message || err }));
   }, [sounds, volume]);
 
   const playClick = useCallback(() => play('click'), [play]);

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import useFitnessPlugin from '../../useFitnessPlugin';
 import { Webcam as FitnessWebcam } from '../../../components/FitnessWebcam.jsx';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
+import getLogger from '../../../../../lib/logging/Logger.js';
 import './CameraViewApp.scss';
 
 const DEFAULT_CAPTURE_INTERVAL_MS = 5000;
@@ -135,7 +136,7 @@ const CameraViewApp = ({ mode, onClose, config, onMount }) => {
         throw new Error('upload-failed-no-filename');
       }
     } catch (err) {
-      console.warn('Snapshot upload failed', err);
+      getLogger().warn('fitness.camera.snapshot_upload_failed', { error: err.message || err });
       setSnapshotStatus((prev) => ({ ...prev, uploading: false, error: err.message }));
     } finally {
       uploadInFlightRef.current = false;

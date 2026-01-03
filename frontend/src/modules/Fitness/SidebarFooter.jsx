@@ -4,6 +4,8 @@ import CircularUserAvatar from './components/CircularUserAvatar.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import './SidebarFooter.scss';
 
+import getLogger from '../../lib/logging/Logger.js';
+
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
 const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
@@ -334,7 +336,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
             ? (userIdMap[deviceKey] || getConfiguredProfileId(ownerName) || 'user')
             : 'user';
           if (device.type === 'heart_rate' && (!ownerName || profileId === 'user')) {
-            console.warn('[SidebarFooter] Missing avatar data', {
+            getLogger().warn('fitness.sidebar.avatar.missing_data', {
               deviceKey,
               ownerName,
               profileId,

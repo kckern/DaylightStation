@@ -993,7 +993,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const signature = JSON.stringify(
       roster.map((entry) => ({
         name: entry?.name || null,
-        deviceId: entry?.deviceId || null,
+        hrDeviceId: entry?.hrDeviceId || null,
         heartRate: Number.isFinite(entry?.heartRate) ? Math.round(entry.heartRate) : null,
         zoneId: entry?.zoneId || null,
         zoneColor: entry?.zoneColor || null,
@@ -1070,7 +1070,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       // Use explicit ID from config
       const id = config.id || config.profileId;
       if (!id) {
-        console.warn('[FitnessContext] replacedPrimaryPool: config missing id for', config.name);
+        getLogger().warn('fitness.context.pool_config_missing_id', { name: config.name });
         return;
       }
       if (seen.has(id)) return;

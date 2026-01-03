@@ -1,5 +1,6 @@
 // Note: slugifyId removed - we now use explicit IDs
 import { DeviceAssignmentLedger } from './DeviceAssignmentLedger.js';
+import getLogger from '../../lib/logging/Logger.js';
 
 /**
  * Phase 4: Grace period for session transfers.
@@ -145,7 +146,7 @@ export class GuestAssignmentService {
           newOccupantId,
           newOccupantName: value.name
         });
-        console.warn('[GuestAssignmentService] Guest replaced on device:', {
+        getLogger().warn('guest_assignment.guest_replaced', {
           deviceId: key,
           previous: previousEntry.occupantName,
           new: value.name,
@@ -165,20 +166,17 @@ export class GuestAssignmentService {
 
     // Create a new session entity for this assignment
     let entityId = null;
-    console.warn('[GuestAssignmentService] ===== GUEST ASSIGNMENT START =====');
-    console.warn('[GuestAssignmentService] Device:', key);
-    console.warn('[GuestAssignmentService] New occupant:', { id: newOccupantId, name: value.name });
-    console.warn('[GuestAssignmentService] Previous occupant:', { id: previousOccupantId, entityId: previousEntityId });
-    console.warn('[GuestAssignmentService] Grace period transfer?', isGracePeriodTransfer);
-    console.warn('[GuestAssignmentService] Transfer from userId?', transferFromUserId);
-    console.warn('[GuestAssignmentService] Has createSessionEntity?', !!session.createSessionEntity);
-    console.warn('[GuestAssignmentService] Has treasureBox?', !!session.treasureBox);
     
-    // Log TreasureBox state BEFORE assignment
-    if (session.treasureBox) {
-      const prevAcc = session.treasureBox.perUser.get(previousOccupantId);
-      console.warn('[GuestAssignmentService] Previous user accumulator:', prevAcc ? { totalCoins: prevAcc.totalCoins, profileId: prevAcc.profileId } : 'NOT FOUND');
-    }
+    getLogger().warn('guest_assignment.assignment_start', {
+      deviceId: key,
+      newOccupant: { id: newOccupantId, name: value.name },
+      previousOccupant: { id: previousOccupantId, entityId: previousEntityId },
+      isGracePeriodTransfer,
+      transferFromUserId,
+      hasCreateSessionEntity: !!session.createSessionEntity,
+      hasTreasureBox: !!session.treasureBox,
+      previousUserAccumulator: session.treasureBox ? session.treasureBox.perUser.get(previousOccupantId) : null
+    });
     
     // For grace period user-to-guest transfer (< 1 min), DON'T create entity
     // The guest takes over the original user's identity completely
@@ -220,7 +218,7 @@ export class GuestAssignmentService {
         }
       } else if (transferFromUserId) {
         // User-to-guest transfer (Jin takes over Soren's series directly)
-        console.warn(`[GuestAssignmentService] Grace period transfer: Moving data from ${transferFromUserId} to ${newOccupantId}`);
+        getLogger().warn('guest_assignment.user_series_transfer_start', { fromUserId: transferFromUserId, toUserId: newOccupantId });
 
         // Orchestrate full transfer via session (Phase 4/5)
         const transferResult = session.transferUserSeries?.(transferFromUserId, newOccupantId);
@@ -248,7 +246,7 @@ export class GuestAssignmentService {
 
     // Log warning if no profileId was provided (Issue #3 remediation)
     if (!value.profileId) {
-      console.warn('[GuestAssignmentService] No profileId in assignment, generated fallback:', {
+      getLogger().warn('guest_assignment.missing_profile_id', {
         deviceId: key,
         name: value.name,
         generatedId: metadata.profileId

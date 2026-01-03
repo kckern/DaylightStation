@@ -1,3 +1,4 @@
+import getLogger from './logging/Logger.js';
 
 // In dev mode, Vite proxy handles forwarding to backend (see vite.config.js)
 // In production, frontend and backend are served from same origin
@@ -60,7 +61,7 @@ const activeWebsockets = new Map();
 
 export const DaylightWebsocketSubscribe = (path, callback) => {
     if (activeWebsockets.has(path)) {
-        console.warn(`WebSocket for path "${path}" is already active.`);
+        getLogger().warn('api.websocket.already_active', { path });
         return activeWebsockets.get(path).unsubscribe;
     }
 
