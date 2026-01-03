@@ -12,7 +12,9 @@
       "Bash(pkill:*)",
       "Bash(./dev:*)",
       "Bash(tee:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)"
     ]
   }
 }
