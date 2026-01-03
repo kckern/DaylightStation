@@ -1,18 +1,85 @@
 import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { TVMenu } from './Menu';
-import { PlayerOverlayLoading } from '../Player/Player';
+import './PlexViews.scss';
 
 // Lazy load specialized views
 const ShowView = lazy(() => import('./ShowView').then(m => ({ default: m.default || m.ShowView })));
 const SeasonView = lazy(() => import('./SeasonView').then(m => ({ default: m.default || m.SeasonView })));
 
 /**
- * Loading fallback
+ * Skeleton fallback for ShowView lazy loading
  */
-function LoadingFallback() {
-  return <PlayerOverlayLoading shouldRender isVisible />;
+function ShowViewSkeleton() {
+  return (
+    <div className="show-view show-view--skeleton">
+      <div className="show-view__backdrop skeleton-pulse" />
+      <div className="show-view__backdrop-gradient" />
+      <div className="show-view__content">
+        <div className="show-view__top">
+          <div className="show-view__poster skeleton-pulse" />
+          <div className="show-view__info">
+            <div className="skeleton-text skeleton-text--lg skeleton-pulse" style={{ width: '60%', height: '2rem', marginBottom: '1rem' }} />
+            <div className="skeleton-text skeleton-text--md skeleton-pulse" style={{ width: '40%', marginBottom: '0.75rem' }} />
+            <div className="skeleton-text skeleton-pulse" style={{ width: '90%', marginBottom: '0.5rem' }} />
+            <div className="skeleton-text skeleton-pulse" style={{ width: '85%', marginBottom: '0.5rem' }} />
+            <div className="skeleton-text skeleton-pulse" style={{ width: '70%' }} />
+          </div>
+        </div>
+        <div className="show-view__bottom">
+          <div className="show-view__seasons-scroll">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="season-card season-card--skeleton">
+                <div className="season-card__thumbnail skeleton-pulse" />
+                <div className="skeleton-text skeleton-text--sm skeleton-pulse" style={{ marginTop: '0.5rem' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
+
+/**
+ * Skeleton fallback for SeasonView lazy loading
+ */
+function SeasonViewSkeleton() {
+  return (
+    <div className="season-view season-view--grid season-view--skeleton">
+      <aside className="season-view__sidebar">
+        <div className="season-view__poster skeleton-pulse" />
+        <div className="season-view__selected-info">
+          <div className="skeleton-text skeleton-text--sm skeleton-pulse" />
+          <div className="skeleton-text skeleton-text--lg skeleton-pulse" />
+          <div className="skeleton-text skeleton-text--md skeleton-pulse" />
+        </div>
+      </aside>
+      <main className="season-view__main">
+        <header className="season-view__header">
+          <div className="season-view__breadcrumb">
+            <div className="skeleton-text skeleton-text--lg skeleton-pulse" style={{ width: '200px' }} />
+          </div>
+        </header>
+        <div className="season-view__grid">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="episode-grid-card episode-grid-card--skeleton">
+              <div className="episode-grid-card__thumbnail skeleton-pulse" />
+              <div className="episode-grid-card__info">
+                <div className="skeleton-text skeleton-text--sm skeleton-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/**
+ * Generic loading fallback
+ */
+const LoadingFallback = ShowViewSkeleton;
 
 /**
  * PlexMenuRouter: Loads Plex menu data and routes to appropriate view
@@ -59,9 +126,9 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
     return () => { canceled = true; };
   }, [plexId]);
 
-  // Loading state
+  // Loading state - show appropriate skeleton based on context
   if (routeInfo.loading) {
-    return <LoadingFallback />;
+    return <ShowViewSkeleton />;
   }
 
   // Error state
@@ -78,7 +145,7 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
 
   if (type === 'show') {
     return (
-      <Suspense fallback={<LoadingFallback />}>
+      <Suspense fallback={<ShowViewSkeleton />}>
         <ShowView 
           showId={plexId} 
           depth={depth} 
@@ -91,7 +158,7 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
 
   if (type === 'season') {
     return (
-      <Suspense fallback={<LoadingFallback />}>
+      <Suspense fallback={<SeasonViewSkeleton />}>
         <SeasonView 
           seasonId={plexId} 
           depth={depth} 
