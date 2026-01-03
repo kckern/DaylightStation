@@ -1,0 +1,857 @@
+/**
+ * PlexViews.scss - Netflix-style styling for ShowView and SeasonView
+ * 
+ * Design principles:
+ * - Dark theme with red/white accents (Netflix-inspired)
+ * - Fits within .tv-app container (1024x580px)
+ * - Large thumbnails with smooth hover effects
+ * - Progress bars on watched content
+ * - Readable text hierarchy
+ * 
+ * All sizes relative to container, no vh/vw units.
+ */
+
+// Variables
+$bg-primary: #141414;
+$bg-secondary: #1a1a1a;
+$bg-card: #222;
+$bg-card-hover: #333;
+$text-primary: #fff;
+$text-secondary: #b3b3b3;
+$text-muted: #808080;
+$accent-red: #e50914;
+$accent-blue: #0080ff;
+$progress-bg: rgba(255, 255, 255, 0.2);
+$progress-fill: #e50914;
+$border-radius: 4px;
+$transition-fast: 0.15s ease;
+$transition-normal: 0.25s ease;
+
+// ============================================
+// SHOW VIEW (fits .tv-app container)
+// ============================================
+
+.show-view {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: $bg-primary;
+  color: $text-primary;
+  overflow: hidden;
+
+  &--error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: $text-secondary;
+  }
+}
+
+// Full-screen backdrop - hero image on right side
+.show-view__backdrop {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 65%;
+  height: 100%;
+  background-size: cover;
+  background-position: center 20%;
+  opacity: 0.5;
+  mask-image: linear-gradient(to left, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 50%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 50%, transparent 100%);
+}
+
+.show-view__backdrop-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba($bg-primary, 1) 0%,
+    rgba($bg-primary, 0.95) 30%,
+    rgba($bg-primary, 0.7) 60%,
+    rgba($bg-primary, 0.5) 100%
+  );
+}
+
+// Main content container - flexbox column
+.show-view__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 3% 5% 2%;
+}
+
+// Top section: Poster + Info (takes remaining space)
+.show-view__top {
+  flex: 1;
+  display: flex;
+  gap: 5%;
+  align-items: center;
+  min-height: 0;
+}
+
+.show-view__poster {
+  flex-shrink: 0;
+  height: 85%;
+  aspect-ratio: 2 / 3;
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  }
+}
+
+.show-view__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 55%;
+}
+
+.show-view__title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1.05;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.show-view__meta {
+  font-size: 1rem;
+  color: $text-secondary;
+  margin: 0.25rem 0 0;
+}
+
+.show-view__tags {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.show-view__tag {
+  background: rgba(255, 255, 255, 0.15);
+  color: $text-primary;
+  padding: 0.25rem 0.75rem;
+  border-radius: 2rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.show-view__summary {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0.5rem 0 0;
+  
+  // Clamp to 3 lines
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+// Bottom section: Seasons (fixed height)
+.show-view__bottom {
+  flex-shrink: 0;
+  padding-top: 2%;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 2%;
+}
+
+.show-view__section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 1.5%;
+  color: $text-primary;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+// Horizontal scrolling seasons - center when not overflowing
+.show-view__seasons-scroll {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 1.5rem 0 4px 1rem;
+  scroll-behavior: smooth;
+  justify-content: left; // Center when items fit
+  
+  // Hide scrollbar but allow scroll
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  
+  // When overflowing, align left
+  &:has(.season-card:nth-child(6)) {
+    justify-content: flex-start;
+  }
+}
+
+// Season Card
+.season-card {
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform $transition-normal;
+  
+  &:hover {
+    transform: scale(1.05) translateY(-4px);
+    
+    .season-card__play-overlay {
+      opacity: 1;
+    }
+  }
+  
+  &--active {
+    transform: scale(1.1) translateY(-6px);
+    
+    .season-card__thumbnail {
+      box-shadow: 0 0 0 3px $accent-blue, 0 12px 24px rgba(0, 0, 0, 0.5);
+    }
+    
+    .season-card__play-overlay {
+      opacity: 1;
+    }
+    
+    .season-card__title {
+      color: $accent-blue;
+    }
+  }
+}
+
+.season-card__thumbnail {
+  position: relative;
+  width: 90px;
+  aspect-ratio: 2 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  background: $bg-card;
+  transition: box-shadow $transition-normal, transform $transition-normal;
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.season-card__play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity $transition-fast;
+  
+  svg {
+    width: 28px;
+    height: 28px;
+    color: $text-primary;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  }
+}
+
+.season-card__title {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: center;
+  transition: color $transition-fast;
+}
+
+
+// ============================================
+// SEASON VIEW (Grid Layout - fits .tv-app container)
+// ============================================
+
+.season-view {
+  width: 100%;
+  height: 100%;
+  background: $bg-primary;
+  color: $text-primary;
+  overflow: hidden;
+
+  &--error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: $text-secondary;
+  }
+  
+  // Grid layout with sidebar + main content
+  &--grid {
+    display: flex;
+    gap: 2%;
+    padding: 2% 3%;
+  }
+}
+
+// Left Sidebar: Season Poster + Selected Episode Info
+.season-view__sidebar {
+  flex-shrink: 0;
+  width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.season-view__poster {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.season-view__selected-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.season-view__selected-number {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: $accent-blue;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.season-view__selected-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.season-view__selected-duration {
+  font-size: 0.75rem;
+  color: $text-secondary;
+}
+
+.season-view__selected-progress {
+  font-size: 0.7rem;
+  color: $accent-red;
+  font-weight: 500;
+}
+
+.season-view__selected-desc {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: $text-secondary;
+  margin: 0.25rem 0 0;
+  
+  // Clamp to 5 lines
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+// Main content area: Header + Grid
+.season-view__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+// Season Header with Breadcrumb
+.season-view__header {
+  flex-shrink: 0;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.season-view__breadcrumb {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.season-view__show-title {
+  font-size: 1rem;
+  font-weight: 500;
+  color: $text-secondary;
+}
+
+.season-view__breadcrumb-sep {
+  font-size: 1rem;
+  color: $text-muted;
+}
+
+.season-view__season-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.season-view__count {
+  font-size: 0.8rem;
+  color: $text-muted;
+  margin-left: 0.25rem;
+}
+
+// Episode Grid (4 columns)
+.season-view__grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem 1rem; // Reduced row gap, keep column gap
+  overflow-y: auto;
+  padding: 1rem 0.5rem 2rem 1rem; // Add bottom padding to prevent cutoff
+  
+  // Hide scrollbar but allow scroll
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.2) transparent;
+  
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+  }
+}
+
+// Episode Grid Card
+.episode-grid-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  cursor: pointer;
+  transition: transform $transition-fast;
+  padding-bottom: 0.25rem; // Spacing between cards
+  
+  &:hover {
+    .episode-grid-card__play-overlay {
+      opacity: 1;
+    }
+  }
+  
+  &--active {
+    transform: scale(1.03);
+    
+    .episode-grid-card__thumbnail {
+      box-shadow: 0 0 0 2px $accent-blue, 0 6px 16px rgba(0, 0, 0, 0.4);
+    }
+    
+    .episode-grid-card__play-overlay {
+      opacity: 1;
+    }
+    
+    .episode-grid-card__title {
+      color: $accent-blue;
+    }
+  }
+  
+  &--watched {
+    opacity: 0.6;
+    
+    &:hover, &.episode-grid-card--active {
+      opacity: 1;
+    }
+  }
+}
+
+.episode-grid-card__thumbnail {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: $border-radius;
+  overflow: hidden;
+  background: $bg-card;
+  transition: box-shadow $transition-fast;
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.episode-grid-card__progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: $progress-bg;
+}
+
+.episode-grid-card__progress-fill {
+  height: 100%;
+  background: $progress-fill;
+  transition: width $transition-normal;
+}
+
+.episode-grid-card__play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity $transition-fast;
+  
+  svg {
+    width: 24px;
+    height: 24px;
+    color: $text-primary;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  }
+}
+
+.episode-grid-card__duration {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.85);
+  color: $text-primary;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 0.6rem;
+  font-weight: 500;
+}
+
+.episode-grid-card__info {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.episode-grid-card__number {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: $text-muted;
+  flex-shrink: 0;
+}
+
+.episode-grid-card__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color $transition-fast;
+}
+
+.episode-grid-card__desc {
+  font-size: 0.65rem;
+  line-height: 1.3;
+  color: $text-secondary;
+  margin: 0;
+  
+  // Clamp to 1 line
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+// ============================================
+// Legacy Episode Card (list view - keep for compatibility)
+// ============================================
+
+// Episodes List
+.season-view__episodes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+// Episode Card
+.episode-card {
+  display: flex;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: $bg-secondary;
+  border-radius: $border-radius;
+  cursor: pointer;
+  transition: background $transition-fast, transform $transition-fast, box-shadow $transition-fast;
+  
+  &:hover {
+    background: $bg-card-hover;
+    
+    .episode-card__play-overlay {
+      opacity: 1;
+    }
+  }
+  
+  &--active {
+    background: $bg-card-hover;
+    box-shadow: inset 0 0 0 2px $accent-blue, 0 4px 16px rgba(0, 0, 0, 0.3);
+    transform: translateX(4px);
+    
+    .episode-card__play-overlay {
+      opacity: 1;
+    }
+    
+    .episode-card__title {
+      color: $accent-blue;
+    }
+  }
+  
+  &--watched {
+    opacity: 0.7;
+    
+    &:hover, &.episode-card--active {
+      opacity: 1;
+    }
+  }
+}
+
+.episode-card__thumbnail {
+  position: relative;
+  flex-shrink: 0;
+  width: 140px;
+  aspect-ratio: 16 / 9;
+  border-radius: $border-radius;
+  overflow: hidden;
+  background: $bg-card;
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.episode-card__progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: $progress-bg;
+}
+
+.episode-card__progress-fill {
+  height: 100%;
+  background: $progress-fill;
+  transition: width $transition-normal;
+}
+
+.episode-card__play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity $transition-fast;
+  
+  svg {
+    width: 28px;
+    height: 28px;
+    color: $text-primary;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  }
+}
+
+.episode-card__duration {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  color: $text-primary;
+  padding: 2px 5px;
+  border-radius: 2px;
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.episode-card__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.episode-card__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.episode-card__number {
+  font-size: 1rem;
+  font-weight: 700;
+  color: $text-muted;
+  flex-shrink: 0;
+}
+
+.episode-card__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color $transition-fast;
+}
+
+.episode-card__progress-text {
+  font-size: 0.75rem;
+  color: $accent-red;
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.episode-card__description {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: $text-secondary;
+  margin: 0;
+  
+  // Clamp to 2 lines
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.episode-card__resume-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: $accent-red;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  
+  &::before {
+    content: '▶';
+    font-size: 0.5rem;
+  }
+}
+
+// ============================================
+// SKELETON LOADING STYLES
+// ============================================
+
+@keyframes skeleton-pulse {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.skeleton-pulse {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  background: $bg-card;
+}
+
+.skeleton-text {
+  height: 1em;
+  border-radius: $border-radius;
+  width: 100%;
+  
+  &--sm {
+    height: 0.8em;
+    width: 60%;
+  }
+  
+  &--md {
+    height: 1em;
+    width: 80%;
+  }
+  
+  &--lg {
+    height: 1.2em;
+    width: 90%;
+  }
+}
+
+.season-view--skeleton {
+  .season-view__poster {
+    aspect-ratio: 2 / 3;
+    border-radius: $border-radius;
+  }
+  
+  .season-view__selected-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 1rem;
+  }
+  
+  .episode-grid-card--skeleton {
+    .episode-grid-card__thumbnail {
+      aspect-ratio: 16 / 9;
+      border-radius: $border-radius;
+    }
+    
+    .episode-grid-card__info {
+      padding: 0.5rem 0;
+    }
+    
+    .skeleton-text {
+      width: 70%;
+    }
+  }
+}
+
+.show-view--skeleton {
+  .show-view__backdrop {
+    opacity: 0.3;
+  }
+  
+  .show-view__poster {
+    aspect-ratio: 2 / 3;
+    border-radius: $border-radius;
+    height: 85%;
+  }
+  
+  .show-view__info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .season-card--skeleton {
+    .season-card__thumbnail {
+      aspect-ratio: 2 / 3;
+      border-radius: $border-radius;
+      height: 120px;
+    }
+  }
+}

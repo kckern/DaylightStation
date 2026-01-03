@@ -2,6 +2,7 @@ import React, { useCallback, Suspense, lazy } from 'react';
 import { useMenuNavigationContext } from '../../context/MenuNavigationContext';
 import { TVMenu } from './Menu';
 import { PlayerOverlayLoading } from '../Player/Player';
+import { PlexMenuRouter } from './PlexMenuRouter';
 
 // Lazy load components that may be rendered from the stack
 const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.default || m.Player })));
@@ -27,11 +28,32 @@ export function MenuStack({ rootMenu }) {
   /**
    * Handle selection from any menu level.
    * Maps selection to appropriate action (push menu, play content, open app).
+   * 
+   * For Plex items without known type, PlexMenuRouter will determine the view.
+   * For items with type already set (from season/show responses), route directly.
    */
   const handleSelect = useCallback((selection) => {
     if (!selection) return;
 
-    // Determine content type and push to stack
+    // If type is already known (e.g., from ShowView/SeasonView selecting a child),
+    // we can route directly to specialized views
+    if (selection.list?.plex && selection.type === 'show') {
+      push({ type: 'show-view', props: selection });
+      return;
+    }
+    
+    if (selection.list?.plex && selection.type === 'season') {
+      push({ type: 'season-view', props: selection });
+      return;
+    }
+
+    // For Plex items without known type, use the router to determine view
+    if (selection.list?.plex && !selection.type) {
+      push({ type: 'plex-menu', props: selection });
+      return;
+    }
+
+    // Default handling for non-Plex lists
     if (selection.list || selection.menu) {
       push({ type: 'menu', props: selection });
     } else if (selection.play || selection.queue) {
@@ -73,6 +95,46 @@ export function MenuStack({ rootMenu }) {
           onSelect={handleSelect}
           onEscape={clear}
         />
+      );
+
+    case 'plex-menu':
+      // PlexMenuRouter fetches data, detects type, and renders appropriate view
+      return (
+        <PlexMenuRouter
+          plexId={props.list?.plex}
+          list={props}
+          depth={depth}
+          onSelect={handleSelect}
+          onEscape={clear}
+        />
+      );
+
+    case 'show-view':
+      // Direct render when type is already known
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <PlexMenuRouter
+            plexId={props.list?.plex}
+            list={props}
+            depth={depth}
+            onSelect={handleSelect}
+            onEscape={clear}
+          />
+        </Suspense>
+      );
+
+    case 'season-view':
+      // Direct render when type is already known
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <PlexMenuRouter
+            plexId={props.list?.plex}
+            list={props}
+            depth={depth}
+            onSelect={handleSelect}
+            onEscape={clear}
+          />
+        </Suspense>
       );
 
     case 'player':
