@@ -34,7 +34,7 @@ RUN cd frontend && npm ci
 RUN cd backend && npm ci && chown -R node:node .
 
 # Bundle app source (only invalidates cache when code changes)
-COPY . .
+COPY --chown=node:node . .
 
 # Build frontend (only runs when frontend code or deps change)
 RUN cd frontend && npm run build

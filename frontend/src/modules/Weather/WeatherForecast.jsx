@@ -33,6 +33,16 @@ export default function WeatherForecast({ weatherData }) {
     }
   }, [weatherData]);
 
+  if (!weatherData || temps.length === 0) {
+    return (
+      <div style={{ width: '100%', height: '160px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', padding: '0 10px' }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="skeleton rect" style={{ width: '10%', height: `${Math.random() * 50 + 30}%` }} />
+        ))}
+      </div>
+    );
+  }
+
 const minTemp = Math.min(...temps.map(({temp}) => temp)) - 5;
 const options = {
     credits: {

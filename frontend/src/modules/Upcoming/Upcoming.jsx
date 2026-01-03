@@ -112,6 +112,32 @@ export default function Upcoming() {
     [listItems.length, cycleTimeMs, animationDuration]
   );
 
+  if (listItems.length === 0) {
+      return (
+        <div className="upcoming">
+            <div className="main-panel">
+                <div className="main-panel-items">
+                    <div className="main-panel-item skeleton-container" style={{padding: '20px'}}>
+                        <div className="skeleton text" style={{width: '40%', height: '1.5rem'}}></div>
+                        <div className="skeleton text" style={{width: '30%', height: '1.2rem'}}></div>
+                        <div className="skeleton text" style={{width: '80%', height: '3rem', marginTop: '1rem'}}></div>
+                    </div>
+                </div>
+            </div>
+            <div className="list-panel">
+                <div className="list-panel-items">
+                    {Array.from({length: 4}).map((_, i) => (
+                        <div key={i} className="list-panel-item skeleton-container" style={{display: 'flex', alignItems: 'center', padding: '10px'}}>
+                            <div className="skeleton rect" style={{width: '60px', height: '24px', borderRadius: '12px', marginRight: '10px'}}></div>
+                            <div className="skeleton text" style={{flex: 1, height: '1.2rem'}}></div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+      )
+  }
+
   return (
     <div className="upcoming">
       <MainPanel items={listItems} isMoving={isMoving} />

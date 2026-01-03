@@ -26,7 +26,15 @@ export function FinanceChart()
 
     return () => clearInterval(interval) // Cleanup interval on component unmount
   }, [])
-  if(!monthData) return null;
+  
+  if(!monthData || Object.keys(monthData).length === 0) {
+      return (
+          <div style={{width: '100%', height: '240px', position: 'relative'}}>
+              <div className="skeleton rect" style={{width: '100%', height: '100%'}}></div>
+          </div>
+      )
+  }
+
   const options = buildDayToDayBudgetOptions(monthData, null, {plotLineColor: '#444'});
   if(!options || !options.chart) return null;
   options.chart.backgroundColor = 'transparent';
