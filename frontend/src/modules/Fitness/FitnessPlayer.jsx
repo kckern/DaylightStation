@@ -14,7 +14,7 @@ import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
 
-const DEBUG_FITNESS_INTERACTIONS = true;
+const DEBUG_FITNESS_INTERACTIONS = false;
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
