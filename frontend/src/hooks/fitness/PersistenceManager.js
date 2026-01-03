@@ -1,0 +1,600 @@
+/**
+ * PersistenceManager - Handles fitness session persistence and validation.
+ *
+ * Single Responsibility: Own session data validation, encoding, and API persistence.
+ *
+ * Extracted from FitnessSession as part of the Single Responsibility refactoring
+ * (postmortem-entityid-migration-fitnessapp.md #13).
+ *
+ * Responsibilities:
+ * - Validate session payloads before persistence
+ * - Encode timeline series (RLE compression)
+ * - Transform session data to v2 format
+ * - Call persistence API
+ *
+ * @see /docs/design/fitness-data-flow.md
+ */
+
+import { DaylightAPI } from '../../lib/api.mjs';
+import getLogger from '../../lib/logging/Logger.js';
+
+// -------------------- Constants --------------------
+
+const MAX_SERIALIZED_SERIES_POINTS = 200000;
+
+const ZONE_SYMBOL_MAP = {
+  cool: 'c',
+  active: 'a',
+  warm: 'w',
+  hot: 'h'
+};
+
+// -------------------- Helper Functions --------------------
+
+/**
+ * Round values for persistence.
+ * @param {string} key
+ * @param {unknown} value
+ * @returns {number|null|unknown}
+ */
+const roundValue = (key, value) => {
+  if (value == null) return null;
+  if (typeof value !== 'number') return value;
+  if (!Number.isFinite(value)) return null;
+
+  const k = String(key || '').toLowerCase();
+
+  // Cumulative series - round to 1 decimal
+  if (k.includes('beats') || k.includes('rotations')) {
+    return Math.round(value * 10) / 10;
+  }
+
+  // Integer metrics
+  return Math.round(value);
+};
+
+/**
+ * Format a unix-ms timestamp into a human-readable string.
+ * @param {number} unixMs
+ * @param {string} timezone
+ * @returns {string|null}
+ */
+const toReadable = (unixMs, timezone) => {
+  if (!Number.isFinite(unixMs)) return null;
+  // Dynamic import would be cleaner but we'll use Date for simplicity
+  const date = new Date(unixMs);
+  return date.toISOString().replace('T', ' ').replace('Z', '');
+};
+
+/**
+ * Resolve the timezone used for persistence.
+ * @returns {string}
+ */
+const resolvePersistTimezone = () => {
+  const intl = Intl?.DateTimeFormat?.()?.resolvedOptions?.()?.timeZone;
+  return intl || 'UTC';
+};
+
+/**
+ * Derive the numeric session id used in v2 payloads.
+ * @param {string|null} sessionId
+ * @returns {string|null}
+ */
+const deriveNumericSessionId = (sessionId) => {
+  if (!sessionId) return null;
+  const raw = String(sessionId).trim();
+  if (!raw) return null;
+  return raw.startsWith('fs_') ? raw.slice(3) : raw;
+};
+
+/**
+ * Derive YYYY-MM-DD from a numeric session id (YYYYMMDDHHmmss).
+ * @param {string|null} numericSessionId
+ * @returns {string|null}
+ */
+const deriveSessionDate = (numericSessionId) => {
+  if (!numericSessionId || numericSessionId.length < 8) return null;
+  const y = numericSessionId.slice(0, 4);
+  const m = numericSessionId.slice(4, 6);
+  const d = numericSessionId.slice(6, 8);
+  if (!y || !m || !d) return null;
+  return `${y}-${m}-${d}`;
+};
+
+/**
+ * Sanitize roster entries for persistence.
+ * @param {Array} roster
+ * @returns {Array}
+ */
+const sanitizeRosterForPersist = (roster) => {
+  if (!Array.isArray(roster)) return [];
+  return roster
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const name = typeof entry.name === 'string' ? entry.name : null;
+      const profileId = entry.profileId || entry.id || null;
+      const hrDeviceId = entry.hrDeviceId ?? null;
+      const isPrimary = entry.isPrimary === true;
+      const isGuest = entry.isGuest === true;
+      const baseUserName = entry.baseUserName || null;
+      if (!name && !profileId && !hrDeviceId) return null;
+      return {
+        ...(name ? { name } : {}),
+        ...(profileId ? { profileId } : {}),
+        ...(hrDeviceId ? { hrDeviceId } : {}),
+        ...(isPrimary ? { isPrimary } : {}),
+        ...(isGuest ? { isGuest } : {}),
+        ...(baseUserName ? { baseUserName } : {})
+      };
+    })
+    .filter(Boolean);
+};
+
+/**
+ * Convert roster + assignment snapshots into a keyed participant object.
+ * @param {Array} roster
+ * @param {Array} deviceAssignments
+ * @returns {Record<string, Object>}
+ */
+const buildParticipantsForPersist = (roster, deviceAssignments) => {
+  const participants = {};
+
+  const assignmentBySlug = new Map();
+  if (Array.isArray(deviceAssignments)) {
+    deviceAssignments.forEach((entry) => {
+      const key = entry?.occupantId || entry?.occupantSlug;
+      if (!key) return;
+      assignmentBySlug.set(String(key), entry);
+    });
+  }
+
+  const safeRoster = Array.isArray(roster) ? roster : [];
+  safeRoster.forEach((entry, idx) => {
+    if (!entry || typeof entry !== 'object') return;
+    const name = typeof entry.name === 'string' ? entry.name : null;
+    const participantId = entry.id || entry.profileId || entry.hrDeviceId || `anon-${idx}`;
+    if (!participantId) return;
+
+    const assignment = assignmentBySlug.get(participantId) || null;
+    const hrDevice = entry.hrDeviceId ?? assignment?.deviceId ?? null;
+
+    participants[participantId] = {
+      ...(name ? { display_name: name } : {}),
+      ...(hrDevice != null ? { hr_device: String(hrDevice) } : {}),
+      ...(entry.isPrimary === true ? { is_primary: true } : {}),
+      ...(entry.isGuest === true ? { is_guest: true } : {}),
+      ...(entry.baseUserName ? { base_user: String(entry.baseUserName) } : {})
+    };
+  });
+
+  return participants;
+};
+
+/**
+ * Map series keys for persistence (kebab-case transformation).
+ * @param {Object} series
+ * @returns {Object}
+ */
+const mapSeriesKeysForPersist = (series) => {
+  if (!series || typeof series !== 'object') return {};
+  const mapped = {};
+  Object.entries(series).forEach(([key, value]) => {
+    // Convert underscores to hyphens for consistency
+    const mappedKey = key.replace(/_/g, '-');
+    mapped[mappedKey] = value;
+  });
+  return mapped;
+};
+
+// -------------------- PersistenceManager Class --------------------
+
+/**
+ * @typedef {Object} PersistenceManagerConfig
+ * @property {Function} [persistApi] - Custom API function (defaults to DaylightAPI)
+ * @property {Function} [onLog] - Logging callback
+ * @property {Function} [validateSeriesLengths] - Series length validator
+ */
+
+export class PersistenceManager {
+  /**
+   * @param {PersistenceManagerConfig} [config]
+   */
+  constructor(config = {}) {
+    this._persistApi = config.persistApi || DaylightAPI;
+    this._onLog = config.onLog || null;
+    this._validateSeriesLengths = config.validateSeriesLengths || null;
+    
+    // Track save state
+    this._saveTriggered = false;
+    this._lastSaveAt = 0;
+  }
+
+  /**
+   * Set logging callback.
+   * @param {Function} callback
+   */
+  setLogCallback(callback) {
+    this._onLog = callback;
+  }
+
+  /**
+   * Set series length validator.
+   * @param {Function} validator
+   */
+  setSeriesLengthValidator(validator) {
+    this._validateSeriesLengths = validator;
+  }
+
+  /**
+   * Check if a save is currently in progress.
+   * @returns {boolean}
+   */
+  isSaveInProgress() {
+    return this._saveTriggered;
+  }
+
+  /**
+   * Get timestamp of last save.
+   * @returns {number}
+   */
+  getLastSaveTime() {
+    return this._lastSaveAt;
+  }
+
+  // -------------------- Encoding --------------------
+
+  /**
+   * Encode a single value for persistence.
+   * @param {string} key
+   * @param {unknown} value
+   * @returns {unknown}
+   */
+  _encodeValue(key, value) {
+    if (value == null) return null;
+    if (typeof value === 'number') {
+      return roundValue(key, value);
+    }
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
+    if (key.includes('zone')) {
+      if (typeof normalized === 'string') {
+        return ZONE_SYMBOL_MAP[normalized] || normalized;
+      }
+      return normalized;
+    }
+    return normalized;
+  }
+
+  /**
+   * Run-length encode an array.
+   * @param {string} key
+   * @param {Array} arr
+   * @returns {Array}
+   */
+  _runLengthEncode(key, arr) {
+    const encoded = [];
+    for (let i = 0; i < arr.length; i += 1) {
+      const value = this._encodeValue(key, arr[i]);
+      const last = encoded[encoded.length - 1];
+
+      // Compact RLE:
+      // - bare value for count=1
+      // - [value, count] for repeats
+      if (Array.isArray(last) && last[0] === value) {
+        last[1] += 1;
+      } else if (last === value) {
+        encoded[encoded.length - 1] = [value, 2];
+      } else {
+        encoded.push(value);
+      }
+    }
+    return encoded;
+  }
+
+  /**
+   * Encode all series for persistence.
+   * @param {Object} series
+   * @param {number} [tickCount]
+   * @returns {{ encodedSeries: Object }}
+   */
+  encodeSeries(series = {}, tickCount = null) {
+    const encodedSeries = {};
+    Object.entries(series).forEach(([key, arr]) => {
+      if (!Array.isArray(arr)) {
+        encodedSeries[key] = arr;
+        return;
+      }
+
+      // Empty-series filtering: do not persist all-null/empty series
+      if (!arr.length || arr.every((v) => v == null)) {
+        return;
+      }
+
+      const rle = this._runLengthEncode(key, arr);
+      encodedSeries[key] = JSON.stringify(rle);
+    });
+    return { encodedSeries };
+  }
+
+  // -------------------- Validation --------------------
+
+  /**
+   * Validate session payload before persistence.
+   * @param {Object} sessionData
+   * @returns {{ ok: boolean, reason?: string, endTime?: number, durationMs?: number }}
+   */
+  validateSessionPayload(sessionData) {
+    if (!sessionData) return { ok: false, reason: 'missing-session' };
+    
+    const { startTime } = sessionData;
+    if (!Number.isFinite(startTime)) return { ok: false, reason: 'invalid-startTime' };
+
+    let endTime = Number(sessionData.endTime);
+    if (!Number.isFinite(endTime)) {
+      endTime = Date.now();
+    }
+    if (endTime <= startTime) {
+      endTime = startTime + 1;
+    }
+    sessionData.endTime = endTime;
+    sessionData.durationMs = Math.max(0, endTime - startTime);
+
+    const roster = Array.isArray(sessionData.roster) ? sessionData.roster : [];
+    const series = sessionData.timeline?.series || {};
+    const tickCount = Number(sessionData.timeline?.timebase?.tickCount) || 0;
+    const hasUserSeries = Object.keys(series).some((key) => typeof key === 'string' && key.startsWith('user:'));
+    const deviceAssignments = Array.isArray(sessionData.deviceAssignments) ? sessionData.deviceAssignments : [];
+
+    if (hasUserSeries && roster.length === 0) {
+      return { ok: false, reason: 'roster-required' };
+    }
+    if (hasUserSeries && deviceAssignments.length === 0) {
+      return { ok: false, reason: 'device-assignments-required' };
+    }
+
+    // Spam prevention - reject short, empty sessions
+    const hasVoiceMemos = Array.isArray(sessionData.voiceMemos) && sessionData.voiceMemos.length > 0;
+    const hasEvents = Array.isArray(sessionData.timeline?.events) && sessionData.timeline.events.length > 0;
+    
+    if (sessionData.durationMs < 10000 && !hasUserSeries && !hasVoiceMemos && !hasEvents) {
+      if (roster.length === 0 || sessionData.durationMs < 1000) {
+        return { ok: false, reason: 'session-too-short-and-empty' };
+      }
+    }
+
+    // Deduplicate challenge events
+    if (Array.isArray(sessionData.timeline?.events)) {
+      const seen = new Set();
+      sessionData.timeline.events = sessionData.timeline.events.filter((evt) => {
+        if (!evt || typeof evt !== 'object') return false;
+        const type = evt.type || evt.eventType || null;
+        if (!type) return false;
+        const tickIndex = Number.isFinite(evt.tickIndex) ? evt.tickIndex : null;
+        const challengeId = evt.data?.challengeId || evt.data?.challenge_id || evt.data?.challenge || null;
+        const key = `${type}|${tickIndex}|${challengeId || ''}`;
+        if (type.startsWith('challenge_')) {
+          if (seen.has(key)) return false;
+          seen.add(key);
+        }
+        return true;
+      });
+    }
+
+    // Require minimum ticks
+    if (tickCount < 3) {
+      return { ok: false, reason: 'insufficient-ticks', tickCount };
+    }
+
+    // Validate series lengths
+    if (this._validateSeriesLengths) {
+      const { ok: lengthsOk, issues } = this._validateSeriesLengths(sessionData.timeline?.timebase || {}, series);
+      if (!lengthsOk) {
+        return { ok: false, reason: 'series-tick-mismatch', issues };
+      }
+    }
+
+    // Check total points
+    let totalPoints = 0;
+    Object.values(series).forEach((entry) => {
+      if (Array.isArray(entry)) {
+        totalPoints += entry.length;
+      }
+    });
+    if (totalPoints > MAX_SERIALIZED_SERIES_POINTS) {
+      return { ok: false, reason: 'series-size-cap', totalPoints };
+    }
+
+    return { ok: true, endTime, durationMs: sessionData.durationMs };
+  }
+
+  // -------------------- Persistence --------------------
+
+  /**
+   * Persist session data to the API.
+   * @param {Object} sessionData
+   * @param {Object} [options]
+   * @param {boolean} [options.force=false]
+   * @returns {boolean} - Whether persistence was initiated
+   */
+  persistSession(sessionData, { force = false } = {}) {
+    if (!sessionData) {
+      getLogger().warn('fitness.persistence.no_data');
+      return false;
+    }
+    if (this._saveTriggered && !force) {
+      getLogger().warn('fitness.persistence.save_in_progress');
+      return false;
+    }
+
+    const validation = this.validateSessionPayload(sessionData);
+    getLogger().warn('fitness.persistence.validation', { validation });
+    if (!validation?.ok) {
+      this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
+      return false;
+    }
+
+    // Build persistence payload
+    const timezone = resolvePersistTimezone();
+    const numericSessionId = deriveNumericSessionId(sessionData.sessionId);
+    const sessionDate = deriveSessionDate(numericSessionId);
+    const startReadable = toReadable(sessionData.startTime, timezone);
+    const endReadable = toReadable(sessionData.endTime, timezone);
+    const durationSeconds = Number.isFinite(sessionData.durationMs)
+      ? Math.round(sessionData.durationMs / 1000)
+      : null;
+
+    const sanitizedRoster = sanitizeRosterForPersist(sessionData.roster);
+    const participants = buildParticipantsForPersist(sanitizedRoster, sessionData.deviceAssignments);
+
+    const persistSessionData = {
+      ...sessionData,
+      version: 2,
+      timezone,
+      startTime: startReadable,
+      endTime: endReadable,
+      session: {
+        ...(numericSessionId ? { id: String(numericSessionId) } : {}),
+        ...(sessionDate ? { date: sessionDate } : {}),
+        ...(startReadable ? { start: startReadable } : {}),
+        ...(endReadable ? { end: endReadable } : {}),
+        ...(durationSeconds != null ? { duration_seconds: durationSeconds } : {})
+      },
+      participants
+    };
+
+    if (persistSessionData.timeline && typeof persistSessionData.timeline === 'object') {
+      persistSessionData.timeline = { ...persistSessionData.timeline };
+    }
+
+    // Convert event timestamps and build v2 events array
+    const v2Events = this._buildV2Events(sessionData, timezone);
+
+    // Move voice memos into events
+    const voiceMemos = Array.isArray(sessionData.voiceMemos) ? sessionData.voiceMemos : [];
+    voiceMemos.forEach((memo) => {
+      if (!memo || typeof memo !== 'object') return;
+      const rawTs = Number(memo.createdAt ?? memo.startedAt ?? memo.endedAt);
+      const at = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : null;
+      v2Events.push({
+        ...(at ? { at } : {}),
+        type: 'voice_memo',
+        data: {
+          id: memo.memoId ?? null,
+          duration_seconds: Number.isFinite(memo.durationSeconds) ? memo.durationSeconds : null,
+          transcript: memo.transcriptClean ?? memo.transcript ?? null
+        }
+      });
+    });
+
+    if (v2Events.length) {
+      persistSessionData.events = v2Events;
+    }
+
+    // Restructure timeline with v2 fields
+    if (persistSessionData.timeline && typeof persistSessionData.timeline === 'object') {
+      const intervalMs = Number(persistSessionData.timeline?.timebase?.intervalMs);
+      const tickCount = Number(persistSessionData.timeline?.timebase?.tickCount);
+      persistSessionData.timeline.interval_seconds = Number.isFinite(intervalMs) ? Math.round(intervalMs / 1000) : null;
+      persistSessionData.timeline.tick_count = Number.isFinite(tickCount) ? tickCount : null;
+      persistSessionData.timeline.encoding = 'rle';
+    }
+
+    // Remove legacy duplicates
+    delete persistSessionData.roster;
+    delete persistSessionData.voiceMemos;
+    delete persistSessionData.deviceAssignments;
+    delete persistSessionData.timebase;
+
+    // Encode series
+    if (persistSessionData.timeline?.series) {
+      const tickCount = Number(persistSessionData.timeline?.timebase?.tickCount);
+      const rawSeries = persistSessionData.timeline.series;
+      const rawKeys = rawSeries && typeof rawSeries === 'object' ? Object.keys(rawSeries) : [];
+      
+      this._log('persist_series_encode_before', {
+        sessionId: persistSessionData.sessionId,
+        seriesCount: rawKeys.length,
+        tickCount,
+        sampleKeys: rawKeys.slice(0, 5)
+      });
+
+      const { encodedSeries } = this.encodeSeries(persistSessionData.timeline.series, tickCount);
+      const mappedSeries = mapSeriesKeysForPersist(encodedSeries);
+      const encodedKeys = Object.keys(mappedSeries || {});
+      const droppedKeys = rawKeys.filter((key) => !Object.prototype.hasOwnProperty.call(encodedSeries || {}, key));
+      
+      this._log('persist_series_encode_after', {
+        sessionId: persistSessionData.sessionId,
+        encodedCount: encodedKeys.length,
+        droppedKeys: droppedKeys.slice(0, 5),
+        wasEmpty: encodedKeys.length === 0,
+        tickCount
+      });
+
+      persistSessionData.timeline.series = mappedSeries;
+    }
+
+    // Log pre-API state
+    const seriesSample = persistSessionData.timeline?.series
+      ? Object.entries(persistSessionData.timeline.series).slice(0, 2)
+      : [];
+    getLogger().warn('fitness.persistence.pre_api', {
+      sessionId: persistSessionData.sessionId,
+      hasTimeline: !!persistSessionData.timeline,
+      seriesKeys: persistSessionData.timeline?.series ? Object.keys(persistSessionData.timeline.series).length : 0,
+      seriesSample: seriesSample.map(([k, v]) => [k, typeof v, v?.substring?.(0, 50)])
+    });
+
+    // Persist
+    this._lastSaveAt = Date.now();
+    this._saveTriggered = true;
+
+    this._persistApi('api/fitness/save_session', { sessionData: persistSessionData }, 'POST')
+      .then(resp => {
+        // Successfully saved
+      })
+      .catch(err => {
+        getLogger().error('fitness.persistence.failed', { error: err.message });
+      })
+      .finally(() => {
+        this._saveTriggered = false;
+      });
+
+    return true;
+  }
+
+  // -------------------- Private Helpers --------------------
+
+  _log(eventName, data) {
+    if (this._onLog) {
+      this._onLog(eventName, data);
+    }
+  }
+
+  _buildV2Events(sessionData, timezone) {
+    const v2Events = [];
+    if (sessionData.timeline && Array.isArray(sessionData.timeline.events)) {
+      sessionData.timeline.events.forEach((evt) => {
+        if (!evt || typeof evt !== 'object') return;
+        const rawTs = Number(evt.timestamp);
+        const readableTs = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : null;
+        if (readableTs) {
+          v2Events.push({
+            at: readableTs,
+            type: evt.type,
+            data: evt.data ?? null
+          });
+        }
+      });
+    }
+    return v2Events;
+  }
+}
+
+/**
+ * Create a PersistenceManager instance.
+ * @param {PersistenceManagerConfig} [config]
+ * @returns {PersistenceManager}
+ */
+export const createPersistenceManager = (config) => new PersistenceManager(config);
+
+export default PersistenceManager;

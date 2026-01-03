@@ -66,8 +66,18 @@ const hasNumericSample = (metrics = {}) => {
 const isValidTickKey = (key) => {
   if (!key || typeof key !== 'string') return false;
   const segments = key.split(':');
-  if (segments.length !== 3) return false;
-  return segments.every((segment) => !!segment && /^[a-z0-9_]+$/i.test(segment));
+
+  // user:<userId>:<metric> and device:<deviceId>:<metric>
+  if (segments.length === 3) {
+    return segments.every((segment) => !!segment && /^[a-z0-9_-]+$/i.test(segment));
+  }
+
+  // global:<metric>
+  if (segments.length === 2 && segments[0] === 'global') {
+    return segments.every((segment) => !!segment && /^[a-z0-9_-]+$/i.test(segment));
+  }
+
+  return false;
 };
 
 /**
@@ -135,19 +145,15 @@ export class MetricsRecorder {
     const intervalSeconds = this._intervalMs / 1000;
 
     const assignMetric = (key, value) => {
-      if (value != null && key) tickPayload[key] = value;
+      if (!key) return;
+      if (typeof value === 'number' && Number.isNaN(value)) return;
+
+      // Preserve explicit nulls so consumers can represent dropouts and missing samples.
+      tickPayload[key] = value === undefined ? null : value;
     };
 
-    // Stage user entries
+    // Stage user entries (only once we have a stable participant id)
     const userMetricMap = new Map();
-    const users = userManager.getAllUsers();
-    
-    users.forEach((user) => {
-      const staged = this._stageUserEntry(user);
-      if (staged) {
-        userMetricMap.set(staged.userId, staged);
-      }
-    });
 
     // Process devices
     const devices = deviceManager.getAllDevices();

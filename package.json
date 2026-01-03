@@ -42,9 +42,13 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:harvest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/harvest.test.mjs",
     "test:harvest:integration": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/harvest.integration.test.mjs",
+      "test:frontend": "NODE_OPTIONS=--experimental-vm-modules jest --config frontend/jest.config.cjs --runInBand",
     "test:all:harvest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/harvest*.test.mjs",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
-    "test:nutribot": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/chatbots/nutribot/_test"
+    "test:nutribot": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand backend/chatbots/nutribot/_test",
+    "audit:logging": "node scripts/audit-logging-code.mjs",
+    "audit:logging:frontend": "node scripts/audit-logging-code.mjs --baseDir=frontend/src",
+    "audit:logging:backend": "node scripts/audit-logging-code.mjs --baseDir=backend"
   }
 }

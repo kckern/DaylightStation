@@ -2,6 +2,7 @@
 // WebSocket server
 
 import { WebSocketServer } from 'ws';
+import crypto from 'crypto';
 import { createLogger } from '../lib/logging/logger.js';
 import { serializeError } from '../lib/logging/utils.js';
 import { ingestFrontendLogs } from '../lib/logging/ingestion.js';
@@ -25,6 +26,11 @@ export function createWebsocketServer(server) {
         ip: req?.socket?.remoteAddress,
         userAgent: req?.headers?.['user-agent']
       };
+      
+      ws._busMeta = {
+        subscriptions: new Set(), // Default: No subscriptions (must opt-in) Phase 1
+        id: crypto.randomUUID()
+      };
 
       //logger.info('WebSocket connection established', { ip: ws._clientMeta.ip });
       
@@ -34,6 +40,12 @@ export function createWebsocketServer(server) {
         try {
           const data = JSON.parse(rawMessage);
           
+          // Handle Bus Commands (subscribe/unsubscribe)
+          if (data.type === 'bus_command') {
+            handleBusCommand(ws, data);
+            return;
+          }
+
           // Check if message is from fitness controller
           if (data.source === 'fitness' || data.source === 'fitness-simulator') {
             // Broadcast to all connected UI clients with fitness topic
@@ -96,6 +108,36 @@ export function restartWebsocketServer() {
   }
 }
 
+/**
+ * Handles subscription commands from clients
+ */
+function handleBusCommand(ws, data) {
+  const { action, topic, topics } = data;
+  const targetTopics = topics || (topic ? [topic] : []);
+  
+  if (!ws._busMeta) {
+    ws._busMeta = { subscriptions: new Set(['*']) };
+  }
+
+  if (action === 'subscribe') {
+    targetTopics.forEach(t => ws._busMeta.subscriptions.add(t));
+    logger.info('Client subscribed to topics', { id: ws._busMeta.id, topics: targetTopics });
+  } else if (action === 'unsubscribe') {
+    targetTopics.forEach(t => ws._busMeta.subscriptions.delete(t));
+    logger.info('Client unsubscribed from topics', { id: ws._busMeta.id, topics: targetTopics });
+  } else if (action === 'clear_subscriptions') {
+    ws._busMeta.subscriptions.clear();
+    logger.info('Client cleared all subscriptions', { id: ws._busMeta.id });
+  }
+  
+  // Acknowledge the command
+  ws.send(JSON.stringify({
+    type: 'bus_ack',
+    action,
+    currentSubscriptions: Array.from(ws._busMeta.subscriptions)
+  }));
+}
+
 export function broadcastToWebsockets(data) {
   if (!wssNav) {
     logger.warn('websocket.broadcast.server_not_initialized');
@@ -106,10 +148,20 @@ export function broadcastToWebsockets(data) {
   const clientCount = wssNav.clients.size;
   let sentCount = 0;
   
+  const topic = data.topic || 'legacy';
+  
   wssNav.clients.forEach((client) => {
     if (client.readyState === client.OPEN) {
-      client.send(msg);
-      sentCount++;
+      const subs = client._busMeta?.subscriptions;
+      
+      // Routing decision:
+      // 1. Client has explicit subscription to the topic
+      // 2. Client has wildcard '*' subscription
+      // 3. (Backward compatibility) Message has no topic and client has '*'
+      if (subs && (subs.has(topic) || subs.has('*'))) {
+        client.send(msg);
+        sentCount++;
+      }
     }
   });
   

@@ -69,6 +69,7 @@ class WebSocketService {
       this.connecting = false;
       this.reconnectAttempts = 0;
       this._notifyStatusListeners();
+      this._syncSubscriptions(); // Inform backend of our interests
       this._flushMessageQueue();
     };
 
@@ -162,6 +163,43 @@ class WebSocketService {
   }
 
   /**
+   * Synchronize current subscriptions with the backend
+   */
+  _syncSubscriptions() {
+    if (!this.connected || this.ws?.readyState !== WebSocket.OPEN) return;
+
+    const topics = new Set();
+    let needsWildcard = false;
+
+    for (const { filter } of this.subscribers.values()) {
+      if (typeof filter === 'string') {
+        topics.add(filter);
+      } else if (Array.isArray(filter)) {
+        filter.forEach(t => topics.add(t));
+      } else if (filter === null || filter === undefined) {
+        needsWildcard = true;
+      } else if (typeof filter === 'function') {
+        // Predicate functions currently require a wildcard because we can't 
+        // evaluate them on the backend. Phase 3 will migrate these to topics.
+        needsWildcard = true;
+      }
+    }
+
+    if (needsWildcard) {
+      topics.add('*');
+    }
+
+    if (topics.size > 0) {
+      this.send({
+        type: 'bus_command',
+        action: 'subscribe',
+        topics: Array.from(topics)
+      });
+      console.log('[WebSocketService] Synced subscriptions:', Array.from(topics));
+    }
+  }
+
+  /**
    * Send data through the WebSocket
    * @param {object|string} data - Data to send (will be JSON stringified if object)
    */
@@ -193,6 +231,9 @@ class WebSocketService {
 
     this.subscribers.set(key, { filter, callback });
 
+    // Inform backend of new subscription interests
+    this._syncSubscriptions();
+
     // Auto-connect on first subscription
     if (this.subscribers.size === 1 && !this.connected && !this.connecting) {
       this.connect();
@@ -201,6 +242,7 @@ class WebSocketService {
     // Return unsubscribe function
     return () => {
       this.subscribers.delete(key);
+      this._syncSubscriptions(); // Update backend after unsubscription
     };
   }
 

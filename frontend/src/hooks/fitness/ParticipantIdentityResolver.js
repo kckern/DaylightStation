@@ -136,6 +136,14 @@ export class ParticipantIdentityResolver {
   getSeriesKey(deviceId, metric) {
     const resolved = this.resolveByDevice(deviceId);
     if (!resolved) return null;
+    if (resolved.source === 'device') {
+      getLogger().warn('identity_resolver.series_key_device_fallback', {
+        deviceId: String(deviceId),
+        metric,
+        resolvedId: resolved.id
+      });
+      return null;
+    }
     return `user:${resolved.id}:${metric}`;
   }
 

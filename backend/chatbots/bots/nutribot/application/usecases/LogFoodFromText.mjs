@@ -84,8 +84,8 @@ export class LogFoodFromText {
         // Reuse existing message (voice flow already showed transcription)
         statusMsgId = existingMessageId;
       } else {
-        // Create new status message with input preview
-        const truncatedText = text.length > 100 ? text.substring(0, 100) + '...' : text;
+        // Create new status message with input preview (allow up to 300 chars for voice transcriptions)
+        const truncatedText = text.length > 300 ? text.substring(0, 300) + '...' : text;
         const result = await this.#messagingGateway.sendMessage(
           conversationId,
           `🔍 Analyzing...\n💬 "${truncatedText}"`,
@@ -176,11 +176,37 @@ export class LogFoodFromText {
       const foodList = this.#formatFoodList(foodItems);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
-      await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
-        text: `${dateHeader}\n\n${foodList}`,
-        choices: buttons,
-        inline: true,
-      });
+      try {
+        await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
+          text: `${dateHeader}\n\n${foodList}`,
+          choices: buttons,
+          inline: true,
+        });
+      } catch (updateError) {
+        // Data is saved but message update failed - send a recovery message
+        this.#logger.warn('logText.updateMessage.failed', { 
+          conversationId, 
+          error: updateError.message,
+          code: updateError.code,
+          nutrilogId: nutriLog.id 
+        });
+        
+        // Try to send a NEW message with the results and action buttons
+        try {
+          await this.#messagingGateway.sendMessage(
+            conversationId,
+            `✅ Food logged! (message update failed)\n\n${dateHeader}\n\n${foodList}`,
+            { reply_markup: { inline_keyboard: buttons } }
+          );
+        } catch (recoveryError) {
+          // Even recovery failed - log but don't throw since data is saved
+          this.#logger.error('logText.recovery.failed', { 
+            conversationId, 
+            error: recoveryError.message,
+            nutrilogId: nutriLog.id 
+          });
+        }
+      }
 
       // 8. Delete original user message after analysis is complete (with retry)
       if (messageId) {

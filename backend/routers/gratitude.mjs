@@ -498,6 +498,7 @@ gratitudeRouter.get('/new', (req, res) => {
 
         // Create WebSocket payload
         const payload = {
+            topic: 'gratitude',
             item: itemData,
             timestamp: new Date().toISOString(),
             type: 'gratitude_item',
