@@ -156,22 +156,30 @@ export class LayoutManager {
 
   /**
    * Simple iterative collision resolution - push overlapping avatars apart vertically.
-   * @param {Array} avatars - Avatars with x, y positions
-   * @returns {Array} Avatars with offsetX, offsetY applied
+   * Uses CLAMPED positions for collision detection, but preserves original x/y.
+   * @param {Array} avatars - Avatars with x, y positions (and optional _clampOffsetX/Y)
+   * @returns {Array} Avatars with offsetX, offsetY applied (including clamp offsets)
    */
   _resolveCollisionsSimple(avatars) {
     if (!avatars || avatars.length === 0) return [];
     if (avatars.length === 1) {
-      return [{ ...avatars[0], offsetX: 0, offsetY: 0 }];
+      const a = avatars[0];
+      return [{ 
+        ...a, 
+        offsetX: a._clampOffsetX || 0, 
+        offsetY: a._clampOffsetY || 0 
+      }];
     }
 
     const DIAMETER = this.avatarRadius * 2;
     const MIN_GAP = 10; // Minimum gap between avatar edges
     const MIN_DISTANCE = DIAMETER + MIN_GAP; // 70px for radius 30
 
-    // Sort by Y position (top to bottom), then by value (higher values first if same Y)
+    // Sort by CLAMPED Y position (top to bottom), then by value (higher values first if same Y)
     const sorted = [...avatars].sort((a, b) => {
-      const yDiff = a.y - b.y;
+      const aClampedY = a.y + (a._clampOffsetY || 0);
+      const bClampedY = b.y + (b._clampOffsetY || 0);
+      const yDiff = aClampedY - bClampedY;
       if (Math.abs(yDiff) < 10) {
         // Nearly same Y, sort by value descending so higher values stay on top
         return (b.value || 0) - (a.value || 0);
@@ -183,23 +191,30 @@ export class LayoutManager {
     
     for (let i = 0; i < sorted.length; i++) {
       const avatar = sorted[i];
-      let offsetY = 0;
+      const clampOffsetX = avatar._clampOffsetX || 0;
+      const clampOffsetY = avatar._clampOffsetY || 0;
+      let collisionOffsetY = 0;
+      
+      // Use CLAMPED X for collision detection (where avatar will actually render)
+      const avatarClampedX = avatar.x + clampOffsetX;
       
       // Check against all already-placed avatars
       for (const placed of result) {
-        const placedY = placed.y + (placed.offsetY || 0);
-        const currentY = avatar.y + offsetY;
-        const dx = Math.abs(avatar.x - placed.x);
-        const dy = currentY - placedY;
+        const placedClampedX = placed.x + (placed._clampOffsetX || 0);
+        const placedFinalY = placed.y + (placed.offsetY || 0);
+        const currentFinalY = avatar.y + clampOffsetY + collisionOffsetY;
         
-        // Only check collision if X positions are similar (within 2x radius)
+        const dx = Math.abs(avatarClampedX - placedClampedX);
+        const dy = currentFinalY - placedFinalY;
+        
+        // Only check collision if CLAMPED X positions are similar (within 2x radius)
         if (dx < MIN_DISTANCE) {
           // If vertically within collision range, push down
           if (Math.abs(dy) < MIN_DISTANCE) {
             // Calculate how much to push down to avoid collision
             const pushNeeded = MIN_DISTANCE - dy;
             if (pushNeeded > 0) {
-              offsetY += pushNeeded;
+              collisionOffsetY += pushNeeded;
             }
           }
         }
@@ -207,8 +222,9 @@ export class LayoutManager {
       
       result.push({
         ...avatar,
-        offsetX: 0,
-        offsetY
+        // Merge clamp offset + collision offset into final offsets
+        offsetX: clampOffsetX,
+        offsetY: clampOffsetY + collisionOffsetY
       });
     }
 
@@ -268,17 +284,18 @@ export class LayoutManager {
   }
 
   /**
-   * Clamp base positions of elements BEFORE collision detection.
-   * This modifies x/y directly (not offsets) so strategies operate on clamped positions.
-   * Stores original position in _originalX/_originalY for connector generation.
+   * Compute bounds clamping as OFFSETS, preserving original x/y for line alignment.
+   * This ensures avatars render at line endpoints, with offsets applied only when needed.
    * @param {Array} elements - Elements with x, y
    * @param {'avatar'|'badge'} type - Element type
+   * @returns {Array} Elements with _clampOffsetX/_clampOffsetY computed
    */
   _clampBasePositions(elements, type) {
     const { width, height, margin } = this.bounds;
     const radius = type === 'avatar' ? this.avatarRadius : this.badgeRadius;
     
     // For avatars, account for label on the right side (coin count)
+    // Only apply label margin if element would exceed bounds
     const labelMargin = type === 'avatar' ? 50 : 0;
     
     // Calculate the safe zone where element centers can be placed
@@ -291,15 +308,18 @@ export class LayoutManager {
       const originalX = el.x;
       const originalY = el.y;
       
-      // Clamp to safe zone
+      // Compute clamped position
       const clampedX = Math.max(minX, Math.min(maxX, originalX));
       const clampedY = Math.max(minY, Math.min(maxY, originalY));
       
-      const wasClampedX = clampedX !== originalX;
-      const wasClampedY = clampedY !== originalY;
+      // Calculate offset needed (negative = move left)
+      const clampOffsetX = clampedX - originalX;
+      const clampOffsetY = clampedY - originalY;
       
-      if (!wasClampedX && !wasClampedY) {
-        return el; // No clamping needed
+      const needsClamp = clampOffsetX !== 0 || clampOffsetY !== 0;
+      
+      if (!needsClamp) {
+        return el; // No clamping needed, pass through unchanged
       }
       
       // If we're clamping to the right edge, switch label to left side
@@ -310,10 +330,12 @@ export class LayoutManager {
       
       return {
         ...el,
-        x: clampedX,
-        y: clampedY,
-        _originalX: originalX, // Store for connector generation
-        _originalY: originalY,
+        // PRESERVE original x/y - this is where the line endpoint is
+        x: originalX,
+        y: originalY,
+        // Store clamp offset separately - will be merged into offsetX/Y later
+        _clampOffsetX: clampOffsetX,
+        _clampOffsetY: clampOffsetY,
         labelPosition,
         _baseClamped: true // Debug flag
       };

@@ -643,6 +643,16 @@ export class GovernanceEngine {
   }
 
   // Main evaluation loop, called periodically or on data change
+  /**
+   * Evaluate governance rules against current session state.
+   * 
+   * @param {Object} params
+   * @param {string[]} params.activeParticipants - Array of userIds (stable, lowercase)
+   * @param {Record<string, string>} params.userZoneMap - Map userId -> zoneId
+   * @param {Record<string, number>} params.zoneRankMap - Map zoneId -> rank (higher is more intense)
+   * @param {Record<string, Object>} params.zoneInfoMap - Map zoneId -> zone metadata
+   * @param {number} params.totalCount - Total number of active participants
+   */
   evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount } = {}) {
     const now = Date.now();
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
@@ -658,13 +668,14 @@ export class GovernanceEngine {
     if (!activeParticipants && this.session?.roster) {
       const roster = this.session.roster || [];
       activeParticipants = roster
-        .filter(entry => entry.isActive !== false && entry.name)
-        .map(entry => entry.name);
+        .filter((entry) => entry.isActive !== false && (entry.id || entry.profileId))
+        .map((entry) => entry.id || entry.profileId);
 
       userZoneMap = {};
-      roster.forEach(entry => {
-        if (entry.name) {
-          userZoneMap[entry.name] = entry.zoneId || null;
+      roster.forEach((entry) => {
+        const participantId = entry.id || entry.profileId;
+        if (participantId) {
+          userZoneMap[participantId] = entry.zoneId || null;
         }
       });
 
@@ -889,22 +900,26 @@ export class GovernanceEngine {
     if (!Number.isFinite(requiredRank)) return null;
 
     const metUsers = [];
-    activeParticipants.forEach((name) => {
-      // Input 'name' and 'userZoneMap' keys are now consistently normalized (lowercase)
-      // from FitnessSession.updateSnapshot to ensure matching.
-      const key = normalizeName(name);
-      const participantZoneId = userZoneMap[key];
+    activeParticipants.forEach((participantId) => {
+      const participantZoneId = userZoneMap[participantId];
+      if (!participantZoneId) {
+        getLogger().warn('participant.zone.lookup_failed', {
+          key: participantId,
+          availableKeys: Object.keys(userZoneMap),
+          caller: 'GovernanceEngine._evaluateZoneRequirement'
+        });
+      }
       const participantRank = participantZoneId && Number.isFinite(zoneRankMap[participantZoneId])
         ? zoneRankMap[participantZoneId]
         : 0;
       if (participantRank >= requiredRank) {
-        metUsers.push(name);
+        metUsers.push(participantId);
       }
     });
 
     const requiredCount = this._normalizeRequiredCount(rule, totalCount);
     const satisfied = metUsers.length >= requiredCount;
-    const missingUsers = activeParticipants.filter((name) => !metUsers.includes(name));
+    const missingUsers = activeParticipants.filter((participantId) => !metUsers.includes(participantId));
     const zoneInfo = zoneInfoMap[zoneId];
 
     return {
@@ -1165,14 +1180,21 @@ export class GovernanceEngine {
         const requiredRank = zoneRankMap[zoneId] || 0;
         
         const metUsers = [];
-        activeParticipants.forEach(name => {
-            const pZone = userZoneMap[name];
+      activeParticipants.forEach((participantId) => {
+        const pZone = userZoneMap[participantId];
+        if (!pZone) {
+          getLogger().warn('participant.zone.lookup_failed', {
+          key: participantId,
+          availableKeys: Object.keys(userZoneMap),
+          caller: 'GovernanceEngine.buildChallengeSummary'
+          });
+        }
             const pRank = pZone && Number.isFinite(zoneRankMap[pZone]) ? zoneRankMap[pZone] : 0;
-            if (pRank >= requiredRank) metUsers.push(name);
+        if (pRank >= requiredRank) metUsers.push(participantId);
         });
         
         const satisfied = metUsers.length >= challenge.requiredCount;
-        const missingUsers = activeParticipants.filter(n => !metUsers.includes(n));
+      const missingUsers = activeParticipants.filter((participantId) => !metUsers.includes(participantId));
         
         return {
             satisfied,

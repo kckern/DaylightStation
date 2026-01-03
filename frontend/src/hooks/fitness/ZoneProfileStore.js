@@ -84,7 +84,7 @@ export class ZoneProfileStore {
 
   getProfileMap() {
     return new Map(
-      Array.from(this._profiles.entries()).map(([slug, profile]) => [slug, this.#cloneProfile(profile)])
+      Array.from(this._profiles.entries()).map(([id, profile]) => [id, this.#cloneProfile(profile)])
     );
   }
 
@@ -141,6 +141,7 @@ export class ZoneProfileStore {
 
     return {
       id: userId,
+      slug: userId,
       name: user.name,
       displayName: user.displayName || user.name,
       groupLabel: user.groupLabel || null,
@@ -190,13 +191,13 @@ export class ZoneProfileStore {
 
   #computeSignature(map) {
     const fingerprint = Array.from(map.values()).map((profile) => ({
-      slug: profile.slug,
+      slug: profile.slug || profile.id,
       hr: profile.heartRate,
       zone: profile.currentZoneId,
       progress: profile.progress,
       config: profile.zoneConfig.map((zone) => `${zone.id}:${zone.min ?? ''}`).join('|')
     }));
-    fingerprint.sort((a, b) => a.slug.localeCompare(b.slug));
+    fingerprint.sort((a, b) => String(a.slug || '').localeCompare(String(b.slug || '')));
     return JSON.stringify(fingerprint);
   }
 }

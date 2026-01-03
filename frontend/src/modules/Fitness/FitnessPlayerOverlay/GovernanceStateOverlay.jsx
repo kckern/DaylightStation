@@ -104,7 +104,7 @@ const GovernancePanelOverlay = ({ overlay, lockRows = [] }) => {
     : 'Meet these conditions to unlock playback.';
   const rows = Array.isArray(lockRows) ? lockRows : [];
   const hasRows = rows.length > 0;
-  const isCompact = rows.length > 3;
+  const isCompact = rows.length > 6;
   const showTableHeader = !isCompact;
 
   const renderProgressBlock = (row, variant = 'default') => {

@@ -109,11 +109,11 @@ export class GenerateDailyReport {
             await this.#messagingGateway.deleteMessage(conversationId, msgId);
           } catch (e) {
             // Ignore individual delete errors (message might be same or already deleted)
-            this.#logger.warn('report.deletePrevious.failed', { messageId: msgId, error: e.message });
+            this.#logger.debug('report.deletePrevious.failed', { messageId: msgId, error: e.message });
           }
         }
       } catch (e) {
-        this.#logger.warn('report.deletePrevious.error', { error: e.message });
+        this.#logger.error('report.deletePrevious.criticalError', { error: e.message, stack: e.stack });
       }
 
       // 1. Check for pending logs (always check unless skipPendingCheck is explicitly true)
@@ -127,7 +127,18 @@ export class GenerateDailyReport {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
         
-        const pendingLogs = await this.#nutriLogRepository.findPending(userId);
+        let pendingLogs;
+        try {
+          pendingLogs = await this.#nutriLogRepository.findPending(userId);
+        } catch (error) {
+          this.#logger.error('report.generate.pendingCheckFailed', { 
+            userId, 
+            error: error.message,
+            stack: error.stack,
+          });
+          throw new Error(`Failed to check pending logs: ${error.message}`);
+        }
+        
         this.#logger.debug('report.generate.pendingCheck', { 
           userId, 
           pendingCount: pendingLogs.length,
@@ -163,11 +174,29 @@ export class GenerateDailyReport {
       }
 
       // 2. Get daily summary
-      const summary = await this.#nutriLogRepository.getDailySummary(userId, date);
+      let summary;
+      try {
+        summary = await this.#nutriLogRepository.getDailySummary(userId, date);
+        this.#logger.debug('report.generate.summaryLoaded', { 
+          userId, 
+          date,
+          logCount: summary.logCount,
+          itemCount: summary.itemCount,
+          totalCalories: summary.totals?.calories,
+        });
+      } catch (error) {
+        this.#logger.error('report.generate.summaryFailed', { 
+          userId, 
+          date,
+          error: error.message,
+          stack: error.stack,
+        });
+        throw new Error(`Failed to get daily summary: ${error.message}`);
+      }
 
       // 3. If no logs, skip
       if (summary.logCount === 0) {
-        this.#logger.debug('report.generate.skipped', { userId, reason: 'no_logs' });
+        this.#logger.info('report.generate.skipped', { userId, date, reason: 'no_logs' });
         return {
           success: false,
           skippedReason: 'No food logged for this date',
@@ -182,7 +211,23 @@ export class GenerateDailyReport {
       );
 
       // 5. Get items for the report
-      const items = await this.#nutriListRepository.findByDate(userId, date);
+      let items;
+      try {
+        items = await this.#nutriListRepository.findByDate(userId, date);
+        this.#logger.debug('report.generate.itemsLoaded', { 
+          userId, 
+          date,
+          itemCount: items.length,
+        });
+      } catch (error) {
+        this.#logger.error('report.generate.itemsLoadFailed', { 
+          userId, 
+          date,
+          error: error.message,
+          stack: error.stack,
+        });
+        throw new Error(`Failed to load items for date: ${error.message}`);
+      }
       
       // 6. Calculate totals
       const totals = items.reduce((acc, item) => {
@@ -193,13 +238,39 @@ export class GenerateDailyReport {
         return acc;
       }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
-      let goals = this.#config.getUserGoals?.(userId);
-      if (!goals) {
-        throw new Error(`Failed to load nutrition goals for user ${userId}`);
+      let goals;
+      try {
+        goals = this.#config.getUserGoals?.(userId);
+        if (!goals) {
+          throw new Error(`getUserGoals returned null/undefined for user ${userId}`);
+        }
+        this.#logger.debug('report.generate.goalsLoaded', { 
+          userId,
+          goals,
+        });
+      } catch (error) {
+        this.#logger.error('report.generate.goalsLoadFailed', { 
+          userId,
+          error: error.message,
+          stack: error.stack,
+        });
+        throw new Error(`Failed to load nutrition goals for user ${userId}: ${error.message}`);
       }
 
       // 7. Build history for chart (last 7 days)
-      const history = await this.#buildHistory(userId, anchorDateForHistory);
+      let history;
+      try {
+        history = await this.#buildHistory(userId, anchorDateForHistory);
+      } catch (error) {
+        this.#logger.error('report.generate.historyFailed', { 
+          userId,
+          anchorDate: anchorDateForHistory,
+          error: error.message,
+          stack: error.stack,
+        });
+        // Use empty history as fallback
+        history = [];
+      }
       this.#logger.debug('report.history', { 
         userId, 
         date, 
@@ -227,9 +298,17 @@ export class GenerateDailyReport {
         const pngFileName = `report-${date}-${Date.now()}.png`;
         pngPath = path.join(tmpDir, pngFileName);
         await fs.writeFile(pngPath, pngBuffer);
-        this.#logger.debug('report.png.generated', { path: pngPath });
+        this.#logger.debug('report.png.generated', { path: pngPath, size: pngBuffer.length });
       } catch (e) {
-        this.#logger.warn('report.png.failed', { error: e.message });
+        this.#logger.error('report.png.failed', { 
+          error: e.message, 
+          stack: e.stack,
+          date,
+          totalsProvided: !!totals,
+          goalsProvided: !!goals,
+          itemCount: items?.length,
+          historyLength: history?.length,
+        });
       }
 
       // 9. Delete status message
@@ -347,6 +426,11 @@ export class GenerateDailyReport {
           itemCount: items.length,
         });
       } catch (e) {
+        this.#logger.warn('report.buildHistory.dateLoadFailed', { 
+          userId,
+          date: dateStr,
+          error: e.message,
+        });
         history.push({ date: dateStr, calories: 0, protein: 0, carbs: 0, fat: 0, itemCount: 0 });
       }
     }
@@ -479,7 +563,11 @@ export class GenerateDailyReport {
           this.#logger.debug('autoAccept.noMessageId', { logId: log.id });
         }
       } catch (e) {
-        this.#logger.warn('autoAccept.logFailed', { logId: log.id, error: e.message });
+        this.#logger.error('autoAccept.logFailed', { 
+          logId: log.id, 
+          error: e.message,
+          stack: e.stack,
+        });
       }
     }
   }

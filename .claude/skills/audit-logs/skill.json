@@ -1,0 +1,38 @@
+{
+  "name": "audit-logs",
+  "description": "Audit and analyze DaylightStation logs for patterns, errors, and compliance",
+  "version": "1.0.0",
+  "author": "DaylightStation Team",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "mode": {
+        "type": "string",
+        "enum": ["errors", "performance", "compliance", "full", "custom"],
+        "description": "Audit mode",
+        "default": "full"
+      },
+      "timeRange": {
+        "type": "string",
+        "description": "Time range to audit (e.g., '1h', '24h', 'today', 'all')",
+        "default": "1h"
+      },
+      "logFile": {
+        "type": "string",
+        "description": "Path to log file (default: dev.log)",
+        "default": "dev.log"
+      },
+      "eventFilter": {
+        "type": "string",
+        "description": "Filter by event pattern (regex)",
+        "default": null
+      },
+      "format": {
+        "type": "string",
+        "enum": ["summary", "detailed", "json"],
+        "description": "Output format",
+        "default": "summary"
+      }
+    }
+  }
+}

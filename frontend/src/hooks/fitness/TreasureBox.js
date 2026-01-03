@@ -1,12 +1,10 @@
 const NO_ZONE_LABEL = 'No Zone';
 import getLogger from '../../lib/logging/Logger.js';
 
-// Phase 4: TrackingId Migration Complete
-// TreasureBox now exclusively uses trackingId (entityId with userId fallback) for all operations.
-// - perUser Map is keyed by trackingId (matching FitnessSession's tracking scheme)
-// - processTick() receives activeParticipants Set containing trackingIds
-// - Direct lookup works: activeParticipants.has(accKey) where accKey === trackingId
-// - profileId is preserved for zone config lookups only
+// Strict identifier contract: TreasureBox is keyed by userId.
+// - perUser Map is keyed by userId
+// - processTick() receives activeParticipants Set containing userIds
+// - profileId is preserved on accumulator for legacy/compat lookups only
 
 export class FitnessTreasureBox {
   constructor(sessionRef) {
@@ -15,18 +13,17 @@ export class FitnessTreasureBox {
     this.activityMonitor = null;  // ActivityMonitor for checking if user is active
     this.coinTimeUnitMs = 5000; // default; will be overridden by configuration injection
     this.globalZones = []; // array of {id,name,min,color,coins}
-    this.usersConfigOverrides = new Map(); // userName -> overrides object {active,warm,hot,fire}
+    this.usersConfigOverrides = new Map(); // userId -> overrides object {active,warm,hot,fire}
     this.buckets = {}; // color -> coin total
     this.totalCoins = 0;
-    this.perUser = new Map(); // trackingId -> accumulator (Phase 4: entityId with userId fallback)
+    this.perUser = new Map(); // userId -> accumulator
     this.lastTick = Date.now(); // for elapsed computation if needed
     this._timeline = {
       perColor: new Map(),
       cumulative: [],
       lastIndex: -1
     };
-    // Phase 2: Device -> Entity mapping for HR routing
-    // When HR comes in for a device, we look up the active entityId here
+    // Compatibility: device -> entity mapping retained, but strict mode ignores entityId for accounting.
     this._deviceEntityMap = new Map(); // deviceId -> entityId
     // Note: Per-user coin timelines removed (Priority 5)
     // Coins are now written directly to main timeline via assignMetric('user:X:coins_total')
@@ -87,8 +84,13 @@ export class FitnessTreasureBox {
       const collectOverrides = (arr) => {
         if (!Array.isArray(arr)) return;
         arr.forEach((u) => {
-          if (!u?.name || !u?.zones) return;
-          this.usersConfigOverrides.set(u.name, { ...u.zones });
+          if (!u?.zones) return;
+          const userKey = u.id || u.profileId || null;
+          if (!userKey) {
+            this._log('user_override_missing_id', { name: u?.name || null });
+            return;
+          }
+          this.usersConfigOverrides.set(userKey, { ...u.zones });
         });
       };
       if (Array.isArray(users)) {
@@ -114,8 +116,8 @@ export class FitnessTreasureBox {
   stop() { if (this._autoInterval) { clearInterval(this._autoInterval); this._autoInterval = null; } }
 
   /**
-   * Phase 2: Set the active session entity for a device.
-   * When HR data comes in for this device, it will be routed to this entity.
+  * Compatibility: Set the active session entity for a device.
+  * Strict mode does not use entityId for accounting, but we keep this for legacy callers.
    * 
    * @param {string} deviceId - Heart rate device ID
    * @param {string} entityId - Session entity ID to receive HR data
@@ -147,18 +149,9 @@ export class FitnessTreasureBox {
    * @returns {boolean} - True if entity is active
    */
   isEntityActive(entityId) {
-    if (!entityId || !entityId.startsWith('entity-')) return false;
-    const acc = this.perUser.get(entityId);
-    if (!acc) return false;
-    
-    // Check if we have a recent HR timestamp
-    const now = Date.now();
-    const lastHRTime = acc._lastHRTimestamp || 0;
-    const threshold = 10000; // 10 seconds
-    const isActive = (now - lastHRTime) < threshold;
-    
-    this._log('entity_active_check', { entityId, lastHRTime, now, diff: now - lastHRTime, threshold, isActive });
-    return isActive;
+    // Strict userId mode: entities are not tracked.
+    this._log('entity_active_check_disabled', { entityId });
+    return false;
   }
 
   /**
@@ -170,50 +163,9 @@ export class FitnessTreasureBox {
    * @returns {boolean} - True if transfer occurred
    */
   transferAccumulator(fromEntityId, toEntityId) {
-    if (!fromEntityId || !toEntityId || fromEntityId === toEntityId) {
-      this._log('transfer_skip', { fromEntityId, toEntityId, reason: 'invalid_args' });
-      return false;
-    }
-    
-    const fromAcc = this.perUser.get(fromEntityId);
-    if (!fromAcc) {
-      this._log('transfer_skip', { fromEntityId, toEntityId, reason: 'no_source_acc' });
-      return false;
-    }
-    
-    // Get or create destination accumulator
-    let toAcc = this.perUser.get(toEntityId);
-    if (!toAcc) {
-      toAcc = this._createAccumulator();
-      this.perUser.set(toEntityId, toAcc);
-    }
-    
-    // Transfer data: add source coins to destination
-    toAcc.totalCoins = (toAcc.totalCoins || 0) + (fromAcc.totalCoins || 0);
-    toAcc.currentIntervalStart = fromAcc.currentIntervalStart || toAcc.currentIntervalStart;
-    toAcc.highestZone = fromAcc.highestZone || toAcc.highestZone;
-    toAcc.lastHR = fromAcc.lastHR || toAcc.lastHR;
-    toAcc.currentColor = fromAcc.currentColor || toAcc.currentColor;
-    toAcc.lastColor = fromAcc.lastColor || toAcc.lastColor;
-    toAcc.lastZoneId = fromAcc.lastZoneId || toAcc.lastZoneId;
-    
-    // Clear source accumulator (but keep entry for historical reference)
-    const transferredCoins = fromAcc.totalCoins || 0;
-    fromAcc.totalCoins = 0;
-    fromAcc.highestZone = null;
-    fromAcc.currentColor = NO_ZONE_LABEL;
-    fromAcc.transferred = true;
-    fromAcc.transferredTo = toEntityId;
-    
-    this._log('transfer_complete', {
-      fromEntityId,
-      toEntityId,
-      coinsTransferred: transferredCoins,
-      newTotal: toAcc.totalCoins
-    });
-    
-    this._notifyMutation();
-    return true;
+    // Strict userId mode: entities are not tracked.
+    this._log('transfer_disabled', { fromEntityId, toEntityId });
+    return false;
   }
 
   /**
@@ -242,13 +194,8 @@ export class FitnessTreasureBox {
    * @param {number} [startTime] - Optional start time
    */
   initializeEntity(entityId, startTime) {
-    if (!entityId) return;
-    if (this.perUser.has(entityId)) {
-      this._log('entity_already_exists', { entityId });
-      return;
-    }
-    this.perUser.set(entityId, this._createAccumulator(startTime));
-    this._log('entity_initialized', { entityId, startTime: startTime || Date.now() });
+    // Strict userId mode: do not create entity-keyed accumulators.
+    this._log('entity_init_disabled', { entityId, startTime: startTime || Date.now() });
   }
 
   // Rename a user in the perUser map (used when guest assigned to preserve zone state)
@@ -288,11 +235,10 @@ export class FitnessTreasureBox {
    * Called synchronously from FitnessSession._collectTimelineTick() to ensure
    * coin processing is aligned with session ticks and dropout detection.
    *
-   * Phase 4: trackingId migration complete - activeParticipants now contains trackingIds
-   * (entityId with userId fallback), matching the keys in perUser Map.
+    * Strict mode: activeParticipants contains userIds, matching the keys in perUser Map.
    *
    * @param {number} tick - Current tick index
-   * @param {Set<string>} activeParticipants - Set of trackingIds (entityId or userId) for active participants
+    * @param {Set<string>} activeParticipants - Set of userIds for active participants
    * @param {Object} options - Additional options (legacy, no longer used)
    */
   processTick(tick, activeParticipants, options = {}) {
@@ -304,18 +250,30 @@ export class FitnessTreasureBox {
       perUserKeys: Array.from(this.perUser.keys())
     });
     if (!this.perUser.size) return;
+
+    // Migration shim: if legacy entity-key accumulators exist, migrate them to profileId.
+    const legacyEntityKeysToDelete = [];
+    for (const [key, acc] of this.perUser.entries()) {
+      if (!key?.startsWith?.('entity-')) continue;
+      const profileId = acc?.profileId;
+      if (profileId && !this.perUser.has(profileId)) {
+        this.perUser.set(profileId, acc);
+        this._log('migrated_entity_accumulator', { entityId: key, profileId });
+      }
+      legacyEntityKeysToDelete.push(key);
+    }
+    legacyEntityKeysToDelete.forEach((key) => this.perUser.delete(key));
+
     const now = Date.now();
 
     for (const [accKey, acc] of this.perUser.entries()) {
-      // Phase 4: accKey is now trackingId (entityId with userId fallback)
-      // activeParticipants contains the same trackingIds, so direct lookup works
-      const profileId = acc.profileId || accKey;  // Keep profileId for zone config lookups
+      const profileId = acc.profileId || accKey;
 
       // CRITICAL: Only process intervals for ACTIVE participants
       // This prevents coin accumulation during dropout
       // Phase 4: Simplified - activeParticipants and perUser use same ID scheme
       if (!activeParticipants.has(accKey)) {
-        this._log('user_not_active', { trackingId: accKey, profileId });
+        this._log('user_not_active', { userId: accKey, profileId });
         // User not active - clear their highestZone to prevent stale awards
         acc.highestZone = null;
         acc.currentColor = null;
@@ -415,19 +373,26 @@ export class FitnessTreasureBox {
    * @param {string} [options.profileId] - Profile ID for zone overrides lookup
    */
   recordUserHeartRate(entityOrUserId, hr, options = {}) {
-    const profileId = options.profileId || entityOrUserId;
+    // Strict mode: accounting is keyed by userId.
+    // If callers pass an entityId, require profileId to map it back to userId.
+    const isEntityId = entityOrUserId?.startsWith?.('entity-');
+    const profileId = options.profileId || (isEntityId ? null : entityOrUserId);
     this._log('record_heart_rate', { 
       entityOrUserId, 
       hr, 
       profileId,
       hasGlobalZones: this.globalZones.length > 0,
-      isEntityId: entityOrUserId?.startsWith?.('entity-')
+      isEntityId
     });
+    if (!profileId) {
+      this._log('missing_profile_id_for_entity', { entityOrUserId });
+      return;
+    }
     if (!this.globalZones.length) return; // disabled gracefully if no zones
     const now = Date.now();
     
-    // Use the entityId (or userId for legacy) as the accumulator key
-    const accKey = entityOrUserId;
+    // Use userId as accumulator key
+    const accKey = profileId;
     let acc = this.perUser.get(accKey);
     if (!acc) {
       acc = this._createAccumulator(now);
@@ -512,16 +477,13 @@ export class FitnessTreasureBox {
       });
     }
     
-    if (entityId) {
-      // Route to entity
-      this.recordUserHeartRate(entityId, hr, options);
-    } else if (options.fallbackUserId) {
-      // Fall back to user-based tracking (legacy)
-      this._log('device_no_entity_fallback', { deviceId: key, fallbackUserId: options.fallbackUserId });
-      this.recordUserHeartRate(options.fallbackUserId, hr, options);
-    } else {
-      this._log('device_no_entity_skip', { deviceId: key });
+    // Strict userId mode: always route to a userId key.
+    const userId = options.fallbackUserId || options.profileId || null;
+    if (!userId) {
+      this._log('device_no_user_mapping', { deviceId: key, entityId });
+      return;
     }
+    this.recordUserHeartRate(userId, hr, { ...options, profileId: userId });
   }
 
   // Note: _ensureUserTimelineIndex removed (Priority 5)
@@ -531,16 +493,14 @@ export class FitnessTreasureBox {
     this._log('award_coins_called', { accKey, zone: zone ? { id: zone.id, name: zone.name, coins: zone.coins } : null, hasActivityMonitor: !!this.activityMonitor });
     if (!zone) return;
     
-    // Get the accumulator to check profileId
     const acc = this.perUser.get(accKey);
-    const isEntityKey = accKey.startsWith('entity-');
     const profileId = acc?.profileId || accKey;
     
     // PRIORITY 2: Safety check - don't award coins if user is not active
     // This is a backup to processTick() which also checks activity
     // For entity keys, check activity by profileId (not entityId)
     if (this.activityMonitor) {
-      const checkId = isEntityKey ? profileId : accKey;
+      const checkId = accKey;
       const isActive = this.activityMonitor.isActive(checkId);
       this._log('activity_check', { accKey, checkId, isActive });
       if (!isActive) {
@@ -610,13 +570,11 @@ export class FitnessTreasureBox {
       if (!key || !data) return;
       const currentColor = data.currentColor && data.currentColor !== NO_ZONE_LABEL ? data.currentColor : null;
       const lastColor = data.lastColor && data.lastColor !== NO_ZONE_LABEL ? data.lastColor : null;
-      // Phase 4: key is trackingId (entityId with userId fallback)
-      const isEntity = key.startsWith?.('entity-');
       snapshot.push({
-        trackingId: key,  // Phase 4: Primary identifier
-        user: key, // Legacy field name - kept for backward compatibility
-        userId: isEntity ? null : key,  // Only populated if trackingId is userId
-        entityId: isEntity ? key : null,  // Only populated if trackingId is entityId
+        trackingId: key,
+        user: key,
+        userId: key,
+        entityId: null,
         color: currentColor || lastColor || null,
         zoneId: data.lastZoneId || null,
         totalCoins: data.totalCoins || 0
@@ -627,8 +585,7 @@ export class FitnessTreasureBox {
 
   /**
    * Get per-participant coin totals.
-   * Phase 4: Keys are trackingIds (entityId with userId fallback)
-   * @returns {Map<string, number>} Map of trackingId -> total coins
+    * @returns {Map<string, number>} Map of userId -> total coins
    */
   getPerUserTotals() {
     const totals = new Map();
@@ -645,14 +602,8 @@ export class FitnessTreasureBox {
    * @returns {Map<string, number>} Map of entityId -> total coins
    */
   getEntityTotals() {
-    const totals = new Map();
-    this.perUser.forEach((data, key) => {
-      if (!key || !data) return;
-      if (!key.startsWith?.('entity-')) return; // Skip legacy userId entries
-      const coins = Number.isFinite(data.totalCoins) ? data.totalCoins : 0;
-      totals.set(key, coins);
-    });
-    return totals;
+    // Strict userId mode: entities are not tracked.
+    return new Map();
   }
 
   /**

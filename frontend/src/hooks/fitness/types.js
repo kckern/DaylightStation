@@ -1,4 +1,73 @@
 /**
+ * Participant Identifier
+ * @typedef {string} ParticipantId
+ * @description Stable participant identifier.
+ * - Format: userId ("kckern", "milo")
+ * - NOT a display name ("Alan", "KC Kern")
+ * @example "kckern"
+ */
+
+/**
+ * Timeline Series Key Format
+ * @typedef {string} TimelineSeriesKey
+ * @description All participant timeline series MUST use 3 segments: <scope>:<participantId>:<metric>
+ * @example "user:kckern:coins_total"
+ */
+
+/**
+ * Resolve the canonical userId to use as a key.
+ * 
+ * Strict identifier contract: all maps/sets keyed by participant identity MUST use userId.
+ * 
+ * @param {Object} entry
+ * @param {string} [entry.id]
+ * @param {string} [entry.profileId]
+ * @returns {ParticipantId|null}
+ */
+export const resolveParticipantUserId = (entry) => {
+  if (!entry) return null;
+  return entry.id || entry.profileId || null;
+};
+
+/**
+ * Build the list of active participant IDs for governance evaluation.
+ * 
+ * @param {Array<Object>} roster
+ * @returns {ParticipantId[]}
+ */
+export const buildActiveParticipantIds = (roster = []) => {
+  if (!Array.isArray(roster) || roster.length === 0) return [];
+  return roster
+    .filter((entry) => entry?.isActive !== false)
+    .map((entry) => resolveParticipantUserId(entry))
+    .filter(Boolean);
+};
+
+/**
+ * Build a userZoneMap keyed by userId.
+ * 
+ * @param {Array<Object>} roster
+ * @returns {Record<ParticipantId, ZoneId|null>}
+ */
+export const buildUserZoneMap = (roster = []) => {
+  const map = {};
+  if (!Array.isArray(roster) || roster.length === 0) return map;
+  roster.forEach((entry) => {
+    const userId = resolveParticipantUserId(entry);
+    if (!userId) return;
+    map[userId] = entry?.zoneId || null;
+  });
+  return map;
+};
+
+/**
+ * Zone Identifier
+ * @typedef {string} ZoneId
+ * @description Heart rate zone ID (lowercase)
+ * @example "cool", "active", "warm", "hot", "fire"
+ */
+
+/**
  * @deprecated Use user.id or entity.id directly instead of deriving IDs from names.
  * This function will be removed in a future version.
  * All users/devices/participants have explicit `id` fields that should be used.

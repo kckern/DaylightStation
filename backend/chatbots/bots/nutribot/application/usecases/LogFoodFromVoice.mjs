@@ -92,13 +92,30 @@ export class LogFoodFromVoice {
     } catch (error) {
       this.#logger.error('logVoice.error', { conversationId, error: error.message });
       
-      // Send a user-friendly error message instead of failing silently
+      // Check if this is a Telegram API error (network timeout, etc.)
+      // These often mean the data was saved but the message update failed
+      const isTelegramError = error.message?.includes('Telegram error') || 
+                              error.code === 'ETIMEDOUT' || 
+                              error.code === 'EAI_AGAIN' ||
+                              error.code === 'ECONNRESET';
+      
+      // Send a user-friendly error message with recovery option
       try {
-        await this.#messagingGateway.sendMessage(
-          conversationId,
-          `⚠️ Sorry, I couldn't process your voice message. Please try again or type what you ate.\n\n_Error: ${error.message || 'Connection issue'}_`,
-          { parse_mode: 'Markdown' }
-        );
+        if (isTelegramError) {
+          // Likely data was saved but UI failed - guide user to check/retry
+          await this.#messagingGateway.sendMessage(
+            conversationId,
+            `⚠️ Network issue while updating the message. Your food may have been logged.\n\nPlease check your recent entries or try again.\n\n_Error: ${error.message || 'Connection issue'}_`,
+            { parse_mode: 'Markdown' }
+          );
+        } else {
+          // Other error - suggest typing instead
+          await this.#messagingGateway.sendMessage(
+            conversationId,
+            `⚠️ Sorry, I couldn't process your voice message. Please try again or type what you ate.\n\n_Error: ${error.message || 'Connection issue'}_`,
+            { parse_mode: 'Markdown' }
+          );
+        }
       } catch (sendError) {
         // If we can't even send an error message, log it
         this.#logger.error('logVoice.errorNotification.failed', { 

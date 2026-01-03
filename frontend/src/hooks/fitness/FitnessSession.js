@@ -17,6 +17,8 @@ import getLogger from '../../lib/logging/Logger.js';
 import { SessionLifecycle } from './SessionLifecycle.js';
 import { MetricsRecorder } from './MetricsRecorder.js';
 import { ParticipantRoster } from './ParticipantRoster.js';
+import { TimelineRecorder } from './TimelineRecorder.js';
+import { PersistenceManager } from './PersistenceManager.js';
 
 // -------------------- Timeout Configuration --------------------
 const FITNESS_TIMEOUTS = {
@@ -301,6 +303,19 @@ export class FitnessSession {
     });
     this._metricsRecorder = new MetricsRecorder({ intervalMs: 5000 });
     this._participantRoster = new ParticipantRoster();
+    
+    // Phase 5: TimelineRecorder - single responsibility for timeline tick recording
+    // Owns: device metrics collection, user metrics, cumulative tracking, dropout detection
+    this._timelineRecorder = new TimelineRecorder({ intervalMs: 5000 });
+    this._timelineRecorder.setLogCallback((eventName, data) => this._log(eventName, data));
+    
+    // Phase 5: PersistenceManager - single responsibility for session persistence
+    // Owns: validation, encoding, API calls
+    this._persistenceManager = new PersistenceManager();
+    this._persistenceManager.setLogCallback((eventName, data) => this._log(eventName, data));
+    this._persistenceManager.setSeriesLengthValidator((timebase, series) => 
+      FitnessTimeline.validateSeriesLengths(timebase, series)
+    );
 
     // Pre-session buffer to avoid ghost sessions from spurious single pings
     this._preSessionBuffer = [];
@@ -319,6 +334,11 @@ export class FitnessSession {
     this._guestCandidatesCache = null;
     this._userZoneProfilesCache = null;
     this._equipmentIdByCadence = new Map();
+
+    // ZoneProfileStore sync scheduling (avoid blocking + queue buildup)
+    this._zoneProfileSyncPending = false;
+    this._zoneProfileSyncLastScheduledAt = 0;
+    this._zoneProfileSyncMinIntervalMs = 1000;
     
     // Legacy: these are now managed by MetricsRecorder but kept for backward compatibility
     // TODO: Remove after full migration to MetricsRecorder
@@ -371,6 +391,58 @@ export class FitnessSession {
     };
     this._telemetryTickInterval = 12;
     this._lastTelemetrySnapshotTick = -1;
+  }
+
+  /**
+   * Schedule a ZoneProfileStore sync without blocking updateSnapshot.
+   * Throttles to avoid repeated queued work when snapshots arrive frequently.
+   *
+   * @param {Array<any>} allUsers
+   * @returns {boolean} True if a sync was scheduled
+   */
+  _scheduleZoneProfileSync(allUsers) {
+    if (!this.zoneProfileStore) return false;
+
+    const nowMs = Date.now();
+    if (this._zoneProfileSyncPending) return false;
+    if (nowMs - (this._zoneProfileSyncLastScheduledAt || 0) < (this._zoneProfileSyncMinIntervalMs || 0)) {
+      return false;
+    }
+
+    this._zoneProfileSyncPending = true;
+    this._zoneProfileSyncLastScheduledAt = nowMs;
+
+    const runSync = () => {
+      const startedAt = Date.now();
+      try {
+        this.zoneProfileStore.syncFromUsers(allUsers);
+      } catch (err) {
+        getLogger().error('fitness.zone_profile_store.sync_failed', {
+          message: err?.message || String(err),
+          stack: err?.stack || null,
+          userCount: Array.isArray(allUsers) ? allUsers.length : null
+        });
+      } finally {
+        this._zoneProfileSyncPending = false;
+      }
+
+      const durationMs = Date.now() - startedAt;
+      if (durationMs > 200) {
+        getLogger().warn('fitness.zone_profile_store.sync_slow', {
+          durationMs,
+          userCount: Array.isArray(allUsers) ? allUsers.length : null
+        });
+      }
+    };
+
+    // Use requestIdleCallback to avoid blocking the main thread when available.
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(runSync, { timeout: 1000 });
+    } else {
+      setTimeout(runSync, 0);
+    }
+
+    return true;
   }
 
   ingestData(payload) {
@@ -1237,6 +1309,20 @@ export class FitnessSession {
     this._metricsRecorder.reset();
     this._metricsRecorder.setLogCallback((type, data) => this._log(type, data));
     
+    // Phase 5: Configure TimelineRecorder with dependencies
+    this._timelineRecorder.reset();
+    this._timelineRecorder.setInterval(this.timebase.intervalMs);
+    this._timelineRecorder.setTimeline(this.timeline);
+    this._timelineRecorder.configure({
+      deviceManager: this.deviceManager,
+      userManager: this.userManager,
+      treasureBox: this.treasureBox,
+      timeline: this.timeline,
+      activityMonitor: this.activityMonitor,
+      eventJournal: this.eventJournal,
+      resolveEquipmentId: (device) => this._resolveEquipmentId(device)
+    });
+    
     this._participantRoster.reset();
     this._participantRoster.configure({
       deviceManager: this.deviceManager,
@@ -1267,6 +1353,9 @@ export class FitnessSession {
     
     // Update ParticipantRoster with treasureBox reference after creation
     this._participantRoster.configure({ treasureBox: this.treasureBox });
+    
+    // Update TimelineRecorder with treasureBox reference after creation
+    this._timelineRecorder.setTreasureBox(this.treasureBox);
     
     this._lastAutosaveAt = 0;
     this._startAutosaveTimer();
@@ -1390,9 +1479,11 @@ export class FitnessSession {
       hasZoneProfileStore: !!this.zoneProfileStore,
       userCount: allUsers.length
     });
-    // DISABLED: This hangs - skip it for now
-    // this.zoneProfileStore?.syncFromUsers(allUsers);
-    getLogger().error('🔵 CHECKPOINT_2.99_SKIPPED_syncFromUsers');
+
+    const scheduledZoneSync = this._scheduleZoneProfileSync(allUsers);
+    getLogger().error('🔵 CHECKPOINT_2.99_SCHEDULED_syncFromUsers', {
+      scheduled: scheduledZoneSync
+    });
 
     getLogger().error('🔵 CHECKPOINT_3_users_processed', {
       userCount: allUsers.length,
@@ -1483,25 +1574,26 @@ export class FitnessSession {
       }))
     });
 
-    // REVERT TO PRE-ENTITYID CODE: Use entry.name (what TreasureBox uses)
+    // Use userId/entityId as stable identifiers (no case issues)
     const activeParticipants = effectiveRoster
         .filter((entry) => {
           const isActive = entry.isActive !== false;
-          return isActive && entry.name;
+          return isActive && (entry.id || entry.profileId);
         })
-        .map(entry => entry.name);  // ← FIXED: Use name like before
+        .map(entry => entry.id || entry.profileId);  // Use ID, not name!
 
     // DEBUG: Log final activeParticipants
     getLogger().error('🎯 ACTIVE_PARTICIPANTS_BUILT', {
       count: activeParticipants.length,
-      names: activeParticipants
+      ids: activeParticipants
     });
 
-    // REVERT TO PRE-ENTITYID CODE: Key by name
+    // Key by userId/entityId (stable, no case issues)
     const userZoneMap = {};
     effectiveRoster.forEach(entry => {
-        if (entry.name) {
-            userZoneMap[entry.name] = entry.zoneId || null;  // ← FIXED: Use name as key
+        const userId = entry.id || entry.profileId;
+        if (userId) {
+            userZoneMap[userId] = entry.zoneId || null;
         }
     });
     
@@ -1537,454 +1629,53 @@ export class FitnessSession {
     });
   }
 
+  /**
+   * Collect timeline tick - DELEGATED to TimelineRecorder.
+   * 
+   * Phase 5 refactoring: This method now delegates to TimelineRecorder
+   * which owns all timeline metric recording, cumulative tracking, and
+   * dropout detection logic.
+   * 
+   * @param {Object} params
+   * @param {number} [params.timestamp] - Tick timestamp
+   * @returns {Object|null} - Tick result from timeline
+   */
   _collectTimelineTick({ timestamp } = {}) {
     if (!this.timeline || !this.sessionId) return null;
 
-    const tickPayload = {};
-    const assignMetric = (key, value) => {
-      // Allow explicit nulls for heart_rate to mark dropouts on the chart
-      const isHeartRateKey = typeof key === 'string' && key.endsWith(':heart_rate');
-      if (value == null && !isHeartRateKey) return;
-      if (typeof value === 'number' && Number.isNaN(value)) return;
-      tickPayload[key] = value;
-    };
-    
-    /**
-     * Phase 3: Assign metric to both user and entity series.
-     * This enables gradual migration to entity-based tracking while maintaining
-     * backward compatibility with user-based chart components.
-     * 
-     * @param {string} userId - User/profile ID
-     * @param {string} entityId - Entity ID (optional, from ledger)
-     * @param {string} metric - Metric name (e.g., 'heart_rate')
-     * @param {*} value - Metric value
-     */
-    const assignUserMetric = (userId, entityId, metric, value) => {
-      // Always write to user series (legacy/backward compatibility)
-      assignMetric(`user:${userId}:${metric}`, value);
-      
-      // Phase 3: Also write to entity series if entityId is available
-      if (entityId) {
-        assignMetric(`entity:${entityId}:${metric}`, value);
-      }
-    };
-    
-    /**
-     * Phase 3: Resolve entityId for a device from the assignment ledger
-     * @param {string} deviceId
-     * @returns {string|null}
-     */
-    const resolveEntityIdForDevice = (deviceId) => {
-      if (!deviceId) return null;
-      const ledger = this.userManager?.assignmentLedger;
-      const entry = ledger?.get?.(deviceId);
-      return entry?.entityId || null;
-    };
-    
-    const sanitizeHeartRate = (value) => (Number.isFinite(value) && value > 0 ? Math.round(value) : null);
-    const sanitizeNumber = (value) => (Number.isFinite(value) ? value : null);
-    const sanitizeDistance = (value) => (Number.isFinite(value) && value > 0 ? value : null);
-    const hasNumericSample = (metrics = {}) => ['heartRate', 'rpm', 'power', 'distance'].some((key) => metrics[key] != null);
-    const stageUserEntry = (user, deviceId) => {
-      if (!user?.id) return null;
-      const userId = user.id;
-      const snapshot = typeof user.getMetricsSnapshot === 'function' ? user.getMetricsSnapshot() : {};
-      // Phase 3: Include entityId in staged entry
-      const entityId = resolveEntityIdForDevice(deviceId);
-      const staged = {
-        userId,
-        entityId, // Phase 3: Track entity for this user
-        deviceId, // Track device for entity resolution
-        metadata: {
-          name: user.name,
-          groupLabel: user.groupLabel || null,
-          source: user.source || null,
-          color: snapshot?.zoneColor || user.currentData?.color || null
-        },
-        metrics: {
-          heartRate: sanitizeHeartRate(snapshot?.heartRate ?? user.currentData?.heartRate),
-          zoneId: snapshot?.zoneId || user.currentData?.zone || null,
-          rpm: sanitizeNumber(snapshot?.rpm),
-          power: sanitizeNumber(snapshot?.power),
-          distance: sanitizeDistance(snapshot?.distance)
-        }
-      };
-      return staged;
-    };
-    const isValidTickKey = (key) => {
-      if (!key || typeof key !== 'string') return false;
-      const segments = key.split(':');
-      if (segments.length !== 3) return false;
-      return segments.every((segment) => !!segment && /^[a-z0-9_]+$/i.test(segment));
-    };
-    const validateTickPayloadKeys = () => {
-      const invalidKeys = [];
-      Object.keys(tickPayload).forEach((key) => {
-        if (isValidTickKey(key)) return;
-        invalidKeys.push(key);
-        delete tickPayload[key];
-      });
-      if (invalidKeys.length) {
-        this._log('timeline_tick_invalid_key', { keys: invalidKeys });
-      }
-    };
-    const userMetricMap = new Map();
-    const intervalMs = this.timeline?.timebase?.intervalMs || this._tickIntervalMs || 5000;
-    const intervalSeconds = intervalMs / 1000;
-
-    const currentTickIndex = this.timeline.timebase?.tickCount ?? 0;
-    
-    // CRITICAL FIX: Don't pre-populate userMetricMap with ALL users
-    // Only add users when their devices are processed below
-    // This prevents creating 15 users with null HR when only 3 have devices
-    // The old approach: const users = this.userManager.getAllUsers(); users.forEach(...)
-    // New approach: users are added on-demand when devices map to them
-
-    // Track users whose devices are inactive (for syncing chart dropout with sidebar)
-    const deviceInactiveUsers = new Set();
-
-    // ID Consistency validation helper (see /docs/reviews/guest-assignment-service-audit.md Issue #3)
-    const validateIdConsistency = (userId, deviceId, ledgerEntry) => {
-      const ledgerId = ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId;
-      if (ledgerId && userId && ledgerId !== userId) {
-        console.error('[FitnessSession] ID MISMATCH:', {
-          userId,
-          ledgerId,
-          deviceId,
-          ledgerOccupantName: ledgerEntry?.occupantName
-        });
-        this.eventJournal?.log('ID_MISMATCH', { userId, ledgerId, deviceId }, { severity: 'error' });
-        return false;
-      }
-      return true;
-    };
-
-    const devices = this.deviceManager.getAllDevices();
-    devices.forEach((device) => {
-      if (!device) return;
-      const deviceId = device.id ? String(device.id) : null;
-      if (!deviceId) return;
-      
-      // OPTION A FIX: Check DeviceManager's inactiveSince as source of truth
-      // This aligns chart dropout with sidebar's inactive state (transparent + countdown)
-      if (device.inactiveSince) {
-        // Device is inactive according to DeviceManager - don't count user as active
-        const mappedUser = this.userManager.resolveUserForDevice(deviceId);
-        if (mappedUser) {
-          const userId = mappedUser.id;
-          if (userId) {
-            deviceInactiveUsers.add(userId);
-            // Ensure user is in userMetricMap so we record null HR
-            if (!userMetricMap.has(userId)) {
-              const staged = stageUserEntry(mappedUser, deviceId);
-              if (staged) {
-                userMetricMap.set(userId, staged);
-              }
-            }
-          }
-        }
-        // Skip active device processing but still record device metrics
-      }
-      
-      const metrics = typeof device.getMetricsSnapshot === 'function'
-        ? device.getMetricsSnapshot()
-        : null;
-      const sanitizedDeviceMetrics = {
-        rpm: sanitizeNumber(metrics?.rpm ?? metrics?.cadence),
-        power: sanitizeNumber(metrics?.power),
-        speed: sanitizeNumber(metrics?.speed),
-        distance: sanitizeDistance(metrics?.distance),
-        heartRate: sanitizeHeartRate(metrics?.heartRate)
-      };
-      const hasDeviceSample = Object.values(sanitizedDeviceMetrics).some((val) => val != null);
-      if (hasDeviceSample) {
-        assignMetric(`device:${deviceId}:rpm`, sanitizedDeviceMetrics.rpm);
-        assignMetric(`device:${deviceId}:power`, sanitizedDeviceMetrics.power);
-        assignMetric(`device:${deviceId}:speed`, sanitizedDeviceMetrics.speed);
-        assignMetric(`device:${deviceId}:distance`, sanitizedDeviceMetrics.distance);
-        assignMetric(`device:${deviceId}:heart_rate`, sanitizedDeviceMetrics.heartRate);
-      }
-
-      const equipmentId = this._resolveEquipmentId(device);
-      const equipmentKey = equipmentId || deviceId;
-      if (equipmentKey) {
-        const prevRotations = this._cumulativeRotations.get(equipmentKey) || 0;
-        const deltaRotations = Number.isFinite(sanitizedDeviceMetrics.rpm) && sanitizedDeviceMetrics.rpm > 0
-          ? (sanitizedDeviceMetrics.rpm / 60) * intervalSeconds
-          : 0;
-        const nextRotations = prevRotations + deltaRotations;
-        this._cumulativeRotations.set(equipmentKey, nextRotations);
-        assignMetric(`device:${equipmentKey}:rotations`, nextRotations);
-      }
-
-      // Skip user metric assignment if device is inactive
-      if (device.inactiveSince) return;
-
-      if (!deviceId) return;
-      const mappedUser = this.userManager.resolveUserForDevice(deviceId);
-      if (!mappedUser) return;
-      const userId = mappedUser.id;
-      if (!userId) return;
-
-      // Validate ID consistency between user and ledger (Issue #3 remediation)
-      const ledgerEntry = this.userManager?.assignmentLedger?.get?.(deviceId);
-      validateIdConsistency(userId, deviceId, ledgerEntry);
-
-      // Phase 4: Use entityId for tracking (with userId fallback)
-      const entityId = ledgerEntry?.entityId || null;
-      const trackingId = entityId || userId;
-
-      if (!userMetricMap.has(trackingId)) {
-        const staged = stageUserEntry(mappedUser, deviceId);
-        if (staged) {
-          userMetricMap.set(trackingId, staged);
-        }
-      }
-      const entry = userMetricMap.get(trackingId);
-      if (!entry) return;
-      // Mark that this user received FRESH device data this tick
-      entry._hasDeviceDataThisTick = true;
-      entry.metrics.heartRate = entry.metrics.heartRate ?? sanitizedDeviceMetrics.heartRate;
-      entry.metrics.rpm = entry.metrics.rpm ?? sanitizedDeviceMetrics.rpm;
-      entry.metrics.power = entry.metrics.power ?? sanitizedDeviceMetrics.power;
-      entry.metrics.distance = entry.metrics.distance ?? sanitizedDeviceMetrics.distance;
-    });
-    
-    // Collect active participant IDs for ActivityMonitor (Phase 2)
-    const activeParticipantIds = new Set();
-    
-    // PHASE 1 FIX: Track users who have valid HR data THIS tick
-    // CRITICAL: Only count users who received FRESH device data this tick
-    // User.getMetricsSnapshot() returns cached/stale heartRate which causes false positives
-    const currentTickActiveHR = new Set();
-    
-    // DEBUG: Log device-to-user mapping state
-    if (currentTickIndex < 3 || currentTickIndex % 10 === 0) {
-      const usersWithData = Array.from(userMetricMap.entries())
-        .filter(([_, e]) => e?._hasDeviceDataThisTick)
-        .map(([trackingId, e]) => ({
-          trackingId,
-          entityId: e?.entityId,
-          userId: e?.userId,
-          hr: e?.metrics?.heartRate
-        }));
-      getLogger().warn('fitness.session.tick', {
-        tick: currentTickIndex,
-        devices: devices.length,
-        activeDevices: devices.filter(d => !d.inactiveSince).length,
-        userMapSize: userMetricMap.size,
-        usersWithDeviceData: usersWithData.length,
-        users: usersWithData
-      });
-    }
-    
-    // First pass: identify who has valid HR data this tick FROM DEVICE
-    // Phase 4: trackingId is now entityId (with userId fallback)
-    userMetricMap.forEach((entry, trackingId) => {
-      if (!entry) return;
-      // Only trust heartRate if we got FRESH device data this tick
-      // Otherwise the user's cached heartRate (from User.getMetricsSnapshot) is stale
-      if (!entry._hasDeviceDataThisTick) return;
-
-      // OPTION A FIX: Don't count user as active if their device is inactive
-      // This syncs chart dropout with sidebar's inactive state
-      // Note: deviceInactiveUsers is keyed by userId, so we check entry.userId
-      if (deviceInactiveUsers.has(entry.userId)) return;
-
-      const hr = entry.metrics?.heartRate;
-      const hasValidHR = hr != null && Number.isFinite(hr) && hr > 0;
-      if (hasValidHR) {
-        currentTickActiveHR.add(trackingId);  // Phase 4: Use trackingId (entityId)
-      }
-    });
-    
-    // Record null for users who HAD active HR last tick but DON'T this tick
-    // This creates the "holes" that allow dropout detection in the chart
-    // Priority 6: Use ActivityMonitor.getPreviousTickActive() instead of _lastTickActiveHR
-    // Phase 4: previousTickActive now contains trackingIds (entityId with userId fallback)
-    const droppedUsers = [];
-    const previousTickActive = this.activityMonitor?.getPreviousTickActive() || new Set();
-    previousTickActive.forEach((trackingId) => {
-      if (!currentTickActiveHR.has(trackingId)) {
-        // User's device stopped broadcasting - record null to mark dropout
-        droppedUsers.push(trackingId);
-
-        // Note: TreasureBox coin accumulation is now handled by:
-        // 1. processTick() which only processes active participants (Priority 1)
-        // 2. _awardCoins() which checks ActivityMonitor.isActive() (Priority 2)
-        // So we don't need to manually clear highestZone or freeze coins here anymore
-      }
-    });
-    if (droppedUsers.length > 0) {
-      console.log('[FitnessSession] DROPOUT DETECTED for:', droppedUsers);
-    }
-    
-    // CRITICAL: Record null HR for ALL roster users who are not currently active
-    // This ensures the chart shows dropout (dotted line) immediately when broadcast stops,
-    // not when the user is removed from roster. This aligns with the sidebar's "inactive" state.
-    const inactiveUsers = [];
-    userMetricMap.forEach((entry, trackingId) => {
-      if (!currentTickActiveHR.has(trackingId)) {
-        // User is in roster but NOT actively broadcasting - record null
-        // Phase 4: trackingId is entityId (or userId fallback)
-        const userId = entry?.userId;
-        const entityId = entry?.entityId || null;
-        assignUserMetric(userId, entityId, 'heart_rate', null);
-        inactiveUsers.push(trackingId);
-      }
-    });
-    
-    // Note: Previous tick tracking now handled by ActivityMonitor.recordTick() (Priority 6)
-    
-    // Second pass: process metrics for all users
-    // Phase 4: trackingId is now entityId (with userId fallback)
-    userMetricMap.forEach((entry, trackingId) => {
-      if (!entry) return;
-      const userId = entry.userId;  // Extract userId from entry
-      const entityId = entry.entityId || null; // Phase 3: Get entityId for dual-write
-      const prevBeats = this._cumulativeBeats.get(trackingId) || 0;
-      const hr = entry.metrics.heartRate;
-      const hasValidHR = currentTickActiveHR.has(trackingId);  // Check trackingId
-      const deltaBeats = hasValidHR
-        ? (hr / 60) * intervalSeconds
-        : 0;
-      const nextBeats = prevBeats + deltaBeats;
-      this._cumulativeBeats.set(trackingId, nextBeats);
-      // Phase 3: Write heart_beats to both user and entity series
-      assignUserMetric(userId, entityId, 'heart_beats', nextBeats);
-
-      // Only record heart_rate if device is actively broadcasting valid HR
-      // Null was already recorded above for users who stopped broadcasting
-      if (!hasValidHR) {
-        // No valid HR data - skip recording other metrics too
-        return;
-      }
-
-      // Track this participant as active (has valid HR data)
-      // Phase 4: Use trackingId (entityId) for activity tracking
-      activeParticipantIds.add(trackingId);
-
-      // Phase 3: Write all metrics to both user and entity series
-      assignUserMetric(userId, entityId, 'heart_rate', entry.metrics.heartRate);
-      assignUserMetric(userId, entityId, 'zone_id', entry.metrics.zoneId);
-      assignUserMetric(userId, entityId, 'rpm', entry.metrics.rpm);
-      assignUserMetric(userId, entityId, 'power', entry.metrics.power);
-      assignUserMetric(userId, entityId, 'distance', entry.metrics.distance);
-    });
-    
-    // Update ActivityMonitor with current tick's activity (Phase 2 - single source of truth)
-    if (this.activityMonitor) {
-      this.activityMonitor.recordTick(currentTickIndex, activeParticipantIds, { timestamp });
-    }
-
-    // Ensure every roster user gets a baseline coins_total=0 once (even if inactive)
-    // so the chart has a series to render and can show dropout immediately.
-    // Phase 3: Also initialize entity series with 0
-    if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
-    if (!this._entitiesWithCoinsRecorded) this._entitiesWithCoinsRecorded = new Set();
-    userMetricMap.forEach((entry, trackingId) => {
-      const userId = entry?.userId;
-      const entityId = entry?.entityId || null;
-      if (userId && !this._usersWithCoinsRecorded.has(userId)) {
-        assignMetric(`user:${userId}:coins_total`, 0);
-        this._usersWithCoinsRecorded.add(userId);
-      }
-      // Phase 3: Initialize entity coins_total too
-      if (entityId && !this._entitiesWithCoinsRecorded.has(entityId)) {
-        assignMetric(`entity:${entityId}:coins_total`, 0);
-        this._entitiesWithCoinsRecorded.add(entityId);
-      }
+    // Delegate to TimelineRecorder
+    const tickResult = this._timelineRecorder.recordTick({
+      timestamp,
+      sessionId: this.sessionId,
+      roster: this.roster
     });
 
-    // Process TreasureBox coin intervals SYNCHRONOUSLY during session tick
-    // This ensures coin awards are aligned with activity detection (no race conditions)
-    if (this.treasureBox) {
-      // Phase 4: Pass trackingIds (entityId with userId fallback) to processTick
-      // currentTickActiveHR now contains entityIds for proper entity-based tracking
-      this.treasureBox.processTick(currentTickIndex, currentTickActiveHR, {});
-      
-      const treasureSummary = this.treasureBox.summary;
-
-    // Chart diagnostics: log once if roster exists but no timeline series present after ticks
-    if (!this._chartDebugLogged.noSeries) {
-      const rosterCount = Array.isArray(this.roster) ? this.roster.length : 0;
-      const tickCount = Number(this.timeline?.timebase?.tickCount) || 0;
-      const seriesCount = this.timeline && this.timeline.series ? Object.keys(this.timeline.series).length : 0;
-      if (rosterCount > 0 && tickCount >= 1 && seriesCount === 0) {
-        this._chartDebugLogged.noSeries = true;
-        this._log('chart_no_series', {
-          rosterCount,
-          tickCount,
-          seriesCount,
-          timebaseIntervalMs: this.timeline?.timebase?.intervalMs,
-          sessionId: this.sessionId
-        });
-      }
-    }
-      if (treasureSummary) {
-        assignMetric('global:coins_total', treasureSummary.totalCoins);
-      }
-      // Phase 3: Get coins per entity/user from TreasureBox
-      // TreasureBox now tracks by entityId (Phase 2), but also supports legacy userId
-      const perUserCoinTotals = typeof this.treasureBox.getPerUserTotals === 'function'
-        ? this.treasureBox.getPerUserTotals()
-        : null;
-      if (perUserCoinTotals && typeof perUserCoinTotals.forEach === 'function') {
-        // Track users/entities who have had their first coin value recorded (to ensure all start at 0)
-        if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
-        if (!this._entitiesWithCoinsRecorded) this._entitiesWithCoinsRecorded = new Set();
-        
-        // VERSION: 2026-01-01-B - force cache bust
-        perUserCoinTotals.forEach((coins, key) => {
-          if (!key) return;
-          
-          // Phase 3: Determine if this is an entityId or userId
-          const isEntity = typeof key === 'string' && key.startsWith('entity-');
-          
-          const coinValue = Number.isFinite(coins) ? coins : 0;
-          
-          if (isEntity) {
-            // For entities: write to BOTH entity series AND user series
-            // Entity series: entity:entity-xxx:coins_total
-            // User series: user:jin:coins_total (using profileId from accumulator)
-            assignMetric(`entity:${key}:coins_total`, coinValue);
-            
-            // Also write to user series using profileId for chart backward compatibility
-            const acc = this.treasureBox?.perUser?.get(key);
-            const profileId = acc?.profileId;
-            if (profileId) {
-              assignMetric(`user:${profileId}:coins_total`, coinValue);
-            }
-          } else {
-            // Regular user: write to user series only
-            assignMetric(`user:${key}:coins_total`, coinValue);
-          }
-        });
-      }
+    // Update FitnessSession state from timeline (for backward compatibility)
+    if (this.timeline?.timebase) {
+      this.timebase.intervalCount = this.timeline.timebase.tickCount;
+      this.timebase.intervalMs = this.timeline.timebase.intervalMs;
+      this.timebase.startAbsMs = this.timeline.timebase.startTime;
+      this.timebase.lastTickTimestamp = this.timeline.timebase.lastTickTimestamp;
     }
 
-    if (this._pendingSnapshotRef) {
-      assignMetric('global:snapshot_ref', this._pendingSnapshotRef);
-      this._pendingSnapshotRef = null;
-    }
+    // Sync cumulative trackers for backward compatibility
+    // TODO: Remove once all consumers use TimelineRecorder directly
+    this._cumulativeBeats = this._timelineRecorder.getAllCumulativeBeats();
+    this._cumulativeRotations = this._timelineRecorder.getAllCumulativeRotations();
 
-    validateTickPayloadKeys();
-    const tickResult = this.timeline.tick(tickPayload, { timestamp });
-    this.timebase.intervalCount = this.timeline.timebase.tickCount;
-    this.timebase.intervalMs = this.timeline.timebase.intervalMs;
-    this.timebase.startAbsMs = this.timeline.timebase.startTime;
-    this.timebase.lastTickTimestamp = this.timeline.timebase.lastTickTimestamp;
+    // Telemetry logging
     this._maybeLogTimelineTelemetry();
-    
-    // DEBUG: Log timeline series state for dropout debugging
-    // Log every 5 ticks to reduce spam but still capture state over time
-    if (currentTickIndex % 5 === 0 || currentTickIndex < 3) {
-      this._logTimelineDebug(currentTickIndex, currentTickActiveHR);
-    }
-    
+
+    // Empty roster timeout check (6A)
+    this._checkEmptyRosterTimeout();
+
     return tickResult;
   }
   
+  // NOTE: The following ~375 lines of inline _collectTimelineTick code were
+  // extracted to TimelineRecorder.js as part of Phase 5 refactoring.
+  // See: /docs/postmortem-entityid-migration-fitnessapp.md #13
+
   /**
    * DEBUG: Log timeline series for dropout detection debugging
    * Logs to both console AND emits a debug event for backend visibility
@@ -2231,6 +1922,9 @@ export class FitnessSession {
     this._tickIntervalMs = 5000;
     this._cumulativeBeats = new Map();
     this._cumulativeRotations = new Map();
+    
+    // Phase 5: Reset TimelineRecorder
+    this._timelineRecorder?.reset();
   }
 
   _encodeSeries(series = {}, tickCount = null) {
@@ -2374,164 +2068,31 @@ export class FitnessSession {
     return { ok: true, endTime, durationMs: sessionData.durationMs };
   }
 
+  /**
+   * Persist session data - DELEGATED to PersistenceManager.
+   * 
+   * Phase 5 refactoring: This method now delegates to PersistenceManager
+   * which owns all validation, encoding, and API persistence logic.
+   * 
+   * @param {Object} sessionData
+   * @param {Object} [options]
+   * @param {boolean} [options.force=false]
+   * @returns {boolean}
+   */
   _persistSession(sessionData, { force = false } = {}) {
-    if (!sessionData) {
-      getLogger().warn('fitness.session.persist.no_data');
-      return false;
-    }
-    if (this._saveTriggered && !force) {
-      getLogger().warn('fitness.session.persist.save_triggered');
-      return false;
-    }
-    const validation = this._validateSessionPayload(sessionData);
-    getLogger().warn('fitness.session.persist.validation', { validation });
-    if (!validation?.ok) {
-      this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
-      return false;
-    }
-
-    // Build a persistence payload without mutating live session state.
-    const timezone = resolvePersistTimezone();
-    const numericSessionId = deriveNumericSessionId(sessionData.sessionId);
-    const sessionDate = deriveSessionDate(numericSessionId);
-    const startReadable = toReadable(sessionData.startTime, timezone);
-    const endReadable = toReadable(sessionData.endTime, timezone);
-    const durationSeconds = Number.isFinite(sessionData.durationMs)
-      ? Math.round(sessionData.durationMs / 1000)
-      : null;
-
-    const sanitizedRoster = sanitizeRosterForPersist(sessionData.roster);
-    const participants = buildParticipantsForPersist(sanitizedRoster, sessionData.deviceAssignments);
-
-    const persistSessionData = {
-      ...sessionData,
-      version: 2,
-      timezone,
-      startTime: startReadable,
-      endTime: endReadable,
-
-      // v2 structural block
-      session: {
-        ...(numericSessionId ? { id: String(numericSessionId) } : {}),
-        ...(sessionDate ? { date: sessionDate } : {}),
-        ...(startReadable ? { start: startReadable } : {}),
-        ...(endReadable ? { end: endReadable } : {}),
-        ...(durationSeconds != null ? { duration_seconds: durationSeconds } : {})
-      },
-
-      // v2 participants keyed object
-      participants
-    };
-    if (persistSessionData.timeline && typeof persistSessionData.timeline === 'object') {
-      persistSessionData.timeline = { ...persistSessionData.timeline };
-    }
-
-    // Convert event timestamps to human-readable strings and build a v2 events array.
-    const v2Events = [];
-    if (persistSessionData.timeline && Array.isArray(persistSessionData.timeline.events)) {
-      persistSessionData.timeline.events = persistSessionData.timeline.events.map((evt) => {
-        if (!evt || typeof evt !== 'object') return evt;
-        const rawTs = Number(evt.timestamp);
-        const readableTs = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : (typeof evt.timestamp === 'string' ? evt.timestamp : null);
-        if (readableTs) {
-          v2Events.push({
-            at: readableTs,
-            type: evt.type,
-            data: evt.data ?? null
-          });
-        }
-        return {
-          ...evt,
-          timestamp: readableTs || evt.timestamp
-        };
-      });
-    }
-
-    // Move voice memos into events and remove top-level voiceMemos from persisted payload.
-    const voiceMemos = Array.isArray(sessionData.voiceMemos) ? sessionData.voiceMemos : [];
-    voiceMemos.forEach((memo) => {
-      if (!memo || typeof memo !== 'object') return;
-      const rawTs = Number(memo.createdAt ?? memo.startedAt ?? memo.endedAt);
-      const at = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : null;
-      v2Events.push({
-        ...(at ? { at } : {}),
-        type: 'voice_memo',
-        data: {
-          id: memo.memoId ?? null,
-          duration_seconds: Number.isFinite(memo.durationSeconds) ? memo.durationSeconds : null,
-          transcript: memo.transcriptClean ?? memo.transcript ?? null
-        }
-      });
-    });
-
-    if (v2Events.length) {
-      persistSessionData.events = v2Events;
-    }
-
-    // Restructure timeline with v2 fields (keep legacy timebase for compatibility).
-    if (persistSessionData.timeline && typeof persistSessionData.timeline === 'object') {
-      const intervalMs = Number(persistSessionData.timeline?.timebase?.intervalMs);
-      const tickCount = Number(persistSessionData.timeline?.timebase?.tickCount);
-      persistSessionData.timeline.interval_seconds = Number.isFinite(intervalMs) ? Math.round(intervalMs / 1000) : null;
-      persistSessionData.timeline.tick_count = Number.isFinite(tickCount) ? tickCount : null;
-      persistSessionData.timeline.encoding = 'rle';
-    }
-
-    // Remove legacy duplicates / noisy sections from persisted payload.
-    delete persistSessionData.roster;
-    delete persistSessionData.voiceMemos;
-    delete persistSessionData.deviceAssignments;
-    delete persistSessionData.timebase;
-    delete persistSessionData.events; // legacy top-level events (timeline.events is the source of truth)
-    if (v2Events.length) {
-      persistSessionData.events = v2Events;
-    }
-
-    // Encode series for compact, deterministic storage while keeping readability (stringified RLE)
-    if (persistSessionData.timeline && persistSessionData.timeline.series) {
-      const tickCount = Number(persistSessionData.timeline?.timebase?.tickCount);
-      const rawSeries = persistSessionData.timeline.series;
-      const rawKeys = rawSeries && typeof rawSeries === 'object' ? Object.keys(rawSeries) : [];
-      this._log('persist_series_encode_before', {
-        sessionId: persistSessionData.sessionId || this.sessionId,
-        seriesCount: rawKeys.length,
-        tickCount,
-        sampleKeys: rawKeys.slice(0, 5)
-      });
-      const { encodedSeries } = this._encodeSeries(persistSessionData.timeline.series, tickCount);
-
-      const mappedSeries = mapSeriesKeysForPersist(encodedSeries);
-      const encodedKeys = Object.keys(mappedSeries || {});
-      const droppedKeys = rawKeys.filter((key) => !Object.prototype.hasOwnProperty.call(encodedSeries || {}, key));
-      this._log('persist_series_encode_after', {
-        sessionId: persistSessionData.sessionId || this.sessionId,
-        encodedCount: encodedKeys.length,
-        droppedKeys: droppedKeys.slice(0, 5),
-        wasEmpty: encodedKeys.length === 0,
-        tickCount
-      });
-      persistSessionData.timeline.series = mappedSeries;
-    }
-    const seriesSample = persistSessionData.timeline?.series ? Object.entries(persistSessionData.timeline.series).slice(0, 2) : [];
-    getLogger().warn('fitness.session.persist.pre_api', {
-      sessionId: persistSessionData.sessionId,
-      hasTimeline: !!persistSessionData.timeline,
-      seriesKeys: persistSessionData.timeline?.series ? Object.keys(persistSessionData.timeline.series).length : 0,
-      seriesSample: seriesSample.map(([k, v]) => [k, typeof v, v?.substring?.(0, 50)])
-    });
-    this._lastAutosaveAt = Date.now();
-    this._saveTriggered = true;
-    const persistFn = this._persistApi || DaylightAPI;
-    persistFn('api/fitness/save_session', { sessionData: persistSessionData }, 'POST')
-    .then(resp => {
-      // console.log('Fitness session saved', resp);
-    }).catch(err => {
-      // console.error('Failed to save fitness session', err);
-    }).finally(() => {
-      this._saveTriggered = false;
-    });
-    return true;
+    // Delegate to PersistenceManager
+    const result = this._persistenceManager.persistSession(sessionData, { force });
+    
+    // Sync state for backward compatibility
+    this._lastAutosaveAt = this._persistenceManager.getLastSaveTime();
+    this._saveTriggered = this._persistenceManager.isSaveInProgress();
+    
+    return result;
   }
+  
+  // NOTE: ~140 lines of _persistSession implementation were extracted to
+  // PersistenceManager.js as part of Phase 5 refactoring.
+  // See: /docs/postmortem-entityid-migration-fitnessapp.md #13
 
   _startTickTimer() {
     this._stopTickTimer();
