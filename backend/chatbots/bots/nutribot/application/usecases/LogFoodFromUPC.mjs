@@ -54,21 +54,24 @@ export class LogFoodFromUPC {
 
     this.#logger.debug('logUPC.start', { conversationId, upc });
 
+    let statusMsgId = null; // Track status message for error handling
+
     try {
       // 1. Delete original user message
       if (messageId) {
         try {
           await this.#messagingGateway.deleteMessage(conversationId, messageId);
         } catch (e) {
-          // Ignore delete errors
+          this.#logger.warn('logUPC.deleteOriginalFailed', { conversationId, messageId, error: e.message });
         }
       }
 
       // 2. Send "Looking up..." message
-      const { messageId: statusMsgId } = await this.#messagingGateway.sendMessage(
+      const statusMsg = await this.#messagingGateway.sendMessage(
         conversationId,
         `🔍 Looking up barcode ${upc}...`
       );
+      statusMsgId = statusMsg.messageId;
 
       // 3. Call UPC gateway
       let product = null;
@@ -196,7 +199,38 @@ export class LogFoodFromUPC {
         product,
       };
     } catch (error) {
-      this.#logger.error('logUPC.error', { conversationId, upc, error: error.message });
+      this.#logger.error('logUPC.error', { 
+        conversationId, 
+        upc, 
+        error: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+      
+      // Update status message with user-friendly error before throwing
+      if (statusMsgId) {
+        try {
+          const isNetworkError = error.code === 'ETIMEDOUT' || 
+                                 error.code === 'ECONNRESET' || 
+                                 error.code === 'EAI_AGAIN' ||
+                                 error.message?.includes('ETIMEDOUT');
+          
+          const errorMsg = isNetworkError
+            ? `⚠️ Network timeout looking up barcode ${upc}\n\nPlease try again or describe the food manually.`
+            : `❌ Error looking up barcode ${upc}\n\n${error.message}\n\nYou can describe the food instead.`;
+          
+          await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
+            text: errorMsg,
+          });
+        } catch (updateError) {
+          this.#logger.warn('logUPC.errorMessageUpdate.failed', { 
+            conversationId, 
+            error: updateError.message 
+          });
+          // Continue throwing original error even if message update fails
+        }
+      }
+      
       throw error;
     }
   }

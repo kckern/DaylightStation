@@ -151,13 +151,30 @@ const getScrobbles = async (guidId = null, req = null) => {
                             headers: {
                                 'User-Agent': 'DaylightStation-Harvester/1.0',
                                 'Accept': 'application/json'
-                            }
+                            },
+                            timeout: 10000 // 10 second timeout
                         }
                     );
                     break; // Success, exit retry loop
                 } catch (err) {
                     retries--;
-                    if (retries === 0) throw err; // Out of retries
+                    
+                    const isTimeout = err.code === 'ETIMEDOUT' || 
+                                     err.code === 'ECONNABORTED' ||
+                                     err.message?.includes('timeout');
+                    
+                    if (retries === 0) {
+                        // Final failure - log with clear error type
+                        lastfmLogger.error('lastfm.api_error.final', {
+                            username: LAST_FM_USER,
+                            page,
+                            error: err.message,
+                            code: err.code,
+                            isTimeout,
+                            statusCode: err.response?.status
+                        });
+                        throw err; // Out of retries
+                    }
                     
                     const waitTime = (4 - retries) * 2000; // 2s, 4s, 6s
                     lastfmLogger.warn('lastfm.api_error.retrying', {
@@ -165,7 +182,9 @@ const getScrobbles = async (guidId = null, req = null) => {
                         page,
                         retriesLeft: retries,
                         waitTime,
-                        error: err.message
+                        error: err.message,
+                        code: err.code,
+                        isTimeout
                     });
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                 }

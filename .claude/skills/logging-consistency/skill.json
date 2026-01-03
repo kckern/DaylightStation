@@ -1,0 +1,48 @@
+{
+  "name": "logging-consistency",
+  "description": "Audit codebase for logging quality and consistency",
+  "version": "1.0.0",
+  "author": "DaylightStation Team",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "enum": ["backend", "frontend", "all"],
+        "description": "Which part of the codebase to audit",
+        "default": "all"
+      },
+      "checkConsoleLogs": {
+        "type": "boolean",
+        "description": "Find console.log/warn/error that should use structured logging",
+        "default": true
+      },
+      "checkLoggerUsage": {
+        "type": "boolean",
+        "description": "Verify createLogger is used properly in all modules",
+        "default": true
+      },
+      "checkSensitiveData": {
+        "type": "boolean",
+        "description": "Check for potential PII/secrets in log statements",
+        "default": true
+      },
+      "checkLogLevels": {
+        "type": "boolean",
+        "description": "Verify log levels are used appropriately",
+        "default": true
+      },
+      "autofix": {
+        "type": "boolean",
+        "description": "Automatically fix issues where possible",
+        "default": false
+      },
+      "format": {
+        "type": "string",
+        "enum": ["summary", "detailed", "checklist"],
+        "description": "Output format",
+        "default": "detailed"
+      }
+    }
+  }
+}
