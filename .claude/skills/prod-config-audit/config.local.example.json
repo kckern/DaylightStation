@@ -1,0 +1,5 @@
+{
+  "host": "your-server.example.com",
+  "configPath": "/path/to/your/config",
+  "dockerComposePath": "/path/to/your/docker-compose.yml"
+}
