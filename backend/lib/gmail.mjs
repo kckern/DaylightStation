@@ -15,19 +15,19 @@ const defaultGmailLogger = createLogger({
  * @returns {Object} Formatted message
  */
 const formatMessage = (data) => {
-    const headers = data.payload.headers;
-    const internalDate = new Date(parseInt(data.internalDate));
+    const headers = data.payload?.headers || [];
+    const internalDate = data.internalDate ? new Date(parseInt(data.internalDate)) : null;
     
     return {
         id: data.id,
-        date: moment(internalDate).format('YYYY-MM-DD'),
-        time: moment(internalDate).format('HH:mm'),
+        date: internalDate ? moment(internalDate).format('YYYY-MM-DD') : moment().format('YYYY-MM-DD'),
+        time: internalDate ? moment(internalDate).format('HH:mm') : '00:00',
         subject: sanitize(headers.find(h => h.name === 'Subject')?.value || 'No Subject'),
         from: sanitize(headers.find(h => h.name === 'From')?.value || 'Unknown'),
         to: sanitize(headers.find(h => h.name === 'To')?.value || 'Unknown'),
-        snippet: sanitize(data.snippet),
-        isUnread: data.labelIds?.includes('UNREAD'),
-        isSent: data.labelIds?.includes('SENT')
+        snippet: sanitize(data.snippet || ''),
+        isUnread: Array.isArray(data.labelIds) && data.labelIds.includes('UNREAD'),
+        isSent: Array.isArray(data.labelIds) && data.labelIds.includes('SENT')
     };
 };
 
@@ -78,8 +78,28 @@ const listMails = async (logger, job_id, targetUsername = null) => {
     const { data: inboxData } = await gmail.users.messages.list({ userId: 'me', q: 'is:inbox', maxResults: 100 });
     
     const inboxMessages = await Promise.all((inboxData.messages || []).map(async message => {
-        const { data } = await gmail.users.messages.get({ userId: 'me', id: message.id });
-        return formatMessage(data);
+        const { data } = await gmail.users.messages.get({ 
+            userId: 'me', 
+            id: message.id,
+            format: 'metadata',
+            metadataHeaders: ['Subject', 'From', 'To', 'Date']
+        });
+        
+        // Fallback: use labelIds from list response if get() doesn't have them
+        const enrichedData = {
+            ...data,
+            labelIds: data.labelIds || message.labelIds || []
+        };
+        
+        log.debug('gmail.message.labels', { 
+            id: data.id,
+            labelIds: enrichedData.labelIds,
+            hasUnread: enrichedData.labelIds.includes('UNREAD'),
+            fromList: message.labelIds,
+            fromGet: data.labelIds
+        });
+        
+        return formatMessage(enrichedData);
     }));
 
     // Save to current/

@@ -11,6 +11,7 @@ class LogDispatcher {
   constructor(config = {}) {
     this.transports = [];
     this.defaultLevel = config.defaultLevel || 'info';
+    this.componentLevels = config.componentLevels || {}; // Per-component log levels
     this.metrics = { sent: 0, dropped: 0, errors: 0 };
   }
 
@@ -38,8 +39,8 @@ class LogDispatcher {
    * @param {Object} event - Normalized log event
    */
   dispatch(event) {
-    // Level filtering
-    if (!this.isLevelEnabled(event.level)) {
+    // Level filtering (check component-specific level if available)
+    if (!this.isLevelEnabled(event.level, event.context)) {
       this.metrics.dropped++;
       return;
     }
@@ -69,10 +70,15 @@ class LogDispatcher {
   /**
    * Check if a log level should be processed
    * @param {string} level - Log level to check
+   * @param {Object} context - Event context (contains source/component info)
    * @returns {boolean}
    */
-  isLevelEnabled(level) {
-    const currentPriority = LEVEL_PRIORITY[this.defaultLevel] ?? LEVEL_PRIORITY.info;
+  isLevelEnabled(level, context = {}) {
+    // Check for component-specific level first (based on context.source)
+    const componentLevel = context?.source ? this.componentLevels[context.source] : null;
+    const effectiveLevel = componentLevel || this.defaultLevel;
+
+    const currentPriority = LEVEL_PRIORITY[effectiveLevel] ?? LEVEL_PRIORITY.info;
     const eventPriority = LEVEL_PRIORITY[level] ?? LEVEL_PRIORITY.info;
     return eventPriority >= currentPriority;
   }
@@ -163,7 +169,7 @@ export function isLoggingInitialized() {
 
 /**
  * Initialize the global logging dispatcher
- * @param {Object} config - { defaultLevel?: string }
+ * @param {Object} config - { defaultLevel?: string, componentLevels?: Object }
  * @returns {LogDispatcher}
  */
 export function initializeLogging(config = {}) {

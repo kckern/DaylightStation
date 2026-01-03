@@ -1,0 +1,73 @@
+{
+  "name": "integration-test",
+  "description": "Run dev server with concurrent log monitoring and API testing via curl",
+  "version": "1.0.0",
+  "author": "DaylightStation Team",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["start", "test", "stop", "restart", "status"],
+        "description": "Action to perform",
+        "default": "start"
+      },
+      "endpoint": {
+        "type": "string",
+        "description": "API endpoint to test (e.g., '/api/health', '/api/clickup/spaces')",
+        "default": null
+      },
+      "method": {
+        "type": "string",
+        "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+        "description": "HTTP method for API testing",
+        "default": "GET"
+      },
+      "data": {
+        "type": "string",
+        "description": "JSON data to send with request (for POST/PUT/PATCH)",
+        "default": null
+      },
+      "headers": {
+        "type": "string",
+        "description": "Additional headers as JSON string",
+        "default": null
+      },
+      "logTail": {
+        "type": "number",
+        "description": "Number of log lines to show initially",
+        "default": 20
+      },
+      "waitForServer": {
+        "type": "number",
+        "description": "Seconds to wait for server startup before testing",
+        "default": 5
+      },
+      "showLogs": {
+        "type": "boolean",
+        "description": "Show live log output during testing",
+        "default": true
+      },
+      "port": {
+        "type": "number",
+        "description": "Backend server port",
+        "default": 3111
+      },
+      "followRedirects": {
+        "type": "boolean",
+        "description": "Follow HTTP redirects in curl",
+        "default": true
+      },
+      "verbose": {
+        "type": "boolean",
+        "description": "Show detailed curl output",
+        "default": false
+      },
+      "curlTimeout": {
+        "type": "number",
+        "description": "Timeout for curl requests in seconds",
+        "default": 30
+      }
+    }
+  }
+}

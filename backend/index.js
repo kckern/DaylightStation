@@ -52,8 +52,9 @@ console.log('[Config] ConfigService initialized with baseDir:', baseDir);
 let loggingConfig = loadLoggingConfig();
 
 // Initialize the new unified logging system
-const dispatcher = initializeLogging({ 
-  defaultLevel: resolveLoggerLevel('backend', loggingConfig) 
+const dispatcher = initializeLogging({
+  defaultLevel: resolveLoggerLevel('backend', loggingConfig),
+  componentLevels: loggingConfig.loggers || {}
 });
 
 // Add console transport
@@ -132,8 +133,9 @@ async function initializeApp() {
     
     loggingConfig = loadLoggingConfig();
 
-    // Update dispatcher level if needed
+    // Update dispatcher level and component levels if needed
     dispatcher.setLevel(resolveLoggerLevel('backend', loggingConfig));
+    dispatcher.componentLevels = loggingConfig.loggers || {};
 
     // Recreate root logger with updated context (new system)
     rootLogger = createLogger({

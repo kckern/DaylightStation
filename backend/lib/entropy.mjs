@@ -97,6 +97,11 @@ export const getEntropyReport = async () => {
                     }
                 } else if (itemsToProcess && typeof itemsToProcess === 'object') {
                     let dates = Object.keys(itemsToProcess);
+                    
+                    // Filter out invalid date keys (must be YYYY-MM-DD format)
+                    const validDateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                    dates = dates.filter(d => validDateRegex.test(d));
+                    
                     dates.sort((a, b) => moment(b).diff(moment(a)));
 
                     // Iterate sorted dates to find the first one that matches criteria
@@ -152,7 +157,12 @@ export const getEntropyReport = async () => {
 
                 if (lastDate) {
                     lastUpdate = lastDate;
-                    const daysDiff = moment().diff(moment(lastDate), 'days');
+                    
+                    // Use date-only comparison to avoid timestamp precision issues
+                    const lastDateOnly = moment(lastDate).format('YYYY-MM-DD');
+                    const todayOnly = moment().format('YYYY-MM-DD');
+                    const daysDiff = moment(todayOnly).diff(moment(lastDateOnly), 'days');
+                    
                     value = Math.max(0, daysDiff);
                     label = value === 0 ? 'Today' : `${value} day${value === 1 ? '' : 's'} ago`;
 

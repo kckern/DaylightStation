@@ -7,7 +7,12 @@
       "Bash(grep:*)",
       "Bash(test:*)",
       "Bash(git check-ignore:*)",
-      "Bash(ssh:*)"
+      "Bash(ssh:*)",
+      "Bash(./deploy.sh:*)",
+      "Bash(pkill:*)",
+      "Bash(./dev:*)",
+      "Bash(tee:*)",
+      "Bash(curl:*)"
     ]
   }
 }
