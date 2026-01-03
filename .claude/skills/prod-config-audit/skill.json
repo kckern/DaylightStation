@@ -1,0 +1,63 @@
+{
+  "name": "prod-config-audit",
+  "description": "Audit production configuration on remote server via SSH",
+  "version": "1.0.0",
+  "author": "DaylightStation Team",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "host": {
+        "type": "string",
+        "description": "SSH host (e.g., 'homeserver.local', 'user@server.com')",
+        "default": null
+      },
+      "configPath": {
+        "type": "string",
+        "description": "Remote config directory path",
+        "default": null
+      },
+      "dockerComposePath": {
+        "type": "string",
+        "description": "Remote docker-compose.yml path",
+        "default": null
+      },
+      "target": {
+        "type": "string",
+        "enum": ["all", "logging", "secrets", "app", "system"],
+        "description": "Which config to audit",
+        "default": "all"
+      },
+      "checkSecrets": {
+        "type": "boolean",
+        "description": "Validate secrets configuration (won't show values)",
+        "default": true
+      },
+      "checkLogging": {
+        "type": "boolean",
+        "description": "Check logging configuration and levels",
+        "default": true
+      },
+      "checkEnvVars": {
+        "type": "boolean",
+        "description": "Check environment variables in docker-compose",
+        "default": true
+      },
+      "compareWithLocal": {
+        "type": "boolean",
+        "description": "Compare production config with local dev config",
+        "default": false
+      },
+      "showRecommendations": {
+        "type": "boolean",
+        "description": "Provide recommendations for optimization",
+        "default": true
+      },
+      "format": {
+        "type": "string",
+        "enum": ["summary", "detailed", "diff"],
+        "description": "Output format",
+        "default": "detailed"
+      }
+    }
+  }
+}

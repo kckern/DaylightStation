@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(ls:*)",
-      "Bash(timeout 15 tail:*)"
+      "Bash(timeout 15 tail:*)",
+      "Bash(node --check:*)",
+      "Bash(grep:*)"
     ]
   }
 }
