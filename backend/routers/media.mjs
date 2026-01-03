@@ -439,6 +439,13 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
                     image: handleDevImage(req, plexInstance.thumbUrl(showMeta.thumb) || `${process.env.host}/media/plex/img/notfound.png`)
                 };
                 
+                // For seasons, include parent show info
+                if (showMeta.type === 'season' && showMeta.parentRatingKey) {
+                    plexInfo.parentKey = showMeta.parentRatingKey;
+                    plexInfo.parentTitle = showMeta.parentTitle;
+                    plexInfo.parentThumb = handleDevImage(req, plexInstance.thumbUrl(showMeta.parentThumb));
+                }
+                
                 // Remove any undefined/falsey keys
                 Object.keys(plexInfo).forEach(key => {
                     if (plexInfo[key] == null || plexInfo[key] === "") {
