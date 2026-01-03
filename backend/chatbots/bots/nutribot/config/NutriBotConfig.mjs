@@ -13,6 +13,7 @@ import { ValidationError, NotFoundError } from '../../../_lib/errors/index.mjs';
 import { TestContext } from '../../../_lib/testing/TestContext.mjs';
 import { UserResolver } from '../../../_lib/users/UserResolver.mjs';
 import { configService } from '../../../../lib/config/ConfigService.mjs';
+import { defaultLogger as logger } from '../../../_lib/logging/Logger.mjs';
 
 // Single source of truth for default nutrition goals
 export const DEFAULT_NUTRITION_GOALS = {
@@ -315,14 +316,14 @@ export class NutriBotConfig {
 
     const conversations = this.#userToConversations.get(username);
     if (!conversations || conversations.length === 0) {
-      console.warn('nutribot.goals.fallback.default', { userId: username });
+      logger.warn('nutribot.goals.fallback.default', { userId: username });
       return this.getDefaultGoals();
     }
     
     // Get from first conversation mapping
     const goals = conversations[0].goals;
     if (!goals) {
-      console.warn('nutribot.goals.fallback.mapping', { userId: username });
+      logger.warn('nutribot.goals.fallback.mapping', { userId: username });
       return this.getDefaultGoals();
     }
     

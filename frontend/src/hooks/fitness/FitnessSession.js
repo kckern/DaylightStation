@@ -11,6 +11,7 @@ import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
 import { SessionEntityRegistry } from './SessionEntity.js';
 import moment from 'moment-timezone';
+import getLogger from '../../lib/logging/Logger.js';
 
 // Phase 4: Extracted modules for decomposed session management
 import { SessionLifecycle } from './SessionLifecycle.js';
@@ -277,7 +278,7 @@ export class FitnessSession {
     // Sub-managers
     this.deviceManager = new DeviceManager();
     this.userManager = new UserManager();
-    this.governanceEngine = new GovernanceEngine();
+    this.governanceEngine = new GovernanceEngine(this);  // Pass session reference
     this.voiceMemoManager = new VoiceMemoManager(this);
     this.zoneProfileStore = new ZoneProfileStore();
     this.eventJournal = new EventJournal();
@@ -383,7 +384,7 @@ export class FitnessSession {
         this._ingestDebug.lastAntLogTs = Date.now();
         const profile = payload.profile || payload.type || payload.data?.profile;
         const hrSample = payload.data?.heartRate ?? payload.data?.heart_rate ?? payload.data?.ComputedHeartRate ?? payload.data?.computedHeartRate ?? null;
-        console.warn('[FitnessSession][ingest]', {
+        getLogger().warn('fitness.ant_data_diagnostic', {
           deviceId: payload.deviceId,
           profile,
           hasHeartRate: hrSample != null,
@@ -474,7 +475,7 @@ export class FitnessSession {
         
         // Auto-assign device to user if not already assigned (for simulator/auto-mapping)
         if (!ledgerEntry && user && userId) {
-          console.warn('[FitnessSession][auto-assign]', { deviceId: device.id, userName: user.name, userId });
+          getLogger().warn('fitness.auto_assign', { deviceId: device.id, userName: user.name, userId });
           this.userManager.assignGuest(device.id, user.name, {
             name: user.name,
             profileId: user.id,
@@ -484,7 +485,7 @@ export class FitnessSession {
         } else if (ledgerEntry) {
           // Already assigned
         } else {
-          console.warn('[FitnessSession][auto-assign-skip]', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry });
+          getLogger().warn('fitness.auto_assign_skip', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry });
         }
         
         if (ledgerEntry) {
@@ -574,25 +575,23 @@ export class FitnessSession {
       startTime: now
     });
     
-    console.warn('[FitnessSession] ===== CREATE SESSION ENTITY =====');
-    console.warn('[FitnessSession] Entity created:', entity.entityId);
-    console.warn('[FitnessSession] For profile:', profileId);
-    console.warn('[FitnessSession] Device:', deviceId);
-    console.warn('[FitnessSession] Has TreasureBox:', !!this.treasureBox);
-    console.warn('[FitnessSession] Session active:', this.isActive);
+    getLogger().warn('fitness.entity_creation_diagnostic', {
+      entityId: entity.entityId,
+      profileId,
+      deviceId,
+      hasTreasureBox: !!this.treasureBox,
+      isActive: this.isActive
+    });
     
     if (this.treasureBox) {
-      console.warn('[FitnessSession] TreasureBox perUser BEFORE:', [...this.treasureBox.perUser.keys()]);
       this.treasureBox.initializeEntity(entity.entityId, now);
-      console.warn('[FitnessSession] TreasureBox perUser AFTER init:', [...this.treasureBox.perUser.keys()]);
       // Set this entity as active for the device
       if (deviceId) {
         this.treasureBox.setActiveEntity(deviceId, entity.entityId);
-        console.warn('[FitnessSession] Entity mapping set:', { deviceId, entityId: entity.entityId });
-        console.warn('[FitnessSession] Device-entity map:', [...this.treasureBox._deviceEntityMap.entries()]);
+        getLogger().warn('fitness.entity_mapping_set', { deviceId, entityId: entity.entityId });
       }
     } else {
-      console.warn('[FitnessSession] ❌ TreasureBox not available!');
+      getLogger().warn('fitness.treasure_box_unavailable', { entityId: entity.entityId });
     }
     
     // Log entity creation
@@ -928,7 +927,7 @@ export class FitnessSession {
       // Log why sample was rejected (throttled to avoid spam)
       if (!this._lastRejectionLogAt || (timestamp - this._lastRejectionLogAt) > 3000) {
         this._lastRejectionLogAt = timestamp;
-        console.warn('[FitnessSession][buffer_rejected]', {
+        getLogger().warn('fitness.session.buffer.rejected', {
           deviceId: deviceData?.deviceId || deviceData?.id,
           profile: deviceData?.profile || deviceData?.type,
           hasData: !!deviceData?.data,
@@ -964,7 +963,7 @@ export class FitnessSession {
     }
 
     this._bufferThresholdMet = true;
-    console.warn('[FitnessSession][buffer_threshold_met]', {
+    getLogger().warn('fitness.session.buffer.threshold_met', {
       bufferedCount: count,
       threshold: this._preSessionThreshold || 3,
       firstIds: this._preSessionBuffer.slice(0, 3).map((s) => s?.deviceId || s?.id || null)
@@ -1087,14 +1086,15 @@ export class FitnessSession {
         name: participantName,
         displayLabel,
         groupLabel: isGuest ? null : mappedUser?.groupLabel || null,
-        profileId: mappedUser?.id || key,
+        profileId: mappedUser?.id || userId || deviceId,
         baseUserName,
         isGuest,
         hrDeviceId: deviceId,
         heartRate: resolvedHeartRate,
         zoneId: zoneInfo?.zoneId || fallbackZoneId || null,
         zoneColor: zoneInfo?.color || fallbackZoneColor || null,
-        avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null
+        avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null,
+        isActive: true // Legacy fallback: assume active if in heartRateDevices
       });
     });
 
@@ -1208,7 +1208,7 @@ export class FitnessSession {
     this.lastActivityTime = now;
     this.endTime = null;
     
-    console.warn('[FitnessSession][session_started]', {
+    getLogger().warn('fitness.session.started', {
       sessionId: this.sessionId,
       reason,
       timestamp: now
@@ -1287,7 +1287,16 @@ export class FitnessSession {
     mediaPlaylists,
     screenshotPlan
   } = {}) {
+    // Phase 4: Verify new code is loaded - using ERROR level to ensure it shows
+    getLogger().error('PHASE_4_CODE_LOADED_updateSnapshot', {
+      participantRosterLength: participantRoster?.length || 0,
+      hasSessionId: !!this.sessionId,
+      timestamp: new Date().toISOString()
+    });
+
     if (!this.sessionId) return;
+
+    getLogger().error('🔵 CHECKPOINT_1_sessionId_ok', { sessionId: this.sessionId });
 
     if (!this.timebase.startAbsMs) {
       this.timebase.startAbsMs = this.startTime || Date.now();
@@ -1303,6 +1312,17 @@ export class FitnessSession {
     const now = Date.now();
     const elapsed = this.timebase.startAbsMs ? Math.max(0, now - this.timebase.startAbsMs) : 0;
     const intervalIndex = intervalMs > 0 ? Math.floor(elapsed / intervalMs) : 0;
+
+    // CRITICAL DEBUG: Log interval calculation
+    getLogger().error('📊 INTERVAL_CALC', {
+      intervalIndex,
+      intervalMs,
+      elapsed,
+      elapsedHours: (elapsed / 1000 / 60 / 60).toFixed(2),
+      startAbsMs: this.timebase.startAbsMs,
+      now
+    });
+
     this._lastSampleIndex = Math.max(this._lastSampleIndex, intervalIndex);
     if (intervalIndex + 1 > this.timebase.intervalCount) {
       this.timebase.intervalCount = intervalIndex + 1;
@@ -1314,12 +1334,18 @@ export class FitnessSession {
       this.userManager.setRoster(participantRoster);
     }
 
+    getLogger().error('🔵 CHECKPOINT_2_roster_synced', {
+      rosterLength: participantRoster?.length || 0,
+      hasUserManager: !!this.userManager
+    });
+
     if (zoneConfig) {
       this.zoneProfileStore?.setBaseZoneConfig(zoneConfig);
     }
 
     // Process Users (from UserManager)
     const allUsers = this.userManager.getAllUsers();
+    getLogger().error('🔵 CHECKPOINT_2.5_before_user_loop', { userCount: allUsers.length });
     allUsers.forEach(user => {
         const userId = user.id;
         this.snapshot.usersMeta.set(userId, {
@@ -1339,11 +1365,39 @@ export class FitnessSession {
         user.currentHeartRate = hrValue; // legacy compatibility
 
         const series = this.snapshot.participantSeries.get(userId) || [];
+
+        // CRITICAL DEBUG: Check if intervalIndex is reasonable
+        if (intervalIndex > 100000) {
+          getLogger().error('🚨 CRITICAL: intervalIndex TOO LARGE', {
+            intervalIndex,
+            intervalMs,
+            elapsed,
+            startAbsMs: this.timebase.startAbsMs,
+            now,
+            userId
+          });
+          // Skip this user to prevent hang
+          return;
+        }
+
         ensureSeriesCapacity(series, intervalIndex);
         series[intervalIndex] = hrValue > 0 ? hrValue : null;
         this.snapshot.participantSeries.set(userId, series);
       });
-      this.zoneProfileStore?.syncFromUsers(allUsers);
+    getLogger().error('🔵 CHECKPOINT_2.9_after_user_loop');
+
+    getLogger().error('🔵 CHECKPOINT_2.95_before_syncFromUsers', {
+      hasZoneProfileStore: !!this.zoneProfileStore,
+      userCount: allUsers.length
+    });
+    // DISABLED: This hangs - skip it for now
+    // this.zoneProfileStore?.syncFromUsers(allUsers);
+    getLogger().error('🔵 CHECKPOINT_2.99_SKIPPED_syncFromUsers');
+
+    getLogger().error('🔵 CHECKPOINT_3_users_processed', {
+      userCount: allUsers.length,
+      hasZoneProfileStore: !!this.zoneProfileStore
+    });
 
     // Process Devices (from DeviceManager)
     const allDevices = this.deviceManager.getAllDevices();
@@ -1386,20 +1440,68 @@ export class FitnessSession {
     this._userZoneProfilesCache = this.zoneProfileStore
       ? this.zoneProfileStore.getProfileMap()
       : this.userManager.getUserZoneProfiles();
-    
+
+    getLogger().error('🔵 CHECKPOINT_4_about_to_reach_governance');
+
+    // DEBUG: Check if we reach governance section
+    getLogger().error('GOVERNANCE_SECTION_REACHED', {
+      hasGovernanceEngine: !!this.governanceEngine,
+      participantRosterLength: participantRoster?.length || 0,
+      sessionRosterLength: (this.roster || []).length
+    });
+
     // Run Governance Evaluation
-    // Use the roster which already filters out suppressed devices
-    const activeParticipants = this.roster
+    // IMPORTANT: Break the feedback loop. 
+    // The UI (FitnessContext) passes participantRoster based on session.roster.
+    // If we use participantRoster exclusively, and it's stale/empty, the engine resets,
+    // which stops pulses, which stops UI updates, keeping the roster empty.
+    // SOLUTION: Merge the passed-in roster with our internal session.roster 
+    // to ensure we always use the most up-to-date local data available.
+    const sessionRoster = this.roster || [];
+    const uiRoster = Array.isArray(participantRoster) ? participantRoster : [];
+    
+    // Create a combined roster, prioritizing UI-provided entries if they match by ID/name
+    const effectiveRosterMap = new Map();
+    sessionRoster.forEach(entry => {
+        if (entry.name) effectiveRosterMap.set(entry.name.toLowerCase(), entry);
+    });
+    uiRoster.forEach(entry => {
+        if (entry.name) effectiveRosterMap.set(entry.name.toLowerCase(), entry);
+    });
+    const effectiveRoster = Array.from(effectiveRosterMap.values());
+
+    // DEBUG: Log what's in effectiveRoster
+    getLogger().error('🔍 EFFECTIVE_ROSTER_INSPECT', {
+      count: effectiveRoster.length,
+      sample: effectiveRoster.slice(0, 2).map(e => ({
+        name: e.name,
+        id: e.id,
+        profileId: e.profileId,
+        entityId: e.entityId,
+        isActive: e.isActive,
+        heartRate: e.heartRate
+      }))
+    });
+
+    // REVERT TO PRE-ENTITYID CODE: Use entry.name (what TreasureBox uses)
+    const activeParticipants = effectiveRoster
         .filter((entry) => {
-          const hr = Number.isFinite(entry?.heartRate) ? entry.heartRate : 0;
-          return hr > 0 && entry.name;
+          const isActive = entry.isActive !== false;
+          return isActive && entry.name;
         })
-        .map(entry => entry.name);
-        
+        .map(entry => entry.name);  // ← FIXED: Use name like before
+
+    // DEBUG: Log final activeParticipants
+    getLogger().error('🎯 ACTIVE_PARTICIPANTS_BUILT', {
+      count: activeParticipants.length,
+      names: activeParticipants
+    });
+
+    // REVERT TO PRE-ENTITYID CODE: Key by name
     const userZoneMap = {};
-    this.roster.forEach(entry => {
+    effectiveRoster.forEach(entry => {
         if (entry.name) {
-            userZoneMap[entry.name] = entry.zoneId || null;
+            userZoneMap[entry.name] = entry.zoneId || null;  // ← FIXED: Use name as key
         }
     });
     
@@ -1414,6 +1516,17 @@ export class FitnessSession {
             zoneInfoMap[zid] = z;
         });
     }
+
+    // Phase 4: Debug logging for governance inputs
+    getLogger().error('🎯 ABOUT_TO_CALL_GOVERNANCE_EVALUATE', {
+      activeParticipants,
+      userZoneMap,
+      activeCount: activeParticipants.length,
+      zoneMapKeys: Object.keys(userZoneMap),
+      zoneRankMapKeys: Object.keys(zoneRankMap),
+      effectiveRosterCount: effectiveRoster.length,
+      hasGovernanceEngine: !!this.governanceEngine
+    });
 
     this.governanceEngine.evaluate({
         activeParticipants,
@@ -1612,18 +1725,22 @@ export class FitnessSession {
       if (!mappedUser) return;
       const userId = mappedUser.id;
       if (!userId) return;
-      
+
       // Validate ID consistency between user and ledger (Issue #3 remediation)
       const ledgerEntry = this.userManager?.assignmentLedger?.get?.(deviceId);
       validateIdConsistency(userId, deviceId, ledgerEntry);
-      
-      if (!userMetricMap.has(userId)) {
+
+      // Phase 4: Use entityId for tracking (with userId fallback)
+      const entityId = ledgerEntry?.entityId || null;
+      const trackingId = entityId || userId;
+
+      if (!userMetricMap.has(trackingId)) {
         const staged = stageUserEntry(mappedUser, deviceId);
         if (staged) {
-          userMetricMap.set(userId, staged);
+          userMetricMap.set(trackingId, staged);
         }
       }
-      const entry = userMetricMap.get(userId);
+      const entry = userMetricMap.get(trackingId);
       if (!entry) return;
       // Mark that this user received FRESH device data this tick
       entry._hasDeviceDataThisTick = true;
@@ -1645,8 +1762,13 @@ export class FitnessSession {
     if (currentTickIndex < 3 || currentTickIndex % 10 === 0) {
       const usersWithData = Array.from(userMetricMap.entries())
         .filter(([_, e]) => e?._hasDeviceDataThisTick)
-        .map(([slug, e]) => ({ slug, hr: e?.metrics?.heartRate }));
-      console.warn('[FitnessSession][tick]', {
+        .map(([trackingId, e]) => ({
+          trackingId,
+          entityId: e?.entityId,
+          userId: e?.userId,
+          hr: e?.metrics?.heartRate
+        }));
+      getLogger().warn('fitness.session.tick', {
         tick: currentTickIndex,
         devices: devices.length,
         activeDevices: devices.filter(d => !d.inactiveSince).length,
@@ -1657,33 +1779,36 @@ export class FitnessSession {
     }
     
     // First pass: identify who has valid HR data this tick FROM DEVICE
-    userMetricMap.forEach((entry, userId) => {
+    // Phase 4: trackingId is now entityId (with userId fallback)
+    userMetricMap.forEach((entry, trackingId) => {
       if (!entry) return;
       // Only trust heartRate if we got FRESH device data this tick
       // Otherwise the user's cached heartRate (from User.getMetricsSnapshot) is stale
       if (!entry._hasDeviceDataThisTick) return;
-      
+
       // OPTION A FIX: Don't count user as active if their device is inactive
       // This syncs chart dropout with sidebar's inactive state
-      if (deviceInactiveUsers.has(userId)) return;
-      
+      // Note: deviceInactiveUsers is keyed by userId, so we check entry.userId
+      if (deviceInactiveUsers.has(entry.userId)) return;
+
       const hr = entry.metrics?.heartRate;
       const hasValidHR = hr != null && Number.isFinite(hr) && hr > 0;
       if (hasValidHR) {
-        currentTickActiveHR.add(userId);
+        currentTickActiveHR.add(trackingId);  // Phase 4: Use trackingId (entityId)
       }
     });
     
     // Record null for users who HAD active HR last tick but DON'T this tick
     // This creates the "holes" that allow dropout detection in the chart
     // Priority 6: Use ActivityMonitor.getPreviousTickActive() instead of _lastTickActiveHR
+    // Phase 4: previousTickActive now contains trackingIds (entityId with userId fallback)
     const droppedUsers = [];
     const previousTickActive = this.activityMonitor?.getPreviousTickActive() || new Set();
-    previousTickActive.forEach((userId) => {
-      if (!currentTickActiveHR.has(userId)) {
+    previousTickActive.forEach((trackingId) => {
+      if (!currentTickActiveHR.has(trackingId)) {
         // User's device stopped broadcasting - record null to mark dropout
-        droppedUsers.push(userId);
-        
+        droppedUsers.push(trackingId);
+
         // Note: TreasureBox coin accumulation is now handled by:
         // 1. processTick() which only processes active participants (Priority 1)
         // 2. _awardCoins() which checks ActivityMonitor.isActive() (Priority 2)
@@ -1698,30 +1823,33 @@ export class FitnessSession {
     // This ensures the chart shows dropout (dotted line) immediately when broadcast stops,
     // not when the user is removed from roster. This aligns with the sidebar's "inactive" state.
     const inactiveUsers = [];
-    userMetricMap.forEach((entry, userId) => {
-      if (!currentTickActiveHR.has(userId)) {
+    userMetricMap.forEach((entry, trackingId) => {
+      if (!currentTickActiveHR.has(trackingId)) {
         // User is in roster but NOT actively broadcasting - record null
-        // Phase 3: Write to both user and entity series
+        // Phase 4: trackingId is entityId (or userId fallback)
+        const userId = entry?.userId;
         const entityId = entry?.entityId || null;
         assignUserMetric(userId, entityId, 'heart_rate', null);
-        inactiveUsers.push(userId);
+        inactiveUsers.push(trackingId);
       }
     });
     
     // Note: Previous tick tracking now handled by ActivityMonitor.recordTick() (Priority 6)
     
     // Second pass: process metrics for all users
-    userMetricMap.forEach((entry, userId) => {
+    // Phase 4: trackingId is now entityId (with userId fallback)
+    userMetricMap.forEach((entry, trackingId) => {
       if (!entry) return;
+      const userId = entry.userId;  // Extract userId from entry
       const entityId = entry.entityId || null; // Phase 3: Get entityId for dual-write
-      const prevBeats = this._cumulativeBeats.get(userId) || 0;
+      const prevBeats = this._cumulativeBeats.get(trackingId) || 0;
       const hr = entry.metrics.heartRate;
-      const hasValidHR = currentTickActiveHR.has(userId);
+      const hasValidHR = currentTickActiveHR.has(trackingId);  // Check trackingId
       const deltaBeats = hasValidHR
         ? (hr / 60) * intervalSeconds
         : 0;
       const nextBeats = prevBeats + deltaBeats;
-      this._cumulativeBeats.set(userId, nextBeats);
+      this._cumulativeBeats.set(trackingId, nextBeats);
       // Phase 3: Write heart_beats to both user and entity series
       assignUserMetric(userId, entityId, 'heart_beats', nextBeats);
 
@@ -1731,10 +1859,11 @@ export class FitnessSession {
         // No valid HR data - skip recording other metrics too
         return;
       }
-      
+
       // Track this participant as active (has valid HR data)
-      activeParticipantIds.add(userId);
-      
+      // Phase 4: Use trackingId (entityId) for activity tracking
+      activeParticipantIds.add(trackingId);
+
       // Phase 3: Write all metrics to both user and entity series
       assignUserMetric(userId, entityId, 'heart_rate', entry.metrics.heartRate);
       assignUserMetric(userId, entityId, 'zone_id', entry.metrics.zoneId);
@@ -1753,9 +1882,10 @@ export class FitnessSession {
     // Phase 3: Also initialize entity series with 0
     if (!this._usersWithCoinsRecorded) this._usersWithCoinsRecorded = new Set();
     if (!this._entitiesWithCoinsRecorded) this._entitiesWithCoinsRecorded = new Set();
-    userMetricMap.forEach((entry, userId) => {
+    userMetricMap.forEach((entry, trackingId) => {
+      const userId = entry?.userId;
       const entityId = entry?.entityId || null;
-      if (!this._usersWithCoinsRecorded.has(userId)) {
+      if (userId && !this._usersWithCoinsRecorded.has(userId)) {
         assignMetric(`user:${userId}:coins_total`, 0);
         this._usersWithCoinsRecorded.add(userId);
       }
@@ -1769,7 +1899,8 @@ export class FitnessSession {
     // Process TreasureBox coin intervals SYNCHRONOUSLY during session tick
     // This ensures coin awards are aligned with activity detection (no race conditions)
     if (this.treasureBox) {
-      // Pass user IDs to processTick
+      // Phase 4: Pass trackingIds (entityId with userId fallback) to processTick
+      // currentTickActiveHR now contains entityIds for proper entity-based tracking
       this.treasureBox.processTick(currentTickIndex, currentTickActiveHR, {});
       
       const treasureSummary = this.treasureBox.summary;
@@ -2245,15 +2376,15 @@ export class FitnessSession {
 
   _persistSession(sessionData, { force = false } = {}) {
     if (!sessionData) {
-      console.warn('[FitnessSession][persist] No session data');
+      getLogger().warn('fitness.session.persist.no_data');
       return false;
     }
     if (this._saveTriggered && !force) {
-      console.warn('[FitnessSession][persist] Save already triggered');
+      getLogger().warn('fitness.session.persist.save_triggered');
       return false;
     }
     const validation = this._validateSessionPayload(sessionData);
-    console.warn('[FitnessSession][persist] Validation:', validation);
+    getLogger().warn('fitness.session.persist.validation', { validation });
     if (!validation?.ok) {
       this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
       return false;
@@ -2382,7 +2513,7 @@ export class FitnessSession {
       persistSessionData.timeline.series = mappedSeries;
     }
     const seriesSample = persistSessionData.timeline?.series ? Object.entries(persistSessionData.timeline.series).slice(0, 2) : [];
-    console.warn('[FitnessSession][persist-pre-api]', {
+    getLogger().warn('fitness.session.persist.pre_api', {
       sessionId: persistSessionData.sessionId,
       hasTimeline: !!persistSessionData.timeline,
       seriesKeys: persistSessionData.timeline?.series ? Object.keys(persistSessionData.timeline.series).length : 0,
@@ -2472,7 +2603,7 @@ export class FitnessSession {
       const now = Date.now();
       if (this._lastAutosaveAt && (now - this._lastAutosaveAt) < this._autosaveIntervalMs) return;
     }
-    console.warn('[FitnessSession][autosave]', { sessionId: this.sessionId, force });
+    getLogger().warn('fitness.session.autosave', { sessionId: this.sessionId, force });
     this._maybeTickTimeline();
     const snapshot = this.summary;
     if (!snapshot) return;

@@ -11,6 +11,8 @@
  * @see /docs/design/guest-switch-session-transition.md
  */
 
+import getLogger from '../../lib/logging/Logger.js';
+
 /**
  * Entity status values
  * @typedef {'active' | 'dropped' | 'transferred' | 'ended'} EntityStatus
@@ -100,7 +102,7 @@ export class SessionEntity {
    */
   end({ status = 'dropped', timestamp, transferredTo, reason } = {}) {
     if (this.status !== 'active') {
-      console.warn('[SessionEntity] Attempting to end non-active entity:', this.entityId, this.status);
+      getLogger().warn('session.entity_end_inactive', { entityId: this.entityId, status: this.status });
       return;
     }
     

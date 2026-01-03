@@ -6,8 +6,6 @@ export class ClusterDetector {
   detectClusters(elements) {
     if (!elements || elements.length === 0) return [];
 
-    console.log('[ClusterDetector] Input elements:', elements.length, 'threshold:', this.clusterThreshold);
-
     // Sort by Y for easier clustering
     const sorted = [...elements].sort((a, b) => a.y - b.y);
     const clusters = [];
@@ -22,16 +20,13 @@ export class ClusterDetector {
       // This matches the "Current Zone" logic where X is identical
       if (yDiff <= this.clusterThreshold) {
         currentCluster.push(current);
-        console.log('[ClusterDetector] Adding to cluster, yDiff:', yDiff);
       } else {
         clusters.push(currentCluster);
         currentCluster = [current];
-        console.log('[ClusterDetector] New cluster, yDiff:', yDiff);
       }
     }
     clusters.push(currentCluster);
 
-    console.log('[ClusterDetector] Clusters:', clusters.map(c => c.length));
     return clusters;
   }
 }

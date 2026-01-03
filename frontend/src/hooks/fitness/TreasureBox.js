@@ -1,8 +1,12 @@
 const NO_ZONE_LABEL = 'No Zone';
+import getLogger from '../../lib/logging/Logger.js';
 
-// Note: slugifyId has been removed - we now use user.id directly
-// Phase 2: TreasureBox now tracks by entityId (session entity) instead of userId
-// This enables fresh coin counts when devices are reassigned
+// Phase 4: TrackingId Migration Complete
+// TreasureBox now exclusively uses trackingId (entityId with userId fallback) for all operations.
+// - perUser Map is keyed by trackingId (matching FitnessSession's tracking scheme)
+// - processTick() receives activeParticipants Set containing trackingIds
+// - Direct lookup works: activeParticipants.has(accKey) where accKey === trackingId
+// - profileId is preserved for zone config lookups only
 
 export class FitnessTreasureBox {
   constructor(sessionRef) {
@@ -14,7 +18,7 @@ export class FitnessTreasureBox {
     this.usersConfigOverrides = new Map(); // userName -> overrides object {active,warm,hot,fire}
     this.buckets = {}; // color -> coin total
     this.totalCoins = 0;
-    this.perUser = new Map(); // entityId -> accumulator (Phase 2: now keyed by entityId)
+    this.perUser = new Map(); // trackingId -> accumulator (Phase 4: entityId with userId fallback)
     this.lastTick = Date.now(); // for elapsed computation if needed
     this._timeline = {
       perColor: new Map(),
@@ -33,7 +37,7 @@ export class FitnessTreasureBox {
   }
 
   _log(event, data = {}) {
-    console.warn(`[TreasureBox][${event}]`, data);
+    getLogger().warn(`treasurebox.${event}`, data);
     try {
       if (this.sessionRef?._log) {
         this.sessionRef._log(`treasurebox_${event}`, data);
@@ -118,18 +122,13 @@ export class FitnessTreasureBox {
    */
   setActiveEntity(deviceId, entityId) {
     const key = String(deviceId);
-    console.warn('[TreasureBox] ===== SET ACTIVE ENTITY =====');
-    console.warn('[TreasureBox] Device:', key);
-    console.warn('[TreasureBox] Entity:', entityId);
-    console.warn('[TreasureBox] Map BEFORE:', [...this._deviceEntityMap.entries()]);
     if (entityId) {
       this._deviceEntityMap.set(key, entityId);
-      this._log('set_active_entity', { deviceId: key, entityId });
+      this._log('set_active_entity', { deviceId: key, entityId, map: [...this._deviceEntityMap.entries()] });
     } else {
       this._deviceEntityMap.delete(key);
       this._log('clear_active_entity', { deviceId: key });
     }
-    console.warn('[TreasureBox] Map AFTER:', [...this._deviceEntityMap.entries()]);
   }
 
   /**
@@ -158,7 +157,7 @@ export class FitnessTreasureBox {
     const threshold = 10000; // 10 seconds
     const isActive = (now - lastHRTime) < threshold;
     
-    console.warn('[TreasureBox] isEntityActive check:', { entityId, lastHRTime, now, diff: now - lastHRTime, threshold, isActive });
+    this._log('entity_active_check', { entityId, lastHRTime, now, diff: now - lastHRTime, threshold, isActive });
     return isActive;
   }
 
@@ -288,9 +287,12 @@ export class FitnessTreasureBox {
    * Process coin intervals for active participants only.
    * Called synchronously from FitnessSession._collectTimelineTick() to ensure
    * coin processing is aligned with session ticks and dropout detection.
-   * 
+   *
+   * Phase 4: trackingId migration complete - activeParticipants now contains trackingIds
+   * (entityId with userId fallback), matching the keys in perUser Map.
+   *
    * @param {number} tick - Current tick index
-   * @param {Set<string>} activeParticipants - Set of user IDs for users with active HR this tick
+   * @param {Set<string>} activeParticipants - Set of trackingIds (entityId or userId) for active participants
    * @param {Object} options - Additional options (legacy, no longer used)
    */
   processTick(tick, activeParticipants, options = {}) {
@@ -303,18 +305,17 @@ export class FitnessTreasureBox {
     });
     if (!this.perUser.size) return;
     const now = Date.now();
-    
+
     for (const [accKey, acc] of this.perUser.entries()) {
-      // accKey can be either a userId (for regular users) or entityId (for guests)
-      // For entity IDs, we need to check activity by the profile ID
-      const profileId = acc.profileId || accKey;
-      const isEntityKey = accKey.startsWith('entity-');
-      
+      // Phase 4: accKey is now trackingId (entityId with userId fallback)
+      // activeParticipants contains the same trackingIds, so direct lookup works
+      const profileId = acc.profileId || accKey;  // Keep profileId for zone config lookups
+
       // CRITICAL: Only process intervals for ACTIVE participants
       // This prevents coin accumulation during dropout
-      // Check activity by profileId (which is what activeParticipants contains)
-      if (!activeParticipants.has(isEntityKey ? profileId : accKey)) {
-        this._log('user_not_active', { accKey, profileId, isEntity: isEntityKey });
+      // Phase 4: Simplified - activeParticipants and perUser use same ID scheme
+      if (!activeParticipants.has(accKey)) {
+        this._log('user_not_active', { trackingId: accKey, profileId });
         // User not active - clear their highestZone to prevent stale awards
         acc.highestZone = null;
         acc.currentColor = null;
@@ -503,7 +504,7 @@ export class FitnessTreasureBox {
     
     // Debug: Log the entity mapping state
     if (!entityId && options.fallbackUserId) {
-      console.warn('[TreasureBox] No entity mapped for device, using fallback:', {
+      getLogger().warn('fitness.treasure.no_entity_mapped', {
         deviceId: key,
         fallbackUserId: options.fallbackUserId,
         mapSize: this._deviceEntityMap.size,
@@ -609,12 +610,13 @@ export class FitnessTreasureBox {
       if (!key || !data) return;
       const currentColor = data.currentColor && data.currentColor !== NO_ZONE_LABEL ? data.currentColor : null;
       const lastColor = data.lastColor && data.lastColor !== NO_ZONE_LABEL ? data.lastColor : null;
-      // Phase 2: key can be entityId or userId
+      // Phase 4: key is trackingId (entityId with userId fallback)
       const isEntity = key.startsWith?.('entity-');
       snapshot.push({
-        user: key, // Legacy field name - actually entityId or userId
-        userId: isEntity ? null : key,
-        entityId: isEntity ? key : null,
+        trackingId: key,  // Phase 4: Primary identifier
+        user: key, // Legacy field name - kept for backward compatibility
+        userId: isEntity ? null : key,  // Only populated if trackingId is userId
+        entityId: isEntity ? key : null,  // Only populated if trackingId is entityId
         color: currentColor || lastColor || null,
         zoneId: data.lastZoneId || null,
         totalCoins: data.totalCoins || 0
@@ -624,9 +626,9 @@ export class FitnessTreasureBox {
   }
 
   /**
-   * Get per-user/entity coin totals.
-   * Phase 2: Keys can be entityId or userId
-   * @returns {Map<string, number>} Map of entityId/userId -> total coins
+   * Get per-participant coin totals.
+   * Phase 4: Keys are trackingIds (entityId with userId fallback)
+   * @returns {Map<string, number>} Map of trackingId -> total coins
    */
   getPerUserTotals() {
     const totals = new Map();
@@ -662,7 +664,7 @@ export class FitnessTreasureBox {
    * @returns {number[]} - Empty array (deprecated)
    */
   getUserCoinsTimeSeries(userId) {
-    console.warn('[TreasureBox] getUserCoinsTimeSeries is deprecated - use getSeries() from timeline');
+    getLogger().warn('treasurebox.deprecated_method_called', { method: 'getUserCoinsTimeSeries' });
     return [];
   }
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Badge } from '@mantine/core';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
+import getLogger from '../../../lib/logging/Logger.js';
 import FlipMove from 'react-flip-move';
 import '../FitnessSidebar.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
@@ -177,7 +178,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       // Use profileId or id directly - never slugify the display name
       const profileId = descriptor.profileId || descriptor.id;
       if (!profileId) {
-        console.warn('[FitnessUsers] User missing profileId/id, avatar may fail:', descriptor.name);
+        getLogger().warn('fitness_users.user_missing_id', { name: descriptor.name });
         return;
       }
       const addKey = (value) => {

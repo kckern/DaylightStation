@@ -13,6 +13,7 @@
 
 import { resolveDisplayLabel } from './types.js';
 import { ParticipantStatus } from '../../modules/Fitness/domain/types.js';
+import getLogger from '../../lib/logging/Logger.js';
 
 /**
  * @typedef {Object} RosterEntry
@@ -258,22 +259,25 @@ export class ParticipantRoster {
 
   _buildZoneLookup() {
     const zoneLookup = new Map();
-    
+
     if (!this._treasureBox) return zoneLookup;
-    
+
     const zoneSnapshot = typeof this._treasureBox.getUserZoneSnapshot === 'function'
       ? this._treasureBox.getUserZoneSnapshot()
       : [];
-    
+
     zoneSnapshot.forEach((entry) => {
-      if (!entry || !entry.userId) return;
-      // Use userId as the key for zone lookup
-      zoneLookup.set(entry.userId, {
+      if (!entry) return;
+      // Phase 4: Use trackingId (entityId with userId fallback) as primary key
+      const trackingId = entry.trackingId || entry.userId || entry.entityId;
+      if (!trackingId) return;
+
+      zoneLookup.set(trackingId, {
         zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
         color: entry.color || null
       });
     });
-    
+
     return zoneLookup;
   }
 
@@ -294,16 +298,21 @@ export class ParticipantRoster {
     // Use the actual user ID - must be explicitly set
     const userId = mappedUser?.id || guestEntry?.occupantId || guestEntry?.metadata?.profileId;
     if (!userId) {
-      console.warn('[ParticipantRoster] No user ID found for participant:', participantName);
+      getLogger().warn('participant.roster.missing_user_id', { participantName });
     }
-    
-    // Phase 5: Include entityId from ledger for entity-aware tracking
+
+    // Phase 4: Get entityId from ledger for entity-aware tracking
     const entityId = guestEntry?.entityId || null;
-    
+
+    // Phase 4: Calculate trackingId for zone lookup (matches TreasureBox key scheme)
+    const trackingId = entityId || userId;
+
     // For grace period transfers: include timelineUserId so chart reads original user's data
     // (Note: The Transfer Path approach moves data, but this provides a fallback or metadata-driven path)
     const timelineUserId = guestEntry?.metadata?.timelineUserId || null;
-    const zoneInfo = zoneLookup.get(userId) || null;
+
+    // Phase 4: Use trackingId for zone lookup (matches TreasureBox key scheme)
+    const zoneInfo = zoneLookup.get(trackingId) || null;
 
     // Phase 5: Get entity-specific data (start time) if available
     // Use registry start time if available, otherwise guestEntry update time

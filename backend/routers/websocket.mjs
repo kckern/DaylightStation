@@ -98,7 +98,7 @@ export function restartWebsocketServer() {
 
 export function broadcastToWebsockets(data) {
   if (!wssNav) {
-    console.warn('[WS] broadcastToWebsockets called but wssNav is null');
+    logger.warn('websocket.broadcast.server_not_initialized');
     return;
   }
   
@@ -113,6 +113,11 @@ export function broadcastToWebsockets(data) {
     }
   });
   
-  console.log(`[WS] Broadcast sent to ${sentCount}/${clientCount} clients:`, 
-    data.topic ? `topic=${data.topic}, action=${data.action}` : msg.substring(0, 100));
+  logger.info('websocket.broadcast.sent', { 
+    sentCount, 
+    clientCount, 
+    topic: data.topic, 
+    action: data.action,
+    summary: data.topic ? null : msg.substring(0, 100)
+  });
 }

@@ -17,6 +17,9 @@ import path from 'path';
 import { isWatched, getEffectivePercent } from '../lib/utils.mjs';
 import { configService } from '../lib/config/ConfigService.mjs';
 import { userDataService } from '../lib/config/UserDataService.mjs';
+import { createLogger } from '../lib/logging/logger.js';
+
+const fetchLogger = createLogger({ app: 'fetch' });
 const dataPath = `${process.env.path.data}`;
 const mediaPath = `${process.env.path.media}`;
 
@@ -107,7 +110,7 @@ const clearWatchedItemsFromPlexLibraries = (media_keys) => {
     }
     
     if (!fs.existsSync(plexDir)) {
-        console.warn('Plex history directory not found:', plexDir);
+        fetchLogger.warn('fetch.plex.history_dir_not_found', { plexDir });
         return {};
     }
     
@@ -391,7 +394,7 @@ apiRouter.get('/:songType(hymn|primary)/:hymn_num?', async (req, res, next) => {
                         mediaFilePath
                     };
                 }else{
-                    console.warn(`File not found: ${mediaFilePath}`);
+                    fetchLogger.warn('fetch.song.file_not_found', { mediaFilePath });
                     return null;
                 }
             } catch (err) {
@@ -745,7 +748,7 @@ export const applyParamsToItems = (items) => {
         };
         const dayArray = daysMap[days];
         if(!dayArray) {
-            console.warn(`Unknown days format: ${days}`);
+            fetchLogger.warn('fetch.applyParams.unknown_days', { days });
             return true; // If unknown, don't filter out
         }
         return dayArray.includes(weekdayInt);

@@ -17,6 +17,8 @@ import {
 import { createTelegramWebhookHandler } from '../../adapters/http/TelegramWebhookHandler.mjs';
 import { HomeBotEventRouter } from './adapters/HomeBotEventRouter.mjs';
 
+import { defaultLogger as logger } from '../../_lib/logging/Logger.mjs';
+
 /**
  * Create HomeBot Express Router
  * @param {import('./container.mjs').HomeBotContainer} container
@@ -34,7 +36,7 @@ export function createHomeBotRouter(container, options = {}) {
     || process.env.HOMEBOT_TELEGRAM_BOT_ID;
 
   if (!botId) {
-    console.warn('[HomeBot] No bot ID configured - webhook will not work');
+    logger.warn('homebot.bot_id_missing');
   }
 
   // Create the HomeBot-specific event router

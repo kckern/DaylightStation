@@ -270,8 +270,7 @@ export const getActivities = async () => {
             const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
             // Only accept valid dates in range
             if (!moment(date, 'YYYY-MM-DD', true).isValid() || moment(date).isBefore('2000-01-01') || moment(date).isAfter(moment().add(1, 'day'))) {
-                // eslint-disable-next-line no-console
-                console.warn(`[fitsync] Skipping invalid date: ${date} (itemId: ${itemId})`);
+                fitsyncLogger.warn('fitsync.invalid_date', { date, itemId });
                 return null;
             }
             return { src, id, date, type, data: item };

@@ -5,6 +5,7 @@ import {
   createChartSegment,
   getZoneColor 
 } from '../domain';
+import getLogger from '../../../lib/logging/Logger.js';
 
 export const MIN_VISIBLE_TICKS = 30;
 
@@ -37,7 +38,7 @@ const normalizeId = (entry) => {
   // Log fallback usage for debugging (Issue #3 remediation)
   const fallbackId = entry.name || entry.hrDeviceId || null;
   if (fallbackId) {
-    console.warn('[FitnessChart.helpers] No canonical ID, using fallback:', {
+    getLogger().warn('fitness_chart.id_fallback', {
       name: entry.name,
       hrDeviceId: entry.hrDeviceId,
       resolvedId: fallbackId
@@ -240,7 +241,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   // Defensive logging: no series data found (Issue #3 remediation)
   // This indicates ID mismatch between timeline recording and chart lookup
   if (!Array.isArray(heartRate) || heartRate.length === 0) {
-    console.warn('[FitnessChart.helpers] No series data found for participant:', {
+    getLogger().warn('fitness_chart.no_series_data', {
       targetId,
       name: rosterEntry?.name || rosterEntry?.displayLabel,
       hrDeviceId: rosterEntry?.hrDeviceId,
@@ -253,7 +254,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
 
   // Last resort fallback: compute from heart_rate (deprecated)
   if (process.env.NODE_ENV === 'development') {
-    console.warn(`[FitnessChart] Falling back to heart_rate calculation for ${targetId} - consider using TreasureBox coins_total`);
+    getLogger().warn('fitness_chart.hr_calc_fallback', { targetId });
   }
   const beats = [];
   let total = 0;
@@ -418,21 +419,6 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
     }
   }
   
-  // Debug: Log segments including gaps and active array status
-  const gapSegs = segments.filter(s => s.isGap === true);
-  const activeFalseCount = active.filter(a => a === false).length;
-  const activeLen = active.length;
-  if (activeFalseCount > 0 || gapSegs.length > 0) {
-    console.log('[buildSegments] DEBUG:', { 
-      totalSegs: segments.length, 
-      gapSegs: gapSegs.length,
-      activeFalseCount,
-      activeLen,
-      firstFalseIdx: active.indexOf(false),
-      lastFalseIdx: active.lastIndexOf(false)
-    });
-  }
-  
   return segments;
 };
 
@@ -504,15 +490,7 @@ export const createPaths = (segments = [], options = {}) => {
 
   const scaleY = options.scaleY || defaultScaleY;
 
-  // Debug: log gap segments being rendered
-  const gapsToRender = mergedSegments.filter(s => s.isGap);
-  if (gapsToRender.length > 0) {
-    console.log('[createPaths] Rendering gap segments:', gapsToRender.length, gapsToRender.map(g => ({
-      isGap: g.isGap,
-      points: g.points,
-      color: g.color
-    })));
-  }
+    const gapsToRender = mergedSegments.filter(s => s.isGap);
 
   return mergedSegments.map((seg) => {
     const points = seg.points.length === 1 ? [...seg.points, seg.points[0]] : seg.points;

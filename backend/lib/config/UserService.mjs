@@ -11,6 +11,9 @@ import fs from 'fs';
 import path from 'path';
 import { parse } from 'yaml';
 import configService from './ConfigService.mjs';
+import createLogger from '../logging/logger.js';
+
+const logger = createLogger({ app: 'user_service' });
 
 // Safe YAML reader
 const safeReadYaml = (filePath) => {
@@ -72,7 +75,7 @@ class UserService {
       
       if (!profile) {
         // No profile found - return minimal object
-        console.warn(`[UserService] No profile found for user: ${username}`);
+        logger.warn('user.profile_not_found', { username });
         return { id: username, name: username };
       }
 

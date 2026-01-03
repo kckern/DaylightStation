@@ -17,6 +17,9 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import createLogger from '../logging/logger.js';
+
+const logger = createLogger({ app: 'config_path' });
 
 /**
  * Get mount configuration from environment variables
@@ -74,7 +77,7 @@ export function tryMount() {
 
   // Only attempt mount on macOS
   if (process.platform !== 'darwin') {
-    console.warn('[ConfigPath] Auto-mount not available on this platform');
+    logger.warn('config_path.auto_mount_unavailable_platform', { platform: process.platform });
     return false;
   }
 
@@ -96,7 +99,7 @@ export function tryMount() {
       return true;
     }
   } catch (err) {
-    console.warn('[ConfigPath] Mount attempt failed:', err.message);
+    logger.warn('config_path.mount_failed', { error: err.message });
   }
 
   return false;
@@ -148,8 +151,8 @@ export function resolveConfigPaths(options = {}) {
 
   // Fallback to codebase (for CI/testing only)
   if (codebaseDir && pathExists(path.join(codebaseDir, 'config.app.yml'))) {
-    console.warn('[ConfigPath] WARNING: Using codebase config fallback');
-    console.warn('[ConfigPath] Set DAYLIGHT_CONFIG_PATH and DAYLIGHT_DATA_PATH for local dev');
+    logger.warn('config_path.using_codebase_fallback');
+    logger.warn('config_path.missing_env_vars_advice');
     return {
       configDir: codebaseDir,
       dataDir: path.join(codebaseDir, 'data'),

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
 
 export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
   const videoRef = useRef(null);
@@ -39,7 +40,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
           videoRef.current.srcObject = localStream;
         }
       } catch (err) {
-        console.warn("Error accessing selected devices, falling back to defaults:", err);
+        getLogger().warn('input.webcam.access_error_fallback', { error: err.message || err });
         try {
           // Fallback to any available device
           localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });

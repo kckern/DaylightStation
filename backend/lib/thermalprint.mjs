@@ -4,6 +4,9 @@ import { createCanvas, loadImage } from 'canvas';
 import fs from 'fs';
 import yaml from 'js-yaml';
 import { saveFile } from './io.mjs';
+import { createLogger } from './logging/logger.js';
+
+const logger = createLogger({ app: 'printer' });
 
 // Printer logging utility
 const printerLog = {
@@ -76,7 +79,24 @@ const printerLog = {
         printerLog._writeLog(logEntry);
     },
     _writeLog: (logEntry) => {
-        //TODO: use our #logger utility instead of console.log
+        const { level, message, data, error, config, success, duration, size, preview } = logEntry;
+        const meta = { data, error, config, success, duration, size, preview };
+        
+        switch (level) {
+            case 'ERROR':
+                logger.error(message, meta);
+                break;
+            case 'WARN':
+                logger.warn(message, meta);
+                break;
+            case 'INFO':
+            case 'JOB_START':
+            case 'JOB_COMPLETE':
+            case 'DATA_PREVIEW':
+            default:
+                logger.info(message, meta);
+                break;
+        }
     }
 };
 
@@ -318,7 +338,7 @@ async function processItem(item, config) {
                 break;
                 
             default:
-                console.warn(`Unknown item type: ${item.type}`);
+                logger.warn('printer.unknown_item_type', { type: item.type });
         }
     } catch (error) {
         console.error(`Error processing ${item.type} item:`, error);

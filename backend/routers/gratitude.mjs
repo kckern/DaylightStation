@@ -7,6 +7,9 @@ import { userDataService } from '../lib/config/UserDataService.mjs';
 import { broadcastToWebsockets } from './websocket.mjs';
 import { v4 as uuidv4 } from 'uuid';
 import moment from 'moment-timezone';
+import { createLogger } from '../lib/logging/logger.js';
+
+const gratitudeLogger = createLogger({ app: 'gratitude' });
 
 /**
  * ============================================================================
@@ -566,7 +569,7 @@ export function getSelectionsForPrint() {
  */
 export function markSelectionsAsPrinted(category, selectionIds) {
     if (!['gratitude', 'hopes'].includes(category)) {
-        console.warn(`Invalid category for markSelectionsAsPrinted: ${category}`);
+        gratitudeLogger.warn('gratitude.mark_printed.invalid_category', { category });
         return;
     }
     

@@ -1,5 +1,6 @@
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
+import getLogger from '../../lib/logging/Logger.js';
 import FitnessTreasureBox from './FitnessSidebar/FitnessTreasureBox.jsx';
 import FitnessUsersList from './FitnessSidebar/FitnessUsers.jsx';
 import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
@@ -70,7 +71,7 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
         // Use explicit ID from match config
         const id = match.id || match.profileId;
         if (!id) {
-          console.warn('[FitnessSidebar] primaryGuestPool: match missing id for', match.name);
+          getLogger().warn('fitness_sidebar.primary_guest_pool_missing_id', { name: match.name });
           return;
         }
         primaryGuestPool.push({
@@ -91,7 +92,7 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
       // Use explicit ID from candidate
       const id = candidate.id || candidate.profileId;
       if (!id) {
-        console.warn('[FitnessSidebar] guestCandidates: candidate missing id for', candidate.name);
+        getLogger().warn('fitness_sidebar.guest_candidate_missing_id', { name: candidate.name });
         return acc;
       }
       if (seenIds.has(id)) return acc;

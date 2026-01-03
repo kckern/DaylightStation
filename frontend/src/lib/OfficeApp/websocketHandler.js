@@ -1,3 +1,5 @@
+import getLogger from '../logging/Logger.js';
+
 /**
  * WebSocket payload handler for OfficeApp
  * Handles incoming websocket messages and transforms them into menu selections
@@ -59,7 +61,7 @@ const handleMediaPlaybackControl = (playbackCommand) => {
     
     console.log(`Playback control: ${playbackCommand} -> ${keyToPress}`);
   } else {
-    console.warn(`Unknown playback command: ${playbackCommand}`);
+    getLogger().warn('office.websocket.unknown_playback_command', { playbackCommand });
   }
 };
 

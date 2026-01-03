@@ -8,6 +8,7 @@ import '../FitnessSidebar.scss';
 import { usePersistentVolume } from '../usePersistentVolume.js';
 import { normalizeDuration } from '../../Player/utils/mediaIdentity.js';
 import { guid } from '../../Player/lib/helpers.js';
+import getLogger from '../../../lib/logging/Logger.js';
 
 const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
 const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
@@ -265,7 +266,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
       // DO NOT mutate queue here - it causes desync between Player internal state and local state
       // Instead, let handleProgress() handle track updates when Player auto-advances
       if (process.env.NODE_ENV === 'development') {
-        console.warn('[FitnessMusicPlayer] Player.advance() not available - track change will occur via progress callback');
+        getLogger().warn('fitness.music.advance_not_available');
       }
     }
   };

@@ -6,6 +6,9 @@ import isJSON from 'is-json';
 import { askGPT } from './gpt.mjs';
 import moment from 'moment';
 import { householdLoadAuth, getCurrentHouseholdId } from './io.mjs';
+import { createLogger } from './logging/logger.js';
+
+const logger = createLogger({ app: 'buxfer' });
 
 
 
@@ -42,7 +45,7 @@ const getCredentials = () => {
         BUXFER_PW: secrets.BUXFER_PW
       };
     } catch (err) {
-      console.warn('[buxfer] Failed to load secrets:', err.message);
+      logger.warn('buxfer.secrets_load_failed', { error: err.message });
     }
   }
   return { BUXFER_EMAIL: null, BUXFER_PW: null };

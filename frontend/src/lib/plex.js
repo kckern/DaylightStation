@@ -1,4 +1,6 @@
 
+import getLogger from './logging/Logger.js';
+
 function extractMetadataKey(url) {
     // Locate the fragment part starting with '#!' and decode it
     const hashIndex = url.indexOf('#!');
@@ -48,7 +50,7 @@ function createOrUpdateMetadataDiv() {
         if (navBarContainer) {
             navBarContainer.appendChild(metadataDiv);
         } else {
-            console.warn("NavBar-container* not found. Appending metadataDiv to body as fallback.");
+            getLogger().warn('plex.navbar_not_found_fallback_to_body');
             document.body.appendChild(metadataDiv);
         }
 

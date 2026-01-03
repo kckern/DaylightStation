@@ -1,11 +1,12 @@
 import { resolveDisplayLabel, deepClone } from './types.js';
+import getLogger from '../../lib/logging/Logger.js';
 
 export class Device {
   constructor(data = {}) {
     // Device ID must be explicitly provided - usually from ANT+ device ID
     const rawId = data.id || data.deviceId;
     if (!rawId) {
-      console.warn('[Device] No id/deviceId provided, generating fallback');
+      getLogger().warn('device.missing_id_generating_fallback');
     }
     this.id = rawId ? String(rawId) : `device-${Date.now()}`;
     this.name = data.name || `Device ${this.id}`;

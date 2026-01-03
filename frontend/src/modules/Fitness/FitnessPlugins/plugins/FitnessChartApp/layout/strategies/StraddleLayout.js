@@ -22,14 +22,10 @@ export class StraddleLayout {
     // Overlap threshold: if avatars are closer than diameter + generous padding, they overlap
     const overlapThreshold = this.avatarRadius * 2.5; // ~75px for radius 30
     
-    console.log('[StraddleLayout] verticalDistance:', verticalDistance, 'threshold:', overlapThreshold, 'willDisplace:', verticalDistance < overlapThreshold);
-    
     // If they would overlap vertically
     if (verticalDistance < overlapThreshold) {
       // Move the bottom avatar leftward to avoid collision
       const horizontalOffset = -(this.avatarRadius * 3); // Move left by 3x radius = 90px
-      
-      console.log('[StraddleLayout] Displacing bottom avatar left by', horizontalOffset);
       
       return [
         { 

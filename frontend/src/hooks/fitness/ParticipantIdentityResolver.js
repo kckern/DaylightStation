@@ -9,6 +9,8 @@
  * @see /docs/reviews/guest-assignment-service-audit.md - Issue #3
  */
 
+import getLogger from '../../lib/logging/Logger.js';
+
 /**
  * @typedef {Object} ResolvedIdentity
  * @property {string} id - The canonical ID to use
@@ -100,7 +102,7 @@ export class ParticipantIdentityResolver {
       const resolved = this.resolveByDevice(rosterEntry.hrDeviceId);
       if (resolved) {
         // Log fallback usage for debugging
-        console.warn('[ParticipantIdentityResolver] No canonical ID in roster entry, using device fallback:', {
+        getLogger().warn('identity_resolver.roster_entry_id_fallback', {
           name: rosterEntry.name,
           hrDeviceId: rosterEntry.hrDeviceId,
           resolvedId: resolved.id,
@@ -110,9 +112,8 @@ export class ParticipantIdentityResolver {
       }
     }
 
-    // Last resort: use name
     if (rosterEntry.name) {
-      console.warn('[ParticipantIdentityResolver] Using name as ID fallback:', {
+      getLogger().warn('identity_resolver.name_id_fallback', {
         name: rosterEntry.name
       });
       return {

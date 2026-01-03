@@ -267,7 +267,6 @@ const FitnessApp = () => {
   }, [fitnessConfiguration]);
 
   const handleNavigate = (type, target, item) => {
-    console.log('[FitnessApp] handleNavigate called', { type, target, item, currentView });
     logger.info('fitness-navigate', { type, target });
     
     switch (type) {
@@ -314,7 +313,6 @@ const FitnessApp = () => {
         break;
         
       case 'view_direct':
-        console.log('[FitnessApp] view_direct: setting currentView to', target.view);
         setActiveCollection(null);
         setActivePlugin(null);
         setCurrentView(target.view);
@@ -547,7 +545,6 @@ const FitnessApp = () => {
                 onNavigate={handleNavigate}
               />
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
-                {console.log('[FitnessApp] rendering main content', { currentView, activePlugin: activePlugin?.id })}
                 {currentView === 'users' && (
                   <FitnessPluginContainer pluginId="fitness_session" mode="standalone" />
                 )}

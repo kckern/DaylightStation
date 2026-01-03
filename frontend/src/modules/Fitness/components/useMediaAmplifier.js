@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
 import { useVolumeStore } from '../VolumeProvider.jsx';
 
 const amplifiers = new WeakMap();
@@ -10,17 +11,17 @@ const cleanupAmplifier = (element) => {
   try {
     amp.source?.disconnect?.();
   } catch (e) {
-    console.warn('Amplifier source disconnect failed', e);
+    getLogger().warn('media_amplifier.disconnect_source_failed', { error: e.message });
   }
   try {
     amp.gainNode?.disconnect?.();
   } catch (e) {
-    console.warn('Amplifier gainNode disconnect failed', e);
+    getLogger().warn('media_amplifier.disconnect_gain_failed', { error: e.message });
   }
   try {
     amp.context?.close?.();
   } catch (e) {
-    console.warn('Amplifier context close failed', e);
+    getLogger().warn('media_amplifier.close_context_failed', { error: e.message });
   }
   amplifiers.delete(element);
 };

@@ -14,12 +14,19 @@ import FitnessApp from './Apps/FitnessApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
+import { setupGlobalErrorHandlers } from './lib/logging/errorHandlers.js';
+import { interceptConsole } from './lib/logging/consoleInterceptor.js';
 
 const getWebSocketUrl = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   // With Vite proxy, WebSocket connects to same origin (proxy forwards /ws to backend)
   return `${protocol}//${window.location.host}/ws`;
 };
+
+// ========== PHASE 4 DEBUG: Check if code reloads ==========
+console.error('🔥 PHASE 4 CODE LOADED - main.jsx timestamp:', new Date().toISOString());
+console.error('🔥 VERSION: Added EFFECTIVE_ROSTER and ACTIVE_PARTICIPANTS logging');
+// ===========================================================
 
 // Bootstrap DaylightLogger and expose a shared frontend logger
 configureDaylightLogger({
@@ -34,6 +41,18 @@ if (typeof window !== 'undefined') {
   window.DaylightLogger = frontendLogger;
 }
 frontendLogger.info('frontend-start', { path: window.location?.pathname });
+
+// Set up global error handlers to capture uncaught errors and promise rejections
+setupGlobalErrorHandlers();
+
+// Intercept console methods to forward all console.log/warn/error calls to backend
+interceptConsole({
+  interceptLog: true,
+  interceptInfo: true,
+  interceptWarn: true,
+  interceptError: true,
+  interceptDebug: false // Off by default (too noisy)
+});
 
 // Enable playback logging via WebSocket
 configurePlaybackLogger({

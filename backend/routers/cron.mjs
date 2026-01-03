@@ -206,7 +206,7 @@ export const cronContinuous = async () => {
           } else if (typeof item === "function") {
             return item;
           }
-          console.warn(`Invalid cron item for ${jobName}:`, item);
+          cronLogger.warn('cron.job.invalid_item', { jobName, item });
           return null; // Gracefully handle invalid items
         })
       );
