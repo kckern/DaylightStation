@@ -230,7 +230,7 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape }) {
               </>
             )}
             <span className="season-view__season-title">{seasonTitle}</span>
-            <span className="season-view__count">({episodes.length} ep{episodes.length !== 1 ? 's' : ''})</span>
+            <span className="season-view__count">({episodes.length} episode{episodes.length !== 1 ? 's' : ''})</span>
           </div>
         </header>
 

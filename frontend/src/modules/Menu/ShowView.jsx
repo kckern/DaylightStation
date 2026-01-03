@@ -175,7 +175,7 @@ export function ShowView({ showId, depth, onSelect, onEscape }) {
           {/* Show Poster */}
           <div className="show-view__poster">
             <img 
-              src={data?.image || showInfo.image} 
+              src={`/media/plex/img/${data?.plex}` || data?.image || showInfo.image} 
               alt={showTitle}
             />
           </div>
