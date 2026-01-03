@@ -60,16 +60,22 @@ export class TelegramGateway {
   }
 
   /**
-   * Call Telegram Bot API
+   * Call Telegram Bot API with retry logic
    * @private
    * @param {string} method - API method name
    * @param {Object} params - Method parameters
+   * @param {number} [attemptNumber=1] - Current attempt number (for internal use)
    * @returns {Promise<Object>}
    */
-  async #callApi(method, params = {}) {
+  async #callApi(method, params = {}, attemptNumber = 1) {
     const url = `${TELEGRAM_API_BASE}${this.#token}/${method}`;
+    const maxRetries = 3;
     
-    this.#logger.debug('telegram.api.request', { method, params: this.#redactParams(params) });
+    this.#logger.debug('telegram.api.request', { 
+      method, 
+      params: this.#redactParams(params),
+      attempt: attemptNumber 
+    });
 
     try {
       const response = await axios.post(url, params, {
@@ -85,15 +91,41 @@ export class TelegramGateway {
         method, 
         success: true,
         hasResult: !!response.data.result,
-        resultKeys: response.data.result ? Object.keys(response.data.result).slice(0, 10) : []
+        resultKeys: response.data.result ? Object.keys(response.data.result).slice(0, 10) : [],
+        attempt: attemptNumber
       });
       return response.data.result;
     } catch (error) {
-      // Handle rate limiting
+      // Handle rate limiting (don't retry, wait as instructed)
       if (error.response?.status === 429) {
         const retryAfter = error.response.data?.parameters?.retry_after || 30;
         this.#logger.warn('telegram.api.rateLimit', { method, retryAfter });
         throw new RateLimitError('Telegram', retryAfter, { method });
+      }
+
+      // Check if error is retryable (network/timeout issues)
+      const isRetryable = error.code === 'ETIMEDOUT' ||
+                         error.code === 'ECONNRESET' ||
+                         error.code === 'ECONNABORTED' ||
+                         error.code === 'EAI_AGAIN' ||
+                         error.code === 'ENOTFOUND' ||
+                         (error.response?.status >= 500 && error.response?.status < 600);
+
+      // Retry logic for transient failures
+      if (isRetryable && attemptNumber < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attemptNumber - 1), 5000); // 1s, 2s, 4s (capped at 5s)
+        this.#logger.warn('telegram.api.retrying', { 
+          method, 
+          attempt: attemptNumber,
+          maxRetries,
+          delay,
+          error: error.message,
+          code: error.code,
+          status: error.response?.status
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.#callApi(method, params, attemptNumber + 1);
       }
 
       // Handle other API errors - capture all possible error info
@@ -106,7 +138,9 @@ export class TelegramGateway {
         error: message,
         status: error.response?.status,
         code: error.code,
-        responseData: error.response?.data
+        responseData: error.response?.data,
+        attempt: attemptNumber,
+        retriesExhausted: isRetryable && attemptNumber >= maxRetries
       });
       throw new ExternalServiceError('Telegram', message, {
         method,

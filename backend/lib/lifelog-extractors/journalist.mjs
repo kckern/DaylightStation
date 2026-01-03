@@ -66,11 +66,15 @@ export const journalistExtractor = {
     // Add summary line
     lines.push(`  ${entry.totalMessages} message${entry.totalMessages > 1 ? 's' : ''} (${entry.wordCount} words)`);
     
-    // Add each message with full content (journal entries are key context)
+    // Add each message with timestamp
     entry.messages.forEach(msg => {
       const time = msg.timestamp.split(' ')[1].substring(0, 5); // HH:mm
-      // Show full content - journal entries are the most important personal context
-      lines.push(`  [${time}] ${msg.content}`);
+      const preview = msg.content.length > 150 
+        ? msg.content.substring(0, 147) + '...'
+        : msg.content;
+      
+      // Format as a paragraph with time prefix
+      lines.push(`  [${time}] ${preview}`);
     });
     
     return lines.join('\n');

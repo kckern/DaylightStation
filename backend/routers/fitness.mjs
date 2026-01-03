@@ -682,7 +682,7 @@ fitnessRouter.post('/save_screenshot', (req, res) => {
             
             saveFile(sessionFilePath, sessionData);
         } catch (snapshotsErr) {
-            fitnessLogger.warn('fitness.snapshots.update_failed', { error: snapshotsErr?.message || snapshotsErr });
+            console.warn('save_screenshot snapshots update failed', snapshotsErr?.message || snapshotsErr);
         }
 
         return res.json(captureInfo);

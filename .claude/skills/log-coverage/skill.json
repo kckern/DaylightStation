@@ -1,0 +1,59 @@
+{
+  "name": "log-coverage",
+  "description": "Analyze code paths to identify missing logging statements",
+  "version": "1.0.0",
+  "author": "DaylightStation Team",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "target": {
+        "type": "string",
+        "enum": ["routers", "integrations", "websockets", "all"],
+        "description": "Which subsystem to analyze",
+        "default": "all"
+      },
+      "checkErrorHandlers": {
+        "type": "boolean",
+        "description": "Find error handlers without logging",
+        "default": true
+      },
+      "checkApiEndpoints": {
+        "type": "boolean",
+        "description": "Check API endpoints for request/response logging",
+        "default": true
+      },
+      "checkWebSocketHandlers": {
+        "type": "boolean",
+        "description": "Check WebSocket event handlers for logging",
+        "default": true
+      },
+      "checkIntegrationCalls": {
+        "type": "boolean",
+        "description": "Check external API calls for success/failure logging",
+        "default": true
+      },
+      "checkDataMutations": {
+        "type": "boolean",
+        "description": "Check file writes and data changes for audit logging",
+        "default": true
+      },
+      "severity": {
+        "type": "string",
+        "enum": ["critical-only", "high-and-above", "all"],
+        "description": "Minimum severity to report",
+        "default": "high-and-above"
+      },
+      "generateTests": {
+        "type": "boolean",
+        "description": "Generate test cases for logging coverage",
+        "default": false
+      },
+      "format": {
+        "type": "string",
+        "enum": ["summary", "detailed", "action-items"],
+        "description": "Output format",
+        "default": "detailed"
+      }
+    }
+  }
+}

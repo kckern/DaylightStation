@@ -196,16 +196,29 @@ const getWeightData = async (job_id) => {
                           error.message?.includes('Too Many Requests') ||
                           error.message?.includes('rate limit');
         
+        // Check if it's a network timeout
+        const isTimeout = error.code === 'ETIMEDOUT' ||
+                         error.code === 'ECONNABORTED' ||
+                         error.code === 'ECONNRESET' ||
+                         error.message?.includes('timeout');
+        
         if (isRateLimit) {
             recordFailure(error);
             withingsLogger.warn('withings.rate_limit', {
                 message: 'Rate limit exceeded',
                 statusCode: error.response?.status
             });
+        } else if (isTimeout) {
+            withingsLogger.warn('withings.timeout', {
+                error: cleanErrorMessage(error),
+                code: error.code,
+                message: 'Request timed out - Withings API may be slow or unreachable'
+            });
         } else {
             withingsLogger.error('withings.fetch.error', {
                 error: cleanErrorMessage(error),
-                statusCode: error.response?.status
+                statusCode: error.response?.status,
+                code: error.code
             });
         }
         
