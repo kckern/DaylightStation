@@ -61,7 +61,11 @@ async function proxyRequest(req, res) {
     }
     
     const targetUrl = `http://${localDevHost}${req.originalUrl}`;
-    console.log(`[PROXY] ${req.method} ${req.originalUrl} → ${targetUrl}`);
+    apiLogger.debug('proxy.request', {
+        method: req.method,
+        url: req.originalUrl,
+        targetUrl
+    });
     
     try {
         const fetchOptions = {
@@ -99,7 +103,11 @@ async function proxyRequest(req, res) {
             return res.send(text);
         }
     } catch (error) {
-        console.error(`[PROXY] Error forwarding to ${targetUrl}:`, error.message);
+        apiLogger.error('proxy.forward.failed', {
+            targetUrl,
+            error: error.message,
+            stack: error.stack
+        });
         return res.status(502).json({ 
             error: 'Proxy error', 
             message: error.message,
@@ -112,7 +120,10 @@ async function proxyRequest(req, res) {
 apiRouter.all('/proxy_toggle', (req, res) => {
     proxyMode = !proxyMode;
     const localDevHost = process.env.LOCAL_DEV_HOST || 'not configured';
-    console.log(`[PROXY] Mode toggled: ${proxyMode ? 'ON' : 'OFF'} → ${localDevHost}`);
+    apiLogger.debug('proxy.mode.toggled', {
+        proxyMode,
+        targetHost: localDevHost
+    });
     return res.status(200).json({
         proxyMode,
         targetHost: localDevHost,
@@ -604,7 +615,11 @@ apiRouter.all('/homebot', async (req, res, next) => {
             return router(req, res, next);
         }
     } catch (error) {
-        console.error('HomeBot router error:', error.message);
+        apiLogger.error('homebot.router.error', {
+            error: error.message,
+            stack: error.stack,
+            url: req.url
+        });
     }
     // No fallback - just return error
     return res.status(503).json({ error: 'HomeBot not initialized' });
@@ -619,7 +634,10 @@ apiRouter.get('/homebot/health', async (req, res) => {
             return router(req, res);
         }
     } catch (error) {
-        console.error('HomeBot health check error:', error.message);
+        apiLogger.error('homebot.health.error', {
+            error: error.message,
+            stack: error.stack
+        });
     }
     return res.status(503).json({ status: 'error', message: 'HomeBot not initialized' });
 });
@@ -634,7 +652,11 @@ apiRouter.all('/journalist/*', async (req, res, next) => {
             return router(req, res, next);
         }
     } catch (error) {
-        console.error('Journalist router error:', error.message);
+        apiLogger.error('journalist.router.error', {
+            error: error.message,
+            stack: error.stack,
+            url: req.url
+        });
     }
     // Fallback to stub
     return processWebhookPayload(req, res);
@@ -649,7 +671,10 @@ apiRouter.all('/journalist', async (req, res, next) => {
             return router(req, res, next);
         }
     } catch (error) {
-        console.error('Journalist router error:', error.message);
+        apiLogger.error('journalist.webhook.error', {
+            error: error.message,
+            stack: error.stack
+        });
     }
     return processWebhookPayload(req, res);
 });
@@ -669,7 +694,11 @@ apiRouter.all('/foodlog', async (req, res, next) => {
                 return router(req, res, next);
             }
         } catch (error) {
-            console.error('NutriBot UPC handler error, falling back to legacy:', error.message);
+            apiLogger.error('nutribot.upc.error', {
+                error: error.message,
+                stack: error.stack,
+                fallback: 'legacy'
+            });
         }
         return processFoodLogHook(req, res);
     }
@@ -684,7 +713,11 @@ apiRouter.all('/foodlog', async (req, res, next) => {
                 return router(req, res, next);
             }
         } catch (error) {
-            console.error('NutriBot image handler error, falling back to legacy:', error.message);
+            apiLogger.error('nutribot.image.error', {
+                error: error.message,
+                stack: error.stack,
+                fallback: 'legacy'
+            });
         }
         return processFoodLogHook(req, res);
     }
@@ -699,7 +732,11 @@ apiRouter.all('/foodlog', async (req, res, next) => {
                 return router(req, res, next);
             }
         } catch (error) {
-            console.error('NutriBot text handler error, falling back to legacy:', error.message);
+            apiLogger.error('nutribot.text.error', {
+                error: error.message,
+                stack: error.stack,
+                fallback: 'legacy'
+            });
         }
         return processFoodLogHook(req, res);
     }
@@ -713,7 +750,11 @@ apiRouter.all('/foodlog', async (req, res, next) => {
             return router(req, res, next);
         }
     } catch (error) {
-        console.error('NutriBot router error, falling back to legacy:', error.message);
+        apiLogger.error('nutribot.router.error', {
+            error: error.message,
+            stack: error.stack,
+            fallback: 'legacy'
+        });
     }
     // Fallback to legacy handler
     return processFoodLogHook(req, res);

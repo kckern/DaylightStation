@@ -45,9 +45,24 @@ const applyEnvOverrides = (config) => {
 
 export const loadLoggingConfig = (baseDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..')) => {
   if (cachedConfig) return cachedConfig;
+
+  // Auto-detect environment
+  const isProduction = fs.existsSync('/.dockerenv') || process.env.NODE_ENV === 'production';
+
   const loggingPath = path.join(baseDir, 'config', 'logging.yml');
   const fileConfig = safeReadYaml(loggingPath);
-  const merged = applyEnvOverrides({ ...DEFAULT_CONFIG, ...fileConfig });
+
+  // Merge configs with environment-based defaults
+  let merged = { ...DEFAULT_CONFIG, ...fileConfig };
+
+  // Auto-adjust defaultLevel based on environment (if not explicitly set in config)
+  if (!fileConfig.defaultLevel) {
+    merged.defaultLevel = isProduction ? 'info' : 'debug';
+  }
+
+  // Apply environment variable overrides (highest priority)
+  merged = applyEnvOverrides(merged);
+
   cachedConfig = merged;
   return merged;
 };
