@@ -30,6 +30,31 @@ export default function Health() {
         const interval = setInterval(reloadData, 300000);
         return () => clearInterval(interval);
     }, []);
+
+    if (!today || Object.keys(today).length === 0) {
+        return (
+            <div className="health">
+                <table style={{width: "100%", borderCollapse: "collapse"}}>
+                    <tbody>
+                        <tr>
+                            <td width="50%" style={{padding: '10px'}}>
+                                <div className="skeleton text" style={{width: '60%', height: '1.5rem'}}></div>
+                                <div className="skeleton text" style={{width: '80%', height: '3rem', marginTop: '10px'}}></div>
+                            </td>
+                            <td width="50%" style={{padding: '10px'}}>
+                                <div className="skeleton text" style={{width: '60%', height: '1.5rem'}}></div>
+                                <div className="skeleton text" style={{width: '80%', height: '3rem', marginTop: '10px'}}></div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div style={{height: '160px', marginTop: '20px'}}>
+                    <div className="skeleton rect" style={{width: '100%', height: '100%'}}></div>
+                </div>
+            </div>
+        )
+    }
+
 	const goalBF = 18;
     const {lbs_adjusted_average, date,fat_percent_adjusted_average, lbs_adjusted_average_7day_trend, calorie_balance} = today;
 	const trend = lbs_adjusted_average_7day_trend > 0 ? 

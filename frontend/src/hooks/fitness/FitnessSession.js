@@ -456,7 +456,7 @@ export class FitnessSession {
         this._ingestDebug.lastAntLogTs = Date.now();
         const profile = payload.profile || payload.type || payload.data?.profile;
         const hrSample = payload.data?.heartRate ?? payload.data?.heart_rate ?? payload.data?.ComputedHeartRate ?? payload.data?.computedHeartRate ?? null;
-        getLogger().warn('fitness.ant_data_diagnostic', {
+        getLogger().debug('fitness.ant_data_diagnostic', {
           deviceId: payload.deviceId,
           profile,
           hasHeartRate: hrSample != null,
@@ -557,7 +557,7 @@ export class FitnessSession {
         } else if (ledgerEntry) {
           // Already assigned
         } else {
-          getLogger().warn('fitness.auto_assign_skip', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry });
+          getLogger().debug('fitness.auto_assign_skip', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry });
         }
         
         if (ledgerEntry) {
@@ -999,7 +999,7 @@ export class FitnessSession {
       // Log why sample was rejected (throttled to avoid spam)
       if (!this._lastRejectionLogAt || (timestamp - this._lastRejectionLogAt) > 3000) {
         this._lastRejectionLogAt = timestamp;
-        getLogger().warn('fitness.session.buffer.rejected', {
+        getLogger().debug('fitness.session.buffer.rejected', {
           deviceId: deviceData?.deviceId || deviceData?.id,
           profile: deviceData?.profile || deviceData?.type,
           hasData: !!deviceData?.data,

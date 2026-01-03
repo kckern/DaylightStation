@@ -808,8 +808,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
             <div className="episodes-section">
               <div className="episodes-container">
                 <div className="season-group">
-                  <div className="episodes-grid">
-                    {Array.from({ length: 12 }).map((_, i) => (
+                  <div className="episodes-grid zoom-200">
+                    {Array.from({ length: 8 }).map((_, i) => (
                       <div key={i} className="episode-card vertical episode-skeleton">
                         <div className="episode-thumbnail skeleton-block" />
                         <div className="episode-title">

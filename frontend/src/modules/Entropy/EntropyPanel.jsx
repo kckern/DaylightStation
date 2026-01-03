@@ -27,7 +27,14 @@ const EntropyPanel = () => {
   if (loading) {
     return (
       <div className="entropy-panel">
-        <div style={{ textAlign: 'center', opacity: 0.5, fontSize: '0.8rem' }}>Loading...</div>
+        <div className="entropy-grid" style={{ gridTemplateColumns: `repeat(4, 1fr)` }}>
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="entropy-item skeleton">
+              <div className="item-icon" />
+              <div className="item-value" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

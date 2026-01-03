@@ -322,7 +322,31 @@ export default function Weather({ weatherData }) {
       processWeatherData(weatherData);
     }
   }, [weatherData]);
-  if (!currentWeather.temp) return null;
+  
+  if (!currentWeather.temp) {
+    return (
+      <table style={{ width: "100%", marginTop: "-1.5rem", marginBottom: "-1rem" }}>
+        <tbody>
+          <tr>
+            <td width="50%" style={{ padding: "1rem", textAlign: "center" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div className="skeleton circle" style={{ width: '100px', height: '100px', margin: '-2ex' }} />
+                <div className="skeleton text" style={{ width: '80px', height: '2.5rem', marginTop: '1rem' }} />
+                <div className="skeleton text" style={{ width: '100px' }} />
+              </div>
+            </td>
+            <td style={{ padding: "1rem", textAlign: "center" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div className="skeleton circle" style={{ width: '3rem', height: '3rem' }} />
+                <div className="skeleton text" style={{ width: '80px', marginTop: '0.5rem' }} />
+                <div className="skeleton text" style={{ width: '60px', height: '3rem' }} />
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
 
   return (
     <table

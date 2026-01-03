@@ -48,6 +48,28 @@
       opacity: 0.7;
     }
 
+    &.skeleton {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: transparent;
+      animation: entropy-pulse 1.5s infinite ease-in-out;
+      pointer-events: none;
+
+      .item-icon {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        width: 2rem;
+        height: 2rem;
+        margin-bottom: 0.5rem;
+      }
+      
+      .item-value {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        width: 3rem;
+        height: 1rem;
+      }
+    }
+
     .item-value {
       font-size: 1.1rem;
       font-weight: 700;
@@ -66,4 +88,10 @@
       transform: scale(1.02);
     }
   }
+}
+
+@keyframes entropy-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+  100% { opacity: 0.6; }
 }
