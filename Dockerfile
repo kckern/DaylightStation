@@ -6,7 +6,7 @@ FROM --platform=$TARGETPLATFORM node:${NODE_VERSION}-alpine
 # Set work directory to /usr/src/app
 WORKDIR /usr/src/app
 
-# Install OpenSSH client, yt-dlp, and required dependencies
+# Install OpenSSH client, yt-dlp, and required dependencies (cached until package versions change)
 RUN apk add --no-cache openssh-client \
     && apk add --no-cache python3 py3-pip \
     && apk add --no-cache cairo-dev jpeg-dev pango-dev giflib-dev g++ build-base \
@@ -20,16 +20,24 @@ RUN apk add --no-cache openssh-client \
     # Test that yt-dlp can work with YouTube
     && yt-dlp --no-download --print title "dQw4w9WgXcQ"
 
-# Bundle app source
+# Install global npm packages (cached until package versions change)
+RUN npm install -g forever
+
+# Copy package files first for better caching
+COPY package*.json ./
+COPY frontend/package*.json ./frontend/
+COPY backend/package*.json ./backend/
+
+# Install dependencies (cached until package*.json changes)
+RUN npm install moment-timezone --save
+RUN cd frontend && npm ci
+RUN cd backend && npm ci && chown -R node:node .
+
+# Bundle app source (only invalidates cache when code changes)
 COPY . .
 
-# install npm install moment-timezone --save
-RUN npm install moment-timezone --save
-
-# Install app dependencies and build
-RUN npm install -g forever
-RUN cd frontend && npm ci && npm run build
-RUN cd backend && npm ci && chown -R node:node .
+# Build frontend (only runs when frontend code or deps change)
+RUN cd frontend && npm run build
 
 # Copy entrypoint script into the image
 COPY entrypoint.sh /usr/src/app
@@ -46,6 +54,9 @@ USER node
 
 # Test that yt-dlp works as the node user
 RUN yt-dlp --version && echo "YouTube extraction verified during image build"
+
+# Set production environment
+ENV NODE_ENV=production
 
 EXPOSE 3112
 EXPOSE 3119

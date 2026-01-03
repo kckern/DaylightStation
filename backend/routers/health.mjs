@@ -3,6 +3,9 @@ import dailyHealth from '../lib/health.mjs';
 import { loadFile, userLoadFile } from '../lib/io.mjs';
 import { userDataService } from '../lib/config/UserDataService.mjs';
 import { configService } from '../lib/config/ConfigService.mjs';
+import { createLogger } from '../lib/logging/logger.js';
+
+const healthLogger = createLogger({ source: 'backend', app: 'health' });
 // STUBBED: journalist folder removed
 // import { getNutriDaysBack, getNutrilListByDate, getNutrilListByID, deleteNuriListById, updateNutrilist, saveNutrilist } from './journalist/lib/db.mjs';
 const getNutriDaysBack = () => ({});
@@ -30,19 +33,27 @@ healthRouter.use(express.json({
 
 // Middleware for error handling
 healthRouter.use((err, req, res, next) => {
-    console.error(err.stack);
+    healthLogger.error('health.router.error', {
+        error: err.message,
+        stack: err.stack,
+        url: req.url,
+        method: req.method
+    });
     res.status(500).json({ error: err.message });
 });
 
 // Get comprehensive health data (includes weight, workouts, nutrition)
 healthRouter.get('/daily', async (req, res, next) => {
     try {
+        healthLogger.debug('health.daily.request');
         const healthData = await dailyHealth();
-        res.json({ 
+        healthLogger.info('health.daily.success');
+        res.json({
             message: 'Daily health data retrieved successfully',
             data: healthData
         });
     } catch (error) {
+        healthLogger.error('health.daily.failed', { error: error.message });
         next(error);
     }
 });
@@ -185,12 +196,18 @@ healthRouter.post('/nutrilist', async (req, res, next) => {
     try {
         const { nutribot_chat_id } = process.env;
         const itemData = req.body;
-        
+
+        healthLogger.debug('nutrilist.create.request', {
+            item: itemData.item,
+            date: itemData.date || moment().format('YYYY-MM-DD')
+        });
+
         // Validate required fields
         if (!itemData.item) {
+            healthLogger.warn('nutrilist.create.validation_failed', { error: 'Item name is required' });
             return res.status(400).json({ error: 'Item name is required' });
         }
-        
+
         // Set defaults and add metadata
         const newItem = {
             uuid: uuidv4(),
@@ -210,18 +227,21 @@ healthRouter.post('/nutrilist', async (req, res, next) => {
             date: itemData.date || moment().format('YYYY-MM-DD'),
             log_uuid: itemData.log_uuid || 'MANUAL'
         };
-        
+
         const result = saveNutrilist([newItem], nutribot_chat_id);
-        
+
         if (result) {
-            res.status(201).json({ 
+            healthLogger.info('nutrilist.create.success', { uuid: newItem.uuid, item: newItem.item });
+            res.status(201).json({
                 message: 'Nutrilist item created successfully',
                 data: newItem
             });
         } else {
+            healthLogger.error('nutrilist.create.failed', { item: newItem.item });
             res.status(500).json({ error: 'Failed to create nutrilist item' });
         }
     } catch (error) {
+        healthLogger.error('nutrilist.create.error', { error: error.message, stack: error.stack });
         next(error);
     }
 });
@@ -232,16 +252,22 @@ healthRouter.put('/nutrilist/:uuid', async (req, res, next) => {
         const { uuid } = req.params;
         const { nutribot_chat_id } = process.env;
         const updateData = req.body;
-        
+
+        healthLogger.debug('nutrilist.update.request', {
+            uuid,
+            fields: Object.keys(updateData)
+        });
+
         // Check if item exists
         const existingItem = getNutrilListByID(nutribot_chat_id, uuid);
         if (!existingItem || Object.keys(existingItem).length === 0) {
+            healthLogger.warn('nutrilist.update.not_found', { uuid });
             return res.status(404).json({ error: 'Nutrilist item not found' });
         }
-        
+
         // Filter out non-updatable fields
         const allowedFields = [
-            'item', 'unit', 'amount', 'noom_color', 'calories', 'fat', 
+            'item', 'unit', 'amount', 'noom_color', 'calories', 'fat',
             'carbs', 'protein', 'fiber', 'sugar', 'sodium', 'cholesterol', 'date'
         ];
         const filteredUpdate = {};
@@ -250,18 +276,21 @@ healthRouter.put('/nutrilist/:uuid', async (req, res, next) => {
                 filteredUpdate[key] = updateData[key];
             }
         });
-        
+
         const updatedItem = updateNutrilist(nutribot_chat_id, uuid, filteredUpdate);
-        
+
         if (updatedItem) {
-            res.json({ 
+            healthLogger.info('nutrilist.update.success', { uuid });
+            res.json({
                 message: 'Nutrilist item updated successfully',
                 data: updatedItem
             });
         } else {
+            healthLogger.error('nutrilist.update.failed', { uuid });
             res.status(500).json({ error: 'Failed to update nutrilist item' });
         }
     } catch (error) {
+        healthLogger.error('nutrilist.update.error', { uuid: req.params.uuid, error: error.message });
         next(error);
     }
 });
@@ -271,24 +300,30 @@ healthRouter.delete('/nutrilist/:uuid', async (req, res, next) => {
     try {
         const { uuid } = req.params;
         const { nutribot_chat_id } = process.env;
-        
+
+        healthLogger.debug('nutrilist.delete.request', { uuid });
+
         // Check if item exists
         const existingItem = getNutrilListByID(nutribot_chat_id, uuid);
         if (!existingItem || Object.keys(existingItem).length === 0) {
+            healthLogger.warn('nutrilist.delete.not_found', { uuid });
             return res.status(404).json({ error: 'Nutrilist item not found' });
         }
-        
+
         const result = deleteNuriListById(nutribot_chat_id, uuid);
-        
+
         if (result.success) {
-            res.json({ 
+            healthLogger.info('nutrilist.delete.success', { uuid });
+            res.json({
                 message: 'Nutrilist item deleted successfully',
                 uuid: uuid
             });
         } else {
+            healthLogger.error('nutrilist.delete.failed', { uuid });
             res.status(500).json({ error: 'Failed to delete nutrilist item' });
         }
     } catch (error) {
+        healthLogger.error('nutrilist.delete.error', { uuid: req.params.uuid, error: error.message });
         next(error);
     }
 });
