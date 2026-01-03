@@ -1067,3 +1067,81 @@ function detectContentType(selection) {
 ```
 
 **Bottom line:** Yes, have `/media/{provider}/list` for each provider. Keep `/data/list` as the composition/routing layer that references items from any provider but returns a unified, minimal menu schema.
+
+
+---
+
+## Addendum: OfficeApp Compatibility (Single-Button Navigation)
+
+The `OfficeApp` operates on a different interaction model than `TVApp`. While `TVApp` uses a standard directional remote (Up/Down/Left/Right/Enter), `OfficeApp` often relies on a single-button input (or limited keypad) that uses a **"Cycle & Timeout"** paradigm:
+1.  **Cycle**: Pressing the button advances the selection to the next item (looping back to start).
+2.  **Timeout**: Stopping on an item for a set duration (e.g., 3 seconds) confirms the selection automatically.
+
+To ensure `ShowView.jsx` and `SeasonView.jsx` work seamlessly in `OfficeApp`, the following enhancements are required:
+
+### 1. Support `MENU_TIMEOUT` Prop
+-   Accept an optional `MENU_TIMEOUT` prop (default: 0).
+-   If `MENU_TIMEOUT > 0`, activate the timeout logic.
+
+### 2. Implement Timeout Logic
+-   Use a timer (similar to `useProgressTimeout` in `Menu.jsx`) that triggers `onSelect(selectedItem)` when it expires.
+-   **Reset** the timer whenever the selection changes (user navigates).
+-   **Visual Feedback**: Render a progress bar on the currently selected item (similar to `KeypadMenu`) to indicate time remaining.
+
+### 3. "Cycle" Navigation Support
+-   The `OfficeApp` keypad handler may dispatch alphanumeric keys (or `Tab`) for the single button.
+-   **Requirement**: In addition to Arrow keys, listen for **any alphanumeric key** (a-z, 0-9) and treat it as a "Next" command.
+-   **Behavior**:
+    -   Increment `selectedIndex` by 1.
+    -   Loop back to 0 if at the end of the list.
+    -   This ensures that a single button can traverse the entire grid/list.
+
+### 4. Local State Fallback
+-   `OfficeApp` does not currently provide `MenuNavigationContext`.
+-   **Requirement**: `ShowView` and `SeasonView` must check if `navContext` exists.
+    -   If `navContext` is present (TVApp), use it for selection state.
+    -   If `navContext` is missing (OfficeApp), fall back to local `useState` for `selectedIndex`.
+
+### Implementation Checklist for Views
+
+#### `SeasonView.jsx` & `ShowView.jsx` Updates:
+
+```javascript
+// 1. Add Prop
+export function SeasonView({ ..., MENU_TIMEOUT = 0 }) {
+  
+  // 2. Local State Fallback
+  const [localIndex, setLocalIndex] = useState(0);
+  const selectedIndex = navContext ? navContext.getSelection(depth).index : localIndex;
+  
+  const setIndex = (i) => {
+    if (navContext) navContext.setSelection(depth, i);
+    else setLocalIndex(i);
+  };
+
+  // 3. Timeout Logic
+  const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {
+    handleSelect(items[selectedIndex]);
+  });
+
+  useEffect(() => {
+    if (MENU_TIMEOUT > 0) resetTime();
+  }, [selectedIndex, resetTime]);
+
+  // 4. Cycle Navigation in handleKeyDown
+  const handleKeyDown = (e) => {
+    // ... existing arrow logic ...
+    
+    // Add alphanumeric cycle support
+    if (/^[a-z0-9]$/i.test(e.key)) {
+      e.preventDefault();
+      const next = (selectedIndex + 1) % items.length;
+      setIndex(next);
+    }
+  };
+  
+  // 5. Render Progress Bar
+  // Inside render loop/grid:
+  // {isActive && MENU_TIMEOUT > 0 && <ProgressBar timeLeft={timeLeft} total={MENU_TIMEOUT} />}
+}
+```
