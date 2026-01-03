@@ -206,6 +206,7 @@ $transition-normal: 0.25s ease;
   flex-shrink: 0;
   cursor: pointer;
   transition: transform $transition-normal;
+  position: relative;
   
   &:hover {
     transform: scale(1.05) translateY(-4px);
@@ -230,6 +231,26 @@ $transition-normal: 0.25s ease;
       color: $accent-blue;
     }
   }
+}
+
+// Timeout progress bar for OfficeApp single-button navigation
+.season-card__timeout-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+  z-index: 10;
+}
+
+.season-card__timeout-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 100%);
+  transition: width 0.015s linear;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
 }
 
 .season-card__thumbnail {
@@ -496,6 +517,26 @@ $transition-normal: 0.25s ease;
     height: 100%;
     object-fit: cover;
   }
+}
+
+// Timeout progress bar for OfficeApp single-button navigation
+.episode-grid-card__timeout-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: $border-radius $border-radius 0 0;
+  overflow: hidden;
+  z-index: 10;
+}
+
+.episode-grid-card__timeout-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 100%);
+  transition: width 0.015s linear;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
 }
 
 .episode-grid-card__progress-bar {

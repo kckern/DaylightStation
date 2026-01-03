@@ -1,30 +1,100 @@
-import React, { useCallback, useEffect, useContext, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useContext, useRef } from 'react';
 import { useFetchPlexData } from './hooks/useFetchPlexData';
 import MenuNavigationContext from '../../context/MenuNavigationContext';
 import './PlexViews.scss';
 
 /**
+ * A hook to handle an optional countdown that invokes a callback.
+ * Copied from Menu.jsx for use in standalone views.
+ */
+function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
+  const [timeLeft, setTimeLeft] = useState(timeout);
+  const timerRef = useRef(null);
+  const callbackRef = useRef(onTimeout);
+
+  useEffect(() => {
+    callbackRef.current = onTimeout;
+  }, [onTimeout]);
+
+  useEffect(() => {
+    if (!timeout || timeout <= 0) {
+      setTimeLeft(0);
+      return;
+    }
+    setTimeLeft(timeout);
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        const newVal = prev - interval;
+        if (newVal <= 0) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+          callbackRef.current?.();
+          return 0;
+        }
+        return newVal;
+      });
+    }, interval);
+
+    return () => {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    };
+  }, [timeout, interval]);
+
+  const resetTime = useCallback(() => {
+    if (timerRef.current) {
+      setTimeLeft(timeout);
+    }
+  }, [timeout]);
+
+  return { timeLeft, resetTime };
+}
+
+/**
  * ShowView: Netflix-style show page with hero banner and season selector
  * Designed to fit in 16:9 viewport without vertical scrolling
+ * 
+ * OfficeApp Compatibility:
+ * - MENU_TIMEOUT: If > 0, auto-selects after timeout (single-button navigation)
+ * - Falls back to local state if MenuNavigationContext is unavailable
+ * - Supports alphanumeric key cycling for single-button input
  */
-export function ShowView({ showId, depth, onSelect, onEscape }) {
+export function ShowView({ showId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
   const { data, loading, error } = useFetchPlexData(showId);
   const navContext = useContext(MenuNavigationContext);
   const seasonsRef = useRef(null);
   
-  // Get selection from context
-  const selection = navContext?.getSelection(depth) || { index: 0, key: null };
-  const selectedIndex = selection.index;
+  // Local state fallback for OfficeApp (no navContext)
+  const [localIndex, setLocalIndex] = useState(0);
+  
+  // Get selection from context or local state
+  const selection = navContext?.getSelection(depth) || { index: localIndex, key: null };
+  const selectedIndex = navContext ? selection.index : localIndex;
 
   const setSelectedIndex = useCallback((index, key = null) => {
     if (navContext) {
       navContext.setSelectionAtDepth(depth, index, key);
+    } else {
+      setLocalIndex(index);
     }
   }, [navContext, depth]);
 
   const seasons = data?.items || [];
   const showInfo = data?.info || {};
   const showTitle = data?.title || showInfo.title || 'Show';
+
+  // Timeout logic for OfficeApp single-button navigation
+  const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {
+    if (seasons.length > 0) {
+      handleSelect(seasons[selectedIndex]);
+    }
+  });
+
+  // Reset timeout on selection change
+  useEffect(() => {
+    if (MENU_TIMEOUT > 0) resetTime();
+  }, [selectedIndex, resetTime, MENU_TIMEOUT]);
 
   // Get season key for selection persistence
   const getSeasonKey = useCallback((season) => {
@@ -92,6 +162,12 @@ export function ShowView({ showId, depth, onSelect, onEscape }) {
         break;
 
       default:
+        // Alphanumeric cycle support for OfficeApp single-button navigation
+        if (/^[a-z0-9]$/i.test(e.key)) {
+          e.preventDefault();
+          const next = (selectedIndex + 1) % seasons.length;
+          setSelectedIndex(next, getSeasonKey(seasons[next]));
+        }
         break;
     }
   }, [seasons, selectedIndex, handleSelect, handleClose, setSelectedIndex, getSeasonKey]);
@@ -218,6 +294,16 @@ export function ShowView({ showId, depth, onSelect, onEscape }) {
                     handleSelect(season);
                   }}
                 >
+                  {/* Timeout Progress Bar for OfficeApp */}
+                  {isActive && MENU_TIMEOUT > 0 && (
+                    <div className="season-card__timeout-bar">
+                      <div 
+                        className="season-card__timeout-fill" 
+                        style={{ width: `${100 - (timeLeft / MENU_TIMEOUT) * 100}%` }}
+                      />
+                    </div>
+                  )}
+
                   {/* Season Thumbnail */}
                   <div className="season-card__thumbnail">
                     <img 

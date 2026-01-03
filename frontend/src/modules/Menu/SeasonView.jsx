@@ -1,24 +1,82 @@
-import React, { useCallback, useEffect, useContext, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useContext, useRef } from 'react';
 import { useFetchPlexData, formatDuration, formatProgress } from './hooks/useFetchPlexData';
 import MenuNavigationContext from '../../context/MenuNavigationContext';
 import './PlexViews.scss';
 
 /**
+ * A hook to handle an optional countdown that invokes a callback.
+ * Copied from Menu.jsx for use in standalone views.
+ */
+function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
+  const [timeLeft, setTimeLeft] = useState(timeout);
+  const timerRef = useRef(null);
+  const callbackRef = useRef(onTimeout);
+
+  useEffect(() => {
+    callbackRef.current = onTimeout;
+  }, [onTimeout]);
+
+  useEffect(() => {
+    if (!timeout || timeout <= 0) {
+      setTimeLeft(0);
+      return;
+    }
+    setTimeLeft(timeout);
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        const newVal = prev - interval;
+        if (newVal <= 0) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+          callbackRef.current?.();
+          return 0;
+        }
+        return newVal;
+      });
+    }, interval);
+
+    return () => {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    };
+  }, [timeout, interval]);
+
+  const resetTime = useCallback(() => {
+    if (timerRef.current) {
+      setTimeLeft(timeout);
+    }
+  }, [timeout]);
+
+  return { timeLeft, resetTime };
+}
+
+/**
  * SeasonView: Netflix-style episode grid for a TV season
  * Shows episode thumbnails in a grid, with expanded description for selected episode
+ * 
+ * OfficeApp Compatibility:
+ * - MENU_TIMEOUT: If > 0, auto-selects after timeout (single-button navigation)
+ * - Falls back to local state if MenuNavigationContext is unavailable
+ * - Supports alphanumeric key cycling for single-button input
  */
-export function SeasonView({ seasonId, depth, onSelect, onEscape }) {
+export function SeasonView({ seasonId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
   const { data, loading, error } = useFetchPlexData(seasonId);
   const navContext = useContext(MenuNavigationContext);
   const gridRef = useRef(null);
   
-  // Get selection from context
-  const selection = navContext?.getSelection(depth) || { index: 0, key: null };
-  const selectedIndex = selection.index;
+  // Local state fallback for OfficeApp (no navContext)
+  const [localIndex, setLocalIndex] = useState(0);
+  
+  // Get selection from context or local state
+  const selection = navContext?.getSelection(depth) || { index: localIndex, key: null };
+  const selectedIndex = navContext ? selection.index : localIndex;
 
   const setSelectedIndex = useCallback((index, key = null) => {
     if (navContext) {
       navContext.setSelectionAtDepth(depth, index, key);
+    } else {
+      setLocalIndex(index);
     }
   }, [navContext, depth]);
 
@@ -27,6 +85,18 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape }) {
   const seasonTitle = data?.title || seasonInfo.title || 'Season';
   const showTitle = seasonInfo.parentTitle || '';
   const seasonPoster = seasonInfo.image || seasonInfo.parentThumb || '';
+
+  // Timeout logic for OfficeApp single-button navigation
+  const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {
+    if (episodes.length > 0) {
+      handleSelect(episodes[selectedIndex]);
+    }
+  });
+
+  // Reset timeout on selection change
+  useEffect(() => {
+    if (MENU_TIMEOUT > 0) resetTime();
+  }, [selectedIndex, resetTime, MENU_TIMEOUT]);
 
   // Get episode key for selection persistence
   const getEpisodeKey = useCallback((episode) => {
@@ -120,6 +190,12 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape }) {
         break;
 
       default:
+        // Alphanumeric cycle support for OfficeApp single-button navigation
+        if (/^[a-z0-9]$/i.test(e.key)) {
+          e.preventDefault();
+          const next = (selectedIndex + 1) % episodes.length;
+          setSelectedIndex(next, getEpisodeKey(episodes[next]));
+        }
         break;
     }
   }, [episodes, selectedIndex, handleSelect, handleClose, setSelectedIndex, getEpisodeKey]);
@@ -250,6 +326,16 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape }) {
                   handleSelect(episode);
                 }}
               >
+                {/* Timeout Progress Bar for OfficeApp */}
+                {isActive && MENU_TIMEOUT > 0 && (
+                  <div className="episode-grid-card__timeout-bar">
+                    <div 
+                      className="episode-grid-card__timeout-fill" 
+                      style={{ width: `${100 - (timeLeft / MENU_TIMEOUT) * 100}%` }}
+                    />
+                  </div>
+                )}
+
                 {/* Episode Thumbnail */}
                 <div className="episode-grid-card__thumbnail">
                   <img 
