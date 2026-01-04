@@ -74,12 +74,22 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
 
     return noteHistory
       .filter(note => {
+        // For active notes, always show them
+        const activeNote = activeNotes.get(note.note);
+        const isStillActive = activeNote && activeNote.timestamp === note.startTime;
+        if (isStillActive) return true;
+
+        // For completed notes, filter based on time since release
+        if (note.endTime) {
+          const timeSinceRelease = now - note.endTime;
+          return timeSinceRelease < DISPLAY_DURATION;
+        }
+
+        // Orphaned notes (no endTime, not active) - use age as fallback
         const age = now - note.startTime;
         return age < DISPLAY_DURATION;
       })
       .map(note => {
-        const age = now - note.startTime;
-
         // Check if this specific note instance is still active by matching both
         // the note number AND the startTime with the activeNotes map
         const activeNote = activeNotes.get(note.note);
@@ -91,13 +101,32 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
             ? note.endTime - note.startTime
             : now - note.startTime;
 
+        // Calculate position differently for active vs completed notes
+        let bottomPercent, progress;
+        if (isStillActive) {
+          // Active notes stay anchored to the keyboard
+          bottomPercent = 0;
+          progress = 0;
+        } else if (note.endTime) {
+          // Completed notes rise based on time since release
+          const timeSinceRelease = now - note.endTime;
+          progress = timeSinceRelease / DISPLAY_DURATION;
+          bottomPercent = progress * 100;
+        } else {
+          // Orphaned notes - fallback to age-based positioning
+          const age = now - note.startTime;
+          progress = age / DISPLAY_DURATION;
+          bottomPercent = progress * 100;
+        }
+
         return {
           ...note,
           x: getNotePosition(note.note, startNote, endNote),
           width: getNoteWidth(note.note, startNote, endNote),
           hue: getNoteHue(note.note, startNote, endNote),
-          age,
           duration,
+          bottomPercent,
+          progress,
           isActive: isStillActive
         };
       });
@@ -107,11 +136,11 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
     <div className="note-waterfall">
       <div className="waterfall-perspective">
         {visibleNotes.map((note, idx) => {
-          // Height based on note duration
-          const heightPercent = Math.min(80, Math.max(2, note.duration / 30));
-          // Position: starts at 0% (bottom) and rises to 100% (top) over DISPLAY_DURATION
-          const progress = note.age / DISPLAY_DURATION;
-          const bottomPercent = progress * 100;
+          // Height based on note duration, scaled to match the timeline
+          // Notes rise at 100% per DISPLAY_DURATION (8000ms), so height should use same scale
+          const heldDuration = note.duration;
+          // Convert duration to percentage of timeline (same scale as rising animation)
+          const heightPercent = Math.min(95, Math.max(1, (heldDuration / DISPLAY_DURATION) * 100));
 
           return (
             <div
@@ -121,10 +150,10 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
                 '--x': `${note.x}%`,
                 '--width': `${note.width}%`,
                 '--height': `${heightPercent}%`,
-                '--bottom': `${bottomPercent}%`,
+                '--bottom': `${note.bottomPercent}%`,
                 '--velocity': note.velocity / 127,
                 '--hue': note.hue,
-                '--progress': progress
+                '--progress': note.progress
               }}
             />
           );

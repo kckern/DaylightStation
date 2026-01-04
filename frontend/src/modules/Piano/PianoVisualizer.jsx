@@ -1,15 +1,14 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
+import { CurrentChordStaff } from './components/CurrentChordStaff';
 import { useMidiSubscription } from './useMidiSubscription';
 import './PianoVisualizer.scss';
 
 const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
 const COUNTDOWN_MS = 30000;   // 30 seconds countdown
+const PLACEHOLDER_DELAY_MS = 2000; // 2 seconds before showing "Play something..."
 
-// Note names for display
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const midiNoteToName = (note) => `${NOTE_NAMES[note % 12]}${Math.floor(note / 12) - 1}`;
 
 // Format duration as mm:ss
 const formatDuration = (seconds) => {
@@ -30,27 +29,23 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   const [inactivityState, setInactivityState] = useState('active'); // 'active' | 'grace' | 'countdown'
   const [countdownProgress, setCountdownProgress] = useState(100);
   const [sessionDuration, setSessionDuration] = useState(0);
-  const lastActivityRef = useRef(Date.now());
+  const lastNoteOffRef = useRef(null); // Track when the last note was released
   const sessionStartRef = useRef(null);
   const timerRef = useRef(null);
+  const [showPlaceholder, setShowPlaceholder] = useState(false);
 
-  // Get current notes display string
-  const currentNotesDisplay = useMemo(() => {
-    if (activeNotes.size === 0) return '';
-    const notes = Array.from(activeNotes.keys())
-      .sort((a, b) => a - b)
-      .map(midiNoteToName);
-    return notes.join(' ');
-  }, [activeNotes]);
-
-  // Reset activity timer when any note event occurs
+  // Track when all notes are released (for inactivity timer)
   useEffect(() => {
-    if (noteHistory.length > 0) {
-      lastActivityRef.current = Date.now();
+    if (activeNotes.size === 0 && noteHistory.length > 0) {
+      // All notes released - start inactivity timer from now
+      lastNoteOffRef.current = Date.now();
+    } else if (activeNotes.size > 0) {
+      // Notes are being played - reset the timer reference
+      lastNoteOffRef.current = null;
       setInactivityState('active');
       setCountdownProgress(100);
     }
-  }, [noteHistory.length]);
+  }, [activeNotes.size, noteHistory.length]);
 
   // Track session start and update duration
   useEffect(() => {
@@ -69,10 +64,24 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
     return () => clearInterval(durationTimer);
   }, []);
 
-  // Inactivity detection
+  // Inactivity detection - only starts after last note is released
   useEffect(() => {
     const checkInactivity = () => {
-      const elapsed = Date.now() - lastActivityRef.current;
+      // If notes are currently being played, stay active
+      if (activeNotes.size > 0) {
+        setInactivityState('active');
+        setCountdownProgress(100);
+        return;
+      }
+
+      // If no notes have been released yet, stay active
+      if (!lastNoteOffRef.current) {
+        setInactivityState('active');
+        setCountdownProgress(100);
+        return;
+      }
+
+      const elapsed = Date.now() - lastNoteOffRef.current;
 
       if (elapsed < GRACE_PERIOD_MS) {
         setInactivityState('active');
@@ -83,14 +92,14 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
         const progress = 100 - (countdownElapsed / COUNTDOWN_MS) * 100;
         setCountdownProgress(Math.max(0, progress));
       } else {
-        // Time's up - close the visualizer
+        // Time's up - close the visualizer only when countdown reaches zero
         if (onClose) onClose();
       }
     };
 
     timerRef.current = setInterval(checkInactivity, 100);
     return () => clearInterval(timerRef.current);
-  }, [onClose]);
+  }, [onClose, activeNotes.size]);
 
   // Handle session end
   useEffect(() => {
@@ -107,20 +116,10 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
     <div className="piano-visualizer">
       <div className="piano-header">
         <div className="header-left">
-          <h1 className="title">Piano</h1>
           <div className="session-timer">
             <span className="timer-value">{formatDuration(sessionDuration)}</span>
             <span className="note-count">{noteHistory.length} notes</span>
           </div>
-        </div>
-
-        <div className="header-center">
-          <div className="current-notes">
-            {currentNotesDisplay || <span className="placeholder">Play something...</span>}
-          </div>
-        </div>
-
-        <div className="header-right">
           {sustainPedal && <span className="pedal-indicator">Sustain</span>}
           {inactivityState === 'countdown' && (
             <div className="inactivity-timer">
@@ -130,6 +129,10 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
               />
             </div>
           )}
+        </div>
+
+        <div className="header-center">
+          <CurrentChordStaff activeNotes={activeNotes} />
         </div>
       </div>
 
