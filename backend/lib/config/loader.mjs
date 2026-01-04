@@ -4,16 +4,15 @@
  * Unified configuration loading with clear precedence order.
  * Handles YAML parsing, merging, and environment awareness.
  *
- * Config now lives in data/system/config/ directory.
- * Supports both new names (app.yml) and legacy names (config.app.yml).
+ * Config now lives in data/system/ directory.
+ * Supports both new names (system.yml) and legacy names (app.yml, config.app.yml).
  *
  * Precedence (highest wins):
  * 1. Resolved paths from pathResolver (DAYLIGHT_DATA_PATH env var)
- * 2. app-local.yml (dev only)
+ * 2. system-local.yml (dev only)
  * 3. secrets.yml
  * 4. apps/*.yml (modular app configs)
- * 5. system.yml (system config)
- * 6. app.yml (main app config)
+ * 5. system.yml (main config, replaces app.yml)
  */
 
 import fs from 'fs';
@@ -72,8 +71,8 @@ export function deepMerge(target, ...sources) {
 /**
  * Try to load a config file, checking new name first then legacy name
  * @param {string} configDir - Config directory
- * @param {string} newName - New file name (e.g., 'app.yml')
- * @param {string} legacyName - Legacy file name (e.g., 'config.app.yml')
+ * @param {string} newName - New file name (e.g., 'system.yml')
+ * @param {string} legacyName - Legacy file name (e.g., 'app.yml')
  * @returns {object} - { config, path, isLegacy }
  */
 function loadConfigWithFallback(configDir, newName, legacyName) {
@@ -120,9 +119,9 @@ export function loadAllConfig(options = {}) {
   const errors = [];
 
   // ============================================================
-  // Layer 1: Main app config (app.yml or legacy config.app.yml)
+  // Layer 1: Main system config (system.yml or legacy app.yml)
   // ============================================================
-  const appResult = loadConfigWithFallback(configDir, 'app.yml', 'config.app.yml');
+  const appResult = loadConfigWithFallback(configDir, 'system.yml', 'app.yml');
   const appConfig = appResult.config;
   if (appConfig) {
     layers.push({ name: 'app', path: appResult.path, keys: Object.keys(appConfig).length });
@@ -131,13 +130,10 @@ export function loadAllConfig(options = {}) {
   }
 
   // ============================================================
-  // Layer 2: System config
+  // Layer 2: Legacy system config (for backwards compatibility)
+  // Now merged into system.yml, but kept for transition
   // ============================================================
-  const systemConfigPath = path.join(configDir, 'system.yml');
-  const systemConfig = safeLoadYaml(systemConfigPath);
-  if (systemConfig) {
-    layers.push({ name: 'system', path: systemConfigPath, keys: Object.keys(systemConfig).length });
-  }
+  // No longer needed - system.yml is now the main config
 
   // ============================================================
   // Layer 3: Modular app configs (apps/*.yml)
@@ -183,7 +179,7 @@ export function loadAllConfig(options = {}) {
   // ============================================================
   let localConfig = null;
   if (isDev && !isDocker) {
-    const localResult = loadConfigWithFallback(configDir, 'app-local.yml', 'config.app-local.yml');
+    const localResult = loadConfigWithFallback(configDir, 'system-local.yml', 'app-local.yml');
     localConfig = localResult.config;
     if (localConfig) {
       layers.push({ name: 'local', path: localResult.path, keys: Object.keys(localConfig).length });
@@ -196,7 +192,6 @@ export function loadAllConfig(options = {}) {
   const merged = deepMerge(
     {},
     appConfig || {},
-    systemConfig || {},
     appsConfig,  // App configs go under their app name
     secretsConfig || {},
     localConfig || {}

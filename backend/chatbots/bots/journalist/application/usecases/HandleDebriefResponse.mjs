@@ -101,7 +101,10 @@ export class HandleDebriefResponse {
     }
     
     const debrief = recentDebriefs[0];
-    const sources = debrief.summaries || [];
+    const summaries = debrief.summaries || [];
+    
+    // Extract source names from summary objects (handle both formats: array of strings or array of {source, category, text})
+    const sources = summaries.map(s => typeof s === 'string' ? s : s.source).filter(Boolean);
     
     if (sources.length === 0) {
       await this.#messagingGateway.sendMessage(

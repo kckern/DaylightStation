@@ -123,15 +123,18 @@ export function resolveConfigPaths(options = {}) {
 
   // Helper to find config dir (new structure first, then legacy)
   const findConfigDir = (dataDir) => {
-    const newConfigDir = path.join(dataDir, 'system', 'config');
+    const newConfigDir = path.join(dataDir, 'system');
     const legacyConfigDir = path.join(dataDir, 'config');
-    if (pathExists(newConfigDir)) return { configDir: newConfigDir, isLegacy: false };
+    // Check for system.yml (preferred) or app.yml (legacy) to confirm it's a valid config dir
+    if (pathExists(path.join(newConfigDir, 'system.yml')) || pathExists(path.join(newConfigDir, 'app.yml'))) {
+      return { configDir: newConfigDir, isLegacy: false };
+    }
     if (pathExists(legacyConfigDir)) return { configDir: legacyConfigDir, isLegacy: true };
     return { configDir: newConfigDir, isLegacy: false }; // Default to new structure
   };
 
   // In Docker, paths are mounted by docker-compose
-  // Config is now inside data directory at system/config/
+  // Config is now inside data directory at system/
   if (isDocker) {
     const dataDir = '/usr/src/app/data';
     const { configDir } = findConfigDir(dataDir);
@@ -202,8 +205,8 @@ export function resolveConfigPaths(options = {}) {
     const { configDir, isLegacy } = findConfigDir(dataDir);
 
     // Check if config exists at either location
-    if (pathExists(path.join(configDir, 'app.yml')) ||
-        pathExists(path.join(configDir, 'config.app.yml'))) {
+    if (pathExists(path.join(configDir, 'system.yml')) ||
+        pathExists(path.join(configDir, 'app.yml'))) {
       return {
         configDir,
         dataDir,
@@ -237,7 +240,7 @@ export function resolveConfigPaths(options = {}) {
 
 /**
  * Get full paths to config files
- * Supports both new names (app.yml) and legacy names (config.app.yml)
+ * Supports both new names (system.yml) and legacy names (app.yml)
  */
 export function getConfigFilePaths(configDir) {
   if (!configDir) return null;
@@ -251,10 +254,9 @@ export function getConfigFilePaths(configDir) {
   };
 
   return {
-    app: resolveFile('app.yml', 'config.app.yml'),
+    system: resolveFile('system.yml', 'app.yml'),
     secrets: resolveFile('secrets.yml', 'config.secrets.yml'),
-    local: resolveFile('app-local.yml', 'config.app-local.yml'),
-    system: path.join(configDir, 'system.yml'),
+    local: resolveFile('system-local.yml', 'app-local.yml'),
     appsDir: path.join(configDir, 'apps')
   };
 }
@@ -266,7 +268,7 @@ export function validateConfigFiles(configDir) {
   const files = getConfigFilePaths(configDir);
   if (!files) return { valid: false, missing: ['configDir'] };
 
-  const required = ['app', 'secrets'];
+  const required = ['system', 'secrets'];
   const missing = [];
 
   for (const key of required) {

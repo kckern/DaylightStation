@@ -66,15 +66,13 @@ export const journalistExtractor = {
     // Add summary line
     lines.push(`  ${entry.totalMessages} message${entry.totalMessages > 1 ? 's' : ''} (${entry.wordCount} words)`);
     
-    // Add each message with timestamp
+    // Add each message with timestamp - FULL CONTENT, no truncation
+    // Journal entries are the most valuable data for day reconstruction
     entry.messages.forEach(msg => {
       const time = msg.timestamp.split(' ')[1].substring(0, 5); // HH:mm
-      const preview = msg.content.length > 150 
-        ? msg.content.substring(0, 147) + '...'
-        : msg.content;
       
-      // Format as a paragraph with time prefix
-      lines.push(`  [${time}] ${preview}`);
+      // Include full content - never truncate journal entries
+      lines.push(`  [${time}] ${msg.content}`);
     });
     
     return lines.join('\n');
