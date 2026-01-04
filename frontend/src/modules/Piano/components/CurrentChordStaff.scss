@@ -1,12 +1,14 @@
 .current-chord-staff-wrapper {
   width: 50%;
   height: 100%;
-  overflow: visible;
+  overflow: hidden;
   display: flex;
-  align-items: flex-start;
-  padding-top: 1rem;
+  align-items: center;
   justify-content: center;
   margin: 0 auto;
+  // Fixed padding to prevent layout shift from note stems
+  padding: 3rem 0;
+  box-sizing: border-box;
 }
 
 .current-chord-staff {
