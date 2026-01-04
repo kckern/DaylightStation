@@ -24,7 +24,12 @@
       "Bash(timeout 10 node:*)",
       "Bash(node simulation.mjs:*)",
       "Bash(npm run build:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(node scrape_livejournal.mjs:*)",
+      "Bash(git log:*)",
+      "Bash(node -e:*)",
+      "Bash(node /tmp/test_letterboxd.mjs:*)",
+      "Bash(node test_harvest.mjs:*)"
     ]
   }
 }

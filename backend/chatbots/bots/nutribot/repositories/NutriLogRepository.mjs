@@ -4,14 +4,23 @@
  * 
  * Repository for persisting and querying NutriLog entities.
  * Supports both file-based storage and in-memory for testing.
+ * 
+ * Archive Support:
+ * - Hot storage: nutrition/nutrilog.yml (recent 30 days)
+ * - Cold storage: nutrition/archives/nutrilog/YYYY-MM.yml (monthly archives)
  */
 
+import fs from 'fs';
+import yaml from 'js-yaml';
+import moment from 'moment-timezone';
 import { loadFile, saveFile } from '../../../../lib/io.mjs';
 import { NutriLog } from '../domain/NutriLog.mjs';
 import { formatLocalTimestamp } from '../../../_lib/time.mjs';
 import { NotFoundError } from '../../../_lib/errors/index.mjs';
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { TestContext } from '../../../_lib/testing/TestContext.mjs';
+
+const ARCHIVE_RETENTION_DAYS = 30;
 
 /**
  * NutriLog repository for persisting food logs
@@ -42,6 +51,51 @@ export class NutriLogRepository {
    */
   #getPath(userId) {
     return this.#config.getNutrilogPath(userId);
+  }
+
+  /**
+   * Get the archive directory path for a user's nutrilog archives
+   * @private
+   * @param {string} userId
+   * @returns {string}
+   */
+  #getArchiveDir(userId) {
+    const basePath = this.#getPath(userId);
+    // nutrilog.yml -> nutrition/archives/nutrilog/
+    const dir = basePath.replace(/\/nutrilog\.yml$/, '/archives/nutrilog');
+    return dir;
+  }
+
+  /**
+   * Get the archive file path for a specific month
+   * @private
+   * @param {string} userId
+   * @param {string} yearMonth - YYYY-MM format
+   * @returns {string}
+   */
+  #getArchivePath(userId, yearMonth) {
+    return `${this.#getArchiveDir(userId)}/${yearMonth}.yml`;
+  }
+
+  /**
+   * Load archive data for a specific month
+   * @private
+   * @param {string} userId
+   * @param {string} yearMonth - YYYY-MM format
+   * @returns {Object}
+   */
+  #loadArchive(userId, yearMonth) {
+    const archivePath = this.#getArchivePath(userId, yearMonth);
+    // Use raw fs for archives (not going through io.mjs)
+    if (fs.existsSync(archivePath)) {
+      try {
+        return yaml.load(fs.readFileSync(archivePath, 'utf8')) || {};
+      } catch (e) {
+        this.#logger.warn('nutrilog.loadArchive.error', { archivePath, error: e.message });
+        return {};
+      }
+    }
+    return {};
   }
 
   #loadData(path) {
@@ -105,6 +159,7 @@ export class NutriLogRepository {
 
   /**
    * Find a NutriLog by ID
+   * Checks hot storage first, then searches monthly archives if not found
    * @param {string} userId
    * @param {string} id
    * @returns {Promise<NutriLog|null>}
@@ -112,7 +167,28 @@ export class NutriLogRepository {
   async findById(userId, id) {
     const path = this.#getPath(userId);
     const data = this.#loadData(path);
-    const entity = this.#findEntity(data, id);
+    let entity = this.#findEntity(data, id);
+
+    // If not found in hot storage, search archives
+    if (!entity) {
+      const archiveDir = this.#getArchiveDir(userId);
+      if (fs.existsSync(archiveDir)) {
+        const archiveFiles = fs.readdirSync(archiveDir)
+          .filter(f => f.endsWith('.yml'))
+          .sort()
+          .reverse(); // Search newest archives first
+        
+        for (const file of archiveFiles) {
+          const yearMonth = file.replace('.yml', '');
+          const archiveData = this.#loadArchive(userId, yearMonth);
+          entity = this.#findEntity(archiveData, id);
+          if (entity) {
+            this.#logger.debug('nutrilog.findById.fromArchive', { id, yearMonth });
+            break;
+          }
+        }
+      }
+    }
 
     if (!entity) return null;
 
@@ -388,6 +464,81 @@ export class NutriLogRepository {
     }
 
     return summary;
+  }
+
+  /**
+   * Archive old log entries to monthly archive files
+   * Moves entries older than retentionDays from hot storage to cold archives
+   * @param {string} userId
+   * @param {number} [retentionDays=30] - Days to keep in hot storage
+   * @returns {Promise<Object>} - { archived: number, kept: number, months: string[] }
+   */
+  async archiveOldLogs(userId, retentionDays = ARCHIVE_RETENTION_DAYS) {
+    const path = this.#getPath(userId);
+    const data = this.#loadData(path);
+    const cutoffDate = moment().subtract(retentionDays, 'days').format('YYYY-MM-DD');
+    
+    const hotLogs = {};
+    const coldByMonth = {}; // { 'YYYY-MM': { logId: {...} } }
+    let archived = 0;
+    let kept = 0;
+    
+    for (const [logId, logEntry] of Object.entries(data)) {
+      const entryDate = logEntry?.meal?.date || logEntry?.createdAt?.substring(0, 10);
+      
+      if (!entryDate || entryDate >= cutoffDate) {
+        // Keep in hot storage
+        hotLogs[logId] = logEntry;
+        kept++;
+      } else {
+        // Move to archive
+        const yearMonth = entryDate.substring(0, 7);
+        if (!coldByMonth[yearMonth]) {
+          coldByMonth[yearMonth] = {};
+        }
+        coldByMonth[yearMonth][logId] = logEntry;
+        archived++;
+      }
+    }
+    
+    if (archived === 0) {
+      return { archived: 0, kept, months: [] };
+    }
+    
+    // Write to monthly archives
+    const archiveDir = this.#getArchiveDir(userId);
+    if (!fs.existsSync(archiveDir)) {
+      fs.mkdirSync(archiveDir, { recursive: true });
+    }
+    
+    const monthsUpdated = [];
+    for (const [yearMonth, monthLogs] of Object.entries(coldByMonth)) {
+      const archivePath = this.#getArchivePath(userId, yearMonth);
+      
+      // Merge with existing archive
+      let existing = {};
+      if (fs.existsSync(archivePath)) {
+        existing = yaml.load(fs.readFileSync(archivePath, 'utf8')) || {};
+      }
+      
+      const merged = { ...existing, ...monthLogs };
+      fs.writeFileSync(archivePath, yaml.dump(merged, { lineWidth: -1 }), 'utf8');
+      monthsUpdated.push(yearMonth);
+      
+      this.#logger.info('nutrilog.archive.wrote', { 
+        userId, 
+        yearMonth, 
+        count: Object.keys(monthLogs).length,
+        total: Object.keys(merged).length 
+      });
+    }
+    
+    // Update hot storage
+    saveFile(path, hotLogs);
+    
+    this.#logger.info('nutrilog.archive.complete', { userId, archived, kept, months: monthsUpdated });
+    
+    return { archived, kept, months: monthsUpdated };
   }
 }
 

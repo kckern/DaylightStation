@@ -228,23 +228,20 @@ export const getActivities = async (logger, daysBack = 90) => {
             continue;
         }
 
-        // Check if we already have this activity on file (new structure)
-        const date = moment(activity.start_date).tz(timezone).format('YYYY-MM-DD');
-        const existingFile = userLoadFile(username, `strava/${date}_${activity.id}`);
+        // Check if we already have this activity in the archive (by activity ID)
+        const archiveFile = userLoadFile(username, `archives/strava/${activity.id}`);
         
-        if (existingFile && existingFile.data && existingFile.data.heartRateOverTime) {
-            activitiesWithHeartRate.push(existingFile.data);
+        if (archiveFile && archiveFile.data && archiveFile.data.heartRateOverTime) {
+            activitiesWithHeartRate.push(archiveFile.data);
             continue;
         }
-
-        // Fallback to checking legacy archive (optional, but good for transition)
-        const onFileActivities = userLoadFile(username, 'archives/strava_long') || {};
-        const onFileActivity = onFileActivities[date] || {};
-        const alreadyHasHR = onFileActivity[md5(activity.id?.toString())]?.data?.heartRateOverTime || null;
         
-        if(alreadyHasHR) {
-            activity.heartRateOverTime = alreadyHasHR;
-            activitiesWithHeartRate.push(activity);
+        // Fallback: check old individual file format (date_id)
+        const date = moment(activity.start_date).tz(timezone).format('YYYY-MM-DD');
+        const oldFormatFile = userLoadFile(username, `strava/${date}_${activity.id}`);
+        
+        if (oldFormatFile && oldFormatFile.data && oldFormatFile.data.heartRateOverTime) {
+            activitiesWithHeartRate.push(oldFormatFile.data);
             continue;
         }
 
@@ -319,18 +316,21 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
         const harvestedDates = activities.map(activity => activity.date);
         const username = getDefaultUsername();
         
-        // Save individual activity files
+        // Save each activity to archives/strava/{activityId}.yml (full data)
         activities.forEach(activity => {
             if (activity.data && activity.data.id) {
-                userSaveFile(username, `strava/${activity.date}_${activity.data.id}`, activity);
+                const archiveData = {
+                    id: activity.data.id,
+                    date: activity.date,
+                    type: activity.type,
+                    src: activity.src,
+                    data: activity.data
+                };
+                userSaveFile(username, `archives/strava/${activity.data.id}`, archiveData);
             }
         });
 
-        // Load existing FULL data to preserve history (deprecated but kept for now if needed, or we can just rely on individual files + summary)
-        // For the summary, we should ideally load the existing summary and merge, or rebuild from individual files if we want to be pure.
-        // But since we are "re-harvesting from scratch" or at least the user asked to, we might just want to update the summary with what we have.
-        // However, to preserve history not in the current fetch window, we need to load existing summary.
-        
+        // Load existing summary to preserve history beyond fetch window
         const existingSummary = userLoadFile(username, 'strava') || {};
         
         // Merge new activities into summary structure
