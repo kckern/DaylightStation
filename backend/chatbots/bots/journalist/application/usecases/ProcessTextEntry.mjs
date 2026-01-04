@@ -117,7 +117,11 @@ export class ProcessTextEntry {
       }
 
       // 4. Generate multiple choice options for the follow-up question
-      const choices = await this.#generateConversationalChoices(response.question, text);
+      // Get debrief summary from state if available
+      const state = this.#conversationStateStore ? await this.#conversationStateStore.get(chatId) : null;
+      const debriefSummary = state?.debrief?.summary || state?.summary || null;
+      
+      const choices = await this.#generateConversationalChoices(response.question, text, historyText, debriefSummary);
 
       // 5. Build message - use question as the full response (acknowledgment may be empty)
       const message = response.acknowledgment 
@@ -195,10 +199,17 @@ export class ProcessTextEntry {
 
   /**
    * Generate multiple choice options for conversational follow-up
+   * @param {string} question - The follow-up question
+   * @param {string} context - User's recent entry
+   * @param {string} [history] - Conversation history
+   * @param {string} [debriefSummary] - Daily debrief summary
    * @private
    */
-  async #generateConversationalChoices(question, context) {
-    const prompt = buildConversationalChoicesPrompt(question, context);
+  async #generateConversationalChoices(question, context, history = '', debriefSummary = null) {
+    const prompt = buildConversationalChoicesPrompt(question, context, { 
+      history: truncateToLength(history, 1500), 
+      debriefSummary: debriefSummary ? truncateToLength(debriefSummary, 800) : null 
+    });
 
     try {
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 100 });
