@@ -13,24 +13,77 @@
     align-items: center;
     margin-bottom: 1rem;
     color: #fff;
-    height: 40px;
+    height: 60px;
     flex-shrink: 0;
+    padding: 0 1rem;
 
-    .session-info {
+    .header-left {
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: 1.5rem;
+      min-width: 200px;
 
-      .device-name {
-        color: #888;
-        font-size: 0.9rem;
+      .title {
+        font-size: 1.5rem;
+        font-weight: 300;
+        margin: 0;
+        color: #fff;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .session-timer {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.1rem;
+
+        .timer-value {
+          font-size: 1.2rem;
+          font-weight: 500;
+          font-variant-numeric: tabular-nums;
+          color: #4ecdc4;
+        }
+
+        .note-count {
+          font-size: 0.7rem;
+          color: #666;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
       }
     }
 
-    .status-indicators {
+    .header-center {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+
+      .current-notes {
+        font-size: 1.8rem;
+        font-weight: 300;
+        letter-spacing: 0.15em;
+        color: #fff;
+        text-align: center;
+        min-height: 2.2rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        .placeholder {
+          color: #444;
+          font-style: italic;
+          font-size: 1rem;
+        }
+      }
+    }
+
+    .header-right {
       display: flex;
       align-items: center;
       gap: 1rem;
+      min-width: 200px;
+      justify-content: flex-end;
 
       .pedal-indicator {
         background: #4a9eff;
