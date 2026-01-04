@@ -798,7 +798,8 @@ mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
         const urls = (await (new Plex()).loadImgFromKey(plex_key)).filter(Boolean).map(url => {
             if (/plex_proxy/.test(url)) {
                 const {host} = process.env.plex;
-                return `${host}${url.replace(/\/plex_proxy/, '')}${url.includes('?') ? '&' : '?'}X-Plex-Token=${process.env.PLEX_TOKEN}`;
+                const plexAuth = configService.getHouseholdAuth('plex') || {};
+                return `${host}${url.replace(/\/plex_proxy/, '')}${url.includes('?') ? '&' : '?'}X-Plex-Token=${plexAuth.token}`;
             }
             return url;
         });

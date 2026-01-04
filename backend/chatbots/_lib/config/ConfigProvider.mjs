@@ -22,38 +22,11 @@ import { DEFAULT_NUTRITION_GOALS } from '../../bots/nutribot/config/NutriBotConf
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Get config directory from environment (same logic as pathResolver.mjs)
- */
-function getConfigDir() {
-  // Check for explicit environment variable first
-  if (process.env.DAYLIGHT_CONFIG_PATH) {
-    return process.env.DAYLIGHT_CONFIG_PATH;
-  }
-  return null;
-}
-
-/**
- * Default search paths for config files (relative to project root)
+ * Default search paths for config files
+ * @deprecated Legacy config.app.yml is no longer used - ConfigService is the primary source
  */
 function getConfigSearchPaths() {
-  const paths = [];
-  
-  // Highest priority: DAYLIGHT_CONFIG_PATH env var
-  const envConfigDir = getConfigDir();
-  if (envConfigDir) {
-    paths.push(path.join(envConfigDir, 'config.app-local.yml'));
-    paths.push(path.join(envConfigDir, 'config.app.yml'));
-  }
-  
-  // From chatbots/_lib/config/ (relative paths)
-  paths.push(path.resolve(__dirname, '../../../../config.app-local.yml'));
-  paths.push(path.resolve(__dirname, '../../../../config.app.yml'));
-  
-  // From project root
-  paths.push(path.resolve(process.cwd(), 'config.app-local.yml'));
-  paths.push(path.resolve(process.cwd(), 'config.app.yml'));
-  
-  return paths;
+  return [];
 }
 
 function getSecretsSearchPaths() {
@@ -82,7 +55,7 @@ export class ConfigProvider {
 
   /**
    * @param {Object} [options]
-   * @param {string} [options.appConfigPath] - Override path to config.app.yml
+   * @param {string} [options.appConfigPath] - Override path to app config (deprecated, use ConfigService)
    * @param {string} [options.secretsPath] - Override path to config.secrets.yml
    * @param {Object} [options.env] - Override environment variables (for testing)
    */
