@@ -1,16 +1,15 @@
 import express from 'express';
 import request from 'request';
 import { createLogger } from '../lib/logging/logger.js';
-import { householdLoadAuth, getCurrentHouseholdId } from '../lib/io.mjs';
+import { configService } from '../lib/config/ConfigService.mjs';
 
 const router = express.Router();
 const logger = createLogger({ source: 'backend', app: 'plex-proxy' });
 
-// Get Plex token from household auth with env fallback
+// Get Plex token from ConfigService (single source of truth)
 const getPlexToken = () => {
-  const hid = getCurrentHouseholdId();
-  const auth = householdLoadAuth(hid, 'plex') || {};
-  return auth.token || process.env.PLEX_TOKEN;
+  const auth = configService.getHouseholdAuth('plex') || {};
+  return auth.token;
 };
 
 router.use('/', (req, res) => {

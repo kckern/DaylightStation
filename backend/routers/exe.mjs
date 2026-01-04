@@ -4,7 +4,8 @@ import path from 'path';
 import express from 'express';
 import { exec } from 'child_process';
 import axios from '../lib/http.mjs';
-import { loadFile, saveFile, householdLoadAuth, getCurrentHouseholdId } from '../lib/io.mjs';
+import { loadFile, saveFile } from '../lib/io.mjs';
+import { configService } from '../lib/config/ConfigService.mjs';
 import { broadcastToWebsockets, restartWebsocketServer } from './websocket.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 import { serializeError } from '../lib/logging/utils.js';
@@ -264,23 +265,21 @@ async function executeCommand(sshCommand) {
     }
 }
 
-// Get Home Assistant auth from household config with env fallback
+// Get Home Assistant auth from ConfigService (single source of truth)
 const getHomeAssistantAuth = () => {
-    const hid = getCurrentHouseholdId();
-    const auth = householdLoadAuth(hid, 'homeassistant') || {};
+    const auth = configService.getHouseholdAuth('homeassistant') || {};
     return {
-        host: auth.host || process.env.home_assistant?.host,
+        host: auth.host || auth.base_url || process.env.home_assistant?.host,
         port: auth.port || process.env.home_assistant?.port,
-        token: auth.token || process.env.HOME_ASSISTANT_TOKEN
+        token: auth.token
     };
 };
 
-// Get Fully Kiosk auth from household config with env fallback
+// Get Fully Kiosk auth from ConfigService (single source of truth)
 const getFullyKioskAuth = () => {
-    const hid = getCurrentHouseholdId();
-    const auth = householdLoadAuth(hid, 'fullykiosk') || {};
+    const auth = configService.getHouseholdAuth('fullykiosk') || {};
     return {
-        password: auth.password || process.env.FULLY_KIOSK_PASSWORD
+        password: auth.password
     };
 };
 

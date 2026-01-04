@@ -5,37 +5,27 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import isJSON from 'is-json';
 import { askGPT } from './gpt.mjs';
 import moment from 'moment';
-import { userLoadAuth, getDefaultUsername } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
 const logger = createLogger({ app: 'buxfer' });
-
-
 
 const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
 
 const getDataPath = () => process.env.path?.data || `${__appDirectory}/data`;
 
-// Lazy-load credentials from user auth, then env, then local file
+// Get credentials from ConfigService (single source of truth)
 const getCredentials = () => {
-  // Try user auth first (three-tier architecture - buxfer is user-specific)
-  const username = getDefaultUsername();
-  const auth = userLoadAuth(username, 'buxfer');
+  // Get from user auth via ConfigService
+  const auth = configService.getUserAuth('buxfer');
   if (auth?.email && auth?.password) {
     return {
       BUXFER_EMAIL: auth.email,
       BUXFER_PW: auth.password
     };
   }
-  
-  // Use process.env fallback (set by config loader during migration)
-  if (process.env.BUXFER_EMAIL && process.env.BUXFER_PW) {
-    return {
-      BUXFER_EMAIL: process.env.BUXFER_EMAIL,
-      BUXFER_PW: process.env.BUXFER_PW
-    };
-  }
-  // Fallback: try local secrets file
+
+  // Fallback: try local secrets file (legacy)
   const secretspath = `${__appDirectory}/config.secrets.yml`;
   if (existsSync(secretspath)) {
     try {

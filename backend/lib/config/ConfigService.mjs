@@ -391,6 +391,90 @@ class ConfigService {
     return this.#dataDir;
   }
 
+  // ============================================================
+  // AUTH LOADING (Single source of truth for credentials)
+  // ============================================================
+
+  /**
+   * Get auth credentials for a household service
+   * Loads from data/households/{householdId}/auth/{service}.yml
+   * Falls back to process.env.{SERVICE}_TOKEN during migration
+   *
+   * @param {string} service - Service name (e.g., 'plex', 'homeassistant', 'fullykiosk')
+   * @param {string} [householdId] - Household ID (defaults to default household)
+   * @returns {object|null} Auth credentials object or null if not found
+   */
+  getHouseholdAuth(service, householdId = null) {
+    if (!service) {
+      logger.warn('config.getHouseholdAuth.noService');
+      return null;
+    }
+    if (!this.#ensureInitialized()) return null;
+
+    const hid = householdId || this.getDefaultHouseholdId();
+    const authPath = path.join(this.#dataDir, 'households', hid, 'auth', `${service}.yml`);
+    const data = safeReadYaml(authPath);
+
+    // Fallback to env var during migration period
+    if (!data) {
+      const envKey = service.toUpperCase().replace(/-/g, '_');
+      const envToken = process.env[`${envKey}_TOKEN`] || process.env[`${envKey}_PASSWORD`] || process.env[envKey];
+      if (envToken) {
+        logger.debug('config.getHouseholdAuth.envFallback', {
+          service,
+          householdId: hid,
+          message: `Using env fallback, migrate to households/${hid}/auth/${service}.yml`
+        });
+        return { token: envToken };
+      }
+    }
+
+    return data;
+  }
+
+  /**
+   * Get auth credentials for a user service
+   * Loads from data/users/{username}/auth/{service}.yml
+   * Falls back to process.env.{SERVICE}_* during migration
+   *
+   * @param {string} service - Service name (e.g., 'strava', 'withings', 'buxfer')
+   * @param {string} [username] - Username (defaults to head of household)
+   * @returns {object|null} Auth credentials object or null if not found
+   */
+  getUserAuth(service, username = null) {
+    if (!service) {
+      logger.warn('config.getUserAuth.noService');
+      return null;
+    }
+    if (!this.#ensureInitialized()) return null;
+
+    const user = username || this.getHeadOfHousehold();
+    if (!user) {
+      logger.warn('config.getUserAuth.noUsername', { service });
+      return null;
+    }
+
+    const authPath = path.join(this.#dataDir, 'users', user, 'auth', `${service}.yml`);
+    const data = safeReadYaml(authPath);
+
+    // Fallback to env var during migration period
+    if (!data) {
+      const envKey = service.toUpperCase().replace(/-/g, '_');
+      // Check for common patterns: SERVICE_TOKEN, SERVICE_EMAIL, etc.
+      const envToken = process.env[`${envKey}_TOKEN`];
+      if (envToken) {
+        logger.debug('config.getUserAuth.envFallback', {
+          service,
+          username: user,
+          message: `Using env fallback, migrate to users/${user}/auth/${service}.yml`
+        });
+        return { token: envToken };
+      }
+    }
+
+    return data;
+  }
+
   /**
    * Load a user profile from data/users/{username}/profile.yml
    * @param {string} username - User ID

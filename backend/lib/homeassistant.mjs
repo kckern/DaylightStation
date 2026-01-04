@@ -1,19 +1,17 @@
 import axios from "./http.mjs";
 import { buildCurl } from './httpUtils.mjs';
 import { createLogger } from './logging/logger.js';
-import { householdLoadAuth, getCurrentHouseholdId } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 
 const haLogger = createLogger({ source: 'backend', app: 'homeassistant' });
 
 /**
- * Get Home Assistant auth token from household config
- * Falls back to env during migration
+ * Get Home Assistant auth from ConfigService (single source of truth)
  */
 const getHomeAssistantAuth = () => {
-    const hid = getCurrentHouseholdId();
-    const auth = householdLoadAuth(hid, 'home_assistant') || {};
+    const auth = configService.getHouseholdAuth('homeassistant') || {};
     return {
-        token: auth.token || process.env.HOME_ASSISTANT_TOKEN,
+        token: auth.token,
         baseUrl: auth.base_url || `${process.env.home_assistant?.host}:${process.env.home_assistant?.port}`
     };
 };
