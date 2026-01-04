@@ -1,9 +1,9 @@
 import axios from './http.mjs';
 import path from 'path';
-import { loadFile, saveFile, householdLoadAuth, getCurrentHouseholdId } from '../lib/io.mjs';
+import { loadFile, saveFile } from '../lib/io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import { clearWatchedItems } from '../routers/fetch.mjs';
 import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';
-import { configService } from './config/ConfigService.mjs';
 import { userDataService } from './config/UserDataService.mjs';
 import fs from 'fs';
 import { createLogger } from './logging/logger.js';
@@ -21,12 +21,11 @@ function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { cons
 export class Plex {
   constructor() {
     const { plex: { host, port } } = process.env;
-    
-    // Load token from household auth (with env fallback during migration)
-    const hid = getCurrentHouseholdId();
-    const auth = householdLoadAuth(hid, 'plex') || {};
-    this.token = auth.token || process.env.PLEX_TOKEN;
-    
+
+    // Load token from ConfigService (single source of truth for auth)
+    const auth = configService.getHouseholdAuth('plex') || {};
+    this.token = auth.token;
+
     this.host = auth.server_url?.replace(/:\d+$/, '') || host;
     this.port = port;
     this.baseUrl = this.port ? `${this.host}:${this.port}` : this.host;
