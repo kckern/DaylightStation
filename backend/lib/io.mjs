@@ -143,9 +143,10 @@ const LEGACY_HOUSEHOLD_PATHS = [
 // Path translations for new directory structure
 // Maps old paths to new paths (with support for household substitution)
 const PATH_TRANSLATIONS = {
-    // System state paths (flattened into system/)
-    'state/cron': 'system/cron',
-    'state/cron_bak': 'system/cron_bak',
+    // Cron paths - config is synced, runtime state is local only
+    'config/cron-jobs': 'system/cron-jobs',           // Job definitions (synced)
+    'state/cron': 'system/state/cron-runtime',        // Runtime state (local only, .dropboxignore)
+    'state/cron_bak': 'system/state/cron-runtime_bak',
     // Household state paths (default household)
     'state/weather': 'households/default/state/weather',
     'state/keyboard': 'households/default/state/keyboard',

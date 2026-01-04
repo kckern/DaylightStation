@@ -31,7 +31,8 @@
       "Bash(node /tmp/test_letterboxd.mjs:*)",
       "Bash(node test_harvest.mjs:*)",
       "Bash(mkdir:*)",
-      "Bash(node --input-type=module -e:*)"
+      "Bash(node --input-type=module -e:*)",
+      "Bash(echo:*)"
     ]
   }
 }
