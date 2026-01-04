@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import './OfficeApp.scss'
 import moment from 'moment'
 import CryptoJS from 'crypto-js'
@@ -15,9 +15,11 @@ import Player from '../modules/Player/Player'
 import {KeypadMenu} from '../modules/Menu/Menu'
 import AppContainer from '../modules/AppContainer/AppContainer'
 import ConnectionStatus from '../components/ConnectionStatus/ConnectionStatus'
+import { PianoVisualizer } from '../modules/Piano'
 
 import { DaylightAPI } from '../lib/api.mjs'
 import { useWebSocket } from '../contexts/WebSocketContext.jsx'
+import { useWebSocketSubscription } from '../hooks/useWebSocket'
 import { createWebSocketHandler } from '../lib/OfficeApp/websocketHandler.js'
 import { useKeyboardHandler } from '../lib/OfficeApp/keyboardHandler.js'
 import { createMenuSelectionHandler } from '../lib/OfficeApp/menuHandler.js'
@@ -36,9 +38,13 @@ function OfficeApp() {
   const [lastPayloadMessage, setLastPayloadMessage] = useState(null)
   const [weatherData, setWeatherData] = useState(null)
   const [shaderOpacity, setShaderOpacity] = useState(0)
+  const [showPiano, setShowPiano] = useState(false)
 
   // Keep playbackKeys separate so we can be sure to check it is never undefined
   const [playbackKeys, setPlaybackKeys] = useState(null)
+
+  // Track if player is active (queue has items or currentContent is a player)
+  const isPlayerActive = useRef(false)
 
   // Get WebSocket functions
   const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket()
@@ -166,8 +172,62 @@ function OfficeApp() {
     setShaderOpacity
   })
 
+  // Track if player is active
+  useEffect(() => {
+    const hasQueue = queue.length > 0;
+    const isPlayerContent = currentContent?.type === 'play' ||
+                            currentContent?.type === 'queue' ||
+                            currentContent?.type === 'playlist';
+    isPlayerActive.current = hasQueue || isPlayerContent;
+  }, [queue, currentContent])
+
+  // MIDI subscription: auto-show piano visualizer
+  const handleMidiEvent = useCallback((data) => {
+    logger.info('piano.midi.received', { topic: data.topic, type: data.type, event: data.data?.event });
+
+    if (data.topic !== 'midi') return;
+
+    // Ignore if player is active
+    if (isPlayerActive.current) {
+      logger.info('piano.midi.ignored', { reason: 'player_active' });
+      return;
+    }
+
+    // Show piano on session_start or first note
+    if (data.type === 'session' && data.data?.event === 'session_start') {
+      logger.info('piano.auto_show', { sessionId: data.sessionId });
+      setShowPiano(true);
+    } else if (data.type === 'note' && data.data?.event === 'note_on' && !showPiano) {
+      // Also show on first note if we missed session_start
+      logger.info('piano.auto_show', { reason: 'note_received' });
+      setShowPiano(true);
+    }
+  }, [showPiano, logger])
+
+  useWebSocketSubscription('midi', handleMidiEvent, [handleMidiEvent])
+
+  // Handler to close piano visualizer
+  const closePiano = useCallback(() => {
+    setShowPiano(false);
+  }, [])
+
+  const handlePianoSessionEnd = useCallback((sessionInfo) => {
+    logger.info('piano.session_end', { noteCount: sessionInfo?.noteCount });
+    setShowPiano(false);
+  }, [logger])
+
   // Helper function to render content based on current state
   const renderContent = () => {
+    // Piano visualizer takes priority when active (but player check already prevents this)
+    if (showPiano) {
+      return (
+        <PianoVisualizer
+          onClose={closePiano}
+          onSessionEnd={handlePianoSessionEnd}
+        />
+      );
+    }
+
     // If we have an active content component (like a sub-menu, player, etc.)
     if (currentContent) {
       // Handle new format from menuHandler

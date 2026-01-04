@@ -1,0 +1,60 @@
+.piano-keyboard {
+  display: flex;
+  position: relative;
+  height: 100%;
+  width: 100%;
+  justify-content: center;
+  align-items: flex-start;
+
+  .piano-key {
+    position: relative;
+    transition: background-color 0.05s ease-out;
+
+    &.white {
+      width: calc(100% / var(--white-key-count, 52));
+      height: 100%;
+      background: linear-gradient(to bottom, #e8e8e8 0%, #f8f8f8 100%);
+      border: 1px solid #999;
+      border-radius: 0 0 4px 4px;
+      z-index: 1;
+
+      &.active {
+        background: linear-gradient(
+          to bottom,
+          hsl(200, 100%, calc(40% + 30% * var(--velocity, 0))) 0%,
+          hsl(200, 100%, calc(50% + 30% * var(--velocity, 0))) 100%
+        );
+        box-shadow: 0 0 20px hsla(200, 100%, 60%, calc(0.3 + 0.5 * var(--velocity, 0)));
+      }
+
+      .note-label {
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 10px;
+        color: #666;
+        pointer-events: none;
+      }
+    }
+
+    &.black {
+      width: calc(100% / var(--white-key-count, 52) * 0.6);
+      height: 60%;
+      background: linear-gradient(to bottom, #111 0%, #333 100%);
+      border-radius: 0 0 3px 3px;
+      margin-left: calc(-100% / var(--white-key-count, 52) * 0.3);
+      margin-right: calc(-100% / var(--white-key-count, 52) * 0.3);
+      z-index: 2;
+
+      &.active {
+        background: linear-gradient(
+          to bottom,
+          hsl(280, 100%, calc(25% + 30% * var(--velocity, 0))) 0%,
+          hsl(280, 100%, calc(40% + 30% * var(--velocity, 0))) 100%
+        );
+        box-shadow: 0 0 15px hsla(280, 100%, 50%, calc(0.3 + 0.5 * var(--velocity, 0)));
+      }
+    }
+  }
+}

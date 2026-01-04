@@ -1,0 +1,104 @@
+.piano-visualizer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to bottom, #1a1a2e 0%, #0d0d1a 100%);
+  padding: 1rem 2rem;
+  box-sizing: border-box;
+
+  .piano-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    color: #fff;
+    height: 40px;
+    flex-shrink: 0;
+
+    .session-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+
+      .device-name {
+        color: #888;
+        font-size: 0.9rem;
+      }
+    }
+
+    .status-indicators {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+
+      .pedal-indicator {
+        background: #4a9eff;
+        color: #fff;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+      }
+
+      .inactivity-timer {
+        width: 150px;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+
+        .timer-bar {
+          height: 100%;
+          background: linear-gradient(90deg, #ff6b6b 0%, #ffa500 50%, #4ecdc4 100%);
+          border-radius: 3px;
+          transition: width 0.1s linear;
+        }
+      }
+    }
+  }
+
+  .keyboard-container {
+    height: 180px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .waterfall-container {
+    flex: 1;
+    min-height: 200px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .session-summary {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    padding: 2rem 3rem;
+    border-radius: 8px;
+    text-align: center;
+    color: #fff;
+    z-index: 100;
+
+    p:first-child {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    p:last-child {
+      color: #888;
+    }
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

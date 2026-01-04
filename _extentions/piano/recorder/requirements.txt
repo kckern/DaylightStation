@@ -1,0 +1,5 @@
+# MIDI Recorder Dependencies
+mido>=1.3.0
+python-rtmidi>=1.5.0
+websockets>=10.0
+PyYAML>=6.0
