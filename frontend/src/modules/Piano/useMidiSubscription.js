@@ -1,8 +1,24 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 
 const MAX_HISTORY_SIZE = 500; // Keep last 500 notes for waterfall
+
+// Dev keyboard mapping: number row keys to MIDI notes (C4-G5)
+const DEV_KEY_MAP = {
+  '1': 60, // C4
+  '2': 62, // D4
+  '3': 64, // E4
+  '4': 65, // F4
+  '5': 67, // G4
+  '6': 69, // A4
+  '7': 71, // B4
+  '8': 72, // C5
+  '9': 74, // D5
+  '0': 76, // E5
+  '-': 77, // F5
+  '=': 79  // G5
+};
 
 /**
  * React hook to subscribe to MIDI events from the piano recorder
@@ -102,6 +118,82 @@ export function useMidiSubscription() {
   }, [logger]);
 
   useWebSocketSubscription('midi', handleMidiMessage, [handleMidiMessage]);
+
+  // Dev keyboard input (localhost only)
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.location.hostname !== 'localhost') {
+      return;
+    }
+
+    const pressedKeys = new Set();
+
+    const handleKeyDown = (e) => {
+      const note = DEV_KEY_MAP[e.key];
+      if (!note || pressedKeys.has(e.key)) return;
+
+      // Prevent other handlers from receiving this key
+      e.preventDefault();
+      e.stopPropagation();
+
+      pressedKeys.add(e.key);
+      const startTime = Date.now();
+
+      setActiveNotes(prev => {
+        const next = new Map(prev);
+        next.set(note, { velocity: 80, timestamp: startTime });
+        return next;
+      });
+
+      setNoteHistory(prev => {
+        const newNote = { note, velocity: 80, startTime, endTime: null };
+        const newHistory = [...prev, newNote];
+        if (newHistory.length > MAX_HISTORY_SIZE) {
+          return newHistory.slice(-MAX_HISTORY_SIZE);
+        }
+        return newHistory;
+      });
+
+      activeNoteIds.current.set(note, startTime);
+    };
+
+    const handleKeyUp = (e) => {
+      const note = DEV_KEY_MAP[e.key];
+      if (!note) return;
+
+      // Prevent other handlers from receiving this key
+      e.preventDefault();
+      e.stopPropagation();
+
+      pressedKeys.delete(e.key);
+
+      setActiveNotes(prev => {
+        const next = new Map(prev);
+        next.delete(note);
+        return next;
+      });
+
+      const noteStartTime = activeNoteIds.current.get(note);
+      if (noteStartTime) {
+        setNoteHistory(prev =>
+          prev.map(n =>
+            n.note === note && n.startTime === noteStartTime && !n.endTime
+              ? { ...n, endTime: Date.now() }
+              : n
+          )
+        );
+        activeNoteIds.current.delete(note);
+      }
+    };
+
+    // Use capture phase to intercept before other handlers
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('keyup', handleKeyUp, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('keyup', handleKeyUp, true);
+    };
+  }, []);
 
   return {
     activeNotes,

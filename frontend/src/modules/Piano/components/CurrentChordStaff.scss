@@ -1,0 +1,35 @@
+.current-chord-staff-wrapper {
+  width: 50%;
+  height: 100%;
+  overflow: visible;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 1rem;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.current-chord-staff {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  // Black notes and staff on cream background
+  .abcjs-note,
+  .abcjs-beam,
+  .abcjs-stem,
+  .abcjs-ledger,
+  .abcjs-clef,
+  .abcjs-staff-extra,
+  .abcjs-note_selected,
+  .abcjs-bar {
+    fill: #1a1a1a !important;
+    stroke: #1a1a1a !important;
+  }
+
+  .abcjs-staff path,
+  .abcjs-staff line {
+    stroke: #333 !important;
+    stroke-width: 0.5px !important;
+  }
+}

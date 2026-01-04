@@ -216,6 +216,22 @@ function OfficeApp() {
     setShowPiano(false);
   }, [logger])
 
+  // Dev keyboard: Numpad 0 toggles piano visualizer (localhost only)
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.location.hostname !== 'localhost') {
+      return;
+    }
+
+    const handleNumpad0 = (e) => {
+      if (e.key === '0' && e.location === 3) { // location 3 = numpad
+        setShowPiano(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleNumpad0);
+    return () => window.removeEventListener('keydown', handleNumpad0);
+  }, [])
+
   // Helper function to render content based on current state
   const renderContent = () => {
     // Piano visualizer takes priority when active (but player check already prevents this)
