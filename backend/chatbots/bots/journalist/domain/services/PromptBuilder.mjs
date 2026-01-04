@@ -220,15 +220,21 @@ Put your ENTIRE response in the "question" field.`;
  * Build multiple choice options for conversational follow-up
  * @param {string} question - The follow-up question
  * @param {string} context - User's recent entry for context
+ * @param {Object} options - Additional context options
+ * @param {string} [options.history] - Recent conversation history
+ * @param {string} [options.debriefSummary] - Today's/yesterday's debrief summary
  * @returns {Array<{role: string, content: string}>}
  */
-export function buildConversationalChoicesPrompt(question, context) {
+export function buildConversationalChoicesPrompt(question, context, options = {}) {
+  const { history, debriefSummary } = options;
+  
   const systemPrompt = `Generate 4 short, PLAUSIBLE answers to a journaling follow-up question.
 
 CRITICAL RULES:
 - Each option MUST directly answer the specific question asked
 - Options should be things the user might actually say
-- Be specific to the topic (food, places, times, activities, etc.)
+- Use the conversation history and daily debrief to generate INFORMED, PERSONALIZED options
+- Reference specific people, places, activities, or events from the context when relevant
 - Keep options 2-6 words each
 - Include variety: specific answers, vague answers, "neither/other" type options
 
@@ -247,9 +253,24 @@ Good: ["Pretty productive", "Dragged on forever", "Got cancelled", "Mixed bag"]
 
 Respond with ONLY a JSON array of 4 strings.`;
 
+  // Build user content with all available context
+  let userContent = '';
+  
+  // Include debrief summary first (most important context)
+  if (debriefSummary) {
+    userContent += `DAILY DEBRIEF (what happened today/yesterday):\n${debriefSummary}\n\n`;
+  }
+  
+  // Include conversation history
+  if (history) {
+    userContent += `RECENT CONVERSATION:\n${history}\n\n`;
+  }
+  
+  userContent += `User just said: "${context}"\n\nFollow-up question: "${question}"\n\nGenerate 4 plausible, context-aware answers:`;
+
   return [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: `User said: "${context}"\n\nFollow-up question: "${question}"\n\nGenerate 4 plausible answers:` },
+    { role: 'user', content: userContent },
   ];
 }
 
