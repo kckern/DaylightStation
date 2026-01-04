@@ -10,12 +10,12 @@ import {
 	createPaths
 } from '../../../FitnessSidebar/FitnessChart.helpers.js';
 import { ParticipantStatus, getZoneColor, isBroadcasting } from '../../../domain';
+import { LayoutManager } from './layout';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
 const CHART_MARGIN = { top: 10, right: 64, bottom: 38, left: 4 };
 const AVATAR_RADIUS = 30;
-const AVATAR_OVERLAP_THRESHOLD = AVATAR_RADIUS * 2;
 const ABSENT_BADGE_RADIUS = 10;
 const COIN_LABEL_GAP = 8;
 const Y_SCALE_BASE = 20;
@@ -458,78 +458,10 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 	return { allEntries, presentEntries: present, absentEntries: absent, dropoutMarkers, maxValue, maxIndex };
 };
 
-const computeAvatarPositions = (entries, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
-	const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
-	const ticks = Math.max(minVisibleTicks, effectiveTicks || 1, 1);
-	return entries
-		.map((entry) => {
-			const beats = entry.beats;
-			let lastIndex = -1;
-			let lastValue = null;
-			for (let i = beats.length - 1; i >= 0; i -= 1) {
-				const v = beats[i];
-				if (Number.isFinite(v)) {
-					lastIndex = i;
-					lastValue = v;
-					break;
-				}
-			}
-			if (lastIndex < 0 || !Number.isFinite(lastValue)) {
-				return null;
-			}
-			const x = ticks <= 1 ? margin.left || 0 : (margin.left || 0) + (lastIndex / (ticks - 1)) * innerWidth;
-			const y = scaleY(lastValue);
-			return { id: entry.id, x, y, name: entry.name, color: entry.color, avatarUrl: entry.avatarUrl, value: lastValue };
-		})
-		.filter(Boolean);
-};
+// NOTE: Avatar/badge positioning is now handled by LayoutManager
+// See: layout/LayoutManager.js for collision resolution, clustering, and connector generation
 
-const resolveAvatarOffsets = (avatars) => {
-	const sorted = [...avatars].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
-	const placed = [];
-	const step = AVATAR_RADIUS * 2 + 6;
-
-	const collides = (candidate, offset) => {
-		const cy = candidate.y + offset;
-		return placed.some((p) => {
-			const dy = cy - (p.y + p.offsetY);
-			const dx = candidate.x - p.x;
-			const distance = Math.hypot(dx, dy);
-			return distance < AVATAR_OVERLAP_THRESHOLD;
-		});
-	};
-
-	sorted.forEach((item) => {
-		let offset = 0;
-		let iterations = 0;
-		while (collides(item, offset) && iterations < 10) {
-			offset += step;
-			iterations += 1;
-		}
-		placed.push({ ...item, offsetY: offset });
-	});
-
-	return placed;
-};
-
-const computeBadgePositions = (dropoutMarkers, scaleY, width, height, minVisibleTicks, margin, effectiveTicks) => {
-	const innerWidth = Math.max(1, width - (margin.left || 0) - (margin.right || 0));
-	const ticks = Math.max(minVisibleTicks, effectiveTicks || 1, 1);
-	return dropoutMarkers
-		.map((marker) => {
-			const tick = Number.isFinite(marker.tick) ? marker.tick : -1;
-			const value = Number.isFinite(marker.value) ? marker.value : null;
-			if (tick < 0 || value == null) return null;
-			const x = ticks <= 1 ? margin.left || 0 : (margin.left || 0) + (tick / (ticks - 1)) * innerWidth;
-			const y = scaleY(value);
-			const label = (marker.name || '?').trim();
-			const initial = label ? label[0].toUpperCase() : '?';
-			return { id: marker.id, x, y, initial };
-		})
-		.filter(Boolean);
-};
-
-const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height }) => (
+const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks, width, height }) => (
 	<svg
 		className="race-chart__svg"
 		viewBox={`0 0 ${width} ${height}`}
@@ -573,35 +505,73 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 				/>
 			))}
 		</g>
-		<g className="race-chart__absent-badges">
-			{badges.map((badge) => (
-				<g key={`absent-${badge.id}`} transform={`translate(${badge.x}, ${badge.y})`}>
-					<circle r={ABSENT_BADGE_RADIUS} fill="#f3f4f6" stroke="#9ca3af" strokeWidth="1.5" />
-					<text
-						x="0"
-						y="4"
-						textAnchor="middle"
-						fontSize={12}
-						fill="#4b5563"
-						fontWeight="600"
-					>
-						{badge.initial}
-					</text>
-				</g>
+		{/* Connectors link displaced avatars back to their line endpoints */}
+		<g className="race-chart__connectors">
+			{connectors.map((conn) => (
+				<line
+					key={conn.id}
+					x1={conn.x1}
+					y1={conn.y1}
+					x2={conn.x2}
+					y2={conn.y2}
+					stroke={conn.color || '#9ca3af'}
+					strokeWidth={2}
+					strokeDasharray="4 2"
+					opacity={0.6}
+				/>
 			))}
+		</g>
+		<g className="race-chart__absent-badges">
+			{badges.map((badge) => {
+				const bx = badge.x + (badge.offsetX || 0);
+				const by = badge.y + (badge.offsetY || 0);
+				const opacity = badge.opacity ?? 1;
+				return (
+					<g key={`absent-${badge.id}`} transform={`translate(${bx}, ${by})`} opacity={opacity}>
+						<circle r={ABSENT_BADGE_RADIUS} fill="#f3f4f6" stroke="#9ca3af" strokeWidth="1.5" />
+						<text
+							x="0"
+							y="4"
+							textAnchor="middle"
+							fontSize={12}
+							fill="#4b5563"
+							fontWeight="600"
+						>
+							{badge.initial}
+						</text>
+					</g>
+				);
+			})}
 		</g>
 		<g className="race-chart__avatars">
 			{avatars.map((avatar, idx) => {
 				const size = AVATAR_RADIUS * 2;
-				const labelX = AVATAR_RADIUS + COIN_LABEL_GAP;
-				const labelY = 0;
+				// Support labelPosition from LayoutManager (left/right/top/bottom)
+				const labelPos = avatar.labelPosition || 'right';
+				let labelX = AVATAR_RADIUS + COIN_LABEL_GAP;
+				let labelY = 0;
+				let textAnchor = 'start';
+				if (labelPos === 'left') {
+					labelX = -(AVATAR_RADIUS + COIN_LABEL_GAP);
+					textAnchor = 'end';
+				} else if (labelPos === 'top') {
+					labelX = 0;
+					labelY = -(AVATAR_RADIUS + COIN_LABEL_GAP);
+					textAnchor = 'middle';
+				} else if (labelPos === 'bottom') {
+					labelX = 0;
+					labelY = AVATAR_RADIUS + COIN_LABEL_GAP + 12;
+					textAnchor = 'middle';
+				}
 				const clipSafeId = slugifyId(avatar.id, 'user');
 				const clipId = `race-clip-${clipSafeId}-${idx}`;
+				const ax = avatar.x + (avatar.offsetX || 0);
+				const ay = avatar.y + (avatar.offsetY || 0);
 				return (
 					<g
 						key={clipId}
 						className="race-chart__avatar-group"
-						transform={`translate(${avatar.x}, ${avatar.y + avatar.offsetY})`}
+						transform={`translate(${ax}, ${ay})`}
 					>
 						<defs>
 							<clipPath id={clipId}>
@@ -612,7 +582,7 @@ const RaceChartSvg = ({ paths, avatars, badges, xTicks, yTicks, width, height })
 							x={labelX}
 							y={labelY}
 							className="race-chart__coin-label"
-							textAnchor="start"
+							textAnchor={textAnchor}
 							dominantBaseline="middle"
 							fontSize={COIN_FONT_SIZE}
 							aria-hidden="true"
@@ -864,7 +834,8 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 				bottomFraction: 1,
 				topFraction: 0.06,
 				effectiveTicks,
-				yScaleBase
+				yScaleBase,
+				scaleY
 			});
 			return created.map((p, idx) => ({ ...p, id: entry.id, key: `${entry.id}-${globalIdx++}-${idx}` }));
 		});
@@ -874,20 +845,94 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			console.log('[FitnessChart] Gap paths in render:', gapPaths.map(p => ({ isGap: p.isGap, d: p.d, opacity: p.opacity })));
 		}
 		return allSegments;
-	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase]);
+	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase, scaleY]);
 
-	const avatars = useMemo(() => {
-		if (!presentEntries.length || !(paddedMaxValue > 0)) return [];
-		const base = computeAvatarPositions(presentEntries, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
-		return resolveAvatarOffsets(base);
-	}, [presentEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
+	// Create LayoutManager instance for unified avatar/badge collision resolution
+	const layoutManager = useMemo(() => new LayoutManager({
+		bounds: { width: chartWidth, height: chartHeight, margin: CHART_MARGIN },
+		avatarRadius: AVATAR_RADIUS,
+		badgeRadius: ABSENT_BADGE_RADIUS,
+		options: {
+			enableConnectors: true,
+			minSpacing: 4,
+			maxDisplacement: 100,
+			maxBadgesPerUser: 3
+		}
+	}), [chartWidth, chartHeight]);
 
-	// Badges are IMMUTABLE dropout markers - they show where users dropped out
-	// and persist even after the user rejoins
-	const badges = useMemo(() => {
-		if (!dropoutMarkers.length || !(paddedMaxValue > 0)) return [];
-		return computeBadgePositions(dropoutMarkers, scaleY, chartWidth, chartHeight, MIN_VISIBLE_TICKS, CHART_MARGIN, effectiveTicks);
-	}, [dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY]);
+	// Compute base positions for avatars and badges, then run through LayoutManager
+	const { avatars, badges, connectors } = useMemo(() => {
+		if (!(paddedMaxValue > 0)) {
+			return { avatars: [], badges: [], connectors: [] };
+		}
+
+		const innerWidth = Math.max(1, chartWidth - CHART_MARGIN.left - CHART_MARGIN.right);
+		const ticks = Math.max(MIN_VISIBLE_TICKS, effectiveTicks || 1, 1);
+
+		// Build avatar elements from presentEntries
+		const avatarElements = presentEntries.map((entry) => {
+			const beats = entry.beats || [];
+			let lastIndex = -1;
+			let lastValue = null;
+			for (let i = beats.length - 1; i >= 0; i -= 1) {
+				const v = beats[i];
+				if (Number.isFinite(v)) {
+					lastIndex = i;
+					lastValue = v;
+					break;
+				}
+			}
+			if (lastIndex < 0 || !Number.isFinite(lastValue)) {
+				return null;
+			}
+			const x = ticks <= 1 ? CHART_MARGIN.left : CHART_MARGIN.left + (lastIndex / (ticks - 1)) * innerWidth;
+			const y = scaleY(lastValue);
+			return {
+				type: 'avatar',
+				id: entry.id,
+				x,
+				y,
+				name: entry.name,
+				color: entry.color,
+				avatarUrl: entry.avatarUrl,
+				value: lastValue
+			};
+		}).filter(Boolean);
+
+		// Build badge elements from dropoutMarkers
+		const badgeElements = dropoutMarkers.map((marker) => {
+			const tick = Number.isFinite(marker.tick) ? marker.tick : -1;
+			const value = Number.isFinite(marker.value) ? marker.value : null;
+			if (tick < 0 || value == null) return null;
+			const x = ticks <= 1 ? CHART_MARGIN.left : CHART_MARGIN.left + (tick / (ticks - 1)) * innerWidth;
+			const y = scaleY(value);
+			const label = (marker.name || '?').trim();
+			const initial = label ? label[0].toUpperCase() : '?';
+			return {
+				type: 'badge',
+				id: marker.id,
+				participantId: marker.participantId,
+				tick: marker.tick,
+				x,
+				y,
+				initial,
+				name: marker.name
+			};
+		}).filter(Boolean);
+
+		// Run through LayoutManager for collision resolution
+		const { elements, connectors: layoutConnectors } = layoutManager.layout([...avatarElements, ...badgeElements]);
+
+		// Separate back into avatars and badges
+		const resolvedAvatars = elements.filter(e => e.type === 'avatar');
+		const resolvedBadges = elements.filter(e => e.type === 'badge');
+
+		return {
+			avatars: resolvedAvatars,
+			badges: resolvedBadges,
+			connectors: layoutConnectors || []
+		};
+	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY, layoutManager]);
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
@@ -928,13 +973,14 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 
 	useEffect(() => {
 		if (hasData) {
-			setPersisted({ paths, avatars, badges, xTicks, yTicks, leaderValue });
+			setPersisted({ paths, avatars, badges, connectors, xTicks, yTicks, leaderValue });
 		}
-	}, [hasData, paths, avatars, badges, xTicks, yTicks, leaderValue]);
+	}, [hasData, paths, avatars, badges, connectors, xTicks, yTicks, leaderValue]);
 
 	const displayPaths = hasData ? paths : persisted?.paths || [];
 	const displayAvatars = hasData ? avatars : persisted?.avatars || [];
 	const displayBadges = hasData ? badges : persisted?.badges || [];
+	const displayConnectors = hasData ? connectors : persisted?.connectors || [];
 	const displayXTicks = (hasData ? xTicks : persisted?.xTicks || xTicks) || [];
 	const displayYTicks = (hasData ? yTicks : persisted?.yTicks || yTicks) || [];
 
@@ -954,6 +1000,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 						paths={displayPaths}
 						avatars={displayAvatars}
 						badges={displayBadges}
+						connectors={displayConnectors}
 						xTicks={displayXTicks}
 						yTicks={displayYTicks}
 						width={chartWidth}

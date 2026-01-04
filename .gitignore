@@ -26,3 +26,4 @@ config.app-local.yml
 .github/copilot-instructions.md
 # Skill local configs
 .claude/skills/*/config.local.json
+/_extentions/piano/node_modules

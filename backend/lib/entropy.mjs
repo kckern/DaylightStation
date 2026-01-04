@@ -90,8 +90,9 @@ export const getEntropyReport = async () => {
                     const validItems = itemsToProcess.filter(item => item && item[dateField]);
                     
                     if (validItems.length > 0) {
-                        // Sort by date descending
-                        validItems.sort((a, b) => moment(b[dateField]).diff(moment(a[dateField])));
+                        // Sort by date descending - use format array to handle both ISO and human-readable dates
+                        const dateFormats = ['YYYY-MM-DD', 'DD MMM YYYY, HH:mm', moment.ISO_8601];
+                        validItems.sort((a, b) => moment(b[dateField], dateFormats).diff(moment(a[dateField], dateFormats)));
                         lastDate = validItems[0][dateField];
                         lastItem = validItems[0];
                     }

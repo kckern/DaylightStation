@@ -28,24 +28,27 @@ describe('LayoutManager', () => {
     assert.equal(result.elements[0].offsetY, 0);
   });
 
-  it('should offset overlapping avatars vertically (Push-Apart)', () => {
+  it('should offset overlapping avatars using straddle strategy (horizontal displacement)', () => {
     const elements = [
       { id: '1', type: 'avatar', x: 300, y: 200, value: 20 },
       { id: '2', type: 'avatar', x: 300, y: 200, value: 10 }
     ];
     const result = manager.layout(elements);
-    
+
     assert.equal(result.elements.length, 2);
-    
+
     // Find avatars by ID
     const a1 = result.elements.find(e => e.id === '1');
     const a2 = result.elements.find(e => e.id === '2');
-    
-    // Push-apart strategy: first avatar stays at original Y, second pushed down
-    // Higher value avatar (id=1) should be first (stays at top)
-    // MIN_DISTANCE = DIAMETER(60) + MIN_GAP(10) = 70
-    assert.equal(a1.offsetY, 0); // First avatar unchanged
-    assert.equal(a2.offsetY, 70); // Second pushed down by MIN_DISTANCE
+
+    // StraddleLayout for 2 avatars: top avatar stays, bottom avatar moves left
+    // Since both have same Y (200), sorted by Y puts them in original order
+    // First avatar (lower Y or first if equal) stays at original position
+    // Second avatar gets horizontal offset of -90 (3 * radius)
+    assert.equal(a1.offsetX, 0); // First avatar unchanged
+    assert.equal(a1.offsetY, 0);
+    assert.equal(a2.offsetX, -90); // Second avatar moved left
+    assert.equal(a2.offsetY, 0);
   });
 
   it('should preserve original x/y and use offsetX for bounds clamping', () => {

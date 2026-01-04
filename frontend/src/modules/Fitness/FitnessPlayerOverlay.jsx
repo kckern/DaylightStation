@@ -553,13 +553,31 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       ? overlay.highlightUsers.filter(Boolean)
       : [];
 
-    const buildProgressGradient = (currentZone, targetZone) => {
-      const start = currentZone?.color || 'rgba(148, 163, 184, 0.6)';
-      const end = targetZone?.color || 'rgba(34, 197, 94, 0.85)';
-      return `linear-gradient(90deg, ${start}, ${end})`;
+    const buildProgressGradient = (currentZone, targetZone, intermediateZones = []) => {
+      const startColor = currentZone?.color || 'rgba(148, 163, 184, 0.6)';
+      const endColor = targetZone?.color || 'rgba(34, 197, 94, 0.85)';
+
+      // If no intermediate zones, use simple two-color gradient
+      if (!intermediateZones || intermediateZones.length === 0) {
+        return `linear-gradient(90deg, ${startColor}, ${endColor})`;
+      }
+
+      // Build multi-stop gradient with intermediate zone colors
+      const stops = [`${startColor} 0%`];
+
+      intermediateZones.forEach((zone) => {
+        if (zone.color && Number.isFinite(zone.position)) {
+          const positionPercent = Math.round(zone.position * 100);
+          stops.push(`${zone.color} ${positionPercent}%`);
+        }
+      });
+
+      stops.push(`${endColor} 100%`);
+
+      return `linear-gradient(90deg, ${stops.join(', ')})`;
     };
 
-    const computeProgressPercent = ({ heartRate, targetHeartRate, progressEntry, targetZoneId }) => {
+    const computeProgressData = ({ heartRate, targetHeartRate, progressEntry, targetZoneId }) => {
       const clamp = (value) => Math.max(0, Math.min(1, value));
       if (progressEntry) {
         const progressSnapshot = {
@@ -593,7 +611,12 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           coolZoneMargin: COOL_ZONE_PROGRESS_MARGIN
         });
         if (progressResult && progressResult.progress != null) {
-          return clamp(progressResult.progress);
+          return {
+            progress: clamp(progressResult.progress),
+            intermediateZones: progressResult.intermediateZones || [],
+            currentSegment: progressResult.currentSegment || 0,
+            segmentsTotal: progressResult.segmentsTotal || 0
+          };
         }
       }
       if (Number.isFinite(targetHeartRate) && targetHeartRate > 0) {
@@ -606,17 +629,18 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           return null;
         }
         if (hrValue >= targetHeartRate) {
-          return 1;
+          return { progress: 1, intermediateZones: [], currentSegment: 0, segmentsTotal: 0 };
         }
         const floor = Math.max(0, targetHeartRate - COOL_ZONE_PROGRESS_MARGIN);
         const span = targetHeartRate - floor;
         if (span <= 0) {
-          return hrValue >= targetHeartRate ? 1 : 0;
+          const prog = hrValue >= targetHeartRate ? 1 : 0;
+          return { progress: prog, intermediateZones: [], currentSegment: 0, segmentsTotal: 0 };
         }
-        return clamp((hrValue - floor) / span);
+        return { progress: clamp((hrValue - floor) / span), intermediateZones: [], currentSegment: 0, segmentsTotal: 0 };
       }
       if (progressEntry?.showBar && Number.isFinite(progressEntry?.progress)) {
-        return clamp(progressEntry.progress);
+        return { progress: clamp(progressEntry.progress), intermediateZones: [], currentSegment: 0, segmentsTotal: 0 };
       }
       return null;
     };
@@ -760,14 +784,16 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         }
         return null;
       })();
-      const progressPercent = overrides.progressPercent !== undefined
-        ? overrides.progressPercent
-        : computeProgressPercent({
+      const progressData = overrides.progressPercent !== undefined
+        ? { progress: overrides.progressPercent, intermediateZones: [], currentSegment: 0, segmentsTotal: 0 }
+        : computeProgressData({
           heartRate,
           targetHeartRate,
           progressEntry,
           targetZoneId
         });
+      const progressPercent = progressData?.progress ?? null;
+      const intermediateZones = progressData?.intermediateZones || [];
       const rowDisplayLabel = overrides.displayLabel
         || resolvedVitals?.displayLabel
         || resolvedParticipant?.displayLabel
@@ -788,9 +814,10 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         heartRate,
         targetHeartRate,
         progressPercent,
+        intermediateZones,
         progressGradient: overrides.progressGradient !== undefined
           ? overrides.progressGradient
-          : (progressPercent != null ? buildProgressGradient(currentZone, target.zoneInfo || null) : null)
+          : (progressPercent != null ? buildProgressGradient(currentZone, target.zoneInfo || null, intermediateZones) : null)
       });
     };
 
@@ -844,20 +871,23 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
 
         let bestProgressPercent = null;
         let bestProgressZone = null;
+        let bestIntermediateZones = [];
         fallbacks.forEach((participant) => {
           if (!participant?.name) return;
           const vitals = resolveParticipantVitals(participant.name, participant);
           const entry = getProgressEntry(participant.name);
-          const percent = computeProgressPercent({
+          const progressData = computeProgressData({
             heartRate: vitals?.heartRate ?? null,
             targetHeartRate: Number.isFinite(target?.targetBpm) ? target.targetBpm : null,
             progressEntry: entry,
             targetZoneId: target?.zoneInfo?.id || null
           });
+          const percent = progressData?.progress ?? null;
           if (percent == null) return;
           if (bestProgressPercent == null || percent > bestProgressPercent) {
             bestProgressPercent = percent;
             bestProgressZone = getParticipantZone(participant, vitals);
+            bestIntermediateZones = progressData?.intermediateZones || [];
           }
         });
 
@@ -870,7 +900,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
             currentZone: bestProgressZone || undefined,
             progressPercent: bestProgressPercent,
             progressGradient: bestProgressPercent != null
-              ? buildProgressGradient(bestProgressZone || aggregateZone || null, target.zoneInfo || null)
+              ? buildProgressGradient(bestProgressZone || aggregateZone || null, target.zoneInfo || null, bestIntermediateZones)
               : undefined,
             targetBpm: Number.isFinite(target?.targetBpm) ? target.targetBpm : undefined
           }
