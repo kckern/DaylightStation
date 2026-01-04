@@ -23,7 +23,8 @@
       "Bash(chmod:*)",
       "Bash(timeout 10 node:*)",
       "Bash(node simulation.mjs:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(cat:*)"
     ]
   }
 }

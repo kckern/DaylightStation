@@ -7,3 +7,4 @@ export * from './HistoryFormatter.mjs';
 export * from './QuestionParser.mjs';
 export * from './QueueManager.mjs';
 export * from './PromptBuilder.mjs';
+export * from './MessageSplitter.mjs';

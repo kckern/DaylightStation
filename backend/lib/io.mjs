@@ -188,9 +188,7 @@ const loadFile = (path) => {
     } else if (fs.existsSync(yamlPath)) {
         fileToLoad = yamlPath;
     } else {
-        ioLogger.warn('io.loadFile.missingFile', { ymlPath, yamlPath });
-        //touch file
-        saveFile(ymlPath, {});
+        // File doesn't exist - just return null, don't create empty files
         return null;
     }
     let fileData = fs.readFileSync(fileToLoad, 'utf8').toString().trim();

@@ -49,6 +49,8 @@ import garmin from '../lib/garmin.mjs';
 import foursquare from '../lib/foursquare.mjs';
 import shopping from '../lib/shopping.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from '../lib/budget.mjs';
+import ArchiveService from '../lib/ArchiveService.mjs';
+import archiveRotation from '../lib/archiveRotation.mjs';
 
 const harvestRootLogger = () => createLogger({
     source: 'backend',
@@ -236,8 +238,86 @@ harvestRouter.get('/', async (req, res) => {
     return res.status(200).json({
         availableEndpoints: harvestKeys,
         defaultUser: username,
-        usage: 'Add ?user=username to specify target user (defaults to head of household)'
+        usage: 'Add ?user=username to specify target user (defaults to head of household)',
+        archiveEndpoints: ['/archive/status', '/archive/rotate', '/archive/migrate']
     });
+});
+
+// ============================================================
+// ARCHIVE MANAGEMENT ENDPOINTS
+// ============================================================
+
+/**
+ * GET /harvest/archive/status
+ * Get archive status for all configured services
+ */
+harvestRouter.get('/archive/status', async (req, res) => {
+    const username = resolveUsername(req);
+    const service = req.query.service;
+    
+    try {
+        const archiveConfig = configService.getAppConfig('archive');
+        if (!archiveConfig?.services) {
+            return res.status(200).json({ message: 'No archive configuration found' });
+        }
+        
+        const services = service 
+            ? { [service]: archiveConfig.services[service] }
+            : archiveConfig.services;
+        
+        const status = {};
+        for (const [svc, config] of Object.entries(services)) {
+            if (config?.enabled) {
+                status[svc] = ArchiveService.getArchiveStatus(username, svc);
+            }
+        }
+        
+        return res.status(200).json({ username, status });
+    } catch (error) {
+        baseLogger.error('harvest.archive.status.error', { error: error.message });
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /harvest/archive/rotate
+ * Manually trigger archive rotation for all services
+ */
+harvestRouter.post('/archive/rotate', async (req, res) => {
+    const guidId = crypto.randomUUID().split('-').pop();
+    
+    try {
+        const result = await archiveRotation(guidId);
+        return res.status(200).json(result);
+    } catch (error) {
+        baseLogger.error('harvest.archive.rotate.error', { error: error.message, guidId });
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /harvest/archive/migrate
+ * Migrate a service to hot/cold storage (dry-run by default)
+ * Query params:
+ *   - service: Service name (required)
+ *   - execute: 'true' to actually perform migration (default: dry-run)
+ */
+harvestRouter.post('/archive/migrate', async (req, res) => {
+    const username = resolveUsername(req);
+    const service = req.query.service;
+    const execute = req.query.execute === 'true';
+    
+    if (!service) {
+        return res.status(400).json({ error: 'Missing required query param: service' });
+    }
+    
+    try {
+        const result = ArchiveService.migrateToHotCold(username, service, { dryRun: !execute });
+        return res.status(200).json(result);
+    } catch (error) {
+        baseLogger.error('harvest.archive.migrate.error', { service, error: error.message });
+        return res.status(500).json({ error: error.message });
+    }
 });
 
 

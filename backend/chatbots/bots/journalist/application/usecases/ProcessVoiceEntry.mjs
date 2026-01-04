@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../../../_lib/logging/index.mjs';
+import { splitTranscription } from '../../domain/services/MessageSplitter.mjs';
 
 /**
  * @typedef {Object} ProcessVoiceEntryInput
@@ -55,12 +56,15 @@ export class ProcessVoiceEntry {
         return { success: false, error: 'Empty transcription' };
       }
 
-      // 2. Send transcription confirmation
-      await this.#messagingGateway.sendMessage(
-        chatId,
-        `🎙️ Transcription:\n\n${transcription}`,
-        {}
-      );
+      // 2. Send transcription confirmation (split if too long for Telegram)
+      const messageParts = splitTranscription(transcription);
+      for (let i = 0; i < messageParts.length; i++) {
+        await this.#messagingGateway.sendMessage(chatId, messageParts[i], {});
+        // Small delay between messages to maintain order
+        if (i < messageParts.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
 
       // 3. Delegate to ProcessTextEntry
       const result = await this.#processTextEntry.execute({
