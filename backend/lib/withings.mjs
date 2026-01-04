@@ -1,5 +1,5 @@
 import axios from './http.mjs';
-import { saveFile, loadFile, userLoadAuth, userSaveAuth, userSaveFile } from './io.mjs';
+import { saveFile, loadFile, userSaveAuth, userSaveFile } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import processWeight from '../jobs/weight.mjs';
 import { createLogger } from './logging/logger.js';
@@ -117,7 +117,7 @@ const getWeightData = async (job_id) => {
     const WITHINGS_REDIRECT = configService.getSecret('WITHINGS_REDIRECT');
     const username = getDefaultUsername();
     // Load from user-namespaced auth
-    const authData = userLoadAuth(username, 'withings') || {};
+    const authData = configService.getUserAuth('withings', username) || {};
     const { refresh } = authData;
     
     try {

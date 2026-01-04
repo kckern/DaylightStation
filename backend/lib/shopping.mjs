@@ -9,12 +9,11 @@
 
 import { google } from 'googleapis';
 import moment from 'moment-timezone';
-import { 
-    userSaveFile, 
-    userLoadFile, 
-    userLoadAuth, 
+import {
+    userSaveFile,
+    userLoadFile,
     getDefaultUsername,
-    householdLoadFile 
+    householdLoadFile
 } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
@@ -435,7 +434,7 @@ export default async function harvestShopping(logger, guidId, req) {
     
     // Get Gmail credentials
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
-    const auth = userLoadAuth(username, 'google') || {};
+    const auth = configService.getUserAuth('google', username) || {};
     const refreshToken = auth.refresh_token || process.env.GOOGLE_REFRESH_TOKEN;
     
     if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {

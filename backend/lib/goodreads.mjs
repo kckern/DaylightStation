@@ -1,4 +1,4 @@
-import { userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
+import { userSaveFile, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import Parser from 'rss-parser';
 let parser = new Parser();
@@ -6,7 +6,7 @@ let parser = new Parser();
 const getBooks = async (targetUsername = null) => {
     // User-level auth (personal Goodreads user ID)
     const username = targetUsername || getDefaultUsername();
-    const auth = userLoadAuth(username, 'goodreads') || {};
+    const auth = configService.getUserAuth('goodreads', username) || {};
     const GOODREADS_USER = auth.user_id || process.env.GOODREADS_USER;
     let url = `https://www.goodreads.com/review/list_rss/${GOODREADS_USER}?&shelf=read`;
     const feed = await parser.parseURL(url);
