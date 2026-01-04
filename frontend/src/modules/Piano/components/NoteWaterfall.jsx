@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import './NoteWaterfall.scss';
 
 // White keys in an octave (C, D, E, F, G, A, B)
@@ -7,7 +7,6 @@ const isWhiteKey = (note) => WHITE_KEY_NOTES.includes(note % 12);
 
 // Calculate x position for a note (percentage)
 const getNotePosition = (note, startNote = 21, endNote = 108) => {
-  // Count white keys up to this note
   let whiteKeysBefore = 0;
   let totalWhiteKeys = 0;
 
@@ -24,7 +23,6 @@ const getNotePosition = (note, startNote = 21, endNote = 108) => {
   if (isWhite) {
     return whiteKeysBefore * keyWidth + keyWidth / 2;
   } else {
-    // Black keys are offset from the previous white key
     return whiteKeysBefore * keyWidth + keyWidth * 0.75;
   }
 };
@@ -38,20 +36,40 @@ const getNoteWidth = (note, startNote = 21, endNote = 108) => {
   return isWhiteKey(note) ? keyWidth * 0.9 : keyWidth * 0.5;
 };
 
+// Color scale based on note pitch (rainbow from low to high)
+// Low notes (21) = red/orange, Mid notes (~60) = green/cyan, High notes (108) = blue/purple
+const getNoteHue = (note, startNote = 21, endNote = 108) => {
+  const range = endNote - startNote;
+  const position = (note - startNote) / range;
+  // Map to hue: 0 (red) -> 60 (yellow) -> 120 (green) -> 180 (cyan) -> 240 (blue) -> 280 (purple)
+  return Math.round(position * 280);
+};
+
+const DISPLAY_DURATION = 8000; // Show notes for 8 seconds as they rise
+const TICK_INTERVAL = 16; // ~60fps
+
 /**
- * Waterfall display showing notes falling down toward the keyboard
+ * Waterfall display showing notes rising up from the keyboard
+ * with Star Wars crawl perspective effect
  */
 export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108 }) {
+  const [tick, setTick] = useState(0);
+
+  // Continuous animation tick
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick(t => t + 1);
+    }, TICK_INTERVAL);
+    return () => clearInterval(interval);
+  }, []);
+
   const visibleNotes = useMemo(() => {
     const now = Date.now();
-    const displayDuration = 5000; // Show notes for 5 seconds
 
     return noteHistory
       .filter(note => {
         const age = now - note.startTime;
-        const endAge = note.endTime ? now - note.endTime : 0;
-        // Show if started within display duration or still active
-        return age < displayDuration && (!note.endTime || endAge < 1000);
+        return age < DISPLAY_DURATION;
       })
       .map(note => {
         const age = now - note.startTime;
@@ -63,34 +81,41 @@ export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108 
           ...note,
           x: getNotePosition(note.note, startNote, endNote),
           width: getNoteWidth(note.note, startNote, endNote),
+          hue: getNoteHue(note.note, startNote, endNote),
           age,
           duration,
           isActive: !note.endTime
         };
       });
-  }, [noteHistory, startNote, endNote]);
+  }, [noteHistory, startNote, endNote, tick]);
 
   return (
     <div className="note-waterfall">
-      {visibleNotes.map((note, idx) => {
-        const heightPercent = Math.min(100, (note.duration / 50)); // Scale duration to height
-        const bottomPercent = 100 - (note.age / 50); // Position based on age
+      <div className="waterfall-perspective">
+        {visibleNotes.map((note, idx) => {
+          // Height based on note duration
+          const heightPercent = Math.min(80, Math.max(2, note.duration / 30));
+          // Position: starts at 0% (bottom) and rises to 100% (top) over DISPLAY_DURATION
+          const progress = note.age / DISPLAY_DURATION;
+          const bottomPercent = progress * 100;
 
-        return (
-          <div
-            key={`${note.note}-${note.startTime}-${idx}`}
-            className={`waterfall-note ${note.isActive ? 'active' : ''} ${isWhiteKey(note.note) ? 'white' : 'black'}`}
-            style={{
-              '--x': `${note.x}%`,
-              '--width': `${note.width}%`,
-              '--height': `${heightPercent}%`,
-              '--bottom': `${bottomPercent}%`,
-              '--velocity': note.velocity / 127,
-              '--hue': isWhiteKey(note.note) ? 200 : 280
-            }}
-          />
-        );
-      })}
+          return (
+            <div
+              key={`${note.note}-${note.startTime}-${idx}`}
+              className={`waterfall-note ${note.isActive ? 'active' : ''}`}
+              style={{
+                '--x': `${note.x}%`,
+                '--width': `${note.width}%`,
+                '--height': `${heightPercent}%`,
+                '--bottom': `${bottomPercent}%`,
+                '--velocity': note.velocity / 127,
+                '--hue': note.hue,
+                '--progress': progress
+              }}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
