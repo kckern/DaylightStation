@@ -375,7 +375,10 @@ export const calculateZoneProgressTowardsTarget = ({
       progress: null,
       rangeMin: null,
       rangeMax: null,
-      targetIndex: null
+      targetIndex: null,
+      intermediateZones: [],
+      currentSegment: 0,
+      segmentsTotal: 0
     };
   }
 
@@ -394,7 +397,10 @@ export const calculateZoneProgressTowardsTarget = ({
       progress: Number.isFinite(snapshot.progress) ? snapshot.progress : null,
       rangeMin: snapshot.rangeMin ?? null,
       rangeMax: snapshot.rangeMax ?? null,
-      targetIndex: null
+      targetIndex: null,
+      intermediateZones: [],
+      currentSegment: 0,
+      segmentsTotal: 0
     };
   }
 
@@ -412,7 +418,10 @@ export const calculateZoneProgressTowardsTarget = ({
       progress: 1,
       rangeMin: snapshot.rangeMin ?? zoneSequence[targetIndex]?.threshold ?? null,
       rangeMax: snapshot.rangeMax ?? zoneSequence[targetIndex]?.threshold ?? null,
-      targetIndex
+      targetIndex,
+      intermediateZones: [],
+      currentSegment: targetIndex - currentZoneIndex,
+      segmentsTotal: 0
     };
   }
 
@@ -455,7 +464,10 @@ export const calculateZoneProgressTowardsTarget = ({
       progress: null,
       rangeMin,
       rangeMax: null,
-      targetIndex
+      targetIndex,
+      intermediateZones: [],
+      currentSegment: 0,
+      segmentsTotal: targetIndex - currentZoneIndex
     };
   }
 
@@ -466,15 +478,50 @@ export const calculateZoneProgressTowardsTarget = ({
       progress,
       rangeMin,
       rangeMax,
-      targetIndex
+      targetIndex,
+      intermediateZones: [],
+      currentSegment: progress === 1 ? (targetIndex - currentZoneIndex) : 0,
+      segmentsTotal: targetIndex - currentZoneIndex
     };
+  }
+
+  // Build intermediate zones array with positions for multi-zone gradients
+  const intermediateZones = [];
+  const segmentsTotal = targetIndex - currentZoneIndex;
+  let currentSegment = 0;
+
+  // Calculate positions for all zones between current and target (exclusive of both endpoints)
+  for (let i = currentZoneIndex + 1; i < targetIndex; i++) {
+    const zone = zoneSequence[i];
+    if (zone && Number.isFinite(zone.threshold)) {
+      const position = (zone.threshold - rangeMin) / span;
+      intermediateZones.push({
+        id: zone.id,
+        name: zone.name,
+        threshold: zone.threshold,
+        position: clamp01(position),
+        color: zone.color || null,
+        index: i
+      });
+    }
+  }
+
+  // Determine which segment the user is currently in
+  for (let i = currentZoneIndex + 1; i <= targetIndex; i++) {
+    const zone = zoneSequence[i];
+    if (zone && Number.isFinite(zone.threshold) && hrValue >= zone.threshold) {
+      currentSegment = i - currentZoneIndex;
+    }
   }
 
   return {
     progress: clamp01((hrValue - rangeMin) / span),
     rangeMin,
     rangeMax,
-    targetIndex
+    targetIndex,
+    intermediateZones,
+    currentSegment,
+    segmentsTotal
   };
 };
 

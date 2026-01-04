@@ -114,6 +114,7 @@ const GovernancePanelOverlay = ({ overlay, lockRows = [] }) => {
     const widthPercent = Number.isFinite(percentValue) ? Math.max(0, percentValue) : 0;
     const showIndicator = widthPercent > 0;
     const progressClass = `governance-lock__progress${variant === 'compact' ? ' governance-lock__progress--compact' : ''}`;
+    const intermediateZones = Array.isArray(row.intermediateZones) ? row.intermediateZones : [];
     return (
       <div className={progressClass} aria-hidden="true">
         <div className="governance-lock__progress-track">
@@ -124,6 +125,21 @@ const GovernancePanelOverlay = ({ overlay, lockRows = [] }) => {
               background: row.progressGradient || undefined
             }}
           />
+          {intermediateZones.map((zone) => {
+            const markerPosition = Math.round((zone.position || 0) * 100);
+            const isPassed = widthPercent >= markerPosition;
+            return (
+              <div
+                key={zone.id}
+                className={`governance-lock__zone-marker${isPassed ? ' governance-lock__zone-marker--passed' : ''}`}
+                style={{
+                  left: `${markerPosition}%`,
+                  borderColor: zone.color || undefined
+                }}
+                title={zone.name || zone.id}
+              />
+            );
+          })}
           <div
             className="governance-lock__progress-indicator"
             style={{

@@ -75,11 +75,29 @@ export class LayoutManager {
     // This ensures collision resolution operates on final X positions
     avatars = this._clampBasePositions(avatars, 'avatar');
 
-    // Phase 2: Simple vertical push-apart collision resolution
-    // Sort by Y position, then push overlapping avatars down
-    let resolvedAvatars = this._resolveCollisionsSimple(avatars);
+    // Phase 2: Cluster detection and strategy-based collision resolution
+    // Detect clusters of nearby avatars, then apply appropriate layout strategy
+    const avatarClusters = this.clusterDetector.detectClusters(avatars);
+    let resolvedAvatars = avatarClusters.flatMap(cluster => {
+      if (cluster.length < 2) {
+        // Single avatar - just pass through with offsets from clamping
+        return cluster.map(a => ({
+          ...a,
+          offsetX: a._clampOffsetX || 0,
+          offsetY: a._clampOffsetY || 0
+        }));
+      }
+      // Apply strategy-based layout for clusters of 2+ avatars
+      const positioned = this.strategySelector.selectAndApply(cluster);
+      // Convert finalX/finalY to offsets
+      return positioned.map(a => ({
+        ...a,
+        offsetX: (a.finalX != null ? a.finalX - a.x : 0) + (a._clampOffsetX || 0),
+        offsetY: (a.finalY != null ? a.finalY - a.y : 0) + (a._clampOffsetY || 0)
+      }));
+    });
 
-    // Phase 6: Label Collision Resolution
+    // Phase 3: Label Collision Resolution
     resolvedAvatars = this.labelManager.resolve(resolvedAvatars);
 
     // Phase 7: Final bounds check (clamp offsets if they pushed avatars out)
@@ -152,83 +170,6 @@ export class LayoutManager {
       }
       return badge;
     });
-  }
-
-  /**
-   * Simple iterative collision resolution - push overlapping avatars apart vertically.
-   * Uses CLAMPED positions for collision detection, but preserves original x/y.
-   * @param {Array} avatars - Avatars with x, y positions (and optional _clampOffsetX/Y)
-   * @returns {Array} Avatars with offsetX, offsetY applied (including clamp offsets)
-   */
-  _resolveCollisionsSimple(avatars) {
-    if (!avatars || avatars.length === 0) return [];
-    if (avatars.length === 1) {
-      const a = avatars[0];
-      return [{ 
-        ...a, 
-        offsetX: a._clampOffsetX || 0, 
-        offsetY: a._clampOffsetY || 0 
-      }];
-    }
-
-    const DIAMETER = this.avatarRadius * 2;
-    const MIN_GAP = 10; // Minimum gap between avatar edges
-    const MIN_DISTANCE = DIAMETER + MIN_GAP; // 70px for radius 30
-
-    // Sort by CLAMPED Y position (top to bottom), then by value (higher values first if same Y)
-    const sorted = [...avatars].sort((a, b) => {
-      const aClampedY = a.y + (a._clampOffsetY || 0);
-      const bClampedY = b.y + (b._clampOffsetY || 0);
-      const yDiff = aClampedY - bClampedY;
-      if (Math.abs(yDiff) < 10) {
-        // Nearly same Y, sort by value descending so higher values stay on top
-        return (b.value || 0) - (a.value || 0);
-      }
-      return yDiff;
-    });
-
-    const result = [];
-    
-    for (let i = 0; i < sorted.length; i++) {
-      const avatar = sorted[i];
-      const clampOffsetX = avatar._clampOffsetX || 0;
-      const clampOffsetY = avatar._clampOffsetY || 0;
-      let collisionOffsetY = 0;
-      
-      // Use CLAMPED X for collision detection (where avatar will actually render)
-      const avatarClampedX = avatar.x + clampOffsetX;
-      
-      // Check against all already-placed avatars
-      for (const placed of result) {
-        const placedClampedX = placed.x + (placed._clampOffsetX || 0);
-        const placedFinalY = placed.y + (placed.offsetY || 0);
-        const currentFinalY = avatar.y + clampOffsetY + collisionOffsetY;
-        
-        const dx = Math.abs(avatarClampedX - placedClampedX);
-        const dy = currentFinalY - placedFinalY;
-        
-        // Only check collision if CLAMPED X positions are similar (within 2x radius)
-        if (dx < MIN_DISTANCE) {
-          // If vertically within collision range, push down
-          if (Math.abs(dy) < MIN_DISTANCE) {
-            // Calculate how much to push down to avoid collision
-            const pushNeeded = MIN_DISTANCE - dy;
-            if (pushNeeded > 0) {
-              collisionOffsetY += pushNeeded;
-            }
-          }
-        }
-      }
-      
-      result.push({
-        ...avatar,
-        // Merge clamp offset + collision offset into final offsets
-        offsetX: clampOffsetX,
-        offsetY: clampOffsetY + collisionOffsetY
-      });
-    }
-
-    return result;
   }
 
   /**

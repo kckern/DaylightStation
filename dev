@@ -1,2 +1,8 @@
 #!/bin/bash
+
+# KILL ANY PROCESS USING PORT 3111 or 3112 or 3119  
+lsof -ti:3111 | xargs --no-run-if-empty kill -9
+lsof -ti:3112 | xargs --no-run-if-empty kill -9
+lsof -ti:3119 | xargs --no-run-if-empty kill -9
+
 npm run dev

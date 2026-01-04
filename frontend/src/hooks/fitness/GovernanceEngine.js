@@ -873,11 +873,14 @@ export class GovernanceEngine {
 
   _evaluateRequirementSet(requirementMap, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount) {
     if (!requirementMap || typeof requirementMap !== 'object') {
-      return { summaries: [], allSatisfied: true };
+      // No requirements defined - cannot satisfy what doesn't exist
+      return { summaries: [], allSatisfied: false };
     }
     const entries = Object.entries(requirementMap).filter(([key]) => key !== 'grace_period_seconds');
     if (!entries.length) {
-      return { summaries: [], allSatisfied: true };
+      // Only grace_period_seconds present, no actual zone requirements - treat as unsatisfied
+      // to prevent resetting during an active grace period countdown
+      return { summaries: [], allSatisfied: false };
     }
     const summaries = [];
     let allSatisfied = true;

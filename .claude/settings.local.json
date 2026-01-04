@@ -14,7 +14,16 @@
       "Bash(tee:*)",
       "Bash(curl:*)",
       "Bash(lsof:*)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "Skill(superpowers:brainstorming)",
+      "Skill(superpowers:executing-plans)",
+      "Bash(python3 -m py_compile:*)",
+      "Bash(npm install)",
+      "Bash(node --test:*)",
+      "Bash(chmod:*)",
+      "Bash(timeout 10 node:*)",
+      "Bash(node simulation.mjs:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

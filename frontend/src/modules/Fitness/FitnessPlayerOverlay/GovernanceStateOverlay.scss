@@ -209,7 +209,7 @@
     height: 10px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.12);
-    overflow: hidden;
+    overflow: visible;
   }
 
   &__progress-fill {
@@ -219,6 +219,7 @@
     background: linear-gradient(90deg, #38bdf8, #22c55e);
     transition: width 0.3s ease-in-out;
     width: 0;
+    overflow: hidden;
   }
 
   &__progress-indicator {
@@ -238,6 +239,24 @@
     pointer-events: none;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
     transition: left 0.3s ease-in-out, opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+  }
+
+  &__zone-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.5);
+    border-left: 1px solid rgba(255, 255, 255, 0.8);
+    border-right: 1px solid rgba(255, 255, 255, 0.8);
+    pointer-events: none;
+    z-index: 1;
+    transition: opacity 0.3s ease-in-out;
+
+    &--passed {
+      opacity: 0.3;
+    }
   }
 
   &__row--compact {
