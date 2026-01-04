@@ -2,6 +2,7 @@ import moment from 'moment';
 import { userLoadFile, userLoadCurrent, userLoadProfile } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
+import ArchiveService from './ArchiveService.mjs';
 
 const entropyLogger = createLogger({
     source: 'backend',
@@ -24,6 +25,7 @@ const calculateStatus = (value, thresholds) => {
 
 /**
  * Load data from appropriate source (lifelog or current)
+ * For archive-enabled services with days_since metric, uses fast path
  * @param {string} username - The username
  * @param {Object} sourceConfig - Source configuration with dataSource and dataPath
  * @returns {Object|Array|null} The loaded data
@@ -36,6 +38,19 @@ const loadDataForSource = (username, sourceConfig) => {
     }
     // Default to lifelog for 'lifelog' or unspecified (backward compat)
     return userLoadFile(username, dataPath);
+};
+
+/**
+ * Fast path for archive-enabled services: get most recent timestamp without loading full file
+ * @param {string} username - The username
+ * @param {string} service - Service name (dataPath)
+ * @returns {Object|null} { timestamp, date, data } or null
+ */
+const getArchiveFastPath = (username, service) => {
+    if (!ArchiveService.isArchiveEnabled(service)) {
+        return null;
+    }
+    return ArchiveService.getMostRecentTimestamp(username, service);
 };
 
 /**
@@ -55,18 +70,36 @@ export const getEntropyReport = async () => {
     const items = [];
     const summary = { green: 0, yellow: 0, red: 0 };
 
-    for (const [id, sourceConfig] of Object.entries(config.sources)) {
-        try {
-            const data = loadDataForSource(username, sourceConfig);
-            let value = 0;
-            let label = '';
-            let lastUpdate = null;
-            let lastItem = null;
+    // Process all sources in parallel for better performance
+    const sourceEntries = Object.entries(config.sources);
+    const results = await Promise.all(
+        sourceEntries.map(async ([id, sourceConfig]) => {
+            try {
+                let value = 0;
+                let label = '';
+                let lastUpdate = null;
+                let lastItem = null;
 
-            if (sourceConfig.metric === 'days_since') {
-                // LIFELOG: For date-keyed data, find the most recent date
-                let lastDate = null;
-                let itemsToProcess = data;
+                if (sourceConfig.metric === 'days_since') {
+                    // FAST PATH: For archive-enabled services, use getMostRecentTimestamp
+                    // This reads only the hot storage file and gets the first entry
+                    const fastResult = getArchiveFastPath(username, sourceConfig.dataPath);
+                    
+                    if (fastResult) {
+                        // Archive fast path succeeded
+                        const lastDateOnly = moment.unix(fastResult.timestamp).format('YYYY-MM-DD');
+                        const todayOnly = moment().format('YYYY-MM-DD');
+                        const daysDiff = moment(todayOnly).diff(moment(lastDateOnly), 'days');
+                        
+                        value = Math.max(0, daysDiff);
+                        label = value === 0 ? 'Today' : `${value} day${value === 1 ? '' : 's'} ago`;
+                        lastUpdate = fastResult.date;
+                        lastItem = fastResult.data;
+                    } else {
+                        // SLOW PATH: Load full data for non-archive services
+                        const data = loadDataForSource(username, sourceConfig);
+                        let lastDate = null;
+                        let itemsToProcess = data;
 
                 // Handle nested list property (e.g. { messages: [...] })
                 if (sourceConfig.listProperty && data && data[sourceConfig.listProperty]) {
@@ -173,8 +206,10 @@ export const getEntropyReport = async () => {
                     value = 999; // No data
                     label = 'No data';
                 }
+            } // End of else (slow path) block
             } else if (sourceConfig.metric === 'count') {
                 // CURRENT: Check count from current/ data
+                const data = loadDataForSource(username, sourceConfig);
                 // Support both new structure (object with countField) and old structure (array)
                 if (data && typeof data === 'object' && !Array.isArray(data)) {
                     // New structure: { lastUpdated, taskCount/unreadCount, tasks/messages }
@@ -205,9 +240,8 @@ export const getEntropyReport = async () => {
             }
 
             const status = calculateStatus(value, sourceConfig.thresholds);
-            summary[status]++;
 
-            items.push({
+            return {
                 id,
                 name: sourceConfig.name,
                 icon: sourceConfig.icon,
@@ -216,10 +250,10 @@ export const getEntropyReport = async () => {
                 label,
                 lastUpdate,
                 url
-            });
+            };
         } catch (error) {
             entropyLogger.error('entropy.calculation.error', { source: id, error: error.message });
-            items.push({
+            return {
                 id,
                 name: sourceConfig.name,
                 icon: sourceConfig.icon,
@@ -227,10 +261,16 @@ export const getEntropyReport = async () => {
                 value: -1,
                 label: 'Error',
                 error: true
-            });
-            summary.red++;
+            };
         }
-    }
+    })
+    );
+
+    // Build summary from results
+    results.forEach(item => {
+        items.push(item);
+        summary[item.status]++;
+    });
 
     return { items, summary };
 };

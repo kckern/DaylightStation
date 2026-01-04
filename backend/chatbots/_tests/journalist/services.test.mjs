@@ -35,6 +35,12 @@ import {
   buildEvaluateResponsePrompt,
 } from '../../bots/journalist/domain/services/PromptBuilder.mjs';
 
+import {
+  splitTranscription,
+  needsSplitting,
+  getMaxMessageLength,
+} from '../../bots/journalist/domain/services/MessageSplitter.mjs';
+
 import { ConversationMessage } from '../../bots/journalist/domain/entities/ConversationMessage.mjs';
 import { MessageQueue } from '../../bots/journalist/domain/entities/MessageQueue.mjs';
 
@@ -294,11 +300,96 @@ describe('Journalist Domain Services', () => {
     describe('buildEvaluateResponsePrompt', () => {
       it('should build evaluate response prompt', () => {
         const prompt = buildEvaluateResponsePrompt('history', 'response', ['Q1?', 'Q2?']);
-        
+
         expect(prompt).toHaveLength(2);
         expect(prompt[0].content).toContain('1');
         expect(prompt[0].content).toContain('0');
         expect(prompt[1].content).toContain('Q1?');
+      });
+    });
+  });
+
+  describe('MessageSplitter', () => {
+    describe('splitTranscription', () => {
+      it('should not split short transcriptions', () => {
+        const text = 'This is a short voice transcription.';
+        const parts = splitTranscription(text);
+
+        expect(parts).toHaveLength(1);
+        expect(parts[0]).toBe('🎙️ Transcription:\n\n' + text);
+      });
+
+      it('should split long transcriptions with numbered headers', () => {
+        const text = 'A'.repeat(5000); // Exceeds 4096
+        const parts = splitTranscription(text);
+
+        expect(parts.length).toBeGreaterThan(1);
+        expect(parts[0]).toContain('🎙️ Transcription (1/');
+        expect(parts[1]).toContain('🎙️ Transcription (2/');
+      });
+
+      it('should include correct total count in headers', () => {
+        const text = 'A'.repeat(10000); // Should create 3+ parts
+        const parts = splitTranscription(text);
+
+        const total = parts.length;
+        parts.forEach((part, index) => {
+          expect(part).toContain(`(${index + 1}/${total})`);
+        });
+      });
+
+      it('should split at sentence boundaries when possible', () => {
+        const sentences = Array(150).fill('This is a test sentence.').join(' ');
+        const parts = splitTranscription(sentences);
+
+        // Each part except possibly the last should end with a sentence
+        for (let i = 0; i < parts.length - 1; i++) {
+          // Extract content after header
+          const content = parts[i].split(':\n\n')[1];
+          expect(content).toMatch(/[.!?]$/);
+        }
+      });
+
+      it('should preserve all content when splitting', () => {
+        const originalText = 'Test content here. '.repeat(300);
+        const parts = splitTranscription(originalText);
+
+        // Combine content without headers
+        const combined = parts
+          .map(p => p.replace(/🎙️ Transcription.*:\n\n/, ''))
+          .join(' ');
+
+        // Should contain all original words
+        const originalWords = originalText.trim().split(/\s+/);
+        const combinedWords = combined.trim().split(/\s+/);
+        expect(combinedWords.length).toBe(originalWords.length);
+      });
+
+      it('should handle empty transcription', () => {
+        const parts = splitTranscription('');
+        expect(parts).toHaveLength(1);
+        expect(parts[0]).toBe('🎙️ Transcription:\n\n');
+      });
+    });
+
+    describe('needsSplitting', () => {
+      it('should return false for short text', () => {
+        expect(needsSplitting('Short text')).toBe(false);
+      });
+
+      it('should return true for text exceeding limit', () => {
+        expect(needsSplitting('A'.repeat(5000))).toBe(true);
+      });
+
+      it('should respect custom limit', () => {
+        expect(needsSplitting('A'.repeat(100), 50)).toBe(true);
+        expect(needsSplitting('A'.repeat(100), 200)).toBe(false);
+      });
+    });
+
+    describe('getMaxMessageLength', () => {
+      it('should return Telegram limit', () => {
+        expect(getMaxMessageLength()).toBe(4096);
       });
     });
   });

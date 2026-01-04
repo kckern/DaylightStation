@@ -46,7 +46,8 @@ const cron = {
     "../lib/goodreads.mjs",      // Reading activity
     "../lib/github.mjs",         // GitHub commit history
     "../lib/reddit.mjs",         // Reddit posts and comments
-    "../lib/shopping.mjs",      // Shopping receipt extraction
+    "../lib/shopping.mjs",       // Shopping receipt extraction
+    "../lib/archiveRotation.mjs", // Rotate old lifelog entries to cold archives
 
    // "../lib/ldsgc.mjs",          // LDS General Conference
    // "../lib/scriptureguide.mjs", // Scripture of the day

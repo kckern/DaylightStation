@@ -8,6 +8,7 @@ import * as time from '../../_lib/utils/time.mjs';
 import { retry, withRetry } from '../../_lib/utils/retry.mjs';
 import { RateLimiter, createPerMinuteLimiter, createPerSecondLimiter } from '../../_lib/utils/ratelimit.mjs';
 import { ok, err, isOk, isErr, unwrap, unwrapOr, map, mapErr, andThen, tryCatch, tryCatchAsync, all, any } from '../../_lib/utils/result.mjs';
+import { splitAtBoundaries } from '../../_lib/utils/text.mjs';
 
 describe('Phase1: Time utilities', () => {
   describe('formatDate', () => {
@@ -385,6 +386,71 @@ describe('Phase1: Result monad', () => {
       const results = [err('e1'), err('e2')];
       const result = any(results);
       expect(result.error).toEqual(['e1', 'e2']);
+    });
+  });
+});
+
+describe('Phase1: Text utilities', () => {
+  describe('splitAtBoundaries', () => {
+    it('should not split text under max length', () => {
+      const text = 'Short text that fits easily';
+      const chunks = splitAtBoundaries(text, 100);
+
+      expect(chunks).toEqual([text]);
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(splitAtBoundaries('', 100)).toEqual([]);
+      expect(splitAtBoundaries(null, 100)).toEqual([]);
+    });
+
+    it('should split at paragraph boundaries', () => {
+      const text = 'First paragraph here.\n\nSecond paragraph here.\n\nThird paragraph here.';
+      const chunks = splitAtBoundaries(text, 40);
+
+      expect(chunks.length).toBeGreaterThan(1);
+      // Each chunk should be trimmed
+      chunks.forEach(chunk => {
+        expect(chunk).toBe(chunk.trim());
+      });
+    });
+
+    it('should split at sentence boundaries when no paragraphs', () => {
+      const text = 'First sentence here. Second sentence here. Third sentence here. Fourth sentence.';
+      const chunks = splitAtBoundaries(text, 50);
+
+      expect(chunks.length).toBeGreaterThan(1);
+      // Should end with sentence punctuation
+      expect(chunks[0]).toMatch(/[.!?]$/);
+    });
+
+    it('should split at word boundaries as fallback', () => {
+      const text = 'oneword twoword threeword fourword fiveword sixword sevenword';
+      const chunks = splitAtBoundaries(text, 30);
+
+      expect(chunks.length).toBeGreaterThan(1);
+      // Should not split mid-word
+      chunks.forEach(chunk => {
+        expect(chunk).not.toMatch(/\s$/);
+      });
+    });
+
+    it('should respect reserved space', () => {
+      const text = 'A'.repeat(100);
+      const chunks = splitAtBoundaries(text, 100, { reservedSpace: 20 });
+
+      // With 20 reserved, effective max is 80
+      expect(chunks.length).toBe(2);
+      expect(chunks[0].length).toBeLessThanOrEqual(80);
+    });
+
+    it('should handle hard cut when no boundaries found', () => {
+      const text = 'A'.repeat(200); // No spaces or punctuation
+      const chunks = splitAtBoundaries(text, 100);
+
+      expect(chunks.length).toBe(2);
+      expect(chunks[0].length).toBe(100);
+      expect(chunks[1].length).toBe(100);
     });
   });
 });

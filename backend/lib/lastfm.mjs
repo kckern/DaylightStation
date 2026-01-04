@@ -7,16 +7,21 @@
  * Required auth file structure:
  *   username: <lastfm_username>
  * 
- * Incremental Mode (default):
- *   - Fetches recent scrobbles and merges with existing data
- *   - Dedupes by track timestamp + artist + title
- *   - Use ?full=true for complete re-sync
+ * Modes:
+ *   - Incremental (default): Fetches recent scrobbles, merges with hot storage
+ *   - Full sync (?full=true): Fetches all, partitions to hot + cold archives
+ *   - Backfill (?backfill2009=true): Writes directly to yearly archives
+ * 
+ * Storage:
+ *   - Hot: users/{user}/lifelog/lastfm.yml (recent 90 days)
+ *   - Cold: users/{user}/lifelog/archives/lastfm/{year}.yml (historical)
  */
 
 import axios from './http.mjs';
 import moment from 'moment-timezone';
 import { userSaveFile, userLoadFile, userLoadAuth, getDefaultUsername } from './io.mjs';
 import { createLogger } from './logging/logger.js';
+import ArchiveService from './ArchiveService.mjs';
 
 const lastfmLogger = createLogger({ source: 'backend', app: 'lastfm' });
 
@@ -78,15 +83,32 @@ const getScrobbles = async (guidId = null, req = null) => {
         throw new Error('Last.fm username not configured');
     }
     
-    // Check for full sync vs incremental
+    // Check for full sync vs incremental vs backfill
     const fullSync = req?.query?.full === 'true';
     const backfillTo2009 = req?.query?.backfill2009 === 'true';
     
+    // Check if archive service is enabled for lastfm
+    const archiveEnabled = ArchiveService.isArchiveEnabled('lastfm');
+    const archiveConfig = archiveEnabled ? ArchiveService.getConfig('lastfm') : null;
+    const retentionDays = archiveConfig?.retentionDays || 90;
+    const cutoffDate = moment().subtract(retentionDays, 'days');
+    
     // Load existing data for incremental merge
+    // For incremental mode with archive: only load hot storage
+    // For backfill: we don't need existing data (write directly to archives)
     let existingScrobbles = [];
     let oldestTimestamp = null;
     try {
-        existingScrobbles = userLoadFile(username, 'lastfm') || [];
+        if (backfillTo2009 && archiveEnabled) {
+            // Backfill mode with archive: load hot to find oldest timestamp, but won't save back to it
+            existingScrobbles = ArchiveService.getHotData(username, 'lastfm') || [];
+        } else if (archiveEnabled) {
+            // Normal mode with archive: only load hot storage
+            existingScrobbles = ArchiveService.getHotData(username, 'lastfm') || [];
+        } else {
+            // No archive: load full file (legacy behavior)
+            existingScrobbles = userLoadFile(username, 'lastfm') || [];
+        }
         if (!Array.isArray(existingScrobbles)) existingScrobbles = [];
         
         // Find oldest timestamp for backfill mode
@@ -219,29 +241,48 @@ const getScrobbles = async (guidId = null, req = null) => {
             
             // Incremental save for 2009 backfill
             if (backfillTo2009 && scrobblesSinceLastSave >= SAVE_INTERVAL) {
-                // Merge with existing
-                const existingById = new Map(existingScrobbles.map(s => [s.id, s]));
-                for (const scrobble of newScrobbles) {
-                    existingById.set(scrobble.id, scrobble);
+                if (archiveEnabled) {
+                    // Archive mode: write directly to yearly archives (skip hot storage)
+                    const result = ArchiveService.appendToArchive(username, 'lastfm', newScrobbles);
+                    
+                    const oldestTrack = newScrobbles[newScrobbles.length - 1];
+                    const oldestDate = oldestTrack ? moment.unix(oldestTrack.timestamp).format('YYYY-MM-DD') : 'unknown';
+                    
+                    lastfmLogger.info('lastfm.incremental_save.archive', {
+                        username: LAST_FM_USER,
+                        page,
+                        scrobblesArchived: result.entriesProcessed,
+                        yearsUpdated: result.yearsUpdated,
+                        oldestDate
+                    });
+                    
+                    newScrobbles.length = 0; // Clear new scrobbles array
+                    scrobblesSinceLastSave = 0;
+                } else {
+                    // Legacy mode: merge with existing and save to single file
+                    const existingById = new Map(existingScrobbles.map(s => [s.id, s]));
+                    for (const scrobble of newScrobbles) {
+                        existingById.set(scrobble.id, scrobble);
+                    }
+                    
+                    const mergedSoFar = Array.from(existingById.values())
+                        .sort((a, b) => b.timestamp - a.timestamp);
+                    
+                    userSaveFile(username, 'lastfm', mergedSoFar);
+                    existingScrobbles = mergedSoFar;
+                    newScrobbles.length = 0;
+                    scrobblesSinceLastSave = 0;
+                    
+                    const oldestTrack = mergedSoFar[mergedSoFar.length - 1];
+                    const oldestDate = oldestTrack ? moment.unix(oldestTrack.timestamp).format('YYYY-MM-DD') : 'unknown';
+                    
+                    lastfmLogger.info('lastfm.incremental_save', {
+                        username: LAST_FM_USER,
+                        page,
+                        totalScrobbles: mergedSoFar.length,
+                        oldestDate
+                    });
                 }
-                
-                const mergedSoFar = Array.from(existingById.values())
-                    .sort((a, b) => b.timestamp - a.timestamp);
-                
-                userSaveFile(username, 'lastfm', mergedSoFar);
-                existingScrobbles = mergedSoFar;
-                newScrobbles.length = 0; // Clear new scrobbles array
-                scrobblesSinceLastSave = 0;
-                
-                const oldestTrack = mergedSoFar[mergedSoFar.length - 1];
-                const oldestDate = oldestTrack ? moment.unix(oldestTrack.timestamp).format('YYYY-MM-DD') : 'unknown';
-                
-                lastfmLogger.info('lastfm.incremental_save', {
-                    username: LAST_FM_USER,
-                    page,
-                    totalScrobbles: mergedSoFar.length,
-                    oldestDate
-                });
             }
             
             // Check for 2009 cutoff
@@ -297,12 +338,69 @@ const getScrobbles = async (guidId = null, req = null) => {
         lastfmLogger.info('lastfm.harvest.success', { 
             username: LAST_FM_USER,
             guidId,
-            mode: fullSync ? 'full' : 'incremental',
+            mode: backfillTo2009 ? 'backfill' : (fullSync ? 'full' : 'incremental'),
+            archiveEnabled,
             ...stats
         });
         
-        // Save merged data
-        userSaveFile(username, 'lastfm', mergedScrobbles);
+        // Save data based on mode and archive settings
+        if (archiveEnabled) {
+            if (backfillTo2009) {
+                // Backfill mode: write remaining new scrobbles directly to archives
+                if (newScrobbles.length > 0) {
+                    ArchiveService.appendToArchive(username, 'lastfm', newScrobbles);
+                }
+                // Don't touch hot storage in backfill mode
+                lastfmLogger.info('lastfm.backfill.complete', {
+                    username: LAST_FM_USER,
+                    scrobblesArchived: newScrobbles.length
+                });
+            } else if (fullSync) {
+                // Full sync: partition into hot (recent) and cold (old)
+                const hotScrobbles = [];
+                const coldScrobbles = [];
+                
+                for (const scrobble of mergedScrobbles) {
+                    const scrobbleDate = moment.unix(scrobble.timestamp);
+                    if (scrobbleDate.isAfter(cutoffDate)) {
+                        hotScrobbles.push(scrobble);
+                    } else {
+                        coldScrobbles.push(scrobble);
+                    }
+                }
+                
+                // Save hot data
+                ArchiveService.saveToHot(username, 'lastfm', hotScrobbles);
+                
+                // Archive cold data
+                if (coldScrobbles.length > 0) {
+                    ArchiveService.appendToArchive(username, 'lastfm', coldScrobbles);
+                }
+                
+                lastfmLogger.info('lastfm.fullsync.partitioned', {
+                    username: LAST_FM_USER,
+                    hotCount: hotScrobbles.length,
+                    coldCount: coldScrobbles.length
+                });
+            } else {
+                // Incremental mode: save to hot, then rotate if needed
+                ArchiveService.saveToHot(username, 'lastfm', mergedScrobbles);
+                
+                // Rotate old entries to archives
+                const rotateResult = ArchiveService.rotateToArchive(username, 'lastfm');
+                if (rotateResult.rotated > 0) {
+                    lastfmLogger.info('lastfm.archive.rotated', {
+                        username: LAST_FM_USER,
+                        rotated: rotateResult.rotated,
+                        kept: rotateResult.kept,
+                        yearsUpdated: rotateResult.yearsUpdated
+                    });
+                }
+            }
+        } else {
+            // Legacy mode: save to single file
+            userSaveFile(username, 'lastfm', mergedScrobbles);
+        }
         
         return mergedScrobbles;
         

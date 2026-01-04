@@ -47,3 +47,7 @@ export {
   all,
   any,
 } from './result.mjs';
+
+export {
+  splitAtBoundaries,
+} from './text.mjs';
