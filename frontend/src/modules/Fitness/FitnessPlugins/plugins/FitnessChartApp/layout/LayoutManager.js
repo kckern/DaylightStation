@@ -17,8 +17,9 @@ export class LayoutManager {
       ...config.options
     };
     
-    this.clusterDetector = new ClusterDetector({ 
-      clusterThreshold: this.avatarRadius * 4  // Increased from 3 to 4 for better grouping
+    this.clusterDetector = new ClusterDetector({
+      // Collision threshold: 2*radius means avatars are touching/overlapping
+      collisionThreshold: this.avatarRadius * 2
     });
     
     this.badgeClusterDetector = new ClusterDetector({
@@ -75,27 +76,9 @@ export class LayoutManager {
     // This ensures collision resolution operates on final X positions
     avatars = this._clampBasePositions(avatars, 'avatar');
 
-    // Phase 2: Cluster detection and strategy-based collision resolution
-    // Detect clusters of nearby avatars, then apply appropriate layout strategy
-    const avatarClusters = this.clusterDetector.detectClusters(avatars);
-    let resolvedAvatars = avatarClusters.flatMap(cluster => {
-      if (cluster.length < 2) {
-        // Single avatar - just pass through with offsets from clamping
-        return cluster.map(a => ({
-          ...a,
-          offsetX: a._clampOffsetX || 0,
-          offsetY: a._clampOffsetY || 0
-        }));
-      }
-      // Apply strategy-based layout for clusters of 2+ avatars
-      const positioned = this.strategySelector.selectAndApply(cluster);
-      // Convert finalX/finalY to offsets
-      return positioned.map(a => ({
-        ...a,
-        offsetX: (a.finalX != null ? a.finalX - a.x : 0) + (a._clampOffsetX || 0),
-        offsetY: (a.finalY != null ? a.finalY - a.y : 0) + (a._clampOffsetY || 0)
-      }));
-    });
+    // Phase 2: Horizontal-only collision resolution
+    // Higher avatars (lower Y value) stay anchored, lower avatars move left
+    let resolvedAvatars = this._resolveAvatarCollisionsHorizontal(avatars);
 
     // Phase 3: Label Collision Resolution
     resolvedAvatars = this.labelManager.resolve(resolvedAvatars);
@@ -181,14 +164,13 @@ export class LayoutManager {
   _clampToBounds(elements, type) {
     const { width, height, margin } = this.bounds;
     const radius = type === 'avatar' ? this.avatarRadius : this.badgeRadius;
-    
-    // For avatars, account for label on the right side (coin count)
-    // Labels are typically ~50px wide, but we use a conservative estimate
-    const labelMargin = type === 'avatar' ? 50 : 0;
-    
+
     // Calculate the safe zone where element centers can be placed
-    const minX = (margin.left || 0) + radius;
-    const maxX = width - (margin.right || 0) - radius - labelMargin;
+    // For X: allow avatars to be at line endpoints (chart area edge)
+    // The margin.right already provides space for avatar + label
+    // For Y: keep radius padding to prevent clipping at top/bottom
+    const minX = (margin.left || 0);
+    const maxX = width - (margin.right || 0);
     const minY = (margin.top || 0) + radius;
     const maxY = height - (margin.bottom || 0) - radius;
     
@@ -208,9 +190,11 @@ export class LayoutManager {
         return el; // No clamping needed
       }
       
-      // If we're clamping to the right edge, switch label to left side
+      // If avatar is near right edge, switch label to left side
+      // Use 50px threshold for label width
       let labelPosition = el.labelPosition;
-      if (type === 'avatar' && currentX > maxX) {
+      const labelThreshold = width - (margin.right || 0) - radius - 50;
+      if (type === 'avatar' && currentX > labelThreshold) {
         labelPosition = 'left';
       }
       
@@ -234,14 +218,13 @@ export class LayoutManager {
   _clampBasePositions(elements, type) {
     const { width, height, margin } = this.bounds;
     const radius = type === 'avatar' ? this.avatarRadius : this.badgeRadius;
-    
-    // For avatars, account for label on the right side (coin count)
-    // Only apply label margin if element would exceed bounds
-    const labelMargin = type === 'avatar' ? 50 : 0;
-    
+
     // Calculate the safe zone where element centers can be placed
-    const minX = (margin.left || 0) + radius;
-    const maxX = width - (margin.right || 0) - radius - labelMargin;
+    // For X: allow avatars to be at line endpoints (chart area edge)
+    // The margin.right already provides space for avatar + label
+    // For Y: keep radius padding to prevent clipping at top/bottom
+    const minX = (margin.left || 0);
+    const maxX = width - (margin.right || 0);
     const minY = (margin.top || 0) + radius;
     const maxY = height - (margin.bottom || 0) - radius;
     
@@ -263,9 +246,11 @@ export class LayoutManager {
         return el; // No clamping needed, pass through unchanged
       }
       
-      // If we're clamping to the right edge, switch label to left side
+      // If avatar is near right edge, switch label to left side
+      // Use 50px threshold for label width
       let labelPosition = el.labelPosition;
-      if (type === 'avatar' && originalX > maxX) {
+      const labelThreshold = width - (margin.right || 0) - radius - 50;
+      if (type === 'avatar' && originalX > labelThreshold) {
         labelPosition = 'left';
       }
       
@@ -281,5 +266,79 @@ export class LayoutManager {
         _baseClamped: true // Debug flag
       };
     });
+  }
+
+  /**
+   * Resolve avatar collisions by moving lower avatars left.
+   * Higher avatars (lower Y) stay anchored at line endpoints.
+   * No vertical displacement - only horizontal.
+   */
+  _resolveAvatarCollisionsHorizontal(avatars) {
+    if (avatars.length < 2) {
+      return avatars.map(a => ({
+        ...a,
+        offsetX: a._clampOffsetX || 0,
+        offsetY: a._clampOffsetY || 0
+      }));
+    }
+
+    const minDist = this.avatarRadius * 2; // Minimum distance between centers
+
+    // Sort by Y ascending (top/higher avatars first - they have priority)
+    const sorted = [...avatars].sort((a, b) => {
+      const ay = a.y + (a._clampOffsetY || 0);
+      const by = b.y + (b._clampOffsetY || 0);
+      return ay - by;
+    });
+
+    // Track final positions (x offset from original position)
+    const offsets = sorted.map(a => ({
+      avatar: a,
+      offsetX: a._clampOffsetX || 0,
+      offsetY: a._clampOffsetY || 0
+    }));
+
+    // For each avatar (starting from second), check collisions with all higher avatars
+    for (let i = 1; i < sorted.length; i++) {
+      const current = offsets[i];
+      const currY = current.avatar.y + current.offsetY;
+
+      // Check against all avatars above this one
+      for (let j = 0; j < i; j++) {
+        const other = offsets[j];
+        const otherY = other.avatar.y + other.offsetY;
+
+        // Calculate current positions
+        const currX = current.avatar.x + current.offsetX;
+        const otherX = other.avatar.x + other.offsetX;
+
+        // Check for collision
+        const dx = currX - otherX;
+        const dy = currY - otherY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < minDist) {
+          // Move current avatar left to resolve collision
+          // Calculate how much to move left to clear the collision vertically
+          const verticalGap = Math.abs(dy);
+          if (verticalGap < minDist) {
+            // Need horizontal displacement
+            const neededHorizontalGap = Math.sqrt(minDist * minDist - dy * dy);
+            const currentHorizontalGap = Math.abs(dx);
+            if (currentHorizontalGap < neededHorizontalGap) {
+              // Move left by the difference plus some padding
+              current.offsetX -= (neededHorizontalGap - currentHorizontalGap + 4);
+            }
+          }
+        }
+      }
+    }
+
+    // Return avatars with computed offsets
+    return offsets.map(({ avatar, offsetX, offsetY }) => ({
+      ...avatar,
+      offsetX,
+      offsetY
+    }));
   }
 }
