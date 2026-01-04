@@ -140,8 +140,50 @@ const LEGACY_HOUSEHOLD_PATHS = [
     { pattern: 'history/menu_memory', suggestion: 'households/{household}/history/menu_memory' },
 ];
 
+// Path translations for new directory structure
+// Maps old paths to new paths (with support for household substitution)
+const PATH_TRANSLATIONS = {
+    // System state paths
+    'state/cron': 'system/state/cron',
+    'state/cron_bak': 'system/state/cron_bak',
+    // Household state paths (default household)
+    'state/weather': 'households/default/state/weather',
+    'state/keyboard': 'households/default/state/keyboard',
+    'state/watchlist': 'households/default/state/watchlist',
+    'state/watchlist_watched': 'households/default/state/watchlist_watched',
+    'state/watchlists': 'households/default/state/watchlists',
+    'state/lists': 'households/default/state/lists',
+    'state/youtube': 'households/default/state/youtube',
+    'state/nav': 'households/default/state/nav',
+    'state/media_config': 'households/default/state/media_config',
+    'state/mediamenu': 'households/default/state/mediamenu',
+    'state/videomenu': 'households/default/state/videomenu',
+};
+
+/**
+ * Translate legacy paths to new structure
+ * @param {string} originalPath - The path to translate
+ * @returns {string} - Translated path or original if no translation exists
+ */
+const translatePath = (originalPath) => {
+    // Direct match
+    if (PATH_TRANSLATIONS[originalPath]) {
+        return PATH_TRANSLATIONS[originalPath];
+    }
+    // Check for prefix matches (for paths like state/cron_something)
+    for (const [oldPath, newPath] of Object.entries(PATH_TRANSLATIONS)) {
+        if (originalPath.startsWith(oldPath + '/') || originalPath.startsWith(oldPath + '_')) {
+            return originalPath.replace(oldPath, newPath);
+        }
+    }
+    return originalPath;
+};
+
 const loadFile = (path) => {
     path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
+
+    // Translate legacy paths to new structure
+    path = translatePath(path);
     
     // Skip macOS resource fork files
     const filename = path.split('/').pop();
@@ -271,7 +313,11 @@ const processQueue = (key) => {
 
 const saveFile = (path, data) => {
     if (typeof path !== 'string') return false;
-    const normalizedPath = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
+    let normalizedPath = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
+
+    // Translate legacy paths to new structure
+    normalizedPath = translatePath(normalizedPath);
+
     const yamlFile = `${normalizedPath}.yml`;
 
     // Check for legacy user-data paths and log deprecation warning (once per path)

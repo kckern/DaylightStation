@@ -1,12 +1,22 @@
 /**
  * ConfigService - Unified Configuration Management
- * 
- * Loads configuration from multiple sources with proper layering:
- * 1. Legacy: config.app.yml, config.secrets.yml, config.app-local.yml
- * 2. New: config/system.yml, config/apps/*.yml
- * 3. User profiles: data/users/{id}/profile.yml
- * 
- * Maintains backwards compatibility while enabling new modular config.
+ *
+ * Config now lives in data/system/config/ directory.
+ * Supports both new file names (app.yml) and legacy names (config.app.yml).
+ *
+ * Directory structure:
+ * - data/system/config/ - System-wide config (app.yml, secrets.yml, etc.)
+ * - data/system/state/  - System-wide state (cron.yml defaults)
+ * - data/apps/          - App default configs (inherited by households)
+ * - data/households/{hid}/ - Household-specific data
+ *   - state/            - Household state (overrides system)
+ *   - apps/{app}/       - Household app data & config overrides
+ * - data/users/         - User profiles
+ * - data/content/       - Shared content
+ *
+ * Initialization:
+ * - init({ dataDir }) - Config at dataDir/system/config/
+ * - init(baseDir) - Legacy: config at baseDir root (deprecated)
  */
 
 import fs from 'fs';
@@ -59,10 +69,11 @@ const resolvePath = (obj, pathStr) => {
 
 class ConfigService {
   #baseDir = null;
+  #configDir = null;          // Config directory (data/config/)
   #dataDir = null;
-  #legacyConfig = null;      // Merged legacy config (app + secrets + local)
-  #systemConfig = null;       // config/system.yml
-  #appConfigs = new Map();    // config/apps/*.yml
+  #legacyConfig = null;       // Merged config (app + secrets + local)
+  #systemConfig = null;       // system.yml
+  #appConfigs = new Map();    // apps/*.yml
   #userProfiles = new Map();  // data/users/*/profile.yml (cached)
   #householdConfigs = new Map(); // data/households/*/household.yml (cached)
   #initialized = false;
@@ -77,7 +88,7 @@ class ConfigService {
    */
   #ensureInitialized() {
     if (this.#initialized) return true;
-    
+
     // Try to get data path from process.env (set by index.js from config files)
     const dataPath = process.env.path?.data;
     if (dataPath) {
@@ -85,7 +96,7 @@ class ConfigService {
       this.#initialized = true;
       return true;
     }
-    
+
     // Log warning once
     if (!this.#initWarningLogged) {
       logger.warn('config.not_initialized_process_env_missing');
@@ -104,49 +115,114 @@ class ConfigService {
 
   /**
    * Initialize the config service
-   * @param {string} baseDir - Project root directory
+   *
+   * @param {string|object} options - Either baseDir string (legacy) or options object
+   * @param {string} options.dataDir - Data directory path (config at dataDir/config/)
+   * @param {string} options.configDir - Config directory path (optional, derived from dataDir)
+   * @param {string} options.baseDir - Codebase root (legacy fallback)
    */
-  init(baseDir) {
-    if (this.#initialized && this.#baseDir === baseDir) return this;
-    
-    this.#baseDir = baseDir;
-    this.#loadLegacyConfigs();
+  init(options) {
+    // Support legacy init(baseDir) signature
+    if (typeof options === 'string') {
+      options = { baseDir: options };
+    }
+
+    const { dataDir, configDir, baseDir } = options;
+
+    // Determine config and data directories
+    if (dataDir) {
+      // New approach: config at dataDir/system/config/
+      this.#dataDir = dataDir;
+      // Check for new structure (system/config/) first, fall back to legacy (config/)
+      const newConfigDir = path.join(dataDir, 'system', 'config');
+      const legacyConfigDir = path.join(dataDir, 'config');
+      if (configDir) {
+        this.#configDir = configDir;
+      } else if (fs.existsSync(newConfigDir)) {
+        this.#configDir = newConfigDir;
+      } else if (fs.existsSync(legacyConfigDir)) {
+        this.#configDir = legacyConfigDir;
+      } else {
+        // Default to new structure
+        this.#configDir = newConfigDir;
+      }
+      this.#baseDir = baseDir || path.dirname(dataDir);
+    } else if (baseDir) {
+      // Legacy approach: config at codebase root
+      this.#baseDir = baseDir;
+      // Check locations in priority order: system/config, config, root
+      const newConfigDir = path.join(baseDir, 'data', 'system', 'config');
+      const legacyDataConfigDir = path.join(baseDir, 'data', 'config');
+      if (fs.existsSync(newConfigDir)) {
+        this.#configDir = newConfigDir;
+        this.#dataDir = path.join(baseDir, 'data');
+      } else if (fs.existsSync(legacyDataConfigDir)) {
+        this.#configDir = legacyDataConfigDir;
+        this.#dataDir = path.join(baseDir, 'data');
+      } else {
+        // Legacy: config files at root level
+        this.#configDir = baseDir;
+        this.#dataDir = path.join(baseDir, 'data');
+      }
+    } else {
+      throw new Error('ConfigService.init() requires dataDir or baseDir');
+    }
+
+    if (this.#initialized && this.#dataDir === dataDir) return this;
+
+    this.#loadConfigs();
     this.#loadSystemConfig();
     this.#loadAppConfigs();
     this.#resolveDataDir();
     this.#initialized = true;
-    
+
     return this;
   }
 
   /**
-   * Load legacy config files (config.app.yml, etc.)
+   * Load config file with fallback from new name to legacy name
    */
-  #loadLegacyConfigs() {
-    const appConfig = safeReadYaml(path.join(this.#baseDir, 'config.app.yml')) || {};
-    const secretsConfig = safeReadYaml(path.join(this.#baseDir, 'config.secrets.yml')) || {};
-    const localConfig = safeReadYaml(path.join(this.#baseDir, 'config.app-local.yml')) || {};
-    
+  #loadConfigFile(newName, legacyName) {
+    const newPath = path.join(this.#configDir, newName);
+    const legacyPath = path.join(this.#configDir, legacyName);
+
+    if (fs.existsSync(newPath)) {
+      return safeReadYaml(newPath);
+    }
+    if (fs.existsSync(legacyPath)) {
+      return safeReadYaml(legacyPath);
+    }
+    return null;
+  }
+
+  /**
+   * Load main config files (app.yml, secrets.yml, app-local.yml)
+   */
+  #loadConfigs() {
+    const appConfig = this.#loadConfigFile('app.yml', 'config.app.yml') || {};
+    const secretsConfig = this.#loadConfigFile('secrets.yml', 'config.secrets.yml') || {};
+    const localConfig = this.#loadConfigFile('app-local.yml', 'config.app-local.yml') || {};
+
     this.#legacyConfig = { ...appConfig, ...secretsConfig, ...localConfig };
   }
 
   /**
-   * Load new system config (config/system.yml)
+   * Load system config (system.yml)
    */
   #loadSystemConfig() {
-    this.#systemConfig = safeReadYaml(path.join(this.#baseDir, 'config', 'system.yml'));
+    this.#systemConfig = safeReadYaml(path.join(this.#configDir, 'system.yml'));
   }
 
   /**
-   * Load all app configs from config/apps/*.yml
+   * Load all app configs from apps/*.yml
    */
   #loadAppConfigs() {
-    const appsDir = path.join(this.#baseDir, 'config', 'apps');
+    const appsDir = path.join(this.#configDir, 'apps');
     if (!fs.existsSync(appsDir)) return;
 
-    const files = fs.readdirSync(appsDir).filter(f => 
-      (f.endsWith('.yml') || f.endsWith('.yaml')) && 
-      !f.startsWith('.') && 
+    const files = fs.readdirSync(appsDir).filter(f =>
+      (f.endsWith('.yml') || f.endsWith('.yaml')) &&
+      !f.startsWith('.') &&
       !f.startsWith('_') &&
       !f.includes('.example.')
     );
@@ -164,14 +240,99 @@ class ConfigService {
    * Resolve the data directory path
    */
   #resolveDataDir() {
+    // If dataDir was explicitly set, use it
+    if (this.#dataDir) return;
+
     // Priority: system config > process.env > legacy config > default
-    // We prefer process.env because it's populated by index.js which handles 
-    // external config directories and local overrides correctly.
-    this.#dataDir = 
+    this.#dataDir =
       this.#systemConfig?.paths?.data ||
       process.env.path?.data ||
       this.#legacyConfig?.path?.data ||
       path.join(this.#baseDir, 'data');
+  }
+
+  /**
+   * Get the config directory path (system/config/)
+   * Alias for getSystemConfigDir() for backwards compatibility
+   */
+  getConfigDir() {
+    return this.#configDir;
+  }
+
+  /**
+   * Get the system config directory (data/system/config/)
+   */
+  getSystemConfigDir() {
+    return this.#configDir;
+  }
+
+  /**
+   * Get the system state directory (data/system/state/)
+   */
+  getSystemStateDir() {
+    this.#ensureInitialized();
+    if (!this.#dataDir) return null;
+    return path.join(this.#dataDir, 'system', 'state');
+  }
+
+  /**
+   * Get the app defaults directory (data/apps/)
+   * @param {string} [appName] - Optional app name to get specific app dir
+   */
+  getAppsDefaultsDir(appName) {
+    this.#ensureInitialized();
+    if (!this.#dataDir) return null;
+    const appsDir = path.join(this.#dataDir, 'apps');
+    return appName ? path.join(appsDir, appName) : appsDir;
+  }
+
+  /**
+   * Get a household's directory (data/households/{hid}/)
+   * @param {string} householdId - Household ID
+   */
+  getHouseholdDir(householdId) {
+    this.#ensureInitialized();
+    if (!this.#dataDir || !householdId) return null;
+    return path.join(this.#dataDir, 'households', householdId);
+  }
+
+  /**
+   * Get a household's state directory (data/households/{hid}/state/)
+   * @param {string} householdId - Household ID
+   */
+  getHouseholdStateDir(householdId) {
+    const hhDir = this.getHouseholdDir(householdId);
+    return hhDir ? path.join(hhDir, 'state') : null;
+  }
+
+  /**
+   * Get a household's app directory (data/households/{hid}/apps/{app}/)
+   * @param {string} householdId - Household ID
+   * @param {string} appName - App name
+   */
+  getHouseholdAppDir(householdId, appName) {
+    const hhDir = this.getHouseholdDir(householdId);
+    if (!hhDir || !appName) return null;
+    return path.join(hhDir, 'apps', appName);
+  }
+
+  /**
+   * Get the content directory (data/content/)
+   */
+  getContentDir() {
+    this.#ensureInitialized();
+    if (!this.#dataDir) return null;
+    return path.join(this.#dataDir, 'content');
+  }
+
+  /**
+   * Get a user's directory (data/users/{uid}/)
+   * @param {string} userId - User ID
+   */
+  getUserDir(userId) {
+    this.#ensureInitialized();
+    if (!this.#dataDir || !userId) return null;
+    return path.join(this.#dataDir, 'users', userId);
   }
 
   // ============================================================
@@ -443,7 +604,8 @@ class ConfigService {
   }
 
   /**
-   * Get household app config (e.g., fitness.primary_users)
+   * Get household app config from household.yml (e.g., fitness.primary_users)
+   * Note: For merged config (app defaults + household overrides), use getMergedHouseholdAppConfig()
    * @param {string} householdId - Household ID
    * @param {string} appName - App name
    * @param {string} [pathStr] - Dot-notation path
@@ -454,6 +616,91 @@ class ConfigService {
     const appConfig = config?.apps?.[appName];
     if (!pathStr) return appConfig;
     return resolvePath(appConfig, pathStr);
+  }
+
+  // ============================================================
+  // INHERITANCE-BASED CONFIG LOADING
+  // ============================================================
+
+  /**
+   * Get state with inheritance (system defaults → household overrides)
+   * Loads from system/state/{stateName}.yml, merged with households/{hid}/state/{stateName}.yml
+   * @param {string} stateName - State file name (without .yml)
+   * @param {string} [householdId] - Household ID (defaults to default household)
+   * @returns {object|null} Merged state or null if not found
+   */
+  getState(stateName, householdId) {
+    if (!this.#ensureInitialized()) return null;
+    const hid = householdId || this.getDefaultHouseholdId();
+
+    // Load system defaults
+    const systemStateDir = this.getSystemStateDir();
+    const systemState = systemStateDir ? safeReadYaml(path.join(systemStateDir, `${stateName}.yml`)) : null;
+
+    // Load household overrides
+    const hhStateDir = this.getHouseholdStateDir(hid);
+    const hhState = hhStateDir ? safeReadYaml(path.join(hhStateDir, `${stateName}.yml`)) : null;
+
+    // Merge: household overrides system
+    if (!systemState && !hhState) return null;
+    return deepMerge(systemState || {}, hhState || {});
+  }
+
+  /**
+   * Get merged app config (app defaults → household overrides)
+   * Loads from apps/{appName}/config.yml, merged with households/{hid}/apps/{appName}/config.yml
+   * @param {string} appName - App name
+   * @param {string} [householdId] - Household ID (defaults to default household)
+   * @returns {object|null} Merged config or null if not found
+   */
+  getMergedHouseholdAppConfig(appName, householdId) {
+    if (!this.#ensureInitialized()) return null;
+    const hid = householdId || this.getDefaultHouseholdId();
+
+    // Load app defaults from data/apps/{appName}/config.yml
+    const appDefaultsDir = this.getAppsDefaultsDir(appName);
+    const appDefaults = appDefaultsDir ? safeReadYaml(path.join(appDefaultsDir, 'config.yml')) : null;
+
+    // Load household overrides from data/households/{hid}/apps/{appName}/config.yml
+    const hhAppDir = this.getHouseholdAppDir(hid, appName);
+    const hhOverrides = hhAppDir ? safeReadYaml(path.join(hhAppDir, 'config.yml')) : null;
+
+    // Also include system-level app config from system/config/apps/{appName}.yml
+    const systemAppConfig = this.getAppConfig(appName);
+
+    // Merge order: system app config → app defaults → household overrides
+    if (!systemAppConfig && !appDefaults && !hhOverrides) return null;
+    return deepMerge(deepMerge(systemAppConfig || {}, appDefaults || {}), hhOverrides || {});
+  }
+
+  /**
+   * Write state to household state directory
+   * @param {string} stateName - State file name (without .yml)
+   * @param {object} data - Data to write
+   * @param {string} [householdId] - Household ID (defaults to default household)
+   * @returns {boolean} Success
+   */
+  writeHouseholdState(stateName, data, householdId) {
+    if (!this.#ensureInitialized()) return false;
+    const hid = householdId || this.getDefaultHouseholdId();
+    const stateDir = this.getHouseholdStateDir(hid);
+
+    if (!stateDir) return false;
+
+    // Ensure directory exists
+    if (!fs.existsSync(stateDir)) {
+      fs.mkdirSync(stateDir, { recursive: true });
+    }
+
+    const filePath = path.join(stateDir, `${stateName}.yml`);
+    try {
+      const { stringify } = require('yaml');
+      fs.writeFileSync(filePath, stringify(data), 'utf8');
+      return true;
+    } catch (err) {
+      logger.error('config.write_household_state_failed', { stateName, householdId: hid, error: err.message });
+      return false;
+    }
   }
 
   /**

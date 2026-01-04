@@ -1,16 +1,19 @@
 /**
  * Config Path Resolver
- * 
- * Resolves config file paths based on environment:
- * - Docker: /usr/src/app/ (mounted by docker-compose)
- * - Local Dev: Uses DAYLIGHT_CONFIG_PATH and DAYLIGHT_DATA_PATH env vars
- * 
+ *
+ * Resolves config file paths based on environment.
+ * Config now lives INSIDE the data directory at data/system/config/.
+ *
+ * Environment:
+ * - Docker: /usr/src/app/data (config at /usr/src/app/data/system/config/)
+ * - Local Dev: Uses DAYLIGHT_DATA_PATH env var
+ *
  * Environment Variables:
- *   DAYLIGHT_CONFIG_PATH - Path to config directory (required for local dev)
- *   DAYLIGHT_DATA_PATH   - Path to data directory (required for local dev)
+ *   DAYLIGHT_DATA_PATH   - Path to data directory (primary)
+ *   DAYLIGHT_CONFIG_PATH - DEPRECATED: config now lives inside data/system/config/
  *   DAYLIGHT_NAS_MOUNT   - NAS mount point to check (optional)
  *   DAYLIGHT_SMB_SHARE   - SMB share URI for auto-mount (optional, macOS only)
- * 
+ *
  * Handles mount detection and graceful failure.
  */
 
@@ -107,6 +110,8 @@ export function tryMount() {
 
 /**
  * Get the base config directory path
+ * Config now lives inside data directory at data/system/config/
+ *
  * @param {object} options
  * @param {boolean} options.isDocker - Running in Docker container
  * @param {string} options.codebaseDir - Codebase directory (fallback for CI)
@@ -114,51 +119,110 @@ export function tryMount() {
  */
 export function resolveConfigPaths(options = {}) {
   const { isDocker, codebaseDir } = options;
-  const config = getMountConfig();
+  const mountConfig = getMountConfig();
+
+  // Helper to find config dir (new structure first, then legacy)
+  const findConfigDir = (dataDir) => {
+    const newConfigDir = path.join(dataDir, 'system', 'config');
+    const legacyConfigDir = path.join(dataDir, 'config');
+    if (pathExists(newConfigDir)) return { configDir: newConfigDir, isLegacy: false };
+    if (pathExists(legacyConfigDir)) return { configDir: legacyConfigDir, isLegacy: true };
+    return { configDir: newConfigDir, isLegacy: false }; // Default to new structure
+  };
 
   // In Docker, paths are mounted by docker-compose
+  // Config is now inside data directory at system/config/
   if (isDocker) {
+    const dataDir = '/usr/src/app/data';
+    const { configDir } = findConfigDir(dataDir);
     return {
-      configDir: '/usr/src/app',
-      dataDir: '/usr/src/app/data',
+      configDir,
+      dataDir,
       source: 'docker',
       mounted: true
     };
   }
 
-  // Check for explicit environment variables (preferred for local dev)
-  if (config.configPath && config.dataPath) {
-    if (pathExists(config.configPath)) {
+  // Check for DAYLIGHT_DATA_PATH (primary method)
+  if (mountConfig.dataPath) {
+    const dataDir = mountConfig.dataPath;
+    const { configDir, isLegacy } = findConfigDir(dataDir);
+
+    if (pathExists(configDir)) {
       return {
-        configDir: config.configPath,
-        dataDir: config.dataPath,
-        source: 'env-vars',
-        mounted: pathExists(config.dataPath)
+        configDir,
+        dataDir,
+        source: isLegacy ? 'env-vars-legacy' : 'env-vars',
+        mounted: true
       };
-    } else {
-      // Configured but not accessible - try mount
-      tryMount();
-      if (pathExists(config.configPath)) {
-        return {
-          configDir: config.configPath,
-          dataDir: config.dataPath,
-          source: 'env-vars-after-mount',
-          mounted: true
-        };
-      }
+    }
+
+    // Data path configured but config not accessible - try mount
+    tryMount();
+    const afterMount = findConfigDir(dataDir);
+    if (pathExists(afterMount.configDir)) {
+      return {
+        configDir: afterMount.configDir,
+        dataDir,
+        source: 'env-vars-after-mount',
+        mounted: true
+      };
+    }
+
+    // Config dir doesn't exist yet - still return the paths
+    // (config might be created later or we're in init mode)
+    if (pathExists(dataDir)) {
+      return {
+        configDir,
+        dataDir,
+        source: 'env-vars-no-config',
+        mounted: true
+      };
+    }
+  }
+
+  // DEPRECATED: Legacy support for separate DAYLIGHT_CONFIG_PATH
+  if (mountConfig.configPath) {
+    console.warn('[ConfigPath] DAYLIGHT_CONFIG_PATH is deprecated. Config now lives inside data/system/config/');
+    if (pathExists(mountConfig.configPath)) {
+      return {
+        configDir: mountConfig.configPath,
+        dataDir: mountConfig.dataPath || path.join(mountConfig.configPath, '..', 'data'),
+        source: 'legacy-env-vars',
+        mounted: true,
+        deprecated: true
+      };
     }
   }
 
   // Fallback to codebase (for CI/testing only)
-  if (codebaseDir && pathExists(path.join(codebaseDir, 'config.app.yml'))) {
-    logger.warn('config_path.using_codebase_fallback');
-    logger.warn('config_path.missing_env_vars_advice');
-    return {
-      configDir: codebaseDir,
-      dataDir: path.join(codebaseDir, 'data'),
-      source: 'codebase-fallback',
-      mounted: false
-    };
+  // Check for config inside data directory (new structure first)
+  if (codebaseDir) {
+    const dataDir = path.join(codebaseDir, 'data');
+    const { configDir, isLegacy } = findConfigDir(dataDir);
+
+    // Check if config exists at either location
+    if (pathExists(path.join(configDir, 'app.yml')) ||
+        pathExists(path.join(configDir, 'config.app.yml'))) {
+      return {
+        configDir,
+        dataDir,
+        source: isLegacy ? 'codebase-data-config-legacy' : 'codebase-data-config',
+        mounted: false
+      };
+    }
+
+    // Legacy location: root config.app.yml
+    if (pathExists(path.join(codebaseDir, 'config.app.yml'))) {
+      logger.warn('config_path.using_legacy_codebase_fallback');
+      return {
+        configDir: codebaseDir,
+        dataDir,
+        source: 'codebase-fallback',
+        mounted: false,
+        deprecated: true
+      };
+    }
   }
 
   // No config available
@@ -167,20 +231,29 @@ export function resolveConfigPaths(options = {}) {
     dataDir: null,
     source: 'none',
     mounted: false,
-    error: 'No configuration source available. Set DAYLIGHT_CONFIG_PATH and DAYLIGHT_DATA_PATH environment variables.'
+    error: 'No configuration source available. Set DAYLIGHT_DATA_PATH environment variable.'
   };
 }
 
 /**
  * Get full paths to config files
+ * Supports both new names (app.yml) and legacy names (config.app.yml)
  */
 export function getConfigFilePaths(configDir) {
   if (!configDir) return null;
-  
+
+  // Helper to find file with fallback to legacy name
+  const resolveFile = (newName, legacyName) => {
+    const newPath = path.join(configDir, newName);
+    const legacyPath = path.join(configDir, legacyName);
+    // Prefer new name, fall back to legacy
+    return pathExists(newPath) ? newPath : legacyPath;
+  };
+
   return {
-    app: path.join(configDir, 'config.app.yml'),
-    secrets: path.join(configDir, 'config.secrets.yml'),
-    local: path.join(configDir, 'config.app-local.yml'),
+    app: resolveFile('app.yml', 'config.app.yml'),
+    secrets: resolveFile('secrets.yml', 'config.secrets.yml'),
+    local: resolveFile('app-local.yml', 'config.app-local.yml'),
     system: path.join(configDir, 'system.yml'),
     appsDir: path.join(configDir, 'apps')
   };

@@ -1,16 +1,19 @@
 /**
  * Config Loader
- * 
+ *
  * Unified configuration loading with clear precedence order.
  * Handles YAML parsing, merging, and environment awareness.
- * 
+ *
+ * Config now lives in data/system/config/ directory.
+ * Supports both new names (app.yml) and legacy names (config.app.yml).
+ *
  * Precedence (highest wins):
- * 1. Resolved paths from pathResolver (DAYLIGHT_* env vars)
- * 2. config.app-local.yml (dev only)
- * 3. config.secrets.yml
- * 4. config/apps/*.yml (new modular - future)
- * 5. config/system.yml (new system - future)
- * 6. config.app.yml (legacy)
+ * 1. Resolved paths from pathResolver (DAYLIGHT_DATA_PATH env var)
+ * 2. app-local.yml (dev only)
+ * 3. secrets.yml
+ * 4. apps/*.yml (modular app configs)
+ * 5. system.yml (system config)
+ * 6. app.yml (main app config)
  */
 
 import fs from 'fs';
@@ -67,8 +70,34 @@ export function deepMerge(target, ...sources) {
 }
 
 /**
+ * Try to load a config file, checking new name first then legacy name
+ * @param {string} configDir - Config directory
+ * @param {string} newName - New file name (e.g., 'app.yml')
+ * @param {string} legacyName - Legacy file name (e.g., 'config.app.yml')
+ * @returns {object} - { config, path, isLegacy }
+ */
+function loadConfigWithFallback(configDir, newName, legacyName) {
+  const newPath = path.join(configDir, newName);
+  const legacyPath = path.join(configDir, legacyName);
+
+  // Try new name first
+  if (fs.existsSync(newPath)) {
+    const config = safeLoadYaml(newPath);
+    return { config, path: newPath, isLegacy: false };
+  }
+
+  // Fall back to legacy name
+  if (fs.existsSync(legacyPath)) {
+    const config = safeLoadYaml(legacyPath);
+    return { config, path: legacyPath, isLegacy: true };
+  }
+
+  return { config: null, path: null, isLegacy: false };
+}
+
+/**
  * Load all configuration files and merge them
- * 
+ *
  * @param {object} options
  * @param {string} options.configDir - Directory containing config files
  * @param {string} options.dataDir - Data directory path
@@ -78,7 +107,7 @@ export function deepMerge(target, ...sources) {
  */
 export function loadAllConfig(options = {}) {
   const { configDir, dataDir, isDocker = false, isDev = false } = options;
-  
+
   if (!configDir) {
     return {
       config: {},
@@ -91,18 +120,18 @@ export function loadAllConfig(options = {}) {
   const errors = [];
 
   // ============================================================
-  // Layer 1: Legacy config.app.yml (lowest priority)
+  // Layer 1: Main app config (app.yml or legacy config.app.yml)
   // ============================================================
-  const appConfigPath = path.join(configDir, 'config.app.yml');
-  const appConfig = safeLoadYaml(appConfigPath);
+  const appResult = loadConfigWithFallback(configDir, 'app.yml', 'config.app.yml');
+  const appConfig = appResult.config;
   if (appConfig) {
-    layers.push({ name: 'app', path: appConfigPath, keys: Object.keys(appConfig).length });
-  } else if (fs.existsSync(appConfigPath)) {
-    errors.push(`Failed to parse ${appConfigPath}`);
+    layers.push({ name: 'app', path: appResult.path, keys: Object.keys(appConfig).length });
+  } else if (appResult.path) {
+    errors.push(`Failed to parse ${appResult.path}`);
   }
 
   // ============================================================
-  // Layer 2: New system config (future)
+  // Layer 2: System config
   // ============================================================
   const systemConfigPath = path.join(configDir, 'system.yml');
   const systemConfig = safeLoadYaml(systemConfigPath);
@@ -111,18 +140,18 @@ export function loadAllConfig(options = {}) {
   }
 
   // ============================================================
-  // Layer 3: New app configs (future)
+  // Layer 3: Modular app configs (apps/*.yml)
   // ============================================================
   const appsDir = path.join(configDir, 'apps');
   let appsConfig = {};
   if (fs.existsSync(appsDir)) {
     try {
       const appFiles = fs.readdirSync(appsDir)
-        .filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && 
-                     !f.includes('.example.') && 
-                     !f.startsWith('.') && 
+        .filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) &&
+                     !f.includes('.example.') &&
+                     !f.startsWith('.') &&
                      !f.startsWith('_'));
-      
+
       for (const file of appFiles) {
         const appName = file.replace(/\.(yml|yaml)$/, '');
         const appPath = path.join(appsDir, file);
@@ -131,7 +160,7 @@ export function loadAllConfig(options = {}) {
           appsConfig[appName] = config;
         }
       }
-      
+
       if (Object.keys(appsConfig).length > 0) {
         layers.push({ name: 'apps', path: appsDir, keys: Object.keys(appsConfig).length });
       }
@@ -141,12 +170,12 @@ export function loadAllConfig(options = {}) {
   }
 
   // ============================================================
-  // Layer 4: Secrets
+  // Layer 4: Secrets (secrets.yml or legacy config.secrets.yml)
   // ============================================================
-  const secretsPath = path.join(configDir, 'config.secrets.yml');
-  const secretsConfig = safeLoadYaml(secretsPath);
+  const secretsResult = loadConfigWithFallback(configDir, 'secrets.yml', 'config.secrets.yml');
+  const secretsConfig = secretsResult.config;
   if (secretsConfig) {
-    layers.push({ name: 'secrets', path: secretsPath, keys: Object.keys(secretsConfig).length });
+    layers.push({ name: 'secrets', path: secretsResult.path, keys: Object.keys(secretsConfig).length });
   }
 
   // ============================================================
@@ -154,10 +183,10 @@ export function loadAllConfig(options = {}) {
   // ============================================================
   let localConfig = null;
   if (isDev && !isDocker) {
-    const localPath = path.join(configDir, 'config.app-local.yml');
-    localConfig = safeLoadYaml(localPath);
+    const localResult = loadConfigWithFallback(configDir, 'app-local.yml', 'config.app-local.yml');
+    localConfig = localResult.config;
     if (localConfig) {
-      layers.push({ name: 'local', path: localPath, keys: Object.keys(localConfig).length });
+      layers.push({ name: 'local', path: localResult.path, keys: Object.keys(localConfig).length });
     }
   }
 
