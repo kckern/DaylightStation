@@ -116,48 +116,87 @@ function computeNextRun(job, fromMoment) {
   return moment(rawNext).add(offsetMinutes, "minutes").tz(timeZone);
 }
 
-// Helper function to safely load cron config with backup fallback
-const loadCronConfig = () => {
-  let cronJobs = loadFile("state/cron");
-  
-  // If cron config is corrupt, empty, or not an array, try to load backup
-  if (!cronJobs || !Array.isArray(cronJobs) || cronJobs.length === 0) {
- //   console.warn("Main cron config is empty or corrupt, attempting to load backup...");
-    const cronBackup = loadFile("state/cron_bak");
-    
-    if (cronBackup && Array.isArray(cronBackup) && cronBackup.length > 0) {
-   //   console.log("Successfully loaded cron backup, restoring main config...");
-      cronJobs = cronBackup;
-      // Restore the main config file from backup
-      saveFile("state/cron", cronJobs);
-    } else {
-    //  console.error("Both main cron config and backup are unavailable or corrupt.");
-      return [];
-    }
+// Load job definitions (synced via Dropbox)
+const loadCronJobs = () => {
+  const jobs = loadFile("config/cron-jobs");
+  if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
+    cronLogger.warn('cron.jobs.empty', { message: 'No cron jobs defined in config/cron-jobs' });
+    return [];
   }
-  
-  return cronJobs;
+  return jobs;
 };
 
-// Helper function to create backup after successful execution
-const backupCronConfig = (cronJobs) => {
-  if (Array.isArray(cronJobs) && cronJobs.length > 0) {
-    try {
-      saveFile("state/cron_bak", cronJobs);
-    //  console.log(`Cron config backed up with ${cronJobs.length} jobs`);
-    } catch (error) {
-    //  console.error("Failed to backup cron config:", error);
+// Load runtime state (local only, not synced)
+const loadCronState = () => {
+  const state = loadFile("state/cron");
+  // State is an object keyed by job name, or null if not found
+  if (!state || typeof state !== 'object') {
+    // Try backup
+    const backup = loadFile("state/cron_bak");
+    if (backup && typeof backup === 'object') {
+      cronLogger.info('cron.state.restored_from_backup');
+      saveFile("state/cron", backup);
+      return backup;
     }
+    return {};
+  }
+  return state;
+};
+
+// Merge job definitions with runtime state
+const loadCronConfig = () => {
+  const jobs = loadCronJobs();
+  const state = loadCronState();
+
+  return jobs.map(job => ({
+    ...job,
+    last_run: state[job.name]?.last_run || null,
+    nextRun: state[job.name]?.nextRun || null,
+    secondsUntil: null,  // Always recalculated
+    needsToRun: false,   // Always recalculated
+  }));
+};
+
+// Save runtime state only (not job definitions)
+const saveCronState = (cronJobs) => {
+  const state = {};
+  for (const job of cronJobs) {
+    state[job.name] = {
+      last_run: job.last_run,
+      nextRun: job.nextRun,
+    };
+  }
+  saveFile("state/cron", state);
+};
+
+// Backup runtime state
+const backupCronState = (cronJobs) => {
+  const state = {};
+  for (const job of cronJobs) {
+    state[job.name] = {
+      last_run: job.last_run,
+      nextRun: job.nextRun,
+    };
+  }
+  try {
+    saveFile("state/cron_bak", state);
+  } catch (error) {
+    cronLogger.error('cron.backup.failed', { error: error?.message });
   }
 };
 
 export const cronContinuous = async () => {
   const now = moment().tz(timeZone);
   const cronJobs = loadCronConfig();
-  if (!Array.isArray(cronJobs)) {
+  if (!Array.isArray(cronJobs) || cronJobs.length === 0) {
     cronLogger.error('cron.config.invalid');
     return;
-  }for (const job of cronJobs) {
+  }
+
+  // Track if any job actually ran (to avoid unnecessary saves)
+  let jobsRan = false;
+
+  for (const job of cronJobs) {
     if (typeof job !== "object" || job === null) {
       cronLogger.warn('cron.job.invalid', { job });
       continue; // Skip invalid jobs
@@ -231,6 +270,7 @@ export const cronContinuous = async () => {
     }
     delete job.messageIds; // Remove messageIds after running
     job.last_run = now.format("YYYY-MM-DD HH:mm:ss");
+    jobsRan = true;  // Mark that we need to save state
     try {
       const newNextRunMoment = computeNextRun(job, now);
       job.nextRun = newNextRunMoment.format("YYYY-MM-DD HH:mm:ss");
@@ -242,10 +282,13 @@ export const cronContinuous = async () => {
       job.error = "Invalid cron_tab";
     }
   }
-  saveFile("state/cron", cronJobs);
-  
-  // Create backup after successful execution if there are jobs
-  backupCronConfig(cronJobs);
+
+  // Only save state when jobs actually ran (reduces writes from every 5s to only when needed)
+  if (jobsRan) {
+    saveCronState(cronJobs);
+    backupCronState(cronJobs);
+    cronLogger.debug('cron.state.saved', { jobsRan: runNow.map(j => j.name) });
+  }
 };
 
 setInterval(() => {

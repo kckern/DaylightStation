@@ -39,15 +39,14 @@ console.log(`[Config] Source: ${configPaths.source}, Config: ${configPaths.confi
 
 // Check for config files in resolved path
 const configFiles = getConfigFilePaths(configPaths.configDir);
-const configExists = configFiles && existsSync(configFiles.app);
+const configExists = configFiles && existsSync(configFiles.system);
 
 // Load configuration from YAML files into process.env (for logging config)
 hydrateProcessEnvFromConfigs(configPaths.configDir);
 
-// Initialize ConfigService so it can load config files for harvesters
-const baseDir = join(__dirname, '..');
-configService.init(baseDir);
-console.log('[Config] ConfigService initialized with baseDir:', baseDir);
+// Initialize ConfigService with data directory so it can load config files
+configService.init({ dataDir: configPaths.dataDir });
+console.log('[Config] ConfigService initialized with dataDir:', configPaths.dataDir);
 
 let loggingConfig = loadLoggingConfig();
 
