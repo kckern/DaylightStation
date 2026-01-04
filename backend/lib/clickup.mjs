@@ -1,6 +1,6 @@
 import axios from './http.mjs';
 import { buildCurl } from './httpUtils.mjs';
-import { saveFile, userSaveFile, userLoadFile, userSaveCurrent, householdLoadAuth, getCurrentHouseholdId } from './io.mjs';
+import { saveFile, userSaveFile, userLoadFile, userSaveCurrent, getCurrentHouseholdId } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 import moment from 'moment';
@@ -19,7 +19,7 @@ const clickupLogger = createLogger({
  */
 const getClickUpAuth = () => {
     const hid = getCurrentHouseholdId();
-    const auth = householdLoadAuth(hid, 'clickup') || {};
+    const auth = configService.getHouseholdAuth('clickup', hid) || {};
     return {
         apiKey: auth.api_key || process.env.CLICKUP_PK,
         workspaceId: auth.workspace_id || process.env.clickup?.team_id

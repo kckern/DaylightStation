@@ -12,7 +12,8 @@
 
 import axios from './http.mjs';
 import moment from 'moment-timezone';
-import { userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
+import { userSaveFile, getDefaultUsername } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
 const redditLogger = createLogger({ source: 'backend', app: 'reddit' });
@@ -26,7 +27,7 @@ const redditLogger = createLogger({ source: 'backend', app: 'reddit' });
 const getRedditActivity = async (guidId = null, req = null) => {
     const targetUsername = req?.targetUsername;
     const username = targetUsername || getDefaultUsername();
-    const auth = userLoadAuth(username, 'reddit') || {};
+    const auth = configService.getUserAuth('reddit', username) || {};
     
     const REDDIT_USERNAME = auth.username;
     

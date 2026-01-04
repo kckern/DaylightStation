@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import { saveFile, sanitize, userSaveFile, userLoadFile, userSaveCurrent, userLoadAuth, getDefaultUsername } from './io.mjs';
+import { saveFile, sanitize, userSaveFile, userLoadFile, userSaveCurrent, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import saveEvents from '../jobs/events.mjs';
 import { createLogger } from './logging/logger.js';
@@ -69,7 +69,7 @@ const listCalendarEvents = async (logger, job_id, targetUsername = null) => {
     
     // User-level auth (personal refresh token)
     const username = targetUsername || getDefaultUsername();
-    const auth = userLoadAuth(username, 'google') || {};
+    const auth = configService.getUserAuth('google', username) || {};
     const refreshToken = auth.refresh_token || process.env.GOOGLE_REFRESH_TOKEN;
 
     if(!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {

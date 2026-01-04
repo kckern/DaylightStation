@@ -19,7 +19,8 @@
 
 import axios from './http.mjs';
 import moment from 'moment-timezone';
-import { userSaveFile, userLoadFile, userLoadAuth, getDefaultUsername } from './io.mjs';
+import { userSaveFile, userLoadFile, getDefaultUsername } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 import ArchiveService from './ArchiveService.mjs';
 
@@ -71,7 +72,7 @@ const getScrobbles = async (guidId = null, req = null) => {
     // User-level auth (personal username)
     const targetUsername = req?.targetUsername;
     const username = targetUsername || getDefaultUsername();
-    const auth = userLoadAuth(username, 'lastfm') || {};
+    const auth = configService.getUserAuth('lastfm', username) || {};
     const LAST_FM_USER = auth.username || process.env.LAST_FM_USER;
     
     if (!LAST_FM_USER) {

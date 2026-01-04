@@ -1,6 +1,6 @@
 import moment from 'moment-timezone';
 import crypto from 'crypto';
-import { loadFile, saveFile, userLoadFile, userSaveFile, userLoadAuth, userSaveAuth } from './io.mjs';
+import { loadFile, saveFile, userLoadFile, userSaveFile, userSaveAuth } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import axios from './http.mjs';
 import { createLogger } from './logging/logger.js';
@@ -118,7 +118,7 @@ export const getAccessToken = async (logger, username = null) => {
     const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = process.env;
     const user = username || getDefaultUsername();
     // Load from user-namespaced auth
-    const authData = userLoadAuth(user, 'strava') || {};
+    const authData = configService.getUserAuth('strava', user) || {};
     const { refresh } = authData;
 
     try {

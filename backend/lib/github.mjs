@@ -11,7 +11,8 @@
 
 import axios from './http.mjs';
 import moment from 'moment-timezone';
-import { userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
+import { userSaveFile, getDefaultUsername } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
 const githubLogger = createLogger({ source: 'backend', app: 'github' });
@@ -25,7 +26,7 @@ const githubLogger = createLogger({ source: 'backend', app: 'github' });
 const getGitHubActivity = async (guidId = null, req = null) => {
     const targetUsername = req?.targetUsername;
     const username = targetUsername || getDefaultUsername();
-    const auth = userLoadAuth(username, 'github') || {};
+    const auth = configService.getUserAuth('github', username) || {};
     
     const GITHUB_USERNAME = auth.username;
     const GITHUB_TOKEN = auth.token; // Optional for public data

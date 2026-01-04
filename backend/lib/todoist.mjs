@@ -1,5 +1,5 @@
 import { TodoistApi } from '@doist/todoist-api-typescript';
-import { saveFile, userSaveFile, userLoadFile, userSaveCurrent, userLoadAuth, getDefaultUsername } from './io.mjs';
+import { saveFile, userSaveFile, userLoadFile, userSaveCurrent, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import saveEvents from '../jobs/events.mjs';
 import { createLogger } from './logging/logger.js';
@@ -41,7 +41,7 @@ const getTasks = async (logger, job_id, targetUsername = null) => {
         
         // User-level auth
         const username = targetUsername || getDefaultUsername();
-        const auth = userLoadAuth(username, 'todoist') || {};
+        const auth = configService.getUserAuth('todoist', username) || {};
         const apiKey = auth.api_key || process.env.TODOIST_KEY;
         
         if(!apiKey) throw new Error('Todoist API key not found');

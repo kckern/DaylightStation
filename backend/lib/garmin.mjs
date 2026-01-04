@@ -2,7 +2,7 @@ import garmin from 'garmin-connect';
 const { GarminConnect } = garmin;
 import moment from 'moment-timezone';
 import crypto from 'crypto';
-import { loadFile, saveFile, userLoadFile, userSaveFile, userLoadAuth, getDefaultUsername } from './io.mjs';
+import { loadFile, saveFile, userLoadFile, userSaveFile, getDefaultUsername } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
@@ -69,7 +69,7 @@ const getGarminClient = (targetUsername = null) => {
     }
     
     // Load credentials from user auth file (with env fallback)
-    const auth = userLoadAuth(username, 'garmin') || {};
+    const auth = configService.getUserAuth('garmin', username) || {};
     const garminUser = auth.username || configService.getSecret('GARMIN_USERNAME');
     const garminPass = auth.password || configService.getSecret('GARMIN_PASSWORD');
     

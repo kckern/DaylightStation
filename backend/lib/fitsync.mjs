@@ -1,6 +1,6 @@
 import moment from 'moment-timezone';
 import crypto from 'crypto';
-import { loadFile, saveFile, userLoadFile, userSaveFile, userLoadAuth, userSaveAuth } from './io.mjs';
+import { loadFile, saveFile, userLoadFile, userSaveFile, userSaveAuth } from './io.mjs';
 import { userDataService } from './config/UserDataService.mjs';
 import { configService } from './config/ConfigService.mjs';
 import axios from './http.mjs';
@@ -114,7 +114,7 @@ export const getAccessToken = async () => {
     if(process.env.FITSYNC_ACCESS_TOKEN) return process.env.FITSYNC_ACCESS_TOKEN;
 
     const username = getDefaultUsername();
-    const authData = userLoadAuth(username, 'fitnesssyncer') || {};
+    const authData = configService.getUserAuth('fitnesssyncer', username) || {};
     const { refresh, client_id, client_secret } = authData;
     
     // Get credentials from user auth file (personal OAuth app)

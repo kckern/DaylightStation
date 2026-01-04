@@ -19,7 +19,8 @@
 
 import axios from './http.mjs';
 import moment from 'moment-timezone';
-import { userSaveFile, userLoadFile, userLoadAuth, getDefaultUsername } from './io.mjs';
+import { userSaveFile, userLoadFile, getDefaultUsername } from './io.mjs';
+import { configService } from './config/ConfigService.mjs';
 import { createLogger } from './logging/logger.js';
 
 const foursquareLogger = createLogger({ source: 'backend', app: 'foursquare' });
@@ -113,7 +114,7 @@ const parseCheckin = (checkin) => {
 const getFoursquareCheckins = async (guidId = null, req = null) => {
     const targetUsername = req?.targetUsername;
     const username = targetUsername || getDefaultUsername();
-    const auth = userLoadAuth(username, 'foursquare') || {};
+    const auth = configService.getUserAuth('foursquare', username) || {};
     
     const FOURSQUARE_TOKEN = auth.token || process.env.FOURSQUARE_TOKEN;
     
