@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
 import { useMidiSubscription } from './useMidiSubscription';
@@ -6,6 +6,17 @@ import './PianoVisualizer.scss';
 
 const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
 const COUNTDOWN_MS = 30000;   // 30 seconds countdown
+
+// Note names for display
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const midiNoteToName = (note) => `${NOTE_NAMES[note % 12]}${Math.floor(note / 12) - 1}`;
+
+// Format duration as mm:ss
+const formatDuration = (seconds) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
 
 /**
  * Full-screen piano visualizer that shows real-time MIDI input
@@ -18,17 +29,45 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   const { activeNotes, sustainPedal, sessionInfo, noteHistory } = useMidiSubscription();
   const [inactivityState, setInactivityState] = useState('active'); // 'active' | 'grace' | 'countdown'
   const [countdownProgress, setCountdownProgress] = useState(100);
+  const [sessionDuration, setSessionDuration] = useState(0);
   const lastActivityRef = useRef(Date.now());
+  const sessionStartRef = useRef(null);
   const timerRef = useRef(null);
 
-  // Reset activity timer when notes are played
+  // Get current notes display string
+  const currentNotesDisplay = useMemo(() => {
+    if (activeNotes.size === 0) return '';
+    const notes = Array.from(activeNotes.keys())
+      .sort((a, b) => a - b)
+      .map(midiNoteToName);
+    return notes.join(' ');
+  }, [activeNotes]);
+
+  // Reset activity timer when any note event occurs
   useEffect(() => {
-    if (activeNotes.size > 0) {
+    if (noteHistory.length > 0) {
       lastActivityRef.current = Date.now();
       setInactivityState('active');
       setCountdownProgress(100);
     }
-  }, [activeNotes]);
+  }, [noteHistory.length]);
+
+  // Track session start and update duration
+  useEffect(() => {
+    if (noteHistory.length > 0 && !sessionStartRef.current) {
+      sessionStartRef.current = Date.now();
+    }
+  }, [noteHistory.length]);
+
+  // Update session duration every second
+  useEffect(() => {
+    const durationTimer = setInterval(() => {
+      if (sessionStartRef.current) {
+        setSessionDuration((Date.now() - sessionStartRef.current) / 1000);
+      }
+    }, 1000);
+    return () => clearInterval(durationTimer);
+  }, []);
 
   // Inactivity detection
   useEffect(() => {
@@ -67,12 +106,21 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   return (
     <div className="piano-visualizer">
       <div className="piano-header">
-        <div className="session-info">
-          {sessionInfo?.device && (
-            <span className="device-name">{sessionInfo.device}</span>
-          )}
+        <div className="header-left">
+          <h1 className="title">Piano</h1>
+          <div className="session-timer">
+            <span className="timer-value">{formatDuration(sessionDuration)}</span>
+            <span className="note-count">{noteHistory.length} notes</span>
+          </div>
         </div>
-        <div className="status-indicators">
+
+        <div className="header-center">
+          <div className="current-notes">
+            {currentNotesDisplay || <span className="placeholder">Play something...</span>}
+          </div>
+        </div>
+
+        <div className="header-right">
           {sustainPedal && <span className="pedal-indicator">Sustain</span>}
           {inactivityState === 'countdown' && (
             <div className="inactivity-timer">
@@ -86,7 +134,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
       </div>
 
       <div className="waterfall-container">
-        <NoteWaterfall noteHistory={noteHistory} />
+        <NoteWaterfall noteHistory={noteHistory} activeNotes={activeNotes} />
       </div>
 
       <div className="keyboard-container">

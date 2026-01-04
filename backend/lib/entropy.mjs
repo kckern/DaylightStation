@@ -158,9 +158,11 @@ export const getEntropyReport = async () => {
 
                 if (lastDate) {
                     lastUpdate = lastDate;
-                    
+
                     // Use date-only comparison to avoid timestamp precision issues
-                    const lastDateOnly = moment(lastDate).format('YYYY-MM-DD');
+                    // Support multiple date formats (ISO, human-readable)
+                    const dateFormats = ['YYYY-MM-DD', 'DD MMM YYYY, HH:mm', moment.ISO_8601];
+                    const lastDateOnly = moment(lastDate, dateFormats).format('YYYY-MM-DD');
                     const todayOnly = moment().format('YYYY-MM-DD');
                     const daysDiff = moment(todayOnly).diff(moment(lastDateOnly), 'days');
                     

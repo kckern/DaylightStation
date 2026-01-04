@@ -35,10 +35,12 @@ export function useMidiSubscription() {
       logger.info('piano.visualizer.note', { event, note, velocity });
 
       if (event === 'note_on' && velocity > 0) {
-        // Note on
+        // Note on - use single timestamp for consistency
+        const startTime = Date.now();
+
         setActiveNotes(prev => {
           const next = new Map(prev);
-          next.set(note, { velocity, timestamp: Date.now() });
+          next.set(note, { velocity, timestamp: startTime });
           return next;
         });
 
@@ -47,7 +49,7 @@ export function useMidiSubscription() {
           const newNote = {
             note,
             velocity,
-            startTime: Date.now(),
+            startTime,
             endTime: null
           };
           const newHistory = [...prev, newNote];
@@ -59,7 +61,7 @@ export function useMidiSubscription() {
         });
 
         // Track which history entry this note corresponds to
-        activeNoteIds.current.set(note, Date.now());
+        activeNoteIds.current.set(note, startTime);
       } else {
         // Note off
         setActiveNotes(prev => {

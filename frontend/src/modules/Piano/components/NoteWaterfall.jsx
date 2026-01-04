@@ -51,8 +51,14 @@ const TICK_INTERVAL = 16; // ~60fps
 /**
  * Waterfall display showing notes rising up from the keyboard
  * with Star Wars crawl perspective effect
+ *
+ * @param {Object} props
+ * @param {Array} props.noteHistory - Array of note events with startTime/endTime
+ * @param {Map} props.activeNotes - Map of currently pressed notes (note number -> {velocity, timestamp})
+ * @param {number} props.startNote - Lowest note on keyboard
+ * @param {number} props.endNote - Highest note on keyboard
  */
-export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108 }) {
+export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108 }) {
   const [tick, setTick] = useState(0);
 
   // Continuous animation tick
@@ -73,9 +79,17 @@ export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108 
       })
       .map(note => {
         const age = now - note.startTime;
-        const duration = note.endTime
-          ? note.endTime - note.startTime
-          : now - note.startTime;
+
+        // Check if this specific note instance is still active by matching both
+        // the note number AND the startTime with the activeNotes map
+        const activeNote = activeNotes.get(note.note);
+        const isStillActive = activeNote && activeNote.timestamp === note.startTime;
+
+        const duration = isStillActive
+          ? now - note.startTime
+          : note.endTime
+            ? note.endTime - note.startTime
+            : now - note.startTime;
 
         return {
           ...note,
@@ -84,10 +98,10 @@ export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108 
           hue: getNoteHue(note.note, startNote, endNote),
           age,
           duration,
-          isActive: !note.endTime
+          isActive: isStillActive
         };
       });
-  }, [noteHistory, startNote, endNote, tick]);
+  }, [noteHistory, activeNotes, startNote, endNote, tick]);
 
   return (
     <div className="note-waterfall">
