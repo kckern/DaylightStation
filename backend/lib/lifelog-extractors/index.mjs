@@ -46,10 +46,14 @@ export {
 
 /**
  * All extractors in priority order
+ * Tier 0: HIGHEST PRIORITY - User's own words
  * Tier 1: High value, primary data sources
  * Tier 2: Medium value, supplementary data
  */
 export const extractors = [
+  // Tier 0: User's own words - MOST VALUABLE, never truncate
+  journalistExtractor, // User's own journal entries and voice notes - TOP PRIORITY
+  
   // Tier 1: Primary sources
   garminExtractor,    // Best aggregated health data
   stravaExtractor,    // Detailed workouts
@@ -59,7 +63,6 @@ export const extractors = [
   githubExtractor,    // Code activity
   nutritionExtractor, // Nutrition tracking from NutriBot
   shoppingExtractor,  // Shopping receipts and spending
-  journalistExtractor, // User's own journal entries and voice notes
   
   // Tier 2: Productivity & Communication
   todoistExtractor,   // Completed tasks

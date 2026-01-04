@@ -8,6 +8,9 @@
 
 import { join } from 'path';
 import { readdirSync } from 'fs';
+import createLogger from '../../../../../lib/logging/logger.js';
+
+const logger = createLogger({ app: 'nutribot' });
 
 // Path to icons/food directory - resolved at runtime
 const getIconsDir = () => {

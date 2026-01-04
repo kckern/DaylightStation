@@ -199,9 +199,12 @@ ${debrief.summary}`;
   static buildSourcePickerKeyboard(sources) {
     const keyboard = [];
     
+    // Normalize sources - handle both string array and object array formats
+    const sourceNames = sources.map(s => typeof s === 'string' ? s : s?.source).filter(Boolean);
+    
     // Build rows of 3 buttons each with callback data
-    for (let i = 0; i < sources.length; i += 3) {
-      const row = sources.slice(i, i + 3).map(source => ({
+    for (let i = 0; i < sourceNames.length; i += 3) {
+      const row = sourceNames.slice(i, i + 3).map(source => ({
         text: `${SOURCE_ICONS[source] || '📄'} ${source}`,
         callback_data: `debrief:source:${source}`
       }));

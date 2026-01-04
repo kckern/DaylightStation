@@ -134,6 +134,12 @@ export class GenerateMorningDebrief {
   async #generateSummary(lifelog, username) {
     const systemPrompt = `You are a personal life recorder reconstructing a day from data. Write a detailed, narrative account of the day's activities.
 
+PRIORITY DATA:
+- JOURNAL ENTRIES are the MOST IMPORTANT source - these are the user's own words about their day
+- Weave journal content prominently into the narrative - quote or paraphrase specific details they mentioned
+- If journal entries mention people, conversations, feelings, or events - these take precedence over inferred activities
+- Use journal entries to add context and meaning to other data points
+
 Style guidelines:
 - Write like a detailed journal entry with natural flow between activities
 - Use specific time references and create a chronological narrative

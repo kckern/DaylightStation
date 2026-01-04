@@ -1,12 +1,12 @@
 /**
  * ConfigService - Unified Configuration Management
  *
- * Config now lives in data/system/config/ directory.
+ * Config now lives in data/system/ directory (flattened).
  * Supports both new file names (app.yml) and legacy names (config.app.yml).
  *
  * Directory structure:
- * - data/system/config/ - System-wide config (app.yml, secrets.yml, etc.)
- * - data/system/state/  - System-wide state (cron.yml defaults)
+ * - data/system/        - System-wide config & state (system.yml, secrets.yml, cron.yml)
+ *   - apps/             - App-specific system configs
  * - data/apps/          - App default configs (inherited by households)
  * - data/households/{hid}/ - Household-specific data
  *   - state/            - Household state (overrides system)
@@ -15,7 +15,7 @@
  * - data/content/       - Shared content
  *
  * Initialization:
- * - init({ dataDir }) - Config at dataDir/system/config/
+ * - init({ dataDir }) - Config at dataDir/system/
  * - init(baseDir) - Legacy: config at baseDir root (deprecated)
  */
 
@@ -131,14 +131,14 @@ class ConfigService {
 
     // Determine config and data directories
     if (dataDir) {
-      // New approach: config at dataDir/system/config/
+      // New approach: config at dataDir/system/
       this.#dataDir = dataDir;
-      // Check for new structure (system/config/) first, fall back to legacy (config/)
-      const newConfigDir = path.join(dataDir, 'system', 'config');
+      // Check for new structure (system/) first, fall back to legacy (config/)
+      const newConfigDir = path.join(dataDir, 'system');
       const legacyConfigDir = path.join(dataDir, 'config');
       if (configDir) {
         this.#configDir = configDir;
-      } else if (fs.existsSync(newConfigDir)) {
+      } else if (fs.existsSync(path.join(newConfigDir, 'system.yml')) || fs.existsSync(path.join(newConfigDir, 'app.yml'))) {
         this.#configDir = newConfigDir;
       } else if (fs.existsSync(legacyConfigDir)) {
         this.#configDir = legacyConfigDir;
@@ -150,10 +150,10 @@ class ConfigService {
     } else if (baseDir) {
       // Legacy approach: config at codebase root
       this.#baseDir = baseDir;
-      // Check locations in priority order: system/config, config, root
-      const newConfigDir = path.join(baseDir, 'data', 'system', 'config');
+      // Check locations in priority order: system, config, root
+      const newConfigDir = path.join(baseDir, 'data', 'system');
       const legacyDataConfigDir = path.join(baseDir, 'data', 'config');
-      if (fs.existsSync(newConfigDir)) {
+      if (fs.existsSync(path.join(newConfigDir, 'system.yml')) || fs.existsSync(path.join(newConfigDir, 'app.yml'))) {
         this.#configDir = newConfigDir;
         this.#dataDir = path.join(baseDir, 'data');
       } else if (fs.existsSync(legacyDataConfigDir)) {
@@ -196,12 +196,12 @@ class ConfigService {
   }
 
   /**
-   * Load main config files (app.yml, secrets.yml, app-local.yml)
+   * Load main config files (system.yml, secrets.yml, system-local.yml)
    */
   #loadConfigs() {
-    const appConfig = this.#loadConfigFile('app.yml', 'config.app.yml') || {};
+    const appConfig = this.#loadConfigFile('system.yml', 'app.yml') || {};
     const secretsConfig = this.#loadConfigFile('secrets.yml', 'config.secrets.yml') || {};
-    const localConfig = this.#loadConfigFile('app-local.yml', 'config.app-local.yml') || {};
+    const localConfig = this.#loadConfigFile('system-local.yml', 'app-local.yml') || {};
 
     this.#legacyConfig = { ...appConfig, ...secretsConfig, ...localConfig };
   }
@@ -215,23 +215,34 @@ class ConfigService {
 
   /**
    * Load all app configs from apps/*.yml
+   * Checks both data/system/apps/ and data/apps/ for backwards compatibility
    */
   #loadAppConfigs() {
-    const appsDir = path.join(this.#configDir, 'apps');
-    if (!fs.existsSync(appsDir)) return;
+    // Check both locations: system/apps/ (new) and apps/ at data root (legacy)
+    const appsDirs = [
+      path.join(this.#configDir, 'apps'),  // data/system/apps/
+      path.join(this.#dataDir, 'apps')      // data/apps/
+    ];
 
-    const files = fs.readdirSync(appsDir).filter(f =>
-      (f.endsWith('.yml') || f.endsWith('.yaml')) &&
-      !f.startsWith('.') &&
-      !f.startsWith('_') &&
-      !f.includes('.example.')
-    );
+    for (const appsDir of appsDirs) {
+      if (!fs.existsSync(appsDir)) continue;
 
-    for (const file of files) {
-      const appName = file.replace(/\.(yml|yaml)$/, '');
-      const config = safeReadYaml(path.join(appsDir, file));
-      if (config) {
-        this.#appConfigs.set(appName, config);
+      const files = fs.readdirSync(appsDir).filter(f =>
+        (f.endsWith('.yml') || f.endsWith('.yaml')) &&
+        !f.startsWith('.') &&
+        !f.startsWith('_') &&
+        !f.includes('.example.')
+      );
+
+      for (const file of files) {
+        const appName = file.replace(/\.(yml|yaml)$/, '');
+        // Only load if not already loaded (first location takes priority)
+        if (!this.#appConfigs.has(appName)) {
+          const config = safeReadYaml(path.join(appsDir, file));
+          if (config) {
+            this.#appConfigs.set(appName, config);
+          }
+        }
       }
     }
   }
@@ -267,12 +278,10 @@ class ConfigService {
   }
 
   /**
-   * Get the system state directory (data/system/state/)
+   * Get the system state directory (data/system/ - same as config, flattened)
    */
   getSystemStateDir() {
-    this.#ensureInitialized();
-    if (!this.#dataDir) return null;
-    return path.join(this.#dataDir, 'system', 'state');
+    return this.#configDir;
   }
 
   /**

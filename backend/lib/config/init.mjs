@@ -5,8 +5,7 @@
  * Supports both server context and standalone CLI/test context.
  *
  * Directory structure:
- * - data/system/config/ - System configuration
- * - data/system/state/  - System state (cron defaults)
+ * - data/system/        - System configuration and state (flattened)
  * - data/apps/          - App default configs
  * - data/households/    - Household-specific data
  * - data/users/         - User profiles
