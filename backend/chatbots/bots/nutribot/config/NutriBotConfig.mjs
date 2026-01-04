@@ -16,8 +16,12 @@ import { configService } from '../../../../lib/config/ConfigService.mjs';
 import { defaultLogger as logger } from '../../../_lib/logging/Logger.mjs';
 
 // Single source of truth for default nutrition goals
+// calories_min/calories_max define the acceptable calorie range
+// For backwards compatibility, 'calories' is treated as the max if min/max not specified
 export const DEFAULT_NUTRITION_GOALS = {
-  calories: 2000,
+  calories: 2000,       // Legacy single value (treated as max if min/max not set)
+  calories_min: 1600,   // Minimum calorie target
+  calories_max: 2000,   // Maximum calorie target
   protein: 150,
   carbs: 200,
   fat: 65,
@@ -298,13 +302,15 @@ export class NutriBotConfig {
   getUserGoals(userId) {
     const username = this.#resolveUsername(userId);
 
+    let rawGoals = null;
+
     // Prefer goals from user profile if available
     try {
       if (configService?.isReady?.()) {
         const profile = configService.getUserProfile(username);
         const profileGoals = profile?.apps?.nutribot?.goals;
         if (profileGoals) {
-          return {
+          rawGoals = {
             ...NutriBotConfig.#DEFAULT_GOALS,
             ...profileGoals,
           };
@@ -314,32 +320,67 @@ export class NutriBotConfig {
       // Ignore and fall back to config mappings
     }
 
-    const conversations = this.#userToConversations.get(username);
-    if (!conversations || conversations.length === 0) {
-      logger.warn('nutribot.goals.fallback.default', { userId: username });
-      return this.getDefaultGoals();
+    if (!rawGoals) {
+      const conversations = this.#userToConversations.get(username);
+      if (!conversations || conversations.length === 0) {
+        logger.warn('nutribot.goals.fallback.default', { userId: username });
+        rawGoals = this.getDefaultGoals();
+      } else {
+        // Get from first conversation mapping
+        const goals = conversations[0].goals;
+        if (!goals) {
+          logger.warn('nutribot.goals.fallback.mapping', { userId: username });
+          rawGoals = this.getDefaultGoals();
+        } else {
+          // Merge with defaults to ensure all fields exist
+          rawGoals = {
+            ...NutriBotConfig.#DEFAULT_GOALS,
+            ...goals,
+          };
+        }
+      }
+    }
+
+    // Normalize calorie goals to support min/max range
+    return NutriBotConfig.normalizeCalorieGoals(rawGoals);
+  }
+
+  /**
+   * Normalize calorie goals to ensure both min/max values exist
+   * Handles backwards compatibility with single 'calories' value
+   * @param {Object} goals - Raw goals object
+   * @returns {Object} - Goals with normalized calories_min/calories_max
+   */
+  static normalizeCalorieGoals(goals) {
+    const normalized = { ...goals };
+    
+    // If calories_min and calories_max are both specified, use them
+    if (normalized.calories_min !== undefined && normalized.calories_max !== undefined) {
+      // Both specified - ensure calories is set to max for backwards compat
+      normalized.calories = normalized.calories_max;
+    } else if (normalized.calories_min !== undefined && normalized.calories_max === undefined) {
+      // Only min specified - set max to same as legacy calories or min + 400
+      normalized.calories_max = normalized.calories || (normalized.calories_min + 400);
+      normalized.calories = normalized.calories_max;
+    } else if (normalized.calories_max !== undefined && normalized.calories_min === undefined) {
+      // Only max specified - set min to 80% of max
+      normalized.calories_min = Math.round(normalized.calories_max * 0.8);
+      normalized.calories = normalized.calories_max;
+    } else if (normalized.calories !== undefined) {
+      // Legacy single value - treat as max, set min to 80% of it
+      normalized.calories_max = normalized.calories;
+      normalized.calories_min = Math.round(normalized.calories * 0.8);
     }
     
-    // Get from first conversation mapping
-    const goals = conversations[0].goals;
-    if (!goals) {
-      logger.warn('nutribot.goals.fallback.mapping', { userId: username });
-      return this.getDefaultGoals();
-    }
-    
-    // Merge with defaults to ensure all fields exist
-    return {
-      ...NutriBotConfig.#DEFAULT_GOALS,
-      ...goals,
-    };
+    return normalized;
   }
 
   /**
    * Get default nutrition goals
-   * @returns {Object} - { calories, protein, carbs, fat, fiber, sodium }
+   * @returns {Object} - { calories, calories_min, calories_max, protein, carbs, fat, fiber, sodium }
    */
   getDefaultGoals() {
-    return { ...NutriBotConfig.#DEFAULT_GOALS };
+    return NutriBotConfig.normalizeCalorieGoals({ ...NutriBotConfig.#DEFAULT_GOALS });
   }
 
   // ==================== Storage Paths ====================

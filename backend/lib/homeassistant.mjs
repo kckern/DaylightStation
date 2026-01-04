@@ -91,19 +91,18 @@ export const activateScene = async (sceneName) => {
  * @returns {Promise<{state: string, last_changed: string, attributes: object} | null>}
  */
 export const getEntityState = async (entityId) => {
-    const { HOME_ASSISTANT_TOKEN, home_assistant } = process.env;
-    if (!home_assistant || !HOME_ASSISTANT_TOKEN) {
+    const { token, baseUrl } = getHomeAssistantAuth();
+    if (!baseUrl || !token) {
         haLogger.warn('homeassistant.getEntityState.not_configured');
         return null;
     }
-    
-    const { host, port } = home_assistant;
-    const url = `${host}:${port}/api/states/${entityId}`;
-    
+
+    const url = `${baseUrl}/api/states/${entityId}`;
+
     try {
         const response = await axios.get(url, {
             headers: {
-                'Authorization': `Bearer ${HOME_ASSISTANT_TOKEN}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             }
         });

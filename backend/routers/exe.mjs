@@ -4,7 +4,7 @@ import path from 'path';
 import express from 'express';
 import { exec } from 'child_process';
 import axios from '../lib/http.mjs';
-import { loadFile, saveFile } from '../lib/io.mjs';
+import { loadFile, saveFile, householdLoadAuth, getCurrentHouseholdId } from '../lib/io.mjs';
 import { broadcastToWebsockets, restartWebsocketServer } from './websocket.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 import { serializeError } from '../lib/logging/utils.js';
@@ -264,18 +264,41 @@ async function executeCommand(sshCommand) {
     }
 }
 
-// Initialize helpers
+// Get Home Assistant auth from household config with env fallback
+const getHomeAssistantAuth = () => {
+    const hid = getCurrentHouseholdId();
+    const auth = householdLoadAuth(hid, 'homeassistant') || {};
+    return {
+        host: auth.host || process.env.home_assistant?.host,
+        port: auth.port || process.env.home_assistant?.port,
+        token: auth.token || process.env.HOME_ASSISTANT_TOKEN
+    };
+};
+
+// Get Fully Kiosk auth from household config with env fallback
+const getFullyKioskAuth = () => {
+    const hid = getCurrentHouseholdId();
+    const auth = householdLoadAuth(hid, 'fullykiosk') || {};
+    return {
+        password: auth.password || process.env.FULLY_KIOSK_PASSWORD
+    };
+};
+
+// Initialize helpers with lazy auth loading
+const haAuth = getHomeAssistantAuth();
+const kioskAuth = getFullyKioskAuth();
+
 const homeAssistant = new HomeAssistant(
-    process.env.home_assistant.host,
-    process.env.home_assistant.port,
-    process.env.HOME_ASSISTANT_TOKEN
+    haAuth.host,
+    haAuth.port,
+    haAuth.token
 );
 
 const kiosk = new Kiosk(
-    process.env.tv.host,
-    process.env.tv.port_kiosk,
-    process.env.FULLY_KIOSK_PASSWORD,
-    process.env.tv.daylight_host
+    process.env.tv?.host,
+    process.env.tv?.port_kiosk,
+    kioskAuth.password,
+    process.env.tv?.daylight_host
 );
 
 const tasker = new Tasker(

@@ -26,9 +26,10 @@ import { createLogger } from '../../../../_lib/logging/index.mjs';
 
 // Fallback messages for when AI fails
 const FALLBACK_MESSAGES = {
-  underGoal: '📊 Nice logging! You\'re at {calories}/{goal} calories. Keep it up!',
+  underMin: '📊 You\'re at {calories} calories - a bit below your {min} minimum. Consider a healthy snack!',
+  inRange: '🎯 Great job! You\'re at {calories} calories, right in your {min}-{max} target range.',
   atGoal: '🎯 You\'ve hit your calorie target for today! Great job staying on track.',
-  overGoal: '📊 You\'re at {calories} calories today ({over} over goal). Tomorrow\'s a new day!',
+  overGoal: '📊 You\'re at {calories} calories today ({over} over your {max} max). Tomorrow\'s a new day!',
   noData: '✅ Report accepted! Keep tracking to stay on top of your goals.',
 };
 
@@ -174,9 +175,16 @@ export class GenerateReportCoaching {
       summary.colorCounts[color] = (summary.colorCounts[color] || 0) + 1;
     }
 
-    // Add goal comparisons
-    summary.calorieGoal = goals.calories;
-    summary.caloriesRemaining = goals.calories - summary.calories;
+    // Add goal comparisons (supports min/max calorie range)
+    const calorieMin = goals.calories_min || Math.round(goals.calories * 0.8);
+    const calorieMax = goals.calories_max || goals.calories;
+    
+    summary.calorieGoal = calorieMax;  // Legacy field for backwards compat
+    summary.calorieMin = calorieMin;
+    summary.calorieMax = calorieMax;
+    summary.caloriesRemaining = calorieMax - summary.calories;
+    summary.inCalorieRange = summary.calories >= calorieMin && summary.calories <= calorieMax;
+    summary.belowMinimum = summary.calories < calorieMin;
     summary.proteinGoal = goals.protein;
     summary.proteinRemaining = goals.protein - summary.protein;
 
@@ -217,6 +225,9 @@ export class GenerateReportCoaching {
    * @private
    */
   #buildFirstOfDayPrompt(todaySummary, history, previousCoaching, goals) {
+    const calorieMin = goals.calories_min || Math.round(goals.calories * 0.8);
+    const calorieMax = goals.calories_max || goals.calories;
+    
     const systemPrompt = `You are a stoic nutrition coach providing a morning briefing. 
 Analyze the user's recent nutrition patterns and provide thoughtful feedback (3-4 sentences).
 
@@ -224,7 +235,10 @@ Focus on:
 1. Yesterday's performance vs goals
 2. Patterns from the past 2 weeks
 3. One specific goal or focus for today
-4. Be encouraging when under goal, didactic when approaching goal, and stern when over goal.
+4. The user has a calorie RANGE goal (${calorieMin}-${calorieMax} cal). Being within this range is SUCCESS.
+   - Below ${calorieMin}: encourage them to eat more
+   - Within ${calorieMin}-${calorieMax}: celebrate success!
+   - Above ${calorieMax}: gentle reminder to be mindful
 
 Guidelines:
 - Be honest about areas to improve
@@ -237,12 +251,12 @@ Guidelines:
     let historySummary = '';
     if (history.length > 0) {
       const avgCalories = Math.round(history.reduce((sum, d) => sum + d.calories, 0) / history.length);
-      const daysUnderGoal = history.filter(d => d.calories <= goals.calories).length;
+      const daysInRange = history.filter(d => d.calories >= calorieMin && d.calories <= calorieMax).length;
       const avgProtein = Math.round(history.reduce((sum, d) => sum + d.protein, 0) / history.length);
       
       historySummary = `\n\nLast ${history.length} days:
-- Average calories: ${avgCalories} (goal: ${goals.calories})
-- Days under goal: ${daysUnderGoal}/${history.length}
+- Average calories: ${avgCalories} (goal range: ${calorieMin}-${calorieMax})
+- Days in range: ${daysInRange}/${history.length}
 - Average protein: ${avgProtein}g (goal: ${goals.protein}g)`;
 
       if (history[0]) {
@@ -257,8 +271,18 @@ Guidelines:
       coachingHistory = `\n\nRecent coaching (avoid repeating):\n${recentAdvice}`;
     }
 
+    // Build calorie status description
+    let calorieStatus;
+    if (todaySummary.calories < calorieMin) {
+      calorieStatus = `${calorieMin - todaySummary.calories} below minimum`;
+    } else if (todaySummary.calories > calorieMax) {
+      calorieStatus = `${todaySummary.calories - calorieMax} over max`;
+    } else {
+      calorieStatus = `in range ✓`;
+    }
+
     const userPrompt = `Today's progress (${todaySummary.itemCount} items logged):
-- Calories: ${todaySummary.calories}/${goals.calories} (${todaySummary.caloriesRemaining > 0 ? todaySummary.caloriesRemaining + ' remaining' : Math.abs(todaySummary.caloriesRemaining) + ' over'})
+- Calories: ${todaySummary.calories} (goal range: ${calorieMin}-${calorieMax}, ${calorieStatus})
 - Protein: ${todaySummary.protein}g/${goals.protein}g
 - Carbs: ${todaySummary.carbs}g/${goals.carbs}g
 - Fat: ${todaySummary.fat}g/${goals.fat}g
@@ -307,7 +331,7 @@ Guidelines:
 
     const userPrompt = `Just logged: ${recentItemsList}
 
-Today's totals now: ${todaySummary.calories}/${goals.calories} cal, ${todaySummary.protein}g protein${avoidRepeat}
+Today's totals now: ${todaySummary.calories} cal (goal range: ${goals.calories_min || Math.round(goals.calories * 0.8)}-${goals.calories_max || goals.calories}), ${todaySummary.protein}g protein${avoidRepeat}
 
 Give brief, encouraging feedback on this update.`;
 
@@ -326,18 +350,24 @@ Give brief, encouraging feedback on this update.`;
       return FALLBACK_MESSAGES.noData;
     }
 
-    const diff = summary.calories - goals.calories;
+    const calorieMin = goals.calories_min || Math.round(goals.calories * 0.8);
+    const calorieMax = goals.calories_max || goals.calories;
     
-    if (Math.abs(diff) < 100) {
-      return FALLBACK_MESSAGES.atGoal;
-    } else if (diff < 0) {
-      return FALLBACK_MESSAGES.underGoal
+    // Check if in range, under min, or over max
+    if (summary.calories < calorieMin) {
+      return FALLBACK_MESSAGES.underMin
         .replace('{calories}', summary.calories)
-        .replace('{goal}', goals.calories);
-    } else {
+        .replace('{min}', calorieMin);
+    } else if (summary.calories > calorieMax) {
       return FALLBACK_MESSAGES.overGoal
         .replace('{calories}', summary.calories)
-        .replace('{over}', diff);
+        .replace('{over}', summary.calories - calorieMax)
+        .replace('{max}', calorieMax);
+    } else {
+      return FALLBACK_MESSAGES.inRange
+        .replace('{calories}', summary.calories)
+        .replace('{min}', calorieMin)
+        .replace('{max}', calorieMax);
     }
   }
 

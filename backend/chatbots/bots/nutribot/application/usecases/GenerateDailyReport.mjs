@@ -318,13 +318,25 @@ export class GenerateDailyReport {
         // Ignore delete errors
       }
 
-      // 10. Build caption - calorie budget summary
-      const remaining = goals.calories - totals.calories;
-      const budgetStatus = remaining >= 0 
-        ? `${remaining} cal remaining`
-        : `${Math.abs(remaining)} cal over budget`;
-      const caloriePercent = Math.round((totals.calories / goals.calories) * 100);
-      const caption = `🔥 ${totals.calories} / ${goals.calories} cal (${caloriePercent}%) • ${budgetStatus}`;
+      // 10. Build caption - calorie budget summary (supports min/max range)
+      const calorieMin = goals.calories_min || Math.round(goals.calories * 0.8);
+      const calorieMax = goals.calories_max || goals.calories;
+      
+      let budgetStatus;
+      if (totals.calories < calorieMin) {
+        budgetStatus = `${calorieMin - totals.calories} cal below minimum`;
+      } else if (totals.calories > calorieMax) {
+        budgetStatus = `${totals.calories - calorieMax} cal over budget`;
+      } else {
+        const remaining = calorieMax - totals.calories;
+        budgetStatus = remaining > 0 ? `${remaining} cal remaining` : 'at goal ✓';
+      }
+      
+      const caloriePercent = Math.round((totals.calories / calorieMax) * 100);
+      const goalDisplay = calorieMin !== calorieMax 
+        ? `${calorieMin}-${calorieMax}`
+        : `${calorieMax}`;
+      const caption = `🔥 ${totals.calories} / ${goalDisplay} cal (${caloriePercent}%) • ${budgetStatus}`;
 
       // 11. Build action buttons
       const buttons = [

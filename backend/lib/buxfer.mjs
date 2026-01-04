@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import isJSON from 'is-json';
 import { askGPT } from './gpt.mjs';
 import moment from 'moment';
-import { householdLoadAuth, getCurrentHouseholdId } from './io.mjs';
+import { userLoadAuth, getDefaultUsername } from './io.mjs';
 import { createLogger } from './logging/logger.js';
 
 const logger = createLogger({ app: 'buxfer' });
@@ -16,11 +16,11 @@ const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(
 
 const getDataPath = () => process.env.path?.data || `${__appDirectory}/data`;
 
-// Lazy-load credentials from household auth, then env, then local file
+// Lazy-load credentials from user auth, then env, then local file
 const getCredentials = () => {
-  // Try household auth first (three-tier architecture)
-  const hid = getCurrentHouseholdId();
-  const auth = householdLoadAuth(hid, 'buxfer');
+  // Try user auth first (three-tier architecture - buxfer is user-specific)
+  const username = getDefaultUsername();
+  const auth = userLoadAuth(username, 'buxfer');
   if (auth?.email && auth?.password) {
     return {
       BUXFER_EMAIL: auth.email,

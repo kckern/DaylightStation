@@ -83,17 +83,17 @@ export class Plex {
       startOffset = 0
     } = opts;
 
-    const { plex: { protocol, platform, session: defaultSession }, PLEX_TOKEN: token } = process.env;
+    const { plex: { protocol, platform, session: defaultSession } } = process.env;
 
     // Generate a unique UUID for this request (always needed for sessionIdentifier)
     const sessionUUID = Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
-    
+
     // clientIdentifier: Use frontend-provided session for multi-player isolation.
     // If no session provided, generate unique ID per request to prevent collisions
     // from concurrent direct API calls (don't share a single defaultSession across requests).
     const clientIdentifier = session || `api-${sessionUUID}`;
-    
+
     // sessionIdentifier: Always unique per request. If we have a stable client session,
     // append the UUID so Plex can track it's from the same client but a new segment request.
     const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
@@ -114,7 +114,7 @@ export class Plex {
     if (startOffset > 0) {
       params.append('offset', String(Math.floor(startOffset)));
     }
-    params.append('X-Plex-Token', token);
+    params.append('X-Plex-Token', this.token);
 
     if (maxVideoBitrate != null) {
       params.append('maxVideoBitrate', String(maxVideoBitrate));
@@ -215,7 +215,7 @@ export class Plex {
       itemData = meta[0];
     }
     if (!itemData) return null;
-    const {host, plex: { host:plexHost,  session: defaultSession, protocol, platform },PLEX_TOKEN:token } = process.env;
+    const {host, plex: { host:plexHost,  session: defaultSession, protocol, platform } } = process.env;
     const plexProxyHost = `${host || ""}/plex_proxy`;
     const { ratingKey:key, type } = itemData;
     if(!["episode", "movie", "track"].includes(type)) {
