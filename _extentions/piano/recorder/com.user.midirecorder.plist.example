@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.midirecorder</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Update this path to your installation directory -->
+        <string>/path/to/recorder/.venv/bin/python3</string>
+        <string>/path/to/recorder/auto_midi_recorder.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <!-- Update this path to your installation directory -->
+    <string>/path/to/recorder</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/path/to/recorder/midi_recorder_stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/path/to/recorder/midi_recorder_stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

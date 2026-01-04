@@ -54,6 +54,24 @@ export function createWebsocketServer(server) {
               ...data
             });
             logger.info('Broadcasted fitness payload', { topic: 'fitness', source: data.source });
+          } else if (data.source === 'piano' && data.topic === 'midi') {
+            // Handle MIDI events from piano recorder
+            if (!data.type || !data.timestamp) {
+              logger.warn('Invalid MIDI message: missing fields', { data });
+              return;
+            }
+            broadcastToWebsockets({
+              topic: 'midi',
+              source: data.source,
+              type: data.type,
+              timestamp: data.timestamp,
+              sessionId: data.sessionId,
+              data: data.data
+            });
+            // Only log session events, not every note (too noisy)
+            if (data.type === 'session') {
+              logger.info('MIDI session event', { event: data.data?.event, sessionId: data.sessionId });
+            }
           } else if (data.source === 'playback-logger' || data.topic === 'logging') {
             // All frontend logging events go through ingestion service
             const clientMeta = {

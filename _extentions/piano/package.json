@@ -1,0 +1,14 @@
+{
+  "name": "piano-simulator",
+  "version": "1.0.0",
+  "description": "MIDI simulator for testing Piano Visualizer",
+  "type": "module",
+  "scripts": {
+    "sim": "node simulation.mjs",
+    "demo": "node simulation.mjs --demo",
+    "random": "node simulation.mjs --random"
+  },
+  "dependencies": {
+    "ws": "^8.14.0"
+  }
+}
