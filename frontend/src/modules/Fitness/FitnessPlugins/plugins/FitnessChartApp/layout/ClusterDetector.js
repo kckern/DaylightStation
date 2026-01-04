@@ -1,32 +1,45 @@
 export class ClusterDetector {
   constructor(config = {}) {
-    this.clusterThreshold = config.clusterThreshold || 90; // 3 * radius (30)
+    // Collision threshold: avatars collide if centers are closer than 2*radius
+    this.collisionThreshold = config.collisionThreshold || config.clusterThreshold || 60;
   }
 
   detectClusters(elements) {
     if (!elements || elements.length === 0) return [];
+    if (elements.length === 1) return [[elements[0]]];
 
-    // Sort by Y for easier clustering
-    const sorted = [...elements].sort((a, b) => a.y - b.y);
-    const clusters = [];
-    let currentCluster = [sorted[0]];
+    // Use union-find to group colliding avatars
+    const parent = elements.map((_, i) => i);
+    const find = (i) => {
+      if (parent[i] !== i) parent[i] = find(parent[i]);
+      return parent[i];
+    };
+    const union = (i, j) => {
+      const pi = find(i), pj = find(j);
+      if (pi !== pj) parent[pi] = pj;
+    };
 
-    for (let i = 1; i < sorted.length; i++) {
-      const current = sorted[i];
-      const prev = currentCluster[currentCluster.length - 1];
-      const yDiff = Math.abs(current.y - prev.y);
-      
-      // Simple 1D clustering on Y axis for now (assuming similar X)
-      // This matches the "Current Zone" logic where X is identical
-      if (yDiff <= this.clusterThreshold) {
-        currentCluster.push(current);
-      } else {
-        clusters.push(currentCluster);
-        currentCluster = [current];
+    // Check all pairs for actual collision (2D distance)
+    for (let i = 0; i < elements.length; i++) {
+      for (let j = i + 1; j < elements.length; j++) {
+        const a = elements[i], b = elements[j];
+        const dx = (a.x + (a._clampOffsetX || 0)) - (b.x + (b._clampOffsetX || 0));
+        const dy = (a.y + (a._clampOffsetY || 0)) - (b.y + (b._clampOffsetY || 0));
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < this.collisionThreshold) {
+          union(i, j);
+        }
       }
     }
-    clusters.push(currentCluster);
 
-    return clusters;
+    // Group by cluster root
+    const groups = {};
+    elements.forEach((el, i) => {
+      const root = find(i);
+      if (!groups[root]) groups[root] = [];
+      groups[root].push(el);
+    });
+
+    return Object.values(groups);
   }
 }

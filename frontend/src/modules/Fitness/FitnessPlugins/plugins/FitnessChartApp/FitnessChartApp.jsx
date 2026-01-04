@@ -14,7 +14,8 @@ import { LayoutManager } from './layout';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
-const CHART_MARGIN = { top: 10, right: 64, bottom: 38, left: 4 };
+// Right margin: avatar radius (30) + label width (~50) + gap (8) = 88, rounded to 90
+const CHART_MARGIN = { top: 10, right: 90, bottom: 38, left: 4 };
 const AVATAR_RADIUS = 30;
 const ABSENT_BADGE_RADIUS = 10;
 const COIN_LABEL_GAP = 8;
