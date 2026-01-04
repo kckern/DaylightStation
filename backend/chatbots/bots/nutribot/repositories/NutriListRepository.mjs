@@ -4,13 +4,22 @@
  * 
  * Repository for the denormalized NutriList (food items for reporting).
  * This is updated whenever a NutriLog is saved/accepted.
+ * 
+ * Archive Support:
+ * - Hot storage: nutrition/nutrilist.yml (recent 30 days)
+ * - Cold storage: nutrition/archives/nutrilist/YYYY-MM.yml (monthly archives)
  */
 
+import fs from 'fs';
+import yaml from 'js-yaml';
+import moment from 'moment-timezone';
 import { loadFile, saveFile } from '../../../../lib/io.mjs';
 import { NotFoundError } from '../../../_lib/errors/index.mjs';
 import { createLogger } from '../../../_lib/logging/index.mjs';
 import { TestContext } from '../../../_lib/testing/TestContext.mjs';
 import { shortIdFromUuid } from '../../../_lib/shortId.mjs';
+
+const ARCHIVE_RETENTION_DAYS = 30;
 
 /**
  * NutriList repository for denormalized food item data
@@ -40,6 +49,51 @@ export class NutriListRepository {
    */
   #getPath(userId) {
     return this.#config.getNutrilistPath(userId);
+  }
+
+  /**
+   * Get the archive directory path for a user's nutrilist archives
+   * @private
+   * @param {string} userId
+   * @returns {string}
+   */
+  #getArchiveDir(userId) {
+    const basePath = this.#getPath(userId);
+    // nutrilist.yml -> nutrition/archives/nutrilist/
+    const dir = basePath.replace(/\/nutrilist\.yml$/, '/archives/nutrilist');
+    return dir;
+  }
+
+  /**
+   * Get the archive file path for a specific month
+   * @private
+   * @param {string} userId
+   * @param {string} yearMonth - YYYY-MM format
+   * @returns {string}
+   */
+  #getArchivePath(userId, yearMonth) {
+    return `${this.#getArchiveDir(userId)}/${yearMonth}.yml`;
+  }
+
+  /**
+   * Load archive data for a specific month
+   * @private
+   * @param {string} userId
+   * @param {string} yearMonth - YYYY-MM format
+   * @returns {Array}
+   */
+  #loadArchive(userId, yearMonth) {
+    const archivePath = this.#getArchivePath(userId, yearMonth);
+    if (fs.existsSync(archivePath)) {
+      try {
+        const data = yaml.load(fs.readFileSync(archivePath, 'utf8'));
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        this.#logger.warn('nutrilist.loadArchive.error', { archivePath, error: e.message });
+        return [];
+      }
+    }
+    return [];
   }
 
   /**
@@ -645,6 +699,147 @@ export class NutriListRepository {
       ...totals,
       food_items: foodItemsList,
     };
+  }
+
+  /**
+   * Archive old items to monthly archive files
+   * Moves items older than retentionDays from hot storage to cold archives
+   * @param {string} userId
+   * @param {number} [retentionDays=30] - Days to keep in hot storage
+   * @returns {Promise<Object>} - { archived: number, kept: number, months: string[] }
+   */
+  async archiveOldItems(userId, retentionDays = ARCHIVE_RETENTION_DAYS) {
+    const path = this.#getPath(userId);
+    const rawData = loadFile(path);
+    const items = Array.isArray(rawData) ? rawData : Object.values(rawData || {});
+    
+    const cutoffDate = moment().subtract(retentionDays, 'days').format('YYYY-MM-DD');
+    
+    const hotItems = [];
+    const coldByMonth = {}; // { 'YYYY-MM': [...items] }
+    let archived = 0;
+    let kept = 0;
+    
+    for (const item of items) {
+      const itemDate = item?.date || item?.createdAt?.substring(0, 10);
+      
+      if (!itemDate || itemDate >= cutoffDate) {
+        // Keep in hot storage
+        hotItems.push(item);
+        kept++;
+      } else {
+        // Move to archive
+        const yearMonth = itemDate.substring(0, 7);
+        if (!coldByMonth[yearMonth]) {
+          coldByMonth[yearMonth] = [];
+        }
+        coldByMonth[yearMonth].push(item);
+        archived++;
+      }
+    }
+    
+    if (archived === 0) {
+      return { archived: 0, kept, months: [] };
+    }
+    
+    // Write to monthly archives
+    const archiveDir = this.#getArchiveDir(userId);
+    if (!fs.existsSync(archiveDir)) {
+      fs.mkdirSync(archiveDir, { recursive: true });
+    }
+    
+    const monthsUpdated = [];
+    for (const [yearMonth, monthItems] of Object.entries(coldByMonth)) {
+      const archivePath = this.#getArchivePath(userId, yearMonth);
+      
+      // Merge with existing archive (dedupe by uuid)
+      let existing = [];
+      if (fs.existsSync(archivePath)) {
+        const existingData = yaml.load(fs.readFileSync(archivePath, 'utf8'));
+        existing = Array.isArray(existingData) ? existingData : [];
+      }
+      
+      const existingUuids = new Set(existing.map(i => i.uuid || i.id));
+      const newItems = monthItems.filter(i => !existingUuids.has(i.uuid) && !existingUuids.has(i.id));
+      const merged = [...existing, ...newItems];
+      
+      // Sort by date descending
+      merged.sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
+      
+      fs.writeFileSync(archivePath, yaml.dump(merged, { lineWidth: -1 }), 'utf8');
+      monthsUpdated.push(yearMonth);
+      
+      this.#logger.info('nutrilist.archive.wrote', { 
+        userId, 
+        yearMonth, 
+        count: monthItems.length,
+        total: merged.length 
+      });
+    }
+    
+    // Sort hot items by date descending
+    hotItems.sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
+    
+    // Update hot storage
+    saveFile(path, hotItems);
+    
+    this.#logger.info('nutrilist.archive.complete', { userId, archived, kept, months: monthsUpdated });
+    
+    return { archived, kept, months: monthsUpdated };
+  }
+
+  /**
+   * Find items by date range, including archives if needed
+   * @param {string} userId
+   * @param {string} startDate - Start date (YYYY-MM-DD)
+   * @param {string} endDate - End date (YYYY-MM-DD)
+   * @returns {Promise<Object[]>}
+   */
+  async findByDateRange(userId, startDate, endDate) {
+    // Get hot storage items
+    let items = await this.findAll(userId);
+    
+    // Determine which archives we need to check
+    const cutoffDate = moment().subtract(ARCHIVE_RETENTION_DAYS, 'days').format('YYYY-MM-DD');
+    
+    if (startDate < cutoffDate) {
+      // Need to check archives
+      const archiveDir = this.#getArchiveDir(userId);
+      if (fs.existsSync(archiveDir)) {
+        const startMonth = startDate.substring(0, 7);
+        const endMonth = endDate.substring(0, 7);
+        
+        const archiveFiles = fs.readdirSync(archiveDir)
+          .filter(f => f.endsWith('.yml'))
+          .map(f => f.replace('.yml', ''))
+          .filter(ym => ym >= startMonth && ym <= endMonth);
+        
+        for (const yearMonth of archiveFiles) {
+          const archiveItems = this.#loadArchive(userId, yearMonth);
+          items = [...items, ...archiveItems];
+        }
+      }
+    }
+    
+    // Filter by date range
+    items = items.filter(item => {
+      const itemDate = item?.date || item?.createdAt?.substring(0, 10);
+      return itemDate && itemDate >= startDate && itemDate <= endDate;
+    });
+    
+    // Dedupe by uuid (in case of overlap between hot and cold)
+    const seen = new Set();
+    items = items.filter(item => {
+      const key = item.uuid || item.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    
+    // Sort by date descending
+    items.sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
+    
+    return items;
   }
 }
 
