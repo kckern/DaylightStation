@@ -238,51 +238,78 @@ mediaRouter.post('/log', async (req, res) => {
         return res.status(400).json({ error: `Invalid request: Missing ${!type ? 'type' : !media_key ? 'media_key' : 'percent'}` });
     }
     try {
-        let librarystring = "";
+        let libraryId = null;
+        let libraryName = 'media';
         if(seconds<10) return res.status(400).json({ error: `Invalid request: seconds < 10` });
-        
+
         let logPath = getMediaMemoryPath(type);
+        let meta = null;
         if (type === 'plex') {
             const plex = new Plex();
-            const [meta] = await plex.loadMeta(media_key);
-            librarystring = meta ? slugify(meta.librarySectionTitle) : 'media';
+            [meta] = await plex.loadMeta(media_key);
             if (meta && meta.librarySectionID) {
-                logPath = getMediaMemoryPath(`plex/${librarystring}`);
+                libraryId = parseInt(meta.librarySectionID, 10);
+                libraryName = slugify(meta.librarySectionTitle || 'media');
+                logPath = getMediaMemoryPath(`plex/${libraryId}_${libraryName}`);
             }
         }
         const log = loadFile(logPath) || {};
         const normalizedSeconds = parseInt(seconds);
-        const normalizedPercent = parseFloat(percent);
         const normalizedWatched = Number.parseFloat(watched_duration);
         const watchedDurationValue = Number.isFinite(normalizedWatched) && normalizedWatched >= 0
             ? Number(normalizedWatched.toFixed(3))
             : null;
-        
-        // Get existing lifetime duration and accumulate
+
+        // Get existing entry data to accumulate lifetime and preserve oldPlexIds
         const existingEntry = log[media_key] || {};
-        const existingLifetime = Number.parseFloat(existingEntry.watched_duration_lifetime) || 0;
+        // Support both old (watched_duration_lifetime) and new (watchedDurationLifetime) field names
+        const existingLifetime = Number.parseFloat(existingEntry.watchedDurationLifetime)
+            || Number.parseFloat(existingEntry.watched_duration_lifetime)
+            || 0;
         const newLifetime = existingLifetime + (watchedDurationValue || 0);
-        
+
+        // Build new format entry
         const entry = {
-            time: moment().format('YYYY-MM-DD hh:mm:ssa'),
-            title: sanitizeForYAML(title),
-            media_key,
-            seconds: normalizedSeconds,
-            percent: normalizedPercent
+            title: sanitizeForYAML(meta?.title || title),
+            parent: meta?.parentTitle || null,
+            parentId: meta?.parentRatingKey ? parseInt(meta.parentRatingKey, 10) : null,
+            grandparent: meta?.grandparentTitle || null,
+            grandparentId: meta?.grandparentRatingKey ? parseInt(meta.grandparentRatingKey, 10) : null,
+            libraryId,
+            mediaType: meta?.type || 'unknown',
+            lastPlayed: moment().toISOString(),
+            playCount: (existingEntry.playCount || 0) + 1,
+            progress: normalizedSeconds,
+            duration: meta?.duration ? Math.round(meta.duration / 1000) : null
         };
+
+        // Add watched duration if provided
         if (watchedDurationValue != null) {
-            entry.watched_duration_last_session = watchedDurationValue;
-            entry.watched_duration_lifetime = Number(newLifetime.toFixed(3));
+            entry.watchedDurationLastSession = watchedDurationValue;
+            entry.watchedDurationLifetime = Number(newLifetime.toFixed(3));
         }
+
+        // Preserve oldPlexIds if they exist
+        if (existingEntry.oldPlexIds?.length) {
+            entry.oldPlexIds = existingEntry.oldPlexIds;
+        }
+
+        // Remove null values for cleaner YAML output
+        Object.keys(entry).forEach(key => {
+            if (entry[key] === null) delete entry[key];
+        });
+
         log[media_key] = entry;
-        if(!log[media_key].title) delete log[media_key].title;
+
+        // Sort by lastPlayed (ISO format), most recent first
         const sortedLog = Object.fromEntries(
-            Object.entries(log).sort(([, a], [, b]) => moment(b.time, 'YYYY-MM-DD hh:mm:ssa').diff(moment(a.time, 'YYYY-MM-DD hh:mm:ssa')))
+            Object.entries(log).sort(([, a], [, b]) =>
+                new Date(b.lastPlayed || 0) - new Date(a.lastPlayed || 0)
+            )
         );
         saveFile(logPath, sortedLog);
-       // console.log(`Log updated: ${JSON.stringify(log[media_key])}`);
-        await logToInfinity(media_key,{percent, seconds});
-        res.json({ response: {type,library:librarystring,...log[media_key]} });
+        await logToInfinity(media_key, { percent, seconds });
+        res.json({ response: { type, library: libraryName, ...log[media_key] } });
     } catch (error) {
         mediaLogger.error('Error handling /log', { message: error.message });
         res.status(500).json({ error: 'Failed to process log.' });
