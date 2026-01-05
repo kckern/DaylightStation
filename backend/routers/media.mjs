@@ -22,7 +22,17 @@ mediaRouter.use(express.json({
 const audioPath = `${process.env.path.media}`;
 const videoPath = `${process.env.path.media}`;
 const mediaPath = `${process.env.path.media}`;
-const notFound = `${audioPath}/${process.env.media.error}`;
+// Resolve notFound path with fallback prefixes (sfx moved to audio/sfx)
+const getNotFoundPath = () => {
+    const errorFile = process.env.media?.error || 'sfx/error.mp3';
+    const prefixes = ['', 'audio', 'video', 'img'];
+    for (const prefix of prefixes) {
+        const candidate = prefix ? `${mediaPath}/${prefix}/${errorFile}` : `${mediaPath}/${errorFile}`;
+        if (fs.existsSync(candidate)) return candidate;
+    }
+    return `${mediaPath}/${errorFile}`; // Fallback even if not found
+};
+const notFound = getNotFoundPath();
 
 const mediaLogger = createLogger({
     source: 'backend',
