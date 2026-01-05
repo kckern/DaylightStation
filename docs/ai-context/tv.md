@@ -86,26 +86,35 @@ This means stored Plex IDs in media_memory can become orphaned.
 ```
 media_memory/
 └── plex/
-    ├── fitness.yml      # Fitness video library history
-    ├── movies.yml       # Movie library history
-    ├── tv.yml           # TV shows history
-    └── music.yml        # Music library history
+    ├── 14_fitness.yml    # Library ID 14 = "Fitness"
+    ├── 1_movies.yml      # Library ID 1 = "Movies"
+    ├── 2_tv.yml          # Library ID 2 = "TV Shows"
+    ├── _archive/         # Migrated legacy files
+    └── _logs/            # Daily validator work logs
 ```
 
 **Entry Format (YAML):**
 ```yaml
-"673634":                    # Plex ID (ratingKey) as key
-  title: "Episode Title (Show Name - Season)"
-  media_key: "673634"        # Same as key
-  last_played: "2025-01-15T10:30:00Z"
-  play_count: 3
-  progress: 1800             # Seconds watched
-  duration: 3600             # Total duration
+"673634":                           # Plex ID (ratingKey) as key
+  title: "Morning Flow"             # Episode/movie title only
+  parent: "30 Days of Yoga"         # Season/Album name
+  parentId: 67890                   # Season/Album ratingKey
+  grandparent: "Yoga With Adriene"  # Show/Artist name
+  grandparentId: 12345              # Show/Artist ratingKey
+  libraryId: 14                     # Library section ID
+  mediaType: "episode"              # episode | movie | track
+  lastPlayed: "2025-01-15T10:30:00Z"
+  playCount: 3
+  progress: 1800                    # Seconds watched
+  duration: 3600                    # Total duration
+  oldPlexIds: [606037, 11570]       # Only present if backfilled
 ```
 
 **Key Files:**
-- `backend/lib/mediaMemory.mjs` - Path utilities (`getMediaMemoryDir()`, `getMediaMemoryPath()`)
-- `backend/lib/plex.mjs` - Plex API client (uses media memory for history)
+- `backend/lib/mediaMemory.mjs` - Path utilities, filename helpers
+- `backend/lib/mediaMemoryValidator.mjs` - Daily cron validator
+- `backend/lib/plex.mjs` - Plex API client
+- `scripts/migrate-media-memory.mjs` - One-time migration script
 
 ## Menu Navigation
 
