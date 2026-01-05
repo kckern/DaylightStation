@@ -32,7 +32,14 @@
       "Bash(node test_harvest.mjs:*)",
       "Bash(mkdir:*)",
       "Bash(node --input-type=module -e:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(wc:*)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Bash(node --experimental-vm-modules -e:*)",
+      "Bash(npm install:*)",
+      "Bash(npx playwright install:*)",
+      "Bash(npm run test:smoke:*)",
+      "Bash(find:*)"
     ]
   }
 }
