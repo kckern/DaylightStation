@@ -10,6 +10,33 @@ Read `.claude/settings.local.json` and look at the `env` section for all environ
 
 > **Actual values:** Check `env` in `.claude/settings.local.json`
 
+### Expected settings.local.json Structure
+
+```json
+{
+  "env": {
+    "mounts": {
+      "data": "/path/to/data",
+      "media": "/path/to/media"
+    },
+    "hosts": {
+      "prod": "user@hostname"
+    },
+    "ports": {
+      "frontend": 5173,
+      "backend": 3112
+    },
+    "docker": {
+      "container": "daylight"
+    }
+  }
+}
+```
+
+If `env` values show `[object Object]`, the file is corrupted and needs manual repair.
+
+### Key Environment Values
+
 - **Data mount:** YAML data files (`env.mounts.data`)
 - **Media mount:** Media files (`env.mounts.media`)
 - **Prod host:** SSH target (`env.hosts.prod`)

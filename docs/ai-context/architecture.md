@@ -61,7 +61,13 @@ DaylightStation/
 │   └── households/
 │       └── {hid}/
 │           ├── apps/{app}/config.yml
-│           └── users/{userId}.yml
+│           ├── users/{userId}.yml
+│           └── history/
+│               └── media_memory/
+│                   └── plex/
+│                       ├── fitness.yml   # Watch history per library
+│                       ├── movies.yml
+│                       └── tv.yml
 └── docs/                        # Documentation
     ├── ai-context/              # Claude context files
     └── plans/                   # Implementation plans
@@ -134,9 +140,29 @@ import { useHook } from './hooks/useHook';
 5. Environment variables
 
 ### Environment Variables
-- Multi-dimensional: `process.env.path.data`
-- Cannot set directly - use spread pattern
-- Loaded via `loadAllConfig` / `ConfigService`
+
+**Multi-dimensional structure** (nested objects, not flat strings):
+
+```javascript
+// Path objects - access via process.env.path.*
+process.env.path.data    // Data mount: YAML files, configs
+process.env.path.media   // Media mount: video, audio, images
+process.env.path.img     // Images subdirectory
+
+// Service configs - access via process.env.<service>.*
+process.env.plex.host    // Plex server URL
+process.env.plex.port    // Plex port (optional)
+```
+
+**Cannot set directly** - use spread pattern:
+```javascript
+process.env = {
+    ...process.env,
+    path: { ...process.env.path, data: '/new/path' }
+};
+```
+
+**Loaded via:** `hydrateProcessEnvFromConfigs()` in bootstrap
 
 ### Runtime Paths
 - **Dev:** Paths from `.claude/settings.local.json` → `env.mounts.*`

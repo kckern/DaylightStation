@@ -62,6 +62,51 @@ const items = await Plex.getLibraryItems(libraryId);
 const streamUrl = Plex.getStreamUrl(itemKey);
 ```
 
+### Plex ID Lifecycle
+
+**IMPORTANT:** Plex IDs (`ratingKey`) are NOT stable. They change when:
+- Plex library is rebuilt/rescanned
+- Media files are moved/renamed
+- Server database is reset
+
+This means stored Plex IDs in media_memory can become orphaned.
+
+**Backfill pattern:** When IDs break:
+1. Use `cli/plex.cli.mjs verify <id>` to check if ID exists
+2. Use `cli/plex.cli.mjs search "<title>" --deep` to find new ID
+3. Run `scripts/backfill-plex-ids.mjs` to auto-match orphans
+
+## Media Memory
+
+**Location:** `data/households/{hid}/history/media_memory/plex/`
+
+**Purpose:** Tracks watch history, progress, play counts per Plex library.
+
+**Directory Structure:**
+```
+media_memory/
+└── plex/
+    ├── fitness.yml      # Fitness video library history
+    ├── movies.yml       # Movie library history
+    ├── tv.yml           # TV shows history
+    └── music.yml        # Music library history
+```
+
+**Entry Format (YAML):**
+```yaml
+"673634":                    # Plex ID (ratingKey) as key
+  title: "Episode Title (Show Name - Season)"
+  media_key: "673634"        # Same as key
+  last_played: "2025-01-15T10:30:00Z"
+  play_count: 3
+  progress: 1800             # Seconds watched
+  duration: 3600             # Total duration
+```
+
+**Key Files:**
+- `backend/lib/mediaMemory.mjs` - Path utilities (`getMediaMemoryDir()`, `getMediaMemoryPath()`)
+- `backend/lib/plex.mjs` - Plex API client (uses media memory for history)
+
 ## Menu Navigation
 
 **Location:** `modules/Menu/`

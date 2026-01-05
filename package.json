@@ -3,6 +3,7 @@
     "axios": "^1.7.2",
     "clickup.js": "^4.0.1",
     "cron-parser": "^4.9.0",
+    "dotenv": "^17.2.3",
     "highcharts-more": "^0.1.7",
     "is-json": "^2.0.1",
     "jimp": "^1.6.0",
