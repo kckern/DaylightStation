@@ -54,6 +54,7 @@
     "rt": "npx playwright test tests/runtime --headed",
     "rt:player": "npx playwright test tests/runtime/player --headed",
     "rt:fitness": "npx playwright test tests/runtime/fitness-session --headed",
+    "rt:finance": "npx playwright test tests/runtime/finance --headed",
     "audit:logging": "node scripts/audit-logging-code.mjs",
     "audit:logging:frontend": "node scripts/audit-logging-code.mjs --baseDir=frontend/src",
     "audit:logging:backend": "node scripts/audit-logging-code.mjs --baseDir=backend"

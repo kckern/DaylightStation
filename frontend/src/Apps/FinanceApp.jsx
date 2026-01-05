@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Button, MantineProvider, Select, TabsPanel } from '@mantine/core';
+import { Button, MantineProvider, Select, TextInput } from '@mantine/core';
 import { BudgetHoldings,  BudgetSpending} from '../modules/Finances/blocks.jsx';
 import { BudgetMortgage } from '../modules/Finances/blocks/mortgage.jsx';
 import { BudgetCashFlow } from '../modules/Finances/blocks/monthly.jsx';
@@ -26,6 +26,18 @@ const fetchBudget = async () => {
 
 const reloadBudget = async () => {
   await fetch(`${baseUrl}/harvest/budget`);
+}
+
+const syncPayroll = async (token) => {
+  const url = token
+    ? `${baseUrl}/harvest/payroll?token=${encodeURIComponent(token)}`
+    : `${baseUrl}/harvest/payroll`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Payroll sync failed');
+  }
+  return response.json();
 }
 
 
@@ -74,6 +86,63 @@ function ReloadButton({setBudgetData}) {
 
 }
 
+function PayrollSyncContent({ onClose }) {
+  const [token, setToken] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setError(null);
+    setResult(null);
+    try {
+      const response = await syncPayroll(token);
+      setResult(response);
+      financeLogger.info('finance.payroll.sync.success', { response });
+    } catch (err) {
+      setError(err.message);
+      financeLogger.error('finance.payroll.sync.error', { error: err.message });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '1rem' }}>
+      <p style={{ marginBottom: '1rem', color: '#666' }}>
+        Enter your payroll session token to sync paychecks. Leave empty to use stored credentials.
+      </p>
+      <TextInput
+        label="Session Token"
+        placeholder="Paste token here (optional)"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        disabled={syncing}
+        style={{ marginBottom: '1rem' }}
+      />
+      <Button
+        onClick={handleSync}
+        loading={syncing}
+        disabled={syncing}
+        fullWidth
+      >
+        {syncing ? 'Syncing...' : 'Sync Payroll'}
+      </Button>
+      {error && (
+        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#fee', borderRadius: '4px', color: '#c00' }}>
+          {error}
+        </div>
+      )}
+      {result && (
+        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#efe', borderRadius: '4px', color: '#060' }}>
+          Payroll synced successfully!
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 
 
@@ -82,6 +151,7 @@ function Header({
   activeBudgetKey,
   setActiveBudgetKey,
   setBudgetData,
+  setDrawerContent,
 }) {
   // Transform available budget keys into data for the Select component
   const budgetOptions = useMemo(() => (
@@ -140,7 +210,17 @@ function Header({
           />
         </div>
 
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+          <button
+            className="reload"
+            onClick={() => setDrawerContent({
+              meta: { title: 'Sync Payroll' },
+              jsx: <PayrollSyncContent onClose={() => setDrawerContent(null)} />
+            })}
+            title="Sync Payroll"
+          >
+            💰
+          </button>
           <ReloadButton setBudgetData={setBudgetData} />
         </div>
       </h1>
@@ -163,6 +243,7 @@ export function BudgetViewer({ budget, mortgage, setBudgetData }) {
         activeBudgetKey={activeBudgetKey}
         setActiveBudgetKey={setActiveBudgetKey}
         setBudgetData={setBudgetData}
+        setDrawerContent={setDrawerContent}
       />
       <Drawer
         opened={!!drawerContent}

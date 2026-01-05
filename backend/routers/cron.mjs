@@ -118,9 +118,9 @@ function computeNextRun(job, fromMoment) {
 
 // Load job definitions (synced via Dropbox)
 const loadCronJobs = () => {
-  const jobs = loadFile("config/cron-jobs");
+  const jobs = loadFile("system/cron-jobs");
   if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
-    cronLogger.warn('cron.jobs.empty', { message: 'No cron jobs defined in config/cron-jobs' });
+    cronLogger.warn('cron.jobs.empty', { message: 'No cron jobs defined in system/cron-jobs' });
     return [];
   }
   return jobs;
@@ -128,14 +128,14 @@ const loadCronJobs = () => {
 
 // Load runtime state (local only, not synced)
 const loadCronState = () => {
-  const state = loadFile("state/cron");
+  const state = loadFile("system/state/cron-runtime");
   // State is an object keyed by job name, or null if not found
   if (!state || typeof state !== 'object') {
     // Try backup
-    const backup = loadFile("state/cron_bak");
+    const backup = loadFile("system/state/cron-runtime_bak");
     if (backup && typeof backup === 'object') {
       cronLogger.info('cron.state.restored_from_backup');
-      saveFile("state/cron", backup);
+      saveFile("system/state/cron-runtime", backup);
       return backup;
     }
     return {};
@@ -166,7 +166,7 @@ const saveCronState = (cronJobs) => {
       nextRun: job.nextRun,
     };
   }
-  saveFile("state/cron", state);
+  saveFile("system/state/cron-runtime", state);
 };
 
 // Backup runtime state
@@ -179,7 +179,7 @@ const backupCronState = (cronJobs) => {
     };
   }
   try {
-    saveFile("state/cron_bak", state);
+    saveFile("system/state/cron-runtime_bak", state);
   } catch (error) {
     cronLogger.error('cron.backup.failed', { error: error?.message });
   }

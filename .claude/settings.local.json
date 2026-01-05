@@ -40,7 +40,9 @@
       "Bash(npx playwright install:*)",
       "Bash(npm run test:smoke:*)",
       "Bash(find:*)",
-      "Bash(npm run test:assembly:*)"
+      "Bash(npm run test:assembly:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx playwright test:*)"
     ]
   }
 }

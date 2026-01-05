@@ -27,3 +27,4 @@ config.app-local.yml
 # Skill local configs
 .claude/skills/*/config.local.json
 /_extentions/piano/node_modules
+/test-results
