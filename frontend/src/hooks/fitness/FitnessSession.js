@@ -2174,7 +2174,8 @@ export class FitnessSession {
     if (!this.sessionId) return;
     if (!force) {
       if (this._autosaveIntervalMs <= 0) return;
-      if (this._saveTriggered) return;
+      // Check PersistenceManager directly - don't use stale _saveTriggered
+      if (this._persistenceManager?.isSaveInProgress?.()) return;
       const now = Date.now();
       if (this._lastAutosaveAt && (now - this._lastAutosaveAt) < this._autosaveIntervalMs) return;
     }
