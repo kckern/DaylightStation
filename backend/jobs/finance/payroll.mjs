@@ -14,12 +14,14 @@ const getPayrollConfig = () => {
   // Get from user auth via ConfigService
   const auth = configService.getUserAuth('payroll') || {};
 
+  // Map config file fields to expected names
+  // Config file: auth_cookie, base_url, company, employee_id, cookie_name
   const secrets = {
-    PAYROLL_BASE: auth.base,
-    PAYROLL_AUTHKEY: auth.authkey,
-    PAYROLL_AUTH: auth.auth,
+    PAYROLL_BASE: auth.base_url || auth.base,
+    PAYROLL_AUTHKEY: auth.cookie_name || auth.authkey,
+    PAYROLL_AUTH: auth.auth_cookie || auth.auth,
     PAYROLL_COMPANY: auth.company,
-    PAYROLL_EMPLOYEE: auth.employee
+    PAYROLL_EMPLOYEE: auth.employee_id || auth.employee
   };
 
   const appConfig = {
@@ -34,7 +36,7 @@ const  payrollSync = async (key,req) => {
 
   payrollLogger.info('payroll.sync.start', { key });
   const config = getPayrollConfig();
-  const { PAYROLL_BASE, PAYROLL_AUTH, PAYROLL_COMPANY, PAYROLL_EMPLOYEE, payroll_account_id, direct_deposit_account_id } = config;
+  const { PAYROLL_BASE, PAYROLL_AUTHKEY, PAYROLL_AUTH, PAYROLL_COMPANY, PAYROLL_EMPLOYEE, payroll_account_id, direct_deposit_account_id } = config;
 
     const authKey = req.query.token || PAYROLL_AUTH;
 

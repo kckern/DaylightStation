@@ -210,18 +210,19 @@ function Header({
           />
         </div>
 
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <ReloadButton setBudgetData={setBudgetData} />
           <button
-            className="reload"
+            className="payroll-btn"
             onClick={() => setDrawerContent({
               meta: { title: 'Sync Payroll' },
               jsx: <PayrollSyncContent onClose={() => setDrawerContent(null)} />
             })}
             title="Sync Payroll"
+            style={{ fontSize: '1.5rem', cursor: 'pointer', background: 'none', border: 'none', marginLeft: '0.5rem' }}
           >
             💰
           </button>
-          <ReloadButton setBudgetData={setBudgetData} />
         </div>
       </h1>
     </header>
