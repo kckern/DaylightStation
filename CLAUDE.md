@@ -1,8 +1,8 @@
 # General Workspace Instructions
 
 - This project runs both in dev and prod
-- The FitnessApp client runs on an ssh box (configure in `.claude/settings.local.json` as `sshHosts.fitness`)
-- For prod logs: `ssh $PROD_HOST 'docker logs $CONTAINER_NAME -f'`
+- The FitnessApp client runs on an ssh box at `homeserver.local`
+- For prod logs: `ssh homeserver.local 'docker logs daylight-station -f'`
 - There are two main mount points (configure paths in `.claude/settings.local.json`):
   - **Data mount** for yml data, accessed via io.mjs
     - Mounted in docker at `/usr/src/app/data`
@@ -31,37 +31,13 @@ Rules:
 
 ---
 
-## Local Settings
+## Environment Reference
 
-Create `.claude/settings.local.json` with your environment-specific values:
-
-```json
-{
-  "sshHosts": {
-    "prod": "your-prod-host",
-    "fitness": "your-fitness-client-host"
-  },
-  "mounts": {
-    "data": "/path/to/your/data/mount",
-    "media": "/path/to/your/media/mount",
-    "config": "/path/to/your/config/mount"
-  },
-  "docker": {
-    "containerName": "daylight-station"
-  },
-  "clickup": {
-    "lists": {
-      "tvView": "LIST_ID",
-      "finances": "LIST_ID",
-      "homeOffice": "LIST_ID",
-      "journalist": "LIST_ID",
-      "nutribot": "LIST_ID",
-      "fitness": "LIST_ID",
-      "admin": "LIST_ID"
-    }
-  }
-}
-```
+| Resource | Value |
+|----------|-------|
+| Prod SSH host | `homeserver.local` |
+| Docker container | `daylight-station` |
+| Prod logs | `ssh homeserver.local 'docker logs daylight-station -f'` |
 
 ---
 

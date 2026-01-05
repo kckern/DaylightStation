@@ -28,3 +28,4 @@ config.app-local.yml
 .claude/skills/*/config.local.json
 /_extentions/piano/node_modules
 /test-results
+.claude/settings.local.json

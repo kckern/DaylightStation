@@ -70,7 +70,11 @@ export const findFileFromMediaKey = media_key => {
           ));
 
     const firstMatch = possiblePaths.find(p => fs.existsSync(p));
-    if(!firstMatch) return {found:false, path: notFound, fileSize: fs.statSync(notFound).size, mimeType: 'audio/mpeg'};
+    if(!firstMatch) {
+        // Gracefully handle missing notFound file
+        const notFoundSize = fs.existsSync(notFound) ? fs.statSync(notFound).size : 0;
+        return {found:false, path: notFound, fileSize: notFoundSize, mimeType: 'audio/mpeg'};
+    }
     const fileSize = fs.statSync(firstMatch).size;
     const fileExt = firstMatch?.split('.').pop();
 
