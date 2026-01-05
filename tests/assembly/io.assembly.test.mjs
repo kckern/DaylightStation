@@ -9,8 +9,15 @@ describe('io.mjs assembly', () => {
 
   beforeAll(async () => {
     // Set test data path before importing io
-    process.env.path = process.env.path || {};
-    process.env.path.data = path.join(__dirname, '../_fixtures/data');
+    // process.env.path is an object, need to spread to modify
+    const testDataPath = path.join(__dirname, '../_fixtures/data');
+    process.env = {
+      ...process.env,
+      path: {
+        ...(process.env.path || {}),
+        data: testDataPath
+      }
+    };
 
     io = await import('../../backend/lib/io.mjs');
   });

@@ -7,21 +7,18 @@ module.exports = {
   transformIgnorePatterns: [
     '/node_modules/(?!(zod)/)',
   ],
-  // Match tests in new /tests/ structure AND existing backend tests (for migration)
+  // Match tests in new /tests/ structure only
   testMatch: [
     '**/tests/unit/**/*.test.mjs',
     '**/tests/assembly/**/*.test.mjs',
     '**/tests/integration/**/*.test.mjs',
     '**/tests/smoke/**/*.test.mjs',
-    '**/tests/live/**/*.test.mjs',
-    '**/backend/**/*.test.mjs'  // Keep existing tests working during migration
+    '**/tests/live/**/*.test.mjs'
   ],
   testPathIgnorePatterns: [
     '/node_modules/',
     '/tests/runtime/'  // Playwright handles these
   ],
-  // Setup file to initialize test environment (process.env.path.data, etc.)
-  setupFilesAfterEnv: ['<rootDir>/backend/chatbots/jest.setup.mjs'],
   // Coverage configuration
   collectCoverageFrom: [
     'backend/lib/**/*.{js,mjs}',
