@@ -212,13 +212,13 @@ apiRouter.get('/talk/:talk_folder?/:talk_id?', async (req, res, next) => {
     const [selectedFile] = findUnwatchedItems(filesInFolder, 'talk', true);
     const filePath = `${dataPath}/content/talks/${talk_folder || ''}/${talk_id || selectedFile}.yaml`;
     const talkData = yaml.load(readFileSync(filePath, 'utf8'));
-    const mediaFilePath = `${mediaPath}/talks/${talk_folder || ''}/${talk_id || selectedFile}.mp4`;
+    const mediaFilePath = `${mediaPath}/video/talks/${talk_folder || ''}/${talk_id || selectedFile}.mp4`;
     const mediaExists = fs.existsSync(mediaFilePath);
-    const mediaUrl = mediaExists ? `${host}/media/talks/${talk_folder || ''}/${talk_id || selectedFile}` : null;
+    const mediaUrl = mediaExists ? `${host}/media/video/talks/${talk_folder || ''}/${talk_id || selectedFile}` : null;
     delete talkData.mediaUrl;
     return res.json({
         input: talk_id || selectedFile,
-        media_key: `talks/${talk_folder || ''}/${talk_id || selectedFile}`,
+        media_key: `video/talks/${talk_folder || ''}/${talk_id || selectedFile}`,
         mediaExists,
         mediaFilePath,
         mediaUrl,
@@ -354,9 +354,9 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
         }
         const reference = generateReference(verse_id).replace(/:1$/, '');
         const host = process.env.host || "";
-        const mediaFilePath = `${mediaPath}/scripture/${volume}/${version}/${verse_id}.mp3`;
+        const mediaFilePath = `${mediaPath}/audio/scripture/${volume}/${version}/${verse_id}.mp3`;
         const mediaExists = fs.existsSync(mediaFilePath);
-        const mediaUrl = mediaExists ? `${host}/media/scripture/${volume}/${version}/${verse_id}` : null;
+        const mediaUrl = mediaExists ? `${host}/media/audio/scripture/${volume}/${version}/${verse_id}` : null;
 
         const data = yaml.load(readFileSync(`${dataPath}/content/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
         res.json({
@@ -385,12 +385,12 @@ apiRouter.get('/:songType(hymn|primary)/:hymn_num?', async (req, res, next) => {
         const { mediaFilePath, mediaUrl } = preferences.reduce((result, prf) => {
             if (result) return result;
             prf = prf ? `${prf}/` : '';
-            const mediaFilePath = `${mediaPath}/songs/${songType}/${prf}${hymnNumStr}.mp3`;
+            const mediaFilePath = `${mediaPath}/audio/songs/${songType}/${prf}${hymnNumStr}.mp3`;
             const host = process.env.host || "";
             try {
                 if (fs.existsSync(mediaFilePath)) {
                     return {
-                        mediaUrl: `${host}/media/songs/${songType}/${prf}${hymnNumStr}`,
+                        mediaUrl: `${host}/media/audio/songs/${songType}/${prf}${hymnNumStr}`,
                         mediaFilePath
                     };
                 }else{

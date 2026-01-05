@@ -784,7 +784,7 @@ mediaRouter.all('/plex/table/:plex_key', async (req, res) => {
 
 
 mediaRouter.all('/plex/img/:plex_key', async (req, res) => {
-    const cacheFolder = `${mediaPath}/cache/plex`;
+    const cacheFolder = `${mediaPath}/img/cache/plex`;
     const { plex_key } = req.params;
     const cacheFile = `${cacheFolder}/${plex_key}.jpg`;
 

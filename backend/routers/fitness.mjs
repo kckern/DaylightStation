@@ -436,9 +436,9 @@ const getSessionStoragePaths = (sessionId) => {
     const sessionsDir = `households/${hid}/apps/fitness/sessions/${sessionDate}`;
     const sessionsDirFs = path.join(dataRoot, 'households', hid, 'apps', 'fitness', 'sessions', sessionDate);
     
-    // Media paths (screenshots) - media/households/{hid}/fitness/sessions/YYYY-MM-DD/{sessionId}/screenshots/
-    const mediaRelativeBase = `households/${hid}/fitness/sessions/${sessionDate}/${sessionId}`;
-    const screenshotsDirFs = path.join(mediaRoot, 'households', hid, 'fitness', 'sessions', sessionDate, sessionId, 'screenshots');
+    // Media paths (screenshots) - media/apps/fitness/households/{hid}/sessions/YYYY-MM-DD/{sessionId}/screenshots/
+    const mediaRelativeBase = `apps/fitness/households/${hid}/sessions/${sessionDate}/${sessionId}`;
+    const screenshotsDirFs = path.join(mediaRoot, 'apps', 'fitness', 'households', hid, 'sessions', sessionDate, sessionId, 'screenshots');
     
     return {
         sessionDate,

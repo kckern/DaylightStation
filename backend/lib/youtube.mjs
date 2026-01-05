@@ -31,7 +31,7 @@ const LOCK_STALE_MS = 60 * 60 * 1000; // consider a lock stale after 1 hour
 const LOCK_FILE = (() => {
   const baseDir = (process.env.path && process.env.path.data)
     ? path.join(process.env.path.data, 'tmp')
-    : path.join(process.env.path.media || '.', 'news');
+    : path.join(process.env.path.media || '.', 'video', 'news');
   try { fs.mkdirSync(baseDir, { recursive: true }); } catch (e) {}
   return path.join(baseDir, 'youtube.lock');
 })();
@@ -189,7 +189,7 @@ const getYoutube = async () => {
 
   try {
     const youtubeData = loadFile('state/youtube');
-    const mediaPath = `${process.env.path.media}/news`;
+    const mediaPath = `${process.env.path.media}/video/news`;
     const deleted = [];
     const shortcodes = [];
     const results = [];
