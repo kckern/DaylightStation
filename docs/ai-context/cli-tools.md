@@ -35,6 +35,90 @@ node cli/auth-validator.cli.mjs <service>
 node cli/fitsync-auth.cli.mjs
 ```
 
+### plex.cli.mjs
+
+**Purpose:** Search Plex libraries, verify IDs, debug media_memory issues.
+
+**Usage:**
+```bash
+node cli/plex.cli.mjs libraries              # List library sections
+node cli/plex.cli.mjs search "yoga"          # Search all libraries
+node cli/plex.cli.mjs search "ninja" --deep  # Hub search (finds episodes)
+node cli/plex.cli.mjs info 673634            # Get metadata for ID
+node cli/plex.cli.mjs verify 606037 11570    # Check if IDs exist
+```
+
+---
+
+## Creating New CLI Tools
+
+New CLIs go in `cli/` directory. Use this bootstrap pattern:
+
+### Bootstrap Template
+
+```javascript
+#!/usr/bin/env node
+
+import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
+import { createLogger } from '../backend/lib/logging/logger.js';
+import { configService } from '../backend/lib/config/ConfigService.mjs';
+import { resolveConfigPaths } from '../backend/lib/config/pathResolver.mjs';
+import { hydrateProcessEnvFromConfigs } from '../backend/lib/logging/config.js';
+
+// Bootstrap config (required for ConfigService access)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isDocker = existsSync('/.dockerenv');
+const configPaths = resolveConfigPaths({ isDocker, codebaseDir: path.join(__dirname, '..') });
+
+if (configPaths.error) {
+    console.error('Config error:', configPaths.error);
+    process.exit(1);
+}
+
+hydrateProcessEnvFromConfigs(configPaths.configDir);
+configService.init({ dataDir: configPaths.dataDir });
+
+const logger = createLogger({ source: 'cli', app: 'your-cli-name' });
+```
+
+### Accessing Service Auth Tokens
+
+```javascript
+// Get auth for any configured service
+const auth = configService.getHouseholdAuth('plex');
+// Returns: { token: '...', server_url: '...' }
+
+const fitnessAuth = configService.getHouseholdAuth('fitness');
+// Returns: { client_id: '...', client_secret: '...' }
+```
+
+### Accessing Data Paths
+
+After bootstrap, use `process.env.path.*`:
+```javascript
+process.env.path.data   // Data mount (YAML files)
+process.env.path.media  // Media mount (video/audio files)
+process.env.path.img    // Images directory
+```
+
+### CLI Argument Parsing Pattern
+
+```javascript
+const args = process.argv.slice(2);
+const flags = {
+    json: args.includes('--json'),
+    verbose: args.includes('--verbose')
+};
+
+// Remove flags to get positional args
+const positionalArgs = args.filter(arg => !arg.startsWith('--'));
+const command = positionalArgs[0];
+const commandArgs = positionalArgs.slice(1);
+```
+
 ---
 
 ## ClickUp Workflow
