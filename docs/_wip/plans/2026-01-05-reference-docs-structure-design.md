@@ -1,7 +1,7 @@
 # Reference Documentation Structure Design
 
 **Date:** 2026-01-05
-**Status:** Draft
+**Status:** Approved
 **Purpose:** Standardize reference docs structure for discoverability, consistency, and maintainability
 
 ---
@@ -109,19 +109,122 @@ reference/{domain}/
 ### Unchanged
 - `ai-context/` stays as-is
 - `runbooks/` stays as-is
+- `_wip/` stays as-is
+- `_archive/` stays as-is
 
 ### Reorganized
-Current domain folders (fitness/, tv/, home/, core/, bots/, finance/) move to `reference/` and content gets reorganized:
+Current domain folders (fitness/, tv/, home/, core/, bots/, finance/) move to `reference/` and content gets reorganized.
 
-**Example: fitness/**
-```
-Current:                              → Becomes:
-fitness-data-flow.md                  → reference/fitness/2-architecture.md
-fitness-session-spec.md               → reference/fitness/features/sessions/ (4-file)
-fitness-identifier-contract.md        → reference/fitness/3-data-model.md (merged)
-fitness-navigation-redesign.md        → reference/fitness/1-use-cases.md (merged)
-pose-data-layers.md                   → reference/fitness/features/pose-tracking.md
-```
+---
+
+## Detailed Migration Mapping
+
+### fitness/ (12 files)
+
+| Current File | Destination | Action |
+|-------------|-------------|--------|
+| fitness-data-flow.md | reference/fitness/2-architecture.md | Move, becomes primary |
+| fitness-identifier-contract.md | reference/fitness/3-data-model.md | Move, becomes primary |
+| fitness-entityid-nullability.md | reference/fitness/3-data-model.md | Merge into above |
+| fitness-identifier-decision-tree.md | reference/fitness/3-data-model.md | Merge into above |
+| short-id-migration.md | reference/fitness/3-data-model.md | Merge into above |
+| fitness-navigation-redesign.md | reference/fitness/features/navigation.md | Move |
+| fitness-chart-layout-manager.md | reference/fitness/features/chart-layout.md | Move |
+| fitness-session-spec.md | reference/fitness/features/sessions.md | Move |
+| guest-switch-session-transition.md | reference/fitness/features/sessions.md | Merge into above |
+| session-entity-justification.md | reference/fitness/features/sessions.md | Merge into above |
+| pose-data-layers.md | reference/fitness/features/pose-tracking.md | Move |
+| vibration-sensors-fitness.md | reference/fitness/features/vibration-sensors.md | Move |
+
+**Create new:**
+- reference/fitness/1-use-cases.md (stub - extract from existing)
+- reference/fitness/4-codebase.md (stub)
+- reference/fitness/5-features.md (index of features/)
+
+### tv/ (2 files)
+
+| Current File | Destination | Action |
+|-------------|-------------|--------|
+| tv-menu-navigation-refactor.md | reference/tv/2-architecture.md | Move |
+| tv-season-view-enhancement.md | reference/tv/features/season-view.md | Move |
+
+**Create new:**
+- reference/tv/1-use-cases.md (stub)
+- reference/tv/3-data-model.md (stub)
+- reference/tv/4-codebase.md (stub)
+- reference/tv/5-features.md (index)
+
+### home/ (4 files)
+
+| Current File | Destination | Action |
+|-------------|-------------|--------|
+| ambient-led-configuration.md | reference/home/features/ambient-led.md | Move, becomes primary |
+| ambient-led-fitness-zones-prd.md | reference/home/features/ambient-led.md | Merge into above |
+| ambient-led-troubleshooting.md | reference/home/features/ambient-led.md | Merge into above |
+| midi-websocket-broadcaster.md | reference/home/features/midi-broadcaster.md | Move |
+
+**Create new:**
+- reference/home/1-use-cases.md (stub)
+- reference/home/2-architecture.md (stub)
+- reference/home/3-data-model.md (stub)
+- reference/home/4-codebase.md (stub)
+- reference/home/5-features.md (index)
+
+### bots/ (4 files)
+
+| Current File | Destination | Action |
+|-------------|-------------|--------|
+| lifelog-extractors.md | reference/bots/3-data-model.md | Move, becomes primary |
+| nutrition-goals-source-of-truth.md | reference/bots/3-data-model.md | Merge into above |
+| telegram-integration-design.md | reference/bots/2-architecture.md | Move |
+| debriefs-example.yml | reference/bots/3-data-model.md | Reference as example |
+
+**Create new:**
+- reference/bots/1-use-cases.md (stub)
+- reference/bots/4-codebase.md (stub)
+- reference/bots/5-features.md (index)
+
+### finance/ (1 file)
+
+| Current File | Destination | Action |
+|-------------|-------------|--------|
+| shopping-harvester.md | reference/finance/features/shopping-harvester.md | Move |
+
+**Create new:**
+- reference/finance/1-use-cases.md (stub)
+- reference/finance/2-architecture.md (stub)
+- reference/finance/3-data-model.md (stub)
+- reference/finance/4-codebase.md (stub)
+- reference/finance/5-features.md (index)
+
+### core/ (9 files)
+
+| Current File | Destination | Action |
+|-------------|-------------|--------|
+| three-tier-architecture.md | reference/core/2-architecture.md | Move, becomes primary |
+| harvester-bifurcation.md | reference/core/2-architecture.md | Merge into above |
+| websocket-message-bus.md | reference/core/features/websocket-bus.md | Move, becomes primary |
+| message-bus-prd.md | reference/core/features/websocket-bus.md | Merge into above |
+| harvester-testing.md | reference/core/4-codebase.md | Move, becomes primary |
+| logging-code-auditor.md | reference/core/4-codebase.md | Merge into above |
+| logging-file-auditor.md | reference/core/4-codebase.md | Merge into above |
+| family-selector.md | reference/core/features/family-selector.md | Move |
+| menu-selection-persistence.md | reference/core/features/menu-persistence.md | Move |
+
+**Create new:**
+- reference/core/1-use-cases.md (stub)
+- reference/core/3-data-model.md (stub)
+- reference/core/5-features.md (index)
+
+---
+
+## Execution Order
+
+1. Create reference/ folder structure
+2. Migrate fitness/ (largest domain, proves pattern)
+3. Migrate remaining domains
+4. Delete empty old folders
+5. Update CLAUDE.md
 
 ---
 

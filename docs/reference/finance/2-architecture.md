@@ -1,0 +1,3 @@
+# Finance Architecture
+
+**TODO:** Document.

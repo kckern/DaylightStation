@@ -82,22 +82,40 @@ ssh {hosts.prod} 'echo "content" > /path/to/file'
 IMPORTANT: Always update docs when changing code!
 
 ### Folder Structure
-- **`ai-context/`** - Claude primers (curated quickstart docs)
-- **Domain folders** - `fitness/`, `tv/`, `home/`, `bots/`, `finance/` - domain-specific reference
-- **`core/`** - Infrastructure, cross-cutting (websockets, logging, harvester testing)
-- **`runbooks/`** - Operational procedures (deployment, troubleshooting)
-- **`_wip/`** - Work in progress (brainstorms, investigations, plans, incidents)
-- **`_archive/`** - Obsolete/superseded docs (historical reference only)
+```
+docs/
+├── ai-context/       # Claude primers (quickstart docs)
+├── reference/        # Domain reference documentation
+│   ├── fitness/      # 1-use-cases, 2-architecture, 3-data-model, 4-codebase, 5-features
+│   ├── tv/
+│   ├── home/
+│   ├── bots/
+│   ├── finance/
+│   └── core/
+├── runbooks/         # Operational procedures
+├── _wip/             # Work in progress (brainstorms, plans, bugs)
+└── _archive/         # Obsolete docs
+```
+
+### Domain Reference Structure
+Each domain in `reference/` follows a numbered 5-file structure:
+- `1-use-cases.md` - Problem statements, requirements, UX flows
+- `2-architecture.md` - System design, data flow diagrams
+- `3-data-model.md` - Entities, schemas, YAML configs
+- `4-codebase.md` - File locations, function reference
+- `5-features.md` - Index of features/ subdirectory
+- `features/` - Individual feature documentation
 
 ### Naming Convention
-- All reference docs use **kebab-case** filenames: `fitness-chart-layout.md`
-- All reference docs have **Related code:** header listing relevant paths
+- Numbered files: `1-use-cases.md`, `2-architecture.md`, etc.
+- Feature files: **kebab-case** in `features/` directory
+- All reference docs have **Related code:** header
 
 ### When to Update Docs
 When modifying code, check if related docs need updating:
-- Changed `backend/lib/fitsync.mjs`? Check `docs/fitness/` for docs with that path
-- Changed `frontend/src/apps/tv/`? Check `docs/tv/`
-- Changed core infrastructure? Check `docs/core/`
+- Changed `frontend/src/hooks/fitness/`? Check `docs/reference/fitness/`
+- Changed `frontend/src/apps/tv/`? Check `docs/reference/tv/`
+- Changed core infrastructure? Check `docs/reference/core/`
 
 ### Freshness Audit
 ```bash
@@ -113,7 +131,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 1. **New work goes to `_wip/`** - All brainstorms, designs, plans, bug investigations, audits, incidents
 2. **Always date-prefix WIP files** - Format: `YYYY-MM-DD-topic-name.md`
 3. **Use appropriate subfolder** - `_wip/bugs/`, `_wip/plans/`, `_wip/audits/`, `_wip/incidents/`
-4. **Graduate when stable** - Move to domain folder (without date prefix) when doc becomes permanent reference
+4. **Graduate when stable** - Move to `reference/{domain}/` (without date prefix) when doc becomes permanent reference
 5. **Archive when obsolete** - Move to `_archive/` when superseded or no longer relevant
 6. **No loose files** - Everything belongs in a subfolder
 7. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
