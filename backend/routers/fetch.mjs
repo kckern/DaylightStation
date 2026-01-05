@@ -8,7 +8,7 @@ import yaml, { load } from 'js-yaml';
 import moment from 'moment-timezone';
 import fs from 'fs';
 import { parseFile } from 'music-metadata';
-import { findFileFromMediaKey, handleDevImage } from './media.mjs';
+import { findFileFromMediaKey, handleDevImage, resolveMediaPath } from './media.mjs';
 import { processListItem } from '../jobs/nav.mjs';
 import {lookupReference, generateReference} from 'scripture-guide';
 import { Plex } from '../lib/plex.mjs';
@@ -686,14 +686,18 @@ export const getChildrenFromMediaKey = async ({media_key, config, req}) => {
         if (plexList) return { meta: plexResponse, items: applyParamsToItems(plexList) };
     }
 
-    // If no list or Plex items, check the mediaPath
-    const folderExists = fs.existsSync(`${mediaPath}/${media_key}`);
-    if (folderExists) {
-        const getFiles = (basePath) => {
-            const folderPath = `${basePath}/${media_key}`;
-            if (!fs.existsSync(folderPath)) return [];
-            return fs.readdirSync(folderPath).map(file => {
-                const isFolder = fs.statSync(`${folderPath}/${file}`).isDirectory();
+    // If no list or Plex items, check the mediaPath with fallback prefixes
+    const isDirectory = (p) => fs.existsSync(p) && fs.statSync(p).isDirectory();
+    const resolved = resolveMediaPath(media_key, isDirectory);
+
+    if (resolved.resolved) {
+        const resolvedFolderPath = resolved.path;
+        // Compute the effective media_key (with prefix if one was used)
+        const effectiveMediaKey = resolved.prefix ? `${resolved.prefix}/${media_key}` : media_key;
+
+        const getFiles = () => {
+            return fs.readdirSync(resolvedFolderPath).map(file => {
+                const isFolder = fs.statSync(`${resolvedFolderPath}/${file}`).isDirectory();
                 if (mustBePlayable && isFolder) return null; // Skip folders if mustBePlayable is true
                 if (isFolder) return { folder: file };
                 const ext = file.split('.').pop();
@@ -703,17 +707,17 @@ export const getChildrenFromMediaKey = async ({media_key, config, req}) => {
                 .map(({ file, folder }) => {
                     if (folder) return { folder };
                     const fileWithoutExt = file.replace(/\.[^/.]+$/, ""); // Remove the file extension
-                    return fs.existsSync(`${folderPath}/${file}`) ? { media_key: `${media_key}/${fileWithoutExt}` } : null;
+                    return fs.existsSync(`${resolvedFolderPath}/${file}`) ? { media_key: `${effectiveMediaKey}/${fileWithoutExt}` } : null;
                 }).filter(Boolean);
         };
 
-        const items = (await Promise.all(getFiles(mediaPath) // Get files from media path
+        const items = (await Promise.all(getFiles()
             .map(loadMetadataFromFile)))
             .map(loadMetadataFromConfig)
             .filter(Boolean);
 
         // Load metadata for the parent and apply parent tags to children
-        const parentMetadata = loadMetadataFromMediaKey(media_key);
+        const parentMetadata = loadMetadataFromMediaKey(effectiveMediaKey);
         let items_full = sortListByMenuMemory(applyParentTags(items, parentMetadata));
 
         if (shuffle) items_full = items_full.sort(() => Math.random() - 0.5);

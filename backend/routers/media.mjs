@@ -30,24 +30,44 @@ const mediaLogger = createLogger({
 });
 
 const ext = ['mp3','mp4','m4a', 'webm'];
+
+// Fallback prefixes for legacy path support (root, audio, video, img)
+const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
+
+// Resolve a media_key to actual path, checking fallback prefixes
+export const resolveMediaPath = (media_key, checkFn = fs.existsSync) => {
+    media_key = media_key.replace(/^\//, '');
+    // Try each prefix in order: root, audio, video, img
+    for (const prefix of MEDIA_PREFIXES) {
+        const candidate = prefix ? `${mediaPath}/${prefix}/${media_key}` : `${mediaPath}/${media_key}`;
+        if (checkFn(candidate)) {
+            return { resolved: true, path: candidate, prefix };
+        }
+    }
+    return { resolved: false, path: null, prefix: null };
+};
+
 export const findFileFromMediaKey = media_key => {
     media_key = media_key.replace(/^\//, '');
     const lastLeaf = media_key.split('/').pop();
     const extention = lastLeaf.split('.').length > 1 ? lastLeaf.split('.').pop() : null;
-    const possiblePaths = extention 
-        ? [audioPath, videoPath].map(p => `${p}/${media_key}`) 
-        : ext.flatMap(e => [audioPath, videoPath].map(p => `${p}/${media_key}.${e}`));
-    const firstMatch = possiblePaths.find(p => fs.existsSync(p));
-    //if(!firstMatch) console.log(`File not found: ${JSON.stringify(possiblePaths)}`);
-    if(!firstMatch) return {found:false, path: notFound, fileSize: fs.statSync(notFound).size, mimeType: 'audio/mpeg'};
-    const fileSize = firstMatch? fs.statSync(firstMatch).size : fs.statSync(notFound).size;
-    const fileExt = firstMatch?.split('.').pop();
-    if(!firstMatch) return {found:false, path: notFound, fileSize, mimeType: 'audio/mpeg'};
 
-    const mimeType = fileExt === 'mp3' ? 'audio/mpeg' 
-        : fileExt === 'm4a' ? 'audio/mp4' 
-        : fileExt === 'mp4' ? 'video/mp4' 
-        : fileExt === 'webm' ? 'video/webm' 
+    // Build all possible paths: each prefix × each extension (if no extension provided)
+    const possiblePaths = extention
+        ? MEDIA_PREFIXES.map(prefix => prefix ? `${mediaPath}/${prefix}/${media_key}` : `${mediaPath}/${media_key}`)
+        : ext.flatMap(e => MEDIA_PREFIXES.map(prefix =>
+            prefix ? `${mediaPath}/${prefix}/${media_key}.${e}` : `${mediaPath}/${media_key}.${e}`
+          ));
+
+    const firstMatch = possiblePaths.find(p => fs.existsSync(p));
+    if(!firstMatch) return {found:false, path: notFound, fileSize: fs.statSync(notFound).size, mimeType: 'audio/mpeg'};
+    const fileSize = fs.statSync(firstMatch).size;
+    const fileExt = firstMatch?.split('.').pop();
+
+    const mimeType = fileExt === 'mp3' ? 'audio/mpeg'
+        : fileExt === 'm4a' ? 'audio/mp4'
+        : fileExt === 'mp4' ? 'video/mp4'
+        : fileExt === 'webm' ? 'video/webm'
         : 'application/octet-stream';
 
     return {found:true, path: firstMatch, fileSize, extention:fileExt, mimeType};
