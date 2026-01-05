@@ -83,7 +83,7 @@ const harvesters = {
     health: (_logger, guidId, username) => health(guidId, { targetUsername: username }),
     garmin: (_logger, guidId, username) => garmin(guidId, { targetUsername: username }),
     foursquare: (_logger, guidId, username) => foursquare(guidId, { targetUsername: username }),
-    payroll: (_logger, guidId, username) => payrollSyncJob(guidId, { targetUsername: username }),
+    payroll: (...args) => payrollSyncJob(...args),
     shopping: (logger, guidId, username) => shopping(logger, guidId, username)
 }
 
