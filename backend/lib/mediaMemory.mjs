@@ -10,6 +10,7 @@ import path from 'path';
 import fs from 'fs';
 import { configService } from './config/ConfigService.mjs';
 import { userDataService } from './config/UserDataService.mjs';
+import { slugify } from './utils.mjs';
 
 /**
  * Sanitize string data to prevent YAML parsing issues
@@ -94,4 +95,52 @@ export const getMediaMemoryDir = (householdId = null) => {
     // Fall back to legacy path
     const legacyPath = path.join(process.env.path.data, 'history', 'media_memory');
     return legacyPath;
+};
+
+/**
+ * Parse library ID and name from filename like "14_fitness.yml"
+ * @param {string} filename - Filename to parse
+ * @returns {{libraryId: number, libraryName: string}|null} Parsed components or null if legacy format
+ */
+export const parseLibraryFilename = (filename) => {
+    const match = filename.match(/^(\d+)_(.+)\.ya?ml$/);
+    if (!match) return null;
+    return {
+        libraryId: parseInt(match[1], 10),
+        libraryName: match[2]
+    };
+};
+
+/**
+ * Build filename from library ID and name
+ * @param {number} libraryId - Library section ID
+ * @param {string} libraryName - Library name (will be slugified)
+ * @returns {string} Filename like "14_fitness.yml"
+ */
+export const buildLibraryFilename = (libraryId, libraryName) => {
+    const slug = slugify(libraryName);
+    return `${libraryId}_${slug}.yml`;
+};
+
+/**
+ * Get all media memory files in plex directory
+ * @param {string|null} householdId - Optional household ID
+ * @returns {Array<{path: string, filename: string, libraryId: number|null, libraryName: string}>} File info array
+ */
+export const getMediaMemoryFiles = (householdId = null) => {
+    const plexDir = path.join(getMediaMemoryDir(householdId), 'plex');
+    if (!fs.existsSync(plexDir)) return [];
+
+    return fs.readdirSync(plexDir)
+        .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'))
+        .filter(f => !f.startsWith('_')) // Exclude _archive, _logs
+        .map(f => {
+            const parsed = parseLibraryFilename(f);
+            return {
+                path: path.join(plexDir, f),
+                filename: f,
+                libraryId: parsed?.libraryId || null,
+                libraryName: parsed?.libraryName || f.replace(/\.ya?ml$/, '')
+            };
+        });
 };
