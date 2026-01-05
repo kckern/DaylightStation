@@ -256,3 +256,6 @@ export const refreshFinancialData = async (noDL) => {
     await compileBudget();
     return { status: 'success' };
 }
+
+// Default export for cron scheduler
+export default refreshFinancialData;
