@@ -50,6 +50,48 @@ ssh {hosts.prod} 'echo "content" > /path/to/file'
 
 ---
 
+## Documentation Management
+
+### Folder Structure
+- **`ai-context/`** - Claude primers (curated quickstart docs)
+- **Domain folders** - `fitness/`, `tv/`, `home/`, `bots/`, `finance/` - domain-specific reference
+- **`core/`** - Infrastructure, cross-cutting (websockets, logging, harvester testing)
+- **`runbooks/`** - Operational procedures (deployment, troubleshooting)
+- **`_wip/`** - Work in progress (brainstorms, investigations, plans, incidents)
+- **`_archive/`** - Obsolete/superseded docs (historical reference only)
+
+### Naming Convention
+- All reference docs use **kebab-case** filenames: `fitness-chart-layout.md`
+- All reference docs have **Related code:** header listing relevant paths
+
+### When to Update Docs
+When modifying code, check if related docs need updating:
+- Changed `backend/lib/fitsync.mjs`? Check `docs/fitness/` for docs with that path
+- Changed `frontend/src/apps/tv/`? Check `docs/tv/`
+- Changed core infrastructure? Check `docs/core/`
+
+### Freshness Audit
+```bash
+# See code changes since last docs review
+git diff $(cat docs/docs-last-updated.txt)..HEAD --name-only
+
+# After updating docs, update the marker
+git rev-parse HEAD > docs/docs-last-updated.txt
+```
+
+### Rules
+
+1. **New work goes to `_wip/`** - All brainstorms, designs, plans, bug investigations, audits, incidents
+2. **Always date-prefix WIP files** - Format: `YYYY-MM-DD-topic-name.md`
+3. **Use appropriate subfolder** - `_wip/bugs/`, `_wip/plans/`, `_wip/audits/`, `_wip/incidents/`
+4. **Graduate when stable** - Move to domain folder (without date prefix) when doc becomes permanent reference
+5. **Archive when obsolete** - Move to `_archive/` when superseded or no longer relevant
+6. **No loose files** - Everything belongs in a subfolder
+7. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
+8. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{hosts.prod}` or reference `.claude/settings.local.json`
+
+---
+
 ## Navigation - AI Context Files
 
 Read these based on what you're working on:
