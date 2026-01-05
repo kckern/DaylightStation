@@ -31,16 +31,15 @@ function getConfigSearchPaths() {
 
 function getSecretsSearchPaths() {
   const paths = [];
-  
-  // Highest priority: DAYLIGHT_CONFIG_PATH env var
-  const envConfigDir = getConfigDir();
-  if (envConfigDir) {
-    paths.push(path.join(envConfigDir, 'config.secrets.yml'));
+
+  // Check environment variable first
+  if (process.env.DAYLIGHT_CONFIG_PATH) {
+    paths.push(path.join(process.env.DAYLIGHT_CONFIG_PATH, 'config.secrets.yml'));
   }
-  
+
   paths.push(path.resolve(__dirname, '../../../../config.secrets.yml'));
   paths.push(path.resolve(process.cwd(), 'config.secrets.yml'));
-  
+
   return paths;
 }
 

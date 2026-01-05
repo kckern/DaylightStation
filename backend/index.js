@@ -350,7 +350,7 @@ async function initializeApp() {
   } else {
     app.get("*", function (req, res, next) {
       if (req.path.startsWith('/ws/')) return next();
-      res.status(500).json({ error: 'This application is not configured yet. Please add a config.app.yml file to the root of the project.' });
+      res.status(500).json({ error: 'This application is not configured yet. Ensure system.yml exists in the data mount.' });
     });
   }
 

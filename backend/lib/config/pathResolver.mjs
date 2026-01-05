@@ -214,18 +214,6 @@ export function resolveConfigPaths(options = {}) {
         mounted: false
       };
     }
-
-    // Legacy location: root config.app.yml
-    if (pathExists(path.join(codebaseDir, 'config.app.yml'))) {
-      logger.warn('config_path.using_legacy_codebase_fallback');
-      return {
-        configDir: codebaseDir,
-        dataDir,
-        source: 'codebase-fallback',
-        mounted: false,
-        deprecated: true
-      };
-    }
   }
 
   // No config available
