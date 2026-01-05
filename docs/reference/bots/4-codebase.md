@@ -1,0 +1,3 @@
+# Bots Codebase
+
+**TODO:** Document.

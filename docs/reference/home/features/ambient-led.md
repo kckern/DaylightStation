@@ -1,3 +1,258 @@
+# Ambient LED Fitness Zone Configuration Guide
+
+This guide documents the configuration options for the Ambient LED feature, which syncs fitness heart rate zones with Home Assistant-controlled LED lights.
+
+## Quick Start
+
+Add the following to your household's fitness config (`data/households/{household_id}/apps/fitness/config.yml`):
+
+```yaml
+ambient_led:
+  scenes:
+    off: garage_led_off
+    cool: garage_led_blue
+    active: garage_led_green
+    warm: garage_led_yellow
+    hot: garage_led_orange
+    fire: garage_led_red
+    fire_all: garage_led_red_breathe
+  throttle_ms: 2000
+```
+
+## Configuration Reference
+
+### `ambient_led` Section
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `scenes` | object | Yes | - | Maps zone names to Home Assistant scene entity names |
+| `throttle_ms` | number | No | 2000 | Minimum milliseconds between HA scene activations |
+
+### `scenes` Object
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `off` | **Yes** | Scene to activate when session ends or no active participants |
+| `cool` | No | Scene for cool zone (<60% max HR) |
+| `active` | No | Scene for active zone (60-70% max HR) |
+| `warm` | No | Scene for warm zone (70-80% max HR) |
+| `hot` | No | Scene for hot zone (80-90% max HR) |
+| `fire` | No | Scene for fire zone (90%+ max HR) |
+| `fire_all` | No | Scene when ALL active participants are in fire zone |
+
+**Note:** The `off` scene is required. If other scenes are missing, they fall back to the next lower zone, ultimately to `off`.
+
+### Scene Fallback Chain
+
+When a zone scene is not configured, the system falls back through this chain:
+
+```
+fire_all → fire → hot → warm → active → cool → off
+```
+
+Example: If you only configure `off` and `fire`:
+- cool, active, warm, hot zones → `off` scene
+- fire zone → `fire` scene
+- all-fire condition → `fire` scene (since `fire_all` not configured)
+
+## Zone Mapping
+
+| Zone | Heart Rate | LED Color | Trigger |
+|------|------------|-----------|---------|
+| Off | - | Off | Session ended or no active participants |
+| Cool | <60% | Blue | Recovery, warmup |
+| Active | 60-70% | Green | Fat burn zone |
+| Warm | 70-80% | Yellow | Cardio zone |
+| Hot | 80-90% | Orange | Threshold zone |
+| Fire | 90%+ | Red | Max effort |
+| Fire All | All users 90%+ | Red (breathing) | Special effect when everyone is maxed |
+
+## Multi-User Behavior
+
+When multiple users are active:
+- **Max Zone Wins**: The highest zone among all active participants is displayed
+- **All-Fire Special**: When every active participant is in the fire zone, triggers the breathing effect
+
+Example with 3 users:
+- User A: warm (70%)
+- User B: hot (85%)
+- User C: cool (55%)
+- **Result**: Orange LED (hot zone - the maximum)
+
+## Feature Toggle
+
+The feature is automatically **disabled** if:
+- `ambient_led` section is missing from config
+- `ambient_led.scenes` is missing or empty
+- `ambient_led.scenes.off` is not configured
+
+This makes it safe to deploy to households without Home Assistant integration.
+
+## Home Assistant Requirements
+
+### Scene Setup
+
+Create scenes in Home Assistant for each LED state. Example `scenes.yaml`:
+
+```yaml
+- name: "Garage LED Off"
+  entities:
+    light.garage_led_strip:
+      state: "off"
+
+- name: "Garage LED Blue"
+  entities:
+    light.garage_led_strip:
+      state: "on"
+      brightness: 255
+      rgb_color: [0, 100, 255]
+
+- name: "Garage LED Green"
+  entities:
+    light.garage_led_strip:
+      state: "on"
+      brightness: 255
+      rgb_color: [0, 255, 100]
+
+- name: "Garage LED Yellow"
+  entities:
+    light.garage_led_strip:
+      state: "on"
+      brightness: 255
+      rgb_color: [255, 255, 0]
+
+- name: "Garage LED Orange"
+  entities:
+    light.garage_led_strip:
+      state: "on"
+      brightness: 255
+      rgb_color: [255, 150, 0]
+
+- name: "Garage LED Red"
+  entities:
+    light.garage_led_strip:
+      state: "on"
+      brightness: 255
+      rgb_color: [255, 0, 0]
+
+- name: "Garage LED Red Breathe"
+  entities:
+    light.garage_led_strip:
+      state: "on"
+      brightness: 255
+      rgb_color: [255, 0, 0]
+      effect: "Breathe"
+```
+
+### Environment Variables
+
+Ensure these are set in your DaylightStation environment:
+
+```yaml
+HOME_ASSISTANT_TOKEN: "your_long_lived_access_token"
+home_assistant:
+  host: "http://homeassistant.local"
+  port: 8123
+```
+
+## API Endpoints
+
+### Check Status
+```bash
+GET /fitness/zone_led/status?householdId=default
+```
+
+Response:
+```json
+{
+  "enabled": true,
+  "scenes": { "off": "garage_led_off", ... },
+  "throttleMs": 2000,
+  "state": {
+    "lastScene": "garage_led_yellow",
+    "lastActivatedAt": 1735123456789,
+    "failureCount": 0,
+    "backoffUntil": 0,
+    "isInBackoff": false
+  }
+}
+```
+
+### View Metrics
+```bash
+GET /fitness/zone_led/metrics
+```
+
+Response:
+```json
+{
+  "uptime": { "ms": 3600000, "formatted": "1h 0m" },
+  "totals": {
+    "requests": 150,
+    "activated": 45,
+    "failures": 0
+  },
+  "skipped": {
+    "duplicate": 80,
+    "rateLimited": 25
+  },
+  "sceneHistogram": {
+    "garage_led_blue": 10,
+    "garage_led_yellow": 20
+  }
+}
+```
+
+### Reset Circuit Breaker
+```bash
+POST /fitness/zone_led/reset
+```
+
+Use this after fixing Home Assistant connectivity issues.
+
+## Example Configurations
+
+### Minimal (Only On/Off)
+```yaml
+ambient_led:
+  scenes:
+    off: led_strip_off
+    fire: led_strip_red
+```
+
+### Full Color Gradient
+```yaml
+ambient_led:
+  scenes:
+    off: fitness_led_off
+    cool: fitness_led_blue
+    active: fitness_led_green
+    warm: fitness_led_yellow
+    hot: fitness_led_orange
+    fire: fitness_led_red
+    fire_all: fitness_led_rainbow
+  throttle_ms: 1500
+```
+
+### Multiple Light Groups
+```yaml
+# Use scenes that control multiple lights
+ambient_led:
+  scenes:
+    off: gym_lights_off
+    cool: gym_lights_cool
+    active: gym_lights_active
+    warm: gym_lights_warm
+    hot: gym_lights_hot
+    fire: gym_lights_fire
+    fire_all: gym_lights_party_mode
+```
+
+## Related Documentation
+
+- [Ambient LED Fitness Zones PRD](./ambient-led-fitness-zones-prd.md)
+- [Troubleshooting Guide](./ambient-led-troubleshooting.md)
+- [Home Assistant API Reference](https://developers.home-assistant.io/docs/api/rest/)
 # Product Requirements Document: Ambient LED Fitness Zone Indicator
 
 ## 1. Executive Summary
@@ -810,3 +1065,347 @@ Authorization: Bearer <token>
 | `fitness.zone_led.failed` | ERROR | error, failureCount |
 | `fitness.zone_led.circuit_open` | WARN | failureCount, backoffMs |
 | `fitness.zone_led.backoff` | WARN | remainingMs |
+# Ambient LED Troubleshooting Guide
+
+This guide helps diagnose and fix issues with the Ambient LED fitness zone feature.
+
+## Quick Diagnostics
+
+### 1. Check Feature Status
+```bash
+curl http://localhost:3000/fitness/zone_led/status
+```
+
+**Expected response when working:**
+```json
+{
+  "enabled": true,
+  "scenes": { "off": "...", "cool": "...", ... },
+  "state": { "failureCount": 0, "isInBackoff": false }
+}
+```
+
+### 2. Check Metrics
+```bash
+curl http://localhost:3000/fitness/zone_led/metrics
+```
+
+Look for:
+- `totals.activated` > 0 (scenes are being activated)
+- `totals.failures` = 0 (no HA errors)
+- `circuitBreaker.isOpen` = false (not in backoff)
+
+---
+
+## Common Issues
+
+### Issue: Feature Shows as Disabled
+
+**Symptoms:**
+- `enabled: false` in status response
+- No LED changes during workout
+
+**Causes & Solutions:**
+
+| Cause | Solution |
+|-------|----------|
+| Missing `ambient_led` section | Add `ambient_led:` section to fitness config |
+| Missing `scenes` object | Add `scenes:` under `ambient_led:` |
+| Missing `off` scene | Add `off: your_scene_name` (required) |
+| Wrong config file | Ensure config is in correct household path |
+
+**Verify config location:**
+```
+data/households/{household_id}/apps/fitness/config.yml
+```
+
+---
+
+### Issue: LEDs Not Changing
+
+**Symptoms:**
+- Status shows `enabled: true`
+- `lastScene` never updates
+- Metrics show `activated: 0`
+
+**Diagnostic Steps:**
+
+1. **Check if requests are reaching backend:**
+   ```bash
+   # Watch logs
+   tail -f logs/backend.log | grep zone_led
+   ```
+
+2. **Check skip reasons in metrics:**
+   ```bash
+   curl http://localhost:3000/fitness/zone_led/metrics | jq '.skipped'
+   ```
+
+**Common skip reasons:**
+
+| Reason | Meaning | Solution |
+|--------|---------|----------|
+| `duplicate` | Same scene already active | Normal behavior - only changes are sent |
+| `rate_limited` | Too many requests | Wait for throttle window (default 2s) |
+| `backoff` | Circuit breaker open | Fix HA connection, then reset |
+| `feature_disabled` | Config missing | Check config file |
+
+3. **Test manual scene activation:**
+   ```bash
+   curl -X POST http://localhost:3000/fitness/zone_led \
+     -H "Content-Type: application/json" \
+     -d '{"zones":[{"zoneId":"warm","isActive":true}]}'
+   ```
+
+---
+
+### Issue: Home Assistant Connection Failures
+
+**Symptoms:**
+- `failureCount` > 0 in status
+- `isInBackoff: true` (circuit breaker open)
+- Error logs showing HA connection issues
+
+**Diagnostic Steps:**
+
+1. **Check HA connectivity:**
+   ```bash
+   curl -H "Authorization: Bearer $HOME_ASSISTANT_TOKEN" \
+        http://your-ha-host:8123/api/
+   ```
+
+2. **Test scene activation directly:**
+   ```bash
+   curl -X POST http://your-ha-host:8123/api/services/scene/turn_on \
+     -H "Authorization: Bearer $HOME_ASSISTANT_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"entity_id": "scene.your_scene_name"}'
+   ```
+
+**Common causes:**
+
+| Cause | Solution |
+|-------|----------|
+| Wrong HA host/port | Update `home_assistant.host` and `home_assistant.port` in config |
+| Invalid token | Generate new long-lived access token in HA |
+| Network issues | Check firewall, DNS resolution |
+| HA offline | Wait for HA to come back online |
+
+3. **Reset circuit breaker after fixing:**
+   ```bash
+   curl -X POST http://localhost:3000/fitness/zone_led/reset
+   ```
+
+---
+
+### Issue: Scene Doesn't Exist in HA
+
+**Symptoms:**
+- HA returns 404 or error
+- Error log shows "scene not found"
+
+**Solution:**
+
+1. Verify scene exists in HA:
+   ```bash
+   curl -H "Authorization: Bearer $HOME_ASSISTANT_TOKEN" \
+        http://your-ha-host:8123/api/states/scene.your_scene_name
+   ```
+
+2. Check scene naming:
+   - Config uses scene **name** (e.g., `garage_led_blue`)
+   - HA uses entity_id format: `scene.garage_led_blue`
+   - The backend adds `scene.` prefix automatically
+
+3. Create missing scene in HA `scenes.yaml`
+
+---
+
+### Issue: Wrong Zone Displayed
+
+**Symptoms:**
+- LED color doesn't match expected zone
+- Unexpected zone resolution
+
+**Diagnostic Steps:**
+
+1. **Check what zones are being sent:**
+   ```bash
+   # In browser console during workout
+   # Or check backend logs for zone_led.activated events
+   ```
+
+2. **Verify zone calculation:**
+   - Max zone among all **active** participants is used
+   - Inactive users (heart rate timeout) are excluded
+   - Single user in fire = "all fire" (breathing effect)
+
+3. **Test zone resolution:**
+   ```bash
+   # Test warm zone
+   curl -X POST http://localhost:3000/fitness/zone_led \
+     -H "Content-Type: application/json" \
+     -d '{"zones":[{"zoneId":"warm","isActive":true}]}'
+   ```
+
+---
+
+### Issue: Rate Limiting Too Aggressive
+
+**Symptoms:**
+- Many `rate_limited` skips in metrics
+- LED changes feel delayed
+
+**Solution:**
+
+Reduce throttle time in config:
+```yaml
+ambient_led:
+  throttle_ms: 1000  # Reduce from default 2000ms
+  scenes:
+    # ...
+```
+
+**Note:** Don't go below 500ms to avoid overwhelming Home Assistant.
+
+---
+
+### Issue: Circuit Breaker Won't Reset
+
+**Symptoms:**
+- `isInBackoff: true` even after HA is fixed
+- Backoff keeps increasing
+
+**Solution:**
+
+1. **Manual reset:**
+   ```bash
+   curl -X POST http://localhost:3000/fitness/zone_led/reset
+   ```
+
+2. **Verify HA is actually reachable** before resetting
+
+3. **Check for recurring failures** - if HA keeps failing, circuit will re-open
+
+---
+
+## Log Analysis
+
+### Key Log Events
+
+| Event | Level | Meaning |
+|-------|-------|---------|
+| `fitness.zone_led.activated` | INFO | Scene successfully changed |
+| `fitness.zone_led.skipped` | DEBUG | Request skipped (see reason) |
+| `fitness.zone_led.failed` | ERROR | HA call failed |
+| `fitness.zone_led.circuit_open` | ERROR | Circuit breaker opened |
+| `fitness.zone_led.backoff` | WARN | Request rejected due to backoff |
+| `fitness.zone_led.reset` | INFO | State was manually reset |
+
+### Enable Debug Logging
+
+To see all zone_led events including skipped requests:
+```bash
+# Set log level to debug for fitness app
+export LOG_LEVEL=debug
+```
+
+### Log Search Examples
+
+```bash
+# Find all scene activations
+grep "zone_led.activated" logs/backend.log
+
+# Find failures
+grep "zone_led.failed\|zone_led.circuit_open" logs/backend.log
+
+# Count by event type
+grep "zone_led" logs/backend.log | cut -d'"' -f4 | sort | uniq -c
+```
+
+---
+
+## Testing Tools
+
+### Manual Test Script
+
+```bash
+# Test all zones in sequence
+node scripts/test-zone-led.mjs test-all
+```
+
+### Individual Zone Commands
+
+```bash
+node scripts/test-zone-led.mjs cool    # Blue
+node scripts/test-zone-led.mjs warm    # Yellow
+node scripts/test-zone-led.mjs hot     # Orange
+node scripts/test-zone-led.mjs fire    # Red
+node scripts/test-zone-led.mjs off     # Off
+```
+
+### Stress Test (Throttle Verification)
+
+```bash
+node scripts/test-zone-led.mjs stress
+```
+
+---
+
+## Health Check Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /fitness/zone_led/status` | Current state and config |
+| `GET /fitness/zone_led/metrics` | Detailed usage metrics |
+| `POST /fitness/zone_led/reset` | Reset circuit breaker |
+
+---
+
+## Recovery Procedures
+
+### Full Reset Procedure
+
+1. Stop any active workout sessions
+2. Fix underlying issue (HA connectivity, config, etc.)
+3. Reset circuit breaker:
+   ```bash
+   curl -X POST http://localhost:3000/fitness/zone_led/reset
+   ```
+4. Test with manual scene change:
+   ```bash
+   curl -X POST http://localhost:3000/fitness/zone_led \
+     -H "Content-Type: application/json" \
+     -d '{"zones":[{"zoneId":"cool","isActive":true}]}'
+   ```
+5. Verify in status:
+   ```bash
+   curl http://localhost:3000/fitness/zone_led/status
+   ```
+
+### Emergency LED Off
+
+If LEDs are stuck on and need to be turned off immediately:
+
+```bash
+# Via DaylightStation
+curl -X POST http://localhost:3000/fitness/zone_led \
+  -H "Content-Type: application/json" \
+  -d '{"sessionEnded":true}'
+
+# Directly via Home Assistant
+curl -X POST http://your-ha-host:8123/api/services/scene/turn_on \
+  -H "Authorization: Bearer $HOME_ASSISTANT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"entity_id": "scene.garage_led_off"}'
+```
+
+---
+
+## Contact & Support
+
+If issues persist after following this guide:
+1. Collect logs: `grep zone_led logs/backend.log > zone_led_debug.log`
+2. Get metrics: `curl http://localhost:3000/fitness/zone_led/metrics > metrics.json`
+3. Get status: `curl http://localhost:3000/fitness/zone_led/status > status.json`
+4. Include config (redact sensitive data)

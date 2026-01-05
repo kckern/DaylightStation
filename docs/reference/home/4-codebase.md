@@ -1,0 +1,3 @@
+# Home Codebase
+
+**TODO:** Document.
