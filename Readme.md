@@ -5,7 +5,7 @@ A self-hosted personal life management platform. Aggregates fitness, health, fin
 ![License](https://img.shields.io/badge/license-Polyform%20Noncommercial-blue)
 ![Docker Pulls](https://img.shields.io/docker/pulls/kckern/daylight-station)
 
-## Features
+## Features 
 
 ### Fitness & Health
 - **Real-time workout tracking** with pose detection and live metrics
