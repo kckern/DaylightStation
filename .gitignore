@@ -31,3 +31,4 @@ config.app-local.yml
 .claude/settings.local.json
 /_extensions/fitness/node_modules
 /_extensions/piano/node_modules
+.worktrees
