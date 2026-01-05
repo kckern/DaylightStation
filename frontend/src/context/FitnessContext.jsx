@@ -310,7 +310,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   useEffect(() => {
     if (!session) return;
-    session.cleanupOrphanGuests?.();
+    // DEBUG: Disabled - suspected cause of empty deviceAssignments on save
+    // session.cleanupOrphanGuests?.();
     session.reconcileAssignments?.();
   }, [session, ledgerVersion]);
   

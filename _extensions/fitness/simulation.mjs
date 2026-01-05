@@ -37,8 +37,13 @@ import { loadFile } from '../../backend/lib/io.mjs';
 // Configuration
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
 const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
-const SIMULATION_DURATION = 30 * 60 * 1000; // 3 minutes in milliseconds
 const UPDATE_INTERVAL = 2000; // Send data every 2 seconds
+
+// Parse --duration=SECONDS argument (default: 120 seconds / 2 minutes)
+const durationArg = process.argv.find(a => a.startsWith('--duration='));
+const SIMULATION_DURATION = durationArg
+  ? parseInt(durationArg.split('=')[1], 10) * 1000
+  : 120 * 1000; // Default 2 minutes
 
 // Initialize config using the new framework
 const isDocker = fs.existsSync('/.dockerenv');

@@ -1280,6 +1280,12 @@ export class FitnessSession {
     this.lastActivityTime = now;
     this.endTime = null;
     
+    // DEBUG: Log session start with stack trace (throttled: first 5 only)
+    if ((this._debugStartCount = (this._debugStartCount || 0) + 1) <= 5) {
+      const stack = new Error().stack?.split('\n').slice(1, 6).map(s => s.trim()).join(' <- ');
+      console.error(`🟢 SESSION_START [${this._debugStartCount}/5]: ${this.sessionId}, reason="${reason}"`, { stack });
+    }
+
     getLogger().warn('fitness.session.started', {
       sessionId: this.sessionId,
       reason,
@@ -1773,14 +1779,22 @@ export class FitnessSession {
    */
   endSession(reason = 'unknown') {
     if (!this.sessionId) return false;
-    
+
     const now = Date.now();
     this.endTime = now;
+
+    // DEBUG: Capture stack trace to identify what's triggering early session ends (throttled: first 5 only)
+    const durationMs = this.endTime - this.startTime;
+    if ((this._debugEndCount = (this._debugEndCount || 0) + 1) <= 5) {
+      const stack = new Error().stack?.split('\n').slice(1, 6).map(s => s.trim()).join(' <- ');
+      console.error(`🛑 SESSION_END [${this._debugEndCount}/5]: ${this.sessionId} after ${durationMs}ms, reason="${reason}"`, { stack });
+    }
+
     this._collectTimelineTick({ timestamp: now });
-    this._log('end', { 
-      sessionId: this.sessionId, 
-      durationMs: this.endTime - this.startTime,
-      reason 
+    this._log('end', {
+      sessionId: this.sessionId,
+      durationMs,
+      reason
     });
     
     let sessionData = null;
@@ -2164,6 +2178,11 @@ export class FitnessSession {
       const now = Date.now();
       if (this._lastAutosaveAt && (now - this._lastAutosaveAt) < this._autosaveIntervalMs) return;
     }
+    // DEBUG: Log autosave (throttled: first 3 only)
+    if ((this._debugAutosaveCount = (this._debugAutosaveCount || 0) + 1) <= 3) {
+      const elapsed = this.startTime ? Date.now() - this.startTime : 0;
+      console.error(`💾 AUTOSAVE [${this._debugAutosaveCount}/3]: ${this.sessionId} at ${elapsed}ms`);
+    }
     getLogger().warn('fitness.session.autosave', { sessionId: this.sessionId, force });
     this._maybeTickTimeline();
     const snapshot = this.summary;
@@ -2315,6 +2334,12 @@ export class FitnessSession {
     }
     const snapshot = ledger.snapshot();
     const removedDevices = [];
+
+    // DEBUG: Log cleanup attempt (throttled)
+    if ((this._debugCleanupCount = (this._debugCleanupCount || 0) + 1) <= 5) {
+      console.error(`🧹 CLEANUP_ORPHANS [${this._debugCleanupCount}/5]: checking ${snapshot.length} ledger entries`);
+    }
+
     snapshot.forEach((entry) => {
       if (!entry) return;
       const slug = entry.occupantSlug || null;
@@ -2322,6 +2347,12 @@ export class FitnessSession {
       const boundDeviceId = user?.hrDeviceId ? String(user.hrDeviceId) : null;
       const deviceMatches = boundDeviceId === entry.deviceId;
       if (!user || !deviceMatches) {
+        // DEBUG: Log each removal (always - these are critical)
+        console.error(`🗑️ LEDGER_REMOVE: device=${entry.deviceId}, slug=${slug}, reason=${!user ? 'user-missing' : 'device-mismatch'}`, {
+          boundDeviceId,
+          entryDeviceId: entry.deviceId,
+          hasUser: !!user
+        });
         ledger.remove(entry.deviceId);
         removedDevices.push(entry.deviceId);
         this.eventJournal?.log('ORPHAN_GUEST_REMOVED', {

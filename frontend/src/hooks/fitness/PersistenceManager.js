@@ -421,6 +421,10 @@ export class PersistenceManager {
       return false;
     }
     if (this._saveTriggered && !force) {
+      // DEBUG: Log when save is blocked (throttled)
+      if ((this._debugBlockedCount = (this._debugBlockedCount || 0) + 1) <= 3) {
+        console.error(`🚫 SAVE_BLOCKED [${this._debugBlockedCount}/3]: ${sessionData?.sessionId} - previous save still in progress`);
+      }
       getLogger().warn('fitness.persistence.save_in_progress');
       return false;
     }
@@ -428,6 +432,8 @@ export class PersistenceManager {
     const validation = this.validateSessionPayload(sessionData);
     getLogger().warn('fitness.persistence.validation', { validation });
     if (!validation?.ok) {
+      // DEBUG: Always log validation failures
+      console.error(`⚠️ VALIDATION_FAIL: ${sessionData?.sessionId}, reason="${validation?.reason}"`, validation);
       this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
       return false;
     }
@@ -548,11 +554,23 @@ export class PersistenceManager {
     this._lastSaveAt = Date.now();
     this._saveTriggered = true;
 
+    // DEBUG: Log save attempt (throttled: first 5 only)
+    if ((this._debugSaveCount = (this._debugSaveCount || 0) + 1) <= 5) {
+      const tickCount = persistSessionData.timeline?.timebase?.tickCount || 0;
+      const seriesCount = Object.keys(persistSessionData.timeline?.series || {}).length;
+      console.error(`📤 SESSION_SAVE [${this._debugSaveCount}/5]: ${persistSessionData.sessionId}, ticks=${tickCount}, series=${seriesCount}`);
+    }
+
     this._persistApi('api/fitness/save_session', { sessionData: persistSessionData }, 'POST')
       .then(resp => {
-        // Successfully saved
+        // DEBUG: Log success (throttled)
+        if ((this._debugSaveSuccessCount = (this._debugSaveSuccessCount || 0) + 1) <= 3) {
+          console.error(`✅ SESSION_SAVED [${this._debugSaveSuccessCount}/3]: ${persistSessionData.sessionId}`);
+        }
       })
       .catch(err => {
+        // DEBUG: Always log failures (these are critical)
+        console.error(`❌ SESSION_SAVE_FAILED: ${persistSessionData.sessionId}`, err?.message || err);
         getLogger().error('fitness.persistence.failed', { error: err.message });
       })
       .finally(() => {
