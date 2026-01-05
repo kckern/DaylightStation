@@ -2,8 +2,8 @@
 
 A self-hosted personal life management platform. Aggregates fitness, health, finance, media, and productivity data into a unified dashboard with real-time tracking and home automation.
 
-![License](https://img.shields.io/badge/license-ISC-blue)
-![Docker Pulls](https://img.shields.io/docker/pulls/kckern/daylightstation)
+![License](https://img.shields.io/badge/license-Polyform%20Noncommercial-blue)
+![Docker Pulls](https://img.shields.io/docker/pulls/kckern/daylight-station)
 
 ## Features
 
@@ -147,10 +147,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 
-ISC License. See [LICENSE](LICENSE) for details.
+Polyform Noncommercial 1.0.0. Free for personal and non-commercial use. See [LICENSE](LICENSE) for details.
 
 ## Links
 
 - [Documentation](docs/)
 - [Report Issues](https://github.com/kckern/DaylightStation/issues)
-- [Docker Hub](https://hub.docker.com/r/kckern/daylightstation)
+- [Docker Hub](https://hub.docker.com/r/kckern/daylight-station)
