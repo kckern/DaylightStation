@@ -29,3 +29,5 @@ config.app-local.yml
 /_extentions/piano/node_modules
 /test-results
 .claude/settings.local.json
+/_extensions/fitness/node_modules
+/_extensions/piano/node_modules

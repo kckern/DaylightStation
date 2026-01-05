@@ -136,12 +136,12 @@ Unified life event extraction from all integrated services:
 
 1. **Build the container**
    ```bash
-   docker-compose build
+   docker-compose -f docker/docker-compose.yml build
    ```
 
 2. **Start the services**
    ```bash
-   docker-compose up -d
+   docker-compose -f docker/docker-compose.yml up -d
    ```
 
 ## Configuration
@@ -246,16 +246,16 @@ DaylightStation/
 │   └── public/                 # Static assets
 │
 ├── config/                     # Configuration templates
-├── data/                       # Runtime data storage
-│   └── households/             # Multi-household data
+├── docker/                     # Docker configuration
+│   ├── Dockerfile              # Container image definition
+│   ├── docker-compose.yml      # Container orchestration
+│   └── docker-compose.remote.yml
 ├── docs/                       # Documentation
 ├── scripts/                    # Utility scripts
 ├── cli/                        # Command-line interface
+├── _extensions/                # Satellite components (ANT+, MIDI)
 │
-├── package.json                # Root workspace package
-├── Dockerfile                  # Container image definition
-├── docker-compose.yml          # Container orchestration
-└── vite.config.js              # Vite configuration
+└── package.json                # Root workspace package
 ```
 
 ## Development
@@ -337,20 +337,20 @@ Household automation assistant for:
 
 ## Docker Support
 
-The application is fully containerized:
+The application is fully containerized. Docker files are in the `docker/` folder:
 
 ```bash
 # Build the image
-docker-compose build
+docker-compose -f docker/docker-compose.yml build
 
 # Start services
-docker-compose up -d
+docker-compose -f docker/docker-compose.yml up -d
 
 # View logs
-docker-compose logs -f
+docker-compose -f docker/docker-compose.yml logs -f
 
 # Stop services
-docker-compose down
+docker-compose -f docker/docker-compose.yml down
 ```
 
 ## Multi-User & Household Support

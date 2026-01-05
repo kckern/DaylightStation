@@ -52,6 +52,8 @@ ssh {hosts.prod} 'echo "content" > /path/to/file'
 
 ## Documentation Management
 
+IMPORTANT: Always update docs when changing code!
+
 ### Folder Structure
 - **`ai-context/`** - Claude primers (curated quickstart docs)
 - **Domain folders** - `fitness/`, `tv/`, `home/`, `bots/`, `finance/` - domain-specific reference
