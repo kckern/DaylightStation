@@ -408,7 +408,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const [music] = useState(
       String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")
     );
-    const ambientMediaUrl = DaylightMediaPath(`media/ambient/${music}`);
+    const ambientMediaUrl = DaylightMediaPath(`media/audio/ambient/${music}`);
 
     // Process volume parameter for both main and ambient audio
     const mainVolume = (() => {
@@ -800,8 +800,8 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     })}
     </div>
   );
-    const ambientMusicUrl = `${DaylightMediaPath(`media/ambient/${String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")}`)}`;
-    
+    const ambientMusicUrl = `${DaylightMediaPath(`media/audio/ambient/${String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")}`)}`;
+
     // Process volume parameter for both main video and ambient audio
     const processVolumeForTalk = (defaultValue) => {
       if (!volume) return defaultValue;
