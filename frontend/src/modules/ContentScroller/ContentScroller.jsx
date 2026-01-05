@@ -918,16 +918,16 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         setPoetryVerses(verses);
         setTitle(`${title} (${author})`);
         setPoemID(finalPoemId);
-        setMediaUrl(DaylightMediaPath(`media/poetry/${finalPoemId}`));
+        setMediaUrl(DaylightMediaPath(`media/audio/poetry/${finalPoemId}`));
         setSubtitle([condition, ...(also_suitable_for || [])].filter(Boolean).join(" • "));
-        setMediaKey(`poetry/${finalPoemId}`);
+        setMediaKey(`audio/poetry/${finalPoemId}`);
         setDuration(duration);
         console.log('Poetry state updated with:', {
           title,
           poemID: finalPoemId,
-          mediaUrl: DaylightMediaPath(`media/poetry/${finalPoemId}`),
+          mediaUrl: DaylightMediaPath(`media/audio/poetry/${finalPoemId}`),
           subtitle: `Poem #${finalPoemId}`,
-          media_key: `poetry/${finalPoemId}`,
+          media_key: `audio/poetry/${finalPoemId}`,
           duration,
           versesLength: verses?.length
         });
