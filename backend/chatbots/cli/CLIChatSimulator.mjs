@@ -32,16 +32,16 @@ import yaml from 'js-yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Load preferred timezone from config.app-local.yml/config.app.yml
+ * Load preferred timezone from system config
  */
 function loadAppTimezone() {
   const searchPaths = [
-    path.resolve(__dirname, '../../../config.app-local.yml'),
-    path.resolve(__dirname, '../../../config.app.yml'),
-    path.resolve(__dirname, '../../../../config.app-local.yml'),
-    path.resolve(__dirname, '../../../../config.app.yml'),
-    path.resolve(process.cwd(), 'config.app-local.yml'),
-    path.resolve(process.cwd(), 'config.app.yml'),
+    path.resolve(__dirname, '../../../system-local.yml'),
+    path.resolve(__dirname, '../../../system.yml'),
+    path.resolve(__dirname, '../../../../system-local.yml'),
+    path.resolve(__dirname, '../../../../system.yml'),
+    path.resolve(process.cwd(), 'system-local.yml'),
+    path.resolve(process.cwd(), 'system.yml'),
   ];
 
   for (const p of searchPaths) {

@@ -18,7 +18,7 @@ export class UserResolver {
   #logger;
 
   /**
-   * @param {Object} config - Chatbots config object from config.app.yml
+   * @param {Object} config - Chatbots config object from ConfigService
    * @param {Object} [options]
    * @param {Object} [options.logger] - Logger instance
    */

@@ -24,10 +24,11 @@ const safeReadYaml = (filePath) => {
 };
 
 export const hydrateProcessEnvFromConfigs = (baseDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..')) => {
-  const appConfig = safeReadYaml(path.join(baseDir, 'config.app.yml'));
+  // Load from new config structure (system.yml) or legacy (config.secrets.yml)
+  const systemConfig = safeReadYaml(path.join(baseDir, 'system.yml'));
   const secretsConfig = safeReadYaml(path.join(baseDir, 'config.secrets.yml'));
-  const localConfig = safeReadYaml(path.join(baseDir, 'config.app-local.yml'));
-  const merged = { ...appConfig, ...secretsConfig, ...localConfig };
+  const localConfig = safeReadYaml(path.join(baseDir, 'system-local.yml'));
+  const merged = { ...systemConfig, ...secretsConfig, ...localConfig };
   process.env = { ...process.env, ...merged };
   return merged;
 };
