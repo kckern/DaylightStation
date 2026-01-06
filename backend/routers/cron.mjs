@@ -297,10 +297,20 @@ export const cronContinuous = async () => {
   }
 };
 
+// Concurrency lock to prevent overlapping cron runs
+let cronRunning = false;
+
 // Only start cron scheduler in production to avoid Dropbox sync conflicts
 if (cronEnabled) {
   setInterval(() => {
-    cronContinuous().catch(err => cronLogger.error('cron.run.error', { error: err?.message, stack: err?.stack }));
+    if (cronRunning) {
+      cronLogger.debug('cron.skipped.already_running');
+      return;
+    }
+    cronRunning = true;
+    cronContinuous()
+      .catch(err => cronLogger.error('cron.run.error', { error: err?.message, stack: err?.stack }))
+      .finally(() => { cronRunning = false; });
   }, 5000);
   cronLogger.info('cron.scheduler.started', { isDocker, interval: 5000 });
 } else {

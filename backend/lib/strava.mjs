@@ -176,20 +176,24 @@ const baseAPI = async (endpoint, logger) => {
         const dataResponse = await axios.get(url, { headers });
         return dataResponse.data;
     } catch (error) {
-        if (error.response && error.response.status === 429) {
+        const statusCode = error.response?.status;
+
+        // Circuit breaker for rate limits (429) AND auth failures (401)
+        // Both indicate we should stop hammering the API
+        if (statusCode === 429 || statusCode === 401) {
             recordFailure(error);
-            log.warn('strava.rate_limit', { 
-                endpoint, 
-                statusCode: 429,
-                message: 'Rate limit exceeded'
+            log.warn('strava.api_blocked', {
+                endpoint,
+                statusCode,
+                message: statusCode === 429 ? 'Rate limit exceeded' : 'Auth token invalid'
             });
             throw error;
         }
-        log.warn('harvest.strava.fetch.error', { 
-            endpoint, 
+        log.warn('harvest.strava.fetch.error', {
+            endpoint,
             error: cleanErrorMessage(error),
-            statusCode: error.response?.status,
-            responseData: error.response?.data 
+            statusCode,
+            responseData: error.response?.data
         });
         return false;
     }
@@ -396,15 +400,23 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
         recordSuccess();
         return finalSummary;
     } catch (error) {
-        // Record failure for circuit breaker on rate limit errors
-        if (error.response && (error.response.status === 429 || error.response.status === 401)) {
+        const statusCode = error.response?.status;
+        // Record failure for circuit breaker on rate limit (429) or auth errors (401)
+        if (statusCode === 429 || statusCode === 401) {
+            // Already recorded in baseAPI, but ensure circuit breaker is triggered
             recordFailure(error);
-            throw error;
+            const cooldownStatus = isInCooldown();
+            return {
+                success: false,
+                error: statusCode === 401 ? 'Auth token invalid - needs refresh' : 'Rate limit exceeded',
+                statusCode,
+                cooldown: cooldownStatus || null
+            };
         }
-        log.error('harvest.strava.failure', { 
-            jobId: job_id, 
+        log.error('harvest.strava.failure', {
+            jobId: job_id,
             error: cleanErrorMessage(error),
-            statusCode: error.response?.status
+            statusCode
         });
         return { success: false, error: cleanErrorMessage(error) };
     }
