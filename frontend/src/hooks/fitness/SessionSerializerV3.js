@@ -96,6 +96,42 @@ export class SessionSerializerV3 {
 
     result.participants = participants;
 
+    // Build timeline block
+    const timelineOutput = {
+      interval_seconds: Math.round((timeline?.timebase?.intervalMs || 5000) / 1000),
+      tick_count: timeline?.timebase?.tickCount || 0,
+      encoding: 'rle',
+      participants: {},
+      equipment: {},
+      global: {}
+    };
+
+    Object.entries(series).forEach(([key, values]) => {
+      if (this.isEmptySeries(values)) return;
+
+      const mapped = this.mapSeriesKey(key);
+      if (!mapped) return;
+
+      const { type, id, metric } = mapped;
+      const encoded = typeof values === 'string' ? values : this.encodeSeries(values);
+
+      if (type === 'participants') {
+        if (!timelineOutput.participants[id]) timelineOutput.participants[id] = {};
+        timelineOutput.participants[id][metric] = encoded;
+      } else if (type === 'equipment') {
+        if (!timelineOutput.equipment[id]) timelineOutput.equipment[id] = {};
+        timelineOutput.equipment[id][metric] = encoded;
+      } else if (type === 'global') {
+        timelineOutput.global[metric] = encoded;
+      }
+    });
+
+    // Remove empty sections
+    if (Object.keys(timelineOutput.equipment).length === 0) delete timelineOutput.equipment;
+    if (Object.keys(timelineOutput.global).length === 0) delete timelineOutput.global;
+
+    result.timeline = timelineOutput;
+
     return result;
   }
 
@@ -180,5 +216,68 @@ export class SessionSerializerV3 {
       }
     }
     return series || [];
+  }
+
+  /**
+   * Check if series is empty/trivial (all null or all zero).
+   * @param {Array|string} series
+   * @returns {boolean}
+   */
+  static isEmptySeries(series) {
+    const decoded = this.decodeSeries(series);
+    if (!decoded || decoded.length === 0) return true;
+    return decoded.every(v => v == null || v === 0);
+  }
+
+  /**
+   * Encode series to RLE format.
+   * @param {Array} series
+   * @returns {string|null}
+   */
+  static encodeSeries(series) {
+    if (!Array.isArray(series) || series.length === 0) return null;
+
+    const rle = [];
+    for (const value of series) {
+      const last = rle[rle.length - 1];
+      if (Array.isArray(last) && last[0] === value) {
+        last[1] += 1;
+      } else if (last === value) {
+        rle[rle.length - 1] = [value, 2];
+      } else {
+        rle.push(value);
+      }
+    }
+    return JSON.stringify(rle);
+  }
+
+  /**
+   * Map v2 series key to v3 nested structure.
+   * @param {string} key
+   * @returns {{type: string, id: string|null, metric: string}|null}
+   */
+  static mapSeriesKey(key) {
+    const METRIC_MAP = {
+      heart_rate: 'hr',
+      zone_id: 'zone',
+      coins_total: 'coins',
+      heart_beats: 'beats'
+    };
+
+    const parts = key.split(':');
+    if (parts.length < 2) return null;
+
+    const [prefix, id, ...metricParts] = parts;
+    const rawMetric = metricParts.join(':') || id;
+    const metric = METRIC_MAP[rawMetric] || rawMetric;
+
+    if (prefix === 'user') {
+      return { type: 'participants', id, metric };
+    } else if (prefix === 'device' || prefix === 'bike') {
+      return { type: 'equipment', id: id.replace('device_', ''), metric };
+    } else if (prefix === 'global') {
+      return { type: 'global', id: null, metric: METRIC_MAP[id] || id };
+    }
+    return null;
   }
 }

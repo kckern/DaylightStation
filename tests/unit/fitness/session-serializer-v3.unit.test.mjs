@@ -115,4 +115,65 @@ describe('SessionSerializerV3', () => {
       expect(result.participants.kckern.total_beats).toBeCloseTo(34.7, 1);
     });
   });
+
+  describe('timeline block', () => {
+    it('nests series by participants/equipment/global', () => {
+      const input = {
+        sessionId: '20260106114853',
+        startTime: 1767728933431,
+        endTime: 1767732533431,
+        timezone: 'America/Los_Angeles',
+        timeline: {
+          timebase: { intervalMs: 5000, tickCount: 5 },
+          series: {
+            'user:kckern:heart_rate': [71, 75, 80, 90, 100],
+            'user:kckern:zone_id': ['c', 'c', 'a', 'a', 'a'],
+            'user:kckern:coins_total': [0, 1, 2, 3, 5],
+            'user:kckern:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7],
+            'device:49904:rpm': [null, null, 60, 65, 70],
+            'device:49904:rotations': [null, null, 5, 10.5, 16.3],
+            'global:coins_total': [0, 1, 2, 3, 5]
+          }
+        }
+      };
+
+      const result = SessionSerializerV3.serialize(input);
+
+      expect(result.timeline.interval_seconds).toBe(5);
+      expect(result.timeline.tick_count).toBe(5);
+      expect(result.timeline.encoding).toBe('rle');
+
+      // Participants nested
+      expect(result.timeline.participants.kckern.hr).toBeDefined();
+      expect(result.timeline.participants.kckern.zone).toBeDefined();
+
+      // Equipment nested
+      expect(result.timeline.equipment['49904'].rpm).toBeDefined();
+
+      // Global
+      expect(result.timeline.global.coins).toBeDefined();
+    });
+
+    it('drops empty/trivial series', () => {
+      const input = {
+        sessionId: '20260106114853',
+        startTime: 1767728933431,
+        endTime: 1767732533431,
+        timezone: 'America/Los_Angeles',
+        timeline: {
+          timebase: { intervalMs: 5000, tickCount: 5 },
+          series: {
+            'user:kckern:heart_rate': [71, 75, 80, 90, 100],
+            'device:12345:power': [null, null, null, null, null],
+            'device:12345:rotations': [0, 0, 0, 0, 0]
+          }
+        }
+      };
+
+      const result = SessionSerializerV3.serialize(input);
+
+      expect(result.timeline.participants.kckern.hr).toBeDefined();
+      expect(result.timeline.equipment).toBeUndefined(); // All nulls/zeros dropped
+    });
+  });
 });
