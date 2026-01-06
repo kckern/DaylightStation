@@ -64,7 +64,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   }
 
   const rawStatus = typeof governanceState.status === 'string' ? governanceState.status.toLowerCase() : '';
-  const normalizedStatus = rawStatus === 'green' ? 'green' : rawStatus === 'yellow' ? 'yellow' : rawStatus === 'red' ? 'red' : 'grey';
+  const normalizedStatus = rawStatus === 'unlocked' ? 'unlocked' : rawStatus === 'warning' ? 'warning' : rawStatus === 'locked' ? 'locked' : 'pending';
   const requirementSummaries = Array.isArray(governanceState.requirements) ? governanceState.requirements : [];
   const normalizedLockRows = Array.isArray(governanceState.lockRows) ? governanceState.lockRows : null;
   const watchers = Array.isArray(governanceState.watchers) ? governanceState.watchers : [];
@@ -169,7 +169,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
 
     return {
       category: 'governance',
-      status: 'red',
+      status: 'locked',
       show: true,
       filterClass: 'governance-filter-critical',
       title: 'Challenge Failed',
@@ -186,10 +186,10 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     };
   }
 
-  if (normalizedStatus === 'green') {
+  if (normalizedStatus === 'unlocked') {
     return {
       category: 'governance',
-      status: 'green',
+      status: 'unlocked',
       show: false,
       filterClass: '',
       title: '',
@@ -202,7 +202,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     };
   }
 
-  if (normalizedStatus === 'yellow') {
+  if (normalizedStatus === 'warning') {
     const countdown = Number.isFinite(governanceState.countdownSecondsRemaining)
       ? governanceState.countdownSecondsRemaining
       : null;
@@ -217,7 +217,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     ])).filter((user) => !metUsers.includes(user));
     return {
       category: 'governance-warning-progress',
-      status: 'yellow',
+      status: 'warning',
       show: true,
       filterClass: 'governance-filter-warning',
       title: '',
@@ -230,10 +230,10 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     };
   }
 
-  if (normalizedStatus === 'red') {
+  if (normalizedStatus === 'locked') {
     return {
       category: 'governance',
-      status: 'red',
+      status: 'locked',
       show: true,
       filterClass: 'governance-filter-critical',
       title: 'Video Locked',
@@ -262,26 +262,26 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     };
   }
 
-  const greyDescriptions = [
+  const pendingDescriptions = [
     watchers.length ? null : 'Waiting for heart-rate participants to connect.',
     requirementSummaries.length ? 'Meet these conditions to unlock playback.' : 'Loading unlock rules...'
   ].filter(Boolean);
 
-  const greyHighlightUsers = missingUsers;
+  const pendingHighlightUsers = missingUsers;
 
   return {
     category: 'governance',
-    status: 'grey',
+    status: 'pending',
     show: true,
     filterClass: '',
     title: 'Video Locked',
-    descriptions: greyDescriptions,
+    descriptions: pendingDescriptions,
     requirements: normalizedLockRows || normalizeRequirements(
       unsatisfied,
       (a, b) => compareSeverity(a, b, { zoneRankMap: governanceState?.zoneRankMap || {} }),
       { zoneRankMap: governanceState?.zoneRankMap || {} }
     ),
-    highlightUsers: greyHighlightUsers,
+    highlightUsers: pendingHighlightUsers,
     countdown: null,
     countdownTotal: null,
     allowGenericAny: false
@@ -311,7 +311,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     governanceState,
     fitnessCtx?.zones
   );
-  const isGovernanceRed = overlay?.category === 'governance' && overlay.status === 'red';
+  const isGovernanceLocked = overlay?.category === 'governance' && overlay.status === 'locked';
   const activeChallenge = governanceState?.challenge || null;
   const challengeEventRef = React.useRef({ id: null, status: null });
 
@@ -930,10 +930,10 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     return rows;
   }, [overlay, participants, fitnessCtx?.usersConfigRaw, zoneMetadata, userZoneProgress, participantMap, resolveParticipantVitals, fitnessCtx?.getUserZoneThreshold]);
 
-  const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceRed
+  const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceLocked
     ? <ChallengeOverlay overlay={currentChallengeOverlay} />
     : null;
-  const nextChallengeOverlay = upcomingChallengeOverlay?.show && !isGovernanceRed
+  const nextChallengeOverlay = upcomingChallengeOverlay?.show && !isGovernanceLocked
     ? <ChallengeOverlay overlay={upcomingChallengeOverlay} />
     : null;
   const primaryOverlay = overlay?.show ? (

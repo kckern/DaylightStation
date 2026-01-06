@@ -315,10 +315,10 @@ const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffender
     if (!overlayShow || overlayCategory !== 'governance') {
       return null;
     }
-    if (overlayStatus === 'grey') {
+    if (overlayStatus === 'pending') {
       return 'init';
     }
-    if (overlayStatus === 'red') {
+    if (overlayStatus === 'locked') {
       return 'locked';
     }
     return null;

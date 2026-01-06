@@ -1382,16 +1382,7 @@ export class FitnessSession {
     mediaPlaylists,
     screenshotPlan
   } = {}) {
-    // Phase 4: Verify new code is loaded - using ERROR level to ensure it shows
-    getLogger().error('PHASE_4_CODE_LOADED_updateSnapshot', {
-      participantRosterLength: participantRoster?.length || 0,
-      hasSessionId: !!this.sessionId,
-      timestamp: new Date().toISOString()
-    });
-
     if (!this.sessionId) return;
-
-    getLogger().error('🔵 CHECKPOINT_1_sessionId_ok', { sessionId: this.sessionId });
 
     if (!this.timebase.startAbsMs) {
       this.timebase.startAbsMs = this.startTime || Date.now();
@@ -1408,16 +1399,6 @@ export class FitnessSession {
     const elapsed = this.timebase.startAbsMs ? Math.max(0, now - this.timebase.startAbsMs) : 0;
     const intervalIndex = intervalMs > 0 ? Math.floor(elapsed / intervalMs) : 0;
 
-    // CRITICAL DEBUG: Log interval calculation
-    getLogger().error('📊 INTERVAL_CALC', {
-      intervalIndex,
-      intervalMs,
-      elapsed,
-      elapsedHours: (elapsed / 1000 / 60 / 60).toFixed(2),
-      startAbsMs: this.timebase.startAbsMs,
-      now
-    });
-
     this._lastSampleIndex = Math.max(this._lastSampleIndex, intervalIndex);
     if (intervalIndex + 1 > this.timebase.intervalCount) {
       this.timebase.intervalCount = intervalIndex + 1;
@@ -1429,18 +1410,12 @@ export class FitnessSession {
       this.userManager.setRoster(participantRoster);
     }
 
-    getLogger().error('🔵 CHECKPOINT_2_roster_synced', {
-      rosterLength: participantRoster?.length || 0,
-      hasUserManager: !!this.userManager
-    });
-
     if (zoneConfig) {
       this.zoneProfileStore?.setBaseZoneConfig(zoneConfig);
     }
 
     // Process Users (from UserManager)
     const allUsers = this.userManager.getAllUsers();
-    getLogger().error('🔵 CHECKPOINT_2.5_before_user_loop', { userCount: allUsers.length });
     allUsers.forEach(user => {
         const userId = user.id;
         this.snapshot.usersMeta.set(userId, {
@@ -1479,22 +1454,8 @@ export class FitnessSession {
         series[intervalIndex] = hrValue > 0 ? hrValue : null;
         this.snapshot.participantSeries.set(userId, series);
       });
-    getLogger().error('🔵 CHECKPOINT_2.9_after_user_loop');
 
-    getLogger().error('🔵 CHECKPOINT_2.95_before_syncFromUsers', {
-      hasZoneProfileStore: !!this.zoneProfileStore,
-      userCount: allUsers.length
-    });
-
-    const scheduledZoneSync = this._scheduleZoneProfileSync(allUsers);
-    getLogger().error('🔵 CHECKPOINT_2.99_SCHEDULED_syncFromUsers', {
-      scheduled: scheduledZoneSync
-    });
-
-    getLogger().error('🔵 CHECKPOINT_3_users_processed', {
-      userCount: allUsers.length,
-      hasZoneProfileStore: !!this.zoneProfileStore
-    });
+    this._scheduleZoneProfileSync(allUsers);
 
     // Process Devices (from DeviceManager)
     const allDevices = this.deviceManager.getAllDevices();
@@ -1538,15 +1499,6 @@ export class FitnessSession {
       ? this.zoneProfileStore.getProfileMap()
       : this.userManager.getUserZoneProfiles();
 
-    getLogger().error('🔵 CHECKPOINT_4_about_to_reach_governance');
-
-    // DEBUG: Check if we reach governance section
-    getLogger().error('GOVERNANCE_SECTION_REACHED', {
-      hasGovernanceEngine: !!this.governanceEngine,
-      participantRosterLength: participantRoster?.length || 0,
-      sessionRosterLength: (this.roster || []).length
-    });
-
     // Run Governance Evaluation
     // IMPORTANT: Break the feedback loop. 
     // The UI (FitnessContext) passes participantRoster based on session.roster.
@@ -1567,19 +1519,6 @@ export class FitnessSession {
     });
     const effectiveRoster = Array.from(effectiveRosterMap.values());
 
-    // DEBUG: Log what's in effectiveRoster
-    getLogger().error('🔍 EFFECTIVE_ROSTER_INSPECT', {
-      count: effectiveRoster.length,
-      sample: effectiveRoster.slice(0, 2).map(e => ({
-        name: e.name,
-        id: e.id,
-        profileId: e.profileId,
-        entityId: e.entityId,
-        isActive: e.isActive,
-        heartRate: e.heartRate
-      }))
-    });
-
     // Use userId/entityId as stable identifiers (no case issues)
     const activeParticipants = effectiveRoster
         .filter((entry) => {
@@ -1587,12 +1526,6 @@ export class FitnessSession {
           return isActive && (entry.id || entry.profileId);
         })
         .map(entry => entry.id || entry.profileId);  // Use ID, not name!
-
-    // DEBUG: Log final activeParticipants
-    getLogger().error('🎯 ACTIVE_PARTICIPANTS_BUILT', {
-      count: activeParticipants.length,
-      ids: activeParticipants
-    });
 
     // Key by userId/entityId (stable, no case issues)
     const userZoneMap = {};
@@ -1614,17 +1547,6 @@ export class FitnessSession {
             zoneInfoMap[zid] = z;
         });
     }
-
-    // Phase 4: Debug logging for governance inputs
-    getLogger().error('🎯 ABOUT_TO_CALL_GOVERNANCE_EVALUATE', {
-      activeParticipants,
-      userZoneMap,
-      activeCount: activeParticipants.length,
-      zoneMapKeys: Object.keys(userZoneMap),
-      zoneRankMapKeys: Object.keys(zoneRankMap),
-      effectiveRosterCount: effectiveRoster.length,
-      hasGovernanceEngine: !!this.governanceEngine
-    });
 
     this.governanceEngine.evaluate({
         activeParticipants,

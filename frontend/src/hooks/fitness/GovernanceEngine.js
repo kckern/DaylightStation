@@ -140,7 +140,7 @@ export class GovernanceEngine {
     this.config = {};
     this.policies = [];
     this.media = null;
-    this.phase = 'init'; // init, green, yellow, red
+    this.phase = 'pending'; // pending, unlocked, warning, locked
     this.pulse = 0;
     
     this.meta = {
@@ -566,7 +566,7 @@ export class GovernanceEngine {
       requirements: [],
       activeCount: 0
     };
-    this._setPhase('init');
+    this._setPhase('pending');
     this._latestInputs = {
       activeParticipants: [],
       userZoneMap: {},
@@ -757,14 +757,7 @@ export class GovernanceEngine {
     const now = Date.now();
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
 
-    // SIMPLIFIED: If no data passed in, read directly from session.roster
-    getLogger().error('🔍 GOVERNANCE_DEBUG', {
-      hasSession: !!this.session,
-      hasRoster: !!this.session?.roster,
-      rosterLength: this.session?.roster?.length || 0,
-      rosterSample: this.session?.roster?.[0]
-    });
-
+    // If no data passed in, read directly from session.roster
     if (!activeParticipants && this.session?.roster) {
       const roster = this.session.roster || [];
       activeParticipants = roster
@@ -780,11 +773,6 @@ export class GovernanceEngine {
       });
 
       totalCount = activeParticipants.length;
-
-      getLogger().error('governance.evaluate.built_from_roster', {
-        participantCount: activeParticipants.length,
-        participants: activeParticipants
-      });
     }
 
     // Ensure defaults
@@ -793,20 +781,6 @@ export class GovernanceEngine {
     zoneRankMap = zoneRankMap || {};
     zoneInfoMap = zoneInfoMap || {};
     totalCount = totalCount || activeParticipants.length;
-
-    // Phase 4: Debug logging for governance evaluation
-    getLogger().warn('governance.evaluate.called', {
-      hasMedia: !!(this.media && this.media.id),
-      mediaId: this.media?.id,
-      hasGovernanceRules,
-      governedLabelSetSize: this._governedLabelSet.size,
-      governedTypeSetSize: this._governedTypeSet.size,
-      activeParticipantsCount: activeParticipants.length,
-      activeParticipants,
-      userZoneMapKeys: Object.keys(userZoneMap),
-      userZoneMap,
-      totalCount
-    });
 
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {
@@ -836,7 +810,7 @@ export class GovernanceEngine {
       // If user had satisfied requirements before, we want to preserve that so the
       // grace period countdown can continue when participants return with low HR.
       this._clearTimers();
-      this._setPhase('init');
+      this._setPhase('pending');
       // Note: No polling needed here - governance is now reactive via TreasureBox callback.
       // When a participant starts exercising, TreasureBox notifies us immediately.
       return;
@@ -846,16 +820,9 @@ export class GovernanceEngine {
     const activePolicy = this._chooseActivePolicy(totalCount);
     if (!activePolicy) {
       this.reset();
-      this._setPhase('init');
+      this._setPhase('pending');
       return;
     }
-
-    getLogger().error('🔧 POLICY_CHOSEN', {
-      policyId: activePolicy.id,
-      policyName: activePolicy.name,
-      baseRequirement: activePolicy.baseRequirement,
-      minParticipants: activePolicy.minParticipants
-    });
 
     // 4. Update Challenge State Context
     if (this.challengeState.activePolicyId !== activePolicy.id) {
@@ -874,12 +841,6 @@ export class GovernanceEngine {
     const baseRequirement = activePolicy.baseRequirement || {};
     const { summaries, allSatisfied } = this._evaluateRequirementSet(baseRequirement, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount);
 
-    getLogger().error('🔧 REQUIREMENTS_EVALUATED', {
-      allSatisfied,
-      summaries,
-      baseRequirement
-    });
-
     this.requirementSummary = {
       policyId: activePolicy.id,
       targetUserCount: activePolicy.minParticipants,
@@ -896,16 +857,16 @@ export class GovernanceEngine {
       if (this.timers.governance) clearTimeout(this.timers.governance);
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
-      this._setPhase('red');
+      this._setPhase('locked');
     } else if (allSatisfied) {
       this.meta.satisfiedOnce = true;
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
-      this._setPhase('green');
+      this._setPhase('unlocked');
     } else if (!this.meta.satisfiedOnce) {
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
-      this._setPhase('init');
+      this._setPhase('pending');
     } else {
       // Grace period logic
       let graceSeconds = baseGraceSeconds;
@@ -913,9 +874,9 @@ export class GovernanceEngine {
         if (this.timers.governance) clearTimeout(this.timers.governance);
         this.meta.deadline = null;
         this.meta.gracePeriodTotal = null;
-        this._setPhase('red');
+        this._setPhase('locked');
       } else {
-        if (!Number.isFinite(this.meta.deadline) && this.phase !== 'red') {
+        if (!Number.isFinite(this.meta.deadline) && this.phase !== 'locked') {
           this.meta.deadline = now + graceSeconds * 1000;
           this.meta.gracePeriodTotal = graceSeconds;
         }
@@ -923,18 +884,18 @@ export class GovernanceEngine {
         if (!Number.isFinite(this.meta.deadline)) {
            if (this.timers.governance) clearTimeout(this.timers.governance);
            this.meta.gracePeriodTotal = null;
-           this._setPhase('red');
+           this._setPhase('locked');
         } else {
           const remainingMs = this.meta.deadline - now;
           if (remainingMs <= 0) {
             if (this.timers.governance) clearTimeout(this.timers.governance);
             this.meta.deadline = null;
             this.meta.gracePeriodTotal = null;
-            this._setPhase('red');
+            this._setPhase('locked');
           } else {
             if (this.timers.governance) clearTimeout(this.timers.governance);
             this.timers.governance = setTimeout(() => this._triggerPulse(), remainingMs);
-            this._setPhase('yellow');
+            this._setPhase('warning');
           }
         }
       }
@@ -1179,7 +1140,7 @@ export class GovernanceEngine {
             ? now + this.challengeState.nextChallengeRemainingMs
             : null;
       const targetTs = Number.isFinite(baseTarget) ? baseTarget : null;
-      const isGreenPhase = this.phase === 'green';
+      const isGreenPhase = this.phase === 'unlocked';
       
       if (!Number.isFinite(targetTs)) {
         this.challengeState.nextChallenge = null;
@@ -1322,7 +1283,7 @@ export class GovernanceEngine {
     };
 
     // --- Main Logic ---
-    const isGreenPhase = this.phase === 'green';
+    const isGreenPhase = this.phase === 'unlocked';
     const forceStartRequest = this.challengeState.forceStartRequest;
 
     if (this.challengeState.activeChallenge) {
@@ -1397,7 +1358,7 @@ export class GovernanceEngine {
             }
             this.meta.deadline = null;
             this.meta.gracePeriodTotal = null;
-            this._setPhase('red');
+            this._setPhase('locked');
             this._schedulePulse(500);
             return;
           } else {

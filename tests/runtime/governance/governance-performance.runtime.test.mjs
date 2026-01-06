@@ -510,12 +510,12 @@ test.describe.serial('Governance Hurdle Tests', () => {
       }
     });
 
-    console.log('   Waiting for governance phase change to green...');
-    const phaseChanged = await waitForGovernancePhase('green', 15000);
-    console.log(`   Phase changed to green: ${phaseChanged}`);
+    console.log('   Waiting for governance phase change to unlocked...');
+    const phaseChanged = await waitForGovernancePhase('unlocked', 15000);
+    console.log(`   Phase changed to unlocked: ${phaseChanged}`);
 
     if (!phaseChanged) {
-      printRecentLogs('Phase did not change to green');
+      printRecentLogs('Phase did not change to unlocked');
     }
 
     const lockOverlay = sharedPage.locator('.governance-overlay');
@@ -578,14 +578,14 @@ test.describe.serial('Governance Hurdle Tests', () => {
       }
     });
 
-    console.log('   Waiting for governance phase change to yellow...');
-    const phaseChanged = await waitForGovernancePhase('yellow', 15000);
-    console.log(`   Phase changed to yellow: ${phaseChanged}`);
+    console.log('   Waiting for governance phase change to warning...');
+    const phaseChanged = await waitForGovernancePhase('warning', 15000);
+    console.log(`   Phase changed to warning: ${phaseChanged}`);
 
     if (!phaseChanged) {
       const currentPhase = getLastGovernancePhase();
       console.log(`   Current phase in dev.log: ${currentPhase}`);
-      printRecentLogs('Phase did not change to yellow');
+      printRecentLogs('Phase did not change to warning');
     }
 
     const progressOverlay = sharedPage.locator('.governance-progress-overlay');
@@ -630,15 +630,15 @@ test.describe.serial('Governance Hurdle Tests', () => {
   test('HURDLE 12: Video locks after grace period expires', async () => {
     console.log('\n🏃 HURDLE 12: Waiting for grace period to expire...');
 
-    // Grace period is typically 30 seconds, wait up to 45 seconds for red phase
-    console.log('   Waiting for phase transition to red (up to 45s)...');
-    const phaseChangedToRed = await waitForGovernancePhase('red', 45000);
+    // Grace period is typically 30 seconds, wait up to 45 seconds for locked phase
+    console.log('   Waiting for phase transition to locked (up to 45s)...');
+    const phaseChangedToLocked = await waitForGovernancePhase('locked', 45000);
 
-    if (phaseChangedToRed) {
-      console.log('   Phase transitioned to red');
+    if (phaseChangedToLocked) {
+      console.log('   Phase transitioned to locked');
     } else {
       const currentPhase = getLastGovernancePhase();
-      console.log(`   Phase did not transition to red (current: ${currentPhase})`);
+      console.log(`   Phase did not transition to locked (current: ${currentPhase})`);
     }
 
     // Check overlays
@@ -656,7 +656,7 @@ test.describe.serial('Governance Hurdle Tests', () => {
       console.log('✅ HURDLE 12 PASSED: Lock overlay appeared after grace period\n');
     } else if (hasWarning) {
       console.log('   ⚠️  WARNING: Grace period not expiring - this is a bug!');
-      console.log('   The yellow->red transition timer may not be firing correctly.');
+      console.log('   The warning->locked transition timer may not be firing correctly.');
       // Still pass for now so we can continue testing other hurdles
       console.log('✅ HURDLE 12 PASSED: Governance active (warning mode - needs investigation)\n');
     } else {
