@@ -1555,6 +1555,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const governanceChallenge = session?.governanceEngine?.challengeState || {};
   const treasureBox = session?.treasureBox ? session.treasureBox.summary : null;
 
+  // TreasureBox instance and helpers for chart live edge and responsive UI
+  const treasureBoxInstance = session?.treasureBox || null;
+  const getTreasureBoxLiveSnapshot = React.useCallback(() => {
+    return session?.treasureBox?.getLiveSnapshot?.() || [];
+  }, [session]);
+  const getTreasureBoxIntervalProgress = React.useCallback((userId) => {
+    return session?.treasureBox?.getIntervalProgress?.(userId) || null;
+  }, [session]);
+
   const triggerChallengeNow = React.useCallback((payload) => {
       return session?.governanceEngine?.triggerChallenge(payload);
   }, [session]);
@@ -1631,6 +1640,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     triggerChallengeNow,
     
     treasureBox,
+    treasureBoxInstance,
+    getTreasureBoxLiveSnapshot,
+    getTreasureBoxIntervalProgress,
     timelineTimebase: timelineSelectors.timebase,
     timelineEvents: timelineSelectors.events,
     getTimelineSeries: timelineSelectors.getSeries,
