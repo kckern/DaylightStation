@@ -956,6 +956,12 @@ export class GovernanceEngine {
         }
       }
     });
+    // BUG FIX: If we have requirement entries but produced no summaries, zoneRankMap may be
+    // incomplete (race condition). Treat as unsatisfied to prevent accidentally clearing
+    // an active grace period countdown.
+    if (entries.length > 0 && summaries.length === 0) {
+      return { summaries: [], allSatisfied: false };
+    }
     return { summaries, allSatisfied };
   }
 
