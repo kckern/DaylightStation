@@ -267,17 +267,29 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				// Skip non-HR devices (no accumulated beats)
 				const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
 				if (maxVal <= 0) return;
-				
-				let lastIndex = -1;
-				let lastValue = null;
-				for (let i = beats.length - 1; i >= 0; i -= 1) {
-					if (Number.isFinite(beats[i])) {
-						lastIndex = i;
-						lastValue = beats[i];
+
+				// Find last ACTIVE tick using `active` array (same logic as present entries)
+				// This correctly identifies dropout tick, unlike beats which is forward-filled
+				let lastActiveIndex = -1;
+				for (let i = active.length - 1; i >= 0; i -= 1) {
+					if (active[i] === true) {
+						lastActiveIndex = i;
 						break;
 					}
 				}
-				
+				// Fall back to last finite beat if no active ticks found
+				let lastIndex = lastActiveIndex;
+				if (lastIndex < 0) {
+					for (let i = beats.length - 1; i >= 0; i -= 1) {
+						if (Number.isFinite(beats[i])) {
+							lastIndex = i;
+							break;
+						}
+					}
+				}
+				// Get lastValue at the determined lastIndex
+				const lastValue = lastIndex >= 0 && Number.isFinite(beats[lastIndex]) ? beats[lastIndex] : null;
+
 				next[slug] = {
 					id: slug,
 					name: slug,
