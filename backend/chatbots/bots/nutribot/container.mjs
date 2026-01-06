@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '../../_lib/logging/index.mjs';
+import { GoogleImageSearchGateway } from '../../infrastructure/gateways/GoogleImageSearchGateway.mjs';
 
 // Core Use Cases
 import { LogFoodFromImage } from './application/usecases/LogFoodFromImage.mjs';
@@ -52,6 +53,7 @@ export class NutribotContainer {
   #messagingGateway;
   #aiGateway;
   #upcGateway;
+  #googleImageGateway;
   #nutrilogRepository;
   #nutrilistRepository;
   #nutricoachRepository;
@@ -89,6 +91,7 @@ export class NutribotContainer {
    * @param {Object} [options.messagingGateway] - Messaging gateway instance
    * @param {Object} [options.aiGateway] - AI gateway instance
    * @param {Object} [options.upcGateway] - UPC lookup gateway
+   * @param {Object} [options.googleImageGateway] - Google Image Search gateway
    * @param {Object} [options.nutrilogRepository] - NutriLog repository
    * @param {Object} [options.nutrilistRepository] - NutriList repository
    * @param {Object} [options.conversationStateStore] - Conversation state store
@@ -104,6 +107,7 @@ export class NutribotContainer {
     this.#messagingGateway = options.messagingGateway;
     this.#aiGateway = options.aiGateway;
     this.#upcGateway = options.upcGateway;
+    this.#googleImageGateway = options.googleImageGateway;
     this.#nutrilogRepository = options.nutrilogRepository;
     this.#nutrilistRepository = options.nutrilistRepository;
     this.#nutricoachRepository = options.nutricoachRepository;
@@ -139,6 +143,10 @@ export class NutribotContainer {
 
   getUPCGateway() {
     return this.#upcGateway;
+  }
+
+  getGoogleImageGateway() {
+    return this.#googleImageGateway;
   }
 
   getNutrilogRepository() {
@@ -206,6 +214,7 @@ export class NutribotContainer {
         messagingGateway: this.getMessagingGateway(),
         upcGateway: this.#upcGateway,
         aiGateway: this.#aiGateway,
+        googleImageGateway: this.#googleImageGateway,
         nutrilogRepository: this.#nutrilogRepository,
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,

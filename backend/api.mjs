@@ -32,6 +32,7 @@ import { UserResolver } from './chatbots/_lib/users/UserResolver.mjs';
 import { TelegramGateway } from './chatbots/infrastructure/messaging/TelegramGateway.mjs';
 import { OpenAIGateway } from './chatbots/infrastructure/ai/OpenAIGateway.mjs';
 import { RealUPCGateway } from './chatbots/infrastructure/gateways/RealUPCGateway.mjs';
+import { GoogleImageSearchGateway } from './chatbots/infrastructure/gateways/GoogleImageSearchGateway.mjs';
 import { NutriLogRepository } from './chatbots/bots/nutribot/repositories/NutriLogRepository.mjs';
 import { NutriListRepository } from './chatbots/bots/nutribot/repositories/NutriListRepository.mjs';
 import { NutriCoachRepository } from './chatbots/bots/nutribot/repositories/NutriCoachRepository.mjs';
@@ -303,6 +304,12 @@ const initNutribotRouter = async () => {
             logger
         });
         
+        const googleImageGateway = new GoogleImageSearchGateway({
+            apiKey: configProvider.getSecret('GOOGLE_API_KEY'),
+            cseId: configProvider.getSecret('GOOGLE_CSE_ID'),
+            logger
+        });
+        
         const nutrilogRepository = new NutriLogRepository({
             config,
             logger
@@ -336,6 +343,7 @@ const initNutribotRouter = async () => {
             messagingGateway,
             aiGateway,
             upcGateway,
+            googleImageGateway,
             nutrilogRepository,
             nutrilistRepository,
             nutricoachRepository,
