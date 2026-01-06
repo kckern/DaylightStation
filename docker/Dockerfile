@@ -1,7 +1,6 @@
 # Install OS
 ARG NODE_VERSION=20.11.0
-ARG TARGETPLATFORM=linux/amd64
-FROM --platform=$TARGETPLATFORM node:${NODE_VERSION}-alpine
+FROM node:${NODE_VERSION}-alpine
 
 # Set work directory to /usr/src/app
 WORKDIR /usr/src/app
@@ -40,7 +39,7 @@ COPY --chown=node:node . .
 RUN cd frontend && npm run build
 
 # Copy entrypoint script into the image
-COPY entrypoint.sh /usr/src/app
+COPY docker/entrypoint.sh /usr/src/app
 
 # Make the entrypoint script executable
 RUN chmod +x /usr/src/app/entrypoint.sh
