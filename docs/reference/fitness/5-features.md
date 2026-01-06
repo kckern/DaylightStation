@@ -8,7 +8,7 @@ Index of all feature documentation in the Fitness domain.
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| [sessions](features/sessions.md) | Stable | Session lifecycle, entity tracking, data persistence |
+| [sessions](features/sessions.md) | Stable | Session lifecycle, entity tracking, v3 YAML format |
 | [fitness-chart](features/fitness-chart.md) | Stable | Race chart visualization, coin accumulation, zone segments |
 | [chart-layout](features/chart-layout.md) | Stable | Avatar/badge collision resolution for chart |
 | [navigation](features/navigation.md) | Stable | Fitness app navigation system design |
