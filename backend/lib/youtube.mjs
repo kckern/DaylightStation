@@ -27,6 +27,11 @@ const RETRY_DELAY = 5000;      // 5 seconds
 const DAYS_TO_KEEP = 10;       // files older than 10 days get removed
 const LOCK_STALE_MS = 60 * 60 * 1000; // consider a lock stale after 1 hour
 
+// Force original audio language - YouTube auto-dubs videos in multiple languages
+// Without this, yt-dlp may grab a dubbed track (German, Spanish, etc.) instead of English
+const AUDIO_LANG = 'en';
+const LANG_ARGS = `--extractor-args "youtube:lang=${AUDIO_LANG}"`;
+
 // Determine a shared lock file path
 const LOCK_FILE = (() => {
   const baseDir = (process.env.path && process.env.path.data)
@@ -148,13 +153,14 @@ const verifyVideoCodec = async (filePath) => {
 // ------------------- Download Parameter Variants -------------------
 const getDownloadParams = (attempt) => {
   // A few fallback attempts with proper escaping
+  // LANG_ARGS forces original audio to prevent YouTube auto-dub tracks
   const options = [
     // Attempt 1 - HEVC/AVC preference with fallback
-    '-f \'bestvideo[vcodec^=hevc][height<=720]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=720]+bestaudio[ext=m4a]/best[height<=720]\' --remux-video mp4',
+    `${LANG_ARGS} -f 'bestvideo[vcodec^=hevc][height<=720]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=720]+bestaudio[ext=m4a]/best[height<=720]' --remux-video mp4`,
     // Attempt 2 - Simple best video + audio
-    '-f \'bestvideo[height<=720]+bestaudio/best[height<=720]\' --remux-video mp4',
+    `${LANG_ARGS} -f 'bestvideo[height<=720]+bestaudio/best[height<=720]' --remux-video mp4`,
     // Attempt 3 - Just best available
-    '-f \'best[height<=1080]\' --remux-video mp4',
+    `${LANG_ARGS} -f 'best[height<=1080]' --remux-video mp4`,
   ];
   return options[Math.min(attempt - 1, options.length - 1)];
 };

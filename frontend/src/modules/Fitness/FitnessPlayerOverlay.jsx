@@ -552,7 +552,14 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       return [];
     }
     const requirementList = Array.isArray(overlay.requirements) ? overlay.requirements.filter(Boolean) : [];
-    if (requirementList.length === 0) {
+    
+    // PHASE 6B FIX: When requirements are empty but participants exist,
+    // show placeholder rows so UI doesn't display "Waiting for participant data..."
+    // This covers the timing gap between participantRoster population and TreasureBox data arrival.
+    // Once TreasureBox records HR data, GovernanceEngine will populate proper requirements.
+    const hasParticipantsButNoRequirements = requirementList.length === 0 && participants.length > 0;
+    
+    if (requirementList.length === 0 && !hasParticipantsButNoRequirements) {
       return [];
     }
     const allowGenericAny = Boolean(overlay.allowGenericAny);
@@ -926,6 +933,34 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         });
       });
     });
+
+    // PHASE 6B FIX: If no rows were built from requirements but participants exist,
+    // create placeholder rows showing participants are connected but awaiting HR data.
+    // This provides visual feedback while TreasureBox populates.
+    if (rows.length === 0 && hasParticipantsButNoRequirements) {
+      const namedParticipants = participants.filter((p) => p?.name);
+      const defaultTarget = {
+        zoneInfo: aggregateZone || zoneMetadata.map[Object.keys(zoneMetadata.map)[0]] || null,
+        label: 'Awaiting heart rate...',
+        targetBpm: null
+      };
+      namedParticipants.forEach((participant) => {
+        const vitals = resolveParticipantVitals(participant.name, participant);
+        const currentZone = getParticipantZone(participant, vitals);
+        addRow({
+          name: participant.name,
+          participant,
+          target: defaultTarget,
+          overrides: {
+            currentZone,
+            heartRate: vitals?.heartRate ?? null,
+            targetHeartRate: null,
+            progressPercent: null,
+            currentLabel: currentZone?.name || 'Connecting...'
+          }
+        });
+      });
+    }
 
     return rows;
   }, [overlay, participants, fitnessCtx?.usersConfigRaw, zoneMetadata, userZoneProgress, participantMap, resolveParticipantVitals, fitnessCtx?.getUserZoneThreshold]);
