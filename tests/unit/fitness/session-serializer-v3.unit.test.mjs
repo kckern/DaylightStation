@@ -176,4 +176,31 @@ describe('SessionSerializerV3', () => {
       expect(result.timeline.equipment).toBeUndefined(); // All nulls/zeros dropped
     });
   });
+
+  describe('events block', () => {
+    it('groups events by audio/video/voice_memos', () => {
+      const input = {
+        sessionId: '20260106114853',
+        startTime: 1767728933431,
+        endTime: 1767732533431,
+        timezone: 'America/Los_Angeles',
+        timeline: {
+          events: [
+            { type: 'media_start', timestamp: 1767729000000, data: { source: 'music_player', title: 'Song 1', artist: 'Artist', plex_id: '123', durationSeconds: 200 } },
+            { type: 'media_start', timestamp: 1767730000000, data: { source: 'video_player', title: 'Video 1', show: 'Show', plex_id: '456', durationSeconds: 300 } },
+            { type: 'voice_memo_start', timestamp: 1767731000000, data: { memoId: 'memo_123', durationSeconds: 60, transcriptPreview: 'Test memo' } }
+          ]
+        }
+      };
+
+      const result = SessionSerializerV3.serialize(input);
+
+      expect(result.events.audio).toHaveLength(1);
+      expect(result.events.audio[0].title).toBe('Song 1');
+      expect(result.events.video).toHaveLength(1);
+      expect(result.events.video[0].title).toBe('Video 1');
+      expect(result.events.voice_memos).toHaveLength(1);
+      expect(result.events.voice_memos[0].id).toBe('memo_123');
+    });
+  });
 });
