@@ -40,7 +40,9 @@ export class SessionSerializerV3 {
       startTime,
       endTime,
       timezone = 'UTC',
-      treasureBox
+      treasureBox,
+      participants: participantsMeta,
+      timeline
     } = data;
 
     const durationSeconds = Math.round((endTime - startTime) / 1000);
@@ -64,6 +66,35 @@ export class SessionSerializerV3 {
         buckets: treasureBox.buckets
       };
     }
+
+    // Build participants block
+    const intervalSeconds = (timeline?.timebase?.intervalMs || 5000) / 1000;
+    const series = timeline?.series || {};
+    const participants = {};
+
+    if (participantsMeta) {
+      Object.entries(participantsMeta).forEach(([userId, meta]) => {
+        const hrSeries = this.decodeSeries(series[`user:${userId}:heart_rate`]);
+        const zoneSeries = this.decodeSeries(series[`user:${userId}:zone_id`]);
+        const coinsSeries = this.decodeSeries(series[`user:${userId}:coins_total`]);
+        const beatsSeries = this.decodeSeries(series[`user:${userId}:heart_beats`]);
+
+        participants[userId] = {
+          display_name: meta.display_name,
+          is_primary: meta.is_primary || false,
+          is_guest: meta.is_guest || false,
+          ...(meta.hr_device && { hr_device: meta.hr_device }),
+          ...(meta.cadence_device && { cadence_device: meta.cadence_device }),
+          coins_earned: this.getLastValue(coinsSeries),
+          active_seconds: this.computeActiveSeconds(hrSeries, intervalSeconds),
+          zone_time_seconds: this.computeZoneTime(zoneSeries, intervalSeconds),
+          hr_stats: this.computeHrStats(hrSeries),
+          total_beats: this.getLastValue(beatsSeries)
+        };
+      });
+    }
+
+    result.participants = participants;
 
     return result;
   }
@@ -111,5 +142,43 @@ export class SessionSerializerV3 {
   static computeActiveSeconds(hrSeries, intervalSeconds = 5) {
     const validCount = (hrSeries || []).filter(v => Number.isFinite(v) && v > 0).length;
     return validCount * intervalSeconds;
+  }
+
+  /**
+   * Get the last non-null value from a series.
+   * @param {Array} series
+   * @returns {*}
+   */
+  static getLastValue(series) {
+    for (let i = (series || []).length - 1; i >= 0; i--) {
+      if (series[i] != null) return series[i];
+    }
+    return 0;
+  }
+
+  /**
+   * Decode RLE series if needed.
+   * @param {Array|string} series
+   * @returns {Array}
+   */
+  static decodeSeries(series) {
+    if (typeof series === 'string') {
+      try {
+        const parsed = JSON.parse(series);
+        const decoded = [];
+        for (const entry of parsed) {
+          if (Array.isArray(entry)) {
+            const [value, count] = entry;
+            for (let i = 0; i < count; i++) decoded.push(value);
+          } else {
+            decoded.push(entry);
+          }
+        }
+        return decoded;
+      } catch {
+        return [];
+      }
+    }
+    return series || [];
   }
 }

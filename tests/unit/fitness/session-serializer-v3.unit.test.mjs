@@ -75,4 +75,44 @@ describe('SessionSerializerV3', () => {
       expect(result.totals.buckets).toEqual({ blue: 0, green: 270, yellow: 400, orange: 228, red: 15 });
     });
   });
+
+  describe('participants block', () => {
+    it('serializes participant with derived stats', () => {
+      const input = {
+        sessionId: '20260106114853',
+        startTime: 1767728933431,
+        endTime: 1767732533431,
+        timezone: 'America/Los_Angeles',
+        participants: {
+          kckern: {
+            display_name: 'Keith',
+            is_primary: true,
+            is_guest: false,
+            hr_device: '40475',
+            cadence_device: '49904'
+          }
+        },
+        timeline: {
+          timebase: { intervalMs: 5000 },
+          series: {
+            'user:kckern:heart_rate': [71, 75, 80, 90, 100],
+            'user:kckern:zone_id': ['c', 'c', 'a', 'a', 'a'],
+            'user:kckern:coins_total': [0, 1, 2, 3, 5],
+            'user:kckern:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7]
+          }
+        }
+      };
+
+      const result = SessionSerializerV3.serialize(input);
+
+      expect(result.participants.kckern).toBeDefined();
+      expect(result.participants.kckern.display_name).toBe('Keith');
+      expect(result.participants.kckern.coins_earned).toBe(5);
+      expect(result.participants.kckern.hr_stats.min).toBe(71);
+      expect(result.participants.kckern.hr_stats.max).toBe(100);
+      expect(result.participants.kckern.zone_time_seconds.cool).toBe(10);
+      expect(result.participants.kckern.zone_time_seconds.active).toBe(15);
+      expect(result.participants.kckern.total_beats).toBeCloseTo(34.7, 1);
+    });
+  });
 });
