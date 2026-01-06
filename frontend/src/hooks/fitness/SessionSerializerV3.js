@@ -39,12 +39,13 @@ export class SessionSerializerV3 {
       sessionId,
       startTime,
       endTime,
-      timezone = 'UTC'
+      timezone = 'UTC',
+      treasureBox
     } = data;
 
     const durationSeconds = Math.round((endTime - startTime) / 1000);
 
-    return {
+    const result = {
       version: 3,
       session: {
         id: sessionId,
@@ -55,5 +56,15 @@ export class SessionSerializerV3 {
         timezone
       }
     };
+
+    // Add totals block if treasureBox exists
+    if (treasureBox) {
+      result.totals = {
+        coins: treasureBox.totalCoins,
+        buckets: treasureBox.buckets
+      };
+    }
+
+    return result;
   }
 }
