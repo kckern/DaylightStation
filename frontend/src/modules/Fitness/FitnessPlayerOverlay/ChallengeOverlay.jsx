@@ -222,11 +222,11 @@ export const useChallengeOverlays = (governanceState, zones) => {
 
 	const challenge = governanceState?.challenge;
 	const countdownPaused = Boolean(
-		(governanceState?.status === 'yellow') ||
+		(governanceState?.status === 'warning') ||
 		governanceState?.challengePaused ||
 		challenge?.paused
 	);
-	const pausedByGovernance = governanceState?.status === 'yellow';
+	const pausedByGovernance = governanceState?.status === 'warning';
 	const challengePhase = challengeMachine.phase;
 	const isChallengeVisible = challengeMachine.show;
 
