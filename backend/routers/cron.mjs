@@ -3,10 +3,15 @@
 import express from "express";
 import crypto from "crypto";
 import moment from "moment-timezone";
+import { existsSync } from "fs";
 import { CronExpressionParser } from "cron-parser";
 import Infinity from "../lib/infinity.mjs";
 import { loadFile, saveFile } from "../lib/io.mjs";
 import { createLogger } from '../lib/logging/logger.js';
+
+// Only run cron jobs in production (Docker container)
+const isDocker = existsSync('/.dockerenv');
+const cronEnabled = isDocker || process.env.ENABLE_CRON === 'true';
 
 const apiRouter = express.Router();
 const timeZone = "America/Los_Angeles";
@@ -292,6 +297,15 @@ export const cronContinuous = async () => {
   }
 };
 
-setInterval(() => {
-  cronContinuous().catch(err => cronLogger.error('cron.run.error', { error: err?.message, stack: err?.stack }));
-}, 5000);
+// Only start cron scheduler in production to avoid Dropbox sync conflicts
+if (cronEnabled) {
+  setInterval(() => {
+    cronContinuous().catch(err => cronLogger.error('cron.run.error', { error: err?.message, stack: err?.stack }));
+  }, 5000);
+  cronLogger.info('cron.scheduler.started', { isDocker, interval: 5000 });
+} else {
+  cronLogger.info('cron.scheduler.disabled', {
+    reason: 'Not running in Docker (dev mode). Set ENABLE_CRON=true to override.',
+    isDocker
+  });
+}
