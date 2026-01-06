@@ -409,7 +409,8 @@ export function useCommonMediaController({
           const secs = mediaEl.currentTime || 0;
           if (secs > 10) {
             const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
-            const logPayload = { title, type, media_key, seconds: secs, percent: pct };
+            const logType = (meta.plex || /^\d+$/.test(String(media_key))) ? 'plex' : type;
+            const logPayload = { title, type: logType, media_key, seconds: secs, percent: pct };
             const watchedDurationSeconds = resolveWatchedDuration();
             if (watchedDurationSeconds != null) {
               logPayload.watched_duration = Number(watchedDurationSeconds.toFixed(3));
