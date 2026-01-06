@@ -9,14 +9,17 @@
  * Responsibilities:
  * - Validate session payloads before persistence
  * - Encode timeline series (RLE compression)
- * - Transform session data to v2 format
+ * - Transform session data to v2 or v3 format
  * - Call persistence API
+ *
+ * v3 format support: Use buildPayload() for v3 serialization via SessionSerializerV3.
  *
  * @see /docs/design/fitness-data-flow.md
  */
 
 import { DaylightAPI } from '../../lib/api.mjs';
 import getLogger from '../../lib/logging/Logger.js';
+import { SessionSerializerV3 } from './SessionSerializerV3.js';
 
 // -------------------- Constants --------------------
 
@@ -239,6 +242,17 @@ export class PersistenceManager {
    */
   getLastSaveTime() {
     return this._lastSaveAt;
+  }
+
+  // -------------------- Payload Building (v3) --------------------
+
+  /**
+   * Build a v3 session payload using SessionSerializerV3.
+   * @param {Object} sessionData - Raw session data
+   * @returns {Object} v3 formatted session payload
+   */
+  buildPayload(sessionData) {
+    return SessionSerializerV3.serialize(sessionData);
   }
 
   // -------------------- Encoding --------------------
