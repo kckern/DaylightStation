@@ -7,26 +7,10 @@
  * - Platform identity resolution
  */
 
-import fs from 'fs';
-import path from 'path';
-import { parse } from 'yaml';
 import configService from './ConfigService.mjs';
 import createLogger from '../logging/logger.js';
 
 const logger = createLogger({ app: 'user_service' });
-
-// Safe YAML reader
-const safeReadYaml = (filePath) => {
-  try {
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      return parse(raw) || {};
-    }
-  } catch (err) {
-    console.error(`[UserService] Failed to read ${filePath}:`, err?.message || err);
-  }
-  return null;
-};
 
 class UserService {
   #configService = null;
