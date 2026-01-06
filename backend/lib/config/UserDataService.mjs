@@ -11,9 +11,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { configService } from './ConfigService.mjs';
 import { createLogger } from '../logging/logger.js';
+import { loadFile, saveFile } from '../io.mjs';
 
 const logger = createLogger({
   source: 'backend',
@@ -24,49 +24,37 @@ const logger = createLogger({
 const deprecationWarnings = new Set();
 
 /**
- * Safe YAML reader with error handling
+ * Convert absolute path to relative path for io.mjs
+ * io.mjs expects paths relative to process.env.path.data
  */
-const safeReadYaml = (filePath) => {
-  try {
-    if (fs.existsSync(filePath)) {
-      let raw = fs.readFileSync(filePath, 'utf8').trim();
-      // Remove null bytes
-      raw = raw.replace(/\u0000/g, '');
-      const data = yaml.load(raw);
-      // Return null for empty objects
-      if (data && typeof data === 'object' && Object.keys(data).length === 0) {
-        return null;
-      }
-      return data || null;
-    }
-  } catch (err) {
-    logger.error('user-data.read-failed', { path: filePath, message: err?.message });
+const toRelativePath = (absolutePath) => {
+  const dataDir = configService.getDataDir() || process.env.path?.data;
+  if (!dataDir) return null;
+  if (absolutePath.startsWith(dataDir)) {
+    return absolutePath.slice(dataDir.length).replace(/^[/\\]+/, '');
   }
-  return null;
+  return absolutePath;
 };
 
 /**
- * Safe YAML writer with directory creation
+ * Read YAML file using io.mjs (with write queue protection on saves)
  */
-const safeWriteYaml = (filePath, data) => {
-  try {
-    // Ensure directory exists
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    
-    const yamlStr = yaml.dump(data, {
-      indent: 2,
-      lineWidth: 120,
-      noRefs: true
-    });
-    fs.writeFileSync(filePath, yamlStr, 'utf8');
-    return true;
-  } catch (err) {
-    logger.error('user-data.write-failed', { path: filePath, message: err?.message });
-    return false;
-  }
+const readYaml = (absolutePath) => {
+  const relativePath = toRelativePath(absolutePath);
+  if (!relativePath) return null;
+  // Strip .yml/.yaml extension - io.mjs adds it back
+  const pathWithoutExt = relativePath.replace(/\.(ya?ml)$/, '');
+  return loadFile(pathWithoutExt);
+};
+
+/**
+ * Write YAML file using io.mjs (with write queue for concurrency safety)
+ */
+const writeYaml = (absolutePath, data) => {
+  const relativePath = toRelativePath(absolutePath);
+  if (!relativePath) return false;
+  const pathWithoutExt = relativePath.replace(/\.(ya?ml)$/, '');
+  return saveFile(pathWithoutExt, data);
 };
 
 /**
@@ -267,18 +255,11 @@ class UserDataService {
     let fullPath = this.getHouseholdSharedPath(householdId, dataPath);
     if (!fullPath) return null;
 
-    // Add extension if not present - prefer .yml, fallback to .yaml
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      if (fs.existsSync(fullPath + '.yml')) {
-        fullPath += '.yml';
-      } else if (fs.existsSync(fullPath + '.yaml')) {
-        fullPath += '.yaml';
-      } else {
-        fullPath += '.yml';
-      }
+      fullPath += '.yml';
     }
 
-    return safeReadYaml(fullPath);
+    return readYaml(fullPath);
   }
 
   /**
@@ -296,7 +277,7 @@ class UserDataService {
       fullPath += '.yml';
     }
 
-    return safeWriteYaml(fullPath, data);
+    return writeYaml(fullPath, data);
   }
 
   /**
@@ -311,16 +292,10 @@ class UserDataService {
     if (!fullPath) return null;
 
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      if (fs.existsSync(fullPath + '.yml')) {
-        fullPath += '.yml';
-      } else if (fs.existsSync(fullPath + '.yaml')) {
-        fullPath += '.yaml';
-      } else {
-        fullPath += '.yml';
-      }
+      fullPath += '.yml';
     }
 
-    return safeReadYaml(fullPath);
+    return readYaml(fullPath);
   }
 
   /**
@@ -339,7 +314,7 @@ class UserDataService {
       fullPath += '.yml';
     }
 
-    return safeWriteYaml(fullPath, data);
+    return writeYaml(fullPath, data);
   }
 
   /**
@@ -391,18 +366,11 @@ class UserDataService {
     let fullPath = this.getUserDataPath(username, dataPath);
     if (!fullPath) return null;
 
-    // Add extension if not present - prefer .yml, fallback to .yaml
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
-      if (fs.existsSync(fullPath + '.yml')) {
-        fullPath += '.yml';
-      } else if (fs.existsSync(fullPath + '.yaml')) {
-        fullPath += '.yaml';
-      } else {
-        fullPath += '.yml'; // Default
-      }
+      fullPath += '.yml';
     }
 
-    return safeReadYaml(fullPath);
+    return readYaml(fullPath);
   }
 
   /**
@@ -416,12 +384,11 @@ class UserDataService {
     let fullPath = this.getUserDataPath(username, dataPath);
     if (!fullPath) return false;
 
-    // Add extension if not present
     if (!fullPath.match(/\.(ya?ml|json)$/)) {
       fullPath += '.yml';
     }
 
-    return safeWriteYaml(fullPath, data);
+    return writeYaml(fullPath, data);
   }
 
   /**
@@ -544,26 +511,9 @@ class UserDataService {
       }
     }
 
-    // Fall back to legacy path
-    const legacyFullPath = path.join(this.#dataDir, legacyPath);
-    const legacyPathWithExt = legacyFullPath.match(/\.(ya?ml)$/) 
-      ? legacyFullPath 
-      : (fs.existsSync(legacyFullPath + '.yml') ? legacyFullPath + '.yml' : legacyFullPath + '.yaml');
-
-    if (fs.existsSync(legacyPathWithExt)) {
-      // Log deprecation warning once per path
-      if (!deprecationWarnings.has(legacyPath)) {
-        deprecationWarnings.add(legacyPath);
-        logger.warn('user-data.legacy-path-used', {
-          legacyPath,
-          message: `Legacy path "${legacyPath}" used - migrate to user-namespaced path`,
-          suggestedPath: username ? `users/${username}/${legacyPath}` : `users/{username}/${legacyPath}`
-        });
-      }
-      return safeReadYaml(legacyPathWithExt);
-    }
-
-    return null;
+    // Fall back to legacy path using io.mjs loadFile
+    // (io.mjs handles deprecation warnings internally)
+    return loadFile(legacyPath);
   }
 
   /**
@@ -574,7 +524,7 @@ class UserDataService {
    */
   migrateData(legacyPath, username, deleteOriginal = false) {
     this.#ensureInitialized();
-    
+
     const legacyFullPath = path.join(this.#dataDir, legacyPath);
     const extensions = ['.yml', '.yaml', ''];
     let sourcePath = null;
@@ -593,7 +543,7 @@ class UserDataService {
     }
 
     // Read legacy data
-    const data = safeReadYaml(sourcePath);
+    const data = readYaml(sourcePath);
     if (data === null) {
       logger.warn('user-data.migrate-empty-source', { legacyPath });
       return false;
@@ -616,8 +566,8 @@ class UserDataService {
       }
     }
 
-    logger.info('user-data.migrated', { 
-      from: legacyPath, 
+    logger.info('user-data.migrated', {
+      from: legacyPath,
       to: `users/${username}/${legacyPath}`,
       deletedOriginal: deleteOriginal
     });
