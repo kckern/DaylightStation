@@ -287,11 +287,19 @@ export class ConfigProvider {
       const profile = configService.getUserProfile(internalUserId);
       if (profile?.apps?.nutribot?.goals) {
         const goals = profile.apps.nutribot.goals;
+        // Support new data model with calories_min/calories_max range
+        // For backwards compatibility, derive calories from max if not specified
+        const caloriesMax = goals.calories_max || goals.calories || 2000;
+        const caloriesMin = goals.calories_min || Math.round(caloriesMax * 0.8);
         return {
-          calories: goals.calories || 2000,
+          calories: caloriesMax,  // Legacy: single value equals max
+          calories_min: caloriesMin,
+          calories_max: caloriesMax,
           protein: goals.protein || 150,
           carbs: goals.carbs || 200,
           fat: goals.fat || 65,
+          fiber: goals.fiber || 30,
+          sodium: goals.sodium || 2300,
         };
       }
     }
