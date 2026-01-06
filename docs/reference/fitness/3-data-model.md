@@ -40,17 +40,41 @@ All lookup tables keyed by participant identity MUST be keyed by `userId`.
 
 ## Timeline Series Keys
 
-### Participant Series
+### In-Memory Keys (during session)
+
+**Participant Series**
 - **Format:** `user:<userId>:<metric>`
 - **Example:** `user:kckern:heart_rate`
 
-### Device Series
+**Device Series**
 - **Format:** `device:<deviceId>:<metric>`
 - **Example:** `device:hrm-01:heart_rate`
 
-### Global Series
+**Global Series**
 - **Format:** `global:<metric>`
 - **Example:** `global:coins_total`
+
+### Persisted Structure (YAML v3)
+
+When saved to YAML, series are reorganized into a nested structure:
+
+```yaml
+timeline:
+  participants:
+    {userId}:
+      hr: '...'       # heart_rate
+      beats: '...'    # heart_beats
+      coins: '...'    # coins_total
+      zone: '...'     # zone_id
+  equipment:
+    {deviceId}:
+      rpm: '...'
+      rotations: '...'
+  global:
+    coins: '...'
+```
+
+See `features/sessions.md` for complete v3 schema documentation.
 
 ---
 
