@@ -67,4 +67,49 @@ export class SessionSerializerV3 {
 
     return result;
   }
+
+  /**
+   * Compute HR statistics from a heart rate series.
+   * @param {Array<number|null>} hrSeries
+   * @returns {{min: number, max: number, avg: number}}
+   */
+  static computeHrStats(hrSeries) {
+    const validValues = (hrSeries || []).filter(v => Number.isFinite(v) && v > 0);
+    if (validValues.length === 0) {
+      return { min: 0, max: 0, avg: 0 };
+    }
+    const min = Math.min(...validValues);
+    const max = Math.max(...validValues);
+    const sum = validValues.reduce((a, b) => a + b, 0);
+    const avg = Math.round(sum / validValues.length);
+    return { min, max, avg };
+  }
+
+  /**
+   * Compute time spent in each zone from zone series.
+   * @param {Array<string|null>} zoneSeries - Zone IDs ('c', 'a', 'w', 'h', etc.)
+   * @param {number} intervalSeconds
+   * @returns {Object} Zone name -> seconds
+   */
+  static computeZoneTime(zoneSeries, intervalSeconds = 5) {
+    const ZONE_MAP = { c: 'cool', a: 'active', w: 'warm', h: 'hot', fire: 'fire' };
+    const counts = {};
+    (zoneSeries || []).forEach(z => {
+      if (z == null) return;
+      const zoneName = ZONE_MAP[z] || z;
+      counts[zoneName] = (counts[zoneName] || 0) + intervalSeconds;
+    });
+    return counts;
+  }
+
+  /**
+   * Compute active seconds (time with valid HR data).
+   * @param {Array<number|null>} hrSeries
+   * @param {number} intervalSeconds
+   * @returns {number}
+   */
+  static computeActiveSeconds(hrSeries, intervalSeconds = 5) {
+    const validCount = (hrSeries || []).filter(v => Number.isFinite(v) && v > 0).length;
+    return validCount * intervalSeconds;
+  }
 }
