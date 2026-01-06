@@ -31,6 +31,8 @@ export class FitnessTreasureBox {
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
     this._autoInterval = null; // timer id
+    // Governance callback for reactive zone change notifications
+    this._governanceCb = null;
   }
 
   _log(event, data = {}) {
@@ -428,12 +430,18 @@ export class FitnessTreasureBox {
       zone: zone ? { id: zone.id, name: zone.name, min: zone.min, coins: zone.coins } : null 
     });
     if (zone) {
+      const previousZoneId = acc.lastZoneId;
       if (!acc.highestZone || zone.min > acc.highestZone.min) {
         this._log('update_highest_zone', { accKey, zone: { id: zone.id, name: zone.name } });
         acc.highestZone = zone;
         acc.currentColor = zone.color;
         acc.lastColor = zone.color; // update persistent last color
         acc.lastZoneId = zone.id || zone.name || null;
+
+        // Notify governance if zone changed (for reactive evaluation)
+        if (acc.lastZoneId !== previousZoneId) {
+          this._notifyGovernance();
+        }
       }
     }
     acc.lastHR = hr;
@@ -625,5 +633,75 @@ export class FitnessTreasureBox {
    */
   getCumulativeTimeline() {
     return [...this._timeline.cumulative];
+  }
+
+  /**
+   * Set callback for governance engine to react to zone changes.
+   * Called when any user's zone changes for reactive governance evaluation.
+   *
+   * @param {Function|null} callback
+   */
+  setGovernanceCallback(callback) {
+    this._governanceCb = typeof callback === 'function' ? callback : null;
+  }
+
+  _notifyGovernance() {
+    if (this._governanceCb) {
+      try { this._governanceCb(); } catch (_) { /* ignore */ }
+    }
+  }
+
+  /**
+   * Get real-time interval progress for a user.
+   * Used by chart for live edge rendering and governance for responsive evaluation.
+   *
+   * @param {string} userId - User ID
+   * @returns {Object} Progress data including pending coins and current zone
+   */
+  getIntervalProgress(userId) {
+    const acc = this.perUser.get(userId);
+    if (!acc || !acc.currentIntervalStart) {
+      return { progress: 0, pendingCoins: 0, zone: null, zoneId: null, zoneColor: null, totalCoins: 0, projectedTotal: 0 };
+    }
+
+    const elapsed = Date.now() - acc.currentIntervalStart;
+    const progress = Math.min(1, elapsed / this.coinTimeUnitMs);
+    const zone = acc.highestZone;
+    const pendingCoins = zone ? zone.coins * progress : 0;
+
+    return {
+      progress,              // 0-1 through interval
+      pendingCoins,          // interpolated coins earned so far in this interval
+      zone,                  // current zone object (null if no HR)
+      zoneId: acc.lastZoneId,
+      zoneColor: acc.lastColor,
+      totalCoins: acc.totalCoins || 0,
+      projectedTotal: (acc.totalCoins || 0) + pendingCoins
+    };
+  }
+
+  /**
+   * Get live snapshot of all users for governance and chart.
+   * Single source of truth for current zone/coin state.
+   *
+   * @returns {Array<Object>} Snapshot of all users with real-time state
+   */
+  getLiveSnapshot() {
+    const snapshot = [];
+    this.perUser.forEach((acc, userId) => {
+      if (!userId || !acc) return;
+      const progress = this.getIntervalProgress(userId);
+      snapshot.push({
+        userId,
+        zoneId: acc.lastZoneId,
+        zoneColor: acc.lastColor,
+        totalCoins: acc.totalCoins || 0,
+        projectedCoins: progress.projectedTotal,
+        intervalProgress: progress.progress,
+        isActive: acc.highestZone !== null,
+        lastHR: acc.lastHR
+      });
+    });
+    return snapshot;
   }
 }
