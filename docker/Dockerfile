@@ -45,7 +45,8 @@ COPY docker/entrypoint.sh /usr/src/app
 RUN chmod +x /usr/src/app/entrypoint.sh
 
 # Ensure node user has access to necessary directories
-RUN chown node:node /usr/src/app/known_hosts \
+RUN touch /usr/src/app/known_hosts \
+    && chown node:node /usr/src/app/known_hosts \
     && mkdir -p /home/node/.cache/yt-dlp \
     && chown -R node:node /home/node/.cache
 
