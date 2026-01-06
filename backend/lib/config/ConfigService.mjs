@@ -86,7 +86,8 @@ class ConfigService {
     if (this.#initialized) return true;
 
     // Try to get data path from process.env (set by index.js from config files)
-    const dataPath = process.env.path?.data;
+    // Fall back to DAYLIGHT_DATA_PATH for CLI tools and tests
+    const dataPath = process.env.path?.data || process.env.DAYLIGHT_DATA_PATH;
     if (dataPath) {
       this.#dataDir = dataPath;
       this.#initialized = true;
