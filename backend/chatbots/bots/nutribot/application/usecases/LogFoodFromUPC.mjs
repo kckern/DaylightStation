@@ -24,6 +24,7 @@ export class LogFoodFromUPC {
   #messagingGateway;
   #upcGateway;
   #aiGateway;
+  #googleImageGateway;
   #nutrilogRepository;
   #conversationStateStore;
   #config;
@@ -35,6 +36,7 @@ export class LogFoodFromUPC {
     this.#messagingGateway = deps.messagingGateway;
     this.#upcGateway = deps.upcGateway;
     this.#aiGateway = deps.aiGateway;
+    this.#googleImageGateway = deps.googleImageGateway;
     this.#nutrilogRepository = deps.nutrilogRepository;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#config = deps.config;
@@ -150,25 +152,62 @@ export class LogFoodFromUPC {
       const caption = this.#buildProductCaption(product, foodItem);
       const portionButtons = this.#buildPortionButtons(nutriLog.id);
 
-      // 10. Get or generate image (always send photo, never text)
+      // 10. Get or generate image with cascading fallbacks
       await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
       
       let imagePath = null;
+      let imageSource = null;
       
-      // Try to fetch product image locally
+      // Step 1: Try to fetch product image from UPC lookup database
       if (product.imageUrl) {
         try {
           imagePath = await this.#downloadImageToTemp(product.imageUrl, upc);
-          this.#logger.debug('logUPC.imageFetched', { upc, imagePath });
+          imageSource = 'upc-database';
+          this.#logger.debug('logUPC.imageFetched', { upc, imagePath, source: imageSource });
         } catch (e) {
           this.#logger.warn('logUPC.imageFetchFailed', { upc, error: e.message });
         }
       }
       
-      // Always generate barcode image if no product image available
+      // Step 2: Try Google Image Search by UPC code
+      if (!imagePath && this.#googleImageGateway?.isConfigured?.()) {
+        try {
+          const upcImageUrl = await this.#googleImageGateway.searchProductImage(
+            upc,
+            { foodOnly: false } // UPC search doesn't need food suffix
+          );
+          if (upcImageUrl) {
+            imagePath = await this.#downloadImageToTemp(upcImageUrl, upc);
+            imageSource = 'google-upc';
+            this.#logger.debug('logUPC.googleUpcImageFetched', { upc, imagePath, source: imageSource });
+          }
+        } catch (e) {
+          this.#logger.warn('logUPC.googleUpcSearchFailed', { upc, error: e.message });
+        }
+      }
+      
+      // Step 3: Try Google Image Search by product name/brand
+      if (!imagePath && this.#googleImageGateway?.isConfigured?.()) {
+        try {
+          const searchImageUrl = await this.#googleImageGateway.searchProductImage(
+            product.name,
+            { brand: product.brand, foodOnly: true }
+          );
+          if (searchImageUrl) {
+            imagePath = await this.#downloadImageToTemp(searchImageUrl, upc);
+            imageSource = 'google-name';
+            this.#logger.debug('logUPC.googleNameImageFetched', { upc, imagePath, source: imageSource });
+          }
+        } catch (e) {
+          this.#logger.warn('logUPC.googleNameSearchFailed', { upc, error: e.message });
+        }
+      }
+      
+      // Step 4: Final fallback - Generate barcode image
       if (!imagePath) {
         imagePath = await this.#generateBarcodeImage(upc, product.name);
-        this.#logger.debug('logUPC.barcodeGenerated', { upc, imagePath });
+        imageSource = 'barcode-generated';
+        this.#logger.debug('logUPC.barcodeGenerated', { upc, imagePath, source: imageSource });
       }
       
       // Always send photo (barcode fallback guarantees we have an image)
@@ -191,6 +230,7 @@ export class LogFoodFromUPC {
         upc,
         productName: product.name,
         logUuid: nutriLog.id,
+        imageSource,
       });
 
       return {

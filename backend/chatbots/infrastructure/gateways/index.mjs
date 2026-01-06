@@ -4,3 +4,4 @@
  */
 
 export { RealUPCGateway } from './RealUPCGateway.mjs';
+export { GoogleImageSearchGateway } from './GoogleImageSearchGateway.mjs';
