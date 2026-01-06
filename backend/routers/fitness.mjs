@@ -9,40 +9,15 @@ import { userDataService } from '../lib/config/UserDataService.mjs';
 import { activateScene } from '../lib/homeassistant.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 import moment from 'moment-timezone';
+import {
+    prepareSessionForPersistence,
+    stringifyTimelineSeriesForFile,
+    isV3Format
+} from '../lib/fitness/sessionNormalizer.mjs';
 
 const fitnessLogger = createLogger({ source: 'backend', app: 'fitness' });
 
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
-
-const trimTrailingNulls = (series = []) => {
-    if (!Array.isArray(series)) return [];
-    const copy = series.map((value) => (value === undefined ? null : value));
-    let end = copy.length;
-    while (end > 0 && copy[end - 1] == null) {
-        end -= 1;
-    }
-    return copy.slice(0, end);
-};
-
-const normalizeNumber = (value) => {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : null;
-};
-
-/**
- * Normalize a timestamp field for persistence.
- * Accepts either unix-ms numbers or human-readable strings.
- *
- * @param {unknown} value
- * @returns {number|string|null}
- */
-const normalizeTimestamp = (value) => {
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        return trimmed ? trimmed : null;
-    }
-    return normalizeNumber(value);
-};
 
 /**
  * Parse a human-readable timestamp string (or pass through unix numbers).
@@ -59,196 +34,6 @@ const parseToUnixMs = (value, timezone) => {
     const parsed = moment.tz(value, 'YYYY-MM-DD h:mm:ss a', tz);
     const ms = parsed?.valueOf?.();
     return Number.isFinite(ms) ? ms : null;
-};
-
-/**
- * Summarize series keys and value types for logging during serialization.
- * @param {object} series
- * @returns {{ keyCount: number, arrayCount: number, stringCount: number, otherCount: number, sampleKeys: string[] }}
- */
-const summarizeSeriesKeys = (series = {}) => {
-    if (!isPlainObject(series)) {
-        return { keyCount: 0, arrayCount: 0, stringCount: 0, otherCount: 0, sampleKeys: [] };
-    }
-    const keys = Object.keys(series);
-    let arrayCount = 0;
-    let stringCount = 0;
-    let otherCount = 0;
-    keys.forEach((key) => {
-        const value = series[key];
-        if (Array.isArray(value)) arrayCount += 1;
-        else if (typeof value === 'string') stringCount += 1;
-        else otherCount += 1;
-    });
-    return {
-        keyCount: keys.length,
-        arrayCount,
-        stringCount,
-        otherCount,
-        sampleKeys: keys.slice(0, 5)
-    };
-};
-
-const normalizeTimelineForPersistence = (timeline = {}) => {
-    if (!isPlainObject(timeline)) return null;
-    const normalizedSeries = {};
-    const sourceSeries = timeline.series && isPlainObject(timeline.series) ? timeline.series : {};
-    Object.entries(sourceSeries).forEach(([key, values]) => {
-        // Accept both arrays (raw data) and strings (encoded RLE from frontend)
-        if (!Array.isArray(values) && typeof values !== 'string') return;
-        // If it's an array, trim trailing nulls; if string, pass through (already encoded)
-        normalizedSeries[key] = Array.isArray(values) ? trimTrailingNulls(values) : values;
-    });
-
-    const normalizedEvents = Array.isArray(timeline.events)
-        ? timeline.events
-            .map((event) => {
-                if (!isPlainObject(event)) return null;
-                const type = typeof event.type === 'string' ? event.type.trim() : null;
-                if (!type) return null;
-                return {
-                    timestamp: normalizeTimestamp(event.timestamp),
-                    offsetMs: normalizeNumber(event.offsetMs),
-                    tickIndex: Number.isFinite(event.tickIndex) ? event.tickIndex : null,
-                    type,
-                    source: typeof event.source === 'string' ? event.source : null,
-                    data: isPlainObject(event.data) ? { ...event.data } : (event.data ?? null)
-                };
-            })
-            .filter(Boolean)
-        : [];
-
-    const timebase = isPlainObject(timeline.timebase) ? { ...timeline.timebase } : {};
-    if (!Number.isFinite(timebase.startTime)) {
-        timebase.startTime = Date.now();
-    }
-    if (!(Number.isFinite(timebase.intervalMs) && timebase.intervalMs > 0)) {
-        timebase.intervalMs = 5000;
-    }
-    if (!Number.isFinite(timebase.tickCount)) {
-        const fallback = Object.values(normalizedSeries)[0]?.length ?? 0;
-        timebase.tickCount = fallback;
-    }
-
-    const normalizedTimeline = {
-        ...timeline,
-        timebase,
-        series: normalizedSeries,
-        events: normalizedEvents
-    };
-
-    // Legacy noise fields should not be persisted.
-    delete normalizedTimeline.seriesMeta;
-
-    return normalizedTimeline;
-};
-
-export const prepareSessionForPersistence = (sessionData = {}) => {
-    if (!isPlainObject(sessionData)) return sessionData;
-    const prepared = { ...sessionData };
-
-    // Legacy fields that should never be persisted.
-    delete prepared._persistWarnings;
-    delete prepared.seriesMeta;
-    delete prepared.voiceMemos;
-    delete prepared.deviceAssignments;
-
-    const hasTopLevelEvents = Array.isArray(prepared.events) && prepared.events.length > 0;
-    if (prepared.timeline) {
-        const normalizedTimeline = normalizeTimelineForPersistence(prepared.timeline);
-        if (normalizedTimeline) {
-            prepared.timeline = normalizedTimeline;
-            prepared.timebase = normalizedTimeline.timebase;
-            if (!hasTopLevelEvents) {
-                prepared.events = normalizedTimeline.events;
-            }
-        }
-    }
-
-    // Roster is ephemeral; keep it only if explicitly needed by callers.
-    // If a client sends roster anyway, allow it through, but never persist warnings.
-
-    return prepared;
-};
-
-const stringifyTimelineSeriesForFile = (sessionData = {}) => {
-    if (!isPlainObject(sessionData)) return sessionData;
-    if (!sessionData.timeline || !isPlainObject(sessionData.timeline)) return sessionData;
-    const clone = { ...sessionData, timeline: { ...sessionData.timeline } };
-    const sourceSeries = sessionData.timeline.series;
-    if (!isPlainObject(sourceSeries)) return clone;
-    const preStats = summarizeSeriesKeys(sourceSeries);
-    const serializedSeries = {};
-    const droppedKeys = [];
-    Object.entries(sourceSeries).forEach(([key, values]) => {
-        if (!Array.isArray(values) && typeof values !== 'string') {
-            droppedKeys.push(key);
-            return;
-        }
-        if (typeof values === 'string') {
-            // Empty-series filtering: if the encoded string represents an all-null series, drop it.
-            try {
-                const parsed = JSON.parse(values);
-                if (!Array.isArray(parsed) || parsed.length === 0) {
-                    droppedKeys.push(key);
-                    return;
-                }
-                const hasAnyNonNull = parsed.some((entry) => {
-                    if (Array.isArray(entry) && entry.length >= 2) {
-                        const [val, count] = entry;
-                        const reps = Number.isFinite(count) && count > 0 ? count : 0;
-                        return reps > 0 && val != null;
-                    }
-                    return entry != null;
-                });
-                if (!hasAnyNonNull) {
-                    droppedKeys.push(key);
-                    return;
-                }
-            } catch (_) {
-                // Not JSON; keep as-is.
-            }
-            serializedSeries[key] = values;
-            return;
-        }
-
-        // Empty-series filtering: drop empty/all-null series.
-        if (!values.length || values.every((v) => v == null)) {
-            droppedKeys.push(key);
-            return;
-        }
-        try {
-            serializedSeries[key] = JSON.stringify(values);
-        } catch (_) {
-            serializedSeries[key] = '[]';
-        }
-    });
-    clone.timeline.series = serializedSeries;
-
-    const postStats = summarizeSeriesKeys(serializedSeries);
-    if (preStats.keyCount && postStats.keyCount === 0) {
-        fitnessLogger.error('fitness.series.serialize.empty', {
-            sessionId: sessionData.sessionId,
-            preStats,
-            postStats,
-            droppedKeys: droppedKeys.slice(0, 10)
-        });
-    } else if (droppedKeys.length) {
-        fitnessLogger.warn('fitness.series.serialize.dropped', {
-            sessionId: sessionData.sessionId,
-            droppedKeys: droppedKeys.slice(0, 10),
-            droppedCount: droppedKeys.length,
-            preStats,
-            postStats
-        });
-    } else {
-        fitnessLogger.debug('fitness.series.serialize.stats', {
-            sessionId: sessionData.sessionId,
-            preStats,
-            postStats
-        });
-    }
-    return clone;
 };
 
 const deriveSessionDate = (sessionId) => {
@@ -562,15 +347,25 @@ fitnessRouter.get('/sessions/:sessionId', (req, res) => {
 fitnessRouter.post('/save_session', (req, res) => {
     const { sessionData } = req.body;
     if(!sessionData) return res.status(400).json({ error: 'Session data is required' });
-    const sanitizedSessionId = sanitizeSessionId(sessionData.sessionId);
+
+    // Handle both v2 (sessionId) and v3 (session.id) formats
+    const rawSessionId = isV3Format(sessionData) ? sessionData.session?.id : sessionData.sessionId;
+    const sanitizedSessionId = sanitizeSessionId(rawSessionId);
     if (!sanitizedSessionId || sanitizedSessionId.length !== 14) {
         return res.status(400).json({ error: 'Valid sessionId is required' });
     }
 
+    // Prepare session for persistence (v3 passes through, v2 is normalized)
+    const preparedSession = prepareSessionForPersistence(sessionData);
+
     // Ensure the session data reflects the sanitized identifier
-    const preparedSession = prepareSessionForPersistence({ ...sessionData, sessionId: sanitizedSessionId });
-    preparedSession.sessionId = sanitizedSessionId;
-    const filePayload = stringifyTimelineSeriesForFile(preparedSession);
+    if (isV3Format(preparedSession)) {
+        preparedSession.session.id = sanitizedSessionId;
+    } else {
+        preparedSession.sessionId = sanitizedSessionId;
+    }
+
+    const filePayload = stringifyTimelineSeriesForFile(preparedSession, fitnessLogger);
 
     const storagePaths = getSessionStoragePaths(sanitizedSessionId);
     if (!storagePaths) {
@@ -1165,5 +960,8 @@ fitnessRouter.post('/zone_led/reset', (req, res) => {
     res.json({ ok: true, message: 'Zone LED state reset', previousState });
 });
 
+
+// Re-export for backward compatibility
+export { prepareSessionForPersistence } from '../lib/fitness/sessionNormalizer.mjs';
 
 export default fitnessRouter;
