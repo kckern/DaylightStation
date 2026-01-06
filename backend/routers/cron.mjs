@@ -256,11 +256,20 @@ export const cronContinuous = async () => {
           return null; // Gracefully handle invalid items
         })
       );
-      const invoke = (fn) => {
+      const invoke = async (fn) => {
         const scopedLogger = cronLogger.child({ jobId: guidId, job: jobName });
-        if (fn.length >= 2) return fn(scopedLogger, guidId);
-        if (fn.length === 1) return fn(guidId);
-        return fn(scopedLogger, guidId);
+        try {
+          if (fn.length >= 2) return await fn(scopedLogger, guidId);
+          if (fn.length === 1) return await fn(guidId);
+          return await fn(scopedLogger, guidId);
+        } catch (err) {
+          // Log error but don't let one harvester crash the whole job
+          scopedLogger.error('cron.harvester.error', {
+            error: err?.message,
+            harvester: fn?.name || 'unknown'
+          });
+          return null;
+        }
       };
 
       await Promise.all(
