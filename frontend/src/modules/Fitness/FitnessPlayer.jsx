@@ -726,7 +726,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       naturalEnd: Boolean(naturalEnd),
       isStalled, // Include stall state in payload (3C fix)
       title: currentItem.title || currentItem.label || 'Episode',
-      type: currentItem.type || 'episode',
+      type: (currentItem.plex || /^\d+$/.test(String(mediaKey))) ? 'plex' : (currentItem.type || 'media'),
       showId: currentItem.showId || null
     };
   }, [currentItem, currentTime, duration, resilienceState]);
