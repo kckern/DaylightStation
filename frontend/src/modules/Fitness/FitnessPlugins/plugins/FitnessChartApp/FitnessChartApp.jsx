@@ -955,22 +955,30 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
-		const start = Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
+
+		// Single user: gridlines span full range from 0 to max (linear distribution)
+		// Multi-user: gridlines span from lowest avatar to max (focus on relative positions)
+		const isSingleUser = allEntries.length === 1;
+		const start = isSingleUser ? 0 : Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
 		// Use MIN_GRID_LINES to ensure consistent grid distribution
-		const tickCount = MIN_GRID_LINES;
+		// For single user, we need MIN_GRID_LINES + 1 ticks total because the X-axis
+		// serves as the bottom reference (value=0), so we skip value=0 in yTicks
+		const tickCount = isSingleUser ? MIN_GRID_LINES + 1 : MIN_GRID_LINES;
 		const span = Math.max(1, paddedMaxValue - start);
 		const values = Array.from({ length: tickCount }, (_, idx) => {
 			const t = idx / Math.max(1, tickCount - 1);
 			return start + span * t;
 		});
-		return values.map((value) => ({
+		// For single user, filter out value=0 since the X-axis line already provides this reference
+		const filteredValues = isSingleUser ? values.filter(v => v > 0) : values;
+		return filteredValues.map((value) => ({
 			value,
 			label: value.toFixed(0),
 			y: scaleY(value),
 			x1: 0,
 			x2: chartWidth
 		}));
-	}, [paddedMaxValue, lowestAvatarValue, chartWidth, scaleY]);
+	}, [paddedMaxValue, lowestAvatarValue, chartWidth, scaleY, allEntries.length]);
 
 	const xTicks = useMemo(() => {
 		const totalMs = effectiveTicks * intervalMs;
