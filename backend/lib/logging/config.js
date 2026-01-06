@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { parse } from 'yaml';
+import { bootstrapReadYaml } from '../bootstrap-yaml.mjs';
 
 const DEFAULT_CONFIG = {
   defaultLevel: 'info',
@@ -10,24 +10,18 @@ const DEFAULT_CONFIG = {
 
 let cachedConfig = null;
 
-const safeReadYaml = (filePath) => {
-  try {
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      return parse(raw) || {};
-    }
-  } catch (err) {
-    const line = `[logging-config] failed to read ${filePath} ${err?.message || err}\n`;
-    process.stderr.write(line);
-  }
-  return {};
-};
+// Use shared bootstrap utility (returns {} on failure for config merging)
+const safeReadYaml = bootstrapReadYaml;
 
 export const hydrateProcessEnvFromConfigs = (baseDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..')) => {
   // Load from new config structure (system.yml) or legacy (config.secrets.yml)
   const systemConfig = safeReadYaml(path.join(baseDir, 'system.yml'));
   const secretsConfig = safeReadYaml(path.join(baseDir, 'config.secrets.yml'));
-  const localConfig = safeReadYaml(path.join(baseDir, 'system-local.yml'));
+
+  // Skip system-local.yml in Docker - it contains host-specific paths that don't exist in the container
+  const isDocker = fs.existsSync('/.dockerenv');
+  const localConfig = isDocker ? {} : safeReadYaml(path.join(baseDir, 'system-local.yml'));
+
   const merged = { ...systemConfig, ...secretsConfig, ...localConfig };
   process.env = { ...process.env, ...merged };
   return merged;
