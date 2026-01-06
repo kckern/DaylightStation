@@ -128,7 +128,14 @@ const useFitnessPlugin = (pluginId) => {
     governanceChallenge: fitnessCtx.governanceChallenge,
     reportGovernanceMetric: fitnessCtx.reportGovernanceMetric,
     treasureBox: fitnessCtx.treasureBox,
-    
+    // TreasureBox instance and helpers for chart live edge and responsive UI
+    treasureBoxInstance: fitnessCtx.treasureBoxInstance,
+    getLiveSnapshot: fitnessCtx.getTreasureBoxLiveSnapshot,
+    getIntervalProgress: fitnessCtx.getTreasureBoxIntervalProgress,
+
+    // Zone configuration for chart slope enforcement
+    zoneConfig: fitnessCtx.zoneConfig,
+
     // Timeline
     timebase: fitnessCtx.timelineTimebase,
     

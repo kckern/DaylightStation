@@ -7,7 +7,9 @@ export {
 	ZONE_COLOR_MAP,
 	buildBeatsSeries,
 	buildSegments,
-	createPaths
+	createPaths,
+	getZoneCoinRate,
+	buildLiveEdge
 } from './FitnessChart.helpers.js';
 
 const FitnessChart = () => {

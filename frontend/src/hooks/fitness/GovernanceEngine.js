@@ -322,8 +322,16 @@ export class GovernanceEngine {
       : [];
     this._governedTypeSet = new Set(normalizeLabelList(governedTypeSource));
 
-    // Start self-evaluation pulse
-    this._schedulePulse(1000);
+    // Subscribe to TreasureBox for reactive zone-based evaluation
+    // (removes 1-second polling delay for governance responsiveness)
+    if (this.session?.treasureBox) {
+      this.session.treasureBox.setGovernanceCallback(() => {
+        this._evaluateFromTreasureBox();
+      });
+    }
+
+    // Initial evaluation from current state
+    this._evaluateFromTreasureBox();
   }
 
   _normalizePolicies(policiesRaw) {
@@ -474,6 +482,41 @@ export class GovernanceEngine {
     if (this.callbacks.onPulse) {
       this.callbacks.onPulse(this.pulse);
     }
+  }
+
+  /**
+   * Evaluate governance state directly from TreasureBox snapshot.
+   * Called reactively when zone state changes - no polling delay.
+   * This is the preferred evaluation path for responsive governance.
+   */
+  _evaluateFromTreasureBox() {
+    const box = this.session?.treasureBox;
+    if (!box) {
+      // Fallback to roster-based evaluation if no TreasureBox
+      if (this.session?.roster) {
+        this.evaluate();
+      }
+      return;
+    }
+
+    const snapshot = box.getLiveSnapshot();
+
+    const activeParticipants = snapshot
+      .filter(s => s.isActive)
+      .map(s => s.userId);
+
+    const userZoneMap = {};
+    snapshot.forEach(s => {
+      if (s.userId) {
+        userZoneMap[s.userId] = s.zoneId;
+      }
+    });
+
+    this.evaluate({
+      activeParticipants,
+      userZoneMap,
+      totalCount: activeParticipants.length
+    });
   }
 
   _schedulePulse(delayMs) {
@@ -794,7 +837,8 @@ export class GovernanceEngine {
       // grace period countdown can continue when participants return with low HR.
       this._clearTimers();
       this._setPhase('init');
-      this._schedulePulse(1000); // Ensure UI keeps checking even if participants are empty
+      // Note: No polling needed here - governance is now reactive via TreasureBox callback.
+      // When a participant starts exercising, TreasureBox notifies us immediately.
       return;
     }
 

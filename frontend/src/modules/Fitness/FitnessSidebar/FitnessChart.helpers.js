@@ -12,6 +12,39 @@ export const MIN_VISIBLE_TICKS = 30;
 // Re-export for backward compatibility - prefer importing from domain
 export const ZONE_COLOR_MAP = ZoneColors;
 
+// Default zone coin rates (used if zoneConfig not provided)
+const DEFAULT_ZONE_COIN_RATES = {
+  active: 0,    // blue - no coins
+  warm: 1,      // yellow
+  hot: 3,       // orange
+  fire: 5       // red
+};
+
+/**
+ * Get coin rate for a zone ID.
+ * @param {string} zoneId - Zone ID (e.g., 'active', 'warm', 'hot', 'fire')
+ * @param {Array} [zoneConfig] - Zone configuration array with coins property
+ * @returns {number} Coins per interval (0 for blue/unknown)
+ */
+export const getZoneCoinRate = (zoneId, zoneConfig = []) => {
+  if (!zoneId) return 0;
+  const normalizedId = String(zoneId).toLowerCase();
+
+  // Try zone config first
+  if (Array.isArray(zoneConfig) && zoneConfig.length > 0) {
+    const zone = zoneConfig.find(z =>
+      String(z.id || '').toLowerCase() === normalizedId ||
+      String(z.name || '').toLowerCase() === normalizedId
+    );
+    if (zone && Number.isFinite(zone.coins)) {
+      return zone.coins;
+    }
+  }
+
+  // Fall back to defaults
+  return DEFAULT_ZONE_COIN_RATES[normalizedId] || 0;
+};
+
 const toNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -271,17 +304,18 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
 
 /**
  * Build chart segments from beats/zones/active arrays.
- * 
+ *
  * @param {number[]} beats - Cumulative beat values per tick
  * @param {(string|null)[]} zones - Zone IDs per tick
  * @param {boolean[]} active - Activity status per tick (true = broadcasting)
  * @param {Object} [options] - Additional options
  * @param {boolean} [options.isCurrentlyActive] - Whether user is currently active according to roster (for immediate gap extension on rejoin)
  * @param {number} [options.currentTick] - Current tick index for extending gap to present
+ * @param {Array} [options.zoneConfig] - Zone configuration array for coin rate lookup
  * @returns {Object[]} Array of segment objects
  */
 export const buildSegments = (beats = [], zones = [], active = [], options = {}) => {
-  const { isCurrentlyActive, currentTick } = options;
+  const { isCurrentlyActive, currentTick, zoneConfig } = options;
   const segments = [];
   let current = null;
   let lastZone = null;
@@ -418,8 +452,98 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
       gapStartPoint = null;
     }
   }
-  
-  return segments;
+
+  // POST-PROCESS: Enforce zone-based slopes to fix sawtooth pattern
+  // Blue zones (coinRate=0) should be flat, non-blue zones should have slope
+  return enforceZoneSlopes(segments, zoneConfig);
+};
+
+/**
+ * Enforce that segment slopes match zone coin rates.
+ * Eliminates sawtooth pattern by interpolating based on zone, not raw data.
+ *
+ * Rules:
+ * - Blue zones (coinRate=0): Always flat (horizontal line)
+ * - Non-blue zones: Always sloped (coins being earned)
+ * - Gap segments: Unchanged (already flat + dashed)
+ *
+ * @param {Object[]} segments - Raw segments from buildSegments
+ * @param {Array} [zoneConfig] - Zone configuration for coin rates
+ * @returns {Object[]} Segments with enforced slopes
+ */
+function enforceZoneSlopes(segments, zoneConfig = []) {
+  return segments.map(segment => {
+    // Gap segments (dropout) stay unchanged - already flat
+    if (segment.isGap) return segment;
+
+    // Need at least 2 points to check for flat segments
+    if (!segment.points || segment.points.length < 2) return segment;
+
+    const coinRate = getZoneCoinRate(segment.zone, zoneConfig);
+
+    if (coinRate === 0) {
+      // Blue zone: enforce flat by using start value for all points
+      // This ensures no accidental slopes in blue segments
+      const startValue = segment.points[0]?.v ?? 0;
+      return {
+        ...segment,
+        points: segment.points.map(p => ({ ...p, v: startValue }))
+      };
+    }
+
+    // Non-blue zone: check if segment is flat when it shouldn't be
+    const startValue = segment.points[0]?.v ?? 0;
+    const endValue = segment.points[segment.points.length - 1]?.v ?? startValue;
+
+    if (startValue === endValue && segment.points.length > 1) {
+      // Flat segment in non-blue zone - create interpolated slope
+      // This fixes the sawtooth where recorded values are [5, 5] but zone earns coins
+      const tickCount = segment.points.length - 1;
+      const expectedGain = coinRate * tickCount;
+
+      return {
+        ...segment,
+        points: segment.points.map((p, idx) => ({
+          ...p,
+          v: startValue + (expectedGain * (idx / tickCount))
+        })),
+        _interpolated: true // Mark for debugging
+      };
+    }
+
+    // Segment already has slope - return as-is
+    return segment;
+  });
+}
+
+/**
+ * Build live edge data for real-time chart updates.
+ * Extends from last recorded point to current TreasureBox state.
+ *
+ * @param {Object} params
+ * @param {number} lastTick - Last recorded tick index
+ * @param {number} lastValue - Last recorded coin value
+ * @param {Object} liveProgress - From TreasureBox.getIntervalProgress()
+ * @param {number} currentTick - Current tick index (may be fractional)
+ * @returns {Object|null} Live edge data or null if not applicable
+ */
+export const buildLiveEdge = ({ lastTick, lastValue, liveProgress, currentTick }) => {
+  if (!liveProgress || !liveProgress.zoneId) return null;
+
+  // Only show live edge if it extends beyond last recorded point
+  if (currentTick <= lastTick) return null;
+
+  const projectedValue = liveProgress.projectedTotal;
+
+  return {
+    startTick: lastTick,
+    startValue: lastValue,
+    endTick: currentTick,
+    endValue: projectedValue,
+    zone: liveProgress.zoneId,
+    color: liveProgress.zoneColor,
+    isLive: true
+  };
 };
 
 export const createPaths = (segments = [], options = {}) => {
