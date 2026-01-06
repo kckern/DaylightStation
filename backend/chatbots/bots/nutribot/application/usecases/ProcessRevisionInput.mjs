@@ -125,13 +125,14 @@ export class ProcessRevisionInput {
       const messageText = dateHeader ? `${dateHeader}\n\n${foodList}` : foodList;
 
       // Update or send new message
+      // For image-based logs, original message is a photo - use caption instead of text
+      const isImageLog = nutriLog?.metadata?.source === 'image';
       const originalMessageId = state.getFlowValue?.('originalMessageId') || state.flowState?.originalMessageId;
       if (originalMessageId) {
-        await this.#messagingGateway.updateMessage(conversationId, originalMessageId, {
-          text: messageText,
-          choices: buttons,
-          inline: true,
-        });
+        const updatePayload = isImageLog
+          ? { caption: messageText, choices: buttons, inline: true }
+          : { text: messageText, choices: buttons, inline: true };
+        await this.#messagingGateway.updateMessage(conversationId, originalMessageId, updatePayload);
       } else {
         await this.#messagingGateway.sendMessage(conversationId, messageText, {
           choices: buttons,

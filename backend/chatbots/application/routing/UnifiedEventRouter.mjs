@@ -166,11 +166,60 @@ export class UnifiedEventRouter {
   async #handleVoice(conversationId, payload, messageId) {
     this.#logger.debug('router.voice', { conversationId, duration: payload.duration });
 
+    // Check conversation state for revision flow (same as text input)
+    const conversationStateStore = this.#container.getConversationStateStore();
+    if (conversationStateStore) {
+      const state = await conversationStateStore.get(conversationId);
+
+      if (state?.activeFlow === 'revision' && state?.flowState?.pendingLogUuid) {
+        this.#logger.info('router.voice.revisionDetected', { logUuid: state.flowState.pendingLogUuid });
+
+        // Transcribe voice first
+        const messagingGateway = this.#container.getMessagingGateway();
+        if (!messagingGateway?.transcribeVoice) {
+          this.#logger.warn('router.voice.noTranscription', { conversationId });
+          // Fall through to regular voice flow which will handle the error
+        } else {
+          try {
+            const transcription = await messagingGateway.transcribeVoice(payload.fileId);
+            if (transcription && transcription.trim().length > 0) {
+              // Route to ProcessRevisionInput with transcribed text
+              const useCase = this.#container.getProcessRevisionInput();
+              const result = await useCase.execute({
+                userId: conversationId,
+                conversationId,
+                text: transcription,
+                messageId,
+              });
+
+              // Delete original voice message after successful revision
+              if (messageId && result.success) {
+                try {
+                  await messagingGateway.deleteMessage(conversationId, messageId);
+                } catch (e) {
+                  // Ignore delete errors
+                }
+              }
+
+              return result;
+            }
+          } catch (error) {
+            this.#logger.warn('router.voice.transcriptionFailed', {
+              conversationId,
+              error: error.message
+            });
+            // Fall through to regular voice flow
+          }
+        }
+      }
+    }
+
+    // Regular voice flow (new food log)
     const useCase = this.#container.getLogFoodFromVoice();
     return useCase.execute({
       userId: conversationId,
       conversationId,
-      voiceData: { 
+      voiceData: {
         fileId: payload.fileId,
         duration: payload.duration,
       },
