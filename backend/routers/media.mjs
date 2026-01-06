@@ -593,9 +593,13 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
 
         const watchData = viewingHistory[item.plex] || viewingHistory[String(item.plex)];
         if (watchData) {
-            item.watchProgress = parseFloat(watchData.percent) || 0;
-            item.watchSeconds = parseInt(watchData.seconds) || 0;
-            item.watchedDate = watchData.time;
+            // Support both old format (percent/seconds) and new format (progress/duration)
+            const seconds = parseInt(watchData.seconds) || parseInt(watchData.progress) || 0;
+            const duration = parseInt(watchData.duration) || 0;
+            const percent = parseFloat(watchData.percent) || (duration > 0 ? (seconds / duration) * 100 : 0);
+            item.watchProgress = percent;
+            item.watchSeconds = seconds;
+            item.watchedDate = watchData.time || watchData.lastPlayed;
             // Last session duration (resets each play session)
             const lastSessionValue = parseFloat(watchData.watched_duration_last_session);
             if (!Number.isNaN(lastSessionValue) && lastSessionValue >= 0) {
