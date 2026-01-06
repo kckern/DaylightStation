@@ -22,4 +22,25 @@ describe('SessionSerializerV3', () => {
       expect(result.session.timezone).toBe('America/Los_Angeles');
     });
   });
+
+  describe('totals block', () => {
+    it('serializes treasure box to totals', () => {
+      const input = {
+        sessionId: '20260106114853',
+        startTime: 1767728933431,
+        endTime: 1767732533431,
+        timezone: 'America/Los_Angeles',
+        treasureBox: {
+          totalCoins: 913,
+          buckets: { blue: 0, green: 270, yellow: 400, orange: 228, red: 15 }
+        }
+      };
+
+      const result = SessionSerializerV3.serialize(input);
+
+      expect(result.totals).toBeDefined();
+      expect(result.totals.coins).toBe(913);
+      expect(result.totals.buckets).toEqual({ blue: 0, green: 270, yellow: 400, orange: 228, red: 15 });
+    });
+  });
 });
