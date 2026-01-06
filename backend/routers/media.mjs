@@ -260,15 +260,12 @@ mediaRouter.post('/log', async (req, res) => {
             ? Number(normalizedWatched.toFixed(3))
             : null;
 
-        // Get existing entry data to accumulate lifetime and preserve oldPlexIds
+        // Get existing entry data to accumulate watchTime and preserve oldPlexIds
         const existingEntry = log[media_key] || {};
-        // Support both old (watched_duration_lifetime) and new (watchedDurationLifetime) field names
-        const existingLifetime = Number.parseFloat(existingEntry.watchedDurationLifetime)
-            || Number.parseFloat(existingEntry.watched_duration_lifetime)
-            || 0;
-        const newLifetime = existingLifetime + (watchedDurationValue || 0);
+        const existingWatchTime = Number.parseFloat(existingEntry.watchTime) || 0;
+        const newWatchTime = existingWatchTime + (watchedDurationValue || 0);
 
-        // Build new format entry
+        // Build entry with canonical field names
         const entry = {
             title: sanitizeForYAML(meta?.title || title),
             parent: meta?.parentTitle || null,
@@ -277,16 +274,15 @@ mediaRouter.post('/log', async (req, res) => {
             grandparentId: meta?.grandparentRatingKey ? parseInt(meta.grandparentRatingKey, 10) : null,
             libraryId,
             mediaType: meta?.type || 'unknown',
-            lastPlayed: moment().toISOString(),
+            lastPlayed: moment().format('YYYY-MM-DD HH.mm.ss'),
             playCount: (existingEntry.playCount || 0) + 1,
-            progress: normalizedSeconds,
-            duration: meta?.duration ? Math.round(meta.duration / 1000) : null
+            playhead: normalizedSeconds,
+            mediaDuration: meta?.duration ? Math.round(meta.duration / 1000) : null
         };
 
-        // Add watched duration if provided
-        if (watchedDurationValue != null) {
-            entry.watchedDurationLastSession = watchedDurationValue;
-            entry.watchedDurationLifetime = Number(newLifetime.toFixed(3));
+        // Add cumulative watch time if provided (watchedDurationLastSession not persisted)
+        if (watchedDurationValue != null && newWatchTime > 0) {
+            entry.watchTime = Number(newWatchTime.toFixed(3));
         }
 
         // Preserve oldPlexIds if they exist
@@ -593,22 +589,17 @@ mediaRouter.all('/plex/list/:plex_key/:config?', async (req, res) => {
 
         const watchData = viewingHistory[item.plex] || viewingHistory[String(item.plex)];
         if (watchData) {
-            // Support both old format (percent/seconds) and new format (progress/duration)
-            const seconds = parseInt(watchData.seconds) || parseInt(watchData.progress) || 0;
-            const duration = parseInt(watchData.duration) || 0;
-            const percent = parseFloat(watchData.percent) || (duration > 0 ? (seconds / duration) * 100 : 0);
+            // Canonical field names: playhead, mediaDuration, watchTime
+            const playhead = parseInt(watchData.playhead) || 0;
+            const mediaDuration = parseInt(watchData.mediaDuration) || 0;
+            const percent = mediaDuration > 0 ? (playhead / mediaDuration) * 100 : 0;
             item.watchProgress = percent;
-            item.watchSeconds = seconds;
-            item.watchedDate = watchData.time || watchData.lastPlayed;
-            // Last session duration (resets each play session)
-            const lastSessionValue = parseFloat(watchData.watched_duration_last_session);
-            if (!Number.isNaN(lastSessionValue) && lastSessionValue >= 0) {
-                item.watchDurationSecondsLastSession = lastSessionValue;
-            }
-            // Lifetime duration (cumulative, never resets)
-            const lifetimeValue = parseFloat(watchData.watched_duration_lifetime);
-            if (!Number.isNaN(lifetimeValue) && lifetimeValue >= 0) {
-                item.watchDurationSecondsLifetime = lifetimeValue;
+            item.watchSeconds = playhead;
+            item.watchedDate = watchData.lastPlayed;
+            // Cumulative watch time
+            const watchTime = parseFloat(watchData.watchTime);
+            if (!Number.isNaN(watchTime) && watchTime >= 0) {
+                item.watchTimeLifetime = watchTime;
             }
         } else {
              // console.log(`No history for ${item.plex} (type: ${typeof item.plex})`);

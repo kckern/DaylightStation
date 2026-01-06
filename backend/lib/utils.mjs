@@ -94,13 +94,13 @@ export const categorizeByWatchStatus = (items, log = {}) => {
   items.forEach(item => {
     const key = typeof item === 'string' ? item : item.media_key;
     const logEntry = log[key];
-    // Support both old format (percent/seconds) and new format (progress/duration)
-    const seconds = logEntry?.seconds || logEntry?.progress || item?.seconds || 0;
-    const duration = logEntry?.duration || item?.duration || 0;
-    const percent = logEntry?.percent || item?.percent || (duration > 0 ? (seconds / duration) * 100 : 0);
+    // Canonical field names: playhead, mediaDuration
+    const playhead = logEntry?.playhead || 0;
+    const mediaDuration = logEntry?.mediaDuration || 0;
+    const percent = mediaDuration > 0 ? (playhead / mediaDuration) * 100 : 0;
 
     // Create a complete item object for isWatched check
-    const watchCheckItem = { percent, seconds };
+    const watchCheckItem = { percent, seconds: playhead };
 
     if (isWatched(watchCheckItem)) {
       watched.push(item);
