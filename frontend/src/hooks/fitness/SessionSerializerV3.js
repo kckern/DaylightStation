@@ -132,7 +132,86 @@ export class SessionSerializerV3 {
 
     result.timeline = timelineOutput;
 
+    // Build events block
+    const rawEvents = timeline?.events || [];
+    const eventsOutput = { audio: [], video: [], voice_memos: [] };
+
+    rawEvents.forEach(event => {
+      const source = event.data?.source;
+      const type = event.type;
+
+      if (type === 'media_start' && source === 'music_player') {
+        eventsOutput.audio.push(this.serializeAudioEvent(event, timezone));
+      } else if (type === 'media_start' && source === 'video_player') {
+        eventsOutput.video.push(this.serializeVideoEvent(event, timezone));
+      } else if (type === 'voice_memo_start' || type === 'voice_memo') {
+        eventsOutput.voice_memos.push(this.serializeVoiceMemoEvent(event, timezone));
+      }
+    });
+
+    // Remove empty sections
+    if (eventsOutput.audio.length === 0) delete eventsOutput.audio;
+    if (eventsOutput.video.length === 0) delete eventsOutput.video;
+    if (eventsOutput.voice_memos.length === 0) delete eventsOutput.voice_memos;
+
+    if (Object.keys(eventsOutput).length > 0) {
+      result.events = eventsOutput;
+    }
+
     return result;
+  }
+
+  /**
+   * Serialize an audio event.
+   * @param {Object} event
+   * @param {string} timezone
+   * @returns {Object}
+   */
+  static serializeAudioEvent(event, timezone) {
+    const d = event.data || {};
+    return {
+      at: this.formatTimestamp(event.timestamp, timezone),
+      title: d.title,
+      ...(d.artist && { artist: d.artist }),
+      ...(d.album && { album: d.album }),
+      plex_id: d.plexId || d.plex_id || d.mediaId,
+      duration_seconds: d.durationSeconds || d.duration_seconds
+    };
+  }
+
+  /**
+   * Serialize a video event.
+   * @param {Object} event
+   * @param {string} timezone
+   * @returns {Object}
+   */
+  static serializeVideoEvent(event, timezone) {
+    const d = event.data || {};
+    return {
+      at: this.formatTimestamp(event.timestamp, timezone),
+      title: d.title,
+      ...(d.show && { show: d.show }),
+      ...(d.season && { season: d.season }),
+      plex_id: d.plexId || d.plex_id || d.mediaId,
+      duration_seconds: d.durationSeconds || d.duration_seconds,
+      ...(d.labels?.length && { labels: d.labels })
+    };
+  }
+
+  /**
+   * Serialize a voice memo event.
+   * @param {Object} event
+   * @param {string} timezone
+   * @returns {Object}
+   */
+  static serializeVoiceMemoEvent(event, timezone) {
+    const d = event.data || {};
+    return {
+      at: this.formatTimestamp(event.timestamp, timezone),
+      id: d.memoId || d.id,
+      duration_seconds: d.durationSeconds || d.duration_seconds,
+      transcript: d.transcriptPreview || d.transcript
+    };
   }
 
   /**
