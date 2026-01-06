@@ -10,12 +10,42 @@ import { createLogger } from '../../../../_lib/logging/index.mjs';
 import { encodeCallback } from '../../../../_lib/callback.mjs';
 import { ConversationState } from '../../../../domain/entities/ConversationState.mjs';
 import { NutriLog } from '../../domain/NutriLog.mjs';
-import { createCanvas } from 'canvas';
+import { createCanvas, registerFont } from 'canvas';
 import bwipjs from 'bwip-js';
 import axios from 'axios';
 import fs from 'fs/promises';
+import fss from 'fs';
 import path from 'path';
 import os from 'os';
+
+// Deferred font registration for barcode text
+let barcodeFontsRegistered = false;
+const ensureBarcodeFontsRegistered = () => {
+  if (barcodeFontsRegistered) return;
+  
+  // Check multiple possible font locations
+  const possibleFontDirs = [
+    process.env.path?.media ? path.join(process.env.path.media, 'fonts') : null,
+    process.env.path?.font,
+    process.env.FONT_DIR,
+    './media/fonts',
+    './data/content/fonts',
+  ].filter(Boolean);
+  
+  for (const fontDir of possibleFontDirs) {
+    const fontPath = path.join(fontDir, 'roboto-condensed', 'RobotoCondensed-Regular.ttf');
+    
+    if (fss.existsSync(fontPath)) {
+      try {
+        registerFont(fontPath, { family: 'Roboto Condensed' });
+        barcodeFontsRegistered = true;
+        return;
+      } catch (e) {
+        // Font registration failed - try next location
+      }
+    }
+  }
+};
 
 /**
  * Log food from UPC use case
@@ -448,6 +478,9 @@ If unsure, use "default" icon.`,
    * @private
    */
   async #generateBarcodeImage(upc, productName) {
+    // Ensure fonts are registered
+    ensureBarcodeFontsRegistered();
+    
     const tmpDir = path.join(os.tmpdir(), 'nutribot-upc');
     await fs.mkdir(tmpDir, { recursive: true });
     
@@ -483,14 +516,17 @@ If unsure, use "default" icon.`,
       canvasHeight - margin.top - margin.bottom - 30
     );
 
+    // Use Roboto Condensed if registered, otherwise fall back to sans-serif
+    const fontFamily = barcodeFontsRegistered ? 'Roboto Condensed' : 'sans-serif';
+    
     // Draw UPC number centered
-    ctx.font = 'bold 24px Arial';
+    ctx.font = `bold 24px "${fontFamily}"`;
     ctx.fillStyle = '#000';
     ctx.textAlign = 'center';
     ctx.fillText(upc, canvasWidth / 2, canvasHeight - margin.bottom + 30);
     
-    // Draw product name (truncated) at top
-    ctx.font = '14px Arial';
+    // Draw product name (truncated) at bottom
+    ctx.font = `14px "${fontFamily}"`;
     const truncatedName = productName.length > 45 
       ? productName.substring(0, 42) + '...' 
       : productName;
