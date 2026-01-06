@@ -10,6 +10,14 @@ const ioLogger = createLogger({
     app: 'io'
 });
 
+/**
+ * Get the data directory path, with fallback to DAYLIGHT_DATA_PATH env var
+ * This handles the case where process.env.path is not yet initialized (e.g., in tests)
+ */
+const getDataPath = () => {
+    return process.env.path?.data || process.env.DAYLIGHT_DATA_PATH;
+};
+
 class FlowSequence extends Array {}
 
 const FlowSequenceType = new yaml.Type('tag:yaml.org,2002:seq', {
@@ -94,7 +102,7 @@ export const saveImage = async (url, folder, uid) => {
 };
 
 export const loadRandom = (folder) => {
-    const path = `${process.env.path.data}/${folder}`;
+    const path = `${getDataPath()}/${folder}`;
     if (!fs.existsSync(path)) {
         ioLogger.error('io.loadRandom.folderMissing', { path });
         return false;
@@ -181,7 +189,8 @@ const translatePath = (originalPath) => {
 };
 
 const loadFile = (path) => {
-    path = path.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
+    const dataPath = getDataPath();
+    path = path.replace(dataPath, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
 
     // Translate legacy paths to new structure
     path = translatePath(path);
@@ -222,8 +231,8 @@ const loadFile = (path) => {
     }
     
     // Try .yml first, then .yaml as fallback (legacy)
-    const ymlPath = `${process.env.path.data}/${path}.yml`;
-    const yamlPath = `${process.env.path.data}/${path}.yaml`;
+    const ymlPath = `${dataPath}/${path}.yml`;
+    const yamlPath = `${dataPath}/${path}.yaml`;
     let fileToLoad = null;
 
     if (fs.existsSync(ymlPath)) {
@@ -265,7 +274,7 @@ function removeCircularReferences(data){
 const mkDirIfNotExists= (path) =>{
     const pathWithoutFilename = path.split('/').slice(0,-1).join('/');
     const dirs = pathWithoutFilename.split('/');
-    let currentPath = process.env.path.data;
+    let currentPath = getDataPath();
     dirs.forEach(dir => {
         currentPath = `${currentPath}/${dir}`;
         if (!fs.existsSync(currentPath)) {
@@ -294,7 +303,7 @@ const processQueue = (key) => {
     try {
         mkDirIfNotExists(job.normalizedPath);
         const processed = markFlowSequences(job.data);
-        const dst = `${process.env.path.data}/${job.yamlFile}`;
+        const dst = `${getDataPath()}/${job.yamlFile}`;
         const yamlString = yaml.dump(processed, {
             schema: CUSTOM_YAML_SCHEMA,
             lineWidth: -1
@@ -314,7 +323,8 @@ const processQueue = (key) => {
 
 const saveFile = (path, data) => {
     if (typeof path !== 'string') return false;
-    let normalizedPath = path?.replace(process.env.path.data, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
+    const dataPath = getDataPath();
+    let normalizedPath = path?.replace(dataPath, '').replace(/^[.\/]+/, '').replace(/\.(yaml|yml)$/, '');
 
     // Translate legacy paths to new structure
     normalizedPath = translatePath(normalizedPath);
