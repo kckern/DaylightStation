@@ -1,15 +1,10 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import Player from '../../Player/Player.jsx';
+import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
 import './GovernanceStateOverlay.scss';
 
-const GOVERNANCE_AUDIO_TRACKS = {
-  init: 'audio/sfx/bgmusic/fitness/start',
-  locked: 'audio/sfx/bgmusic/fitness/locked'
-};
-
-const GovernanceWarningOverlay = ({ countdown, countdownTotal, offenders }) => {
+const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, offenders }) {
   const remaining = Number.isFinite(countdown) ? Math.max(countdown, 0) : 0;
   const total = Number.isFinite(countdownTotal) ? Math.max(countdownTotal, 1) : 1;
   const progress = Math.max(0, Math.min(1, remaining / total));
@@ -61,7 +56,7 @@ const GovernanceWarningOverlay = ({ countdown, countdownTotal, offenders }) => {
                     <div
                       className="governance-progress-overlay__chip-progress-fill"
                       style={{
-                        width: `${chipProgress}%`,
+                        transform: `scaleX(${clamped})`,
                         background: progressColor
                       }}
                     />
@@ -75,12 +70,19 @@ const GovernanceWarningOverlay = ({ countdown, countdownTotal, offenders }) => {
       <div className="governance-progress-overlay__track">
         <div
           className="governance-progress-overlay__fill"
-          style={{ width: `${Math.round(progress * 100)}%` }}
+          style={{ transform: `scaleX(${progress})` }}
         />
       </div>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Skip re-render if countdown delta < 0.3s and offenders reference unchanged
+  const countdownDelta = Math.abs((prevProps.countdown || 0) - (nextProps.countdown || 0));
+  if (countdownDelta < 0.3 && prevProps.offenders === nextProps.offenders) {
+    return true; // props are equal, skip re-render
+  }
+  return false;
+});
 
 GovernanceWarningOverlay.propTypes = {
   countdown: PropTypes.number,
@@ -97,7 +99,7 @@ GovernanceWarningOverlay.propTypes = {
   }))
 };
 
-const GovernancePanelOverlay = ({ overlay, lockRows = [] }) => {
+const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ overlay, lockRows = [] }) {
   const title = overlay.title || 'Video Locked';
   const primaryMessage = Array.isArray(overlay.descriptions) && overlay.descriptions.length > 0
     ? overlay.descriptions[0]
@@ -121,7 +123,7 @@ const GovernancePanelOverlay = ({ overlay, lockRows = [] }) => {
           <div
             className="governance-lock__progress-fill"
             style={{
-              width: `${widthPercent}%`,
+              transform: `scaleX(${clamped})`,
               background: row.progressGradient || undefined
             }}
           />
@@ -246,7 +248,7 @@ const GovernancePanelOverlay = ({ overlay, lockRows = [] }) => {
       </div>
     </div>
   );
-};
+});
 
 GovernancePanelOverlay.propTypes = {
   overlay: PropTypes.shape({
@@ -277,22 +279,24 @@ GovernancePanelOverlay.propTypes = {
   }))
 };
 
-const GenericOverlay = ({ overlay }) => (
-  <div className="fitness-player-overlay">
-    <div className="fitness-player-overlay__panel">
-      {overlay.title ? (
-        <div className="fitness-player-overlay__title">{overlay.title}</div>
-      ) : null}
-      {Array.isArray(overlay.descriptions) && overlay.descriptions.length > 0
-        ? overlay.descriptions.map((line, idx) => (
-            <p className="fitness-player-overlay__line" key={`generic-desc-${idx}`}>
-              {line}
-            </p>
-          ))
-        : null}
+const GenericOverlay = React.memo(function GenericOverlay({ overlay }) {
+  return (
+    <div className="fitness-player-overlay">
+      <div className="fitness-player-overlay__panel">
+        {overlay.title ? (
+          <div className="fitness-player-overlay__title">{overlay.title}</div>
+        ) : null}
+        {Array.isArray(overlay.descriptions) && overlay.descriptions.length > 0
+          ? overlay.descriptions.map((line, idx) => (
+              <p className="fitness-player-overlay__line" key={`generic-desc-${idx}`}>
+                {line}
+              </p>
+            ))
+          : null}
+      </div>
     </div>
-  </div>
-);
+  );
+});
 
 GenericOverlay.propTypes = {
   overlay: PropTypes.shape({
@@ -305,55 +309,29 @@ const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffender
   const overlayShow = Boolean(overlay?.show);
   const overlayCategory = overlay?.category || null;
   const overlayStatus = typeof overlay?.status === 'string' ? overlay.status.toLowerCase() : '';
-  const audioConfig = useMemo(() => {
+  
+  // Determine which audio track to play (or null for none)
+  const audioTrackKey = useMemo(() => {
     if (!overlayShow || overlayCategory !== 'governance') {
       return null;
     }
-    let trackKey = null;
     if (overlayStatus === 'grey') {
-      trackKey = 'init';
-    } else if (overlayStatus === 'red') {
-      trackKey = 'locked';
+      return 'init';
     }
-    if (!trackKey) {
-      return null;
+    if (overlayStatus === 'red') {
+      return 'locked';
     }
-    const media = GOVERNANCE_AUDIO_TRACKS[trackKey];
-    if (!media) {
-      return null;
-    }
-    const guid = `governance-audio-${trackKey}`;
-    return {
-      playerKey: guid,
-      playPayload: {
-        media,
-        guid,
-        continuous: true,
-        volume: 0.85,
-        shader: 'minimal'
-      }
-    };
+    return null;
   }, [overlayShow, overlayCategory, overlayStatus]);
 
   if (!overlay?.show) {
     return null;
   }
 
-  const hiddenAudio = audioConfig ? (
-    <div className="governance-overlay__audio" aria-hidden="true">
-      <Player
-        key={audioConfig.playerKey}
-        playerType="governance-audio"
-        ignoreKeys
-        play={audioConfig.playPayload}
-      />
-    </div>
-  ) : null;
-
   if (overlay.category === 'governance-warning-progress') {
     return (
       <>
-        {hiddenAudio}
+        <GovernanceAudioPlayer trackKey={audioTrackKey} />
         <GovernanceWarningOverlay
           countdown={overlay.countdown}
           countdownTotal={overlay.countdownTotal}
@@ -365,8 +343,8 @@ const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffender
 
   if (overlay.category === 'governance') {
     return (
-        <>
-        {hiddenAudio}
+      <>
+        <GovernanceAudioPlayer trackKey={audioTrackKey} />
         <GovernancePanelOverlay
           overlay={overlay}
           lockRows={lockRows}
@@ -377,7 +355,7 @@ const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffender
 
   return (
     <>
-      {hiddenAudio}
+      <GovernanceAudioPlayer trackKey={audioTrackKey} />
       <GenericOverlay overlay={overlay} />
     </>
   );

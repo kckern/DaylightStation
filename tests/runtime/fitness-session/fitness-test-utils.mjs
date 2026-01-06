@@ -71,15 +71,13 @@ export async function startDevServer(timeout = 60000) {
   });
   proc.unref();
 
-  // Wait for both ports to be ready
+  // Wait for frontend to be ready (backend is proxied through it in dev)
   while (Date.now() - startTime < timeout) {
     try {
-      const [frontendCheck, backendCheck] = await Promise.all([
-        fetch(`http://localhost:${FRONTEND_PORT}`).then(() => true).catch(() => false),
-        fetch(`http://localhost:${BACKEND_PORT}/health`).then(() => true).catch(() => false)
-      ]);
+      const frontendCheck = await fetch(`http://localhost:${FRONTEND_PORT}`).then(() => true).catch(() => false);
+      const apiCheck = await fetch(`http://localhost:${FRONTEND_PORT}/api/fitness`).then(() => true).catch(() => false);
 
-      if (frontendCheck && backendCheck) {
+      if (frontendCheck && apiCheck) {
         console.log('Dev server ready');
         return proc;
       }

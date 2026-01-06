@@ -444,7 +444,19 @@ export class GovernanceEngine {
 
   _setPhase(newPhase) {
     if (this.phase !== newPhase) {
+      const oldPhase = this.phase;
       this.phase = newPhase;
+      this._invalidateStateCache(); // Invalidate cache on phase change
+      
+      // Log phase transitions for debugging (visible in dev.log)
+      getLogger().info('governance.phase_change', {
+        from: oldPhase,
+        to: newPhase,
+        mediaId: this.media?.id,
+        deadline: this.meta?.deadline,
+        satisfiedOnce: this.meta?.satisfiedOnce
+      });
+      
       if (this.callbacks.onPhaseChange) {
         this.callbacks.onPhaseChange(newPhase);
       }
@@ -520,10 +532,55 @@ export class GovernanceEngine {
       totalCount: 0
     };
     this._lastEvaluationTs = null;
+    
+    // State caching for performance - throttle recomputation to 200ms
+    this._stateCache = null;
+    this._stateCacheTs = 0;
+    this._stateCacheThrottleMs = 200;
+    this._stateVersion = 0; // Incremented on evaluate() to invalidate cache
+    this._stateCacheVersion = -1; // Track which version the cache represents
   }
 
   get state() {
-    return this._composeState();
+    return this._getCachedState();
+  }
+
+  /**
+   * Returns cached state if still valid, otherwise recomputes.
+   * Cache is invalidated after throttle period OR when evaluate() is called.
+   */
+  _getCachedState() {
+    const now = Date.now();
+    const cacheAge = now - this._stateCacheTs;
+    const cacheValid = this._stateCache
+      && cacheAge < this._stateCacheThrottleMs
+      && this._stateCacheVersion === this._stateVersion;
+    
+    if (cacheValid) {
+      // Update countdown in-place without full recomputation
+      // This allows smooth countdown display while throttling expensive parts
+      if (this._stateCache.countdownSecondsRemaining != null && this.meta?.deadline) {
+        const remaining = Math.max(0, Math.round((this.meta.deadline - now) / 1000));
+        if (remaining !== this._stateCache.countdownSecondsRemaining) {
+          // Shallow copy to update countdown without mutating cache
+          this._stateCache = { ...this._stateCache, countdownSecondsRemaining: remaining };
+        }
+      }
+      return this._stateCache;
+    }
+    
+    // Recompute and cache
+    this._stateCache = this._composeState();
+    this._stateCacheTs = now;
+    this._stateCacheVersion = this._stateVersion;
+    return this._stateCache;
+  }
+
+  /**
+   * Invalidate state cache - call this when significant state changes occur
+   */
+  _invalidateStateCache() {
+    this._stateVersion++;
   }
 
   _composeState() {
@@ -732,9 +789,12 @@ export class GovernanceEngine {
     // 2. Check participants
     if (activeParticipants.length === 0) {
       getLogger().warn('governance.evaluate.no_participants');
-      this.reset(); // Or keep history? Context cleared history on empty participants
+      // Don't call reset() here - it clears satisfiedOnce which breaks grace period logic.
+      // If user had satisfied requirements before, we want to preserve that so the
+      // grace period countdown can continue when participants return with low HR.
+      this._clearTimers();
       this._setPhase('init');
-      this._schedulePulse(1000); // Ensure UI keeps checking even if engine is reset
+      this._schedulePulse(1000); // Ensure UI keeps checking even if participants are empty
       return;
     }
 
@@ -846,6 +906,9 @@ export class GovernanceEngine {
       zoneInfoMap,
       totalCount
     });
+    
+    // Invalidate state cache after evaluation completes
+    this._invalidateStateCache();
   }
 
   _chooseActivePolicy(totalCount) {
