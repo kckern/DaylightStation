@@ -57,9 +57,10 @@ const formatDuration = (ms) => {
  * @param {Object} timebase - Timeline timebase config
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor for centralized activity tracking
+ * @param {Array} [options.zoneConfig] - Zone configuration for coin rate lookup (fixes sawtooth)
  */
 const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
-	const { activityMonitor } = options;
+	const { activityMonitor, zoneConfig } = options;
 	
 	return useMemo(() => {
 		if (!Array.isArray(roster) || roster.length === 0 || typeof getSeries !== 'function') {
@@ -70,7 +71,8 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		const debugItems = roster.map((entry, idx) => {
 			const { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor });
 			const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
-			const segments = buildSegments(beats, zones, active);
+			// Pass zoneConfig to buildSegments for zone-based slope enforcement (fixes sawtooth)
+			const segments = buildSegments(beats, zones, active, { zoneConfig });
 			const profileId = entry.profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || entry.id || idx);
 			const entryId = entry.id || profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || idx, `anon-${idx}`);
 			
@@ -199,7 +201,7 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		const maxValue = Math.max(0, ...shaped.map((e) => e.maxVal));
 		const maxIndex = Math.max(0, ...shaped.map((e) => e.lastIndex));
 		return { entries: shaped, maxValue, maxIndex };
-	}, [roster, getSeries, timebase, activityMonitor]);
+	}, [roster, getSeries, timebase, activityMonitor, zoneConfig]);
 };
 
 // NOTE: Clean ChartDataBuilder interface is available via useFitnessApp().chartDataBuilder
@@ -229,10 +231,11 @@ const findFirstFiniteAfter = (arr = [], index) => {
  * @param {string[]} historicalParticipantIds - IDs of historical participants
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor
+ * @param {Array} [options.zoneConfig] - Zone configuration for coin rate lookup (fixes sawtooth)
  */
 const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = [], options = {}) => {
-	const { activityMonitor } = options;
-	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor });
+	const { activityMonitor, zoneConfig } = options;
+	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor, zoneConfig });
 	const [participantCache, setParticipantCache] = useState({});
 	// Track which historical IDs we've already processed to avoid re-processing on every render
 	const processedHistoricalRef = useRef(new Set());
@@ -256,8 +259,9 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				// Build data for historical participant (pass activityMonitor for Phase 2)
 				const { beats, zones, active } = buildBeatsSeries({ profileId: slug, name: slug }, getSeries, timebase, { activityMonitor });
 				if (!beats.length) return;
-				
-				const segments = buildSegments(beats, zones, active);
+
+				// Pass zoneConfig for zone-based slope enforcement
+				const segments = buildSegments(beats, zones, active, { zoneConfig });
 				if (!segments.length) return;
 				
 				// Skip non-HR devices (no accumulated beats)
@@ -614,13 +618,14 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 );
 
 const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
-	const { 
-		participants, 
-		historicalParticipants, 
-		getUserTimelineSeries, 
-		timebase, 
+	const {
+		participants,
+		historicalParticipants,
+		getUserTimelineSeries,
+		timebase,
 		registerLifecycle,
-		activityMonitor  // Phase 2 - centralized activity tracking
+		activityMonitor,  // Phase 2 - centralized activity tracking
+		zoneConfig        // Zone config for coin rate lookup (fixes sawtooth)
 	} = useFitnessPlugin('fitness_chart');
 	const containerRef = useRef(null);
 	const [chartSize, setChartSize] = useState({ width: DEFAULT_CHART_WIDTH, height: DEFAULT_CHART_HEIGHT });
@@ -656,12 +661,13 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	}, []);
 
 	// Pass activityMonitor for centralized activity tracking (Phase 2)
+	// Pass zoneConfig for zone-based slope enforcement (fixes sawtooth pattern)
 	const { allEntries, presentEntries, absentEntries, dropoutMarkers, maxValue, maxIndex } = useRaceChartWithHistory(
-		participants, 
-		getUserTimelineSeries, 
-		timebase, 
+		participants,
+		getUserTimelineSeries,
+		timebase,
 		historicalParticipants,
-		{ activityMonitor }
+		{ activityMonitor, zoneConfig }
 	);
 
 	// Diagnostic logging to dev.log to understand warmup failures without spamming
