@@ -767,6 +767,8 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 
 	const lowestAvatarValue = useMemo(() => {
 		let min = Number.POSITIVE_INFINITY;
+		// Include BOTH present entries (active avatars) AND absent entries (dropout badges)
+		// This ensures gridlines stay anchored to dropout positions, not just active users
 		presentEntries.forEach((entry) => {
 			const beats = entry.beats || [];
 			for (let i = beats.length - 1; i >= 0; i -= 1) {
@@ -777,9 +779,15 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 				}
 			}
 		});
+		// Also consider absent entries (dropouts) - use their lastValue as dropout position
+		absentEntries.forEach((entry) => {
+			if (Number.isFinite(entry.lastValue) && entry.lastValue < min) {
+				min = entry.lastValue;
+			}
+		});
 		if (min === Number.POSITIVE_INFINITY) return Math.max(0, minDataValue);
 		return Math.max(0, min);
-	}, [presentEntries, minDataValue]);
+	}, [presentEntries, absentEntries, minDataValue]);
 
 	const lowestValue = useMemo(() => {
 		let min = Number.POSITIVE_INFINITY;

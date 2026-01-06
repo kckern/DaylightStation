@@ -472,7 +472,8 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
  * @returns {Object[]} Segments with enforced slopes
  */
 function enforceZoneSlopes(segments, zoneConfig = []) {
-  return segments.map(segment => {
+  // First pass: apply slope enforcement to each segment
+  const processed = segments.map(segment => {
     // Gap segments (dropout) stay unchanged - already flat
     if (segment.isGap) return segment;
 
@@ -514,6 +515,30 @@ function enforceZoneSlopes(segments, zoneConfig = []) {
     // Segment already has slope - return as-is
     return segment;
   });
+
+  // Second pass: ensure continuity between adjacent segments
+  // When interpolation modifies a segment's end value, the next segment's
+  // continuity point (first point) may have the OLD value, creating a gap.
+  // Fix by updating continuity points to match the previous segment's end.
+  for (let i = 1; i < processed.length; i++) {
+    const prev = processed[i - 1];
+    const curr = processed[i];
+
+    // Skip if either segment is a gap (gaps have special continuity handling)
+    if (curr.isGap || prev.isGap) continue;
+    if (!prev.points?.length || !curr.points?.length) continue;
+
+    const prevLast = prev.points[prev.points.length - 1];
+    const currFirst = curr.points[0];
+
+    // If segments share the same tick (continuity point) but different values,
+    // update the current segment's first point to match the previous end
+    if (currFirst.i === prevLast.i && currFirst.v !== prevLast.v) {
+      curr.points[0] = { ...currFirst, v: prevLast.v };
+    }
+  }
+
+  return processed;
 }
 
 /**
