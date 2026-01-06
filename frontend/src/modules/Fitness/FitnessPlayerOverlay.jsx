@@ -424,8 +424,13 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     };
   }, [getUserVitals]);
   
-  const progressLookup = userZoneProgress instanceof Map ? userZoneProgress : null;
-  const getProgressEntry = (name) => {
+  // Memoize progressLookup reference for stable getProgressEntry
+  const progressLookup = useMemo(() => {
+    return userZoneProgress instanceof Map ? userZoneProgress : null;
+  }, [userZoneProgress]);
+
+  // Stabilize getProgressEntry with useCallback
+  const getProgressEntry = React.useCallback((name) => {
     if (!name) return null;
     if (progressLookup) {
       return progressLookup.get(name) || null;
@@ -434,7 +439,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       return userZoneProgress[name] || null;
     }
     return null;
-  };
+  }, [progressLookup, userZoneProgress]);
 
   const participantMap = useMemo(() => {
     const map = new Map();
@@ -446,16 +451,18 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     return map;
   }, [participants]);
 
-  const findZoneByLabel = (label) => {
+  // Stabilize findZoneByLabel with useCallback
+  const findZoneByLabel = React.useCallback((label) => {
     if (!label) return null;
     const normalized = label.trim().toLowerCase();
     const match = Object.values(zoneMetadata.map || {}).find((entry) =>
       entry?.name?.trim().toLowerCase() === normalized
     );
     return match || null;
-  };
+  }, [zoneMetadata.map]);
 
-  const getParticipantZone = (participant, resolvedVitals = null) => {
+  // Stabilize getParticipantZone with useCallback
+  const getParticipantZone = React.useCallback((participant, resolvedVitals = null) => {
     if (!participant && !resolvedVitals) return null;
     const zoneId = normalizeZoneId(resolvedVitals?.zoneId) || normalizeZoneId(participant?.zoneId);
     if (zoneId && zoneMetadata.map[zoneId]) {
@@ -487,7 +494,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       };
     }
     return null;
-  };
+  }, [zoneMetadata.map, findZoneByLabel]);
 
   const warningOffenders = useMemo(() => {
     if (!overlay || overlay.category !== 'governance-warning-progress') {
@@ -538,7 +545,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       });
     });
     return offenders;
-  }, [overlay, participantMap, zoneMetadata, userZoneProgress, resolveParticipantVitals]);
+  }, [overlay, participantMap, resolveParticipantVitals, getParticipantZone, getProgressEntry]);
 
   const lockRows = useMemo(() => {
     if (!overlay || overlay.category !== 'governance' || !overlay.show) {

@@ -147,7 +147,7 @@ const EpisodeInfo = ({ episode, showInfo, seasonsMap, seasonsList, onPlay }) => 
         </div>
       </div>
       <div className="episode-actions center">
-  <button className="play-button" onPointerDown={() => onPlay && onPlay(episode)}>▶ Play</button>
+  <button className="play-button" data-testid="play-episode-button" onPointerDown={() => onPlay && onPlay(episode)}>▶ Play</button>
       </div>
     </div>
   );

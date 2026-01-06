@@ -319,7 +319,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
             .map((show, index) => (
               <div
                 key={show.plex || index}
-                className="show-card"
+                className="show-card show-tile media-card"
+                data-testid="show-card"
+                data-show-id={show.plex || show.id}
+                data-show-title={show.label}
                 onPointerDown={(e) => handleShowClick(e, show)}
               >
                 {show.image && (
@@ -327,6 +330,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
                     src={normalizeImageUrl(show.image)}
                     alt={show.label}
                     className={`show-image ${loadedImages[show.plex || show.id] ? 'loaded' : ''}`}
+                    data-testid="show-poster"
                     onLoad={() => {
                       const key = show.plex || show.id;
                       if (key !== undefined) {
