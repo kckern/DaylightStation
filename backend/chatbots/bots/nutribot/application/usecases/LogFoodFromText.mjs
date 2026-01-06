@@ -221,11 +221,11 @@ export class LogFoodFromText {
         await this.#nutrilogRepository.save(updatedLog);
       }
 
-      this.#logger.info('logText.complete', { 
-        conversationId, 
+      this.#logger.info('logText.complete', {
+        conversationId,
         itemCount: foodItems.length,
         logUuid: nutriLog.id,
-        items: foodItems.map(i => `${i.name} ${i.grams}g`).join(', ')
+        items: foodItems.map(i => `${i.label} ${i.grams}g`).join(', ')
       });
 
       return {

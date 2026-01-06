@@ -85,19 +85,18 @@ export class ReviseFoodLog {
       const message = `✏️ Revise Entry:\n\n${dateHeader ? dateHeader + '\n\n' : ''}${currentItems || '(none)'}`;
 
       // 4. Update the message or send new one
+      // For image-based logs, original message is a photo - use caption instead of text
+      const isImageLog = nutriLog?.metadata?.source === 'image';
+      const cancelButton = [{ text: '❌ Cancel', callback_data: encodeCallback('cr', { id: logUuid }) }];
+
       if (messageId) {
-        await this.#messagingGateway.updateMessage(conversationId, messageId, {
-          text: message,
-          choices: [
-            [{ text: '❌ Cancel', callback_data: encodeCallback('cr', { id: logUuid }) }],
-          ],
-          inline: true,
-        });
+        const updatePayload = isImageLog
+          ? { caption: message, choices: [cancelButton], inline: true }
+          : { text: message, choices: [cancelButton], inline: true };
+        await this.#messagingGateway.updateMessage(conversationId, messageId, updatePayload);
       } else {
         await this.#messagingGateway.sendMessage(conversationId, message, {
-          choices: [
-            [{ text: '❌ Cancel', callback_data: encodeCallback('cr', { id: logUuid }) }],
-          ],
+          choices: [cancelButton],
           inline: true,
         });
       }
