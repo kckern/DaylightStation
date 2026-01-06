@@ -21,22 +21,18 @@
 
 import fs from 'fs';
 import path from 'path';
-import { parse } from 'yaml';
+import { bootstrapReadYaml } from '../bootstrap-yaml.mjs';
 import createLogger from '../logging/logger.js';
 
 const logger = createLogger({ app: 'config' });
 
-// Safe YAML reader with error handling
+// Bootstrap: returns {} on failure (for config merging)
+// Runtime methods that need null on missing should check fs.existsSync first
 const safeReadYaml = (filePath) => {
-  try {
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      return parse(raw) || {};
-    }
-  } catch (err) {
-    console.error(`[ConfigService] Failed to read ${filePath}:`, err?.message || err);
-  }
-  return null;
+  if (!fs.existsSync(filePath)) return null;
+  const result = bootstrapReadYaml(filePath);
+  // bootstrapReadYaml returns {} on parse error, convert to null for runtime semantics
+  return (result && Object.keys(result).length > 0) ? result : null;
 };
 
 // Deep merge utility (later values override earlier)
