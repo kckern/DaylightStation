@@ -111,7 +111,6 @@ export function useResiliencePolicy({
   playbackHealth,
   isStartupPhase = false,
   readDiagnostics,
-  reduceBitrateAfterHardReset,
   requestDecoderNudge,
   logResilienceEvent
 }) {
@@ -182,17 +181,6 @@ export function useResiliencePolicy({
       };
     }
 
-    if (classification === 'buffer-starved') {
-      if ((now - lastSnapshot.lastMitigationAt) > 3000) {
-        reduceBitrateAfterHardReset?.({ reason: 'buffer-starved', source: 'stall-guard' });
-        stallInsightsRef.current = {
-          ...stallInsightsRef.current,
-          lastMitigationAt: now
-        };
-      }
-      return;
-    }
-
     if (classification === 'decoder-stall') {
       const detectedAgo = now - (lastSnapshot.lastDetectedAt || now);
       if (detectedAgo < SHAKA_STALL_GRACE_MS) {
@@ -206,7 +194,7 @@ export function useResiliencePolicy({
         lastMitigationAt: now
       };
     }
-  }, [classify, logResilienceEvent, policyState, readDiagnostics, reduceBitrateAfterHardReset, requestDecoderNudge]);
+  }, [classify, logResilienceEvent, policyState, readDiagnostics, requestDecoderNudge]);
 
   return useMemo(() => ({
     policyState,

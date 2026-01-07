@@ -8,6 +8,5 @@ export const logResilienceEvent = (event, payload = {}, options = {}) => {
 export const metrics = {
   stallCount: (payload = {}, options = {}) => playbackLog('metric.player_stall_total', payload || {}, options || {}),
   stallDurationMs: (payload = {}, options = {}) => playbackLog('metric.player_stall_duration_ms', payload || {}, options || {}),
-  recoveryAttempt: (payload = {}, options = {}) => playbackLog('metric.player_recovery_total', payload || {}, options || {}),
-  bitrateOverride: (payload = {}, options = {}) => playbackLog('metric.player_bitrate_override_total', payload || {}, options || {})
+  recoveryAttempt: (payload = {}, options = {}) => playbackLog('metric.player_recovery_total', payload || {}, options || {})
 };

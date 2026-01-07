@@ -392,12 +392,10 @@ export function VideoPlayer({
   resilienceBridge,
   maxVideoBitrate,
   maxResolution,
-  watchedDurationProvider,
-  resilienceBitrateInfo = null,
-  onRestoreFullBitrate = null
+  watchedDurationProvider
 }) {
   const isPlex = ['dash_video'].includes(media.media_type);
-  
+
   const { show, season, title, media_url } = media;
 
   const { startSeconds: initialStartSeconds } = useMemo(
@@ -415,13 +413,6 @@ export function VideoPlayer({
 
   const resolvedMaxVideoBitrate = maxVideoBitrate ?? media?.maxVideoBitrate ?? null;
   const resolvedMaxResolution = maxResolution ?? media?.maxResolution ?? null;
-  const resilienceBitrateTag = resilienceBitrateInfo?.tag ?? null;
-  const baselineMaxVideoBitrate = Number(resilienceBitrateInfo?.baseline) || null;
-  const resilienceBitrate = Number(resilienceBitrateInfo?.current);
-  const effectiveBitrateCap = Number.isFinite(resilienceBitrate)
-    ? resilienceBitrate
-    : (Number.isFinite(resolvedMaxVideoBitrate) ? Number(resolvedMaxVideoBitrate) : null);
-  const hardRecoveryBitrateCapActive = Boolean(resilienceBitrateInfo?.isHardRecovery);
 
   const videoKey = useMemo(
     () => `${media_url || ''}__cap=${resolvedMaxVideoBitrate ?? 'unlimited'}__res=${resolvedMaxResolution ?? 'native'}`,
@@ -1115,29 +1106,6 @@ export function VideoPlayer({
     }
   }, []);
 
-  const formatBitrateLabel = useCallback((value) => {
-    if (!Number.isFinite(value)) return null;
-    if (value >= 1000) {
-      const mbps = value / 1000;
-      return `${mbps.toFixed(mbps >= 10 ? 0 : 1)} Mbps`;
-    }
-    return `${value} kbps`;
-  }, []);
-
-  const handleBitrateBadgeActivate = useCallback((event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    playbackLog('bitrate-restore-request', {
-      waitKey: waitKey || null,
-      currentKbps: effectiveBitrateCap ?? null,
-      baselineKbps: baselineMaxVideoBitrate ?? null,
-      tag: resilienceBitrateTag
-    }, { level: 'info' });
-    if (typeof onRestoreFullBitrate === 'function') {
-      onRestoreFullBitrate({ source: 'video-player' });
-    }
-  }, [baselineMaxVideoBitrate, effectiveBitrateCap, onRestoreFullBitrate, resilienceBitrateTag, waitKey]);
-
   return (
     <div ref={playerRootRef} className={`video-player ${shader}`}>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
@@ -1162,17 +1130,6 @@ export function VideoPlayer({
         />
       )}
       <div className="video-grain-overlay" aria-hidden="true" />
-      {hardRecoveryBitrateCapActive && Number.isFinite(effectiveBitrateCap) && (
-        <button
-          type="button"
-          className="bitrate-cap-badge"
-          onClick={handleBitrateBadgeActivate}
-          aria-label="Bitrate capped after recovery. Tap to restore full bitrate."
-        >
-          <span>Bitrate cap {formatBitrateLabel(effectiveBitrateCap)}</span>
-          <span className="bitrate-cap-reset">Reset</span>
-        </button>
-      )}
     </div>
   );
 }
@@ -1207,15 +1164,5 @@ VideoPlayer.propTypes = {
   }),
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  watchedDurationProvider: PropTypes.func,
-  resilienceBitrateInfo: PropTypes.shape({
-    current: PropTypes.number,
-    baseline: PropTypes.number,
-    tag: PropTypes.string,
-    reason: PropTypes.string,
-    updatedAt: PropTypes.number,
-    source: PropTypes.string,
-    isHardRecovery: PropTypes.bool
-  }),
-  onRestoreFullBitrate: PropTypes.func
+  watchedDurationProvider: PropTypes.func
 };
