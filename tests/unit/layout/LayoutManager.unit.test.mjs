@@ -127,11 +127,14 @@ describe('LayoutManager', () => {
 
     it('should handle tick count of 2 with avatars at ticks 0 and 1', () => {
       const width = 420;
-      const innerWidth = width - MARGIN.left - MARGIN.right;
+      const avatarRadius = 30;
+      // Valid X range accounts for avatar radius
+      const minX = MARGIN.left + avatarRadius;
+      const maxX = width - MARGIN.right - avatarRadius;
 
       const input = [
-        { type: 'avatar', id: 'user-0', x: MARGIN.left, y: 150, name: 'A', color: '#4ade80', value: 1000 },
-        { type: 'avatar', id: 'user-1', x: MARGIN.left + innerWidth, y: 155, name: 'B', color: '#4ade80', value: 1500 }
+        { type: 'avatar', id: 'user-0', x: minX, y: 150, name: 'A', color: '#4ade80', value: 1000 },
+        { type: 'avatar', id: 'user-1', x: maxX, y: 155, name: 'B', color: '#4ade80', value: 1500 }
       ];
 
       const { elements } = manager.layout(input);
@@ -139,6 +142,7 @@ describe('LayoutManager', () => {
       const a = elements.find(e => e.id === 'user-0');
       const b = elements.find(e => e.id === 'user-1');
 
+      // No displacement needed when avatars are within valid bounds and not overlapping
       expect(Math.abs(a.offsetX || 0)).toBeLessThan(5);
       expect(Math.abs(b.offsetX || 0)).toBeLessThan(5);
     });

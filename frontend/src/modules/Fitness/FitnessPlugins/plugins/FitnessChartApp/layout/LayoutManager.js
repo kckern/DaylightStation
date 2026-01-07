@@ -232,18 +232,17 @@ export class LayoutManager {
     const radius = type === 'avatar' ? this.avatarRadius : this.badgeRadius;
 
     // Calculate the safe zone where element centers can be placed
-    // For X: allow avatars to be at line endpoints (chart area edge)
-    // The margin.right already provides space for avatar + label
+    // For X: account for radius so avatars don't extend past visible area
     // For Y: keep radius padding to prevent clipping at top/bottom
-    const minX = (margin.left || 0);
-    const maxX = width - (margin.right || 0);
+    const minX = (margin.left || 0) + radius;
+    const maxX = width - (margin.right || 0) - radius;
     const minY = (margin.top || 0) + radius;
     const maxY = height - (margin.bottom || 0) - radius;
-    
+
     return elements.map(el => {
       const currentX = el.x + (el.offsetX || 0);
       const currentY = el.y + (el.offsetY || 0);
-      
+
       // Clamp to safe zone
       let clampedX = Math.max(minX, Math.min(maxX, currentX));
       let clampedY = Math.max(minY, Math.min(maxY, currentY));
@@ -286,11 +285,10 @@ export class LayoutManager {
     const radius = type === 'avatar' ? this.avatarRadius : this.badgeRadius;
 
     // Calculate the safe zone where element centers can be placed
-    // For X: allow avatars to be at line endpoints (chart area edge)
-    // The margin.right already provides space for avatar + label
+    // For X: account for radius so avatars don't extend past visible area
     // For Y: keep radius padding to prevent clipping at top/bottom
-    const minX = (margin.left || 0);
-    const maxX = width - (margin.right || 0);
+    const minX = (margin.left || 0) + radius;
+    const maxX = width - (margin.right || 0) - radius;
     const minY = (margin.top || 0) + radius;
     const maxY = height - (margin.bottom || 0) - radius;
     
@@ -349,6 +347,7 @@ export class LayoutManager {
     }
 
     const minDist = this.avatarRadius * 2; // Minimum distance between centers
+    const maxDisplacement = this.options.maxDisplacement; // Cap collision displacement
 
     // Sort by Y ascending (top/higher avatars first - they have priority)
     const sorted = [...avatars].sort((a, b) => {
@@ -360,7 +359,8 @@ export class LayoutManager {
     // Track final positions (x offset from original position)
     const offsets = sorted.map(a => ({
       avatar: a,
-      offsetX: a._clampOffsetX || 0,
+      baseOffsetX: a._clampOffsetX || 0, // Offset from base clamping (doesn't count toward limit)
+      collisionOffsetX: 0, // Offset from collision resolution (capped)
       offsetY: a._clampOffsetY || 0
     }));
 
@@ -374,9 +374,9 @@ export class LayoutManager {
         const other = offsets[j];
         const otherY = other.avatar.y + other.offsetY;
 
-        // Calculate current positions
-        const currX = current.avatar.x + current.offsetX;
-        const otherX = other.avatar.x + other.offsetX;
+        // Calculate current positions (base + collision offsets)
+        const currX = current.avatar.x + current.baseOffsetX + current.collisionOffsetX;
+        const otherX = other.avatar.x + other.baseOffsetX + other.collisionOffsetX;
 
         // Check for collision
         const dx = currX - otherX;
@@ -393,17 +393,25 @@ export class LayoutManager {
             const currentHorizontalGap = Math.abs(dx);
             if (currentHorizontalGap < neededHorizontalGap) {
               // Move left by the difference plus some padding
-              current.offsetX -= (neededHorizontalGap - currentHorizontalGap + 4);
+              const pushAmount = neededHorizontalGap - currentHorizontalGap + 4;
+              const newCollisionOffset = current.collisionOffsetX - pushAmount;
+
+              // Cap TOTAL displacement (base + collision) to prevent excessive displacement
+              // This may result in some overlap when chart is too crowded
+              // Use small buffer to avoid floating point precision issues at threshold
+              const totalOffset = current.baseOffsetX + newCollisionOffset;
+              const cappedTotalOffset = Math.max(totalOffset, -(maxDisplacement - 0.5));
+              current.collisionOffsetX = cappedTotalOffset - current.baseOffsetX;
             }
           }
         }
       }
     }
 
-    // Return avatars with computed offsets
-    return offsets.map(({ avatar, offsetX, offsetY }) => ({
+    // Return avatars with computed offsets (base + collision)
+    return offsets.map(({ avatar, baseOffsetX, collisionOffsetX, offsetY }) => ({
       ...avatar,
-      offsetX,
+      offsetX: baseOffsetX + collisionOffsetX,
       offsetY
     }));
   }
