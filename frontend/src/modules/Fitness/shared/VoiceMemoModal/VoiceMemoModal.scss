@@ -1,0 +1,358 @@
+@import '../styles/variables';
+@import '../styles/mixins';
+@import '../styles/animations';
+
+.voice-memo-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--app-z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: app-fade-in var(--app-transition-normal);
+
+  // Backdrop
+  &__backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+  }
+
+  // Panel
+  &__panel {
+    position: relative;
+    background: var(--app-bg-elevated);
+    border-radius: var(--app-radius-lg);
+    border: 1px solid var(--app-border-color);
+    box-shadow: var(--app-shadow-lg);
+    padding: var(--app-spacing-xl);
+    min-width: 320px;
+    max-width: 480px;
+    width: 90%;
+    animation: app-scale-in var(--app-transition-normal);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--app-spacing-lg);
+  }
+
+  // Close button - top right
+  &__close {
+    position: absolute;
+    top: var(--app-spacing-md);
+    right: var(--app-spacing-md);
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: var(--app-radius-full);
+    color: var(--app-text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--app-transition-fast);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.2);
+      color: var(--app-text-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-action-primary);
+      outline-offset: 2px;
+    }
+  }
+
+  // Recording View
+  &__recording {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--app-spacing-lg);
+    padding-top: var(--app-spacing-lg);
+    width: 100%;
+  }
+
+  &__level-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+  }
+
+  &__mic-level {
+    // Ensure visibility
+    min-width: 120px;
+  }
+
+  &__timer {
+    font-family: var(--app-font-mono);
+    font-size: var(--app-font-size-2xl);
+    color: var(--app-text-primary);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  // Stop button - 64px red circle
+  &__stop-btn {
+    width: 64px;
+    height: 64px;
+    border: none;
+    background: var(--app-action-danger);
+    border-radius: var(--app-radius-full);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--app-transition-fast);
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+
+    &:hover {
+      background: #ff5252;
+      transform: scale(1.05);
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-action-danger);
+      outline-offset: 4px;
+    }
+  }
+
+  // Processing spinner
+  &__spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--app-bg-tertiary);
+    border-top-color: var(--app-action-primary);
+    border-radius: var(--app-radius-full);
+    animation: app-spin 1s linear infinite;
+  }
+
+  // Error message
+  &__error {
+    color: var(--app-action-danger);
+    font-size: var(--app-font-size-sm);
+    text-align: center;
+    padding: var(--app-spacing-sm) var(--app-spacing-md);
+    background: rgba(255, 107, 107, 0.1);
+    border-radius: var(--app-radius-md);
+  }
+
+  // Preview View
+  &__preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--app-spacing-lg);
+    padding-top: var(--app-spacing-lg);
+    width: 100%;
+  }
+
+  &__transcript {
+    font-size: var(--app-font-size-md);
+    color: var(--app-text-primary);
+    line-height: 1.6;
+    text-align: center;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: var(--app-spacing-md);
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: var(--app-radius-md);
+    width: 100%;
+    @include scrollbar-hide;
+  }
+
+  // Countdown container
+  &__countdown-container {
+    width: 100%;
+    position: relative;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // Countdown bar - animates left to right
+  &__countdown-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 4px;
+    width: 100%;
+    background: var(--app-action-success);
+    border-radius: 2px;
+    transform-origin: left;
+    transition: transform 50ms linear;
+  }
+
+  &__countdown-text {
+    font-size: var(--app-font-size-sm);
+    color: var(--app-text-secondary);
+    margin-top: 8px;
+  }
+
+  // Action buttons container
+  &__actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--app-spacing-lg);
+    padding-top: var(--app-spacing-sm);
+  }
+
+  // Action buttons - 48px circles
+  &__action-btn {
+    width: 48px;
+    height: 48px;
+    border: none;
+    border-radius: var(--app-radius-full);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--app-transition-fast);
+
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 3px;
+    }
+
+    // Accept - green
+    &--accept {
+      background: var(--app-action-success);
+      color: white;
+      box-shadow: 0 4px 12px rgba(81, 207, 102, 0.4);
+
+      &:hover {
+        background: #3eb854;
+        transform: scale(1.08);
+      }
+
+      &:active {
+        transform: scale(0.98);
+      }
+    }
+
+    // Redo - gray
+    &--redo {
+      background: var(--app-bg-tertiary);
+      color: var(--app-text-secondary);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+      &:hover {
+        background: #3a3a3a;
+        color: var(--app-text-primary);
+        transform: scale(1.08);
+      }
+
+      &:active {
+        transform: scale(0.98);
+      }
+    }
+
+    // Delete - red
+    &--delete {
+      background: var(--app-action-danger);
+      color: white;
+      box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+
+      &:hover {
+        background: #ff5252;
+        transform: scale(1.08);
+      }
+
+      &:active {
+        transform: scale(0.98);
+      }
+    }
+  }
+
+  // Context variants
+  &--fullscreen {
+    // Default styling is for fullscreen context
+  }
+
+  &--player {
+    // Player context - smaller panel, positioned lower
+    .voice-memo-modal__panel {
+      min-width: 280px;
+      max-width: 360px;
+      padding: var(--app-spacing-lg);
+    }
+
+    .voice-memo-modal__timer {
+      font-size: var(--app-font-size-xl);
+    }
+
+    .voice-memo-modal__stop-btn {
+      width: 56px;
+      height: 56px;
+    }
+
+    .voice-memo-modal__action-btn {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
+  &--show {
+    // Show context - compact styling
+    .voice-memo-modal__panel {
+      min-width: 260px;
+      max-width: 320px;
+      padding: var(--app-spacing-md) var(--app-spacing-lg);
+      gap: var(--app-spacing-md);
+    }
+
+    .voice-memo-modal__recording,
+    .voice-memo-modal__preview {
+      gap: var(--app-spacing-md);
+      padding-top: var(--app-spacing-md);
+    }
+
+    .voice-memo-modal__timer {
+      font-size: var(--app-font-size-lg);
+    }
+
+    .voice-memo-modal__stop-btn {
+      width: 52px;
+      height: 52px;
+    }
+
+    .voice-memo-modal__action-btn {
+      width: 40px;
+      height: 40px;
+    }
+
+    .voice-memo-modal__transcript {
+      font-size: var(--app-font-size-sm);
+      max-height: 120px;
+    }
+  }
+}
+
+// Screen reader only utility
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
