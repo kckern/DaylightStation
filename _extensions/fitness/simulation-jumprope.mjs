@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 /**
  * Jump Rope Simulator - Generates realistic jump rope BLE data
- * 
+ *
  * Usage:
- *   node simulation-jumprope.mjs [--duration=SECONDS] [--device=DEVICE_ID]
- * 
- * Examples:
- *   node simulation-jumprope.mjs                     # 2 min default
- *   node simulation-jumprope.mjs --duration=300     # 5 minutes
- *   node simulation-jumprope.mjs --device=test123   # Custom device ID
+ *   node simulation-jumprope.mjs [options]
+ *
+ * Options:
+ *   --duration=SECONDS  Simulation duration (default: 120)
+ *   --device=DEVICE_ID  Custom device ID
+ *   --countdown         Start in countdown mode (counter decreases)
+ *   --switch-mode       Switch between modes mid-simulation
  */
 
 import WebSocket from 'ws';
@@ -45,6 +46,8 @@ const UPDATE_INTERVAL = 500; // Send data every 500ms (realistic BLE update rate
 // Parse arguments
 const durationArg = process.argv.find(a => a.startsWith('--duration='));
 const deviceArg = process.argv.find(a => a.startsWith('--device='));
+const countdownArg = process.argv.includes('--countdown');
+const switchModeArg = process.argv.includes('--switch-mode');
 
 const SIMULATION_DURATION = durationArg
   ? parseInt(durationArg.split('=')[1], 10) * 1000
@@ -78,7 +81,11 @@ class JumpropeSimulator {
     this.interval = null;
     
     // Session state
-    this.totalJumps = 0;
+    this.totalRevolutions = 0;
+    this.rawCounter = countdownArg ? 500 : 0;
+    this.countdownMode = countdownArg;
+    this.shouldSwitchMode = switchModeArg;
+    this.modeSwitched = false;
     this.currentRPM = 0;
     this.maxRPM = 0;
     this.rpmReadings = [];
@@ -186,28 +193,34 @@ class JumpropeSimulator {
    */
   sendJumpropeData() {
     if (!this.connected || !this.ws) return;
-    
+
     const elapsedSeconds = Math.floor((Date.now() - this.startTime) / 1000);
+
+    if (this.shouldSwitchMode && !this.modeSwitched && elapsedSeconds > 30) {
+      this.countdownMode = !this.countdownMode;
+      this.rawCounter = this.countdownMode ? 500 : 0;
+      this.modeSwitched = true;
+      console.log(`🔄 Mode switched to ${this.countdownMode ? 'countdown' : 'count up'}`);
+    }
+
     const rpm = this.generateRPM(elapsedSeconds);
-    
-    // Calculate jumps added this interval
+
     const jumpsThisInterval = Math.round(rpm / (60 / (UPDATE_INTERVAL / 1000)));
-    this.totalJumps += jumpsThisInterval;
-    
-    // Track RPM readings for average
+
+    if (this.countdownMode) {
+      this.rawCounter -= jumpsThisInterval;
+      if (this.rawCounter < 0) this.rawCounter = 0;
+    } else {
+      this.rawCounter += jumpsThisInterval;
+    }
+
+    this.totalRevolutions += jumpsThisInterval;
+
     if (rpm > 0) {
       this.rpmReadings.push(rpm);
       this.maxRPM = Math.max(this.maxRPM, rpm);
     }
-    
-    // Calculate average RPM
-    const avgRPM = this.rpmReadings.length > 0
-      ? Math.round(this.rpmReadings.reduce((a, b) => a + b, 0) / this.rpmReadings.length)
-      : 0;
-    
-    // Calculate calories (rough estimate: ~0.1 cal per jump)
-    const calories = Math.round(this.totalJumps * 0.1);
-    
+
     const message = {
       topic: 'fitness',
       source: 'fitness-simulator',
@@ -216,22 +229,17 @@ class JumpropeSimulator {
       deviceName: DEVICE_NAME,
       timestamp: new Date().toISOString(),
       data: {
-        jumps: this.totalJumps,
-        rpm: rpm,
-        avgRPM: avgRPM,
-        maxRPM: this.maxRPM,
-        duration: elapsedSeconds,
-        calories: calories
+        revolutions: this.totalRevolutions
       }
     };
 
     this.ws.send(JSON.stringify(message));
-    
-    // Log every 2 seconds to reduce spam
+
     if (elapsedSeconds % 2 === 0 && this.lastLoggedSecond !== elapsedSeconds) {
       this.lastLoggedSecond = elapsedSeconds;
       const phase = this.getCurrentPhase(elapsedSeconds);
-      console.log(`🦘 [${elapsedSeconds}s] ${phase.name}: ${this.totalJumps} jumps @ ${rpm} RPM (avg: ${avgRPM})`);
+      const mode = this.countdownMode ? '(countdown)' : '(count up)';
+      console.log(`🦘 [${elapsedSeconds}s] ${phase.name} ${mode}: ${this.totalRevolutions} revs @ ~${rpm} RPM`);
     }
   }
 
@@ -281,11 +289,11 @@ class JumpropeSimulator {
     
     console.log('\n📈 Simulation Summary:');
     console.log(`  ⏱️  Duration: ${durationSec} seconds`);
-    console.log(`  🦘 Total jumps: ${this.totalJumps}`);
+    console.log(`  🦘 Total revolutions: ${this.totalRevolutions}`);
     console.log(`  📊 Average RPM: ${avgRPM}`);
     console.log(`  🔥 Max RPM: ${this.maxRPM}`);
-    console.log(`  🔥 Calories: ${Math.round(this.totalJumps * 0.1)}`);
-    console.log(`  📉 Jumps/min: ${Math.round(this.totalJumps / (durationSec / 60))}`);
+    console.log(`  🔥 Calories: ${Math.round(this.totalRevolutions * 0.1)}`);
+    console.log(`  📉 Revolutions/min: ${Math.round(this.totalRevolutions / (durationSec / 60))}`);
     
     console.log('\n✅ Simulation complete!');
     process.exit(0);

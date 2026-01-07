@@ -94,4 +94,12 @@
       filter: grayscale(0.8);
     }
   }
+
+  &.stale {
+    opacity: 0.6;
+
+    .device-stats .device-value {
+      color: var(--color-text-muted, #888);
+    }
+  }
 }

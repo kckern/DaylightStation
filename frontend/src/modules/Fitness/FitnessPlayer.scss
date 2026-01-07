@@ -1607,11 +1607,39 @@ dash-video {
   z-index: 15;
   pointer-events: none;
   opacity: 0.9;
-  
+
   .race-chart-panel {
     pointer-events: auto;
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(4px);
+  }
+}
+
+.fitness-player__voice-memo-fab {
+  position: absolute;
+  bottom: 6rem;
+  right: 2rem;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s, transform 0.2s;
+  z-index: 100;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.05);
+  }
+
+  &:active {
+    transform: scale(0.95);
   }
 }
 
