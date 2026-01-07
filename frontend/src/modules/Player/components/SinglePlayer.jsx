@@ -22,8 +22,6 @@ export function SinglePlayer(props = {}) {
     remountDiagnostics,
     wrapWithContainer = true,
     suppressLocalOverlay = false,
-    resilienceBitrateInfo = null,
-    onRestoreFullBitrate = null,
     plexClientSession = null,
     ...play
   } = props;
@@ -182,89 +180,26 @@ export function SinglePlayer(props = {}) {
     }
   }, [playbackSessionKey, setWatchedDurationValue]);
 
-  // Store initial max video bitrate to prevent it being lost on re-renders
-  const initialMaxVideoBitrateRef = useRef(play.maxVideoBitrate);
-  
-  // Update ref if prop changes
-  useEffect(() => {
-    if (play.maxVideoBitrate !== undefined) {
-      initialMaxVideoBitrateRef.current = play.maxVideoBitrate;
-    }
-  }, [play.maxVideoBitrate]);
-
-  // LocalStorage helpers (per-device, per-plexId)
-  const bitrateKey = useCallback((plexId) => `dashMaxVideoBitrate:${plexId}`, []);
-  // Clear any cached bitrate caps on page load to avoid sticky limits across sessions
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const keysToDelete = [];
-      for (let i = 0; i < window.localStorage.length; i += 1) {
-        const key = window.localStorage.key(i);
-        if (key && key.startsWith('dashMaxVideoBitrate:')) {
-          keysToDelete.push(key);
-        }
-      }
-      keysToDelete.forEach((key) => window.localStorage.removeItem(key));
-    } catch {
-      // Best-effort cleanup; ignore storage errors
-    }
-  }, []);
-
-  const readStoredBitrate = useCallback((plexId) => {
-    try {
-      const raw = window.localStorage.getItem(bitrateKey(plexId));
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      if (!obj || typeof obj !== 'object') return null;
-      const now = Date.now();
-      if (obj.expiresAt && now > obj.expiresAt) {
-        window.localStorage.removeItem(bitrateKey(plexId));
-        return null;
-      }
-      return (obj.valueKbps ?? null);
-    } catch {
-      return null;
-    }
-  }, [bitrateKey]);
-  const writeStoredBitrate = useCallback((plexId, valueKbps) => {
-    try {
-      const now = Date.now();
-      const ttl = 30 * 24 * 60 * 60 * 1000; // 30 days
-      const payload = { valueKbps: valueKbps ?? null, updatedAt: now, expiresAt: now + ttl };
-      window.localStorage.setItem(bitrateKey(plexId), JSON.stringify(payload));
-    } catch {}
-  }, [bitrateKey]);
-
-  const fetchVideoInfoCallback = useCallback(async (opts = {}) => {
+  const fetchVideoInfoCallback = useCallback(async () => {
     setIsReady(false);
-    // Determine plexId (prefer explicit plex prop)
-    const plexId = plex || mediaInfo?.media_key || play?.media_key || play?.plex;
-    // Respect override; else use stored; else use initial maxVideoBitrate from ref
-    const bitrateOverride = opts?.maxVideoBitrateOverride;
-    const resolutionOverride = opts?.maxResolutionOverride;
-    const stored = plexId ? readStoredBitrate(plexId) : null;
-    const effectiveMax = (bitrateOverride !== undefined) ? bitrateOverride : (stored != null ? stored : initialMaxVideoBitrateRef.current);
-    const effectiveResolution = (resolutionOverride !== undefined) ? resolutionOverride : play?.maxResolution;
 
-    const info = await fetchMediaInfo({ 
-      plex, 
-      media, 
-      shuffle, 
-      maxVideoBitrate: effectiveMax,
-      maxResolution: effectiveResolution,
+    const info = await fetchMediaInfo({
+      plex,
+      media,
+      shuffle,
+      maxVideoBitrate: play?.maxVideoBitrate,
+      maxResolution: play?.maxResolution,
       session: plexClientSession
     });
-    
+
     if (info) {
-      // Attach current max to mediaInfo so the hook can seed its ref
       const withCap = {
         ...info,
         continuous,
-        maxVideoBitrate: effectiveMax ?? null,
-        maxResolution: effectiveResolution ?? null
+        maxVideoBitrate: play?.maxVideoBitrate ?? null,
+        maxResolution: play?.maxResolution ?? null
       };
-      
+
       // Override seconds if explicitly provided in play object
       if (play?.seconds !== undefined) {
         withCap.seconds = play.seconds;
@@ -274,18 +209,13 @@ export function SinglePlayer(props = {}) {
       if (play?.resume !== undefined) {
         withCap.resume = play.resume;
       }
-      
+
       setMediaInfo(withCap);
       setIsReady(true);
-      // Persist override if provided
-      if (bitrateOverride !== undefined && plexId) {
-        writeStoredBitrate(plexId, bitrateOverride);
-      }
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, rate, open, shuffle, continuous, mediaInfo?.media_key, play?.media_key, play?.plex, play?.maxResolution, readStoredBitrate, writeStoredBitrate, plexClientSession]);
-  // Note: initialMaxVideoBitrateRef intentionally not in deps - we use the ref to preserve the initial value
+  }, [plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession]);
 
   useEffect(() => {
     fetchVideoInfoCallback();
@@ -357,8 +287,6 @@ export function SinglePlayer(props = {}) {
             resilienceBridge,
             maxVideoBitrate: mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null,
             maxResolution: mediaInfo?.maxResolution ?? play?.maxResolution ?? null,
-            resilienceBitrateInfo,
-            onRestoreFullBitrate,
             watchedDurationProvider: getWatchedDuration
           }
         )
@@ -432,15 +360,5 @@ SinglePlayer.propTypes = {
   }),
   suppressLocalOverlay: PropTypes.bool,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  resilienceBitrateInfo: PropTypes.shape({
-    current: PropTypes.number,
-    baseline: PropTypes.number,
-    tag: PropTypes.string,
-    reason: PropTypes.string,
-    updatedAt: PropTypes.number,
-    source: PropTypes.string,
-    isHardRecovery: PropTypes.bool
-  }),
-  onRestoreFullBitrate: PropTypes.func
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
 };

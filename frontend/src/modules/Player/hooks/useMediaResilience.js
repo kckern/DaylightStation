@@ -507,8 +507,7 @@ export function useMediaResilience({
       stallCount: 0,
       stallDurationMs: 0,
       recoveryAttempts: 0,
-      decoderNudges: 0,
-      bitrateOverrides: 0
+      decoderNudges: 0
     };
     lastKnownSeekIntentMsRef.current = Number.isFinite(initialStart) && initialStart >= 0
       ? Math.max(0, initialStart * 1000)

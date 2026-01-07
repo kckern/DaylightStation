@@ -113,37 +113,6 @@
     z-index: var(--player-layer-quality, 30); /* Above headings/progress if needed */
 }
 
-.video-player .bitrate-cap-badge {
-    position: absolute;
-    bottom: 1rem;
-    left: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    padding: 0.45rem 0.65rem;
-    border-radius: 0.45rem;
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
-    font-size: 0.75rem;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    cursor: pointer;
-    z-index: var(--player-layer-quality, 30);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.video-player .bitrate-cap-badge:hover,
-.video-player .bitrate-cap-badge:focus-visible {
-    border-color: rgba(255, 255, 255, 0.55);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-}
-
-.video-player .bitrate-cap-reset {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    opacity: 0.85;
-}
-
 .video-player > h2{
     position: absolute;
     bottom: 0;
