@@ -149,8 +149,13 @@ export function generateBadges(prng, options = {}) {
 
 /**
  * Detect layout anomalies by comparing input to output.
+ * @param {Array} input - Original elements passed to layout()
+ * @param {Array} output - Elements returned from layout()
+ * @param {Array} trace - Trace log from LayoutManager
+ * @param {Object} bounds - Chart bounds for out-of-bounds detection (defaults to CHART_DEFAULTS)
  */
-export function detectAnomalies(input, output, trace = []) {
+export function detectAnomalies(input, output, trace = [], bounds = {}) {
+  const { width = CHART_DEFAULTS.width, height = CHART_DEFAULTS.height } = bounds;
   const anomalies = [];
   const DISPLACEMENT_THRESHOLD = 5;
 
@@ -199,8 +204,8 @@ export function detectAnomalies(input, output, trace = []) {
     const finalY = outEl.y + (outEl.offsetY || 0);
     const radius = outEl.type === 'avatar' ? CHART_DEFAULTS.avatarRadius : CHART_DEFAULTS.badgeRadius;
 
-    if (finalX - radius < 0 || finalX + radius > CHART_DEFAULTS.width ||
-        finalY - radius < 0 || finalY + radius > CHART_DEFAULTS.height) {
+    if (finalX - radius < 0 || finalX + radius > width ||
+        finalY - radius < 0 || finalY + radius > height) {
       anomalies.push({
         type: 'out_of_bounds',
         elementId: outEl.id,
