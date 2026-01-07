@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AppButton, Gauge, ProgressBar, ProgressRing, NumericKeypad, TouchSlider, StatusBadge } from '../../../../shared';
+import { AppButton, Gauge, ProgressBar, ProgressRing, NumericKeypad, TouchSlider } from '../../../../shared';
 import useFitnessPlugin from '../../../useFitnessPlugin';
 import ComponentCard from '../components/ComponentCard';
 
@@ -100,17 +100,6 @@ const PrimitivesSection = ({ components }) => {
         <div style={{ display: 'grid', gap: '8px' }}>
           <div className="cs-keypad-value">Value: {keypadValue || '—'}</div>
           <NumericKeypad value={keypadValue} onChange={setKeypadValue} maxLength={6} />
-        </div>
-      </ComponentCard>
-
-      <ComponentCard
-        title="Status Badge"
-        description="Connection indicator with live/demo state."
-      >
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <StatusBadge status={sessionActive ? 'active' : 'idle'} label={sessionActive ? 'Connected' : 'Demo'} />
-          <StatusBadge status="warning" label="Buffering" pulse />
-          <StatusBadge status="error" label="Error" />
         </div>
       </ComponentCard>
       {/* Additional primitives can iterate components. For now we render curated set. */}

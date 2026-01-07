@@ -1,33 +1,12 @@
 /**
  * JumpropeCard - Realtime card for BLE jump rope
  * 
- * Shows: jumprope icon, name, total jumps @ current RPM, RPM progress bar
+ * Shows: animated jumprope avatar, name, total jumps, RPM
  */
 
 import React from 'react';
-import { BaseRealtimeCard, StatsRow } from './BaseRealtimeCard.jsx';
-import { DaylightMediaPath } from '../../../../lib/api.mjs';
-
-// RPM zone colors
-const RPM_COLORS = {
-  idle: '#666',      // gray - below min
-  min: '#3b82f6',    // blue - min to med
-  med: '#22c55e',    // green - med to high  
-  high: '#f59e0b',   // orange - high to max
-  max: '#ef4444'     // red - at/above max
-};
-
-/**
- * Get RPM zone color based on current RPM and thresholds
- */
-function getRpmZoneColor(rpm, thresholds = {}) {
-  const { min = 10, med = 50, high = 80, max = 120 } = thresholds;
-  if (!Number.isFinite(rpm) || rpm < min) return RPM_COLORS.idle;
-  if (rpm >= max) return RPM_COLORS.max;
-  if (rpm >= high) return RPM_COLORS.high;
-  if (rpm >= med) return RPM_COLORS.med;
-  return RPM_COLORS.min;
-}
+import JumpropeAvatar from './JumpropeAvatar.jsx';
+import './JumpropeCard.scss';
 
 export function JumpropeCard({
   device,
@@ -47,51 +26,51 @@ export function JumpropeCard({
   const jumpsValue = Number.isFinite(jumps) ? `${Math.round(jumps)}` : '--';
   const rpmValue = Number.isFinite(rpm) && rpm > 0 ? `${Math.round(rpm)}` : '--';
 
-  // Calculate RPM progress (0-1 scale based on max threshold)
-  const maxRpm = rpmThresholds.max || 120;
-  const rpmProgress = Number.isFinite(rpm) && rpm > 0
-    ? Math.min(1, rpm / maxRpm)
-    : 0;
-  
-  // Get zone color for the progress bar
-  const rpmColor = getRpmZoneColor(rpm, rpmThresholds);
-  
-  // Build progress bar
-  const progressBar = (
-    <div className="zone-progress-bar rpm-progress-bar" aria-label="RPM progress" role="presentation">
-      <div
-        className="zone-progress-fill"
-        style={{ 
-          width: `${Math.max(0, Math.min(100, Math.round(rpmProgress * 100)))}%`,
-          backgroundColor: rpmColor
-        }}
-      />
-    </div>
-  );
+  const cardClasses = [
+    'jumprope-card',
+    'fitness-device',
+    layoutMode === 'vert' ? 'card-vertical' : 'card-horizontal',
+    isInactive ? 'inactive' : 'active',
+    isCountdownActive ? 'countdown-active' : '',
+    zoneClass
+  ].filter(Boolean).join(' ');
 
   return (
-    <BaseRealtimeCard
-      device={device}
-      deviceName={deviceName}
-      className="jumprope"
-      layoutMode={layoutMode}
-      zoneClass={zoneClass}
-      isInactive={isInactive}
-      isCountdownActive={isCountdownActive}
-      countdownWidth={countdownWidth}
-      imageSrc={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
-      imageAlt={`${deviceName} equipment`}
-      imageFallback={DaylightMediaPath('/media/img/equipment/equipment')}
-      isClickable={false}
-      progressBar={progressBar}
+    <div 
+      className={cardClasses}
+      title={`${deviceName} - ${jumpsValue} jumps ${rpmValue} rpm`}
     >
-      <div className="device-stats">
-        <span className="device-value">{jumpsValue}</span>
-        <span className="device-unit">jumps</span>
-        <span className="device-value">{rpmValue}</span>
-        <span className="device-unit">rpm</span>
+      {/* Timeout countdown bar */}
+      {isCountdownActive && (
+        <div className="device-timeout-bar" aria-label="Removal countdown" role="presentation">
+          <div
+            className="device-timeout-fill"
+            style={{ width: `${Math.max(0, Math.min(100, countdownWidth))}%` }}
+          />
+        </div>
+      )}
+      
+      {/* Animated jumprope avatar */}
+      <JumpropeAvatar
+        equipmentId={equipmentId}
+        equipmentName={deviceName}
+        rpm={rpm}
+        jumps={jumps}
+        rpmThresholds={rpmThresholds}
+        size={64}
+      />
+      
+      {/* Info section */}
+      <div className="device-info">
+        <div className="device-name">{deviceName}</div>
+        <div className="device-stats">
+          <span className="device-value">{jumpsValue}</span>
+          <span className="device-unit">jumps</span>
+          <span className="device-value">{rpmValue}</span>
+          <span className="device-unit">rpm</span>
+        </div>
       </div>
-    </BaseRealtimeCard>
+    </div>
   );
 }
 

@@ -529,7 +529,7 @@
       & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal {
         padding: 12px 14px;
       }
-      & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal .user-profile-img-container {
+      & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal .card-avatar {
         width: 86px;
         height: 86px;
         min-width: 86px;
@@ -552,7 +552,7 @@
       & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal {
         padding: 10px 12px;
       }
-      & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal .user-profile-img-container {
+      & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal .card-avatar {
         width: 72px;
         height: 72px;
         min-width: 72px;
@@ -637,7 +637,7 @@
           flex: 0 0 auto; 
         }
         
-        .user-profile-img-container {
+        .card-avatar {
           width: 68px;
           height: 68px;
           margin: 0 14px 0 0;
@@ -782,7 +782,7 @@
 
       .device-unit { font-size: 0.5rem; }
 
-      .user-profile-img-container.clickable {
+      .card-avatar.clickable {
         cursor: pointer;
       }
 
@@ -1328,7 +1328,7 @@
     .device-grid.horiz-scale-150 .fitness-device.card-horizontal {
       padding: 12px 14px;
     }
-    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .user-profile-img-container {
+    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .card-avatar {
       width: 86px;
       height: 86px;
       min-width: 86px;
@@ -1352,7 +1352,7 @@
     .device-grid.horiz-scale-130 .fitness-device.card-horizontal {
       padding: 10px 12px;
     }
-    .device-grid.horiz-scale-130 .fitness-device.card-horizontal .user-profile-img-container {
+    .device-grid.horiz-scale-130 .fitness-device.card-horizontal .card-avatar {
       width: 72px;
       height: 72px;
       min-width: 72px;
@@ -1403,7 +1403,7 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.45);
     }
 
-    .fitness-device.card-vertical .user-profile-img-container {
+    .fitness-device.card-vertical .card-avatar {
       width: 128px;
       height: 128px;
       border-radius: 50%;
@@ -1449,7 +1449,7 @@
       width: 100%;
     }
 
-    .user-profile-img-container {
+    .card-avatar {
       flex: 0 0 68px;
       width: 68px;
       height: 68px;
@@ -2812,19 +2812,19 @@
 }
 
 /* Zone-colored avatar rings (place AFTER any generic border rules so it wins) */
-.fitness-device .user-profile-img-container {
+.fitness-device .card-avatar {
   position: relative;
   z-index: 1 !important; /* CRITICAL: avatars must be above zone overlay */
 }
-.fitness-device .user-profile-img-container.zone-cool   { border-color: var(--zone-cool-color, #1e3a8a) !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.35) !important; }
-.fitness-device .user-profile-img-container.zone-active { border-color: var(--zone-active-color, #059669) !important; box-shadow: 0 0 0 2px rgba(16,185,129,0.35) !important; }
-.fitness-device .user-profile-img-container.zone-warm   { border-color: var(--zone-warm-color, #ca8a04) !important; box-shadow: 0 0 0 2px rgba(234,179,8,0.35) !important; }
-.fitness-device .user-profile-img-container.zone-hot    { border-color: var(--zone-hot-color, #ea580c) !important; box-shadow: 0 0 0 2px rgba(234,88,12,0.4) !important; }
-.fitness-device .user-profile-img-container.zone-fire   { border-color: var(--zone-fire-color, #dc2626) !important; box-shadow: 0 0 0 2px rgba(220,38,38,0.45) !important; }
-.fitness-device .user-profile-img-container.no-zone     { border-color: #333 !important; box-shadow: none !important; }
+.fitness-device .card-avatar.zone-cool   { border-color: var(--zone-cool-color, #1e3a8a) !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.35) !important; }
+.fitness-device .card-avatar.zone-active { border-color: var(--zone-active-color, #059669) !important; box-shadow: 0 0 0 2px rgba(16,185,129,0.35) !important; }
+.fitness-device .card-avatar.zone-warm   { border-color: var(--zone-warm-color, #ca8a04) !important; box-shadow: 0 0 0 2px rgba(234,179,8,0.35) !important; }
+.fitness-device .card-avatar.zone-hot    { border-color: var(--zone-hot-color, #ea580c) !important; box-shadow: 0 0 0 2px rgba(234,88,12,0.4) !important; }
+.fitness-device .card-avatar.zone-fire   { border-color: var(--zone-fire-color, #dc2626) !important; box-shadow: 0 0 0 2px rgba(220,38,38,0.45) !important; }
+.fitness-device .card-avatar.no-zone     { border-color: #333 !important; box-shadow: none !important; }
 
 /* Vertical avatar sizing (fallback) */
-.fitness-device.card-vertical .user-profile-img-container {
+.fitness-device.card-vertical .card-avatar {
   width: 128px;
   height: 128px;
   border-radius: 50%;
