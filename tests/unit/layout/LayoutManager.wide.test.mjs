@@ -26,7 +26,10 @@ function runSimulation(seed) {
   });
 
   const { elements, trace } = manager.layout(scenario.elements);
-  const { hasAnomaly, anomalies } = detectAnomalies(scenario.elements, elements, trace);
+  const { hasAnomaly, anomalies } = detectAnomalies(scenario.elements, elements, trace, {
+    width: scenario.chartWidth,
+    height: scenario.chartHeight
+  });
 
   return {
     seed,
