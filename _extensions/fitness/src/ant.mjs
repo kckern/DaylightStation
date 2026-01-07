@@ -16,6 +16,7 @@ export class ANTPlusManager {
     this.sensors = new Map();
     this.scanInterval = null;
     this.broadcastCallback = broadcastCallback;
+    this._lastLogTime = new Map(); // Throttle logging per device
   }
 
   async initialize() {
@@ -164,18 +165,17 @@ export class ANTPlusManager {
         
         // Only log meaningful changes (throttle to reduce spam)
         const deviceKey = `${deviceId}-${profile}`;
-        const lastLog = this._lastLogTime?.get(deviceKey) || 0;
+        const lastLog = this._lastLogTime.get(deviceKey) || 0;
         const now = Date.now();
         
-        // Log at most once per second per device, or when significant data is present
-        if (now - lastLog > 1000 || hr || (cadence && cadence > 0) || power) {
-          if (!this._lastLogTime) this._lastLogTime = new Map();
+        // Log at most once per second per device
+        if (now - lastLog > 1000) {
           this._lastLogTime.set(deviceKey, now);
           
           // Build compact log line
           const metrics = [];
           if (hr) metrics.push(`HR:${hr}`);
-          if (cadence !== null) metrics.push(`CAD:${cadence}`);
+          if (cadence !== null) metrics.push(`CAD:${Math.round(cadence)}`);
           if (power) metrics.push(`PWR:${power}`);
           
           if (metrics.length > 0) {

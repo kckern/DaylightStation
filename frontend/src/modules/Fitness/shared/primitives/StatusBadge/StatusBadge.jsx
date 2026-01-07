@@ -28,7 +28,6 @@ const StatusBadge = ({
 
   return (
     <span className={combinedClassName} {...props}>
-      <span className="status-badge__dot" />
       {icon && <span className="status-badge__icon">{icon}</span>}
       {label && <span className="status-badge__label">{label}</span>}
     </span>

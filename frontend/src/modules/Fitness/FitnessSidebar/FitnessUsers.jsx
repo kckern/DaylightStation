@@ -480,11 +480,19 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const map = {};
     if (Array.isArray(equipment)) {
       equipment.forEach(e => {
+        const entry = { name: e.name, id: e.id || e.name.toLowerCase(), type: e.type };
+        // Include rpm thresholds if present
+        if (e?.rpm) {
+          entry.rpm = e.rpm;
+        }
         if (e?.cadence) {
-          map[String(e.cadence)] = { name: e.name, id: e.id || e.name.toLowerCase() };
+          map[String(e.cadence)] = entry;
         }
         if (e?.speed) {
-          map[String(e.speed)] = { name: e.name, id: e.id || e.name.toLowerCase() };
+          map[String(e.speed)] = entry;
+        }
+        if (e?.ble) {
+          map[String(e.ble)] = entry;
         }
       });
     }
@@ -527,6 +535,18 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     if (device.type === 'power' && device.power) return `${device.power}`;
     if (device.type === 'cadence' && device.cadence) return `${device.cadence}`;
     if (device.type === 'speed' && device.speedKmh) return `${device.speedKmh.toFixed(1)}`;
+    if (device.type === 'jumprope') {
+      // Show total jumps and RPM for jumprope: "150 @ 120"
+      const jumps = device.revolutionCount ?? null;
+      const rpm = device.cadence ?? null;
+      if (Number.isFinite(jumps) && Number.isFinite(rpm) && rpm > 0) {
+        return `${Math.round(jumps)} @ ${Math.round(rpm)}`;
+      }
+      if (Number.isFinite(jumps)) {
+        return `${Math.round(jumps)}`;
+      }
+      return '--';
+    }
     return '--';
   };
 
@@ -623,7 +643,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   useEffect(() => {
   const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
   const cadenceDevicesOnly = allDevices.filter(d => d.type === 'cadence');
-  const otherDevices = allDevices.filter(d => d.type !== 'heart_rate' && d.type !== 'cadence');
+  const jumpDevices = allDevices.filter(d => d.type === 'jumprope');
+  const otherDevices = allDevices.filter(d => 
+    d.type !== 'heart_rate' && d.type !== 'cadence' && d.type !== 'jumprope'
+  );
     
     hrDevices.sort((a, b) => {
       const aZone = getDeviceZoneId(a);
@@ -644,6 +667,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       return (b.cadence || 0) - (a.cadence || 0);
     });
     
+    jumpDevices.sort((a, b) => {
+      if (a.isActive && !b.isActive) return -1;
+      if (!a.isActive && b.isActive) return 1;
+      return (b.revolutionCount || 0) - (a.revolutionCount || 0);
+    });
+    
     otherDevices.sort((a, b) => {
       const typeOrder = CONFIG.sorting.otherTypeOrder;
       const fallback = typeOrder.unknown || 3;
@@ -660,6 +689,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const combined = [...hrDevices];
     if (cadenceDevicesOnly.length > 0) {
       combined.push({ type: 'rpm-group', devices: cadenceDevicesOnly });
+    }
+    if (jumpDevices.length > 0) {
+      combined.push({ type: 'jump-group', devices: jumpDevices });
     }
     combined.push(...otherDevices);
     setSortedDevices(combined);
@@ -828,6 +860,87 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 );
               }
               
+              // Jump rope group rendering
+              if (device.type === 'jump-group') {
+                const jumpDevices = device.devices;
+                
+                return (
+                  <div 
+                    key="jump-group"
+                    className="jump-group-container"
+                  >
+                    {jumpDevices.map(jumpDevice => {
+                      const equipmentInfo = equipmentMap[String(jumpDevice.deviceId)];
+                      const deviceName = equipmentInfo?.name || jumpDevice.name || 'Jump Rope';
+                      const equipmentId = equipmentInfo?.id || String(jumpDevice.deviceId);
+                      const rpmThresholds = equipmentInfo?.rpm || { min: 10, med: 50, high: 80, max: 120 };
+                      const jumps = jumpDevice.revolutionCount ?? null;
+                      const rpm = jumpDevice.cadence ?? null;
+                      
+                      const jumpsValue = Number.isFinite(jumps) ? `${Math.round(jumps)}` : '--';
+                      const rpmValue = Number.isFinite(rpm) && rpm > 0 ? `${Math.round(rpm)}` : '--';
+                      
+                      const isInactive = jumpDevice.isActive === false || !!jumpDevice.inactiveSince;
+                      
+                      // Calculate RPM progress for bar
+                      const maxRpm = rpmThresholds.max || 120;
+                      const rpmProgress = Number.isFinite(rpm) && rpm > 0 ? Math.min(1, rpm / maxRpm) : 0;
+                      
+                      // Get zone color based on RPM thresholds
+                      const getRpmColor = (r) => {
+                        const { min = 10, med = 50, high = 80, max: maxT = 120 } = rpmThresholds;
+                        if (!Number.isFinite(r) || r < min) return '#666';
+                        if (r >= maxT) return '#ef4444';
+                        if (r >= high) return '#f59e0b';
+                        if (r >= med) return '#22c55e';
+                        return '#3b82f6';
+                      };
+                      
+                      return (
+                        <div 
+                          key={`jump-${jumpDevice.deviceId}`}
+                          className={`fitness-device card-horizontal jumprope ${isInactive ? 'inactive' : 'active'}`}
+                          title={`${deviceName} - ${jumpsValue} jumps ${rpmValue} rpm`}
+                        >
+                          <div className="user-profile-img-container">
+                            <img
+                              src={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
+                              alt={`${deviceName} equipment`}
+                              onError={(e) => {
+                                if (e.target.dataset.fallback) {
+                                  e.target.style.display = 'none';
+                                  return;
+                                }
+                                e.target.dataset.fallback = '1';
+                                e.target.src = DaylightMediaPath('/media/img/equipment/equipment');
+                              }}
+                            />
+                          </div>
+                          <div className="device-info">
+                            <div className="device-name">{deviceName}</div>
+                            <div className="device-stats">
+                              <span className="device-value">{jumpsValue}</span>
+                              <span className="device-unit">jumps</span>
+                              <span className="device-value">{rpmValue}</span>
+                              <span className="device-unit">rpm</span>
+                            </div>
+                          </div>
+                          <div className="zone-progress-bar rpm-progress-bar" aria-label="RPM progress" role="presentation">
+                            <div
+                              className="zone-progress-fill"
+                              style={{ 
+                                width: `${Math.max(0, Math.min(100, Math.round(rpmProgress * 100)))}%`,
+                                backgroundColor: getRpmColor(rpm)
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              }
+              
               const deviceIdStr = String(device.deviceId);
               const isHeartRate = device.type === 'heart_rate';
               const guestAssignment = isHeartRate ? getGuestAssignment(deviceIdStr) : null;
@@ -885,7 +998,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   ? participantEntry.heartRate
                   : (Number.isFinite(device.heartRate) ? device.heartRate : null));
               const deviceName = isHeartRate ? 
-                (guestAssignment?.occupantName || guestAssignment?.metadata?.name || ownerName || displayLabel || participantEntry?.name || deviceIdStr) : String(device.deviceId);
+                (guestAssignment?.occupantName || guestAssignment?.metadata?.name || ownerName || displayLabel || participantEntry?.name || deviceIdStr) : (device.name || String(device.deviceId));
               const zoneIdForGrouping = isHeartRate ? getDeviceZoneId(device) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
