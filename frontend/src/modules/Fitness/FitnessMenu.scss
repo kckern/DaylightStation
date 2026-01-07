@@ -20,6 +20,9 @@
     background: linear-gradient(135deg, rgba(60,60,60,0.4), rgba(40,40,40,0.4));
     border-color: rgba(255,255,255,0.05);
     pointer-events: none;
+    // Ensure skeleton fills grid cell like actual cards
+    width: 100%;
+    aspect-ratio: 1 / 1.5;
     .skeleton-shimmer {
       position: absolute;
       inset: 0;
