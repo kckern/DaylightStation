@@ -6,6 +6,13 @@ services:
     container_name: daylight-fitness
     restart: unless-stopped
     privileged: true  # Required for USB device access
+    user: root  # Required for ANT+ USB device access
+    
+    # Add capabilities for Bluetooth
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
     
     # Load environment variables from .env file
     env_file:
@@ -20,23 +27,27 @@ services:
       - TV_ON_COMMAND=${TV_ON_COMMAND:-01 30 41 30 41 30 43 02 43 32 30 33 44 36 30 30 30 31 03 73 0D}
       - TV_OFF_COMMAND=${TV_OFF_COMMAND:-01 30 41 30 41 30 43 02 43 32 30 33 44 36 30 30 30 34 03 76 0D}
     
-    # Device access for ANT+ USB dongle and serial port
+    # Device access for ANT+ USB dongle, serial port, and Bluetooth
     devices:
       - /dev/bus/usb:/dev/bus/usb  # ANT+ USB dongle access
       - ${SERIAL_DEVICE:-/dev/ttyUSB0}:${SERIAL_DEVICE:-/dev/ttyUSB0}  # Serial port for TV control
     
-    # Volume mounts for USB device detection
+    # Volume mounts for USB device detection and Bluetooth
     volumes:
       - /dev:/dev
       - /sys:/sys
       - /run/udev:/run/udev:ro
+      - /run/dbus:/run/dbus:rw  # DBus for Bluetooth (needs write access)
+      - /var/run/dbus:/var/run/dbus:rw
+      - ./config:/usr/src/app/config:ro  # Mount BLE device config
     
     # Network configuration
-    ports:
-      - "${FITNESS_PORT:-3001}:3000"
+    # Use host network for full Bluetooth access
+    network_mode: host
     
-    # Add to host network for easier USB device access (alternative approach)
-    # network_mode: host
+    # Ports not needed with host network mode
+    # ports:
+    #   - "${FITNESS_PORT:-3001}:3000"
     
     # Health check
     healthcheck:

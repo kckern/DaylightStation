@@ -475,6 +475,28 @@ export class FitnessSession {
       }
       return device;
     }
+
+    // Handle BLE Jumprope Data
+    if (payload.topic === 'fitness' && payload.type === 'ble_jumprope' && payload.deviceId && payload.data) {
+      // Normalize jumprope data to DeviceManager format
+      const normalized = {
+        id: String(payload.deviceId),
+        name: payload.deviceName || 'Jumprope',
+        type: 'jumprope',
+        profile: 'jumprope',
+        lastSeen: Date.now(),
+        connectionState: 'connected',
+        cadence: payload.data.rpm || 0,
+        revolutionCount: payload.data.jumps || 0,
+        timestamp: payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now()
+      };
+      
+      const device = this.deviceManager.registerDevice(normalized);
+      if (device) {
+        this.recordDeviceActivity(device, { rawPayload: payload });
+      }
+      return device;
+    }
     
     // For other payload types, still try to process
     if (payload.deviceId) {

@@ -382,7 +382,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
                   {device.type === 'power' && '⚡'}
                   {device.type === 'cadence' && '⚙️'}
                   {device.type === 'speed' && '🚴'}
-                  {!['power', 'cadence', 'speed'].includes(device.type) && '📡'}
+                  {device.type === 'jumprope' && '🦘'}
+                  {!['power', 'cadence', 'speed', 'jumprope'].includes(device.type) && '📡'}
                 </div>
               )}
             </div>

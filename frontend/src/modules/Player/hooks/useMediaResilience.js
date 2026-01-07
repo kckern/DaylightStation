@@ -1700,6 +1700,10 @@ export function useMediaResilience({
     if (userIntent === USER_INTENT.paused) {
       return SYSTEM_HEALTH.ok;
     }
+    // Governance-paused video is not stalled - it's intentionally stopped
+    if (externalPauseReason === 'PAUSED_GOVERNANCE') {
+      return SYSTEM_HEALTH.ok;
+    }
     if (status === STATUS.stalling || playbackHealth.isStalledEvent) {
       return SYSTEM_HEALTH.stalled;
     }

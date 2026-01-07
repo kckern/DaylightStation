@@ -206,8 +206,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   } = usePlayerController(playerRef);
   const lastKnownTimeRef = useRef(0);
   const statusUpdateRef = useRef({ lastSent: 0, inflight: false, endSent: false });
-  const governancePausedRef = useRef(false);
-  const governanceInitialPauseRef = useRef({ handled: false, timer: null });
   const [playIsGoverned, setPlayIsGoverned] = useState(false);
   const [showChart, setShowChart] = useState(true);
 
@@ -259,12 +257,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   useEffect(() => {
     lastKnownTimeRef.current = 0;
     statusUpdateRef.current = { lastSent: 0, inflight: false, endSent: false };
-    const state = governanceInitialPauseRef.current;
-    if (state.timer) {
-      clearTimeout(state.timer);
-      state.timer = null;
-    }
-    state.handled = false;
   }, [currentItem ? currentItem.id : null]);
 
   useEffect(() => {
@@ -300,72 +292,44 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setPlayIsGoverned(false);
       return;
     }
-    // Only allow playback when governance is green or yellow
-    // Grey (init) and red (paused) should lock playback
+    // Only allow playback when governance is unlocked or warning
+    // pending and locked phases should lock playback
     const governanceVideoLocked = Boolean(governanceState?.videoLocked);
-    const locked = governanceVideoLocked || (governance !== 'green' && governance !== 'yellow');
+    const locked = governanceVideoLocked || (governance !== 'unlocked' && governance !== 'warning');
     setPlayIsGoverned(locked);
   }, [currentItem, governedLabelSet, governedTypeSet, governance, governanceState?.videoLocked]);
 
+  // Simplified governance: just mute during lock, unmute and play on unlock
+  const wasGovernancePausedRef = useRef(false);
   useEffect(() => {
-    if (!pausePlayback || !playPlayback) return;
-    const state = governanceInitialPauseRef.current;
+    const api = playerRef?.current;
+    const media = api?.getMediaElement?.();
 
     if (governancePaused) {
-      if (!state.handled) {
-        state.handled = true;
-        if (state.timer) {
-          clearTimeout(state.timer);
-          state.timer = null;
+      wasGovernancePausedRef.current = true;
+      if (media) media.muted = true;
+    } else if (wasGovernancePausedRef.current) {
+      // Governance just unlocked - unmute and ensure playback
+      wasGovernancePausedRef.current = false;
+
+      // Retry play multiple times to handle resilience system remounts
+      const tryPlay = (attempt = 0) => {
+        const currentMedia = playerRef?.current?.getMediaElement?.();
+        if (currentMedia) {
+          currentMedia.muted = false;
+          if (currentMedia.paused) {
+            currentMedia.play?.().catch(() => {});
+          }
         }
-        try {
-          playPlayback();
-        } catch (_) {
-          // ignored
+        // Retry up to 5 times over 2.5 seconds
+        if (attempt < 5) {
+          setTimeout(() => tryPlay(attempt + 1), 500);
         }
-        state.timer = setTimeout(() => {
-          state.timer = null;
-          pausePlayback();
-          setVideoPlayerPaused?.(true);
-          governancePausedRef.current = true;
-        }, 1000);
-        return;
-      }
-
-      if (state.timer) {
-        return;
-      }
-
-      pausePlayback();
-      setVideoPlayerPaused?.(true);
-      governancePausedRef.current = true;
-      return;
+      };
+      tryPlay();
     }
+  }, [governancePaused]);
 
-    if (state.timer) {
-      clearTimeout(state.timer);
-      state.timer = null;
-    }
-    state.handled = false;
-
-    if (governancePausedRef.current) {
-      playPlayback();
-      setVideoPlayerPaused?.(false);
-      governancePausedRef.current = false;
-    }
-  }, [governancePaused, pausePlayback, playPlayback, setVideoPlayerPaused]);
-
-  useEffect(() => {
-    return () => {
-      const state = governanceInitialPauseRef.current;
-      if (state.timer) {
-        clearTimeout(state.timer);
-        state.timer = null;
-      }
-      state.handled = false;
-    };
-  }, []);
-  
   const TimeDisplay = useMemo(() => React.memo(({ ct, dur }) => (
     <>{formatTime(ct)} / {formatTime(dur)}</>
   )), []);
@@ -898,8 +862,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     
     // Only autoplay if:
     // 1. Media is not governed, OR
-    // 2. Media is governed AND governance is green or yellow
-    const canAutoplay = !mediaGoverned || (governance === 'green' || governance === 'yellow');
+    // 2. Media is governed AND governance is unlocked or warning
+    const canAutoplay = !mediaGoverned || (governance === 'unlocked' || governance === 'warning');
     const stableGuid = String(
       enhancedCurrentItem.guid
         || enhancedCurrentItem.media_key
@@ -1085,7 +1049,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           progressMetaRef.current.lastDuration = d;
           setDuration(d);
         }
-        setIsPaused(paused || governancePaused);
+        setIsPaused(paused);
         if (governancePaused && !paused && pausePlayback) {
           pausePlayback();
         }
@@ -1109,14 +1073,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       progressMetaRef.current.lastDuration = d;
       setDuration(d);
     }
-    setIsPaused(paused || governancePaused);
+    // isPaused reflects actual video state - governance is handled separately via pauseDecision
+    setIsPaused(paused);
 
     // Immediately pause if governed and locked
     if (governancePaused && !paused && pausePlayback) {
       pausePlayback();
     }
 
-    // Update context so music player can sync
+    // Update context so music player can sync (includes governance state)
     if (setVideoPlayerPaused) {
       setVideoPlayerPaused(paused || governancePaused);
     }
