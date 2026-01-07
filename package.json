@@ -55,6 +55,8 @@
     "test:coverage": "npm run test:unit -- --coverage",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch --testPathPattern=tests/unit",
     "test:all": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test:layout": "npm run test:unit -- --testPathPattern=layout",
+    "test:layout-analysis": "npm run test:layout && npx playwright test tests/runtime/chart/chart-avatar-alignment.runtime.test.mjs",
     "rt": "npx playwright test tests/runtime --headed",
     "rt:player": "npx playwright test tests/runtime/player --headed",
     "rt:fitness": "npx playwright test tests/runtime/fitness-session --headed",
