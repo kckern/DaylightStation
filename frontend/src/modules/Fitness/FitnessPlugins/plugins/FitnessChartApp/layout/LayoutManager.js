@@ -121,8 +121,9 @@ export class LayoutManager {
     let resolvedAvatars = this._resolveAvatarCollisionsHorizontal(avatars);
 
     if (this.traceEnabled) {
+      const avatarMap = new Map(avatars.map(a => [a.id, a]));
       resolvedAvatars.forEach(a => {
-        const inputA = avatars.find(i => i.id === a.id);
+        const inputA = avatarMap.get(a.id);
         const baseOffsetX = inputA?._clampOffsetX || 0;
         const additionalOffsetX = (a.offsetX || 0) - baseOffsetX;
         if (Math.abs(additionalOffsetX) > 0.1) {
@@ -140,7 +141,7 @@ export class LayoutManager {
     resolvedAvatars = this.labelManager.resolve(resolvedAvatars);
 
     if (this.traceEnabled) {
-      resolvedAvatars.forEach((a, idx) => {
+      resolvedAvatars.forEach(a => {
         if (a.labelPosition && a.labelPosition !== 'right') {
           this._trace('label_resolve', a.id, { labelPosition: a.labelPosition });
         }
