@@ -36,6 +36,15 @@
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
   }
+  
+  // Jumprope mode
+  &--jumprope {
+    .full-screen-container__content {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
 
   &__header {
     flex: 0 0 auto;
@@ -78,5 +87,54 @@
     &:hover {
       color: var(--app-text-primary);
     }
+  }
+}
+
+// Full-screen jumprope display
+.full-screen-jumprope {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  text-align: center;
+  
+  &__avatar {
+    // Avatar is already sized via props
+  }
+  
+  &__stats {
+    display: flex;
+    gap: 48px;
+    justify-content: center;
+  }
+  
+  &__stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  &__value {
+    font-size: 72px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  
+  &__label {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-top: 8px;
+  }
+  
+  &__name {
+    font-size: 24px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.8);
+    margin-top: 16px;
   }
 }

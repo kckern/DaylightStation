@@ -104,7 +104,7 @@ export function BaseRealtimeCard({
         )}
         
         {/* Profile image */}
-        <div className={`user-profile-img-container ${zoneClass}`}>
+        <div className={`card-avatar ${zoneClass}`}>
           <img
             src={imageSrc}
             alt={imageAlt || `${deviceName} profile`}

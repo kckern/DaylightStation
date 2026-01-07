@@ -10,6 +10,7 @@ import { CadenceCard } from './CadenceCard.jsx';
 import { JumpropeCard } from './JumpropeCard.jsx';
 import { VibrationCard } from './VibrationCard.jsx';
 import { BaseRealtimeCard, StatsRow } from './BaseRealtimeCard.jsx';
+import JumpropeAvatar from './JumpropeAvatar.jsx';
 
 /**
  * Registry mapping device type to card component
@@ -73,6 +74,7 @@ export {
   PersonCard,
   CadenceCard,
   JumpropeCard,
+  JumpropeAvatar,
   VibrationCard,
   BaseRealtimeCard,
   StatsRow
@@ -86,6 +88,7 @@ export default {
   PersonCard,
   CadenceCard,
   JumpropeCard,
+  JumpropeAvatar,
   VibrationCard,
   BaseRealtimeCard,
   StatsRow

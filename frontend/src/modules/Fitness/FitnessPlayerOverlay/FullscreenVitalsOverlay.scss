@@ -136,6 +136,51 @@
       }
     }
   }
+
+  // Jumprope group styling - matches RPM group
+  .jumprope-group {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+  
+  .fullscreen-jumprope-item {
+    position: relative;
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    
+    .jumprope-avatar {
+      position: absolute;
+      inset: 0;
+    }
+  }
+  
+  .jumprope-value-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 50%;
+    padding: 6px 0 8px;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom-left-radius: 50%;
+    border-bottom-right-radius: 50%;
+    z-index: 2;
+    
+    .jumprope-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.4px;
+    }
+  }
 }
 
 @keyframes fullscreen-rpm-spin {

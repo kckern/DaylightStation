@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import CircularUserAvatar from '../components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
+import JumpropeAvatar from '../FitnessSidebar/RealtimeCards/JumpropeAvatar.jsx';
 import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {
@@ -97,6 +98,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
   const {
     heartRateDevices = [],
     cadenceDevices = [],
+    jumpropeDevices = [],
     getUserByDevice,
     userCurrentZones,
     zones,
@@ -206,6 +208,29 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
       });
   }, [cadenceDevices, equipmentMap, deviceConfiguration?.cadence, getUserByDevice, allUsers]);
 
+  // Build jumprope items with equipment mapping
+  const jumpropeItems = useMemo(() => {
+    if (!Array.isArray(jumpropeDevices)) return [];
+    return jumpropeDevices
+      .filter((device) => device && device.deviceId != null)
+      .map((device) => {
+        // Find equipment config by BLE address
+        const equipmentConfig = equipment.find(e => e.ble === device.deviceId);
+        const equipmentId = equipmentConfig?.id || String(device.deviceId);
+        const equipmentName = equipmentConfig?.name || 'Jump Rope';
+        const rpmThresholds = equipmentConfig?.rpm || { min: 10, med: 50, high: 80, max: 120 };
+        
+        return {
+          deviceId: device.deviceId,
+          equipmentId,
+          equipmentName,
+          rpm: device.cadence ?? 0,
+          jumps: device.revolutionCount ?? 0,
+          rpmThresholds
+        };
+      });
+  }, [jumpropeDevices, equipment]);
+
   const handleToggleAnchor = useCallback((event) => {
     if (event) {
       event.preventDefault();
@@ -214,7 +239,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     setAnchor((prev) => (prev === 'right' ? 'left' : 'right'));
   }, []);
 
-  if (!visible || (!hrItems.length && !rpmItems.length)) {
+  if (!visible || (!hrItems.length && !rpmItems.length && !jumpropeItems.length)) {
     return null;
   }
 
@@ -269,6 +294,25 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
               fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
               renderValue={(value) => (Number.isFinite(value) ? value : 0)}
             />
+          ))}
+        </div>
+      )}
+      {jumpropeItems.length > 0 && (
+        <div className={`fullscreen-vitals-group jumprope-group count-${jumpropeItems.length}`}>
+          {jumpropeItems.map((item) => (
+            <div key={`jumprope-${item.deviceId}`} className="fullscreen-jumprope-item">
+              <JumpropeAvatar
+                equipmentId={item.equipmentId}
+                equipmentName={item.equipmentName}
+                rpm={item.rpm}
+                jumps={item.jumps}
+                rpmThresholds={item.rpmThresholds}
+                size={68}
+              />
+              <div className="jumprope-value-overlay">
+                <span className="jumprope-value">{item.jumps}</span>
+              </div>
+            </div>
           ))}
         </div>
       )}

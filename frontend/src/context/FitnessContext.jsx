@@ -912,6 +912,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const heartRateDevices = React.useMemo(() => allDevices.filter(d => d.type === 'heart_rate'), [allDevices]);
   const speedDevices = React.useMemo(() => allDevices.filter(d => d.type === 'speed'), [allDevices]);
   const cadenceDevices = React.useMemo(() => allDevices.filter(d => d.type === 'cadence'), [allDevices]);
+  const jumpropeDevices = React.useMemo(() => allDevices.filter(d => d.type === 'jumprope'), [allDevices]);
   const powerDevices = React.useMemo(() => allDevices.filter(d => d.type === 'power'), [allDevices]);
   const unknownDevices = React.useMemo(() => allDevices.filter(d => d.type === 'unknown'), [allDevices]);
 
@@ -1596,6 +1597,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     heartRateDevices,
     speedDevices,
     cadenceDevices,
+    jumpropeDevices,
     powerDevices,
     unknownDevices,
     

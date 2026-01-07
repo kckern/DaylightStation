@@ -6,6 +6,7 @@ import FlipMove from 'react-flip-move';
 import '../FitnessSidebar.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
+import { JumpropeCard } from './RealtimeCards';
 import { useZoneProfiles } from '../../../hooks/useZoneProfiles.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
@@ -874,67 +875,17 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       const deviceName = equipmentInfo?.name || jumpDevice.name || 'Jump Rope';
                       const equipmentId = equipmentInfo?.id || String(jumpDevice.deviceId);
                       const rpmThresholds = equipmentInfo?.rpm || { min: 10, med: 50, high: 80, max: 120 };
-                      const jumps = jumpDevice.revolutionCount ?? null;
-                      const rpm = jumpDevice.cadence ?? null;
-                      
-                      const jumpsValue = Number.isFinite(jumps) ? `${Math.round(jumps)}` : '--';
-                      const rpmValue = Number.isFinite(rpm) && rpm > 0 ? `${Math.round(rpm)}` : '--';
-                      
                       const isInactive = jumpDevice.isActive === false || !!jumpDevice.inactiveSince;
                       
-                      // Calculate RPM progress for bar
-                      const maxRpm = rpmThresholds.max || 120;
-                      const rpmProgress = Number.isFinite(rpm) && rpm > 0 ? Math.min(1, rpm / maxRpm) : 0;
-                      
-                      // Get zone color based on RPM thresholds
-                      const getRpmColor = (r) => {
-                        const { min = 10, med = 50, high = 80, max: maxT = 120 } = rpmThresholds;
-                        if (!Number.isFinite(r) || r < min) return '#666';
-                        if (r >= maxT) return '#ef4444';
-                        if (r >= high) return '#f59e0b';
-                        if (r >= med) return '#22c55e';
-                        return '#3b82f6';
-                      };
-                      
                       return (
-                        <div 
+                        <JumpropeCard
                           key={`jump-${jumpDevice.deviceId}`}
-                          className={`fitness-device card-horizontal jumprope ${isInactive ? 'inactive' : 'active'}`}
-                          title={`${deviceName} - ${jumpsValue} jumps ${rpmValue} rpm`}
-                        >
-                          <div className="user-profile-img-container">
-                            <img
-                              src={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
-                              alt={`${deviceName} equipment`}
-                              onError={(e) => {
-                                if (e.target.dataset.fallback) {
-                                  e.target.style.display = 'none';
-                                  return;
-                                }
-                                e.target.dataset.fallback = '1';
-                                e.target.src = DaylightMediaPath('/media/img/equipment/equipment');
-                              }}
-                            />
-                          </div>
-                          <div className="device-info">
-                            <div className="device-name">{deviceName}</div>
-                            <div className="device-stats">
-                              <span className="device-value">{jumpsValue}</span>
-                              <span className="device-unit">jumps</span>
-                              <span className="device-value">{rpmValue}</span>
-                              <span className="device-unit">rpm</span>
-                            </div>
-                          </div>
-                          <div className="zone-progress-bar rpm-progress-bar" aria-label="RPM progress" role="presentation">
-                            <div
-                              className="zone-progress-fill"
-                              style={{ 
-                                width: `${Math.max(0, Math.min(100, Math.round(rpmProgress * 100)))}%`,
-                                backgroundColor: getRpmColor(rpm)
-                              }}
-                            />
-                          </div>
-                        </div>
+                          device={jumpDevice}
+                          deviceName={deviceName}
+                          equipmentId={equipmentId}
+                          rpmThresholds={rpmThresholds}
+                          isInactive={isInactive}
+                        />
                       );
                     })}
                   </div>
@@ -1071,7 +1022,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       </div>
                     )}
                     <div
-                      className={`user-profile-img-container ${zoneClass}`}
+                      className={`card-avatar ${zoneClass}`}
                     >
                       {isHeartRate ? (
                         <img

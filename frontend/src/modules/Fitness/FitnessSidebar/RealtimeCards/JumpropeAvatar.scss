@@ -1,0 +1,84 @@
+/**
+ * JumpropeAvatar Styles
+ * 
+ * Dual-arc circular avatar:
+ * - Top arc: RPM progress gauge
+ * - Bottom arc: Pulses when new data arrives
+ */
+
+.jumprope-avatar {
+  --jumprope-size: 64px;
+  --jumprope-zone-color: #666;
+  --arc-track-color: rgba(255, 255, 255, 0.15);
+  --arc-stroke-width: 4px;
+  
+  position: relative;
+  width: var(--jumprope-size);
+  height: var(--jumprope-size);
+  flex-shrink: 0;
+  
+  // SVG gauge container
+  .jumprope-gauge {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(0deg);
+    pointer-events: none;
+  }
+  
+  // Arc styling
+  .gauge-arc {
+    stroke-width: var(--arc-stroke-width);
+    stroke-linecap: round;
+    fill: none;
+    transition: stroke 0.3s ease, stroke-dashoffset 0.3s ease;
+    
+    &.gauge-arc-track {
+      stroke: var(--arc-track-color);
+    }
+    
+    &.gauge-arc-progress {
+      stroke: var(--jumprope-zone-color);
+    }
+    
+    &.bottom-arc {
+      stroke: var(--jumprope-zone-color);
+      opacity: 0.5;
+      transition: opacity 0.1s ease, stroke-width 0.1s ease;
+    }
+  }
+  
+  // Pulse effect on bottom arc when data updates
+  &.is-pulsing .bottom-arc {
+    opacity: 0.3;
+    stroke-width: 6px;
+  }
+  
+  // Center avatar
+  .avatar-core {
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+    }
+  }
+  
+  // Idle state
+  &.is-idle {
+    .gauge-arc-progress,
+    .bottom-arc {
+      opacity: 0.3;
+    }
+  }
+}
