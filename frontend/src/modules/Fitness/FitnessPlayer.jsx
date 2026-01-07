@@ -164,7 +164,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     addVoiceMemoToSession,
     pauseMusicPlayer,
     resumeMusicPlayer,
-    preferredMicrophoneId
+    preferredMicrophoneId,
+    participantRoster: contextParticipantRoster
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
 
@@ -215,7 +216,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [showChart, setShowChart] = useState(true);
   const [voiceMemoModalOpen, setVoiceMemoModalOpen] = useState(false);
 
-  const governanceOverlay = useGovernanceOverlay(governanceState);
+  // Use participantRoster from context, with session roster as fallback for immediate data
+  // This eliminates brief "Waiting for participants" flash when roster exists but context hasn't updated
+  const sessionRoster = fitnessSessionInstance?.roster;
+  const participants = Array.isArray(contextParticipantRoster) && contextParticipantRoster.length > 0
+    ? contextParticipantRoster
+    : (Array.isArray(sessionRoster) ? sessionRoster : []);
+
+  const governanceOverlay = useGovernanceOverlay(governanceState, participants);
   renderCountRef.current += 1;
 
   const playerContentClassName = useMemo(() => {
@@ -791,7 +799,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
     // Fix 2 (bugbash 4B): Compute fresh elapsed time on each close attempt (not stale useMemo)
     const sessionStartTime = fitnessSessionInstance?.startTime;
-    const threshold = plexConfig?.voice_memo_prompt_threshold_seconds ?? 900; // 15 minutes default
+    const threshold = plexConfig?.voice_memo_prompt_threshold_seconds ?? 480; // 8 minutes default
     const hasMemos = Array.isArray(voiceMemos) && voiceMemos.length > 0;
     const shouldPrompt = sessionStartTime 
       && ((Date.now() - sessionStartTime) / 1000 > threshold) 
