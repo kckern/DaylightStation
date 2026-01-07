@@ -51,6 +51,12 @@
     }
   }
 
+  &.jumprope {
+    .monitor-value {
+      color: #ff6b6b;
+    }
+  }
+
   &.default {
     .monitor-value {
       color: #adb5bd;

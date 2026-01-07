@@ -846,6 +846,17 @@
         }
       }
 
+      &.jumprope {
+        .device-icon {
+          color: #ff6b6b;
+          filter: drop-shadow(0 0 4px rgba(255, 107, 107, 0.4));
+        }
+        
+        .device-value {
+          color: #ff6b6b;
+        }
+      }
+
       // Zone pill styling (placed before card for layout) using same zone-* classes applied to profile ring
       + .device-zone-info, .device-zone-info { // allow either structural order
         margin: 0 0 4px 70px; // adjust indent for larger avatar

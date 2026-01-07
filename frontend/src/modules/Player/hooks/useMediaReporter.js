@@ -310,13 +310,16 @@ export function useMediaReporter({
     setTimeout(() => { isHardResettingRef.current = false; }, 1000);
     const normalized = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
     pendingSeekSecondsRef.current = normalized;
-    try {
-      mediaEl.pause?.();
-    } catch (_) {}
+    // Note: We don't pause here because:
+    // 1. With MSE/Shaka, pause() causes PAUSED_USER feedback loop
+    // 2. The seek and load() alone should be sufficient
     try {
       mediaEl.currentTime = normalized;
     } catch (_) {}
+    // load() is for native src attribute - with MSE it's less useful but harmless
     mediaEl.load?.();
+    // Try to play after reset if video was intended to play
+    mediaEl.play?.().catch(() => {});
     reportPlaybackMetrics();
   }, [mediaRef, reportPlaybackMetrics]);
 

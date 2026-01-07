@@ -33,6 +33,7 @@ const CONFIG = {
     power: { unit: 'W', colorClass: 'power', icon: '⚡' },
     cadence: { unit: 'RPM', colorClass: 'cadence', icon: '⚙️' },
     speed: { unit: 'km/h', colorClass: 'speed', icon: '🚴' },
+    jumprope: { unit: 'jumps', colorClass: 'jumprope', icon: '🦘' },
     default: { unit: '', colorClass: 'unknown', icon: '📡' }
   },
   sorting: {

@@ -18,10 +18,11 @@ export const resolvePause = ({ governance = {}, resilience = {}, user = {} } = {
     return { paused: true, reason: PAUSE_REASON.GOVERNANCE };
   }
 
+  // Note: resilience.stalled is NOT included - stalled state triggers reload, not pause
+  // Pausing during stall interferes with reload recovery (e.g., after governance unlock)
   const resiliencePaused = truthy(
     resilience.requiresPause
     ?? resilience.buffering
-    ?? resilience.stalled
     ?? resilience.waiting
   );
   if (resiliencePaused) {

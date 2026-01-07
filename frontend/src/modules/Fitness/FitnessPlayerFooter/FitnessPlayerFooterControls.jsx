@@ -160,6 +160,17 @@ export default function FitnessPlayerFooterControls({
                 <span className="icon" aria-hidden="true">⏩</span>
               </div>
             </>
+          ) : playIsGoverned ? (
+            // Governance lock takes priority over stalled state
+            <div
+              role="button"
+              tabIndex={0}
+              className="control-button play-pause-button governed"
+              aria-label="Playback locked"
+              aria-disabled="true"
+            >
+              <span className="icon"><Icon.Lock /></span>
+            </div>
           ) : isStalled ? (
             <div
               role="button"
@@ -180,23 +191,17 @@ export default function FitnessPlayerFooterControls({
             <div
               role="button"
               tabIndex={0}
-              onPointerDown={() => {
-                if (playIsGoverned) {
-                  return;
-                }
-                playPause();
-              }}
+              onPointerDown={playPause}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  if (!playIsGoverned) playPause();
+                  playPause();
                 }
               }}
-              className={`control-button play-pause-button${playIsGoverned ? ' governed' : ''}`}
-              aria-label={playIsGoverned ? 'Playback locked' : (isPaused ? 'Play' : 'Pause')}
-              aria-disabled={playIsGoverned ? 'true' : undefined}
+              className="control-button play-pause-button"
+              aria-label={isPaused ? 'Play' : 'Pause'}
             >
-              <span className="icon">{playIsGoverned ? <Icon.Lock /> : (isPaused ? <Icon.Play /> : <Icon.Pause />)}</span>
+              <span className="icon">{isPaused ? <Icon.Play /> : <Icon.Pause />}</span>
             </div>
           )}
           {showNav && (

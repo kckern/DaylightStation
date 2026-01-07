@@ -1,11 +1,17 @@
 FROM node:18-slim
 
-# Install system dependencies for ANT+ and serial communication
+# Install system dependencies for ANT+, serial communication, and Bluetooth
 RUN apt-get update && apt-get install -y \
     usbutils \
     libusb-1.0-0-dev \
     libudev-dev \
     python3 \
+    python3-pip \
+    python3-venv \
+    bluez \
+    bluetooth \
+    libbluetooth-dev \
+    libdbus-1-dev \
     make \
     g++ \
     curl \
@@ -19,6 +25,9 @@ COPY package*.json ./
 
 # Install node dependencies
 RUN npm install
+
+# Install Python BLE library (bleak)
+RUN pip3 install --break-system-packages bleak
 
 # Copy application code
 COPY . .
