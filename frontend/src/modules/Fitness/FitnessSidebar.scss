@@ -1795,6 +1795,12 @@
             }
           }
       .track-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        display: flex;
 
         .menu-item-subtext {
           font-size: 0.75rem;
@@ -1809,12 +1815,27 @@
             color: #ffd43b;
           }
         }
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #fff;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+
+        // Marquee wrapper - ping-pong scroll for overflow text
+        .marquee-text {
+          display: inline-block;
+          // --scroll-distance is set by JS based on actual overflow
+          animation: marquee-pingpong 8s ease-in-out infinite;
+          animation-play-state: var(--marquee-play-state, paused);
+        }
+      }
+
+      // Ping-pong marquee: pause at each end, scroll back and forth
+      @keyframes marquee-pingpong {
+        0%, 20% {
+          transform: translateX(0); // Start flush left, pause 20%
+        }
+        50%, 70% {
+          transform: translateX(var(--scroll-distance, 0px)); // Scroll to show end, pause 20%
+        }
+        100% {
+          transform: translateX(0); // Back to flush left
+        }
       }
       .track-artist {
         font-size: 0.9rem;

@@ -43,6 +43,9 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
   const [isPlaying, setIsPlaying] = useState(true);
   const audioPlayerRef = useRef(null);
   const loggedTrackRef = useRef(null);
+  const titleContainerRef = useRef(null);
+  const marqueeTextRef = useRef(null);
+  const [scrollDistance, setScrollDistance] = useState(0);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
   const [isVideoAvailable, setIsVideoAvailable] = useState(false);
@@ -77,6 +80,26 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
       setControlsOpen(false);
     }
   }, [selectedPlaylistId]);
+
+  // Measure text overflow for marquee scroll distance
+  useEffect(() => {
+    const measureOverflow = () => {
+      if (!titleContainerRef.current || !marqueeTextRef.current) return;
+
+      const containerWidth = titleContainerRef.current.offsetWidth;
+      const textWidth = marqueeTextRef.current.scrollWidth;
+      const overflow = textWidth - containerWidth;
+
+      // Only scroll if text overflows (negative value = scroll left by this amount)
+      setScrollDistance(overflow > 0 ? -overflow : 0);
+    };
+
+    // Measure after render and fonts load
+    measureOverflow();
+    const timeoutId = setTimeout(measureOverflow, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [currentTrack?.title, currentTrack?.label]);
 
   const currentTrackIdentity = useMemo(() => {
     if (!currentTrack) return null;
@@ -425,8 +448,17 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
           aria-expanded={controlsOpen}
         >
           <div className="track-details">
-            <div className="track-title">
-              {currentTrack?.title || currentTrack?.label || 'No track playing'}
+            <div className="track-title" ref={titleContainerRef}>
+              <span
+                className="marquee-text"
+                ref={marqueeTextRef}
+                style={{
+                  '--scroll-distance': `${scrollDistance}px`,
+                  '--marquee-play-state': scrollDistance < 0 ? 'running' : 'paused'
+                }}
+              >
+                {currentTrack?.title || currentTrack?.label || 'No track playing'}
+              </span>
             </div>
             <div className="track-artist">
               {(() => {

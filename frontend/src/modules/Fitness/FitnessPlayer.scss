@@ -76,7 +76,7 @@ dash-video {
     flex: 0 0 250px; /* Initial width; overridden inline when resizing */
     background-color: #1a1a1a;
   padding: 0; /* symmetric padding */
-    overflow-y: auto;
+    overflow: hidden; /* Hide scrollbars - content is flex column and won't overflow */
     border-left: 1px solid #333; /* border now on left */
     border-right: none;
     display: flex;
