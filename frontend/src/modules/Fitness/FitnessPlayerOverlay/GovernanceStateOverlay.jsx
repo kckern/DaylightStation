@@ -20,7 +20,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
             const percentValue = clamped != null ? Math.round(clamped * 100) : null;
             const chipProgress = Number.isFinite(percentValue) ? Math.max(0, percentValue) : 0;
             const borderStyle = offender.zoneColor ? { borderColor: offender.zoneColor } : undefined;
-            const progressColor = offender.zoneColor || 'rgba(56, 189, 248, 0.95)';
+            const progressColor = offender.targetZoneColor || offender.zoneColor || 'rgba(56, 189, 248, 0.95)';
             return (
               <div
                 className="governance-progress-overlay__chip"
