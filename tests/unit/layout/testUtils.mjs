@@ -171,11 +171,15 @@ export function detectAnomalies(input, output, trace = [], bounds = {}) {
 
     if (displacement <= DISPLACEMENT_THRESHOLD) continue;
 
-    const collisionTrace = trace.filter(t =>
-      t.elementId === outEl.id && t.phase === 'collision_resolve'
+    // Check if displacement is explained by collision or base clamping
+    const relevantTrace = trace.filter(t =>
+      t.elementId === outEl.id &&
+      (t.phase === 'collision_resolve' || t.phase === 'base_clamp')
     );
 
-    const wasCollisionJustified = collisionTrace.some(t => t.reason);
+    const wasCollisionJustified = relevantTrace.some(t =>
+      t.reason || (t.phase === 'base_clamp' && t.clampOffset)
+    );
 
     if (!wasCollisionJustified) {
       anomalies.push({
@@ -184,7 +188,7 @@ export function detectAnomalies(input, output, trace = [], bounds = {}) {
         inputPosition: { x: inEl.x, y: inEl.y },
         outputPosition: { x: finalX, y: finalY },
         displacement,
-        trace: collisionTrace
+        trace: relevantTrace
       });
     }
 
