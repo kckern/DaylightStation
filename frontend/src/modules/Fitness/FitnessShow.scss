@@ -320,6 +320,25 @@
         color: rgba(255, 255, 255, 0.85);
       }
 
+      .show-voice-memo-btn {
+        margin-left: 0.75rem;
+        padding: 0.5rem;
+        background: rgba(255, 255, 255, 0.1);
+        border: none;
+        border-radius: 50%;
+        color: var(--fitness-text-muted, #888);
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.2);
+          color: var(--fitness-text, #fff);
+        }
+      }
+
       .show-tagline {
         font-size: 1.1rem;
         color: rgba(255, 255, 255, 0.8);

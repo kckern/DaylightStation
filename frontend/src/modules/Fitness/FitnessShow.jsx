@@ -3,6 +3,7 @@ import { LoadingOverlay, Alert } from '@mantine/core';
 import { DaylightAPI, DaylightMediaPath, normalizeImageUrl } from '../../lib/api.mjs';
 import './FitnessShow.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
+import VoiceMemoModal from './shared/VoiceMemoModal';
 import moment from 'moment';
 
 const formatWatchedDate = (dateString) => {
@@ -209,6 +210,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
   const [loadedEpisodeImages, setLoadedEpisodeImages] = useState({});
   const [loadedSeasonImages, setLoadedSeasonImages] = useState({});
+  const [voiceMemoOpen, setVoiceMemoOpen] = useState(false);
   
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
   const fitnessContext = useFitness() || {};
@@ -221,7 +223,12 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     plexConfig,
     governedTypes,
     governedLabelSet: contextGovernedLabelSet,
-    governedTypeSet: contextGovernedTypeSet
+    governedTypeSet: contextGovernedTypeSet,
+    fitnessSessionInstance,
+    addVoiceMemoToSession,
+    pauseMusicPlayer,
+    resumeMusicPlayer,
+    preferredMicrophoneId
   } = fitnessContext;
   const nomusicLabelSet = useMemo(() => {
     const normalized = Array.isArray(nomusicLabels)
@@ -953,6 +960,21 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                       🔒
                     </span>
                   )}
+                  {fitnessSessionInstance?.isActive && (
+                    <button
+                      type="button"
+                      className="show-voice-memo-btn"
+                      onClick={() => setVoiceMemoOpen(true)}
+                      aria-label="Record voice memo"
+                      title="Record voice memo"
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="22" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
                 {info.tagline && <div className="show-tagline">{info.tagline}</div>}
                 {info.summary && (
@@ -1144,6 +1166,16 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
           )}
         </div>
       </div>
+      <VoiceMemoModal
+        context="show"
+        open={voiceMemoOpen}
+        onClose={() => setVoiceMemoOpen(false)}
+        onMemoSaved={(memo) => addVoiceMemoToSession?.(memo)}
+        sessionId={fitnessSessionInstance?.sessionId}
+        pauseMusic={pauseMusicPlayer}
+        resumeMusic={resumeMusicPlayer}
+        preferredMicrophoneId={preferredMicrophoneId}
+      />
     </div>
   );
 };
