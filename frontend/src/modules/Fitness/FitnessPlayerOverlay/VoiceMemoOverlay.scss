@@ -360,6 +360,17 @@
     font-variant-numeric: tabular-nums;
   }
 
+  &__mic-level {
+    display: flex;
+    visibility: visible;
+    opacity: 1;
+    min-height: 40px;
+    width: 100%;
+    margin: 1rem 0;
+    justify-content: center;
+    align-items: center;
+  }
+
   &__redo-controls {
     display: flex;
     flex-direction: column;
