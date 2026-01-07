@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
@@ -33,7 +33,7 @@ const logLevelFromVolume = (volume) => {
 
 
 
-const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume }) => {
+const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, videoVolume }, ref) => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -42,6 +42,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
   const [error, setError] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const audioPlayerRef = useRef(null);
+  const wasPlayingBeforePauseRef = useRef(false);
   const loggedTrackRef = useRef(null);
   const titleContainerRef = useRef(null);
   const marqueeTextRef = useRef(null);
@@ -50,6 +51,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
   const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
   const [isVideoAvailable, setIsVideoAvailable] = useState(false);
   const touchHandledRef = useRef(false);
+  const expansionCooldownRef = useRef(false);
   
   const fitnessContext = useFitnessContext();
   const { videoPlayerPaused } = fitnessContext || {};
@@ -61,6 +63,24 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
 
   // Stable Plex client session ID - ensures music player has distinct X-Plex-Client-Identifier from video player
   const musicPlexSession = useMemo(() => `fitness-music-${guid()}`, []);
+
+  // Expose pause/resume API for external callers (e.g., voice memo recording)
+  useImperativeHandle(ref, () => ({
+    pause: () => {
+      if (audioPlayerRef.current) {
+        wasPlayingBeforePauseRef.current = isPlaying;
+        audioPlayerRef.current.pause();
+        setIsPlaying(false);
+      }
+    },
+    resume: () => {
+      if (audioPlayerRef.current && wasPlayingBeforePauseRef.current) {
+        audioPlayerRef.current.play();
+        setIsPlaying(true);
+      }
+    },
+    isPlaying: () => isPlaying
+  }), [isPlaying]);
 
   // Sync music player with video player pause state
   useEffect(() => {
@@ -320,7 +340,25 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
   };
 
   const toggleControls = () => {
-    setControlsOpen(prev => !prev);
+    setControlsOpen(prev => {
+      const opening = !prev;
+      if (opening) {
+        // Set a cooldown to prevent accidental touches on newly-revealed UI
+        expansionCooldownRef.current = true;
+        setTimeout(() => {
+          expansionCooldownRef.current = false;
+        }, 400); // 400ms grace period after expansion
+      }
+      return opening;
+    });
+  };
+
+  const handlePlaylistButtonClick = () => {
+    // Ignore clicks during the expansion cooldown to prevent accidental activation
+    if (expansionCooldownRef.current) {
+      return;
+    }
+    setPlaylistModalOpen(true);
   };
 
   const handleMusicToggle = useCallback(() => {
@@ -533,7 +571,7 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
                 <>
                   <button 
                     className="current-playlist-button"
-                    onClick={() => setPlaylistModalOpen(true)}
+                    onClick={handlePlaylistButtonClick}
                   >
                     <span className="playlist-icon">🎵</span>
                     <span className="playlist-name">
@@ -594,6 +632,8 @@ const FitnessMusicPlayer = ({ selectedPlaylistId, videoPlayerRef, videoVolume })
       )}
     </div>
   );
-};
+});
+
+FitnessMusicPlayer.displayName = 'FitnessMusicPlayer';
 
 export default FitnessMusicPlayer;
