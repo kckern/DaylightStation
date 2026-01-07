@@ -32,3 +32,4 @@ config.app-local.yml
 /_extensions/fitness/node_modules
 /_extensions/piano/node_modules
 .worktrees
+/_extensions/fitness/config
