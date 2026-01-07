@@ -66,22 +66,27 @@ const VoiceMemoModal = ({
   const [autoAcceptCancelled, setAutoAcceptCancelled] = useState(false);
 
   // Refs
-  const micLevelRafRef = useRef(null);
   const autoAcceptStartRef = useRef(null);
   const autoAcceptIntervalRef = useRef(null);
   const hasAutoStartedRef = useRef(false);
   const closeButtonRef = useRef(null);
   const stopButtonRef = useRef(null);
+  const acceptButtonRef = useRef(null);
+  const panelRef = useRef(null);
+  // Store memoId at preview entry to avoid dependency issues in auto-accept effect
+  const replacingMemoIdRef = useRef(null);
 
   // Handle memo captured from recorder
   const handleMemoCaptured = useCallback((memo) => {
     setCapturedMemo(memo);
     setView('preview');
+    // Store existing memo ID at preview entry to avoid dependency issues
+    replacingMemoIdRef.current = existingMemo?.memoId || null;
     // Start auto-accept countdown
     setAutoAcceptProgress(0);
     setAutoAcceptCancelled(false);
     autoAcceptStartRef.current = Date.now();
-  }, []);
+  }, [existingMemo?.memoId]);
 
   // Voice memo recorder hook
   const {
@@ -96,13 +101,9 @@ const VoiceMemoModal = ({
     playerRef,
     preferredMicrophoneId,
     onMemoCaptured: handleMemoCaptured,
+    // Recorder hook already throttles at ~14fps, no RAF wrapper needed
     onLevel: useCallback((level) => {
-      if (micLevelRafRef.current) {
-        cancelAnimationFrame(micLevelRafRef.current);
-      }
-      micLevelRafRef.current = requestAnimationFrame(() => {
-        setMicLevel(Number.isFinite(level) ? level : 0);
-      });
+      setMicLevel(Number.isFinite(level) ? level : 0);
     }, [])
   });
 
@@ -123,10 +124,11 @@ const VoiceMemoModal = ({
   // Accept memo and close
   const handleAccept = useCallback(() => {
     if (capturedMemo && onMemoSaved) {
-      onMemoSaved(capturedMemo, existingMemo?.memoId || null);
+      // Use stored memoId ref to avoid dependency on existingMemo prop
+      onMemoSaved(capturedMemo, replacingMemoIdRef.current);
     }
     onClose?.();
-  }, [capturedMemo, existingMemo?.memoId, onMemoSaved, onClose]);
+  }, [capturedMemo, onMemoSaved, onClose]);
 
   // Redo recording
   const handleRedo = useCallback(() => {
@@ -224,8 +226,11 @@ const VoiceMemoModal = ({
         handleClose();
       }
       if (view === 'recording' && isRecording && (e.key === ' ' || e.key === 'Spacebar')) {
-        e.preventDefault();
-        stopRecording();
+        // Only handle if focus is within the modal or on body (no other element focused)
+        if (panelRef.current?.contains(document.activeElement) || document.activeElement === document.body) {
+          e.preventDefault();
+          stopRecording();
+        }
       }
     };
 
@@ -240,16 +245,14 @@ const VoiceMemoModal = ({
     if (view === 'recording' && isRecording) {
       stopButtonRef.current?.focus?.();
     } else if (view === 'preview') {
-      closeButtonRef.current?.focus?.();
+      // Focus accept button in preview for easier keyboard interaction
+      acceptButtonRef.current?.focus?.();
     }
   }, [open, view, isRecording]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (micLevelRafRef.current) {
-        cancelAnimationFrame(micLevelRafRef.current);
-      }
       if (autoAcceptIntervalRef.current) {
         clearInterval(autoAcceptIntervalRef.current);
       }
@@ -273,7 +276,7 @@ const VoiceMemoModal = ({
     >
       <div className="voice-memo-modal__backdrop" onClick={handleClose} />
 
-      <div className="voice-memo-modal__panel">
+      <div className="voice-memo-modal__panel" ref={panelRef}>
         {/* Close button - always visible */}
         <button
           type="button"
@@ -362,6 +365,7 @@ const VoiceMemoModal = ({
                 onClick={handleAccept}
                 aria-label="Accept"
                 title="Accept"
+                ref={acceptButtonRef}
               >
                 <Icons.Accept />
               </button>
