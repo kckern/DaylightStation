@@ -16,7 +16,9 @@ export class LayoutManager {
       maxBadgesPerUser: 3,
       ...config.options
     };
-    
+    this.traceEnabled = config.trace || false;
+    this.traceLog = [];
+
     this.clusterDetector = new ClusterDetector({
       // Collision threshold: 2*radius means avatars are touching/overlapping
       collisionThreshold: this.avatarRadius * 2
@@ -50,6 +52,27 @@ export class LayoutManager {
     });
   }
 
+  /**
+   * Record a trace entry for debugging layout decisions.
+   */
+  _trace(phase, elementId, data) {
+    if (!this.traceEnabled) return;
+    this.traceLog.push({
+      phase,
+      elementId,
+      timestamp: Date.now(),
+      ...data
+    });
+  }
+
+  clearTrace() {
+    this.traceLog = [];
+  }
+
+  getTrace() {
+    return this.traceLog;
+  }
+
   layout(elements) {
     // Separate avatars and badges
     let avatars = elements.filter(e => e.type === 'avatar');
@@ -72,16 +95,57 @@ export class LayoutManager {
       });
     }
 
+    if (this.traceEnabled) {
+      this.clearTrace();
+      avatars.forEach(a => this._trace('input', a.id, { x: a.x, y: a.y, type: 'avatar' }));
+      badges.forEach(b => this._trace('input', b.id, { x: b.x, y: b.y, type: 'badge' }));
+    }
+
     // Phase 1: Clamp avatar BASE positions to bounds FIRST
     // This ensures collision resolution operates on final X positions
     avatars = this._clampBasePositions(avatars, 'avatar');
+
+    if (this.traceEnabled) {
+      avatars.forEach(a => {
+        if (a._baseClamped) {
+          this._trace('base_clamp', a.id, {
+            before: { x: a.x, y: a.y },
+            clampOffset: { x: a._clampOffsetX || 0, y: a._clampOffsetY || 0 }
+          });
+        }
+      });
+    }
 
     // Phase 2: Horizontal-only collision resolution
     // Higher avatars (lower Y value) stay anchored, lower avatars move left
     let resolvedAvatars = this._resolveAvatarCollisionsHorizontal(avatars);
 
+    if (this.traceEnabled) {
+      resolvedAvatars.forEach(a => {
+        const inputA = avatars.find(i => i.id === a.id);
+        const baseOffsetX = inputA?._clampOffsetX || 0;
+        const additionalOffsetX = (a.offsetX || 0) - baseOffsetX;
+        if (Math.abs(additionalOffsetX) > 0.1) {
+          this._trace('collision_resolve', a.id, {
+            before: { offsetX: baseOffsetX },
+            after: { offsetX: a.offsetX || 0 },
+            delta: { x: additionalOffsetX },
+            reason: 'horizontal_collision_avoidance'
+          });
+        }
+      });
+    }
+
     // Phase 3: Label Collision Resolution
     resolvedAvatars = this.labelManager.resolve(resolvedAvatars);
+
+    if (this.traceEnabled) {
+      resolvedAvatars.forEach((a, idx) => {
+        if (a.labelPosition && a.labelPosition !== 'right') {
+          this._trace('label_resolve', a.id, { labelPosition: a.labelPosition });
+        }
+      });
+    }
 
     // Phase 7: Final bounds check (clamp offsets if they pushed avatars out)
     resolvedAvatars = this._clampToBounds(resolvedAvatars, 'avatar');
@@ -129,7 +193,8 @@ export class LayoutManager {
 
     return {
       elements: [...resolvedAvatars, ...resolvedBadges],
-      connectors
+      connectors,
+      trace: this.traceEnabled ? this.getTrace() : undefined
     };
   }
 
