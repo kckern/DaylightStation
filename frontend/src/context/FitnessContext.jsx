@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
   FitnessSession,
   setFitnessTimeouts,
@@ -95,6 +95,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const vibrationTimeoutRefs = useRef({});
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
   const guestAssignmentServiceRef = useRef(null);
+  const musicPlayerRef = useRef(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
   const [transferVersion, setTransferVersion] = useState(0);
 
@@ -753,6 +754,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const normalized = Boolean(nextEnabled);
     setMusicOverride((prev) => (musicAutoEnabled === normalized ? null : normalized));
   }, [musicAutoEnabled]);
+
+  // Music player control helpers for voice memo coordination
+  const pauseMusicPlayer = useCallback(() => {
+    musicPlayerRef.current?.pause?.();
+  }, []);
+
+  const resumeMusicPlayer = useCallback(() => {
+    musicPlayerRef.current?.resume?.();
+  }, []);
 
   // Lightweight heartbeat to refresh UI
   useEffect(() => {
@@ -1607,6 +1617,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     setMusicAutoEnabled,
     musicOverride,
     setMusicOverrideState,
+    musicPlayerRef,
+    pauseMusicPlayer,
+    resumeMusicPlayer,
     videoPlayerPaused,
     setVideoPlayerPaused,
     sidebarSizeMode,
