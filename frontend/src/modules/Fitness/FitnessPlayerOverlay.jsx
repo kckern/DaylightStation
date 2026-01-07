@@ -383,7 +383,13 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
 
   const userZoneProgress = fitnessCtx?.userZoneProgress || null;
   const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
-  const participants = Array.isArray(fitnessCtx?.participantRoster) ? fitnessCtx.participantRoster : [];
+  // Use participantRoster from context (updated on version heartbeat), but also check
+  // session roster directly as fallback for immediate data during initial render.
+  // This eliminates the brief "Waiting for participants" flash when roster exists but
+  // participantRoster hasn't updated yet.
+  const contextRoster = Array.isArray(fitnessCtx?.participantRoster) ? fitnessCtx.participantRoster : [];
+  const sessionRoster = fitnessCtx?.fitnessSessionInstance?.roster;
+  const participants = contextRoster.length > 0 ? contextRoster : (Array.isArray(sessionRoster) ? sessionRoster : []);
   const getUserVitals = fitnessCtx?.getUserVitals;
   const clamp01 = (value) => Math.max(0, Math.min(1, value));
   const normalizeZoneId = (value) => {
