@@ -15,6 +15,7 @@
  */
 
 import getLogger from '../../lib/logging/Logger.js';
+import { JumpropeSessionState } from './JumpropeSessionState.js';
 
 /**
  * @typedef {Object} RouteResult
@@ -49,6 +50,9 @@ export class DeviceEventRouter {
     // Debug logging throttle
     this._lastDebugLog = new Map();
     this._debugThrottleMs = 5000;
+
+    // Jumprope session state per device
+    this._jumpropeStates = new Map();
     
     // Register built-in handlers
     this._registerBuiltinHandlers();
@@ -227,7 +231,17 @@ export class DeviceEventRouter {
       const deviceIdStr = String(payload.deviceId);
       const equipment = ctx.getEquipmentByBle(deviceIdStr);
       const equipmentName = equipment?.name || null;
-      
+
+      let sessionState = this._jumpropeStates.get(deviceIdStr);
+      if (!sessionState) {
+        sessionState = new JumpropeSessionState(deviceIdStr);
+        this._jumpropeStates.set(deviceIdStr, sessionState);
+      }
+
+      const timestamp = payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now();
+      const revolutions = payload.data.revolutions ?? payload.data.jumps ?? 0;
+      const { sessionJumps, rpm } = sessionState.ingest(revolutions, timestamp);
+
       const normalized = {
         id: deviceIdStr,
         name: equipmentName || payload.deviceName || 'Jumprope',
@@ -235,11 +249,11 @@ export class DeviceEventRouter {
         profile: 'jumprope',
         lastSeen: Date.now(),
         connectionState: 'connected',
-        cadence: payload.data.rpm || 0,
-        revolutionCount: payload.data.jumps || 0,
-        timestamp: payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now()
+        cadence: rpm,
+        revolutionCount: sessionJumps,
+        timestamp
       };
-      
+
       return ctx.deviceManager.registerDevice(normalized);
     });
 
@@ -293,6 +307,24 @@ export class DeviceEventRouter {
    */
   getRegisteredTypes() {
     return Array.from(this._handlers.keys());
+  }
+
+  /**
+   * Reset jumprope session state for a device
+   * @param {string} deviceId
+   */
+  resetJumpropeState(deviceId) {
+    const state = this._jumpropeStates.get(deviceId);
+    if (state) {
+      state.reset();
+    }
+  }
+
+  /**
+   * Reset all jumprope states (for new session)
+   */
+  resetAllJumpropeStates() {
+    this._jumpropeStates.forEach((state) => state.reset());
   }
 }
 

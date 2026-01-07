@@ -1,100 +1,123 @@
 /**
  * RENPHO Jumprope BLE Decoder
- * Decodes data packets from RENPHO R-Q008 jumprope
+ * Direction-agnostic revolution tracking for RENPHO R-Q008
+ *
+ * Key insight: The raw counter can count UP or DOWN depending on device mode.
+ * We detect ANY change as a revolution event.
  */
 
 export class RenphoJumpropeDecoder {
   constructor() {
-    this.sessionData = {
-      startTime: null,
-      endTime: null,
-      totalJumps: 0,
-      maxRPM: 0,
-      avgRPM: 0,
-      rpmReadings: [],
-      duration: 0
-    };
+    this.lastRawCounter = null;
+    this.totalRevolutions = 0;
+    this.connectionStartTime = null;
+    this.lastPacketTime = null;
+    this.pendingCarryover = 0;
   }
 
-  decodeMainPacket(data) {
-    // Main data packet (0xAD prefix, 20 bytes)
-    // Format analysis:
-    // [0]: 0xAD (packet type)
-    // [1]: Jump sequence counter
-    // [10-11]: RPM - rope rotations per minute (little-endian)
-    // [14-15]: Total jumps counter (little-endian)
-    
-    const sequenceNum = data[1];
-    const rpm = data[10] | (data[11] << 8);
-    const jumpCount = data[14] | (data[15] << 8);
-    const estimatedCalories = Math.round(jumpCount * 0.1);
-    
-    return {
-      type: 'main',
-      sequenceNum,
-      rpm,
-      jumpCount,
-      estimatedCalories,
-      rawHex: Buffer.from(data).toString('hex')
-    };
-  }
+  /**
+   * Process a raw BLE packet and extract revolution count
+   * @param {Uint8Array} data - Raw BLE packet data
+   * @returns {{revolutions: number, timestamp: string}|null}
+   */
+  processPacket(data) {
+    const decoded = this.decode(data);
+    if (!decoded || decoded.type !== 'main') return null;
 
-  decodeSecondaryPacket(data) {
-    // Secondary packet (0xAF prefix, 8 bytes)
-    const sequenceNum = data[1];
-    return {
-      type: 'secondary',
-      sequenceNum,
-      rawHex: Buffer.from(data).toString('hex')
-    };
-  }
+    const rawCounter = decoded.jumpCount;
+    const now = Date.now();
+    this.lastPacketTime = now;
 
-  decode(data) {
-    if (data.length === 0) return null;
-    
-    const packetType = data[0];
-    
-    if (packetType === 0xAD && data.length >= 20) {
-      return this.decodeMainPacket(data);
-    } else if (packetType === 0xAF && data.length >= 8) {
-      return this.decodeSecondaryPacket(data);
+    if (this.connectionStartTime === null) {
+      this.connectionStartTime = now;
     }
-    
+
+    if (this.lastRawCounter === null) {
+      this.pendingCarryover = rawCounter <= 50 ? rawCounter : 0;
+      this.lastRawCounter = rawCounter;
+      return this._formatOutput();
+    }
+
+    if (rawCounter === this.lastRawCounter) {
+      if (this.pendingCarryover > 0) {
+        this.totalRevolutions = this.pendingCarryover;
+        this.pendingCarryover = 0;
+      }
+      return this._formatOutput();
+    }
+
+    const delta = Math.abs(rawCounter - this.lastRawCounter);
+
+    if (delta > 100) {
+      this.totalRevolutions = 0;
+      this.pendingCarryover = 0;
+      this.totalRevolutions += 1;
+    } else {
+      this.totalRevolutions += delta;
+      this.pendingCarryover = 0;
+    }
+
+    this.lastRawCounter = rawCounter;
+
+    return this._formatOutput();
+  }
+
+  /**
+   * Decode raw BLE packet
+   * @param {Uint8Array} data
+   * @returns {{type: string, sequenceNum: number, jumpCount: number, rawHex: string}|null}
+   */
+  decode(data) {
+    if (!data || data.length === 0) return null;
+
+    const packetType = data[0];
+
+    if (packetType === 0xAD && data.length >= 20) {
+      return this._decodeMainPacket(data);
+    }
+    if (packetType === 0xAF && data.length >= 8) {
+      return this._decodeSecondaryPacket(data);
+    }
+
     return null;
   }
 
-  updateSession(decodedData) {
-    if (!decodedData || decodedData.type !== 'main') return;
-    
-    const { rpm, jumpCount } = decodedData;
-    
-    // Initialize session on first packet
-    if (!this.sessionData.startTime) {
-      this.sessionData.startTime = new Date().toISOString();
-      console.log('🏃 Jump rope workout session started!');
-    }
-    
-    // Update session data
-    this.sessionData.totalJumps = jumpCount;
-    
-    if (rpm > 0 && rpm < 300) {
-      this.sessionData.rpmReadings.push(rpm);
-      this.sessionData.maxRPM = Math.max(this.sessionData.maxRPM, rpm);
-      
-      // Calculate average
-      const sum = this.sessionData.rpmReadings.reduce((a, b) => a + b, 0);
-      this.sessionData.avgRPM = Math.round(sum / this.sessionData.rpmReadings.length);
-    }
-    
-    // Calculate duration
-    if (this.sessionData.startTime) {
-      const start = new Date(this.sessionData.startTime);
-      this.sessionData.duration = Math.round((Date.now() - start) / 1000);
-    }
+  _decodeMainPacket(data) {
+    // Main data packet (0xAD prefix, 20 bytes)
+    // [0]: 0xAD (packet type)
+    // [1]: Sequence number
+    // [10-11]: Timer (not RPM)
+    // [14-15]: Jump counter (little-endian, direction-dependent)
+    const sequenceNum = data[1];
+    const jumpCount = data[14] | (data[15] << 8);
+
+    return {
+      type: 'main',
+      sequenceNum,
+      jumpCount,
+      rawHex: Buffer.from(data).toString('hex')
+    };
   }
 
+  _decodeSecondaryPacket(data) {
+    return {
+      type: 'secondary',
+      sequenceNum: data[1],
+      rawHex: Buffer.from(data).toString('hex')
+    };
+  }
+
+  _formatOutput() {
+    return {
+      revolutions: this.totalRevolutions,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Format for WebSocket broadcast - minimal payload
+   */
   formatForWebSocket(deviceConfig) {
-    // Format data to match the fitness server's expected format
     return {
       topic: 'fitness',
       source: 'fitness',
@@ -103,20 +126,26 @@ export class RenphoJumpropeDecoder {
       deviceName: deviceConfig.name,
       timestamp: new Date().toISOString(),
       data: {
-        jumps: this.sessionData.totalJumps,
-        rpm: this.sessionData.rpmReadings.slice(-1)[0] || 0,
-        avgRPM: this.sessionData.avgRPM,
-        maxRPM: this.sessionData.maxRPM,
-        duration: this.sessionData.duration,
-        calories: Math.round(this.sessionData.totalJumps * 0.1)
+        revolutions: this.totalRevolutions
       }
     };
   }
 
-  getSessionData() {
-    return {
-      ...this.sessionData,
-      calories: Math.round(this.sessionData.totalJumps * 0.1)
-    };
+  /**
+   * Reset state on BLE disconnect
+   */
+  reset() {
+    this.lastRawCounter = null;
+    this.totalRevolutions = 0;
+    this.connectionStartTime = null;
+    this.lastPacketTime = null;
+    this.pendingCarryover = 0;
+  }
+
+  /**
+   * Get current revolution count
+   */
+  getRevolutions() {
+    return this.totalRevolutions;
   }
 }

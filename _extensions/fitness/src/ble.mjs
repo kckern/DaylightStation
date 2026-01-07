@@ -143,6 +143,10 @@ export class BLEManager {
 
     pythonProcess.on('close', (code) => {
       console.log(`🛑 BLE monitor for ${deviceConfig.name} stopped (code: ${code})`);
+      const decoder = this.decoders.get(deviceConfig.address);
+      if (decoder && typeof decoder.reset === 'function') {
+        decoder.reset();
+      }
       this.activeMonitors.delete(deviceConfig.address);
       this.decoders.delete(deviceConfig.address);
     });
@@ -264,23 +268,18 @@ if __name__ == "__main__":
   }
 
   handleDeviceData(deviceAddress, dataArray, decoder) {
-    const decoded = decoder.decode(dataArray);
-    
-    if (!decoded || decoded.type !== 'main') return;
+    const result = decoder.processPacket(dataArray);
 
-    decoder.updateSession(decoded);
-    
-    // Log jumprope data (throttled)
+    if (!result) return;
+
     const now = Date.now();
     const lastLog = this._lastJumpLogTime || 0;
     if (now - lastLog > 1000) {
       this._lastJumpLogTime = now;
-      const session = decoder.getSessionData();
       const timestamp = new Date().toISOString().split('T')[1].slice(0, -5);
-      console.log(`[${timestamp}] Jumprope: Jumps:${session.totalJumps} RPM:${decoded.rpm} Avg:${session.avgRPM}`);
+      console.log(`[${timestamp}] Jumprope: ${result.revolutions} revolutions`);
     }
-    
-    // Broadcast to WebSocket
+
     const deviceConfig = this.devices.get(deviceAddress);
     const wsData = decoder.formatForWebSocket(deviceConfig);
     if (this.broadcastCallback) {

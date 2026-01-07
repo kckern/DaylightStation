@@ -13,6 +13,7 @@ import { resolveMediaIdentity, normalizeDuration } from '../Player/utils/mediaId
 import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
+import VoiceMemoModal from './shared/VoiceMemoModal';
 
 const DEBUG_FITNESS_INTERACTIONS = false;
 
@@ -159,7 +160,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     fitnessSessionInstance,
     voiceMemoOverlayState, // 4A: Voice memo overlay state for exit guard
     voiceMemos, // 4B: Voice memos for 15-minute rule
-    openVoiceMemoRedo // 4B: Open voice memo prompt
+    openVoiceMemoRedo, // 4B: Open voice memo prompt
+    addVoiceMemoToSession,
+    pauseMusicPlayer,
+    resumeMusicPlayer,
+    preferredMicrophoneId
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
 
@@ -208,6 +213,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const statusUpdateRef = useRef({ lastSent: 0, inflight: false, endSent: false });
   const [playIsGoverned, setPlayIsGoverned] = useState(false);
   const [showChart, setShowChart] = useState(true);
+  const [voiceMemoModalOpen, setVoiceMemoModalOpen] = useState(false);
 
   const governanceOverlay = useGovernanceOverlay(governanceState);
   renderCountRef.current += 1;
@@ -1343,6 +1349,31 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           <FitnessChart />
         </div>
       )}
+      {playerMode === 'fullscreen' && fitnessSessionInstance?.isActive && (
+        <button
+          type="button"
+          className="fitness-player__voice-memo-fab"
+          onClick={() => setVoiceMemoModalOpen(true)}
+          aria-label="Record voice memo"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+          </svg>
+        </button>
+      )}
+      <VoiceMemoModal
+        context="fullscreen"
+        open={voiceMemoModalOpen}
+        onClose={() => setVoiceMemoModalOpen(false)}
+        onMemoSaved={(memo) => addVoiceMemoToSession?.(memo)}
+        sessionId={fitnessSessionInstance?.sessionId}
+        playerRef={playerRef}
+        pauseMusic={pauseMusicPlayer}
+        resumeMusic={resumeMusicPlayer}
+        preferredMicrophoneId={preferredMicrophoneId}
+      />
     </div>
   );
 

@@ -19,12 +19,15 @@ export function JumpropeCard({
   isCountdownActive = false,
   countdownWidth = 0,
 }) {
+  const STALENESS_THRESHOLD_MS = 5000;
+  const isStale = device.timestamp && (Date.now() - device.timestamp > STALENESS_THRESHOLD_MS);
+
   // Get jumps and RPM values
   const jumps = device.revolutionCount ?? null;
   const rpm = device.cadence ?? null;
   
   const jumpsValue = Number.isFinite(jumps) ? `${Math.round(jumps)}` : '--';
-  const rpmValue = Number.isFinite(rpm) && rpm > 0 ? `${Math.round(rpm)}` : '--';
+  const rpmValue = isStale ? '--' : (Number.isFinite(rpm) && rpm > 0 ? `${Math.round(rpm)}` : '--');
 
   const cardClasses = [
     'jumprope-card',
@@ -32,6 +35,7 @@ export function JumpropeCard({
     layoutMode === 'vert' ? 'card-vertical' : 'card-horizontal',
     isInactive ? 'inactive' : 'active',
     isCountdownActive ? 'countdown-active' : '',
+    isStale ? 'stale' : '',
     zoneClass
   ].filter(Boolean).join(' ');
 
