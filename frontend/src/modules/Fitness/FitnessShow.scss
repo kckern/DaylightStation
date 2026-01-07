@@ -6,6 +6,10 @@
   flex-direction: column;
 
   &.loading {
+    /* Ensure the skeleton fills its container */
+    width: 100%;
+    flex: 1 1 auto;
+
     .skeleton-block,
     .skeleton-line,
     .skeleton-tag {
@@ -31,6 +35,20 @@
       border: 3px solid rgba(0,0,0,0.5);
       flex: 0 0 auto;
     }
+
+    /* Fix skeleton container widths - ensure all containers fill available space */
+    .show-content {
+      width: 100%;
+    }
+
+    .episodes-panel,
+    .episodes-section,
+    .episodes-container,
+    .season-group,
+    .episodes-grid {
+      width: 100%;
+    }
+
     .episodes-grid .episode-skeleton {
       .episode-thumbnail {
         aspect-ratio: 16 / 9;
