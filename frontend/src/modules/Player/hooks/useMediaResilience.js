@@ -898,11 +898,28 @@ export function useMediaResilience({
     }
   }, [clearTimer, logResilienceEvent, resilienceActions, resilienceState.lastStallToken, statusRef]);
 
+  // Track governance state changes to provide grace period after unlock
+  const prevExternalPauseReasonRef = useRef(externalPauseReason);
+  const governanceUnlockGraceUntilRef = useRef(0);
+  const GOVERNANCE_UNLOCK_GRACE_MS = 5000; // 5 seconds after governance unlock
+
   useEffect(() => {
-    if (externalPauseReason === 'PAUSED_GOVERNANCE') {
+    const wasGovernance = prevExternalPauseReasonRef.current === 'PAUSED_GOVERNANCE';
+    const isGovernance = externalPauseReason === 'PAUSED_GOVERNANCE';
+    prevExternalPauseReasonRef.current = externalPauseReason;
+
+    if (isGovernance) {
+      // Currently governance locked - invalidate stall detection
       invalidatePendingStallDetection('governance-pause');
+    } else if (wasGovernance && !isGovernance) {
+      // Governance just unlocked - start grace period
+      governanceUnlockGraceUntilRef.current = Date.now() + GOVERNANCE_UNLOCK_GRACE_MS;
+      invalidatePendingStallDetection('governance-unlock-grace');
+      logResilienceEvent('governance-unlock-grace-started', {
+        graceMs: GOVERNANCE_UNLOCK_GRACE_MS
+      }, { level: 'info' });
     }
-  }, [externalPauseReason, invalidatePendingStallDetection]);
+  }, [externalPauseReason, invalidatePendingStallDetection, logResilienceEvent]);
 
   const resetDetectionState = useCallback(() => {
     clearTimer(stallTimerRef);
@@ -1372,12 +1389,21 @@ export function useMediaResilience({
       if (decoderNudgeStateRef.current.graceUntil && now < decoderNudgeStateRef.current.graceUntil) {
         return;
       }
+      // During governance unlock grace period, suppress stall escalation to let Shaka load
+      if (governanceUnlockGraceUntilRef.current && now < governanceUnlockGraceUntilRef.current) {
+        return;
+      }
       enterStallingState();
       scheduleHardRecovery();
       return;
     }
 
     if (status === STATUS.stalling) {
+      // During governance unlock grace period, suppress hard recovery
+      const now = Date.now();
+      if (governanceUnlockGraceUntilRef.current && now < governanceUnlockGraceUntilRef.current) {
+        return;
+      }
       scheduleHardRecovery();
       return;
     }

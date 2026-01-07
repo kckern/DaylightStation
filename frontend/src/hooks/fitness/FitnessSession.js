@@ -10,6 +10,7 @@ import { ZoneProfileStore } from './ZoneProfileStore.js';
 import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
 import { SessionEntityRegistry } from './SessionEntity.js';
+import { DeviceEventRouter } from './DeviceEventRouter.js';
 import moment from 'moment-timezone';
 import getLogger from '../../lib/logging/Logger.js';
 
@@ -333,7 +334,10 @@ export class FitnessSession {
     this._deviceOwnershipCache = null;
     this._guestCandidatesCache = null;
     this._userZoneProfilesCache = null;
-    this._equipmentIdByCadence = new Map();
+    
+    // Device Event Router - central dispatcher for device data payloads
+    this._deviceRouter = new DeviceEventRouter();
+    this._deviceRouter.setDeviceManager(this.deviceManager);
 
     // ZoneProfileStore sync scheduling (avoid blocking + queue buildup)
     this._zoneProfileSyncPending = false;
@@ -445,61 +449,36 @@ export class FitnessSession {
     return true;
   }
 
+  /**
+   * Get the device event router for external handler registration
+   * @returns {DeviceEventRouter}
+   */
+  getDeviceRouter() {
+    return this._deviceRouter;
+  }
+
+  /**
+   * Register a custom device handler
+   * @param {string} type - Payload type (e.g., 'ble_rower', 'ble_treadmill')
+   * @param {(payload: any, ctx: Object) => Object|null} handler
+   */
+  registerDeviceHandler(type, handler) {
+    this._deviceRouter.register(type, handler);
+  }
+
   ingestData(payload) {
     if (!payload) return;
 
-    // Handle ANT+ Data
-    if (payload.topic === 'fitness' && payload.type === 'ant' && payload.deviceId && payload.data) {
-      // One-time diagnostic to confirm ANT payloads are flowing into the session layer
-      if (!this._ingestDebug.firstAntSeen || (Date.now() - this._ingestDebug.lastAntLogTs) > 5000) {
-        this._ingestDebug.firstAntSeen = true;
-        this._ingestDebug.lastAntLogTs = Date.now();
-        const profile = payload.profile || payload.type || payload.data?.profile;
-        const hrSample = payload.data?.heartRate ?? payload.data?.heart_rate ?? payload.data?.ComputedHeartRate ?? payload.data?.computedHeartRate ?? null;
-        getLogger().debug('fitness.ant_data_diagnostic', {
-          deviceId: payload.deviceId,
-          profile,
-          hasHeartRate: hrSample != null,
-          heartRate: hrSample,
-          keys: Object.keys(payload?.data || {})
-        });
-      }
-      const device = this.deviceManager.updateDevice(
-        String(payload.deviceId),
-        payload.profile,
-        { ...payload.data, dongleIndex: payload.dongleIndex, timestamp: payload.timestamp }
-      );
-      if (device) {
-        // Pass raw payload for accurate HR detection in pre-session buffer
-        this.recordDeviceActivity(device, { rawPayload: payload });
-      }
-      return device;
-    }
-
-    // Handle BLE Jumprope Data
-    if (payload.topic === 'fitness' && payload.type === 'ble_jumprope' && payload.deviceId && payload.data) {
-      // Normalize jumprope data to DeviceManager format
-      const normalized = {
-        id: String(payload.deviceId),
-        name: payload.deviceName || 'Jumprope',
-        type: 'jumprope',
-        profile: 'jumprope',
-        lastSeen: Date.now(),
-        connectionState: 'connected',
-        cadence: payload.data.rpm || 0,
-        revolutionCount: payload.data.jumps || 0,
-        timestamp: payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now()
-      };
-      
-      const device = this.deviceManager.registerDevice(normalized);
-      if (device) {
-        this.recordDeviceActivity(device, { rawPayload: payload });
-      }
-      return device;
+    // Route through DeviceEventRouter for all device types
+    const result = this._deviceRouter.route(payload);
+    
+    if (result.handled && result.device) {
+      this.recordDeviceActivity(result.device, { rawPayload: payload });
+      return result.device;
     }
     
-    // For other payload types, still try to process
-    if (payload.deviceId) {
+    // For unhandled payload types with deviceId, still try to record activity
+    if (!result.handled && payload.deviceId) {
       this.recordDeviceActivity(payload, { rawPayload: payload });
     }
   }
@@ -968,16 +947,8 @@ export class FitnessSession {
   }
 
   setEquipmentCatalog(equipmentList = []) {
-    this._equipmentIdByCadence = new Map();
-    if (!Array.isArray(equipmentList)) return;
-    equipmentList.forEach((entry) => {
-      if (!entry || entry.cadence == null || !entry.id) return;
-      const key = String(entry.cadence).trim();
-      const val = String(entry.id).trim();
-      if (key && val) {
-        this._equipmentIdByCadence.set(key, val);
-      }
-    });
+    // Delegate to DeviceEventRouter for unified equipment lookups
+    this._deviceRouter.setEquipmentCatalog(equipmentList);
   }
 
   _isValidPreSessionSample(payload) {

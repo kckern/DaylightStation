@@ -301,6 +301,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   // Simplified governance: just mute during lock, unmute and play on unlock
   const wasGovernancePausedRef = useRef(false);
+  const governanceUnlockTimerRef = useRef(null);
   useEffect(() => {
     const api = playerRef?.current;
     const media = api?.getMediaElement?.();
@@ -308,26 +309,49 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (governancePaused) {
       wasGovernancePausedRef.current = true;
       if (media) media.muted = true;
+      // Clear any pending unlock timers
+      if (governanceUnlockTimerRef.current) {
+        clearTimeout(governanceUnlockTimerRef.current);
+        governanceUnlockTimerRef.current = null;
+      }
     } else if (wasGovernancePausedRef.current) {
       // Governance just unlocked - unmute and ensure playback
       wasGovernancePausedRef.current = false;
 
-      // Retry play multiple times to handle resilience system remounts
+      // Wait a moment for resilience grace period to take effect, then try to play
+      // The resilience system has a 5s grace period after governance unlock
       const tryPlay = (attempt = 0) => {
         const currentMedia = playerRef?.current?.getMediaElement?.();
-        if (currentMedia) {
-          currentMedia.muted = false;
-          if (currentMedia.paused) {
-            currentMedia.play?.().catch(() => {});
+        if (!currentMedia) {
+          // Media element not ready yet, retry later
+          if (attempt < 10) {
+            governanceUnlockTimerRef.current = setTimeout(() => tryPlay(attempt + 1), 500);
           }
+          return;
         }
-        // Retry up to 5 times over 2.5 seconds
-        if (attempt < 5) {
-          setTimeout(() => tryPlay(attempt + 1), 500);
+
+        currentMedia.muted = false;
+
+        // Only call play() if video is actually ready (readyState >= 3)
+        // This prevents AbortError from conflicting play() calls
+        if (currentMedia.readyState >= 3 && currentMedia.paused) {
+          currentMedia.play?.().catch(() => {});
+        } else if (currentMedia.readyState < 3 && attempt < 10) {
+          // Not ready yet, wait for Shaka to load
+          governanceUnlockTimerRef.current = setTimeout(() => tryPlay(attempt + 1), 500);
         }
       };
-      tryPlay();
+
+      // Start after a brief delay to let state settle
+      governanceUnlockTimerRef.current = setTimeout(() => tryPlay(0), 100);
     }
+
+    return () => {
+      if (governanceUnlockTimerRef.current) {
+        clearTimeout(governanceUnlockTimerRef.current);
+        governanceUnlockTimerRef.current = null;
+      }
+    };
   }, [governancePaused]);
 
   const TimeDisplay = useMemo(() => React.memo(({ ct, dur }) => (

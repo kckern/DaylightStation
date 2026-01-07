@@ -270,6 +270,16 @@ if __name__ == "__main__":
 
     decoder.updateSession(decoded);
     
+    // Log jumprope data (throttled)
+    const now = Date.now();
+    const lastLog = this._lastJumpLogTime || 0;
+    if (now - lastLog > 1000) {
+      this._lastJumpLogTime = now;
+      const session = decoder.getSessionData();
+      const timestamp = new Date().toISOString().split('T')[1].slice(0, -5);
+      console.log(`[${timestamp}] Jumprope: Jumps:${session.totalJumps} RPM:${decoded.rpm} Avg:${session.avgRPM}`);
+    }
+    
     // Broadcast to WebSocket
     const deviceConfig = this.devices.get(deviceAddress);
     const wsData = decoder.formatForWebSocket(deviceConfig);
