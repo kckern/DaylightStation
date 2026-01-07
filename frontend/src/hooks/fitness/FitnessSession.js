@@ -1348,6 +1348,13 @@ export class FitnessSession {
       this.treasureBox.setActivityMonitor(this.activityMonitor);
       // Configure treasure box if we have config available
       // (Usually configured via updateSnapshot or external call)
+
+      // Ensure governance callback is wired even when TreasureBox is lazily created
+      if (this.governanceEngine) {
+        this.treasureBox.setGovernanceCallback(() => {
+          this.governanceEngine._evaluateFromTreasureBox();
+        });
+      }
     }
     
     // Update ParticipantRoster with treasureBox reference after creation

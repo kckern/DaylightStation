@@ -595,6 +595,16 @@ export class GovernanceEngine {
   _getCachedState() {
     const now = Date.now();
     const cacheAge = now - this._stateCacheTs;
+    const watcherCount = Array.isArray(this._latestInputs.activeParticipants)
+      ? this._latestInputs.activeParticipants.length
+      : 0;
+    const cachedWatcherCount = Array.isArray(this._stateCache?.watchers)
+      ? this._stateCache.watchers.length
+      : 0;
+    if (watcherCount !== cachedWatcherCount) {
+      this._stateVersion += 1; // Invalidate cache when watcher count changes
+    }
+
     const cacheValid = this._stateCache
       && cacheAge < this._stateCacheThrottleMs
       && this._stateCacheVersion === this._stateVersion;
@@ -811,6 +821,15 @@ export class GovernanceEngine {
       // grace period countdown can continue when participants return with low HR.
       this._clearTimers();
       this._setPhase('pending');
+      // Capture latest inputs so UI (watchers) reflects the current empty state
+      this._latestInputs = {
+        activeParticipants: [],
+        userZoneMap: userZoneMap || {},
+        zoneRankMap: zoneRankMap || {},
+        zoneInfoMap: zoneInfoMap || {},
+        totalCount: totalCount || 0
+      };
+      this._invalidateStateCache();
       // Note: No polling needed here - governance is now reactive via TreasureBox callback.
       // When a participant starts exercising, TreasureBox notifies us immediately.
       return;

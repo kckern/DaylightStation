@@ -46,7 +46,7 @@ const buildChallengeEventPayload = (challenge, statusOverride = null) => {
 };
 
 
-export const useGovernanceOverlay = (governanceState) => useMemo(() => {
+export const useGovernanceOverlay = (governanceState, participantRoster = []) => useMemo(() => {
   if (!governanceState?.isGoverned) {
     return {
       category: null,
@@ -263,7 +263,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
   }
 
   const pendingDescriptions = [
-    watchers.length ? null : 'Waiting for heart-rate participants to connect.',
+    (watchers.length || participantRoster.length) ? null : 'Waiting for heart-rate participants to connect.',
     requirementSummaries.length ? 'Meet these conditions to unlock playback.' : 'Loading unlock rules...'
   ].filter(Boolean);
 
@@ -286,7 +286,7 @@ export const useGovernanceOverlay = (governanceState) => useMemo(() => {
     countdownTotal: null,
     allowGenericAny: false
   };
-}, [governanceState]);
+}, [governanceState, participantRoster]);
 
 const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
   const fitnessCtx = useFitnessContext();
@@ -496,6 +496,19 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     return null;
   }, [zoneMetadata.map, findZoneByLabel]);
 
+  const computeGovernanceProgress = React.useCallback((heartRate, targetThreshold, margin = COOL_ZONE_PROGRESS_MARGIN) => {
+    if (!Number.isFinite(targetThreshold) || !Number.isFinite(heartRate)) {
+      return null;
+    }
+    if (heartRate >= targetThreshold) return 1;
+    const floor = Math.max(0, targetThreshold - margin);
+    const span = targetThreshold - floor;
+    if (span <= 0) {
+      return heartRate >= targetThreshold ? 1 : 0;
+    }
+    return Math.max(0, Math.min(1, (heartRate - floor) / span));
+  }, []);
+
   const warningOffenders = useMemo(() => {
     if (!overlay || overlay.category !== 'governance-warning-progress') {
       return [];
@@ -508,6 +521,10 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     }
     const offenders = [];
     const seen = new Set();
+    const targetRequirement = Array.isArray(overlay.requirements) ? overlay.requirements.find(Boolean) : null;
+    const targetThreshold = Number.isFinite(targetRequirement?.threshold) ? targetRequirement.threshold : null;
+    const targetZoneId = targetRequirement?.zone || targetRequirement?.zoneLabel || null;
+    const targetZoneColor = targetRequirement?.zoneColor || null;
     highlightList.forEach((rawName, idx) => {
       const normalized = normalizeName(rawName || String(idx));
       if (!normalized || seen.has(normalized)) return;
@@ -527,12 +544,29 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       const heartRate = vitals?.heartRate ?? null;
       const zoneInfo = getParticipantZone(participant, vitals);
       const displayLabel = vitals?.displayLabel || participant?.displayLabel || canonicalName;
-      const progressEntry = (vitals?.name || participant?.name)
-        ? getProgressEntry(vitals?.name || participant?.name)
-        : null;
-      const progressPercent = progressEntry && progressEntry.showBar && Number.isFinite(progressEntry.progress)
-        ? clamp01(progressEntry.progress)
-        : null;
+        const progressEntry = (() => {
+          const candidateNames = [
+            vitals?.name,
+            participant?.name,
+            vitals?.canonical?.name,
+            canonicalName,
+            rawName
+          ].filter(Boolean);
+          for (const name of candidateNames) {
+            const entry = getProgressEntry(name);
+            if (entry) return entry;
+          }
+          return null;
+        })();
+        const progressPercent = (() => {
+          // Prefer governance-target progress; fall back to zone progress entry
+          const governanceProgress = computeGovernanceProgress(heartRate, targetThreshold);
+          if (governanceProgress != null) return governanceProgress;
+          if (progressEntry && Number.isFinite(progressEntry.progress)) {
+            return clamp01(progressEntry.progress);
+          }
+          return null;
+        })();
       offenders.push({
         key: normalized,
         name: canonicalName,
@@ -540,12 +574,15 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         heartRate,
         avatarSrc,
         zoneId: zoneInfo?.id || null,
-        zoneColor: zoneInfo?.color || null,
-        progressPercent
+          zoneColor: zoneInfo?.color || null,
+          progressPercent,
+          targetZoneId: targetZoneId || null,
+          targetThreshold: targetThreshold,
+          targetZoneColor: targetZoneColor || targetRequirement?.color || null
       });
     });
     return offenders;
-  }, [overlay, participantMap, resolveParticipantVitals, getParticipantZone, getProgressEntry]);
+    }, [overlay, participantMap, resolveParticipantVitals, getParticipantZone, getProgressEntry, computeGovernanceProgress]);
 
   const lockRows = useMemo(() => {
     if (!overlay || overlay.category !== 'governance' || !overlay.show) {
