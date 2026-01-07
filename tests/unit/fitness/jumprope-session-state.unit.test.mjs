@@ -63,6 +63,17 @@ describe('JumpropeSessionState', () => {
       const rpm = state.deriveRPM();
       expect(rpm).toBe(0);
     });
+
+    it('zeros RPM if no packet in last 3 seconds', () => {
+      const baseTime = Date.now();
+
+      state.ingest(0, baseTime);
+      state.ingest(30, baseTime + 1000);
+
+      jest.advanceTimersByTime(4000);
+      const rpm = state.deriveRPM();
+      expect(rpm).toBe(0);
+    });
   });
 
   describe('reset', () => {

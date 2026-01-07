@@ -939,10 +939,17 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     // This provides visual feedback while TreasureBox populates.
     if (rows.length === 0 && hasParticipantsButNoRequirements) {
       const namedParticipants = participants.filter((p) => p?.name);
-      const defaultTarget = {
+      const fallbackRequirement = overlay?.requirements?.find(Boolean)
+        || (Array.isArray(governanceState?.requirements) ? governanceState.requirements.find(Boolean) : null)
+        || governanceState?.challenge
+        || null;
+      const derivedTarget = fallbackRequirement ? buildTargetInfo(fallbackRequirement) : null;
+      const defaultTarget = derivedTarget || {
         zoneInfo: aggregateZone || zoneMetadata.map[Object.keys(zoneMetadata.map)[0]] || null,
-        label: 'Awaiting heart rate...',
-        targetBpm: null
+        label: fallbackRequirement?.zoneLabel || fallbackRequirement?.ruleLabel || 'Target zone',
+        targetBpm: Number.isFinite(fallbackRequirement?.threshold)
+          ? fallbackRequirement.threshold
+          : (Number.isFinite(aggregateZone?.min) ? aggregateZone.min : null)
       };
       namedParticipants.forEach((participant) => {
         const vitals = resolveParticipantVitals(participant.name, participant);
@@ -963,7 +970,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     }
 
     return rows;
-  }, [overlay, participants, fitnessCtx?.usersConfigRaw, zoneMetadata, userZoneProgress, participantMap, resolveParticipantVitals, fitnessCtx?.getUserZoneThreshold]);
+  }, [overlay, participants, fitnessCtx?.usersConfigRaw, zoneMetadata, userZoneProgress, participantMap, resolveParticipantVitals, fitnessCtx?.getUserZoneThreshold, governanceState]);
 
   const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceLocked
     ? <ChallengeOverlay overlay={currentChallengeOverlay} />

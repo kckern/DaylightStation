@@ -63,6 +63,8 @@ export class JumpropeSessionState {
     const oldest = windowSamples[0];
     const newest = windowSamples[windowSamples.length - 1];
 
+    if (now - newest.timestamp >= 3000) return 0;
+
     const revDelta = newest.revolutions - oldest.revolutions;
     const timeDeltaMs = newest.timestamp - oldest.timestamp;
 
