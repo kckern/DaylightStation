@@ -388,11 +388,17 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
       // The gap is purely horizontal at the dropout value
       // Any vertical jump is part of the COLORED segment (user earned coins after rejoining)
       // This correctly shows: dropout value stayed flat, then jumps to current value
+      const gapTicks = i - gapStartPoint.i;
+      const gapDurationMs = gapTicks * intervalMs;
+      // Bug 01 fix: Capture zone before gap for short gap styling
+      // Short gaps will use this color instead of grey
+      const zoneBeforeGap = lastZone || null;
       const gapSegment = {
-        zone: null,
-        color: getZoneColor(null),
+        zone: zoneBeforeGap,
+        color: getZoneColor(zoneBeforeGap),
         status: ParticipantStatus.IDLE,
         isGap: true,
+        gapDurationMs,
         points: [
           { ...gapStartPoint },           // Left: dropout point (tick N, value V)
           { i, v: gapStartPoint.v }       // Right: same Y, at rejoin tick (horizontal only)
@@ -651,12 +657,15 @@ export const createPaths = (segments = [], options = {}) => {
     // Gap segments (dropout) get reduced opacity and dashed stroke
     const segIsGap = Boolean(seg.isGap) || isDropout(seg.status);
     const defaultColor = getZoneColor(null);
+    // Bug 01 fix: Pass through gapDurationMs for threshold-based styling
+    const gapDurationMs = seg.gapDurationMs || 0;
     return {
       zone: seg.zone,
       color: seg.color,
       status: seg.status || (segIsGap ? ParticipantStatus.IDLE : ParticipantStatus.ACTIVE),
       opacity: segIsGap ? 0.5 : (seg.color === defaultColor ? 0.1 : 1),
       isGap: segIsGap,
+      gapDurationMs,
       d: path
     };
   });

@@ -396,6 +396,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       onPulse: () => forceUpdate()
     });
 
+    // Expose governance engine for testing
+    if (typeof window !== 'undefined') {
+      window.__governanceEngine = session.governanceEngine;
+    }
+
     // Configure TreasureBox (lazy init in session, but we can pre-config if needed)
     // Session handles lazy init, but we can push config now if session started.
     // Actually, session.ensureStarted() creates treasureBox.

@@ -486,6 +486,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     videoTrackId: currentMediaIdentity
   });
 
+  // Apply persisted volume when media element becomes available
+  // This fixes the race condition where useLayoutEffect runs before playerRef is set
+  useEffect(() => {
+    if (mediaElement && videoVolume?.applyToPlayer) {
+      videoVolume.applyToPlayer();
+    }
+  }, [mediaElement, videoVolume]);
+
   const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
     if (!DEBUG_FITNESS_INTERACTIONS) return;
     const { level: detailLevel, ...restDetails } = details || {};

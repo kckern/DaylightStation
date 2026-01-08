@@ -436,14 +436,13 @@ dash-video {
     }
 
     &.governance-filter-warning {
-
-        //transform: scaleY(-1);
+      // Warning state: dim video with blur to indicate impending lock
+      // TESTING: Re-adding blur to measure FPS impact
       .player,
       .video-player,
       video,
       dash-video {
-        //sepia + dim + blur
-        filter: sepia(0.65)  brightness(0.8)  contrast(1.2) blur(2px) ;
+        filter: sepia(0.65) brightness(0.8) contrast(1.2) blur(2px);
         transition: filter 0.3s ease;
       }
     }
@@ -644,10 +643,13 @@ dash-video {
 
       &__fill {
         height: 100%;
+        width: 100%;
         background: linear-gradient(90deg, rgba(249, 115, 22, 0.9), rgba(234, 179, 8, 0.9));
         border-radius: inherit;
-        transition: width 0.25s ease;
-        will-change: width;
+        transform-origin: left;
+        transform: scaleX(0);
+        transition: transform 0.25s ease;
+        will-change: transform;
         pointer-events: none;
       }
     }

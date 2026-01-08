@@ -512,9 +512,23 @@ export class GovernanceEngine {
       }
     });
 
+    // Build zoneRankMap and zoneInfoMap from session's zone config
+    const zoneRankMap = {};
+    const zoneInfoMap = {};
+    const zoneConfig = this.session?.snapshot?.zoneConfig;
+    if (Array.isArray(zoneConfig)) {
+      zoneConfig.forEach((z, idx) => {
+        const zid = String(z.id || z.name).toLowerCase();
+        zoneRankMap[zid] = idx;
+        zoneInfoMap[zid] = z;
+      });
+    }
+
     this.evaluate({
       activeParticipants,
       userZoneMap,
+      zoneRankMap,
+      zoneInfoMap,
       totalCount: activeParticipants.length
     });
   }
@@ -1159,14 +1173,15 @@ export class GovernanceEngine {
             ? now + this.challengeState.nextChallengeRemainingMs
             : null;
       const targetTs = Number.isFinite(baseTarget) ? baseTarget : null;
-      const isGreenPhase = this.phase === 'unlocked';
-      
+      // Challenges can only trigger in unlocked phase - they pause during warning
+      const canTriggerChallenge = this.phase === 'unlocked';
+
       if (!Number.isFinite(targetTs)) {
         this.challengeState.nextChallenge = null;
         return false;
       }
 
-      if (targetTs <= now && !isGreenPhase) {
+      if (targetTs <= now && !canTriggerChallenge) {
         this.challengeState.nextChallenge = null;
         return false;
       }
@@ -1218,7 +1233,7 @@ export class GovernanceEngine {
         preview = this.challengeState.nextChallenge;
       } else {
         const payload = chooseSelectionPayload();
-        preview = assignNextChallengePreview(now, payload);
+        preview = payload ? assignNextChallengePreview(now, payload) : null;
       }
 
       if (!preview) {
@@ -1461,7 +1476,10 @@ export class GovernanceEngine {
       ? { ...forceStartRequest.payload }
       : null;
 
-    if (!isGreenPhase && !shouldForceStart) {
+    // Challenges can only trigger in unlocked phase - they pause during warning
+    const canTriggerChallenge = isGreenPhase;
+
+    if (!canTriggerChallenge && !shouldForceStart) {
       if (Number.isFinite(this.challengeState.nextChallengeAt)) {
         this.challengeState.nextChallengeRemainingMs = Math.max(0, this.challengeState.nextChallengeAt - now);
         this.challengeState.nextChallengeAt = null;
@@ -1472,16 +1490,34 @@ export class GovernanceEngine {
 
     if (shouldForceStart) {
       const started = startChallenge({ previewOverride: forcePreviewPayload, forced: true });
-      if (!started && !isGreenPhase) {
+      if (!started && !canTriggerChallenge) {
         this._schedulePulse(1000);
       }
       return;
     }
     
-    // If we are here, we are in green phase and no active challenge
+    // If we are here, we can trigger challenges (unlocked phase) and no active challenge
     if (this.challengeState.nextChallengeAt == null) {
-        const delay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
-        queueNextChallenge(delay);
+        // Check if we have a paused countdown to resume or trigger
+        if (Number.isFinite(this.challengeState.nextChallengeRemainingMs)) {
+            if (this.challengeState.nextChallengeRemainingMs > 0) {
+                // Resume paused countdown
+                this.challengeState.nextChallengeAt = now + this.challengeState.nextChallengeRemainingMs;
+                this.challengeState.nextChallengeRemainingMs = null;
+                this._schedulePulse(Math.max(50, this.challengeState.nextChallengeAt - now));
+            } else {
+                // Countdown expired during warning phase - trigger now
+                this.challengeState.nextChallengeRemainingMs = null;
+                if (!startChallenge()) {
+                    const delay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
+                    queueNextChallenge(delay);
+                }
+            }
+        } else {
+            // Schedule a new challenge
+            const delay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
+            queueNextChallenge(delay);
+        }
     } else {
         ensureNextChallengePreview({});
         if (now >= this.challengeState.nextChallengeAt) {

@@ -4,7 +4,7 @@ import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { StripedProgressBar } from '../shared';
 import './FitnessGovernance.scss';
 
-const STATUS_PRIORITY = ['red', 'yellow', 'green', 'init', 'idle', 'off'];
+const STATUS_PRIORITY = ['locked', 'red', 'warning', 'yellow', 'unlocked', 'green', 'init', 'idle', 'off', 'pending'];
 
 // Map status to stripe animation speeds
 const STRIPE_SPEEDS = {
@@ -48,10 +48,16 @@ const FitnessGovernance = () => {
   const statusClass = `fg-status-${summary.status}`;
 
   // Map status to display color for shared primitives
+  // Phase names: unlocked (green), warning (yellow), locked (red)
   const statusColors = {
     idle: 'gray',
     off: 'gray',
     init: 'gray',
+    pending: 'gray',
+    unlocked: 'green',
+    warning: 'yellow',
+    locked: 'red',
+    // Legacy names for backwards compatibility
     green: 'green',
     yellow: 'yellow',
     red: 'red'
@@ -85,9 +91,10 @@ const FitnessGovernance = () => {
         </div>
         
         <div className={`fg-status-pill fg-${statusColor}`}>
-          {(summary.status === 'green' || summary.status === 'yellow' || summary.status === 'red' || summary.status === 'init') && (
+          {(summary.status === 'unlocked' || summary.status === 'warning' || summary.status === 'locked' ||
+            summary.status === 'green' || summary.status === 'yellow' || summary.status === 'red' || summary.status === 'init') && (
             <StripedProgressBar
-              value={summary.status === 'yellow' ? summary.graceProgress : 100}
+              value={(summary.status === 'warning' || summary.status === 'yellow') ? summary.graceProgress : 100}
               max={100}
               color={statusColor}
               speed={stripeSpeed}

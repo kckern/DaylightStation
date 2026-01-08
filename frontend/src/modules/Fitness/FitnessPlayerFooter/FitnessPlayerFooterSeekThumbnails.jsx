@@ -403,6 +403,10 @@ const FitnessPlayerFooterSeekThumbnails = ({
   const commit = useCallback((t) => {
     if (disabled) return;
     const normalizedTarget = Number.isFinite(t) ? Math.max(0, t) : 0;
+    // Telemetry for testing - logs seek target for verification
+    if (typeof window !== 'undefined') {
+      console.log('[FitnessPlayerFooterSeekThumbnails] commit called', { t: normalizedTarget });
+    }
     const seekDirection = resolveSeekDirection(normalizedTarget, currentTime);
     const intentMeta = recordSeekIntent(normalizedTarget);
     setPendingTime(normalizedTarget);

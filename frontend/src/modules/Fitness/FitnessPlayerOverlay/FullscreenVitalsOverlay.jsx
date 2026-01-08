@@ -3,8 +3,7 @@ import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import CircularUserAvatar from '../components/CircularUserAvatar.jsx';
-import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
-import JumpropeAvatar from '../FitnessSidebar/RealtimeCards/JumpropeAvatar.jsx';
+import RpmDeviceAvatar, { calculateRpmProgress, getRpmZoneColor } from '../FitnessSidebar/RealtimeCards/RpmDeviceAvatar.jsx';
 import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {
@@ -13,26 +12,6 @@ const RPM_COLOR_MAP = {
   yellow: '#f0c836',
   green: '#51cf66',
   blue: '#6ab8ff'
-};
-
-const withAlpha = (hexColor, alpha = 0.9) => {
-  if (!hexColor || typeof hexColor !== 'string') {
-    return `rgba(0, 0, 0, ${alpha})`;
-  }
-  const normalized = hexColor.trim();
-  if (!normalized.startsWith('#') || (normalized.length !== 7 && normalized.length !== 4)) {
-    return `rgba(0, 0, 0, ${alpha})`;
-  }
-  const expand = normalized.length === 4
-    ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
-    : normalized;
-  const r = parseInt(expand.slice(1, 3), 16);
-  const g = parseInt(expand.slice(3, 5), 16);
-  const b = parseInt(expand.slice(5, 7), 16);
-  if ([r, g, b].some(Number.isNaN)) {
-    return `rgba(0, 0, 0, ${alpha})`;
-  }
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
 const canonicalZones = ['cool', 'active', 'warm', 'hot', 'fire'];
@@ -106,9 +85,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     usersConfigRaw = {},
     equipment = [],
     deviceConfiguration,
-    userZoneProgress,
-    getDeviceAssignment,
-    deviceAssignments = []
+    userZoneProgress
   } = fitnessCtx || {};
 
   const equipmentMap = useMemo(() => {
@@ -117,18 +94,21 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
       equipment.forEach((item) => {
         if (!item) return;
         // Use explicit ID from equipment config
-        const equipmentId = item.id || String(item.cadence || item.speed || '');
+        const equipmentId = item.id || String(item.cadence || item.speed || item.ble || '');
+        const entry = {
+          name: item.name || String(item.cadence || item.speed || item.ble),
+          id: equipmentId,
+          rpm: item.rpm,
+          showRevolutions: item.showRevolutions ?? (item.type === 'jumprope')
+        };
         if (item.cadence != null) {
-          map[String(item.cadence)] = {
-            name: item.name || String(item.cadence),
-            id: equipmentId
-          };
+          map[String(item.cadence)] = entry;
         }
         if (item.speed != null) {
-          map[String(item.speed)] = {
-            name: item.name || String(item.speed),
-            id: equipmentId
-          };
+          map[String(item.speed)] = entry;
+        }
+        if (item.ble != null) {
+          map[String(item.ble)] = entry;
         }
       });
     }
@@ -171,65 +151,41 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
   }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones]);
 
   const rpmItems = useMemo(() => {
-    if (!Array.isArray(cadenceDevices)) return [];
     const cadenceConfig = deviceConfiguration?.cadence || {};
-    return cadenceDevices
-      .filter((device) => device && device.deviceId != null)
-      .map((device) => {
-        const assignment = typeof getDeviceAssignment === 'function'
-          ? getDeviceAssignment(device.deviceId)
-          : deviceAssignments.find((entry) => String(entry.deviceId) === String(device.deviceId));
-        const baseUser = typeof getUserByDevice === 'function'
-          ? getUserByDevice(device.deviceId)
-          : allUsers.find((u) => String(u.cadenceDeviceId) === String(device.deviceId));
-        const equipmentInfo = equipmentMap[String(device.deviceId)] || {};
-        // Use explicit equipment ID
-        const equipmentId = equipmentInfo.id
-          || assignment?.metadata?.equipmentId
-          || assignment?.occupantId
-          || baseUser?.id
-          || String(device.deviceId);
-        const avatarSrc = DaylightMediaPath(`/media/img/equipment/${equipmentId}`);
-        const rpm = Math.max(0, Math.round(device.cadence || 0));
-        const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
-        const colorKey = cadenceConfig[String(device.deviceId)];
-        const resolvedRingColor = colorKey
-          ? (RPM_COLOR_MAP[colorKey] || colorKey)
-          : RPM_COLOR_MAP.orange;
-        const overlayBg = withAlpha(resolvedRingColor, 0.9);
-        return {
-          deviceId: device.deviceId,
-          rpm,
-          avatarSrc,
-          animationDuration,
-          ringColor: resolvedRingColor,
-          overlayBg
-        };
-      });
-  }, [cadenceDevices, equipmentMap, deviceConfiguration?.cadence, getUserByDevice, allUsers]);
+    const allRpmDevices = [
+      ...(Array.isArray(cadenceDevices) ? cadenceDevices : []),
+      ...(Array.isArray(jumpropeDevices) ? jumpropeDevices : [])
+    ].filter((device) => device && device.deviceId != null);
 
-  // Build jumprope items with equipment mapping
-  const jumpropeItems = useMemo(() => {
-    if (!Array.isArray(jumpropeDevices)) return [];
-    return jumpropeDevices
-      .filter((device) => device && device.deviceId != null)
-      .map((device) => {
-        // Find equipment config by BLE address
-        const equipmentConfig = equipment.find(e => e.ble === device.deviceId);
-        const equipmentId = equipmentConfig?.id || String(device.deviceId);
-        const equipmentName = equipmentConfig?.name || 'Jump Rope';
-        const rpmThresholds = equipmentConfig?.rpm || { min: 10, med: 50, high: 80, max: 120 };
-        
-        return {
-          deviceId: device.deviceId,
-          equipmentId,
-          equipmentName,
-          rpm: device.cadence ?? 0,
-          jumps: device.revolutionCount ?? 0,
-          rpmThresholds
-        };
-      });
-  }, [jumpropeDevices, equipment]);
+    return allRpmDevices.map((device) => {
+      const isJumprope = Array.isArray(jumpropeDevices)
+        ? jumpropeDevices.some((j) => j.deviceId === device.deviceId)
+        : false;
+      const equipmentConfig = isJumprope
+        ? (equipment.find((e) => e.ble === device.deviceId) || equipmentMap[String(device.deviceId)])
+        : equipmentMap[String(device.deviceId)];
+      const equipmentId = equipmentConfig?.id || String(device.deviceId);
+      const rpmThresholds = equipmentConfig?.rpm || { min: 30, med: 60, high: 80, max: 100 };
+      const rpm = Math.max(0, Math.round(device.cadence || 0));
+      const zoneColor = getRpmZoneColor(rpm, rpmThresholds);
+      const colorKey = cadenceConfig[String(device.deviceId)];
+      const resolvedRingColor = colorKey ? (RPM_COLOR_MAP[colorKey] || colorKey) : zoneColor;
+
+      return {
+        deviceId: device.deviceId,
+        rpm,
+        equipmentId,
+        rpmThresholds,
+        deviceSubtype: isJumprope ? 'jumprope' : 'cycle',
+        revolutionCount: device.revolutionCount ?? 0,
+        zoneColor: resolvedRingColor
+      };
+    }).sort((a, b) => {
+      const aProgress = calculateRpmProgress(a.rpm, a.rpmThresholds);
+      const bProgress = calculateRpmProgress(b.rpm, b.rpmThresholds);
+      return bProgress - aProgress;
+    });
+  }, [cadenceDevices, jumpropeDevices, equipmentMap, equipment, deviceConfiguration?.cadence]);
 
   const handleToggleAnchor = useCallback((event) => {
     if (event) {
@@ -239,7 +195,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     setAnchor((prev) => (prev === 'right' ? 'left' : 'right'));
   }, []);
 
-  if (!visible || (!hrItems.length && !rpmItems.length && !jumpropeItems.length)) {
+  if (!visible || (!hrItems.length && !rpmItems.length)) {
     return null;
   }
 
@@ -279,38 +235,18 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
       {rpmItems.length > 0 && (
         <div className={`fullscreen-vitals-group rpm-group count-${rpmItems.length}`}>
           {rpmItems.map((item) => (
-            <RpmDeviceAvatar
-              key={`rpm-${item.deviceId}`}
-              baseClassName={null}
-              className="vital-rpm"
-              rpm={item.rpm}
-              animationDuration={item.animationDuration}
-              avatarSrc={item.avatarSrc}
-              avatarAlt=""
-              style={{
-                '--rpm-ring-color': item.ringColor,
-                '--rpm-overlay-bg': item.overlayBg
-              }}
-              fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
-              renderValue={(value) => (Number.isFinite(value) ? value : 0)}
-            />
-          ))}
-        </div>
-      )}
-      {jumpropeItems.length > 0 && (
-        <div className={`fullscreen-vitals-group jumprope-group count-${jumpropeItems.length}`}>
-          {jumpropeItems.map((item) => (
-            <div key={`jumprope-${item.deviceId}`} className="fullscreen-jumprope-item">
-              <JumpropeAvatar
+            <div key={`rpm-${item.deviceId}`} className="fullscreen-rpm-item">
+              <RpmDeviceAvatar
                 equipmentId={item.equipmentId}
-                equipmentName={item.equipmentName}
+                equipmentName=""
                 rpm={item.rpm}
-                jumps={item.jumps}
+                revolutionCount={item.revolutionCount}
                 rpmThresholds={item.rpmThresholds}
+                deviceSubtype={item.deviceSubtype}
                 size={68}
               />
-              <div className="jumprope-value-overlay">
-                <span className="jumprope-value">{item.jumps}</span>
+              <div className="rpm-value-overlay" style={{ color: item.zoneColor }}>
+                <span className="rpm-value">{item.rpm}</span>
               </div>
             </div>
           ))}

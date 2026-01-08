@@ -1,16 +1,16 @@
 /**
  * RealtimeCards Registry
- * 
+ *
  * Maps device types to their corresponding card components.
  * Use getCardComponent(device.type) to get the right renderer.
  */
 
 import { PersonCard } from './PersonCard.jsx';
-import { CadenceCard } from './CadenceCard.jsx';
-import { JumpropeCard } from './JumpropeCard.jsx';
+import { RpmDeviceCard } from './RpmDeviceCard.jsx';
 import { VibrationCard } from './VibrationCard.jsx';
 import { BaseRealtimeCard, StatsRow } from './BaseRealtimeCard.jsx';
-import JumpropeAvatar from './JumpropeAvatar.jsx';
+import RpmDeviceAvatar from './RpmDeviceAvatar.jsx';
+import { calculateRpmProgress, getRpmZoneColor } from './rpmUtils.mjs';
 
 /**
  * Registry mapping device type to card component
@@ -18,15 +18,13 @@ import JumpropeAvatar from './JumpropeAvatar.jsx';
 const CARD_REGISTRY = {
   // People (heart rate monitors)
   heart_rate: PersonCard,
-  
-  // Equipment - Cadence-based
-  cadence: CadenceCard,
-  stationary_bike: CadenceCard,
-  ab_roller: CadenceCard,
-  
-  // Equipment - BLE
-  jumprope: JumpropeCard,
-  
+
+  // Equipment - RPM-based (unified)
+  cadence: RpmDeviceCard,
+  stationary_bike: RpmDeviceCard,
+  ab_roller: RpmDeviceCard,
+  jumprope: RpmDeviceCard,
+
   // Equipment - Vibration-based
   vibration: VibrationCard,
   punching_bag: VibrationCard,
@@ -72,9 +70,10 @@ export function registerCard(deviceType, component) {
 // Named exports for direct imports
 export {
   PersonCard,
-  CadenceCard,
-  JumpropeCard,
-  JumpropeAvatar,
+  RpmDeviceCard,
+  RpmDeviceAvatar,
+  calculateRpmProgress,
+  getRpmZoneColor,
   VibrationCard,
   BaseRealtimeCard,
   StatsRow
@@ -86,9 +85,8 @@ export default {
   getRegisteredTypes,
   registerCard,
   PersonCard,
-  CadenceCard,
-  JumpropeCard,
-  JumpropeAvatar,
+  RpmDeviceCard,
+  RpmDeviceAvatar,
   VibrationCard,
   BaseRealtimeCard,
   StatsRow
