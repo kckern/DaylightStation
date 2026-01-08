@@ -724,7 +724,8 @@ const FitnessPlayerFooterSeekThumbnails = ({
         displayTimeSnapshot: displayTime
       };
       const progressRatio = clamp01(thumbnailProgress);
-      const showSpark = progressRatio > 0 && progressRatio < 1;
+      // Show spark whenever thumbnail is active (even at 0% progress)
+      const showSpark = isActive && progressRatio < 1;
 
       return (
         <FitnessPlayerFooterSeekThumbnail
