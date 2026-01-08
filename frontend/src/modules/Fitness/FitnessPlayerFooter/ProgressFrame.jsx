@@ -1,102 +1,124 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { getDaylightLogger } from '../../../lib/logging/singleton.js';
 import './ProgressFrame.scss';
 
-const BORDER_VIEWBOX = 100;
-const BORDER_STROKE = 3;
-const BORDER_CORNER_RADIUS = 4;
-const BORDER_MARGIN = BORDER_STROKE / 2;
-const BORDER_RECT_SIZE = BORDER_VIEWBOX - BORDER_STROKE;
-const clamp01 = (value) => (value < 0 ? 0 : value > 1 ? 1 : value);
-const LOG_INTERVAL_MS = 3000;
+const logger = getDaylightLogger({ context: { component: 'ProgressFrame' } });
 
-const rectToObject = (rect) => (
-  rect
-    ? {
-        x: rect.x,
-        y: rect.y,
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height
-      }
-    : null
-);
+// Constants
+const VIEWBOX = 100;
+const STROKE = 3;
+const RADIUS = 4;
+const INSET = STROKE / 2;
+const SIZE = VIEWBOX - STROKE;
+const RIGHT = INSET + SIZE;
+const BOTTOM = INSET + SIZE;
 
-const buildPathDefinition = () => {
-  const inset = BORDER_MARGIN;
-  const width = BORDER_RECT_SIZE;
-  const height = BORDER_RECT_SIZE;
-  const r = BORDER_CORNER_RADIUS;
-  const right = inset + width;
-  const bottom = inset + height;
-  return [
-    `M ${inset} ${inset}`,
-    `L ${right - r} ${inset}`,
-    `A ${r} ${r} 0 0 1 ${right} ${inset + r}`,
-    `L ${right} ${bottom - r}`,
-    `A ${r} ${r} 0 0 1 ${right - r} ${bottom}`,
-    `L ${inset + r} ${bottom}`,
-    `A ${r} ${r} 0 0 1 ${inset} ${bottom - r}`,
-    `L ${inset} ${inset}`
-  ].join(' ');
-};
+const DEBUG_SPARK = false;
+const LOG_INTERVAL_MS = 500;
 
-const BORDER_PATH_D = buildPathDefinition();
+// Segment definitions (clockwise from top-left)
+const SEGMENTS = [
+  { type: 'line', from: [INSET, INSET], to: [RIGHT - RADIUS, INSET], length: SIZE - RADIUS },
+  { type: 'arc', center: [RIGHT - RADIUS, INSET + RADIUS], startAngle: -Math.PI / 2, endAngle: 0, length: (Math.PI / 2) * RADIUS },
+  { type: 'line', from: [RIGHT, INSET + RADIUS], to: [RIGHT, BOTTOM - RADIUS], length: SIZE - 2 * RADIUS },
+  { type: 'arc', center: [RIGHT - RADIUS, BOTTOM - RADIUS], startAngle: 0, endAngle: Math.PI / 2, length: (Math.PI / 2) * RADIUS },
+  { type: 'line', from: [RIGHT - RADIUS, BOTTOM], to: [INSET + RADIUS, BOTTOM], length: SIZE - 2 * RADIUS },
+  { type: 'arc', center: [INSET + RADIUS, BOTTOM - RADIUS], startAngle: Math.PI / 2, endAngle: Math.PI, length: (Math.PI / 2) * RADIUS },
+  { type: 'line', from: [INSET, BOTTOM - RADIUS], to: [INSET, INSET + RADIUS], length: SIZE - 2 * RADIUS },
+  { type: 'arc', center: [INSET + RADIUS, INSET + RADIUS], startAngle: Math.PI, endAngle: 3 * Math.PI / 2, length: (Math.PI / 2) * RADIUS }
+];
 
-const SEGMENTS = (() => {
-  const inset = BORDER_MARGIN;
-  const width = BORDER_RECT_SIZE;
-  const height = BORDER_RECT_SIZE;
-  const r = BORDER_CORNER_RADIUS;
-  const right = inset + width;
-  const bottom = inset + height;
-  const topLine = width - r;
-  const rightSideLine = height - (2 * r);
-  const bottomLine = width - (2 * r);
-  const leftSideLine = height - r;
-  const arcLength = (Math.PI / 2) * r;
+const PERIMETER = SEGMENTS.reduce((sum, s) => sum + s.length, 0);
 
-  const list = [];
-  list.push({ type: 'line', length: topLine, from: { x: inset, y: inset }, to: { x: right - r, y: inset } });
-  list.push({ type: 'arc', length: arcLength, center: { x: right - r, y: inset + r }, radius: r, startAngle: -Math.PI / 2, endAngle: 0 });
-  list.push({ type: 'line', length: rightSideLine, from: { x: right, y: inset + r }, to: { x: right, y: bottom - r } });
-  list.push({ type: 'arc', length: arcLength, center: { x: right - r, y: bottom - r }, radius: r, startAngle: 0, endAngle: Math.PI / 2 });
-  list.push({ type: 'line', length: bottomLine, from: { x: right - r, y: bottom }, to: { x: inset + r, y: bottom } });
-  list.push({ type: 'arc', length: arcLength, center: { x: inset + r, y: bottom - r }, radius: r, startAngle: Math.PI / 2, endAngle: Math.PI });
-  list.push({ type: 'line', length: leftSideLine, from: { x: inset, y: bottom - r }, to: { x: inset, y: inset } });
-  return list;
+// Build the full track path (for the background)
+const TRACK_PATH = (() => {
+  const parts = [`M ${INSET} ${INSET}`];
+  for (const seg of SEGMENTS) {
+    if (seg.type === 'line') {
+      parts.push(`L ${seg.to[0]} ${seg.to[1]}`);
+    } else {
+      const endX = seg.center[0] + RADIUS * Math.cos(seg.endAngle);
+      const endY = seg.center[1] + RADIUS * Math.sin(seg.endAngle);
+      parts.push(`A ${RADIUS} ${RADIUS} 0 0 1 ${endX} ${endY}`);
+    }
+  }
+  return parts.join(' ');
 })();
 
-const PATH_PERIMETER = SEGMENTS.reduce((sum, seg) => sum + seg.length, 0);
-const TOP_EDGE_RATIO = SEGMENTS.length ? SEGMENTS[0].length / PATH_PERIMETER : 0;
-const SPARK_ANCHOR_RATIO = Math.min(0.01, TOP_EDGE_RATIO * 0.25);
-const ORIGIN_POINT = {
-  x: (BORDER_MARGIN / BORDER_VIEWBOX) * 100,
-  y: (BORDER_MARGIN / BORDER_VIEWBOX) * 100
-};
-const getPointAt = (ratioInput) => {
-  const target = clamp01(ratioInput);
-  const distance = target * PATH_PERIMETER;
-  let traversed = 0;
+// Build a progress path that draws ONLY the visible portion (no dasharray needed)
+const buildProgressPath = (progress) => {
+  if (progress <= 0) return '';
+
+  const targetLength = Math.min(progress, 1) * PERIMETER;
+  let remaining = targetLength;
+  const parts = [`M ${SEGMENTS[0].from[0]} ${SEGMENTS[0].from[1]}`];
+
   for (const seg of SEGMENTS) {
-    if (traversed + seg.length >= distance) {
-      const segProgress = (distance - traversed) / seg.length;
-      if (seg.type === 'line') {
-        const x = seg.from.x + (seg.to.x - seg.from.x) * segProgress;
-        const y = seg.from.y + (seg.to.y - seg.from.y) * segProgress;
-        return { x: (x / BORDER_VIEWBOX) * 100, y: (y / BORDER_VIEWBOX) * 100 };
+    if (remaining <= 0) break;
+
+    if (seg.type === 'line') {
+      if (remaining >= seg.length) {
+        parts.push(`L ${seg.to[0]} ${seg.to[1]}`);
+        remaining -= seg.length;
+      } else {
+        const ratio = remaining / seg.length;
+        const endX = seg.from[0] + (seg.to[0] - seg.from[0]) * ratio;
+        const endY = seg.from[1] + (seg.to[1] - seg.from[1]) * ratio;
+        parts.push(`L ${endX} ${endY}`);
+        remaining = 0;
       }
-      const angle = seg.startAngle + (seg.endAngle - seg.startAngle) * segProgress;
-      const px = seg.center.x + seg.radius * Math.cos(angle);
-      const py = seg.center.y + seg.radius * Math.sin(angle);
-      return { x: (px / BORDER_VIEWBOX) * 100, y: (py / BORDER_VIEWBOX) * 100 };
+    } else {
+      if (remaining >= seg.length) {
+        const endX = seg.center[0] + RADIUS * Math.cos(seg.endAngle);
+        const endY = seg.center[1] + RADIUS * Math.sin(seg.endAngle);
+        parts.push(`A ${RADIUS} ${RADIUS} 0 0 1 ${endX} ${endY}`);
+        remaining -= seg.length;
+      } else {
+        const ratio = remaining / seg.length;
+        const endAngle = seg.startAngle + (seg.endAngle - seg.startAngle) * ratio;
+        const endX = seg.center[0] + RADIUS * Math.cos(endAngle);
+        const endY = seg.center[1] + RADIUS * Math.sin(endAngle);
+        parts.push(`A ${RADIUS} ${RADIUS} 0 0 1 ${endX} ${endY}`);
+        remaining = 0;
+      }
     }
-    traversed += seg.length;
   }
-  const fallback = SEGMENTS[0].from;
-  return { x: (fallback.x / BORDER_VIEWBOX) * 100, y: (fallback.y / BORDER_VIEWBOX) * 100 };
+
+  return parts.join(' ');
 };
+
+// Get the endpoint coordinates for the spark
+const getEndpoint = (progress) => {
+  if (progress <= 0) return { x: INSET, y: INSET };
+
+  const targetLength = Math.min(progress, 1) * PERIMETER;
+  let remaining = targetLength;
+
+  for (const seg of SEGMENTS) {
+    if (remaining <= seg.length) {
+      const ratio = remaining / seg.length;
+      if (seg.type === 'line') {
+        return {
+          x: seg.from[0] + (seg.to[0] - seg.from[0]) * ratio,
+          y: seg.from[1] + (seg.to[1] - seg.from[1]) * ratio
+        };
+      } else {
+        const angle = seg.startAngle + (seg.endAngle - seg.startAngle) * ratio;
+        return {
+          x: seg.center[0] + RADIUS * Math.cos(angle),
+          y: seg.center[1] + RADIUS * Math.sin(angle)
+        };
+      }
+    }
+    remaining -= seg.length;
+  }
+
+  // Full loop - return start point
+  return { x: INSET, y: INSET };
+};
+
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 const ProgressFrame = ({
   leftPct,
@@ -108,42 +130,47 @@ const ProgressFrame = ({
 }) => {
   const overlayRef = useRef(null);
   const sparkRef = useRef(null);
-  const trackPathRef = useRef(null);
-  const fillPathRef = useRef(null);
+
   const hasThumbnailOverlay = typeof perc === 'number' && !Number.isNaN(perc);
   const safePerc = clamp01(hasThumbnailOverlay ? perc : 0);
-  const safeVisibleRatio = clamp01(visibleRatio);
-  const cappedPerc = hasThumbnailOverlay ? Math.min(safePerc, safeVisibleRatio || 0) : 0;
+  const cappedPerc = hasThumbnailOverlay ? Math.min(safePerc, clamp01(visibleRatio) || 0) : 0;
   const hasProgress = cappedPerc > 0;
-  const sparkRatio = showSpark ? Math.min(cappedPerc, 0.999) : null;
-  const sparkPoint = showSpark && sparkRatio != null
-    ? (sparkRatio <= SPARK_ANCHOR_RATIO ? ORIGIN_POINT : getPointAt(sparkRatio))
-    : null;
+  // Always show spark at origin when active, even at 0% progress
+  const showSparkAtOrigin = showSpark && hasThumbnailOverlay;
 
+  // Build paths
+  const progressPath = useMemo(() => buildProgressPath(cappedPerc), [cappedPerc]);
+  const endpoint = useMemo(() => getEndpoint(cappedPerc), [cappedPerc]);
+
+  // Convert endpoint to CSS percentages
+  const sparkX = (endpoint.x / VIEWBOX) * 100;
+  const sparkY = (endpoint.y / VIEWBOX) * 100;
+
+  // Debug logging
   useEffect(() => {
-    if (!hasThumbnailOverlay || typeof window === 'undefined') {
+    if (!DEBUG_SPARK || !hasThumbnailOverlay || typeof window === 'undefined') {
       return undefined;
     }
 
     const logMetrics = () => {
       const overlayEl = overlayRef.current;
-      if (!overlayEl) {
-        return;
-      }
+      if (!overlayEl) return;
 
+      const rect = overlayEl.getBoundingClientRect();
+      logger.info('spark-position', {
+        progress: `${(cappedPerc * 100).toFixed(1)}%`,
+        container: { w: rect.width.toFixed(0), h: rect.height.toFixed(0) },
+        endpoint: { x: endpoint.x.toFixed(2), y: endpoint.y.toFixed(2) },
+        sparkPct: { x: sparkX.toFixed(2), y: sparkY.toFixed(2) }
+      });
     };
 
     logMetrics();
-    const intervalId = window.setInterval(logMetrics, LOG_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
-  }, [hasThumbnailOverlay, perc, safePerc, safeVisibleRatio, cappedPerc, showSpark, sparkPoint]);
+    const intervalId = setInterval(logMetrics, LOG_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, [hasThumbnailOverlay, cappedPerc, endpoint, sparkX, sparkY]);
 
   if (hasThumbnailOverlay) {
-    const dashLength = cappedPerc * PATH_PERIMETER;
-    const dashArray = cappedPerc >= 1
-      ? `${PATH_PERIMETER} ${PATH_PERIMETER}`
-      : `${dashLength} ${PATH_PERIMETER}`;
-
     return (
       <div
         ref={overlayRef}
@@ -151,40 +178,36 @@ const ProgressFrame = ({
       >
         <svg
           className="progress-frame-overlay__svg"
-          viewBox={`0 0 ${BORDER_VIEWBOX} ${BORDER_VIEWBOX}`}
+          viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
           preserveAspectRatio="none"
           aria-hidden="true"
         >
+          {/* Track (full border, dimmed) */}
           <path
-            ref={trackPathRef}
             className="progress-frame-overlay__track"
-            d={BORDER_PATH_D}
-            strokeWidth={BORDER_STROKE}
+            d={TRACK_PATH}
+            strokeWidth={STROKE}
             fill="none"
             vectorEffect="non-scaling-stroke"
           />
+          {/* Progress (only the visible portion) */}
           {hasProgress && (
             <path
-              ref={fillPathRef}
               className="progress-frame-overlay__fill"
-              d={BORDER_PATH_D}
-              strokeWidth={BORDER_STROKE}
-              strokeDasharray={dashArray}
-              strokeDashoffset={0}
+              d={progressPath}
+              strokeWidth={STROKE}
               fill="none"
               vectorEffect="non-scaling-stroke"
-              strokeLinecap="round"
             />
           )}
         </svg>
-        {showSpark && sparkPoint && (
+        {/* Spark dot - show at origin even at 0% progress */}
+        {showSparkAtOrigin && (
           <div
-            className="progress-frame-overlay__spark"
             ref={sparkRef}
-            style={{ left: `${sparkPoint.x}%`, top: `${sparkPoint.y}%` }}
-          >
-            <div className="spark-core" />
-          </div>
+            className="progress-frame-overlay__spark"
+            style={{ left: `${sparkX}%`, top: `${sparkY}%` }}
+          />
         )}
       </div>
     );
