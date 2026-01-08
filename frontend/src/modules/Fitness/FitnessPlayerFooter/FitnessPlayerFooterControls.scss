@@ -4,6 +4,13 @@
   align-items: center;
 }
 
+.footer-controls-left .control-buttons-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
 .footer-controls-left[data-stalled='1'] .play-pause-button.stalled {
   color: #FFD400;
 }
