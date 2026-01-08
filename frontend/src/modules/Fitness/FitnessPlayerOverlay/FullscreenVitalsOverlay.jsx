@@ -3,7 +3,8 @@ import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import CircularUserAvatar from '../components/CircularUserAvatar.jsx';
-import RpmDeviceAvatar, { calculateRpmProgress, getRpmZoneColor } from '../FitnessSidebar/RealtimeCards/RpmDeviceAvatar.jsx';
+import RpmDeviceAvatar from '../FitnessSidebar/RealtimeCards/RpmDeviceAvatar.jsx';
+import { calculateRpmProgress, getRpmZoneColor } from '../FitnessSidebar/RealtimeCards/rpmUtils.mjs';
 import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {

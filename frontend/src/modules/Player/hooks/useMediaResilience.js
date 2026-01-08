@@ -49,6 +49,8 @@ const DECODER_NUDGE_MIN_BUFFER_MS = 8000;
 const DECODER_NUDGE_COOLDOWN_MS = 3000;
 // Default: allow Shaka a longer startup window before we consider nudging the decoder
 const DECODER_NUDGE_GRACE_MS = 8000;
+// Grace period after user seek to prevent nudge from jumping back to old buffer
+const SEEK_INTENT_NUDGE_GRACE_MS = 15000;
 const RECOVERY_WATCHDOG_FACTOR = 1.5;
 const RECOVERY_WATCHDOG_BASE_MS = 4000;
 const RECOVERY_WATCHDOG_MAX_MS = 60000;
@@ -423,6 +425,15 @@ export function useMediaResilience({
       return false;
     }
     if (state.lastRequestedAt && (now - state.lastRequestedAt) < DECODER_NUDGE_COOLDOWN_MS) {
+      return false;
+    }
+    // Skip nudge during seek intent grace period to avoid jumping back to old buffer
+    if (state.graceUntil && now < state.graceUntil) {
+      logResilienceEvent('decoder-nudge-suppressed', {
+        reason,
+        graceRemainingMs: state.graceUntil - now,
+        ...extraDetails
+      }, { level: 'debug' });
       return false;
     }
     state.inflight = true;
@@ -964,6 +975,8 @@ export function useMediaResilience({
     persistSeekIntentMs(valueMs);
     markLoadingIntentActive();
     invalidatePendingStallDetection(reason);
+    // Set grace period to prevent decoder nudge from jumping back to old buffer position
+    decoderNudgeStateRef.current.graceUntil = Date.now() + SEEK_INTENT_NUDGE_GRACE_MS;
   }, [persistSeekIntentMs, invalidatePendingStallDetection, markLoadingIntentActive]);
 
   const recordSeekIntentSeconds = useCallback((valueSeconds, reason = 'seek-intent') => {
