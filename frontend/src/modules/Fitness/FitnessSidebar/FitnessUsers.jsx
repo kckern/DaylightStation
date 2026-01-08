@@ -5,8 +5,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import FlipMove from 'react-flip-move';
 import '../FitnessSidebar.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
-import { JumpropeCard } from './RealtimeCards';
+import { RpmDeviceCard, calculateRpmProgress } from './RealtimeCards';
 import { useZoneProfiles } from '../../../hooks/useZoneProfiles.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
@@ -382,14 +381,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return rebuilt;
   }, [contextHrColorMap, deviceConfiguration]);
 
-  // Build cadence color map from device configuration
-  const cadenceColorMap = React.useMemo(() => {
-    const map = {};
-    const cadenceSrc = deviceConfiguration?.cadence || {};
-    Object.keys(cadenceSrc).forEach(k => { map[String(k)] = cadenceSrc[k]; });
-    return map;
-  }, [deviceConfiguration]);
-
   // Map of deviceId -> user name (config + roster fallbacks)
   const hrOwnerBaseMap = React.useMemo(() => {
     const map = {};
@@ -481,8 +472,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const map = {};
     if (Array.isArray(equipment)) {
       equipment.forEach(e => {
-        const entry = { name: e.name, id: e.id || e.name.toLowerCase(), type: e.type };
-        // Include rpm thresholds if present
+        const entry = {
+          name: e.name,
+          id: e.id || e.name.toLowerCase(),
+          type: e.type,
+          showRevolutions: e.showRevolutions ?? (e.type === 'jumprope')
+        };
         if (e?.rpm) {
           entry.rpm = e.rpm;
         }
@@ -642,38 +637,55 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   };
   
   useEffect(() => {
-  const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
-  const cadenceDevicesOnly = allDevices.filter(d => d.type === 'cadence');
-  const jumpDevices = allDevices.filter(d => d.type === 'jumprope');
-  const otherDevices = allDevices.filter(d => 
-    d.type !== 'heart_rate' && d.type !== 'cadence' && d.type !== 'jumprope'
-  );
-    
+    const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
+    // Combine cadence and jumprope into single RPM group
+    const rpmDevices = allDevices.filter(d =>
+      d.type === 'cadence' || d.type === 'stationary_bike' ||
+      d.type === 'ab_roller' || d.type === 'jumprope'
+    );
+    const otherDevices = allDevices.filter(d =>
+      d.type !== 'heart_rate' && d.type !== 'cadence' &&
+      d.type !== 'stationary_bike' && d.type !== 'ab_roller' &&
+      d.type !== 'jumprope'
+    );
+
+    // HR: Sort by zone rank, then by zone progress (not raw HR)
     hrDevices.sort((a, b) => {
       const aZone = getDeviceZoneId(a);
       const bZone = getDeviceZoneId(b);
       const aRank = aZone ? zoneRankMap[aZone] : -1;
       const bRank = bZone ? zoneRankMap[bZone] : -1;
       if (bRank !== aRank) return bRank - aRank;
-      const hrDelta = (b.heartRate || 0) - (a.heartRate || 0);
-      if (hrDelta !== 0) return hrDelta;
+
+      // Secondary sort: zone progress (normalized within zone)
+      const aName = resolveCanonicalUserName(a.deviceId);
+      const bName = resolveCanonicalUserName(b.deviceId);
+      const aProgress = lookupZoneProgress(aName)?.progress ?? 0;
+      const bProgress = lookupZoneProgress(bName)?.progress ?? 0;
+      if (bProgress !== aProgress) return bProgress - aProgress;
+
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
       return String(a.deviceId).localeCompare(String(b.deviceId));
     });
-    
-    cadenceDevicesOnly.sort((a, b) => {
+
+    // RPM: Sort by rpmProgress (% toward max) descending
+    rpmDevices.sort((a, b) => {
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
-      return (b.cadence || 0) - (a.cadence || 0);
+
+      const aEquip = equipmentMap[String(a.deviceId)] || {};
+      const bEquip = equipmentMap[String(b.deviceId)] || {};
+      const aThresholds = aEquip.rpm || { min: 0, max: 100 };
+      const bThresholds = bEquip.rpm || { min: 0, max: 100 };
+      const aRpm = a.cadence || 0;
+      const bRpm = b.cadence || 0;
+      const aProgress = calculateRpmProgress(aRpm, aThresholds);
+      const bProgress = calculateRpmProgress(bRpm, bThresholds);
+
+      return bProgress - aProgress;
     });
-    
-    jumpDevices.sort((a, b) => {
-      if (a.isActive && !b.isActive) return -1;
-      if (!a.isActive && b.isActive) return 1;
-      return (b.revolutionCount || 0) - (a.revolutionCount || 0);
-    });
-    
+
     otherDevices.sort((a, b) => {
       const typeOrder = CONFIG.sorting.otherTypeOrder;
       const fallback = typeOrder.unknown || 3;
@@ -686,17 +698,15 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       const valueB = b.power || (b.speedKmh || 0);
       return valueB - valueA;
     });
-    
+
     const combined = [...hrDevices];
-    if (cadenceDevicesOnly.length > 0) {
-      combined.push({ type: 'rpm-group', devices: cadenceDevicesOnly });
-    }
-    if (jumpDevices.length > 0) {
-      combined.push({ type: 'jump-group', devices: jumpDevices });
+    // Single unified RPM group
+    if (rpmDevices.length > 0) {
+      combined.push({ type: 'rpm-group', devices: rpmDevices });
     }
     combined.push(...otherDevices);
     setSortedDevices(combined);
-  }, [allDevices]);
+  }, [allDevices, equipmentMap, resolveCanonicalUserName, lookupZoneProgress]);
 
   // Decide vertical vs horizontal layout for user (heart_rate) cards
   useLayoutEffect(() => {
@@ -832,62 +842,25 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
                         const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
                         const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
-                        const rpmValue = Number.isFinite(rpmDevice.cadence)
-                          ? Math.max(0, Math.round(rpmDevice.cadence))
-                          : 0;
-                        const animationDuration = rpmValue > 0
-                          ? `${CONFIG.rpm.animationBase / Math.max(rpmValue, 1)}s`
-                          : '0s';
-                        const deviceColor = cadenceColorMap[String(rpmDevice.deviceId)];
-                        const colorMap = CONFIG.rpm.colorMap;
-                        const borderColor = deviceColor ? (colorMap[deviceColor] || deviceColor) : colorMap.green;
+                        const rpmThresholds = equipmentInfo?.rpm || { min: 30, med: 60, high: 80, max: 100 };
+                        const deviceSubtype = rpmDevice.type === 'jumprope' ? 'jumprope' : 'cycle';
+                        const showRevolutions = equipmentInfo?.showRevolutions ?? (rpmDevice.type === 'jumprope');
+                        const isInactive = rpmDevice.isActive === false || !!rpmDevice.inactiveSince;
 
                         return (
-                          <RpmDeviceAvatar
+                          <RpmDeviceCard
                             key={`rpm-${rpmDevice.deviceId}`}
-                            rpm={rpmValue}
-                            animationDuration={animationDuration}
-                            avatarSrc={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
-                            avatarAlt={deviceName}
-                            imageClassName="rpm-device-image"
-                            spinnerStyle={{ borderColor }}
-                            valueStyle={{ background: CONFIG.rpm.overlayBg }}
-                            fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
+                            device={rpmDevice}
+                            deviceName={deviceName}
+                            equipmentId={equipmentId}
+                            rpmThresholds={rpmThresholds}
+                            deviceSubtype={deviceSubtype}
+                            showRevolutions={showRevolutions}
+                            isInactive={isInactive}
                           />
                         );
                       })}
                     </div>
-                  </div>
-                );
-              }
-              
-              // Jump rope group rendering
-              if (device.type === 'jump-group') {
-                const jumpDevices = device.devices;
-                
-                return (
-                  <div 
-                    key="jump-group"
-                    className="jump-group-container"
-                  >
-                    {jumpDevices.map(jumpDevice => {
-                      const equipmentInfo = equipmentMap[String(jumpDevice.deviceId)];
-                      const deviceName = equipmentInfo?.name || jumpDevice.name || 'Jump Rope';
-                      const equipmentId = equipmentInfo?.id || String(jumpDevice.deviceId);
-                      const rpmThresholds = equipmentInfo?.rpm || { min: 10, med: 50, high: 80, max: 120 };
-                      const isInactive = jumpDevice.isActive === false || !!jumpDevice.inactiveSince;
-                      
-                      return (
-                        <JumpropeCard
-                          key={`jump-${jumpDevice.deviceId}`}
-                          device={jumpDevice}
-                          deviceName={deviceName}
-                          equipmentId={equipmentId}
-                          rpmThresholds={rpmThresholds}
-                          isInactive={isInactive}
-                        />
-                      );
-                    })}
                   </div>
                 );
               }

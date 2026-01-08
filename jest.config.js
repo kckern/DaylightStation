@@ -17,7 +17,8 @@ module.exports = {
   ],
   testPathIgnorePatterns: [
     '/node_modules/',
-    '/tests/runtime/'  // Playwright handles these
+    '/tests/runtime/', // Playwright handles these
+    '/\\.worktrees/'  // Ignore worktree fixtures/duplicates
   ],
   // Coverage configuration
   collectCoverageFrom: [

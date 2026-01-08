@@ -48,14 +48,34 @@ export class RenphoJumpropeDecoder {
 
     const delta = Math.abs(rawCounter - this.lastRawCounter);
 
-    if (delta > 100) {
-      this.totalRevolutions = 0;
-      this.pendingCarryover = 0;
-      this.totalRevolutions += 1;
+    // Device counter wraps at 250 (firmware limit)
+    const COUNTER_MAX = 250;
+    const ROLLOVER_THRESHOLD = 100;
+    const BOUNDARY_ZONE = 50; // Values within this distance of 0 or 250 suggest rollover
+
+    if (delta > ROLLOVER_THRESHOLD) {
+      // Check if this looks like a rollover:
+      // - One value should be near 0 (low boundary)
+      // - Other value should be near 250 (high boundary)
+      const minVal = Math.min(rawCounter, this.lastRawCounter);
+      const maxVal = Math.max(rawCounter, this.lastRawCounter);
+      const nearLowBoundary = minVal < BOUNDARY_ZONE;
+      const nearHighBoundary = maxVal > (COUNTER_MAX - BOUNDARY_ZONE);
+
+      if (nearLowBoundary && nearHighBoundary) {
+        // It's a rollover - compute actual delta across boundary
+        // e.g., 249 → 2: actual jumps = (250 - 249) + 2 = 3
+        const complement = COUNTER_MAX - delta;
+        this.totalRevolutions += Math.max(1, complement);
+      } else {
+        // Large jump but not a rollover (e.g., 50 → 248) - count as actual delta
+        // This handles normal gameplay jumps that happen to be large
+        this.totalRevolutions += delta;
+      }
     } else {
       this.totalRevolutions += delta;
-      this.pendingCarryover = 0;
     }
+    this.pendingCarryover = 0;
 
     this.lastRawCounter = rawCounter;
 

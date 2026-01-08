@@ -42,6 +42,46 @@ describe('RenphoJumpropeDecoder', () => {
       expect(result.revolutions).toBe(1);
     });
 
+    it('handles counter rollover at 250 boundary (Bug 08 fix)', () => {
+      // Build up to near rollover point
+      decoder.processPacket(createPacket(245));
+      const before = decoder.processPacket(createPacket(249));
+      expect(before.revolutions).toBe(4); // 245 -> 249 = 4 jumps
+
+      // Rollover: 249 -> 2 (crossed 250 boundary)
+      // delta = |2 - 249| = 247, complement = 250 - 247 = 3
+      const after = decoder.processPacket(createPacket(2));
+      expect(after.revolutions).toBe(7); // 4 + 3 = 7 total jumps
+    });
+
+    it('accumulates correctly across multiple rollovers (Bug 08 - the main fix)', () => {
+      // Start at 240
+      decoder.processPacket(createPacket(240));
+
+      // Jump to 248 (8 jumps)
+      decoder.processPacket(createPacket(248));
+      expect(decoder.getRevolutions()).toBe(8);
+
+      // Rollover 1: 248 -> 5 (delta=243, complement=7)
+      // 248 > 200 (near high), 5 < 50 (near low) → rollover detected
+      decoder.processPacket(createPacket(5));
+      expect(decoder.getRevolutions()).toBe(15); // 8 + 7 = 15
+
+      // Continue counting: 5 -> 50 (45 jumps)
+      decoder.processPacket(createPacket(50));
+      expect(decoder.getRevolutions()).toBe(60); // 15 + 45 = 60
+
+      // Large jump (not rollover): 50 -> 248 (delta=198)
+      // 50 is NOT < 50, so not near low boundary → not a rollover
+      // Should count as 198 actual jumps
+      decoder.processPacket(createPacket(248));
+      expect(decoder.getRevolutions()).toBe(258); // 60 + 198 = 258
+
+      // Rollover 2: 248 -> 3 (delta=245, complement=5)
+      decoder.processPacket(createPacket(3));
+      expect(decoder.getRevolutions()).toBe(263); // 258 + 5 = 263 - should NOT reset to 0!
+    });
+
     it('ignores duplicate values', () => {
       decoder.processPacket(createPacket(5));
       const result1 = decoder.processPacket(createPacket(5));

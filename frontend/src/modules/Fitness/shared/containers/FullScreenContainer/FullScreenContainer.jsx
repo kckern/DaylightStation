@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import PropTypes from 'prop-types';
-import JumpropeAvatar from '../../../FitnessSidebar/RealtimeCards/JumpropeAvatar.jsx';
+import RpmDeviceAvatar from '../../../FitnessSidebar/RealtimeCards/RpmDeviceAvatar.jsx';
 import './FullScreenContainer.scss';
 
 const FullScreenContainer = ({
@@ -68,12 +68,13 @@ const FullScreenContainer = ({
       <main className="full-screen-container__content">
         {jumpropeData ? (
           <div className="full-screen-jumprope">
-            <JumpropeAvatar
+            <RpmDeviceAvatar
               equipmentId={jumpropeData.equipmentId}
               equipmentName={jumpropeData.equipmentName}
               rpm={jumpropeData.rpm}
-              jumps={jumpropeData.jumps}
+              revolutionCount={jumpropeData.jumps}
               rpmThresholds={jumpropeData.rpmThresholds}
+              deviceSubtype="jumprope"
               size={280}
               className="full-screen-jumprope__avatar"
             />

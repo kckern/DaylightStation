@@ -24,6 +24,8 @@ const MIN_GRID_LINES = 4;
 const PATH_STROKE_WIDTH = 5;
 const TICK_FONT_SIZE = 20;
 const COIN_FONT_SIZE = 20;
+// Bug 01 fix: Minimum gap duration before showing grey dotted style (2 minutes)
+const MIN_GAP_DURATION_FOR_DASHED_MS = 2 * 60 * 1000;
 
 const slugifyId = (value, fallback = 'user') => {
 	if (!value) return fallback;
@@ -508,19 +510,25 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 			))}
 		</g>
 		<g className="race-chart__paths">
-			{paths.map((path, idx) => (
-				<path
-					key={`${path.zone || 'seg'}-${idx}`}
-					d={path.d}
-					stroke={path.isGap ? ZONE_COLOR_MAP.default : path.color}
-					fill="none"
-					strokeWidth={PATH_STROKE_WIDTH}
-					opacity={path.opacity ?? 1}
-					strokeLinecap={path.isGap ? 'butt' : 'round'}
-					strokeLinejoin="round"
-					strokeDasharray={path.isGap ? '4 4' : undefined}
-				/>
-			))}
+			{paths.map((path, idx) => {
+				// Bug 01 fix: Only use grey dotted style for gaps >= 2 minutes
+				// Short gaps use segment color (solid) for visual continuity
+				const isLongGap = path.isGap && (path.gapDurationMs || 0) >= MIN_GAP_DURATION_FOR_DASHED_MS;
+				const isShortGap = path.isGap && !isLongGap;
+				return (
+					<path
+						key={`${path.zone || 'seg'}-${idx}`}
+						d={path.d}
+						stroke={isLongGap ? ZONE_COLOR_MAP.default : path.color}
+						fill="none"
+						strokeWidth={PATH_STROKE_WIDTH}
+						opacity={isShortGap ? 0.7 : (path.opacity ?? 1)}
+						strokeLinecap={isLongGap ? 'butt' : 'round'}
+						strokeLinejoin="round"
+						strokeDasharray={isLongGap ? '4 4' : undefined}
+					/>
+				);
+			})}
 		</g>
 		{/* Connectors link displaced avatars back to their line endpoints */}
 		<g className="race-chart__connectors">

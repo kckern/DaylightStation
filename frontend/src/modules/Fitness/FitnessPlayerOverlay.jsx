@@ -215,6 +215,25 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       ...challengeMissingUsers,
       ...missingUsers
     ])).filter((user) => !metUsers.includes(user));
+
+    // Bug 04 fix: Don't show phantom warnings without offenders
+    // Only display warning overlay if there are actual users to highlight
+    if (warningHighlights.length === 0) {
+      return {
+        category: 'governance',
+        status: 'warning',
+        show: false,
+        filterClass: 'governance-filter-warning',
+        title: '',
+        descriptions: [],
+        requirements: [],
+        highlightUsers: [],
+        countdown,
+        countdownTotal,
+        allowGenericAny: false
+      };
+    }
+
     return {
       category: 'governance-warning-progress',
       status: 'warning',

@@ -59,135 +59,41 @@
     }
   }
 
-  .vital-rpm {
+  .rpm-group {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  .fullscreen-rpm-item {
     position: relative;
     width: 68px;
     height: 68px;
-    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    background: rgba(0, 0, 0, 0.72);
-    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55);
 
-    .rpm-spinning-border {
-      position: absolute;
-      inset: -4px;
-      border-radius: 50%;
-      border: 5px dashed var(--rpm-ring-color, #ff922b);
-      animation: fullscreen-rpm-spin var(--spin-duration, 2.6s) linear infinite;
-      opacity: 1;
-      transition: animation-duration 0.3s ease-out;
-    }
-
-    .rpm-avatar-content {
-      position: relative;
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      overflow: hidden;
-      background: rgba(0, 0, 0, 0.82);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.6);
-
-      img {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-      }
+    .rpm-device-avatar {
+      width: 100%;
+      height: 100%;
     }
 
     .rpm-value-overlay {
       position: absolute;
       left: 0;
       right: 0;
-      bottom: 0;
-      height: 52%;
-      padding: 6px 0 8px;
-      background: var(--rpm-overlay-bg, rgba(0, 0, 0, 0.85));
+      bottom: 4px;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 2px;
-      border-bottom-left-radius: 50%;
-      border-bottom-right-radius: 50%;
-      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45);
-      z-index: 1;
+      pointer-events: none;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
 
       .rpm-value {
-        font-size: 1.25rem;
+        font-size: 1.2rem;
         font-weight: 700;
-        color: #fff;
-        letter-spacing: 0.4px;
-      }
-
-      .rpm-label {
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        color: rgba(255, 255, 255, 0.75);
-        letter-spacing: 0.35px;
+        line-height: 1;
       }
     }
-  }
-
-  // Jumprope group styling - matches RPM group
-  .jumprope-group {
-    flex-direction: row;
-    align-items: flex-end;
-  }
-  
-  .fullscreen-jumprope-item {
-    position: relative;
-    width: 68px;
-    height: 68px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    
-    .jumprope-avatar {
-      position: absolute;
-      inset: 0;
-    }
-  }
-  
-  .jumprope-value-overlay {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 50%;
-    padding: 6px 0 8px;
-    background: rgba(0, 0, 0, 0.75);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-bottom-left-radius: 50%;
-    border-bottom-right-radius: 50%;
-    z-index: 2;
-    
-    .jumprope-value {
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: #fff;
-      letter-spacing: 0.4px;
-    }
-  }
-}
-
-@keyframes fullscreen-rpm-spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
   }
 }
