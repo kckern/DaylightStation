@@ -225,25 +225,34 @@ export const getActivities = async (logger, daysBack = 90) => {
     // Process sequentially to avoid rate limits
     for (const activity of activities) {
         if(!activity?.id) continue;
-        
+
+        const date = moment(activity.start_date).tz(timezone).format('YYYY-MM-DD');
+        const typeRaw = activity.type || activity.sport_type || 'activity';
+        const safeType = typeRaw.replace(/\s+/g, '').replace(/[^A-Za-z0-9_-]/g, '') || 'activity';
+
         if (activity.type === 'VirtualRide' || activity.type === 'VirtualRun') {
             activity.heartRateOverTime = [9];
             activitiesWithHeartRate.push(activity);
             continue;
         }
 
-        // Check if we already have this activity in the archive (by activity ID)
+        // Check if we already have this activity in the archive using new naming
+        const newArchivePath = `archives/strava/${date}_${safeType}_${activity.id}`;
+        const archiveFileNew = userLoadFile(username, newArchivePath);
+        if (archiveFileNew && archiveFileNew.data && archiveFileNew.data.heartRateOverTime) {
+            activitiesWithHeartRate.push(archiveFileNew.data);
+            continue;
+        }
+
+        // Legacy archive by id only
         const archiveFile = userLoadFile(username, `archives/strava/${activity.id}`);
-        
         if (archiveFile && archiveFile.data && archiveFile.data.heartRateOverTime) {
             activitiesWithHeartRate.push(archiveFile.data);
             continue;
         }
-        
+
         // Fallback: check old individual file format (date_id)
-        const date = moment(activity.start_date).tz(timezone).format('YYYY-MM-DD');
         const oldFormatFile = userLoadFile(username, `strava/${date}_${activity.id}`);
-        
         if (oldFormatFile && oldFormatFile.data && oldFormatFile.data.heartRateOverTime) {
             activitiesWithHeartRate.push(oldFormatFile.data);
             continue;
@@ -283,7 +292,7 @@ export const getActivities = async (logger, daysBack = 90) => {
 
 const harvestActivities = async (logger, job_id, daysBack = 90) => {
     const log = asLogger(logger);
-    
+
     // Check circuit breaker before attempting harvest
     const cooldownStatus = isInCooldown();
     if (cooldownStatus) {
@@ -295,8 +304,22 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
         return { skipped: true, reason: 'cooldown', remainingMins: cooldownStatus.remainingMins };
     }
 
+    // Expand window when BACKFILL_SINCE is provided
+    let effectiveDaysBack = daysBack;
+    const backfillSince = process.env.BACKFILL_SINCE;
+    if (backfillSince) {
+        const bfMoment = moment(backfillSince, 'YYYY-MM-DD', true);
+        if (bfMoment.isValid()) {
+            const diffDays = Math.max(1, moment().startOf('day').diff(bfMoment.startOf('day'), 'days') + 1);
+            effectiveDaysBack = Math.max(effectiveDaysBack, diffDays);
+            log.info('harvest.strava.backfill', { jobId: job_id, since: backfillSince, daysBack: effectiveDaysBack });
+        } else {
+            log.warn('harvest.strava.backfill_invalid', { jobId: job_id, backfillSince });
+        }
+    }
+
     try {
-        const activitiesData = await getActivities(logger, daysBack);
+        const activitiesData = await getActivities(logger, effectiveDaysBack);
         if(!activitiesData) return await reauthSequence();
         
         // Filter out any nulls from getActivities
@@ -309,11 +332,13 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
         
         const activities = validItems.map(item => {
             const src = "strava";
-            const { start_date: timestamp, type, id: itemId } = item;
+            const { start_date: timestamp, type, sport_type, id: itemId } = item;
             if(!itemId) return false;
             const id = md5(itemId?.toString());
             const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
-            const saveMe = { src, id, date, type, data: item };
+            const typeRaw = type || sport_type || 'activity';
+            const safeType = typeRaw.replace(/\s+/g, '').replace(/[^A-Za-z0-9_-]/g, '') || 'activity';
+            const saveMe = { src, id, date, type: safeType, data: item };
             return saveMe;
         }).filter(Boolean);
 
@@ -330,7 +355,8 @@ const harvestActivities = async (logger, job_id, daysBack = 90) => {
                     src: activity.src,
                     data: activity.data
                 };
-                userSaveFile(username, `archives/strava/${activity.data.id}`, archiveData);
+                const archiveName = `${activity.date}_${activity.type}_${activity.data.id}`;
+                userSaveFile(username, `archives/strava/${archiveName}`, archiveData);
             }
         });
 

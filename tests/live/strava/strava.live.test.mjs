@@ -4,10 +4,14 @@
  * Run with: npm test -- tests/live/strava/strava.live.test.mjs
  */
 
+import path from 'path';
 import { configService } from '../../../backend/lib/config/ConfigService.mjs';
 import harvestActivities, { getAccessToken, isStravaInCooldown } from '../../../backend/lib/strava.mjs';
+import { readYamlFile, getDataPath } from '../harness-utils.mjs';
 
 describe('Strava Live Integration', () => {
+  let username;
+
   beforeAll(() => {
     const dataPath = process.env.DAYLIGHT_DATA_PATH;
 
@@ -21,6 +25,8 @@ describe('Strava Live Integration', () => {
     // Set secrets in process.env (strava.mjs reads from process.env)
     process.env.STRAVA_CLIENT_ID = configService.getSecret('STRAVA_CLIENT_ID');
     process.env.STRAVA_CLIENT_SECRET = configService.getSecret('STRAVA_CLIENT_SECRET');
+
+    username = configService.getHeadOfHousehold();
   });
 
   it('harvests strava activities', async () => {
@@ -52,6 +58,24 @@ describe('Strava Live Integration', () => {
       const dates = Object.keys(result);
       console.log(`Harvested ${dates.length} dates`);
       expect(dates.length).toBeGreaterThanOrEqual(0);
+
+      const summaryPath = `users/${username}/lifelog/strava.yml`;
+      const fullPath = path.join(getDataPath(), summaryPath);
+      const summary = readYamlFile(summaryPath);
+      console.log(`Summary file: ${fullPath}`);
+      expect(summary).toBeTruthy();
+
+      if (summary) {
+        const summaryDates = Object.keys(summary);
+        console.log(`Summary dates (${summaryDates.length}): ${summaryDates.slice(0, 5).join(', ')}`);
+        const latestDate = summaryDates.sort().pop();
+        if (latestDate) {
+          const latestCount = Array.isArray(summary[latestDate]) ? summary[latestDate].length : 0;
+          console.log(`Latest date ${latestDate} count: ${latestCount}`);
+        }
+        const preview = Object.fromEntries(summaryDates.slice(0, 2).map(d => [d, summary[d]]));
+        console.log(`Summary preview: ${JSON.stringify(preview, null, 2)}`);
+      }
     }
   }, 60000);
 });
