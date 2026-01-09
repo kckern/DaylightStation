@@ -67,6 +67,20 @@ export const getEntropyReport = async () => {
         return { items: [], summary: { green: 0, yellow: 0, red: 0 } };
     }
 
+    // Fallback sources (only if not already configured)
+    const fallbackSources = {
+        letterboxd: {
+            name: 'Movies',
+            icon: 'letterboxd.svg',
+            metric: 'days_since',
+            dataSource: 'lifelog',
+            dataPath: 'letterboxd',
+            thresholds: { green: 3, yellow: 14 },
+            url: 'https://letterboxd.com/{username}'
+        }
+    };
+    config.sources = { ...fallbackSources, ...config.sources };
+
     const items = [];
     const summary = { green: 0, yellow: 0, red: 0 };
 
@@ -74,6 +88,10 @@ export const getEntropyReport = async () => {
     const sourceEntries = Object.entries(config.sources);
     const results = await Promise.all(
         sourceEntries.map(async ([id, sourceConfig]) => {
+            // Normalize known sources
+            if (id === 'letterboxd' && sourceConfig.dataPath === 'letterboxd') {
+                sourceConfig.dateField = 'date';
+            }
             try {
                 let value = 0;
                 let label = '';
@@ -120,14 +138,23 @@ export const getEntropyReport = async () => {
                 if (Array.isArray(itemsToProcess)) {
                     // Array of objects - find max date in specified field
                     const dateField = sourceConfig.dateField || 'date';
-                    const validItems = itemsToProcess.filter(item => item && item[dateField]);
-                    
-                    if (validItems.length > 0) {
-                        // Sort by date descending - use format array to handle both ISO and human-readable dates
-                        const dateFormats = ['YYYY-MM-DD', 'DD MMM YYYY, HH:mm', moment.ISO_8601];
-                        validItems.sort((a, b) => moment(b[dateField], dateFormats).diff(moment(a[dateField], dateFormats)));
-                        lastDate = validItems[0][dateField];
-                        lastItem = validItems[0];
+                    const dateFormats = ['YYYY-MM-DD', 'DD MMM YYYY, HH:mm', moment.ISO_8601];
+                    const datedItems = itemsToProcess
+                        .filter(item => item && item[dateField])
+                        .map(item => ({ item, ts: moment(item[dateField], dateFormats) }))
+                        .filter(entry => entry.ts.isValid());
+
+                    if (datedItems.length > 0) {
+                        datedItems.sort((a, b) => b.ts.diff(a.ts));
+                        lastDate = datedItems[0].item[dateField];
+                        lastItem = datedItems[0].item;
+                    } else if (itemsToProcess.length > 0) {
+                        entropyLogger.warn('entropy.source.invalid_dates', {
+                            source: id,
+                            username,
+                            dateField,
+                            sample: itemsToProcess.slice(0, 3)
+                        });
                     }
                 } else if (itemsToProcess && typeof itemsToProcess === 'object') {
                     let dates = Object.keys(itemsToProcess);
@@ -205,6 +232,14 @@ export const getEntropyReport = async () => {
                 } else {
                     value = 999; // No data
                     label = 'No data';
+                    entropyLogger.warn('entropy.source.no_data', {
+                        source: id,
+                        username,
+                        dataType: typeof itemsToProcess,
+                        isArray: Array.isArray(itemsToProcess),
+                        length: Array.isArray(itemsToProcess) ? itemsToProcess.length : undefined,
+                        dataPath: process.env.path?.data || process.env.DAYLIGHT_DATA_PATH
+                    });
                 }
             } // End of else (slow path) block
             } else if (sourceConfig.metric === 'count') {

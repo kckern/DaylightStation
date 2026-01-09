@@ -17,6 +17,9 @@
  *   - Cold: users/{user}/lifelog/archives/lastfm/{year}.yml (historical)
  */
 
+import fs from 'fs';
+import path from 'path';
+import yaml from 'js-yaml';
 import axios from './http.mjs';
 import moment from 'moment-timezone';
 import { userSaveFile, userLoadFile, getDefaultUsername } from './io.mjs';
@@ -25,6 +28,65 @@ import { createLogger } from './logging/logger.js';
 import ArchiveService from './ArchiveService.mjs';
 
 const lastfmLogger = createLogger({ source: 'backend', app: 'lastfm' });
+
+const loadArchivedIds = (username) => {
+    const ids = new Set();
+    const userDir = configService.getUserDir(username);
+    if (!userDir) return ids;
+    const archiveDir = path.join(userDir, 'lifelog', 'archives', 'lastfm');
+    if (!fs.existsSync(archiveDir)) return ids;
+
+    const files = fs.readdirSync(archiveDir).filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+    for (const file of files) {
+        const p = path.join(archiveDir, file);
+        try {
+            const data = yaml.load(fs.readFileSync(p, 'utf8'));
+            if (Array.isArray(data)) {
+                for (const entry of data) {
+                    if (entry?.id) ids.add(entry.id);
+                }
+            }
+        } catch (err) {
+            lastfmLogger.warn('lastfm.archive.read_failed', { file: p, error: err.message });
+        }
+    }
+    return ids;
+};
+
+const sanitizeKey = (val) => {
+    if (!val) return null;
+    if (val === 'undefined' || val === 'null') return null;
+    return val;
+};
+
+const resolveApiKey = (auth = null) => {
+    const candidates = [
+        'LAST_FM_API_KEY',
+        'LASTFM_API_KEY',
+        'LASTFM_APIKEY',
+        'LAST_FM_APIKEY',
+        'lastfm_api_key',
+        'lastfmApiKey'
+    ];
+
+    // Prefer env first
+    for (const key of candidates) {
+        const val = sanitizeKey(process.env[key]);
+        if (val) return val;
+    }
+
+    // Fallback to secrets
+    for (const key of candidates) {
+        const val = sanitizeKey(configService.getSecret(key));
+        if (val) return val;
+    }
+
+    // Fallback to user auth key (api key stored alongside username)
+    const authKey = sanitizeKey(auth?.key);
+    if (authKey) return authKey;
+
+    return null;
+};
 
 /**
  * Parse a raw Last.fm scrobble into our normalized format
@@ -57,23 +119,65 @@ const parseScrobble = (track) => {
  *   - req.targetUsername: Override default username
  * @returns {Promise<Array>} Array of scrobble activities
  */
-const getScrobbles = async (guidId = null, req = null) => {
-    // System-level API key (shared app key)
-    const { LAST_FM_API_KEY } = process.env;
-    
-    if (!LAST_FM_API_KEY) {
-        lastfmLogger.error('lastfm.api_key.missing', { 
-            message: 'No Last.fm API key found in system config',
-            suggestion: 'Add LAST_FM_API_KEY to config.secrets.yml'
-        });
-        throw new Error('Last.fm API key not configured');
+const getBackfillCursorPath = (username) => {
+    const userDir = configService.getUserDir(username);
+    if (!userDir) return null;
+    return path.join(userDir, 'lifelog', 'lastfm.backfill.yml');
+};
+
+const loadBackfillCursor = (username) => {
+    const cursorPath = getBackfillCursorPath(username);
+    if (!cursorPath || !fs.existsSync(cursorPath)) return null;
+    try {
+        return yaml.load(fs.readFileSync(cursorPath, 'utf8')) || null;
+    } catch (err) {
+        lastfmLogger.warn('lastfm.backfill.cursor_read_failed', { file: cursorPath, error: err.message });
+        return null;
     }
-    
+};
+
+const saveBackfillCursor = (username, oldestTimestamp) => {
+    const cursorPath = getBackfillCursorPath(username);
+    if (!cursorPath) return;
+    try {
+        const dir = path.dirname(cursorPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const oldestDate = moment.unix(oldestTimestamp).format('YYYY-MM-DD');
+        const payload = { lastOldestTimestamp: oldestTimestamp, lastOldestDate: oldestDate, updatedAt: new Date().toISOString() };
+        fs.writeFileSync(cursorPath, yaml.dump(payload), 'utf8');
+    } catch (err) {
+        lastfmLogger.warn('lastfm.backfill.cursor_write_failed', { file: cursorPath, error: err.message });
+    }
+};
+
+const getScrobbles = async (guidId = null, req = null) => {
     // User-level auth (personal username)
     const targetUsername = req?.targetUsername;
     const username = targetUsername || getDefaultUsername();
     const auth = configService.getUserAuth('lastfm', username) || {};
     const LAST_FM_USER = auth.username || process.env.LAST_FM_USER;
+
+    // System-level API key (shared app key) - resolve across variants and allow per-user key fallback
+    const apiKey = resolveApiKey(auth);
+    if (apiKey) {
+        const source = sanitizeKey(process.env.LAST_FM_API_KEY) || sanitizeKey(process.env.LASTFM_API_KEY) ? 'env' : (sanitizeKey(auth?.key) ? 'auth' : 'secret');
+        lastfmLogger.info('lastfm.auth.api_key_resolved', { source });
+    } else {
+        lastfmLogger.error('lastfm.auth.api_key_missing', { sourcesChecked: ['env','secret','auth.key'] });
+    }
+    if (apiKey) {
+        process.env.LAST_FM_API_KEY = process.env.LAST_FM_API_KEY || apiKey;
+        process.env.LASTFM_API_KEY = process.env.LASTFM_API_KEY || apiKey;
+    }
+    const LAST_FM_API_KEY = apiKey;
+    
+    if (!apiKey) {
+        lastfmLogger.error('lastfm.api_key.missing', { 
+            message: 'No Last.fm API key found in system config or user auth',
+            suggestion: 'Add LAST_FM_API_KEY to config.secrets.yml or key to users/{user}/auth/lastfm.yml'
+        });
+        throw new Error('Last.fm API key not configured');
+    }
     
     if (!LAST_FM_USER) {
         lastfmLogger.error('lastfm.username.missing', { 
@@ -87,6 +191,11 @@ const getScrobbles = async (guidId = null, req = null) => {
     // Check for full sync vs incremental vs backfill
     const fullSync = req?.query?.full === 'true';
     const backfillTo2009 = req?.query?.backfill2009 === 'true';
+    const backfillForward = req?.query?.backfillForward === 'true' || req?.backfillForward === true || process.env.LASTFM_BACKFILL_FORWARD === 'true';
+    const backfillSinceStr = req?.query?.backfillSince || process.env.LASTFM_BACKFILL_SINCE || (backfillForward ? '2008-01-01' : null);
+    const backfillSince = backfillSinceStr ? moment(backfillSinceStr, ['YYYY-MM-DD', 'YYYY/MM/DD', 'YYYY-MM-DDTHH:mm:ssZ'], true) : null;
+    const backfillPageLimit = parseInt(req?.query?.backfillPageLimit || process.env.LASTFM_BACKFILL_PAGE_LIMIT || '0', 10);
+    const backfillCursor = backfillForward ? loadBackfillCursor(username) : null;
     
     // Check if archive service is enabled for lastfm
     const archiveEnabled = ArchiveService.isArchiveEnabled('lastfm');
@@ -129,8 +238,151 @@ const getScrobbles = async (guidId = null, req = null) => {
         lastfmLogger.info('lastfm.no_existing_data', { username });
     }
     
-    try {
+    const existingSet = new Set();
+    const populateExistingSet = () => {
+        if (existingScrobbles.length > 0) {
+            for (const s of existingScrobbles) existingSet.add(s.id);
+        }
+        // Also include archived IDs when not using ArchiveService
+        if (!archiveEnabled) {
+            const archived = loadArchivedIds(username);
+            for (const id of archived) existingSet.add(id);
+        }
+        return existingSet;
+    };
+
+    const fetchOldestFirst = async () => {
         const newScrobbles = [];
+        populateExistingSet();
+        const cursorTs = backfillCursor?.lastOldestTimestamp;
+
+        const makeRequest = async (page) => {
+            const params = {
+                'api_key': LAST_FM_API_KEY,
+                'user': LAST_FM_USER,
+                'limit': 200,
+                'method': 'user.getRecentTracks',
+                'page': page,
+                'format': 'json'
+            };
+
+            let retries = 3;
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+                try {
+                    const resp = await axios.get(
+                        `https://ws.audioscrobbler.com/2.0/?${new URLSearchParams(params).toString()}`,
+                        {
+                            headers: {
+                                'User-Agent': 'DaylightStation-Harvester/1.0',
+                                'Accept': 'application/json'
+                            },
+                            timeout: 10000
+                        }
+                    );
+                    return resp;
+                } catch (err) {
+                    retries--;
+                    const status = err.response?.status;
+                    const isRateLimit = status === 429;
+                    const isFatal4xx = status >= 400 && status < 500;
+                    if (isRateLimit || isFatal4xx || retries <= 0) throw err;
+                    const waitTime = (4 - retries) * 2000;
+                    lastfmLogger.warn('lastfm.api_error.retrying', { username: LAST_FM_USER, page, retriesLeft: retries, waitTime, error: err.message, code: err.code, statusCode: status });
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                }
+            }
+        };
+
+        // First request to discover total pages
+        const firstResp = await makeRequest(1);
+        const totalPages = parseInt(firstResp.data?.recenttracks?.['@attr']?.totalPages || 1);
+        const pages = Array.from({ length: totalPages }, (_, i) => totalPages - i); // oldest to newest
+        let consecutiveDuplicatePages = 0;
+        let pageCounter = 0;
+
+        for (const page of pages) {
+            const response = page === 1 ? firstResp : await makeRequest(page);
+            const tracks = response.data?.recenttracks?.track;
+            if (!tracks || tracks.length === 0) continue;
+            const parsed = (Array.isArray(tracks) ? tracks : [tracks])
+                .map(parseScrobble)
+                .filter(Boolean);
+
+            const beforeLen = newScrobbles.length;
+            for (const scrobble of parsed) {
+                if (cursorTs && scrobble.timestamp <= cursorTs) {
+                    lastfmLogger.info('lastfm.backfill.cursor_hit', {
+                        username: LAST_FM_USER,
+                        page,
+                        cursorDate: moment.unix(cursorTs).format('YYYY-MM-DD'),
+                        scrobbleDate: moment.unix(scrobble.timestamp).format('YYYY-MM-DD')
+                    });
+                    consecutiveDuplicatePages = 3; // trigger break below
+                    break;
+                }
+                if (existingSet.has(scrobble.id)) continue;
+                existingSet.add(scrobble.id);
+                newScrobbles.push(scrobble);
+            }
+
+            const added = newScrobbles.length - beforeLen;
+            consecutiveDuplicatePages = added === 0 ? consecutiveDuplicatePages + 1 : 0;
+            pageCounter++;
+
+            if (page % 10 === 0) {
+                const oldestTrack = parsed[parsed.length - 1];
+                const oldestDate = oldestTrack ? moment.unix(oldestTrack.timestamp).format('YYYY-MM-DD') : 'unknown';
+                lastfmLogger.info('lastfm.harvest.progress', {
+                    username: LAST_FM_USER,
+                    page,
+                    totalPages,
+                    fetchedSoFar: newScrobbles.length,
+                    oldestDate,
+                    backfillSince: backfillSince ? backfillSince.format('YYYY-MM-DD') : undefined
+                });
+            }
+
+            // If we hit several pages of duplicates, assume we've overlapped existing data
+            if (consecutiveDuplicatePages >= 3) {
+                lastfmLogger.info('lastfm.backfill.duplicate_overlap', { username: LAST_FM_USER, page, newScrobbles: newScrobbles.length });
+                break;
+            }
+
+            // Stop if we've reached the requested backfill floor
+            if (backfillSince && parsed.length > 0) {
+                const oldestTrack = parsed[parsed.length - 1];
+                const oldestMoment = moment.unix(oldestTrack.timestamp);
+                if (oldestMoment.isBefore(backfillSince)) {
+                    lastfmLogger.info('lastfm.backfill.reached_floor', {
+                        username: LAST_FM_USER,
+                        page,
+                        floor: backfillSince.format('YYYY-MM-DD'),
+                        oldestDate: oldestMoment.format('YYYY-MM-DD')
+                    });
+                    break;
+                }
+            }
+
+            // Stop if page cap is reached
+            if (backfillPageLimit > 0 && pageCounter >= backfillPageLimit) {
+                lastfmLogger.info('lastfm.backfill.page_limit', {
+                    username: LAST_FM_USER,
+                    page,
+                    limit: backfillPageLimit,
+                    fetchedSoFar: newScrobbles.length
+                });
+                break;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        return newScrobbles;
+    };
+
+    try {
+        const newScrobbles = backfillForward ? await fetchOldestFirst() : [];
         let page = 1;
         const maxPages = backfillTo2009 ? 100000 : (fullSync ? 50 : 10); // No limit for 2009 backfill
         let hasMore = true;
@@ -147,9 +399,10 @@ const getScrobbles = async (guidId = null, req = null) => {
         const SAVE_INTERVAL = backfillTo2009 ? 1000 : 2000; // Save every 1000 scrobbles for 2009 backfill
         
         // Paginate through scrobbles
-        while (hasMore && page <= maxPages) {
+        while (!backfillForward && hasMore && page <= maxPages) {
             const params = {
                 'api_key': LAST_FM_API_KEY,
+                // Note: kept legacy name to minimize churn; apiKey equals LAST_FM_API_KEY
                 'user': LAST_FM_USER,
                 'limit': 200,
                 'method': 'user.getRecentTracks',
@@ -343,6 +596,12 @@ const getScrobbles = async (guidId = null, req = null) => {
             archiveEnabled,
             ...stats
         });
+
+        // Save cursor for forward backfill
+        if (backfillForward && mergedScrobbles.length > 0) {
+            const oldest = mergedScrobbles[mergedScrobbles.length - 1];
+            if (oldest?.timestamp) saveBackfillCursor(username, oldest.timestamp);
+        }
         
         // Save data based on mode and archive settings
         if (archiveEnabled) {

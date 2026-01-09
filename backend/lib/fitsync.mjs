@@ -11,6 +11,11 @@ const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 const fitsyncLogger = createLogger({ source: 'backend', app: 'fitsync' });
 
 const timezone = process.env.TZ || 'America/Los_Angeles';
+const tokenBufferSeconds = 60; // refresh 1 minute before expiry
+const accessTokenCache = {
+    token: null,
+    expiresAt: null
+};
 
 /**
  * Extract clean error message from HTML error responses
@@ -111,7 +116,24 @@ const getDefaultUsername = () => {
 
 export const getAccessToken = async () => {
     // Check for cached token
-    if(process.env.FITSYNC_ACCESS_TOKEN) return process.env.FITSYNC_ACCESS_TOKEN;
+    const now = moment();
+    const isCachedValid = () => accessTokenCache.token && accessTokenCache.expiresAt && now.isBefore(accessTokenCache.expiresAt);
+
+    if (isCachedValid()) {
+        fitsyncLogger.debug('fitsync.auth.cache_hit', { expiresAt: accessTokenCache.expiresAt.toISOString() });
+        return accessTokenCache.token;
+    }
+
+    // Accept env token only if paired with a future expiry
+    if (process.env.FITSYNC_ACCESS_TOKEN && process.env.FITSYNC_ACCESS_TOKEN_EXPIRES_AT) {
+        const envExpiry = moment(process.env.FITSYNC_ACCESS_TOKEN_EXPIRES_AT);
+        if (envExpiry.isValid() && envExpiry.isAfter(now)) {
+            accessTokenCache.token = process.env.FITSYNC_ACCESS_TOKEN;
+            accessTokenCache.expiresAt = envExpiry;
+            fitsyncLogger.debug('fitsync.auth.env_token_reused', { expiresAt: envExpiry.toISOString() });
+            return accessTokenCache.token;
+        }
+    }
 
     const username = getDefaultUsername();
     const authData = configService.getUserAuth('fitnesssyncer', username) || {};
@@ -151,18 +173,25 @@ export const getAccessToken = async () => {
         
         const accessToken = tokenResponse.data.access_token;
         const refreshToken = tokenResponse.data.refresh_token;
+        const expiresInSeconds = tokenResponse.data.expires_in || 3600; // FitnessSyncer default is 1 hour
+        const expiresAt = moment().add(Math.max(60, expiresInSeconds - tokenBufferSeconds), 'seconds');
         
-        if (refreshToken) {
-            // Preserve client credentials when saving new refresh token
-            userSaveAuth(username, 'fitnesssyncer', { 
-                refresh: refreshToken,
+        const nextRefreshToken = refreshToken || refresh;
+        if (nextRefreshToken) {
+            // Preserve any existing auth fields while updating tokens/credentials
+            userSaveAuth(username, 'fitnesssyncer', {
+                ...authData,
+                refresh: nextRefreshToken,
                 client_id: FITSYNC_CLIENT_ID,
                 client_secret: FITSYNC_CLIENT_SECRET
             });
         }
-        
+
+        accessTokenCache.token = accessToken;
+        accessTokenCache.expiresAt = expiresAt;
         process.env.FITSYNC_ACCESS_TOKEN = accessToken;
-        fitsyncLogger.info('fitsync.auth.token_refreshed', { username });
+        process.env.FITSYNC_ACCESS_TOKEN_EXPIRES_AT = expiresAt.toISOString();
+        fitsyncLogger.info('fitsync.auth.token_refreshed', { username, expiresAt: expiresAt.toISOString() });
         return accessToken;
     } catch (error) {
         const cleanError = cleanErrorMessage(error);
@@ -171,6 +200,10 @@ export const getAccessToken = async () => {
             statusCode: error.response?.status,
             username
         });
+        accessTokenCache.token = null;
+        accessTokenCache.expiresAt = null;
+        delete process.env.FITSYNC_ACCESS_TOKEN;
+        delete process.env.FITSYNC_ACCESS_TOKEN_EXPIRES_AT;
         
         // Record failure for rate limiting
         if (error.response?.status === 429) {
@@ -252,7 +285,18 @@ export const getActivities = async () => {
     // Anchor fetch to 7 days before latest
     const anchorDate = latestDate ? moment(latestDate).subtract(7, 'days').startOf('day') : moment().subtract(1, 'year').startOf('day');
 
+    fitsyncLogger.info('fitsync.harvest.start', {
+        anchorDate: anchorDate.toISOString(),
+        latestDate,
+        username
+    });
+
     while (true) {
+        fitsyncLogger.info('fitsync.harvest.page', {
+            offset,
+            limit,
+            anchorDate: anchorDate.toISOString()
+        });
         const response = await baseAPI(`sources/${garminSourceId}/items?offset=${offset}&limit=${limit}`);
         const items = response.items || [];
         if (items.length === 0) break;

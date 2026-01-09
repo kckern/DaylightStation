@@ -1,11 +1,11 @@
-import { userSaveFile, getDefaultUsername } from './io.mjs';
+import { userSaveFile } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
 import axios from './http.mjs';
 
 const getMovies = async (targetUsername = null) => {
     // User-level auth (personal Letterboxd username)
-    const username = targetUsername || getDefaultUsername();
-    console.log('[letterboxd] targetUsername:', targetUsername, 'resolved username:', username, 'type:', typeof username);
+    const username = targetUsername || configService.getHeadOfHousehold();
+    if (!username) throw new Error('Letterboxd: unable to resolve username');
     const auth = configService.getUserAuth('letterboxd', username) || {};
     const LETTERBOXD_USER = auth.username || process.env.LETTERBOXD_USER;
     let page = 1;

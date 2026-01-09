@@ -22,8 +22,12 @@ describe('Last.fm Live Integration', () => {
       configService.init({ dataDir: dataPath });
     }
 
-    process.env.LASTFM_API_KEY = configService.getSecret('LASTFM_API_KEY');
+    process.env.LASTFM_API_KEY = process.env.LASTFM_API_KEY || configService.getSecret('LASTFM_API_KEY') || configService.getSecret('LAST_FM_API_KEY');
   });
+
+  const isBackfill = process.env.LASTFM_BACKFILL === 'true';
+  const backfillSince = process.env.LASTFM_BACKFILL_SINCE || '2008-01-01';
+  const testTimeout = isBackfill ? 300000 : 60000;
 
   it('fetches lastfm scrobbles', async () => {
     const username = configService.getHeadOfHousehold();
@@ -40,12 +44,12 @@ describe('Last.fm Live Integration', () => {
     }
 
     try {
-      const result = await getScrobbles(`test-${Date.now()}`, { targetUsername: username });
+      const result = await getScrobbles(`test-${Date.now()}`, { targetUsername: username, backfill: isBackfill, query: { backfillSince } });
 
       if (result?.error) {
         console.log(`Error: ${result.error}`);
       } else if (Array.isArray(result)) {
-        console.log(`Fetched ${result.length} scrobbles`);
+        console.log(`Fetched ${result.length} scrobbles${isBackfill ? ' (backfill)' : ''}`);
         if (result.length > 0) {
           const latest = result[0];
           console.log(`Latest: "${latest.title}" by ${latest.artist}`);
@@ -62,5 +66,5 @@ describe('Last.fm Live Integration', () => {
         throw error;
       }
     }
-  }, 60000);
+  }, testTimeout);
 });

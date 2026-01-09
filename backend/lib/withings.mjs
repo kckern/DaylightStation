@@ -1,3 +1,4 @@
+import moment from 'moment';
 import axios from './http.mjs';
 import { saveFile, loadFile, userSaveAuth, userSaveFile } from './io.mjs';
 import { configService } from './config/ConfigService.mjs';
@@ -16,6 +17,20 @@ const circuitBreaker = {
   maxFailures: 3,
   baseCooldownMs: 5 * 60 * 1000, // 5 minutes
   maxCooldownMs: 2 * 60 * 60 * 1000, // 2 hours max
+};
+
+const tokenBufferSeconds = 60; // refresh 1 minute before expiry
+const accessTokenCache = {
+    token: null,
+    expiresAt: null
+};
+
+const resolveSecrets = () => {
+    // Support legacy and new names
+    const clientId = process.env.WITHINGS_CLIENT_ID || configService.getSecret('WITHINGS_CLIENT_ID') || process.env.WITHINGS_CLIENT || configService.getSecret('WITHINGS_CLIENT');
+    const clientSecret = process.env.WITHINGS_CLIENT_SECRET || configService.getSecret('WITHINGS_CLIENT_SECRET') || process.env.WITHINGS_SECRET || configService.getSecret('WITHINGS_SECRET');
+    const redirectUri = process.env.WITHINGS_REDIRECT || configService.getSecret('WITHINGS_REDIRECT');
+    return { clientId, clientSecret, redirectUri };
 };
 
 /**
@@ -97,6 +112,98 @@ const recordSuccess = () => {
   circuitBreaker.cooldownUntil = null;
 };
 
+const getAccessToken = async (username, authData) => {
+    const now = moment();
+    const isCachedValid = () => accessTokenCache.token && accessTokenCache.expiresAt && now.isBefore(accessTokenCache.expiresAt);
+
+    if (isCachedValid()) {
+        withingsLogger.debug('withings.auth.cache_hit', { expiresAt: accessTokenCache.expiresAt.toISOString() });
+        return accessTokenCache.token;
+    }
+
+    if (process.env.WITHINGS_ACCESS_TOKEN && process.env.WITHINGS_ACCESS_TOKEN_EXPIRES_AT) {
+        const envExpiry = moment(process.env.WITHINGS_ACCESS_TOKEN_EXPIRES_AT);
+        if (envExpiry.isValid() && envExpiry.isAfter(now)) {
+            accessTokenCache.token = process.env.WITHINGS_ACCESS_TOKEN;
+            accessTokenCache.expiresAt = envExpiry;
+            withingsLogger.debug('withings.auth.env_token_reused', { expiresAt: envExpiry.toISOString() });
+            return accessTokenCache.token;
+        }
+    }
+
+    const { clientId, clientSecret, redirectUri } = resolveSecrets();
+    const refresh = authData?.refresh || authData?.refresh_token;
+    // Allow seeded access token with expiry from auth file for immediate reuse
+    if (!accessTokenCache.token && authData?.access_token) {
+        const expiresInSeed = authData?.expires_in ? Number(authData.expires_in) : null;
+        if (expiresInSeed && expiresInSeed > 60) {
+            const seededExpiry = moment().add(Math.max(60, expiresInSeed - tokenBufferSeconds), 'seconds');
+            accessTokenCache.token = authData.access_token;
+            accessTokenCache.expiresAt = seededExpiry;
+            process.env.WITHINGS_ACCESS_TOKEN = authData.access_token;
+            process.env.WITHINGS_ACCESS_TOKEN_EXPIRES_AT = seededExpiry.toISOString();
+            withingsLogger.debug('withings.auth.seed_token_loaded', { expiresAt: seededExpiry.toISOString() });
+            if (accessTokenCache.expiresAt && now.isBefore(accessTokenCache.expiresAt)) {
+                return accessTokenCache.token;
+            }
+        }
+    }
+
+    if (!clientId || !clientSecret) {
+        withingsLogger.error('withings.auth.credentials_missing', { message: 'WITHINGS_CLIENT_ID/SECRET missing' });
+        return null;
+    }
+    if (!refresh) {
+        withingsLogger.error('withings.auth.missing_refresh', { message: 'No refresh token found', username });
+        return null;
+    }
+
+    const params_auth = {
+        action: 'requesttoken',
+        grant_type: 'refresh_token',
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refresh,
+        redirect_uri: redirectUri
+    };
+
+    try {
+        const response = await axios.post('https://wbsapi.withings.net/v2/oauth2', params_auth);
+        const auth_data = response?.data?.body || {};
+        const access_token = auth_data.access_token;
+        const refresh_token = auth_data.refresh_token;
+        const expiresIn = auth_data.expires_in || 3600;
+        const expiresAt = moment().add(Math.max(60, expiresIn - tokenBufferSeconds), 'seconds');
+
+        if (refresh_token) {
+            userSaveAuth(username, 'withings', { ...authData, refresh: refresh_token });
+        }
+
+        if (!access_token) {
+            withingsLogger.error('withings.auth.no_access_token', { response: response?.data });
+            return null;
+        }
+
+        accessTokenCache.token = access_token;
+        accessTokenCache.expiresAt = expiresAt;
+        process.env.WITHINGS_ACCESS_TOKEN = access_token;
+        process.env.WITHINGS_ACCESS_TOKEN_EXPIRES_AT = expiresAt.toISOString();
+        withingsLogger.info('withings.auth.token_refreshed', { username, expiresAt: expiresAt.toISOString() });
+        return access_token;
+    } catch (error) {
+        withingsLogger.error('withings.auth.refresh_failed', {
+            error: cleanErrorMessage(error),
+            statusCode: error.response?.status,
+            code: error.code
+        });
+        accessTokenCache.token = null;
+        accessTokenCache.expiresAt = null;
+        delete process.env.WITHINGS_ACCESS_TOKEN;
+        delete process.env.WITHINGS_ACCESS_TOKEN_EXPIRES_AT;
+        return null;
+    }
+};
+
 const getWeightData = async (job_id) => {
 
     //In Dev, the api is not called, and previous api data is sent to the processWeight function
@@ -112,38 +219,19 @@ const getWeightData = async (job_id) => {
         return { skipped: true, reason: 'cooldown', remainingMins: cooldownStatus.remainingMins };
     }
 
-    const WITHINGS_CLIENT = configService.getSecret('WITHINGS_CLIENT');
-    const WITHINGS_SECRET = configService.getSecret('WITHINGS_SECRET');
-    const WITHINGS_REDIRECT = configService.getSecret('WITHINGS_REDIRECT');
+    const { clientId, clientSecret, redirectUri } = resolveSecrets();
     const username = getDefaultUsername();
     // Load from user-namespaced auth
     const authData = configService.getUserAuth('withings', username) || {};
     const { refresh } = authData;
     
     try {
-        const params_auth = {
-            action: 'requesttoken',
-            grant_type: 'refresh_token',
-            client_id: WITHINGS_CLIENT,
-            client_secret: WITHINGS_SECRET,
-            refresh_token: refresh,
-            redirect_uri:  WITHINGS_REDIRECT
-        };
-        const response = await axios.post('https://wbsapi.withings.net/v2/oauth2',params_auth);
-        let {body:auth_data} =response?.data || {};
+        const access_token = await getAccessToken(username, authData);
 
-    const {access_token, refresh_token} = auth_data || {};
-
-    if(refresh_token) {
-        userSaveAuth(username, 'withings', { refresh: refresh_token });
-    }
-
-    if(!access_token){
-
-         processWeight(job_id);  
-        return {error: `No access token.  Refresh token may have expired.`, refresh_token,r:response.data, params_auth, path:process.env.path};
-
-    } 
+        if (!access_token) {
+            processWeight(job_id);
+            return { error: 'No access token. Refresh token may have expired.' };
+        }
 
     const params = {
         access_token,
