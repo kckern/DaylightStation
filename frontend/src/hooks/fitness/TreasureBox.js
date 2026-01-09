@@ -35,8 +35,13 @@ export class FitnessTreasureBox {
     this._governanceCb = null;
   }
 
-  _log(event, data = {}) {
-    getLogger().warn(`treasurebox.${event}`, data);
+  _log(event, data = {}, level = 'warn') { // Default to warn to match legacy behavior
+    const logger = getLogger();
+    if (logger && typeof logger[level] === 'function') {
+      logger[level](`treasurebox.${event}`, data);
+    } else {
+      logger?.warn(`treasurebox.${event}`, data);
+    }
     try {
       if (this.sessionRef?._log) {
         this.sessionRef._log(`treasurebox_${event}`, data);
@@ -250,7 +255,7 @@ export class FitnessTreasureBox {
       activeParticipants: Array.from(activeParticipants),
       coinTimeUnitMs: this.coinTimeUnitMs,
       perUserKeys: Array.from(this.perUser.keys())
-    });
+    }, 'debug');
     if (!this.perUser.size) return;
 
     // Migration shim: if legacy entity-key accumulators exist, migrate them to profileId.
@@ -275,7 +280,7 @@ export class FitnessTreasureBox {
       // This prevents coin accumulation during dropout
       // Phase 4: Simplified - activeParticipants and perUser use same ID scheme
       if (!activeParticipants.has(accKey)) {
-        this._log('user_not_active', { userId: accKey, profileId });
+        this._log('user_not_active', { userId: accKey, profileId }, 'debug');
         // User not active - clear their highestZone to prevent stale awards
         acc.highestZone = null;
         acc.currentColor = null;

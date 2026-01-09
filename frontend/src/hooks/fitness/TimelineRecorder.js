@@ -376,7 +376,7 @@ export class TimelineRecorder {
           userId: e?.userId,
           hr: e?.metrics?.heartRate
         }));
-      getLogger().warn('fitness.timeline.tick', {
+      getLogger().debug('fitness.timeline.tick', {
         tick: currentTickIndex,
         devices: devices.length,
         activeDevices: devices.filter(d => !d.inactiveSince).length,

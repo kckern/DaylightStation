@@ -5,7 +5,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import FlipMove from 'react-flip-move';
 import '../FitnessSidebar.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import { RpmDeviceCard, calculateRpmProgress } from './RealtimeCards';
+import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
 import { useZoneProfiles } from '../../../hooks/useZoneProfiles.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
@@ -381,6 +381,13 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return rebuilt;
   }, [contextHrColorMap, deviceConfiguration]);
 
+  const cadenceColorMap = React.useMemo(() => {
+    const map = {};
+    const cadenceSrc = deviceConfiguration?.cadence || {};
+    Object.keys(cadenceSrc).forEach(k => { map[String(k)] = cadenceSrc[k]; });
+    return map;
+  }, [deviceConfiguration]);
+
   // Map of deviceId -> user name (config + roster fallbacks)
   const hrOwnerBaseMap = React.useMemo(() => {
     const map = {};
@@ -669,21 +676,13 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       return String(a.deviceId).localeCompare(String(b.deviceId));
     });
 
-    // RPM: Sort by rpmProgress (% toward max) descending
+    // RPM: Sort by appearance time (stable deviceId order), active devices first
     rpmDevices.sort((a, b) => {
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
 
-      const aEquip = equipmentMap[String(a.deviceId)] || {};
-      const bEquip = equipmentMap[String(b.deviceId)] || {};
-      const aThresholds = aEquip.rpm || { min: 0, max: 100 };
-      const bThresholds = bEquip.rpm || { min: 0, max: 100 };
-      const aRpm = a.cadence || 0;
-      const bRpm = b.cadence || 0;
-      const aProgress = calculateRpmProgress(aRpm, aThresholds);
-      const bProgress = calculateRpmProgress(bRpm, bThresholds);
-
-      return bProgress - aProgress;
+      // Stable sort by deviceId to preserve appearance order
+      return String(a.deviceId).localeCompare(String(b.deviceId));
     });
 
     otherDevices.sort((a, b) => {
@@ -842,22 +841,27 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
                         const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
                         const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
-                        const rpmThresholds = equipmentInfo?.rpm || { min: 30, med: 60, high: 80, max: 100 };
-                        const deviceSubtype = rpmDevice.type === 'jumprope' ? 'jumprope' : 'cycle';
-                        const showRevolutions = equipmentInfo?.showRevolutions ?? (rpmDevice.type === 'jumprope');
-                        const isInactive = rpmDevice.isActive === false || !!rpmDevice.inactiveSince;
+                        const rpmValue = Number.isFinite(rpmDevice.cadence)
+                          ? Math.max(0, Math.round(rpmDevice.cadence))
+                          : 0;
+                        const animationDuration = rpmValue > 0
+                          ? `${CONFIG.rpm.animationBase / Math.max(rpmValue, 1)}s`
+                          : '0s';
+                        const deviceColor = cadenceColorMap[String(rpmDevice.deviceId)];
+                        const colorMap = CONFIG.rpm.colorMap;
+                        const borderColor = deviceColor ? (colorMap[deviceColor] || deviceColor) : colorMap.green;
 
                         return (
-                          <RpmDeviceCard
+                          <RpmDeviceAvatar
                             key={`rpm-${rpmDevice.deviceId}`}
-                            device={rpmDevice}
-                            deviceName={deviceName}
-                            equipmentId={equipmentId}
-                            rpmThresholds={rpmThresholds}
-                            deviceSubtype={deviceSubtype}
-                            showRevolutions={showRevolutions}
-                            isInactive={isInactive}
-                            compactMode={rpmDevices.length >= 2}
+                            rpm={rpmValue}
+                            animationDuration={animationDuration}
+                            avatarSrc={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
+                            avatarAlt={deviceName}
+                            imageClassName="rpm-device-image"
+                            spinnerStyle={{ borderColor }}
+                            valueStyle={{ background: CONFIG.rpm.overlayBg }}
+                            fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
                           />
                         );
                       })}
