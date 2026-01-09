@@ -211,6 +211,18 @@ const VoiceMemoOverlay = ({
       onClose?.();
       return;
     }
+
+    // Check if transcript indicates no meaningful content - auto-redo
+    const transcript = (memo.transcriptClean || memo.transcriptRaw || '').trim().toLowerCase();
+    if (transcript === 'no memo' || transcript === 'no memo.') {
+      logVoiceMemo('overlay-redo-auto-retry', { reason: 'no-memo-transcript', memoId: memo.memoId || null });
+      // Reset state so recording auto-starts again
+      autoStartRef.current = false;
+      setRecorderState('idle');
+      // Stay in redo mode - recording will auto-start via useLayoutEffect
+      return;
+    }
+
     const targetId = overlayState?.memoId;
     logVoiceMemo('overlay-redo-captured', { memoId: targetId || memo.memoId || null });
     const stored = targetId ? (onReplaceMemo?.(targetId, memo) || memo) : (onAddMemo?.(memo) || memo);
@@ -543,7 +555,9 @@ const VoiceMemoOverlay = ({
               </div>
             ) : (
               <>
-                <span className="voice-memo-overlay__prompt">How did it go?</span>
+                <span className="voice-memo-overlay__prompt">
+                  {overlayState?.fromFitnessVideoEnd ? 'How did it go?' : 'How is it going?'}
+                </span>
 
                 <MicLevelIndicator
                   level={(micLevel || 0) * 100}
