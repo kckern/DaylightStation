@@ -16,6 +16,9 @@ import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolve
 import { loadAllConfig, logConfigSummary } from './lib/config/loader.mjs';
 import { configService } from './lib/config/ConfigService.mjs';
 
+// ConfigService v2 (new architecture - runs alongside old during migration)
+import { initConfigService, ConfigValidationError } from './lib/config/v2/index.mjs';
+
 // Logging system
 import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
 import { createConsoleTransport, createLogglyTransport, createFileTransport } from './lib/logging/transports/index.js';
@@ -47,6 +50,21 @@ hydrateProcessEnvFromConfigs(configPaths.configDir);
 // Initialize ConfigService with data directory so it can load config files
 configService.init({ dataDir: configPaths.dataDir });
 console.log('[Config] ConfigService initialized with dataDir:', configPaths.dataDir);
+
+// Initialize ConfigService v2 (new architecture)
+// During migration, this runs alongside old ConfigService
+// Validation errors are logged but don't block startup (yet)
+try {
+  initConfigService(configPaths.dataDir);
+  console.log('[Config] ConfigService v2 initialized successfully');
+} catch (err) {
+  if (err instanceof ConfigValidationError) {
+    console.warn('[Config] ConfigService v2 validation failed (non-blocking during migration):');
+    console.warn(err.message);
+  } else {
+    console.error('[Config] ConfigService v2 init error:', err.message);
+  }
+}
 
 let loggingConfig = loadLoggingConfig();
 
