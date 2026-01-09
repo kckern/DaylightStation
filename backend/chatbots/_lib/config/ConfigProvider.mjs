@@ -110,6 +110,39 @@ export class ConfigProvider {
       return this.#loadYamlFile(overridePath);
     }
 
+    // Try ConfigService first (new architecture - loads from data/system/secrets.yml)
+    if (configService.isReady()) {
+      try {
+        const secrets = {};
+        // Get all secret keys we need
+        const secretKeys = [
+          'TELEGRAM_NUTRIBOT_TOKEN',
+          'TELEGRAM_JOURNALIST_BOT_TOKEN',
+          'TELEGRAM_HOMEBOT_TOKEN',
+          'OPENAI_API_KEY',
+          'GOOGLE_CLIENT_ID',
+          'GOOGLE_CLIENT_SECRET',
+          'GOOGLE_API_KEY',
+          'LAST_FM_API_KEY',
+          // Add other commonly used secrets as needed
+        ];
+        
+        for (const key of secretKeys) {
+          const value = configService.getSecret(key);
+          if (value) {
+            secrets[key] = value;
+          }
+        }
+        
+        if (Object.keys(secrets).length > 0) {
+          return secrets;
+        }
+      } catch (error) {
+        logger.warn('chatbots.config.secrets_from_configservice_failed', { error: error.message });
+      }
+    }
+
+    // Fallback to legacy paths
     const searchPaths = getSecretsSearchPaths();
     for (const p of searchPaths) {
       if (fs.existsSync(p)) {
