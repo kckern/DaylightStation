@@ -300,6 +300,7 @@
     transition: transform 0.1s linear;
     border-radius: 0 0 0.875rem 0.875rem;
     box-shadow: 0 0 0.5rem rgba(34, 197, 94, 0.6);
+    z-index: 2;
   }
 
   @keyframes pulse-glow {
