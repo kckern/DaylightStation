@@ -1,0 +1,4 @@
+households:
+  default: test-household
+
+timezone: America/New_York

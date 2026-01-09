@@ -1,0 +1,15 @@
+bots:
+  nutribot:
+    telegram_bot_id: "6898194425"
+    webhooks:
+      prod: https://api.example.com/nutribot
+      dev: https://dev.example.com/nutribot
+  journalist:
+    telegram_bot_id: "580626020"
+    webhooks:
+      prod: https://api.example.com/journalist
+      dev: https://dev.example.com/journalist
+
+identity_mappings:
+  telegram:
+    "12345": testuser
