@@ -234,13 +234,28 @@ const findFirstFiniteAfter = (arr = [], index) => {
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor
  * @param {Array} [options.zoneConfig] - Zone configuration for coin rate lookup (fixes sawtooth)
+ * @param {string} [options.sessionId] - Session ID to clear cache when session changes (memory leak fix)
  */
 const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = [], options = {}) => {
-	const { activityMonitor, zoneConfig } = options;
+	const { activityMonitor, zoneConfig, sessionId } = options;
 	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor, zoneConfig });
 	const [participantCache, setParticipantCache] = useState({});
 	// Track which historical IDs we've already processed to avoid re-processing on every render
 	const processedHistoricalRef = useRef(new Set());
+	// Track last seen sessionId to detect session changes
+	const lastSessionIdRef = useRef(sessionId);
+
+	// MEMORY LEAK FIX: Clear all cached state when session ends or changes
+	// This prevents stale participant data from accumulating across sessions
+	useEffect(() => {
+		// Session changed (including ended → new session, or active → ended)
+		if (lastSessionIdRef.current !== sessionId) {
+			lastSessionIdRef.current = sessionId;
+			// Clear all accumulated state
+			setParticipantCache({});
+			processedHistoricalRef.current.clear();
+		}
+	}, [sessionId]);
 
 	// Initialize cache from historical participants (1B fix)
 	// Uses processedHistoricalRef instead of boolean flag to allow late arrivals while avoiding duplicates
@@ -645,7 +660,8 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		timebase,
 		registerLifecycle,
 		activityMonitor,  // Phase 2 - centralized activity tracking
-		zoneConfig        // Zone config for coin rate lookup (fixes sawtooth)
+		zoneConfig,       // Zone config for coin rate lookup (fixes sawtooth)
+		sessionId         // Session ID for cache cleanup on session change
 	} = useFitnessPlugin('fitness_chart');
 	const containerRef = useRef(null);
 	const [chartSize, setChartSize] = useState({ width: DEFAULT_CHART_WIDTH, height: DEFAULT_CHART_HEIGHT });
@@ -671,7 +687,13 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			const rect = el.getBoundingClientRect();
 			const width = Math.max(240, rect.width || DEFAULT_CHART_WIDTH);
 			const height = Math.max(200, rect.height || DEFAULT_CHART_HEIGHT);
-			setChartSize({ width, height });
+			// Only update state if dimensions actually changed to prevent infinite render loop
+			setChartSize((prev) => {
+				if (prev.width === width && prev.height === height) {
+					return prev; // Return same reference to skip re-render
+				}
+				return { width, height };
+			});
 		};
 
 		updateSize();
@@ -682,12 +704,13 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 
 	// Pass activityMonitor for centralized activity tracking (Phase 2)
 	// Pass zoneConfig for zone-based slope enforcement (fixes sawtooth pattern)
+	// Pass sessionId to clear cache on session change (memory leak fix)
 	const { allEntries, presentEntries, absentEntries, dropoutMarkers, maxValue, maxIndex } = useRaceChartWithHistory(
 		participants,
 		getUserTimelineSeries,
 		timebase,
 		historicalParticipants,
-		{ activityMonitor, zoneConfig }
+		{ activityMonitor, zoneConfig, sessionId }
 	);
 
 	// Diagnostic logging to dev.log to understand warmup failures without spamming
@@ -763,6 +786,16 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	// Always use Y_SCALE_BASE regardless of entry count for consistent grid spacing
 	const yScaleBase = Y_SCALE_BASE;
 	const [persisted, setPersisted] = useState(null);
+
+	// MEMORY LEAK FIX: Clear persisted chart data when session ends
+	// This prevents stale chart snapshots from lingering in memory
+	const lastPersistedSessionRef = useRef(sessionId);
+	useEffect(() => {
+		if (lastPersistedSessionRef.current !== sessionId) {
+			lastPersistedSessionRef.current = sessionId;
+			setPersisted(null);
+		}
+	}, [sessionId]);
 
 	const minDataValue = useMemo(() => {
 		const vals = allEntries.flatMap((e) => e.beats || []).filter((v) => Number.isFinite(v));

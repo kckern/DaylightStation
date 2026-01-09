@@ -1,10 +1,9 @@
-import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import CircularUserAvatar from '../components/CircularUserAvatar.jsx';
-import RpmDeviceAvatar from '../FitnessSidebar/RealtimeCards/RpmDeviceAvatar.jsx';
-import { calculateRpmProgress, getRpmZoneColor } from '../FitnessSidebar/RealtimeCards/rpmUtils.mjs';
+import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
 import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {
@@ -13,6 +12,26 @@ const RPM_COLOR_MAP = {
   yellow: '#f0c836',
   green: '#51cf66',
   blue: '#6ab8ff'
+};
+
+const withAlpha = (hexColor, alpha = 0.9) => {
+  if (!hexColor || typeof hexColor !== 'string') {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  const normalized = hexColor.trim();
+  if (!normalized.startsWith('#') || (normalized.length !== 7 && normalized.length !== 4)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  const expand = normalized.length === 4
+    ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+    : normalized;
+  const r = parseInt(expand.slice(1, 3), 16);
+  const g = parseInt(expand.slice(3, 5), 16);
+  const b = parseInt(expand.slice(5, 7), 16);
+  if ([r, g, b].some(Number.isNaN)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
 const canonicalZones = ['cool', 'active', 'warm', 'hot', 'fire'];
@@ -77,8 +96,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
   const [anchor, setAnchor] = useState('right');
   const {
     heartRateDevices = [],
-    cadenceDevices = [],
-    jumpropeDevices = [],
+    allDevices = [],
     getUserByDevice,
     userCurrentZones,
     zones,
@@ -94,22 +112,24 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     if (Array.isArray(equipment)) {
       equipment.forEach((item) => {
         if (!item) return;
-        // Use explicit ID from equipment config
         const equipmentId = item.id || String(item.cadence || item.speed || item.ble || '');
-        const entry = {
-          name: item.name || String(item.cadence || item.speed || item.ble),
-          id: equipmentId,
-          rpm: item.rpm,
-          showRevolutions: item.showRevolutions ?? (item.type === 'jumprope')
-        };
         if (item.cadence != null) {
-          map[String(item.cadence)] = entry;
+          map[String(item.cadence)] = {
+            name: item.name || String(item.cadence),
+            id: equipmentId
+          };
         }
         if (item.speed != null) {
-          map[String(item.speed)] = entry;
+          map[String(item.speed)] = {
+            name: item.name || String(item.speed),
+            id: equipmentId
+          };
         }
         if (item.ble != null) {
-          map[String(item.ble)] = entry;
+          map[String(item.ble)] = {
+            name: item.name || String(item.ble),
+            id: equipmentId
+          };
         }
       });
     }
@@ -137,7 +157,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           : null;
         const effectiveZoneColor = zoneInfo.color || 'rgba(128, 128, 128, 0.6)';
         const isInactive = device.inactiveSince || device.connectionState !== 'connected';
-        
+
         return {
           deviceId: device.deviceId,
           name: user?.name || String(device.deviceId),
@@ -149,44 +169,41 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           progressValue
         };
       });
-  }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones]);
+  }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, userZoneProgress]);
 
   const rpmItems = useMemo(() => {
     const cadenceConfig = deviceConfiguration?.cadence || {};
-    const allRpmDevices = [
-      ...(Array.isArray(cadenceDevices) ? cadenceDevices : []),
-      ...(Array.isArray(jumpropeDevices) ? jumpropeDevices : [])
-    ].filter((device) => device && device.deviceId != null);
+    // Filter RPM devices from allDevices (same approach as FitnessUsers)
+    const allRpmDevices = allDevices.filter(d =>
+      d.type === 'cadence' || d.type === 'stationary_bike' ||
+      d.type === 'ab_roller' || d.type === 'jumprope'
+    );
 
     return allRpmDevices.map((device) => {
-      const isJumprope = Array.isArray(jumpropeDevices)
-        ? jumpropeDevices.some((j) => j.deviceId === device.deviceId)
-        : false;
+      const isJumprope = device.type === 'jumprope';
       const equipmentConfig = isJumprope
         ? (equipment.find((e) => e.ble === device.deviceId) || equipmentMap[String(device.deviceId)])
         : equipmentMap[String(device.deviceId)];
       const equipmentId = equipmentConfig?.id || String(device.deviceId);
-      const rpmThresholds = equipmentConfig?.rpm || { min: 30, med: 60, high: 80, max: 100 };
+      const avatarSrc = DaylightMediaPath(`/media/img/equipment/${equipmentId}`);
       const rpm = Math.max(0, Math.round(device.cadence || 0));
-      const zoneColor = getRpmZoneColor(rpm, rpmThresholds);
+      const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
       const colorKey = cadenceConfig[String(device.deviceId)];
-      const resolvedRingColor = colorKey ? (RPM_COLOR_MAP[colorKey] || colorKey) : zoneColor;
+      const resolvedRingColor = colorKey
+        ? (RPM_COLOR_MAP[colorKey] || colorKey)
+        : RPM_COLOR_MAP.orange;
+      const overlayBg = withAlpha(resolvedRingColor, 0.9);
 
       return {
         deviceId: device.deviceId,
         rpm,
-        equipmentId,
-        rpmThresholds,
-        deviceSubtype: isJumprope ? 'jumprope' : 'cycle',
-        revolutionCount: device.revolutionCount ?? 0,
-        zoneColor: resolvedRingColor
+        avatarSrc,
+        animationDuration,
+        ringColor: resolvedRingColor,
+        overlayBg
       };
-    }).sort((a, b) => {
-      const aProgress = calculateRpmProgress(a.rpm, a.rpmThresholds);
-      const bProgress = calculateRpmProgress(b.rpm, b.rpmThresholds);
-      return bProgress - aProgress;
     });
-  }, [cadenceDevices, jumpropeDevices, equipmentMap, equipment, deviceConfiguration?.cadence]);
+  }, [allDevices, equipmentMap, equipment, deviceConfiguration?.cadence]);
 
   const handleToggleAnchor = useCallback((event) => {
     if (event) {
@@ -236,20 +253,21 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
       {rpmItems.length > 0 && (
         <div className={`fullscreen-vitals-group rpm-group count-${rpmItems.length}`}>
           {rpmItems.map((item) => (
-            <div key={`rpm-${item.deviceId}`} className="fullscreen-rpm-item">
-              <RpmDeviceAvatar
-                equipmentId={item.equipmentId}
-                equipmentName=""
-                rpm={item.rpm}
-                revolutionCount={item.revolutionCount}
-                rpmThresholds={item.rpmThresholds}
-                deviceSubtype={item.deviceSubtype}
-                size={76}
-              />
-              <div className="rpm-value-overlay" style={{ color: item.zoneColor }}>
-                <span className="rpm-value">{item.rpm}</span>
-              </div>
-            </div>
+            <RpmDeviceAvatar
+              key={`rpm-${item.deviceId}`}
+              baseClassName={null}
+              className="vital-rpm"
+              rpm={item.rpm}
+              animationDuration={item.animationDuration}
+              avatarSrc={item.avatarSrc}
+              avatarAlt=""
+              style={{
+                '--rpm-ring-color': item.ringColor,
+                '--rpm-overlay-bg': item.overlayBg
+              }}
+              fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
+              renderValue={(value) => (Number.isFinite(value) ? value : 0)}
+            />
           ))}
         </div>
       )}
