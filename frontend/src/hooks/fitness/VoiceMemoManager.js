@@ -18,14 +18,35 @@ export class VoiceMemoManager {
 
   addMemo(memo) {
     if (!memo) return null;
-    
+
     const newMemo = {
       ...memo,
       memoId: memo.memoId || `memo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       createdAt: memo.createdAt || Date.now(),
       sessionElapsedSeconds: memo.sessionElapsedSeconds ?? this._getSessionElapsedSeconds()
     };
-    
+
+    // Duplicate prevention: Check for same memoId
+    const existingById = this.memos.find(m => String(m.memoId) === String(newMemo.memoId));
+    if (existingById) {
+      return existingById; // Already exists, return existing
+    }
+
+    // Duplicate prevention: Check for same transcript within 5 seconds
+    const DUPLICATE_WINDOW_MS = 5000;
+    const transcriptToMatch = newMemo.transcriptRaw || newMemo.transcriptClean || '';
+    if (transcriptToMatch) {
+      const existingByContent = this.memos.find(m => {
+        const existingTranscript = m.transcriptRaw || m.transcriptClean || '';
+        if (!existingTranscript || existingTranscript !== transcriptToMatch) return false;
+        const timeDiff = Math.abs((m.createdAt || 0) - (newMemo.createdAt || 0));
+        return timeDiff < DUPLICATE_WINDOW_MS;
+      });
+      if (existingByContent) {
+        return existingByContent; // Duplicate content within time window
+      }
+    }
+
     this.memos.push(newMemo);
     const session = this.sessionRef;
     if (session && typeof session.logEvent === 'function') {

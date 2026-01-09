@@ -923,10 +923,32 @@
   
   .rpm-devices {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
-    justify-content: space-between;
     flex: 1;
+
+    // Single device - default layout
+    &.devicecount_1 {
+      justify-content: flex-start;
+    }
+
+    // 2-3 devices - horizontal row
+    &.devicecount_2,
+    &.devicecount_3 {
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: 10px;
+    }
+
+    // 4+ devices - grid layout
+    &.devicecount_4,
+    &.devicecount_5,
+    &.devicecount_6 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      justify-items: center;
+    }
   }
   .rpm_devices.devicecount_4 {
     .rpm-device-avatar {

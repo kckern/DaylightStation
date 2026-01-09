@@ -857,6 +857,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                             deviceSubtype={deviceSubtype}
                             showRevolutions={showRevolutions}
                             isInactive={isInactive}
+                            compactMode={rpmDevices.length >= 2}
                           />
                         );
                       })}

@@ -3,7 +3,6 @@ import { LoadingOverlay, Alert } from '@mantine/core';
 import { DaylightAPI, DaylightMediaPath, normalizeImageUrl } from '../../lib/api.mjs';
 import './FitnessShow.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
-import VoiceMemoModal from './shared/VoiceMemoModal';
 import moment from 'moment';
 
 const formatWatchedDate = (dateString) => {
@@ -210,8 +209,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
   const [loadedEpisodeImages, setLoadedEpisodeImages] = useState({});
   const [loadedSeasonImages, setLoadedSeasonImages] = useState({});
-  const [voiceMemoOpen, setVoiceMemoOpen] = useState(false);
-  
+
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
   const fitnessContext = useFitness() || {};
   const {
@@ -226,9 +224,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     governedTypeSet: contextGovernedTypeSet,
     fitnessSessionInstance,
     addVoiceMemoToSession,
-    pauseMusicPlayer,
-    resumeMusicPlayer,
-    preferredMicrophoneId
+    openVoiceMemoCapture
   } = fitnessContext;
   const nomusicLabelSet = useMemo(() => {
     const normalized = Array.isArray(nomusicLabels)
@@ -964,7 +960,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                     <button
                       type="button"
                       className="show-voice-memo-btn"
-                      onClick={() => setVoiceMemoOpen(true)}
+                      onClick={() => openVoiceMemoCapture?.(null)}
                       aria-label="Record voice memo"
                       title="Record voice memo"
                     >
@@ -1166,16 +1162,6 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
           )}
         </div>
       </div>
-      <VoiceMemoModal
-        context="show"
-        open={voiceMemoOpen}
-        onClose={() => setVoiceMemoOpen(false)}
-        onMemoSaved={(memo) => addVoiceMemoToSession?.(memo)}
-        sessionId={fitnessSessionInstance?.sessionId}
-        pauseMusic={pauseMusicPlayer}
-        resumeMusic={resumeMusicPlayer}
-        preferredMicrophoneId={preferredMicrophoneId}
-      />
     </div>
   );
 };

@@ -506,10 +506,11 @@ fitnessRouter.post('/voice_memo', async (req, res) => {
         const filePath = path.join(tmpDir, fileName);
         fs.writeFileSync(filePath, buffer);
 
-        // 1. Transcribe with Whisper
+        // 1. Transcribe with Whisper (fitness-biased prompt improves accuracy for exercise terms)
         const transcription = await openai.audio.transcriptions.create({
             file: fs.createReadStream(filePath),
-            model: 'whisper-1'
+            model: 'whisper-1',
+            prompt: 'Transcribe this description of a fitness workout. Common terms: reps, sets, squats, lunges, burpees, HIIT, intervals, warmup, cooldown, rest, cardio, weights, dumbbells, kettlebell, pushups, pullups, planks, crunches.  If you cant understand, respond with "[No Memo]"',
         });
         const transcriptRaw = transcription?.text || '';
 
@@ -520,7 +521,7 @@ fitnessRouter.post('/voice_memo', async (req, res) => {
                 const cleanResp = await openai.chat.completions.create({
                     model: 'gpt-4o',
                     messages: [
-                        { role: 'system', content: 'You clean short workout voice memos. Remove duplicated words, filler like "uh", obvious transcription glitches, keep numeric data and intent. Return ONLY the cleaned text.' },
+                        { role: 'system', content: 'You clean short workout voice memos. Remove duplicated words, filler like "uh", obvious transcription glitches, keep numeric data and intent. Return ONLY the cleaned text.  This will be a report of a workout session. If there are obvious mistranscriptions that cannot be resolved, solve them (eg thumbbells -> dumbbells). Do not add any information that was not in the original. If it appears to be a transcript of noise, silence, or unintelligible speech, respond with "[No Memo]".' },
                         { role: 'user', content: transcriptRaw }
                     ],
                     temperature: 0.2,

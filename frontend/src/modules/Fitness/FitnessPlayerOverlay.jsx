@@ -316,7 +316,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
   const closeVoiceMemoOverlay = fitnessCtx?.closeVoiceMemoOverlay;
   const openVoiceMemoReview = fitnessCtx?.openVoiceMemoReview;
   const openVoiceMemoList = fitnessCtx?.openVoiceMemoList;
-  const openVoiceMemoRedo = fitnessCtx?.openVoiceMemoRedo;
+  const openVoiceMemoCapture = fitnessCtx?.openVoiceMemoCapture;
   const removeVoiceMemo = fitnessCtx?.removeVoiceMemoFromSession;
   const replaceVoiceMemo = fitnessCtx?.replaceVoiceMemoInSession;
   const addVoiceMemo = fitnessCtx?.addVoiceMemoToSession;
@@ -333,6 +333,22 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
   const isGovernanceLocked = overlay?.category === 'governance' && overlay.status === 'locked';
   const activeChallenge = governanceState?.challenge || null;
   const challengeEventRef = React.useRef({ id: null, status: null });
+  const wasPlayingBeforeOverlayRef = React.useRef(false);
+
+  // Pause video when voice memo overlay opens
+  React.useEffect(() => {
+    if (voiceMemoOverlayOpen && playerRef?.current) {
+      const video = playerRef.current.getMediaElement?.() || playerRef.current;
+      if (video && typeof video.pause === 'function') {
+        wasPlayingBeforeOverlayRef.current = !video.paused;
+        if (!video.paused) {
+          video.pause();
+        }
+      }
+      // Also pause music
+      fitnessCtx?.pauseMusicPlayer?.();
+    }
+  }, [voiceMemoOverlayOpen, playerRef, fitnessCtx]);
 
   React.useEffect(() => {
     if (!sessionInstance || typeof sessionInstance.logEvent !== 'function') {
@@ -1072,7 +1088,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           onClose={closeVoiceMemoOverlay}
           onOpenReview={openVoiceMemoReview}
           onOpenList={openVoiceMemoList}
-          onOpenRedo={openVoiceMemoRedo}
+          onOpenRedo={openVoiceMemoCapture}
           onRemoveMemo={removeVoiceMemo}
           onAddMemo={addVoiceMemo}
           onReplaceMemo={replaceVoiceMemo}

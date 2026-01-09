@@ -683,7 +683,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'list', memoId: null });
   }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded]);
 
-  const openVoiceMemoRedo = React.useCallback((memoOrId, { autoAccept = false, onComplete } = {}) => {
+  const openVoiceMemoCapture = React.useCallback((memoOrId, { autoAccept = false, onComplete } = {}) => {
+    // Pause video and music when opening voice memo overlay
+    setVideoPlayerPaused(true);
+    musicPlayerRef.current?.pause?.();
+
     const id = typeof memoOrId === 'string' ? memoOrId : memoOrId?.memoId;
     if (id) {
       const existing = getVoiceMemoById(id);
@@ -711,9 +715,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       startedAt: Date.now(),
       onComplete: onComplete || null // Fix 5: Store onComplete callback
     });
-    logVoiceMemo('overlay-open-redo', { memoId: id || null, autoAccept });
-    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'redo', memoId: id || null, autoAccept });
-  }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
+    logVoiceMemo('overlay-open-capture', { memoId: id || null, autoAccept });
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'capture', memoId: id || null, autoAccept });
+  }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, setVideoPlayerPaused, voiceMemos]);
 
   React.useEffect(() => {
     if (selectedPlaylistId != null) {
@@ -1650,7 +1654,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     closeVoiceMemoOverlay,
     openVoiceMemoReview,
     openVoiceMemoList,
-    openVoiceMemoRedo,
+    openVoiceMemoCapture,
     
     setGovernanceMedia,
     updateGovernancePhase,

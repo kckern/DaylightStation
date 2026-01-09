@@ -24,6 +24,7 @@ export function RpmDeviceCard({
   isInactive = false,
   isCountdownActive = false,
   countdownWidth = 0,
+  compactMode = false,
 }) {
   const isStale = device.timestamp && (Date.now() - device.timestamp > STALENESS_THRESHOLD_MS);
 
@@ -40,6 +41,7 @@ export function RpmDeviceCard({
     isInactive ? 'inactive' : 'active',
     isCountdownActive ? 'countdown-active' : '',
     isStale ? 'stale' : '',
+    compactMode ? 'compact-mode' : '',
     zoneClass
   ].filter(Boolean).join(' ');
 
@@ -57,29 +59,38 @@ export function RpmDeviceCard({
         </div>
       )}
 
-      <RpmDeviceAvatar
-        equipmentId={equipmentId}
-        equipmentName={deviceName}
-        rpm={rpm}
-        revolutionCount={revolutions}
-        rpmThresholds={rpmThresholds}
-        deviceSubtype={deviceSubtype}
-        size={64}
-      />
-
-      <div className="device-info">
-        <div className="device-name">{deviceName}</div>
-        <div className="device-stats">
-          <span className="device-value">{rpmValue}</span>
-          <span className="device-unit">RPM</span>
-          {showRevolutions && (
-            <>
-              <span className="device-value secondary">{revsValue}</span>
-              <span className="device-unit secondary">total</span>
-            </>
-          )}
-        </div>
+      <div className="rpm-avatar-wrapper">
+        <RpmDeviceAvatar
+          equipmentId={equipmentId}
+          equipmentName={deviceName}
+          rpm={rpm}
+          revolutionCount={revolutions}
+          rpmThresholds={rpmThresholds}
+          deviceSubtype={deviceSubtype}
+          size={64}
+        />
+        {compactMode && (
+          <div className="rpm-value-overlay">
+            <span className="rpm-value">{rpmValue}</span>
+          </div>
+        )}
       </div>
+
+      {!compactMode && (
+        <div className="device-info">
+          <div className="device-name">{deviceName}</div>
+          <div className="device-stats">
+            <span className="device-value">{rpmValue}</span>
+            <span className="device-unit">RPM</span>
+            {showRevolutions && (
+              <>
+                <span className="device-value secondary">{revsValue}</span>
+                <span className="device-unit secondary">total</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -100,7 +111,8 @@ RpmDeviceCard.propTypes = {
   zoneClass: PropTypes.string,
   isInactive: PropTypes.bool,
   isCountdownActive: PropTypes.bool,
-  countdownWidth: PropTypes.number
+  countdownWidth: PropTypes.number,
+  compactMode: PropTypes.bool
 };
 
 export default RpmDeviceCard;

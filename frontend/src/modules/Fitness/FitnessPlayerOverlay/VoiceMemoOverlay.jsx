@@ -5,9 +5,11 @@ import { MicLevelIndicator, CountdownRing } from '../shared';
 import { formatTime } from '../shared/utils/time';
 import './VoiceMemoOverlay.scss';
 import { playbackLog } from '../../Player/lib/playbackLogger.js';
+import { getDaylightLogger } from '../../../lib/logging/singleton.js';
+import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 
-// Auto-accept countdown for review mode (4C: extended to 5000ms)
-const VOICE_MEMO_AUTO_ACCEPT_MS = 5000;
+// Auto-accept countdown for review mode
+const VOICE_MEMO_AUTO_ACCEPT_MS = 8000;
 
 const Icons = {
   Review: () => (
@@ -49,6 +51,16 @@ const Icons = {
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect>
     </svg>
+  ),
+  Processing: () => (
+    <svg className="voice-memo-overlay__processing-spinner" width="48" height="48" viewBox="0 0 48 48" fill="none">
+      {/* Animated sound wave bars */}
+      <rect className="voice-memo-overlay__wave-bar voice-memo-overlay__wave-bar--1" x="8" y="16" width="4" height="16" rx="2" fill="currentColor" />
+      <rect className="voice-memo-overlay__wave-bar voice-memo-overlay__wave-bar--2" x="16" y="12" width="4" height="24" rx="2" fill="currentColor" />
+      <rect className="voice-memo-overlay__wave-bar voice-memo-overlay__wave-bar--3" x="24" y="8" width="4" height="32" rx="2" fill="currentColor" />
+      <rect className="voice-memo-overlay__wave-bar voice-memo-overlay__wave-bar--4" x="32" y="12" width="4" height="24" rx="2" fill="currentColor" />
+      <rect className="voice-memo-overlay__wave-bar voice-memo-overlay__wave-bar--5" x="40" y="16" width="4" height="16" rx="2" fill="currentColor" />
+    </svg>
   )
 };
 
@@ -88,6 +100,10 @@ const VoiceMemoOverlay = ({
   playerRef,
   preferredMicrophoneId
 }) => {
+  const fitnessCtx = useFitnessContext();
+  const pauseMusicPlayer = fitnessCtx?.pauseMusicPlayer;
+  const resumeMusicPlayer = fitnessCtx?.resumeMusicPlayer;
+
   const logVoiceMemo = useCallback((event, payload = {}, options = {}) => {
     playbackLog('voice-memo', {
       event,
@@ -122,16 +138,21 @@ const VoiceMemoOverlay = ({
   const [autoAcceptCancelled, setAutoAcceptCancelled] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
   const micLevelRafRef = React.useRef(null);
-  const liveMessageRef = React.useRef('');
   const closeButtonRef = React.useRef(null);
   const recordButtonRef = React.useRef(null);
-  const stopButtonRef = React.useRef(null);
   const autoStartRef = React.useRef(false);
+  const overlayRef = React.useRef(null);
+  const panelRef = React.useRef(null);
 
   const handleClose = useCallback(() => {
-    logVoiceMemo('overlay-close-request');
+    logVoiceMemo('overlay-close-request', { mode: overlayState?.mode, memoId: overlayState?.memoId });
+    // If closing during review mode, discard the pending memo
+    if (overlayState?.mode === 'review' && overlayState?.memoId) {
+      logVoiceMemo('overlay-close-discard', { memoId: overlayState.memoId });
+      onRemoveMemo?.(overlayState.memoId);
+    }
     onClose?.();
-  }, [logVoiceMemo, onClose]);
+  }, [logVoiceMemo, onClose, onRemoveMemo, overlayState?.mode, overlayState?.memoId]);
 
   const handleAccept = useCallback(() => {
     logVoiceMemo('overlay-accept', { memoId: overlayState?.memoId || null });
@@ -224,7 +245,9 @@ const VoiceMemoOverlay = ({
       micLevelRafRef.current = requestAnimationFrame(() => {
         setMicLevel(Number.isFinite(level) ? level : 0);
       });
-    }, [])
+    }, []),
+    onPauseMusic: pauseMusicPlayer,
+    onResumeMusic: resumeMusicPlayer
   });
 
   const isProcessing = uploading || recorderState === 'processing';
@@ -274,6 +297,41 @@ const VoiceMemoOverlay = ({
     }
   }, [overlayState?.open]);
 
+  // DEBUG: Log xywh of overlay and panel
+  useEffect(() => {
+    if (!overlayState?.open) return;
+    const logger = getDaylightLogger();
+    const logDimensions = () => {
+      const overlay = overlayRef.current;
+      const panel = panelRef.current;
+      if (overlay) {
+        const rect = overlay.getBoundingClientRect();
+        logger.info('voice-memo-overlay-dimensions', {
+          element: 'overlay',
+          mode: overlayState?.mode,
+          x: rect.x.toFixed(1),
+          y: rect.y.toFixed(1),
+          width: rect.width.toFixed(1),
+          height: rect.height.toFixed(1)
+        });
+      }
+      if (panel) {
+        const rect = panel.getBoundingClientRect();
+        logger.info('voice-memo-panel-dimensions', {
+          element: 'panel',
+          mode: overlayState?.mode,
+          x: rect.x.toFixed(1),
+          y: rect.y.toFixed(1),
+          width: rect.width.toFixed(1),
+          height: rect.height.toFixed(1)
+        });
+      }
+    };
+    // Log after render settles
+    const timeout = setTimeout(logDimensions, 100);
+    return () => clearTimeout(timeout);
+  }, [overlayState?.open, overlayState?.mode]);
+
   useEffect(() => {
     if (overlayState?.mode !== 'redo' && isRecording) {
       stopRecording();
@@ -292,11 +350,12 @@ const VoiceMemoOverlay = ({
       autoStartRef.current = false;
       return;
     }
-    if (!overlayState.memoId && !isRecording && !isProcessing && !isRecorderErrored && !autoStartRef.current) {
+    // Auto-start recording in redo mode (whether new capture or redoing existing memo)
+    if (!isRecording && !isProcessing && !isRecorderErrored && !autoStartRef.current) {
       autoStartRef.current = true;
       handleStartRedoRecording();
     }
-  }, [overlayState?.open, overlayState?.mode, overlayState?.memoId, isRecording, isProcessing, isRecorderErrored, handleStartRedoRecording]);
+  }, [overlayState?.open, overlayState?.mode, isRecording, isProcessing, isRecorderErrored, handleStartRedoRecording]);
 
   useEffect(() => {
     if (!overlayState?.open) return;
@@ -323,12 +382,23 @@ const VoiceMemoOverlay = ({
   useEffect(() => {
     if (!overlayState?.open) return;
     if (overlayState.mode === 'redo') {
-      const target = isRecording ? stopButtonRef.current : recordButtonRef.current;
+      // Focus record button when not recording, close button when recording (since stop button removed)
+      const target = isRecording ? closeButtonRef.current : recordButtonRef.current;
       target?.focus?.();
     } else if (overlayState.mode === 'review' || overlayState.mode === 'list') {
       closeButtonRef.current?.focus?.();
     }
   }, [overlayState?.open, overlayState?.mode, isRecording]);
+
+  // Handle backdrop click (click outside panel to close)
+  const handleBackdropClick = useCallback((e) => {
+    // Stop propagation to prevent triggering fullscreen toggle on player underneath
+    e.stopPropagation();
+    // Only close if clicking directly on backdrop, not on panel or its children
+    if (e.target === overlayRef.current) {
+      handleClose();
+    }
+  }, [handleClose]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -346,27 +416,6 @@ const VoiceMemoOverlay = ({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [overlayState?.open, overlayState?.mode, isRecording, handleClose, stopRecording]);
-
-  // ARIA live announcements for start/stop/processing
-  const prevRecordingRef = React.useRef(false);
-  const prevProcessingRef = React.useRef(false);
-  useEffect(() => {
-    const wasRecording = prevRecordingRef.current;
-    if (!wasRecording && isRecording) {
-      liveMessageRef.current = 'Recording started';
-    } else if (wasRecording && !isRecording) {
-      liveMessageRef.current = 'Recording stopped';
-    }
-    prevRecordingRef.current = isRecording;
-  }, [isRecording]);
-
-  useEffect(() => {
-    const wasProcessing = prevProcessingRef.current;
-    if (!wasProcessing && isProcessing) {
-      liveMessageRef.current = 'Processing voice memo';
-    }
-    prevProcessingRef.current = isProcessing;
-  }, [isProcessing]);
 
   if (!overlayState?.open) {
     return null;
@@ -396,13 +445,15 @@ const VoiceMemoOverlay = ({
   const micLabel = preferredMicrophoneId ? `Mic: ${preferredMicrophoneId}` : '';
 
   return (
-    <div 
+    <div
+      ref={overlayRef}
       className={`voice-memo-overlay voice-memo-overlay--${mode}`}
+      onClick={handleBackdropClick}
       onMouseMove={handleUserInteraction}
       onTouchStart={handleUserInteraction}
       onKeyDown={handleUserInteraction}
     >
-      <div className="voice-memo-overlay__panel">
+      <div ref={panelRef} className="voice-memo-overlay__panel">
         <div className="voice-memo-overlay__header">
           <div className="voice-memo-overlay__title">{titleText}</div>
           <button type="button" className="voice-memo-overlay__close" onClick={handleClose} aria-label="Close voice memo overlay" ref={closeButtonRef}>
@@ -445,9 +496,6 @@ const VoiceMemoOverlay = ({
 
         {showReview ? (
           <div className="voice-memo-overlay__content voice-memo-overlay__content--review">
-            <div className="voice-memo-overlay__review-header">
-              {memoTimestamp && <span className="voice-memo-overlay__timestamp">{memoTimestamp}</span>}
-            </div>
             <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--large">{displayTranscript}</div>
             <div className="voice-memo-overlay__actions">
               <button 
@@ -488,76 +536,70 @@ const VoiceMemoOverlay = ({
 
         {showRedo ? (
           <div className="voice-memo-overlay__content voice-memo-overlay__content--centered">
-            <div className="voice-memo-overlay__meta-large">
-              {memoTitle ? <span className="voice-memo-overlay__meta-heading">{memoTitle}</span> : null}
-              {memoTimestamp && <span className="voice-memo-overlay__timestamp">{memoTimestamp}</span>}
-              {micLabel ? <span className="voice-memo-overlay__meta mic">{micLabel}</span> : null}
-            </div>
-            <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--faded">{displayTranscript}</div>
-            {!isProcessing ? (
-              <MicLevelIndicator
-                level={(micLevel || 0) * 100}
-                bars={7}
-                orientation="horizontal"
-                size="lg"
-                variant="waveform"
-                activeColor="#ff6b6b"
-                className="voice-memo-overlay__mic-level"
-              />
+            {isProcessing ? (
+              <div className="voice-memo-overlay__processing">
+                <Icons.Processing />
+                <span className="voice-memo-overlay__processing-text">Transcribing…</span>
+              </div>
             ) : (
-              <div className="voice-memo-overlay__spinner" aria-hidden="true" />
-            )}
-            
-            {recorderErrorMessage ? <div className="voice-memo-overlay__error">{recorderErrorMessage}</div> : null}
-            
-            <div className="voice-memo-overlay__redo-controls">
-              {!isRecording && !isProcessing && !isRecorderErrored ? (
-                <button
-                  type="button"
-                  className="voice-memo-overlay__record-btn"
-                  onClick={handleStartRedoRecording}
-                  disabled={isProcessing}
-                  aria-label="Start recording"
-                  ref={recordButtonRef}
-                >
-                  <Icons.Record />
-                </button>
-              ) : null}
-              
-              {isRecording ? (
-                <>
-                  <div className="voice-memo-overlay__hint voice-memo-overlay__hint--recording">Recording… {recordingTimeLabel}</div>
-                  <button
-                    type="button"
-                    className="voice-memo-overlay__record-btn voice-memo-overlay__record-btn--active"
-                    onClick={stopRecording}
-                    disabled={isProcessing}
-                    aria-label="Stop recording"
-                    ref={stopButtonRef}
-                  >
-                    <Icons.Stop />
-                  </button>
-                </>
-              ) : null}
-              
-              {isProcessing ? (
-                <div className="voice-memo-overlay__status voice-memo-overlay__status--processing">Processing voice memo…</div>
-              ) : null}
+              <>
+                <span className="voice-memo-overlay__prompt">How did it go?</span>
 
-              {isRecorderErrored ? (
-                <div className="voice-memo-overlay__retry-row">
-                  {recorderErrorRetryable ? (
-                    <button type="button" className="voice-memo-overlay__btn" onClick={handleStartRedoRecording}>Retry</button>
+                <MicLevelIndicator
+                  level={(micLevel || 0) * 100}
+                  bars={7}
+                  orientation="horizontal"
+                  size="lg"
+                  variant="waveform"
+                  activeColor="#ff6b6b"
+                  className="voice-memo-overlay__mic-level"
+                />
+
+                {recorderErrorMessage ? <div className="voice-memo-overlay__error">{recorderErrorMessage}</div> : null}
+
+                <div className="voice-memo-overlay__redo-controls">
+                  {!isRecording && !isRecorderErrored ? (
+                    <button
+                      type="button"
+                      className="voice-memo-overlay__record-btn"
+                      onClick={handleStartRedoRecording}
+                      aria-label="Start recording"
+                      ref={recordButtonRef}
+                    >
+                      <Icons.Record />
+                    </button>
                   ) : null}
-                  <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--ghost" onClick={handleClose}>Discard</button>
+
+                  {isRecording ? (
+                    <>
+                      <div className="voice-memo-overlay__recording-status">
+                        <div className="voice-memo-overlay__hint voice-memo-overlay__hint--recording">Recording…</div>
+                        <div className="voice-memo-overlay__recording-time">{recordingTimeLabel}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="voice-memo-overlay__record-btn voice-memo-overlay__record-btn--active"
+                        onClick={stopRecording}
+                        aria-label="Stop recording"
+                      >
+                        <Icons.Stop />
+                      </button>
+                    </>
+                  ) : null}
+
+                  {isRecorderErrored ? (
+                    <div className="voice-memo-overlay__retry-row">
+                      {recorderErrorRetryable ? (
+                        <button type="button" className="voice-memo-overlay__btn" onClick={handleStartRedoRecording}>Retry</button>
+                      ) : null}
+                      <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--ghost" onClick={handleClose}>Discard</button>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
+              </>
+            )}
           </div>
         ) : null}
-      </div>
-      <div aria-live="assertive" aria-atomic="true" className="sr-only">
-        {liveMessageRef.current}
       </div>
     </div>
   );

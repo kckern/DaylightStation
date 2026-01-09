@@ -3,9 +3,10 @@
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.9);
+  border-radius: 12px;
   position: relative;
+  min-height: 78px;
 
   &.card-horizontal {
     flex-direction: row;
@@ -24,6 +25,14 @@
     opacity: 0.4;
   }
 
+  // Compact mode - just the avatar with RPM overlay
+  &.compact-mode {
+    background: transparent;
+    padding: 0;
+    min-height: auto;
+    gap: 0;
+  }
+
   .device-timeout-bar {
     position: absolute;
     top: 0;
@@ -31,13 +40,40 @@
     right: 0;
     height: 3px;
     background: rgba(255, 255, 255, 0.1);
-    border-radius: 8px 8px 0 0;
+    border-radius: 12px 12px 0 0;
     overflow: hidden;
 
     .device-timeout-fill {
       height: 100%;
       background: #ff6b6b;
       transition: width 0.5s linear;
+    }
+  }
+
+  .rpm-avatar-wrapper {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .rpm-value-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.75);
+    border-bottom-left-radius: 50%;
+    border-bottom-right-radius: 50%;
+    pointer-events: none;
+
+    .rpm-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
     }
   }
 
