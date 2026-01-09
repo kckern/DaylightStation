@@ -164,7 +164,7 @@ const useFitnessPlugin = (pluginId) => {
     },
     
     // Voice memos
-    openVoiceMemoRedo: fitnessCtx.openVoiceMemoRedo,
+    openVoiceMemoCapture: fitnessCtx.openVoiceMemoCapture,
     voiceMemos: fitnessCtx.voiceMemos,
 
     // Sidebar control

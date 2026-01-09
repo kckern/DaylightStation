@@ -16,12 +16,30 @@ const resolveAudioConstraints = (preferredMicrophoneId) => {
   return { deviceId: { exact: preferredMicrophoneId } };
 };
 
-const resolvePlaybackState = (api) => {
+/**
+ * Resolve playback state from various player API shapes.
+ * Handles: getPlaybackState(), getMediaController(), and native .paused property.
+ * @param {Object} api - Player API object
+ * @returns {Object|null} - { isPaused: boolean } or null
+ */
+export const resolvePlaybackState = (api) => {
   if (!api) return null;
+
+  // Priority 1: Direct getPlaybackState() method
   const direct = api.getPlaybackState?.();
   if (direct) return direct;
+
+  // Priority 2: MediaController API
   const controller = api.getMediaController?.();
-  return controller?.getPlaybackState?.() || controller?.transport?.getPlaybackState?.() || null;
+  const controllerState = controller?.getPlaybackState?.() || controller?.transport?.getPlaybackState?.();
+  if (controllerState) return controllerState;
+
+  // Priority 3: Native video element .paused property
+  if (typeof api.paused === 'boolean') {
+    return { isPaused: api.paused };
+  }
+
+  return null;
 };
 
 const normalizeRecorderError = (err, fallbackMessage = 'Recorder error', code = 'recorder_error', retryable = false) => {
@@ -34,30 +52,77 @@ const normalizeRecorderError = (err, fallbackMessage = 'Recorder error', code = 
   };
 };
 
-const pauseMediaIfNeeded = (playerRef, wasPlayingRef) => {
+// Maximum recording duration: 5 minutes
+const MAX_RECORDING_MS = 5 * 60 * 1000;
+
+/**
+ * Pause media player if it's currently playing.
+ * Handles multiple API shapes: direct pause(), getMediaController().pause().
+ * @param {Object} playerRef - React ref to player
+ * @param {Object} wasPlayingRef - React ref to track if we should resume later
+ */
+export const pauseMediaIfNeeded = (playerRef, wasPlayingRef) => {
   const api = playerRef?.current;
   if (!api) {
     wasPlayingRef.current = false;
     return;
   }
+
   const playbackState = resolvePlaybackState(api);
-  if (playbackState && playbackState.isPaused === false) {
-    wasPlayingRef.current = true;
-    api.pause?.();
+  const isPlaying = playbackState && playbackState.isPaused === false;
+
+  if (!isPlaying) {
+    wasPlayingRef.current = false;
     return;
   }
-  wasPlayingRef.current = false;
+
+  // Mark that we paused it (so we can resume later)
+  wasPlayingRef.current = true;
+
+  // Try multiple pause APIs
+  if (typeof api.pause === 'function') {
+    api.pause();
+    return;
+  }
+
+  // Fallback: MediaController API
+  const controller = api.getMediaController?.();
+  if (typeof controller?.pause === 'function') {
+    controller.pause();
+    return;
+  }
 };
 
-const resumeMediaIfNeeded = (playerRef, wasPlayingRef) => {
+/**
+ * Resume media player if we previously paused it.
+ * Handles multiple API shapes: direct play(), getMediaController().play().
+ * @param {Object} playerRef - React ref to player
+ * @param {Object} wasPlayingRef - React ref tracking if we paused it
+ */
+export const resumeMediaIfNeeded = (playerRef, wasPlayingRef) => {
   if (!wasPlayingRef.current) return;
+
   const api = playerRef?.current;
   if (!api) {
     wasPlayingRef.current = false;
     return;
   }
-  api.play?.();
+
+  // Reset the flag
   wasPlayingRef.current = false;
+
+  // Try multiple play APIs
+  if (typeof api.play === 'function') {
+    api.play();
+    return;
+  }
+
+  // Fallback: MediaController API
+  const controller = api.getMediaController?.();
+  if (typeof controller?.play === 'function') {
+    controller.play();
+    return;
+  }
 };
 
 const useVoiceMemoRecorder = ({
@@ -67,7 +132,9 @@ const useVoiceMemoRecorder = ({
   onMemoCaptured,
   onError,
   onStateChange,
-  onLevel
+  onLevel,
+  onPauseMusic,
+  onResumeMusic
 } = {}) => {
   const logVoiceMemo = useCallback((event, payload = {}, options = {}) => {
     playbackLog('voice-memo', {
@@ -210,7 +277,15 @@ const useVoiceMemoRecorder = ({
           sumSquares += centered * centered;
         }
         const rms = Math.sqrt(sumSquares / buf.length);
-        const level = Math.max(0, Math.min(1, rms * 1.8));
+
+        // Logarithmic scaling for perceptual loudness
+        // Maps typical speech range (-60dB to 0dB) to 0-1
+        const MIN_DB = -60;
+        const MAX_DB = 0;
+        const db = rms > 0 ? 20 * Math.log10(rms) : MIN_DB;
+        const normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
+        const level = Math.max(0, Math.min(1, normalized));
+
         const now = performance.now();
         if (now - lastLevelAtRef.current >= LEVEL_SAMPLE_INTERVAL_MS) {
           lastLevelAtRef.current = now;
@@ -293,6 +368,10 @@ const useVoiceMemoRecorder = ({
     emitState('requesting');
     emitLevel(null);
     pauseMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
+    // Also pause music player
+    if (typeof onPauseMusic === 'function') {
+      try { onPauseMusic(); } catch (_) { /* ignore */ }
+    }
     logVoiceMemo('recording-start-request', { preferredMicrophoneId: preferredMicrophoneId || null });
     try {
       const audioConstraints = resolveAudioConstraints(preferredMicrophoneId);
@@ -331,13 +410,34 @@ const useVoiceMemoRecorder = ({
         if (!recordingStartTimeRef.current) return;
         const elapsed = Date.now() - recordingStartTimeRef.current;
         setRecordingDuration(elapsed);
+        // Auto-stop at max duration (5 minutes)
+        if (elapsed >= MAX_RECORDING_MS) {
+          logVoiceMemo('recording-max-duration-reached', { elapsed, maxMs: MAX_RECORDING_MS });
+          try {
+            mediaRecorderRef.current?.stop();
+          } catch (_) { /* ignore */ }
+          setIsRecording(false);
+          emitState('processing');
+          clearDurationTimer();
+          cleanupStream();
+          resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
+          // Also resume music player
+          if (typeof onResumeMusic === 'function') {
+            try { onResumeMusic(); } catch (_) { /* ignore */ }
+          }
+          emitLevel(null);
+        }
       }, 100);
     } catch (err) {
       resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
+      // Also resume music player on error
+      if (typeof onResumeMusic === 'function') {
+        try { onResumeMusic(); } catch (_) { /* ignore */ }
+      }
       emitError(err, 'Failed to access microphone', 'mic_access_denied', false);
       logVoiceMemo('recording-start-error', { error: err?.message || String(err) }, { level: 'warn' });
     }
-  }, [clearDurationTimer, emitError, emitLevel, emitState, handleRecordingStop, logVoiceMemo, playerRef, preferredMicrophoneId, startLevelMonitor]);
+  }, [clearDurationTimer, emitError, emitLevel, emitState, handleRecordingStop, logVoiceMemo, onPauseMusic, onResumeMusic, playerRef, preferredMicrophoneId, startLevelMonitor]);
 
   const stopRecording = useCallback(() => {
     logVoiceMemo('recording-stop-request');
@@ -352,8 +452,12 @@ const useVoiceMemoRecorder = ({
     setRecordingDuration(0);
     cleanupStream();
     resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
+    // Also resume music player
+    if (typeof onResumeMusic === 'function') {
+      try { onResumeMusic(); } catch (_) { /* ignore */ }
+    }
     emitLevel(null);
-  }, [cleanupStream, clearDurationTimer, emitLevel, emitState, logVoiceMemo, playerRef]);
+  }, [cleanupStream, clearDurationTimer, emitLevel, emitState, logVoiceMemo, onResumeMusic, playerRef]);
 
   useEffect(() => () => {
     clearDurationTimer();

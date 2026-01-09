@@ -244,7 +244,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
                 revolutionCount={item.revolutionCount}
                 rpmThresholds={item.rpmThresholds}
                 deviceSubtype={item.deviceSubtype}
-                size={68}
+                size={76}
               />
               <div className="rpm-value-overlay" style={{ color: item.zoneColor }}>
                 <span className="rpm-value">{item.rpm}</span>

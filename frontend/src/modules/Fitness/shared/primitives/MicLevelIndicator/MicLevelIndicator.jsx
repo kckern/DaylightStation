@@ -31,19 +31,29 @@ const MicLevelIndicator = ({
   const style = activeColor ? { '--mic-active-color': activeColor } : undefined;
 
   if (variant === 'waveform') {
+    // Calculate bar heights based on actual level + variation for visual interest
+    const baseHeight = 15 + (normalizedLevel * 0.7); // 15-85% based on level
+    const getBarHeight = (index) => {
+      // Create a wave pattern across bars, centered on the middle
+      const center = (bars - 1) / 2;
+      const distanceFromCenter = Math.abs(index - center);
+      const waveMultiplier = 1 - (distanceFromCenter / bars) * 0.4; // Taller in center
+      return Math.min(100, baseHeight * waveMultiplier);
+    };
+
     return (
       <div className={combinedClassName} style={style} {...props}>
-        <div 
+        <div
           className="mic-level-indicator__waveform"
           style={{ '--level': normalizedLevel / 100 }}
         >
           {Array.from({ length: bars }, (_, i) => (
-            <div 
-              key={i} 
-              className="mic-level-indicator__wave-bar"
-              style={{ 
-                animationDelay: `${i * 0.1}s`,
-                height: `${20 + Math.random() * 60}%`
+            <div
+              key={i}
+              className={`mic-level-indicator__wave-bar ${normalizedLevel > 5 ? 'mic-level-indicator__wave-bar--active' : ''}`}
+              style={{
+                animationDelay: `${i * 0.08}s`,
+                height: `${getBarHeight(i)}%`
               }}
             />
           ))}

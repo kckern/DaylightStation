@@ -29,7 +29,7 @@ const QuickToolsDrawer = () => {
     heartRateDevices = [],
     cadenceDevices = [],
     treasureBox,
-    openVoiceMemoRedo,
+    openVoiceMemoCapture,
     voiceMemos = []
   } = useFitnessPlugin('component_showcase');
 
@@ -235,7 +235,7 @@ const QuickToolsDrawer = () => {
               <div className="cs-tool-title">Quick Notes</div>
               <div className="cs-tool-value">{memoCount} pending</div>
               <div className="cs-tool-actions">
-                <button type="button" onClick={() => openVoiceMemoRedo?.()}>Record</button>
+                <button type="button" onClick={() => openVoiceMemoCapture?.()}>Record</button>
               </div>
             </div>
 

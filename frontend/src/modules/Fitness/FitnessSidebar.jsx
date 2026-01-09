@@ -24,10 +24,10 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     sidebarCam: true
   }));
   const [treasureBoxOverridden, setTreasureBoxOverridden] = useState(false);
-  const { 
-    treasureBox, 
-    fitnessSession, 
-    selectedPlaylistId, 
+  const {
+    treasureBox,
+    fitnessSession,
+    selectedPlaylistId,
     governanceState,
     usersConfigRaw,
     deviceAssignments = [],
@@ -38,7 +38,8 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     setMusicOverride,
     replacedPrimaryPool,
     preferredMicrophoneId,
-    setPreferredMicrophoneId
+    setPreferredMicrophoneId,
+    musicPlayerRef
   } = fitnessContext;
   const menuOpen = menuState.open;
   const guestCandidates = React.useMemo(() => {
@@ -219,8 +220,9 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
       {/* Music Player */}
       {musicEnabled && (
         <div className="fitness-sidebar-music">
-          <FitnessMusicPlayer 
-            selectedPlaylistId={selectedPlaylistId} 
+          <FitnessMusicPlayer
+            ref={musicPlayerRef}
+            selectedPlaylistId={selectedPlaylistId}
             videoPlayerRef={playerRef}
             videoVolume={videoVolume}
           />

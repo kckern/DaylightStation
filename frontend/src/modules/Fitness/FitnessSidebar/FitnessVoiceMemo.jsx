@@ -29,7 +29,7 @@ const FitnessVoiceMemo = ({ onToggleMenu }) => {
   }, [memoCount]);
 
   const handleStartRecording = useCallback(() => {
-    fitnessCtx?.openVoiceMemoRedo?.(null);
+    fitnessCtx?.openVoiceMemoCapture?.(null);
   }, [fitnessCtx]);
 
   const handleOpenList = useCallback(() => {

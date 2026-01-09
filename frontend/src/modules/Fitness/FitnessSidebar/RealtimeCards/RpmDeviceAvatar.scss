@@ -7,6 +7,12 @@
   width: var(--rpm-avatar-size);
   height: var(--rpm-avatar-size);
 
+  // Enforce circular shape - prevent flex/grid from squashing into ovals
+  aspect-ratio: 1;
+  flex-shrink: 0;
+  min-width: var(--rpm-avatar-size);
+  min-height: var(--rpm-avatar-size);
+
   .rpm-gauge {
     position: absolute;
     top: 0;
