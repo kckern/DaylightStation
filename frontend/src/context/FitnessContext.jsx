@@ -683,7 +683,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'list', memoId: null });
   }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded]);
 
-  const openVoiceMemoCapture = React.useCallback((memoOrId, { autoAccept = false, onComplete } = {}) => {
+  const openVoiceMemoCapture = React.useCallback((memoOrId, { autoAccept = false, fromFitnessVideoEnd = false, onComplete } = {}) => {
     // Pause video and music when opening voice memo overlay
     setVideoPlayerPaused(true);
     musicPlayerRef.current?.pause?.();
@@ -698,6 +698,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             mode: 'list',
             memoId: null,
             autoAccept: false,
+            fromFitnessVideoEnd: false,
             startedAt: Date.now(),
             onComplete: onComplete || null
           });
@@ -712,11 +713,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       mode: 'redo',
       memoId: id || null,
       autoAccept, // 4B: Pass autoAccept option for 15-minute rule
+      fromFitnessVideoEnd, // Show "How did it go?" vs "How is it going?"
       startedAt: Date.now(),
       onComplete: onComplete || null // Fix 5: Store onComplete callback
     });
-    logVoiceMemo('overlay-open-capture', { memoId: id || null, autoAccept });
-    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'capture', memoId: id || null, autoAccept });
+    logVoiceMemo('overlay-open-capture', { memoId: id || null, autoAccept, fromFitnessVideoEnd });
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'capture', memoId: id || null, autoAccept, fromFitnessVideoEnd });
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, setVideoPlayerPaused, voiceMemos]);
 
   React.useEffect(() => {

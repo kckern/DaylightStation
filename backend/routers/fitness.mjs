@@ -510,7 +510,7 @@ fitnessRouter.post('/voice_memo', async (req, res) => {
         const transcription = await openai.audio.transcriptions.create({
             file: fs.createReadStream(filePath),
             model: 'whisper-1',
-            prompt: 'Transcribe this description of a fitness workout. Common terms: reps, sets, squats, lunges, burpees, HIIT, intervals, warmup, cooldown, rest, cardio, weights, dumbbells, kettlebell, pushups, pullups, planks, crunches.  If you cant understand, respond with "[No Memo]"',
+            prompt: 'Transcribe this description of a fitness workout. Common terms: pounds (lbs), weights, dumbbells, reps, sets, squats, lunges, burpees, HIIT, intervals, warmup, cooldown, rest, cardio,  kettlebell, pushups, pullups, planks, crunches. "',
         });
         const transcriptRaw = transcription?.text || '';
 
@@ -525,7 +525,7 @@ fitnessRouter.post('/voice_memo', async (req, res) => {
                         { role: 'user', content: transcriptRaw }
                     ],
                     temperature: 0.2,
-                    max_tokens: 400
+                    max_tokens: 1000,
                 });
                 transcriptClean = cleanResp?.choices?.[0]?.message?.content?.trim() || transcriptRaw;
             } catch(cleanErr) {

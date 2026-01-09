@@ -827,8 +827,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       pausePlayback();
       pendingCloseRef.current = true;
       // Pass autoAccept: true so the review will auto-accept after recording
+      // Pass fromFitnessVideoEnd: true to show "How did it go?" prompt
       // Pass onComplete callback so close happens via callback (not just effect transition)
-      openVoiceMemoCapture(null, { autoAccept: true, onComplete: executeClose });
+      openVoiceMemoCapture(null, { autoAccept: true, fromFitnessVideoEnd: true, onComplete: executeClose });
       return;
     }
 
