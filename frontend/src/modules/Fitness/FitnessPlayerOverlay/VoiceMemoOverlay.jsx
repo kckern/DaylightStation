@@ -214,8 +214,9 @@ const VoiceMemoOverlay = ({
 
     // Check if transcript indicates no meaningful content - auto-redo
     const transcript = (memo.transcriptClean || memo.transcriptRaw || '').trim().toLowerCase();
-    if (transcript === 'no memo' || transcript === 'no memo.') {
-      logVoiceMemo('overlay-redo-auto-retry', { reason: 'no-memo-transcript', memoId: memo.memoId || null });
+    const isNoMemo = transcript === '[no memo]' || transcript === 'no memo' || transcript === 'no memo.' || transcript.includes('[no memo]');
+    if (isNoMemo) {
+      logVoiceMemo('overlay-redo-auto-retry', { reason: 'no-memo-transcript', transcript, memoId: memo.memoId || null });
       // Reset state so recording auto-starts again
       autoStartRef.current = false;
       setRecorderState('idle');
@@ -402,10 +403,17 @@ const VoiceMemoOverlay = ({
     }
   }, [overlayState?.open, overlayState?.mode, isRecording]);
 
+  // Stop all events from propagating to player underneath
+  const stopEventPropagation = useCallback((e) => {
+   // e.stopPropagation();
+ //   e.nativeEvent?.stopImmediatePropagation?.();
+  }, []);
+
   // Handle backdrop click (click outside panel to close)
   const handleBackdropClick = useCallback((e) => {
     // Stop propagation to prevent triggering fullscreen toggle on player underneath
-    e.stopPropagation();
+  //  e.stopPropagation();
+  //  e.nativeEvent?.stopImmediatePropagation?.();
     // Only close if clicking directly on backdrop, not on panel or its children
     if (e.target === overlayRef.current) {
       handleClose();
@@ -461,8 +469,18 @@ const VoiceMemoOverlay = ({
       ref={overlayRef}
       className={`voice-memo-overlay voice-memo-overlay--${mode}`}
       onClick={handleBackdropClick}
+      onClickCapture={stopEventPropagation}
+      onMouseDown={stopEventPropagation}
+      onMouseDownCapture={stopEventPropagation}
+      onMouseUp={stopEventPropagation}
       onMouseMove={handleUserInteraction}
-      onTouchStart={handleUserInteraction}
+      onTouchStart={(e) => { stopEventPropagation(e); handleUserInteraction(e); }}
+      onTouchStartCapture={stopEventPropagation}
+      onTouchEnd={stopEventPropagation}
+      onPointerDown={stopEventPropagation}
+      onPointerDownCapture={stopEventPropagation}
+      onPointerUp={stopEventPropagation}
+      onDoubleClick={stopEventPropagation}
       onKeyDown={handleUserInteraction}
     >
       <div ref={panelRef} className="voice-memo-overlay__panel">

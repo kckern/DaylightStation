@@ -507,28 +507,50 @@ fitnessRouter.post('/voice_memo', async (req, res) => {
         fs.writeFileSync(filePath, buffer);
 
         // 1. Transcribe with Whisper (fitness-biased prompt improves accuracy for exercise terms)
+        const whisperPrompt = 'Transcribe this description of a fitness workout. Common terms: pounds (lbs), weights, dumbbells, reps, sets, squats, lunges, burpees, HIIT, intervals, warmup, cooldown, rest, cardio,  kettlebell, pushups, pullups, planks, crunches. "';
         const transcription = await openai.audio.transcriptions.create({
             file: fs.createReadStream(filePath),
             model: 'whisper-1',
-            prompt: 'Transcribe this description of a fitness workout. Common terms: pounds (lbs), weights, dumbbells, reps, sets, squats, lunges, burpees, HIIT, intervals, warmup, cooldown, rest, cardio,  kettlebell, pushups, pullups, planks, crunches. "',
+            prompt: whisperPrompt,
         });
         const transcriptRaw = transcription?.text || '';
 
+        fitnessLogger.info('voice-memo.whisper', {
+            sessionId,
+            whisperPrompt,
+            transcriptRaw,
+            audioSize: buffer.length,
+            durationEstimate: Math.round(buffer.length / 4096)
+        });
+
         // 2. Clean transcript with GPT-4o (remove obvious filler / mis-heard artifacts, keep intent)
         let transcriptClean = transcriptRaw;
+        const cleanupSystemPrompt = 'You clean short voice memos recorded during fitness sessions. Remove duplicated words, filler like "uh", obvious transcription glitches. Keep numeric data and intent intact. Return ONLY the cleaned text - no commentary or additions. Fix obvious mistranscriptions (eg thumbbells -> dumbbells). ONLY respond with "[No Memo]" if the audio is literally silence, static noise, or completely unintelligible gibberish. If the person said actual words - even if unrelated to fitness - return those words cleaned up.';
         if (transcriptRaw) {
             try {
                 const cleanResp = await openai.chat.completions.create({
                     model: 'gpt-4o',
                     messages: [
-                        { role: 'system', content: 'You clean short workout voice memos. Remove duplicated words, filler like "uh", obvious transcription glitches, keep numeric data and intent. Return ONLY the cleaned text.  This will be a report of a workout session. If there are obvious mistranscriptions that cannot be resolved, solve them (eg thumbbells -> dumbbells). Do not add any information that was not in the original. If it appears to be a transcript of noise, silence, or unintelligible speech, respond with "[No Memo]".' },
+                        { role: 'system', content: cleanupSystemPrompt },
                         { role: 'user', content: transcriptRaw }
                     ],
                     temperature: 0.2,
                     max_tokens: 1000,
                 });
                 transcriptClean = cleanResp?.choices?.[0]?.message?.content?.trim() || transcriptRaw;
+
+                fitnessLogger.info('voice-memo.gpt-cleanup', {
+                    sessionId,
+                    systemPrompt: cleanupSystemPrompt,
+                    userPrompt: transcriptRaw,
+                    response: transcriptClean,
+                    isNoMemo: transcriptClean.toLowerCase().includes('no memo')
+                });
             } catch(cleanErr) {
+                fitnessLogger.error('voice-memo.gpt-cleanup-error', {
+                    sessionId,
+                    error: cleanErr.message || String(cleanErr)
+                });
                 console.error('Clean transcript error:', cleanErr);
             }
         }
