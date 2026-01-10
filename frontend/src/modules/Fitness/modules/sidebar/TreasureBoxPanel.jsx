@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import FitnessTreasureBox from '../../FitnessSidebar/FitnessTreasureBox.jsx';
 import { useFitnessContext } from '../../../../context/FitnessContext.jsx';
@@ -9,8 +9,10 @@ import './panels.scss';
  * 
  * Wraps FitnessTreasureBox with panel-level props and context consumption.
  * Can be clicked to toggle chart/view mode.
+ * 
+ * Memoized to prevent re-renders from high-frequency context updates (e.g., playback time).
  */
-const TreasureBoxPanel = ({
+const TreasureBoxPanel = memo(function TreasureBoxPanel({
   visible = true,
   onClick = null,
   className = '',
@@ -54,7 +56,7 @@ const TreasureBoxPanel = ({
       <FitnessTreasureBox box={treasureBox} session={fitnessSession} />
     </div>
   );
-};
+});
 
 TreasureBoxPanel.propTypes = {
   /** Whether the panel is visible */

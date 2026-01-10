@@ -1,8 +1,22 @@
 # Fitness Module Component Taxonomy
 
 **Date:** 2026-01-10  
-**Status:** Phase 1 Complete  
+**Status:** All Phases Complete  
 **Scope:** Frontend Fitness module reorganization
+
+---
+
+## Architecture Review Summary
+
+### Key Wins
+- **"Slots over Props"** - Replaced complex conditional logic with declarative API
+- **Tiered Composition** - Decoupled "where" (Frames) from "what" (Views/Modules)
+- **Non-Breaking Migration** - Created Frames first, wrapped existing components
+
+### Applied Recommendations
+- ✅ **React.memo** - All sidebar panels wrapped to prevent re-renders from high-frequency context updates
+- ✅ **Strict Slot Content** - Frames remain logic-free; visibility decisions live in Views
+- 🔲 **CSS Variable Standardization** - Consider moving `$sidebar-width`, `$z-index-overlay` to global theme
 
 ---
 
