@@ -196,6 +196,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // Session State
   const fitnessSessionRef = useRef(new FitnessSession());
+  
+  // MEMORY LEAK FIX: Cleanup session on provider unmount
+  useEffect(() => {
+    return () => {
+      const session = fitnessSessionRef.current;
+      if (session) {
+        // Stop all timers and cleanup state
+        if (typeof session.destroy === 'function') {
+          session.destroy();
+        } else {
+          // Fallback if destroy() not yet implemented
+          session.reset();
+          session.governanceEngine?.reset();
+        }
+      }
+    };
+  }, []);
+  
   const treasureConfigSignatureRef = useRef(null);
   const configuredSignatureRef = useRef(null);
   const emptyRosterRef = useRef([]);
@@ -417,6 +435,27 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Expose governance engine for testing
     if (typeof window !== 'undefined') {
       window.__governanceEngine = session.governanceEngine;
+      window.__fitnessSession = session;
+      
+      // MEMORY LEAK FIX: Add debug helper for memory monitoring
+      window.__fitnessMemoryStats = () => {
+        const series = session?.timeline?.series || {};
+        const seriesCount = Object.keys(series).length;
+        const totalPoints = Object.values(series).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+        const perUserCount = session?.treasureBox?.perUser?.size || 0;
+        const eventLogSize = session?.eventLog?.length || 0;
+        const deviceCount = session?.deviceManager?.devices?.size || 0;
+        const userCount = session?.userManager?.users?.size || 0;
+        return { 
+          seriesCount, 
+          totalPoints, 
+          perUserCount, 
+          eventLogSize,
+          deviceCount,
+          userCount,
+          sessionActive: !!session?.sessionId
+        };
+      };
     }
 
     // Configure TreasureBox (lazy init in session, but we can pre-config if needed)
@@ -811,13 +850,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     musicPlayerRef.current?.resume?.();
   }, []);
 
-  // Lightweight heartbeat to refresh UI
+  // MEMORY LEAK FIX: Only run heartbeat when session is active
+  const sessionId = fitnessSessionRef.current?.sessionId;
   useEffect(() => {
+    if (!sessionId) return;
+    
     const interval = setInterval(() => {
       forceUpdate();
     }, 1000);
     return () => clearInterval(interval);
-  }, [forceUpdate]);
+  }, [forceUpdate, sessionId]);
   
   const fitnessPlayQueue = propPlayQueue !== undefined ? propPlayQueue : internalPlayQueue;
   const setFitnessPlayQueue = propSetPlayQueue || setInternalPlayQueue;
@@ -907,10 +949,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   
   // WebSocket subscription using centralized WebSocketService
   useEffect(() => {
+    // MEMORY LEAK FIX: Move cleanup refs outside .then() to ensure proper cleanup
+    let unsubscribe = null;
+    let unsubscribeStatus = null;
+    let mounted = true;
+    
     // Import dynamically to avoid circular dependencies
     import('../services/WebSocketService').then(({ wsService }) => {
+      if (!mounted) return;
+      
       // Subscribe to fitness and vibration topics
-      const unsubscribe = wsService.subscribe(
+      unsubscribe = wsService.subscribe(
         ['fitness', 'vibration'],
         (data) => {
           if (data?.topic === 'vibration') {
@@ -926,31 +975,34 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       );
 
       // Subscribe to connection status
-      const unsubscribeStatus = wsService.onStatusChange(({ connected: isConnected }) => {
+      unsubscribeStatus = wsService.onStatusChange(({ connected: isConnected }) => {
         setConnected(isConnected);
       });
-
-      // Cleanup subscriptions and vibration timeouts on unmount
-      return () => {
-        unsubscribe();
-        unsubscribeStatus();
-        Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
-        vibrationTimeoutRefs.current = {};
-      };
     });
+
+    // Cleanup subscriptions and vibration timeouts on unmount
+    return () => {
+      mounted = false;
+      unsubscribe?.();
+      unsubscribeStatus?.();
+      Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
+      vibrationTimeoutRefs.current = {};
+    };
   }, [forceUpdate, handleVibrationEvent]);
 
+  // MEMORY LEAK FIX: Only prune devices when session is active
+  const currentSessionId = fitnessSessionRef.current?.sessionId;
   useEffect(() => {
+    const session = fitnessSessionRef.current;
+    if (!currentSessionId) return;
+    
     const interval = setInterval(() => {
       const timeouts = getFitnessTimeouts();
-      const session = fitnessSessionRef.current;
-      if (session) {
-        session.deviceManager.pruneStaleDevices(timeouts);
-        forceUpdate();
-      }
+      session.deviceManager.pruneStaleDevices(timeouts);
+      forceUpdate();
     }, 3000);
     return () => clearInterval(interval);
-  }, [forceUpdate]);
+  }, [forceUpdate, currentSessionId]);
 
   const reconnectFitnessWebSocket = React.useCallback(() => {
     // Use the centralized WebSocketService to reconnect

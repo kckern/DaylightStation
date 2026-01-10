@@ -485,8 +485,9 @@ export class FitnessSession {
 
   _log(type, payload = {}) {
     this.eventLog.push({ ts: Date.now(), type, ...payload });
+    // MEMORY LEAK FIX: Use splice for in-place mutation instead of slice (new array)
     if (this.eventLog.length > 500) {
-      this.eventLog = this.eventLog.slice(-500);
+      this.eventLog.splice(0, this.eventLog.length - 500);
     }
   }
 
@@ -1865,6 +1866,36 @@ export class FitnessSession {
     
     // Phase 5: Reset TimelineRecorder
     this._timelineRecorder?.reset();
+  }
+
+  /**
+   * MEMORY LEAK FIX: Complete teardown for unmount/navigation
+   * Unlike reset() which prepares for session reuse, destroy() nullifies all references for GC
+   */
+  destroy() {
+    // First do standard reset
+    this.reset();
+    
+    // Then clear persistent state that reset() intentionally preserves
+    this._sessionEndedCallbacks = [];
+    
+    // Nullify manager references
+    this._deviceRouter = null;
+    this._persistenceManager = null;
+    this._metricsRecorder = null;
+    this._timelineRecorder = null;
+    this._participantRoster = null;
+    this._lifecycle = null;
+    
+    // Clear zone profile store
+    this.zoneProfileStore?.clear();
+    this.zoneProfileStore = null;
+    
+    // Clear event journal
+    this.eventJournal = null;
+    
+    // Clear activity monitor
+    this.activityMonitor = null;
   }
 
   _encodeSeries(series = {}, tickCount = null) {

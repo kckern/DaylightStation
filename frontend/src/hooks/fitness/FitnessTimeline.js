@@ -2,6 +2,11 @@ import { deepClone } from './types.js';
 
 const DEFAULT_INTERVAL_MS = 5000;
 
+// MEMORY LEAK FIX: Limit timeline history to prevent unbounded growth
+// At 5-second intervals: 2000 points = ~2.7 hours of data
+// This provides sufficient history for chart visualization while preventing memory exhaustion
+const MAX_SERIES_LENGTH = 2000;
+
 const isPlainObject = (value) => value != null && typeof value === 'object' && !Array.isArray(value);
 
 const cloneValue = (value) => {
@@ -78,6 +83,21 @@ export class FitnessTimeline {
     const timestamp = this._resolveTickTimestamp(tickIndex, options.timestamp);
     this.timebase.tickCount = tickIndex + 1;
     this.timebase.lastTickTimestamp = timestamp;
+
+    // MEMORY LEAK FIX: Prune old data to prevent unbounded growth
+    let prunedCount = 0;
+    Object.entries(this.series).forEach(([key, arr]) => {
+      if (Array.isArray(arr) && arr.length > MAX_SERIES_LENGTH) {
+        const removed = arr.length - MAX_SERIES_LENGTH;
+        arr.splice(0, removed);
+        prunedCount++;
+        
+        // Log first prune only to avoid spam
+        if (prunedCount === 1 && typeof console !== 'undefined') {
+          console.warn('[FitnessTimeline] Pruned', removed, 'old points from', key, '(current length:', arr.length, ')');
+        }
+      }
+    });
 
     return { tickIndex, timestamp };
   }
