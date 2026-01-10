@@ -644,6 +644,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Clear pause state when closing overlay (BUG-08)
     setVideoPlayerPaused(false);
     musicPlayerRef.current?.resume?.();
+    
+    // Directly resume video playback via player ref
+    if (videoPlayerRef.current?.play) {
+      videoPlayerRef.current.play();
+    }
 
     setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
     // Fire onComplete callback after state reset
@@ -1738,6 +1743,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     expandSidebar,
     toggleSidebarCollapsed,
     voiceMemoOverlayState,
+    
+    // Voice memo video pause/resume control (BUG-08 fix)
+    videoPlayerPaused,
+    setVideoPlayerPaused,
     
     registerVideoPlayer,
     videoPlayerRef,

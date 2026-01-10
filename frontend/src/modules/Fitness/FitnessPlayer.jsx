@@ -399,22 +399,21 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Handled manual pause/resume for voice memos (BUG-08)
   const wasPlayingBeforeVoiceMemoRef = useRef(false);
   useEffect(() => {
-    if (!mediaElement) return;
-    
     if (videoPlayerPaused) {
-      // If we're not already paused by governance/user, capture the playing state
-      // Actually, just capturing if it was NOT paused is sufficient
-      wasPlayingBeforeVoiceMemoRef.current = !mediaElement.paused;
-      if (!mediaElement.paused) {
+      // Capture playing state before pausing
+      if (mediaElement && !mediaElement.paused) {
+        wasPlayingBeforeVoiceMemoRef.current = true;
         mediaElement.pause();
       }
-    } else if (wasPlayingBeforeVoiceMemoRef.current) {
-      // Overlay closed, resume if it was playing before
-      wasPlayingBeforeVoiceMemoRef.current = false;
-      if (mediaElement.paused) {
-        mediaElement.play().catch(() => {
-          // Ignore play errors (e.g. user gesture requirements which should already be met)
-        });
+    } else {
+      // Resume if we were playing before the pause
+      if (wasPlayingBeforeVoiceMemoRef.current && mediaElement) {
+        wasPlayingBeforeVoiceMemoRef.current = false;
+        if (mediaElement.paused) {
+          mediaElement.play().catch(() => {
+            // Ignore play errors (e.g. user gesture requirements which should already be met)
+          });
+        }
       }
     }
   }, [videoPlayerPaused, mediaElement]);
