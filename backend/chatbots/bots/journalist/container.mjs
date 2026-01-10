@@ -182,7 +182,7 @@ export class JournalistContainer {
       // Get data path from config or environment
       const dataPath = process.env.path?.data 
         ? `${process.env.path.data}/users/${this.#config.username || 'kckern'}/lifelog/journalist`
-        : '/Volumes/mounts/DockerDrive/Docker/DaylightStation/data/users/kckern/lifelog/journalist';
+        : '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata/users/kckern/lifelog/journalist';
       
       this.#debriefRepository = new DebriefRepository({
         logger: this.#logger,

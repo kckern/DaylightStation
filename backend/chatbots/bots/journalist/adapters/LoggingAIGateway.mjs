@@ -34,7 +34,7 @@ export class LoggingAIGateway {
     // Determine log path based on environment
     const dataPath = process.env.path?.data 
       ? `${process.env.path.data}/users/${this.#username}/lifelog/journalist`
-      : `/Volumes/mounts/DockerDrive/Docker/DaylightStation/data/users/${this.#username}/lifelog/journalist`;
+      : `/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata/users/${this.#username}/lifelog/journalist`;
     
     this.#logPath = `${dataPath}/last_gpt.yml`;
   }

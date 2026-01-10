@@ -21,10 +21,10 @@ const isDocker = process.env.DOCKER === 'true';
 // In dev, config files are in mounted volume, not repo
 const configDir = isDocker 
   ? '/usr/src/app' 
-  : '/Volumes/mounts/DockerDrive/Docker/DaylightStation/config';
+  : '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig';
 const dataDir = isDocker 
   ? '/usr/src/app/data' 
-  : '/Volumes/mounts/DockerDrive/Docker/DaylightStation/data';
+  : '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata';
 
 // Load and populate process.env with config
 const configResult = loadAllConfig({

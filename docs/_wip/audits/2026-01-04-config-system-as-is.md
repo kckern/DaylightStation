@@ -15,7 +15,7 @@ This document maps the current state of configuration management in DaylightStat
 | Purpose | Path | Notes |
 |---------|------|-------|
 | **Local Dropbox (Primary Dev)** | `/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/` | Synced via Dropbox, contains `data/` and `media/` |
-| **Mounted NAS (Legacy)** | `/Volumes/mounts/DockerDrive/Docker/DaylightStation/` | SMB mount to homeserver, contains `config/`, `data/`, `media/` |
+| **Mounted NAS (Legacy)** | `/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation` | SMB mount to homeserver, contains `config/`, `data/`, `media/` |
 | **Remote Server** | `ssh homeserver.local:/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/` | Production data location |
 
 **Current Issue:** Local Dropbox only contains `data/` and `media/`. The `config/` directory is only on the NAS mount, which is less reliable from macOS.
@@ -408,7 +408,7 @@ chatbots:
 | `backend/routers/fetch.mjs` | Module-level `const dataPath = process.env.path.data` |
 | `backend/routers/media.mjs` | Module-level path constants |
 | `backend/lib/budget.mjs` | Module-level `dataPath` constant |
-| `backend/lib/ArchiveService.mjs` | Hardcoded fallback: `/Volumes/mounts/DockerDrive/Docker/DaylightStation/config` |
+| `backend/lib/ArchiveService.mjs` | Hardcoded fallback: `/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig` |
 
 ### 7.2 Direct YAML Loading (Bypassing ConfigService)
 

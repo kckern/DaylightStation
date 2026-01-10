@@ -309,7 +309,7 @@ However, since the LifelogAggregator already loads the file once and passes it t
 
 ### config/archive.yml
 
-Located at `/Volumes/mounts/DockerDrive/Docker/DaylightStation/config/archive.yml`
+Located at `/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig/archive.yml`
 
 ```yaml
 services:
