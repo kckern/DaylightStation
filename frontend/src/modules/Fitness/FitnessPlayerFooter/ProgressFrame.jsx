@@ -112,10 +112,16 @@ const ProgressFrame = ({
   perc = 0,
   visibleRatio = 1,
   showSpark = false,
-  className = ''
+  className = '',
+  // Zoom overlay mode props (for progress bar zoom indicator)
+  leftPct = null,
+  widthPct = null
 }) => {
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ w: 100, h: 100 });
+  
+  // Determine if this is zoom overlay mode (yellow rectangle on progress bar)
+  const isZoomOverlayMode = leftPct != null && widthPct != null;
   
   // Track container size with ResizeObserver
   useEffect(() => {
@@ -133,6 +139,29 @@ const ProgressFrame = ({
     return () => observer.disconnect();
   }, []);
   
+  // ZOOM OVERLAY MODE: Render a positioned rectangle showing zoom range
+  if (isZoomOverlayMode) {
+    return (
+      <div
+        className={`progress-frame-zoom-overlay${className ? ` ${className}` : ''}`}
+        style={{
+          position: 'absolute',
+          left: `${leftPct}%`,
+          width: `${widthPct}%`,
+          top: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(255, 200, 0, 0.5)',
+          border: '1px solid rgba(255, 200, 0, 0.8)',
+          borderRadius: '2px',
+          pointerEvents: 'none',
+          zIndex: 2
+        }}
+        aria-hidden="true"
+      />
+    );
+  }
+  
+  // THUMBNAIL PROGRESS MODE: Render SVG border progress
   // Generate path data based on current dimensions
   const pathData = useMemo(() => 
     buildPathData(dimensions.w, dimensions.h, STROKE_WIDTH, CORNER_RADIUS),
@@ -206,7 +235,10 @@ ProgressFrame.propTypes = {
   perc: PropTypes.number,
   visibleRatio: PropTypes.number,
   showSpark: PropTypes.bool,
-  className: PropTypes.string
+  className: PropTypes.string,
+  // Zoom overlay mode
+  leftPct: PropTypes.number,
+  widthPct: PropTypes.number
 };
 
 export default ProgressFrame;
