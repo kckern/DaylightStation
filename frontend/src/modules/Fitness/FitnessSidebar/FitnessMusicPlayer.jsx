@@ -89,9 +89,12 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   useEffect(() => {
     if (videoPlayerPaused !== undefined && audioPlayerRef.current) {
       if (videoPlayerPaused) {
+        // BUG-08: Store playing state before pausing for voice memo
+        wasPlayingBeforePauseRef.current = isPlaying;
         audioPlayerRef.current.pause();
         setIsPlaying(false);
-      } else {
+      } else if (wasPlayingBeforePauseRef.current) {
+        // Only resume if it was playing before the pause
         audioPlayerRef.current.play();
         setIsPlaying(true);
       }

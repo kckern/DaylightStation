@@ -168,7 +168,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     resumeMusicPlayer,
     preferredMicrophoneId,
     participantRoster: contextParticipantRoster,
-    registerVideoPlayer
+    registerVideoPlayer,
+    setCurrentMedia,
+    trackRecentlyPlayed
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
 
@@ -192,12 +194,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     };
   }, [playerRef]);
 
-  // Pause video when videoPlayerPaused is set (e.g., voice memo overlay opens)
+  // Sync media element ref for context
   useEffect(() => {
-    if (videoPlayerPaused && mediaElement) {
-      mediaElement.pause();
-    }
-  }, [videoPlayerPaused, mediaElement]);
+    registerVideoPlayer(mediaElement);
+  }, [mediaElement, registerVideoPlayer]);
 
   const { boostLevel, setBoost } = useMediaAmplifier(mediaElement, {
     showId: currentItem?.showId,
@@ -267,7 +267,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [contextGovernedTypeSet, governedTypes]);
 
   const pauseDecision = useMemo(() => resolvePause({
-    governance: { blocked: playIsGoverned || governanceState?.videoLocked },
+    governance: { locked: playIsGoverned || governanceState?.videoLocked },
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
@@ -321,6 +321,24 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const locked = governanceVideoLocked || (governance !== 'unlocked' && governance !== 'warning');
     setPlayIsGoverned(locked);
   }, [currentItem, governedLabelSet, governedTypeSet, governance, governanceState?.videoLocked]);
+
+  // Sync current item with global context for AI transcription context injection (BUG-07)
+  useEffect(() => {
+    setCurrentMedia(currentItem);
+    if (currentItem) {
+      trackRecentlyPlayed(currentItem);
+    }
+    return () => {
+      // Don't clear on every item change, only when player actually closes or unmounts handled elsewhere
+    };
+  }, [currentItem, setCurrentMedia, trackRecentlyPlayed]);
+
+  // Clear global media context on player unmount
+  useEffect(() => {
+    return () => {
+      setCurrentMedia(null);
+    };
+  }, [setCurrentMedia]);
 
   // Simplified governance: just mute during lock, unmute and play on unlock
   const wasGovernancePausedRef = useRef(false);
@@ -376,6 +394,29 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       }
     };
   }, [governancePaused]);
+  
+  // Handled manual pause/resume for voice memos (BUG-08)
+  const wasPlayingBeforeVoiceMemoRef = useRef(false);
+  useEffect(() => {
+    if (!mediaElement) return;
+    
+    if (videoPlayerPaused) {
+      // If we're not already paused by governance/user, capture the playing state
+      // Actually, just capturing if it was NOT paused is sufficient
+      wasPlayingBeforeVoiceMemoRef.current = !mediaElement.paused;
+      if (!mediaElement.paused) {
+        mediaElement.pause();
+      }
+    } else if (wasPlayingBeforeVoiceMemoRef.current) {
+      // Overlay closed, resume if it was playing before
+      wasPlayingBeforeVoiceMemoRef.current = false;
+      if (mediaElement.paused) {
+        mediaElement.play().catch(() => {
+          // Ignore play errors (e.g. user gesture requirements which should already be met)
+        });
+      }
+    }
+  }, [videoPlayerPaused, mediaElement]);
 
   const TimeDisplay = useMemo(() => React.memo(({ ct, dur }) => (
     <>{formatTime(ct)} / {formatTime(dur)}</>

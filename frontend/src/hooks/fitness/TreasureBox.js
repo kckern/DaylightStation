@@ -1,6 +1,11 @@
 const NO_ZONE_LABEL = 'No Zone';
 import getLogger from '../../lib/logging/Logger.js';
 
+// MEMORY LEAK FIX: Limit timeline history to prevent unbounded growth
+// At 5-second intervals: 1000 points = ~83 minutes of data
+// This provides ample history for chart visualization while preventing memory exhaustion
+const MAX_TIMELINE_POINTS = 1000;
+
 // Strict identifier contract: TreasureBox is keyed by userId.
 // - perUser Map is keyed by userId
 // - processTick() receives activeParticipants Set containing userIds
@@ -121,6 +126,30 @@ export class FitnessTreasureBox {
   }
 
   stop() { if (this._autoInterval) { clearInterval(this._autoInterval); this._autoInterval = null; } }
+
+  /**
+   * MEMORY LEAK FIX: Reset all state for session cleanup
+   * Called by FitnessSession.endSession() to prevent data accumulation across sessions
+   */
+  reset() {
+    this._log('reset', { 
+      hadUsers: this.perUser.size,
+      hadTimelinePoints: this._timeline.cumulative.length,
+      totalCoins: this.totalCoins
+    });
+    
+    // Clear all accumulated state
+    this.buckets = {};
+    this.totalCoins = 0;
+    this.perUser.clear();
+    this._timeline.perColor.clear();
+    this._timeline.cumulative = [];
+    this._timeline.lastIndex = -1;
+    this._deviceEntityMap.clear();
+    this.usersConfigOverrides.clear();
+    
+    // Note: Keep globalZones, coinTimeUnitMs, callbacks - these are configuration, not session state
+  }
 
   /**
   * Compatibility: Set the active session entity for a device.
@@ -313,6 +342,35 @@ export class FitnessTreasureBox {
     this.processTick(-1, allUsers, {});
   }
 
+  /**
+   * MEMORY LEAK FIX: Truncate timeline to MAX_TIMELINE_POINTS
+   * Keeps most recent data, discards oldest data to prevent unbounded growth
+   */
+  _truncateTimeline() {
+    const cumLen = this._timeline.cumulative.length;
+    if (cumLen <= MAX_TIMELINE_POINTS) return;
+    
+    const excess = cumLen - MAX_TIMELINE_POINTS;
+    this._log('truncate_timeline', { 
+      before: cumLen, 
+      after: MAX_TIMELINE_POINTS, 
+      removed: excess 
+    }, 'info');
+    
+    // Keep most recent MAX_TIMELINE_POINTS entries
+    this._timeline.cumulative = this._timeline.cumulative.slice(-MAX_TIMELINE_POINTS);
+    
+    // Truncate each color series
+    this._timeline.perColor.forEach((series, color) => {
+      if (series.length > MAX_TIMELINE_POINTS) {
+        this._timeline.perColor.set(color, series.slice(-MAX_TIMELINE_POINTS));
+      }
+    });
+    
+    // Adjust lastIndex to reflect truncation
+    this._timeline.lastIndex = Math.max(-1, this._timeline.lastIndex - excess);
+  }
+
   _ensureTimelineIndex(index, color) {
     if (index < 0) return;
     if (color) {
@@ -330,6 +388,9 @@ export class FitnessTreasureBox {
       const prev = cumulative.length > 0 ? (cumulative[cumulative.length - 1] ?? 0) : 0;
       cumulative.push(prev);
     }
+    
+    // MEMORY LEAK FIX: Enforce timeline bounds after growth
+    this._truncateTimeline();
   }
 
   getTimelineSnapshotForIndex(index) {

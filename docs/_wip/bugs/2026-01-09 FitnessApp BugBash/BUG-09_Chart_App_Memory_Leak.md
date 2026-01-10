@@ -3,7 +3,8 @@
 **Date Reported:** 2026-01-09  
 **Category:** 📉 Stability & Performance  
 **Priority:** Critical  
-**Status:** Open
+**Status:** Fixed (2026-01-09)  
+**Resolution:** Implemented bounded timeline storage and session cleanup
 
 ---
 
@@ -18,6 +19,43 @@ Chart App should maintain stable memory usage over time and remain responsive re
 ## Current Behavior
 
 Browser/webview crashes or freezes after extended Chart App usage, indicating a memory leak.
+
+---
+
+## Resolution Summary
+
+**Fixed on:** 2026-01-09
+
+### Changes Implemented
+
+1. **Bounded Timeline Storage** ([TreasureBox.js](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/hooks/fitness/TreasureBox.js))
+   - Added `MAX_TIMELINE_POINTS = 1000` constant (~83 minutes at 5s intervals)
+   - Implemented `_truncateTimeline()` method to enforce rolling window
+   - Timeline automatically truncates when exceeding limit, keeping most recent data
+
+2. **Session Cleanup** ([TreasureBox.js](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/hooks/fitness/TreasureBox.js))
+   - Added `reset()` method to clear all accumulated state
+   - Clears: buckets, perUser, timeline data, device mappings
+   - Preserves: configuration (zones, callbacks) for next session
+
+3. **Integration** ([FitnessSession.js](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/hooks/fitness/FitnessSession.js))
+   - Calls `treasureBox.reset()` during `endSession()`
+   - Ensures clean state between sessions
+
+### Prior Partial Fix (2026-01-08)
+
+Commit `0a416312` previously fixed:
+- Chart component cache clearing on sessionId change
+- Persisted chart data cleanup
+- ResizeObserver proper disconnection
+
+### Memory Metrics (Expected)
+
+| Metric | Before Fix | After Fix |
+|--------|------------|-----------|
+| Timeline growth | Unbounded | Max 1000 points |
+| Memory per hour | ~50MB+ (growing) | Stable <75MB |
+| Session cleanup | Incomplete | Complete reset |
 
 ---
 
