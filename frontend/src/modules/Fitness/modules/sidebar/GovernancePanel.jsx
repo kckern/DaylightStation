@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import FitnessGovernance from '../../FitnessSidebar/FitnessGovernance.jsx';
 import { useFitnessContext } from '../../../../context/FitnessContext.jsx';
@@ -9,8 +9,10 @@ import './panels.scss';
  * 
  * Wraps FitnessGovernance with panel-level visibility control.
  * Shows lock status, grace period countdown, and next challenge timer.
+ * 
+ * Memoized to prevent re-renders from high-frequency context updates.
  */
-const GovernancePanel = ({
+const GovernancePanel = memo(function GovernancePanel({
   visible = true,
   disabled = false,
   className = '',
@@ -35,7 +37,7 @@ const GovernancePanel = ({
       <FitnessGovernance />
     </div>
   );
-};
+});
 
 GovernancePanel.propTypes = {
   /** Whether the panel should be visible (may also show when governed) */

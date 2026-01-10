@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import FitnessVoiceMemo from '../../FitnessSidebar/FitnessVoiceMemo.jsx';
 import './panels.scss';
@@ -8,8 +8,10 @@ import './panels.scss';
  * 
  * Wraps FitnessVoiceMemo with panel-level visibility and menu integration.
  * Shows record button and opens settings menu.
+ * 
+ * Memoized to prevent re-renders from high-frequency context updates.
  */
-const VoiceMemoPanel = ({
+const VoiceMemoPanel = memo(function VoiceMemoPanel({
   visible = true,
   minimal = true,
   menuOpen = false,
@@ -38,7 +40,7 @@ const VoiceMemoPanel = ({
       />
     </div>
   );
-};
+});
 
 VoiceMemoPanel.propTypes = {
   /** Whether the panel is visible */

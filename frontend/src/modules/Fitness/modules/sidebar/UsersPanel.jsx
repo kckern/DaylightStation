@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import FitnessUsersList from '../../FitnessSidebar/FitnessUsers.jsx';
 import './panels.scss';
@@ -8,8 +8,10 @@ import './panels.scss';
  * 
  * Wraps FitnessUsers with panel-level visibility and event handling.
  * Shows connected devices and allows guest assignment.
+ * 
+ * Memoized to prevent re-renders from high-frequency context updates.
  */
-const UsersPanel = ({
+const UsersPanel = memo(function UsersPanel({
   visible = true,
   onRequestGuestAssignment = null,
   className = '',
@@ -28,7 +30,7 @@ const UsersPanel = ({
       <FitnessUsersList onRequestGuestAssignment={onRequestGuestAssignment} />
     </div>
   );
-};
+});
 
 UsersPanel.propTypes = {
   /** Whether the panel is visible */
