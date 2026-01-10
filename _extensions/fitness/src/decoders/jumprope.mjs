@@ -35,6 +35,7 @@ export class RenphoJumpropeDecoder {
     if (this.lastRawCounter === null) {
       this.pendingCarryover = rawCounter <= 50 ? rawCounter : 0;
       this.lastRawCounter = rawCounter;
+      console.log(`🔧 [JUMPROPE] First packet: rawCounter=${rawCounter}, pendingCarryover=${this.pendingCarryover}`);
       return this._formatOutput();
     }
 
@@ -47,9 +48,10 @@ export class RenphoJumpropeDecoder {
     }
 
     const delta = Math.abs(rawCounter - this.lastRawCounter);
+    const prevTotal = this.totalRevolutions;
 
-    // Device counter wraps at 250 (firmware limit)
-    const COUNTER_MAX = 250;
+    // Device counter wraps at 251 values (0-250 inclusive)
+    const COUNTER_MAX = 251;
     const ROLLOVER_THRESHOLD = 100;
     const BOUNDARY_ZONE = 50; // Values within this distance of 0 or 250 suggest rollover
 
@@ -60,20 +62,26 @@ export class RenphoJumpropeDecoder {
       const minVal = Math.min(rawCounter, this.lastRawCounter);
       const maxVal = Math.max(rawCounter, this.lastRawCounter);
       const nearLowBoundary = minVal < BOUNDARY_ZONE;
-      const nearHighBoundary = maxVal > (COUNTER_MAX - BOUNDARY_ZONE);
+      const nearHighBoundary = maxVal > (COUNTER_MAX - 1 - BOUNDARY_ZONE);
 
       if (nearLowBoundary && nearHighBoundary) {
         // It's a rollover - compute actual delta across boundary
-        // e.g., 249 → 2: actual jumps = (250 - 249) + 2 = 3
+        // e.g., 249 → 2: actual jumps = (251 - 249) + 2 = 4
         const complement = COUNTER_MAX - delta;
         this.totalRevolutions += Math.max(1, complement);
+        console.log(`🔧 [JUMPROPE] ROLLOVER: ${this.lastRawCounter}→${rawCounter}, delta=${delta}, complement=${complement}, total: ${prevTotal}→${this.totalRevolutions}`);
       } else {
         // Large jump but not a rollover (e.g., 50 → 248) - count as actual delta
         // This handles normal gameplay jumps that happen to be large
         this.totalRevolutions += delta;
+        console.log(`🔧 [JUMPROPE] LARGE JUMP (not rollover): ${this.lastRawCounter}→${rawCounter}, delta=${delta}, total: ${prevTotal}→${this.totalRevolutions}`);
       }
     } else {
       this.totalRevolutions += delta;
+      // Only log significant changes to reduce noise
+      if (delta > 0 && this.totalRevolutions % 50 === 0) {
+        console.log(`🔧 [JUMPROPE] Normal: raw=${rawCounter}, delta=${delta}, total=${this.totalRevolutions}`);
+      }
     }
     this.pendingCarryover = 0;
 

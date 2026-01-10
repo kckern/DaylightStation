@@ -2064,7 +2064,12 @@ export function useMediaResilience({
     togglePauseOverlay,
     recordSeekIntentSeconds,
     recordSeekIntentMs,
-    getSeekIntentMs: () => resolveSeekIntentMs()
+    getSeekIntentMs: () => resolveSeekIntentMs(),
+    clearSeekIntent: (reason = 'external-clear') => {
+      lastKnownSeekIntentMsRef.current = null;
+      updateSessionTargetTimeSeconds(null);
+      logResilienceEvent('seek-intent-cleared', { reason });
+    }
   }), [
     fetchVideoInfoRef,
     markHealthy,
@@ -2082,7 +2087,9 @@ export function useMediaResilience({
     resilienceActions,
     setOverlayPausePreference,
     setHardResetLoopCount,
-    markLoadingIntentActive
+    markLoadingIntentActive,
+    updateSessionTargetTimeSeconds,
+    logResilienceEvent
   ]);
 
   useEffect(() => {

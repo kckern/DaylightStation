@@ -470,7 +470,7 @@ const VoiceMemoOverlay = ({
   const memoTitle = currentMemo?.title || currentMemo?.name || currentMemo?.label || '';
   const micLabel = preferredMicrophoneId ? `Mic: ${preferredMicrophoneId}` : '';
 
-  return (
+  const overlayContent = (
     <div
       ref={overlayRef}
       className={`voice-memo-overlay voice-memo-overlay--${mode}`}

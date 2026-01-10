@@ -620,7 +620,7 @@ const GlobalOverlays = () => {
       onAddMemo={fitnessCtx.addVoiceMemoToSession}
       onReplaceMemo={fitnessCtx.replaceVoiceMemoInSession}
       sessionId={fitnessCtx.fitnessSession?.sessionId || fitnessCtx.fitnessSessionInstance?.sessionId}
-      playerRef={null}
+      playerRef={fitnessCtx.videoPlayerRef}
       preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
     />
   );
