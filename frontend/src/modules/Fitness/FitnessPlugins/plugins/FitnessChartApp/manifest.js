@@ -10,6 +10,7 @@ export default {
     sidebar: true,
     mini: true
   },
+  sidebar: true,
   dimensions: {
     standalone: { minWidth: 400, minHeight: 300, preferredAspect: '4:3' },
     overlay: { width: 320, height: 240, position: 'bottom-right' },

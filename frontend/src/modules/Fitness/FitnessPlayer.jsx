@@ -143,6 +143,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
   const pendingCloseRef = useRef(false); // Track pending close for voice memo guard (4A fix)
+  // BUG-04 Fix: Use high-res timestamp guard to prevent runaway touch events from previous views
+  const mountTimeRef = useRef(performance.now());
   const {
     fitnessPlayQueue,
     setFitnessPlayQueue,
@@ -165,7 +167,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     pauseMusicPlayer,
     resumeMusicPlayer,
     preferredMicrophoneId,
-    participantRoster: contextParticipantRoster
+    participantRoster: contextParticipantRoster,
+    registerVideoPlayer
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
 
@@ -516,6 +519,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       }
     });
   }, [fitnessLogContext]);
+
+  // IMPORTANT: Register player ref globally for coordination with overlays
+  useEffect(() => {
+    if (typeof registerVideoPlayer === 'function') {
+      registerVideoPlayer(playerRef);
+    }
+  }, [registerVideoPlayer, playerRef]);
 
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
@@ -1228,6 +1238,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const handleVideoContainerPointerDown = useCallback((event) => {
     if (typeof event.button === 'number' && event.button !== 0) return;
+    // BUG-04 Fix: Ignore events that occurred before this component was mounted
+    const eventTime = event.nativeEvent?.timeStamp || performance.now();
+    if (eventTime <= mountTimeRef.current) {
+      return;
+    }
     const target = event.target instanceof Element ? event.target : null;
     if (shouldBlockFullscreenToggle(target)) {
       return;
@@ -1257,6 +1272,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const handleRootPointerDownCapture = useCallback((event) => {
     if (typeof event.button === 'number' && event.button !== 0) return;
+    // BUG-04 Fix: Ignore events that occurred before this component was mounted
+    const eventTime = event.nativeEvent?.timeStamp || performance.now();
+    if (eventTime <= mountTimeRef.current) {
+      return;
+    }
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
 

@@ -6,6 +6,9 @@
   border: 1px solid #ffd400;
   background: rgba(255, 212, 0, 0.12);
   pointer-events: none;
+  // Smooth transition for position changes (BUG-03 fix)
+  transition: left 0.3s ease-out, width 0.3s ease-out;
+  will-change: left, width;
 }
 
 .progress-frame-overlay {
@@ -26,6 +29,8 @@
 .progress-frame-overlay__fill {
   stroke: #ffd400;
   filter: drop-shadow(0 0 6px rgba(255, 212, 0, 0.7));
+  // Smooth transition for stroke-dashoffset (progress) changes
+  transition: stroke-dashoffset 0.3s ease-out;
 }
 
 .progress-frame-overlay__spark {
@@ -37,4 +42,7 @@
   box-shadow: 0 0 6px rgba(255, 212, 0, 0.9);
   transform: translate(-50%, -50%);
   pointer-events: none;
+  // Smooth transition for spark position (BUG-03 fix)
+  transition: left 0.3s ease-out, top 0.3s ease-out;
+  will-change: left, top;
 }

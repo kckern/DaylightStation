@@ -83,8 +83,16 @@ export const configService = new Proxy({}, {
       return () => instance !== null;
     }
     
-    // For all other props, get the instance (throws if not initialized)
-    return getConfigService()[prop];
+    // Get the instance (throws if not initialized)
+    const svc = getConfigService();
+    const value = svc[prop];
+    
+    // If it's a function, bind it to the correct instance
+    if (typeof value === 'function') {
+      return value.bind(svc);
+    }
+    
+    return value;
   }
 });
 

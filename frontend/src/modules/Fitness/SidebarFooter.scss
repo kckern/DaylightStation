@@ -1,3 +1,6 @@
+@use './shared/styles/mixins' as *;
+@use './shared/styles/rpm-device' as *;
+
 .sidebar-footer {
   margin-top: auto;
   width: 100%;
@@ -5,7 +8,7 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 0 4px 8px 4px;
-  
+
   .device-container {
     width: 100%;
     min-height: 50px;
@@ -14,7 +17,7 @@
     flex-direction: column;
     gap: 8px;
   }
-  
+
   .device-card {
     width: 100%;
     aspect-ratio: 1;
@@ -27,9 +30,9 @@
     transition: all 0.3s ease;
     border: 3px solid rgba(255, 255, 255, 0.2);
     background: rgba(0, 0, 0, 0.4);
-    
+
     /* Hover removed for TV */
-    
+
     &.inactive {
       opacity: 0.5;
       filter: grayscale(0.5);
@@ -110,7 +113,7 @@
       }
     }
   }
-  
+
   .fitness-monitor {
     width: 100%;
     aspect-ratio: 1;
@@ -123,9 +126,9 @@
     transition: all 0.3s ease;
     border: 3px solid rgba(255, 255, 255, 0.2);
     background: rgba(0, 0, 0, 0.4);
-    
+
     &.connected {
-      
+
       .device-icon {
         filter: drop-shadow(0 0 4px rgba(0, 255, 0, 0.4));
       }
@@ -134,30 +137,63 @@
     &.disconnected {
       opacity: 0.6;
       border-color: rgba(255, 0, 0, 0.3);
-      
+
       .device-icon {
         filter: grayscale(0.5) drop-shadow(0 0 4px rgba(255, 0, 0, 0.3));
       }
     }
-    
+
     .device-icon {
       font-size: 2rem;
     }
   }
 }
 
-// Animations
+// RPM Device Card Styles - Uses shared partial for single source of truth
+// Only scale differs between sidebar and fullscreen views
+.device-card.rpm-device {
+  --rpm-scale: 0.6; // Sidebar is smaller than fullscreen (68px base)
+  @include rpm-device-base;
+
+  // Size is controlled by parent .device-card (aspect-ratio: 1)
+  // The shared mixins use --rpm-scale for proportional sizing
+
+  .rpm-spinning-border {
+    @include rpm-spinning-border;
+  }
+
+  .rpm-avatar-container {
+    @include rpm-avatar-wrapper;
+  }
+
+  .device-avatar {
+    @include rpm-avatar-content;
+  }
+
+  .rpm-value-overlay {
+    @include rpm-value-overlay;
+  }
+
+  @include rpm-zone-colors;
+}
+
+// Animations (heartbeat is sidebar-specific, rpm-spin is in shared partial)
 @keyframes heartbeat {
-  0%, 50%, 100% { 
-    transform: scale(1); 
+
+  0%,
+  50%,
+  100% {
+    transform: scale(1);
     filter: drop-shadow(0 0 4px rgba(255, 107, 107, 0.4));
   }
-  25% { 
-    transform: scale(1.15); 
+
+  25% {
+    transform: scale(1.15);
     filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.8));
   }
-  75% { 
-    transform: scale(1.05); 
+
+  75% {
+    transform: scale(1.05);
     filter: drop-shadow(0 0 6px rgba(255, 107, 107, 0.6));
   }
 }

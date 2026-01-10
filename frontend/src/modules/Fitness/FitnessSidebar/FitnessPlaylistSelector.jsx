@@ -3,7 +3,13 @@ import { DaylightMediaPath } from '../../../lib/api.mjs';
 import '../FitnessSidebar.scss';
 
 const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onClose }) => {
-  const handleSelect = (playlistId) => {
+  const handleSelect = (playlistId, event = null) => {
+    // Interaction Isolation
+    if (event) {
+      if (typeof event.preventDefault === 'function') event.preventDefault();
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch (_) {}
+    }
+    
     onSelect(playlistId);
     if (onClose) onClose();
   };
@@ -12,7 +18,7 @@ const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onCl
     <div className="fitness-playlist-selector">
       <div 
         className={`playlist-item ${!selectedPlaylistId ? 'selected' : ''}`}
-        onClick={() => handleSelect(null)}
+        onPointerDown={(e) => handleSelect(null, e)}
       >
         <div className="playlist-thumb placeholder">
           <span>🔇</span>
@@ -28,7 +34,7 @@ const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onCl
           <div 
             key={playlist.id}
             className={`playlist-item ${selectedPlaylistId === playlist.id ? 'selected' : ''}`}
-            onClick={() => handleSelect(playlist.id)}
+            onPointerDown={(e) => handleSelect(playlist.id, e)}
           >
             <div className="playlist-thumb">
               {thumbPath ? (

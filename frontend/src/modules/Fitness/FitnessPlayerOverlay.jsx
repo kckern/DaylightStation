@@ -6,7 +6,6 @@ import { COOL_ZONE_PROGRESS_MARGIN, calculateZoneProgressTowardsTarget, normaliz
 import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlay/ChallengeOverlay.jsx';
 import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverlay.jsx';
 import { normalizeRequirements, compareSeverity } from '../../hooks/fitness/GovernanceEngine.js';
-import VoiceMemoOverlay from './FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
 import FullscreenVitalsOverlay from './FitnessPlayerOverlay/FullscreenVitalsOverlay.jsx';
 import FitnessPluginContainer from './FitnessPlugins/FitnessPluginContainer.jsx';
 import './FitnessPlayerOverlay/FitnessAppOverlay.scss';
@@ -1081,22 +1080,6 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       {challengeOverlay}
       {!challengeOverlay && nextChallengeOverlay}
       {primaryOverlay}
-      {voiceMemoOverlayOpen ? (
-        <VoiceMemoOverlay
-          overlayState={voiceMemoOverlayState}
-          voiceMemos={voiceMemos}
-          onClose={closeVoiceMemoOverlay}
-          onOpenReview={openVoiceMemoReview}
-          onOpenList={openVoiceMemoList}
-          onOpenRedo={openVoiceMemoCapture}
-          onRemoveMemo={removeVoiceMemo}
-          onAddMemo={addVoiceMemo}
-          onReplaceMemo={replaceVoiceMemo}
-          sessionId={sessionId}
-          playerRef={playerRef}
-          preferredMicrophoneId={preferredMicrophoneId}
-        />
-      ) : null}
       {showFullscreenVitals ? (
         <FullscreenVitalsOverlay visible={showFullscreenVitals} />
       ) : null}
