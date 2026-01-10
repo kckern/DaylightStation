@@ -1,6 +1,6 @@
 
 import { userLoadFile, userSaveFile } from '../lib/io.mjs';
-import { configService } from '../lib/config/v2/index.mjs';
+import { configService } from '../lib/config/index.mjs';
 import { setupTestEnv } from '../chatbots/_lib/testing/setupTestEnv.mjs';
 import moment from 'moment-timezone';
 

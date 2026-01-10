@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import isJSON from 'is-json';
 import { askGPT } from './gpt.mjs';
 import moment from 'moment';
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 import { createLogger } from './logging/logger.js';
 
 const logger = createLogger({ app: 'buxfer' });

@@ -1,6 +1,6 @@
 /**
  * Config Validator
- * @module lib/config/v2/configValidator
+ * @module lib/config/configValidator
  *
  * Validates config against schema and throws on failure.
  * Provides actionable error messages with file paths checked.

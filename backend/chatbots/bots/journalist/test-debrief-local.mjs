@@ -41,7 +41,7 @@ import { LifelogAggregator } from './adapters/LifelogAggregator.mjs';
 import { GenerateMorningDebrief } from './application/usecases/GenerateMorningDebrief.mjs';
 import { DebriefRepository } from './infrastructure/DebriefRepository.mjs';
 import { createLogger } from '../../_lib/logging/index.mjs';
-import { configService } from '../../../lib/config/v2/index.mjs';
+import { configService } from '../../../lib/config/index.mjs';
 import { OpenAIGateway } from '../../infrastructure/ai/OpenAIGateway.mjs';
 
 const args = process.argv.slice(2);

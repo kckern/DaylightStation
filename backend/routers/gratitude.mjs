@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { loadFile, saveFile } from '../lib/io.mjs';
-import { configService } from '../lib/config/v2/index.mjs';
+import { configService } from '../lib/config/index.mjs';
 import { userDataService } from '../lib/config/UserDataService.mjs';
 import { broadcastToWebsockets } from './websocket.mjs';
 import { v4 as uuidv4 } from 'uuid';

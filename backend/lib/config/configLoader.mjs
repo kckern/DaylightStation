@@ -1,6 +1,6 @@
 /**
  * Config Loader
- * @module lib/config/v2/configLoader
+ * @module lib/config/configLoader
  *
  * Reads YAML files from disk and assembles a unified config object.
  * All I/O is done here - ConfigService receives the result and does no I/O.

@@ -3,7 +3,7 @@ import harvestStrava from '../lib/strava.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 import { setupTestEnv } from '../chatbots/_lib/testing/setupTestEnv.mjs';
 import { userSaveFile, userLoadFile } from '../lib/io.mjs';
-import { configService } from '../lib/config/v2/index.mjs';
+import { configService } from '../lib/config/index.mjs';
 
 // Initialize environment
 setupTestEnv({ loadConfigs: true });

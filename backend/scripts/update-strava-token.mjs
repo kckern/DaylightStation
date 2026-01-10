@@ -6,7 +6,7 @@
 
 import { setupTestEnv } from '../chatbots/_lib/testing/setupTestEnv.mjs';
 import { userSaveAuth, userLoadAuth } from '../lib/io.mjs';
-import configService from '../lib/config/v2/index.mjs';
+import configService from '../lib/config/index.mjs';
 import axios from '../lib/http.mjs';
 
 // Setup environment to load secrets

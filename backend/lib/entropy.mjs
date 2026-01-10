@@ -1,6 +1,6 @@
 import moment from 'moment';
 import { userLoadFile, userLoadCurrent, userLoadProfile } from './io.mjs';
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 import { createLogger } from './logging/logger.js';
 import ArchiveService from './ArchiveService.mjs';
 

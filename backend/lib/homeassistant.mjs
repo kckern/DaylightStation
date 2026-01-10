@@ -1,7 +1,7 @@
 import axios from "./http.mjs";
 import { buildCurl } from './httpUtils.mjs';
 import { createLogger } from './logging/logger.js';
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 
 const haLogger = createLogger({ source: 'backend', app: 'homeassistant' });
 
