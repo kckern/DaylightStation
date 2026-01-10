@@ -1,0 +1,67 @@
+/**
+ * FitnessFrame - Base layout shell styles
+ * 
+ * Layout: [Nav | Main Content]
+ * - Nav is absolutely positioned on the left (4rem wide)
+ * - Main has left margin to offset for nav
+ * - Overlay is absolutely positioned over everything
+ */
+
+// Navbar width constant (matches FitnessNavbar.scss)
+$navbar-width: 4rem;
+
+.fitness-frame {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background-color: #1a1a1a;
+
+  // Navigation slot - wrapper for absolutely positioned navbar
+  &__nav {
+    // Nav slot is a positioning context, but navbar inside is absolute
+    // This slot doesn't take flex space; navbar positions itself
+    flex: 0 0 auto;
+    width: 0; // Navbar is absolute, so slot has no width
+    height: 100%;
+    z-index: 10;
+    position: relative;
+  }
+
+  // Main content slot - offset by navbar width
+  &__main {
+    flex: 1 1 auto;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+    margin-left: $navbar-width; // Offset for absolute-positioned navbar
+  }
+
+  // Overlay slot (absolute positioning for modals, overlays, etc.)
+  &__overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    pointer-events: none;
+
+    // Children of overlay should have pointer events re-enabled
+    > * {
+      pointer-events: auto;
+    }
+  }
+
+  // Modifier: hidden nav
+  &--nav-hidden {
+    .fitness-frame__nav {
+      display: none;
+    }
+    
+    .fitness-frame__main {
+      margin-left: 0; // No offset when nav is hidden
+    }
+  }
+}

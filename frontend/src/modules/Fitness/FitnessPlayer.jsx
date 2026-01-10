@@ -13,6 +13,7 @@ import { resolveMediaIdentity, normalizeDuration } from '../Player/utils/mediaId
 import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
+import { FitnessPlayerFrame } from './frames';
 
 const DEBUG_FITNESS_INTERACTIONS = false;
 
@@ -1406,7 +1407,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     ? `${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
     : 'fitness-player-empty';
 
-  const videoShell = (
+  // Video content with overlay and chart
+  const videoContent = (
     <div className="fitness-video-shell">
       <div className="player-controls-blocker"></div>
       <FitnessPlayerOverlay 
@@ -1453,87 +1455,84 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     </div>
   );
 
-  return (
-    <div className={playerRootClasses} onPointerDownCapture={handleRootPointerDownCapture}>
-      {/* Sidebar Component */}
-      <div
-        className={`fitness-player-sidebar ${sidebarSide === 'left' ? 'sidebar-left' : 'sidebar-right'}${playerMode === 'fullscreen' ? ' minimized' : ''}`}
-        style={{ width: playerMode === 'fullscreen' ? 0 : sidebarRenderWidth, flex: `0 0 ${playerMode === 'fullscreen' ? 0 : sidebarRenderWidth}px`, order: sidebarSide === 'right' ? 2 : 0 }}
-      >
-        {hasActiveItem && (
-          <div
-            className={`sidebar-content${playerMode === 'fullscreen' ? ' sidebar-content-hidden' : ''}`}
-            aria-hidden={playerMode === 'fullscreen'}
-            style={{
-              pointerEvents: playerMode === 'fullscreen' ? 'none' : 'auto',
-              opacity: playerMode === 'fullscreen' ? 0 : 1,
-              visibility: playerMode === 'fullscreen' ? 'hidden' : 'visible'
-            }}
-          >
-            {/* Keep sidebar mounted in fullscreen so auxiliary players (music) continue running */}
-            <FitnessSidebar
-              playerRef={playerRef}
-              videoVolume={videoVolume}
-              onReloadVideo={handleReloadEpisode}
-              reloadTargetSeconds={reloadTargetSeconds}
-              onToggleChart={() => setShowChart(prev => !prev)}
-              showChart={showChart}
-              boostLevel={boostLevel}
-              setBoost={setBoost}
-            />
-          </div>
-        )}
-        {/* Footer controls removed (maximal/resizer deprecated) */}
-      </div>
-      {/* Main Player Panel */}
-      <div className="fitness-player-main" ref={mainPlayerRef} style={{ order: sidebarSide === 'right' ? 1 : 2 }}>
-        {/* MainContent - 16:9 aspect ratio container */}
-        <div
-          className={playerContentClassName}
-          ref={contentRef}
-          onPointerDownCapture={handleVideoContainerPointerDown}
-          onMouseDownCapture={handleVideoContainerPointerDown}
-          onClickCapture={handleVideoContainerClickCapture}
-          style={{
-            width: videoDims.width ? videoDims.width + 'px' : '100%',
-            height: videoDims.height ? videoDims.height + 'px' : 'auto',
-            margin: videoDims.width && videoDims.width < (mainPlayerRef.current?.clientWidth || 0) ? '0 auto' : '0',
-            position: 'relative'
-          }}
-        >
-          <div className="fitness-player-video-host">
-            {hasActiveItem ? videoShell : null}
-          </div>
-        </div>
-        
-        <FitnessPlayerFooter
-          ref={footerRef}
-          hidden={videoDims.hideFooter}
-          height={videoDims.footerHeight}
-          stackMode={stackMode}
-          currentTime={currentTime}
-          duration={duration}
-          currentItem={currentItem}
-          seekButtons={seekButtons}
-          onSeek={handleSeek}
-          onPrev={handlePrev}
-          onNext={handleNext}
-          onClose={handleClose}
-          hasPrev={hasPrev}
-          hasNext={hasNext}
-          isPaused={isPaused}
-          stallInfo={stallStatus}
-          playerRef={playerRef}
-          TimeDisplay={TimeDisplay}
-          renderCount={renderCountRef.current}
-          generateThumbnailUrl={generateThumbnailUrl}
-          thumbnailsCommitRef={thumbnailsCommitRef}
-          thumbnailsGetTimeRef={thumbnailsGetTimeRef}
-          playIsGoverned={playIsGoverned}
-          mediaElementKey={playerElementKey}
-        />
+  // Sidebar slot content
+  const sidebarContent = hasActiveItem ? (
+    <FitnessSidebar
+      playerRef={playerRef}
+      videoVolume={videoVolume}
+      onReloadVideo={handleReloadEpisode}
+      reloadTargetSeconds={reloadTargetSeconds}
+      onToggleChart={() => setShowChart(prev => !prev)}
+      showChart={showChart}
+      boostLevel={boostLevel}
+      setBoost={setBoost}
+    />
+  ) : null;
+
+  // Footer slot content
+  const footerContent = (
+    <FitnessPlayerFooter
+      ref={footerRef}
+      hidden={videoDims.hideFooter}
+      height={videoDims.footerHeight}
+      stackMode={stackMode}
+      currentTime={currentTime}
+      duration={duration}
+      currentItem={currentItem}
+      seekButtons={seekButtons}
+      onSeek={handleSeek}
+      onPrev={handlePrev}
+      onNext={handleNext}
+      onClose={handleClose}
+      hasPrev={hasPrev}
+      hasNext={hasNext}
+      isPaused={isPaused}
+      stallInfo={stallStatus}
+      playerRef={playerRef}
+      TimeDisplay={TimeDisplay}
+      renderCount={renderCountRef.current}
+      generateThumbnailUrl={generateThumbnailUrl}
+      thumbnailsCommitRef={thumbnailsCommitRef}
+      thumbnailsGetTimeRef={thumbnailsGetTimeRef}
+      playIsGoverned={playIsGoverned}
+      mediaElementKey={playerElementKey}
+    />
+  );
+
+  // Content wrapper with video sizing and event handlers
+  const mainContent = (
+    <div
+      className={playerContentClassName}
+      onPointerDownCapture={handleVideoContainerPointerDown}
+      onMouseDownCapture={handleVideoContainerPointerDown}
+      onClickCapture={handleVideoContainerClickCapture}
+      style={{
+        width: videoDims.width ? videoDims.width + 'px' : '100%',
+        height: videoDims.height ? videoDims.height + 'px' : 'auto',
+        margin: videoDims.width && videoDims.width < (mainPlayerRef.current?.clientWidth || 0) ? '0 auto' : '0',
+        position: 'relative'
+      }}
+    >
+      <div className="fitness-player-video-host">
+        {hasActiveItem ? videoContent : null}
       </div>
     </div>
+  );
+
+  return (
+    <FitnessPlayerFrame
+      className={playerRootClasses}
+      mode={playerMode}
+      sidebarSide={sidebarSide}
+      sidebarWidth={sidebarRenderWidth}
+      sidebar={sidebarContent}
+      footer={footerContent}
+      contentRef={contentRef}
+      mainRef={mainPlayerRef}
+      onRootPointerDownCapture={handleRootPointerDownCapture}
+    >
+      {mainContent}
+    </FitnessPlayerFrame>
   );
 };
 
