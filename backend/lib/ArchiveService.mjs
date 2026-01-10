@@ -40,7 +40,7 @@ const loadConfig = () => {
     
     try {
         // Archive is system-level config, not an app config
-        const configPath = `${process.env.path?.config || '/Volumes/mounts/DockerDrive/Docker/DaylightStation/config'}/archive.yml`;
+        const configPath = `${process.env.path?.config || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig'}/archive.yml`;
         if (fs.existsSync(configPath)) {
             const fileData = fs.readFileSync(configPath, 'utf8');
             archiveConfig = yaml.load(fileData) || { services: {}, defaults: {} };

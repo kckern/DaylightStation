@@ -69,7 +69,7 @@ const projectRoot = path.resolve(__dirname, '..');
 // Find data path
 const possibleDataPaths = [
     process.env.DATA_PATH,
-    '/Volumes/mounts/DockerDrive/Docker/DaylightStation/data',
+    '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata',
     path.join(projectRoot, 'data')
 ].filter(Boolean);
 
@@ -128,8 +128,8 @@ const validateSystem = () => {
     // Check multiple possible locations for config.secrets.yml
     const possibleSecretsPaths = [
         path.join(projectRoot, 'config', 'config.secrets.yml'),
-        '/Volumes/mounts/DockerDrive/Docker/DaylightStation/config/config.secrets.yml',
-        '/Volumes/mounts/DockerDrive/Docker/DaylightStation/config/config.secrets-local.yml',
+        '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig/config.secrets.yml',
+        '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig/config.secrets-local.yml',
     ];
     
     let secretsPath = null;
