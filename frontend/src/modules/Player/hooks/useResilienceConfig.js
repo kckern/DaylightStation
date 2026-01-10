@@ -8,25 +8,15 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
   },
   monitor: {
     progressEpsilonSeconds: 0.25,
-    stallDetectionThresholdMs: 500,
-    hardRecoverAfterStalledForMs: 4000,
-    // Give startup more room before hard recovery kicks in (helps NAS spin-up)
-    hardRecoverLoadingGraceMs: 12000,
-    hardRecoverAttemptBackoffMs: 1000,
-    mountTimeoutMs: 5000,
-    mountPollIntervalMs: 750,
-    mountMaxAttempts: 3,
-    // Extended startup timeout to allow slow cold starts/transcodes
-    startupTimeoutMs: 20000,
-    startupMaxAttempts: 2,
-    decoderNudgeGraceMs: 8000,
-    startupWatchdogTiers: null
+    stallDetectionThresholdMs: 5000,
+    hardRecoverAfterStalledForMs: 2000,
+    // Grace period for initial load
+    hardRecoverLoadingGraceMs: 15000,
+    recoveryCooldownMs: 4000
   },
   recovery: {
     enabled: true,
-    reloadDelayMs: 0,
-    cooldownMs: 4000,
-    maxAttempts: 8
+    maxAttempts: 3
   },
   debug: {
     revealDelayMs: 5000
@@ -75,7 +65,6 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
     const overlayConfig = mergedConfig.overlay || {};
     const debugConfig = mergedConfig.debug || {};
     const monitorConfig = mergedConfig.monitor || {};
-    const legacyReload = mergedConfig.reload || {};
     const recoveryConfig = mergedConfig.recovery || {};
 
     return {
@@ -83,28 +72,14 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
       debugConfig,
       monitorSettings: {
         epsilonSeconds: coerceNumber(monitorConfig.progressEpsilonSeconds, 0.25),
-        stallDetectionThresholdMs: coerceNumber(monitorConfig.stallDetectionThresholdMs, 500),
-        hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 6000),
-        hardRecoverLoadingGraceMs: coerceNumber(
-          monitorConfig.hardRecoverLoadingGraceMs ?? monitorConfig.hardRecoverStartupGraceMs,
-          12000
-        ),
-        hardRecoverAttemptBackoffMs: coerceNumber(monitorConfig.hardRecoverAttemptBackoffMs, 1000),
-        mountTimeoutMs: coerceNumber(monitorConfig.mountTimeoutMs, 6000),
-        mountPollIntervalMs: coerceNumber(monitorConfig.mountPollIntervalMs, 750),
-        mountMaxAttempts: coerceNumber(monitorConfig.mountMaxAttempts, 3),
-        startupTimeoutMs: coerceNumber(monitorConfig.startupTimeoutMs, 20000),
-        startupMaxAttempts: coerceNumber(monitorConfig.startupMaxAttempts, 2),
-        decoderNudgeGraceMs: coerceNumber(monitorConfig.decoderNudgeGraceMs, 8000),
-        startupWatchdogTiers: Array.isArray(monitorConfig.startupWatchdogTiers)
-          ? monitorConfig.startupWatchdogTiers
-          : null
+        stallDetectionThresholdMs: coerceNumber(monitorConfig.stallDetectionThresholdMs, 5000),
+        hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 2000),
+        hardRecoverLoadingGraceMs: coerceNumber(monitorConfig.hardRecoverLoadingGraceMs, 15000),
+        recoveryCooldownMs: coerceNumber(monitorConfig.recoveryCooldownMs, 4000)
       },
       recoveryConfig: {
-        enabled: recoveryConfig.enabled ?? legacyReload.enabled ?? true,
-        reloadDelayMs: coerceNumber(recoveryConfig.reloadDelayMs ?? legacyReload.stallMs, 0),
-        cooldownMs: coerceNumber(recoveryConfig.cooldownMs ?? legacyReload.cooldownMs, 4000),
-        maxAttempts: coerceNumber(recoveryConfig.maxAttempts ?? legacyReload.maxAttempts, 2)
+        enabled: recoveryConfig.enabled ?? true,
+        maxAttempts: coerceNumber(recoveryConfig.maxAttempts, 3)
       }
     };
   }, [contextConfig, configOverrides, runtimeOverrides]);
