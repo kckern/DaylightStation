@@ -1,7 +1,7 @@
 import axios from '../../lib/http.mjs';
 import { getTransactions, addTransaction } from '../../lib/buxfer.mjs';
 import { loadFile, saveFile } from '../../lib/io.mjs';
-import { configService } from '../../lib/config/v2/index.mjs';
+import { configService } from '../../lib/config/index.mjs';
 import { createLogger } from '../../lib/logging/logger.js';
 
 const payrollLogger = createLogger({

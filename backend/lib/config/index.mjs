@@ -1,19 +1,19 @@
 /**
  * Config Service Entry Point
- * @module lib/config/v2
+ * @module lib/config
  *
  * Factory, singleton, and exports for the config system.
  *
  * Usage at startup:
- *   import { initConfigService } from './lib/config/v2/index.mjs';
+ *   import { initConfigService } from './lib/config/index.mjs';
  *   initConfigService(dataDir);
  *
  * Usage in modules:
- *   import { configService } from '../lib/config/v2/index.mjs';
+ *   import { configService } from '../lib/config/index.mjs';
  *   const key = configService.getSecret('API_KEY');
  *
  * Usage in tests:
- *   import { createTestConfigService } from '../lib/config/v2/index.mjs';
+ *   import { createTestConfigService } from '../lib/config/index.mjs';
  *   const svc = createTestConfigService({ ... });
  */
 
@@ -73,7 +73,7 @@ export function getConfigService() {
  * Convenience proxy for direct import.
  *
  * Usage:
- *   import { configService } from './config/v2/index.mjs';
+ *   import { configService } from './config/index.mjs';
  *   const key = configService.getSecret('API_KEY');
  */
 export const configService = new Proxy({}, {

@@ -12,7 +12,7 @@
 import axios from './http.mjs';
 import moment from 'moment-timezone';
 import { userSaveFile, getDefaultUsername } from './io.mjs';
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 import { createLogger } from './logging/logger.js';
 
 const githubLogger = createLogger({ source: 'backend', app: 'github' });

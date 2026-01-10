@@ -1,5 +1,5 @@
 import { userSaveFile } from './io.mjs';
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 import axios from './http.mjs';
 
 const getMovies = async (targetUsername = null) => {

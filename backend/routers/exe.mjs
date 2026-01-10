@@ -5,7 +5,7 @@ import express from 'express';
 import { exec } from 'child_process';
 import axios from '../lib/http.mjs';
 import { loadFile, saveFile } from '../lib/io.mjs';
-import { configService } from '../lib/config/v2/index.mjs';
+import { configService } from '../lib/config/index.mjs';
 import { broadcastToWebsockets, restartWebsocketServer } from './websocket.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 import { serializeError } from '../lib/logging/utils.js';
