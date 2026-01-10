@@ -1,15 +1,7 @@
-.progress-zoom-window {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  box-sizing: border-box;
-  border: 1px solid #ffd400;
-  background: rgba(255, 212, 0, 0.12);
-  pointer-events: none;
-  // Smooth transition for position changes (BUG-03 fix)
-  transition: left 0.3s ease-out, width 0.3s ease-out;
-  will-change: left, width;
-}
+/**
+ * ProgressFrame v2 Styles
+ * Clean implementation with proper overflow handling
+ */
 
 .progress-frame-overlay {
   position: absolute;
@@ -20,6 +12,7 @@
 .progress-frame-overlay__svg {
   width: 100%;
   height: 100%;
+  overflow: visible; // Allow spark glow to extend outside bounds
 }
 
 .progress-frame-overlay__track {
@@ -29,20 +22,24 @@
 .progress-frame-overlay__fill {
   stroke: #ffd400;
   filter: drop-shadow(0 0 6px rgba(255, 212, 0, 0.7));
-  // Smooth transition for stroke-dasharray (progress) changes
-  transition: stroke-dasharray 0.3s ease-out;
+  transition: stroke-dasharray 0.15s ease-out;
 }
 
 .progress-frame-overlay__spark {
+  fill: #ffd400;
+  filter: drop-shadow(0 0 6px rgba(255, 212, 0, 0.9));
+  transition: cx 0.15s ease-out, cy 0.15s ease-out;
+}
+
+// Zoom window overlay (kept for compatibility)
+.progress-zoom-window {
   position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ffd400;
-  box-shadow: 0 0 6px rgba(255, 212, 0, 0.9);
-  transform: translate(-50%, -50%);
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  border: 1px solid #ffd400;
+  background: rgba(255, 212, 0, 0.12);
   pointer-events: none;
-  // Smooth transition for spark position (BUG-03 fix)
-  transition: left 0.3s ease-out, top 0.3s ease-out;
-  will-change: left, top;
+  transition: left 0.3s ease-out, width 0.3s ease-out;
+  will-change: left, width;
 }
