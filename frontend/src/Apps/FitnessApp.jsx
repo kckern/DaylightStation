@@ -150,11 +150,18 @@ const FitnessApp = () => {
       // Run immediately and on DOM changes
       removeTooltips();
       
+      // MEMORY LEAK FIX: Properly track debounce timer to prevent stacking timeouts
       let observer = null;
+      let debounceTimer = null;
       try {
         observer = new MutationObserver(() => {
-          // Debounce the tooltip removal to avoid performance issues
-          setTimeout(removeTooltips, 100);
+          // Skip if already pending to prevent timeout stacking
+          if (debounceTimer) return;
+          
+          debounceTimer = setTimeout(() => {
+            debounceTimer = null;
+            removeTooltips();
+          }, 500);
         });
         
         if (document.body) {
@@ -170,6 +177,14 @@ const FitnessApp = () => {
       }
       
       return () => {
+        if (debounceTimer) {
+          try {
+            clearTimeout(debounceTimer);
+            debounceTimer = null;
+          } catch (e) {
+            // Ignore clear errors
+          }
+        }
         if (observer) {
           try {
             observer.disconnect();
