@@ -1,7 +1,7 @@
 import express from 'express';
 import request from 'request';
 import { createLogger } from '../lib/logging/logger.js';
-import { configService } from '../lib/config/v2/index.mjs';
+import { configService } from '../lib/config/index.mjs';
 
 const router = express.Router();
 const logger = createLogger({ source: 'backend', app: 'plex-proxy' });

@@ -41,7 +41,7 @@ import { FileRepository } from './chatbots/infrastructure/persistence/FileReposi
 import { CanvasReportRenderer } from './chatbots/adapters/http/CanvasReportRenderer.mjs';
 import { createLogger as createChatbotLogger } from './chatbots/_lib/logging/index.mjs';
 import { DEFAULT_NUTRITION_GOALS } from './chatbots/bots/nutribot/config/NutriBotConfig.mjs';
-import { configService } from './lib/config/v2/index.mjs';
+import { configService } from './lib/config/index.mjs';
 import { createLogger } from './lib/logging/logger.js';
 
 const apiLogger = createLogger({ app: 'api' });

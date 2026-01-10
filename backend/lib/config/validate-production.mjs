@@ -6,10 +6,10 @@
  * that the new ConfigService can load all config correctly.
  *
  * Usage:
- *   DAYLIGHT_DATA_PATH=/data node backend/lib/config/v2/validate-production.mjs
+ *   DAYLIGHT_DATA_PATH=/data node backend/lib/config/validate-production.mjs
  *
  * Or in Docker:
- *   docker exec daylight-station node backend/lib/config/v2/validate-production.mjs
+ *   docker exec daylight-station node backend/lib/config/validate-production.mjs
  */
 
 import { loadConfig } from './configLoader.mjs';

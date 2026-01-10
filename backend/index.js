@@ -16,11 +16,8 @@ import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolve
 import { loadAllConfig, logConfigSummary } from './lib/config/loader.mjs';
 
 // ConfigService v2 (primary config system)
-import { initConfigService, ConfigValidationError, configService } from './lib/config/v2/index.mjs';
+import { initConfigService, ConfigValidationError, configService } from './lib/config/index.mjs';
 
-// Legacy ConfigService - DEPRECATED, kept for backwards compatibility during migration
-// TODO: Remove once all modules are verified working with v2
-import { configService as legacyConfigService } from './lib/config/ConfigService.mjs';
 
 // Logging system
 import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
@@ -64,9 +61,6 @@ try {
   throw err;
 }
 
-// Initialize legacy ConfigService for backwards compatibility
-// TODO: Remove once Phase 4 cleanup is complete
-legacyConfigService.init({ dataDir: configPaths.dataDir });
 
 let loggingConfig = loadLoggingConfig();
 
