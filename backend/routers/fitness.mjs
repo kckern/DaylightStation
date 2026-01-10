@@ -14,6 +14,7 @@ import {
     stringifyTimelineSeriesForFile,
     isV3Format
 } from '../lib/fitness/sessionNormalizer.mjs';
+import { buildTranscriptionContext } from '../lib/ai/transcriptionContext.mjs';
 
 const fitnessLogger = createLogger({ source: 'backend', app: 'fitness' });
 
@@ -493,7 +494,7 @@ fitnessRouter.post('/save_screenshot', (req, res) => {
 fitnessRouter.post('/voice_memo', async (req, res) => {
     try {
         if(!openai) return res.status(500).json({ ok:false, error: 'OPENAI_API_KEY not configured' });
-        const { audioBase64, mimeType, sessionId, startedAt, endedAt } = req.body || {};
+        const { audioBase64, mimeType, sessionId, startedAt, endedAt, context: sessionContext = {} } = req.body || {};
         if(!audioBase64 || typeof audioBase64 !== 'string') {
             return res.status(400).json({ ok:false, error: 'audioBase64 required' });
         }
@@ -507,7 +508,24 @@ fitnessRouter.post('/voice_memo', async (req, res) => {
         fs.writeFileSync(filePath, buffer);
 
         // 1. Transcribe with Whisper (fitness-biased prompt improves accuracy for exercise terms)
-        const whisperPrompt = 'Transcribe this description of a fitness workout. Common terms: pounds (lbs), weights, dumbbells, reps, sets, squats, lunges, burpees, HIIT, intervals, warmup, cooldown, rest, cardio,  kettlebell, pushups, pullups, planks, crunches. "';
+        // Fetch all household member names to improve recognition
+        const householdId = sessionContext.householdId || configService.getDefaultHouseholdId();
+        const fitnessConfig = loadFitnessConfig(householdId);
+        const householdMembers = [];
+        if (fitnessConfig?.users) {
+            if (Array.isArray(fitnessConfig.users.primary)) {
+                householdMembers.push(...fitnessConfig.users.primary.map(u => typeof u === 'string' ? u : u.name));
+            }
+            if (Array.isArray(fitnessConfig.users.family)) {
+                householdMembers.push(...fitnessConfig.users.family.map(u => u.name));
+            }
+        }
+        
+        const whisperPrompt = buildTranscriptionContext({
+            ...sessionContext,
+            householdMembers: [...new Set(householdMembers)]
+        });
+
         const transcription = await openai.audio.transcriptions.create({
             file: fs.createReadStream(filePath),
             model: 'whisper-1',

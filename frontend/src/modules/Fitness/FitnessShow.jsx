@@ -224,7 +224,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     governedTypeSet: contextGovernedTypeSet,
     fitnessSessionInstance,
     addVoiceMemoToSession,
-    openVoiceMemoCapture
+    openVoiceMemoCapture,
+    setCurrentMedia
   } = fitnessContext;
   const nomusicLabelSet = useMemo(() => {
     const normalized = Array.isArray(nomusicLabels)
@@ -286,6 +287,27 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   useEffect(() => {
     fetchShowData();
   }, [fetchShowData]);
+
+  // Sync viewed show with global context for AI transcription context injection (BUG-07)
+  useEffect(() => {
+    if (showData?.show) {
+      setCurrentMedia({
+        showName: showData.show.title || showData.show.label || showData.show.name,
+        showId: showData.show.id,
+        isViewing: true
+      });
+    }
+    return () => {
+      // Handled by unmount effect
+    };
+  }, [showData, setCurrentMedia]);
+
+  // Handle unmount - clear viewing media
+  useEffect(() => {
+    return () => {
+      setCurrentMedia(null);
+    };
+  }, [setCurrentMedia]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;

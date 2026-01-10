@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { playbackLog } from '../../Player/lib/playbackLogger.js';
+import { useFitness } from '../../../context/FitnessContext.jsx';
 
 const blobToBase64 = (blob) => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -136,6 +137,7 @@ const useVoiceMemoRecorder = ({
   onPauseMusic,
   onResumeMusic
 } = {}) => {
+  const fitnessCtx = useFitness();
   const logVoiceMemo = useCallback((event, payload = {}, options = {}) => {
     playbackLog('voice-memo', {
       event,
@@ -325,7 +327,14 @@ const useVoiceMemoRecorder = ({
         mimeType: blob.type,
         sessionId: sessionId || null,
         startedAt: recordingStartTimeRef.current || Date.now(),
-        endedAt: Date.now()
+        endedAt: Date.now(),
+        context: {
+          currentShow: fitnessCtx?.currentMedia?.showName || fitnessCtx?.currentMedia?.show,
+          currentEpisode: fitnessCtx?.currentMedia?.title,
+          recentShows: fitnessCtx?.recentlyPlayed?.map(item => item.showName || item.show),
+          activeUsers: fitnessCtx?.fitnessSessionInstance?.roster?.map(p => p.name),
+          householdId: fitnessCtx?.householdId
+        }
       };
 
       const resp = await Promise.race([
@@ -420,20 +429,20 @@ const useVoiceMemoRecorder = ({
           emitState('processing');
           clearDurationTimer();
           cleanupStream();
-          resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
+          // resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
           // Also resume music player
-          if (typeof onResumeMusic === 'function') {
-            try { onResumeMusic(); } catch (_) { /* ignore */ }
-          }
+          // if (typeof onResumeMusic === 'function') {
+          //   try { onResumeMusic(); } catch (_) { /* ignore */ }
+          // }
           emitLevel(null);
         }
       }, 100);
     } catch (err) {
-      resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
+      // resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
       // Also resume music player on error
-      if (typeof onResumeMusic === 'function') {
-        try { onResumeMusic(); } catch (_) { /* ignore */ }
-      }
+      // if (typeof onResumeMusic === 'function') {
+      //   try { onResumeMusic(); } catch (_) { /* ignore */ }
+      // }
       emitError(err, 'Failed to access microphone', 'mic_access_denied', false);
       logVoiceMemo('recording-start-error', { error: err?.message || String(err) }, { level: 'warn' });
     }
@@ -451,11 +460,11 @@ const useVoiceMemoRecorder = ({
     clearDurationTimer();
     setRecordingDuration(0);
     cleanupStream();
-    resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
+    // resumeMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
     // Also resume music player
-    if (typeof onResumeMusic === 'function') {
-      try { onResumeMusic(); } catch (_) { /* ignore */ }
-    }
+    // if (typeof onResumeMusic === 'function') {
+    //   try { onResumeMusic(); } catch (_) { /* ignore */ }
+    // }
     emitLevel(null);
   }, [cleanupStream, clearDurationTimer, emitLevel, emitState, logVoiceMemo, onResumeMusic, playerRef]);
 

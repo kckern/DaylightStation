@@ -99,6 +99,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const videoPlayerRef = useRef(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
   const [transferVersion, setTransferVersion] = useState(0);
+  const [currentMedia, setCurrentMedia] = useState(null);
+  const [recentlyPlayed, setRecentlyPlayed] = useState([]);
 
   // App State
   const [activeApp, setActiveApp] = useState(null);
@@ -160,6 +162,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const registerVideoPlayer = React.useCallback((ref) => {
     videoPlayerRef.current = ref?.current || ref || null;
+  }, []);
+
+  const trackRecentlyPlayed = React.useCallback((item) => {
+    if (!item) return;
+    setRecentlyPlayed(prev => {
+      const filtered = prev.filter(p => (p.id || p.ratingKey || p.plex) !== (item.id || item.ratingKey || item.plex));
+      return [item, ...filtered].slice(0, 10);
+    });
   }, []);
 
   // Governance Metric Reporting
@@ -627,6 +637,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       mode: voiceMemoOverlayState.mode,
       memoId: voiceMemoOverlayState.memoId
     });
+    
+    // Clear pause state when closing overlay (BUG-08)
+    setVideoPlayerPaused(false);
+    musicPlayerRef.current?.resume?.();
+
     setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
     // Fire onComplete callback after state reset
     if (typeof onComplete === 'function') {
@@ -639,6 +654,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [emitVoiceMemoTelemetry, logVoiceMemo, setVoiceMemoOverlayStateGuarded, voiceMemoOverlayState]);
 
   const openVoiceMemoReview = React.useCallback((memoOrId, { autoAccept, fromRecording = false } = {}) => {
+    // Pause video and music when opening voice memo review
+    setVideoPlayerPaused(true);
+    musicPlayerRef.current?.pause?.();
+
     // Allow optimistic review opens when we have the memo object, even if it hasn't landed in voiceMemos yet.
     const isObject = memoOrId && typeof memoOrId === 'object';
     const id = isObject ? memoOrId.memoId : memoOrId;
@@ -677,6 +696,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
 
   const openVoiceMemoList = React.useCallback(() => {
+    // Pause video and music when opening voice memo list
+    setVideoPlayerPaused(true);
+    musicPlayerRef.current?.pause?.();
+
     setVoiceMemoOverlayStateGuarded({
       open: true,
       mode: 'list',
@@ -1698,6 +1721,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     closeApp,
     launchOverlayApp,
     dismissOverlayApp,
+
+    currentMedia,
+    setCurrentMedia,
+    recentlyPlayed,
+    trackRecentlyPlayed,
     emitAppEvent,
     subscribeToAppEvent,
     reportGovernanceMetric,

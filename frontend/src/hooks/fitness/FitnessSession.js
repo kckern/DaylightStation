@@ -1721,7 +1721,11 @@ export class FitnessSession {
     
     let sessionData = null;
     try {
-      if (this.treasureBox) this.treasureBox.stop();
+      if (this.treasureBox) {
+        this.treasureBox.stop();
+        // MEMORY LEAK FIX: Clear accumulated timeline data on session end
+        this.treasureBox.reset();
+      }
       sessionData = this.summary;
     } catch(_){}
     
