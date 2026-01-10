@@ -78,6 +78,12 @@ export function getConfigService() {
  */
 export const configService = new Proxy({}, {
   get(_, prop) {
+    // Special handling for isReady() - safe to call before initialization
+    if (prop === 'isReady') {
+      return () => instance !== null;
+    }
+    
+    // For all other props, get the instance (throws if not initialized)
     return getConfigService()[prop];
   }
 });
