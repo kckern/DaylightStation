@@ -117,7 +117,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   
   const { 
     connected, 
-    allDevices,
+    fitnessDevices,
+    allDevices: contextAllDevices,
+    activeHeartRateParticipants, // Phase 1 SSOT: Use this instead of filtering devices
+    rpmDevices: contextRpmDevices, // Phase 2 SSOT: Centralized RPM selector
+    equipmentDevices: contextEquipmentDevices, // Phase 2 SSOT: Centralized equipment selector
     deviceConfiguration,
     equipment,
     users,
@@ -133,6 +137,20 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     userCollections,
     deviceOwnership,
   } = fitnessContext;
+
+  // Use context-provided arrays if available, fallback to derivation for backward compat
+  const allDevices = React.useMemo(() => {
+    if (contextAllDevices) return contextAllDevices;
+    return fitnessDevices ? Array.from(fitnessDevices.values()) : [];
+  }, [fitnessDevices, contextAllDevices]);
+
+  // Phase 1 SSOT: Use canonical participant list from context
+  const heartRateDevices = activeHeartRateParticipants || [];
+  
+  // Phase 2 SSOT: Use domain selectors from context
+  const rpmDevices = contextRpmDevices || [];
+  const equipmentDevices = contextEquipmentDevices || [];
+
   const zoneProfiles = useZoneProfiles();
 
   const normalizedCollections = userCollections || {};
@@ -646,18 +664,13 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   };
   
   useEffect(() => {
-    if (!allDevices) return;
-    const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
-    // Combine cadence and jumprope into single RPM group
-    const rpmDevices = allDevices.filter(d =>
-      d.type === 'cadence' || d.type === 'stationary_bike' ||
-      d.type === 'ab_roller' || d.type === 'jumprope'
-    );
-    const otherDevices = allDevices.filter(d =>
-      d.type !== 'heart_rate' && d.type !== 'cadence' &&
-      d.type !== 'stationary_bike' && d.type !== 'ab_roller' &&
-      d.type !== 'jumprope'
-    );
+    // Phase 1 SSOT: Use activeHeartRateParticipants directly from context
+    // No more inline roster-to-device derivation - that logic now lives in FitnessContext
+    const hrDevices = [...(activeHeartRateParticipants || [])];
+
+    // Phase 2 SSOT: Use domain selectors from context instead of filtering allDevices
+    const rpmDevicesCopy = [...rpmDevices];
+    const otherDevices = [...equipmentDevices];
 
     // HR: Sort by zone rank, then by zone progress (not raw HR)
     hrDevices.sort((a, b) => {
@@ -680,7 +693,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     });
 
     // RPM: Sort by appearance time (stable deviceId order), active devices first
-    rpmDevices.sort((a, b) => {
+    rpmDevicesCopy.sort((a, b) => {
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
 
@@ -703,18 +716,19 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
     const combined = [...hrDevices];
     // Single unified RPM group
-    if (rpmDevices.length > 0) {
-      combined.push({ type: 'rpm-group', devices: rpmDevices });
+    if (rpmDevicesCopy.length > 0) {
+      combined.push({ type: 'rpm-group', devices: rpmDevicesCopy });
     }
     combined.push(...otherDevices);
     setSortedDevices(combined);
-  }, [allDevices, equipmentMap, resolveCanonicalUserName, lookupZoneProgress]);
+  }, [equipmentMap, resolveCanonicalUserName, lookupZoneProgress, activeHeartRateParticipants, rpmDevices, equipmentDevices]);
 
   // Decide vertical vs horizontal layout for user (heart_rate) cards
   useLayoutEffect(() => {
     if (!containerRef.current || !allDevices) return;
     // Count heart_rate users that are active; fallback to all heart_rate when none marked active
-    const hrAll = allDevices.filter(d => d.type === 'heart_rate');
+    // Phase 1 SSOT: Use activeHeartRateParticipants for HR count
+    const hrAll = activeHeartRateParticipants || [];
     const hrActive = hrAll.filter(d => d.isActive);
     const hrCountCandidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
 

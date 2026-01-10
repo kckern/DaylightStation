@@ -110,7 +110,11 @@ const useFitnessPlugin = (pluginId) => {
     getProfileCoinsTotal: fitnessCtx.getProfileCoinsTotal,
     
     // Devices
+    // Phase 2 SSOT: Prefer activeHeartRateParticipants over heartRateDevices for roster-based data
+    activeHeartRateParticipants: fitnessCtx.activeHeartRateParticipants,
     heartRateDevices: fitnessCtx.heartRateDevices,
+    rpmDevices: fitnessCtx.rpmDevices,
+    equipmentDevices: fitnessCtx.equipmentDevices,
     cadenceDevices: fitnessCtx.cadenceDevices,
     powerDevices: fitnessCtx.powerDevices,
     allDevices: fitnessCtx.allDevices,

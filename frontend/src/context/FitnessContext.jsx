@@ -13,6 +13,9 @@ import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 import { getPluginManifest } from '../modules/Fitness/FitnessPlugins/registry.js';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessPlugins/plugins/VibrationApp/constants.js';
 
+// Phase 3 SSOT: Domain model imports
+import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
+
 // Create context
 const FitnessContext = createContext(null);
 
@@ -954,16 +957,75 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
 
   // Prepare data for context value
-  const allDevices = React.useMemo(() => Array.from(fitnessDevices.values()), [fitnessDevices, version]);
+  const allDevicesRaw = React.useMemo(() => Array.from(fitnessDevices.values()), [fitnessDevices, version]);
   const allUsers = React.useMemo(() => Array.from(users.values()), [users, version]);
   
+  // Phase 2 SSOT: Wrap allDevices with deprecation warning in development
+  // Components should use domain selectors (activeHeartRateParticipants, rpmDevices, equipmentDevices) instead
+  const allDevices = React.useMemo(() => {
+    if (process.env.NODE_ENV === 'development') {
+      // Track which components access allDevices for future cleanup
+      const warned = new Set();
+      return new Proxy(allDevicesRaw, {
+        get(target, prop) {
+          // Only warn once per property access pattern, and skip common array methods
+          if (prop === 'filter' && !warned.has('filter')) {
+            warned.add('filter');
+            console.warn(
+              '[FitnessContext] DEPRECATION: Direct filtering of allDevices detected. ' +
+              'Use activeHeartRateParticipants, rpmDevices, or equipmentDevices selectors instead. ' +
+              'See docs/ops/fix-fitness-user-consistency.md'
+            );
+          }
+          return Reflect.get(target, prop);
+        }
+      });
+    }
+    return allDevicesRaw;
+  }, [allDevicesRaw]);
+  
   // Categorized device arrays
-  const heartRateDevices = React.useMemo(() => allDevices.filter(d => d.type === 'heart_rate'), [allDevices]);
-  const speedDevices = React.useMemo(() => allDevices.filter(d => d.type === 'speed'), [allDevices]);
-  const cadenceDevices = React.useMemo(() => allDevices.filter(d => d.type === 'cadence'), [allDevices]);
-  const jumpropeDevices = React.useMemo(() => allDevices.filter(d => d.type === 'jumprope'), [allDevices]);
-  const powerDevices = React.useMemo(() => allDevices.filter(d => d.type === 'power'), [allDevices]);
-  const unknownDevices = React.useMemo(() => allDevices.filter(d => d.type === 'unknown'), [allDevices]);
+  const heartRateDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'heart_rate'), [allDevicesRaw]);
+  const speedDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'speed'), [allDevicesRaw]);
+  const cadenceDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'cadence'), [allDevicesRaw]);
+  const jumpropeDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'jumprope'), [allDevicesRaw]);
+  const powerDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'power'), [allDevicesRaw]);
+  const unknownDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'unknown'), [allDevicesRaw]);
+
+  // ==========================================================================
+  // Phase 2 SSOT: Domain-level device selectors
+  // ==========================================================================
+  // These selectors provide domain-meaningful groupings of devices.
+  // UI components should use these instead of filtering allDevices directly.
+  
+  /**
+   * RPM devices: cadence, stationary_bike, ab_roller, jumprope
+   * Used by FitnessUsers.jsx for the unified RPM group display
+   */
+  const rpmDevices = React.useMemo(() => {
+    return allDevicesRaw.filter(d =>
+      d.type === 'cadence' || 
+      d.type === 'stationary_bike' ||
+      d.type === 'ab_roller' || 
+      d.type === 'jumprope'
+    );
+  }, [allDevicesRaw]);
+
+  /**
+   * Equipment/other devices: everything that's not HR or RPM
+   * Used by FitnessUsers.jsx for the "other devices" section
+   */
+  const equipmentDevices = React.useMemo(() => {
+    return allDevicesRaw.filter(d =>
+      d.type !== 'heart_rate' && 
+      d.type !== 'cadence' &&
+      d.type !== 'stationary_bike' && 
+      d.type !== 'ab_roller' &&
+      d.type !== 'jumprope'
+    );
+  }, [allDevicesRaw]);
+
+  // ==========================================================================
 
   const preferGroupLabels = React.useMemo(() => heartRateDevices.length > 1, [heartRateDevices.length]);
 
@@ -1063,6 +1125,27 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const activeParticipantNames = React.useMemo(() => {
     return participantRoster.map(p => p.name).filter(Boolean);
   }, [participantRoster]);
+
+  // ==========================================================================
+  // Phase 3 SSOT: Participant Domain Entities
+  // ==========================================================================
+  // This is the SINGLE SOURCE OF TRUTH for "who is participating with a heart rate device."
+  // All UI components (FitnessUsers, SidebarFooter, GovernanceOverlay, Chart) must consume
+  // this selector instead of deriving their own lists from raw devices.
+  // 
+  // Phase 3 upgrade: Uses ParticipantFactory to create proper domain entities.
+  // See: docs/ops/fix-fitness-user-consistency.md
+  
+  const activeHeartRateParticipants = React.useMemo(() => {
+    const inactiveTimeout = ant_devices?.timeout?.inactive ?? 60000;
+    
+    return ParticipantFactory.fromRoster(participantRoster, {
+      devices: heartRateDevices,
+      zoneConfig,
+      inactiveTimeout,
+      getDisplayLabel
+    });
+  }, [participantRoster, heartRateDevices, zoneConfig, ant_devices, getDisplayLabel]);
 
   // ==========================================================================
   // Ambient LED Zone Sync (Home Assistant Integration)
@@ -1633,6 +1716,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     connected,
     vibrationState,
     fitnessDevices,
+    // Expose allDevices for backward compatibility (prefer domain selectors below)
+    allDevices,
+    heartRateDevices,
+    // Phase 2 SSOT: Domain-level device selectors
+    rpmDevices,
+    equipmentDevices,
     users,
     deviceAssignments,
     zoneProfiles,
@@ -1743,6 +1832,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     userCount: users.size,
     usersConfigRaw: usersConfig,
     participantRoster,
+    // Phase 1 SSOT: Canonical participant list - USE THIS instead of filtering devices
+    activeHeartRateParticipants,
     participantsByDevice: participantLookupByDevice,
     participantsByName: participantLookupByName,
     userVitals: userVitalsMap,
