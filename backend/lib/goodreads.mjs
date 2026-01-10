@@ -1,5 +1,5 @@
 import { userSaveFile, getDefaultUsername } from './io.mjs';
-import { configService } from './config/ConfigService.mjs';
+import { configService } from './config/v2/index.mjs';
 import Parser from 'rss-parser';
 let parser = new Parser();
 

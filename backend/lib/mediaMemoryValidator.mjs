@@ -17,7 +17,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import stringSimilarity from 'string-similarity';
 import axios from './http.mjs';
 import { createLogger } from './logging/logger.js';
-import { configService } from './config/ConfigService.mjs';
+import { configService } from './config/v2/index.mjs';
 import { getMediaMemoryDir, getMediaMemoryFiles } from './mediaMemory.mjs';
 
 const logger = createLogger({ source: 'cron', app: 'mediaMemoryValidator' });

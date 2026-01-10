@@ -2,7 +2,7 @@ import express from 'express';
 import dailyHealth from '../lib/health.mjs';
 import { loadFile, userLoadFile } from '../lib/io.mjs';
 import { userDataService } from '../lib/config/UserDataService.mjs';
-import { configService } from '../lib/config/ConfigService.mjs';
+import { configService } from '../lib/config/v2/index.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 
 const healthLogger = createLogger({ source: 'backend', app: 'health' });

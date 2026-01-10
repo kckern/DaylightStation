@@ -15,7 +15,7 @@ import { Plex } from '../lib/plex.mjs';
 import { parse } from 'path';
 import path from 'path';
 import { isWatched, getEffectivePercent } from '../lib/utils.mjs';
-import { configService } from '../lib/config/ConfigService.mjs';
+import { configService } from '../lib/config/v2/index.mjs';
 import { userDataService } from '../lib/config/UserDataService.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 

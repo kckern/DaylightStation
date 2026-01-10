@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import { saveFile, sanitize, userSaveFile, userLoadFile, userSaveCurrent, getDefaultUsername } from './io.mjs';
-import { configService } from './config/ConfigService.mjs';
+import { configService } from './config/v2/index.mjs';
 import { createLogger } from './logging/logger.js';
 import moment from 'moment';
 

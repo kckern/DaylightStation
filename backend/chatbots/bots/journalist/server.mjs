@@ -19,7 +19,7 @@ import { JournalistInputRouter } from './adapters/JournalistInputRouter.mjs';
 import { journalistJournalHandler } from './handlers/journal.mjs';
 import { journalistTriggerHandler } from './handlers/trigger.mjs';
 import { handleMorningDebrief } from './handlers/morning.mjs';
-import { configService } from '../../../lib/config/ConfigService.mjs';
+import { configService } from '../../../lib/config/v2/index.mjs';
 
 /**
  * Create Journalist Express Router

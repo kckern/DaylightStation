@@ -1,7 +1,7 @@
 import moment from 'moment';
 import axios from './http.mjs';
 import { saveFile, loadFile, userSaveAuth, userSaveFile } from './io.mjs';
-import { configService } from './config/ConfigService.mjs';
+import { configService } from './config/v2/index.mjs';
 import processWeight from '../jobs/weight.mjs';
 import { createLogger } from './logging/logger.js';
 
