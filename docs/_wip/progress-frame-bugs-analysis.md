@@ -270,3 +270,154 @@ Coordinate system:
     │                                  │
   (0,100) ─────────────────────────(100,100)
 ```
+
+---
+
+## DEEP DIVE ANALYSIS (2026-01-10 - Post-Implementation)
+
+### Current Status Summary
+
+**Code Implementation:**
+- ✅ Path is closed (9 segments including closing line + 'Z' command)
+- ✅ PERIMETER calculation correct (389.133 units)
+- ✅ `stroke-dasharray` reveal pattern implemented (from START forward)
+- ✅ Spark position calculations mathematically verified
+- ✅ Debug logging confirms correct endpoint mapping
+
+**Test Results:**
+```
+Initial state:  dasharray: 20.5513, 389.133 → 5.3% progress
+After 15s:      dasharray: 23.9722, 389.133 → 6.2% progress
+Spark position: x=25.47%, y=1.5% (on top edge)
+```
+
+### Remaining Issue: Visual vs. Mathematical Discrepancy
+
+**The Core Problem:**
+Based on the user-provided screenshot, the spark appears on the **LEFT edge near top** (visually ~15-20% down from top-left corner), but the calculations show it should be on the **TOP edge** going rightward.
+
+**Evidence:**
+1. Screenshot shows yellow spark positioned at approximately (5%, 15-20%) visual location
+2. Logging data shows endpoint at `x=25.47, y=1.50` (viewbox coords)
+3. This translates to `sparkPct: { x: 25.47%, y: 1.50% }` (CSS positioning)
+
+**Hypothesis A: CSS Transform Issue**
+The spark has `transform: translate(-50%, -50%)` applied, which centers it on the endpoint. If there's a CSS rendering issue with percentage-based positioning on a `preserveAspectRatio="none"` SVG, the visual position might not match the intended position.
+
+**Hypothesis B: Path Direction Mismatch**
+Despite the mathematical correctness, if the SVG renderer interprets the arc directions differently than expected, the visual stroke could be drawn in reverse order or from the wrong starting point.
+
+**Hypothesis C: ViewBox/Container Scaling Issue**
+The logged container dimensions show `"container": {"w":"91","h":"113"}`, indicating a non-square aspect ratio (91px × 113px). With `preserveAspectRatio="none"`, the SVG is stretched, but the spark positioning uses percentage-based CSS (`left: 25.47%`) which is calculated from the 100×100 viewBox. This could cause visual misalignment.
+
+### Critical Test: Verify SVG vs CSS Coordinate Systems
+
+**Problem:**
+```jsx
+// In ProgressFrame.jsx:
+const sparkX = (endpoint.x / VIEWBOX) * 100;  // Converts viewBox coord to %
+const sparkY = (endpoint.y / VIEWBOX) * 100;
+
+// CSS positioning:
+<div style={{ left: `${sparkX}%`, top: `${sparkY}%` }} />
+```
+
+This assumes the container and SVG use the same coordinate space, but:
+- SVG has `viewBox="0 0 100 100"` with `preserveAspectRatio="none"`
+- Container has physical dimensions 91×113 (aspect ratio 0.805)
+- Percentage-based CSS `left/top` is relative to the **container**, not the viewBox
+
+**Visual Consequence:**
+- For endpoint `x=25.47` in viewBox (meant to be 25.47% from left)
+- CSS `left: 25.47%` positions spark at 25.47% of **container width** (23.2px from left edge of 91px)
+- But the SVG stroke at that same point is scaled by `preserveAspectRatio="none"`, so horizontal positions in the SVG are compressed by factor of 0.91
+- This creates horizontal misalignment between the spark and the stroke
+
+**Expected Fix:**
+The spark must be positioned relative to the **SVG coordinate system**, not CSS percentages of the container. Two approaches:
+
+### Fix Option 1: Use SVG for Spark (Recommended)
+
+Instead of a CSS `<div>` with `left/top`, render the spark as an SVG `<circle>` within the same SVG:
+
+```jsx
+<svg className="progress-frame-overlay__svg" viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`} ...>
+  <path className="progress-frame-overlay__track" d={TRACK_PATH} ... />
+  <path className="progress-frame-overlay__fill" d={TRACK_PATH} ... />
+  {showSparkAtOrigin && (
+    <circle
+      className="progress-frame-overlay__spark-svg"
+      cx={endpoint.x}
+      cy={endpoint.y}
+      r="4"
+      vectorEffect="non-scaling-stroke"
+    />
+  )}
+</svg>
+```
+
+Benefits:
+- Spark coordinates in viewBox space (same as path)
+- No CSS percentage conversion errors
+- `vector-effect="non-scaling-stroke"` keeps spark size consistent
+
+### Fix Option 2: Account for Container Aspect Ratio
+
+If keeping CSS positioning, calculate the actual container dimensions and scale the spark position:
+
+```jsx
+const rect = overlayRef.current?.getBoundingClientRect();
+if (rect) {
+  // Convert viewBox coords to actual pixel position within stretched SVG
+  const actualX = (endpoint.x / VIEWBOX) * rect.width;
+  const actualY = (endpoint.y / VIEWBOX) * rect.height;
+  const sparkXPct = (actualX / rect.width) * 100;
+  const sparkYPct = (actualY / rect.height) * 100;
+}
+```
+
+But this is redundant — we're converting viewBox → pixels → percentage when we could just use viewBox coordinates directly via Fix Option 1.
+
+### Fix Option 3: Remove `preserveAspectRatio="none"`
+
+Change to `preserveAspectRatio="xMidYMid meet"` so the SVG maintains aspect ratio. This ensures the stroke and spark use the same coordinate system, but may introduce letterboxing if the container isn't square.
+
+---
+
+## Recommended Next Steps
+
+1. **Implement Fix Option 1** (SVG-based spark) — most robust solution
+2. **Test visual alignment** with actual video playback at various progress values (0%, 25%, 50%, 75%, 99%)
+3. **Remove DEBUG_SPARK** flag once validated
+4. **Document the fix** with before/after screenshots
+5. **Add integration test** that verifies spark position matches stroke endpoint at key progress milestones
+
+### Test Plan
+
+Create comprehensive visual test:
+```javascript
+test('ProgressFrame visual alignment', async ({ page }) => {
+  // Navigate to fitness player with actual video
+  // Seek to various times (0%, 10%, 50%, 90%, 99% of thumbnail duration)
+  // For each position:
+  //   - Capture screenshot
+  //   - Extract stroke-dasharray from computed styles
+  //   - Extract spark position from computed styles
+  //   - Verify spark is visually on the stroke endpoint
+  //   - Compare against expected segment (top edge, right arc, etc.)
+});
+```
+
+---
+
+## Technical Root Cause Summary
+
+**The bug is NOT in the math** — all calculations are correct.
+
+**The bug IS in the rendering layer:**
+- SVG stroke uses `viewBox` coordinate system (100×100)
+- Spark uses CSS percentage positioning relative to non-square container (91×113)
+- `preserveAspectRatio="none"` stretches the SVG, creating coordinate system mismatch
+- Spark appears offset from stroke endpoint because they're in different coordinate spaces
+
+**Fix:** Move spark into SVG coordinate system or remove `preserveAspectRatio="none"`.
