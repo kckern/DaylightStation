@@ -40,7 +40,7 @@ import github from '../lib/github.mjs';
 import reddit from '../lib/reddit.mjs';
 import Infinity from '../lib/infinity.mjs';
 import scripture from '../lib/scriptureguide.mjs';
-import ldsgc from '../lib/ldsgc.mjs';
+// import ldsgc from '../lib/ldsgc.mjs';
 import youtube_dl from '../lib/youtube.mjs';
 import health from '../lib/health.mjs';
 import fitness from '../lib/fitsync.mjs';
@@ -67,7 +67,7 @@ const harvesters = {
     gmail: (logger, guidId, username) => gmail(logger, guidId, username),
     gcal: (logger, guidId, username) => gcal(logger, guidId, username),
     withings: (_logger, guidId, username) => withings(guidId, { targetUsername: username }),
-    ldsgc: (_logger, guidId, username) => ldsgc(guidId, { targetUsername: username }),
+    // ldsgc: (_logger, guidId, username) => ldsgc(guidId, { targetUsername: username }),
     weather: (_logger, guidId, username) => weather(guidId, { targetUsername: username }),
     scripture: (_logger, guidId, username) => scripture(guidId, { targetUsername: username }),
     clickup: (_logger, guidId, username) => clickup(guidId, { targetUsername: username }),
