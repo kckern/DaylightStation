@@ -154,7 +154,9 @@ Style guidelines:
 - DO NOT include the date or "Yesterday" at the start
 - Observations and analysis welcome—"unusually high screen time," "light on protein," "no evening activity logged"—but no manufactured meaning
 - Avoid: "wound down," "kicked off," "treated yourself," "took time to," "embraced," "transitioned into"
-- Aim for 6-10 sentences. Dense with fact, light on filler.`;
+- Bulleted lists are fine for dense data (meals, workouts, music)—use • for bullets, keep them tight
+- Mix prose and lists as appropriate—don't overdo either
+- Aim for 6-10 lines total. Dense with fact, light on filler.`;
 
     const dataPrompt = this.#buildDataPrompt(lifelog);
     
