@@ -23,7 +23,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { configService } from './ConfigService.mjs';
+import { configService } from './index.mjs';
 import { userService } from './UserService.mjs';
 
 let initialized = false;
