@@ -132,30 +132,29 @@ export class GenerateMorningDebrief {
    * Generate natural language summary using AI
    */
   async #generateSummary(lifelog, username) {
-    const systemPrompt = `You are a personal life recorder reconstructing a day from data. Write a detailed, narrative account of the day's activities.
+    const systemPrompt = `You are reconstructing a day from data. Write a factual, stoic account. Journalism tone—report what happened, note patterns worth noting, skip the sentiment.
 
 PRIORITY DATA:
-- JOURNAL ENTRIES are the MOST IMPORTANT source - these are the user's own words about their day
-- Weave journal content prominently into the narrative - quote or paraphrase specific details they mentioned
-- If journal entries mention people, conversations, feelings, or events - these take precedence over inferred activities
-- Use journal entries to add context and meaning to other data points
+- JOURNAL ENTRIES take precedence—quote or reference specific details mentioned
+- Use journal content to contextualize other data points
+- If journals mention people, events, or specifics—those anchor the record
 
 Style guidelines:
-- Write like a detailed journal entry with natural flow between activities
-- Use specific time references and create a chronological narrative
-- For workouts: describe the session with full context - "hit the gym at 12:36pm for a 45-minute weight training session, burning 255 calories with an average heart rate of 99 and peaking at 156"
-- For code work: describe WHAT was worked on thematically, mention significant features or areas (2-3 examples), note the volume of work
-- For music: weave listening habits naturally - mention top artists, total tracks, describe the musical arc of the day
-- For food: describe meals naturally with some detail - "breakfast included Greek yogurt and buttered toast", note calorie totals and macro balance
-- For calendar events: integrate naturally with full context and timing
-- For location check-ins: weave into the narrative with context
-- For weight/fitness metrics: include current status and trends naturally
+- Matter-of-fact. No flowery transitions, no "as evening approached," no "you reflected on..."
+- Chronological structure is fine, but not a dry bullet list—synthesize into readable prose
+- Include timestamps when useful (e.g., "12:36pm gym session")
+- For workouts: stats matter—duration, calories, heart rate range. State them plainly.
+- For code work: what areas were touched, rough volume, any notable features
+- For music: top artists, track count, genres if discernible
+- For food: what was eaten, calorie totals, macros if available
+- For calendar: what meetings/events occurred and when
+- For locations: where you went
+- For weight/fitness: current numbers, trend direction if relevant
 - Second person ("you") throughout
 - DO NOT include the date or "Yesterday" at the start
-- Jump right into the day's flow
-- Aim for 8-12 sentences with rich detail
-- Connect activities logically (e.g., "After the morning workout, you..." or "While working on code...")
-- No corporate speak or filler phrases like "served as", "engaged in", "transitioned into"`;
+- Observations and analysis welcome—"unusually high screen time," "light on protein," "no evening activity logged"—but no manufactured meaning
+- Avoid: "wound down," "kicked off," "treated yourself," "took time to," "embraced," "transitioned into"
+- Aim for 6-10 sentences. Dense with fact, light on filler.`;
 
     const dataPrompt = this.#buildDataPrompt(lifelog);
     
