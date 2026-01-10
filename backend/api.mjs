@@ -446,6 +446,14 @@ const initJournalistRouter = async () => {
         const conversationStateStore = new FileConversationStateStore({
             storePath: basePath,
             userResolver,
+            pathResolver: (chatId) => {
+                const username = userResolver.resolveUsername(chatId);
+                if (!username) {
+                    logger.warn('journalist.stateStore.noUsername', { chatId });
+                    return `${basePath}/_unknown/${chatId}`;
+                }
+                return `${basePath}/${username}/state/${chatId}`;
+            },
             logger
         });
         
@@ -541,10 +549,9 @@ const initHomeBotRouter = async () => {
         
         const userResolver = new UserResolver({ users: usersConfig });
         
-        // Conversation state base path
-        const basePath = chatbotsConfig?.data?.homebot?.base_path || 
-                        process.env.HOMEBOT_DATA_PATH ||
-                        '/Volumes/mounts/DockerDrive/Docker/DaylightStation/data/homebot';
+        // Conversation state base path - household-level bot
+        const householdId = chatbotsConfig?.data?.homebot?.household_id || 'default';
+        const basePath = `households/${householdId}`;
         
         // Create AI gateway
         const aiGateway = new OpenAIGateway({
@@ -563,6 +570,9 @@ const initHomeBotRouter = async () => {
         // Create conversation state store
         const conversationStateStore = new FileConversationStateStore({
             storePath: basePath,
+            pathResolver: (chatId) => {
+                return `${basePath}/state/${chatId}`;
+            },
             userResolver,
             logger
         });
