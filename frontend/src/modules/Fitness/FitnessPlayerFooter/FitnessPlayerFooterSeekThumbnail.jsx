@@ -1,3 +1,15 @@
+/**
+ * FitnessPlayerFooterSeekThumbnail - Presentational component for a single thumbnail
+ * 
+ * This is a DUMB component - it receives all computed values as props and only
+ * handles visual rendering and thumbnail image crossfade animations.
+ * 
+ * It does NOT:
+ * - Compute time values
+ * - Determine active/past/future state
+ * - Handle seek/zoom logic (delegated to SingleThumbnailButton)
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import SingleThumbnailButton from '../SingleThumbnailButton.jsx';
@@ -7,6 +19,8 @@ import './FitnessPlayerFooterSeekThumbnail.scss';
 const clampRatio = (value) => (value < 0 ? 0 : value > 1 ? 1 : value);
 const REFRESH_INTERVAL_MS = 8000;
 const THUMBNAIL_TIME_OFFSET_MS = 10000;
+
+// Patterns for detecting live-preview capable thumbnails
 const TIMESTAMP_PATTERNS = [
   /(\/indexes\/(?:sd|ld)\/)(\d+)/i,
   /(\/thumb\/)(\d+)/i,
@@ -14,6 +28,9 @@ const TIMESTAMP_PATTERNS = [
   /(thumb%2F)(\d+)/i
 ];
 
+/**
+ * Update thumbnail URL timestamp for live preview
+ */
 const updateThumbnailTimestamp = (src, seconds) => {
   if (!src || !Number.isFinite(seconds)) return null;
   const timestamp = Math.max(0, Math.floor(seconds * 1000));
@@ -25,35 +42,48 @@ const updateThumbnailTimestamp = (src, seconds) => {
   return null;
 };
 
+/**
+ * Check if thumbnail URL supports live preview
+ */
 const supportsLivePreview = (src) => {
   if (!src || typeof src !== 'string') return false;
   return TIMESTAMP_PATTERNS.some((pattern) => pattern.test(src));
 };
 
 const FitnessPlayerFooterSeekThumbnail = ({
+  // Identity
   className,
-  state,
   index = 0,
+  
+  // State
+  state,           // 'active' | 'past' | 'future'
   isOrigin = false,
   disabled = false,
+  isActive,
+  
+  // Time values
   segmentStart,
   segmentEnd,
   globalRangeStart,
   globalRangeEnd,
-  sampleTime,
-  labelTime,
-  seekTime,
+  seekTime,        // Explicit seek target
+  labelTime,       // Time to display on label
+  
+  // Visual
   imgSrc,
   posterSrc,
   greyBg,
   label,
-  isActive,
   progressRatio = 0,
   showSpark,
-  onSeek,
-  onZoom,
-  enableZoom,
   visibleRatio = 1,
+  
+  // Callbacks
+  onSeek,          // (seekTime) => void - ONLY seek, no zoom!
+  onZoom,          // ([start, end]) => void - ONLY zoom, no seek!
+  enableZoom = true,
+  
+  // Telemetry
   telemetryMeta = null,
   onTelemetry
 }) => {
@@ -61,11 +91,14 @@ const FitnessPlayerFooterSeekThumbnail = ({
   const perc = clampRatio(progressRatio);
   const sparkRatio = clampRatio(visibleRatio);
   
+  // Image state management
   const [panToggle, setPanToggle] = useState(false);
   const [posterFallbackActive, setPosterFallbackActive] = useState(false);
   const [imageUnavailable, setImageUnavailable] = useState(!imgSrc);
   const [liveFrameSrc, setLiveFrameSrc] = useState(imgSrc || null);
   const progressRatioRef = useRef(clampRatio(progressRatio));
+  
+  // Double-buffer layer state for smooth crossfades
   const [frameState, setFrameState] = useState(() => ({
     activeIndex: 0,
     pendingIndex: null,
@@ -75,10 +108,12 @@ const FitnessPlayerFooterSeekThumbnail = ({
     ]
   }));
 
+  // Keep progressRatio ref updated
   useEffect(() => {
     progressRatioRef.current = clampRatio(progressRatio);
   }, [progressRatio]);
 
+  // Reset image state when source changes
   useEffect(() => {
     setPosterFallbackActive(false);
     setImageUnavailable(!imgSrc);
@@ -93,16 +128,21 @@ const FitnessPlayerFooterSeekThumbnail = ({
     }));
   }, [imgSrc, posterSrc]);
 
+  // Reset live frame when not active
   useEffect(() => {
     if (!isActive) {
       setLiveFrameSrc(imgSrc || null);
     }
   }, [isActive, imgSrc]);
 
+  // Check if we can animate this thumbnail
   const canAnimateThumbnail = useMemo(() => supportsLivePreview(imgSrc), [imgSrc]);
 
+  // Live preview animation effect (only when active)
   useEffect(() => {
-    if (!isActive || !canAnimateThumbnail || posterFallbackActive || imageUnavailable) return undefined;
+    if (!isActive || !canAnimateThumbnail || posterFallbackActive || imageUnavailable) {
+      return undefined;
+    }
 
     const updateFrame = () => {
       const safeStart = Number.isFinite(segmentStart) ? segmentStart : 0;
@@ -121,6 +161,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
     return () => clearInterval(intervalId);
   }, [isActive, canAnimateThumbnail, posterFallbackActive, imageUnavailable, imgSrc, segmentStart, segmentEnd]);
 
+  // Resolve which image source to display
   const resolvedSrc = useMemo(() => {
     if (imageUnavailable) return null;
     if (posterFallbackActive) return posterSrc || null;
@@ -128,12 +169,14 @@ const FitnessPlayerFooterSeekThumbnail = ({
     return imgSrc || null;
   }, [imageUnavailable, posterFallbackActive, posterSrc, isActive, canAnimateThumbnail, liveFrameSrc, imgSrc]);
 
+  // Toggle pan direction when image changes
   useEffect(() => {
     if (resolvedSrc) {
       setPanToggle((prev) => !prev);
     }
   }, [resolvedSrc]);
 
+  // Manage layer state for crossfade
   useEffect(() => {
     setFrameState((prev) => {
       if (!resolvedSrc) {
@@ -172,6 +215,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
     });
   }, [resolvedSrc]);
 
+  // Handle layer load completion
   const handleLayerLoad = (layerIndex) => {
     setFrameState((prev) => {
       const layers = prev.layers.map((layer, idx) => (
@@ -190,6 +234,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
     });
   };
 
+  // Handle layer load error - fall back to poster
   const handleLayerError = (failedSrc) => {
     if (!posterFallbackActive && posterSrc && failedSrc !== posterSrc) {
       setPosterFallbackActive(true);
@@ -201,20 +246,40 @@ const FitnessPlayerFooterSeekThumbnail = ({
     setLiveFrameSrc(null);
   };
 
+  // Check if we have a visible image loaded
   const hasVisibleImage = useMemo(() => (
-    frameState.layers.some((layer, idx) => layer.src && idx === frameState.activeIndex && layer.loaded)
+    frameState.layers.some((layer, idx) => 
+      layer.src && idx === frameState.activeIndex && layer.loaded
+    )
   ), [frameState]);
 
   const showFallback = !resolvedSrc || !hasVisibleImage || imageUnavailable;
 
+  /**
+   * Handle seek - pass EXACT segmentStart to parent
+   * The parent's commitSeek will use this value directly
+   */
+  const handleSeek = (target) => {
+    // ALWAYS use segmentStart as the seek target for this thumbnail
+    // This ensures we seek to the correct position regardless of displayTime
+    onSeek?.(segmentStart);
+  };
+
+  /**
+   * Handle zoom - pass segment bounds to parent
+   */
+  const handleZoom = (bounds) => {
+    onZoom?.(bounds);
+  };
+
   return (
     <SingleThumbnailButton
-      pos={sampleTime}
+      pos={segmentStart}
       rangeStart={segmentStart}
       rangeEnd={segmentEnd}
       state={state}
-      onSeek={onSeek}
-      onZoom={onZoom}
+      onSeek={handleSeek}
+      onZoom={handleZoom}
       enableZoom={enableZoom}
       globalStart={globalRangeStart}
       globalEnd={globalRangeEnd}
@@ -226,7 +291,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
       <div
         className={containerClass}
         data-pos={segmentStart}
-        data-sample-time={sampleTime}
+        data-sample-time={segmentStart}
         data-label-time={labelTime}
         data-origin={isOrigin ? '1' : '0'}
         style={{
@@ -281,18 +346,17 @@ FitnessPlayerFooterSeekThumbnail.propTypes = {
   index: PropTypes.number,
   isOrigin: PropTypes.bool,
   disabled: PropTypes.bool,
+  isActive: PropTypes.bool,
   segmentStart: PropTypes.number,
   segmentEnd: PropTypes.number,
   globalRangeStart: PropTypes.number,
   globalRangeEnd: PropTypes.number,
-  sampleTime: PropTypes.number,
-  labelTime: PropTypes.number,
   seekTime: PropTypes.number,
+  labelTime: PropTypes.number,
   imgSrc: PropTypes.string,
   posterSrc: PropTypes.string,
   greyBg: PropTypes.string,
   label: PropTypes.string,
-  isActive: PropTypes.bool,
   progressRatio: PropTypes.number,
   showSpark: PropTypes.bool,
   onSeek: PropTypes.func,

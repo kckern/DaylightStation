@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap');
+
 .voice-memo-overlay {
   // Full-screen backdrop for click-outside-to-close
   position: fixed;
@@ -8,6 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  font-family: 'Roboto Condensed', sans-serif;
 
   &__panel {
     pointer-events: auto;
@@ -324,6 +327,7 @@
     border-radius: 0.75rem;
     font-size: 0.95rem;
     font-weight: 500;
+    font-family: inherit;
     cursor: pointer;
     transition: all 0.2s ease;
 
@@ -540,6 +544,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    font-family: inherit;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 0.25rem 0.75rem rgba(239, 68, 68, 0.4);

@@ -1,18 +1,19 @@
-import React, { useRef } from 'react';
+import React, { useRef, useCallback } from 'react';
 
 /**
- * SingleThumbnailButton
- * Props:
- *  - pos (number) seek position (seconds)
- *  - rangeStart (number|null)
- *  - rangeEnd (number|null)
- *  - state: 'active' | 'past' | 'future'
- *  - onSeek(pos)
- *  - onZoom([start,end])
- *  - children (thumbnail content)
- *  - enableZoom (boolean) whether zoom gestures are enabled
-  *  - seekTime (number) overrides the seek target (defaults to rangeStart/pos)
-  *  - labelTime (number) anchor used when tapping the time label to zoom
+ * SingleThumbnailButton - Gesture handler for thumbnail interactions
+ * 
+ * CRITICAL DESIGN PRINCIPLE:
+ * - SEEK operations (onSeek) and ZOOM operations (onZoom) are COMPLETELY SEPARATE
+ * - A single gesture triggers EITHER seek OR zoom, NEVER both
+ * - onSeek receives the EXACT segmentStart time (not computed from displayTime)
+ * - onZoom receives the segment bounds for navigation (NO seek involved)
+ * 
+ * Gesture mapping:
+ * - Left click: SEEK to segmentStart
+ * - Right click: ZOOM to segment (no seek)
+ * - Long press (touch): ZOOM to segment (no seek)
+ * - Click on time label: ZOOM to segment (no seek)
  */
 export default function SingleThumbnailButton({
   pos,
@@ -25,138 +26,198 @@ export default function SingleThumbnailButton({
   children,
   globalStart = 0,
   globalEnd = null,
-  fallbackZoomWindow = 120, // seconds
-  seekTime,
-  labelTime,
+  seekTime,      // Explicit seek target (defaults to rangeStart)
+  labelTime,     // Time shown on label (for zoom signal)
   telemetryMeta = null,
   onTelemetry
 }) {
-  const longPressTimeout = useRef();
-  const hasRange = enableZoom && Number.isFinite(rangeStart) && Number.isFinite(rangeEnd) && rangeEnd > rangeStart;
-  const btnRange = hasRange ? [rangeStart, rangeEnd] : null;
+  const longPressTimeout = useRef(null);
+  const longPressTriggered = useRef(false);
+  
+  // Determine if we have a valid zoom range
+  const hasValidRange = enableZoom && 
+    Number.isFinite(rangeStart) && 
+    Number.isFinite(rangeEnd) && 
+    rangeEnd > rangeStart;
+  const zoomBounds = hasValidRange ? [rangeStart, rangeEnd] : null;
 
-  const resolveSeekTime = () => {
+  /**
+   * Resolve the EXACT seek target
+   * Priority: explicit seekTime > rangeStart > pos
+   */
+  const getSeekTarget = useCallback(() => {
     if (Number.isFinite(seekTime)) return seekTime;
-    if (btnRange) return btnRange[0];
     if (Number.isFinite(rangeStart)) return rangeStart;
     return pos;
-  };
+  }, [seekTime, rangeStart, pos]);
 
-  const resolveRangeAnchor = () => {
-    if (btnRange) return btnRange[0];
-    if (Number.isFinite(rangeStart)) return rangeStart;
-    if (Number.isFinite(seekTime)) return seekTime;
-    return pos;
-  };
+  /**
+   * Resolve zoom bounds for this segment
+   */
+  const getZoomBounds = useCallback(() => {
+    if (zoomBounds) return zoomBounds;
+    // If no range, create a zoom signal (same start/end triggers auto-expand)
+    const anchor = Number.isFinite(labelTime) ? labelTime : pos;
+    return [anchor, anchor];
+  }, [zoomBounds, labelTime, pos]);
 
-  const clearLong = () => { if (longPressTimeout.current) clearTimeout(longPressTimeout.current); };
-  const startLong = () => {
-    if (!btnRange) return;
-    clearLong();
-    longPressTimeout.current = setTimeout(() => onZoom?.(btnRange), 400);
-  };
-
-  const isTimeElement = (e) => {
+  /**
+   * Check if the click target is the time label element
+   */
+  const isTimeLabel = useCallback((e) => {
+    // Check composed path first (handles shadow DOM)
     const path = e.nativeEvent?.composedPath?.() || [];
     for (const node of path) {
-      if (node && node.classList && node.classList.contains('thumbnail-time')) return true;
+      if (node?.classList?.contains('thumbnail-time')) return true;
     }
+    // Fallback: traverse up from target
     let el = e.target;
     while (el && el !== e.currentTarget) {
-      if (el.classList && el.classList.contains('thumbnail-time')) return true;
+      if (el.classList?.contains('thumbnail-time')) return true;
       el = el.parentElement;
     }
     return false;
-  };
+  }, []);
 
-  const emitTelemetry = (phase, extra = {}) => {
+  /**
+   * Emit telemetry event
+   */
+  const emitTelemetry = useCallback((phase, extra = {}) => {
     if (typeof onTelemetry !== 'function') return;
     onTelemetry(phase, {
       ...extra,
       telemetryMeta,
       timestamp: Date.now()
     });
-  };
+  }, [onTelemetry, telemetryMeta]);
 
-  const handlePointerDown = (e) => {
-    const timeElt = isTimeElement(e);
-    const reason = timeElt ? 'time-label' : (e.button === 2 ? 'right-button' : 'seek-default');
-    const targetSeek = resolveSeekTime();
-    const anchor = resolveRangeAnchor();
-    // DEBUG: Trace what SingleThumbnailButton is sending
-    console.log('[SingleThumbnailButton]', {
-      targetSeek,
-      anchor,
-      seekTime,
-      rangeStart,
-      rangeEnd,
-      pos,
-      btnRange,
-      reason
-    });
+  /**
+   * Clear long press timer
+   */
+  const clearLongPress = useCallback(() => {
+    if (longPressTimeout.current) {
+      clearTimeout(longPressTimeout.current);
+      longPressTimeout.current = null;
+    }
+  }, []);
+
+  /**
+   * Start long press timer for zoom
+   */
+  const startLongPress = useCallback(() => {
+    if (!enableZoom) return;
+    clearLongPress();
+    longPressTriggered.current = false;
+    longPressTimeout.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      const bounds = getZoomBounds();
+      onZoom?.(bounds);
+      emitTelemetry('zoom-trigger', { source: 'long-press', zoomBounds: bounds });
+    }, 400);
+  }, [enableZoom, clearLongPress, getZoomBounds, onZoom, emitTelemetry]);
+
+  /**
+   * Handle pointer down - determines SEEK vs ZOOM
+   */
+  const handlePointerDown = useCallback((e) => {
+    const isTimeLabelClick = isTimeLabel(e);
+    const isRightClick = e.button === 2;
+    
+    // Determine if this is a ZOOM gesture
+    const isZoomGesture = enableZoom && (isRightClick || isTimeLabelClick);
+    
     emitTelemetry('pointer-down', {
-      pointerType: e.pointerType || (e.touches ? 'touch' : 'mouse'),
-      button: typeof e.button === 'number' ? e.button : null,
-      reason,
-      timeElement: timeElt,
-      targetSeek,
-      anchor,
-      pos,
+      pointerType: e.pointerType || 'mouse',
+      button: e.button,
+      isTimeLabelClick,
+      isRightClick,
+      isZoomGesture,
+      seekTarget: getSeekTarget(),
       rangeStart,
-      rangeEnd,
-      labelTime
+      rangeEnd
     });
-    if ((e.button === 2 || timeElt) && enableZoom) {
+
+    if (isZoomGesture) {
+      // ZOOM PATH - No seek!
       e.preventDefault();
       e.stopPropagation();
-      if (btnRange) {
-        onZoom?.(btnRange);
-        emitTelemetry('zoom-trigger', { source: reason, zoomBounds: btnRange });
-      } else if (timeElt) {
-        const anchor = Number.isFinite(labelTime) ? labelTime : pos;
-        const zoomSignal = [anchor, anchor];
-        onZoom?.(zoomSignal);
-        emitTelemetry('zoom-trigger', { source: reason, zoomBounds: zoomSignal });
-      }
+      const bounds = getZoomBounds();
+      onZoom?.(bounds);
+      emitTelemetry('zoom-trigger', { 
+        source: isTimeLabelClick ? 'time-label' : 'right-click', 
+        zoomBounds: bounds 
+      });
       return;
     }
-    onSeek?.(targetSeek, anchor);
-    emitTelemetry('seek-requested', {
-      targetSeek,
-      anchor
-    });
-  };
-  const handleContext = (e) => {
-    if (!btnRange) return;
+
+    // SEEK PATH - No zoom!
+    const target = getSeekTarget();
+    onSeek?.(target);
+    emitTelemetry('seek-trigger', { seekTarget: target });
+  }, [enableZoom, isTimeLabel, getSeekTarget, getZoomBounds, onSeek, onZoom, emitTelemetry, rangeStart, rangeEnd]);
+
+  /**
+   * Handle context menu (right-click) - triggers ZOOM
+   */
+  const handleContextMenu = useCallback((e) => {
+    if (!enableZoom) return;
     e.preventDefault();
     e.stopPropagation();
-    onZoom?.(btnRange);
-    emitTelemetry('context-zoom', { zoomBounds: btnRange });
-  };
-  const handleTouchStart = () => {
-    startLong();
+    const bounds = getZoomBounds();
+    onZoom?.(bounds);
+    emitTelemetry('zoom-trigger', { source: 'context-menu', zoomBounds: bounds });
+  }, [enableZoom, getZoomBounds, onZoom, emitTelemetry]);
+
+  /**
+   * Handle touch start - initiates long press for zoom
+   */
+  const handleTouchStart = useCallback((e) => {
+    if (!enableZoom) return;
+    longPressTriggered.current = false;
+    startLongPress();
     emitTelemetry('touch-start', { rangeStart, rangeEnd });
-  };
-  const handleTouchEnd = () => {
-    clearLong();
-    emitTelemetry('touch-end', { rangeStart, rangeEnd });
-  };
-  const handleTouchCancel = () => {
-    clearLong();
-    emitTelemetry('touch-cancel', { rangeStart, rangeEnd });
-  };
+  }, [enableZoom, startLongPress, emitTelemetry, rangeStart, rangeEnd]);
+
+  /**
+   * Handle touch end - complete SEEK if no long press triggered
+   */
+  const handleTouchEnd = useCallback((e) => {
+    clearLongPress();
+    
+    // If long press triggered zoom, don't also seek
+    if (longPressTriggered.current) {
+      longPressTriggered.current = false;
+      emitTelemetry('touch-end', { action: 'zoom-completed' });
+      return;
+    }
+
+    // No long press - treat as seek
+    const target = getSeekTarget();
+    onSeek?.(target);
+    emitTelemetry('touch-end', { action: 'seek', seekTarget: target });
+  }, [clearLongPress, getSeekTarget, onSeek, emitTelemetry]);
+
+  /**
+   * Handle touch cancel
+   */
+  const handleTouchCancel = useCallback(() => {
+    clearLongPress();
+    longPressTriggered.current = false;
+    emitTelemetry('touch-cancel', {});
+  }, [clearLongPress, emitTelemetry]);
 
   return React.cloneElement(React.Children.only(children), {
-    // Immediate pointerDown activation; if on the time label we zoom & stop propagation
     onPointerDown: handlePointerDown,
-    onContextMenu: btnRange ? handleContext : undefined,
-    onTouchStart: btnRange ? handleTouchStart : undefined,
-    onTouchEnd: btnRange ? handleTouchEnd : undefined,
-    onTouchCancel: btnRange ? handleTouchCancel : undefined,
-    'data-range-start': btnRange ? rangeStart : undefined,
-    'data-range-end': btnRange ? rangeEnd : undefined,
+    onContextMenu: enableZoom ? handleContextMenu : undefined,
+    onTouchStart: enableZoom ? handleTouchStart : undefined,
+    onTouchEnd: enableZoom ? handleTouchEnd : undefined,
+    onTouchCancel: enableZoom ? handleTouchCancel : undefined,
+    'data-range-start': zoomBounds ? rangeStart : undefined,
+    'data-range-end': zoomBounds ? rangeEnd : undefined,
     'data-state': state,
     role: 'button',
-    'aria-label': btnRange ? 'Seek marker (right-click / long-press / time click to zoom)' : 'Seek marker'
+    'aria-label': enableZoom 
+      ? 'Seek marker (right-click / long-press / time click to zoom)' 
+      : 'Seek marker'
   });
 }
