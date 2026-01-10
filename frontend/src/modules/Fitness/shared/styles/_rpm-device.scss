@@ -1,0 +1,118 @@
+// RPM Device Vitals - Single Source of Truth
+// Used by both Sidebar and Fullscreen views
+// Scale via CSS custom property: --rpm-scale (default 1)
+
+@mixin rpm-device-base {
+    position: relative;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.72);
+    box-shadow: 0 calc(12px * var(--rpm-scale, 1)) calc(26px * var(--rpm-scale, 1)) rgba(0, 0, 0, 0.55);
+}
+
+// Zone color map for RPM devices
+$rpm-zone-colors: (
+    'fire': #ff6b6b,
+    'hot': #ff922b,
+    'warm': #ffd43b,
+    'active': #51cf66,
+    'cool': #6ab8ff
+);
+
+@mixin rpm-spinning-border {
+    position: absolute;
+    inset: calc(-4px * var(--rpm-scale, 1));
+    border-radius: 50%;
+    border: calc(5px * var(--rpm-scale, 1)) dashed var(--rpm-ring-color, #ff922b);
+    animation: rpm-spin var(--spin-duration, 2.6s) linear infinite;
+    opacity: 1;
+    transition: animation-duration 0.3s ease-out;
+    pointer-events: none;
+}
+
+@mixin rpm-avatar-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@mixin rpm-avatar-content {
+    position: relative;
+    width: calc(100% - 4px * var(--rpm-scale, 1));
+    height: calc(100% - 4px * var(--rpm-scale, 1));
+    border-radius: 50%;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.82);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 calc(3px * var(--rpm-scale, 1)) calc(8px * var(--rpm-scale, 1)) rgba(0, 0, 0, 0.6);
+
+    img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+}
+
+@mixin rpm-value-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 50%;
+    padding: calc(6px * var(--rpm-scale, 1)) 0 calc(8px * var(--rpm-scale, 1));
+    background: var(--rpm-overlay-bg, rgba(0, 0, 0, 0.85));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: calc(2px * var(--rpm-scale, 1));
+    border-bottom-left-radius: 50%;
+    border-bottom-right-radius: 50%;
+    box-shadow: inset 0 calc(2px * var(--rpm-scale, 1)) calc(8px * var(--rpm-scale, 1)) rgba(0, 0, 0, 0.45);
+    z-index: 1;
+
+    .rpm-value {
+        font-size: calc(1.25rem * var(--rpm-scale, 1));
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: 0.4px;
+        line-height: 1;
+    }
+
+    .rpm-label {
+        font-size: calc(0.7rem * var(--rpm-scale, 1));
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.75);
+        letter-spacing: 0.35px;
+    }
+}
+
+// Generate zone color modifiers for spinning border
+@mixin rpm-zone-colors {
+    @each $zone, $color in $rpm-zone-colors {
+        &.zone-#{$zone} .rpm-spinning-border {
+            border-color: $color;
+        }
+    }
+}
+
+// Single keyframe animation - used by all RPM devices
+@keyframes rpm-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}

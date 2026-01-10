@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import ReactDOM from 'react-dom';
 import PropTypes from 'prop-types';
 import useVoiceMemoRecorder from '../FitnessSidebar/useVoiceMemoRecorder.js';
 import { MicLevelIndicator, CountdownRing } from '../shared';
@@ -441,6 +442,11 @@ const VoiceMemoOverlay = ({
     return null;
   }
 
+  // BUG-06 Fix: Use portal to render at document.body for global accessibility
+  // This allows voice memo to work from FitnessShow and other contexts,
+  // not just when FitnessPlayer is mounted
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
+
   const mode = overlayState.mode || 'list';
   const showList = mode === 'list';
   const showReview = mode === 'review';
@@ -635,6 +641,9 @@ const VoiceMemoOverlay = ({
       </div>
     </div>
   );
+
+  // BUG-06 Fix: Render via portal if available, otherwise render inline
+  return portalTarget ? ReactDOM.createPortal(overlayContent, portalTarget) : overlayContent;
 };
 
 VoiceMemoOverlay.propTypes = {

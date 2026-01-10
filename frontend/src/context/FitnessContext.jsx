@@ -96,6 +96,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
   const guestAssignmentServiceRef = useRef(null);
   const musicPlayerRef = useRef(null);
+  const videoPlayerRef = useRef(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
   const [transferVersion, setTransferVersion] = useState(0);
 
@@ -155,6 +156,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       const idx = listeners.indexOf(callback);
       if (idx > -1) listeners.splice(idx, 1);
     };
+  }, []);
+
+  const registerVideoPlayer = React.useCallback((ref) => {
+    videoPlayerRef.current = ref?.current || ref || null;
   }, []);
 
   // Governance Metric Reporting
@@ -1613,34 +1618,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     deviceOwnership,
     guestCandidates: guestCandidateList,
     
-    allDevices,
-    allUsers,
-    heartRateDevices,
-    speedDevices,
-    cadenceDevices,
-    jumpropeDevices,
-    powerDevices,
-    unknownDevices,
-    
-    selectedPlaylistId,
-    setSelectedPlaylistId,
-    musicAutoEnabled,
-    setMusicAutoEnabled,
-    musicOverride,
-    setMusicOverrideState,
-    musicPlayerRef,
-    pauseMusicPlayer,
-    resumeMusicPlayer,
-    videoPlayerPaused,
-    setVideoPlayerPaused,
-    sidebarSizeMode,
     toggleSidebarSizeMode,
+    sidebarSizeMode,
     sidebarCollapsed,
     setSidebarCollapsed,
     collapseSidebar,
     expandSidebar,
     toggleSidebarCollapsed,
     voiceMemoOverlayState,
+    
+    registerVideoPlayer,
+    videoPlayerRef,
     
     forceUpdate,
     assignGuestToDevice,

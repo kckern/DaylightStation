@@ -147,7 +147,7 @@ const EpisodeInfo = ({ episode, showInfo, seasonsMap, seasonsList, onPlay }) => 
         </div>
       </div>
       <div className="episode-actions center">
-  <button className="play-button" data-testid="play-episode-button" onPointerDown={() => onPlay && onPlay(episode)}>▶ Play</button>
+  <button className="play-button" data-testid="play-episode-button" onPointerDown={(e) => onPlay && onPlay(episode, null, e)}>▶ Play</button>
       </div>
     </div>
   );
@@ -472,12 +472,24 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     return watchProgress >= threshold;
   }, []);
 
-  const handlePlayEpisode = async (episode, sourceEl = null) => {
+  const handlePlayEpisode = async (episode, sourceEl = null, event = null) => {
   // play episode (debug removed)
     // If source element provided, require full visibility before play
     if (sourceEl) {
       const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 8 });
       if (didScroll) return; // wait for second tap
+    }
+
+    // Interaction Isolation: Prevent the gesture from leaking to the next view
+    if (event) {
+      try {
+        if (typeof event.currentTarget?.setPointerCapture === 'function') {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }
+      } catch (_) {}
+      if (typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
     }
     
     try {
@@ -1028,7 +1040,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
                             {episode.image && (
                               <div 
                                 className="episode-thumbnail"
-                                onPointerDown={(e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'))}
+                                onPointerDown={(e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
                               >
                                 <img
                                   src={normalizeImageUrl(episode.image)}

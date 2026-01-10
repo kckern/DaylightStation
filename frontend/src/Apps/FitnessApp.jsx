@@ -12,6 +12,8 @@ import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import { getChildLogger } from '../lib/logging/singleton.js';
 import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
+import VoiceMemoOverlay from '../modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
+import { useFitnessContext } from '../context/FitnessContext.jsx';
 
 const FitnessApp = () => {
   // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
@@ -437,6 +439,7 @@ const FitnessApp = () => {
           fitnessPlayQueue={fitnessPlayQueue}
           setFitnessPlayQueue={setFitnessPlayQueue}
         >
+          <GlobalOverlays />
           <div className={`fitness-app-container ${kioskUI ? 'kiosk-ui' : ''}`}>
             <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
               {loading && (
@@ -598,6 +601,28 @@ const FitnessApp = () => {
       </FitnessProvider>
     </VolumeProvider>
     </MantineProvider>
+  );
+};
+
+const GlobalOverlays = () => {
+  const fitnessCtx = useFitnessContext();
+  if (!fitnessCtx) return null;
+
+  return (
+    <VoiceMemoOverlay
+      overlayState={fitnessCtx.voiceMemoOverlayState}
+      voiceMemos={fitnessCtx.voiceMemos}
+      onClose={fitnessCtx.closeVoiceMemoOverlay}
+      onOpenReview={fitnessCtx.openVoiceMemoReview}
+      onOpenList={fitnessCtx.openVoiceMemoList}
+      onOpenRedo={fitnessCtx.openVoiceMemoCapture}
+      onRemoveMemo={fitnessCtx.removeVoiceMemoFromSession}
+      onAddMemo={fitnessCtx.addVoiceMemoToSession}
+      onReplaceMemo={fitnessCtx.replaceVoiceMemoInSession}
+      sessionId={fitnessCtx.fitnessSession?.sessionId || fitnessCtx.fitnessSessionInstance?.sessionId}
+      playerRef={null}
+      preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
+    />
   );
 };
 

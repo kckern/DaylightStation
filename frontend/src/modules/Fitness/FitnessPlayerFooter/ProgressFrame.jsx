@@ -46,47 +46,8 @@ const TRACK_PATH = (() => {
   return parts.join(' ');
 })();
 
-// Build a progress path that draws ONLY the visible portion (no dasharray needed)
-const buildProgressPath = (progress) => {
-  if (progress <= 0) return '';
-
-  const targetLength = Math.min(progress, 1) * PERIMETER;
-  let remaining = targetLength;
-  const parts = [`M ${SEGMENTS[0].from[0]} ${SEGMENTS[0].from[1]}`];
-
-  for (const seg of SEGMENTS) {
-    if (remaining <= 0) break;
-
-    if (seg.type === 'line') {
-      if (remaining >= seg.length) {
-        parts.push(`L ${seg.to[0]} ${seg.to[1]}`);
-        remaining -= seg.length;
-      } else {
-        const ratio = remaining / seg.length;
-        const endX = seg.from[0] + (seg.to[0] - seg.from[0]) * ratio;
-        const endY = seg.from[1] + (seg.to[1] - seg.from[1]) * ratio;
-        parts.push(`L ${endX} ${endY}`);
-        remaining = 0;
-      }
-    } else {
-      if (remaining >= seg.length) {
-        const endX = seg.center[0] + RADIUS * Math.cos(seg.endAngle);
-        const endY = seg.center[1] + RADIUS * Math.sin(seg.endAngle);
-        parts.push(`A ${RADIUS} ${RADIUS} 0 0 1 ${endX} ${endY}`);
-        remaining -= seg.length;
-      } else {
-        const ratio = remaining / seg.length;
-        const endAngle = seg.startAngle + (seg.endAngle - seg.startAngle) * ratio;
-        const endX = seg.center[0] + RADIUS * Math.cos(endAngle);
-        const endY = seg.center[1] + RADIUS * Math.sin(endAngle);
-        parts.push(`A ${RADIUS} ${RADIUS} 0 0 1 ${endX} ${endY}`);
-        remaining = 0;
-      }
-    }
-  }
-
-  return parts.join(' ');
-};
+// NOTE: We now use stroke-dashoffset for smooth CSS transitions instead of building
+// a custom progress path. The full TRACK_PATH is drawn with dasharray/dashoffset.
 
 // Get the endpoint coordinates for the spark
 const getEndpoint = (progress) => {
@@ -134,12 +95,10 @@ const ProgressFrame = ({
   const hasThumbnailOverlay = typeof perc === 'number' && !Number.isNaN(perc);
   const safePerc = clamp01(hasThumbnailOverlay ? perc : 0);
   const cappedPerc = hasThumbnailOverlay ? Math.min(safePerc, clamp01(visibleRatio) || 0) : 0;
-  const hasProgress = cappedPerc > 0;
   // Always show spark at origin when active, even at 0% progress
   const showSparkAtOrigin = showSpark && hasThumbnailOverlay;
 
-  // Build paths
-  const progressPath = useMemo(() => buildProgressPath(cappedPerc), [cappedPerc]);
+  // Get spark endpoint position
   const endpoint = useMemo(() => getEndpoint(cappedPerc), [cappedPerc]);
 
   // Convert endpoint to CSS percentages
@@ -171,6 +130,11 @@ const ProgressFrame = ({
   }, [hasThumbnailOverlay, cappedPerc, endpoint, sparkX, sparkY]);
 
   if (hasThumbnailOverlay) {
+    // Calculate dashoffset for smooth CSS transition
+    // dasharray = PERIMETER (full path length)
+    // dashoffset = PERIMETER * (1 - progress) shows progress from start
+    const dashOffset = PERIMETER * (1 - cappedPerc);
+    
     return (
       <div
         ref={overlayRef}
@@ -190,16 +154,18 @@ const ProgressFrame = ({
             fill="none"
             vectorEffect="non-scaling-stroke"
           />
-          {/* Progress (only the visible portion) */}
-          {hasProgress && (
-            <path
-              className="progress-frame-overlay__fill"
-              d={progressPath}
-              strokeWidth={STROKE}
-              fill="none"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
+          {/* Progress fill using dashoffset for smooth CSS transitions */}
+          <path
+            className="progress-frame-overlay__fill"
+            d={TRACK_PATH}
+            strokeWidth={STROKE}
+            fill="none"
+            vectorEffect="non-scaling-stroke"
+            style={{
+              strokeDasharray: PERIMETER,
+              strokeDashoffset: dashOffset
+            }}
+          />
         </svg>
         {/* Spark dot - show at origin even at 0% progress */}
         {showSparkAtOrigin && (

@@ -52,6 +52,9 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const [isVideoAvailable, setIsVideoAvailable] = useState(false);
   const touchHandledRef = useRef(false);
   const expansionCooldownRef = useRef(false);
+  // BUG-04 Fix: Precise timestamp guarding for interaction transitions
+  const mountTimeRef = useRef(performance.now());
+  const interactionLockRef = useRef(0); // stores timestamp of last major UI transition
   
   const fitnessContext = useFitnessContext();
   const { videoPlayerPaused } = fitnessContext || {};
@@ -293,7 +296,14 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     });
   }, [sessionInstance, currentTrackIdentity, currentTrack, selectedPlaylistId, musicVolumeState.volume, musicEnabled]);
 
-  const handleNext = () => {
+  const handleNext = (e) => {
+    // Interaction Isolation
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      interactionLockRef.current = e.nativeEvent?.timeStamp || performance.now();
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+
     if (process.env.NODE_ENV === 'development') {
       console.log('[Next] Button clicked');
     }
@@ -314,7 +324,13 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
   };
 
-  const handleTogglePlayPause = () => {
+  const handleTogglePlayPause = (e) => {
+    // Interaction Isolation
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+
     if (audioPlayerRef.current) {
       audioPlayerRef.current.toggle();
       // Update local state to reflect the toggle
@@ -339,25 +355,32 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     musicVolumeState.setVolume(logVolumeFromLevel(level));
   };
 
-  const toggleControls = () => {
+  const toggleControls = (e = null) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+
     setControlsOpen(prev => {
       const opening = !prev;
-      if (opening) {
-        // Set a cooldown to prevent accidental touches on newly-revealed UI
-        expansionCooldownRef.current = true;
-        setTimeout(() => {
-          expansionCooldownRef.current = false;
-        }, 400); // 400ms grace period after expansion
-      }
+      // Mark transition timestamp to guard newly revealed UI
+      interactionLockRef.current = e?.nativeEvent?.timeStamp || performance.now();
       return opening;
     });
   };
 
-  const handlePlaylistButtonClick = () => {
-    // Ignore clicks during the expansion cooldown to prevent accidental activation
-    if (expansionCooldownRef.current) {
+  const handlePlaylistButtonClick = (e) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+
+    // Ignore events that triggered before or during a transition
+    const eventTime = e?.nativeEvent?.timeStamp || performance.now();
+    if (eventTime <= interactionLockRef.current) {
       return;
     }
+
     setPlaylistModalOpen(true);
   };
 
@@ -371,18 +394,9 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
   }, [setMusicOverride, musicEnabled, setGlobalPlaylistId]);
 
-  const handleInfoTouchStart = () => {
-    // Touch events trigger an extra click; mark so we skip the follow-up click handler.
-    touchHandledRef.current = true;
-    toggleControls();
-  };
-
-  const handleInfoClick = () => {
-    if (touchHandledRef.current) {
-      touchHandledRef.current = false;
-      return;
-    }
-    toggleControls();
+  const handleInfoPointerDown = (e) => {
+    // Interaction Isolation
+    toggleControls(e);
   };
 
   const handleInfoKeyDown = (event) => {
@@ -454,7 +468,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
         {/* Album Art */}
         <div 
           className={`music-player-artwork ${!isPlaying ? 'paused' : ''}`}
-          onClick={handleTogglePlayPause} 
+          onPointerDown={handleTogglePlayPause} 
           style={{ cursor: 'pointer' }}
         >
           {currentTrack?.key || currentTrack?.plex || currentTrack?.media_key ? (
@@ -478,8 +492,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
         {/* Track Info & Progress */}
         <div 
           className="music-player-info"
-          onClick={handleInfoClick}
-          onTouchStart={handleInfoTouchStart}
+          onPointerDown={handleInfoPointerDown}
           onKeyDown={handleInfoKeyDown}
           role="button"
           tabIndex={0}
@@ -525,7 +538,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
           <div className="music-player-controls">
             <button 
               className="control-button next-button"
-              onClick={handleNext}
+              onPointerDown={handleNext}
               title="Next track"
             >
               <span className="control-icon">⏭</span>
@@ -571,7 +584,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
                 <>
                   <button 
                     className="current-playlist-button"
-                    onClick={handlePlaylistButtonClick}
+                    onPointerDown={handlePlaylistButtonClick}
                   >
                     <span className="playlist-icon">🎵</span>
                     <span className="playlist-name">
