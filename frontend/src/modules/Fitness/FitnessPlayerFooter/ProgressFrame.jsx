@@ -17,7 +17,7 @@ const BOTTOM = INSET + SIZE;
 const DEBUG_SPARK = false;
 const LOG_INTERVAL_MS = 500;
 
-// Segment definitions (clockwise from top-left)
+// Segment definitions (clockwise from top-left, closed loop)
 const SEGMENTS = [
   { type: 'line', from: [INSET, INSET], to: [RIGHT - RADIUS, INSET], length: SIZE - RADIUS },
   { type: 'arc', center: [RIGHT - RADIUS, INSET + RADIUS], startAngle: -Math.PI / 2, endAngle: 0, length: (Math.PI / 2) * RADIUS },
@@ -26,12 +26,20 @@ const SEGMENTS = [
   { type: 'line', from: [RIGHT - RADIUS, BOTTOM], to: [INSET + RADIUS, BOTTOM], length: SIZE - 2 * RADIUS },
   { type: 'arc', center: [INSET + RADIUS, BOTTOM - RADIUS], startAngle: Math.PI / 2, endAngle: Math.PI, length: (Math.PI / 2) * RADIUS },
   { type: 'line', from: [INSET, BOTTOM - RADIUS], to: [INSET, INSET + RADIUS], length: SIZE - 2 * RADIUS },
-  { type: 'arc', center: [INSET + RADIUS, INSET + RADIUS], startAngle: Math.PI, endAngle: 3 * Math.PI / 2, length: (Math.PI / 2) * RADIUS }
+  { type: 'arc', center: [INSET + RADIUS, INSET + RADIUS], startAngle: Math.PI, endAngle: 3 * Math.PI / 2, length: (Math.PI / 2) * RADIUS },
+  // Closing segment: connects end of last arc back to origin
+  { type: 'line', from: [INSET + RADIUS, INSET], to: [INSET, INSET], length: RADIUS }
 ];
 
 const PERIMETER = SEGMENTS.reduce((sum, s) => sum + s.length, 0);
 
-// Build the full track path (for the background)
+// Spark stabilization: anchor to origin for very small progress values
+// This prevents jittering when progress is near 0
+const TOP_EDGE_RATIO = SEGMENTS.length ? SEGMENTS[0].length / PERIMETER : 0;
+const SPARK_ANCHOR_RATIO = Math.min(0.01, TOP_EDGE_RATIO * 0.25);
+const ORIGIN_POINT = { x: INSET, y: INSET };
+
+// Build the full track path (for the background) - closed loop
 const TRACK_PATH = (() => {
   const parts = [`M ${INSET} ${INSET}`];
   for (const seg of SEGMENTS) {
@@ -43,11 +51,12 @@ const TRACK_PATH = (() => {
       parts.push(`A ${RADIUS} ${RADIUS} 0 0 1 ${endX} ${endY}`);
     }
   }
+  parts.push('Z'); // Close path to ensure complete loop
   return parts.join(' ');
 })();
 
-// NOTE: We now use stroke-dashoffset for smooth CSS transitions instead of building
-// a custom progress path. The full TRACK_PATH is drawn with dasharray/dashoffset.
+// Progress is revealed from START using dasharray pattern: "visibleLength gap"
+// where visibleLength grows from 0 to PERIMETER as progress increases
 
 // Get the endpoint coordinates for the spark
 const getEndpoint = (progress) => {
@@ -98,10 +107,15 @@ const ProgressFrame = ({
   // Always show spark at origin when active, even at 0% progress
   const showSparkAtOrigin = showSpark && hasThumbnailOverlay;
 
-  // Get spark endpoint position
-  const endpoint = useMemo(() => getEndpoint(cappedPerc), [cappedPerc]);
+  // Get spark endpoint position - use stable origin for very small progress values
+  const endpoint = useMemo(() => {
+    if (cappedPerc <= SPARK_ANCHOR_RATIO) {
+      return ORIGIN_POINT;
+    }
+    return getEndpoint(cappedPerc);
+  }, [cappedPerc]);
 
-  // Convert endpoint to CSS percentages
+  // Convert endpoint to CSS percentages (viewbox coords -> percentage)
   const sparkX = (endpoint.x / VIEWBOX) * 100;
   const sparkY = (endpoint.y / VIEWBOX) * 100;
 
@@ -116,11 +130,16 @@ const ProgressFrame = ({
       if (!overlayEl) return;
 
       const rect = overlayEl.getBoundingClientRect();
+      const visibleLength = cappedPerc * PERIMETER;
+      
+      // Log via logger (forwards to dev.log via WebSocket)
       logger.info('spark-position', {
         progress: `${(cappedPerc * 100).toFixed(1)}%`,
-        container: { w: rect.width.toFixed(0), h: rect.height.toFixed(0) },
+        visibleLength: visibleLength.toFixed(1),
+        perimeter: PERIMETER.toFixed(1),
         endpoint: { x: endpoint.x.toFixed(2), y: endpoint.y.toFixed(2) },
-        sparkPct: { x: sparkX.toFixed(2), y: sparkY.toFixed(2) }
+        sparkPct: { x: sparkX.toFixed(2), y: sparkY.toFixed(2) },
+        container: { w: rect.width.toFixed(0), h: rect.height.toFixed(0) }
       });
     };
 
@@ -130,10 +149,10 @@ const ProgressFrame = ({
   }, [hasThumbnailOverlay, cappedPerc, endpoint, sparkX, sparkY]);
 
   if (hasThumbnailOverlay) {
-    // Calculate dashoffset for smooth CSS transition
-    // dasharray = PERIMETER (full path length)
-    // dashoffset = PERIMETER * (1 - progress) shows progress from start
-    const dashOffset = PERIMETER * (1 - cappedPerc);
+    // Calculate visible length for progress from START of path
+    // dasharray pattern: "visible gap" where gap extends beyond path end
+    const visibleLength = cappedPerc * PERIMETER;
+    const dashArray = `${visibleLength} ${PERIMETER}`;
     
     return (
       <div
@@ -154,7 +173,7 @@ const ProgressFrame = ({
             fill="none"
             vectorEffect="non-scaling-stroke"
           />
-          {/* Progress fill using dashoffset for smooth CSS transitions */}
+          {/* Progress fill using dasharray to reveal from START */}
           <path
             className="progress-frame-overlay__fill"
             d={TRACK_PATH}
@@ -162,8 +181,8 @@ const ProgressFrame = ({
             fill="none"
             vectorEffect="non-scaling-stroke"
             style={{
-              strokeDasharray: PERIMETER,
-              strokeDashoffset: dashOffset
+              strokeDasharray: dashArray,
+              strokeDashoffset: 0
             }}
           />
         </svg>

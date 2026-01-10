@@ -60,6 +60,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
   const containerClass = `${className}${disabled ? ' disabled' : ''}`;
   const perc = clampRatio(progressRatio);
   const sparkRatio = clampRatio(visibleRatio);
+  
   const [panToggle, setPanToggle] = useState(false);
   const [posterFallbackActive, setPosterFallbackActive] = useState(false);
   const [imageUnavailable, setImageUnavailable] = useState(!imgSrc);

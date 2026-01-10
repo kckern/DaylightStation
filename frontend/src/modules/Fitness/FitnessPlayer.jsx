@@ -124,6 +124,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Mode: fullscreen (no sidebar/ no footer) or normal (standard layout)
   const [playerMode, setPlayerMode] = useState('normal'); // 'fullscreen' | 'normal'
   const lastNonFullscreenRef = useRef('normal');
+  const hasInitializedLayoutRef = useRef(false); // Prevent auto-fullscreen on initial render
   // Resizing removed per spec
   // Declare hooks
   const [currentItem, setCurrentItem] = useState(null);
@@ -684,10 +685,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         const footerRatio = totalH > 0 ? (footerHeight / totalH) : 0;
 
         // Snap to fullscreen if footer would be under 5% of viewport (per spec)
-        if (playerMode !== 'fullscreen' && footerRatio < 0.05) {
+        // BUT skip auto-snap on initial render to prevent unwanted fullscreen default
+        if (playerMode !== 'fullscreen' && footerRatio < 0.05 && hasInitializedLayoutRef.current) {
           setPlayerMode('fullscreen');
           return; // another effect run will size again
         }
+        // Mark layout as initialized after first successful compute
+        hasInitializedLayoutRef.current = true;
 
         const hideFooter = (playerMode === 'fullscreen');
         setVideoDims(prev => (prev.width === videoW && prev.height === videoH && prev.hideFooter === hideFooter && prev.footerHeight === footerHeight)
