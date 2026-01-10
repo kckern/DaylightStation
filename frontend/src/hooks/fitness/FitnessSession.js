@@ -25,7 +25,7 @@ import { PersistenceManager } from './PersistenceManager.js';
 const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 180000,
-  rpmZero: 12000,
+  rpmZero: 3000,
   emptySession: 60000 // 6A: Time (ms) with empty roster before auto-ending session
 };
 

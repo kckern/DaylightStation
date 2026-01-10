@@ -21,7 +21,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     userCurrentZones,
     zones,
     userZoneProgress,
-    getUserByDevice
+    getUserByDevice,
+    fitnessPlayQueue
   } = useFitnessContext();
   const inactiveTimeout = deviceConfiguration?.timeout?.inactive ?? 60000;
 
@@ -299,11 +300,14 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     return hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
   }, [activeHeartRateParticipants, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive]);
 
+  const isVideoPlaying = Array.isArray(fitnessPlayQueue) && fitnessPlayQueue.length > 0;
+
   const handleContainerClick = React.useCallback(() => {
     console.log('[SidebarFooter] device-container clicked', { 
       hasOnAvatarClick: Boolean(onAvatarClick), 
       hasOnContentSelect: Boolean(onContentSelect),
-      deviceCount: sortedDevices.length 
+      deviceCount: sortedDevices.length,
+      isVideoPlaying
     });
     if (onAvatarClick) {
       // Pass first device info if available
@@ -314,12 +318,14 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
         const profileId = userIdMap[deviceKey] || 'user';
         onAvatarClick({ deviceKey, ownerName, profileId });
       }
-    } else if (onContentSelect) {
+    } else if (onContentSelect && !isVideoPlaying) {
+      // Only navigate when NOT in video playback mode.
+      // During playback, FitnessPlayer already shows FitnessSidebar with users.
+      // Navigating to 'users' view would cause duplicate sidebars.
       console.log('[SidebarFooter] navigating to users view (fitness_session plugin)');
-      // Use view_direct type to navigate to users view
       onContentSelect('view_direct', { view: 'users' });
     }
-  }, [onAvatarClick, onContentSelect, sortedDevices, resolveDeviceKey, hrOwnerMap, userIdMap]);
+  }, [onAvatarClick, onContentSelect, sortedDevices, resolveDeviceKey, hrOwnerMap, userIdMap, isVideoPlaying]);
 
   return (
     <div className="sidebar-footer">

@@ -683,6 +683,14 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
       arr.sort((a, b) => {
         const an = a.number, bn = b.number;
         const aHas = Number.isFinite(an), bHas = Number.isFinite(bn);
+        
+        // Special handling: season 0 (specials) goes to the end
+        const aIsZero = aHas && an === 0;
+        const bIsZero = bHas && bn === 0;
+        if (aIsZero && !bIsZero) return 1;  // a (season 0) goes after b
+        if (!aIsZero && bIsZero) return -1; // b (season 0) goes after a
+        
+        // Normal sorting for numbered seasons (excluding 0)
         if (aHas && bHas && an !== bn) return an - bn;
         if (aHas && !bHas) return -1;
         if (!aHas && bHas) return 1;
@@ -825,53 +833,53 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   if (loading) {
     return (
       <div className="fitness-show loading">
-        <div className="show-content">
-          {/* Left skeleton poster & info */}
-          <div className="show-info-panel">
-            <div className="show-poster skeleton-block poster-skeleton" />
-            <div className="show-description">
-              <div className="skeleton-line line-lg" />
-              <div className="skeleton-line line-md" />
-              <div className="skeleton-line line-sm" />
-              <div className="skeleton-tags">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="skeleton-tag" />
-                ))}
-              </div>
-            </div>
-          </div>
-          {/* Right panel skeleton */}
-          <div className="episodes-panel">
-            <div className="episodes-section">
-              <div className="episodes-container">
-                <div className="season-group">
-                  <div className="episodes-grid zoom-150">
-                    {Array.from({ length: 8 }).map((_, i) => (
-                      <div key={i} className="episode-card vertical episode-skeleton">
-                        <div className="episode-thumbnail skeleton-block" />
-                        <div className="episode-title">
-                          <div className="skeleton-line line-ep" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="season-filter-bar skeleton-season-bar">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="season-item season-skeleton">
-                  <div className="season-image-wrapper">
-                    <div className="season-image skeleton-block" />
-                  </div>
-                  <div className="season-caption">
-                    <div className="skeleton-line line-caption" />
-                  </div>
-                </div>
-              ))}
-            </div>
+      <div className="show-content">
+        {/* Left skeleton poster & info */}
+        <div className="show-info-panel">
+        <div className="show-poster skeleton-block poster-skeleton" />
+        <div className="show-description">
+          <div className="skeleton-line line-lg" />
+          <div className="skeleton-line line-md" />
+          <div className="skeleton-line line-sm" />
+          <div className="skeleton-tags">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="skeleton-tag" />
+          ))}
           </div>
         </div>
+        </div>
+        {/* Right panel skeleton */}
+        <div className="episodes-panel">
+        <div className="episodes-section">
+          <div className="episodes-container">
+          <div className="season-group">
+            <div className="episodes-grid zoom-150">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="episode-card vertical episode-skeleton">
+              <div className="episode-thumbnail skeleton-block" />
+              <div className="episode-title">
+                <div className="skeleton-line line-ep" />
+              </div>
+              </div>
+            ))}
+            </div>
+          </div>
+          </div>
+        </div>
+        <div className="season-filter-bar skeleton-season-bar">
+          {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="season-item season-skeleton">
+            <div className="season-image-wrapper">
+            <div className="season-image skeleton-block" />
+            </div>
+            <div className="season-caption">
+            <div className="skeleton-line line-caption" />
+            </div>
+          </div>
+          ))}
+        </div>
+        </div>
+      </div>
       </div>
     );
   }

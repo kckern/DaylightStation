@@ -236,11 +236,11 @@ export class DeviceManager {
     
     // Handle legacy signature (timeoutMs) or new config object
     const timeouts = typeof config === 'number' 
-      ? { inactive: config, remove: config * 3, rpmZero: 12000 }
+      ? { inactive: config, remove: config * 3, rpmZero: 3000 }
       : { 
           inactive: config.inactive || 60000, 
           remove: config.remove || 180000, 
-          rpmZero: config.rpmZero || 12000 
+          rpmZero: config.rpmZero || 3000 
         };
 
     for (const [id, device] of this.devices) {

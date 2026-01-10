@@ -137,21 +137,19 @@ const FitnessPlayerFooterSeekThumbnails = ({
   const [rangeStart, rangeEnd] = effectiveRange;
   const rangeSpan = Math.max(0, rangeEnd - rangeStart);
 
-  // Clear stale seek intents when zoom range changes to prevent offset bug
+  // Clear stale seek intents when zoom range changes to prevent offset bug (BUG-06 fix)
   useEffect(() => {
     if (!playerRef?.current) return;
-    const controller = playerRef.current;
     
-    // Clear any pending auto-seek that might have been set during previous zoom
-    if (typeof controller.clearPendingAutoSeek === 'function') {
-      controller.clearPendingAutoSeek();
+    // Clear any pending auto-seek from transport layer when zoom changes
+    if (typeof playerRef.current.clearPendingAutoSeek === 'function') {
+      playerRef.current.clearPendingAutoSeek();
       logger.info('cleared-pending-autoseek-on-zoom-change', { zoomRange });
     }
     
-    // Also clear the resilience system's seek intent
-    if (typeof controller.recordSeekIntentMs === 'function' && !zoomRange) {
-      // When unzooming, don't preserve the zoomed-seek position
-      controller.recordSeekIntentMs(null, 'zoom-range-reset');
+    // Clear resilience system's seek intent when unzooming to prevent stale offset
+    if (!zoomRange && typeof playerRef.current.clearSeekIntent === 'function') {
+      playerRef.current.clearSeekIntent('zoom-range-reset');
       logger.info('cleared-seek-intent-on-unzoom');
     }
   }, [zoomRange, playerRef]);

@@ -8,11 +8,10 @@ export default {
   requires: { sessionActive: false, participants: false, heartRate: false, governance: false },
   pauseVideoOnLaunch: false,
   exitOnVideoEnd: false,
-  sidebar: {
-    collapseOnFullscreen: true,
-    allowToggle: true,
-    defaultVisible: true
-  },
+  // sidebar: false - FitnessSessionApp renders its own FitnessSidebar internally.
+  // Setting sidebar config here would cause FitnessPluginContainer to add ANOTHER
+  // FitnessSidebar wrapper, resulting in duplicate sidebars.
+  sidebar: false,
   dimensions: {
     standalone: { minWidth: 800, minHeight: 600, preferredAspect: '16:9' }
   }

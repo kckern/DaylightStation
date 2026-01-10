@@ -633,7 +633,14 @@ const Player = forwardRef(function Player(props, ref) {
     resetMediaResilience: () => resilienceControllerRef.current?.reset?.(),
     forceMediaReload: (opts) => resilienceControllerRef.current?.forceReload?.(opts),
     forceMediaInfoFetch: (opts) => resilienceControllerRef.current?.forceFetchInfo?.(opts),
-    getPlaybackState: () => controllerRef.current?.getPlaybackState?.() || controllerRef.current?.transport?.getPlaybackState?.() || null
+    getPlaybackState: () => controllerRef.current?.getPlaybackState?.() || controllerRef.current?.transport?.getPlaybackState?.() || null,
+    // BUG-06 fix: Clear stale seek state after zoom operations
+    clearPendingAutoSeek: () => {
+      controllerRef.current?.transport?.clearPendingAutoSeek?.();
+    },
+    clearSeekIntent: (reason) => {
+      resilienceControllerRef.current?.clearSeekIntent?.(reason);
+    }
   }), [isQueue, advance, singleAdvance]);
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);

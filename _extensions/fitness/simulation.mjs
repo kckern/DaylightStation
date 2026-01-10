@@ -30,7 +30,7 @@ if (fs.existsSync(envPath)) {
 // Import the new config framework
 import { resolveConfigPaths } from '../../backend/lib/config/pathResolver.mjs';
 import { loadAllConfig } from '../../backend/lib/config/loader.mjs';
-import { configService } from '../../backend/lib/config/ConfigService.mjs';
+import { configService, initConfigService } from '../../backend/lib/config/index.mjs';
 import { userDataService } from '../../backend/lib/config/UserDataService.mjs';
 import { loadFile } from '../../backend/lib/io.mjs';
 
@@ -78,6 +78,14 @@ process.env = {
 };
 
 console.log('📊 Data path:', process.env.path?.data);
+
+// Initialize ConfigService singleton with the data directory
+try {
+  initConfigService(configPaths.dataDir);
+  console.log('✅ ConfigService initialized');
+} catch (err) {
+  console.warn('⚠️  ConfigService initialization:', err.message);
+}
 
 // Load fitness config using the new household-aware approach
 function loadConfig() {
