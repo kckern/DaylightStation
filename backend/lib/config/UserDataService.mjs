@@ -11,7 +11,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { configService } from './ConfigService.mjs';
+import { configService } from './index.mjs';
 import { createLogger } from '../logging/logger.js';
 import { loadFile, saveFile } from '../io.mjs';
 
