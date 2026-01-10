@@ -361,6 +361,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   const [rpmScale, setRpmScale] = useState(1);
   const [layoutMode, setLayoutMode] = useState('horiz'); // 'horiz' | 'vert' for heart-rate user cards
   const hrCounts = React.useMemo(() => {
+    if (!allDevices) return { all: 0, active: 0, candidate: 0 };
     const hrAll = allDevices.filter(d => d.type === 'heart_rate');
     const hrActive = hrAll.filter(d => d.isActive);
     const candidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
@@ -421,6 +422,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
   // Build a map of deviceId -> displayName applying group_label rule
   const hrDisplayNameMap = React.useMemo(() => {
+    if (!allDevices) return hrOwnerMap;
     const activeHrDeviceIds = allDevices
       .filter(d => d.type === 'heart_rate')
       .map(d => String(d.deviceId));
@@ -644,6 +646,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   };
   
   useEffect(() => {
+    if (!allDevices) return;
     const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
     // Combine cadence and jumprope into single RPM group
     const rpmDevices = allDevices.filter(d =>
@@ -709,7 +712,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
   // Decide vertical vs horizontal layout for user (heart_rate) cards
   useLayoutEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !allDevices) return;
     // Count heart_rate users that are active; fallback to all heart_rate when none marked active
     const hrAll = allDevices.filter(d => d.type === 'heart_rate');
     const hrActive = hrAll.filter(d => d.isActive);
