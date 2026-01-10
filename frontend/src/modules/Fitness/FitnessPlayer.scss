@@ -46,6 +46,65 @@ dash-video {
   }
 }
 
+/* =============================================================================
+   FitnessPlayerFrame Integration
+   Map frame classes to existing fitness-player classes for backward compatibility
+   ============================================================================= */
+.fitness-player-frame {
+  // Inherit existing fitness-player positioning
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #111;
+  z-index: 100;
+  overflow: hidden;
+  height: 100%;
+
+  // Map frame sidebar to fitness-player-sidebar styles
+  .fitness-player-frame__sidebar {
+    background-color: #1a1a1a;
+    border-left: 1px solid #333;
+    overflow: hidden;
+  }
+
+  .fitness-player-frame__sidebar-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  // Map frame main to fitness-player-main styles
+  .fitness-player-frame__main {
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  // Map frame content to fitness-player-content styles
+  .fitness-player-frame__content {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  // Preserve fullscreen mode behavior
+  &.mode-fullscreen {
+    .fitness-player-frame__sidebar {
+      width: 0 !important;
+      flex: 0 0 0px !important;
+      border: none;
+    }
+    
+    .fitness-player-frame__footer {
+      display: none;
+    }
+  }
+}
+
+/* =============================================================================
+   Original fitness-player styles (preserved for compatibility)
+   ============================================================================= */
 .fitness-player {
   position: absolute;
   top: 0;

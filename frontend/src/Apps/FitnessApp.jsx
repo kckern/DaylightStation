@@ -14,6 +14,7 @@ import { getChildLogger } from '../lib/logging/singleton.js';
 import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
 import VoiceMemoOverlay from '../modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
+import { FitnessFrame } from '../modules/Fitness/frames';
 
 const FitnessApp = () => {
   // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
@@ -546,22 +547,22 @@ const FitnessApp = () => {
                 </button>
               </div>
             )}
-            {/* Base UI - Always render but hide when player is shown */}
-            <div style={{ 
-              display: 'flex', 
-              height: '100%', 
-              width: '100%',
-              visibility: fitnessPlayQueue.length > 0 || loading ? 'hidden' : 'visible'
-            }}>
-              <FitnessNavbar 
-                navItems={navItems}
-                currentState={{
-                  currentView,
-                  activeCollection,
-                  activePlugin
-                }}
-                onNavigate={handleNavigate}
-              />
+            {/* Base UI - Using FitnessFrame layout shell */}
+            <FitnessFrame
+              nav={
+                <FitnessNavbar 
+                  navItems={navItems}
+                  currentState={{
+                    currentView,
+                    activeCollection,
+                    activePlugin
+                  }}
+                  onNavigate={handleNavigate}
+                />
+              }
+              hideNav={fitnessPlayQueue.length > 0 || loading}
+              className={fitnessPlayQueue.length > 0 || loading ? 'fitness-frame--hidden' : ''}
+            >
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
                 {currentView === 'users' && (
                   <FitnessPluginContainer pluginId="fitness_session" mode="standalone" />
@@ -591,7 +592,7 @@ const FitnessApp = () => {
                   />
                 )}
               </div>
-            </div>
+            </FitnessFrame>
             
             {/* Player overlay - only rendered when needed */}
             {fitnessPlayQueue.length > 0 && (

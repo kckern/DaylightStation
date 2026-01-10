@@ -1,0 +1,47 @@
+/**
+ * SidebarCore - Sidebar shell styles
+ */
+
+.sidebar-core {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+
+  &__content {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    gap: 0; // Panels control their own spacing
+  }
+
+  &__menu-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+  }
+
+  // Mode variants
+  &--mode-player {
+    // Default player mode styling
+  }
+
+  &--mode-plugin {
+    // Plugin mode may have different panel defaults
+  }
+
+  &--mode-session {
+    // Session mode (chart + camera)
+  }
+
+  &--mode-standalone {
+    // Standalone sidebar (no parent player)
+  }
+}

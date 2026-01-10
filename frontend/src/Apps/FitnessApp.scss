@@ -53,6 +53,18 @@
       margin-left: 4rem;
     }
   }
+
+  // FitnessFrame integration - remove margin when using frame layout
+  .fitness-frame {
+    .fitness-main-content {
+      margin-left: 0;
+    }
+  }
+
+  // Hide frame when player is active
+  .fitness-frame--hidden {
+    visibility: hidden;
+  }
 }
 
 // Kiosk UI mode - hide cursor after first touch event detected

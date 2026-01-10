@@ -1,0 +1,47 @@
+/**
+ * Sidebar Panel Styles - Shared styles for all sidebar panel wrappers
+ */
+
+.sidebar-panel {
+  // Base panel styling
+  flex: 0 0 auto;
+  width: 100%;
+  
+  // Clickable panel variant
+  &--clickable {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.03);
+    }
+    
+    &:active {
+      background-color: rgba(255, 255, 255, 0.06);
+    }
+  }
+
+  // Panel type variants
+  &--treasure-box {
+    // TreasureBox specific overrides
+  }
+
+  &--governance {
+    // Governance specific overrides
+  }
+
+  &--users {
+    // Users panel grows to fill available space
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  &--music {
+    // Music player specific overrides
+  }
+
+  &--voice-memo {
+    // Voice memo specific overrides
+  }
+}
