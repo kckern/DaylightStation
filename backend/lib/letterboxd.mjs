@@ -4,7 +4,7 @@ import axios from './http.mjs';
 
 const getMovies = async (targetUsername = null) => {
     // User-level auth (personal Letterboxd username)
-    const username = targetUsername || configService.getHeadOfHousehold();
+    const username = targetUsername || configService.getHeadOfHousehold('primary');
     if (!username) throw new Error('Letterboxd: unable to resolve username');
     const auth = configService.getUserAuth('letterboxd', username) || {};
     const LETTERBOXD_USER = auth.username || process.env.LETTERBOXD_USER;
