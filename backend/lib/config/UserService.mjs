@@ -7,7 +7,7 @@
  * - Platform identity resolution
  */
 
-import configService from './ConfigService.mjs';
+import { configService } from './index.mjs';
 import createLogger from '../logging/logger.js';
 
 const logger = createLogger({ app: 'user_service' });
