@@ -2,7 +2,7 @@
 const compileDailyFoodReport = async () => {};
 import { loadFile, saveFile, userLoadFile, userSaveFile } from "./io.mjs";
 import { userDataService } from "./config/UserDataService.mjs";
-import { configService } from "./config/v2/index.mjs";
+import { configService } from "./config/index.mjs";
 import moment from "moment";
 import crypto from "crypto";
 import { load } from "js-yaml";

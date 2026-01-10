@@ -8,7 +8,7 @@
 
 import path from 'path';
 import fs from 'fs';
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 import { userDataService } from './config/UserDataService.mjs';
 import { slugify } from './utils.mjs';
 

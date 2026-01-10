@@ -1,6 +1,6 @@
 /**
  * Config Schema Definition
- * @module lib/config/v2/configSchema
+ * @module lib/config/configSchema
  *
  * Declares required vs optional fields for config validation.
  *

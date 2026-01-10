@@ -5,7 +5,7 @@
  * Provides access to household member data from ConfigService.
  */
 
-import { configService } from '../../../../lib/config/v2/index.mjs';
+import { configService } from '../../../../lib/config/index.mjs';
 import { createLogger } from '../../../_lib/logging/index.mjs';
 
 /**

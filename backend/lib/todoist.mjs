@@ -1,6 +1,6 @@
 import { TodoistApi } from '@doist/todoist-api-typescript';
 import { saveFile, userSaveFile, userLoadFile, userSaveCurrent, getDefaultUsername } from './io.mjs';
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 import saveEvents from '../jobs/events.mjs';
 import { createLogger } from './logging/logger.js';
 import axios from './http.mjs';

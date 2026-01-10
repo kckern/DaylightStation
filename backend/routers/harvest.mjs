@@ -25,7 +25,7 @@ import express from 'express';
 const harvestRouter = express.Router();
 import crypto from 'crypto';
 import { createLogger } from '../lib/logging/logger.js';
-import { configService } from '../lib/config/v2/index.mjs';
+import { configService } from '../lib/config/index.mjs';
 
 import todoist from '../lib/todoist.mjs';
 import gmail from '../lib/gmail.mjs';

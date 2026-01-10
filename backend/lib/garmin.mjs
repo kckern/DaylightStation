@@ -3,7 +3,7 @@ const { GarminConnect } = garmin;
 import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile, userLoadFile, userSaveFile, getDefaultUsername } from './io.mjs';
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 import { createLogger } from './logging/logger.js';
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');

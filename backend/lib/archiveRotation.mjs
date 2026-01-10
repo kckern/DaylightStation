@@ -16,7 +16,7 @@
  * - NutriBot: nutrilog, nutrilist (custom repository methods)
  */
 
-import { configService } from './config/v2/index.mjs';
+import { configService } from './config/index.mjs';
 import ArchiveService from './ArchiveService.mjs';
 import { createLogger } from './logging/logger.js';
 
