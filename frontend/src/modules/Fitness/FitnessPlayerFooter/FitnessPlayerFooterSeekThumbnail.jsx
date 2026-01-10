@@ -10,7 +10,7 @@
  * - Handle seek/zoom logic (delegated to SingleThumbnailButton)
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import PropTypes from 'prop-types';
 import SingleThumbnailButton from '../SingleThumbnailButton.jsx';
 import ProgressFrame from './ProgressFrame.jsx';
@@ -367,4 +367,5 @@ FitnessPlayerFooterSeekThumbnail.propTypes = {
   onTelemetry: PropTypes.func
 };
 
-export default FitnessPlayerFooterSeekThumbnail;
+// Memoize to prevent re-renders when only other thumbnails change
+export default memo(FitnessPlayerFooterSeekThumbnail);

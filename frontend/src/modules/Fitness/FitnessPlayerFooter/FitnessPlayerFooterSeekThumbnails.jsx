@@ -210,12 +210,6 @@ const FitnessPlayerFooterSeekThumbnails = ({
     zoomIn(bounds);
   }, [zoomIn, disabled]);
 
-  // --- TELEMETRY ---
-  // Disabled for performance - uncomment for debugging
-  const handleThumbnailTelemetry = useCallback(() => {
-    // logger.debug('thumbnail-telemetry', { phase, ...detail });
-  }, []);
-
   // --- RENDER THUMBNAILS ---
   const renderedThumbnails = useMemo(() => {
     if (!currentItem) return null;
@@ -324,8 +318,6 @@ const FitnessPlayerFooterSeekThumbnails = ({
           onSeek={handleThumbnailSeek}
           onZoom={handleThumbnailZoom}
           enableZoom={!disabled}
-          telemetryMeta={{ idx, segmentStart, segmentEnd, state }}
-          onTelemetry={handleThumbnailTelemetry}
         />
       );
     });
@@ -340,8 +332,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
     disabled,
     generateThumbnailUrl,
     handleThumbnailSeek,
-    handleThumbnailZoom,
-    handleThumbnailTelemetry
+    handleThumbnailZoom
   ]);
 
   // --- PROGRESS BAR PERCENTAGE ---
