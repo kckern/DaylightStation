@@ -29,8 +29,8 @@
 .progress-frame-overlay__fill {
   stroke: #ffd400;
   filter: drop-shadow(0 0 6px rgba(255, 212, 0, 0.7));
-  // Smooth transition for stroke-dashoffset (progress) changes
-  transition: stroke-dashoffset 0.3s ease-out;
+  // Smooth transition for stroke-dasharray (progress) changes
+  transition: stroke-dasharray 0.3s ease-out;
 }
 
 .progress-frame-overlay__spark {

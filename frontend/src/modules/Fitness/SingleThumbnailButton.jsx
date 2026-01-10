@@ -83,6 +83,17 @@ export default function SingleThumbnailButton({
     const reason = timeElt ? 'time-label' : (e.button === 2 ? 'right-button' : 'seek-default');
     const targetSeek = resolveSeekTime();
     const anchor = resolveRangeAnchor();
+    // DEBUG: Trace what SingleThumbnailButton is sending
+    console.log('[SingleThumbnailButton]', {
+      targetSeek,
+      anchor,
+      seekTime,
+      rangeStart,
+      rangeEnd,
+      pos,
+      btnRange,
+      reason
+    });
     emitTelemetry('pointer-down', {
       pointerType: e.pointerType || (e.touches ? 'touch' : 'mouse'),
       button: typeof e.button === 'number' ? e.button : null,

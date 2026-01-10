@@ -6,7 +6,9 @@ import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHan
 import { playbackLog } from '../lib/playbackLogger.js';
 import { getLogWaitKey } from '../lib/waitKeyLabel.js';
 import { useMediaReporter } from './useMediaReporter.js';
+import { getDaylightLogger } from '../../../lib/logging/singleton.js';
 
+const logger = getDaylightLogger({ context: { component: 'MediaController' } });
 const DEBUG_MEDIA = false;
 const roundSeconds = (value, precision = 3) => (Number.isFinite(value)
   ? Number(value.toFixed(precision))
@@ -160,6 +162,7 @@ export function useCommonMediaController({
         pendingAutoSeekRef.current = null;
         return true;
       }
+      logger.info('video-seek-apply', { source, targetSeconds, currentTime, from: 'setSeconds' });
       mediaEl.currentTime = targetSeconds;
       pendingAutoSeekRef.current = null;
       if (DEBUG_MEDIA) {
@@ -391,6 +394,11 @@ export function useCommonMediaController({
 
       if (Number.isFinite(pendingAutoSeekRef.current)) {
         try {
+          logger.info('video-seek-apply', { 
+            targetSeconds: pendingAutoSeekRef.current, 
+            currentTime: mediaEl.currentTime,
+            from: 'pendingAutoSeek-after-waiting' 
+          });
           mediaEl.currentTime = pendingAutoSeekRef.current;
         } catch (_) {
           // rely on future metadata event to reapply
@@ -561,6 +569,11 @@ export function useCommonMediaController({
 
         if (Number.isFinite(desiredStart) && desiredStart >= 0) {
           try {
+            logger.info('video-seek-apply', { 
+              targetSeconds: desiredStart, 
+              currentTime: mediaEl.currentTime,
+              from: 'desiredStart-on-media-change' 
+            });
             mediaEl.currentTime = desiredStart;
           } catch (error) {
             playbackLog('media-start-time-failed', { desiredStart, error }, { level: 'warn' });
@@ -797,7 +810,10 @@ export function useCommonMediaController({
     getDuration: getDurationValue,
     getPlaybackState,
     isDash,
-    hardReset
+    hardReset,
+    clearPendingAutoSeek: () => {
+      pendingAutoSeekRef.current = null;
+    }
   }), [getMediaEl, getCurrentTime, getDurationValue, getPlaybackState, hardReset, isDash, pause, play, seek, seekRelative, toggle]);
 
   useMediaKeyboardHandler({

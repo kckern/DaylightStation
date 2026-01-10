@@ -4,8 +4,10 @@ import usePlayerController from '../../Player/usePlayerController.js';
 import playbackLog from '../../Player/lib/playbackLogger.js';
 import FitnessPlayerFooterSeekThumbnail from './FitnessPlayerFooterSeekThumbnail.jsx';
 import ProgressFrame from './ProgressFrame.jsx';
+import { getDaylightLogger } from '../../../lib/logging/singleton.js';
 import './FitnessPlayerFooterSeekThumbnails.scss';
 
+const logger = getDaylightLogger({ context: { component: 'SeekThumbnails' } });
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const FOOTER_LOG_EVENT = 'fitness-footer';
 const DEBUG_FOOTER = false;
@@ -97,10 +99,19 @@ const FitnessPlayerFooterSeekThumbnails = ({
       const [rs, re] = range.map(parseFloat);
       if (Number.isFinite(rs) && Number.isFinite(re) && re > rs) baseRange = [rs, re];
     }
-    if (!zoomRange) return baseRange;
-    if (!Array.isArray(zoomRange) || zoomRange.length !== 2) return baseRange;
+    if (!zoomRange) {
+      logger.info('effectiveRange-base', { baseRange, hasZoom: false });
+      return baseRange;
+    }
+    if (!Array.isArray(zoomRange) || zoomRange.length !== 2) {
+      logger.info('effectiveRange-invalid', { zoomRange, baseRange });
+      return baseRange;
+    }
     const [zs, ze] = zoomRange;
-    if (Number.isFinite(zs) && Number.isFinite(ze) && ze > zs) return [zs, ze];
+    if (Number.isFinite(zs) && Number.isFinite(ze) && ze > zs) {
+      logger.info('effectiveRange-zoomed', { zoomRange: [zs, ze], baseRange });
+      return [zs, ze];
+    }
     if (Number.isFinite(zs) && zs === ze) {
       const basePositions = unzoomedPositionsRef.current || [];
       if (basePositions.length) {
@@ -116,13 +127,34 @@ const FitnessPlayerFooterSeekThumbnails = ({
       }
       const segment = baseDurationProp / 10;
       const end = Math.min(zs + segment, baseRange[1]);
+      logger.info('effectiveRange-signal', { zoomSignal: zs, computedRange: [zs, end] });
       return [zs, end];
     }
+    logger.info('effectiveRange-fallback', { zoomRange, baseRange });
     return baseRange;
   }, [range, zoomRange, baseDurationProp]);
 
   const [rangeStart, rangeEnd] = effectiveRange;
   const rangeSpan = Math.max(0, rangeEnd - rangeStart);
+
+  // Clear stale seek intents when zoom range changes to prevent offset bug
+  useEffect(() => {
+    if (!playerRef?.current) return;
+    const controller = playerRef.current;
+    
+    // Clear any pending auto-seek that might have been set during previous zoom
+    if (typeof controller.clearPendingAutoSeek === 'function') {
+      controller.clearPendingAutoSeek();
+      logger.info('cleared-pending-autoseek-on-zoom-change', { zoomRange });
+    }
+    
+    // Also clear the resilience system's seek intent
+    if (typeof controller.recordSeekIntentMs === 'function' && !zoomRange) {
+      // When unzooming, don't preserve the zoomed-seek position
+      controller.recordSeekIntentMs(null, 'zoom-range-reset');
+      logger.info('cleared-seek-intent-on-unzoom');
+    }
+  }, [zoomRange, playerRef]);
 
   const rangePositions = useMemo(() => {
     const arr = buildRangePositions(rangeStart, rangeEnd);
@@ -275,8 +307,10 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const [start, end] = bounds;
     if (!Number.isFinite(start) || !Number.isFinite(end)) return;
     if (zoomRange && Math.abs((zoomRange[0] ?? 0) - start) < 0.0001 && Math.abs((zoomRange[1] ?? 0) - end) < 0.0001) {
+      logger.info('zoom-request-duplicate', { bounds, currentZoom: zoomRange });
       return;
     }
+    logger.info('zoom-request', { bounds, currentZoom: zoomRange, currentRange: [rangeStart, rangeEnd] });
     const snapshot = lastViewSnapshotRef.current;
     if (snapshot) {
       const positionsClone = Array.isArray(snapshot.positions) ? snapshot.positions.slice() : [];
@@ -331,6 +365,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
     if (!positions.length) return;
     const idx = resolveZoomIndex();
+    logger.info('zoom-step-backward', { currentIndex: idx, zoomStackSize: zoomStackRef.current.length, currentZoom: zoomRange });
     if (idx <= 0) return;
     setZoomRangeFromIndex(idx - 1);
   }, [disabled, isZoomed, getActiveZoomSnapshot, resolveZoomIndex, setZoomRangeFromIndex]);
@@ -403,6 +438,14 @@ const FitnessPlayerFooterSeekThumbnails = ({
   const commit = useCallback((t) => {
     if (disabled) return;
     const normalizedTarget = Number.isFinite(t) ? Math.max(0, t) : 0;
+    logger.info('seek-commit', { 
+      target: normalizedTarget, 
+      currentTime, 
+      pendingTime, 
+      rangeStart, 
+      rangeEnd,
+      isZoomed: !!zoomRange
+    });
     // Telemetry for testing - logs seek target for verification
     if (typeof window !== 'undefined') {
       console.log('[FitnessPlayerFooterSeekThumbnails] commit called', { t: normalizedTarget });
@@ -619,6 +662,15 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const resolvedTarget = Number.isFinite(rangeAnchor)
       ? rangeAnchor
       : (Number.isFinite(seekTarget) ? seekTarget : rangeStart);
+    // DEBUG: Trace seek values
+    console.log('[handleThumbnailSeek]', {
+      seekTarget,
+      rangeAnchor,
+      resolvedTarget,
+      footerRangeStart: rangeStart,
+      currentTime,
+      displayTime
+    });
     const direction = resolveSeekDirection(resolvedTarget, currentTime);
     logFooterEvent('thumbnail-seek-intent', {
       seekTarget,
@@ -698,8 +750,11 @@ const FitnessPlayerFooterSeekThumbnails = ({
         const durationWindow = endTime - segmentStart;
         const BOUNDARY_TOLERANCE = 0.1;
         const effectiveEnd = endTime - BOUNDARY_TOLERANCE;
-        if (durationWindow > 0 && currentTime >= segmentStart && currentTime < effectiveEnd) {
-          const progressInSegment = currentTime - segmentStart;
+        // Use displayTime for active thumbnail to reflect pending seeks immediately
+        // (currentTime only updates after video element finishes seeking)
+        const effectiveTime = displayTime;
+        if (durationWindow > 0 && effectiveTime >= segmentStart && effectiveTime < effectiveEnd) {
+          const progressInSegment = effectiveTime - segmentStart;
           thumbnailProgress = clamp01(progressInSegment / durationWindow);
           isActivelyPlaying = true;
         }
