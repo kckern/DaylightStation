@@ -8,6 +8,7 @@ import { CronExpressionParser } from "cron-parser";
 import Infinity from "../lib/infinity.mjs";
 import { loadFile, saveFile } from "../lib/io.mjs";
 import { createLogger } from '../lib/logging/logger.js';
+import { taskRegistry } from "../lib/cron/TaskRegistry.mjs";
 
 // Only run cron jobs in production (Docker container)
 const isDocker = existsSync('/.dockerenv');
@@ -22,67 +23,93 @@ const cronLogger = createLogger({
   context: { env: process.env.NODE_ENV }
 });
 
+// Build legacy bucket-based mapping for endpoints and backward compatibility
+// Note: Endpoints are created at startup; individual job schedules load dynamically in loadCronJobs
+const cronRegistry = taskRegistry.load();
 const cron = {
-  // Every 10 minutes: Time-sensitive data (tasks, calendar, email, weather)
-  cron10Mins: [
-    "../lib/weather.mjs",
-    "../lib/gcal.mjs",
-    "../lib/todoist.mjs",
-    "../lib/gmail.mjs",
-  ],
-  
-  // Hourly: Health and fitness, music, task management, budgeting
-  cronHourly: [
-    "../lib/withings.mjs",      // Weight/body measurements
-    "../lib/strava.mjs",         // Strava activities
-    "../lib/lastfm.mjs",         // Music listening history
-    "../lib/clickup.mjs",        // Task management
-    "../lib/foursquare.mjs",        // Foursquare/Swarm check-ins
-    "../lib/budget.mjs",         // Budget compilation and financial sync
-  ],
-  
-  // Daily: Media consumption, religious content, task management, social activity
-  cronDaily: [
-    "../lib/youtube.mjs",        // YouTube downloads
-    "../lib/fitsync.mjs",        // FitnessSyncer aggregation
-    "../lib/garmin.mjs",         // Garmin data
-    "../lib/health.mjs",         // Health data aggregation (combines strava/garmin/fitsync)
-    "../lib/letterboxd.mjs",     // Movie watching history
-    "../lib/goodreads.mjs",      // Reading activity
-    "../lib/github.mjs",         // GitHub commit history
-    "../lib/reddit.mjs",         // Reddit posts and comments
-    "../lib/shopping.mjs",       // Shopping receipt extraction
-    "../lib/archiveRotation.mjs", // Rotate old lifelog entries to cold archives
-    "../lib/mediaMemoryValidator.mjs", // Validate media memory data integrity
-
-   // "../lib/ldsgc.mjs",          // LDS General Conference
-   // "../lib/scriptureguide.mjs", // Scripture of the day
-  ],
-  
-  // Weekly: Financial data (expensive operations)
-  cronWeekly: [
-  ]
+  cron10Mins: [],
+  cronHourly: [],
+  cronDaily: [],
+  cronWeekly: []
 };
+
+// Map jobs from registry into buckets
+taskRegistry.getJobs().forEach(job => {
+  const bucket = job.bucket || (job.schedule.includes('*/10') ? 'cron10Mins' : 
+                               job.schedule.includes('0 * * *') ? 'cronHourly' : 'cronDaily');
+  if (cron[bucket]) {
+    cron[bucket].push(job.module);
+  } else {
+    // If it's a new bucket name or individual job, we might eventually want individual endpoints
+    cron[bucket] = [job.module];
+  }
+});
 
 apiRouter.use((err, req, res, next) => {
   cronLogger.error('cron.middleware.error', { error: err?.message, stack: err?.stack });
   res.status(500).json({ error: err.message });
 });
 
+apiRouter.get('/status', (req, res) => {
+  try {
+    const jobsWithState = loadCronConfig();
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      jobs: jobsWithState
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/run/:jobId', async (req, res) => {
+  const { jobId } = req.params;
+  try {
+    const jobs = loadCronConfig();
+    const job = jobs.find(j => j.id === jobId || j.name === jobId);
+    
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const guidId = crypto.randomUUID().split("-").pop();
+    cronLogger.info('cron.job.manual_trigger', { jobId, guidId });
+    
+    // Immediate response to client
+    res.json({ status: 'started', jobId, guidId });
+
+    // Execute in background
+    const jobFile = job.module ? [job.module] : cron[job.name];
+    if (jobFile) {
+      for (const item of jobFile) {
+        const module = await import(item);
+        const fn = module.default;
+        if (typeof fn === 'function') {
+          await fn(cronLogger.child({ jobId: guidId, manual: true }), guidId);
+        }
+      }
+    }
+  } catch (err) {
+    cronLogger.error('cron.job.manual_failed', { jobId, error: err.message });
+  }
+});
+
 Object.keys(cron).forEach(key => {
   apiRouter.get(`/${key}`, async (req, res, next) => {
     try {
-      const functions = await Promise.all(
-        cron[key].map(async item => {
-          if (typeof item === "string") {
-            const module = await import(item);
-            return module.default;
-          } else if (typeof item === "function") {
-            return item;
-          }
+      const functions = [];
+      for (const item of cron[key]) {
+        if (typeof item === "string") {
+          const module = await import(item);
+          functions.push(module.default);
+        } else if (typeof item === "function") {
+          functions.push(item);
+        } else {
           throw new Error(`Invalid item for ${key}`);
-        })
-      );
+        }
+      }
+      
       const guidId = crypto.randomUUID().split("-").pop();
       cronLogger.info('cron.endpoint.called', { key, guidId });
       const data = {
@@ -91,7 +118,13 @@ Object.keys(cron).forEach(key => {
         guidId
       };
       res.json(data);
-      await Promise.all(functions.map(fn => fn(guidId)));
+
+      // Execute sequentially
+      for (const fn of functions) {
+        if (typeof fn === "function") {
+          await fn(guidId);
+        }
+      }
     } catch (error) {
       next(error);
     }
@@ -122,11 +155,11 @@ function computeNextRun(job, fromMoment) {
   return moment(rawNext).add(offsetMinutes, "minutes").tz(timeZone);
 }
 
-// Load job definitions (synced via Dropbox)
+// Load job definitions from registry (uses cached jobs, not re-loading from disk)
 const loadCronJobs = () => {
-  const jobs = loadFile("system/cron-jobs");
+  const jobs = taskRegistry.getJobs();
   if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
-    cronLogger.warn('cron.jobs.empty', { message: 'No cron jobs defined in system/cron-jobs' });
+    cronLogger.warn('cron.jobs.empty', { message: 'No cron jobs loaded from registry' });
     return [];
   }
   return jobs;
@@ -154,22 +187,31 @@ const loadCronConfig = () => {
   const jobs = loadCronJobs();
   const state = loadCronState();
 
-  return jobs.map(job => ({
-    ...job,
-    last_run: state[job.name]?.last_run || null,
-    nextRun: state[job.name]?.nextRun || null,
-    secondsUntil: null,  // Always recalculated
-    needsToRun: false,   // Always recalculated
-  }));
+  return jobs.map(job => {
+    const jobKey = job.id || job.name;
+    return {
+      ...job,
+      last_run: state[jobKey]?.last_run || null,
+      nextRun: state[jobKey]?.nextRun || null,
+      status: state[jobKey]?.status || null,
+      duration_ms: state[jobKey]?.duration_ms || 0,
+      secondsUntil: null,  // Always recalculated
+      needsToRun: false,   // Always recalculated
+    };
+  });
 };
+
 
 // Save runtime state only (not job definitions)
 const saveCronState = (cronJobs) => {
-  const state = {};
+  const state = loadCronState();
   for (const job of cronJobs) {
-    state[job.name] = {
+    const jobKey = job.id || job.name;
+    state[jobKey] = {
       last_run: job.last_run,
       nextRun: job.nextRun,
+      status: job.status || 'unknown',
+      duration_ms: job.duration_ms || 0
     };
   }
   saveFile("system/state/cron-runtime", state);
@@ -177,11 +219,14 @@ const saveCronState = (cronJobs) => {
 
 // Backup runtime state
 const backupCronState = (cronJobs) => {
-  const state = {};
+  const state = loadCronState();
   for (const job of cronJobs) {
-    state[job.name] = {
+    const jobKey = job.id || job.name;
+    state[jobKey] = {
       last_run: job.last_run,
       nextRun: job.nextRun,
+      status: job.status || 'unknown',
+      duration_ms: job.duration_ms || 0
     };
   }
   try {
@@ -210,6 +255,7 @@ export const cronContinuous = async () => {
     if (!job.nextRun) {
       const nextMoment = computeNextRun(job, now);
       job.nextRun = nextMoment.format("YYYY-MM-DD HH:mm:ss");
+      job.cron_tab = job.cron_tab || job.schedule; // Ensure cron_tab exists for computeNextRun
       job.secondsUntil = nextMoment.unix() - now.unix();
       job.needsToRun = false;
       job.last_run = job.last_run || 0;
@@ -240,50 +286,94 @@ export const cronContinuous = async () => {
     }
   }
   for (const job of runNow) {
+    const jobKey = job.id || job.name;
     const jobName = job.name;
-    const jobFile = cron[jobName];
+
+    // Phase 2: Dependency Check
+    if (job.dependencies && Array.isArray(job.dependencies)) {
+      const state = loadCronState();
+      const unmet = job.dependencies.filter(depId => {
+        const depState = state[depId];
+        return !depState || depState.status !== 'success';
+      });
+
+      if (unmet.length > 0) {
+        cronLogger.warn('cron.job.dependencies_unmet', { job: jobKey, unmet });
+        job.needsToRun = false;
+        continue;
+      }
+    }
+
+    const jobFile = job.module ? [job.module] : cron[jobName];
     if (jobFile) {
       const guidId = crypto.randomUUID().split("-").pop();
-      const funcs = await Promise.all(
-        jobFile.map(async item => {
+      
+      // Phase 2: Sequential Import
+      const funcs = [];
+      for (const item of jobFile) {
+        try {
           if (typeof item === "string") {
             const module = await import(item);
-            return module.default;
+            funcs.push(module.default);
           } else if (typeof item === "function") {
-            return item;
+            funcs.push(item);
           }
-          cronLogger.warn('cron.job.invalid_item', { jobName, item });
-          return null; // Gracefully handle invalid items
-        })
-      );
-      const invoke = async (fn) => {
-        const scopedLogger = cronLogger.child({ jobId: guidId, job: jobName });
-        try {
-          if (fn.length >= 2) return await fn(scopedLogger, guidId);
-          if (fn.length === 1) return await fn(guidId);
-          return await fn(scopedLogger, guidId);
         } catch (err) {
-          // Log error but don't let one harvester crash the whole job
+          cronLogger.error('cron.job.import_failed', { job: jobKey, item, error: err.message });
+        }
+      }
+
+      const invoke = async (fn) => {
+        const scopedLogger = cronLogger.child({ jobId: guidId, job: jobKey });
+        const timeoutMs = job.timeout || 300000; // Default 5 minutes
+        
+        try {
+          let result;
+          const promise = (fn.length >= 2) ? fn(scopedLogger, guidId) : 
+                          (fn.length === 1) ? fn(guidId) : 
+                          fn(scopedLogger, guidId);
+          
+          // Race between execution and timeout
+          result = await Promise.race([
+            promise,
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error(`Job timeout after ${timeoutMs}ms`)), timeoutMs)
+            )
+          ]);
+          
+          return { success: true, result };
+        } catch (err) {
           scopedLogger.error('cron.harvester.error', {
             error: err?.message,
             harvester: fn?.name || 'unknown'
           });
-          return null;
+          return { success: false, error: err.message };
         }
       };
 
-      await Promise.all(
-        funcs.map(fn => {
-          if (typeof fn === "function") {
-            return invoke(fn);
-          }
-          cronLogger.warn('cron.job.invalidFunction', { job: jobName, fnType: typeof fn });
-          return null;
-        })
-      );
-      job.messageIds = job.messageIds ? [...job.messageIds, guidId] : [guidId];
+      // Phase 2: Sequential Execution
+      const startTime = Date.now();
+      cronLogger.info('cron.job.started', { job: jobKey, guidId });
+      let jobSucceeded = true;
+      for (const fn of funcs) {
+        if (typeof fn === "function") {
+          const outcome = await invoke(fn);
+          if (!outcome.success) jobSucceeded = false;
+        } else {
+          cronLogger.warn('cron.job.invalidFunction', { job: jobKey, fnType: typeof fn });
+          jobSucceeded = false;
+        }
+      }
+      job.status = jobSucceeded ? 'success' : 'failed';
+      job.duration_ms = Date.now() - startTime;
+      cronLogger.info('cron.job.finished', { 
+        job: jobKey, 
+        guidId, 
+        status: job.status, 
+        duration_ms: job.duration_ms 
+      });
     }
-    delete job.messageIds; // Remove messageIds after running
+
     job.last_run = now.format("YYYY-MM-DD HH:mm:ss");
     jobsRan = true;  // Mark that we need to save state
     try {
@@ -292,8 +382,9 @@ export const cronContinuous = async () => {
       job.secondsUntil = newNextRunMoment.unix() - now.unix();
       job.needsToRun = false;
     } catch (e) {
-      cronLogger.error('cron.schedule.compute.error', { job: job.name, error: e?.message, stack: e?.stack });
+      cronLogger.error('cron.schedule.compute.error', { job: jobKey, error: e?.message, stack: e?.stack });
       job.needsToRun = false;
+      job.status = 'failed';
       job.error = "Invalid cron_tab";
     }
   }
