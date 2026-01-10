@@ -34,9 +34,7 @@ const LANG_ARGS = `--extractor-args "youtube:lang=${AUDIO_LANG}"`;
 
 // Determine a shared lock file path
 const LOCK_FILE = (() => {
-  const baseDir = (process.env.path && process.env.path.data)
-    ? path.join(process.env.path.data, 'tmp')
-    : path.join(process.env.path.media || '.', 'video', 'news');
+  const baseDir = path.join(process.env.path.media || '.', 'video', 'news');
   try { fs.mkdirSync(baseDir, { recursive: true }); } catch (e) {}
   return path.join(baseDir, 'youtube.lock');
 })();
