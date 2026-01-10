@@ -12,6 +12,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   const { 
     connected, 
     heartRateDevices, 
+    activeHeartRateParticipants, // Phase 1 SSOT: Canonical participant list
     deviceConfiguration,
     participantRoster,
     participantsByDevice,
@@ -61,8 +62,10 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   }, [userProfileIdMap]);
 
   const computeDeviceActive = React.useCallback((device) => {
-    if (!device) return false;
-    const lastSeen = Number(device.lastSeen ?? device.timestamp);
+    if (!device) return false;    // Prefer explicit active state if available (from Roster/ActivityMonitor)
+    if (device.isActive !== undefined) return device.isActive;
+    
+    // Fallback to timestamp check    const lastSeen = Number(device.lastSeen ?? device.timestamp);
     if (!Number.isFinite(lastSeen) || lastSeen <= 0) return true;
     return (Date.now() - lastSeen) <= inactiveTimeout;
   }, [inactiveTimeout]);
@@ -267,7 +270,9 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   }, [resolveDeviceParticipant, userCurrentZones, deriveZoneFromHR]);
 
   const sortedDevices = React.useMemo(() => {
-    const hrDevices = heartRateDevices ? [...heartRateDevices] : [];
+    // Phase 1 SSOT: Use activeHeartRateParticipants from context instead of inline derivation
+    // This eliminates duplicated roster-to-device logic (see docs/ops/fix-fitness-user-consistency.md)
+    const hrDevices = [...(activeHeartRateParticipants || [])];
 
     // Sort heart rate devices: zone rank DESC (fire top, cool bottom), then HR DESC, then active status as tertiary
     hrDevices.sort((a, b) => {
@@ -292,7 +297,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
 
     // Only keep the single top performer to prevent growth
     return hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
-  }, [heartRateDevices, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive]);
+  }, [activeHeartRateParticipants, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive]);
 
   const handleContainerClick = React.useCallback(() => {
     console.log('[SidebarFooter] device-container clicked', { 
