@@ -1,7 +1,7 @@
 import axios from './http.mjs';
 import { buildCurl } from './httpUtils.mjs';
 import { saveFile, userSaveFile, userLoadFile, userSaveCurrent, getCurrentHouseholdId } from './io.mjs';
-import { configService } from './config/ConfigService.mjs';
+import { configService } from './config/v2/index.mjs';
 import { createLogger } from './logging/logger.js';
 import moment from 'moment';
 

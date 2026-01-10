@@ -1,7 +1,7 @@
 import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { loadFile, saveFile, userLoadFile, userSaveFile, userSaveAuth } from './io.mjs';
-import { configService } from './config/ConfigService.mjs';
+import { configService } from './config/v2/index.mjs';
 import axios from './http.mjs';
 import { createLogger } from './logging/logger.js';
 import { serializeError } from './logging/utils.js';

@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 import { userService } from '../lib/config/UserService.mjs';
-import { configService } from '../lib/config/ConfigService.mjs';
+import { configService } from '../lib/config/v2/index.mjs';
 import { userDataService } from '../lib/config/UserDataService.mjs';
 import { activateScene } from '../lib/homeassistant.mjs';
 import { createLogger } from '../lib/logging/logger.js';

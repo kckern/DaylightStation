@@ -15,7 +15,7 @@ import {
     getDefaultUsername,
     householdLoadFile
 } from './io.mjs';
-import { configService } from './config/ConfigService.mjs';
+import { configService } from './config/v2/index.mjs';
 import { createLogger } from './logging/logger.js';
 import { getAIGateway, systemMessage, userMessage } from './ai/index.mjs';
 

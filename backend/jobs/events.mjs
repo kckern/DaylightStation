@@ -1,6 +1,6 @@
 
 import { loadFile, saveFile, userLoadFile, userLoadCurrent, userSaveFile } from '../lib/io.mjs';
-import { configService } from '../lib/config/ConfigService.mjs';
+import { configService } from '../lib/config/v2/index.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 
 // Get default username for user-scoped data

@@ -14,10 +14,13 @@ import { userDataService } from './lib/config/UserDataService.mjs';
 // Config path resolver and loader
 import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolver.mjs';
 import { loadAllConfig, logConfigSummary } from './lib/config/loader.mjs';
-import { configService } from './lib/config/ConfigService.mjs';
 
-// ConfigService v2 (new architecture - runs alongside old during migration)
-import { initConfigService, ConfigValidationError } from './lib/config/v2/index.mjs';
+// ConfigService v2 (primary config system)
+import { initConfigService, ConfigValidationError, configService } from './lib/config/v2/index.mjs';
+
+// Legacy ConfigService - DEPRECATED, kept for backwards compatibility during migration
+// TODO: Remove once all modules are verified working with v2
+import { configService as legacyConfigService } from './lib/config/ConfigService.mjs';
 
 // Logging system
 import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
@@ -47,24 +50,23 @@ const configExists = configFiles && existsSync(configFiles.system);
 // Load configuration from YAML files into process.env (for logging config)
 hydrateProcessEnvFromConfigs(configPaths.configDir);
 
-// Initialize ConfigService with data directory so it can load config files
-configService.init({ dataDir: configPaths.dataDir });
-console.log('[Config] ConfigService initialized with dataDir:', configPaths.dataDir);
-
-// Initialize ConfigService v2 (new architecture)
-// During migration, this runs alongside old ConfigService
-// Validation errors are logged but don't block startup (yet)
+// Initialize ConfigService v2 (primary config system)
+// Fails fast if config is invalid - this is intentional
 try {
   initConfigService(configPaths.dataDir);
-  console.log('[Config] ConfigService v2 initialized successfully');
+  console.log('[Config] ConfigService v2 initialized with dataDir:', configPaths.dataDir);
 } catch (err) {
   if (err instanceof ConfigValidationError) {
-    console.warn('[Config] ConfigService v2 validation failed (non-blocking during migration):');
-    console.warn(err.message);
-  } else {
-    console.error('[Config] ConfigService v2 init error:', err.message);
+    console.error('[FATAL] Config validation failed:');
+    console.error(err.message);
+    process.exit(1);
   }
+  throw err;
 }
+
+// Initialize legacy ConfigService for backwards compatibility
+// TODO: Remove once Phase 4 cleanup is complete
+legacyConfigService.init({ dataDir: configPaths.dataDir });
 
 let loggingConfig = loadLoggingConfig();
 

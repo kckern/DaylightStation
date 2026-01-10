@@ -7,7 +7,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { configService } from '../../../../lib/config/ConfigService.mjs';
+import { configService } from '../../../../lib/config/v2/index.mjs';
 import { userDataService } from '../../../../lib/config/UserDataService.mjs';
 import { broadcastToWebsockets } from '../../../../routers/websocket.mjs';
 import { createLogger } from '../../../_lib/logging/index.mjs';

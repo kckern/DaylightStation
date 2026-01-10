@@ -1,5 +1,5 @@
 import { saveFile, loadFile, getCurrentHouseholdId } from './io.mjs';
-import { configService } from './config/ConfigService.mjs';
+import { configService } from './config/v2/index.mjs';
 import { fetchWeatherApi } from 'openmeteo';
 import moment from 'moment';
 import 'moment-timezone';

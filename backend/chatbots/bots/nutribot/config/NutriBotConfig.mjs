@@ -12,7 +12,7 @@ import { loadConfig } from '../../../_lib/config/ConfigLoader.mjs';
 import { ValidationError, NotFoundError } from '../../../_lib/errors/index.mjs';
 import { TestContext } from '../../../_lib/testing/TestContext.mjs';
 import { UserResolver } from '../../../_lib/users/UserResolver.mjs';
-import { configService } from '../../../../lib/config/ConfigService.mjs';
+import { configService } from '../../../../lib/config/v2/index.mjs';
 import { defaultLogger as logger } from '../../../_lib/logging/Logger.mjs';
 
 // Single source of truth for default nutrition goals
