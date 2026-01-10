@@ -284,21 +284,33 @@ const getFullyKioskAuth = () => {
 };
 
 // Initialize helpers with lazy auth loading
-const haAuth = getHomeAssistantAuth();
-const kioskAuth = getFullyKioskAuth();
+let homeAssistant = null;
+let kiosk = null;
 
-const homeAssistant = new HomeAssistant(
-    haAuth.host,
-    haAuth.port,
-    haAuth.token
-);
+const ensureHomeAssistant = () => {
+    if (!homeAssistant) {
+        const haAuth = getHomeAssistantAuth();
+        homeAssistant = new HomeAssistant(
+            haAuth.host,
+            haAuth.port,
+            haAuth.token
+        );
+    }
+    return homeAssistant;
+};
 
-const kiosk = new Kiosk(
-    process.env.tv?.host,
-    process.env.tv?.port_kiosk,
-    kioskAuth.password,
-    process.env.tv?.daylight_host
-);
+const ensureKiosk = () => {
+    if (!kiosk) {
+        const kioskAuth = getFullyKioskAuth();
+        kiosk = new Kiosk(
+            process.env.tv?.host,
+            process.env.tv?.port_kiosk,
+            kioskAuth.password,
+            process.env.tv?.daylight_host
+        );
+    }
+    return kiosk;
+};
 
 const tasker = new Tasker(
     process.env.tv.host,
@@ -310,9 +322,9 @@ exeRouter.get('/tv/:state(on|off|toggle)', async (req, res) => {
     try {
         exeLogger.info('exe.tv.request', { state: req.params.state });
         let result;
-        if (req.params.state === 'toggle') result = await homeAssistant.toggleTV();
-        if (req.params.state === 'on') result = await homeAssistant.turnOnTV();
-        if (req.params.state === 'off') result = await homeAssistant.turnOffTV();
+        if (req.params.state === 'toggle') result = await ensureHomeAssistant().toggleTV();
+        if (req.params.state === 'on') result = await ensureHomeAssistant().turnOnTV();
+        if (req.params.state === 'off') result = await ensureHomeAssistant().turnOffTV();
         res.json({ result });
     } catch (error) {
         exeLogger.error('exe.tv.failed', { state: req.params.state, error: serializeError(error) });
@@ -324,9 +336,9 @@ exeRouter.get('/office_tv/:state(on|off|toggle)', async (req, res) => {
     try {
         exeLogger.info('exe.officeTv.request', { state: req.params.state });
         let result;
-        if (req.params.state === 'toggle') result = await homeAssistant.toggleTV('office');
-        if (req.params.state === 'on') result = await homeAssistant.turnOnTV('office');
-        if (req.params.state === 'off') result = await homeAssistant.turnOffTV('office');
+        if (req.params.state === 'toggle') result = await ensureHomeAssistant().toggleTV('office');
+        if (req.params.state === 'on') result = await ensureHomeAssistant().turnOnTV('office');
+        if (req.params.state === 'off') result = await ensureHomeAssistant().turnOffTV('office');
         res.json({ result });
     } catch (error) {
         exeLogger.error('exe.officeTv.failed', { state: req.params.state, error: serializeError(error) });
@@ -337,11 +349,11 @@ exeRouter.get('/office_tv/:state(on|off|toggle)', async (req, res) => {
 
 exeRouter.get('/tv', async (req, res) => {
     try {
-        const secondsToTurnOnTV = await homeAssistant.turnOnTV();
+        const secondsToTurnOnTV = await ensureHomeAssistant().turnOnTV();
         const query = req.query || {};
         const secondsToOpenKiosk = await tasker.sendCommand('blank');
-        const secondsToPrepareKiosk = await kiosk.waitForBlank()
-        const {success, secondsToLoadKiosk, secondsToLoadUrl} = await kiosk.loadUrl('/tv', query);
+        const secondsToPrepareKiosk = await ensureKiosk().waitForBlank()
+        const {success, secondsToLoadKiosk, secondsToLoadUrl} = await ensureKiosk().loadUrl('/tv', query);
         res.json({ status: 'ok', secondsToTurnOnTV, secondsToOpenKiosk, secondsToPrepareKiosk, secondsToLoadKiosk, secondsToLoadUrl });
     } catch (error) {
         exeLogger.error('exe.tv.loadFailed', { error: serializeError(error) });
