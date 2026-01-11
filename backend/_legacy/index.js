@@ -218,8 +218,9 @@ async function initializeApp() {
     const { default: tts } = await import('./routers/tts.mjs');
 
     // Content domain (new DDD structure)
-    const { createContentRegistry } = await import('../src/infrastructure/bootstrap.mjs');
+    const { createContentRegistry, createWatchStore } = await import('../src/infrastructure/bootstrap.mjs');
     const { createContentRouter } = await import('../src/api/routers/content.mjs');
+    const { createProxyRouter } = await import('../src/api/routers/proxy.mjs');
 
     // Backend API
     app.post('/api/logs', (req, res) => {
@@ -344,8 +345,17 @@ async function initializeApp() {
       token: process.env.media.plex.token
     } : null;
     const contentRegistry = createContentRegistry({ mediaBasePath, plex: plexConfig });
-    app.use('/api/content', createContentRouter(contentRegistry));
+
+    // Create watch state store for progress tracking
+    const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || '/data/media_memory';
+    const watchStore = createWatchStore({ watchStatePath });
+
+    app.use('/api/content', createContentRouter(contentRegistry, watchStore));
     rootLogger.info('content.mounted', { path: '/api/content', mediaBasePath, plexEnabled: !!plexConfig });
+
+    // Mount proxy router for streaming and thumbnails
+    app.use('/proxy', createProxyRouter({ registry: contentRegistry }));
+    rootLogger.info('proxy.mounted', { path: '/proxy' });
 
     // Mount API router on main app for webhook routes (journalist, foodlog)
     const { default: apiRouter } = await import('./api.mjs');
