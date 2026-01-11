@@ -67,10 +67,32 @@ export class LocalContentAdapter {
   }
 
   /**
+   * Validate and normalize a path to ensure it stays within containment.
+   * @param {string} localId - The local ID/path component
+   * @param {string} subdir - Subdirectory within dataPath (e.g., 'talks')
+   * @returns {string|null} - Normalized path if valid, null if path escapes containment
+   * @private
+   */
+  _validatePath(localId, subdir) {
+    // Normalize the path to resolve any . or .. segments
+    const normalizedId = path.normalize(localId).replace(/^(\.\.[/\\])+/, '');
+    const basePath = path.resolve(this.dataPath, subdir);
+    const candidatePath = path.resolve(basePath, `${normalizedId}.yaml`);
+
+    // Ensure the resolved path stays within the base directory
+    if (!candidatePath.startsWith(basePath + path.sep) && candidatePath !== basePath) {
+      return null;
+    }
+
+    return candidatePath;
+  }
+
+  /**
    * @private
    */
   async _getTalk(localId) {
-    const yamlPath = path.join(this.dataPath, 'talks', `${localId}.yaml`);
+    const yamlPath = this._validatePath(localId, 'talks');
+    if (!yamlPath) return null;
 
     try {
       if (!fs.existsSync(yamlPath)) return null;
