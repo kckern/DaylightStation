@@ -46,4 +46,29 @@ describe('FilesystemAdapter', () => {
     expect(playables.length).toBeGreaterThan(0);
     expect(playables[0].mediaUrl).toBeDefined();
   });
+
+  test('prevents path traversal attacks', async () => {
+    // Attempt to escape the media directory with ..
+    const item1 = await adapter.getItem('../../../etc/passwd');
+    expect(item1).toBeNull();
+
+    const item2 = await adapter.getItem('audio/../../../../../../etc/passwd');
+    expect(item2).toBeNull();
+
+    // Test with encoded path traversal
+    const item3 = await adapter.getItem('..%2F..%2Fetc/passwd');
+    expect(item3).toBeNull();
+
+    // Test getList with path traversal
+    const list1 = await adapter.getList('../../../etc');
+    expect(list1).toEqual([]);
+
+    const list2 = await adapter.getList('audio/../../../etc');
+    expect(list2).toEqual([]);
+  });
+
+  test('throws error when mediaBasePath is missing', () => {
+    expect(() => new FilesystemAdapter({})).toThrow('FilesystemAdapter requires mediaBasePath');
+    expect(() => new FilesystemAdapter({ mediaBasePath: '' })).toThrow('FilesystemAdapter requires mediaBasePath');
+  });
 });
