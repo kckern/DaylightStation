@@ -1,0 +1,47 @@
+// backend/src/domains/content/capabilities/Playable.mjs
+import { Item } from '../entities/Item.mjs';
+
+/**
+ * @typedef {'audio' | 'video' | 'live' | 'composite'} MediaType
+ */
+
+/**
+ * Playable capability - items that can be played/streamed.
+ */
+export class PlayableItem extends Item {
+  /**
+   * @param {Object} props
+   * @param {string} props.id - Compound ID: "source:localId"
+   * @param {string} props.source - Adapter source name
+   * @param {string} props.title - Display title
+   * @param {MediaType} props.mediaType - Type of media content
+   * @param {string} props.mediaUrl - Proxied URL for streaming
+   * @param {number} [props.duration] - Duration in seconds
+   * @param {boolean} props.resumable - Whether playback can be resumed
+   * @param {number} [props.resumePosition] - Current position in seconds
+   * @param {number} [props.playbackRate] - Playback speed multiplier
+   * @param {string} [props.thumbnail] - Proxied thumbnail URL
+   * @param {string} [props.description] - Item description
+   * @param {Object} [props.metadata] - Additional metadata
+   */
+  constructor(props) {
+    super(props);
+    this.mediaType = props.mediaType;
+    this.mediaUrl = props.mediaUrl;
+    this.duration = props.duration ?? null;
+    this.resumable = props.resumable;
+    this.resumePosition = props.resumePosition ?? null;
+    this.playbackRate = props.playbackRate ?? 1.0;
+  }
+
+  /**
+   * Get progress as percentage (0-100)
+   * @returns {number|null}
+   */
+  getProgress() {
+    if (!this.resumable || !this.duration || !this.resumePosition) {
+      return null;
+    }
+    return Math.round((this.resumePosition / this.duration) * 100);
+  }
+}
