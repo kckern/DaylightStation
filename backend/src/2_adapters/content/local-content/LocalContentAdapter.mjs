@@ -28,7 +28,9 @@ export class LocalContentAdapter {
   get prefixes() {
     return [
       { prefix: 'talk' },
-      { prefix: 'scripture' }
+      { prefix: 'scripture' },
+      { prefix: 'hymn' },
+      { prefix: 'primary' }
     ];
   }
 
@@ -50,6 +52,8 @@ export class LocalContentAdapter {
     const prefix = id.split(':')[0];
     if (prefix === 'talk') return 'talks';
     if (prefix === 'scripture') return 'scripture';
+    if (prefix === 'hymn') return 'songs';
+    if (prefix === 'primary') return 'songs';
     return 'local';
   }
 
@@ -68,6 +72,14 @@ export class LocalContentAdapter {
 
     if (prefix === 'scripture') {
       return this._getScripture(localId);
+    }
+
+    if (prefix === 'hymn') {
+      return this._getSong('hymn', localId);
+    }
+
+    if (prefix === 'primary') {
+      return this._getSong('primary', localId);
     }
 
     return null;
@@ -242,6 +254,47 @@ export class LocalContentAdapter {
         title: folderId,
         itemType: 'container',
         children
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * Get song item by collection and number
+   * @param {string} collection - Song collection ('hymn' or 'primary')
+   * @param {string} number - Song number
+   * @returns {Promise<PlayableItem|null>}
+   * @private
+   */
+  async _getSong(collection, number) {
+    const yamlPath = this._validatePath(number, `songs/${collection}`);
+    if (!yamlPath) return null;
+
+    try {
+      if (!fs.existsSync(yamlPath)) return null;
+      const content = fs.readFileSync(yamlPath, 'utf8');
+      const metadata = yaml.load(content);
+
+      const compoundId = `${collection}:${number}`;
+      const mediaUrl = `/proxy/local-content/stream/${collection}/${number}`;
+
+      return new PlayableItem({
+        id: compoundId,
+        source: this.source,
+        title: metadata.title || `${collection} ${number}`,
+        type: collection,
+        mediaType: 'audio',
+        mediaUrl,
+        duration: metadata.duration || 0,
+        resumable: false, // songs don't need resume
+        metadata: {
+          number: metadata.number,
+          collection: metadata.collection,
+          verses: metadata.verses || [],
+          lyrics: metadata.lyrics,
+          mediaFile: metadata.mediaFile
+        }
       });
     } catch (err) {
       return null;
