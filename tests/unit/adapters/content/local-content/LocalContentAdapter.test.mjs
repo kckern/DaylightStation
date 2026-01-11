@@ -1,5 +1,5 @@
 // tests/unit/adapters/content/local-content/LocalContentAdapter.test.mjs
-import { LocalContentAdapter } from '../../../../../backend/src/adapters/content/local-content/LocalContentAdapter.mjs';
+import { LocalContentAdapter } from '../../../../../backend/src/2_adapters/content/local-content/LocalContentAdapter.mjs';
 
 describe('LocalContentAdapter', () => {
   let adapter;

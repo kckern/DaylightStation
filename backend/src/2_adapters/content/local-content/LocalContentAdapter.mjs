@@ -1,9 +1,9 @@
-// backend/src/adapters/content/local-content/LocalContentAdapter.mjs
+// backend/src/2_adapters/content/local-content/LocalContentAdapter.mjs
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { PlayableItem } from '../../../domains/content/capabilities/Playable.mjs';
-import { ListableItem } from '../../../domains/content/capabilities/Listable.mjs';
+import { PlayableItem } from '../../../1_domains/content/capabilities/Playable.mjs';
+import { ListableItem } from '../../../1_domains/content/capabilities/Listable.mjs';
 
 /**
  * Adapter for local content (talks, scriptures)
