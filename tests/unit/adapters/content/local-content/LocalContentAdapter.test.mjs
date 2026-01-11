@@ -84,5 +84,20 @@ describe('LocalContentAdapter', () => {
       const item = await adapter.getItem('talk:general/nonexistent');
       expect(item).toBeNull();
     });
+
+    it('rejects path traversal attempts', async () => {
+      const item = await adapter.getItem('talk:../../../etc/passwd');
+      expect(item).toBeNull();
+    });
+
+    it('rejects path traversal with encoded sequences', async () => {
+      const item = await adapter.getItem('talk:general/../../../etc/passwd');
+      expect(item).toBeNull();
+    });
+
+    it('rejects absolute path attempts', async () => {
+      const item = await adapter.getItem('talk:/etc/passwd');
+      expect(item).toBeNull();
+    });
   });
 });
