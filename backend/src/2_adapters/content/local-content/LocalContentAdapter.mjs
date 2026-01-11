@@ -67,6 +67,43 @@ export class LocalContentAdapter {
   }
 
   /**
+   * Get list of items in a container
+   * @param {string} id - e.g., "talk:april2024"
+   * @returns {Promise<ListableItem|null>}
+   */
+  async getList(id) {
+    const [prefix, localId] = id.split(':');
+    if (!localId) return null;
+
+    if (prefix === 'talk') {
+      return this._getTalkFolder(localId);
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolve ID to playable items
+   * @param {string} id
+   * @returns {Promise<PlayableItem[]>}
+   */
+  async resolvePlayables(id) {
+    // Try as single item first
+    const item = await this.getItem(id);
+    if (item && item.isPlayable && item.isPlayable()) {
+      return [item];
+    }
+
+    // Try as container
+    const list = await this.getList(id);
+    if (list && list.children) {
+      return list.children.filter(c => c.isPlayable && c.isPlayable());
+    }
+
+    return [];
+  }
+
+  /**
    * Validate and normalize a path to ensure it stays within containment.
    * @param {string} localId - The local ID/path component
    * @param {string} subdir - Subdirectory within dataPath (e.g., 'talks')
@@ -116,6 +153,48 @@ export class LocalContentAdapter {
           date: metadata.date,
           description: metadata.description
         }
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * Get a folder of talks as a ListableItem container
+   * @param {string} folderId - Folder name (e.g., "april2024")
+   * @returns {Promise<ListableItem|null>}
+   * @private
+   */
+  async _getTalkFolder(folderId) {
+    // Validate path stays within data directory
+    const normalizedId = path.normalize(folderId).replace(/^(\.\.[/\\])+/, '');
+    const basePath = path.resolve(this.dataPath, 'talks');
+    const folderPath = path.resolve(basePath, normalizedId);
+
+    if (!folderPath.startsWith(basePath + path.sep) && folderPath !== basePath) {
+      return null;
+    }
+
+    try {
+      if (!fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+        return null;
+      }
+
+      const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.yaml'));
+      const children = [];
+
+      for (const file of files) {
+        const talkId = file.replace('.yaml', '');
+        const item = await this._getTalk(`${folderId}/${talkId}`);
+        if (item) children.push(item);
+      }
+
+      return new ListableItem({
+        id: `talk:${folderId}`,
+        source: this.name,
+        title: folderId,
+        itemType: 'container',
+        children
       });
     } catch (err) {
       return null;
