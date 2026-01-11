@@ -2,6 +2,7 @@
 
 // Entities
 export { Item } from './entities/Item.mjs';
+export { WatchState } from './entities/WatchState.mjs';
 
 // Capabilities
 export { ListableItem } from './capabilities/Listable.mjs';
