@@ -109,13 +109,17 @@ backend/src/
 │   ├── scheduling/
 │   └── logging/
 │
-├── applications/                   # Orchestration layer
-│   ├── bots/
-│   │   ├── nutribot/
-│   │   └── journalist/
-│   └── jobs/
-│       ├── finance/
-│       └── fitness/
+├── applications/                   # Orchestration layer (grouped by app)
+│   ├── nutribot/                   # Nutrition tracking app
+│   │   ├── bot/                    # Telegram bot handlers
+│   │   └── jobs/                   # Scheduled jobs
+│   ├── journalist/                 # Journaling app
+│   │   ├── bot/                    # Telegram bot handlers
+│   │   └── jobs/                   # Morning debrief, etc.
+│   ├── fitness/                    # Fitness tracking app
+│   │   └── jobs/                   # Garmin sync, session jobs
+│   └── finance/                    # Finance app
+│       └── jobs/                   # Budget sync, payroll
 │
 └── api/                            # HTTP entry points
     ├── routers/
@@ -186,10 +190,12 @@ Cross-cutting concerns and wiring.
 
 Use case orchestration. Thin coordination layer.
 
-| Type | Examples | Purpose |
-|------|----------|---------|
-| Bots | NutriBot, Journalist | Orchestrate: messaging → AI → domain |
-| Jobs | BudgetSync, GarminSync | Scheduled domain operations |
+| App | Components | Purpose |
+|-----|------------|---------|
+| `nutribot` | bot/, jobs/ | Nutrition tracking via Telegram |
+| `journalist` | bot/, jobs/ | Journaling via Telegram |
+| `fitness` | jobs/ | Fitness sync (Garmin, Strava) |
+| `finance` | jobs/ | Budget sync, payroll (Buxfer) |
 
 **Rules:**
 - Receive dependencies via injection (interfaces only)
@@ -469,8 +475,10 @@ No dual-write concerns. No sync issues. Old endpoint becomes dead code immediate
 | `backend/lib/budgetlib/` | `src/domains/finance/services/` |
 | `backend/lib/buxfer.mjs` | `src/adapters/finance/buxfer/` |
 | `backend/routers/*.mjs` | `src/api/routers/` |
-| `backend/chatbots/` | `src/applications/bots/` + `src/adapters/messaging/` |
-| `backend/jobs/` | `src/applications/jobs/` |
+| `backend/chatbots/bots/nutribot/` | `src/applications/nutribot/bot/` |
+| `backend/chatbots/bots/journalist/` | `src/applications/journalist/bot/` |
+| `backend/jobs/finance/` | `src/applications/finance/jobs/` |
+| `backend/jobs/fitness/` | `src/applications/fitness/jobs/` |
 
 ### 9.5 Phase 0: Skeleton Setup
 
