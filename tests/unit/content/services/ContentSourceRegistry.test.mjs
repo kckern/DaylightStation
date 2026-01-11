@@ -61,4 +61,34 @@ describe('ContentSourceRegistry', () => {
     expect(prefixes).toContain('media');
     expect(prefixes).toContain('file');
   });
+
+  test('applies idTransform when resolving from prefix', () => {
+    const adapterWithTransform = {
+      source: 'hymn',
+      prefixes: [{ prefix: 'hymn', idTransform: (id) => `songs/${id}` }],
+      getItem: async () => null,
+      getList: async () => [],
+      resolvePlayables: async () => []
+    };
+
+    registry.register(adapterWithTransform);
+    const result = registry.resolveFromPrefix('hymn', 'abc123');
+    expect(result.localId).toBe('songs/abc123');
+  });
+
+  test('canResolve returns true for resolvable IDs', () => {
+    registry.register(mockPlexAdapter);
+    expect(registry.canResolve('plex:12345')).toBe(true);
+  });
+
+  test('canResolve returns false for unknown sources', () => {
+    expect(registry.canResolve('unknown:123')).toBe(false);
+  });
+
+  test('resolve falls back to filesystem for ID without colon', () => {
+    registry.register(mockFilesystemAdapter);
+    const result = registry.resolve('audio/song.mp3');
+    expect(result.adapter).toBe(mockFilesystemAdapter);
+    expect(result.localId).toBe('audio/song.mp3');
+  });
 });
