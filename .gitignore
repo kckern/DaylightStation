@@ -34,3 +34,4 @@ tests/runtime/
 /_extensions/piano/node_modules
 .worktrees
 /_extensions/fitness/config
+/test-results
