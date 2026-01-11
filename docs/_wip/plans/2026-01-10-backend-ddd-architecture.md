@@ -53,6 +53,18 @@ backend/src/
 │   │   │   └── Zone.ts
 │   │   └── services/
 │   │
+│   ├── finance/                    # Finance domain
+│   │   ├── entities/
+│   │   │   ├── Budget.ts
+│   │   │   ├── Transaction.ts
+│   │   │   ├── Mortgage.ts
+│   │   │   └── Account.ts
+│   │   ├── ports/
+│   │   │   └── ITransactionSource.ts
+│   │   └── services/
+│   │       ├── BudgetService.ts
+│   │       └── MortgageService.ts
+│   │
 │   ├── nutrition/                  # Nutrition domain
 │   │   └── entities/
 │   │       ├── FoodLog.ts
@@ -83,6 +95,9 @@ backend/src/
 │   │
 │   ├── persistence/                # Implements IPersistence
 │   │   └── yaml/
+│   │
+│   ├── finance/                    # Implements ITransactionSource
+│   │   └── buxfer/
 │   │
 │   └── home-automation/
 │       └── homeassistant/
@@ -121,6 +136,7 @@ Pure business logic. No external dependencies. No I/O.
 | `content` | Item, Queue, WatchState | Browsable, playable, queueable content (media, apps, games) |
 | `messaging` | Conversation, Message | Chat interactions across platforms |
 | `fitness` | Session, Participant, Zone | Workout tracking |
+| `finance` | Budget, Transaction, Mortgage, Account | Budget tracking, mortgage amortization |
 | `nutrition` | FoodLog, Meal | Food/nutrition tracking |
 | `journaling` | JournalEntry | Personal journaling |
 
@@ -141,6 +157,7 @@ Implement domain ports. Handle external integrations.
 | `messaging` | Telegram, Discord | `IMessagingPlatform` |
 | `ai` | OpenAI, Claude | `IAIProvider` |
 | `persistence` | YAML | `IPersistence` |
+| `finance` | Buxfer | `ITransactionSource` |
 | `home-automation` | HomeAssistant | `IHomeAutomation` |
 
 **Rules:**
@@ -227,6 +244,30 @@ interface IAIProvider {
 
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<string>;
   transcribe(audio: Buffer): Promise<string>;
+}
+```
+
+### 3.4 Finance Domain
+
+```typescript
+// domains/finance/ports/ITransactionSource.ts
+interface ITransactionSource {
+  readonly source: string;
+
+  getTransactions(options: TransactionQuery): Promise<Transaction[]>;
+  getAccountBalances(accounts: string[]): Promise<AccountBalance[]>;
+}
+
+// domains/finance/services/BudgetService.ts
+class BudgetService {
+  compileBudget(config: BudgetConfig, transactions: Transaction[]): Budget;
+  reconcile(budget: Budget, transactions: Transaction[]): ReconcileResult;
+}
+
+// domains/finance/services/MortgageService.ts
+class MortgageService {
+  calculateAmortization(mortgage: Mortgage, paymentPlans: PaymentPlan[]): AmortizationSchedule;
+  processPayments(mortgage: Mortgage, transactions: Transaction[]): MortgageStatus;
 }
 ```
 
@@ -424,6 +465,9 @@ No dual-write concerns. No sync issues. Old endpoint becomes dead code immediate
 | `backend/lib/io.mjs` | `src/adapters/persistence/yaml/` |
 | `backend/lib/ai/OpenAIGateway.mjs` | `src/adapters/ai/openai/` |
 | `backend/lib/config/` | `src/infrastructure/config/` |
+| `backend/lib/budget.mjs` | `src/domains/finance/services/` |
+| `backend/lib/budgetlib/` | `src/domains/finance/services/` |
+| `backend/lib/buxfer.mjs` | `src/adapters/finance/buxfer/` |
 | `backend/routers/*.mjs` | `src/api/routers/` |
 | `backend/chatbots/` | `src/applications/bots/` + `src/adapters/messaging/` |
 | `backend/jobs/` | `src/applications/jobs/` |
