@@ -32,6 +32,9 @@ export class FilesystemAdapter {
    * @param {string} config.mediaBasePath - Base path for media files
    */
   constructor(config) {
+    if (!config.mediaBasePath) {
+      throw new Error('FilesystemAdapter requires mediaBasePath');
+    }
     this.mediaBasePath = config.mediaBasePath;
   }
 
@@ -55,10 +58,20 @@ export class FilesystemAdapter {
   resolvePath(mediaKey) {
     mediaKey = mediaKey.replace(/^\//, '');
 
+    // Normalize and validate path stays within mediaBasePath
+    const normalizedKey = path.normalize(mediaKey).replace(/^(\.\.[/\\])+/, '');
+    const resolvedBasePath = path.resolve(this.mediaBasePath);
+
     for (const prefix of MEDIA_PREFIXES) {
       const candidate = prefix
-        ? path.join(this.mediaBasePath, prefix, mediaKey)
-        : path.join(this.mediaBasePath, mediaKey);
+        ? path.join(this.mediaBasePath, prefix, normalizedKey)
+        : path.join(this.mediaBasePath, normalizedKey);
+
+      // Validate path containment
+      const resolved = path.resolve(candidate);
+      if (!resolved.startsWith(resolvedBasePath)) {
+        continue; // Skip paths that escape base directory
+      }
 
       if (fs.existsSync(candidate)) {
         return { path: candidate, prefix };
@@ -70,8 +83,14 @@ export class FilesystemAdapter {
     for (const ext of exts) {
       for (const prefix of MEDIA_PREFIXES) {
         const candidate = prefix
-          ? path.join(this.mediaBasePath, prefix, mediaKey + ext)
-          : path.join(this.mediaBasePath, mediaKey + ext);
+          ? path.join(this.mediaBasePath, prefix, normalizedKey + ext)
+          : path.join(this.mediaBasePath, normalizedKey + ext);
+
+        // Validate path containment
+        const resolved = path.resolve(candidate);
+        if (!resolved.startsWith(resolvedBasePath)) {
+          continue; // Skip paths that escape base directory
+        }
 
         if (fs.existsSync(candidate)) {
           return { path: candidate, prefix };
@@ -102,33 +121,38 @@ export class FilesystemAdapter {
     const resolved = this.resolvePath(id);
     if (!resolved) return null;
 
-    const stats = fs.statSync(resolved.path);
-    if (stats.isDirectory()) {
-      return new ListableItem({
+    try {
+      const stats = fs.statSync(resolved.path);
+      if (stats.isDirectory()) {
+        return new ListableItem({
+          id: `filesystem:${id}`,
+          source: 'filesystem',
+          title: path.basename(id),
+          itemType: 'container',
+          childCount: fs.readdirSync(resolved.path).length
+        });
+      }
+
+      const ext = path.extname(resolved.path).toLowerCase();
+      const mediaType = this.getMediaType(ext);
+
+      return new PlayableItem({
         id: `filesystem:${id}`,
         source: 'filesystem',
-        title: path.basename(id),
-        itemType: 'container',
-        childCount: fs.readdirSync(resolved.path).length
+        title: path.basename(id, ext),
+        mediaType,
+        mediaUrl: `/proxy/filesystem/stream/${encodeURIComponent(id)}`,
+        resumable: mediaType === 'video',
+        metadata: {
+          filePath: resolved.path,
+          fileSize: stats.size,
+          mimeType: MIME_TYPES[ext] || 'application/octet-stream'
+        }
       });
+    } catch (err) {
+      // File was deleted or permission denied
+      return null;
     }
-
-    const ext = path.extname(resolved.path).toLowerCase();
-    const mediaType = this.getMediaType(ext);
-
-    return new PlayableItem({
-      id: `filesystem:${id}`,
-      source: 'filesystem',
-      title: path.basename(id, ext),
-      mediaType,
-      mediaUrl: `/proxy/filesystem/stream/${encodeURIComponent(id)}`,
-      resumable: mediaType === 'video',
-      metadata: {
-        filePath: resolved.path,
-        fileSize: stats.size,
-        mimeType: MIME_TYPES[ext] || 'application/octet-stream'
-      }
-    });
   }
 
   /**
@@ -139,41 +163,51 @@ export class FilesystemAdapter {
     const resolved = this.resolvePath(id);
     if (!resolved) return [];
 
-    const stats = fs.statSync(resolved.path);
-    if (!stats.isDirectory()) return [];
+    try {
+      const stats = fs.statSync(resolved.path);
+      if (!stats.isDirectory()) return [];
 
-    const entries = fs.readdirSync(resolved.path);
-    const items = [];
+      const entries = fs.readdirSync(resolved.path);
+      const items = [];
 
-    for (const entry of entries) {
-      if (entry.startsWith('.')) continue;
+      for (const entry of entries) {
+        if (entry.startsWith('.')) continue;
 
-      const entryPath = path.join(resolved.path, entry);
-      const entryStats = fs.statSync(entryPath);
-      const entryId = id ? `${id}/${entry}` : entry;
+        const entryPath = path.join(resolved.path, entry);
+        try {
+          const entryStats = fs.statSync(entryPath);
+          const entryId = id ? `${id}/${entry}` : entry;
 
-      if (entryStats.isDirectory()) {
-        items.push(new ListableItem({
-          id: `filesystem:${entryId}`,
-          source: 'filesystem',
-          title: entry,
-          itemType: 'container',
-          childCount: fs.readdirSync(entryPath).length
-        }));
-      } else {
-        const ext = path.extname(entry).toLowerCase();
-        if (AUDIO_EXTS.includes(ext) || VIDEO_EXTS.includes(ext)) {
-          items.push(new ListableItem({
-            id: `filesystem:${entryId}`,
-            source: 'filesystem',
-            title: path.basename(entry, ext),
-            itemType: 'leaf'
-          }));
+          if (entryStats.isDirectory()) {
+            items.push(new ListableItem({
+              id: `filesystem:${entryId}`,
+              source: 'filesystem',
+              title: entry,
+              itemType: 'container',
+              childCount: fs.readdirSync(entryPath).length
+            }));
+          } else {
+            const ext = path.extname(entry).toLowerCase();
+            if (AUDIO_EXTS.includes(ext) || VIDEO_EXTS.includes(ext)) {
+              items.push(new ListableItem({
+                id: `filesystem:${entryId}`,
+                source: 'filesystem',
+                title: path.basename(entry, ext),
+                itemType: 'leaf'
+              }));
+            }
+          }
+        } catch (entryErr) {
+          // Skip entries that can't be accessed
+          continue;
         }
       }
-    }
 
-    return items;
+      return items;
+    } catch (err) {
+      // Directory was deleted or permission denied
+      return [];
+    }
   }
 
   /**
@@ -186,11 +220,11 @@ export class FilesystemAdapter {
 
     for (const item of list) {
       if (item.itemType === 'leaf') {
-        const localId = item.id.replace('filesystem:', '');
+        const localId = item.getLocalId();
         const playable = await this.getItem(localId);
         if (playable) playables.push(playable);
       } else if (item.itemType === 'container') {
-        const localId = item.id.replace('filesystem:', '');
+        const localId = item.getLocalId();
         const children = await this.resolvePlayables(localId);
         playables.push(...children);
       }
