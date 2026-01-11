@@ -39,4 +39,12 @@ export class Item {
     const colonIndex = this.id.indexOf(':');
     return colonIndex > -1 ? this.id.substring(colonIndex + 1) : this.id;
   }
+
+  /**
+   * Check if item is playable
+   * @returns {boolean}
+   */
+  isPlayable() {
+    return false;
+  }
 }

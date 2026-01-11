@@ -49,4 +49,54 @@ export class LocalContentAdapter {
     if (prefix === 'scripture') return 'scripture';
     return 'local';
   }
+
+  /**
+   * Get item by compound ID
+   * @param {string} id - e.g., "talk:general/test-talk"
+   * @returns {Promise<PlayableItem|ListableItem|null>}
+   */
+  async getItem(id) {
+    const [prefix, localId] = id.split(':');
+    if (!localId) return null;
+
+    if (prefix === 'talk') {
+      return this._getTalk(localId);
+    }
+
+    return null;
+  }
+
+  /**
+   * @private
+   */
+  async _getTalk(localId) {
+    const yamlPath = path.join(this.dataPath, 'talks', `${localId}.yaml`);
+
+    try {
+      if (!fs.existsSync(yamlPath)) return null;
+      const content = fs.readFileSync(yamlPath, 'utf8');
+      const metadata = yaml.load(content);
+
+      const compoundId = `talk:${localId}`;
+      const mediaUrl = `/proxy/local-content/stream/talk/${localId}`;
+
+      return new PlayableItem({
+        id: compoundId,
+        source: this.name,
+        title: metadata.title || localId,
+        mediaType: 'audio',
+        mediaUrl,
+        duration: metadata.duration || 0,
+        resumable: true,
+        description: metadata.description,
+        metadata: {
+          speaker: metadata.speaker,
+          date: metadata.date,
+          description: metadata.description
+        }
+      });
+    } catch (err) {
+      return null;
+    }
+  }
 }

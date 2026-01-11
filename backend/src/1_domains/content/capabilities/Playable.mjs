@@ -44,4 +44,12 @@ export class PlayableItem extends Item {
     }
     return Math.round((this.resumePosition / this.duration) * 100);
   }
+
+  /**
+   * Check if item is playable
+   * @returns {boolean}
+   */
+  isPlayable() {
+    return true;
+  }
 }

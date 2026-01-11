@@ -1,0 +1,6 @@
+# tests/_fixtures/local-content/talks/general/test-talk.yaml
+title: "Test Talk Title"
+speaker: "Elder Test"
+date: "2024-04-06"
+duration: 1200
+description: "A test talk for unit testing"
