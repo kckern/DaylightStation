@@ -607,6 +607,42 @@ class AdapterRegistry {
   getRegisteredPrefixes(): string[] {
     return Array.from(this.prefixMap.keys());
   }
+
+  /**
+   * Resolve a compound ID to adapter + localId.
+   * Compound IDs use format: "source:localId" (e.g., "plex:12345", "filesystem:audio/music/song.mp3")
+   *
+   * This differs from resolveFromPrefix():
+   * - resolveFromPrefix("hymn", "113") → uses prefix mapping → LocalContentAdapter
+   * - resolve("plex:12345") → uses source name directly → PlexAdapter
+   */
+  resolve(compoundId: string): { adapter: Adapter; localId: string } | null {
+    const colonIndex = compoundId.indexOf(':');
+    if (colonIndex === -1) {
+      // No colon - treat as filesystem path (default adapter)
+      const defaultAdapter = this.adapters.get('filesystem');
+      return defaultAdapter ? { adapter: defaultAdapter, localId: compoundId } : null;
+    }
+
+    const source = compoundId.substring(0, colonIndex);
+    const localId = compoundId.substring(colonIndex + 1);
+
+    // First try exact source match (e.g., "plex", "filesystem", "folder")
+    const adapter = this.adapters.get(source);
+    if (adapter) {
+      return { adapter, localId };
+    }
+
+    // Fall back to prefix resolution (e.g., "hymn" → LocalContentAdapter)
+    return this.resolveFromPrefix(source, localId);
+  }
+
+  /**
+   * Check if a compound ID can be resolved
+   */
+  canResolve(compoundId: string): boolean {
+    return this.resolve(compoundId) !== null;
+  }
 }
 ```
 
@@ -1292,7 +1328,1267 @@ class AudiobookshelfAdapter implements Adapter {
 
 ---
 
-### 5.8 Future: FreshRSSAdapter (Placeholder)
+### 5.8 FolderAdapter
+
+**FolderAdapter** is a meta-adapter that manages collections of items from any source. Folders are defined in `lists.yml` and group items by folder name. Unlike other adapters that wrap external sources, FolderAdapter orchestrates other adapters.
+
+#### 5.8.1 Capabilities
+
+| Capability | Support | Notes |
+|------------|---------|-------|
+| Listable | ✅ | Browse folder contents |
+| Playable | ❌ | Folders are containers, not playable |
+| Queueable | ✅ | Resolve to playable items from children |
+| Openable | ❌ | Not applicable |
+
+#### 5.8.2 Prefix Registration
+
+```typescript
+class FolderAdapter implements Adapter {
+  source = 'folder';
+
+  prefixes = [
+    { prefix: 'list' },           // list: FHE
+    { prefix: 'queue' },          // queue: Music Queue
+    { prefix: 'folder' },         // folder: Morning Program
+  ];
+
+  constructor(
+    private registry: AdapterRegistry,
+    private inputParser: InputParser,
+    private queueService: QueueService,
+    private configPath: string           // Path to lists.yml
+  ) {}
+}
+```
+
+#### 5.8.3 Folder Data Model
+
+Folders are defined in `lists.yml`:
+
+```yaml
+# lists.yml
+_schemaVersion: 1
+
+# Each item belongs to a folder
+- input: 'media: sfx/intro'
+  folder: Morning Program
+
+- input: 'scripture: cfm'
+  folder: Morning Program
+  shuffle: false
+
+- input: 'plex: 375839'
+  folder: Morning Program
+  label: Crash Course Kids
+
+- input: 'talk: ldsgc'
+  folder: Morning Program
+
+- input: 'app: wrapup'
+  action: Open
+  folder: Morning Program
+
+# Folder can reference another folder
+- input: morning+program
+  folder: TVApp
+  label: Morning Program
+  action: Queue
+
+# Folder with day filtering
+- input: 'plex: 409169'
+  folder: Kids Shows
+  days: 'Weekend'
+  shuffle: true
+```
+
+#### 5.8.4 Types
+
+```typescript
+interface FolderItem {
+  input: string;                    // Raw input string: 'plex: 12345'
+  folder: string;                   // Folder name this item belongs to
+  label?: string;                   // Display label (overrides source title)
+  action?: 'play' | 'queue' | 'open';  // Default: 'play'
+
+  // Playback modifiers
+  shuffle?: boolean;
+  continuous?: boolean;
+  volume?: number;
+  playbackRate?: number;
+
+  // Scheduling
+  days?: string;                    // 'Weekdays', 'Weekend', 'M•W•F', etc.
+  active?: boolean;                 // Enable/disable item
+
+  // Display
+  image?: string;
+  folder_color?: string;            // Used for folder-level styling
+}
+
+interface Folder extends Item, Queueable {
+  name: string;
+  items: FolderItem[];
+  itemCount: number;
+}
+
+interface ResolvedFolderItem extends Item {
+  sourceItem: FolderItem;           // Original config
+  resolvedAdapter: Adapter;         // Which adapter handles this
+  resolvedId: string;               // ID within that adapter
+  action: 'play' | 'queue' | 'open';
+}
+```
+
+#### 5.8.5 Core Adapter Methods
+
+```typescript
+private folderCache: Map<string, FolderItem[]> = new Map();
+
+/**
+ * Load and cache folder definitions from lists.yml
+ */
+private async loadFolders(): Promise<Map<string, FolderItem[]>> {
+  if (this.folderCache.size > 0) {
+    return this.folderCache;
+  }
+
+  const listItems: FolderItem[] = await this.loadListsYaml();
+
+  // Group by folder name (case-insensitive)
+  for (const item of listItems) {
+    const folderKey = item.folder?.toLowerCase();
+    if (!folderKey) continue;
+
+    if (!this.folderCache.has(folderKey)) {
+      this.folderCache.set(folderKey, []);
+    }
+    this.folderCache.get(folderKey)!.push(item);
+  }
+
+  return this.folderCache;
+}
+
+/**
+ * Invalidate cache when lists.yml changes
+ */
+invalidateCache(): void {
+  this.folderCache.clear();
+}
+
+async getItem(id: string): Promise<Folder | null> {
+  const folders = await this.loadFolders();
+  const folderKey = id.toLowerCase();
+  const items = folders.get(folderKey);
+
+  if (!items) return null;
+
+  return {
+    id: `folder:${id}`,
+    source: 'folder',
+    title: id,  // Use original casing from first item
+    name: id,
+    items,
+    itemCount: items.length,
+    isContainer: true,
+    traversalMode: 'sequential'
+  };
+}
+
+async getList(id: string): Promise<Listable[]> {
+  const folder = await this.getItem(id);
+  if (!folder) return [];
+
+  const listables: Listable[] = [];
+
+  for (const item of folder.items) {
+    // Apply day filtering
+    if (!this.isActiveToday(item)) continue;
+
+    // Skip inactive items
+    if (item.active === false) continue;
+
+    const resolved = await this.resolveItem(item);
+    if (!resolved) continue;
+
+    listables.push({
+      id: resolved.id,
+      source: resolved.source,
+      title: item.label ?? resolved.title,
+      thumbnail: item.image ?? resolved.thumbnail,
+      itemType: resolved.isContainer ? 'container' : 'leaf',
+      metadata: {
+        action: item.action ?? 'play',
+        ...item  // Include all folder item properties
+      }
+    });
+  }
+
+  return listables;
+}
+
+/**
+ * Resolve folder to playable items.
+ * For each child, execute play() to get the "next up" item.
+ * This is the core of daily programming - variety and rotation.
+ */
+async resolvePlayables(id: string): Promise<Playable[]> {
+  const folder = await this.getItem(id);
+  if (!folder) return [];
+
+  const playables: Playable[] = [];
+
+  for (const item of folder.items) {
+    // Apply day filtering
+    if (!this.isActiveToday(item)) continue;
+
+    // Skip inactive items
+    if (item.active === false) continue;
+
+    // Skip "open" actions - they're not playable
+    if (item.action === 'open') continue;
+
+    try {
+      const resolved = await this.resolveItem(item);
+      if (!resolved) continue;
+
+      if (item.action === 'queue') {
+        // Queue action: get ALL playables from child
+        const childPlayables = await resolved.adapter.resolvePlayables(resolved.localId);
+        playables.push(...this.applyItemModifiers(childPlayables, item));
+      } else {
+        // Play action (default): get NEXT UP from child
+        const nextUp = await this.queueService.getNextPlayable(
+          `${resolved.adapter.source}:${resolved.localId}`
+        );
+        if (nextUp) {
+          playables.push(this.applyItemModifiers([nextUp], item)[0]);
+        }
+      }
+    } catch (err) {
+      // Log and skip failed items (graceful degradation)
+      logger.warn('folder.item_resolution_failed', {
+        folder: id,
+        input: item.input,
+        error: err.message
+      });
+    }
+  }
+
+  return playables;
+}
+
+async getStoragePath(id: string): Promise<string> {
+  return 'folders';
+}
+```
+
+#### 5.8.6 Item Resolution
+
+```typescript
+/**
+ * Resolve a folder item's input string to an adapter + localId
+ */
+private async resolveItem(item: FolderItem): Promise<{
+  adapter: Adapter;
+  localId: string;
+  id: string;
+  source: string;
+  title: string;
+  thumbnail?: string;
+  isContainer: boolean;
+} | null> {
+  const parsed = this.inputParser.parse(item.input, {
+    shuffle: item.shuffle,
+    continuous: item.continuous,
+    volume: item.volume,
+    playbackRate: item.playbackRate,
+    days: item.days,
+    active: item.active
+  });
+
+  if (!parsed.sources.length) {
+    logger.warn('folder.invalid_input', { input: item.input });
+    return null;
+  }
+
+  // Use first source (multiple sources handled at queue level)
+  const { adapter, localId } = parsed.sources[0];
+
+  try {
+    const resolved = await adapter.getItem(localId);
+    if (!resolved) return null;
+
+    return {
+      adapter,
+      localId,
+      id: resolved.id,
+      source: resolved.source,
+      title: resolved.title,
+      thumbnail: resolved.thumbnail,
+      isContainer: 'isContainer' in resolved ? resolved.isContainer : false
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Apply folder item modifiers to resolved playables
+ */
+private applyItemModifiers(playables: Playable[], item: FolderItem): Playable[] {
+  return playables.map(p => ({
+    ...p,
+    // Override with folder item settings
+    ...(item.volume !== undefined && { volume: item.volume }),
+    ...(item.playbackRate !== undefined && { playbackRate: item.playbackRate }),
+    ...(item.shuffle !== undefined && { shuffle: item.shuffle }),
+    ...(item.continuous !== undefined && { continuous: item.continuous }),
+    // Preserve label override
+    ...(item.label && { title: item.label })
+  }));
+}
+```
+
+#### 5.8.7 Day Filtering
+
+```typescript
+private readonly DAY_MAP: Record<string, number[]> = {
+  'monday': [1],
+  'tuesday': [2],
+  'wednesday': [3],
+  'thursday': [4],
+  'friday': [5],
+  'saturday': [6],
+  'sunday': [0],
+  'weekdays': [1, 2, 3, 4, 5],
+  'weekend': [0, 6],
+  'm•w•f': [1, 3, 5],
+  't•th': [2, 4],
+  'm•w': [1, 3],
+};
+
+/**
+ * Check if item should be active today based on days filter
+ */
+private isActiveToday(item: FolderItem): boolean {
+  if (!item.days) return true;
+
+  const today = new Date().getDay();  // 0 = Sunday
+  const daysKey = item.days.toLowerCase();
+  const allowedDays = this.DAY_MAP[daysKey];
+
+  if (!allowedDays) {
+    logger.warn('folder.unknown_days_value', { days: item.days });
+    return true;  // Default to active if unknown
+  }
+
+  return allowedDays.includes(today);
+}
+```
+
+#### 5.8.8 Folder References (Nested Folders)
+
+Folders can reference other folders via the plus-sign syntax:
+
+```yaml
+- input: morning+program      # References "Morning Program" folder
+  folder: TVApp
+  action: Queue
+```
+
+```typescript
+/**
+ * Handle folder reference in input
+ * "morning+program" → folder: "morning program"
+ */
+private parseFolderReference(input: string): string | null {
+  if (input.includes('+') && !input.includes(':')) {
+    return input.replace(/\+/g, ' ');
+  }
+  return null;
+}
+
+// In resolveItem():
+const folderRef = this.parseFolderReference(item.input);
+if (folderRef) {
+  // Self-reference: resolve via this adapter
+  return {
+    adapter: this,
+    localId: folderRef,
+    id: `folder:${folderRef}`,
+    source: 'folder',
+    title: folderRef,
+    isContainer: true
+  };
+}
+```
+
+#### 5.8.9 Menu Memory Sorting
+
+```typescript
+/**
+ * Sort folder items by recent access (menu memory)
+ * Unless folder has folder_color (indicating fixed order)
+ */
+private async sortByMenuMemory(items: FolderItem[]): Promise<FolderItem[]> {
+  // Check if folder uses fixed order
+  const hasFixedOrder = items.some(item => item.folder_color);
+  if (hasFixedOrder) return items;
+
+  const menuMemory = await this.loadMenuMemory();
+
+  return [...items].sort((a, b) => {
+    const aTime = menuMemory[a.input] ?? 0;
+    const bTime = menuMemory[b.input] ?? 0;
+    return bTime - aTime;  // Most recent first
+  });
+}
+```
+
+#### 5.8.10 Cache Invalidation
+
+```typescript
+// FolderAdapter should watch for lists.yml changes
+class FolderAdapter {
+  private watcher: FSWatcher;
+
+  constructor(/* ... */) {
+    // Watch for config changes
+    this.watcher = chokidar.watch(this.configPath);
+    this.watcher.on('change', () => {
+      logger.info('folder.config_changed', { path: this.configPath });
+      this.invalidateCache();
+    });
+  }
+
+  destroy(): void {
+    this.watcher.close();
+  }
+}
+```
+
+---
+
+### 5.9 WatchlistAdapter
+
+**WatchlistAdapter** manages curated watchlists synced from external sources (Infinity). Unlike FolderAdapter which groups items by folder name, WatchlistAdapter tracks individual items with scheduling metadata (wait_until, skip_after, hold) and watch progress.
+
+#### 5.9.1 Capabilities
+
+| Capability | Support | Notes |
+|------------|---------|-------|
+| Listable | ✅ | Browse watchlist items |
+| Playable | ❌ | Watchlist is a container |
+| Queueable | ✅ | Resolve to next unwatched item |
+| Openable | ❌ | Not applicable |
+
+#### 5.9.2 Prefix Registration
+
+```typescript
+class WatchlistAdapter implements Adapter {
+  source = 'watchlist';
+
+  prefixes = [
+    { prefix: 'watchlist' },      // watchlist: Scripture
+    { prefix: 'wl' },             // wl: Scripture (alias)
+  ];
+
+  constructor(
+    private registry: AdapterRegistry,
+    private watchStateStore: WatchStateStore,
+    private configPath: string    // Path to watchlist.yml
+  ) {}
+}
+```
+
+#### 5.9.3 Watchlist Data Model
+
+Watchlist items are stored in `watchlist.yml`:
+
+```yaml
+# watchlist.yml
+_schemaVersion: 1
+
+# Each item represents something to watch
+- media_key: '12345'              # Plex ID or media path
+  src: plex                       # Source: 'plex' or 'media'
+  folder: Scripture               # Watchlist group name
+  title: 'Book of Mormon Video'
+  program: Scripture Study        # Optional program context
+  uid: abc123                     # External sync ID (Infinity)
+
+  # Scheduling
+  wait_until: '2026-01-15'        # Don't show until this date
+  skip_after: '2026-02-01'        # Hide after this date
+  hold: false                     # Temporarily pause
+
+  # Progress tracking (synced from watch state)
+  percent: 45                     # Last known watch percent
+  watched: false                  # Fully watched flag
+```
+
+#### 5.9.4 Types
+
+```typescript
+interface WatchlistItem {
+  media_key: string;              // ID in source system (plex ID or media path)
+  src: 'plex' | 'media';          // Which adapter handles this
+  folder: string;                 // Watchlist group name
+  title?: string;                 // Display title
+  program?: string;               // Program context
+
+  // External sync
+  uid?: string;                   // Infinity item ID
+
+  // Scheduling
+  wait_until?: string;            // ISO date - don't show until
+  skip_after?: string;            // ISO date - hide after
+  hold?: boolean;                 // Temporarily paused
+
+  // Progress (read from watch state)
+  percent?: number;
+  watched?: boolean;
+}
+
+interface Watchlist extends Item, Queueable {
+  name: string;
+  items: WatchlistItem[];
+  itemCount: number;
+  unwatchedCount: number;
+}
+
+interface CandidateBuckets {
+  urgent: Map<string, WatchlistItem>;      // wait_until passed, should watch soon
+  normal: Map<string, WatchlistItem>;      // Regular priority
+  in_progress: Map<string, WatchlistItem>; // Started but not finished
+}
+```
+
+#### 5.9.5 Core Adapter Methods
+
+```typescript
+async getItem(id: string): Promise<Watchlist | null> {
+  const items = await this.getWatchlistItems(id);
+  if (!items.length) return null;
+
+  const unwatched = items.filter(i => !i.watched && !this.isSkipped(i));
+
+  return {
+    id: `watchlist:${id}`,
+    source: 'watchlist',
+    title: id,
+    name: id,
+    items,
+    itemCount: items.length,
+    unwatchedCount: unwatched.length,
+    isContainer: true,
+    traversalMode: 'priority'  // Uses priority buckets, not sequential
+  };
+}
+
+async getList(id: string): Promise<Listable[]> {
+  const items = await this.getWatchlistItems(id);
+  const listables: Listable[] = [];
+
+  for (const item of items) {
+    // Skip items outside their date window
+    if (this.isSkipped(item)) continue;
+    if (this.isWaiting(item)) continue;
+
+    const resolved = await this.resolveSourceItem(item);
+    if (!resolved) continue;
+
+    listables.push({
+      id: resolved.id,
+      source: resolved.source,
+      title: item.title ?? resolved.title,
+      thumbnail: resolved.thumbnail,
+      itemType: 'leaf',
+      metadata: {
+        watchlistFolder: item.folder,
+        percent: item.percent,
+        watched: item.watched,
+        hold: item.hold,
+        wait_until: item.wait_until,
+        skip_after: item.skip_after
+      }
+    });
+  }
+
+  return listables;
+}
+
+/**
+ * Resolve watchlist to next item using priority buckets.
+ * Priority order: in_progress > urgent > normal
+ */
+async resolvePlayables(id: string): Promise<Playable[]> {
+  const items = await this.getWatchlistItems(id);
+  const candidates = this.categorizeCandidates(items);
+
+  // Pick from buckets in priority order
+  const nextItem = this.pickNextCandidate(candidates);
+  if (!nextItem) {
+    // All watched - could auto-clear or return empty
+    logger.info('watchlist.all_watched', { folder: id });
+    return [];
+  }
+
+  const resolved = await this.resolveSourceItem(nextItem);
+  if (!resolved) return [];
+
+  // Return single item - watchlist gives you ONE thing to watch
+  return [resolved];
+}
+
+async getStoragePath(id: string): Promise<string> {
+  return 'watchlist';
+}
+
+/**
+ * Load watchlist items for a folder
+ */
+private async getWatchlistItems(folder: string): Promise<WatchlistItem[]> {
+  const allItems: WatchlistItem[] = await this.loadWatchlistYaml();
+  const normalizedFolder = this.normalizeKey(folder);
+
+  // Filter by folder name (case-insensitive)
+  const folderItems = allItems.filter(
+    item => this.normalizeKey(item.folder) === normalizedFolder
+  );
+
+  // Enrich with current watch state
+  return Promise.all(folderItems.map(item => this.enrichWithWatchState(item)));
+}
+
+private normalizeKey(key: string): string {
+  return key?.replace(/[^A-Za-z0-9]/g, '').toLowerCase() ?? '';
+}
+```
+
+#### 5.9.6 Priority Bucketing
+
+```typescript
+/**
+ * Categorize items into priority buckets.
+ * This is the core watchlist algorithm.
+ */
+private categorizeCandidates(items: WatchlistItem[]): CandidateBuckets {
+  const candidates: CandidateBuckets = {
+    urgent: new Map(),
+    normal: new Map(),
+    in_progress: new Map()
+  };
+
+  const now = new Date();
+
+  for (const item of items) {
+    // Skip if on hold
+    if (item.hold) continue;
+
+    // Skip if outside date window
+    if (this.isSkipped(item)) continue;
+
+    // Skip if already watched
+    if (item.watched || (item.percent && item.percent >= 90)) continue;
+
+    const key = item.media_key;
+
+    // In-progress: started but not finished (10-90%)
+    if (item.percent && item.percent >= 10 && item.percent < 90) {
+      candidates.in_progress.set(key, item);
+      continue;
+    }
+
+    // Urgent: wait_until has passed
+    if (item.wait_until) {
+      const waitDate = new Date(item.wait_until);
+      if (waitDate <= now) {
+        candidates.urgent.set(key, item);
+        continue;
+      } else {
+        // Still waiting
+        continue;
+      }
+    }
+
+    // Normal: everything else
+    candidates.normal.set(key, item);
+  }
+
+  return candidates;
+}
+
+/**
+ * Pick next item from buckets in priority order
+ */
+private pickNextCandidate(candidates: CandidateBuckets): WatchlistItem | null {
+  // Priority 1: Items in progress (resume watching)
+  if (candidates.in_progress.size > 0) {
+    // Sort by most recent watch, pick first
+    const sorted = [...candidates.in_progress.values()].sort(
+      (a, b) => (b.percent ?? 0) - (a.percent ?? 0)
+    );
+    return sorted[0];
+  }
+
+  // Priority 2: Urgent items (wait_until passed)
+  if (candidates.urgent.size > 0) {
+    // Sort by wait_until date (earliest first)
+    const sorted = [...candidates.urgent.values()].sort(
+      (a, b) => new Date(a.wait_until!).getTime() - new Date(b.wait_until!).getTime()
+    );
+    return sorted[0];
+  }
+
+  // Priority 3: Normal items
+  if (candidates.normal.size > 0) {
+    // Return first (order from YAML)
+    return candidates.normal.values().next().value;
+  }
+
+  return null;
+}
+```
+
+#### 5.9.7 Date Window Filtering
+
+```typescript
+private isWaiting(item: WatchlistItem): boolean {
+  if (!item.wait_until) return false;
+  return new Date(item.wait_until) > new Date();
+}
+
+private isSkipped(item: WatchlistItem): boolean {
+  if (!item.skip_after) return false;
+  return new Date(item.skip_after) < new Date();
+}
+```
+
+#### 5.9.8 Watch State Enrichment
+
+```typescript
+/**
+ * Enrich watchlist item with current watch state from memory
+ */
+private async enrichWithWatchState(item: WatchlistItem): Promise<WatchlistItem> {
+  const storagePath = item.src === 'plex'
+    ? await this.getPlexStoragePath(item.media_key)
+    : 'media';
+
+  const watchState = await this.watchStateStore.getProgress(
+    storagePath,
+    item.media_key
+  );
+
+  return {
+    ...item,
+    percent: watchState?.percent ?? item.percent ?? 0,
+    watched: watchState?.watched ?? item.watched ?? false
+  };
+}
+
+/**
+ * Get Plex library-specific storage path
+ */
+private async getPlexStoragePath(plexKey: string): Promise<string> {
+  // Plex items are stored by library: plex/1_movies, plex/2_tv, etc.
+  const plexAdapter = this.registry.get('plex');
+  return plexAdapter.getStoragePath(plexKey);
+}
+```
+
+#### 5.9.9 Source Item Resolution
+
+```typescript
+/**
+ * Resolve watchlist item to its source adapter
+ */
+private async resolveSourceItem(item: WatchlistItem): Promise<Playable | null> {
+  const adapter = item.src === 'plex'
+    ? this.registry.get('plex')
+    : this.registry.get('filesystem');
+
+  if (!adapter) {
+    logger.warn('watchlist.unknown_source', { src: item.src });
+    return null;
+  }
+
+  try {
+    const resolved = await adapter.getItem(item.media_key);
+    if (!resolved) return null;
+
+    // For Plex shows/seasons, get next episode
+    if ('resolvePlayables' in adapter && resolved.isContainer) {
+      const playables = await adapter.resolvePlayables(item.media_key);
+      return playables[0] ?? null;
+    }
+
+    return resolved as Playable;
+  } catch (err) {
+    logger.warn('watchlist.resolution_failed', {
+      media_key: item.media_key,
+      src: item.src,
+      error: err.message
+    });
+    return null;
+  }
+}
+```
+
+#### 5.9.10 Fallback Behavior
+
+```typescript
+/**
+ * When all items are watched, try progressively relaxed filters
+ */
+async resolvePlayablesWithFallback(id: string): Promise<Playable[]> {
+  const items = await this.getWatchlistItems(id);
+
+  // Try 1: Normal rules
+  let candidates = this.categorizeCandidates(items);
+  let next = this.pickNextCandidate(candidates);
+  if (next) return this.resolveAndWrap(next);
+
+  // Try 2: Ignore skip_after
+  candidates = this.categorizeCandidates(items, { ignoreSkips: true });
+  next = this.pickNextCandidate(candidates);
+  if (next) return this.resolveAndWrap(next);
+
+  // Try 3: Ignore watch status (re-watch)
+  candidates = this.categorizeCandidates(items, { ignoreSkips: true, ignoreWatched: true });
+  next = this.pickNextCandidate(candidates);
+  if (next) return this.resolveAndWrap(next);
+
+  // Try 4: Ignore wait_until
+  candidates = this.categorizeCandidates(items, { ignoreSkips: true, ignoreWatched: true, ignoreWait: true });
+  next = this.pickNextCandidate(candidates);
+  if (next) return this.resolveAndWrap(next);
+
+  // Nothing available
+  return [];
+}
+
+private async resolveAndWrap(item: WatchlistItem): Promise<Playable[]> {
+  const resolved = await this.resolveSourceItem(item);
+  return resolved ? [resolved] : [];
+}
+```
+
+#### 5.9.11 External Sync (Infinity)
+
+```typescript
+/**
+ * Update Infinity when watch progress changes
+ */
+async syncProgressToInfinity(mediaKey: string, percent: number): Promise<void> {
+  const items = await this.loadWatchlistYaml();
+  const matches = items.filter(item => item.media_key === mediaKey);
+
+  if (!matches.length) return;
+
+  const { watchlist_progress, watchlist_watched } = process.env.infinity;
+  const isComplete = percent >= 90;
+
+  for (const match of matches) {
+    if (!match.uid) continue;
+
+    try {
+      await Infinity.updateItem(
+        process.env.infinity.watchlist,
+        match.uid,
+        watchlist_progress,
+        percent
+      );
+
+      if (isComplete) {
+        await Infinity.updateItem(
+          process.env.infinity.watchlist,
+          match.uid,
+          watchlist_watched,
+          true
+        );
+      }
+
+      logger.info('watchlist.infinity_synced', { uid: match.uid, percent });
+    } catch (err) {
+      logger.warn('watchlist.infinity_sync_failed', {
+        uid: match.uid,
+        error: err.message
+      });
+    }
+  }
+}
+```
+
+---
+
+### 5.10 AppAdapter
+
+**AppAdapter** handles openable applications - UI components that can be launched but don't stream media. Unlike Playable items that have media URLs, Openable items render React components in the AppContainer.
+
+#### 5.10.1 Capabilities
+
+| Capability | Support | Notes |
+|------------|---------|-------|
+| Listable | ✅ | Browse available apps |
+| Playable | ❌ | Apps are not media |
+| Queueable | ❌ | Apps don't queue |
+| Openable | ✅ | Primary capability |
+
+#### 5.10.2 Prefix Registration
+
+```typescript
+class AppAdapter implements Adapter {
+  source = 'app';
+
+  prefixes = [
+    { prefix: 'app' },            // app: wrapup
+    { prefix: 'open' },           // open: gratitude (alias)
+  ];
+
+  constructor(
+    private appRegistry: AppRegistry
+  ) {}
+}
+```
+
+#### 5.10.3 App Registry
+
+Apps are defined in code (React components), but their metadata can be enriched via config:
+
+```typescript
+interface AppDefinition {
+  id: string;                     // App identifier: 'wrapup'
+  title: string;                  // Display name: 'Wrap Up'
+  description?: string;           // What the app does
+  icon?: string;                  // Icon path or component name
+  category?: AppCategory;         // Grouping for menu display
+  requiresParam?: boolean;        // Does app need a param? (e.g., art/nativity)
+  paramLabel?: string;            // Label for param: 'Art Path'
+}
+
+type AppCategory = 'utility' | 'display' | 'interactive' | 'system';
+
+// Built-in apps from AppContainer.jsx
+const BUILT_IN_APPS: AppDefinition[] = [
+  {
+    id: 'wrapup',
+    title: 'Wrap Up',
+    description: 'End of program summary',
+    category: 'utility'
+  },
+  {
+    id: 'gratitude',
+    title: 'Gratitude',
+    description: 'Daily gratitude prompt',
+    category: 'interactive'
+  },
+  {
+    id: 'art',
+    title: 'Art Display',
+    description: 'Display artwork',
+    category: 'display',
+    requiresParam: true,
+    paramLabel: 'Art Path'
+  },
+  {
+    id: 'webcam',
+    title: 'Webcam',
+    description: 'Camera view',
+    category: 'display'
+  },
+  {
+    id: 'websocket',
+    title: 'WebSocket Debug',
+    description: 'WebSocket connection viewer',
+    category: 'system',
+    requiresParam: true,
+    paramLabel: 'Path'
+  },
+  {
+    id: 'glympse',
+    title: 'Glympse',
+    description: 'Location tracking display',
+    category: 'display',
+    requiresParam: true,
+    paramLabel: 'Glympse ID'
+  },
+  {
+    id: 'keycode',
+    title: 'Key Tester',
+    description: 'Keyboard input tester',
+    category: 'system'
+  },
+  {
+    id: 'office_off',
+    title: 'Office Off',
+    description: 'Office shutdown sequence',
+    category: 'utility'
+  },
+  {
+    id: 'family-selector',
+    title: 'Family Selector',
+    description: 'Random family member picker',
+    category: 'interactive',
+    requiresParam: false,
+    paramLabel: 'Winner (optional)'
+  }
+];
+```
+
+#### 5.10.4 Types
+
+```typescript
+interface OpenableApp extends Item, Openable {
+  appId: string;                  // App identifier
+  param?: string;                 // Optional parameter
+  definition: AppDefinition;      // App metadata
+}
+
+interface Openable {
+  /**
+   * Returns data needed to open/render the app.
+   * Frontend uses this to render via AppContainer.
+   */
+  openPayload: OpenPayload;
+}
+
+interface OpenPayload {
+  app: string;                    // App ID
+  param?: string;                 // Optional param
+}
+```
+
+#### 5.10.5 Core Adapter Methods
+
+```typescript
+async getItem(id: string): Promise<OpenableApp | null> {
+  // Parse id - may contain param: "art/nativity" or just "art"
+  const [appId, param] = id.split('/');
+
+  const definition = this.appRegistry.get(appId);
+  if (!definition) {
+    logger.warn('app.unknown', { appId });
+    return null;
+  }
+
+  // Validate param requirement
+  if (definition.requiresParam && !param) {
+    logger.warn('app.missing_param', { appId, paramLabel: definition.paramLabel });
+    // Still return - let frontend handle missing param
+  }
+
+  return {
+    id: `app:${id}`,
+    source: 'app',
+    title: definition.title,
+    thumbnail: definition.icon,
+    appId,
+    param,
+    definition,
+    openPayload: {
+      app: appId,
+      param
+    }
+  };
+}
+
+async getList(id?: string): Promise<Listable[]> {
+  // If id provided, filter by category
+  const category = id as AppCategory | undefined;
+
+  const apps = category
+    ? this.appRegistry.getByCategory(category)
+    : this.appRegistry.getAll();
+
+  return apps.map(def => ({
+    id: `app:${def.id}`,
+    source: 'app',
+    title: def.title,
+    thumbnail: def.icon,
+    itemType: 'leaf',
+    metadata: {
+      category: def.category,
+      description: def.description,
+      requiresParam: def.requiresParam
+    }
+  }));
+}
+
+// Apps are not queueable - they open immediately
+async resolvePlayables(id: string): Promise<Playable[]> {
+  throw new AdapterError(
+    'Apps are not playable',
+    'app',
+    AdapterErrorCode.OPERATION_NOT_SUPPORTED
+  );
+}
+
+// Apps don't have watch state
+async getStoragePath(id: string): Promise<string> {
+  throw new AdapterError(
+    'Apps do not have storage paths',
+    'app',
+    AdapterErrorCode.OPERATION_NOT_SUPPORTED
+  );
+}
+```
+
+#### 5.10.6 App Registry Implementation
+
+```typescript
+class AppRegistry {
+  private apps: Map<string, AppDefinition> = new Map();
+
+  constructor() {
+    // Register built-in apps
+    for (const app of BUILT_IN_APPS) {
+      this.register(app);
+    }
+  }
+
+  register(definition: AppDefinition): void {
+    this.apps.set(definition.id, definition);
+  }
+
+  get(id: string): AppDefinition | undefined {
+    return this.apps.get(id);
+  }
+
+  getAll(): AppDefinition[] {
+    return [...this.apps.values()];
+  }
+
+  getByCategory(category: AppCategory): AppDefinition[] {
+    return this.getAll().filter(app => app.category === category);
+  }
+
+  exists(id: string): boolean {
+    return this.apps.has(id);
+  }
+}
+```
+
+#### 5.10.7 Integration with FolderAdapter
+
+Apps can be included in folders with `action: Open`:
+
+```yaml
+# lists.yml
+- input: 'app: wrapup'
+  action: Open
+  folder: Morning Program
+  label: End Program
+```
+
+The FolderAdapter handles this by detecting `action: Open` and returning the OpenPayload instead of trying to resolve playables:
+
+```typescript
+// In FolderAdapter.resolvePlayables():
+if (item.action === 'open') {
+  // Skip - handled separately by getOpenables()
+  continue;
+}
+
+// New method in FolderAdapter:
+async getOpenables(id: string): Promise<OpenableApp[]> {
+  const folder = await this.getItem(id);
+  if (!folder) return [];
+
+  const openables: OpenableApp[] = [];
+
+  for (const item of folder.items) {
+    if (item.action !== 'open') continue;
+    if (!this.isActiveToday(item)) continue;
+    if (item.active === false) continue;
+
+    const resolved = await this.resolveItem(item);
+    if (resolved && 'openPayload' in resolved) {
+      openables.push(resolved as OpenableApp);
+    }
+  }
+
+  return openables;
+}
+```
+
+#### 5.10.8 Frontend Integration
+
+The frontend's AppContainer already handles rendering based on app ID:
+
+```tsx
+// AppContainer.jsx (existing)
+if (app === "wrapup") return <WrapUp clear={clear} />;
+if (app === "gratitude") return <Gratitude clear={clear} />;
+if (app === "art") return <ArtApp path={param} />;
+// etc.
+```
+
+The API returns an OpenPayload that the frontend uses:
+
+```typescript
+// API Response
+{
+  id: 'app:wrapup',
+  source: 'app',
+  title: 'Wrap Up',
+  openPayload: {
+    app: 'wrapup'
+  }
+}
+
+// Frontend usage
+const { openPayload } = await api.getItem('app:wrapup');
+push({ type: 'app', props: { open: openPayload } });
+```
+
+#### 5.10.9 Config Extension (Optional)
+
+Apps can be extended via config for household-specific customization:
+
+```yaml
+# apps.yml (optional)
+_schemaVersion: 1
+
+# Override built-in app metadata
+wrapup:
+  title: 'Morning Wrap Up'
+  icon: '/media/img/icons/sunrise.png'
+
+# Add custom app (must have matching React component)
+custom-widget:
+  title: 'Custom Widget'
+  description: 'Household-specific widget'
+  category: 'utility'
+```
+
+```typescript
+class AppRegistry {
+  async loadConfig(configPath: string): Promise<void> {
+    const config = await loadYaml(configPath);
+    if (!config) return;
+
+    for (const [appId, overrides] of Object.entries(config)) {
+      if (appId.startsWith('_')) continue;  // Skip schema version
+
+      const existing = this.apps.get(appId);
+      if (existing) {
+        // Merge overrides with built-in definition
+        this.apps.set(appId, { ...existing, ...overrides });
+      } else {
+        // New custom app - requires React component to exist
+        logger.warn('app.custom_missing_component', { appId });
+      }
+    }
+  }
+}
+```
+
+---
+
+### 5.11 Future: FreshRSSAdapter (Placeholder)
 
 **Status:** Not yet implemented
 
@@ -2276,25 +3572,25 @@ This section documents areas that need further design work before implementation
 | Adapter | Status | Notes |
 |---------|--------|-------|
 | `FilesystemAdapter` | ✅ **Defined** | See Section 5.4 |
-| `FolderAdapter` | **Needs spec** | Handles `list:`, `queue:`, folder references |
-| `WatchlistAdapter` | Needs spec | Handles `watchlist:` prefix |
-| `AppAdapter` | Needs spec | Handles `app:` prefix for Openables |
+| `FolderAdapter` | ✅ **Defined** | See Section 5.8 - meta-adapter for lists.yml |
+| `WatchlistAdapter` | ✅ **Defined** | See Section 5.9 - priority-based with scheduling |
+| `AppAdapter` | ✅ **Defined** | See Section 5.10 - Openable apps/utilities |
 
-### 18.2 Missing: `registry.resolve()` Method
+**All required adapters are now fully specified.**
 
-The `QueueService` calls `this.registry.resolve(id)` but `AdapterRegistry` only defines:
-- `get(source)` - Get adapter by source name
-- `resolveFromPrefix(prefix, value)` - Resolve input prefix
+### 18.2 ~~Missing: `registry.resolve()` Method~~ ✅ RESOLVED
 
-**Need to define:** How compound IDs (`plex:12345`) are parsed vs. input strings (`plex: 12345`).
+**Added to Section 5.2 (AdapterRegistry):**
 
 ```typescript
-// Proposed addition to AdapterRegistry:
-resolve(compoundId: string): { adapter: Adapter; localId: string } {
-  const [source, ...rest] = compoundId.split(':');
-  return { adapter: this.get(source), localId: rest.join(':') };
-}
+resolve(compoundId: string): { adapter: Adapter; localId: string } | null
+canResolve(compoundId: string): boolean
 ```
+
+The `resolve()` method handles compound IDs (`plex:12345`) by:
+1. If no colon → treat as filesystem path (default adapter)
+2. Try exact source match (`plex` → PlexAdapter)
+3. Fall back to prefix resolution (`hymn` → LocalContentAdapter via prefix mapping)
 
 ### 18.3 Household / Multi-Tenant Scope
 

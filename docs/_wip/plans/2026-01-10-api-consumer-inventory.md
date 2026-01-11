@@ -8,7 +8,7 @@ This document catalogs all frontend consumers of backend APIs that would be affe
 |----------|----------------|--------------|
 | List/Menu Data | 6 | `data/list/{key}`, `media/plex/list/{id}` |
 | Media Info | 3 | `media/plex/info/{id}`, `media/info/{key}` |
-| Playback Logging | 3 | `media/log` |
+| Playback Logging | 4 | `media/log`, `data/menu_log` |
 | Content Scrollers | 1 | `data/scripture/`, `data/talk/`, `data/poetry/` |
 | Static Media | 15+ | `/media/img/`, `/media/plex/img/` |
 
@@ -259,6 +259,27 @@ DaylightAPI('harvest/watchlist')
 
 ---
 
+### 3.4 `frontend/src/modules/Menu/Menu.jsx`
+
+**Function:** `logMenuSelection()`
+
+**API Calls:**
+```javascript
+// Line 27 - Menu selection logging
+DaylightAPI("data/menu_log", { media_key: selectedKey })
+```
+
+**Payload Shape:**
+```typescript
+interface MenuLogPayload {
+  media_key: string;  // The selected menu item's key
+}
+```
+
+**Migration Impact:** LOW - Menu analytics/recent items
+
+---
+
 ## 4. Content Scroller Consumers
 
 ### 4.1 `frontend/src/modules/ContentScroller/ContentScroller.jsx`
@@ -416,9 +437,10 @@ The frontend passes these modifiers via URL path segments:
 - [ ] `data/poetry/{id}` → `/api/play/poetry/{id}`
 - [ ] `data/hymn/{num}` → `/api/play/hymn/{num}`
 
-### Phase 4: Proxy/Static (LOW)
+### Phase 4: Proxy/Static/Analytics (LOW)
 - [ ] `/media/plex/img/{id}` → `/proxy/plex/thumb/{id}`
 - [ ] `/media/{path}` → `/proxy/filesystem/stream/{path}`
+- [ ] `data/menu_log` → `/api/analytics/menu-selection`
 
 ---
 
@@ -438,6 +460,7 @@ const LEGACY_MAPPINGS = {
 
   // Logging
   'media/log': '/api/progress',
+  'data/menu_log': '/api/analytics/menu-selection',
 
   // Content types
   'data/scripture/:ref': '/api/play/scripture/:ref',
