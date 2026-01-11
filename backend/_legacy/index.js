@@ -339,9 +339,13 @@ async function initializeApp() {
 
     // Initialize content registry and mount content router (new DDD structure)
     const mediaBasePath = process.env.path?.media || process.env.MEDIA_PATH || '/data/media';
-    const contentRegistry = createContentRegistry({ mediaBasePath });
+    const plexConfig = process.env.media?.plex ? {
+      host: process.env.media.plex.host,
+      token: process.env.media.plex.token
+    } : null;
+    const contentRegistry = createContentRegistry({ mediaBasePath, plex: plexConfig });
     app.use('/api/content', createContentRouter(contentRegistry));
-    rootLogger.info('content.mounted', { path: '/api/content', mediaBasePath });
+    rootLogger.info('content.mounted', { path: '/api/content', mediaBasePath, plexEnabled: !!plexConfig });
 
     // Mount API router on main app for webhook routes (journalist, foodlog)
     const { default: apiRouter } = await import('./api.mjs');
