@@ -1,8 +1,8 @@
-// backend/src/infrastructure/bootstrap.mjs
-import { ContentSourceRegistry } from '../domains/content/services/ContentSourceRegistry.mjs';
-import { FilesystemAdapter } from '../adapters/content/media/filesystem/FilesystemAdapter.mjs';
-import { PlexAdapter } from '../adapters/content/media/plex/PlexAdapter.mjs';
-import { YamlWatchStateStore } from '../adapters/persistence/yaml/YamlWatchStateStore.mjs';
+// backend/src/0_infrastructure/bootstrap.mjs
+import { ContentSourceRegistry } from '../1_domains/content/services/ContentSourceRegistry.mjs';
+import { FilesystemAdapter } from '../2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { PlexAdapter } from '../2_adapters/content/media/plex/PlexAdapter.mjs';
+import { YamlWatchStateStore } from '../2_adapters/persistence/yaml/YamlWatchStateStore.mjs';
 
 /**
  * Create and configure the content registry

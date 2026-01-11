@@ -1,8 +1,8 @@
-// backend/src/adapters/persistence/yaml/YamlWatchStateStore.mjs
+// backend/src/2_adapters/persistence/yaml/YamlWatchStateStore.mjs
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { WatchState } from '../../../domains/content/entities/WatchState.mjs';
+import { WatchState } from '../../../1_domains/content/entities/WatchState.mjs';
 
 /**
  * YAML-based watch state persistence

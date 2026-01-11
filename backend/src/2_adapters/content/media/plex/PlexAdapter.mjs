@@ -1,6 +1,6 @@
-// backend/src/adapters/content/media/plex/PlexAdapter.mjs
-import { ListableItem } from '../../../../domains/content/capabilities/Listable.mjs';
-import { PlayableItem } from '../../../../domains/content/capabilities/Playable.mjs';
+// backend/src/2_adapters/content/media/plex/PlexAdapter.mjs
+import { ListableItem } from '../../../../1_domains/content/capabilities/Listable.mjs';
+import { PlayableItem } from '../../../../1_domains/content/capabilities/Playable.mjs';
 import { PlexClient } from './PlexClient.mjs';
 
 /**

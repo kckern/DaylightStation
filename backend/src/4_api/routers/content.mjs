@@ -1,11 +1,11 @@
-// backend/src/api/routers/content.mjs
+// backend/src/4_api/routers/content.mjs
 import express from 'express';
-import { WatchState } from '../../domains/content/entities/WatchState.mjs';
+import { WatchState } from '../../1_domains/content/entities/WatchState.mjs';
 
 /**
  * Create content API router
- * @param {import('../../domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
- * @param {import('../../adapters/persistence/yaml/YamlWatchStateStore.mjs').YamlWatchStateStore} [watchStore=null] - Optional watch state store
+ * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
+ * @param {import('../../2_adapters/persistence/yaml/YamlWatchStateStore.mjs').YamlWatchStateStore} [watchStore=null] - Optional watch state store
  * @returns {express.Router}
  */
 export function createContentRouter(registry, watchStore = null) {
