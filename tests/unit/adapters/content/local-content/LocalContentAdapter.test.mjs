@@ -100,4 +100,66 @@ describe('LocalContentAdapter', () => {
       expect(item).toBeNull();
     });
   });
+
+  describe('getList', () => {
+    it('returns ListableItem with children for talk folder', async () => {
+      const fixtureAdapter = new LocalContentAdapter({
+        dataPath: path.resolve(__dirname, '../../../../_fixtures/local-content'),
+        mediaPath: '/media'
+      });
+
+      const list = await fixtureAdapter.getList('talk:april2024');
+
+      expect(list).not.toBeNull();
+      expect(list.id).toBe('talk:april2024');
+      expect(list.isContainer()).toBe(true);
+      expect(list.children.length).toBe(2);
+    });
+
+    it('returns null for nonexistent folder', async () => {
+      const list = await adapter.getList('talk:nonexistent');
+      expect(list).toBeNull();
+    });
+
+    it('rejects path traversal attempts in getList', async () => {
+      const list = await adapter.getList('talk:../../../etc');
+      expect(list).toBeNull();
+    });
+
+    it('returns null when localId is missing', async () => {
+      const list = await adapter.getList('talk:');
+      expect(list).toBeNull();
+    });
+  });
+
+  describe('resolvePlayables', () => {
+    it('returns single item for talk', async () => {
+      const fixtureAdapter = new LocalContentAdapter({
+        dataPath: path.resolve(__dirname, '../../../../_fixtures/local-content'),
+        mediaPath: '/media'
+      });
+
+      const playables = await fixtureAdapter.resolvePlayables('talk:general/test-talk');
+
+      expect(playables.length).toBe(1);
+      expect(playables[0].id).toBe('talk:general/test-talk');
+    });
+
+    it('returns all talks for folder', async () => {
+      const fixtureAdapter = new LocalContentAdapter({
+        dataPath: path.resolve(__dirname, '../../../../_fixtures/local-content'),
+        mediaPath: '/media'
+      });
+
+      const playables = await fixtureAdapter.resolvePlayables('talk:april2024');
+
+      expect(playables.length).toBe(2);
+      expect(playables.every(p => p.isPlayable())).toBe(true);
+    });
+
+    it('returns empty array for nonexistent item', async () => {
+      const playables = await adapter.resolvePlayables('talk:nonexistent');
+      expect(playables).toEqual([]);
+    });
+  });
 });
