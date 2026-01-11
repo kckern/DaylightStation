@@ -5,6 +5,7 @@
  * @property {string} id - Compound ID: "source:localId"
  * @property {string} source - Adapter source name
  * @property {string} title - Display title
+ * @property {string} [type] - Item type (e.g., 'talk', 'scripture', 'movie')
  * @property {string} [thumbnail] - Proxied thumbnail URL
  * @property {string} [description] - Item description
  * @property {Object} [metadata] - Additional metadata
@@ -26,6 +27,7 @@ export class Item {
     this.id = props.id;
     this.source = props.source;
     this.title = props.title;
+    this.type = props.type ?? null;
     this.thumbnail = props.thumbnail ?? null;
     this.description = props.description ?? null;
     this.metadata = props.metadata ?? {};
