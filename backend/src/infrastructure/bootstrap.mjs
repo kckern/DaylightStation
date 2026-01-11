@@ -2,6 +2,7 @@
 import { ContentSourceRegistry } from '../domains/content/services/ContentSourceRegistry.mjs';
 import { FilesystemAdapter } from '../adapters/content/media/filesystem/FilesystemAdapter.mjs';
 import { PlexAdapter } from '../adapters/content/media/plex/PlexAdapter.mjs';
+import { YamlWatchStateStore } from '../adapters/persistence/yaml/YamlWatchStateStore.mjs';
 
 /**
  * Create and configure the content registry
@@ -31,4 +32,16 @@ export function createContentRegistry(config) {
   }
 
   return registry;
+}
+
+/**
+ * Create watch state store
+ * @param {Object} config
+ * @param {string} config.watchStatePath - Path for watch state files
+ * @returns {YamlWatchStateStore}
+ */
+export function createWatchStore(config) {
+  return new YamlWatchStateStore({
+    basePath: config.watchStatePath
+  });
 }
