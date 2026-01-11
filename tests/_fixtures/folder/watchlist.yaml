@@ -1,0 +1,14 @@
+# tests/_fixtures/folder/watchlist.yaml
+- folder: "Morning Shows"
+  items:
+    - source: plex
+      id: "12345"
+      title: "Show One"
+    - source: plex
+      id: "67890"
+      title: "Show Two"
+- folder: "Evening Talks"
+  items:
+    - source: local-content
+      id: "talk:general/talk1"
+      title: "Talk One"
