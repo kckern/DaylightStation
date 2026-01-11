@@ -218,9 +218,9 @@ async function initializeApp() {
     const { default: tts } = await import('./routers/tts.mjs');
 
     // Content domain (new DDD structure)
-    const { createContentRegistry, createWatchStore } = await import('../src/infrastructure/bootstrap.mjs');
-    const { createContentRouter } = await import('../src/api/routers/content.mjs');
-    const { createProxyRouter } = await import('../src/api/routers/proxy.mjs');
+    const { createContentRegistry, createWatchStore } = await import('../src/0_infrastructure/bootstrap.mjs');
+    const { createContentRouter } = await import('../src/4_api/routers/content.mjs');
+    const { createProxyRouter } = await import('../src/4_api/routers/proxy.mjs');
 
     // Backend API
     app.post('/api/logs', (req, res) => {

@@ -1,6 +1,6 @@
 // tests/unit/adapters/persistence/YamlWatchStateStore.test.mjs
-import { YamlWatchStateStore } from '../../../../backend/src/adapters/persistence/yaml/YamlWatchStateStore.mjs';
-import { WatchState } from '../../../../backend/src/domains/content/entities/WatchState.mjs';
+import { YamlWatchStateStore } from '../../../../backend/src/2_adapters/persistence/yaml/YamlWatchStateStore.mjs';
+import { WatchState } from '../../../../backend/src/1_domains/content/entities/WatchState.mjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

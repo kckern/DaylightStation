@@ -1,5 +1,5 @@
 // tests/unit/content/ports/IWatchStateStore.test.mjs
-import { validateWatchStateStore } from '../../../../backend/src/domains/content/ports/IWatchStateStore.mjs';
+import { validateWatchStateStore } from '../../../../backend/src/1_domains/content/ports/IWatchStateStore.mjs';
 
 describe('IWatchStateStore port', () => {
   test('validates store has required methods', () => {

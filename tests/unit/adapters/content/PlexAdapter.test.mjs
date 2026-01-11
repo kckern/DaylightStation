@@ -1,6 +1,6 @@
 // tests/unit/adapters/content/PlexAdapter.test.mjs
-import { PlexAdapter } from '../../../../backend/src/adapters/content/media/plex/PlexAdapter.mjs';
-import { PlexClient } from '../../../../backend/src/adapters/content/media/plex/PlexClient.mjs';
+import { PlexAdapter } from '../../../../backend/src/2_adapters/content/media/plex/PlexAdapter.mjs';
+import { PlexClient } from '../../../../backend/src/2_adapters/content/media/plex/PlexClient.mjs';
 
 describe('PlexAdapter', () => {
   describe('constructor', () => {

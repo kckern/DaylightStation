@@ -1,8 +1,8 @@
 // tests/unit/content/services/QueueService.test.mjs
 import { jest } from '@jest/globals';
-import { QueueService } from '../../../../backend/src/domains/content/services/QueueService.mjs';
-import { PlayableItem } from '../../../../backend/src/domains/content/capabilities/Playable.mjs';
-import { WatchState } from '../../../../backend/src/domains/content/entities/WatchState.mjs';
+import { QueueService } from '../../../../backend/src/1_domains/content/services/QueueService.mjs';
+import { PlayableItem } from '../../../../backend/src/1_domains/content/capabilities/Playable.mjs';
+import { WatchState } from '../../../../backend/src/1_domains/content/entities/WatchState.mjs';
 
 describe('QueueService', () => {
   let service;
