@@ -66,6 +66,10 @@ export class LocalContentAdapter {
       return this._getTalk(localId);
     }
 
+    if (prefix === 'scripture') {
+      return this._getScripture(localId);
+    }
+
     return null;
   }
 
@@ -155,6 +159,46 @@ export class LocalContentAdapter {
           speaker: metadata.speaker,
           date: metadata.date,
           description: metadata.description
+        }
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * Get scripture item by local ID
+   * @param {string} localId - e.g., "cfm/test-chapter"
+   * @returns {Promise<PlayableItem|null>}
+   * @private
+   */
+  async _getScripture(localId) {
+    const yamlPath = this._validatePath(localId, 'scripture');
+    if (!yamlPath) return null;
+
+    try {
+      if (!fs.existsSync(yamlPath)) return null;
+      const content = fs.readFileSync(yamlPath, 'utf8');
+      const metadata = yaml.load(content);
+
+      const compoundId = `scripture:${localId}`;
+      const mediaUrl = `/proxy/local-content/stream/scripture/${localId}`;
+
+      return new PlayableItem({
+        id: compoundId,
+        source: this.source,
+        title: metadata.reference || localId,
+        type: 'scripture',
+        mediaType: 'audio',
+        mediaUrl,
+        duration: metadata.duration || 0,
+        resumable: true,
+        metadata: {
+          reference: metadata.reference,
+          volume: metadata.volume,
+          chapter: metadata.chapter,
+          verses: metadata.verses || [],
+          mediaFile: metadata.mediaFile
         }
       });
     } catch (err) {

@@ -135,6 +135,67 @@ describe('LocalContentAdapter', () => {
     });
   });
 
+  describe('scripture content', () => {
+    let fixtureAdapter;
+
+    beforeEach(() => {
+      fixtureAdapter = new LocalContentAdapter({
+        dataPath: path.resolve(__dirname, '../../../../_fixtures/local-content'),
+        mediaPath: '/media'
+      });
+    });
+
+    it('returns scripture item with verses', async () => {
+      const item = await fixtureAdapter.getItem('scripture:cfm/test-chapter');
+
+      expect(item).not.toBeNull();
+      expect(item.id).toBe('scripture:cfm/test-chapter');
+      expect(item.title).toBe('1 Nephi 1');
+      expect(item.type).toBe('scripture');
+      expect(item.mediaType).toBe('audio');
+      expect(item.metadata.reference).toBe('1 Nephi 1');
+      expect(item.metadata.verses).toBeDefined();
+      expect(item.metadata.verses.length).toBe(2);
+    });
+
+    it('includes verse timing for audio sync', async () => {
+      const item = await fixtureAdapter.getItem('scripture:cfm/test-chapter');
+
+      expect(item).not.toBeNull();
+      const verses = item.metadata.verses;
+      expect(verses[0].start).toBe(0);
+      expect(verses[0].end).toBe(15);
+      expect(verses[1].start).toBe(15);
+      expect(verses[1].end).toBe(30);
+    });
+
+    it('returns null for missing scripture', async () => {
+      const item = await fixtureAdapter.getItem('scripture:nonexistent/chapter');
+      expect(item).toBeNull();
+    });
+
+    it('prevents path traversal in scripture', async () => {
+      const item = await fixtureAdapter.getItem('scripture:../../../etc/passwd');
+      expect(item).toBeNull();
+    });
+
+    it('includes correct mediaUrl for streaming', async () => {
+      const item = await fixtureAdapter.getItem('scripture:cfm/test-chapter');
+
+      expect(item).not.toBeNull();
+      expect(item.mediaUrl).toBe('/proxy/local-content/stream/scripture/cfm/test-chapter');
+    });
+
+    it('includes volume and chapter in metadata', async () => {
+      const item = await fixtureAdapter.getItem('scripture:cfm/test-chapter');
+
+      expect(item).not.toBeNull();
+      expect(item.metadata.volume).toBe('bom');
+      expect(item.metadata.chapter).toBe(1);
+      expect(item.metadata.mediaFile).toBe('cfm/1nephi1.mp3');
+    });
+  });
+
   describe('resolvePlayables', () => {
     it('returns single item for talk', async () => {
       const fixtureAdapter = new LocalContentAdapter({
