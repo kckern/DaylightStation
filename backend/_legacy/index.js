@@ -328,6 +328,10 @@ async function initializeApp() {
     app.use("/harvest", harvestRouter);
     // JournalistRouter now handled via /api/journalist in api.mjs
     app.use("/home", homeRouter);
+    // Wire legacy /media/log endpoint to use new WatchState system
+    const { legacyMediaLogMiddleware } = await import('../src/4_api/middleware/legacyCompat.mjs');
+    app.post('/media/log', legacyMediaLogMiddleware(watchStore));
+
     app.use("/media", mediaRouter);
     app.use("/api/health", healthRouter);
     app.use("/api/lifelog", lifelogRouter);
