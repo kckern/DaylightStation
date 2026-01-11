@@ -28,15 +28,18 @@ describe('LocalContentAdapter', () => {
     });
   });
 
-  describe('name', () => {
+  describe('source', () => {
     it('returns local-content', () => {
-      expect(adapter.name).toBe('local-content');
+      expect(adapter.source).toBe('local-content');
     });
   });
 
   describe('prefixes', () => {
     it('returns supported prefixes', () => {
-      expect(adapter.prefixes).toEqual(['talk', 'scripture']);
+      expect(adapter.prefixes).toEqual([
+        { prefix: 'talk' },
+        { prefix: 'scripture' }
+      ]);
     });
   });
 

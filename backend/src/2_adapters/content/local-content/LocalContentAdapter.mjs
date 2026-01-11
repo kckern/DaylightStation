@@ -21,12 +21,15 @@ export class LocalContentAdapter {
     this.mediaPath = config.mediaPath;
   }
 
-  get name() {
+  get source() {
     return 'local-content';
   }
 
   get prefixes() {
-    return ['talk', 'scripture'];
+    return [
+      { prefix: 'talk' },
+      { prefix: 'scripture' }
+    ];
   }
 
   /**
@@ -35,7 +38,7 @@ export class LocalContentAdapter {
    */
   canResolve(id) {
     const prefix = id.split(':')[0];
-    return this.prefixes.includes(prefix);
+    return this.prefixes.some(p => p.prefix === prefix);
   }
 
   /**
@@ -141,7 +144,7 @@ export class LocalContentAdapter {
 
       return new PlayableItem({
         id: compoundId,
-        source: this.name,
+        source: this.source,
         title: metadata.title || localId,
         mediaType: 'audio',
         mediaUrl,
@@ -191,7 +194,7 @@ export class LocalContentAdapter {
 
       return new ListableItem({
         id: `talk:${folderId}`,
-        source: this.name,
+        source: this.source,
         title: folderId,
         itemType: 'container',
         children

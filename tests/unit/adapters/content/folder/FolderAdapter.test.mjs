@@ -26,15 +26,15 @@ describe('FolderAdapter', () => {
     });
   });
 
-  describe('name', () => {
+  describe('source', () => {
     test('returns folder', () => {
-      expect(adapter.name).toBe('folder');
+      expect(adapter.source).toBe('folder');
     });
   });
 
   describe('prefixes', () => {
     test('returns folder prefix', () => {
-      expect(adapter.prefixes).toEqual(['folder']);
+      expect(adapter.prefixes).toEqual([{ prefix: 'folder' }]);
     });
   });
 

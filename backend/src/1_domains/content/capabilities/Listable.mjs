@@ -17,6 +17,7 @@ export class ListableItem extends Item {
    * @param {string} props.title - Display title
    * @param {ItemType} props.itemType - Whether item is a container or leaf
    * @param {number} [props.childCount] - Number of children (for containers)
+   * @param {Array} [props.children] - Child items (for containers)
    * @param {number} [props.sortOrder] - Order in list
    * @param {string} [props.thumbnail] - Proxied thumbnail URL
    * @param {string} [props.description] - Item description
@@ -25,7 +26,8 @@ export class ListableItem extends Item {
   constructor(props) {
     super(props);
     this.itemType = props.itemType;
-    this.childCount = props.childCount ?? 0;
+    this.children = props.children ?? [];
+    this.childCount = props.childCount ?? this.children.length;
     this.sortOrder = props.sortOrder ?? 0;
   }
 

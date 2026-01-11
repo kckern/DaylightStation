@@ -15,12 +15,12 @@ export class FolderAdapter {
     this._watchlistCache = null;
   }
 
-  get name() {
+  get source() {
     return 'folder';
   }
 
   get prefixes() {
-    return ['folder'];
+    return [{ prefix: 'folder' }];
   }
 
   canResolve(id) {

@@ -1,5 +1,5 @@
 // tests/unit/adapters/content/FilesystemAdapter.test.mjs
-import { FilesystemAdapter } from '../../../../backend/src/adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { FilesystemAdapter } from '../../../../backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
