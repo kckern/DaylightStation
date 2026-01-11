@@ -38,7 +38,9 @@ describe('LocalContentAdapter', () => {
     it('returns supported prefixes', () => {
       expect(adapter.prefixes).toEqual([
         { prefix: 'talk' },
-        { prefix: 'scripture' }
+        { prefix: 'scripture' },
+        { prefix: 'hymn' },
+        { prefix: 'primary' }
       ]);
     });
   });
@@ -50,6 +52,14 @@ describe('LocalContentAdapter', () => {
 
     it('returns true for scripture: prefix', () => {
       expect(adapter.canResolve('scripture:bom/1nephi/1')).toBe(true);
+    });
+
+    it('returns true for hymn: prefix', () => {
+      expect(adapter.canResolve('hymn:113')).toBe(true);
+    });
+
+    it('returns true for primary: prefix', () => {
+      expect(adapter.canResolve('primary:42')).toBe(true);
     });
 
     it('returns false for other prefixes', () => {
@@ -64,6 +74,14 @@ describe('LocalContentAdapter', () => {
 
     it('returns scripture for scripture items', () => {
       expect(adapter.getStoragePath('scripture:bom/1nephi/1')).toBe('scripture');
+    });
+
+    it('returns songs for hymn items', () => {
+      expect(adapter.getStoragePath('hymn:113')).toBe('songs');
+    });
+
+    it('returns songs for primary items', () => {
+      expect(adapter.getStoragePath('primary:42')).toBe('songs');
     });
   });
 
@@ -193,6 +211,56 @@ describe('LocalContentAdapter', () => {
       expect(item.metadata.volume).toBe('bom');
       expect(item.metadata.chapter).toBe(1);
       expect(item.metadata.mediaFile).toBe('cfm/1nephi1.mp3');
+    });
+  });
+
+  describe('hymn content', () => {
+    let fixtureAdapter;
+
+    beforeEach(() => {
+      fixtureAdapter = new LocalContentAdapter({
+        dataPath: path.resolve(__dirname, '../../../../_fixtures/local-content'),
+        mediaPath: '/media'
+      });
+    });
+
+    it('returns hymn item with lyrics', async () => {
+      const item = await fixtureAdapter.getItem('hymn:113');
+
+      expect(item).not.toBeNull();
+      expect(item.id).toBe('hymn:113');
+      expect(item.title).toBe("Our Savior's Love");
+      expect(item.type).toBe('hymn');
+      expect(item.mediaType).toBe('audio');
+      expect(item.metadata.verses).toBeDefined();
+      expect(item.metadata.verses.length).toBe(2);
+      expect(item.metadata.lyrics).toBeDefined();
+    });
+
+    it('maps hymn prefix to songs/hymn path', async () => {
+      const item = await fixtureAdapter.getItem('hymn:113');
+
+      expect(item).not.toBeNull();
+      expect(item.mediaUrl).toBe('/proxy/local-content/stream/hymn/113');
+      expect(item.metadata.number).toBe(113);
+      expect(item.metadata.collection).toBe('hymn');
+    });
+
+    it('returns null for missing hymn', async () => {
+      const item = await fixtureAdapter.getItem('hymn:999');
+      expect(item).toBeNull();
+    });
+
+    it('prevents path traversal in hymn', async () => {
+      const item = await fixtureAdapter.getItem('hymn:../../../etc/passwd');
+      expect(item).toBeNull();
+    });
+
+    it('is not resumable (songs do not need resume)', async () => {
+      const item = await fixtureAdapter.getItem('hymn:113');
+
+      expect(item).not.toBeNull();
+      expect(item.resumable).toBe(false);
     });
   });
 
