@@ -1,5 +1,9 @@
 // tests/unit/adapters/content/local-content/LocalContentAdapter.test.mjs
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { LocalContentAdapter } from '../../../../../backend/src/2_adapters/content/local-content/LocalContentAdapter.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('LocalContentAdapter', () => {
   let adapter;
@@ -57,6 +61,28 @@ describe('LocalContentAdapter', () => {
 
     it('returns scripture for scripture items', () => {
       expect(adapter.getStoragePath('scripture:bom/1nephi/1')).toBe('scripture');
+    });
+  });
+
+  describe('getItem', () => {
+    it('returns PlayableItem for talk', async () => {
+      const fixtureAdapter = new LocalContentAdapter({
+        dataPath: path.resolve(__dirname, '../../../../_fixtures/local-content'),
+        mediaPath: '/media'
+      });
+
+      const item = await fixtureAdapter.getItem('talk:general/test-talk');
+
+      expect(item).not.toBeNull();
+      expect(item.id).toBe('talk:general/test-talk');
+      expect(item.title).toBe('Test Talk Title');
+      expect(item.duration).toBe(1200);
+      expect(item.isPlayable()).toBe(true);
+    });
+
+    it('returns null for nonexistent talk', async () => {
+      const item = await adapter.getItem('talk:general/nonexistent');
+      expect(item).toBeNull();
     });
   });
 });
