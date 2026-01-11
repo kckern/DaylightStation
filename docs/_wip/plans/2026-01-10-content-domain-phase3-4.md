@@ -1,4 +1,4 @@
-# Content Domain Phase 3 - LocalContent, Folders & Legacy Compatibility
+# Content Domain Phase 3-4 - LocalContent, Folders & Legacy Compatibility
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
