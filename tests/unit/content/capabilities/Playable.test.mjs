@@ -47,4 +47,184 @@ describe('Playable capability', () => {
 
     expect(item.resumePosition).toBe(3600);
   });
+
+  describe('getProgress()', () => {
+    test('returns null when resumable is false', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: false,
+        resumePosition: 3600
+      });
+
+      expect(item.getProgress()).toBeNull();
+    });
+
+    test('returns null when duration is missing', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        resumable: true,
+        resumePosition: 3600
+      });
+
+      expect(item.getProgress()).toBeNull();
+    });
+
+    test('returns null when duration is null', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: null,
+        resumable: true,
+        resumePosition: 3600
+      });
+
+      expect(item.getProgress()).toBeNull();
+    });
+
+    test('returns null when resumePosition is missing', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: true
+      });
+
+      expect(item.getProgress()).toBeNull();
+    });
+
+    test('returns null when resumePosition is null', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: true,
+        resumePosition: null
+      });
+
+      expect(item.getProgress()).toBeNull();
+    });
+
+    test('returns correct percentage', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: true,
+        resumePosition: 3600
+      });
+
+      expect(item.getProgress()).toBe(50);
+    });
+
+    test('handles 0% progress', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: true,
+        resumePosition: 0
+      });
+
+      expect(item.getProgress()).toBeNull(); // resumePosition 0 is falsy
+    });
+
+    test('handles 100% progress', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: true,
+        resumePosition: 7200
+      });
+
+      expect(item.getProgress()).toBe(100);
+    });
+  });
+
+  describe('playbackRate default value', () => {
+    test('defaults to 1.0 when not provided', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: true
+      });
+
+      expect(item.playbackRate).toBe(1.0);
+    });
+
+    test('can be overridden with custom value', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: true,
+        playbackRate: 1.5
+      });
+
+      expect(item.playbackRate).toBe(1.5);
+    });
+  });
+
+  describe('optional field defaults', () => {
+    test('duration defaults to null when not provided', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        resumable: true
+      });
+
+      expect(item.duration).toBeNull();
+    });
+
+    test('resumePosition defaults to null when not provided', () => {
+      const item = new PlayableItem({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/proxy/plex/stream/12345',
+        duration: 7200,
+        resumable: true
+      });
+
+      expect(item.resumePosition).toBeNull();
+    });
+  });
 });
