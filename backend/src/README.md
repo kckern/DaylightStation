@@ -39,6 +39,22 @@ Dependencies flow **inward** toward the domain:
 
 **Domain is heaven, adapter is earth.**
 
+The domain defines the covenant; the adapter fulfills it in the physical realm.
+
+Heaven:
+ - is pure, stable, and eternal
+ - gives identity and purpose
+ - binds things together teleologically
+ - is immaterial with respect to instance, technology, and implementation
+Earth:
+ - Obtains patterns from heaven, resources from below
+ - Is mutable, transient, and perishable
+ - Implements details, handles I/O, and integrates with the outside world
+ - Provides heaven with material instance and form
+
+Heaven remains untouched by earthly concerns, while earth serves heaven's design.
+ 
+Techically:
 - Domains contain pure business logic with no I/O
 - Adapters implement domain ports and handle external integrations
 - Application layer is adapter-agnostic (receives interfaces, not implementations)
