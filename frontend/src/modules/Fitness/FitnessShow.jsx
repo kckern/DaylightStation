@@ -266,6 +266,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
         .filter(Boolean);
       const hasNoMusicLabel = normalizedLabels.some((label) => nomusicLabelSet.has(label));
       if (typeof setMusicAutoEnabled === 'function') {
+        // Enable music auto-play when video has NoMusic label (video lacks its own soundtrack)
         setMusicAutoEnabled(hasNoMusicLabel);
       }
       
@@ -282,7 +283,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
     } finally {
       setLoading(false);
     }
-  }, [showId, nomusicLabelSet, setMusicAutoEnabled]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setMusicAutoEnabled is stable
+  }, [showId, nomusicLabelSet]);
 
   useEffect(() => {
     fetchShowData();

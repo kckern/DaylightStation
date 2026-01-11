@@ -1634,7 +1634,8 @@
 
   .music-player-empty {
     width: 100%;
-    height: 100%;
+    height: 80px;
+    min-height: 80px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1651,6 +1652,7 @@
     width: 100%;
     min-width: 0;
     height: 80px;
+    min-height: 80px;
   }
 
   .music-player-artwork {
@@ -3206,7 +3208,8 @@
 
     .music-player-empty {
       width: 100%;
-      height: 100%;
+      height: 40px;
+      min-height: 40px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -3222,6 +3225,7 @@
       align-items: center;
       width: 100%;
       height: 40px;
+      min-height: 40px;
     }
 
     .music-player-artwork {
@@ -3642,9 +3646,15 @@
 /* Overrides for FitnessPlayer context (compact/original size) */
 .fitness-sidebar-mode-player .fitness-music-player-container {
   min-height: 56px;
-  
+
+  .music-player-empty {
+    height: 56px;
+    min-height: 56px;
+  }
+
   .music-player-content {
     height: 56px;
+    min-height: 56px;
   }
   
   .music-player-artwork {
