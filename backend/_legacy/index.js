@@ -217,6 +217,10 @@ async function initializeApp() {
     const { default: exe } = await import('./routers/exe.mjs');
     const { default: tts } = await import('./routers/tts.mjs');
 
+    // Content domain (new DDD structure)
+    const { createContentRegistry } = await import('../src/infrastructure/bootstrap.mjs');
+    const { createContentRouter } = await import('../src/api/routers/content.mjs');
+
     // Backend API
     app.post('/api/logs', (req, res) => {
       const body = req.body;
@@ -332,6 +336,12 @@ async function initializeApp() {
     app.use("/tts", tts);
     app.use("/api/gratitude", gratitudeRouter);
     app.use("/plex_proxy", plexProxyRouter);
+
+    // Initialize content registry and mount content router (new DDD structure)
+    const mediaBasePath = process.env.path?.media || process.env.MEDIA_PATH || '/data/media';
+    const contentRegistry = createContentRegistry({ mediaBasePath });
+    app.use('/api/content', createContentRouter(contentRegistry));
+    rootLogger.info('content.mounted', { path: '/api/content', mediaBasePath });
 
     // Mount API router on main app for webhook routes (journalist, foodlog)
     const { default: apiRouter } = await import('./api.mjs');
