@@ -35,3 +35,4 @@ tests/runtime/
 .worktrees
 /_extensions/fitness/config
 /test-results
+.claude/ralph-loop.local.md
