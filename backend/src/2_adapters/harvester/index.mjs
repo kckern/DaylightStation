@@ -33,3 +33,8 @@ export { GoodreadsHarvester } from './social/GoodreadsHarvester.mjs';
 // Communication Harvesters
 export { GmailHarvester } from './communication/GmailHarvester.mjs';
 export { GCalHarvester } from './communication/GCalHarvester.mjs';
+
+// Other Harvesters
+export { WeatherHarvester } from './other/WeatherHarvester.mjs';
+export { ScriptureHarvester } from './other/ScriptureHarvester.mjs';
+// Note: YouTube (media download) and Budget (finance domain) don't fit IHarvester pattern
