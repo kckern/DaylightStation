@@ -16,6 +16,7 @@ export const HarvesterCategory = {
   FITNESS: 'fitness',
   SOCIAL: 'social',
   PRODUCTIVITY: 'productivity',
+  COMMUNICATION: 'communication',
   FINANCE: 'finance',
   OTHER: 'other',
 };
