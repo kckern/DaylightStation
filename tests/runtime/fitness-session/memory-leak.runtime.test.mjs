@@ -147,25 +147,39 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
     await page.waitForTimeout(800);
     await episodeThumb.dispatchEvent('pointerdown');
 
-    // 7. Wait for video to start (governance should unlock with 120bpm HR)
-    console.log('[LEAK-1] Waiting for video to start...');
-    await page.waitForTimeout(5000);
+    // 7. Wait for governance to unlock (with 120bpm HR)
+    console.log('[LEAK-1] Waiting for governance to unlock...');
+    const lockOverlay = page.locator('.governance-overlay');
+    try {
+      await expect(lockOverlay).toBeHidden({ timeout: 30000 });
+      console.log('[LEAK-1] Governance unlocked - video should play');
+    } catch (e) {
+      console.log('[LEAK-1] WARNING: Governance still locked after 30s');
+    }
+
+    // Wait a bit more for video to actually start
+    await page.waitForTimeout(3000);
 
     // Check video status
     const videoState = await page.evaluate(() => {
       const video = document.querySelector('video');
-      const lockOverlay = document.querySelector('.governance-overlay');
       return {
         hasVideo: !!video,
         videoPlaying: video && !video.paused,
-        videoSrc: video?.src?.substring(0, 50) || null,
-        isLocked: lockOverlay && window.getComputedStyle(lockOverlay).display !== 'none'
+        currentTime: video?.currentTime || 0,
+        duration: video?.duration || 0,
+        videoSrc: video?.src?.substring(0, 80) || null
       };
     });
     console.log(`[LEAK-1] Video state: ${JSON.stringify(videoState)}`);
 
-    if (videoState.isLocked) {
-      console.log('[LEAK-1] WARNING: Content is locked - HR may not be high enough');
+    if (!videoState.videoPlaying) {
+      console.log('[LEAK-1] WARNING: Video not playing - attempting to play...');
+      await page.evaluate(() => {
+        const video = document.querySelector('video');
+        if (video) video.play().catch(() => {});
+      });
+      await page.waitForTimeout(2000);
     }
 
     // 8. Capture baselines AFTER video starts
