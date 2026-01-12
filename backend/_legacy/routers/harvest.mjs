@@ -53,10 +53,17 @@ import ArchiveService from '../lib/ArchiveService.mjs';
 import archiveRotation from '../lib/archiveRotation.mjs';
 
 // New DDD Harvesters (Phase 3f migration)
-import { GarminHarvester, StravaHarvester, WithingsHarvester, YamlLifelogStore, YamlAuthStore } from '../../src/2_adapters/harvester/index.mjs';
+import {
+    GarminHarvester, StravaHarvester, WithingsHarvester,
+    TodoistHarvester, ClickUpHarvester, GitHubHarvester,
+    LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester,
+    YamlLifelogStore, YamlAuthStore
+} from '../../src/2_adapters/harvester/index.mjs';
 import garminLib from 'garmin-connect';
 const { GarminConnect } = garminLib;
 import axios from './http.mjs';
+import { TodoistApi } from '@doist/todoist-api-typescript';
+import Parser from 'rss-parser';
 
 // Create shared lifelog store
 const lifelogStore = new YamlLifelogStore({
@@ -143,6 +150,66 @@ const withingsHarvester = new WithingsHarvester({
     logger: createLogger({ source: 'backend', app: 'withings' }),
 });
 
+// Wave 2: Productivity Harvesters
+const todoistHarvester = new TodoistHarvester({
+    todoistApi: null, // Will be created per-request with user token
+    httpClient: axios,
+    lifelogStore,
+    currentStore: {
+        load: (username) => userLoadFile(username, 'todoist/current.yml'),
+        save: (username, data) => userSaveFile(username, 'todoist/current.yml', data),
+    },
+    configService,
+    logger: createLogger({ source: 'backend', app: 'todoist' }),
+});
+
+const clickupHarvester = new ClickUpHarvester({
+    httpClient: axios,
+    lifelogStore,
+    currentStore: {
+        load: (username) => userLoadFile(username, 'clickup/current.yml'),
+        save: (username, data) => userSaveFile(username, 'clickup/current.yml', data),
+    },
+    configService,
+    logger: createLogger({ source: 'backend', app: 'clickup' }),
+});
+
+const githubHarvester = new GitHubHarvester({
+    httpClient: axios,
+    lifelogStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'github' }),
+});
+
+// Wave 3: Social Harvesters
+const lastfmHarvester = new LastfmHarvester({
+    httpClient: axios,
+    lifelogStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'lastfm' }),
+});
+
+const redditHarvester = new RedditHarvester({
+    httpClient: axios,
+    lifelogStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'reddit' }),
+});
+
+const letterboxdHarvester = new LetterboxdHarvester({
+    httpClient: axios,
+    lifelogStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'letterboxd' }),
+});
+
+const goodreadsHarvester = new GoodreadsHarvester({
+    rssParser: new Parser(),
+    lifelogStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'goodreads' }),
+});
+
 const harvestRootLogger = () => createLogger({
     source: 'backend',
     app: 'harvest',
@@ -154,20 +221,27 @@ const harvesters = {
         fn[i] = (_logger, _guidId, username) => Infinity.loadData(i, { targetUsername: username });
         return fn;
     }, {}),
-    todoist: (logger, guidId, username) => todoist(logger, guidId, username),
+    // todoist: Uses new DDD harvester (Phase 3f Wave 2)
+    todoist: (_logger, _guidId, username) => todoistHarvester.harvest(username),
     gmail: (logger, guidId, username) => gmail(logger, guidId, username),
     gcal: (logger, guidId, username) => gcal(logger, guidId, username),
-    // withings: Uses new DDD harvester (Phase 3f)
+    // withings: Uses new DDD harvester (Phase 3f Wave 1)
     withings: (_logger, _guidId, username) => withingsHarvester.harvest(username),
     // ldsgc: (_logger, guidId, username) => ldsgc(guidId, { targetUsername: username }),
     weather: (_logger, guidId, username) => weather(guidId, { targetUsername: username }),
     scripture: (_logger, guidId, username) => scripture(guidId, { targetUsername: username }),
-    clickup: (_logger, guidId, username) => clickup(guidId, { targetUsername: username }),
-    lastfm: (_logger, guidId, username) => lastfm(guidId, { targetUsername: username }),
-    letterboxd: (_logger, guidId, username) => letterboxd(username),
-    goodreads: (_logger, guidId, username) => goodreads(username),
-    github: (_logger, guidId, username) => github(guidId, { targetUsername: username }),
-    reddit: (_logger, guidId, username) => reddit(guidId, { targetUsername: username }),
+    // clickup: Uses new DDD harvester (Phase 3f Wave 2)
+    clickup: (_logger, _guidId, username) => clickupHarvester.harvest(username),
+    // lastfm: Uses new DDD harvester (Phase 3f Wave 3)
+    lastfm: (_logger, _guidId, username) => lastfmHarvester.harvest(username),
+    // letterboxd: Uses new DDD harvester (Phase 3f Wave 3)
+    letterboxd: (_logger, _guidId, username) => letterboxdHarvester.harvest(username),
+    // goodreads: Uses new DDD harvester (Phase 3f Wave 3)
+    goodreads: (_logger, _guidId, username) => goodreadsHarvester.harvest(username),
+    // github: Uses new DDD harvester (Phase 3f Wave 2)
+    github: (_logger, _guidId, username) => githubHarvester.harvest(username),
+    // reddit: Uses new DDD harvester (Phase 3f Wave 3)
+    reddit: (_logger, _guidId, username) => redditHarvester.harvest(username),
     budget: (_logger, guidId, username) => budget(guidId, { targetUsername: username }),
     youtube_dl: (_logger, guidId, username) => youtube_dl(guidId, { targetUsername: username }),
     fitness: (_logger, guidId, username) => fitness(guidId, { targetUsername: username }),
