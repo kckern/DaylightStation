@@ -36,8 +36,8 @@
 | 3c | Messaging Adapters | ✅ Complete | 100% |
 | 3d | Nutrition/Journaling Adapters | ✅ Complete | 100% |
 | 3e | AI Adapters | ✅ Complete | 100% |
-| 3f | External APIs (19) | 🔄 14 of 16 done | 88% |
-| **3** | **Adapters** | **🔄 6 of 6 nearly done** | **96%** |
+| 3f | External APIs (19) | 🔄 15 of 16 done | 94% |
+| **3** | **Adapters** | **🔄 6 of 6 nearly done** | **97%** |
 | 4a | Nutribot (116 files) | ✅ Complete | 100% |
 | 4b | Journalist (57 files) | ✅ Complete | 100% |
 | 4c | Fitness App | ✅ Complete | 100% |
@@ -308,7 +308,7 @@ All harvesters implement `IHarvester` interface with:
 - [x] RedditHarvester - Comments/posts from user profile
 - [x] LetterboxdHarvester - Film diary via RSS feed
 - [x] GoodreadsHarvester - Books via RSS feed
-- [ ] FoursquareHarvester - Not yet migrated
+- [x] FoursquareHarvester - Swarm check-ins with venue, photos, comments
 
 **Communication Harvesters** (`src/2_adapters/harvester/communication/`)
 - [x] GmailHarvester - Inbox/sent via Gmail API
