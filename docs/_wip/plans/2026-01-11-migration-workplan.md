@@ -634,21 +634,21 @@ Similar structure to Nutribot.
 8. **[x] Finance Application** - BudgetCompilationService, HarvestService, CategorizationService complete
 9. **[x] Content Domain** - All 7 phases complete with legacy shims
 10. **[x] Finance Legacy Shims** - /data/budget, /harvest/budget redirects complete
-11. **[x] External API Harvesters (Phase 3f)** - 15 of 16 harvesters migrated:
+11. **[x] External API Harvesters (Phase 3f)** - ALL 16 harvesters migrated:
     - Fitness: Garmin, Strava, Withings
     - Productivity: Todoist, ClickUp, GitHub
     - Social: Lastfm, Reddit, Letterboxd, Goodreads, Foursquare
     - Communication: Gmail, GCal
-    - Other: Weather, Scripture (Shopping pending - different domain)
+    - Finance: Shopping (personal purchase history)
+    - Other: Weather, Scripture
 
 ### Immediate Next Actions
 
-1. **[ ] Complete Phase 3f** - Remaining harvester: ShoppingHarvester (commerce/home domain)
-2. **[ ] Create server.mjs** - `src/server.mjs` to replace `_legacy/index.js`
-3. **[ ] Migrate health router** - `4_api/routers/health.mjs`
-4. **[ ] Migrate lifelog router** - `4_api/routers/lifelog.mjs`
-5. **[ ] Migrate home router** - `4_api/routers/home.mjs`
-6. **[ ] Migrate cron router** - `4_api/routers/admin/cron.mjs`
+1. **[ ] Create server.mjs** - `src/server.mjs` to replace `_legacy/index.js`
+2. **[ ] Migrate health router** - `4_api/routers/health.mjs`
+3. **[ ] Migrate lifelog router** - `4_api/routers/lifelog.mjs`
+4. **[ ] Migrate home router** - `4_api/routers/home.mjs`
+5. **[ ] Migrate cron router** - `4_api/routers/admin/cron.mjs`
 
 ### Definition of Done (per component)
 
@@ -667,7 +667,7 @@ Similar structure to Nutribot.
 |-------|------------|-----------------|--------|
 | 2. Fitness Domain | 15 | 25 | ✅ COMPLETE |
 | 2. Finance Domain | 12 | 20 | ✅ COMPLETE |
-| 3. External APIs | 19 | 30 | 🔄 15 of 16 done (94%) |
+| 3. External APIs | 16 | 30 | ✅ COMPLETE |
 | 4. Chatbots | 2 apps | 40 | ✅ COMPLETE |
 | 4. Finance App | 4 | 8 | ✅ COMPLETE |
 | 5. Remaining Routers | 8 | 15 | 🔄 IN PROGRESS |
