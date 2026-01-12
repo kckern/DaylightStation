@@ -1,376 +1,13 @@
-import React, { useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import ShakaVideoStreamer from 'vimond-replay/video-streamer/shaka-player';
-import { useCommonMediaController, shouldRestartFromBeginning } from '../hooks/useCommonMediaController.js';
-import { useBufferResilience } from '../hooks/useBufferResilience.js';
+import 'dash-video-element';
+import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
-import { playbackLog } from '../lib/playbackLogger.js';
-
-const MAX_ADAPTIVE_VIDEO_BLUR_PX = 5;
-const ADAPTIVE_BLUR_PX_PER_SCALE = 1.5;
-const GRAIN_TEXTURE_SIZE = 256;
-const MIN_GRAIN_OPACITY = 0.01;
-const MAX_GRAIN_OPACITY = 0.5;
-const GRAIN_SCANLINE_PERIOD = 4; // px
-const GRAIN_SCANLINE_ALPHA = 5;
-
-let cachedGrainDataUrl = null;
-
-const ensureGrainTexture = () => {
-  if (cachedGrainDataUrl || typeof document === 'undefined') {
-    return cachedGrainDataUrl;
-  }
-  const canvas = document.createElement('canvas');
-  canvas.width = GRAIN_TEXTURE_SIZE;
-  canvas.height = GRAIN_TEXTURE_SIZE;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  const imageData = ctx.createImageData(GRAIN_TEXTURE_SIZE, GRAIN_TEXTURE_SIZE);
-  for (let i = 0; i < imageData.data.length; i += 4) {
-    const value = Math.floor(Math.random() * 255);
-    imageData.data[i] = value;
-    imageData.data[i + 1] = value;
-    imageData.data[i + 2] = value;
-    imageData.data[i + 3] = 255;
-  }
-  ctx.putImageData(imageData, 0, 0);
-  // Subtle CRT-style scanlines layered over the static grain
-  ctx.fillStyle = `rgba(0, 0, 0, ${GRAIN_SCANLINE_ALPHA})`;
-  for (let y = 0; y < GRAIN_TEXTURE_SIZE; y += GRAIN_SCANLINE_PERIOD) {
-    ctx.fillRect(0, y, GRAIN_TEXTURE_SIZE, 1);
-  }
-  cachedGrainDataUrl = canvas.toDataURL('image/png');
-  return cachedGrainDataUrl;
-};
-
-const computeGrainOpacity = (blurPx) => {
-  if (!Number.isFinite(blurPx) || blurPx <= 0) return 0;
-  const ratio = Math.min(1, blurPx / MAX_ADAPTIVE_VIDEO_BLUR_PX);
-  const opacity = MIN_GRAIN_OPACITY + (MAX_GRAIN_OPACITY - MIN_GRAIN_OPACITY) * ratio;
-  return Number(opacity.toFixed(3));
-};
-
-const readVideoBaseFilter = (mediaEl) => {
-  if (typeof window === 'undefined' || !mediaEl) return '';
-  const computed = window.getComputedStyle?.(mediaEl);
-  if (!computed) return '';
-  const base = computed.getPropertyValue('--player-video-filter-base')?.trim();
-  if (!base || base === 'none') return '';
-  return base;
-};
-
-const readVideoDisplayMetrics = (mediaEl) => {
-  if (!mediaEl) return null;
-  const rect = typeof mediaEl.getBoundingClientRect === 'function' ? mediaEl.getBoundingClientRect() : null;
-  const displayHeight = rect?.height || mediaEl.clientHeight || mediaEl.offsetHeight || 0;
-  const intrinsicHeight = Number(mediaEl.naturalHeight || mediaEl.videoHeight || 0);
-  if (!displayHeight || !intrinsicHeight) {
-    return null;
-  }
-  return {
-    displayHeight,
-    intrinsicHeight,
-  };
-};
-
-const computeAdaptiveVideoBlurPx = (mediaEl) => {
-  const metrics = readVideoDisplayMetrics(mediaEl);
-  if (!metrics) return 0;
-  const { displayHeight, intrinsicHeight } = metrics;
-  if (!Number.isFinite(displayHeight) || !Number.isFinite(intrinsicHeight) || intrinsicHeight <= 0) {
-    return 0;
-  }
-  if (displayHeight <= intrinsicHeight) {
-    return 0;
-  }
-  const scaleRatio = displayHeight / intrinsicHeight;
-  const scaledExcess = Math.max(0, scaleRatio - 1);
-  const blurPx = Math.min(MAX_ADAPTIVE_VIDEO_BLUR_PX, scaledExcess * ADAPTIVE_BLUR_PX_PER_SCALE);
-  return Number(blurPx.toFixed(2));
-};
-
-const applyAdaptiveVideoBlur = (mediaEl, blurPx, rootEl) => {
-  if (!mediaEl) return;
-  if (!Number.isFinite(blurPx) || blurPx <= 0) {
-    mediaEl.style.removeProperty('--player-video-filter-computed');
-    mediaEl.removeAttribute('data-adaptive-blur');
-    if (rootEl) {
-      rootEl.style.removeProperty('--player-video-grain-opacity');
-      rootEl.style.removeProperty('--player-video-grain-image');
-      rootEl.style.removeProperty('--player-video-grain-offset');
-      rootEl.removeAttribute('data-adaptive-grain');
-    }
-    return;
-  }
-  const baseFilter = readVideoBaseFilter(mediaEl);
-  const composed = [baseFilter, `blur(${blurPx.toFixed(2)}px)`]
-    .filter(Boolean)
-    .join(' ')
-    .trim() || 'none';
-  mediaEl.style.setProperty('--player-video-filter-computed', composed);
-  mediaEl.dataset.adaptiveBlur = blurPx.toFixed(2);
-  if (rootEl) {
-    const opacity = computeGrainOpacity(blurPx);
-    const grainUrl = ensureGrainTexture();
-    if (grainUrl) {
-      rootEl.style.setProperty('--player-video-grain-opacity', opacity.toString());
-      rootEl.style.setProperty('--player-video-grain-image', `url(${grainUrl})`);
-      rootEl.style.setProperty('--player-video-grain-offset', '0px 0px');
-      rootEl.dataset.adaptiveGrain = opacity.toString();
-    }
-  }
-};
-
-const deriveApproxDurationSeconds = (media = {}) => {
-  const numericFields = [
-    media?.duration,
-    media?.duration_seconds,
-    media?.runtime,
-    media?.runtimeSeconds,
-    media?.media_duration
-  ];
-  const explicitDuration = numericFields.map((value) => Number(value)).find((value) => Number.isFinite(value) && value > 0);
-  if (Number.isFinite(explicitDuration)) {
-    return explicitDuration;
-  }
-  const seconds = Number(media?.seconds);
-  const percent = Number(media?.percent);
-  if (Number.isFinite(seconds) && Number.isFinite(percent) && percent > 0) {
-    return seconds / (percent / 100);
-  }
-  return null;
-};
-
-const resolveInitialStartSeconds = (media) => {
-  const rawStart = Number(media?.seconds);
-  const normalizedStart = Number.isFinite(rawStart) && rawStart >= 0 ? rawStart : 0;
-  const approxDuration = deriveApproxDurationSeconds(media);
-  const decision = shouldRestartFromBeginning(approxDuration, normalizedStart);
-  const result = {
-    startSeconds: decision.restart ? 0 : normalizedStart,
-    decision,
-    approxDuration
-  };
-  
-  return result;
-};
+import { LoadingOverlay } from './LoadingOverlay.jsx';
 
 /**
  * Video player component for playing video content (including DASH video)
  */
-const serializePlaybackError = (error) => {
-  if (!error) return null;
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    };
-  }
-  if (typeof error === 'object') {
-    const {
-      code,
-      severity,
-      technology,
-      message,
-      data,
-      category,
-      detail,
-      stack
-    } = error;
-    return {
-      code: code ?? error?.detail?.code ?? null,
-      severity: severity ?? error?.severity ?? null,
-      technology: technology ?? error?.technology ?? null,
-      category: category ?? null,
-      message: message ?? error?.message ?? null,
-      data: data ?? error?.data ?? null,
-      detail: detail ?? null,
-      stack: stack ?? error?.stack ?? null
-    };
-  }
-  return { value: error };
-};
-
-const serializeMediaError = (mediaError) => {
-  if (!mediaError) return null;
-  const { code, message, MEDIA_ERR_NETWORK, MEDIA_ERR_DECODE, MEDIA_ERR_SRC_NOT_SUPPORTED, MEDIA_ERR_ABORTED } = mediaError;
-  return {
-    code: code ?? null,
-    message: message || null,
-    MEDIA_ERR_ABORTED,
-    MEDIA_ERR_NETWORK,
-    MEDIA_ERR_DECODE,
-    MEDIA_ERR_SRC_NOT_SUPPORTED
-  };
-};
-
-const serializeTimeRanges = (ranges) => {
-  if (!ranges || typeof ranges.length !== 'number') {
-    return [];
-  }
-  const entries = [];
-  for (let index = 0; index < ranges.length; index += 1) {
-    try {
-      const start = ranges.start(index);
-      const end = ranges.end(index);
-      entries.push({
-        start: Number.isFinite(start) ? Number(start.toFixed(3)) : start,
-        end: Number.isFinite(end) ? Number(end.toFixed(3)) : end
-      });
-    } catch (_) {
-      // Ignore invalid ranges
-    }
-  }
-  return entries;
-};
-
-const computeBufferSnapshot = (mediaEl) => {
-  if (!mediaEl) {
-    return {
-      currentTime: null,
-      buffered: [],
-      bufferAheadSeconds: null,
-      bufferBehindSeconds: null,
-      nextBufferStartSeconds: null,
-      bufferGapSeconds: null
-    };
-  }
-  const buffered = serializeTimeRanges(mediaEl.buffered);
-  const currentTime = Number.isFinite(mediaEl.currentTime) ? Number(mediaEl.currentTime.toFixed(3)) : null;
-  if (currentTime == null || !buffered.length) {
-    return {
-      currentTime,
-      buffered,
-      bufferAheadSeconds: null,
-      bufferBehindSeconds: null,
-      nextBufferStartSeconds: null,
-      bufferGapSeconds: null
-    };
-  }
-  let bufferAheadSeconds = null;
-  let bufferBehindSeconds = null;
-  let nextBufferStartSeconds = null;
-  for (let index = 0; index < buffered.length; index += 1) {
-    const range = buffered[index];
-    if (currentTime >= range.start && currentTime <= range.end) {
-      bufferAheadSeconds = Number((range.end - currentTime).toFixed(3));
-      bufferBehindSeconds = Number((currentTime - range.start).toFixed(3));
-      if (index + 1 < buffered.length) {
-        nextBufferStartSeconds = buffered[index + 1].start;
-      }
-      break;
-    }
-    if (currentTime < range.start) {
-      nextBufferStartSeconds = range.start;
-      break;
-    }
-  }
-  const bufferGapSeconds = Number.isFinite(nextBufferStartSeconds)
-    ? Number((nextBufferStartSeconds - currentTime).toFixed(3))
-    : null;
-  return {
-    currentTime,
-    buffered,
-    bufferAheadSeconds,
-    bufferBehindSeconds,
-    nextBufferStartSeconds,
-    bufferGapSeconds
-  };
-};
-
-const readVideoPlaybackQuality = (mediaEl) => {
-  if (!mediaEl) {
-    return {
-      droppedFrames: null,
-      totalFrames: null
-    };
-  }
-  try {
-    if (typeof mediaEl.getVideoPlaybackQuality === 'function') {
-      const sample = mediaEl.getVideoPlaybackQuality();
-      return {
-        droppedFrames: Number.isFinite(sample?.droppedVideoFrames)
-          ? sample.droppedVideoFrames
-          : (Number.isFinite(sample?.droppedFrames) ? sample.droppedFrames : null),
-        totalFrames: Number.isFinite(sample?.totalVideoFrames)
-          ? sample.totalVideoFrames
-          : (Number.isFinite(sample?.totalFrames) ? sample.totalFrames : null)
-      };
-    }
-  } catch (_) {
-    // ignore playback quality errors
-  }
-  const dropped = Number.isFinite(mediaEl?.webkitDroppedFrameCount)
-    ? mediaEl.webkitDroppedFrameCount
-    : null;
-  const decoded = Number.isFinite(mediaEl?.webkitDecodedFrameCount)
-    ? mediaEl.webkitDecodedFrameCount
-    : null;
-  return {
-    droppedFrames: dropped,
-    totalFrames: decoded
-  };
-};
-
-const summarizeShakaStats = (player) => {
-  if (!player || typeof player.getStats !== 'function') {
-    return null;
-  }
-  try {
-    const stats = player.getStats();
-    if (!stats || typeof stats !== 'object') {
-      return null;
-    }
-    return {
-      width: stats.width ?? null,
-      height: stats.height ?? null,
-      streamBandwidth: stats.streamBandwidth ?? null,
-      estimatedBandwidth: stats.estimatedBandwidth ?? null,
-      decodedFrames: stats.decodedFrames ?? null,
-      droppedFrames: stats.droppedFrames ?? null,
-      bufferLength: stats.bufferLength ?? null,
-      stateHistoryLength: Array.isArray(stats.stateHistory) ? stats.stateHistory.length : null
-    };
-  } catch (_) {
-    return null;
-  }
-};
-
-const buildTroubleDiagnostics = (mediaEl, player) => {
-  if (!mediaEl) {
-    return null;
-  }
-  const buffer = computeBufferSnapshot(mediaEl);
-  const quality = readVideoPlaybackQuality(mediaEl);
-  const shaka = summarizeShakaStats(player);
-  return {
-    currentTime: buffer.currentTime,
-    bufferAheadSeconds: buffer.bufferAheadSeconds,
-    bufferBehindSeconds: buffer.bufferBehindSeconds,
-    nextBufferStartSeconds: buffer.nextBufferStartSeconds,
-    bufferGapSeconds: buffer.bufferGapSeconds,
-    buffered: buffer.buffered,
-    playbackRate: Number.isFinite(mediaEl.playbackRate) ? Number(mediaEl.playbackRate.toFixed(3)) : null,
-    paused: typeof mediaEl.paused === 'boolean' ? mediaEl.paused : null,
-    readyState: typeof mediaEl.readyState === 'number' ? mediaEl.readyState : null,
-    networkState: typeof mediaEl.networkState === 'number' ? mediaEl.networkState : null,
-    quality,
-    shaka
-  };
-};
-
-const isSmoothPlaybackSample = (mediaEl) => {
-  if (!mediaEl) {
-    return false;
-  }
-  const readyState = typeof mediaEl.readyState === 'number' ? mediaEl.readyState : 0;
-  const networkState = typeof mediaEl.networkState === 'number' ? mediaEl.networkState : 0;
-  return readyState >= 3 && mediaEl.paused === false && networkState !== 2;
-};
-
-const SMOOTH_PLAYBACK_HEARTBEAT_INTERVAL_MS = 15000;
-
 export function VideoPlayer({ 
   media, 
   advance, 
@@ -387,62 +24,33 @@ export function VideoPlayer({
   ignoreKeys, 
   onProgress, 
   onMediaRef, 
+  showQuality,
+  stallConfig,
   keyboardOverrides,
-  onController,
-  resilienceBridge,
-  maxVideoBitrate,
-  maxResolution,
-  watchedDurationProvider
+  onController
 }) {
+  // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
-
-  const { show, season, title, media_url } = media;
-
-  const { startSeconds: initialStartSeconds } = useMemo(
-    () => resolveInitialStartSeconds(media),
-    [
-      media?.seconds,
-      media?.percent,
-      media?.duration,
-      media?.duration_seconds,
-      media?.runtime,
-      media?.runtimeSeconds,
-      media?.media_duration
-    ]
-  );
-
-  const resolvedMaxVideoBitrate = maxVideoBitrate ?? media?.maxVideoBitrate ?? null;
-  const resolvedMaxResolution = maxResolution ?? media?.maxResolution ?? null;
-
-  const videoKey = useMemo(
-    () => `${media_url || ''}__cap=${resolvedMaxVideoBitrate ?? 'unlimited'}__res=${resolvedMaxResolution ?? 'native'}`,
-    [media_url, resolvedMaxVideoBitrate, resolvedMaxResolution]
-  );
-
-  const shakaNudgePlaybackRef = useRef(async () => ({ ok: false, outcome: 'not-ready' }));
-  const troubleDiagnosticsRef = useRef(() => null);
-  const lastPlayInvokeRef = useRef(0);
-  const mediaAccessExtras = useMemo(() => ({
-    nudgePlayback: (...args) => shakaNudgePlaybackRef.current?.(...args),
-    getTroubleDiagnostics: () => troubleDiagnosticsRef.current?.()
-  }), []);
-
-  const playerRootRef = useRef(null);
-
+  const [displayReady, setDisplayReady] = useState(false);
+  const [isAdapting, setIsAdapting] = useState(false);
+  const [adaptMessage, setAdaptMessage] = useState(undefined);
+  
   const {
     isDash,
     containerRef,
     seconds,
-    duration,
-    handleProgressClick,
-    mediaInstanceKey,
-    getMediaEl,
     isPaused,
+    duration,
+    isStalled,
     isSeeking,
-    hardReset,
-    waitKey
+    handleProgressClick,
+    quality,
+    droppedFramePct,
+    currentMaxKbps,
+    stallState,
+    elementKey
   } = useCommonMediaController({
-    start: initialStartSeconds,
+    start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
@@ -460,369 +68,58 @@ export function VideoPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
+    showQuality,
+    stallConfig,
     keyboardOverrides,
-    onController,
-    instanceKey: videoKey,
-    fetchVideoInfo,
-    seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
-    resilienceBridge,
-    watchedDurationProvider,
-    mediaAccessExtras
+  onController,
+    onRequestBitrateChange: useCallback(async (newCapKbps, { reason }) => {
+      // Trigger a refetch with bitrate override and show overlay message
+      try {
+        const msg =
+          reason === 'over_allowance' ? 'Lowering bitrate to reduce dropped frames…' :
+          reason === 'ramp_up' ? 'Increasing bitrate after stable playback…' :
+          reason === 'reset_unlimited' ? 'Restoring unlimited bitrate…' :
+          reason === 'manual_reset' ? 'Resetting bitrate cap…' :
+          'Adapting bitrate to device performance…';
+        setAdaptMessage(msg);
+        setIsAdapting(true);
+        await fetchVideoInfo?.({ maxVideoBitrateOverride: newCapKbps, reason });
+      } finally {
+        // We will also clear during canplay/playing, but ensure it doesn't stick
+        setTimeout(() => { setIsAdapting(false); setAdaptMessage(undefined); }, 5000);
+      }
+    }, [fetchVideoInfo])
   });
-  const dashSource = useMemo(() => {
-    if (!media_url) return null;
-    const startPosition = Number.isFinite(initialStartSeconds) && initialStartSeconds >= 0 ? initialStartSeconds : undefined;
-    return startPosition != null
-      ? { streamUrl: media_url, contentType: 'application/dash+xml', startPosition }
-      : { streamUrl: media_url, contentType: 'application/dash+xml' };
-  }, [media_url, initialStartSeconds]);
 
-  const getCurrentMediaElement = useCallback(() => {
-    const host = containerRef.current;
-    if (!host) return null;
-    const selector = 'video';
-    const shadowRoot = host.shadowRoot;
-    if (shadowRoot && typeof shadowRoot.querySelector === 'function') {
-      const shadowVideo = shadowRoot.querySelector(selector);
-      if (shadowVideo) return shadowVideo;
-    }
+  const { show, season, title, media_url } = media;
 
-    const tagName = typeof host.tagName === 'string' ? host.tagName.toUpperCase() : '';
-    if (tagName === 'VIDEO') {
-      return host;
-    }
-
-    if (typeof host.querySelector === 'function') {
-      const nestedVideo = host.querySelector(selector);
-      if (nestedVideo) return nestedVideo;
-    }
-
-    return null;
-  }, [containerRef]);
-
-  const shakaPlayerRef = useRef(null);
+  // If the media_url (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
   useEffect(() => {
-    troubleDiagnosticsRef.current = () => {
-      const mediaEl = getCurrentMediaElement();
-      return buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
+    setDisplayReady(false);
+  }, [media_url, media?.maxVideoBitrate]);
+
+  // Handle dash-video custom element events (web components don't support React synthetic events)
+  useEffect(() => {
+    if (!isDash) return;
+    const el = containerRef.current;
+    if (!el) return;
+
+    const handleReady = () => {
+      setDisplayReady(true);
+      setIsAdapting(false);
+      setAdaptMessage(undefined);
     };
+
+    el.addEventListener('canplay', handleReady);
+    el.addEventListener('playing', handleReady);
+
     return () => {
-      troubleDiagnosticsRef.current = () => null;
+      el.removeEventListener('canplay', handleReady);
+      el.removeEventListener('playing', handleReady);
     };
-  }, [getCurrentMediaElement]);
-  const shakaNetworkingCleanupRef = useRef(() => {});
-  const findNextBufferedStart = useCallback((mediaEl, currentSeconds) => {
-    if (!mediaEl?.buffered) return null;
-    try {
-      const ranges = mediaEl.buffered;
-      const length = Number(ranges.length) || 0;
-      let containsCurrent = false;
-      for (let index = 0; index < length; index += 1) {
-        const start = ranges.start(index);
-        const end = ranges.end(index);
-        if (!Number.isFinite(start) || !Number.isFinite(end)) {
-          continue;
-        }
-        if (currentSeconds >= start && currentSeconds <= end) {
-          containsCurrent = true;
-          break;
-        }
-        if (currentSeconds < start) {
-          return start + 0.01;
-        }
-      }
-      return containsCurrent ? null : null;
-    } catch (_) {
-      return null;
-    }
-  }, []);
-
-  const logShakaDiagnostic = useCallback((event, payload = {}, level = 'debug') => {
-    const rateLimit = event === 'shaka-video-event'
-      ? {
-          key: 'playback-heartbeat',
-          interval: SMOOTH_PLAYBACK_HEARTBEAT_INTERVAL_MS,
-          when: (recordPayload) => (
-            recordPayload?.eventName === 'timeupdate'
-            && (recordPayload?.smooth === true
-              || (
-                typeof recordPayload?.readyState === 'number'
-                && recordPayload.readyState >= 3
-                && recordPayload?.paused === false
-                && recordPayload?.buffering !== true
-              ))
-          )
-        }
-      : undefined;
-    playbackLog(event, {
-      ...payload,
-      mediaType: media?.media_type || null,
-      mediaTitle: media?.title || media?.show || null
-    }, {
-      level,
-      context: {
-        mediaKey: media?.media_key || media?.id || null,
-        instanceKey: mediaInstanceKey,
-        waitKey: waitKey || null
-      },
-      ...(rateLimit ? { rateLimit } : {})
-    });
-  }, [media?.id, media?.media_key, media?.media_type, media?.show, media?.title, mediaInstanceKey, waitKey]);
-
-  const shakaNudgePlayback = useCallback(async ({ reason = 'decoder-stall' } = {}) => {
-    const mediaEl = getCurrentMediaElement();
-    if (!mediaEl) {
-      logShakaDiagnostic('shaka-nudge-skip', { reason, outcome: 'no-media-element' }, 'warn');
-      return { ok: false, outcome: 'no-media-element' };
-    }
-
-    const diagnostics = buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
-
-    const currentTime = Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : 0;
-    const gapTarget = findNextBufferedStart(mediaEl, currentTime);
-    if (Number.isFinite(gapTarget) && gapTarget - currentTime > 0.05) {
-      try {
-        mediaEl.currentTime = Math.max(0, gapTarget);
-        mediaEl.play?.().catch(() => {});
-        logShakaDiagnostic('shaka-nudge-gap-skip', {
-          reason,
-          targetSeconds: gapTarget,
-          diagnostics
-        }, 'info');
-        return { ok: true, action: 'gap-skip', targetSeconds: gapTarget };
-      } catch (error) {
-        logShakaDiagnostic('shaka-nudge-gap-error', {
-          reason,
-          targetSeconds: gapTarget,
-          error: serializePlaybackError(error),
-          diagnostics
-        }, 'warn');
-      }
-    }
-
-    const player = shakaPlayerRef.current;
-    // For decoder stalls (where we have buffer but no progress), retryStreaming is often insufficient.
-    // We prefer a micro-seek to kick the decoder.
-    const preferSeek = reason === 'decoder-stall';
-
-    if (!preferSeek && player && typeof player.retryStreaming === 'function') {
-      try {
-        await player.retryStreaming();
-        logShakaDiagnostic('shaka-nudge-retry-streaming', { reason }, 'info');
-        return { ok: true, action: 'retry-streaming' };
-      } catch (error) {
-        logShakaDiagnostic('shaka-nudge-retry-error', {
-          reason,
-          error: serializePlaybackError(error),
-          diagnostics
-        }, 'warn');
-      }
-    }
-
-    const duration = Number.isFinite(mediaEl.duration) ? mediaEl.duration : null;
-    const delta = 0.25;
-    const targetSeconds = duration != null
-      ? Math.min(Math.max(0, currentTime + delta), Math.max(0, duration - 0.05))
-      : currentTime + delta;
-    if (Number.isFinite(targetSeconds) && targetSeconds > currentTime) {
-      try {
-        mediaEl.currentTime = targetSeconds;
-        mediaEl.play?.().catch(() => {});
-        logShakaDiagnostic('shaka-nudge-microseek', {
-          reason,
-          targetSeconds,
-          diagnostics
-        }, 'info');
-        return { ok: true, action: 'micro-seek', targetSeconds };
-      } catch (error) {
-        logShakaDiagnostic('shaka-nudge-microseek-error', {
-          reason,
-          targetSeconds,
-          error: serializePlaybackError(error),
-          diagnostics
-        }, 'warn');
-      }
-    }
-
-    logShakaDiagnostic('shaka-nudge-exhausted', { reason, diagnostics }, 'warn');
-    return { ok: false, outcome: 'exhausted' };
-  }, [findNextBufferedStart, getCurrentMediaElement, logShakaDiagnostic]);
-
-  useEffect(() => {
-    shakaNudgePlaybackRef.current = shakaNudgePlayback;
-  }, [shakaNudgePlayback]);
-
-  const {
-    handleNetworkResponse,
-    handlePlayerStateChange,
-    handlePlaybackError: handleShakaPlaybackError
-  } = useBufferResilience({
-    mediaInstanceKey,
-    logShakaDiagnostic,
-    hardReset,
-    getCurrentMediaElement,
-    resilienceBridge,
-    fetchVideoInfo,
-    advance,
-    seconds
-  });
-
-  const shakaConfiguration = useMemo(() => {
-    const streaming = {
-      bufferingGoal: 90,
-      rebufferingGoal: 30,
-      stallEnabled: true,
-      stallThreshold: 0.25,
-      bufferBehind: 120,
-      retryParameters: {
-        maxAttempts: 7,
-        baseDelay: 250,
-        backoffFactor: 2,
-        fuzzFactor: 0.5,
-        timeout: 0
-      }
-    };
-    const abr = {
-      enabled: true,
-      switchInterval: 2,
-      bandwidthUpgradeTarget: 0.85,
-      bandwidthDowngradeTarget: 0.95
-    };
-    return {
-      playsInline: true,
-      shakaPlayer: {
-        installPolyfills: true,
-        customConfiguration: {
-          streaming,
-          abr
-        }
-      }
-    };
-  }, []);
-
-  const handleShakaReady = useCallback(({ thirdPartyPlayer, play, setProperties }) => {
-    shakaPlayerRef.current = thirdPartyPlayer || null;
-    if (typeof shakaNetworkingCleanupRef.current === 'function') {
-      shakaNetworkingCleanupRef.current();
-      shakaNetworkingCleanupRef.current = () => {};
-    }
-    const cleanupFns = [];
-    if (thirdPartyPlayer && typeof thirdPartyPlayer.addEventListener === 'function') {
-      const shakaEvents = ['error', 'loading', 'streaming', 'buffering'];
-      shakaEvents.forEach((eventName) => {
-        const handler = (event) => {
-          const payload = {
-            eventName,
-            streamUrl: dashSource?.streamUrl || null
-          };
-          if (event && typeof event === 'object') {
-            if ('buffering' in event) payload.buffering = Boolean(event.buffering);
-            if ('detail' in event) payload.detail = serializePlaybackError(event.detail);
-          }
-          if (eventName === 'buffering' || eventName === 'error') {
-            payload.diagnostics = buildTroubleDiagnostics(getCurrentMediaElement(), shakaPlayerRef.current || thirdPartyPlayer || null);
-          }
-          logShakaDiagnostic('shaka-player-event', payload, eventName === 'error' ? 'warn' : 'debug');
-
-          handlePlayerStateChange(eventName, event);
-        };
-        thirdPartyPlayer.addEventListener(eventName, handler);
-        cleanupFns.push(() => thirdPartyPlayer.removeEventListener(eventName, handler));
-      });
-      logShakaDiagnostic('shaka-event-hooks', {
-        attached: true,
-        eventNames: shakaEvents
-      }, 'debug');
-    } else {
-      logShakaDiagnostic('shaka-event-hooks', {
-        attached: false
-      }, 'warn');
-    }
-
-    let networkingHooksRegistered = false;
-    let networkingEngineReason = null;
-    const hasNetworkingGetter = Boolean(thirdPartyPlayer && typeof thirdPartyPlayer.getNetworkingEngine === 'function');
-    const networkingEngine = hasNetworkingGetter ? thirdPartyPlayer.getNetworkingEngine() : null;
-    if (networkingEngine) {
-      const requestFilter = (requestType, request) => {
-        logShakaDiagnostic('shaka-network-request', {
-          requestType,
-          uri: request?.uris?.[0] || null,
-          method: request?.method || 'GET',
-          headerKeys: request?.headers ? Object.keys(request.headers) : null,
-          allowCrossSiteCredentials: Boolean(request?.allowCrossSiteCredentials)
-        }, 'debug');
-      };
-      const responseFilter = handleNetworkResponse;
-      networkingEngine.registerRequestFilter?.(requestFilter);
-      networkingEngine.registerResponseFilter?.(responseFilter);
-      cleanupFns.push(() => {
-        networkingEngine.unregisterRequestFilter?.(requestFilter);
-        networkingEngine.unregisterResponseFilter?.(responseFilter);
-      });
-      networkingHooksRegistered = true;
-      logShakaDiagnostic('shaka-network-hooks', {
-        registered: true,
-        hasRequestFilter: typeof networkingEngine.registerRequestFilter === 'function',
-        hasResponseFilter: typeof networkingEngine.registerResponseFilter === 'function'
-      }, 'debug');
-    } else {
-      networkingEngineReason = !thirdPartyPlayer
-        ? 'missing-player'
-        : !hasNetworkingGetter
-        ? 'missing-networking-api'
-        : 'engine-null';
-    }
-
-    if (!networkingHooksRegistered) {
-      logShakaDiagnostic('shaka-network-hooks', {
-        registered: false,
-        reason: networkingEngineReason
-      }, 'warn');
-    }
-
-    shakaNetworkingCleanupRef.current = () => {
-      cleanupFns.forEach((fn) => {
-        try {
-          fn();
-        } catch (error) {
-          logShakaDiagnostic('shaka-network-hooks-cleanup-error', {
-            error: serializePlaybackError(error)
-          }, 'warn');
-        }
-      });
-    };
-
-    const appliedConfig = shakaConfiguration?.shakaPlayer?.customConfiguration || null;
-    if (thirdPartyPlayer && appliedConfig) {
-      try {
-        thirdPartyPlayer.configure(appliedConfig);
-        logShakaDiagnostic('shaka-config-applied', {
-          streaming: appliedConfig.streaming,
-          abr: appliedConfig.abr
-        }, 'info');
-      } catch (error) {
-        logShakaDiagnostic('shaka-config-error', {
-          error: serializePlaybackError(error)
-        }, 'error');
-      }
-    }
-
-    logShakaDiagnostic('shaka-ready', {
-      hasPlayer: Boolean(thirdPartyPlayer),
-      hasPlayMethod: typeof play === 'function',
-      streamUrl: dashSource?.streamUrl || null,
-      startPosition: dashSource?.startPosition ?? null,
-      playbackRate: playbackRate || media.playbackRate || 1
-    }, 'info');
-    if (setProperties) {
-      setProperties({ playbackRate: playbackRate || media.playbackRate || 1 });
-    }
-  }, [dashSource?.startPosition, dashSource?.streamUrl, getCurrentMediaElement, logShakaDiagnostic, media.playbackRate, playbackRate, shakaConfiguration, handleNetworkResponse, handlePlayerStateChange]);
-
-
-
+  }, [isDash, media_url, elementKey]);
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
+  const plexIdValue = media?.media_key || media?.key || media?.plex || null;
   
   
   const heading = !!show && !!season && !!title
@@ -833,306 +130,88 @@ export function VideoPlayer({
     ? show
     : title;
 
-
-  useEffect(() => {
-    const mediaEl = getCurrentMediaElement();
-    if (!mediaEl) return;
-    mediaEl.style.objectFit = 'contain';
-    mediaEl.style.maxWidth = '100%';
-    mediaEl.style.maxHeight = '100%';
-    mediaEl.style.width = '100%';
-    mediaEl.style.height = '100%';
-  }, [getCurrentMediaElement, mediaInstanceKey]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') {
-      return undefined;
-    }
-
-    let disposed = false;
-    let mediaEl = null;
-    let resizeObserver = null;
-    let measureRaf = 0;
-    let lookupRaf = 0;
-    let lastAppliedBlur = null;
-    let grainFrameHandle = null;
-    let grainUsingVfc = false;
-    const metadataEvents = ['loadedmetadata', 'loadeddata', 'emptied'];
-
-    const cancelMeasure = () => {
-      if (measureRaf) {
-        window.cancelAnimationFrame(measureRaf);
-        measureRaf = 0;
-      }
-    };
-
-    const cancelGrainLoop = () => {
-      if (!grainFrameHandle) return;
-      if (grainUsingVfc && mediaEl && typeof mediaEl.cancelVideoFrameCallback === 'function') {
-        mediaEl.cancelVideoFrameCallback(grainFrameHandle);
-      } else {
-        window.cancelAnimationFrame(grainFrameHandle);
-      }
-      grainFrameHandle = null;
-    };
-
-    const scheduleGrainFrame = () => {
-      if (disposed || !mediaEl || !playerRootRef.current) return;
-      if (!lastAppliedBlur || lastAppliedBlur <= 0) {
-        cancelGrainLoop();
-        return;
-      }
-
-      const applyGrainOffset = () => {
-        if (disposed || !playerRootRef.current) return;
-        const offsetSpan = 320;
-        const x = Math.floor(Math.random() * offsetSpan);
-        const y = Math.floor(Math.random() * offsetSpan);
-        playerRootRef.current.style.setProperty('--player-video-grain-offset', `-${x}px -${y}px`);
-      };
-
-      const step = () => {
-        applyGrainOffset();
-        scheduleGrainFrame();
-      };
-
-      if (typeof mediaEl.requestVideoFrameCallback === 'function') {
-        grainUsingVfc = true;
-        grainFrameHandle = mediaEl.requestVideoFrameCallback(() => step());
-      } else {
-        grainUsingVfc = false;
-        grainFrameHandle = window.requestAnimationFrame(step);
-      }
-    };
-
-    const applyBlurUpdate = () => {
-      measureRaf = 0;
-      if (disposed || !mediaEl) return;
-      const blurPx = computeAdaptiveVideoBlurPx(mediaEl);
-      if (blurPx === lastAppliedBlur) return;
-      lastAppliedBlur = blurPx;
-      applyAdaptiveVideoBlur(mediaEl, blurPx, playerRootRef.current);
-      if (blurPx > 0) {
-        scheduleGrainFrame();
-      } else {
-        cancelGrainLoop();
-      }
-    };
-
-    const scheduleBlurUpdate = () => {
-      if (!mediaEl || disposed) return;
-      cancelMeasure();
-      measureRaf = window.requestAnimationFrame(applyBlurUpdate);
-    };
-
-    const teardownMediaEl = () => {
-      if (!mediaEl) return;
-      metadataEvents.forEach((event) => mediaEl.removeEventListener(event, scheduleBlurUpdate));
-      resizeObserver?.disconnect();
-      resizeObserver = null;
-      applyAdaptiveVideoBlur(mediaEl, 0, playerRootRef.current);
-      lastAppliedBlur = null;
-      cancelGrainLoop();
-      mediaEl = null;
-    };
-
-    const bindMediaEl = (node) => {
-      if (!node || disposed) return;
-      teardownMediaEl();
-      mediaEl = node;
-      metadataEvents.forEach((event) => mediaEl.addEventListener(event, scheduleBlurUpdate));
-      if (typeof ResizeObserver === 'function') {
-        resizeObserver = new ResizeObserver(() => scheduleBlurUpdate());
-        resizeObserver.observe(mediaEl);
-      }
-      scheduleBlurUpdate();
-    };
-
-    const lookupMediaEl = () => {
-      lookupRaf = 0;
-      if (disposed) return;
-      const node = getCurrentMediaElement();
-      if (node) {
-        bindMediaEl(node);
-        return;
-      }
-      lookupRaf = window.requestAnimationFrame(lookupMediaEl);
-    };
-
-    const handleGlobalChange = () => scheduleBlurUpdate();
-
-    window.addEventListener('resize', handleGlobalChange);
-    window.addEventListener('orientationchange', handleGlobalChange);
-    document.addEventListener('fullscreenchange', handleGlobalChange);
-
-    lookupMediaEl();
-
-    return () => {
-      disposed = true;
-      window.removeEventListener('resize', handleGlobalChange);
-      window.removeEventListener('orientationchange', handleGlobalChange);
-      document.removeEventListener('fullscreenchange', handleGlobalChange);
-      if (lookupRaf) {
-        window.cancelAnimationFrame(lookupRaf);
-      }
-      cancelMeasure();
-      teardownMediaEl();
-    };
-  }, [getCurrentMediaElement, mediaInstanceKey, playerRootRef]);
-
-  useEffect(() => {
-    if (!isDash) return () => {};
-    let disposed = false;
-    let detachListeners = () => {};
-    const importantEvents = [
-      'loadedmetadata',
-      'loadeddata',
-      'canplay',
-      'canplaythrough',
-      'waiting',
-      'stalled',
-      'error',
-      'play',
-      'playing',
-      'pause',
-      'seeking',
-      'seeked',
-      'ended',
-      'timeupdate'
-    ];
-
-    const attachListeners = (mediaEl) => {
-      if (!mediaEl) return;
-      let restorePlay = null;
-      if (typeof mediaEl.play === 'function') {
-        const originalPlay = mediaEl.play;
-        mediaEl.play = (...args) => {
-          const now = Date.now();
-          if (now - lastPlayInvokeRef.current > 5) {
-            logShakaDiagnostic('dash-video-play-invoked', {
-              argsLength: args.length
-            }, 'debug');
-            lastPlayInvokeRef.current = now;
-          }
-          try {
-            const result = originalPlay.apply(mediaEl, args);
-            if (result && typeof result.then === 'function') {
-              return result.then(
-                (value) => {
-                  logShakaDiagnostic('dash-video-play-result', { status: 'fulfilled' }, 'info');
-                  return value;
-                },
-                (error) => {
-                  logShakaDiagnostic('dash-video-play-result', {
-                    status: 'rejected',
-                    error: serializePlaybackError(error)
-                  }, 'warn');
-                  throw error;
-                }
-              );
-            }
-            logShakaDiagnostic('dash-video-play-result', { status: 'sync' }, 'info');
-            return result;
-          } catch (error) {
-            logShakaDiagnostic('dash-video-play-result', {
-              status: 'threw',
-              error: serializePlaybackError(error)
-            }, 'error');
-            throw error;
-          }
-        };
-        restorePlay = () => {
-          mediaEl.play = originalPlay;
-        };
-      }
-      const handler = (event) => {
-        const payload = {
-          eventName: event.type,
-          readyState: mediaEl.readyState,
-          networkState: mediaEl.networkState,
-          paused: mediaEl.paused,
-          ended: mediaEl.ended,
-          currentTime: Number.isFinite(mediaEl.currentTime)
-            ? Number(mediaEl.currentTime.toFixed(3))
-            : null,
-          buffered: serializeTimeRanges(mediaEl.buffered)
-        };
-        if (event.type === 'error') {
-          payload.mediaError = serializeMediaError(mediaEl.error);
-        }
-        if (event.type === 'timeupdate') {
-          payload.smooth = isSmoothPlaybackSample(mediaEl);
-        }
-        if (event.type === 'waiting' || event.type === 'stalled' || event.type === 'error' || event.type === 'seeking') {
-          payload.diagnostics = buildTroubleDiagnostics(mediaEl, shakaPlayerRef.current);
-        }
-        logShakaDiagnostic('shaka-video-event', payload, event.type === 'error' ? 'error' : 'debug');
-      };
-      importantEvents.forEach((eventName) => mediaEl.addEventListener(eventName, handler));
-      detachListeners = () => {
-        importantEvents.forEach((eventName) => mediaEl.removeEventListener(eventName, handler));
-        if (restorePlay) {
-          restorePlay();
-        }
-      };
-      logShakaDiagnostic('shaka-video-element-attached', {
-        readyState: mediaEl.readyState,
-        networkState: mediaEl.networkState,
-        paused: mediaEl.paused
-      }, 'debug');
-    };
-
-    const waitForMediaElement = () => {
-      if (disposed) return;
-      const mediaEl = getCurrentMediaElement();
-      if (!mediaEl) {
-        requestAnimationFrame(waitForMediaElement);
-        return;
-      }
-      attachListeners(mediaEl);
-    };
-
-    waitForMediaElement();
-
-    return () => {
-      disposed = true;
-      detachListeners();
-    };
-  }, [getCurrentMediaElement, isDash, logShakaDiagnostic, mediaInstanceKey]);
-
-  useEffect(() => () => {
-    if (typeof shakaNetworkingCleanupRef.current === 'function') {
-      shakaNetworkingCleanupRef.current();
-    }
-  }, []);
-
   return (
-    <div ref={playerRootRef} className={`video-player ${shader}`}>
+    <div className={`video-player ${shader}`}>
+      <h2>
+        {heading} {`(${playbackRate}×)`}
+      </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {isDash ? (
-        <div ref={containerRef} className="video-element-host">
-          <ShakaVideoStreamer
-            key={mediaInstanceKey}
-            className="video-element"
-            source={dashSource}
-            configuration={shakaConfiguration}
-            onReady={handleShakaReady}
-            onPlaybackError={handleShakaPlaybackError}
-          />
-        </div>
-      ) : (
-        <video
-          key={mediaInstanceKey}
-          autoPlay
-          ref={containerRef}
-          className="video-element"
-          src={media_url}
+      {(seconds === 0 || isStalled || isSeeking || isAdapting) && (
+        <LoadingOverlay
+          seconds={seconds}
+          isPaused={isPaused}
+          fetchVideoInfo={fetchVideoInfo}
+          stalled={isStalled}
+          initialStart={media.seconds || 0}
+          plexId={plexIdValue}
+          message={isAdapting ? adaptMessage : undefined}
+          debugContext={{
+            scope: 'video',
+            mediaType: media?.media_type,
+            title,
+            show,
+            season,
+            url: media_url,
+            media_key: media?.media_key || media?.key || media?.plex,
+            isDash,
+            shader,
+            stallState
+          }}
+          getMediaEl={() => {
+            const el = (containerRef.current?.shadowRoot?.querySelector('video')) || containerRef.current;
+            return el || null;
+          }}
         />
       )}
-      <div className="video-grain-overlay" aria-hidden="true" />
+      {isDash ? (
+        <dash-video
+          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
+          ref={containerRef}
+          class={`video-element ${displayReady ? 'show' : ''}`}
+          src={media_url}
+          autoplay=""
+        />
+      ) : (
+        <video
+          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
+          autoPlay
+          ref={containerRef}
+          className={`video-element ${displayReady ? 'show' : ''}`}
+          src={media_url}
+          onCanPlay={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
+          onPlaying={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
+        />
+      )}
+      {showQuality && quality?.supported && (
+        <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} />
+      )}
     </div>
   );
 }
+
+function QualityOverlay({ stats, capKbps, avgPct }) {
+  // console.log('[QualityOverlay] Rendering with capKbps:', capKbps);
+  const pctText = `${stats.totalVideoFrames > 0 ? stats.droppedPct.toFixed(1) : '0.0'}%`;
+  const avgText = typeof avgPct === 'number' ? `${(avgPct * 100).toFixed(1)}%` : null;
+  return (
+    <div className="quality-overlay">
+      <div> Dropped Frames: {stats.droppedVideoFrames} ({pctText}) </div>
+      <div> Bitrate Cap: {capKbps == null ? 'unlimited' : `${capKbps} kbps`} </div>
+      {avgText && <div> Avg (rolling): {avgText} </div>}
+    </div>
+  );
+}
+
+QualityOverlay.propTypes = {
+  stats: PropTypes.shape({
+    droppedVideoFrames: PropTypes.number,
+    totalVideoFrames: PropTypes.number,
+    droppedPct: PropTypes.number,
+    supported: PropTypes.bool
+  }),
+  capKbps: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
+  avgPct: PropTypes.number
+};
 
 VideoPlayer.propTypes = {
   media: PropTypes.object.isRequired,
@@ -1144,25 +223,13 @@ VideoPlayer.propTypes = {
   setShader: PropTypes.func,
   cycleThroughClasses: PropTypes.func,
   classes: PropTypes.arrayOf(PropTypes.string),
-  playbackKeys: PropTypes.oneOfType([
-    PropTypes.arrayOf(PropTypes.string),
-    PropTypes.objectOf(PropTypes.arrayOf(PropTypes.string))
-  ]),
+  playbackKeys: PropTypes.arrayOf(PropTypes.string),
   queuePosition: PropTypes.number,
   fetchVideoInfo: PropTypes.func,
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
-  keyboardOverrides: PropTypes.object,
-  onController: PropTypes.func,
-  resilienceBridge: PropTypes.shape({
-    onPlaybackMetrics: PropTypes.func,
-    onRegisterMediaAccess: PropTypes.func,
-    seekToIntentSeconds: PropTypes.number,
-    onSeekRequestConsumed: PropTypes.func,
-    onStartupSignal: PropTypes.func
-  }),
-  maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  watchedDurationProvider: PropTypes.func
+  showQuality: PropTypes.bool,
+  stallConfig: PropTypes.object,
+  onController: PropTypes.func
 };

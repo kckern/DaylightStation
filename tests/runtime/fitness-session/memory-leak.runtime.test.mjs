@@ -77,6 +77,22 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
 
     page = await context.newPage();
 
+    // Capture console messages for debugging video/Shaka issues
+    const consoleErrors = [];
+    page.on('console', msg => {
+      const type = msg.type();
+      const text = msg.text();
+      if (type === 'error' || type === 'warning') {
+        consoleErrors.push({ type, text: text.substring(0, 500) });
+        if (consoleErrors.length <= 10 || text.includes('shaka') || text.includes('video')) {
+          console.log(`[Browser ${type}] ${text.substring(0, 200)}`);
+        }
+      }
+    });
+    page.on('pageerror', err => {
+      console.log(`[Page error] ${err.message?.substring(0, 200)}`);
+    });
+
     // Set up memory profiler with CDP
     let cdpSession = null;
     try {
@@ -147,6 +163,14 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
     await page.waitForTimeout(800);
     await episodeThumb.dispatchEvent('pointerdown');
 
+    // Log if using DASH or native video
+    const playerType = await page.evaluate(() => {
+      const shakaEl = document.querySelector('.video-element-host');
+      const nativeEl = document.querySelector('video.video-element');
+      return shakaEl ? 'DASH/Shaka' : (nativeEl ? 'Native' : 'Unknown');
+    });
+    console.log(`[LEAK-1] Player type: ${playerType}`);
+
     // 7. Wait for governance to unlock (with 120bpm HR)
     console.log('[LEAK-1] Waiting for governance to unlock...');
     const lockOverlay = page.locator('.governance-overlay');
@@ -160,24 +184,47 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
     // Wait a bit more for video to actually start
     await page.waitForTimeout(3000);
 
-    // Check video status
+    // Check video status (comprehensive) - find the WORKING video (readyState > 0)
     const videoState = await page.evaluate(() => {
-      const video = document.querySelector('video');
+      const videos = document.querySelectorAll('video');
+      const allVideoInfo = Array.from(videos).map((v, i) => ({
+        idx: i,
+        src: v.src?.substring(0, 100) || '(empty)',
+        srcObject: !!v.srcObject,
+        readyState: v.readyState,
+        networkState: v.networkState,
+        paused: v.paused,
+        currentTime: v.currentTime,
+        duration: v.duration
+      }));
+      // Find the video with readyState > 0 (actually has media loaded)
+      const workingVideo = Array.from(videos).find(v => v.readyState > 0) || videos[0];
       return {
-        hasVideo: !!video,
-        videoPlaying: video && !video.paused,
-        currentTime: video?.currentTime || 0,
-        duration: video?.duration || 0,
-        videoSrc: video?.src?.substring(0, 80) || null
+        hasVideo: !!workingVideo,
+        videoCount: videos.length,
+        workingVideoIdx: allVideoInfo.findIndex(v => v.readyState > 0),
+        videoPlaying: workingVideo && !workingVideo.paused,
+        currentTime: workingVideo?.currentTime || 0,
+        duration: workingVideo?.duration || 0,
+        videoSrc: workingVideo?.src?.substring(0, 100) || null,
+        hasSrcObject: !!workingVideo?.srcObject,
+        readyState: workingVideo?.readyState,
+        networkState: workingVideo?.networkState,
+        error: workingVideo?.error ? { code: workingVideo.error.code, message: workingVideo.error.message } : null,
+        allVideos: allVideoInfo
       };
     });
-    console.log(`[LEAK-1] Video state: ${JSON.stringify(videoState)}`);
+    console.log(`[LEAK-1] Video state: ${JSON.stringify(videoState, null, 2)}`);
 
     if (!videoState.videoPlaying) {
-      console.log('[LEAK-1] WARNING: Video not playing - attempting to play...');
+      console.log('[LEAK-1] WARNING: Video not playing - attempting to play the working video...');
       await page.evaluate(() => {
-        const video = document.querySelector('video');
-        if (video) video.play().catch(() => {});
+        const videos = document.querySelectorAll('video');
+        // Play the working video (readyState > 0)
+        const workingVideo = Array.from(videos).find(v => v.readyState > 0);
+        if (workingVideo) {
+          workingVideo.play().catch(e => console.log('[Play error]', e.message));
+        }
       });
       await page.waitForTimeout(2000);
     }
@@ -214,21 +261,36 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
 
       // Check video status
       const vidStatus = await page.evaluate(() => {
-        const video = document.querySelector('video');
+        const videos = document.querySelectorAll('video');
+        const video = Array.from(videos).find(v => v.readyState > 0) || videos[0];
+        // Get buffered ranges info
+        let bufferInfo = null;
+        if (video?.buffered?.length > 0) {
+          const ranges = [];
+          for (let i = 0; i < video.buffered.length; i++) {
+            ranges.push({ start: video.buffered.start(i), end: video.buffered.end(i) });
+          }
+          const totalBufferedSec = ranges.reduce((sum, r) => sum + (r.end - r.start), 0);
+          bufferInfo = { rangeCount: ranges.length, totalSec: Math.round(totalBufferedSec) };
+        }
         return {
           playing: video && !video.paused,
           currentTime: video?.currentTime?.toFixed(0) || 0,
-          duration: video?.duration?.toFixed(0) || 0
+          duration: video?.duration?.toFixed(0) || 0,
+          buffer: bufferInfo
         };
-      }).catch(() => ({ playing: false, currentTime: 0, duration: 0 }));
+      }).catch(() => ({ playing: false, currentTime: 0, duration: 0, buffer: null }));
 
       const heapMB = latestSample?.heapUsedMB?.toFixed(1) ?? '?';
       const growthMB = profiler.getTotalGrowth().toFixed(1);
 
+      const bufferStr = vidStatus.buffer
+        ? `Buffer: ${vidStatus.buffer.totalSec}s in ${vidStatus.buffer.rangeCount} ranges`
+        : 'Buffer: N/A';
       console.log(
         `[LEAK-1] ${elapsed}s - Heap: ${heapMB}MB (+${growthMB}), ` +
         `Timers: ${currentStats.activeIntervals}, ` +
-        `Video: ${vidStatus.playing ? 'playing' : 'paused'} ${vidStatus.currentTime}/${vidStatus.duration}s`
+        `Video: ${vidStatus.playing ? 'playing' : 'paused'} ${vidStatus.currentTime}/${vidStatus.duration}s, ${bufferStr}`
       );
 
       // Early abort if clearly failing

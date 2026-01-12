@@ -165,6 +165,31 @@ export class MemoryProfiler {
   }
 
   /**
+   * Public method to sample memory on-demand and record it
+   * Returns the sample with heapUsedMB/heapTotalMB computed
+   */
+  async sampleMemory() {
+    const mem = await this._sampleMemory();
+    this.samples.push(mem);
+    return {
+      ...mem,
+      heapUsedMB: mem.heapUsed ? mem.heapUsed / (1024 * 1024) : 0,
+      heapTotalMB: mem.heapTotal ? mem.heapTotal / (1024 * 1024) : 0
+    };
+  }
+
+  /**
+   * Alias for getReport() with additional computed fields for leak detection
+   */
+  calculateMetrics() {
+    const report = this.getReport();
+    return {
+      ...report,
+      samples: this.getSamples()
+    };
+  }
+
+  /**
    * Generate summary report
    */
   getReport() {
