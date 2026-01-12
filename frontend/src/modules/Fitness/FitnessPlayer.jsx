@@ -179,6 +179,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const [mediaElement, setMediaElement] = useState(null);
 
   // Track media element replacements so boost can rebind after player remounts
+  // MEMORY LEAK FIX: Empty dependency array - playerRef is a useRef (stable reference)
+  // and should never be a dependency. This effect runs once on mount and cleans up on unmount.
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     let cancelled = false;
@@ -194,7 +196,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [playerRef]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync media element ref for context
   useEffect(() => {
