@@ -40,6 +40,13 @@ const CONFIG = {
   longRunDurationSec: 300,
   // Sampling interval for memory (ms)
   memorySampleIntervalMs: 10000,
+  // Test timeouts (ms) - must exceed test duration
+  timeouts: {
+    longRun: 10 * 60 * 1000,  // 10 minutes for 5-min test
+    churn: 5 * 60 * 1000,     // 5 minutes for churn test
+    multiUser: 5 * 60 * 1000, // 5 minutes for multi-user test
+    navigation: 5 * 60 * 1000 // 5 minutes for navigation test
+  },
   // Thresholds
   thresholds: {
     maxHeapGrowthMB: 50,
@@ -94,6 +101,7 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
   });
 
   test('LEAK-1: Memory stability over 5 minutes with active session', async () => {
+    test.setTimeout(CONFIG.timeouts.longRun);
     const testName = 'LEAK-1: Memory stability';
     const durationSec = CONFIG.longRunDurationSec;
 
@@ -217,6 +225,7 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
   });
 
   test('LEAK-2: Session start/stop churn (10 cycles)', async () => {
+    test.setTimeout(CONFIG.timeouts.churn);
     const testName = 'LEAK-2: Session churn';
     const cycles = 10;
 
@@ -294,6 +303,7 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
   });
 
   test('LEAK-3: Multi-user HR streaming (3 users)', async () => {
+    test.setTimeout(CONFIG.timeouts.multiUser);
     const testName = 'LEAK-3: Multi-user';
     const durationSec = 120;
 
@@ -363,6 +373,7 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
   });
 
   test('LEAK-4: View navigation during session', async () => {
+    test.setTimeout(CONFIG.timeouts.navigation);
     const testName = 'LEAK-4: View navigation';
     const navigations = 6;
 
