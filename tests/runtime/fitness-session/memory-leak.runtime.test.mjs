@@ -100,9 +100,9 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
     await context?.close();
   });
 
-  test('LEAK-1: Memory stability over 5 minutes with active session', async () => {
+  test('LEAK-1: Memory stability over 5 minutes with video playback', async () => {
     test.setTimeout(CONFIG.timeouts.longRun);
-    const testName = 'LEAK-1: Memory stability';
+    const testName = 'LEAK-1: Video playback stability';
     const durationSec = CONFIG.longRunDurationSec;
 
     console.log(`\n${'='.repeat(60)}`);
@@ -110,28 +110,65 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
     console.log(`Duration: ${durationSec}s, Sampling: ${CONFIG.memorySampleIntervalMs}ms`);
     console.log(`${'='.repeat(60)}\n`);
 
-    // 1. Start HR simulation (steady 120bpm - active zone)
-    console.log('[LEAK-1] Starting HR simulation...');
+    // 1. Start HR simulation (steady 120bpm - active zone, above governance threshold)
+    console.log('[LEAK-1] Starting HR simulation (120bpm - active zone)...');
     simulator.runScenario({
-      duration: durationSec + 60, // Extra buffer
+      duration: durationSec + 120, // Extra buffer
       users: { alice: { hr: 120, variance: 5 } }
     });
 
     // 2. Wait for HR data to propagate
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
 
     // 3. Navigate to fitness app
     console.log('[LEAK-1] Loading fitness app...');
     await page.goto(`${FRONTEND_URL}/fitness`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(5000); // Let session auto-start
+    await page.waitForTimeout(3000);
 
-    // 4. Verify session started
-    const sessionActive = await page.evaluate(() => {
-      return !!document.querySelector('.fitness-session-active, [class*="session"]');
+    // 4. Navigate to Kids collection (governed content)
+    console.log('[LEAK-1] Navigating to Kids collection...');
+    const kidsNav = page.locator('.fitness-navbar button.nav-item', { hasText: 'Kids' });
+    await expect(kidsNav).toBeVisible({ timeout: 10000 });
+    await kidsNav.click();
+    await page.waitForTimeout(2000);
+
+    // 5. Click first show
+    console.log('[LEAK-1] Clicking first show...');
+    const showTile = page.locator('.show-card[data-testid="show-card"]').first();
+    await expect(showTile, 'No show tiles found').toBeVisible({ timeout: 10000 });
+    await showTile.click();
+    await page.waitForTimeout(2000);
+
+    // 6. Start video playback (double-tap on episode)
+    console.log('[LEAK-1] Starting video playback...');
+    const episodeThumb = page.locator('.episode-card .episode-thumbnail').first();
+    await expect(episodeThumb, 'No episode thumbnails found').toBeVisible({ timeout: 10000 });
+    await episodeThumb.dispatchEvent('pointerdown');
+    await page.waitForTimeout(800);
+    await episodeThumb.dispatchEvent('pointerdown');
+
+    // 7. Wait for video to start (governance should unlock with 120bpm HR)
+    console.log('[LEAK-1] Waiting for video to start...');
+    await page.waitForTimeout(5000);
+
+    // Check video status
+    const videoState = await page.evaluate(() => {
+      const video = document.querySelector('video');
+      const lockOverlay = document.querySelector('.governance-overlay');
+      return {
+        hasVideo: !!video,
+        videoPlaying: video && !video.paused,
+        videoSrc: video?.src?.substring(0, 50) || null,
+        isLocked: lockOverlay && window.getComputedStyle(lockOverlay).display !== 'none'
+      };
     });
-    console.log(`[LEAK-1] Session active indicator: ${sessionActive}`);
+    console.log(`[LEAK-1] Video state: ${JSON.stringify(videoState)}`);
 
-    // 5. Capture baselines
+    if (videoState.isLocked) {
+      console.log('[LEAK-1] WARNING: Content is locked - HR may not be high enough');
+    }
+
+    // 8. Capture baselines AFTER video starts
     console.log('[LEAK-1] Capturing baselines...');
     await profiler.captureBaseline();
     await timerTracker.captureBaseline();
@@ -145,8 +182,8 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
     // 6. Start memory sampling
     profiler.startSampling(CONFIG.memorySampleIntervalMs);
 
-    // 7. Run for specified duration with periodic status
-    const statusInterval = 60; // Log status every 60s
+    // 9. Run for specified duration with periodic status
+    const statusInterval = 30; // Log status every 30s (more frequent for video test)
     const iterations = Math.ceil(durationSec / statusInterval);
 
     for (let i = 0; i < iterations; i++) {
@@ -161,16 +198,36 @@ test.describe.serial('FitnessSession Memory Leak Detection', () => {
       const samples = profiler.getSamples();
       const latestSample = samples[samples.length - 1];
 
+      // Check video status
+      const vidStatus = await page.evaluate(() => {
+        const video = document.querySelector('video');
+        return {
+          playing: video && !video.paused,
+          currentTime: video?.currentTime?.toFixed(0) || 0,
+          duration: video?.duration?.toFixed(0) || 0
+        };
+      }).catch(() => ({ playing: false, currentTime: 0, duration: 0 }));
+
+      const heapMB = latestSample?.heapUsedMB?.toFixed(1) ?? '?';
+      const growthMB = profiler.getTotalGrowth().toFixed(1);
+
       console.log(
-        `[LEAK-1] ${elapsed}s - Heap: ${latestSample?.heapUsedMB?.toFixed(1) ?? '?'}MB, ` +
+        `[LEAK-1] ${elapsed}s - Heap: ${heapMB}MB (+${growthMB}), ` +
         `Timers: ${currentStats.activeIntervals}, ` +
-        `Samples: ${samples.length}`
+        `Video: ${vidStatus.playing ? 'playing' : 'paused'} ${vidStatus.currentTime}/${vidStatus.duration}s`
       );
 
       // Early abort if clearly failing
       const currentGrowth = profiler.getTotalGrowth();
       if (currentGrowth > CONFIG.thresholds.maxHeapGrowthMB * 1.5) {
         console.log(`[LEAK-1] EARLY ABORT: Heap growth ${currentGrowth.toFixed(1)}MB exceeds 1.5x threshold`);
+        break;
+      }
+
+      // Check if page crashed
+      const pageAlive = await page.evaluate(() => true).catch(() => false);
+      if (!pageAlive) {
+        console.log(`[LEAK-1] PAGE CRASHED at ${elapsed}s!`);
         break;
       }
     }
