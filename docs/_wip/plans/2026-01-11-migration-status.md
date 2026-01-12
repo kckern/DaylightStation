@@ -36,8 +36,8 @@
 | 3c | Messaging Adapters | ✅ Complete | 100% |
 | 3d | Nutrition/Journaling Adapters | ✅ Complete | 100% |
 | 3e | AI Adapters | ✅ Complete | 100% |
-| 3f | External APIs (19) | 🔄 15 of 16 done | 94% |
-| **3** | **Adapters** | **🔄 6 of 6 nearly done** | **97%** |
+| 3f | External APIs (16) | ✅ Complete | 100% |
+| **3** | **Adapters** | **✅ Complete** | **100%** |
 | 4a | Nutribot (116 files) | ✅ Complete | 100% |
 | 4b | Journalist (57 files) | ✅ Complete | 100% |
 | 4c | Fitness App | ✅ Complete | 100% |
@@ -284,7 +284,7 @@
 - [x] GET /api/ai/metrics - Get adapter metrics
 - [x] POST /api/ai/metrics/reset - Reset metrics
 
-### Phase 3f: External API Harvesters 🔄 (88%)
+### Phase 3f: External API Harvesters ✅ (100%)
 
 All harvesters implement `IHarvester` interface with:
 - `harvest(username, options)` - Main data fetch method
@@ -314,15 +314,17 @@ All harvesters implement `IHarvester` interface with:
 - [x] GmailHarvester - Inbox/sent via Gmail API
 - [x] GCalHarvester - Calendar events with multi-calendar support
 
+**Finance Harvesters** (`src/2_adapters/harvester/finance/`)
+- [x] ShoppingHarvester - Gmail receipt scanning with AI extraction (personal purchase history)
+
 **Other Harvesters** (`src/2_adapters/harvester/other/`)
 - [x] WeatherHarvester - Open-Meteo weather + air quality (household-level)
 - [x] ScriptureHarvester - Scripture Guide API content fetch
-- [ ] ShoppingHarvester - Not yet migrated (different domain)
 
 **Wired into Legacy** (`_legacy/routers/harvest.mjs`)
-- All 14 harvesters registered with strangler-fig pattern
+- All 16 harvesters registered with strangler-fig pattern
 - Legacy harvesters delegate to new DDD harvesters
-- Budget handled separately via Finance domain
+- Budget handled separately via Finance domain (BuxferAdapter + BudgetCompilationService)
 
 ### Phase 4a: Nutribot Application ✅
 
