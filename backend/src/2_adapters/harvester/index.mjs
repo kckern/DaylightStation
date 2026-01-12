@@ -29,3 +29,7 @@ export { LastfmHarvester } from './social/LastfmHarvester.mjs';
 export { RedditHarvester } from './social/RedditHarvester.mjs';
 export { LetterboxdHarvester } from './social/LetterboxdHarvester.mjs';
 export { GoodreadsHarvester } from './social/GoodreadsHarvester.mjs';
+
+// Communication Harvesters
+export { GmailHarvester } from './communication/GmailHarvester.mjs';
+export { GCalHarvester } from './communication/GCalHarvester.mjs';

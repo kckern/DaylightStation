@@ -57,6 +57,7 @@ import {
     GarminHarvester, StravaHarvester, WithingsHarvester,
     TodoistHarvester, ClickUpHarvester, GitHubHarvester,
     LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester,
+    GmailHarvester, GCalHarvester,
     YamlLifelogStore, YamlAuthStore
 } from '../../src/2_adapters/harvester/index.mjs';
 import garminLib from 'garmin-connect';
@@ -210,6 +211,25 @@ const goodreadsHarvester = new GoodreadsHarvester({
     logger: createLogger({ source: 'backend', app: 'goodreads' }),
 });
 
+// Wave 4: Communication Harvesters
+const gmailHarvester = new GmailHarvester({
+    lifelogStore,
+    currentStore: {
+        save: (username, data) => userSaveFile(username, 'gmail/current.yml', data),
+    },
+    configService,
+    logger: createLogger({ source: 'backend', app: 'gmail' }),
+});
+
+const gcalHarvester = new GCalHarvester({
+    lifelogStore,
+    currentStore: {
+        save: (username, data) => userSaveFile(username, 'calendar/current.yml', data),
+    },
+    configService,
+    logger: createLogger({ source: 'backend', app: 'gcal' }),
+});
+
 const harvestRootLogger = () => createLogger({
     source: 'backend',
     app: 'harvest',
@@ -223,8 +243,10 @@ const harvesters = {
     }, {}),
     // todoist: Uses new DDD harvester (Phase 3f Wave 2)
     todoist: (_logger, _guidId, username) => todoistHarvester.harvest(username),
-    gmail: (logger, guidId, username) => gmail(logger, guidId, username),
-    gcal: (logger, guidId, username) => gcal(logger, guidId, username),
+    // gmail: Uses new DDD harvester (Phase 3f Wave 4)
+    gmail: (_logger, _guidId, username) => gmailHarvester.harvest(username),
+    // gcal: Uses new DDD harvester (Phase 3f Wave 4)
+    gcal: (_logger, _guidId, username) => gcalHarvester.harvest(username),
     // withings: Uses new DDD harvester (Phase 3f Wave 1)
     withings: (_logger, _guidId, username) => withingsHarvester.harvest(username),
     // ldsgc: (_logger, guidId, username) => ldsgc(guidId, { targetUsername: username }),
