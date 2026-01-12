@@ -80,5 +80,17 @@ routing:
       expect(() => loadRoutingConfig('/nonexistent/path.yml', {}))
         .toThrow();
     });
+
+    it('throws error for invalid default target', () => {
+      fs.writeFileSync(configPath, `
+default: invalid
+routing:
+  /api/finance: new
+`);
+      const availableShims = {};
+
+      expect(() => loadRoutingConfig(configPath, availableShims))
+        .toThrow('Invalid default target "invalid"');
+    });
   });
 });
