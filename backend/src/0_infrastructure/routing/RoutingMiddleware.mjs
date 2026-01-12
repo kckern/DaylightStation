@@ -49,7 +49,7 @@ export function createRoutingMiddleware({ config, legacyApp, newApp, shims, logg
   const routingTable = buildRoutingTable(config.routing || {});
   const defaultTarget = config.default;
 
-  return (req, res) => {
+  return (req, res, next) => {
     const { target, shim: shimName } = matchRoute(req.path, routingTable, defaultTarget);
 
     // Set header to indicate which app served the request
@@ -62,14 +62,12 @@ export function createRoutingMiddleware({ config, legacyApp, newApp, shims, logg
       if (!shim.name) {
         shim.name = shimName;
       }
+      res.setHeader('x-shim-applied', shimName);
       wrapResponseWithShim(res, req, shim, logger, metrics);
     }
 
-    // Route to appropriate app
-    if (target === 'legacy') {
-      return legacyApp(req, res);
-    } else {
-      return newApp(req, res);
-    }
+    // Route to appropriate app - pass next for Express Router compatibility
+    const targetApp = target === 'legacy' ? legacyApp : newApp;
+    return targetApp(req, res, next || (() => {}));
   };
 }
