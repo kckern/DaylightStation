@@ -16,8 +16,8 @@ describe('RoutingMiddleware', () => {
   let mockRes;
 
   beforeEach(() => {
-    legacyApp = jest.fn((req, res) => res.json({ source: 'legacy' }));
-    newApp = jest.fn((req, res) => res.json({ source: 'new' }));
+    legacyApp = jest.fn((req, res, next) => res.json({ source: 'legacy' }));
+    newApp = jest.fn((req, res, next) => res.json({ source: 'new' }));
 
     shims = {
       'content-v1': {
@@ -63,9 +63,10 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/legacy/data';
-      middleware(mockReq, mockRes);
+      const next = jest.fn();
+      middleware(mockReq, mockRes, next);
 
-      expect(legacyApp).toHaveBeenCalledWith(mockReq, mockRes);
+      expect(legacyApp).toHaveBeenCalledWith(mockReq, mockRes, next);
       expect(newApp).not.toHaveBeenCalled();
     });
 
@@ -87,9 +88,10 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/new/data';
-      middleware(mockReq, mockRes);
+      const next = jest.fn();
+      middleware(mockReq, mockRes, next);
 
-      expect(newApp).toHaveBeenCalledWith(mockReq, mockRes);
+      expect(newApp).toHaveBeenCalledWith(mockReq, mockRes, next);
       expect(legacyApp).not.toHaveBeenCalled();
     });
 
@@ -111,9 +113,10 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/unknown/endpoint';
-      middleware(mockReq, mockRes);
+      const next = jest.fn();
+      middleware(mockReq, mockRes, next);
 
-      expect(legacyApp).toHaveBeenCalledWith(mockReq, mockRes);
+      expect(legacyApp).toHaveBeenCalledWith(mockReq, mockRes, next);
       expect(newApp).not.toHaveBeenCalled();
     });
 
@@ -133,7 +136,8 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/something';
-      middleware(mockReq, mockRes);
+      const next = jest.fn();
+      middleware(mockReq, mockRes, next);
 
       expect(mockRes.setHeader).toHaveBeenCalledWith('x-served-by', 'new');
     });
@@ -156,7 +160,8 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/content';
-      middleware(mockReq, mockRes);
+      const next = jest.fn();
+      middleware(mockReq, mockRes, next);
 
       // Call the wrapped json to trigger shim recording
       mockRes.json({ data: 'test' });
