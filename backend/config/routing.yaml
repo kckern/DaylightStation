@@ -1,0 +1,19 @@
+# Routing configuration
+# Loaded at server startup, restart required for changes
+
+default: legacy  # Unlisted paths go here
+
+routing:
+  # Finance domain - migrated with shims
+  # /api/v2/finance: new
+  # /api/finance:
+  #   target: new
+  #   shim: finance-data-v1
+
+  # Content domain - migrated with shims
+  # /api/v2/content: new
+  # /api/content:
+  #   target: new
+  #   shim: content-list-v1
+
+  # All paths default to legacy until explicitly migrated
