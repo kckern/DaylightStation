@@ -15,6 +15,11 @@ export function loadRoutingConfig(configPath, availableShims) {
 
   const errors = [];
 
+  // Validate default field
+  if (!['new', 'legacy'].includes(config.default)) {
+    errors.push(`Invalid default target "${config.default}"`);
+  }
+
   for (const [path, rule] of Object.entries(config.routing || {})) {
     const shimName = typeof rule === 'object' ? rule.shim : null;
     const target = typeof rule === 'string' ? rule : rule?.target;
