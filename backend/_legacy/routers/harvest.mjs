@@ -30,6 +30,8 @@ import { userLoadFile, userSaveFile, userSaveAuth } from '../lib/io.mjs';
 
 import todoist from '../lib/todoist.mjs';
 import gmail from '../lib/gmail.mjs';
+import { google } from 'googleapis';
+import { getAIGateway } from '../lib/ai/index.mjs';
 import gcal from '../lib/gcal.mjs';
 import withings from '../lib/withings.mjs';
 import weather from '../lib/weather.mjs';
@@ -58,6 +60,7 @@ import {
     TodoistHarvester, ClickUpHarvester, GitHubHarvester,
     LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester, FoursquareHarvester,
     GmailHarvester, GCalHarvester,
+    ShoppingHarvester,
     WeatherHarvester, ScriptureHarvester,
     YamlLifelogStore, YamlAuthStore
 } from '../../src/2_adapters/harvester/index.mjs';
@@ -258,6 +261,29 @@ const scriptureHarvester = new ScriptureHarvester({
     logger: createLogger({ source: 'backend', app: 'scripture' }),
 });
 
+// Gmail client factory for ShoppingHarvester
+const createGmailClient = (username) => {
+    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
+    const auth = configService.getUserAuth('google', username) || {};
+    const refreshToken = auth.refresh_token || process.env.GOOGLE_REFRESH_TOKEN;
+
+    if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
+        throw new Error('Gmail credentials not found for shopping harvester');
+    }
+
+    const oAuth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+    oAuth2Client.setCredentials({ refresh_token: refreshToken });
+    return google.gmail({ version: 'v1', auth: oAuth2Client });
+};
+
+const shoppingHarvester = new ShoppingHarvester({
+    gmailClientFactory: createGmailClient,
+    aiGateway: getAIGateway(),
+    lifelogStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'shopping' }),
+});
+
 const harvestRootLogger = () => createLogger({
     source: 'backend',
     app: 'harvest',
@@ -305,7 +331,8 @@ const harvesters = {
     // foursquare: Uses new DDD harvester (Phase 3f Wave 3)
     foursquare: (_logger, _guidId, username) => foursquareHarvester.harvest(username),
     payroll: (...args) => payrollSyncJob(...args),
-    shopping: (logger, guidId, username) => shopping(logger, guidId, username)
+    // shopping: Uses new DDD harvester (Phase 3f)
+    shopping: (_logger, _guidId, username) => shoppingHarvester.harvest(username)
 }
 
 const harvestKeys = Object.keys(harvesters);

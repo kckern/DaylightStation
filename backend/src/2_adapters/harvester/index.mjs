@@ -35,7 +35,10 @@ export { FoursquareHarvester } from './social/FoursquareHarvester.mjs';
 export { GmailHarvester } from './communication/GmailHarvester.mjs';
 export { GCalHarvester } from './communication/GCalHarvester.mjs';
 
+// Finance Harvesters
+export { ShoppingHarvester } from './finance/ShoppingHarvester.mjs';
+
 // Other Harvesters
 export { WeatherHarvester } from './other/WeatherHarvester.mjs';
 export { ScriptureHarvester } from './other/ScriptureHarvester.mjs';
-// Note: YouTube (media download) and Budget (finance domain) don't fit IHarvester pattern
+// Note: YouTube (media download) and Budget (already in finance domain) don't fit IHarvester pattern
