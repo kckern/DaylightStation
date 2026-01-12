@@ -1,7 +1,7 @@
 # Backend Migration Status
 
-**Last Updated:** 2026-01-11 (Evening)
-**Test Status:** 1134 tests passing (77 unit suites + 6 assembly suites)
+**Last Updated:** 2026-01-12
+**Test Status:** 1214 tests passing (92 suites)
 **Detailed Workplan:** [migration-workplan.md](./2026-01-11-migration-workplan.md)
 
 ---
@@ -36,8 +36,8 @@
 | 3c | Messaging Adapters | ✅ Complete | 100% |
 | 3d | Nutrition/Journaling Adapters | ✅ Complete | 100% |
 | 3e | AI Adapters | ✅ Complete | 100% |
-| 3f | External APIs (19) | ⬜ Not Started | 0% |
-| **3** | **Adapters** | **🔄 5 of 6 done** | **83%** |
+| 3f | External APIs (19) | 🔄 14 of 16 done | 88% |
+| **3** | **Adapters** | **🔄 6 of 6 nearly done** | **96%** |
 | 4a | Nutribot (116 files) | ✅ Complete | 100% |
 | 4b | Journalist (57 files) | ✅ Complete | 100% |
 | 4c | Fitness App | ✅ Complete | 100% |
@@ -283,6 +283,46 @@
 - [x] POST /api/ai/embed - Text embeddings (OpenAI only)
 - [x] GET /api/ai/metrics - Get adapter metrics
 - [x] POST /api/ai/metrics/reset - Reset metrics
+
+### Phase 3f: External API Harvesters 🔄 (88%)
+
+All harvesters implement `IHarvester` interface with:
+- `harvest(username, options)` - Main data fetch method
+- `getStatus()` - Circuit breaker state
+- `serviceId` / `category` getters
+- CircuitBreaker resilience with exponential backoff
+- YamlLifelogStore / YamlAuthStore for persistence
+
+**Fitness Harvesters** (`src/2_adapters/harvester/fitness/`)
+- [x] GarminHarvester - OAuth activities, sleep, HR
+- [x] StravaHarvester - OAuth activities with segments
+- [x] WithingsHarvester - OAuth weight, BP measurements
+
+**Productivity Harvesters** (`src/2_adapters/harvester/productivity/`)
+- [x] TodoistHarvester - Completed tasks via Todoist API
+- [x] ClickUpHarvester - Tasks with status, workspace-aware
+- [x] GitHubHarvester - Commits, PRs, issues across repos
+
+**Social Harvesters** (`src/2_adapters/harvester/social/`)
+- [x] LastfmHarvester - Recent tracks via scrobble API
+- [x] RedditHarvester - Comments/posts from user profile
+- [x] LetterboxdHarvester - Film diary via RSS feed
+- [x] GoodreadsHarvester - Books via RSS feed
+- [ ] FoursquareHarvester - Not yet migrated
+
+**Communication Harvesters** (`src/2_adapters/harvester/communication/`)
+- [x] GmailHarvester - Inbox/sent via Gmail API
+- [x] GCalHarvester - Calendar events with multi-calendar support
+
+**Other Harvesters** (`src/2_adapters/harvester/other/`)
+- [x] WeatherHarvester - Open-Meteo weather + air quality (household-level)
+- [x] ScriptureHarvester - Scripture Guide API content fetch
+- [ ] ShoppingHarvester - Not yet migrated (different domain)
+
+**Wired into Legacy** (`_legacy/routers/harvest.mjs`)
+- All 14 harvesters registered with strangler-fig pattern
+- Legacy harvesters delegate to new DDD harvesters
+- Budget handled separately via Finance domain
 
 ### Phase 4a: Nutribot Application ✅
 

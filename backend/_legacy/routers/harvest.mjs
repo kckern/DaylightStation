@@ -56,7 +56,7 @@ import archiveRotation from '../lib/archiveRotation.mjs';
 import {
     GarminHarvester, StravaHarvester, WithingsHarvester,
     TodoistHarvester, ClickUpHarvester, GitHubHarvester,
-    LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester,
+    LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester, FoursquareHarvester,
     GmailHarvester, GCalHarvester,
     WeatherHarvester, ScriptureHarvester,
     YamlLifelogStore, YamlAuthStore
@@ -213,6 +213,14 @@ const goodreadsHarvester = new GoodreadsHarvester({
     logger: createLogger({ source: 'backend', app: 'goodreads' }),
 });
 
+const foursquareHarvester = new FoursquareHarvester({
+    httpClient: axios,
+    lifelogStore,
+    authStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'foursquare' }),
+});
+
 // Wave 4: Communication Harvesters
 const gmailHarvester = new GmailHarvester({
     lifelogStore,
@@ -294,7 +302,8 @@ const harvesters = {
     health: (_logger, guidId, username) => health(guidId, { targetUsername: username }),
     // garmin: Uses new DDD harvester (Phase 3f)
     garmin: (_logger, _guidId, username) => garminHarvester.harvest(username),
-    foursquare: (_logger, guidId, username) => foursquare(guidId, { targetUsername: username }),
+    // foursquare: Uses new DDD harvester (Phase 3f Wave 3)
+    foursquare: (_logger, _guidId, username) => foursquareHarvester.harvest(username),
     payroll: (...args) => payrollSyncJob(...args),
     shopping: (logger, guidId, username) => shopping(logger, guidId, username)
 }
