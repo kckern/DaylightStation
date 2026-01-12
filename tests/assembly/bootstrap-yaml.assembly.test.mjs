@@ -11,7 +11,7 @@ describe('bootstrap-yaml.mjs', () => {
   let bootstrapReadYaml;
 
   beforeAll(async () => {
-    const mod = await import('../../backend/lib/bootstrap-yaml.mjs');
+    const mod = await import('../../backend/_legacy/lib/bootstrap-yaml.mjs');
     bootstrapReadYaml = mod.bootstrapReadYaml;
   });
 

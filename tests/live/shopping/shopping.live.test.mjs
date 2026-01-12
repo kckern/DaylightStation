@@ -10,7 +10,7 @@
  * - User gmail refresh token
  */
 
-import { configService } from '../../../backend/lib/config/ConfigService.mjs';
+import { configService } from '../../../backend/_legacy/lib/config/index.mjs';
 
 describe('Shopping Live Integration', () => {
   let processShoppingData;

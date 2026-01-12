@@ -1,6 +1,7 @@
-// backend/src/api/routers/proxy.mjs
+// backend/src/4_api/routers/proxy.mjs
 import express from 'express';
 import fs from 'fs';
+import nodePath from 'path';
 
 /**
  * Create proxy router for streaming and thumbnails
@@ -82,6 +83,83 @@ export function createProxyRouter(config) {
       res.redirect(plexUrl);
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * GET /proxy/local-content/stream/:type/*
+   * Stream audio for LocalContent types (talk, scripture, hymn, primary, poem)
+   */
+  router.get('/local-content/stream/:type/*', async (req, res) => {
+    try {
+      const { type } = req.params;
+      const path = req.params[0] || '';
+      const adapter = registry.get('local-content');
+
+      if (!adapter) {
+        return res.status(500).json({ error: 'LocalContent adapter not configured' });
+      }
+
+      // Map type to prefix
+      const prefixMap = {
+        'talk': 'talk',
+        'scripture': 'scripture',
+        'hymn': 'hymn',
+        'primary': 'primary',
+        'poem': 'poem'
+      };
+
+      const prefix = prefixMap[type];
+      if (!prefix) {
+        return res.status(400).json({ error: `Unknown content type: ${type}` });
+      }
+
+      // Get item to find media file path
+      const item = await adapter.getItem(`${prefix}:${path}`);
+      if (!item || !item.metadata?.mediaFile) {
+        return res.status(404).json({ error: 'Media file not found', type, path });
+      }
+
+      // Construct full file path
+      const mediaPath = item.metadata.mediaFile;
+      const fullPath = nodePath.join(adapter.mediaPath, mediaPath);
+
+      if (!fs.existsSync(fullPath)) {
+        return res.status(404).json({ error: 'Media file not found on disk', path: fullPath });
+      }
+
+      const stat = fs.statSync(fullPath);
+      const ext = nodePath.extname(fullPath).toLowerCase();
+      const mimeType = ext === '.mp3' ? 'audio/mpeg' : 'audio/mp4';
+
+      // Handle range requests for audio seeking
+      const range = req.headers.range;
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+        const chunkSize = end - start + 1;
+
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': mimeType
+        });
+
+        fs.createReadStream(fullPath, { start, end }).pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': stat.size,
+          'Content-Type': mimeType
+        });
+        fs.createReadStream(fullPath).pipe(res);
+      }
+    } catch (err) {
+      console.error('[proxy] local-content stream error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
     }
   });
 

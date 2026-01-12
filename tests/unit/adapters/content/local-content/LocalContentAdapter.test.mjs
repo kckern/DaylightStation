@@ -40,7 +40,8 @@ describe('LocalContentAdapter', () => {
         { prefix: 'talk' },
         { prefix: 'scripture' },
         { prefix: 'hymn' },
-        { prefix: 'primary' }
+        { prefix: 'primary' },
+        { prefix: 'poem' }
       ]);
     });
   });
@@ -60,6 +61,10 @@ describe('LocalContentAdapter', () => {
 
     it('returns true for primary: prefix', () => {
       expect(adapter.canResolve('primary:42')).toBe(true);
+    });
+
+    it('returns true for poem: prefix', () => {
+      expect(adapter.canResolve('poem:remedy/01')).toBe(true);
     });
 
     it('returns false for other prefixes', () => {
@@ -82,6 +87,10 @@ describe('LocalContentAdapter', () => {
 
     it('returns songs for primary items', () => {
       expect(adapter.getStoragePath('primary:42')).toBe('songs');
+    });
+
+    it('returns poetry for poem items', () => {
+      expect(adapter.getStoragePath('poem:remedy/01')).toBe('poetry');
     });
   });
 
@@ -261,6 +270,75 @@ describe('LocalContentAdapter', () => {
 
       expect(item).not.toBeNull();
       expect(item.resumable).toBe(false);
+    });
+  });
+
+  describe('poetry content', () => {
+    let fixtureAdapter;
+
+    beforeEach(() => {
+      fixtureAdapter = new LocalContentAdapter({
+        dataPath: path.resolve(__dirname, '../../../../_fixtures/local-content'),
+        mediaPath: '/media'
+      });
+    });
+
+    it('returns poem item with stanzas', async () => {
+      const item = await fixtureAdapter.getItem('poem:remedy/01');
+
+      expect(item).not.toBeNull();
+      expect(item.id).toBe('poem:remedy/01');
+      expect(item.title).toBe('Test Poem');
+      expect(item.type).toBe('poem');
+      expect(item.mediaType).toBe('audio');
+      expect(item.metadata.author).toBe('Test Author');
+      expect(item.metadata.condition).toBe('sleep');
+      expect(item.metadata.verses).toBeDefined();
+      expect(item.metadata.verses.length).toBe(2);
+      expect(item.metadata.verses[0].stanza).toBe(1);
+      expect(item.metadata.verses[0].lines).toEqual([
+        'The first line of verse',
+        'The second line'
+      ]);
+    });
+
+    it('includes also_suitable_for array', async () => {
+      const item = await fixtureAdapter.getItem('poem:remedy/01');
+
+      expect(item).not.toBeNull();
+      expect(item.metadata.also_suitable_for).toBeDefined();
+      expect(item.metadata.also_suitable_for).toEqual(['calm', 'peace']);
+    });
+
+    it('returns null for missing poem', async () => {
+      const item = await fixtureAdapter.getItem('poem:nonexistent/poem');
+      expect(item).toBeNull();
+    });
+
+    it('prevents path traversal in poem', async () => {
+      const item = await fixtureAdapter.getItem('poem:../../../etc/passwd');
+      expect(item).toBeNull();
+    });
+
+    it('is not resumable (poems do not track progress)', async () => {
+      const item = await fixtureAdapter.getItem('poem:remedy/01');
+
+      expect(item).not.toBeNull();
+      expect(item.resumable).toBe(false);
+    });
+
+    it('includes correct mediaUrl for streaming', async () => {
+      const item = await fixtureAdapter.getItem('poem:remedy/01');
+
+      expect(item).not.toBeNull();
+      expect(item.mediaUrl).toBe('/proxy/local-content/stream/poem/remedy/01');
+    });
+
+    it('includes poem_id in metadata', async () => {
+      const item = await fixtureAdapter.getItem('poem:remedy/01');
+
+      expect(item).not.toBeNull();
+      expect(item.metadata.poem_id).toBe('remedy/01');
     });
   });
 

@@ -1,0 +1,125 @@
+/**
+ * ImmichProxyAdapter - Proxy adapter for Immich photo management
+ *
+ * Implements IProxyAdapter for forwarding requests to Immich
+ * with API key authentication.
+ *
+ * @module adapters/proxy
+ */
+
+/**
+ * @implements {import('../../0_infrastructure/proxy/IProxyAdapter.mjs').IProxyAdapter}
+ */
+export class ImmichProxyAdapter {
+  #host;
+  #apiKey;
+  #logger;
+
+  /**
+   * @param {Object} config
+   * @param {string} config.host - Immich server URL (e.g., 'http://localhost:2283')
+   * @param {string} config.apiKey - Immich API key
+   * @param {Object} [options]
+   * @param {Object} [options.logger] - Logger instance
+   */
+  constructor(config, options = {}) {
+    this.#host = config.host;
+    this.#apiKey = config.apiKey;
+    this.#logger = options.logger || console;
+  }
+
+  /**
+   * Get service identifier
+   * @returns {string}
+   */
+  getServiceName() {
+    return 'immich';
+  }
+
+  /**
+   * Get Immich server base URL
+   * @returns {string}
+   */
+  getBaseUrl() {
+    return this.#host;
+  }
+
+  /**
+   * Check if adapter is configured
+   * @returns {boolean}
+   */
+  isConfigured() {
+    return Boolean(this.#host && this.#apiKey);
+  }
+
+  /**
+   * Get authentication headers
+   * Immich uses x-api-key header
+   * @returns {Object}
+   */
+  getAuthHeaders() {
+    return {
+      'x-api-key': this.#apiKey
+    };
+  }
+
+  /**
+   * No auth params needed for Immich
+   * @returns {null}
+   */
+  getAuthParams() {
+    return null;
+  }
+
+  /**
+   * Transform incoming path
+   * Strips /immich prefix if present
+   * @param {string} path
+   * @returns {string}
+   */
+  transformPath(path) {
+    return path.replace(/^\/immich/, '');
+  }
+
+  /**
+   * Default retry configuration
+   * @returns {{ maxRetries: number, delayMs: number }}
+   */
+  getRetryConfig() {
+    return {
+      maxRetries: 3,
+      delayMs: 500
+    };
+  }
+
+  /**
+   * Standard retry logic
+   * @param {number} statusCode
+   * @returns {boolean}
+   */
+  shouldRetry(statusCode) {
+    return statusCode >= 500 || statusCode === 429;
+  }
+
+  /**
+   * Default timeout
+   * @returns {number}
+   */
+  getTimeout() {
+    return 30000;
+  }
+}
+
+/**
+ * Create an ImmichProxyAdapter from environment config
+ * @param {Object} [options]
+ * @returns {ImmichProxyAdapter}
+ */
+export function createImmichProxyAdapter(options = {}) {
+  const host = process.env.immich?.host || process.env.IMMICH_HOST;
+  const apiKey = process.env.immich?.apiKey || process.env.IMMICH_API_KEY;
+
+  return new ImmichProxyAdapter({ host, apiKey }, options);
+}
+
+export default ImmichProxyAdapter;

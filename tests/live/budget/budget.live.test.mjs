@@ -11,7 +11,7 @@
  * server environment with process.env.path set up correctly.
  */
 
-import { configService } from '../../../backend/lib/config/ConfigService.mjs';
+import { configService } from '../../../backend/_legacy/lib/config/index.mjs';
 
 // Must set process.env.path before importing budget.mjs
 const dataPath = process.env.DAYLIGHT_DATA_PATH;

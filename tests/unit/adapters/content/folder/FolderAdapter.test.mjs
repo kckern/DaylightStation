@@ -68,7 +68,7 @@ describe('FolderAdapter', () => {
       const item = await adapter.getItem('folder:Morning Shows');
       expect(item).not.toBeNull();
       expect(item.id).toBe('folder:Morning Shows');
-      expect(item.metadata.itemCount).toBe(2);
+      expect(item.childCount).toBe(2);
     });
   });
 

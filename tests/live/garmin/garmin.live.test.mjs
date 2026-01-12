@@ -8,8 +8,8 @@
  *   OR GARMIN_USERNAME and GARMIN_PASSWORD in secrets.yml
  */
 
-import { configService } from '../../../backend/lib/config/ConfigService.mjs';
-import harvestActivities, { isGarminInCooldown } from '../../../backend/lib/garmin.mjs';
+import { configService } from '../../../backend/_legacy/lib/config/index.mjs';
+import harvestActivities, { isGarminInCooldown } from '../../../backend/_legacy/lib/garmin.mjs';
 
 describe('Garmin Live Integration', () => {
   beforeAll(() => {

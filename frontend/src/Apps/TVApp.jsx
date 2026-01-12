@@ -67,7 +67,8 @@ export default function TVApp({ appParam }) {
 
   useEffect(() => {
     const fetchData = async () => {
-      const data = await DaylightAPI("data/list/TVApp/recent_on_top");
+      // Migrated from legacy: data/list/TVApp/recent_on_top
+      const data = await DaylightAPI("api/list/folder/TVApp/recent_on_top");
       setList(data);
       logger.info('tvapp-data-loaded', { count: data?.items?.length ?? 0 });
     };

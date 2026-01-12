@@ -114,20 +114,22 @@ export class FilesystemAdapter {
   }
 
   /**
-   * @param {string} id
+   * @param {string} id - Compound ID like "filesystem:path/to/file.mp3"
    * @returns {Promise<PlayableItem|ListableItem|null>}
    */
   async getItem(id) {
-    const resolved = this.resolvePath(id);
+    // Strip source prefix if present
+    const localId = id.replace(/^filesystem:/, '');
+    const resolved = this.resolvePath(localId);
     if (!resolved) return null;
 
     try {
       const stats = fs.statSync(resolved.path);
       if (stats.isDirectory()) {
         return new ListableItem({
-          id: `filesystem:${id}`,
+          id: `filesystem:${localId}`,
           source: 'filesystem',
-          title: path.basename(id),
+          title: path.basename(localId),
           itemType: 'container',
           childCount: fs.readdirSync(resolved.path).length
         });
@@ -137,11 +139,11 @@ export class FilesystemAdapter {
       const mediaType = this.getMediaType(ext);
 
       return new PlayableItem({
-        id: `filesystem:${id}`,
+        id: `filesystem:${localId}`,
         source: 'filesystem',
-        title: path.basename(id, ext),
+        title: path.basename(localId, ext),
         mediaType,
-        mediaUrl: `/proxy/filesystem/stream/${encodeURIComponent(id)}`,
+        mediaUrl: `/proxy/filesystem/stream/${encodeURIComponent(localId)}`,
         resumable: mediaType === 'video',
         metadata: {
           filePath: resolved.path,
@@ -156,11 +158,13 @@ export class FilesystemAdapter {
   }
 
   /**
-   * @param {string} id
+   * @param {string} id - Compound ID like "filesystem:path/to/dir"
    * @returns {Promise<ListableItem[]>}
    */
   async getList(id) {
-    const resolved = this.resolvePath(id);
+    // Strip source prefix if present
+    const localId = id.replace(/^filesystem:/, '');
+    const resolved = this.resolvePath(localId);
     if (!resolved) return [];
 
     try {

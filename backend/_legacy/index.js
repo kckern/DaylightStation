@@ -18,6 +18,11 @@ import { loadAllConfig, logConfigSummary } from './lib/config/loader.mjs';
 // ConfigService v2 (primary config system)
 import { initConfigService, ConfigValidationError, configService } from './lib/config/index.mjs';
 
+// Routing toggle system for legacy/new route migration
+import { loadRoutingConfig, createRoutingMiddleware, ShimMetrics } from '../src/0_infrastructure/routing/index.mjs';
+import { allShims } from '../src/4_api/shims/index.mjs';
+import { createShimsRouter } from '../src/4_api/routers/admin/shims.mjs';
+
 
 // Logging system
 import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
@@ -114,6 +119,22 @@ app.use(express.urlencoded({ limit: '50mb', extended: true })); // Parse URL-enc
 // Create HTTP server
 const server = createServer(app);
 
+// Initialize routing toggle system for legacy/new route migration
+const shimMetrics = new ShimMetrics();
+let routingConfig;
+try {
+  routingConfig = loadRoutingConfig('./backend/config/routing.yml', allShims);
+  console.log('[routing] Config loaded successfully');
+} catch (error) {
+  console.error('[routing] Config error:', error.message);
+  console.log('[routing] Defaulting all routes to legacy');
+  routingConfig = { default: 'legacy', routing: {} };
+}
+
+// Create separate routers for legacy and new implementations
+const legacyRouter = express.Router();
+const newRouter = express.Router();
+
 
 async function initializeApp() {
   // Create WebSocket server FIRST, before any Express routes
@@ -175,7 +196,7 @@ async function initializeApp() {
     }
 
     // Initialize WebSocket server after config is loaded
-    createWebsocketServer(server);
+    await createWebsocketServer(server);
 
     // Initialize MQTT subscriber for vibration sensors (fitness)
     try {
@@ -217,10 +238,20 @@ async function initializeApp() {
     const { default: exe } = await import('./routers/exe.mjs');
     const { default: tts } = await import('./routers/tts.mjs');
 
+    // Mount admin shims router for monitoring shim usage (before routing middleware)
+    app.use('/admin/shims', createShimsRouter({ metrics: shimMetrics }));
+    rootLogger.info('routing.toggle.initialized', {
+      default: routingConfig.default,
+      routes: Object.keys(routingConfig.routing || {}),
+      adminPath: '/admin/shims'
+    });
+
     // Content domain (new DDD structure)
-    const { createContentRegistry, createWatchStore } = await import('../src/0_infrastructure/bootstrap.mjs');
+    const { createContentRegistry, createWatchStore, createFinanceServices, createFinanceApiRouter, createEntropyServices, createEntropyApiRouter } = await import('../src/0_infrastructure/bootstrap.mjs');
     const { createContentRouter } = await import('../src/4_api/routers/content.mjs');
     const { createProxyRouter } = await import('../src/4_api/routers/proxy.mjs');
+    const { createListRouter } = await import('../src/4_api/routers/list.mjs');
+    const { createPlayRouter } = await import('../src/4_api/routers/play.mjs');
 
     // Backend API
     app.post('/api/logs', (req, res) => {
@@ -321,13 +352,24 @@ async function initializeApp() {
       const hid = process.env.household_id || 'default';
       res.redirect(`/data/households/${hid}/shared/calendar`);
     });
-    
+
+    // Legacy finance endpoint shims (redirect to new API - must be before legacy routers)
+    app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
+    app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
+    app.get('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
+    app.post('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
+
     app.use('/data', fetchRouter);
-    
+
     app.use('/cron', cron);
     app.use("/harvest", harvestRouter);
     // JournalistRouter now handled via /api/journalist in api.mjs
     app.use("/home", homeRouter);
+
+    // Create watch state store for progress tracking (needed by legacy media/log)
+    const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || '/data/media_memory';
+    const watchStore = createWatchStore({ watchStatePath });
+
     // Wire legacy /media/log endpoint to use new WatchState system
     const { legacyMediaLogMiddleware } = await import('../src/4_api/middleware/legacyCompat.mjs');
     app.post('/media/log', legacyMediaLogMiddleware(watchStore));
@@ -344,15 +386,20 @@ async function initializeApp() {
 
     // Initialize content registry and mount content router (new DDD structure)
     const mediaBasePath = process.env.path?.media || process.env.MEDIA_PATH || '/data/media';
+    const dataBasePath = process.env.path?.data || process.env.DATA_PATH || '/data';
+    const householdId = configService.getDefaultHouseholdId() || 'default';
+    const householdDir = userDataService.getHouseholdDir(householdId) || `${dataBasePath}/households/${householdId}`;
     const plexConfig = process.env.media?.plex ? {
       host: process.env.media.plex.host,
       token: process.env.media.plex.token
     } : null;
-    const contentRegistry = createContentRegistry({ mediaBasePath, plex: plexConfig });
-
-    // Create watch state store for progress tracking
-    const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || '/data/media_memory';
-    const watchStore = createWatchStore({ watchStatePath });
+    const watchlistPath = `${householdDir}/state/lists.yml`;
+    const contentRegistry = createContentRegistry({
+      mediaBasePath,
+      plex: plexConfig,
+      dataPath: dataBasePath,
+      watchlistPath
+    });
 
     app.use('/api/content', createContentRouter(contentRegistry, watchStore));
     rootLogger.info('content.mounted', { path: '/api/content', mediaBasePath, plexEnabled: !!plexConfig });
@@ -360,6 +407,45 @@ async function initializeApp() {
     // Mount proxy router for streaming and thumbnails
     app.use('/proxy', createProxyRouter({ registry: contentRegistry }));
     rootLogger.info('proxy.mounted', { path: '/proxy' });
+
+    // Mount list and play routers for Content Domain API
+    app.use('/api/list', createListRouter({ registry: contentRegistry }));
+    app.use('/api/play', createPlayRouter({ registry: contentRegistry, watchStore }));
+    rootLogger.info('content.api.mounted', { paths: ['/api/list', '/api/play'] });
+
+    // Finance domain (new DDD structure)
+    const financeServices = createFinanceServices({
+      dataRoot: dataBasePath,
+      defaultHouseholdId: householdId,
+      buxfer: process.env.finance?.buxfer ? {
+        email: process.env.finance.buxfer.email,
+        password: process.env.finance.buxfer.password
+      } : null,
+      // AI gateway can be added when needed for transaction categorization
+      logger: rootLogger.child({ module: 'finance' })
+    });
+    app.use('/api/finance', createFinanceApiRouter({
+      financeServices,
+      configService,
+      logger: rootLogger.child({ module: 'finance-api' })
+    }));
+    rootLogger.info('finance.api.mounted', { path: '/api/finance', buxferConfigured: !!financeServices.buxferAdapter });
+
+    // Entropy domain (new DDD structure)
+    const { userLoadFile, userLoadCurrent } = await import('./lib/io.mjs');
+    const ArchiveService = (await import('./lib/ArchiveService.mjs')).default;
+    const entropyServices = createEntropyServices({
+      io: { userLoadFile, userLoadCurrent },
+      archiveService: ArchiveService,
+      configService,
+      logger: rootLogger.child({ module: 'entropy' })
+    });
+    app.use('/api/entropy', createEntropyApiRouter({
+      entropyServices,
+      configService,
+      logger: rootLogger.child({ module: 'entropy-api' })
+    }));
+    rootLogger.info('entropy.api.mounted', { path: '/api/entropy' });
 
     // Mount API router on main app for webhook routes (journalist, foodlog)
     const { default: apiRouter } = await import('./api.mjs');

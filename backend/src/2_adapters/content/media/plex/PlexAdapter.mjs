@@ -39,28 +39,31 @@ export class PlexAdapter {
 
   /**
    * Get a single item by ID
-   * @param {string} id - Local ID (rating key or path)
+   * @param {string} id - Compound ID (plex:660440) or local ID
    * @returns {Promise<PlayableItem|ListableItem|null>}
    */
   async getItem(id) {
     try {
+      // Strip source prefix if present
+      const localId = id.replace(/^plex:/, '');
+
       // If ID is a numeric rating key, fetch metadata directly
-      if (/^\d+$/.test(id)) {
-        const data = await this.client.getMetadata(id);
+      if (/^\d+$/.test(localId)) {
+        const data = await this.client.getMetadata(localId);
         const item = data.MediaContainer?.Metadata?.[0];
         if (!item) return null;
         return this._toPlayableItem(item);
       }
 
       // Otherwise treat as container path
-      const data = await this.client.getContainer(`/${id}`);
+      const data = await this.client.getContainer(`/${localId}`);
       const container = data.MediaContainer;
       if (!container) return null;
 
       return new ListableItem({
-        id: `plex:${id}`,
+        id: `plex:${localId}`,
         source: 'plex',
-        title: container.title1 || container.title || id,
+        title: container.title1 || container.title || localId,
         itemType: 'container',
         childCount: container.size || 0,
         thumbnail: container.thumb ? `${this.host}${container.thumb}` : null
@@ -72,12 +75,27 @@ export class PlexAdapter {
 
   /**
    * Get list of items in a container
-   * @param {string} id - Container path (empty for library sections)
+   * @param {string} id - Container path or rating key (empty for library sections)
    * @returns {Promise<ListableItem[]>}
    */
   async getList(id) {
     try {
-      const path = id ? `/${id}` : '/library/sections';
+      // Strip source prefix if present
+      const localId = id?.replace(/^plex:/, '') || '';
+
+      // Determine the correct path
+      let path;
+      if (!localId) {
+        // Empty - list all library sections
+        path = '/library/sections';
+      } else if (/^\d+$/.test(localId)) {
+        // Numeric ID = rating key - get children
+        path = `/library/metadata/${localId}/children`;
+      } else {
+        // Path-based (e.g., library/sections/1/all)
+        path = `/${localId}`;
+      }
+
       const data = await this.client.getContainer(path);
       const container = data.MediaContainer;
       if (!container) return [];
@@ -96,15 +114,29 @@ export class PlexAdapter {
    */
   async resolvePlayables(id) {
     try {
-      // If ID is a numeric rating key, try to get it as playable
-      if (/^\d+$/.test(id)) {
-        const item = await this.getItem(id);
-        if (item?.mediaUrl) return [item];
-        return [];
+      // Strip source prefix if present
+      const localId = id?.replace(/^plex:/, '') || '';
+
+      // If ID is a numeric rating key, check if directly playable or a container
+      if (/^\d+$/.test(localId)) {
+        const item = await this.getItem(localId);
+        if (item?.mediaUrl) {
+          // Directly playable (movie, episode, track)
+          return [item];
+        }
+        // It's a container - get its children
+        const children = await this.getList(localId);
+        const playables = [];
+        for (const child of children) {
+          const childId = child.id.replace('plex:', '');
+          const resolved = await this.resolvePlayables(childId);
+          playables.push(...resolved);
+        }
+        return playables;
       }
 
       // Otherwise get list and recurse
-      const list = await this.getList(id);
+      const list = await this.getList(localId);
       const playables = [];
 
       for (const item of list) {
@@ -113,8 +145,8 @@ export class PlexAdapter {
           const playable = await this.getItem(ratingKey);
           if (playable?.mediaUrl) playables.push(playable);
         } else if (item.itemType === 'container') {
-          const localId = item.id.replace('plex:', '');
-          const children = await this.resolvePlayables(localId);
+          const childId = item.id.replace('plex:', '');
+          const children = await this.resolvePlayables(childId);
           playables.push(...children);
         }
       }

@@ -10,9 +10,9 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 
 // Import the components under test
-import { UnifiedEventRouter } from '../../backend/chatbots/application/routing/UnifiedEventRouter.mjs';
-import { NutribotContainer } from '../../backend/chatbots/bots/nutribot/container.mjs';
-import { ConversationState } from '../../backend/chatbots/domain/entities/ConversationState.mjs';
+import { UnifiedEventRouter } from '../../backend/_legacy/chatbots/application/routing/UnifiedEventRouter.mjs';
+import { NutribotContainer } from '../../backend/_legacy/chatbots/bots/nutribot/container.mjs';
+import { ConversationState } from '../../backend/_legacy/chatbots/domain/entities/ConversationState.mjs';
 
 // ==================== Mock Implementations ====================
 
