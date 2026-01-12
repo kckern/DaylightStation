@@ -28,7 +28,8 @@ config.app-local.yml
 .claude/skills/*/config.local.json
 /_extentions/piano/node_modules
 /tests/test-results
-tests/runtime/
+# Runtime test reports (keep test files, ignore generated reports)
+tests/runtime/**/reports/*.json
 .claude/settings.local.json
 /_extensions/fitness/node_modules
 /_extensions/piano/node_modules
