@@ -58,8 +58,10 @@ import {
     TodoistHarvester, ClickUpHarvester, GitHubHarvester,
     LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester,
     GmailHarvester, GCalHarvester,
+    WeatherHarvester, ScriptureHarvester,
     YamlLifelogStore, YamlAuthStore
 } from '../../src/2_adapters/harvester/index.mjs';
+import { saveFile } from '../lib/io.mjs';
 import garminLib from 'garmin-connect';
 const { GarminConnect } = garminLib;
 import axios from './http.mjs';
@@ -230,6 +232,24 @@ const gcalHarvester = new GCalHarvester({
     logger: createLogger({ source: 'backend', app: 'gcal' }),
 });
 
+// Wave 5: Other Harvesters
+const hid = process.env.household_id || 'default';
+const weatherHarvester = new WeatherHarvester({
+    sharedStore: {
+        save: (data) => saveFile(`households/${hid}/shared/weather`, data),
+    },
+    configService,
+    logger: createLogger({ source: 'backend', app: 'weather' }),
+});
+
+const scriptureHarvester = new ScriptureHarvester({
+    httpClient: axios,
+    contentStore: {
+        save: (volume, version, verseId, data) => saveFile(`content/scripture/${volume}/${version}/${verseId}`, data),
+    },
+    logger: createLogger({ source: 'backend', app: 'scripture' }),
+});
+
 const harvestRootLogger = () => createLogger({
     source: 'backend',
     app: 'harvest',
@@ -250,8 +270,10 @@ const harvesters = {
     // withings: Uses new DDD harvester (Phase 3f Wave 1)
     withings: (_logger, _guidId, username) => withingsHarvester.harvest(username),
     // ldsgc: (_logger, guidId, username) => ldsgc(guidId, { targetUsername: username }),
-    weather: (_logger, guidId, username) => weather(guidId, { targetUsername: username }),
-    scripture: (_logger, guidId, username) => scripture(guidId, { targetUsername: username }),
+    // weather: Uses new DDD harvester (Phase 3f Wave 5)
+    weather: (_logger, _guidId, username) => weatherHarvester.harvest(username),
+    // scripture: Uses new DDD harvester (Phase 3f Wave 5)
+    scripture: (_logger, _guidId, username, options) => scriptureHarvester.harvest(username, options),
     // clickup: Uses new DDD harvester (Phase 3f Wave 2)
     clickup: (_logger, _guidId, username) => clickupHarvester.harvest(username),
     // lastfm: Uses new DDD harvester (Phase 3f Wave 3)
