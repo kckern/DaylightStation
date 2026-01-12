@@ -18,3 +18,14 @@ export { YamlAuthStore } from './YamlAuthStore.mjs';
 export { GarminHarvester } from './fitness/GarminHarvester.mjs';
 export { StravaHarvester } from './fitness/StravaHarvester.mjs';
 export { WithingsHarvester } from './fitness/WithingsHarvester.mjs';
+
+// Productivity Harvesters
+export { TodoistHarvester } from './productivity/TodoistHarvester.mjs';
+export { ClickUpHarvester } from './productivity/ClickUpHarvester.mjs';
+export { GitHubHarvester } from './productivity/GitHubHarvester.mjs';
+
+// Social Harvesters
+export { LastfmHarvester } from './social/LastfmHarvester.mjs';
+export { RedditHarvester } from './social/RedditHarvester.mjs';
+export { LetterboxdHarvester } from './social/LetterboxdHarvester.mjs';
+export { GoodreadsHarvester } from './social/GoodreadsHarvester.mjs';
