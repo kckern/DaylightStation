@@ -255,8 +255,9 @@ function useFetchMenuData(listInput, refreshToken = 0) {
           items: [],
         };
       }
+      // Migrated from legacy: data/list/${target}
       const data = await DaylightAPI(
-        `data/list/${target}${config ? `/${config}` : ""}`
+        `api/list/folder/${target}${config ? `/${config}` : ""}`
       );
       if (canceled) return null;
       return { 

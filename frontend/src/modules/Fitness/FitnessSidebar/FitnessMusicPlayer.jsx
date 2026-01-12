@@ -190,7 +190,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
         
         // Fetch playlist data from the media API
         // Use path-based shuffle instead of query param to avoid polluting item data
-        const response = await DaylightAPI(`/media/plex/list/${selectedPlaylistId}/playable,shuffle`);
+        // Migrated from legacy: /media/plex/list/${selectedPlaylistId}/playable,shuffle
+        const response = await DaylightAPI(`/api/list/plex/${selectedPlaylistId}/playable,shuffle`);
         
         console.log('[Playlist] Raw API response:', response);
         

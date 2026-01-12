@@ -1,16 +1,20 @@
 /**
- * Gratitude Repository
- * @module homebot/repositories/GratitudeRepository
- * 
- * Wraps gratitude data access for HomeBot use cases.
- * Provides methods for adding selections and broadcasting via WebSocket.
+ * Gratitude Repository Bridge
+ *
+ * This file now delegates to the new clean architecture implementation.
+ * It wraps the new GratitudeService for HomeBot use cases.
+ *
+ * New implementation: backend/src/1_domains/gratitude/
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { configService } from '../../../../lib/config/index.mjs';
 import { userDataService } from '../../../../lib/config/UserDataService.mjs';
 import { broadcastToWebsockets } from '../../../../routers/websocket.mjs';
 import { createLogger } from '../../../_lib/logging/index.mjs';
+
+// Import new architecture components
+import { GratitudeService } from '../../../../../src/1_domains/gratitude/services/GratitudeService.mjs';
+import { YamlGratitudeStore } from '../../../../../src/2_adapters/persistence/yaml/YamlGratitudeStore.mjs';
 
 /**
  * Valid categories for gratitude items
@@ -20,10 +24,12 @@ const CATEGORIES = ['gratitude', 'hopes'];
 /**
  * Gratitude Repository
  * Provides data access for gratitude items with WebSocket broadcasting.
+ * Now delegates to the new GratitudeService architecture.
  */
 export class GratitudeRepository {
   #householdId;
   #logger;
+  #gratitudeService;
 
   /**
    * @param {Object} [options]
@@ -33,6 +39,17 @@ export class GratitudeRepository {
   constructor(options = {}) {
     this.#householdId = options.householdId || null;
     this.#logger = options.logger || createLogger({ source: 'repository', app: 'homebot' });
+
+    // Create the new architecture services
+    const gratitudeStore = new YamlGratitudeStore({
+      userDataService,
+      logger: this.#logger
+    });
+
+    this.#gratitudeService = new GratitudeService({
+      store: gratitudeStore,
+      logger: this.#logger
+    });
   }
 
   /**
@@ -44,60 +61,36 @@ export class GratitudeRepository {
   }
 
   /**
-   * Read array from household shared gratitude path
-   * @private
-   */
-  #readArray(key) {
-    const hid = this.#getHouseholdId();
-    const data = userDataService.readHouseholdSharedData(hid, `gratitude/${key}`);
-    return Array.isArray(data) ? data : [];
-  }
-
-  /**
-   * Write array to household shared gratitude path
-   * @private
-   */
-  #writeArray(key, arr) {
-    const hid = this.#getHouseholdId();
-    userDataService.writeHouseholdSharedData(hid, `gratitude/${key}`, arr);
-  }
-
-  /**
    * Add a selection for a user
    * @param {string} category - 'gratitude' or 'hopes'
    * @param {Object} options
    * @param {string} options.userId - Username of the household member
    * @param {Object} options.item - Item object with id and text
-   * @returns {Object} The created selection entry
+   * @returns {Promise<Object>} The created selection entry
    */
   async addSelection(category, { userId, item }) {
     if (!CATEGORIES.includes(category)) {
       throw new Error(`Invalid category: ${category}`);
     }
 
-    const selections = this.#readArray(`selections.${category}`);
-    
-    const entry = {
-      id: uuidv4(),
+    const householdId = this.#getHouseholdId();
+    const timezone = configService.getHouseholdTimezone?.(householdId);
+
+    const selection = await this.#gratitudeService.addSelection(
+      householdId,
+      category,
       userId,
-      item: {
-        id: item.id || uuidv4(),
-        text: item.text,
-      },
-      datetime: new Date().toISOString(),
-    };
-    
-    // Add to front of array (newest first)
-    selections.unshift(entry);
-    this.#writeArray(`selections.${category}`, selections);
-    
-    this.#logger.debug('gratitude.selection.added', { 
-      category, 
-      userId, 
-      itemId: entry.item.id 
+      item,
+      timezone
+    );
+
+    this.#logger.debug('gratitude.selection.added', {
+      category,
+      userId,
+      itemId: selection.item?.id
     });
-    
-    return entry;
+
+    return selection.toJSON();
   }
 
   /**
@@ -105,51 +98,46 @@ export class GratitudeRepository {
    * @param {string} category - 'gratitude' or 'hopes'
    * @param {string} userId - Username of the household member
    * @param {Array<{id: string, text: string}>} items - Array of items
-   * @returns {Array<Object>} The created selection entries
+   * @returns {Promise<Array<Object>>} The created selection entries
    */
   async addSelections(category, userId, items) {
     if (!CATEGORIES.includes(category)) {
       throw new Error(`Invalid category: ${category}`);
     }
 
-    const selections = this.#readArray(`selections.${category}`);
-    const entries = [];
-    
-    for (const item of items) {
-      const entry = {
-        id: uuidv4(),
-        userId,
-        item: {
-          id: item.id || uuidv4(),
-          text: item.text,
-        },
-        datetime: new Date().toISOString(),
-      };
-      entries.push(entry);
-      selections.unshift(entry);
-    }
-    
-    this.#writeArray(`selections.${category}`, selections);
-    
-    this.#logger.info('gratitude.selections.added', { 
-      category, 
-      userId, 
-      count: entries.length 
+    const householdId = this.#getHouseholdId();
+    const timezone = configService.getHouseholdTimezone?.(householdId);
+
+    const selections = await this.#gratitudeService.addSelections(
+      householdId,
+      category,
+      userId,
+      items,
+      timezone
+    );
+
+    this.#logger.info('gratitude.selections.added', {
+      category,
+      userId,
+      count: selections.length
     });
-    
-    return entries;
+
+    return selections.map(s => s.toJSON());
   }
 
   /**
    * Get all selections for a category
    * @param {string} category - 'gratitude' or 'hopes'
-   * @returns {Array<Object>}
+   * @returns {Promise<Array<Object>>}
    */
   async getSelections(category) {
     if (!CATEGORIES.includes(category)) {
       throw new Error(`Invalid category: ${category}`);
     }
-    return this.#readArray(`selections.${category}`);
+
+    const householdId = this.#getHouseholdId();
+    const selections = await this.#gratitudeService.getSelections(householdId, category);
+    return selections.map(s => s.toJSON());
   }
 
   /**
@@ -169,13 +157,13 @@ export class GratitudeRepository {
       userName,
       category,
       source: 'homebot',
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     };
 
-    this.#logger.debug('gratitude.broadcast', { 
-      category, 
-      userId, 
-      itemCount: items.length 
+    this.#logger.debug('gratitude.broadcast', {
+      category,
+      userId,
+      itemCount: items.length
     });
 
     broadcastToWebsockets(payload);

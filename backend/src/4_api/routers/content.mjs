@@ -96,7 +96,7 @@ export function createContentRouter(registry, watchStore = null) {
    * POST /api/content/progress/:source/*
    * Update watch progress for an item
    */
-  router.post('/progress/:source/*', express.json(), async (req, res) => {
+  router.post('/progress/:source/*', async (req, res) => {
     try {
       if (!watchStore) {
         return res.status(501).json({ error: 'Watch state storage not configured' });

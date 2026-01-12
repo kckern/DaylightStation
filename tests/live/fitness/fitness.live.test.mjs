@@ -7,8 +7,8 @@
  * - Fitness data sources configured (Garmin, Strava, etc.)
  */
 
-import { configService } from '../../../backend/lib/config/ConfigService.mjs';
-import fitnessSync from '../../../backend/lib/fitsync.mjs';
+import { configService } from '../../../backend/_legacy/lib/config/index.mjs';
+import fitnessSync from '../../../backend/_legacy/lib/fitsync.mjs';
 
 describe('Fitness Sync Live Integration', () => {
   beforeAll(() => {

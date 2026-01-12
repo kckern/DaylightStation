@@ -26,6 +26,7 @@ const harvestRouter = express.Router();
 import crypto from 'crypto';
 import { createLogger } from '../lib/logging/logger.js';
 import { configService } from '../lib/config/index.mjs';
+import { userLoadFile, userSaveFile, userSaveAuth } from '../lib/io.mjs';
 
 import todoist from '../lib/todoist.mjs';
 import gmail from '../lib/gmail.mjs';
@@ -44,13 +45,103 @@ import scripture from '../lib/scriptureguide.mjs';
 import youtube_dl from '../lib/youtube.mjs';
 import health from '../lib/health.mjs';
 import fitness from '../lib/fitsync.mjs';
-import strava from '../lib/strava.mjs';
-import garmin from '../lib/garmin.mjs';
+// strava: Now using StravaHarvester from src/2_adapters/harvester/
 import foursquare from '../lib/foursquare.mjs';
 import shopping from '../lib/shopping.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from '../lib/budget.mjs';
 import ArchiveService from '../lib/ArchiveService.mjs';
 import archiveRotation from '../lib/archiveRotation.mjs';
+
+// New DDD Harvesters (Phase 3f migration)
+import { GarminHarvester, StravaHarvester, WithingsHarvester, YamlLifelogStore, YamlAuthStore } from '../../src/2_adapters/harvester/index.mjs';
+import garminLib from 'garmin-connect';
+const { GarminConnect } = garminLib;
+import axios from './http.mjs';
+
+// Create shared lifelog store
+const lifelogStore = new YamlLifelogStore({
+    io: { userLoadFile, userSaveFile },
+    logger: createLogger({ source: 'backend', app: 'lifelogStore' }),
+});
+
+// Factory function for Garmin client
+const createGarminClient = (username) => {
+    const auth = configService.getUserAuth('garmin', username) || {};
+    const garminUser = auth.username || configService.getSecret('GARMIN_USERNAME');
+    const garminPass = auth.password || configService.getSecret('GARMIN_PASSWORD');
+
+    if (!garminUser || !garminPass) {
+        throw new Error(`Garmin credentials not found for user: ${username}`);
+    }
+
+    return new GarminConnect({ username: garminUser, password: garminPass });
+};
+
+// Create shared auth store
+const authStore = new YamlAuthStore({
+    io: { userSaveAuth },
+    logger: createLogger({ source: 'backend', app: 'authStore' }),
+});
+
+// Instantiate new harvesters
+const garminHarvester = new GarminHarvester({
+    garminClientFactory: createGarminClient,
+    lifelogStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'garmin' }),
+});
+
+// Strava client wrapper
+const stravaClient = {
+    accessToken: null,
+
+    async refreshToken(refreshToken) {
+        const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = process.env;
+        const response = await axios.post('https://www.strava.com/oauth/token',
+            new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: refreshToken,
+                client_id: STRAVA_CLIENT_ID,
+                client_secret: STRAVA_CLIENT_SECRET
+            }),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+        this.accessToken = response.data.access_token;
+        return response.data;
+    },
+
+    async getActivities({ before, after, page, perPage }) {
+        const url = `https://www.strava.com/api/v3/athlete/activities?before=${before}&after=${after}&page=${page}&per_page=${perPage}`;
+        const response = await axios.get(url, {
+            headers: { 'Authorization': `Bearer ${this.accessToken}` }
+        });
+        return response.data;
+    },
+
+    async getActivityStreams(activityId, keys) {
+        const url = `https://www.strava.com/api/v3/activities/${activityId}/streams?keys=${keys.join(',')}&key_by_type=true`;
+        const response = await axios.get(url, {
+            headers: { 'Authorization': `Bearer ${this.accessToken}` }
+        });
+        return response.data;
+    }
+};
+
+const stravaHarvester = new StravaHarvester({
+    stravaClient,
+    lifelogStore,
+    authStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'strava' }),
+});
+
+const withingsHarvester = new WithingsHarvester({
+    httpClient: axios,
+    lifelogStore,
+    authStore,
+    configService,
+    logger: createLogger({ source: 'backend', app: 'withings' }),
+});
 
 const harvestRootLogger = () => createLogger({
     source: 'backend',
@@ -66,7 +157,8 @@ const harvesters = {
     todoist: (logger, guidId, username) => todoist(logger, guidId, username),
     gmail: (logger, guidId, username) => gmail(logger, guidId, username),
     gcal: (logger, guidId, username) => gcal(logger, guidId, username),
-    withings: (_logger, guidId, username) => withings(guidId, { targetUsername: username }),
+    // withings: Uses new DDD harvester (Phase 3f)
+    withings: (_logger, _guidId, username) => withingsHarvester.harvest(username),
     // ldsgc: (_logger, guidId, username) => ldsgc(guidId, { targetUsername: username }),
     weather: (_logger, guidId, username) => weather(guidId, { targetUsername: username }),
     scripture: (_logger, guidId, username) => scripture(guidId, { targetUsername: username }),
@@ -79,9 +171,11 @@ const harvesters = {
     budget: (_logger, guidId, username) => budget(guidId, { targetUsername: username }),
     youtube_dl: (_logger, guidId, username) => youtube_dl(guidId, { targetUsername: username }),
     fitness: (_logger, guidId, username) => fitness(guidId, { targetUsername: username }),
-    strava: (logger, guidId, username) => strava(logger, guidId, username),
+    // strava: Uses new DDD harvester (Phase 3f)
+    strava: (_logger, _guidId, username) => stravaHarvester.harvest(username),
     health: (_logger, guidId, username) => health(guidId, { targetUsername: username }),
-    garmin: (_logger, guidId, username) => garmin(guidId, { targetUsername: username }),
+    // garmin: Uses new DDD harvester (Phase 3f)
+    garmin: (_logger, _guidId, username) => garminHarvester.harvest(username),
     foursquare: (_logger, guidId, username) => foursquare(guidId, { targetUsername: username }),
     payroll: (...args) => payrollSyncJob(...args),
     shopping: (logger, guidId, username) => shopping(logger, guidId, username)

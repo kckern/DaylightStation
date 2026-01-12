@@ -245,7 +245,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
 
     try {
       setLoading(true);
-      const response = await DaylightAPI(`/media/plex/list/${showId}/playable`);
+      // Migrated from legacy: /media/plex/list/${showId}/playable
+      const response = await DaylightAPI(`/api/list/plex/${showId}/playable`);
       setShowData(response);
       
       const rawLabels = [];

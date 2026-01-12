@@ -7,8 +7,8 @@
  * - Goodreads user ID/URL in users/{username}/auth/goodreads.yml
  */
 
-import { configService } from '../../../backend/lib/config/ConfigService.mjs';
-import getBooks from '../../../backend/lib/goodreads.mjs';
+import { configService } from '../../../backend/_legacy/lib/config/index.mjs';
+import getBooks from '../../../backend/_legacy/lib/goodreads.mjs';
 
 describe('Goodreads Live Integration', () => {
   beforeAll(() => {

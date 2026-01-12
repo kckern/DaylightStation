@@ -23,6 +23,7 @@ describe('Content API Router', () => {
     watchStore = new YamlWatchStateStore({ basePath: watchStatePath });
 
     app = express();
+    app.use(express.json());
     app.use('/api/content', createContentRouter(registry, watchStore));
   });
 
