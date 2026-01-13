@@ -123,7 +123,8 @@ export function createContentRegistry(config) {
   // Register filesystem adapter
   if (config.mediaBasePath) {
     registry.register(new FilesystemAdapter({
-      mediaBasePath: config.mediaBasePath
+      mediaBasePath: config.mediaBasePath,
+      historyPath: config.mediaMemoryPath ? `${config.mediaMemoryPath}/media` : null
     }));
   }
 

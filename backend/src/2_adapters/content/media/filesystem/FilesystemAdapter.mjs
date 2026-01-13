@@ -1,6 +1,7 @@
 // backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs
 import fs from 'fs';
 import path from 'path';
+import yaml from 'js-yaml';
 import { Item } from '../../../../1_domains/content/entities/Item.mjs';
 import { ListableItem } from '../../../../1_domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '../../../../1_domains/content/capabilities/Playable.mjs';
@@ -25,17 +26,53 @@ const VIDEO_EXTS = ['.mp4', '.webm', '.mkv', '.avi'];
 /**
  * Filesystem adapter for raw media files.
  * Implements IContentSource for accessing media files on the local filesystem.
+ * Supports watch state integration for resume position tracking.
  */
 export class FilesystemAdapter {
   /**
    * @param {Object} config
    * @param {string} config.mediaBasePath - Base path for media files
+   * @param {string} [config.historyPath] - Path to media_memory directory for watch state
    */
   constructor(config) {
     if (!config.mediaBasePath) {
       throw new Error('FilesystemAdapter requires mediaBasePath');
     }
     this.mediaBasePath = config.mediaBasePath;
+    this.historyPath = config.historyPath || null;
+    this._watchStateCache = null;
+  }
+
+  /**
+   * Load watch state from media_memory YAML file
+   * @returns {Object} Watch state map { mediaKey: { percent, seconds, playhead, mediaDuration } }
+   * @private
+   */
+  _loadWatchState() {
+    if (!this.historyPath) return {};
+    if (this._watchStateCache) return this._watchStateCache;
+
+    try {
+      const filePath = path.join(this.historyPath, 'media.yml');
+      if (!fs.existsSync(filePath)) return {};
+      const content = fs.readFileSync(filePath, 'utf8');
+      this._watchStateCache = yaml.load(content) || {};
+      return this._watchStateCache;
+    } catch (err) {
+      return {};
+    }
+  }
+
+  /**
+   * Get watch state for a specific media key
+   * @param {string} mediaKey - Media key (file path)
+   * @returns {Object|null} Watch state { percent, seconds, playhead, mediaDuration }
+   * @private
+   */
+  _getWatchState(mediaKey) {
+    const watchState = this._loadWatchState();
+    // Try both with and without filesystem: prefix
+    return watchState[mediaKey] || watchState[`filesystem:${mediaKey}`] || null;
   }
 
   get source() {
@@ -138,17 +175,28 @@ export class FilesystemAdapter {
       const ext = path.extname(resolved.path).toLowerCase();
       const mediaType = this.getMediaType(ext);
 
+      // Load watch state for resume position
+      const watchState = this._getWatchState(localId);
+      const resumePosition = watchState?.playhead || watchState?.seconds || null;
+      const duration = watchState?.mediaDuration || null;
+
       return new PlayableItem({
         id: `filesystem:${localId}`,
         source: 'filesystem',
         title: path.basename(localId, ext),
         mediaType,
         mediaUrl: `/proxy/filesystem/stream/${encodeURIComponent(localId)}`,
+        duration,
         resumable: mediaType === 'video',
+        resumePosition,
         metadata: {
           filePath: resolved.path,
           fileSize: stats.size,
-          mimeType: MIME_TYPES[ext] || 'application/octet-stream'
+          mimeType: MIME_TYPES[ext] || 'application/octet-stream',
+          // Include watch state fields in metadata for compatibility
+          percent: watchState?.percent || null,
+          playhead: resumePosition,
+          watchTime: watchState?.watchTime || null
         }
       });
     } catch (err) {
