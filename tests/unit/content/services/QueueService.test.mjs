@@ -119,4 +119,73 @@ describe('QueueService', () => {
       expect(all.length).toBe(0);
     });
   });
+
+  describe('sortByPriority', () => {
+    test('orders in_progress items first', () => {
+      const items = [
+        { id: '1', title: 'Unwatched', percent: 0, priority: 'medium' },
+        { id: '2', title: 'In Progress', percent: 45, priority: 'in_progress' },
+        { id: '3', title: 'Also Unwatched', percent: 0, priority: 'medium' }
+      ];
+      const sorted = QueueService.sortByPriority(items);
+      expect(sorted[0].id).toBe('2');
+    });
+
+    test('orders urgent items after in_progress', () => {
+      const items = [
+        { id: '1', title: 'Normal', percent: 0, priority: 'medium' },
+        { id: '2', title: 'Urgent', percent: 0, priority: 'urgent' },
+        { id: '3', title: 'In Progress', percent: 50, priority: 'in_progress' }
+      ];
+      const sorted = QueueService.sortByPriority(items);
+      expect(sorted[0].id).toBe('3'); // in_progress first
+      expect(sorted[1].id).toBe('2'); // urgent second
+    });
+
+    test('sorts in_progress items by percent descending', () => {
+      const items = [
+        { id: '1', title: 'Low Progress', percent: 20, priority: 'in_progress' },
+        { id: '2', title: 'High Progress', percent: 80, priority: 'in_progress' },
+        { id: '3', title: 'Mid Progress', percent: 50, priority: 'in_progress' }
+      ];
+      const sorted = QueueService.sortByPriority(items);
+      expect(sorted[0].id).toBe('2'); // 80%
+      expect(sorted[1].id).toBe('3'); // 50%
+      expect(sorted[2].id).toBe('1'); // 20%
+    });
+
+    test('preserves original order for same priority items', () => {
+      const items = [
+        { id: '1', title: 'First', percent: 0, priority: 'medium' },
+        { id: '2', title: 'Second', percent: 0, priority: 'medium' },
+        { id: '3', title: 'Third', percent: 0, priority: 'medium' }
+      ];
+      const sorted = QueueService.sortByPriority(items);
+      expect(sorted.map(i => i.id)).toEqual(['1', '2', '3']);
+    });
+
+    test('handles full priority ordering', () => {
+      const items = [
+        { id: '1', title: 'Low', percent: 0, priority: 'low' },
+        { id: '2', title: 'High', percent: 0, priority: 'high' },
+        { id: '3', title: 'Urgent', percent: 0, priority: 'urgent' },
+        { id: '4', title: 'Medium', percent: 0, priority: 'medium' },
+        { id: '5', title: 'In Progress', percent: 30, priority: 'in_progress' }
+      ];
+      const sorted = QueueService.sortByPriority(items);
+      expect(sorted.map(i => i.id)).toEqual(['5', '3', '2', '4', '1']);
+    });
+
+    test('treats items without priority as medium', () => {
+      const items = [
+        { id: '1', title: 'No Priority', percent: 0 },
+        { id: '2', title: 'Urgent', percent: 0, priority: 'urgent' },
+        { id: '3', title: 'Low', percent: 0, priority: 'low' }
+      ];
+      const sorted = QueueService.sortByPriority(items);
+      expect(sorted[0].id).toBe('2'); // urgent
+      expect(sorted[1].id).toBe('1'); // no priority (treated as medium)
+      expect(sorted[2].id).toBe('3'); // low
+    });
+  });
 });

@@ -2,6 +2,18 @@
 import { PlayableItem } from '../capabilities/Playable.mjs';
 
 /**
+ * Priority ordering for queue items.
+ * Lower numbers = higher priority.
+ */
+const PRIORITY_ORDER = {
+  'in_progress': 0,
+  'urgent': 1,
+  'high': 2,
+  'medium': 3,
+  'low': 4
+};
+
+/**
  * QueueService handles play vs queue logic with watch state awareness.
  *
  * Key distinction:
@@ -9,6 +21,42 @@ import { PlayableItem } from '../capabilities/Playable.mjs';
  * - getAllPlayables() → ALL items (for queue/binge watching)
  */
 export class QueueService {
+  /**
+   * Sort items by priority.
+   * Order: in_progress (by percent desc) > urgent > high > medium > low
+   * Items without priority are treated as medium.
+   * Stable sort preserves original order for items with same priority.
+   *
+   * @param {Array} items - Items with optional priority and percent fields
+   * @returns {Array} Sorted items (new array, original unchanged)
+   */
+  static sortByPriority(items) {
+    // Use index to ensure stable sort
+    const indexed = items.map((item, index) => ({ item, index }));
+
+    indexed.sort((a, b) => {
+      const priorityA = PRIORITY_ORDER[a.item.priority] ?? PRIORITY_ORDER.medium;
+      const priorityB = PRIORITY_ORDER[b.item.priority] ?? PRIORITY_ORDER.medium;
+
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
+      // For in_progress items, sort by percent descending
+      if (a.item.priority === 'in_progress' && b.item.priority === 'in_progress') {
+        const percentA = a.item.percent || 0;
+        const percentB = b.item.percent || 0;
+        if (percentA !== percentB) {
+          return percentB - percentA;
+        }
+      }
+
+      // Preserve original order (stable sort)
+      return a.index - b.index;
+    });
+
+    return indexed.map(({ item }) => item);
+  }
   /**
    * @param {Object} config
    * @param {import('../ports/IWatchStateStore.mjs').IWatchStateStore} config.watchStore
