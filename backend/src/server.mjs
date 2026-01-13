@@ -469,6 +469,35 @@ async function main() {
   }));
   logger.info('nutribot.mounted', { path: '/api/nutribot', telegramConfigured: !!messagingServices.telegramAdapter });
 
+  // Journalist application
+  const journalistConfig = process.env.journalist || {};
+
+  // Create AI adapter for journalist (reuse pattern from nutribot, or share adapter)
+  let journalistAiGateway = nutribotAiGateway;  // Reuse the same adapter
+  if (!journalistAiGateway && openaiApiKey) {
+    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
+    journalistAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: logger.child({ module: 'journalist-ai' }) });
+  }
+
+  const journalistServices = createJournalistServices({
+    userDataService,
+    configService,
+    telegramAdapter: messagingServices.telegramAdapter,
+    aiGateway: journalistAiGateway,
+    userResolver: null,  // TODO: Add UserResolver when available
+    conversationStateStore: null,  // Uses in-memory by default
+    quizRepository: null,  // TODO: Add quiz repository when available
+    logger: logger.child({ module: 'journalist' })
+  });
+
+  app.use('/api/journalist', createJournalistApiRouter({
+    journalistServices,
+    configService,
+    secretToken: journalistConfig.telegram?.secretToken || telegramConfig.secretToken || '',
+    logger: logger.child({ module: 'journalist-api' })
+  }));
+  logger.info('journalist.mounted', { path: '/api/journalist', telegramConfigured: !!messagingServices.telegramAdapter });
+
   // Legacy finance endpoint shims
   app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
   app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
