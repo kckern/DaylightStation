@@ -14,6 +14,7 @@
 | Fitness | 41 | 32 | 9 | 78% |
 | Health | 52 | 44 | 8 | 85% |
 | Finance | 35 | 22 | 13 | 63% |
+| Messaging | 2 | 2 | 0 | 100% |
 | Config | TBD | TBD | TBD | TBD |
 | Playback | TBD | TBD | TBD | TBD |
 | Scheduling | TBD | TBD | TBD | TBD |
@@ -1458,10 +1459,185 @@ While raw parity is 63%, the DDD implementation provides significantly more func
 
 ---
 
+## 5. Messaging Domain
+
+### Legacy Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| gmail.mjs | `backend/_legacy/lib/gmail.mjs` | Gmail integration (email harvesting for lifelog) |
+
+**Note:** The legacy gmail.mjs has been refactored to be a bridge file that delegates to the new GmailAdapter architecture. The original codebase did not have dedicated Telegram/chatbot adapters in the legacy lib folder - those are DDD-only additions.
+
+### DDD Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| Message.mjs | `backend/src/1_domains/messaging/entities/Message.mjs` | Message entity with factory methods |
+| Conversation.mjs | `backend/src/1_domains/messaging/entities/Conversation.mjs` | Conversation entity |
+| Notification.mjs | `backend/src/1_domains/messaging/entities/Notification.mjs` | Notification entity |
+| IMessagingGateway.mjs | `backend/src/1_domains/messaging/ports/IMessagingGateway.mjs` | Messaging platform interface |
+| IConversationStore.mjs | `backend/src/1_domains/messaging/ports/IConversationStore.mjs` | Conversation persistence interface |
+| INotificationChannel.mjs | `backend/src/1_domains/messaging/ports/INotificationChannel.mjs` | Notification channel interface |
+| IConversationStateStore.mjs | `backend/src/1_domains/messaging/ports/IConversationStateStore.mjs` | Conversation state persistence interface |
+| ConversationService.mjs | `backend/src/1_domains/messaging/services/ConversationService.mjs` | Conversation management service |
+| NotificationService.mjs | `backend/src/1_domains/messaging/services/NotificationService.mjs` | Notification management service |
+| GmailAdapter.mjs | `backend/src/2_adapters/messaging/GmailAdapter.mjs` | Gmail API adapter |
+| TelegramAdapter.mjs | `backend/src/2_adapters/messaging/TelegramAdapter.mjs` | Telegram Bot API adapter |
+| YamlConversationStateStore.mjs | `backend/src/2_adapters/messaging/YamlConversationStateStore.mjs` | YAML-based state persistence |
+
+---
+
+### Legacy Functions: gmail.mjs
+
+| Function | Lines | Purpose | DDD Equivalent | Status |
+|----------|-------|---------|----------------|--------|
+| `createGmailClient(username)` | 29-46 | Create Google OAuth2 client | `GmailAdapter.getClient()` | ✅ |
+| `listMails(logger, job_id, targetUsername)` | 57-114 | Harvest emails for lifelog | `GmailAdapter.harvestEmails()` | ✅ |
+
+---
+
+### DDD-Only Functions: GmailAdapter.mjs
+
+| Function | Lines | Purpose | Notes |
+|----------|-------|---------|-------|
+| `constructor()` | 7-18 | Initialize with auth factory | New architecture |
+| `getClient()` | 23-28 | Get Gmail API client | Replaces createGmailClient |
+| `send(notification)` | 35-62 | Send email notification | Implements INotificationChannel |
+| `getInboxMessages(options)` | 69-99 | Fetch inbox messages | Refactored from legacy |
+| `getSentMessages(options)` | 104-135 | Fetch sent messages | Refactored from legacy |
+| `getUnreadCount()` | 140-150 | Get unread email count | New |
+| `markAsRead(messageId)` | 155-165 | Mark message as read | New |
+| `archiveMessage(messageId)` | 170-180 | Archive a message | New |
+| `formatMessage(data)` | 187-211 | Format Gmail message | Refactored from legacy |
+| `createMessage(to, subject, body)` | 216-230 | Create raw email message | New |
+| `sanitize(text)` | 235-240 | Sanitize text | Helper |
+| `getDateDaysAgo(days)` | 245-249 | Calculate date N days ago | Helper |
+| `mergeByDate(existing, newMessages)` | 254-271 | Merge messages by date | Refactored from legacy |
+| `harvestEmails(existingData)` | 276-309 | Main harvest function | Replaces listMails core logic |
+| `getMetrics()` | 314-326 | Get adapter metrics | New |
+| `formatDuration(ms)` | 331-336 | Format duration string | Helper |
+| `isConfigured()` | 341-343 | Check if configured | New |
+
+---
+
+### DDD-Only Functions: TelegramAdapter.mjs
+
+| Function | Lines | Purpose | Notes |
+|----------|-------|---------|-------|
+| `constructor()` | 9-26 | Initialize with token | New (no legacy equivalent) |
+| `callApi(method, params, httpMethod)` | 31-62 | Make Telegram API request | Core infrastructure |
+| `sendMessage(chatId, text, options)` | 69-99 | Send text message | IMessagingGateway |
+| `sendImage(chatId, imageSource, caption, options)` | 104-138 | Send image | IMessagingGateway |
+| `updateMessage(chatId, messageId, updates)` | 143-175 | Edit existing message | IMessagingGateway |
+| `updateKeyboard(chatId, messageId, choices)` | 180-186 | Update keyboard on message | IMessagingGateway |
+| `deleteMessage(chatId, messageId)` | 191-196 | Delete a message | IMessagingGateway |
+| `transcribeVoice(fileId)` | 201-208 | Transcribe voice message | IMessagingGateway |
+| `getFileUrl(fileId)` | 213-216 | Get file download URL | IMessagingGateway |
+| `send(notification)` | 223-237 | Send notification | INotificationChannel |
+| `getBotInfo()` | 244-249 | Get bot information | Bot management |
+| `setWebhook(url, options)` | 254-272 | Set webhook URL | Bot management |
+| `deleteWebhook(options)` | 277-283 | Delete webhook | Bot management |
+| `getWebhookInfo()` | 288-290 | Get webhook info | Bot management |
+| `setCommands(commands)` | 295-302 | Set bot commands | Bot management |
+| `buildKeyboard(choices, inline)` | 309-329 | Build keyboard markup | Helper |
+| `parseUpdate(update)` | 334-361 | Parse incoming update | Helper |
+| `answerCallbackQuery(callbackQueryId, options)` | 366-372 | Answer callback query | Helper |
+| `getMetrics()` | 377-389 | Get adapter metrics | New |
+| `formatDuration(ms)` | 394-399 | Format duration string | Helper |
+| `isConfigured()` | 404-406 | Check if configured | New |
+
+---
+
+### DDD-Only Functions: YamlConversationStateStore.mjs
+
+| Function | Lines | Purpose | Notes |
+|----------|-------|---------|-------|
+| `constructor(config)` | 35-41 | Initialize with basePath | New (no legacy equivalent) |
+| `get(conversationId, messageId)` | 113-127 | Get conversation state | IConversationStateStore |
+| `set(conversationId, state, messageId)` | 135-161 | Set conversation state | IConversationStateStore |
+| `delete(conversationId, messageId)` | 168-204 | Delete conversation state | IConversationStateStore |
+| `clear(conversationId)` | 210-212 | Clear all state | IConversationStateStore |
+
+---
+
+### Domain Entity Methods
+
+#### Message.mjs (17 methods)
+- `constructor()`, `isText()`, `isVoice()`, `isImage()`, `isCallback()`, `getText()`, `getAgeMs()`, `getAgeMinutes()`, `isFrom()`, `isRecent()`, `toJSON()`, `fromJSON()`, `createText()`, `createVoice()`, `createImage()`, `createCallback()`, `generateId()`
+
+#### Conversation.mjs (9 methods)
+- `constructor()`, `addMessage()`, `getMessageCount()`, `getMessagesByParticipant()`, `getLatestMessage()`, `hasParticipant()`, `addParticipant()`, `toJSON()`, `fromJSON()`
+
+#### Notification.mjs (8 methods)
+- `constructor()`, `isSent()`, `isRead()`, `markSent()`, `markRead()`, `isHighPriority()`, `toJSON()`, `fromJSON()`
+
+---
+
+### Domain Service Methods
+
+#### ConversationService.mjs (12 methods)
+- `constructor()`, `createConversation()`, `getConversation()`, `getOrCreateConversation()`, `getConversationsForParticipant()`, `getActiveConversations()`, `addMessage()`, `getMessages()`, `getRecentMessages()`, `getConversationSummary()`, `archiveConversation()`, `deleteConversation()`, `getStatistics()`, `generateConversationId()`
+
+#### NotificationService.mjs (8 methods)
+- `constructor()`, `send()`, `getNotification()`, `getNotificationsForRecipient()`, `getUnreadNotifications()`, `markRead()`, `markAllRead()`, `registerChannel()`, `generateId()`
+
+---
+
+### Gaps Analysis
+
+**Legacy Functions with DDD Equivalents:** 2/2 (100%)
+
+| Legacy Function | Status | DDD Equivalent | Notes |
+|-----------------|--------|----------------|-------|
+| `createGmailClient()` | ✅ | `GmailAdapter.getClient()` | Refactored to use factory pattern |
+| `listMails()` | ✅ | `GmailAdapter.harvestEmails()` | Core logic moved to adapter |
+
+**Missing from DDD:** None
+
+**DDD-Only Additions (not in legacy):**
+- Complete TelegramAdapter (21 methods) - New messaging channel
+- YamlConversationStateStore (5 methods) - State persistence for multi-turn conversations
+- Enhanced GmailAdapter (15 additional methods vs legacy)
+- Domain entities: Message, Conversation, Notification
+- Domain services: ConversationService, NotificationService
+- Port interfaces: IMessagingGateway, IConversationStore, INotificationChannel, IConversationStateStore
+
+---
+
+### Parity Summary: Messaging Domain
+
+| Metric | Value |
+|--------|-------|
+| Legacy Exported Functions | 2 |
+| DDD Equivalent Functions | 2 |
+| Functions Missing from DDD | 0 |
+| **Parity Percentage** | **100%** |
+
+**Key Findings:**
+
+1. **Full Parity Achieved:** All legacy Gmail functions have DDD equivalents
+2. **Significant Enhancement:** DDD adds 63+ new methods across adapters, entities, and services
+3. **New Capabilities:**
+   - Telegram integration (IMessagingGateway implementation)
+   - Conversation state management (YamlConversationStateStore)
+   - Domain-driven entities (Message, Conversation, Notification)
+   - Multi-channel notification support (INotificationChannel)
+4. **Architecture Improvement:** Legacy was Gmail-only; DDD provides a unified messaging abstraction supporting multiple channels
+
+**Parity Calculation Note:**
+While raw parity is 100%, the DDD implementation provides substantially more functionality:
+- 63+ DDD methods vs 2 legacy functions
+- Multi-channel support (Gmail, Telegram, extensible to SMS/Push)
+- Clean domain model with entities, ports, and services
+- State persistence for complex conversation flows
+
+---
+
 ## Next Steps
 
-1. **Task 1.5:** Audit Playback domain
-2. **Task 1.6:** Audit Scheduling domain
-3. **Task 1.7:** Audit User domain
-4. **Task 1.8:** Audit Config domain
+1. **Task 1.6:** Audit Playback domain
+2. **Task 1.7:** Audit Scheduling domain
+3. **Task 1.8:** Audit User domain
+4. **Task 1.9:** Audit Config domain
 5. **Task 2.x:** Implement missing functions by priority
