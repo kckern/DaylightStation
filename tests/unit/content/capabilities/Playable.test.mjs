@@ -345,4 +345,78 @@ describe('Playable capability', () => {
       expect(item.playCount).toBe(0);
     });
   });
+
+  describe('behavior flags', () => {
+    it('should support shuffle flag', () => {
+      const item = new PlayableItem({
+        id: 'folder:music',
+        source: 'folder',
+        title: 'Music',
+        mediaType: 'audio',
+        mediaUrl: '/stream/music',
+        shuffle: true
+      });
+      expect(item.shuffle).toBe(true);
+    });
+
+    it('should support continuous flag', () => {
+      const item = new PlayableItem({
+        id: 'folder:ambient',
+        source: 'folder',
+        title: 'Ambient',
+        mediaType: 'audio',
+        mediaUrl: '/stream/ambient',
+        continuous: true
+      });
+      expect(item.continuous).toBe(true);
+    });
+
+    it('should support resume flag', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resume: true
+      });
+      expect(item.resume).toBe(true);
+    });
+
+    it('should support active flag for queue filtering', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        active: false
+      });
+      expect(item.active).toBe(false);
+    });
+
+    it('should default active to true', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123'
+      });
+      expect(item.active).toBe(true);
+    });
+
+    it('should default other flags to false', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123'
+      });
+      expect(item.shuffle).toBe(false);
+      expect(item.continuous).toBe(false);
+      expect(item.resume).toBe(false);
+    });
+  });
 });

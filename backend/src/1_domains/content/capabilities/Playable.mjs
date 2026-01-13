@@ -26,6 +26,10 @@ export class PlayableItem extends Item {
    * @param {string} [props.lastPlayed] - ISO timestamp of last play
    * @param {number} [props.playCount] - Number of times played
    * @param {number} [props.watchProgress] - Explicit watch progress percentage (0-100)
+   * @param {boolean} [props.shuffle] - Whether to shuffle playback (default: false)
+   * @param {boolean} [props.continuous] - Whether to play continuously (default: false)
+   * @param {boolean} [props.resume] - Whether to resume from last position (default: false)
+   * @param {boolean} [props.active] - Whether item is active for queue filtering (default: true)
    */
   constructor(props) {
     super(props);
@@ -38,6 +42,11 @@ export class PlayableItem extends Item {
     this.lastPlayed = props.lastPlayed ?? null;
     this.playCount = props.playCount ?? 0;
     this._watchProgress = props.watchProgress ?? null;
+    // Behavior flags
+    this.shuffle = props.shuffle || false;
+    this.continuous = props.continuous || false;
+    this.resume = props.resume || false;
+    this.active = props.active !== false; // defaults to true
   }
 
   /**
