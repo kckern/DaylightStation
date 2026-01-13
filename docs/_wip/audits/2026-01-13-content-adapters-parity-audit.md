@@ -10,11 +10,11 @@
 
 | Adapter/Component | Parity | Critical Gaps | Status |
 |-------------------|--------|---------------|--------|
-| **PlexAdapter** | ~85% | (Already fixed in previous commit) | Done |
-| **FolderAdapter** | ~60% | Watch state, metadata flattening, field names | Needs Work |
-| **LocalContentAdapter** | ~90% | Scripture version, talk mediaType/type | Minor Fixes |
+| **PlexAdapter** | ~85% | (Fixed in previous commit) | Done |
+| **FolderAdapter** | ~90% | (Fixed: watch state, metadata, priority) | Done |
+| **LocalContentAdapter** | ~95% | (Fixed: scripture version, talk type/mediaType) | Done |
 | **FilesystemAdapter** | ~50% | Watch state, HTTP headers, images, errors | Needs Work |
-| **Content Domain** | ~75% | Scheduling metadata, FolderAdapter.resolvePlayables() | Needs Work |
+| **Content Domain** | ~85% | (FolderAdapter fixed, scheduling metadata added) | Mostly Done |
 | **Apps Adapter** | 0% | Not implemented (no legacy either) | Greenfield |
 | **Games Adapter** | 0% | Not implemented (no legacy either) | Greenfield |
 
@@ -85,50 +85,38 @@ FolderAdapter does NOT implement `resolvePlayables()`, breaking queue functional
 
 ### Gaps Found
 
-#### P1-1: Scripture Missing `version` Field
+#### P1-1: Scripture Missing `version` Field - RESOLVED
 **Severity:** HIGH
-
-DDD adapter does not preserve the scripture version field (sebom, msg, etc.)
+**Status:** Fixed - Added `version` to scripture metadata
 
 ```javascript
-// LEGACY has
-version: "sebom"
-
-// DDD metadata has NO version
+// Now includes version
 metadata: {
   reference: "1 Nephi 1",
   volume: "bom",
+  version: "sebom",  // ADDED
   chapter: 31103,
   verses: [...]
-  // version: undefined - MISSING
 }
 ```
 
 **Fix:** Add `version` to scripture metadata extraction.
 
-#### P1-2: Talk `type` Field Not Set
+#### P1-2: Talk `type` Field Not Set - RESOLVED
 **Severity:** MEDIUM
-
-Talks return `type: null` instead of `type: 'talk'`.
+**Status:** Fixed - Now sets `type: 'talk'`
 
 ```javascript
-// Expected
+// Now correct
 type: 'talk'
-
-// Actual
-type: null
 ```
 
-#### P1-3: Talk `mediaType` Incorrect
+#### P1-3: Talk `mediaType` Incorrect - RESOLVED
 **Severity:** MEDIUM
-
-Talks are video but adapter sets `mediaType: 'audio'`.
+**Status:** Fixed - Now sets `mediaType: 'video'`
 
 ```javascript
-// Current (WRONG for talks)
-mediaType: 'audio'
-
-// Should be
+// Now correct
 mediaType: 'video'
 ```
 
@@ -139,18 +127,19 @@ mediaType: 'video'
 | id | OK | OK | OK | OK | OK |
 | source | OK | OK | OK | OK | OK |
 | title | OK | OK | OK | OK | OK |
-| type | NULL | OK | OK | OK | OK |
-| mediaType | WRONG | OK | OK | OK | OK |
+| type | OK | OK | OK | OK | OK |
+| mediaType | OK | OK | OK | OK | OK |
 | mediaUrl | OK | OK | OK | OK | OK |
 | duration | OK | OK | OK | OK | OK |
-| metadata.version | - | MISSING | - | - | - |
+| metadata.version | - | OK | - | - | - |
 | metadata.verses | OK | OK | OK | OK | OK |
 
-### Recommendations
+### Status
 
-1. Add `version` to scripture metadata
-2. Set `type: 'talk'` for talks
-3. Set `mediaType: 'video'` for talks
+All P1 issues have been resolved:
+- Scripture now includes `version` in metadata
+- Talks now set `type: 'talk'`
+- Talks now set `mediaType: 'video'`
 
 ---
 

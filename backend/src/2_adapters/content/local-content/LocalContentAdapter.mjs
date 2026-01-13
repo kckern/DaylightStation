@@ -169,7 +169,8 @@ export class LocalContentAdapter {
         id: compoundId,
         source: this.source,
         title: metadata.title || localId,
-        mediaType: 'audio',
+        type: 'talk',
+        mediaType: 'video',
         mediaUrl,
         duration: metadata.duration || 0,
         resumable: true,
@@ -245,6 +246,7 @@ export class LocalContentAdapter {
         metadata: {
           reference,
           volume,
+          version,
           chapter: verseId,
           verses,
           mediaFile: rawData.mediaFile
