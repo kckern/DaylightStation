@@ -147,13 +147,13 @@ const PARITY_TESTS = [
     name: 'Local content - hymn',
     legacy: '/data/hymn/113',
     ddd: '/api/local-content/hymn/113',
-    ignoreFields: ['_cached', 'timestamp', '_source']
+    ignoreFields: ['_cached', 'timestamp', '_source', 'duration']  // duration derived from audio file
   },
   {
     name: 'Local content - primary song',
     legacy: '/data/primary/123',
     ddd: '/api/local-content/primary/123',
-    ignoreFields: ['_cached', 'timestamp', '_source']
+    ignoreFields: ['_cached', 'timestamp', '_source', 'duration']  // duration derived from audio file
   },
 
   // ---------------------------
