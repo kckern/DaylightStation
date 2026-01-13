@@ -17,6 +17,7 @@
  * @property {string} [description] - Item description
  * @property {Object} [metadata] - Additional metadata
  * @property {ItemActions} [actions] - Available actions for this item
+ * @property {string} [media_key] - Optional override for media key (defaults to id)
  */
 
 /**
@@ -40,6 +41,7 @@ export class Item {
     this.description = props.description ?? null;
     this.metadata = props.metadata ?? {};
     this.actions = props.actions ?? null;
+    this._media_key = props.media_key ?? null;
   }
 
   /**
@@ -49,6 +51,25 @@ export class Item {
   getLocalId() {
     const colonIndex = this.id.indexOf(':');
     return colonIndex > -1 ? this.id.substring(colonIndex + 1) : this.id;
+  }
+
+  /**
+   * Get the plex rating key (for plex items)
+   * @returns {string|null}
+   */
+  get plex() {
+    if (this.source === 'plex') {
+      return this.getLocalId();
+    }
+    return this.metadata?.plex ?? null;
+  }
+
+  /**
+   * Get the media key for logging/requests
+   * @returns {string}
+   */
+  get media_key() {
+    return this._media_key ?? this.id;
   }
 
   /**
